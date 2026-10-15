@@ -29,6 +29,7 @@ import {
   OrganizationRunSchema
 } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
+import { ObjectLocateInputSchema, ObjectLocateResultSchema } from "@app/domain";
 import {
   WikiCollectionCommandSchema,
   WikiCollectionResponseSchema,
@@ -243,6 +244,12 @@ const api: DesktopApi = {
           ipcChannels.organizationCommand,
           OrganizationCommandSchema.parse(input)
         )
+      )
+  },
+  objects: {
+    locate: async (input) =>
+      ObjectLocateResultSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.objectsLocate, ObjectLocateInputSchema.parse(input))
       )
   },
   wiki: {

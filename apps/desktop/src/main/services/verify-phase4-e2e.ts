@@ -50,6 +50,7 @@ import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor } from "./job-supervisor.js";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
+import { ObjectsService } from "./objects-service.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { YouTubeService } from "./youtube-service.js";
@@ -1339,6 +1340,40 @@ try {
     elsewhere.vectorScore !== 0
   )
     throw new Error("A candidate without a vector was not told apart from a dissimilar one.");
+
+  // objects.locate answers from the same database: a note hangs from its source, which keeps its
+  // own place; an anchored address locates the object it names; a missing object locates nothing.
+  const objects = new ObjectsService(() => pool);
+  const locatedNote = await objects.locate({ address: `memora://note/${firstOfOne}` });
+  const notePath = locatedNote?.primaryPath ?? [];
+  const owningSource = notePath.at(-2);
+  if (
+    !locatedNote ||
+    notePath.at(-1)?.id !== firstOfOne ||
+    !owningSource ||
+    notePath.slice(0, -1).some((item) => item.kind !== "source") ||
+    locatedNote.counts.passages < 1
+  )
+    throw new Error(
+      `objects.locate did not place the note under its source: ${JSON.stringify(locatedNote)}.`
+    );
+  const anchoredId = randomUUID();
+  const locatedSource = await objects.locate({
+    address: `memora://source/${owningSource.id}#passage=${anchoredId}`
+  });
+  if (
+    !locatedSource ||
+    locatedSource.object.id !== owningSource.id ||
+    locatedSource.primaryPath.at(-1)?.id !== owningSource.id ||
+    locatedSource.counts.notes < 1 ||
+    locatedSource.counts.passages < 1
+  )
+    throw new Error(`objects.locate did not locate the source: ${JSON.stringify(locatedSource)}.`);
+  if (
+    (await objects.locate({ address: `memora://source/${randomUUID()}` })) !== null ||
+    (await objects.locate({ address: `memora://note/${randomUUID()}` })) !== null
+  )
+    throw new Error("objects.locate invented an object that does not exist.");
 
   console.info(
     JSON.stringify(

@@ -230,6 +230,11 @@ export function App({
   const openGraphNote = useStableCallback((sourceItemId: string, atomicNoteId: string) =>
     openLibrarySource({ sourceItemId, atomicNoteId, origin: "knowledgeGraph" })
   );
+  // A legacy wiki page listed by "Where is this" opens in the Wiki.
+  const openWikiPage = useStableCallback((pageId: string) => {
+    setObsidianTarget({ kind: "wiki", id: pageId, token: Date.now() });
+    setActiveView("wiki");
+  });
   // After an interactive import the new source opens in the Library with the outcome as a toast.
   function openImportedSource(sourceItemId: string, status?: MessageKey) {
     openLibrarySource({ sourceItemId, origin: "import" });
@@ -738,6 +743,7 @@ export function App({
                 setLibraryTarget(null);
                 setActiveView("knowledgeGraph");
               }}
+              onOpenWikiPage={openWikiPage}
             />
           </div>
           <div hidden={activeView !== "wiki"}>
@@ -752,12 +758,13 @@ export function App({
               externalTarget={obsidianTarget}
               active={activeView === "wiki"}
               t={t}
-              onOpenSource={(sourceItemId, atomicNoteId) => {
+              onOpenSource={(sourceItemId, atomicNoteId, passage) => {
                 libraryTargetToken.current += 1;
                 setLibraryTarget({
                   sourceItemId,
                   origin: "wiki",
                   ...(atomicNoteId ? { atomicNoteId } : {}),
+                  ...(passage ? { passage } : {}),
                   token: libraryTargetToken.current
                 });
                 setActiveView("library");
@@ -800,9 +807,13 @@ export function App({
               t={t}
               state={searchState}
               onStateChange={setSearchState}
-              onOpenSource={(sourceItemId) => {
+              onOpenSource={(sourceItemId, passage) => {
                 libraryTargetToken.current += 1;
-                setLibraryTarget({ sourceItemId, token: libraryTargetToken.current });
+                setLibraryTarget({
+                  sourceItemId,
+                  ...(passage ? { passage } : {}),
+                  token: libraryTargetToken.current
+                });
                 setActiveView("library");
               }}
             />

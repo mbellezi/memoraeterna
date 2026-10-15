@@ -11,6 +11,7 @@ import {
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult } from "../../shared/ipc";
 import { cn } from "../lib/cn";
+import { citationTarget, type PassageAnchor } from "../lib/object-navigation";
 import { AiNoteBadge } from "./AiNoteBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -38,7 +39,8 @@ export function SearchView({
   t: Translator;
   state?: SearchViewState;
   onStateChange?: (state: SearchViewState) => void;
-  onOpenSource?: (sourceItemId: string) => void;
+  /** A passage result opens the source on the exact chunk it found. */
+  onOpenSource?: (sourceItemId: string, passage?: PassageAnchor) => void;
 }) {
   const [localState, setLocalState] = useState<SearchViewState>(defaultSearchViewState);
   const current = state ?? localState;
@@ -182,7 +184,14 @@ export function SearchView({
                 <SearchResultCard
                   result={result}
                   t={t}
-                  onOpen={onOpenSource ? () => onOpenSource(result.sourceItemId) : undefined}
+                  onOpen={
+                    onOpenSource
+                      ? () =>
+                          result.kind === "chunk"
+                            ? onOpenSource(result.sourceItemId, citationTarget(result).passage)
+                            : onOpenSource(result.sourceItemId)
+                      : undefined
+                  }
                 />
               </li>
             ))}

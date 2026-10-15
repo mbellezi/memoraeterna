@@ -2660,5 +2660,47 @@
       "originalPassages": "Máximo de passagens completas admitidas como evidência.",
       "tools": "Máximo de operações de busca e leitura do grupo."
     }
+  },
+  "objects": {
+    "kinds": {
+      "source": "Fonte",
+      "note": "Nota",
+      "topic": "Tópico",
+      "question": "Pergunta",
+      "entity": "Entidade"
+    },
+    "whereIsThis": {
+      "title": "Onde está isto",
+      "loading": "Localizando...",
+      "missing": "Este item não está mais na biblioteca.",
+      "error": "Não foi possível carregar onde isto está.",
+      "openFailed": "Não foi possível abrir esse item.",
+      "path": "Caminho a partir da raiz da biblioteca",
+      "here": "você está aqui",
+      "alsoIn": "Também em",
+      "alsoInEmpty": "Não aparece em nenhum outro lugar.",
+      "citedBy": "Citado por",
+      "citedByEmpty": "Nada cita isto ainda.",
+      "legacy": "Wiki legada",
+      "legacyHint": "Uma página da wiki legada. Os tópicos vão substituí-la.",
+      "more": "Mais {count} não exibidos",
+      "counts": {
+        "passages": "Trechos",
+        "notes": "Notas",
+        "children": "Subitens"
+      }
+    },
+    "citation": {
+      "openPassage": "Abrir o trecho na fonte",
+      "noteOrigin": "Abrir o trecho de onde esta nota vem",
+      "showing": "Mostrando o trecho citado",
+      "unavailable": "Este trecho não está na versão atual da fonte. Ele pode pertencer a uma versão anterior.",
+      "earlierVersions": "Mostrar versões anteriores",
+      "cited": "Trecho citado"
+    },
+    "errors": {
+      "unavailable": "Os objetos ainda não estão disponíveis.",
+      "unsupportedKind": "Este tipo de objeto ainda não tem página."
+    }
   }
 }

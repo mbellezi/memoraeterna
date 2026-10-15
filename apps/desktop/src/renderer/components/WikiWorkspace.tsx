@@ -3,6 +3,7 @@ import { KnowledgeAssets } from "./KnowledgeAssets";
 import { KnowledgeInterpretations } from "./KnowledgeInterpretations";
 import { WikiChildrenLinks } from "./WikiChildrenLinks";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
+import { citationTarget, type PassageAnchor } from "../lib/object-navigation";
 import { WikiContextPane } from "./WikiContextPane";
 import { WikiNavigationPane } from "./WikiNavigationPane";
 import { WikiThemeTree } from "./WikiThemeTree";
@@ -102,7 +103,8 @@ export function WikiWorkspace({
   treeWidth?: number;
   onTreeWidthChange?: (width: number) => void;
   t: Translator;
-  onOpenSource: (id: string, noteId?: string) => void;
+  /** Opens a source; with a passage, the reader opens on that exact chunk and SourceSpan. */
+  onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
 }) {
   const pageRequests = useRef(createWikiPageRequests());
   // The page poll belongs to one request epoch. Starting or invalidating a request moves the epoch,
@@ -1485,7 +1487,17 @@ export function WikiWorkspace({
                                 ))}
                             </details>
                           )}
-                          <KnowledgeInterpretations items={s.interpretations} t={t} />
+                          <KnowledgeInterpretations
+                            items={s.interpretations}
+                            t={t}
+                            onOpenPassage={(evidence) =>
+                              onOpenSource(
+                                evidence.sourceItemId,
+                                undefined,
+                                citationTarget(evidence).passage
+                              )
+                            }
+                          />
                           <MarkdownPreview
                             markdown={s.markdown}
                             emptyLabel={t("wiki.emptySection")}
@@ -1680,12 +1692,18 @@ export function WikiWorkspace({
                 <button
                   disabled={inspector.sourceAvailable === false}
                   className={`${control} w-full`}
-                  onClick={() => onOpenSource(inspector.sourceItemId)}
+                  onClick={() =>
+                    onOpenSource(
+                      inspector.sourceItemId,
+                      undefined,
+                      citationTarget(inspector).passage
+                    )
+                  }
                 >
                   {t(
                     inspector.sourceAvailable === false
                       ? "obsidianWiki.unavailable"
-                      : "wiki.openSource"
+                      : "objects.citation.openPassage"
                   )}
                 </button>
               </>

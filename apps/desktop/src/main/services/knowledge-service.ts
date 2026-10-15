@@ -328,26 +328,41 @@ export class KnowledgeService {
     const documents = await createDocumentRepository(pool).listBySourceItem(sourceItemId);
     const sourceAssets = await createDocumentAssetRepository(pool).listBySourceItem(sourceItemId);
     const documentDetails = await Promise.all(
-      documents.map(async (document) => ({
-        id: document.id,
-        title: document.title,
-        canonicalMarkdown: document.canonicalMarkdown,
-        language: document.language,
-        chunks: (await createChunkRepository(pool).listByDocument(document.id)).map((chunk) => ({
-          id: chunk.id,
-          content: chunk.content,
-          chunkIndex: chunk.chunkIndex,
-          sourceSpanId: chunk.sourceSpanId
-        })),
-        assets: (await createDocumentAssetRepository(pool).listByDocument(document.id)).map(
-          (asset) => ({
-            id: asset.id,
-            originalFileName: asset.originalFileName,
-            mimeType: asset.mimeType,
-            role: asset.role
-          })
-        )
-      }))
+      documents.map(async (document) => {
+        const chunkRepository = createChunkRepository(pool);
+        const [documentChunks, spans] = await Promise.all([
+          chunkRepository.listByDocument(document.id),
+          chunkRepository.listSpansByDocument(document.id)
+        ]);
+        const spanById = new Map(spans.map((span) => [span.id, span]));
+        return {
+          id: document.id,
+          title: document.title,
+          canonicalMarkdown: document.canonicalMarkdown,
+          language: document.language,
+          // A chunk carries its SourceSpan so a citation can highlight the passage in the Markdown.
+          chunks: documentChunks.map((chunk) => {
+            const span = chunk.sourceSpanId ? spanById.get(chunk.sourceSpanId) : undefined;
+            return {
+              id: chunk.id,
+              content: chunk.content,
+              chunkIndex: chunk.chunkIndex,
+              sourceSpanId: chunk.sourceSpanId,
+              startOffset: span?.startOffset ?? null,
+              endOffset: span?.endOffset ?? null,
+              page: span?.page ?? null
+            };
+          }),
+          assets: (await createDocumentAssetRepository(pool).listByDocument(document.id)).map(
+            (asset) => ({
+              id: asset.id,
+              originalFileName: asset.originalFileName,
+              mimeType: asset.mimeType,
+              role: asset.role
+            })
+          )
+        };
+      })
     );
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);

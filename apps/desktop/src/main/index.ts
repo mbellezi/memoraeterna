@@ -12,6 +12,8 @@ import { OrganizationService } from "./services/organization-service.js";
 import { registerOrganizationIpc } from "./services/organization-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
+import { registerObjectsIpc } from "./services/objects-ipc.js";
+import { ObjectsService } from "./services/objects-service.js";
 import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
@@ -288,6 +290,7 @@ void app.whenReady().then(() => {
     async () => (await settingsService!.getApp()).debugMode
   );
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
+  registerObjectsIpc(ipcMain, new ObjectsService(() => databaseService?.getPool() ?? null));
   const relationThreshold = readRelationThreshold(
     process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD
   );

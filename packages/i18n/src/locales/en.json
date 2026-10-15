@@ -2657,5 +2657,47 @@
       "originalPassages": "Maximum complete passages admitted as evidence.",
       "tools": "Maximum search and read operations for the group."
     }
+  },
+  "objects": {
+    "kinds": {
+      "source": "Source",
+      "note": "Note",
+      "topic": "Topic",
+      "question": "Question",
+      "entity": "Entity"
+    },
+    "whereIsThis": {
+      "title": "Where is this",
+      "loading": "Finding where this is...",
+      "missing": "This item is no longer in the library.",
+      "error": "Where this is could not be loaded.",
+      "openFailed": "That item could not be opened.",
+      "path": "Path from the library root",
+      "here": "you are here",
+      "alsoIn": "Also in",
+      "alsoInEmpty": "It is not placed anywhere else.",
+      "citedBy": "Cited by",
+      "citedByEmpty": "Nothing cites it yet.",
+      "legacy": "Legacy wiki",
+      "legacyHint": "A page of the legacy wiki. Topics will replace it.",
+      "more": "{count} more not shown",
+      "counts": {
+        "passages": "Chunks",
+        "notes": "Notes",
+        "children": "Subitems"
+      }
+    },
+    "citation": {
+      "openPassage": "Open the passage in the source",
+      "noteOrigin": "Open the passage this note comes from",
+      "showing": "Showing the cited passage",
+      "unavailable": "This passage is not in the current version of the source. It may belong to an earlier version.",
+      "earlierVersions": "Show earlier versions",
+      "cited": "Cited passage"
+    },
+    "errors": {
+      "unavailable": "Objects are not available yet.",
+      "unsupportedKind": "This kind of object has no page yet."
+    }
   }
 }

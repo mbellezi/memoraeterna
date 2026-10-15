@@ -2662,5 +2662,47 @@
       "originalPassages": "Nombre maximal de passages complets admis comme preuves.",
       "tools": "Nombre maximal de recherches et de lectures du groupe."
     }
+  },
+  "objects": {
+    "kinds": {
+      "source": "Source",
+      "note": "Note",
+      "topic": "Sujet",
+      "question": "Question",
+      "entity": "Entité"
+    },
+    "whereIsThis": {
+      "title": "Où est-ce",
+      "loading": "Recherche de l'emplacement...",
+      "missing": "Cet élément n'est plus dans la bibliothèque.",
+      "error": "Impossible de charger l'emplacement.",
+      "openFailed": "Impossible d'ouvrir cet élément.",
+      "path": "Chemin depuis la racine de la bibliothèque",
+      "here": "vous êtes ici",
+      "alsoIn": "Aussi dans",
+      "alsoInEmpty": "N'apparaît nulle part ailleurs.",
+      "citedBy": "Cité par",
+      "citedByEmpty": "Personne ne le cite encore.",
+      "legacy": "Ancien wiki",
+      "legacyHint": "Une page de l'ancien wiki. Les sujets la remplaceront.",
+      "more": "{count} autres non affichés",
+      "counts": {
+        "passages": "Segments",
+        "notes": "Notes",
+        "children": "Sous-éléments"
+      }
+    },
+    "citation": {
+      "openPassage": "Ouvrir le passage dans la source",
+      "noteOrigin": "Ouvrir le passage dont cette note est issue",
+      "showing": "Passage cité affiché",
+      "unavailable": "Ce passage n'est pas dans la version actuelle de la source. Il appartient peut-être à une version antérieure.",
+      "earlierVersions": "Afficher les versions antérieures",
+      "cited": "Passage cité"
+    },
+    "errors": {
+      "unavailable": "Les objets ne sont pas encore disponibles.",
+      "unsupportedKind": "Ce type d'objet n'a pas encore de page."
+    }
   }
 }

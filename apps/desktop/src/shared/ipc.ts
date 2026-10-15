@@ -18,7 +18,13 @@ import {
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { MaintenanceCommand } from "@app/domain";
-import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
+import type {
+  ConsultationInput,
+  ConsultationResult,
+  ObjectLocateInput,
+  ObjectLocateResult,
+  OrganizationRun
+} from "@app/domain";
 import type { OrganizationCommand } from "@app/domain";
 import type {
   WikiPage,
@@ -85,6 +91,7 @@ export const ipcChannels = {
   wikiSave: "app:wiki:save",
   wikiSearch: "app:wiki:search",
   wikiHistory: "app:wiki:history",
+  objectsLocate: "app:objects:locate",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   databaseGetStatus: "app:database:get-status",
@@ -999,7 +1006,12 @@ export const sourceDetailSchema = z
                 id: z.string().uuid(),
                 content: z.string(),
                 chunkIndex: z.number().int().nonnegative(),
-                sourceSpanId: z.string().uuid().nullable()
+                sourceSpanId: z.string().uuid().nullable(),
+                // The SourceSpan of the chunk: where it sits in the document Markdown (offsets
+                // into `canonicalMarkdown`) and its page, so a citation can highlight it.
+                startOffset: z.number().int().nonnegative().nullable().default(null),
+                endOffset: z.number().int().nonnegative().nullable().default(null),
+                page: z.number().int().positive().nullable().default(null)
               })
               .strict()
           ),
@@ -1627,6 +1639,10 @@ export interface DesktopApi {
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   curator: { command: (input: import("@app/domain").CuratorCommand) => Promise<unknown> };
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
+  objects: {
+    /** Where an object is (primary path, other placements, citations); null when it does not exist. */
+    locate: (input: ObjectLocateInput) => Promise<ObjectLocateResult | null>;
+  };
   wiki: {
     collection: (
       input: z.input<typeof import("@app/domain").WikiCollectionCommandSchema>

@@ -1,12 +1,19 @@
 import type { InterpretationRecord, InterpretationDraftSchema } from "@app/domain";
 import type { z } from "zod";
 import type { Translator, MessageKey } from "@app/i18n";
+
+/** The evidence of a recorded interpretation, enough to open the exact passage in its source. */
+export type InterpretationEvidence = InterpretationRecord["evidence"][number];
+
 export function KnowledgeInterpretations({
   items,
-  t
+  t,
+  onOpenPassage
 }: {
   items: Array<InterpretationRecord | z.infer<typeof InterpretationDraftSchema>> | undefined;
   t: Translator;
+  /** Opens the evidence passage in the source reader; without it the evidence is read-only. */
+  onOpenPassage?: ((evidence: InterpretationEvidence) => void) | undefined;
 }) {
   if (!items?.length) return null;
   const stamp = (value: string) =>
@@ -115,6 +122,15 @@ export function KnowledgeInterpretations({
                   <blockquote className="mt-2 whitespace-pre-wrap border-l-2 pl-3">
                     {e.excerpt}
                   </blockquote>
+                  {onOpenPassage ? (
+                    <button
+                      type="button"
+                      className="mt-2 rounded-md px-1.5 py-0.5 text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      onClick={() => onOpenPassage(e)}
+                    >
+                      {t("objects.citation.openPassage")}
+                    </button>
+                  ) : null}
                 </details>
               ))}
           </details>

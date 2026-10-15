@@ -35,7 +35,8 @@
     "db:seed:verify": "tsx src/scripts/verify-seed.ts",
     "db:wall-clock:verify": "tsx src/scripts/verify-wall-clock.ts",
     "db:relation-decisions:verify": "tsx src/scripts/verify-relation-decisions.ts",
-    "db:notes-active:verify": "tsx src/scripts/verify-notes-active.ts"
+    "db:notes-active:verify": "tsx src/scripts/verify-notes-active.ts",
+    "db:object-locate:verify": "tsx src/scripts/verify-object-locate.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",

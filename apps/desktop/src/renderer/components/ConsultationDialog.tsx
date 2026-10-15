@@ -12,6 +12,7 @@ import {
 } from "@app/domain";
 import type { Translator, MessageKey } from "@app/i18n";
 import type { AiProfile } from "../../shared/ipc";
+import { citationTarget, type PassageAnchor } from "../lib/object-navigation";
 import { MarkdownPreview } from "./MarkdownEditor";
 import { EvidenceScopePicker, ProfilePicker, OrganizationRuns } from "./OrganizationView";
 const control =
@@ -35,7 +36,7 @@ export function ConsultationDialog({
   page: WikiPage | null;
   initialQuestion: string;
   onClose: () => void;
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     request = useRef<string | null>(null),
@@ -459,9 +460,15 @@ export function ConsultationDialog({
                   </p>
                   <button
                     className={`${control} mt-3`}
-                    onClick={() => onOpenSource(selected.sourceItemId)}
+                    onClick={() =>
+                      onOpenSource(
+                        selected.sourceItemId,
+                        undefined,
+                        citationTarget(selected).passage
+                      )
+                    }
                   >
-                    {t("wiki.openSource")}
+                    {t("objects.citation.openPassage")}
                   </button>
                 </aside>
               )}

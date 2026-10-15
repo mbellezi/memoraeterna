@@ -24,6 +24,7 @@ import {
   Newspaper,
   NotebookPen,
   Play,
+  Quote,
   RefreshCw,
   ScrollText,
   Sparkles,
@@ -31,7 +32,12 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { SourceItemTypes, type ProcessingPlanRequest, type SourceItemType } from "@app/domain";
+import {
+  formatObjectAddress,
+  SourceItemTypes,
+  type ProcessingPlanRequest,
+  type SourceItemType
+} from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
@@ -42,6 +48,7 @@ import {
   syncModalDialog,
   type LoadOutcome
 } from "../lib/hidden-view";
+import { useStableCallback } from "../lib/stable-callback";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportView, childSourceType } from "./ImportView";
 import { AiNoteBadge } from "./AiNoteBadge";
@@ -57,11 +64,15 @@ import {
 } from "./ProcessingPlanPicker";
 import { MarkdownPreview } from "./MarkdownEditor";
 import { SearchResultCard, searchResultId } from "./SearchView";
+import { WhereIsThis, type OpenableNavigation } from "./WhereIsThis";
+import { resolvePassage, type PassageAnchor } from "../lib/object-navigation";
 
 export interface LibraryExternalTarget {
   sourceItemId: string;
   atomicNoteId?: string;
   sourceRelationId?: string;
+  /** The exact passage a citation points at: the reader opens on it, scrolled and highlighted. */
+  passage?: PassageAnchor;
   origin?: "search" | "knowledgeGraph" | "wiki" | "import";
   token: number;
 }
@@ -266,7 +277,8 @@ export function LibraryView({
   onTargetConsumed,
   onExitToSearch,
   onExitToKnowledgeGraph,
-  onExitToWiki
+  onExitToWiki,
+  onOpenWikiPage
 }: {
   t: Translator;
   /** The Library stays mounted while hidden; hidden means no loading and no open dialogs. */
@@ -279,8 +291,17 @@ export function LibraryView({
   onExitToWiki?: () => void;
   onExitToSearch?: () => void;
   onExitToKnowledgeGraph?: () => void;
+  /** Opens a legacy wiki page (a placement or citation listed by "Where is this"). */
+  onOpenWikiPage?: (pageId: string) => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
+  // The passage a citation asked the reader to show; the source detail takes it over on mount.
+  const [passageTarget, setPassageTarget] = useState<{
+    sourceItemId: string;
+    passage: PassageAnchor;
+    token: number;
+  } | null>(null);
+  const passageToken = useRef(0);
   const [relationNoteTarget, setRelationNoteTarget] = useState<{
     sourceItemId: string;
     noteId: string;
@@ -422,6 +443,7 @@ export function LibraryView({
         exit.current?.();
         return;
       }
+      setPassageTarget(null);
       setStack(action.path);
       setFromSearch(action.fromSearch);
     }
@@ -454,6 +476,16 @@ export function LibraryView({
     setFromSearch(cameFromSearch);
     setStack([externalTarget.sourceItemId]);
     setOpenedTarget(externalTarget);
+    passageToken.current += 1;
+    setPassageTarget(
+      externalTarget.passage
+        ? {
+            sourceItemId: externalTarget.sourceItemId,
+            passage: externalTarget.passage,
+            token: passageToken.current
+          }
+        : null
+    );
     onTargetConsumed?.(externalTarget.token);
   }, [externalTarget, onNavigate, onTargetConsumed]);
 
@@ -521,6 +553,7 @@ export function LibraryView({
     }
 
     const nextPath = stack.slice(0, -1);
+    setPassageTarget(null);
     setStack(nextPath);
     if (nextPath.length === 0) setFromSearch(false);
     onNavigate?.();
@@ -530,7 +563,31 @@ export function LibraryView({
     navigateToPath(ids, false);
   }
 
+  // Where "Where is this" leads: a source at its place in the hierarchy, a note in its source or
+  // a legacy wiki page. The current path is not pushed again.
+  function navigateObject(navigation: OpenableNavigation) {
+    if (navigation.type === "legacyPage") {
+      onOpenWikiPage?.(navigation.pageId);
+      return;
+    }
+    const sourceItemId = navigation.path.at(-1);
+    if (!sourceItemId) return;
+    if (navigation.type === "note")
+      setRelationNoteTarget({ sourceItemId, noteId: navigation.noteId });
+    const samePath =
+      navigation.path.length === stack.length && navigation.path.every((id, i) => stack[i] === id);
+    if (!samePath) openPath(navigation.path);
+  }
+
+  // A note opens the passage it came from; that passage may be in another source.
+  function openPassage(sourceItemId: string, passage: PassageAnchor) {
+    if (sourceItemId !== currentId) openSource(sourceItemId);
+    passageToken.current += 1;
+    setPassageTarget({ sourceItemId, passage, token: passageToken.current });
+  }
+
   function navigateToPath(path: string[], cameFromSearch: boolean) {
+    setPassageTarget(null);
     pushLibraryHistory({ view: "library", path, fromSearch: cameFromSearch });
     setStack(path);
     setOffset(0);
@@ -584,6 +641,12 @@ export function LibraryView({
               setRelationNoteTarget({ sourceItemId, noteId });
               if (sourceItemId !== currentId) openSource(sourceItemId);
             }}
+            onNavigateObject={navigateObject}
+            onOpenPassage={openPassage}
+            focusedPassage={passageTarget?.sourceItemId === detail.id ? passageTarget : null}
+            onPassageShown={(token) =>
+              setPassageTarget((current) => (current?.token === token ? null : current))
+            }
             onOpenPath={openPath}
             onGoToLibrary={goToLibrary}
             onBack={goBack}
@@ -1198,7 +1261,7 @@ export function orderHierarchically(
   return result;
 }
 
-function SourceDetailView({
+export function SourceDetailView({
   detail,
   active,
   focusedAtomicNoteId,
@@ -1218,13 +1281,22 @@ function SourceDetailView({
   loading,
   loadError,
   metadataEnrichmentEnabled,
-  onOpenNote
+  onOpenNote,
+  onNavigateObject,
+  onOpenPassage,
+  focusedPassage,
+  onPassageShown
 }: {
   detail: SourceDetail;
   active: boolean;
   focusedAtomicNoteId: string | null;
   focusedSourceRelationId?: string | undefined;
   onOpenNote: (sourceItemId: string, noteId: string) => void;
+  onNavigateObject: (navigation: OpenableNavigation) => void;
+  onOpenPassage: (sourceItemId: string, passage: PassageAnchor) => void;
+  /** The passage a citation asked to show, until this view has taken it over. */
+  focusedPassage: { passage: PassageAnchor; token: number } | null;
+  onPassageShown: (token: number) => void;
   metadataEnrichmentEnabled: boolean;
   allSources: LibrarySource[];
   backLabel: string;
@@ -1245,12 +1317,23 @@ function SourceDetailView({
   const [historyError, setHistoryError] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [tab, setTab] = useState(
-    focusedSourceRelationId ? "graph" : focusedAtomicNoteId ? "notes" : "overview"
+    focusedSourceRelationId
+      ? "graph"
+      : focusedPassage
+        ? "content"
+        : focusedAtomicNoteId
+          ? "notes"
+          : "overview"
   );
   const [editor, setEditor] = useState<"edit" | "child" | null>(null);
   const [selectedChildren, setSelectedChildren] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // The cited passage stays highlighted while this view is open; opening another source starts clean.
+  const [passageFocus, setPassageFocus] = useState(focusedPassage);
+  const [passageSignal, setPassageSignal] = useState(focusedPassage ? 1 : 0);
+  const cited = passageFocus ? resolvePassage(detail.documents, passageFocus.passage) : null;
+  const citedChunkId = cited?.status === "found" ? cited.chunkId : null;
 
   const chain = detail.breadcrumbs.length
     ? detail.breadcrumbs
@@ -1279,6 +1362,34 @@ function SourceDetailView({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [focusedAtomicNoteId]);
+
+  // A new citation replaces the passage shown and opens the content, while rendering rather than
+  // in an effect, so the reader never paints the previous tab first.
+  if (focusedPassage && focusedPassage.token !== passageFocus?.token) {
+    setPassageFocus(focusedPassage);
+    setPassageSignal((signal) => signal + 1);
+    setTab("content");
+  }
+  // The Library drops its copy once this view has taken the passage over.
+  const passageShown = useStableCallback(onPassageShown);
+  useEffect(() => {
+    if (focusedPassage) passageShown(focusedPassage.token);
+  }, [focusedPassage, passageShown]);
+
+  // A cited passage opens the reader on its chunk: scrolled to it and focused, after the sections
+  // that hold it have opened.
+  useEffect(() => {
+    if (!passageFocus || !citedChunkId) return;
+    const timer = window.setTimeout(() => {
+      const target =
+        document.getElementById("cited-passage") ??
+        document.getElementById(`passage-chunk-${citedChunkId}`);
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      target?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [passageFocus, passageSignal, citedChunkId]);
 
   async function deleteSource() {
     if (!window.confirm(t("library.delete.confirmation", { values: { title: detail.title } })))
@@ -1417,6 +1528,14 @@ function SourceDetailView({
           {t("library.delete.failed")}
         </p>
       ) : null}
+
+      <WhereIsThis
+        t={t}
+        address={formatObjectAddress({ kind: "source", id: detail.id })}
+        active={active}
+        refreshKey={`${detail.updatedAt}|${detail.atomicNotes.length}|${chunkCount}`}
+        onNavigate={onNavigateObject}
+      />
 
       <Tabs
         label={detail.title}
@@ -1646,14 +1765,48 @@ function SourceDetailView({
                 {asset.originalFileName}
               </Button>
             ))}
+        {tab === "content" && passageFocus ? (
+          cited?.status === "found" ? (
+            <p
+              role="status"
+              className="flex flex-wrap items-center gap-x-2 rounded-lg border border-border bg-accent-soft px-3 py-2 text-sm text-foreground"
+            >
+              <Quote className="h-4 w-4 text-accent" aria-hidden="true" />
+              {t("objects.citation.showing")}
+              <span className="text-muted-foreground">
+                {t("library.chunk", { values: { index: cited.chunkIndex + 1 } })}
+                {cited.page ? ` · ${t("search.page")} ${cited.page}` : ""}
+              </span>
+            </p>
+          ) : (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-soft px-3 py-2 text-sm text-foreground"
+            >
+              {t("objects.citation.unavailable")}
+              <Button type="button" onClick={() => setTab("history")}>
+                {t("objects.citation.earlierVersions")}
+              </Button>
+            </div>
+          )
+        ) : null}
         {tab === "content" &&
           detail.documents.map((document) => (
             <div key={document.id} className="grid gap-3">
-              <CollapsibleSection title={t("library.sections.document")} defaultOpen>
+              <CollapsibleSection
+                title={t("library.sections.document")}
+                defaultOpen
+                openSignal={passageSignal}
+              >
                 <div className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-5 dark:bg-slate-950">
                   <MarkdownPreview
                     markdown={document.canonicalMarkdown}
                     emptyLabel={t("markdown.emptyPreview")}
+                    highlight={
+                      cited?.status === "found" && cited.documentId === document.id && cited.range
+                        ? { ...cited.range, id: "cited-passage" }
+                        : undefined
+                    }
                   />
                 </div>
                 {document.assets.length > 0 ? (
@@ -1680,15 +1833,30 @@ function SourceDetailView({
               <CollapsibleSection
                 title={t("library.sections.chunks")}
                 count={document.chunks.length}
+                openSignal={citedChunkId && cited?.status === "found" ? passageSignal : 0}
               >
                 <ol className="grid gap-2">
                   {document.chunks.map((chunk) => (
                     <li
                       key={chunk.id}
-                      className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800"
+                      id={`passage-chunk-${chunk.id}`}
+                      tabIndex={-1}
+                      aria-current={chunk.id === citedChunkId ? "true" : undefined}
+                      className={cn(
+                        "scroll-my-6 rounded-lg border p-3 text-sm outline-none",
+                        chunk.id === citedChunkId
+                          ? "border-accent bg-accent-soft ring-2 ring-accent"
+                          : "border-slate-200 dark:border-slate-800"
+                      )}
                     >
-                      <p className="mb-1 text-xs text-slate-500">
+                      <p className="mb-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         {t("library.chunk", { values: { index: chunk.chunkIndex + 1 } })}
+                        {chunk.page ? ` · ${t("search.page")} ${chunk.page}` : ""}
+                        {chunk.id === citedChunkId ? (
+                          <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                            {t("objects.citation.cited")}
+                          </span>
+                        ) : null}
                       </p>
                       <p className="whitespace-pre-wrap font-reading">{chunk.content}</p>
                     </li>
@@ -1710,7 +1878,14 @@ function SourceDetailView({
               <ol className="grid gap-2">
                 {detail.atomicNotes.map((note) => (
                   <li key={note.id}>
-                    <AtomicNoteCard note={note} focused={note.id === focusedAtomicNoteId} t={t} />
+                    <AtomicNoteCard
+                      note={note}
+                      focused={note.id === focusedAtomicNoteId}
+                      t={t}
+                      active={active}
+                      onNavigate={onNavigateObject}
+                      onOpenPassage={onOpenPassage}
+                    />
                   </li>
                 ))}
               </ol>
@@ -2075,13 +2250,27 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
 export function AtomicNoteCard({
   note,
   focused = false,
-  t
+  t,
+  active = true,
+  onNavigate,
+  onOpenPassage
 }: {
   note: SourceDetail["atomicNotes"][number];
   focused?: boolean;
   t: Translator;
+  active?: boolean;
+  /** Shows "Where is this" inside the open card; omitted where a note cannot be navigated to. */
+  onNavigate?: ((navigation: OpenableNavigation) => void) | undefined;
+  /** Opens the passage the note came from in the source reader. */
+  onOpenPassage?: ((sourceItemId: string, passage: PassageAnchor) => void) | undefined;
 }) {
   const [expanded, setExpanded] = useState(focused);
+  // A note that becomes the focus of a navigation opens, so its place and passage are in view.
+  const [wasFocused, setWasFocused] = useState(focused);
+  if (focused !== wasFocused) {
+    setWasFocused(focused);
+    if (focused) setExpanded(true);
+  }
   const cardRef = useExpandedCardViewport(expanded);
   return (
     <article
@@ -2136,6 +2325,35 @@ export function AtomicNoteCard({
           <p className="whitespace-pre-wrap px-4 pb-4 text-sm text-slate-600 dark:text-slate-300">
             {note.bodyMarkdown}
           </p>
+          {expanded && (onOpenPassage || onNavigate) ? (
+            <div className="grid gap-3 px-4 pb-4">
+              {onOpenPassage ? (
+                <Button
+                  type="button"
+                  className="w-fit"
+                  onClick={() =>
+                    onOpenPassage(note.sourceItemId, {
+                      chunkId: note.evidenceChunkId,
+                      sourceSpanId: note.sourceSpanId,
+                      documentId: null
+                    })
+                  }
+                >
+                  <Quote aria-hidden="true" />
+                  {t("objects.citation.noteOrigin")}
+                </Button>
+              ) : null}
+              {onNavigate ? (
+                <WhereIsThis
+                  t={t}
+                  address={formatObjectAddress({ kind: "note", id: note.id })}
+                  active={active}
+                  refreshKey={note.updatedAt}
+                  onNavigate={onNavigate}
+                />
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </article>
@@ -2146,14 +2364,22 @@ function CollapsibleSection({
   title,
   count,
   defaultOpen = false,
+  openSignal = 0,
   children
 }: {
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  /** Opens the section each time it grows (a citation needs the passage it holds on screen). */
+  openSignal?: number;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen || openSignal > 0);
+  const [seenSignal, setSeenSignal] = useState(openSignal);
+  if (openSignal !== seenSignal) {
+    setSeenSignal(openSignal);
+    if (openSignal > 0) setOpen(true);
+  }
   const sectionRef = useExpandedCardViewport(open);
   return (
     <section

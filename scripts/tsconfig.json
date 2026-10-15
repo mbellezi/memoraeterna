@@ -13,6 +13,7 @@
     "./db/**/*.ts",
     "./fixtures/**/*.ts",
     "./kpi/**/*.ts",
+    "./objects/**/*.ts",
     "./spikes/*.ts",
     "./spikes/lib/*.ts"
   ],

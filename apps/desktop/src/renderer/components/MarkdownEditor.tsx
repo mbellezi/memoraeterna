@@ -260,51 +260,113 @@ export function MarkdownEditor({
   );
 }
 
+/** A range of the Markdown source to show as cited; `id` marks the first block it touches. */
+export interface MarkdownHighlight {
+  start: number;
+  end: number;
+  id: string;
+}
+
 export function MarkdownPreview({
   markdown,
   emptyLabel,
-  reference
+  reference,
+  highlight
 }: {
   markdown: string;
   emptyLabel: string;
   reference?: ((token: string) => ReactNode) | undefined;
+  highlight?: MarkdownHighlight | undefined;
 }) {
   const blocks = parseBlocks(markdown);
   if (blocks.length === 0) return <p className="text-sm italic text-slate-400">{emptyLabel}</p>;
+  const cited =
+    highlight && highlight.end > highlight.start
+      ? blocks.map((block) => block.start < highlight.end && block.end > highlight.start)
+      : [];
+  // Consecutive blocks of the cited range read as one passage: they share a single highlight.
+  const nodes: ReactNode[] = [];
+  let anchored = false;
+  for (let index = 0; index < blocks.length;) {
+    if (!cited[index]) {
+      nodes.push(renderBlock(blocks[index]!, index, reference));
+      index += 1;
+      continue;
+    }
+    let last = index;
+    while (cited[last + 1]) last += 1;
+    nodes.push(
+      <div
+        key={`cited-${index}`}
+        id={anchored ? undefined : highlight?.id}
+        tabIndex={anchored ? undefined : -1}
+        data-cited-passage="true"
+        className="-mx-2 grid scroll-my-6 gap-4 rounded-lg bg-accent-soft px-2 py-1 outline-none ring-2 ring-accent"
+      >
+        {blocks
+          .slice(index, last + 1)
+          .map((block, offset) => renderBlock(block, index + offset, reference))}
+      </div>
+    );
+    anchored = true;
+    index = last + 1;
+  }
   return (
     <div className="grid gap-4 font-reading text-reading text-slate-700 dark:text-slate-200">
-      {blocks.map((block, index) => renderBlock(block, index, reference))}
+      {nodes}
     </div>
   );
 }
 
-type MarkdownBlock =
+type MarkdownBlock = (
   | { type: "heading"; level: number; text: string }
   | { type: "paragraph"; text: string }
   | { type: "quote"; text: string }
   | { type: "code"; text: string }
   | { type: "list"; ordered: boolean; items: string[] }
-  | { type: "rule" };
+  | { type: "rule" }
+) & {
+  /** Offsets of the block in the Markdown source, so a SourceSpan can be located in it. */
+  start: number;
+  end: number;
+};
+
+function splitLines(markdown: string): Array<{ text: string; start: number }> {
+  const lines: Array<{ text: string; start: number }> = [];
+  const separator = /\r\n?|\n/g;
+  let start = 0;
+  for (let match = separator.exec(markdown); match; match = separator.exec(markdown)) {
+    lines.push({ text: markdown.slice(start, match.index), start });
+    start = match.index + match[0].length;
+  }
+  lines.push({ text: markdown.slice(start), start });
+  return lines;
+}
 
 function parseBlocks(markdown: string): MarkdownBlock[] {
-  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const lines = splitLines(markdown);
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
+  let paragraphStart = 0;
+  let paragraphEnd = 0;
   let code: string[] | null = null;
+  let codeStart = 0;
   const flushParagraph = () => {
     const text = paragraph.join("\n").trim();
-    if (text) blocks.push({ type: "paragraph", text });
+    if (text) blocks.push({ type: "paragraph", text, start: paragraphStart, end: paragraphEnd });
     paragraph = [];
   };
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
+    const { text: line, start } = lines[index] ?? { text: "", start: markdown.length };
+    const end = start + line.length;
     if (line.trim().startsWith("```")) {
       if (code) {
-        blocks.push({ type: "code", text: code.join("\n") });
+        blocks.push({ type: "code", text: code.join("\n"), start: codeStart, end });
         code = null;
       } else {
         flushParagraph();
         code = [];
+        codeStart = start;
       }
       continue;
     }
@@ -315,18 +377,18 @@ function parseBlocks(markdown: string): MarkdownBlock[] {
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       flushParagraph();
-      blocks.push({ type: "heading", level: heading[1]!.length, text: heading[2]! });
+      blocks.push({ type: "heading", level: heading[1]!.length, text: heading[2]!, start, end });
       continue;
     }
     if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
       flushParagraph();
-      blocks.push({ type: "rule" });
+      blocks.push({ type: "rule", start, end });
       continue;
     }
     const quote = line.match(/^>\s?(.*)$/);
     if (quote) {
       flushParagraph();
-      blocks.push({ type: "quote", text: quote[1]! });
+      blocks.push({ type: "quote", text: quote[1]!, start, end });
       continue;
     }
     const list = line.match(/^\s*(?:(\d+)[.)]|[-*+])\s+(.+)$/);
@@ -334,14 +396,21 @@ function parseBlocks(markdown: string): MarkdownBlock[] {
       flushParagraph();
       const ordered = Boolean(list[1]);
       const previous = blocks.at(-1);
-      if (previous?.type === "list" && previous.ordered === ordered) previous.items.push(list[2]!);
-      else blocks.push({ type: "list", ordered, items: [list[2]!] });
+      if (previous?.type === "list" && previous.ordered === ordered) {
+        previous.items.push(list[2]!);
+        previous.end = end;
+      } else blocks.push({ type: "list", ordered, items: [list[2]!], start, end });
       continue;
     }
     if (!line.trim()) flushParagraph();
-    else paragraph.push(line);
+    else {
+      if (paragraph.length === 0) paragraphStart = start;
+      paragraph.push(line);
+      paragraphEnd = end;
+    }
   }
-  if (code) blocks.push({ type: "code", text: code.join("\n") });
+  if (code)
+    blocks.push({ type: "code", text: code.join("\n"), start: codeStart, end: markdown.length });
   flushParagraph();
   return blocks;
 }

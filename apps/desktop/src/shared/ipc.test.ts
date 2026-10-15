@@ -5,6 +5,7 @@ import {
   databaseStatusSchema,
   defaultAppSettings,
   defaultStorageSettings,
+  ipcChannels,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
   systemInfoSchema,
@@ -394,5 +395,56 @@ describe("desktop IPC contracts", () => {
         ]
       }).results[0]?.rerankScore
     ).toBe(0.9);
+  });
+
+  it("carries the SourceSpan of every chunk so a citation can highlight it", () => {
+    const base = {
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "PersonalNote",
+      title: "Source",
+      subtitle: null,
+      sourceUri: null,
+      language: "en",
+      summary: null,
+      metadata: {},
+      updatedAt: new Date(0).toISOString(),
+      assets: [],
+      summaries: [],
+      atomicNotes: [],
+      relations: []
+    };
+    const chunk = {
+      id: "00000000-0000-4000-8000-000000000003",
+      content: "Passage",
+      chunkIndex: 0,
+      sourceSpanId: "00000000-0000-4000-8000-000000000004"
+    };
+    const document = (chunks: unknown[]) => ({
+      id: "00000000-0000-4000-8000-000000000002",
+      title: "Source",
+      canonicalMarkdown: "Passage",
+      language: "en",
+      chunks,
+      assets: []
+    });
+    const parsed = sourceDetailSchema.parse({
+      ...base,
+      documents: [document([{ ...chunk, startOffset: 4, endOffset: 11, page: 2 }, chunk])]
+    });
+    expect(parsed.documents[0]?.chunks.map((c) => [c.startOffset, c.endOffset, c.page])).toEqual([
+      [4, 11, 2],
+      [null, null, null]
+    ]);
+    expect(
+      sourceDetailSchema.safeParse({
+        ...base,
+        documents: [document([{ ...chunk, startOffset: -1 }])]
+      }).success
+    ).toBe(false);
+  });
+
+  it("registers the objects.locate channel", () => {
+    expect(ipcChannels.objectsLocate).toBe("app:objects:locate");
+    expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 });

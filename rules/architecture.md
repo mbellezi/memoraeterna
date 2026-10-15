@@ -28,6 +28,12 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
   detection) may run in a renderer Web Worker over validated snapshots.
 - New code pushes state changes to the renderer through typed events emitted
   after commit; it does not add polling loops.
+- Objects (source, note, topic, question, entity) are addressed as `memora://<kind>/<uuid>` with
+  anchors `#passage=<chunkId>`, `#span=<sourceSpanId>` and `#section=<sectionId>`; `@app/domain`
+  holds the one parser. `objects.locate` is a read-only read without AI (primary path, other
+  placements, citing objects, counts) and stays within a p95 of 50 ms.
+- A citation opens its exact chunk and SourceSpan, highlighted, in the source reader; a passage
+  that is no longer current is reported, never replaced by similar text.
 
 ## Packages and dependency direction
 
@@ -58,26 +64,22 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 
 - Jobs, ingestion runs, stage checkpoints and processing batches persist in
   PostgreSQL. UI progress is a view of persisted work, never its owner.
-- Workers claim jobs atomically (`FOR UPDATE SKIP LOCKED`) with bounded pools
-  and concurrency.
+- Workers claim jobs atomically (`FOR UPDATE SKIP LOCKED`) with bounded pools and concurrency.
 - Stages are resumable from checkpoints after restart, crash, timeout or
   cancellation, without repeating validated work or replaying an uncertain
   provider call. Unrequested stages are recorded as skipped, not pending.
-- One failed or canceled item never blocks or invalidates its siblings or
-  unrelated tasks. Aggregate progress never hides a failed child. Cancellation
-  preserves completed results.
+- One failed or canceled item never blocks or invalidates its siblings or unrelated tasks.
+  Aggregate progress never hides a failed child. Cancellation preserves completed results.
 - Only transient errors are retried, with bounded attempts and backoff.
-- Reuse an artifact only when its source revision, input hashes and required
-  dependencies still match; invalidation is explicit and limited to affected
-  dependents.
+- Reuse an artifact only when its source revision, input hashes and required dependencies still
+  match; invalidation is explicit and limited to affected dependents.
 - Job state, statuses and errors shown to users are localized.
 
 ## Sidecars and native runtimes
 
-- PostgreSQL, Docling (CPython) and the MLX helper are platform-specific,
-  version-pinned, built from a recorded origin with checksums, licenses and SBOM
-  data, and supervised by the desktop (start, timeout, cancellation, crash
-  recovery, shutdown).
+- PostgreSQL, Docling (CPython) and the MLX helper are platform-specific, version-pinned, built
+  from a recorded origin with checksums, licenses and SBOM data, and supervised by the desktop
+  (start, timeout, cancellation, crash recovery, shutdown).
 - Runtime code never downloads dependencies or installs packages. Optional model
   downloads are an explicit user workflow with immutable revisions and hash
   verification. There is no system-Python fallback.
@@ -103,9 +105,7 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 ## Development application testing
 
 - Start DEV only with `npm run dev -w @app/desktop` from the repository root.
-- Manual and automated UI validation uses only that DEV app. Never open an
-  installed or packaged copy unless the owner asks for release validation, and
-  never run it alongside DEV. Run one Memora Eterna instance at a time and
-  target it by repository path or `localhost` content.
-- Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does
-  not steal focus.
+- Manual and automated UI validation uses only that DEV app. Never open an installed or packaged
+  copy unless the owner asks for release validation, and never run it alongside DEV. Run one
+  Memora Eterna instance at a time and target it by repository path or `localhost` content.
+- Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does not steal focus.
