@@ -15,7 +15,8 @@
     "./kpi/**/*.ts",
     "./objects/**/*.ts",
     "./spikes/*.ts",
-    "./spikes/lib/*.ts"
+    "./spikes/lib/*.ts",
+    "./topics/**/*.ts"
   ],
   "exclude": [
     "./verify-ai-context.ts",
