@@ -344,6 +344,58 @@ MEMORA_GOLDEN_MAX_TOKENS=80000 MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 \
 npm run dev -w @app/desktop
 ```
 
+## 7. The Topic Tree Engine under a golden run (F2: G1, the barrier, the profiles)
+
+`MEMORA_GOLDEN_TOPICS` is read only when `MEMORA_GOLDEN_RUN` is set (and never in a packaged build); every
+other run behaves as `full` and ignores it, whatever its value.
+
+- `deterministic` (the default in a golden run): the engine places and rebalances but makes no topic AI call
+  (no gate, naming, Areas, labels or overview). The run is exactly what it was before F2: one batch, existing
+  cassettes replay at 0 misses and keep their timing. `summary.json` records `topics: {mode, arrival: null}`.
+- `full`: every topic call runs. F2 measurements use it in `record` mode on a cassette copy, so the extraction
+  stays pinned and only the new `topic.*` calls are recorded; later replays must show 0 misses. It needs the
+  topic service's job barrier and is refused without it, before anything changes.
+- `MEMORA_GOLDEN_TOPICS_ARRIVAL` (only with `full`) decides when topic jobs run. **The topic barrier:** topic
+  jobs are held while a source ingests, so the items present at every build and naming call are a function of
+  the manifest order and not of lane timing. The ingestion itself never changes: it stays one batch, because the
+  collective matching stages (atomic notes and sources) run once every run has reached them and the recorded
+  cassette holds exactly those prompts, so the extraction is served from the cassette copy as before.
+  `per-source` (the default) paces the batch's jobs: the supervisor is stopped while the batch is queued, the
+  jobs of every source after the first are pushed far into the future (`run_after`), and each source's jobs
+  are released only after the previous source's jobs have finished and the light lane was drained. The heavy
+  lane is idle at every drain, so nothing else can enqueue topic work, and the hold is re-armed before the next
+  source runs. The last source also runs the collective matching; its drain follows the whole batch. `batch`
+  keeps the single batch unpaced and drains the light lane once after it. A drain ends after two polls without
+  a queued or running `topic-*` job; a replay miss or the live token cap stops the run (`diverged`,
+  `token_limit`) and leaves the topic jobs held. A run needs an idle job queue to start in `full` mode.
+  `summary.json` then has `topics: {mode, arrival, held, boundaries: [{source, batchId, drainMs, polls}],
+  drainMs, jobs}`.
+
+Measurement profiles ENV-G (golden-small), ENV-F (matching fixture) and ENV-C (the corpus) live under
+`.cache/profiles/<name>`:
+
+```sh
+npx tsx scripts/topics/env-profiles.ts create env-f --from <stopped DEV userData> [--dry-run]
+npx tsx scripts/topics/env-profiles.ts recipe env-f --max-tokens <cap>     # the record and replay commands
+npx tsx scripts/topics/env-profiles.ts check env-f
+```
+
+`create` clones the stopped DEV profile with `cp -cR` (APFS, so the model weights are not duplicated; the
+source is only read and a running one is refused), starts the app once with the DEV-only
+`MEMORA_PROFILE_RESET=1` and then copies the cassette (`golden-small-v9-a` to `golden-small-f2`,
+`matching-fixture-v9-a` to `matching-fixture-f2`; an existing copy is never overwritten). The reset is the
+Settings reset: AI routes, credentials and installed models stay, the library and the settings go, and the app
+writes `profile-reset.json` and quits. The knob is refused when packaged, with any other DEV knob that changes
+the library, with a value other than `1`, and unless the profile folder is inside `<repository>/.cache/profiles/`
+(symbolic links resolved), so the owner's profile can never be reset by it. The script refuses a profile whose
+content language is not the one its cassette was recorded with (pt-BR): a replay would miss every prompt.
+
+`npm run topics:export -- --db <dev-connection.json | scratch-<slug>.json | postgres url> --name env-f` exports
+the tree of a running profile through a read-only session: `.cache/topics/exports/<name>/export.json` (tree,
+names, placements, gate log, change-sets, daily metrics, shape audit) and the replay store
+`.cache/topics/vectors/<name>.{f32,index.jsonl,meta.json}` (the unit vectors of the current notes in the tree's
+embedding space, in import order), which `npm run topics:replay` loads by name.
+
 ## After a run
 
 The runner pauses nothing and `summary.json` has no `automation` entry: the legacy wiki automation is

@@ -32,6 +32,7 @@ import {
   type GoldenRunOptions,
   type GoldenRunSummary
 } from "./golden-runner.js";
+import type { GoldenTopicBarrier } from "./golden-topics.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService } from "./ingestion-service.js";
 import { JobSupervisor } from "./job-supervisor.js";
@@ -54,7 +55,10 @@ import { LibraryResetService } from "./library-reset-service.js";
  * Finally it covers MEMORA_GOLDEN_SOURCE_PAIRS on the complete library (verdict-only, a fake decider):
  * the real read queries build the requests, the verdicts are written and no relation, decision or
  * run state is persisted. The legacy wiki, organization and maintenance tables stay empty through
- * every run and reset (the runner no longer pauses legacy automation: none can exist).
+ * every run and reset (the runner no longer pauses legacy automation: none can exist). Last it covers
+ * MEMORA_GOLDEN_TOPICS=full (G1, D23): a fake topic barrier on the real supervisor and jobs table, one
+ * batch whose jobs are paced a source at a time in manifest order, the topic lane drained and the hold
+ * re-armed in between and released after the last drain.
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -686,6 +690,159 @@ try {
       (await rowCount("maintenance_runs")) === 0,
     `the full-knowledge import wrote no legacy state: ${JSON.stringify(await legacyCounts())}`
   );
+
+  // 8. G1 `full` with the topic barrier (D23) on the real services, the real supervisor and the real
+  //    jobs table. The topic service is not part of this check: a fake barrier answers the hold and
+  //    the release, queues a `topic-place` job at each release (as the held PLACE jobs would be) and
+  //    finishes it a moment later. The run must stay ONE batch (the collective matching sees every
+  //    source, as the recorded run did) and its jobs must be paced: each source's jobs are claimed
+  //    only after the previous source's jobs finished and the light lane was drained, in manifest
+  //    order, with the heavy lane idle at every drain.
+  await resetLibrary();
+  const barrierEvents: Array<{ event: string; at: number; running: number; heldBack: number }> = [];
+  const observeLanes = async (event: string) => {
+    const state = await pool!.query<{ running: number; heldBack: number }>(
+      `select count(*) filter (where lane = 'heavy' and status::text = 'running')::int as running,
+              count(*) filter (where type = 'ingestion' and status::text = 'queued'
+                               and run_after > now())::int as "heldBack"
+       from jobs`
+    );
+    barrierEvents.push({
+      event,
+      at: Date.now(),
+      running: Number(state.rows[0]?.running),
+      heldBack: Number(state.rows[0]?.heldBack)
+    });
+  };
+  const queuedTopicJobs = async () =>
+    Number(
+      (
+        await pool!.query<{ n: number }>(
+          `select count(*)::int as n from jobs
+           where type like 'topic-%' and status::text in ('queued', 'running')`
+        )
+      ).rows[0]?.n
+    );
+  const topicBarrier: GoldenTopicBarrier = {
+    hold: () => observeLanes("hold"),
+    release: async () => {
+      await observeLanes("release");
+      await pool!.query(
+        `insert into jobs (type, status, lane, payload) values ('topic-place', 'queued', 'light', '{}')`
+      );
+      setTimeout(() => {
+        void pool!.query(
+          `update jobs set status = 'succeeded', finished_at = now()
+           where type like 'topic-%' and status::text = 'queued'`
+        );
+      }, 400);
+    }
+  };
+  const fullRun = await prepareGoldenRun(
+    input({
+      ...withRoutes,
+      topicBarrier,
+      env: {
+        MEMORA_GOLDEN_RUN: manifestPath,
+        MEMORA_GOLDEN_MAX_TOKENS: "1000",
+        MEMORA_GOLDEN_TOPICS: "full"
+      },
+      pollIntervalMs: 100
+    })
+  );
+  const fullSummary = await withTimeout(fullRun.start(), 180_000, "the per-source topic run");
+  report(fullSummary);
+  check(
+    fullSummary.status !== "failed",
+    `the run did not fail: ${String(fullSummary.error ?? "")}`
+  );
+  const sequence = barrierEvents.map((entry) => entry.event).join(",");
+  check(
+    sequence === "hold,release,hold,release,hold,release,hold,release",
+    `the hold is armed at the start and after each drain but the last: ${sequence}`
+  );
+  const releases = barrierEvents.filter((entry) => entry.event === "release");
+  check(
+    releases.every((entry) => entry.running === 0),
+    `the heavy lane is idle at every drain: ${releases.map((entry) => entry.running).join(",")}`
+  );
+  const heldBack = releases.map((entry) => entry.heldBack);
+  check(
+    heldBack[0]! > heldBack[1]! &&
+      heldBack[1]! > heldBack[2]! &&
+      heldBack[2]! > 0 &&
+      heldBack[3] === 0,
+    `later sources' jobs are held back until their turn: ${heldBack.join(",")}`
+  );
+  check((await queuedTopicJobs()) === 0, "the last drain left no topic job behind");
+  const claimed = await pool.query<{ title: string; claimedAt: Date }>(
+    `with recursive up(origin_id, id, parent_id) as (
+       select s.id, s.id, s.parent_source_item_id from source_items s
+       union all
+       select up.origin_id, s.id, s.parent_source_item_id from source_items s join up on s.id = up.parent_id)
+     select root.title, r.started_at as "claimedAt"
+     from ingestion_runs r
+     join up on up.origin_id = r.source_item_id and up.parent_id is null
+     join source_items root on root.id = up.id
+     where r.started_at is not null order by r.started_at, r.id`
+  );
+  const order = claimed.rows
+    .map((row) => row.title)
+    .filter((title, index, titles) => title !== titles[index - 1]);
+  check(
+    order.join("|") === "Forgetting curve|Replication study|A book|A story",
+    `the sources ran in manifest order: ${order.join("|")}`
+  );
+  // Every source after the first was claimed only after the drain that preceded it ended.
+  const drainEnds = barrierEvents.filter((entry) => entry.event === "hold").slice(1);
+  const firstClaim = (title: string) =>
+    Math.min(
+      ...claimed.rows.filter((row) => row.title === title).map((row) => row.claimedAt.getTime())
+    );
+  check(
+    ["Replication study", "A book", "A story"].every(
+      (title, index) => firstClaim(title) >= drainEnds[index]!.at - 50
+    ),
+    "no source started before the previous source was drained"
+  );
+  const batches = await pool.query<{ n: number }>(
+    `select count(distinct batch_id)::int as n from ingestion_runs where job_id is not null`
+  );
+  check(
+    Number(batches.rows[0]?.n) === 1 && !("batchIds" in fullSummary),
+    "the paced run is one batch, as the recorded run is"
+  );
+  const topics = fullSummary.topics as {
+    mode: string;
+    arrival: string;
+    held: boolean;
+    boundaries: Array<{ source: string; drainMs: number }>;
+    jobs: Array<{ type: string; status: string; count: number }>;
+  };
+  check(
+    topics.mode === "full" && topics.arrival === "per-source" && topics.held === false,
+    `the summary records the barrier: ${JSON.stringify(topics)}`
+  );
+  check(
+    topics.boundaries.map((boundary) => boundary.source).join(",") === "web,paper,book,story",
+    `one boundary per source, in manifest order: ${JSON.stringify(topics.boundaries)}`
+  );
+  check(
+    topics.jobs.length === 1 &&
+      topics.jobs[0]!.type === "topic-place" &&
+      topics.jobs[0]!.status === "succeeded" &&
+      topics.jobs[0]!.count === 4,
+    `the summary counts the topic jobs from the real table: ${JSON.stringify(topics.jobs)}`
+  );
+  const fullStalled = (fullSummary.failures as { stalledStages: Array<{ stage: string }> })
+    .stalledStages;
+  check(
+    (fullSummary.failures as { runs: number }).runs === 0 &&
+      fullStalled.every((item) => item.stage === "sourceMatching") &&
+      (fullSummary.sources as unknown[]).length === 4,
+    "the paced run ended as the plain run did: no failure, only source matching waits"
+  );
+  check(await noLegacyContent(), "the barrier run wrote no legacy state");
 
   console.log("GOLDEN_RUNNER_VERIFY ok");
 } catch (error) {

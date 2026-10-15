@@ -28,6 +28,7 @@ import {
   trimGoldenText,
   verifyGoldenFile,
   waitForBatch,
+  waitForTopicLane,
   type GoldenLibrarySource,
   type GoldenManifest,
   type GoldenRunOptions
@@ -327,7 +328,8 @@ describe("golden run environment", () => {
       exitWhenDone: true,
       maxLiveTokens: 500000,
       only: null,
-      sourcePairsPath: null
+      sourcePairsPath: null,
+      topics: { golden: true, mode: "deterministic", arrival: "per-source" }
     });
     expect(
       readGoldenRunEnvironment(
@@ -1637,5 +1639,449 @@ describe("golden source pair verdicts", () => {
       )
     ).rejects.toThrow("cannot read");
     expect(services.calls).toEqual([]);
+  });
+});
+
+describe("golden topics: G1 and the topic barrier (D23)", () => {
+  const options = { isPackaged: false, workspaceRoot: "/repo" };
+
+  it("reads MEMORA_GOLDEN_TOPICS only inside a golden run", () => {
+    // Deterministic by default; full and its arrival are read as written.
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json" }, options)?.topics).toEqual({
+      golden: true,
+      mode: "deterministic",
+      arrival: "per-source"
+    });
+    expect(
+      readGoldenRunEnvironment(
+        {
+          MEMORA_GOLDEN_RUN: "m.json",
+          MEMORA_GOLDEN_TOPICS: "full",
+          MEMORA_GOLDEN_TOPICS_ARRIVAL: "batch"
+        },
+        options
+      )?.topics
+    ).toEqual({ golden: true, mode: "full", arrival: "batch" });
+    // Without MEMORA_GOLDEN_RUN there is no golden run and the knobs are not even parsed.
+    expect(
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_TOPICS: "nonsense", MEMORA_GOLDEN_TOPICS_ARRIVAL: "nonsense" },
+        options
+      )
+    ).toBeNull();
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_TOPICS: "nonsense" },
+        options
+      )
+    ).toThrow("MEMORA_GOLDEN_TOPICS must be deterministic or full");
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_TOPICS_ARRIVAL: "batch" },
+        options
+      )
+    ).toThrow("only applies with MEMORA_GOLDEN_TOPICS=full");
+  });
+
+  it("refuses full without the topic service's barrier or with jobs in the queue, changing nothing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const env = {
+      MEMORA_GOLDEN_RUN: manifestPath,
+      MEMORA_GOLDEN_MAX_TOKENS: "1000000",
+      MEMORA_GOLDEN_TOPICS: "full"
+    };
+    const services = fakeServices();
+    await expect(prepareGoldenRun(prepareInput(manifestPath, services, { env }))).rejects.toThrow(
+      "MEMORA_GOLDEN_TOPICS=full needs the topic service"
+    );
+    // The per-source barrier stops the supervisor to queue the batch: a job left behind would be aborted.
+    const busy = fakeServices({ pendingJobs: [{ type: "ingestion", count: 2 }] });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, busy, {
+          env: { ...env, MEMORA_GOLDEN_ALLOW_NONEMPTY: "1" },
+          topicBarrier: { hold: () => undefined, release: () => undefined }
+        })
+      )
+    ).rejects.toThrow("needs an idle job queue, but 2 jobs are queued or running (ingestion 2)");
+    expect([services.calls, busy.calls]).toEqual([[], []]);
+  });
+
+  /**
+   * A whole golden run on fakes. `events` is one timeline: the barrier's hold and release, the
+   * imports, the supervisor's stop, start and wake, the batch the hierarchy queues, and the jobs
+   * the runner holds back and releases (named by the source they belong to).
+   */
+  function world(
+    topics: { mode?: "deterministic" | "full"; arrival?: "per-source" | "batch" } = {},
+    behavior: {
+      replayMissesAfterRelease?: boolean;
+      missesAtStart?: boolean;
+      /** The hold-back finds fewer queued jobs than it holds back. */
+      lostRace?: boolean;
+    } = {}
+  ) {
+    const events: string[] = [];
+    let held = false;
+    let drainPolls = 0;
+    let released = false;
+    let next = 0;
+    let batches = 0;
+    let jobs = 0;
+    const uuid = (prefix: string) => `${prefix}-4000-8000-${String(++next).padStart(12, "0")}`;
+    const names = new Map<string, string>();
+    const rootOf = new Map<string, string>();
+    const children = new Map<string, string[]>();
+    const jobLabel = new Map<string, string>();
+    const imported = (name: string, root?: string) => {
+      const sourceItemId = uuid("00000000");
+      names.set(sourceItemId, name);
+      rootOf.set(sourceItemId, root ?? sourceItemId);
+      if (root) children.set(root, [...(children.get(root) ?? []), sourceItemId]);
+      events.push(`import:${name}`);
+      return {
+        sourceItemId,
+        documentId: null,
+        ingestionRunId: null,
+        jobId: null,
+        batchId: null,
+        structureId: null,
+        requiresStructureReview: false,
+        duplicate: false
+      };
+    };
+    const labelsOf = (jobIds: string[]) =>
+      [...new Set(jobIds.map((id) => jobLabel.get(id)))].join("+");
+    const barrier = {
+      hold: () => {
+        held = true;
+        events.push("hold");
+      },
+      release: () => {
+        held = false;
+        released = true;
+        drainPolls = 2;
+        events.push("release");
+      }
+    };
+    const rootJobPolls = new Map<string, number>();
+    const pool = {
+      query: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("with recursive up(origin_id")) {
+          return {
+            rows: (params[0] as string[]).map((id) => ({
+              originId: id,
+              rootId: rootOf.get(id)
+            }))
+          };
+        }
+        if (sql.includes("interval '100 years'")) {
+          const ids = params[0] as string[];
+          events.push(`hold-back:${labelsOf(ids)}`);
+          return { rows: (behavior.lostRace ? ids.slice(1) : ids).map((id) => ({ id })) };
+        }
+        if (sql.includes("with ordinality")) {
+          events.push(`release-jobs:${labelsOf(params[0] as string[])}`);
+          return { rows: [] };
+        }
+        if (sql.includes("id = any($1::uuid[]) and status::text in")) {
+          // One busy poll for the jobs of a source, then quiet.
+          const key = (params[0] as string[]).join();
+          const seen = rootJobPolls.get(key) ?? 0;
+          rootJobPolls.set(key, seen + 1);
+          return { rows: [{ active: seen === 0 ? 1 : 0 }] };
+        }
+        if (sql.includes("like $1") && sql.includes("as active")) {
+          // Held jobs stay queued and run only after the release: two busy polls, then idle.
+          if (held) return { rows: [{ active: 3 }] };
+          return { rows: [{ active: drainPolls > 0 ? (drainPolls--, 1) : 0 }] };
+        }
+        if (sql.includes("like $1")) {
+          return { rows: [{ type: "topic-place", status: "succeeded", count: 3 }] };
+        }
+        if (sql.includes("as sources")) return { rows: [{ sources: 0, notes: 0 }] };
+        if (sql.includes("as active")) return { rows: [{ active: 0 }] };
+        return { rows: [] };
+      }
+    };
+    const cassette = {
+      stats: () =>
+        behavior.missesAtStart || (behavior.replayMissesAfterRelease && released)
+          ? stats("replay", 1)
+          : behavior.replayMissesAfterRelease
+            ? stats("replay")
+            : stats("record"),
+      limitLiveTokens: () => undefined
+    };
+    const ingestion = {
+      captureWebPage: async () => imported("web"),
+      importFile: async (path: string, input: { descriptor: { parentSourceItemId?: string } }) =>
+        path.includes("book-01")
+          ? imported("book-01", input.descriptor.parentSourceItemId)
+          : imported("paper"),
+      createContainerSource: async () => imported("book")
+    };
+    const hierarchy = {
+      getStructure: async () => ({ divisions: [] }),
+      confirmStructure: async () => ({}),
+      process: async (input: { plan: { targetSourceItemIds: string[] } }) => {
+        const batchId = `00000000-0000-4000-9000-${String(++batches).padStart(12, "0")}`;
+        const targets = input.plan.targetSourceItemIds;
+        events.push(`process:${targets.map((target) => names.get(target)).join("+")}`);
+        // Roots first, then their children, as the real queueing orders them.
+        const sources = [...targets, ...targets.flatMap((target) => children.get(target) ?? [])];
+        const queued = sources.map((sourceItemId) => {
+          const jobId = `00000000-0000-4000-a000-${String(++jobs).padStart(12, "0")}`;
+          jobLabel.set(jobId, names.get(rootOf.get(sourceItemId)!)!);
+          return { sourceItemId, documentId: "d", ingestionRunId: "r", jobId };
+        });
+        return { batchId, queued };
+      }
+    };
+    const supervisor = {
+      wake: () => {
+        events.push("wake");
+      },
+      stop: async () => {
+        events.push("stop");
+      },
+      start: async () => {
+        events.push("start");
+      },
+      cancelBatch: async (batchId: string) => {
+        events.push(`cancel:${batchId.slice(-1)}`);
+        return null;
+      }
+    };
+    const env = {
+      ...(topics.mode ? { MEMORA_GOLDEN_TOPICS: topics.mode } : {}),
+      ...(topics.arrival ? { MEMORA_GOLDEN_TOPICS_ARRIVAL: topics.arrival } : {})
+    };
+    return {
+      events,
+      barrier,
+      pool,
+      cassette,
+      ingestion,
+      hierarchy,
+      supervisor,
+      env,
+      isHeld: () => held
+    };
+  }
+
+  async function startWorld(w: ReturnType<typeof world>) {
+    const manifestPath = await writeSources(testManifest());
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, fakeServices(), {
+        env: { MEMORA_GOLDEN_RUN: manifestPath, MEMORA_GOLDEN_MAX_TOKENS: "1000000", ...w.env },
+        pool: w.pool as unknown as GoldenRunOptions["pool"],
+        cassette: w.cassette,
+        ingestion: w.ingestion as unknown as GoldenRunOptions["ingestion"],
+        hierarchy: w.hierarchy as unknown as GoldenRunOptions["hierarchy"],
+        jobs: w.supervisor as unknown as GoldenRunOptions["jobs"],
+        topicBarrier: w.barrier,
+        sleep: async () => undefined,
+        pollIntervalMs: 1,
+        now: () => new Date("2026-10-15T12:00:00.000Z")
+      })
+    );
+    return run.start();
+  }
+
+  const imports = ["import:web", "import:paper", "import:book", "import:book-01"];
+
+  it("a deterministic run never holds topic jobs and stays one plain batch", async () => {
+    const w = world();
+    const summary = await startWorld(w);
+    expect(w.events).toEqual([...imports, "process:web+paper+book", "wake"]);
+    expect(summary).toMatchObject({
+      status: "completed",
+      topics: { mode: "deterministic", arrival: null }
+    });
+    expect(summary.topics).not.toHaveProperty("boundaries");
+    expect(summary).not.toHaveProperty("batchIds");
+  });
+
+  it("per-source: one batch whose jobs are paced, a source at a time, with a drain between them", async () => {
+    const w = world({ mode: "full" });
+    const summary = await startWorld(w);
+    expect(w.events).toEqual([
+      "hold",
+      ...imports,
+      // The supervisor is stopped while the batch is queued, so no job starts before the later
+      // sources' jobs (the book's two included) are held back.
+      "stop",
+      "process:web+paper+book",
+      "hold-back:paper+book",
+      "start",
+      // The first source ran: drain, re-arm the hold, release the next source's jobs.
+      "release",
+      "hold",
+      "release-jobs:paper",
+      "wake",
+      "release",
+      "hold",
+      "release-jobs:book",
+      "wake",
+      // The last source and the collective matching ran as part of the batch; the last drain does
+      // not re-arm the hold: the app then runs as it normally does.
+      "release"
+    ]);
+    expect(w.isHeld()).toBe(false);
+    expect(summary).toMatchObject({
+      status: "completed",
+      topics: {
+        mode: "full",
+        arrival: "per-source",
+        held: false,
+        boundaries: [
+          { source: "web", polls: 4 },
+          { source: "paper", polls: 4 },
+          { source: "book", polls: 4 }
+        ],
+        jobs: [{ type: "topic-place", status: "succeeded", count: 3 }]
+      }
+    });
+    // One batch, as recorded: the collective matching sees every source.
+    expect(summary).not.toHaveProperty("batchIds");
+    expect(summary.sources).toHaveLength(3);
+  });
+
+  it("batch: one batch for the whole manifest, drained once after it", async () => {
+    const w = world({ mode: "full", arrival: "batch" });
+    const summary = await startWorld(w);
+    expect(w.events).toEqual(["hold", ...imports, "process:web+paper+book", "wake", "release"]);
+    expect(summary).toMatchObject({
+      topics: { arrival: "batch", held: false, boundaries: [{ source: "*" }] }
+    });
+  });
+
+  it("stops at a source that diverges and leaves the topic jobs held", async () => {
+    const w = world({ mode: "full" }, { missesAtStart: true });
+    const summary = await startWorld(w);
+    expect(w.events).toEqual([
+      "hold",
+      ...imports,
+      "stop",
+      "process:web+paper+book",
+      "hold-back:paper+book",
+      "start",
+      "cancel:1"
+    ]);
+    expect(w.isHeld()).toBe(true);
+    expect(summary).toMatchObject({ status: "diverged", topics: { held: true, boundaries: [] } });
+  });
+
+  it("holds the topic jobs again when a drain diverges", async () => {
+    const w = world({ mode: "full" }, { replayMissesAfterRelease: true });
+    const summary = await startWorld(w);
+    expect(w.events).toEqual([
+      "hold",
+      ...imports,
+      "stop",
+      "process:web+paper+book",
+      "hold-back:paper+book",
+      "start",
+      "release",
+      "hold"
+    ]);
+    expect(w.isHeld()).toBe(true);
+    expect(summary).toMatchObject({ status: "diverged", topics: { held: true } });
+  });
+
+  it("cancels the half held-back batch and restarts the supervisor when the hold-back fails", async () => {
+    const w = world({ mode: "full" }, { lostRace: true });
+    const summary = await startWorld(w);
+    expect(w.events).toEqual([
+      "hold",
+      ...imports,
+      "stop",
+      "process:web+paper+book",
+      "hold-back:paper+book",
+      "cancel:1",
+      "start"
+    ]);
+    expect(w.isHeld()).toBe(true);
+    expect(summary).toMatchObject({ status: "failed" });
+    expect(String(summary.error)).toContain("were not queued when they were to be held back");
+  });
+
+  it("leaves the jobs held and fails the run when an import throws", async () => {
+    const w = world({ mode: "full" });
+    w.ingestion.importFile = async () => {
+      throw new Error("disk full");
+    };
+    const summary = await startWorld(w);
+    // Nothing was queued yet: no stop, no batch.
+    expect(w.events).toEqual(["hold", "import:web"]);
+    expect(w.isHeld()).toBe(true);
+    expect(summary).toMatchObject({ status: "failed", error: "disk full" });
+  });
+});
+
+describe("golden topic lane waiting", () => {
+  function laneOptions(input: {
+    active: number[];
+    mode?: "record" | "replay";
+    misses?: number;
+    liveTokens?: number;
+    maxLiveTokens?: number | null;
+    topicDrainTimeoutMs?: number;
+  }) {
+    const queries: Array<{ sql: string; params: unknown }> = [];
+    let poll = 0;
+    const options = {
+      environment: { maxLiveTokens: input.maxLiveTokens ?? null },
+      pool: {
+        query: async (sql: string, params: unknown) => {
+          queries.push({ sql, params });
+          return { rows: [{ active: input.active[poll++] ?? 0 }] };
+        }
+      },
+      cassette: {
+        stats: () => stats(input.mode ?? "record", input.misses ?? 0, input.liveTokens ?? 0)
+      },
+      log: () => undefined,
+      sleep: async () => undefined,
+      pollIntervalMs: 10,
+      ...(input.topicDrainTimeoutMs ? { topicDrainTimeoutMs: input.topicDrainTimeoutMs } : {})
+    } as unknown as GoldenRunOptions;
+    return { options, queries, polls: () => poll };
+  }
+
+  it("settles after two quiet polls, counting only topic jobs", async () => {
+    const { options, queries, polls } = laneOptions({ active: [2, 1, 0, 1, 0, 0] });
+    expect(await waitForTopicLane(options)).toEqual({ outcome: "settled", polls: 6 });
+    expect(polls()).toBe(6);
+    expect(queries[0]!.params).toEqual(["topic-%"]);
+    expect(queries[0]!.sql).toContain("type::text like $1");
+  });
+
+  it("stops a replay at its first cassette miss and a recording at the live token limit", async () => {
+    expect(
+      await waitForTopicLane(laneOptions({ active: [1], mode: "replay", misses: 1 }).options)
+    ).toMatchObject({ outcome: "diverged" });
+    expect(
+      await waitForTopicLane(
+        laneOptions({ active: [1], liveTokens: 900, maxLiveTokens: 500 }).options
+      )
+    ).toMatchObject({ outcome: "token_limit" });
+    // A replay never calls a provider, so the cap does not apply to it.
+    expect(
+      await waitForTopicLane(
+        laneOptions({ active: [0, 0], mode: "replay", liveTokens: 900, maxLiveTokens: 500 }).options
+      )
+    ).toMatchObject({ outcome: "settled" });
+  });
+
+  it("fails when topic jobs never drain", async () => {
+    const { options } = laneOptions({
+      active: Array.from({ length: 50 }, () => 1),
+      topicDrainTimeoutMs: 100
+    });
+    await expect(waitForTopicLane(options)).rejects.toThrow(
+      "still had queued or running topic jobs"
+    );
   });
 });

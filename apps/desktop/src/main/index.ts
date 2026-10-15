@@ -49,6 +49,7 @@ import { IntegrationGateway } from "./services/integration-gateway.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
+import { runProfileResetStartup } from "./services/profile-reset.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
@@ -500,6 +501,29 @@ void app.whenReady().then(() => {
           logger: console
         });
         if (legacyWipe === "quit") {
+          app.quit();
+          return;
+        }
+        // DEV-only measurement profile reset (MEMORA_PROFILE_RESET=1, scripts/topics/env-profiles.ts):
+        // the Settings reset of a profile under .cache/profiles/, then quit. Refused for any other
+        // profile. Nothing else has started, so there is nothing to stop first.
+        const profileReset = await runProfileResetStartup({
+          env: process.env,
+          isPackaged: app.isPackaged,
+          userDataPath: app.getPath("userData"),
+          workspaceRoot,
+          pool: databaseService!.getPool()!,
+          libraryReset: {
+            reset: async () => {
+              await metadataEnrichmentService!.clearCache();
+              await session.defaultSession.clearCache();
+              return libraryResetService!.reset();
+            }
+          },
+          readContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+          logger: console
+        });
+        if (profileReset === "quit") {
           app.quit();
           return;
         }

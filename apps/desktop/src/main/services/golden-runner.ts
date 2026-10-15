@@ -28,6 +28,12 @@ import type {
 import type { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import type { IngestionService } from "./ingestion-service.js";
 import type { JobSupervisor } from "./job-supervisor.js";
+import {
+  readGoldenTopicsConfig,
+  topicJobTypePrefix,
+  type GoldenTopicBarrier,
+  type GoldenTopicsConfig
+} from "./golden-topics.js";
 import type { LibraryResetService } from "./library-reset-service.js";
 
 /**
@@ -40,6 +46,13 @@ import type { LibraryResetService } from "./library-reset-service.js";
  * but golden sources (proven against the manifest), through the same service as the Settings reset.
  * With MEMORA_GOLDEN_SOURCE_PAIRS=<pair list> it also asks the live source decider about given pairs of
  * works and writes the raw verdicts, persisting nothing (see `golden-source-pairs.ts`).
+ *
+ * MEMORA_GOLDEN_TOPICS (G1, `golden-topics.ts`) decides what the Topic Tree Engine does during the
+ * run. `deterministic` (the default) leaves the run exactly as before: one batch, and the engine makes
+ * no topic AI call. `full` adds the topic barrier (D23): topic jobs are held while sources ingest
+ * and the light lane is drained at every source boundary (MEMORA_GOLDEN_TOPICS_ARRIVAL=per-source:
+ * the one batch's jobs are paced a source at a time in manifest order) or once after the whole batch
+ * (`batch`), so the items present at each build and naming call do not depend on lane timing.
  */
 
 /** Full knowledge processing, which no longer has the legacy wiki stage (F2 D14). */
@@ -305,6 +318,8 @@ export interface GoldenRunEnvironment {
    * only, with MEMORA_GOLDEN_RUN). The verdicts are written; no relation is persisted.
    */
   sourcePairsPath: string | null;
+  /** G1 (MEMORA_GOLDEN_TOPICS and MEMORA_GOLDEN_TOPICS_ARRIVAL): the engine's AI work and its barrier. */
+  topics: GoldenTopicsConfig;
 }
 
 /** Reads MEMORA_GOLDEN_*; null when no golden run is requested. Packaged builds refuse it. */
@@ -358,7 +373,8 @@ export function readGoldenRunEnvironment(
     exitWhenDone: env.MEMORA_GOLDEN_EXIT === "1",
     maxLiveTokens: limit,
     only: only.length ? only : null,
-    sourcePairsPath: rawSourcePairs ? resolve(options.workspaceRoot, rawSourcePairs) : null
+    sourcePairsPath: rawSourcePairs ? resolve(options.workspaceRoot, rawSourcePairs) : null,
+    topics: readGoldenTopicsConfig(env, { isPackaged: false })
   };
 }
 
@@ -380,7 +396,14 @@ export interface GoldenRunOptions {
   libraryReset?: Pick<LibraryResetService, "reset">;
   ingestion: Pick<IngestionService, "importFile" | "captureWebPage" | "createContainerSource">;
   hierarchy: Pick<HierarchicalIngestionService, "process" | "getStructure" | "confirmStructure">;
-  jobs: Pick<JobSupervisor, "wake" | "cancelBatch">;
+  jobs: Pick<JobSupervisor, "wake" | "cancelBatch" | "start" | "stop">;
+  /**
+   * The topic service's job barrier. Required with MEMORA_GOLDEN_TOPICS=full (D23); a deterministic
+   * run never holds topic jobs.
+   */
+  topicBarrier?: GoldenTopicBarrier;
+  /** How long a drain of the topic lane may take before the run fails (default 30 minutes). */
+  topicDrainTimeoutMs?: number;
   settings: { getApp(): Promise<AppSettings> };
   /** Runs the source decider for MEMORA_GOLDEN_SOURCE_PAIRS (the normal AI service: the cassette records it). */
   ai?: Pick<AiService, "runDefaultTask">;
@@ -442,6 +465,13 @@ export async function prepareGoldenRun(
   const environment = readGoldenRunEnvironment(env, input);
   if (!environment) throw new Error("MEMORA_GOLDEN_RUN must name a golden manifest");
   const options: GoldenRunOptions = { ...rest, environment };
+  // G1 `full` schedules the engine's AI work through the topic service; without it the run would
+  // let topic jobs race the heavy lane, which is what the barrier exists to prevent.
+  if (environment.topics.mode === "full" && !options.topicBarrier)
+    throw new Error(
+      "MEMORA_GOLDEN_TOPICS=full needs the topic service and its job barrier; " +
+        "nothing was changed"
+    );
   const cassette = options.cassette?.stats();
   if (!options.cassette || !cassette)
     throw new Error("The golden runner needs MEMORA_AI_CASSETTE=record or replay");
@@ -509,6 +539,13 @@ export async function prepareGoldenRun(
     }
   }
   const pending = pendingJobs.reduce((sum, job) => sum + job.count, 0);
+  // The per-source barrier stops the supervisor to queue the batch; a job another run left behind
+  // would be aborted by it.
+  if (environment.topics.mode === "full" && pending > 0)
+    throw new Error(
+      `MEMORA_GOLDEN_TOPICS=full needs an idle job queue, but ${pending} jobs are queued or running ` +
+        `(${pendingJobs.map((job) => `${job.type} ${job.count}`).join(", ")}). Nothing was changed.`
+    );
   // With a pair list, a library that already holds the manifest's roots (and the explicit
   // MEMORA_GOLDEN_ALLOW_NONEMPTY=1) is not processed again: the run only judges the pairs.
   const sourcePairsMode: SourcePairsMode | null = !pairsFile
@@ -570,6 +607,10 @@ export async function prepareGoldenRun(
           backup: preparedBackup,
           pendingJobs,
           only: environment.only,
+          topics: {
+            mode: environment.topics.mode,
+            arrival: environment.topics.mode === "full" ? environment.topics.arrival : null
+          },
           ...(reset ? { reset } : {})
         },
         sourcePairs
@@ -955,27 +996,18 @@ async function runGolden(
         ...context
       };
     } else {
-      const imported = await importSources(options, manifest);
-      const importedAt = now();
-      const rootIds = imported.map((source) => source.sourceItemId);
-      const batch = await options.hierarchy.process({
-        runKind: "initial",
-        trigger: "library_action",
-        plan: ProcessingPlanRequestSchema.parse({
-          preset: "custom",
-          requestedStages: goldenRunStages,
-          scope: "source_and_children",
-          targetSourceItemIds: rootIds
-        })
-      });
-      log(options, "queued", { batchId: batch.batchId, runs: batch.queued.length });
-      options.jobs.wake();
-      const outcome = await waitForBatch(options, batch.batchId, runDirectory);
+      // G1 `full` runs under the topic barrier (D23); a deterministic run is one plain batch.
+      const barrier = options.environment.topics.mode === "full" ? options.topicBarrier : undefined;
+      const processed = barrier
+        ? await processUnderTopicBarrier(options, manifest, barrier, runDirectory, now)
+        : await processInOneBatch(options, manifest, runDirectory, now);
+      const { imported, importedAt, outcome } = processed;
+      if (processed.topics) context.topics = { ...(context.topics as object), ...processed.topics };
       const finishedAt = now();
       summary = await buildGoldenSummary(options, {
         manifest,
         imported,
-        batchId: batch.batchId,
+        batchId: processed.batchId,
         startedAt,
         importedAt,
         finishedAt,
@@ -1025,6 +1057,351 @@ async function runGolden(
   if (options.environment.exitWhenDone) options.quit();
   else log(options, "left_running", { reason: "MEMORA_GOLDEN_EXIT is not 1" });
   return summary;
+}
+
+interface ProcessedRun {
+  imported: ImportedSource[];
+  batchId: string;
+  importedAt: Date;
+  outcome: BatchOutcome;
+  /** What the topic barrier did (`full` runs only); merged into the summary's `topics`. */
+  topics?: Record<string, unknown>;
+}
+
+/** A queued batch: its ID and, per run, the source it processes and its job (null when nothing is left to run). */
+interface QueuedBatch {
+  batchId: string;
+  queued: Array<{ sourceItemId: string; jobId: string | null }>;
+}
+
+/** Queues the full knowledge plan for the given root sources. */
+async function queueBatch(options: GoldenRunOptions, rootIds: string[]): Promise<QueuedBatch> {
+  const batch = await options.hierarchy.process({
+    runKind: "initial",
+    trigger: "library_action",
+    plan: ProcessingPlanRequestSchema.parse({
+      preset: "custom",
+      requestedStages: goldenRunStages,
+      scope: "source_and_children",
+      targetSourceItemIds: rootIds
+    })
+  });
+  log(options, "queued", { batchId: batch.batchId, runs: batch.queued.length });
+  return {
+    batchId: batch.batchId,
+    queued: batch.queued.map(({ sourceItemId, jobId }) => ({ sourceItemId, jobId }))
+  };
+}
+
+/** The plain run: import the whole manifest, queue one batch, wait for it. */
+async function processInOneBatch(
+  options: GoldenRunOptions,
+  manifest: GoldenManifest,
+  runDirectory: string,
+  now: () => Date
+): Promise<ProcessedRun> {
+  const imported = await importSources(options, manifest);
+  const importedAt = now();
+  const { batchId } = await queueBatch(
+    options,
+    imported.map((source) => source.sourceItemId)
+  );
+  options.jobs.wake();
+  const outcome = await waitForBatch(options, batchId, runDirectory);
+  return { imported, batchId, importedAt, outcome };
+}
+
+/** One drain of the light lane: how long it took and how often the jobs table was polled. */
+export interface TopicBoundary {
+  /** The manifest key whose notes the drain admitted, or `*` for the whole manifest (`batch`). */
+  source: string;
+  batchId: string;
+  drainMs: number;
+  polls: number;
+}
+
+/**
+ * The topic barrier (D23). Topic jobs are held while sources ingest, so the items present at every
+ * build and naming call are a function of the manifest order, not of lane timing. The ingestion
+ * itself is never changed: it stays ONE batch, because the collective matching stages run once every
+ * run has reached them and the recorded cassette holds exactly those prompts.
+ *
+ * - `batch`: the batch runs as usual with the topic jobs held, then the light lane is drained once.
+ * - `per-source`: the batch's run jobs are paced. The supervisor is stopped while the batch is
+ *   queued (so no job can start early) and the jobs of every source after the first are pushed far
+ *   into the future; each source's jobs are then released only after the previous source's jobs
+ *   finished and the light lane was drained. The heavy lane is idle at every drain, so nothing else
+ *   can enqueue topic work, and the hold is re-armed before the next source runs. The last source
+ *   also runs the batch's collective matching; its drain follows the whole batch.
+ *
+ * A divergence or token limit leaves the topic jobs held (and logs it): a stopped run must not let
+ * queued topic work reach the provider or add cassette misses. The hold is released after the last
+ * drain, so the app then runs as it normally does.
+ */
+async function processUnderTopicBarrier(
+  options: GoldenRunOptions,
+  manifest: GoldenManifest,
+  barrier: GoldenTopicBarrier,
+  runDirectory: string,
+  now: () => Date
+): Promise<ProcessedRun> {
+  const { arrival } = options.environment.topics;
+  const boundaries: TopicBoundary[] = [];
+  let released = false;
+  const drain = async (source: string, batchId: string, holdAgain: boolean) => {
+    const drained = await drainTopicLane(options, barrier, source, batchId, holdAgain);
+    boundaries.push(drained.boundary);
+    if (!holdAgain && drained.outcome === "settled") released = true;
+    return drained.outcome;
+  };
+  /** `batch`: the batch as usual, then one drain. */
+  const underHold = async (rootIds: string[]) => {
+    const { batchId } = await queueBatch(options, rootIds);
+    options.jobs.wake();
+    let outcome = await waitForBatch(options, batchId, runDirectory);
+    if (outcome === "settled") outcome = await drain("*", batchId, false);
+    return { batchId, outcome };
+  };
+  /** `per-source`: the same batch, its jobs paced a source at a time. */
+  const paced = async (imported: readonly ImportedSource[], rootIds: string[]) => {
+    // Nothing may run between queueing the batch and holding the later sources' jobs back.
+    await options.jobs.stop();
+    let queued: QueuedBatch | null = null;
+    try {
+      queued = await queueBatch(options, rootIds);
+      const { batchId } = queued;
+      const groups = await groupJobsBySource(options.pool, imported, queued);
+      await holdBackJobs(
+        options.pool,
+        groups.slice(1).flatMap((group) => group.jobIds)
+      );
+      await options.jobs.start();
+      let outcome: BatchOutcome = "settled";
+      for (const [index, group] of groups.entries()) {
+        if (index === groups.length - 1) break;
+        outcome = await waitForJobs(options, batchId, group.jobIds);
+        if (outcome === "settled") outcome = await drain(group.key, batchId, true);
+        if (outcome !== "settled") break;
+        await releaseJobs(options.pool, groups[index + 1]!.jobIds);
+        options.jobs.wake();
+      }
+      if (outcome === "settled") {
+        // The last source and the collective matching, then the last drain.
+        outcome = await waitForBatch(options, batchId, runDirectory);
+        if (outcome === "settled") outcome = await drain(groups.at(-1)?.key ?? "*", batchId, false);
+      }
+      return { batchId, outcome };
+    } catch (error) {
+      // A batch that is half held back must not be left to run later on its own.
+      if (queued) await options.jobs.cancelBatch(queued.batchId).catch(() => undefined);
+      // The supervisor was stopped for the queueing; it must run again whatever happened.
+      await options.jobs.start();
+      throw error;
+    }
+  };
+  try {
+    await barrier.hold();
+    log(options, "topics_held", { arrival, sources: manifest.sources.length });
+    const imported = await importSources(options, manifest);
+    const importedAt = now();
+    const rootIds = imported.map((source) => source.sourceItemId);
+    const ran = arrival === "batch" ? await underHold(rootIds) : await paced(imported, rootIds);
+    if (ran.outcome === "settled" && !released) {
+      await barrier.release();
+      released = true;
+    }
+    if (ran.outcome !== "settled") log(options, "topics_left_held", { reason: ran.outcome });
+    return {
+      imported,
+      batchId: ran.batchId,
+      importedAt,
+      outcome: ran.outcome,
+      topics: {
+        held: !released,
+        boundaries,
+        drainMs: boundaries.reduce((sum, boundary) => sum + boundary.drainMs, 0),
+        jobs: await readTopicJobCounts(options.pool)
+      }
+    };
+  } catch (error) {
+    log(options, "topics_left_held", {
+      reason: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+}
+
+/**
+ * The jobs of a queued batch grouped by the root source (manifest key) they belong to, in manifest
+ * order and, within a root, in the order they were queued. A run's source may be a chapter or a
+ * detected division; its root is found through the source tree.
+ */
+async function groupJobsBySource(
+  pool: Query,
+  imported: readonly ImportedSource[],
+  batch: QueuedBatch
+): Promise<Array<{ key: string; jobIds: string[] }>> {
+  const roots = await pool.query<{ originId: string; rootId: string }>(
+    `with recursive up(origin_id, id, parent_id) as (
+       select s.id, s.id, s.parent_source_item_id from source_items s where s.id = any($1::uuid[])
+       union all
+       select up.origin_id, s.id, s.parent_source_item_id
+       from source_items s join up on s.id = up.parent_id)
+     select origin_id as "originId", id as "rootId" from up where parent_id is null`,
+    [batch.queued.map((run) => run.sourceItemId)]
+  );
+  const rootOf = new Map(roots.rows.map((row) => [row.originId, row.rootId]));
+  const groups = imported.map((source) => ({ key: source.key, jobIds: [] as string[] }));
+  const index = new Map(imported.map((source, position) => [source.sourceItemId, position]));
+  for (const run of batch.queued) {
+    const position = index.get(rootOf.get(run.sourceItemId) ?? "");
+    if (position === undefined)
+      throw new Error(`Run of source ${run.sourceItemId} does not belong to an imported root`);
+    if (run.jobId) groups[position]!.jobIds.push(run.jobId);
+  }
+  return groups;
+}
+
+/** Pushes queued jobs far into the future; any job that is not queued any more is a lost race. */
+async function holdBackJobs(pool: Query, jobIds: readonly string[]): Promise<void> {
+  if (jobIds.length === 0) return;
+  const held = await pool.query(
+    `update jobs set run_after = now() + interval '100 years', updated_at = now()
+     where id = any($1::uuid[]) and status::text = 'queued' returning id`,
+    [jobIds]
+  );
+  if (held.rows.length !== jobIds.length)
+    throw new Error(
+      `${jobIds.length - held.rows.length} of the later sources' jobs were not queued when they ` +
+        "were to be held back; the run stops before anything runs out of order"
+    );
+}
+
+/** Makes held jobs claimable again, in the order they were queued. */
+async function releaseJobs(pool: Query, jobIds: readonly string[]): Promise<void> {
+  if (jobIds.length === 0) return;
+  await pool.query(
+    `update jobs set run_after = clock_timestamp() + t.position * interval '1 millisecond',
+       updated_at = now()
+     from unnest($1::uuid[]) with ordinality as t(id, position)
+     where jobs.id = t.id and jobs.status::text = 'queued'`,
+    [jobIds]
+  );
+}
+
+/** Waits until none of the given jobs is queued or running (two quiet polls); stops like a batch wait. */
+async function waitForJobs(
+  options: GoldenRunOptions,
+  batchId: string,
+  jobIds: readonly string[]
+): Promise<BatchOutcome> {
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const interval = options.pollIntervalMs ?? 5000;
+  let quiet = 0;
+  for (;;) {
+    const stopped = await stopReason(options);
+    if (stopped) {
+      await options.jobs.cancelBatch(batchId);
+      return stopped;
+    }
+    const active = await options.pool.query<{ active: number }>(
+      `select count(*)::int as active from jobs
+       where id = any($1::uuid[]) and status::text in ('queued', 'running')`,
+      [jobIds]
+    );
+    quiet = Number(active.rows[0]?.active ?? 0) === 0 ? quiet + 1 : 0;
+    if (quiet >= 2) return "settled";
+    await sleep(interval);
+  }
+}
+
+/** A replay miss or the live token cap, the two reasons a golden run stops by itself. */
+async function stopReason(options: GoldenRunOptions): Promise<BatchOutcome | null> {
+  const cassette = options.cassette?.stats();
+  if (cassette?.mode === "replay" && cassette.misses > 0) {
+    log(options, "diverged", { misses: cassette.missDetails });
+    return "diverged";
+  }
+  const limit = options.environment.maxLiveTokens;
+  if (cassette?.mode === "record" && limit !== null && cassette.liveTokens >= limit) {
+    log(options, "token_limit", { limit, liveTokens: cassette.liveTokens });
+    return "token_limit";
+  }
+  return null;
+}
+
+/** Releases the hold, waits for the light lane to run what is queued, then holds again if asked. */
+async function drainTopicLane(
+  options: GoldenRunOptions,
+  barrier: GoldenTopicBarrier,
+  source: string,
+  batchId: string,
+  holdAgain: boolean
+): Promise<{ boundary: TopicBoundary; outcome: BatchOutcome }> {
+  const began = Date.now();
+  await barrier.release();
+  const waited = await waitForTopicLane(options).catch(async (error: unknown) => {
+    await barrier.hold();
+    throw error;
+  });
+  if (waited.outcome !== "settled" || holdAgain) await barrier.hold();
+  const boundary: TopicBoundary = {
+    source,
+    batchId,
+    drainMs: Date.now() - began,
+    polls: waited.polls
+  };
+  log(options, "topics_drained", { ...boundary, outcome: waited.outcome });
+  return { boundary, outcome: waited.outcome };
+}
+
+/**
+ * Waits until no topic job is queued or running, like `waitForBatch` waits for a batch: two quiet
+ * polls in a row. A queued job counts even before its debounce has elapsed, because it will run.
+ * A replay miss or the live token cap stops it (`diverged`, `token_limit`); a lane that never
+ * drains within `topicDrainTimeoutMs` is an error.
+ */
+export async function waitForTopicLane(
+  options: GoldenRunOptions
+): Promise<{ outcome: BatchOutcome; polls: number }> {
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const interval = options.pollIntervalMs ?? 1000;
+  const timeoutMs = options.topicDrainTimeoutMs ?? 1_800_000;
+  const maxPolls = Math.max(2, Math.ceil(timeoutMs / interval));
+  let quiet = 0;
+  for (let polls = 1; polls <= maxPolls; polls += 1) {
+    const stopped = await stopReason(options);
+    if (stopped) return { outcome: stopped, polls };
+    const active = await options.pool.query<{ active: number }>(
+      `select count(*)::int as active from jobs
+       where type::text like $1 and status::text in ('queued', 'running')`,
+      [`${topicJobTypePrefix}%`]
+    );
+    // Two quiet polls in a row: no queued, running or retrying topic job is left.
+    quiet = Number(active.rows[0]?.active ?? 0) === 0 ? quiet + 1 : 0;
+    if (quiet >= 2) return { outcome: "settled", polls };
+    await sleep(interval);
+  }
+  throw new Error(
+    `The topic lane still had queued or running topic jobs after ${timeoutMs} ms; ` +
+      "the topic jobs are held again"
+  );
+}
+
+/** Topic jobs by type and status, for the run summary. */
+async function readTopicJobCounts(pool: Query) {
+  const result = await pool.query<{ type: string; status: string; count: number }>(
+    `select type::text as type, status::text as status, count(*)::int as count from jobs
+     where type::text like $1 group by 1, 2 order by 1, 2`,
+    [`${topicJobTypePrefix}%`]
+  );
+  return result.rows.map((row) => ({
+    type: String(row.type),
+    status: String(row.status),
+    count: Number(row.count)
+  }));
 }
 
 interface SourcePairsRequest {
