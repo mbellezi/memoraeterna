@@ -11,6 +11,7 @@ import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import type { AiService } from "../ai-service.js";
 import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
+import { startCorpusRunner } from "./corpus-runner.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
@@ -248,6 +249,15 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     }
   };
 
+  const corpusRunnerOptions = {
+    env: options.env,
+    isPackaged: options.isPackaged,
+    getPool,
+    spaceResolver: options.spaceResolver,
+    ...(logger ? { logger } : {}),
+    ...(options.now ? { now: options.now } : {})
+  };
+
   return {
     service: topicService,
     triggers,
@@ -261,6 +271,9 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     jobs,
     structure,
     async start() {
+      // ENV-C (T22b): with MEMORA_TOPIC_CORPUS set (DEV only) the topic jobs are held before the
+      // supervisor starts and the corpus runner seeds, embeds and builds in the background.
+      void startCorpusRunner({ ...corpusRunnerOptions, service: topicService, triggers });
       const ensured = await ensureActiveTree();
       const treeId = ensured?.kind === "ready" ? ensured.tree.id : null;
       try {

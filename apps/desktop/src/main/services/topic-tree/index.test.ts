@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { IpcMain } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -273,6 +277,59 @@ describe("the topic services factory", () => {
       await expect(created.hooks.notesChanged([id(1)])).resolves.toBeUndefined();
       await expect(created.hooks.sourcesChanged([id(2)])).resolves.toBeUndefined();
       await expect(created.hooks.itemsRemoved()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("the ENV-C corpus runner (T22b)", () => {
+    it("never holds the topic jobs on an ordinary start", async () => {
+      const created = create();
+      await created.start();
+      expect(created.service.isHeld()).toBe(false);
+    });
+
+    it("ignores the corpus knob of a packaged build: nothing is held, nothing quits", async () => {
+      const created = create({
+        isPackaged: true,
+        env: { MEMORA_TOPIC_CORPUS: "1", MEMORA_USER_DATA_DIR: "/profiles/x" }
+      });
+      await created.start();
+      expect(created.service.isHeld()).toBe(false);
+      expect(quiet.warn).toHaveBeenCalledWith(
+        expect.stringContaining("ignored in packaged builds")
+      );
+    });
+
+    it("holds the topic jobs as soon as a valid knob is read, before start returns", async () => {
+      vi.useRealTimers();
+      const workspace = await mkdtemp(join(tmpdir(), "memora-corpus-hook-"));
+      try {
+        const created = create({
+          env: {
+            MEMORA_TOPIC_CORPUS: "1",
+            MEMORA_USER_DATA_DIR: join(workspace, ".cache", "profiles", "env-c"),
+            MEMORA_WORKSPACE_ROOT: workspace,
+            MEMORA_TOPIC_CORPUS_STAGE: "seed"
+          }
+        });
+        await created.start();
+        expect(created.service.isHeld()).toBe(true);
+        // The run refuses a profile that does not exist, in the background, and records it; the
+        // barrier stays up (a stopped run never lets queued topic work through).
+        const folder = join(workspace, ".cache", "topics", "corpus-runs");
+        let files: string[] = [];
+        for (let attempt = 0; attempt < 100 && files.length === 0; attempt += 1) {
+          files = await readdir(folder).catch(() => []);
+          if (files.length === 0) await new Promise((done) => setTimeout(done, 20));
+        }
+        expect(files).toHaveLength(1);
+        expect(JSON.parse(await readFile(join(folder, files[0]!), "utf8"))).toMatchObject({
+          outcome: "refused",
+          topicJobsLeftHeld: true
+        });
+        expect(created.service.isHeld()).toBe(true);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
     });
   });
 });

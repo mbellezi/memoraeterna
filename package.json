@@ -56,6 +56,7 @@
     "topics:bench": "tsx scripts/topics/read-benchmark.ts",
     "topics:export": "tsx scripts/topics/export.ts",
     "topics:profiles": "tsx scripts/topics/env-profiles.ts",
+    "topics:report": "tsx scripts/topics/report.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast"

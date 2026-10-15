@@ -343,9 +343,21 @@ describe("check and recipe", () => {
     expect(populateRecipe({ kind: "env-f", workspaceRoot: "/repo" })).toContain(
       "MEMORA_GOLDEN_MAX_TOKENS=<cap on live tokens>"
     );
-    expect(populateRecipe({ kind: "env-c", workspaceRoot: "/repo" })).toContain(
-      "MEMORA_TOPIC_CORPUS"
-    );
+    const corpus = populateRecipe({ kind: "env-c", workspaceRoot: "/repo", maxTokens: 90000 });
+    expect(corpus).toContain("MEMORA_TOPIC_CORPUS=1");
+    expect(corpus).toContain("MEMORA_USER_DATA_DIR=/repo/.cache/profiles/env-c");
+    // Seed without a cassette, then build and arrive recorded to corpus-f2 under the token cap.
+    const [seed, build, arrive] = corpus.split(/\n\d\. /u).slice(1);
+    expect(seed).toContain("MEMORA_TOPIC_CORPUS_STAGE=seed");
+    expect(seed).toContain("MEMORA_TOPIC_CORPUS_HOLDOUT=articles:40");
+    expect(seed).not.toContain("MEMORA_AI_CASSETTE");
+    for (const step of [build, arrive]) {
+      expect(step).toContain("MEMORA_AI_CASSETTE=record");
+      expect(step).toContain("corpus-f2");
+      expect(step).toContain("MEMORA_TOPIC_CORPUS_MAX_TOKENS=90000");
+    }
+    expect(build).toContain("MEMORA_TOPIC_CORPUS_STAGE=build");
+    expect(arrive).toContain("MEMORA_TOPIC_CORPUS_STAGE=arrive");
   });
 });
 

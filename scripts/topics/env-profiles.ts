@@ -462,12 +462,41 @@ export function populateRecipe(input: {
 }): string {
   const definition = profileDefinitions[input.kind];
   const profile = join(profilesRoot(input.workspaceRoot), input.name ?? input.kind);
-  if (definition.populate === "corpus")
+  if (definition.populate === "corpus") {
+    const cap = input.maxTokens === undefined ? "<cap on live tokens>" : String(input.maxTokens);
+    const base = [
+      `MEMORA_USER_DATA_DIR=${profile}`,
+      `MEMORA_WORKSPACE_ROOT=${input.workspaceRoot}`,
+      "MEMORA_TOPIC_CORPUS=1",
+      "MEMORA_TOPIC_CORPUS_EXIT=1",
+      "MEMORA_DEV_BACKGROUND=1"
+    ];
+    const recorded = [
+      "MEMORA_AI_CASSETTE=record",
+      `MEMORA_AI_CASSETTE_DIR=${join(".cache", "golden", "cassettes", "corpus-f2")}`,
+      `MEMORA_TOPIC_CORPUS_MAX_TOKENS=${cap}`
+    ];
+    const start = (extra: readonly string[]): string =>
+      `  ${[...base, ...extra].join(" \\\n  ")} \\\n  npm run dev -w @app/desktop`;
     return [
       `${definition.label}: ${definition.description}.`,
-      `Populate it with the DEV corpus runner (MEMORA_TOPIC_CORPUS, task T22b) on this profile:`,
-      `  MEMORA_USER_DATA_DIR=${profile}`
+      "Populate it with the DEV corpus runner (T22b, MEMORA_TOPIC_CORPUS) in separate starts of the DEV app,",
+      "one at a time (the DEV-app slot, and the local-model slot while the notes embed):",
+      "",
+      "1. Seed the base library and embed it through the app's route (no AI cassette: it would record",
+      "   every embedding call). Topic jobs stay held; 40 held-out articles wait for step 3.",
+      start(["MEMORA_TOPIC_CORPUS_STAGE=seed", "MEMORA_TOPIC_CORPUS_HOLDOUT=articles:40"]),
+      "",
+      "2. Build, name and group the tree once (topic AI is recorded to the cassette, with a token cap):",
+      start(["MEMORA_TOPIC_CORPUS_STAGE=build", ...recorded]),
+      "",
+      "3. Let the held-out articles arrive one at a time (the live gate spot check):",
+      start(["MEMORA_TOPIC_CORPUS_STAGE=arrive", ...recorded]),
+      "",
+      "Each start writes .cache/topics/corpus-runs/<time>.json (seed and embedding times, the space",
+      "check, the embedding route, live tokens). Then: npm run topics:export, npm run topics:report."
     ].join("\n");
+  }
   const cassettes = join(".cache", "golden", "cassettes");
   const cap = input.maxTokens === undefined ? "<cap on live tokens>" : String(input.maxTokens);
   const common = [
