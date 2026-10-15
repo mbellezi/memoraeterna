@@ -6,6 +6,7 @@ import type { Translator } from "@app/i18n";
 import { AiNoteBadge } from "../AiNoteBadge";
 import { Button } from "../ui/button";
 import { NoteEditForm, type EditError } from "./NoteEditForm";
+import { PlaceInTopic } from "./PlaceInTopic";
 import {
   formatNoteDate,
   interpolateNodes,
@@ -44,6 +45,8 @@ export interface NoteHeaderProps {
   onDiscardAndReload: () => void;
   onEscapeEdit: () => void;
   onOpenNote: (noteId: string) => void;
+  /** "Place in topic" (T26): whether the page shows, and what to do once the note was placed. */
+  place?: { active: boolean; onPlaced: () => void } | undefined;
 }
 
 /** Badge row, actions, the idea statement and where the note comes from. */
@@ -61,7 +64,8 @@ export function NoteHeader({
   onCancelEdit,
   onDiscardAndReload,
   onEscapeEdit,
-  onOpenNote
+  onOpenNote,
+  place
 }: NoteHeaderProps) {
   const { note } = page;
   const state = noteHeaderState(note);
@@ -139,6 +143,15 @@ export function NoteHeader({
                 <Check aria-hidden="true" />
                 {t("notePage.actions.markReviewed")}
               </Button>
+            ) : null}
+            {actions.edit && place ? (
+              <PlaceInTopic
+                t={t}
+                noteId={note.id}
+                noteTitle={note.title}
+                active={place.active}
+                onPlaced={place.onPlaced}
+              />
             ) : null}
             {actions.edit ? (
               <Button ref={editRef} type="button" variant="link" onClick={onStartEdit}>

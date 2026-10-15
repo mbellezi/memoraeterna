@@ -4,7 +4,9 @@ import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { recordView } from "../../lib/view-history";
+import { TopicOpsOverlay, useTopicOps } from "../topics/ops/use-topic-ops";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
+import type { HeaderOps } from "./TopicHeader";
 import { TopicPageController } from "./topic-page-controller";
 import type { TopicPageActions } from "./topic-page-model";
 import { TopicPageView } from "./TopicPageView";
@@ -42,6 +44,16 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusedTopic = useRef<string | null>(null);
   const opener = useObjectOpener(onNavigate);
+  const topicOps = useTopicOps(active);
+  // The topic whose heading is being renamed; another topic or a hidden page ends the rename
+  // (adjusted while rendering, not in an effect).
+  const [renamingFor, setRenamingFor] = useState<string | null>(null);
+  const [wasActive, setWasActive] = useState(active);
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (!active) setRenamingFor(null);
+  }
+  const renaming = renamingFor === topicId;
 
   useEffect(() => {
     controller.show(topicId, active, t);
@@ -79,6 +91,39 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
       opener.open({ type: "resolve", address: formatObjectAddress({ kind: "source", id }) })
   };
 
+  const { controller: ops } = topicOps;
+  const shown = snapshot.load.status === "ready" ? snapshot.load.page.topic : null;
+  const headerOps: HeaderOps | undefined = shown
+    ? {
+        renaming,
+        busy: topicOps.snapshot.busy,
+        error: topicOps.dialog === null ? topicOps.snapshot.error : null,
+        onStartRename: () => {
+          ops.clearError();
+          setRenamingFor(topicId);
+        },
+        onCommitRename: (title) =>
+          void ops.rename(shown, title).then((done) => {
+            if (!done) return;
+            setRenamingFor(null);
+            headingRef.current?.focus({ preventScroll: true });
+          }),
+        onCancelRename: () => {
+          ops.clearError();
+          setRenamingFor(null);
+          headingRef.current?.focus({ preventScroll: true });
+        },
+        onCreate: () =>
+          topicOps.openDialog({
+            kind: "create",
+            parent: { id: shown.id, title: shown.title },
+            top: shown.parentId === null
+          }),
+        onMove: () => topicOps.openDialog({ kind: "move", topic: shown }),
+        onTogglePin: () => void ops.pin(shown, shown.management !== "pinned")
+      }
+    : undefined;
+
   return (
     <TopicPageView
       t={t}
@@ -86,6 +131,8 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
       active={active}
       headingRef={headingRef}
       actions={actions}
+      ops={headerOps}
+      overlay={<TopicOpsOverlay t={t} ops={topicOps} />}
       openFailed={opener.openFailed}
       onClose={closable ? () => onClose?.() : undefined}
       onRetry={() => controller.retry()}

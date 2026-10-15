@@ -2,15 +2,22 @@ import type { RefObject } from "react";
 import {
   ChevronRight,
   CircleCheck,
+  FolderInput,
+  FolderPlus,
   ListTree,
   OctagonAlert,
+  Pencil,
+  Pin,
+  PinOff,
   TriangleAlert,
   Undo2
 } from "lucide-react";
 import type { TopicPage } from "@app/domain";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { InlineTitleEditor } from "../topics/ops/InlineTitleEditor";
+import { opsErrorText } from "../topics/ops/topic-ops";
 import { Button } from "../ui/button";
 import type { UndoState } from "./topic-page-controller";
 import {
@@ -36,6 +43,21 @@ const toneIcon: Record<HealthTone, typeof CircleCheck> = {
   danger: OctagonAlert
 };
 
+/** What the header needs to change the topic it shows (T26); absent, the header is read-only. */
+export interface HeaderOps {
+  /** The heading is being renamed in place. */
+  renaming: boolean;
+  busy: boolean;
+  /** The last operation was refused. */
+  error: MessageKey | null;
+  onStartRename: () => void;
+  onCommitRename: (title: string) => void;
+  onCancelRename: () => void;
+  onCreate: () => void;
+  onMove: () => void;
+  onTogglePin: () => void;
+}
+
 export interface TopicHeaderProps {
   t: Translator;
   page: TopicPage;
@@ -44,6 +66,7 @@ export interface TopicHeaderProps {
   undo: UndoState;
   headingRef?: RefObject<HTMLHeadingElement | null> | undefined;
   actions: TopicPageActions;
+  ops?: HeaderOps | undefined;
   onUndo: () => void;
 }
 
@@ -55,6 +78,7 @@ export function TopicHeader({
   undo,
   headingRef,
   actions,
+  ops,
   onUndo
 }: TopicHeaderProps) {
   const { topic } = page;
@@ -63,6 +87,8 @@ export function TopicHeader({
   const health = healthViews[topic.health];
   const HealthIcon = toneIcon[health.tone];
   const lang = topic.nameLanguage ?? undefined;
+  const root = isRootPage(page);
+  const pinned = topic.management === "pinned";
   return (
     <header className="flex flex-col gap-3">
       {page.redirectedFrom ? (
@@ -108,8 +134,61 @@ export function TopicHeader({
         lang={topic.title !== null ? lang : undefined}
         className="font-reading text-2xl font-semibold text-foreground [overflow-wrap:anywhere] outline-none"
       >
-        {title}
+        {ops?.renaming ? (
+          <InlineTitleEditor
+            initial={topic.title ?? ""}
+            label={t("topics.ops.rename.label")}
+            invalid={ops.error !== null}
+            busy={ops.busy}
+            lang={lang}
+            className="h-10 text-xl font-semibold"
+            onCommit={ops.onCommitRename}
+            onCancel={ops.onCancelRename}
+          />
+        ) : (
+          title
+        )}
       </h1>
+      {ops ? (
+        <div
+          role="group"
+          aria-label={t("topics.ops.actions.label")}
+          className="flex flex-wrap gap-2"
+        >
+          {root ? null : (
+            <Button type="button" disabled={ops.busy || ops.renaming} onClick={ops.onStartRename}>
+              <Pencil aria-hidden="true" />
+              {t("topics.ops.actions.rename")}
+            </Button>
+          )}
+          <Button type="button" aria-haspopup="dialog" disabled={ops.busy} onClick={ops.onCreate}>
+            <FolderPlus aria-hidden="true" />
+            {t(root ? "topics.ops.actions.createTop" : "topics.ops.actions.create")}
+          </Button>
+          {root ? null : (
+            <>
+              <Button type="button" aria-haspopup="dialog" disabled={ops.busy} onClick={ops.onMove}>
+                <FolderInput aria-hidden="true" />
+                {t("topics.ops.actions.move")}
+              </Button>
+              <Button
+                type="button"
+                aria-pressed={pinned}
+                disabled={ops.busy}
+                onClick={ops.onTogglePin}
+              >
+                {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+                {t(pinned ? "topics.ops.actions.unpin" : "topics.ops.actions.pin")}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : null}
+      {ops?.error ? (
+        <p role="alert" className="text-sm text-danger">
+          {opsErrorText(t, ops.error)}
+        </p>
+      ) : null}
       {topic.nameState === "provisional" ? (
         <p className="text-xs text-muted-foreground">{t("topics.page.provisionalName")}</p>
       ) : null}

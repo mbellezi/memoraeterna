@@ -110,7 +110,8 @@ export function registerTopicIpc(ipc: IpcMain, deps: TopicIpcDependencies): void
 /** What the push channel needs of a window's web contents. */
 export interface TopicsChangedTarget {
   isDestroyed(): boolean;
-  send(channel: string, payload: TopicsChangedEvent): void;
+  /** `topicsChanged` carries its event; the view-history push (a pin, T26) carries none. */
+  send(channel: string, payload?: TopicsChangedEvent): void;
 }
 
 /** The emitter the topic service calls after a change-set commits (its coalescer lives there). */

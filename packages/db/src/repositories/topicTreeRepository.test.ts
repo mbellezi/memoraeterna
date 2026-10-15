@@ -771,6 +771,22 @@ describe.skipIf(!sidecarInstalled)("topic tree writer on a real PostgreSQL datab
       kind: "clean",
       generation: 3
     });
+
+    // The reads of the human path (T26): the stamp a rename or move is made from, and a
+    // change-set looked up inside its own tree.
+    const stamps = await repo.topicStamps(tree.id, [uuidOf(3), uuidOf(9999)]);
+    expect([...stamps.keys()]).toEqual([uuidOf(3)]);
+    expect(stamps.get(uuidOf(3))).toMatchObject({ retired: false });
+    expect(stamps.get(uuidOf(3))?.updatedAt).toBeInstanceOf(Date);
+    const movedId = moved.kind === "applied" ? moved.changeSetId : "";
+    await expect(repo.changeSetMeta(tree.id, movedId)).resolves.toEqual({
+      id: movedId,
+      origin: "rebalance",
+      status: "undone",
+      titleKey: "topics.changeSets.rebalance"
+    });
+    await expect(repo.changeSetMeta(tree.id, randomUUID())).resolves.toBeNull();
+    await expect(repo.changeSetMeta(randomUUID(), movedId)).resolves.toBeNull();
   }, 60_000);
 
   it("blocks an undo whose inverse would break I2 or the depth cap, like the engine", async () => {

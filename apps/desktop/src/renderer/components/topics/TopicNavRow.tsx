@@ -4,6 +4,7 @@ import {
   CornerDownRight,
   Hourglass,
   LoaderCircle,
+  MoreHorizontal,
   Pin,
   RotateCw,
   TriangleAlert,
@@ -13,6 +14,8 @@ import type { TopicHealth, TopicItemLeaf } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
 import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
+import { InlineTitleEditor } from "./ops/InlineTitleEditor";
+import { actionRowOf, type NavRowOps } from "./ops/nav-ops";
 import { isExpandableRow, type NavRow, type PlaceEntry } from "./topic-navigation";
 
 /** Indent per outline level, and the first level's inset (the 4 px grid). */
@@ -30,6 +33,8 @@ export interface NavRowProps {
   selected: boolean;
   /** Absolute placement inside a windowed list. */
   style?: CSSProperties | undefined;
+  /** Renaming in place and the actions of a topic (T26); absent, the row is read-only. */
+  ops?: NavRowOps | undefined;
   onToggle: (row: NavRow) => void;
   onActivate: (row: NavRow) => void;
   onFocusRow: (key: string) => void;
@@ -145,6 +150,7 @@ export function TopicNavRow({
   tabStop,
   selected,
   style,
+  ops,
   onToggle,
   onActivate,
   onFocusRow,
@@ -152,6 +158,7 @@ export function TopicNavRow({
 }: NavRowProps) {
   const expandable = isExpandableRow(row);
   const title = rowTitle(t, row);
+  const actionRow = ops ? actionRowOf(row) : null;
   return (
     <div
       role="treeitem"
@@ -167,16 +174,45 @@ export function TopicNavRow({
       title={title?.tooltip}
       style={{ ...style, paddingLeft: baseInset + (row.level - 1) * levelIndent }}
       className={cn(
-        "flex h-7 items-center gap-1 rounded-md pr-2 text-sm outline-none",
+        "group/row flex h-7 items-center gap-1 rounded-md pr-2 text-sm outline-none",
         "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
         selected ? "bg-accent-soft font-semibold text-foreground" : "text-foreground hover:bg-soft"
       )}
       onClick={() => onActivate(row)}
       onFocus={() => onFocusRow(row.key)}
       onKeyDown={(event) => onKeyDown(event, row)}
+      onContextMenu={
+        ops && actionRow
+          ? (event) => {
+              event.preventDefault();
+              ops.onOpenMenu(actionRow, { x: event.clientX, y: event.clientY });
+            }
+          : undefined
+      }
     >
       <Chevron row={row} onToggle={onToggle} />
-      <RowContent t={t} row={row} format={format} />
+      <RowContent t={t} row={row} format={format} ops={ops} />
+      {ops && actionRow ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={t("topics.ops.actions.more")}
+          title={t("topics.ops.actions.more")}
+          aria-haspopup="menu"
+          className={cn(
+            "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0",
+            "hover:bg-surface-hover hover:text-foreground focus-visible:opacity-100",
+            "group-focus-within/row:opacity-100 group-hover/row:opacity-100"
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+            const box = event.currentTarget.getBoundingClientRect();
+            ops.onOpenMenu(actionRow, { x: box.left, y: box.bottom + 2 });
+          }}
+        >
+          <MoreHorizontal aria-hidden="true" className="size-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -203,11 +239,13 @@ function rowTitle(t: Translator, row: NavRow): { tooltip: string } | null {
 function RowContent({
   t,
   row,
-  format
+  format,
+  ops
 }: {
   t: Translator;
   row: NavRow;
   format: (value: number) => string;
+  ops?: NavRowOps | undefined;
 }) {
   switch (row.type) {
     case "topic": {
@@ -216,14 +254,25 @@ function RowContent({
         <>
           <ObjectKindGlyph kind="topic" className={objectKindTextClass.topic} />
           <span className="sr-only">{t("topics.navigator.kinds.topic")}: </span>
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate",
-              node.title === null && "italic text-muted-foreground"
-            )}
-          >
-            {node.title ?? t("topics.navigator.unnamed")}
-          </span>
+          {ops?.renamingKey === row.key ? (
+            <InlineTitleEditor
+              initial={node.title ?? ""}
+              label={t("topics.ops.rename.label")}
+              invalid={ops.invalid}
+              busy={ops.busy}
+              onCommit={(title) => ops.onCommitRename(row, title)}
+              onCancel={ops.onCancelRename}
+            />
+          ) : (
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                node.title === null && "italic text-muted-foreground"
+              )}
+            >
+              {node.title ?? t("topics.navigator.unnamed")}
+            </span>
+          )}
           {node.management === "human" ? (
             <Mark
               label={t("topics.navigator.marks.createdByYou")}

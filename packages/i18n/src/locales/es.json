@@ -1784,6 +1784,12 @@
       "rebalance": "Temas reorganizados: {operations} cambios, {items} elementos movidos",
       "proposal": "Reorganización de temas propuesta ({items} elementos)",
       "naming": "Nombres de temas actualizados: {topics}",
+      "humanRename": "Renombraste un tema.",
+      "humanMove": "Moviste un tema.",
+      "humanCreate": "Creaste un tema.",
+      "humanPin": "Fijaste un tema.",
+      "humanUnpin": "Dejaste de fijar un tema.",
+      "humanPlace": "Colocaste una nota o fuente en un tema.",
       "gate": "{items} ubicaciones dudosas revisadas"
     },
     "navigator": {
@@ -1935,7 +1941,74 @@
       "notFound": "Este tema ya no existe.",
       "protected": "Este tema está protegido, así que el cambio necesita tu aprobación.",
       "unavailable": "Esta acción todavía no está disponible.",
-      "canceled": "La tarea de temas se canceló."
+      "canceled": "La tarea de temas se canceló.",
+      "depthCap": "Los temas no se pueden anidar tan profundamente.",
+      "invalid": "Ese cambio no es posible aquí.",
+      "unchanged": "No cambió nada."
+    },
+    "ops": {
+      "cancel": "Cancelar",
+      "working": "Espera...",
+      "errors": {
+        "failed": "No se pudo hacer el cambio. Inténtalo de nuevo."
+      },
+      "actions": {
+        "label": "Acciones del tema",
+        "more": "Acciones del tema",
+        "rename": "Renombrar",
+        "create": "Nuevo subtema",
+        "createTop": "Nuevo tema de primer nivel",
+        "move": "Mover a...",
+        "pin": "Fijar",
+        "unpin": "Dejar de fijar",
+        "place": "Colocar en un tema"
+      },
+      "rename": {
+        "label": "Nombre del tema",
+        "empty": "Ponle un nombre al tema.",
+        "tooLong": "Un nombre tiene como máximo {count} caracteres."
+      },
+      "create": {
+        "title": "Nuevo subtema en {parent}",
+        "titleTop": "Nuevo tema de primer nivel",
+        "label": "Nombre",
+        "submit": "Crear"
+      },
+      "move": {
+        "title": "Mover {title}",
+        "titlePlace": "Colocar {title} en un tema",
+        "hint": "Elige el tema bajo el que va.",
+        "hintPlace": "Elige el tema al que pertenece. Abre un tema para mirar dentro.",
+        "pathLabel": "Ubicación",
+        "root": "Todos los temas",
+        "up": "Subir un nivel",
+        "filter": "Filtrar temas",
+        "loading": "Cargando temas...",
+        "error": "No se pudieron cargar los temas.",
+        "none": "Aquí no hay subtemas.",
+        "noMatch": "Ningún tema coincide.",
+        "open": "Abrir",
+        "here": "Mover aquí",
+        "placeHere": "Colocar aquí",
+        "alsoHere": "Mostrar también aquí",
+        "alreadyHere": "Ya está aquí.",
+        "chooseTopic": "Abre un tema para colocarlo allí."
+      },
+      "toast": {
+        "renamed": "Renombrado a {title}.",
+        "moved": "{title} se movió dentro de {parent}.",
+        "created": "{title} creado en {parent}.",
+        "pinned": "{title} fijado. La automatización no lo cambiará.",
+        "unpinned": "{title} ya no está fijado. Sigue protegido de los cambios automáticos.",
+        "placed": "{title} colocado en {parent}.",
+        "alsoPlaced": "{title} ahora también aparece en {parent}.",
+        "undone": "Cambio deshecho.",
+        "undo": "Deshacer",
+        "undoing": "Deshaciendo...",
+        "dismiss": "Descartar",
+        "blocked": "No se puede deshacer ahora: un cambio posterior depende de él.",
+        "failed": "No se pudo deshacer el cambio. Inténtalo de nuevo."
+      }
     }
   },
   "wiki": {

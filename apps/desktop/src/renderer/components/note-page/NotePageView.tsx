@@ -33,6 +33,8 @@ export interface NotePageViewProps {
   explanations: Readonly<Record<string, ExplanationState>>;
   more: RelationsMore;
   openFailed: boolean;
+  /** "Place in topic" (T26): whether the page shows, and what to do once the note was placed. */
+  place?: { active: boolean; onPlaced: () => void } | undefined;
   /** Polite announcement of the last action's result. */
   announcement: string;
   onBack: () => void;
@@ -126,6 +128,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         onDiscardAndReload={props.onDiscardAndReload}
         onEscapeEdit={props.onEscapeEdit}
         onOpenNote={props.onOpenNote}
+        place={props.place}
       />
       <NoteBodyText t={t} note={note} />
       <WhereIsThisView

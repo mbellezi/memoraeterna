@@ -8,17 +8,43 @@ import {
   TopicTreeRepositoryError,
   createJobRepository,
   createTopicTreeLoadRepository,
-  createTopicTreeRepository
+  createTopicTreeRepository,
+  createViewHistoryRepository,
+  viewHistoryAddress,
+  withTransaction
 } from "@app/db";
-import type { JobDebounce, JobRecord, JsonObject, PgPool, TopicTreeRecord } from "@app/db";
+import type {
+  ApplyChangeSetResult,
+  JobDebounce,
+  JobRecord,
+  JsonObject,
+  PgClient,
+  PgPool,
+  ResolvePendingResult,
+  TopicTreeRecord,
+  UndoChangeSetResult
+} from "@app/db";
 import { topicLimits } from "@app/domain";
-import type { TopicsBlockedReason, TopicsPhase } from "@app/domain";
+import type {
+  TopicMutation,
+  TopicMutationResult,
+  TopicReviewInput,
+  TopicReviewResult,
+  TopicUndoInput,
+  TopicUndoResult,
+  TopicsBlockedReason,
+  TopicsPhase
+} from "@app/domain";
+import { createTranslator } from "@app/i18n";
 import {
+  StructureEventConflictError,
+  applyEvents,
   canonicalStateDump,
   canonicalTopicTreeConfig,
   compareContentKeys,
   compareStrings,
   defaultTopicTreeConfig,
+  invertEvents,
   isLive,
   itemKey,
   parseItemKey,
@@ -40,6 +66,15 @@ import {
   topicJobTypes
 } from "./topic-jobs.js";
 import type { TopicScope } from "./topic-jobs.js";
+import {
+  humanErrorKeys,
+  historyEffectsOfUndo,
+  prepareHumanOperation,
+  randomId,
+  settleStats,
+  undoBlockersOf
+} from "./topic-human.js";
+import type { HistoryPinEffect } from "./topic-human.js";
 import { emptyPlaceSummary, preparePlacement } from "./topic-place.js";
 import type { PlaceSummary } from "./topic-place.js";
 import { compareTreeSpace } from "./topic-space.js";
@@ -146,6 +181,17 @@ export interface TopicTreeServiceOptions {
   wake?: () => void;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
+  /** IDs of topics a person creates (default: random UUIDs; tests fix them). */
+  newTopicId?: () => string;
+  /** Called after a pin or unpin committed, so Pinned and Recents read the view history again (D28). */
+  onViewHistoryChanged?: () => void;
+  /** The title a pinned topic without a name gets in the view history. */
+  unnamedTopicTitle?: () => string;
+  /**
+   * Called after a human change-set committed (T26): REBALANCE checks the topics it touched. A
+   * failure is logged and never fails the operation.
+   */
+  onHumanChange?: (change: { treeId: string; changeSetId: string; generation: number }) => unknown;
 }
 
 interface HeldJob {
@@ -609,6 +655,310 @@ export class TopicTreeService {
   }
 
   // -------------------------------------------------------------------------
+  // Human operations (T26): `topics.mutate`, `topics.undo`, `topics.review`
+  //
+  // Each takes its turn on the engine like PLACE, applies the events to the cache first (so the
+  // statistics it commits are exact, D7) and commits them as one change-set. A refusal throws a
+  // `topics.errors.*` key. Whenever a refusal or a conflict leaves the cache in doubt it is dropped.
+
+  /** One human operation as one `human` change-set: rename, move, create, pin, unpin, place an item. */
+  public mutate(mutation: TopicMutation): Promise<TopicMutationResult> {
+    return this.exclusive(() => this.mutateNow(mutation));
+  }
+
+  /** Undoes a change-set exactly, or names what blocks it (plan 4.1 Events and undo). */
+  public undo(input: TopicUndoInput): Promise<TopicUndoResult> {
+    return this.exclusive(() => this.undoNow(input));
+  }
+
+  /** Applies or dismisses a proposal that waits for the owner (D29). */
+  public review(input: TopicReviewInput): Promise<TopicReviewResult> {
+    return this.exclusive(() => this.reviewNow(input));
+  }
+
+  private async mutateNow(mutation: TopicMutation): Promise<TopicMutationResult> {
+    const pool = this.requirePool();
+    const repository = createTopicTreeRepository(pool);
+    const tree = await repository.activeTree();
+    if (!tree) throw new Error(humanErrorKeys.notFound);
+    for (let attempt = 0; attempt < topicServiceLimits.placeAttempts; attempt += 1) {
+      const cache = await this.currentCache(tree.id);
+      if (!cache) throw new Error(humanErrorKeys.notFound);
+      let prepared;
+      try {
+        prepared = await prepareHumanOperation({
+          pool,
+          cache,
+          mutation,
+          changeSetId: randomId(),
+          newTopicId: this.options.newTopicId ?? randomId
+        });
+      } catch (error) {
+        this.cache = null;
+        throw error;
+      }
+      const outcome = await this.commitHuman(
+        cache,
+        prepared.history ? [prepared.history] : [],
+        (client) =>
+          repository.applyChangeSet(
+            {
+              id: prepared.changeSetId,
+              treeId: tree.id,
+              expectedGeneration: cache.tree.generation,
+              origin: "human",
+              titleKey: prepared.titleKey,
+              titleParams: prepared.titleParams,
+              summary: prepared.summary,
+              events: prepared.events,
+              stats: prepared.stats,
+              clock: cache.state.clock
+            },
+            { client }
+          )
+      );
+      if (outcome.kind === "applied") {
+        if (prepared.newItem) this.adjustPending(-1);
+        await this.afterHumanCommit(cache, outcome, prepared.changedTopicIds);
+        return { changeSetId: outcome.changeSetId, generation: outcome.generation };
+      }
+      this.cache = null;
+      if (outcome.kind === "no_change" || outcome.kind === "pending") {
+        throw new Error(humanErrorKeys.unchanged);
+      }
+      const refusal = humanConflictError(outcome);
+      if (refusal) throw refusal;
+    }
+    throw new Error(humanErrorKeys.stale);
+  }
+
+  private async undoNow(input: TopicUndoInput): Promise<TopicUndoResult> {
+    const pool = this.requirePool();
+    const repository = createTopicTreeRepository(pool);
+    const tree = await repository.activeTree();
+    if (!tree) throw new Error(humanErrorKeys.notFound);
+    const meta = await repository.changeSetMeta(tree.id, input.changeSetId);
+    if (!meta) throw new Error(humanErrorKeys.notFound);
+    // A build or an undo has no inverse to offer (the read side reports it as unavailable too).
+    if (meta.origin === "build" || meta.origin === "undo") {
+      return {
+        status: "blocked",
+        blockers: [
+          {
+            kind: "conflict",
+            code: "notUndoable",
+            topicId: null,
+            item: null,
+            reason: "A build or an undo cannot be undone"
+          }
+        ]
+      };
+    }
+    if (meta.status !== "applied") {
+      return { status: "blocked", blockers: [{ kind: "notApplied", status: meta.status }] };
+    }
+    const events = await repository.changeSetEvents(meta.id);
+    const history = historyEffectsOfUndo(events);
+    const inverse = invertEvents(events);
+    for (let attempt = 0; attempt < topicServiceLimits.placeAttempts; attempt += 1) {
+      const cache = await this.currentCache(tree.id);
+      if (!cache) throw new Error(humanErrorKeys.notFound);
+      // The inverse goes to the cache first, so the statistics committed with it are exact. When
+      // it does not apply here the repository names what blocks it.
+      let settled: ReturnType<typeof settleStats> | null = null;
+      try {
+        settled = settleStats(cache, inverse, applyEvents(cache.state, inverse).touchedTopics);
+      } catch (error) {
+        if (!(error instanceof StructureEventConflictError)) {
+          this.cache = null;
+          throw error;
+        }
+      }
+      const outcome = await this.commitHuman(cache, history, (client) =>
+        repository.undoChangeSet(
+          {
+            treeId: tree.id,
+            changeSetId: meta.id,
+            expectedGeneration: cache.tree.generation,
+            titleKey: "topics.changeSets.undo",
+            titleParams: { undone: meta.titleKey },
+            ...(settled ? { stats: settled.stats } : {}),
+            clock: cache.state.clock
+          },
+          { client }
+        )
+      );
+      if (outcome.kind === "applied") {
+        if (!settled) this.cache = null;
+        await this.afterHumanCommit(cache, outcome, settled?.changedTopicIds ?? []);
+        return {
+          status: "undone",
+          changeSetId: outcome.changeSetId,
+          generation: outcome.generation
+        };
+      }
+      this.cache = null;
+      if (outcome.kind === "blocked") {
+        return { status: "blocked", blockers: undoBlockersOf(outcome.blockers) };
+      }
+      const refusal = humanConflictError(outcome);
+      if (refusal) throw refusal;
+    }
+    throw new Error(humanErrorKeys.stale);
+  }
+
+  private async reviewNow(input: TopicReviewInput): Promise<TopicReviewResult> {
+    const pool = this.requirePool();
+    const repository = createTopicTreeRepository(pool);
+    const tree = await repository.activeTree();
+    if (!tree) throw new Error(humanErrorKeys.notFound);
+    const meta = await repository.changeSetMeta(tree.id, input.changeSetId);
+    if (!meta) throw new Error(humanErrorKeys.notFound);
+    // A proposal that was already resolved (a second click, another window) is not an error.
+    if (meta.status !== "pending_review") return { status: meta.status };
+    if (input.decision === "dismiss") {
+      const result = await repository.resolvePendingChangeSet({
+        treeId: tree.id,
+        changeSetId: meta.id,
+        decision: "dismiss",
+        expectedGeneration: tree.generation
+      });
+      if (result.kind === "dismissed") {
+        // The shape's warnings changed without a new generation: every view reads again.
+        this.options.changes.record({
+          treeId: tree.id,
+          generation: tree.generation,
+          topicIds: null,
+          changeSetId: meta.id
+        });
+        return { status: "dismissed" };
+      }
+      if (result.kind === "not_pending") return { status: result.status };
+      throw (
+        (result.kind === "conflict" ? humanConflictError(result) : null) ??
+        new Error(humanErrorKeys.stale)
+      );
+    }
+    const events = await repository.changeSetEvents(meta.id);
+    for (let attempt = 0; attempt < topicServiceLimits.placeAttempts; attempt += 1) {
+      const cache = await this.currentCache(tree.id);
+      if (!cache) throw new Error(humanErrorKeys.notFound);
+      let settled: ReturnType<typeof settleStats>;
+      try {
+        settled = settleStats(cache, events, applyEvents(cache.state, events).touchedTopics);
+      } catch (error) {
+        // The tree moved on since the proposal was made: it no longer applies as it was.
+        this.cache = null;
+        if (error instanceof StructureEventConflictError) {
+          throw new Error(humanErrorKeys.stale, { cause: error });
+        }
+        throw error;
+      }
+      const outcome = await this.commitHuman(cache, [], () =>
+        repository.resolvePendingChangeSet({
+          treeId: tree.id,
+          changeSetId: meta.id,
+          decision: "apply",
+          expectedGeneration: cache.tree.generation,
+          stats: settled.stats,
+          clock: cache.state.clock
+        })
+      );
+      if (outcome.kind === "applied") {
+        await this.afterHumanCommit(cache, outcome, settled.changedTopicIds);
+        return { status: "applied" };
+      }
+      this.cache = null;
+      if (outcome.kind === "not_pending") return { status: outcome.status };
+      if (outcome.kind === "dismissed") return { status: "dismissed" };
+      const refusal = humanConflictError(outcome);
+      if (refusal) throw refusal;
+    }
+    throw new Error(humanErrorKeys.stale);
+  }
+
+  /**
+   * Runs a human commit in one transaction with the view-history pins it carries (D28), so a pin
+   * and its protection are never half done. A refused pin (the history's limit) rolls the change-set
+   * back and throws its message.
+   */
+  private async commitHuman<R extends { kind: string }>(
+    cache: TopicTreeCache,
+    history: readonly HistoryPinEffect[],
+    run: (client: PgClient) => Promise<R>
+  ): Promise<R> {
+    let outcome: R;
+    try {
+      outcome = await withTransaction(this.requirePool(), async (client) => {
+        const result = await run(client);
+        if (result.kind === "applied") await this.writeHistory(client, cache, history);
+        return result;
+      });
+    } catch (error) {
+      // The cache already holds the change; nothing was committed.
+      this.cache = null;
+      throw error;
+    }
+    if (outcome.kind === "applied" && history.length > 0) this.options.onViewHistoryChanged?.();
+    return outcome;
+  }
+
+  private async writeHistory(
+    client: PgClient,
+    cache: TopicTreeCache,
+    effects: readonly HistoryPinEffect[]
+  ): Promise<void> {
+    const history = createViewHistoryRepository(client);
+    for (const effect of effects) {
+      const address = viewHistoryAddress("topic", effect.topicId);
+      const entry = await history.setPinned(address, effect.pinned);
+      if (entry !== null || !effect.pinned) continue;
+      // Pinned before it was ever opened: the entry the pin needs is created, not counted as an open.
+      const title =
+        cache.state.topics.get(effect.topicId)?.title ??
+        this.options.unnamedTopicTitle?.() ??
+        createTranslator("en")("topics.unnamed");
+      await history.record({ kind: "topic", objectId: effect.topicId, title });
+      await history.setPinned(address, true);
+    }
+  }
+
+  /** Keeps the cache and the push in step with a committed human change-set. */
+  private async afterHumanCommit(
+    cache: TopicTreeCache,
+    applied: { changeSetId: string; generation: number; dirtyTopicIds: string[] },
+    changedTopicIds: readonly string[]
+  ): Promise<void> {
+    cache.tree = { ...cache.tree, generation: applied.generation, clock: cache.state.clock };
+    cache.state.generation = applied.generation;
+    this.rememberCounts(cache);
+    this.options.changes.record({
+      treeId: cache.tree.id,
+      generation: applied.generation,
+      topicIds:
+        changedTopicIds.length > topicLimits.changedTopicIdsMax ? null : [...changedTopicIds],
+      changeSetId: applied.changeSetId
+    });
+    if (applied.dirtyTopicIds.length > 0) {
+      // Statistics the change-set could not settle: reload, and let the sweep restore them.
+      this.cache = null;
+      await this.options.triggers.sweep("dirty_stats", { treeId: cache.tree.id });
+    }
+    try {
+      await this.options.onHumanChange?.({
+        treeId: cache.tree.id,
+        changeSetId: applied.changeSetId,
+        generation: applied.generation
+      });
+    } catch (error) {
+      this.options.logger?.warn(
+        `Topic follow-up of change-set ${applied.changeSetId} failed`,
+        error
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Jobs this service asks for
 
   /** The gate of a scope, when a gate executor exists and topic AI is not off (D10, D23). */
@@ -814,4 +1164,30 @@ async function timed(run: () => Promise<JsonObject>): Promise<JsonObject> {
 /** Items a PLACE change-set placed, moved, re-decided in place or took out of the tree. */
 function changedItems(summary: PlaceSummary): number {
   return summary.placed + summary.moved + summary.updated + summary.unplaced;
+}
+
+/**
+ * The error a conflicting human commit becomes, or null when trying again on a fresh cache can
+ * still succeed (another writer moved the generation or held a lock).
+ */
+function humanConflictError(
+  result: Extract<
+    ApplyChangeSetResult | UndoChangeSetResult | ResolvePendingResult,
+    { kind: "conflict" }
+  >
+): Error | null {
+  if (result.reason === "treeRetired") return new Error(humanErrorKeys.notFound);
+  if (result.reason === "notBootstrappable") return new Error(humanErrorKeys.stale);
+  if (result.reason === "generation") return null;
+  switch (result.code) {
+    case "cycle":
+      return new Error(humanErrorKeys.cycle);
+    case "duplicateTitle":
+      return new Error(humanErrorKeys.duplicateTitle);
+    case "itemDeleted":
+      return new Error(humanErrorKeys.notFound);
+    case "busy":
+    case "state":
+      return null;
+  }
 }

@@ -163,7 +163,8 @@ function replaceVector(
   return topics;
 }
 
-function liveTopics(state: TopicTreeState, ids: Iterable<string>): string[] {
+/** Live topics among the given IDs, each once. */
+export function liveTopics(state: TopicTreeState, ids: Iterable<string>): string[] {
   const output = new Set<string>();
   for (const id of ids) {
     const node = state.topics.get(id);
@@ -173,7 +174,7 @@ function liveTopics(state: TopicTreeState, ids: Iterable<string>): string[] {
 }
 
 /** Every live topic on the paths from `ids` to the root. */
-function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
+export function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
   const output = new Set<string>();
   for (const id of liveTopics(state, ids))
     for (const pathId of pathOf(state, id)) output.add(pathId);

@@ -459,6 +459,7 @@ export function NotePage({
           if (editing && isPristineDraft(editing.base, editing.draft)) cancelEdit();
         }}
         onOpenNote={(id) => leave(() => onOpenNote(id))}
+        place={{ active, onPlaced: reload }}
         onOpenPassage={(sourceItemId, passage) => leave(() => onOpenPassage(sourceItemId, passage))}
         onOpenPlacement={opener.open}
         onCardEvent={dispatchCard}

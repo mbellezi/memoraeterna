@@ -1777,6 +1777,12 @@
       "rebalance": "Reorganized topics: {operations} changes, {items} items moved",
       "proposal": "Proposed topic reorganization ({items} items)",
       "naming": "Topic names updated: {topics}",
+      "humanRename": "You renamed a topic.",
+      "humanMove": "You moved a topic.",
+      "humanCreate": "You created a topic.",
+      "humanPin": "You pinned a topic.",
+      "humanUnpin": "You unpinned a topic.",
+      "humanPlace": "You placed a note or source in a topic.",
       "gate": "Checked {items} uncertain placements"
     },
     "navigator": {
@@ -1928,7 +1934,74 @@
       "notFound": "This topic no longer exists.",
       "protected": "This topic is protected, so the change needs your approval.",
       "unavailable": "This action is not available yet.",
-      "canceled": "The topic task was canceled."
+      "canceled": "The topic task was canceled.",
+      "depthCap": "Topics cannot be nested this deep.",
+      "invalid": "That change is not possible here.",
+      "unchanged": "Nothing changed."
+    },
+    "ops": {
+      "cancel": "Cancel",
+      "working": "Working...",
+      "errors": {
+        "failed": "The change could not be made. Try again."
+      },
+      "actions": {
+        "label": "Topic actions",
+        "more": "Topic actions",
+        "rename": "Rename",
+        "create": "New subtopic",
+        "createTop": "New top-level topic",
+        "move": "Move to...",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "place": "Place in topic"
+      },
+      "rename": {
+        "label": "Topic name",
+        "empty": "Give the topic a name.",
+        "tooLong": "A name has at most {count} characters."
+      },
+      "create": {
+        "title": "New subtopic in {parent}",
+        "titleTop": "New top-level topic",
+        "label": "Name",
+        "submit": "Create"
+      },
+      "move": {
+        "title": "Move {title}",
+        "titlePlace": "Place {title} in a topic",
+        "hint": "Choose the topic it goes under.",
+        "hintPlace": "Choose the topic it belongs in. Open a topic to look inside it.",
+        "pathLabel": "Location",
+        "root": "All topics",
+        "up": "Up one level",
+        "filter": "Filter topics",
+        "loading": "Loading topics...",
+        "error": "The topics could not be loaded.",
+        "none": "There are no subtopics here.",
+        "noMatch": "No topic matches.",
+        "open": "Open",
+        "here": "Move here",
+        "placeHere": "Place here",
+        "alsoHere": "Also show here",
+        "alreadyHere": "It is already here.",
+        "chooseTopic": "Open a topic to place it there."
+      },
+      "toast": {
+        "renamed": "Renamed to {title}.",
+        "moved": "Moved {title} under {parent}.",
+        "created": "Created {title} under {parent}.",
+        "pinned": "Pinned {title}. Automation will not change it.",
+        "unpinned": "Unpinned {title}. It stays protected from automatic changes.",
+        "placed": "Placed {title} in {parent}.",
+        "alsoPlaced": "{title} now also shows in {parent}.",
+        "undone": "Change undone.",
+        "undo": "Undo",
+        "undoing": "Undoing...",
+        "dismiss": "Dismiss",
+        "blocked": "It cannot be undone now: a later change depends on it.",
+        "failed": "The change could not be undone. Try again."
+      }
     }
   },
   "wiki": {

@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ChevronsDownUp, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
+import { ChevronsDownUp, FolderPlus, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
 import { formatObjectAddress } from "@app/domain";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 import { Button } from "../ui/button";
+import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
+import { isPinnedRow, topicMenuItems, type NavRowOps } from "./ops/nav-ops";
+import { opsErrorText } from "./ops/topic-ops";
+import { TopicOpsOverlay, useTopicOps } from "./ops/use-topic-ops";
 import { TopicNavTree } from "./TopicNavTree";
 import { activateRow, owningSourceOf, toggleRow, type RowActionDeps } from "./topic-actions";
 import { TopicStatusLine } from "./TopicStatusLine";
@@ -17,7 +21,9 @@ import {
   rootState,
   topicRows,
   unsortedRows,
-  type NavRow
+  type NavRow,
+  type PlaceRow,
+  type TopicRow
 } from "./topic-navigation";
 import { statusLines } from "./topic-status";
 
@@ -26,6 +32,19 @@ const ids = {
   recents: "topic-nav-recents",
   topics: "topic-nav-topics"
 };
+
+/** What the navigator draws for the human operations (T26); absent, it is read-only. */
+export interface NavigatorOps {
+  rows: NavRowOps;
+  /** The last refusal of an operation that has no dialog of its own. */
+  error: MessageKey | null;
+  /** The actions of a topic, open at a point. */
+  menu: ReactNode;
+  /** The notice with Undo and the open dialog. */
+  overlay: ReactNode;
+  /** A new topic at the top level; null while the tree is not read. */
+  onCreateTop: (() => void) | null;
+}
 
 export interface TopicNavigatorViewProps {
   t: Translator;
@@ -43,28 +62,34 @@ export interface TopicNavigatorViewProps {
   onAskReembed: () => void;
   onConfirmReembed: () => void;
   onCancelReembed: () => void;
+  ops?: NavigatorOps | undefined;
 }
 
 function Section({
   id,
   title,
   count,
+  action,
   children
 }: {
   id: string;
   title: string;
   count?: string | undefined;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="mt-3 grid gap-0.5">
-      <h3
-        id={id}
-        className="flex justify-between px-2 pb-1 text-xs font-semibold text-muted-foreground"
-      >
-        <span>{title}</span>
-        {count === undefined ? null : <span className="font-normal tabular-nums">{count}</span>}
-      </h3>
+      <div className="flex items-center gap-1">
+        <h3
+          id={id}
+          className="flex min-w-0 flex-1 justify-between px-2 pb-1 text-xs font-semibold text-muted-foreground"
+        >
+          <span>{title}</span>
+          {count === undefined ? null : <span className="font-normal tabular-nums">{count}</span>}
+        </h3>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -89,7 +114,8 @@ export function TopicNavigatorView({
   onRetryPlaces,
   onAskReembed,
   onConfirmReembed,
-  onCancelReembed
+  onCancelReembed,
+  ops
 }: TopicNavigatorViewProps) {
   const { branches, expanded, places } = snapshot;
   const topics = useMemo(() => topicRows(branches, expanded), [branches, expanded]);
@@ -101,7 +127,7 @@ export function TopicNavigatorView({
   const state = rootState(root);
   const total = root?.data?.parent.items;
   const format = (value: number) => new Intl.NumberFormat(t.locale).format(value);
-  const place = { t, selectedTopicId, onToggle, onActivate };
+  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows };
   return (
     <div className="flex min-h-full flex-col px-1 pb-4">
       <header className="flex h-9 items-center gap-1 pl-2">
@@ -136,6 +162,11 @@ export function TopicNavigatorView({
           {t("topics.navigator.openFailed")}
         </p>
       ) : null}
+      {ops?.error ? (
+        <p role="alert" className="mt-2 px-2 text-xs leading-5 text-danger">
+          {opsErrorText(t, ops.error)}
+        </p>
+      ) : null}
       {places.phase === "error" ? (
         <div className="mt-3 flex items-center gap-2 px-2">
           <p role="alert" className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
@@ -161,6 +192,20 @@ export function TopicNavigatorView({
         id={ids.topics}
         title={t("topics.navigator.topics")}
         count={total === undefined ? undefined : format(total)}
+        action={
+          ops?.onCreateTop ? (
+            <Button
+              variant="ghost"
+              className="size-6 min-h-0 px-0"
+              aria-label={t("topics.ops.actions.createTop")}
+              title={t("topics.ops.actions.createTop")}
+              aria-haspopup="dialog"
+              onClick={ops.onCreateTop}
+            >
+              <FolderPlus aria-hidden="true" />
+            </Button>
+          ) : undefined
+        }
       >
         {state === "loading" ? (
           <p
@@ -209,6 +254,8 @@ export function TopicNavigatorView({
           <TopicNavTree {...place} rows={unsorted} labelledBy="topic-nav-unsorted" />
         </div>
       ) : null}
+      {ops?.menu}
+      {ops?.overlay}
     </div>
   );
 }
@@ -257,10 +304,23 @@ export function TopicNavigator({
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const [openFailed, setOpenFailed] = useState(false);
   const expanding = useRef<string | null>(null);
+  const topicOps = useTopicOps(active);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ row: TopicRow | PlaceRow; anchor: MenuAnchor } | null>(null);
 
   useEffect(() => {
     store.setActive(active);
   }, [store, active]);
+
+  // A hidden navigator keeps no editor and no menu open (adjusted while rendering, not in an effect).
+  const [wasActive, setWasActive] = useState(active);
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (!active) {
+      setRenaming(null);
+      setMenu(null);
+    }
+  }
 
   // Pushed events are kept while the Wiki is hidden and applied when it is shown again.
   useEffect(() => {
@@ -329,12 +389,91 @@ export function TopicNavigator({
     clearOpenFailure: () => setOpenFailed(false)
   };
 
+  const { controller } = topicOps;
+  /** Focus goes back to the row once its editor or menu is gone. */
+  const focusRow = (key: string) =>
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(`[data-nav-key="${CSS.escape(key)}"]`)?.focus()
+    );
+  const stopRename = (key: string) => {
+    controller.clearError();
+    setRenaming(null);
+    focusRow(key);
+  };
+  const rowOps: NavRowOps = {
+    renamingKey: renaming,
+    invalid: renaming !== null && topicOps.snapshot.error !== null,
+    busy: topicOps.snapshot.busy,
+    onStartRename: (row) => {
+      controller.clearError();
+      setMenu(null);
+      setRenaming(row.key);
+    },
+    onCommitRename: (row, title) =>
+      void controller.rename(row.node, title).then((done) => {
+        if (done) stopRename(row.key);
+      }),
+    onCancelRename: () => {
+      if (renaming !== null) stopRename(renaming);
+    },
+    onOpenMenu: (row, anchor) => setMenu({ row, anchor })
+  };
+  const menuNode = menu ? (
+    <FloatingMenu
+      label={t("topics.ops.actions.label")}
+      anchor={menu.anchor}
+      onClose={() => setMenu(null)}
+      items={topicMenuItems(
+        t,
+        menu.row,
+        {
+          rename: () => menu.row.type === "topic" && rowOps.onStartRename(menu.row),
+          create: () =>
+            menu.row.type === "topic" &&
+            topicOps.openDialog({
+              kind: "create",
+              parent: { id: menu.row.node.id, title: menu.row.node.title },
+              top: false
+            }),
+          move: () =>
+            menu.row.type === "topic" &&
+            topicOps.openDialog({ kind: "move", topic: menu.row.node }),
+          togglePin: () => {
+            const row = menu.row;
+            const target =
+              row.type === "topic"
+                ? { id: row.node.id, title: row.node.title }
+                : { id: row.place.id, title: row.place.title };
+            void controller.pin(target, !isPinnedRow(row));
+          }
+        },
+        topicOps.snapshot.busy
+      )}
+    />
+  ) : null;
+  const rootId = snapshot.branches.get(rootBranchKey)?.data?.parent.id ?? null;
+
   return (
     <TopicNavigatorView
       t={t}
       snapshot={snapshot}
       selectedTopicId={selectedTopicId}
       openFailed={openFailed}
+      ops={{
+        rows: rowOps,
+        error: renaming === null ? topicOps.snapshot.error : null,
+        menu: menuNode,
+        overlay: <TopicOpsOverlay t={t} ops={topicOps} />,
+        onCreateTop:
+          rootId === null
+            ? null
+            : () =>
+                topicOps.openDialog({
+                  kind: "create",
+                  parent: { id: rootId, title: null },
+                  top: true
+                })
+      }}
       onAsk={onAsk}
       onCollapseAll={() => store.collapseAll()}
       onToggle={(row) => toggleRow(row, deps)}

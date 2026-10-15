@@ -1,11 +1,11 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { RefreshCw, X } from "lucide-react";
 import type { TopicPage } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { ObjectKindGlyph } from "../glyphs";
 import { Button } from "../ui/button";
-import { TopicHeader } from "./TopicHeader";
+import { TopicHeader, type HeaderOps } from "./TopicHeader";
 import { TopicMap } from "./TopicMap";
 import { TopicOverviewSlot } from "./TopicOverviewSlot";
 import { TopicSideColumn } from "./TopicSideColumn";
@@ -19,6 +19,10 @@ export interface TopicPageViewProps {
   active: boolean;
   headingRef?: RefObject<HTMLHeadingElement | null> | undefined;
   actions: TopicPageActions;
+  /** Renaming, moving, creating and pinning the topic (T26); absent, the page is read-only. */
+  ops?: HeaderOps | undefined;
+  /** The notice with Undo and the open dialog of those operations. */
+  overlay?: ReactNode;
   /** An entry of the page could not be opened. */
   openFailed: boolean;
   /** When the host can close the page (Cmd-W does the same), the strip offers it. */
@@ -96,6 +100,7 @@ export function TopicPageView(props: TopicPageViewProps) {
           <TopicSideColumn t={t} page={load.page} active={props.active} actions={props.actions} />
         </div>
       ) : null}
+      {props.overlay}
     </div>
   );
 }
@@ -115,6 +120,7 @@ function TopicArticle(props: TopicPageViewProps & { page: TopicPage }) {
         undo={snapshot.undo}
         headingRef={props.headingRef}
         actions={props.actions}
+        ops={props.ops}
         onUndo={props.onUndo}
       />
       <TopicOverviewSlot

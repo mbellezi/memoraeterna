@@ -256,14 +256,29 @@ export class TopicStructureJobs {
     if (result.status !== "applied" || typeof result.changeSetId !== "string") return;
     const treeId = typeof job.payload.treeId === "string" ? job.payload.treeId : null;
     if (!treeId) return;
-    const changeSetId = result.changeSetId;
+    await this.afterChangeSet(treeId, result.changeSetId, Number(result.generation));
+  }
+
+  /**
+   * After a human change-set (T26): the topics it touched wait for REBALANCE like those of a PLACE.
+   * Protected topics stay where the person put them; their neighbours may need repair.
+   */
+  public afterHumanChange(treeId: string, changeSetId: string, generation: number): Promise<void> {
+    return this.afterChangeSet(treeId, changeSetId, generation);
+  }
+
+  private async afterChangeSet(
+    treeId: string,
+    changeSetId: string,
+    generation: number
+  ): Promise<void> {
     await this.guard(async () => {
       const events = await createTopicTreeRepository(this.requirePool()).changeSetEvents(
         changeSetId
       );
       this.markDirty(treeId, eventsTopics(events));
       await this.request(topicJobTypes.rebalance, treeId);
-      await this.auditIfDue(treeId, Number(result.generation));
+      await this.auditIfDue(treeId, generation);
     });
   }
 

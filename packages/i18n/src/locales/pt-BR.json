@@ -1780,6 +1780,12 @@
       "rebalance": "Tópicos reorganizados: {operations} alterações, {items} itens movidos",
       "proposal": "Reorganização de tópicos proposta ({items} itens)",
       "naming": "Nomes de tópicos atualizados: {topics}",
+      "humanRename": "Você renomeou um tópico.",
+      "humanMove": "Você moveu um tópico.",
+      "humanCreate": "Você criou um tópico.",
+      "humanPin": "Você fixou um tópico.",
+      "humanUnpin": "Você desafixou um tópico.",
+      "humanPlace": "Você colocou uma nota ou fonte em um tópico.",
       "gate": "{items} posicionamentos incertos verificados"
     },
     "navigator": {
@@ -1931,7 +1937,74 @@
       "notFound": "Este tópico não existe mais.",
       "protected": "Este tópico é protegido, então a mudança precisa da sua aprovação.",
       "unavailable": "Esta ação ainda não está disponível.",
-      "canceled": "A tarefa de tópicos foi cancelada."
+      "canceled": "A tarefa de tópicos foi cancelada.",
+      "depthCap": "Os tópicos não podem ficar tão aninhados.",
+      "invalid": "Essa mudança não é possível aqui.",
+      "unchanged": "Nada mudou."
+    },
+    "ops": {
+      "cancel": "Cancelar",
+      "working": "Aguarde...",
+      "errors": {
+        "failed": "Não foi possível fazer a mudança. Tente novamente."
+      },
+      "actions": {
+        "label": "Ações do tópico",
+        "more": "Ações do tópico",
+        "rename": "Renomear",
+        "create": "Novo subtópico",
+        "createTop": "Novo tópico no nível superior",
+        "move": "Mover para...",
+        "pin": "Fixar",
+        "unpin": "Desafixar",
+        "place": "Colocar em um tópico"
+      },
+      "rename": {
+        "label": "Nome do tópico",
+        "empty": "Dê um nome ao tópico.",
+        "tooLong": "Um nome tem no máximo {count} caracteres."
+      },
+      "create": {
+        "title": "Novo subtópico em {parent}",
+        "titleTop": "Novo tópico no nível superior",
+        "label": "Nome",
+        "submit": "Criar"
+      },
+      "move": {
+        "title": "Mover {title}",
+        "titlePlace": "Colocar {title} em um tópico",
+        "hint": "Escolha o tópico onde ele ficará.",
+        "hintPlace": "Escolha o tópico a que pertence. Abra um tópico para ver o que há dentro.",
+        "pathLabel": "Local",
+        "root": "Todos os tópicos",
+        "up": "Subir um nível",
+        "filter": "Filtrar tópicos",
+        "loading": "Carregando tópicos...",
+        "error": "Não foi possível carregar os tópicos.",
+        "none": "Não há subtópicos aqui.",
+        "noMatch": "Nenhum tópico corresponde.",
+        "open": "Abrir",
+        "here": "Mover para aqui",
+        "placeHere": "Colocar aqui",
+        "alsoHere": "Mostrar também aqui",
+        "alreadyHere": "Já está aqui.",
+        "chooseTopic": "Abra um tópico para colocá-lo ali."
+      },
+      "toast": {
+        "renamed": "Renomeado para {title}.",
+        "moved": "{title} foi movido para dentro de {parent}.",
+        "created": "{title} criado em {parent}.",
+        "pinned": "{title} fixado. A automação não vai alterá-lo.",
+        "unpinned": "{title} desafixado. Continua protegido contra mudanças automáticas.",
+        "placed": "{title} colocado em {parent}.",
+        "alsoPlaced": "{title} agora também aparece em {parent}.",
+        "undone": "Mudança desfeita.",
+        "undo": "Desfazer",
+        "undoing": "Desfazendo...",
+        "dismiss": "Dispensar",
+        "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
+        "failed": "Não foi possível desfazer a mudança. Tente novamente."
+      }
     }
   },
   "wiki": {

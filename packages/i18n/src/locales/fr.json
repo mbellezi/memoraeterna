@@ -1782,6 +1782,12 @@
       "rebalance": "Sujets réorganisés : {operations} modifications, {items} éléments déplacés",
       "proposal": "Réorganisation des sujets proposée ({items} éléments)",
       "naming": "Noms de sujets mis à jour : {topics}",
+      "humanRename": "Vous avez renommé un sujet.",
+      "humanMove": "Vous avez déplacé un sujet.",
+      "humanCreate": "Vous avez créé un sujet.",
+      "humanPin": "Vous avez épinglé un sujet.",
+      "humanUnpin": "Vous avez désépinglé un sujet.",
+      "humanPlace": "Vous avez placé une note ou une source dans un sujet.",
       "gate": "{items} classements incertains vérifiés"
     },
     "navigator": {
@@ -1933,7 +1939,74 @@
       "notFound": "Ce sujet n’existe plus.",
       "protected": "Ce sujet est protégé : la modification demande votre approbation.",
       "unavailable": "Cette action n’est pas encore disponible.",
-      "canceled": "La tâche sur les sujets a été annulée."
+      "canceled": "La tâche sur les sujets a été annulée.",
+      "depthCap": "Les sujets ne peuvent pas être imbriqués aussi profondément.",
+      "invalid": "Cette modification n’est pas possible ici.",
+      "unchanged": "Rien n’a changé."
+    },
+    "ops": {
+      "cancel": "Annuler",
+      "working": "Veuillez patienter...",
+      "errors": {
+        "failed": "La modification n’a pas pu être faite. Réessayez."
+      },
+      "actions": {
+        "label": "Actions du sujet",
+        "more": "Actions du sujet",
+        "rename": "Renommer",
+        "create": "Nouveau sous-sujet",
+        "createTop": "Nouveau sujet de premier niveau",
+        "move": "Déplacer vers...",
+        "pin": "Épingler",
+        "unpin": "Désépingler",
+        "place": "Placer dans un sujet"
+      },
+      "rename": {
+        "label": "Nom du sujet",
+        "empty": "Donnez un nom au sujet.",
+        "tooLong": "Un nom compte au plus {count} caractères."
+      },
+      "create": {
+        "title": "Nouveau sous-sujet dans {parent}",
+        "titleTop": "Nouveau sujet de premier niveau",
+        "label": "Nom",
+        "submit": "Créer"
+      },
+      "move": {
+        "title": "Déplacer {title}",
+        "titlePlace": "Placer {title} dans un sujet",
+        "hint": "Choisissez le sujet sous lequel il va.",
+        "hintPlace": "Choisissez le sujet auquel il appartient. Ouvrez un sujet pour regarder dedans.",
+        "pathLabel": "Emplacement",
+        "root": "Tous les sujets",
+        "up": "Remonter d’un niveau",
+        "filter": "Filtrer les sujets",
+        "loading": "Chargement des sujets...",
+        "error": "Les sujets n’ont pas pu être chargés.",
+        "none": "Il n’y a pas de sous-sujets ici.",
+        "noMatch": "Aucun sujet ne correspond.",
+        "open": "Ouvrir",
+        "here": "Déplacer ici",
+        "placeHere": "Placer ici",
+        "alsoHere": "Afficher aussi ici",
+        "alreadyHere": "C’est déjà ici.",
+        "chooseTopic": "Ouvrez un sujet pour l’y placer."
+      },
+      "toast": {
+        "renamed": "Renommé en {title}.",
+        "moved": "{title} a été déplacé sous {parent}.",
+        "created": "{title} créé sous {parent}.",
+        "pinned": "{title} épinglé. L’automatisation ne le modifiera pas.",
+        "unpinned": "{title} désépinglé. Il reste protégé des modifications automatiques.",
+        "placed": "{title} placé dans {parent}.",
+        "alsoPlaced": "{title} apparaît maintenant aussi dans {parent}.",
+        "undone": "Modification annulée.",
+        "undo": "Annuler",
+        "undoing": "Annulation...",
+        "dismiss": "Fermer",
+        "blocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
+        "failed": "La modification n’a pas pu être annulée. Réessayez."
+      }
     }
   },
   "wiki": {

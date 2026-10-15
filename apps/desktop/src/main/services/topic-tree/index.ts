@@ -14,6 +14,7 @@ import type { LightJobRegistry } from "../job-lanes.js";
 import { startCorpusRunner } from "./corpus-runner.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
 import { TopicAreasService } from "./topic-areas.js";
+import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
 import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
@@ -132,6 +133,16 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(options.wake ? { wake: options.wake } : {})
   });
   const hooks = createTopicChangeHooks(triggers, logger);
+  // A pin writes the view history in the change-set's transaction; the navigator reads it again.
+  const notifyViewHistory = options.ipc
+    ? () => {
+        for (const target of options.ipc!.targets()) {
+          if (!target.isDestroyed()) target.send(ipcChannels.viewHistoryChanged);
+        }
+      }
+    : undefined;
+  // The structure jobs are created below, after the service they run on.
+  let structureJobs: TopicStructureJobs | null = null;
   const budget = new TopicAiBudget({
     store: options.budgetStore ?? settingsAiBudgetStore(getPool),
     cap: () => service!.config().ai.maxBackgroundCallsPerDay,
@@ -145,6 +156,10 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     aiMode,
     budget,
     isRegistered,
+    // T26: a human change-set asks REBALANCE to check the topics it touched.
+    onHumanChange: (change) =>
+      structureJobs?.afterHumanChange(change.treeId, change.changeSetId, change.generation),
+    ...(notifyViewHistory ? { onViewHistoryChanged: notifyViewHistory } : {}),
     ...(options.newTreeConfig ? { newTreeConfig: options.newTreeConfig } : {}),
     ...(options.wake ? { wake: options.wake } : {}),
     ...(logger ? { logger } : {}),
@@ -165,6 +180,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(logger ? { logger } : {}),
     ...(options.now ? { now: options.now } : {})
   });
+  structureJobs = structure;
 
   // The placement gate (T23, D10) on the `model` worker: only the AI service's validated ranker.
   const gate = options.ai
@@ -193,6 +209,10 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
           (await gate?.waitingForDecider(status.counts.needsGate)) ?? false
         );
       },
+      // T26: the human operations of the topic screens.
+      mutate: (input) => topicService.mutate(input),
+      undo: (input) => topicService.undo(input),
+      review: (input) => topicService.review(input),
       ...(options.now ? { now: options.now } : {}),
       ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
     });

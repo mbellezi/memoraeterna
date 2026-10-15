@@ -153,6 +153,8 @@ const changeTitlePrefix = "topics.changeSets.";
 export function bannerOrigin(titleKey: string): BannerOrigin {
   if (!titleKey.startsWith(changeTitlePrefix)) return "other";
   const origin = titleKey.slice(changeTitlePrefix.length);
+  // `humanRename`, `humanMove`, ... are the person's own changes (T26).
+  if (origin.startsWith("human")) return "human";
   return Object.hasOwn(bannerKeys, origin) ? (origin as BannerOrigin) : "other";
 }
 

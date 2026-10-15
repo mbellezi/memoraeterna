@@ -1775,6 +1775,12 @@
       "rebalance": "Argomenti riorganizzati: {operations} modifiche, {items} elementi spostati",
       "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)",
       "naming": "Nomi degli argomenti aggiornati: {topics}",
+      "humanRename": "Hai rinominato un argomento.",
+      "humanMove": "Hai spostato un argomento.",
+      "humanCreate": "Hai creato un argomento.",
+      "humanPin": "Hai fissato un argomento.",
+      "humanUnpin": "Hai rimosso un argomento dai fissati.",
+      "humanPlace": "Hai messo una nota o una fonte in un argomento.",
       "gate": "{items} collocazioni incerte verificate"
     },
     "navigator": {
@@ -1926,7 +1932,74 @@
       "notFound": "Questo argomento non esiste più.",
       "protected": "Questo argomento è protetto, quindi la modifica richiede la tua approvazione.",
       "unavailable": "Questa azione non è ancora disponibile.",
-      "canceled": "L’attività sugli argomenti è stata annullata."
+      "canceled": "L’attività sugli argomenti è stata annullata.",
+      "depthCap": "Gli argomenti non possono essere annidati così in profondità.",
+      "invalid": "Questa modifica non è possibile qui.",
+      "unchanged": "Non è cambiato nulla."
+    },
+    "ops": {
+      "cancel": "Annulla",
+      "working": "Attendi...",
+      "errors": {
+        "failed": "Non è stato possibile fare la modifica. Riprova."
+      },
+      "actions": {
+        "label": "Azioni dell’argomento",
+        "more": "Azioni dell’argomento",
+        "rename": "Rinomina",
+        "create": "Nuovo sottoargomento",
+        "createTop": "Nuovo argomento di primo livello",
+        "move": "Sposta in...",
+        "pin": "Fissa",
+        "unpin": "Rimuovi dai fissati",
+        "place": "Metti in un argomento"
+      },
+      "rename": {
+        "label": "Nome dell’argomento",
+        "empty": "Dai un nome all’argomento.",
+        "tooLong": "Un nome ha al massimo {count} caratteri."
+      },
+      "create": {
+        "title": "Nuovo sottoargomento in {parent}",
+        "titleTop": "Nuovo argomento di primo livello",
+        "label": "Nome",
+        "submit": "Crea"
+      },
+      "move": {
+        "title": "Sposta {title}",
+        "titlePlace": "Metti {title} in un argomento",
+        "hint": "Scegli l’argomento sotto cui va.",
+        "hintPlace": "Scegli l’argomento a cui appartiene. Apri un argomento per guardarci dentro.",
+        "pathLabel": "Posizione",
+        "root": "Tutti gli argomenti",
+        "up": "Su di un livello",
+        "filter": "Filtra gli argomenti",
+        "loading": "Caricamento degli argomenti...",
+        "error": "Non è stato possibile caricare gli argomenti.",
+        "none": "Qui non ci sono sottoargomenti.",
+        "noMatch": "Nessun argomento corrisponde.",
+        "open": "Apri",
+        "here": "Sposta qui",
+        "placeHere": "Metti qui",
+        "alsoHere": "Mostra anche qui",
+        "alreadyHere": "È già qui.",
+        "chooseTopic": "Apri un argomento per metterlo lì."
+      },
+      "toast": {
+        "renamed": "Rinominato in {title}.",
+        "moved": "{title} spostato in {parent}.",
+        "created": "{title} creato in {parent}.",
+        "pinned": "{title} fissato. L’automazione non lo cambierà.",
+        "unpinned": "{title} rimosso dai fissati. Resta protetto dalle modifiche automatiche.",
+        "placed": "{title} messo in {parent}.",
+        "alsoPlaced": "{title} ora compare anche in {parent}.",
+        "undone": "Modifica annullata.",
+        "undo": "Annulla",
+        "undoing": "Annullamento...",
+        "dismiss": "Chiudi",
+        "blocked": "Non si può annullare ora: una modifica successiva ne dipende.",
+        "failed": "Non è stato possibile annullare la modifica. Riprova."
+      }
     }
   },
   "wiki": {

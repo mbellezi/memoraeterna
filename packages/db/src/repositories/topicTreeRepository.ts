@@ -279,6 +279,20 @@ export interface TopicStructureBuild {
   createdAt: Date;
 }
 
+/** The stamp of a topic: its last update and whether it is retired (`topicStamps`). */
+export interface TopicStamp {
+  updatedAt: Date;
+  retired: boolean;
+}
+
+/** The identity of a stored change-set, as the undo and review handlers need it. */
+export interface StoredTopicChangeSet {
+  id: string;
+  origin: TopicChangeSetOrigin;
+  status: TopicChangeSetStatus;
+  titleKey: string;
+}
+
 /** A proposal that waits for the owner or that the owner dismissed (D29). */
 export interface TopicProposal {
   changeSetId: string;
@@ -1883,6 +1897,43 @@ export function createTopicTreeRepository(pool: PgPool) {
       };
       for (const row of result.rows) counts[row.status] = row.count;
       return counts;
+    },
+
+    /**
+     * The optimistic-concurrency stamps of topics (`topics.updated_at`, to the millisecond a read
+     * reports): a human rename or move names the stamp it was made from (T26). Unknown topics are
+     * left out of the answer.
+     */
+    async topicStamps(
+      treeId: string,
+      topicIds: readonly string[],
+      db: Queryable = pool
+    ): Promise<Map<string, TopicStamp>> {
+      const result = await db.query<{ id: string; updatedAt: Date | string; retired: boolean }>(
+        `select id, updated_at as "updatedAt", retired_at is not null as retired
+           from topics where tree_id = $1 and id = any($2::uuid[])`,
+        [treeId, [...topicIds]]
+      );
+      return new Map(
+        result.rows.map((row) => [
+          row.id,
+          { updatedAt: new Date(row.updatedAt), retired: row.retired }
+        ])
+      );
+    },
+
+    /** What the undo and review handlers need to know of one change-set; null when it is not in the tree. */
+    async changeSetMeta(
+      treeId: string,
+      changeSetId: string,
+      db: Queryable = pool
+    ): Promise<StoredTopicChangeSet | null> {
+      const result = await db.query<StoredTopicChangeSet>(
+        `select id, origin, status, title_key as "titleKey" from topic_change_sets
+          where id = $1 and tree_id = $2`,
+        [changeSetId, treeId]
+      );
+      return result.rows[0] ?? null;
     },
 
     /**

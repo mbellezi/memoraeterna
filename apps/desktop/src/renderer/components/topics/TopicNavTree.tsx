@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Translator } from "@app/i18n";
 import { TopicNavRow } from "./TopicNavRow";
+import { actionRowOf, type NavRowOps } from "./ops/nav-ops";
 import { useRowWindow } from "./row-window";
 import {
   navRowHeight,
@@ -28,6 +29,8 @@ export interface NavTreeProps {
   onToggle: (row: NavRow) => void;
   /** Opening what a row stands for (Enter, Space, a click). */
   onActivate: (row: NavRow) => void;
+  /** Renaming in place and the actions of a topic (T26); absent, the tree is read-only. */
+  ops?: NavRowOps | undefined;
 }
 
 const isSelected = (row: NavRow, selectedTopicId: string | null) =>
@@ -48,7 +51,8 @@ export function TopicNavTree({
   selectedTopicId,
   scrollTo = null,
   onToggle,
-  onActivate
+  onActivate,
+  ops
 }: NavTreeProps) {
   const [remembered, setRemembered] = useState<string | null>(null);
   const stop = rovingKey(rows, remembered);
@@ -90,6 +94,21 @@ export function TopicNavTree({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, row: NavRow) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // F2 renames the topic in place; the menu key and Shift-F10 open its actions at the row.
+    const actionRow = ops ? actionRowOf(row) : null;
+    if (ops && actionRow) {
+      if (event.key === "F2" && actionRow.type === "topic") {
+        event.preventDefault();
+        ops.onStartRename(actionRow);
+        return;
+      }
+      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+        event.preventDefault();
+        const box = event.currentTarget.getBoundingClientRect();
+        ops.onOpenMenu(actionRow, { x: box.left + 24, y: box.bottom });
+        return;
+      }
+    }
     const index = rows.indexOf(row);
     const action = navigationAction(rows, index, event.key);
     if (action.type === "none") return;
@@ -124,6 +143,7 @@ export function TopicNavTree({
                 ? { position: "absolute", insetInline: 0, top: index * navRowHeight }
                 : undefined
             }
+            ops={ops}
             onToggle={onToggle}
             onActivate={onActivate}
             onFocusRow={setRemembered}
