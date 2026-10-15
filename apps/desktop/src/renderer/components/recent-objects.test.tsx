@@ -68,9 +68,10 @@ describe("the Recents list", () => {
         {...handlers}
       />
     );
-    // Server rendering attaches no refs; the address is never written into the page.
-    expect(html).not.toContain("memora://");
+    // Server rendering attaches no refs; both entries still render (their addresses only appear in
+    // the data attributes the focus finder uses).
     expect(html).toContain("Memory and attention");
+    expect(html).toContain("Other");
   });
 
   it("shows a loading state", () => {

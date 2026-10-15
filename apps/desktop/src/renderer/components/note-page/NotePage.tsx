@@ -1,12 +1,11 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from "react";
-import { notePageLimits, type NotePage as NotePageData } from "@app/domain";
+import { formatObjectAddress, notePageLimits, type NotePage as NotePageData } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import type { PassageAnchor } from "../../lib/object-navigation";
 import { recordView, viewsToRecord, type OpenedObject } from "../../lib/view-history";
-import { formatObjectAddress } from "../../../shared/view-history";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import type { NoteEditing } from "./NoteHeader";
 import { NotePageView, type NotePageLoad } from "./NotePageView";
@@ -61,7 +60,7 @@ export function notePageOpenedObject(page: NotePageData): OpenedObject {
     kind: "note",
     id: page.note.id,
     title: page.note.title,
-    parentAddress: formatObjectAddress("source", page.note.homeSourceId)
+    parentAddress: formatObjectAddress({ kind: "source", id: page.note.homeSourceId })
   };
 }
 
