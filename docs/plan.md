@@ -434,26 +434,26 @@ Wave 0:
 - [x] T00b Early legacy wipe recorded (owner, 2026-10-15): D37-D40, Q13, gate W and these task boxes.
 
 Wave 1:
-- [ ] T01 MLX helper `embed` and `score` protocol in one shared helper process, with memory limits.
-- [ ] T02 Job lanes (migration 0051): `jobs.lane` and `jobs.dedupe_key`, one heavy loop and two light workers
+- [x] T01 MLX helper `embed` and `score` protocol in one shared helper process, with memory limits.
+- [x] T02 Job lanes (migration 0051): `jobs.lane` and `jobs.dedupe_key`, one heavy loop and two light workers
       (`compute`, `model`), with the Background jobs section of `rules/architecture.md` in the same change.
-- [ ] T03 Pure engine core in `packages/domain/src/topic-tree/` (complete config, state and event vocabulary;
+- [x] T03 Pure engine core in `packages/domain/src/topic-tree/` (complete config, state and event vocabulary;
       exact stats, invariants, k-means, kNN, Louvain build, metrics) with property tests.
-- [ ] T04 Legacy wiki state is never created on a library without legacy content (D3).
-- [ ] T05 Restore-verified backups with snapshot-consistent counts.
+- [x] T04 Legacy wiki state is never created on a library without legacy content (D3).
+- [x] T05 Restore-verified backups with snapshot-consistent counts.
 
 Wave 1b (the legacy wipe; gate W at the end):
-- [ ] T10 Ask answers from notes and chunks only, without the legacy wiki or organization domains; its save
+- [x] T10 Ask answers from notes and chunks only, without the legacy wiki or organization domains; its save
       and investigation writes are fenced (D13).
-- [ ] T35b Legacy automation unwired (startup and reset defaults, ticks, legacy job executors, the golden
+- [x] T35b Legacy automation unwired (startup and reset defaults, ticks, legacy job executors, the golden
       pause) and its IPC writers fenced (D3).
-- [ ] T35a Legacy detach (migration 0052): impact triggers dropped (D5), the legacy insert fence (D40),
+- [x] T35a Legacy detach (migration 0052): impact triggers dropped (D5), the legacy insert fence (D40),
       `organizeKnowledge` leaves ingestion (D14).
-- [ ] T36w Verified, recount-guarded legacy wipe service and its one-shot DEV knob (D4), with
+- [x] T36w Verified, recount-guarded legacy wipe service and its one-shot DEV knob (D4), with
       `rules/data.md`.
-- [ ] T21w Wiki empty state hosting Ask; the Automation and Organization entry points hidden (D38).
-- [ ] T34a Old wiki projection files retired through the managed recovery flow.
-- [ ] T37w Wipe rehearsal on a clone of the DEV profile, then the DEV wipe (D37): verified `pg_dump` backup
+- [x] T21w Wiki empty state hosting Ask; the Automation and Organization entry points hidden (D38).
+- [x] T34a Old wiki projection files retired through the managed recovery flow.
+- [x] T37w Wipe rehearsal on a clone of the DEV profile, then the DEV wipe (D37): verified `pg_dump` backup
       and a cold copy of the database, then the wipe of the wiki, organization, curator and maintenance data
       (decision 4).
 

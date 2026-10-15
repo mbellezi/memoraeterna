@@ -44,8 +44,9 @@ dated measurements, not rules.
   22-24/28, and the evidence for the other F1a exit criteria.
 - [kpi-f1b.md](kpi-f1b.md) — F1b measurements: decide-only matching v9 on the golden library and the
   fixture, locate and Note page latency.
-- [f2-decisions.md](f2-decisions.md) — the binding F2 decisions (D1-D36), owner-question defaults, gates and
+- [f2-decisions.md](f2-decisions.md) — the binding F2 decisions (D1-D40), owner-question defaults, gates and
   measurement datasets for the Topic Tree Engine.
+- [kpi-f2.md](kpi-f2.md) — F2 measurements, starting with gate W (the legacy wiki wipe).
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only
   AI cassettes (record/replay) and the golden runner.
 
