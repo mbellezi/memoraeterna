@@ -133,7 +133,7 @@ export function ReviewQueueView({ t }: { t: Translator }) {
             </div>
           ) : (
             <>
-              <p className="text-sm font-medium">{note.ideaStatement}</p>
+              <p className="font-reading text-sm font-medium">{note.ideaStatement}</p>
               <p className="whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
                 {note.bodyMarkdown}
               </p>

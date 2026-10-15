@@ -1,0 +1,242 @@
+/*
+ * Design tokens for the "quiet academic instrument" visual language.
+ *
+ * This file is the only place colour values are defined. It is plain CSS (no Tailwind) so the
+ * graph, canvases and mockups can read the same variables. `styles.css` maps them onto the
+ * Tailwind theme.
+ *
+ * Themes
+ *   :root                                  light theme, and the base for every token
+ *   .dark                                  explicit dark theme (set by the theme setting)
+ *   prefers-color-scheme: dark             "System": dark when the OS is dark and the user has not
+ *                                          chosen a theme (no .light or .dark on the root)
+ *   An explicit .light or .dark always wins over the OS preference.
+ *
+ * Contrast (WCAG 2.x AA), enforced by `npm run contrast` (scripts/contrast) in both themes
+ *   --text-*, --accent*, --state-*       4.5:1 on every --surface-* (and on --state-*-soft)
+ *   --text-on-solid                      4.5:1 on --accent, --accent-hover and the solid states
+ *   --object-*, --stance-*, --border-strong   3:1 on every --surface-* (glyphs and boundaries)
+ *   --graph-*                            labels 4.5:1 and glyphs 3:1 on the graph canvas
+ * Colour is never the only signal: pair --object-* and --stance-* with a glyph or a label.
+ * Every colour is an opaque hex literal so the check can read it.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces: paper in light, graphite in dark. */
+  --surface-canvas: #f5f7f9;
+  --surface-raised: #ffffff;
+  --surface-soft: #eef2f6;
+  --surface-hover: #e8edf3;
+  --surface-selected: #e1f1f4;
+
+  /* Text. Tertiary is the quietest text that still meets 4.5:1 (placeholders, hints). */
+  --text-primary: #263140;
+  --text-secondary: #4a5668;
+  --text-tertiary: #5a6577;
+  --text-on-solid: #ffffff;
+
+  /* Borders. Subtle separators are decorative; strong borders bound controls (3:1). */
+  --border-subtle: #e3e8ee;
+  --border-strong: #78859a;
+
+  /* Accent: links, focus ring, selection and solid fills. */
+  --accent: #07707f;
+  --accent-hover: #055b68;
+
+  /* Object types: source, note, topic, question, entity. */
+  --object-source: #2f5fb3;
+  --object-note: #527017;
+  --object-topic: #7a6200;
+  --object-question: #7048b8;
+  --object-entity: #b03a79;
+
+  /* Relation stances. depends_on and example_of use kebab-case in CSS. */
+  --stance-supports: #1a7345;
+  --stance-contradicts: #b3261e;
+  --stance-extends: #2a5f9e;
+  --stance-depends-on: #9a4a00;
+  --stance-example-of: #7048b8;
+  --stance-related: #5a6577;
+
+  /* State: text, glyphs and solid fills; the -soft tints are the matching backgrounds. */
+  --state-info: #2a5f9e;
+  --state-info-soft: #e6eef8;
+  --state-success: #1a7345;
+  --state-success-soft: #e3f2e9;
+  --state-warning: #8a4b00;
+  --state-warning-soft: #f8eddb;
+  --state-danger: #b3261e;
+  --state-danger-soft: #fbe6e4;
+
+  /*
+   * Graph canvas. The graph is dark in both themes, so its colours do not change with the theme:
+   * read them with getComputedStyle on the graph container. --graph-object-* and --graph-stance-*
+   * mirror the dark theme's --object-* and --stance-* (the contrast check enforces it).
+   */
+  --graph-canvas-center: #202b39;
+  --graph-canvas-edge: #10151d;
+  --graph-label: #cbd5e1;
+  --graph-label-muted: #94a3b8;
+  --graph-object-source: #8bb4f2;
+  --graph-object-note: #a5c862;
+  --graph-object-topic: #e2b25e;
+  --graph-object-question: #b9a3f0;
+  --graph-object-entity: #ee93bd;
+  --graph-stance-supports: #5fd08f;
+  --graph-stance-contradicts: #f58b84;
+  --graph-stance-extends: #7db4ee;
+  --graph-stance-depends-on: #f0a35a;
+  --graph-stance-example-of: #b9a3f0;
+  --graph-stance-related: #9daabd;
+
+  /* Typography: Inter for the interface, Source Serif 4 for reading, both bundled offline. */
+  --font-family-ui:
+    "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-family-reading:
+    "Source Serif 4 Variable", "Source Serif 4", Georgia, "Times New Roman", serif;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 550;
+  --weight-bold: 650;
+
+  /* Type scale: fixed sizes with their line-height ratios. Never use arbitrary sizes. */
+  --type-caption: 0.75rem;
+  --type-caption-leading: 1.5;
+  --type-small: 0.8125rem;
+  --type-small-leading: 1.5;
+  --type-body: 0.875rem;
+  --type-body-leading: 1.5;
+  --type-lead: 1.0625rem;
+  --type-lead-leading: 1.4;
+  --type-title: 1.25rem;
+  --type-title-leading: 1.35;
+  --type-display: 1.5rem;
+  --type-display-leading: 1.3;
+  --type-reading: 1rem;
+  --type-reading-leading: 1.75;
+
+  /* Spacing: a 4 px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radii. */
+  --radius-1: 0.25rem;
+  --radius-2: 0.375rem;
+  --radius-3: 0.5rem;
+  --radius-4: 0.75rem;
+  --radius-5: 1rem;
+
+  /* Motion: short and functional. Durations drop to zero for prefers-reduced-motion. */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 240ms;
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface-canvas: #10151d;
+  --surface-raised: #171e28;
+  --surface-soft: #202b39;
+  --surface-hover: #283548;
+  --surface-selected: #19333d;
+
+  --text-primary: #e4eaf2;
+  --text-secondary: #b6c3d3;
+  --text-tertiary: #9daabd;
+  --text-on-solid: #0e2530;
+
+  --border-subtle: #2a3544;
+  --border-strong: #6b7a8f;
+
+  --accent: #65d6e8;
+  --accent-hover: #8be3f1;
+
+  --object-source: #8bb4f2;
+  --object-note: #a5c862;
+  --object-topic: #e2b25e;
+  --object-question: #b9a3f0;
+  --object-entity: #ee93bd;
+
+  --stance-supports: #5fd08f;
+  --stance-contradicts: #f58b84;
+  --stance-extends: #7db4ee;
+  --stance-depends-on: #f0a35a;
+  --stance-example-of: #b9a3f0;
+  --stance-related: #9daabd;
+
+  --state-info: #7db4ee;
+  --state-info-soft: #172a40;
+  --state-success: #5fd08f;
+  --state-success-soft: #14301f;
+  --state-warning: #e8b05a;
+  --state-warning-soft: #382b10;
+  --state-danger: #f58b84;
+  --state-danger-soft: #3b1f1e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --surface-canvas: #10151d;
+    --surface-raised: #171e28;
+    --surface-soft: #202b39;
+    --surface-hover: #283548;
+    --surface-selected: #19333d;
+
+    --text-primary: #e4eaf2;
+    --text-secondary: #b6c3d3;
+    --text-tertiary: #9daabd;
+    --text-on-solid: #0e2530;
+
+    --border-subtle: #2a3544;
+    --border-strong: #6b7a8f;
+
+    --accent: #65d6e8;
+    --accent-hover: #8be3f1;
+
+    --object-source: #8bb4f2;
+    --object-note: #a5c862;
+    --object-topic: #e2b25e;
+    --object-question: #b9a3f0;
+    --object-entity: #ee93bd;
+
+    --stance-supports: #5fd08f;
+    --stance-contradicts: #f58b84;
+    --stance-extends: #7db4ee;
+    --stance-depends-on: #f0a35a;
+    --stance-example-of: #b9a3f0;
+    --stance-related: #9daabd;
+
+    --state-info: #7db4ee;
+    --state-info-soft: #172a40;
+    --state-success: #5fd08f;
+    --state-success-soft: #14301f;
+    --state-warning: #e8b05a;
+    --state-warning-soft: #382b10;
+    --state-danger: #f58b84;
+    --state-danger-soft: #3b1f1e;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+}

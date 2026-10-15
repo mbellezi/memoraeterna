@@ -19,14 +19,19 @@ accessibility, visualizations or user-visible backend messages.
 
 ## Visual language
 
-- Use semantic design tokens only. New code adds no raw palette classes and no
-  arbitrary font sizes; the quality ratchet only lets existing ones decrease.
+- Use semantic design tokens only: `tokens.css` is the one source of colour, type,
+  spacing, radius and motion values. New code adds no raw palette classes, hex
+  colours or arbitrary font sizes (the quality ratchet only lets them decrease).
 - Colour carries meaning (object type, relation stance, state) and is never the
   only signal: pair it with a glyph, icon or label.
 - Text meets WCAG AA contrast (4.5:1, glyphs and large text 3:1) in light and
-  dark themes. The graph and canvases read colours from tokens.
-- Fonts are bundled for offline use; no remote font or stylesheet is used.
-- Motion is short and functional and respects `prefers-reduced-motion`.
+  dark themes; `npm run contrast` (part of `npm run check`) enforces it for
+  every token pair. The graph and canvases read colours from tokens.
+- Inter (interface) and Source Serif 4 (reading surfaces) are bundled offline; no
+  remote font or stylesheet is used. Motion is short and functional; durations
+  are tokens, zero under `prefers-reduced-motion`.
+- Check UI in the DEV app at the normal opening window size (never full screen),
+  at the minimum supported window size, and in both themes.
 
 ## Accessibility
 
@@ -76,8 +81,3 @@ accessibility, visualizations or user-visible backend messages.
 - Renderers, workers, listeners and animation frames are disposed when a view
   unmounts; teardown is idempotent. They are rebuilt only when their data or
   mode changes, never because a parent passed a new callback.
-
-## Visual checks
-
-- Check UI in the DEV app at the normal opening window size (never full screen),
-  at the minimum supported window size, and in both themes.

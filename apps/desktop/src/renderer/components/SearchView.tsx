@@ -297,7 +297,7 @@ export function SearchResultCard({
                   : result.sourceTitle}
           </h2>
           {isNote ? (
-            <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <p className="mt-0.5 font-reading text-sm font-medium text-slate-700 dark:text-slate-300">
               {result.ideaStatement}
             </p>
           ) : null}

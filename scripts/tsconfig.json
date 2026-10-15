@@ -9,6 +9,7 @@
   },
   "include": [
     "./*.ts",
+    "./contrast/**/*.ts",
     "./db/**/*.ts",
     "./fixtures/**/*.ts",
     "./kpi/**/*.ts",

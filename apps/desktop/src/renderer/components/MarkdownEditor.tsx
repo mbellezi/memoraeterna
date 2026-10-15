@@ -272,7 +272,7 @@ export function MarkdownPreview({
   const blocks = parseBlocks(markdown);
   if (blocks.length === 0) return <p className="text-sm italic text-slate-400">{emptyLabel}</p>;
   return (
-    <div className="grid gap-4 text-[15px] leading-7 text-slate-700 dark:text-slate-200">
+    <div className="grid gap-4 font-reading text-reading text-slate-700 dark:text-slate-200">
       {blocks.map((block, index) => renderBlock(block, index, reference))}
     </div>
   );

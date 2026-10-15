@@ -1690,7 +1690,7 @@ function SourceDetailView({
                       <p className="mb-1 text-xs text-slate-500">
                         {t("library.chunk", { values: { index: chunk.chunkIndex + 1 } })}
                       </p>
-                      <p className="whitespace-pre-wrap">{chunk.content}</p>
+                      <p className="whitespace-pre-wrap font-reading">{chunk.content}</p>
                     </li>
                   ))}
                 </ol>
@@ -2104,7 +2104,7 @@ export function AtomicNoteCard({
       >
         <span className="min-w-0">
           <span className="block font-semibold">{note.title}</span>
-          <span className="mt-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+          <span className="mt-1 block font-reading text-sm font-medium text-slate-700 dark:text-slate-300">
             {note.ideaStatement}
           </span>
         </span>

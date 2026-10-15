@@ -44,6 +44,7 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { useStableCallback } from "./lib/stable-callback";
+import { useResolvedTheme } from "./lib/theme";
 import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
@@ -206,7 +207,7 @@ export function App({
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
-  const isDarkMode = appSettings.themeMode === "dark";
+  const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   const preserveKnowledgeGraphViewState = useCallback(
     (mode: KnowledgeGraphDashboardMode, state: KnowledgeGraphViewState) => {
       knowledgeGraphViewStates.current[mode] = state;
@@ -237,11 +238,6 @@ export function App({
   }
 
   activeViewRef.current = activeView;
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDarkMode);
-    document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
-  }, [isDarkMode]);
 
   useEffect(
     () =>
@@ -459,7 +455,7 @@ export function App({
   }
 
   function toggleThemeMode() {
-    updateAppSettings({ themeMode: appSettings.themeMode === "dark" ? "light" : "dark" });
+    updateAppSettings({ themeMode: isDarkMode ? "light" : "dark" });
   }
 
   function selectSettingsScope(scope: SettingsScope) {
