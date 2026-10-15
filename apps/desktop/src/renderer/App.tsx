@@ -1,5 +1,14 @@
 import { KnowledgeAutomationView } from "./components/KnowledgeAutomationView";
-import { subscribeWindowNavigation } from "./lib/window-navigation";
+import { dispatchWindowNavigation, subscribeWindowNavigation } from "./lib/window-navigation";
+import {
+  closePanelPriority,
+  closeTopDialog,
+  dispatchClosePanel,
+  openDialogs,
+  subscribeClosePanel
+} from "./lib/close-panel";
+import { applyMenuCommand } from "./lib/menu-commands";
+import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -56,17 +65,7 @@ import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog"
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
-type ViewId =
-  | "automation"
-  | "wiki"
-  | "library"
-  | "import"
-  | "search"
-  | "review"
-  | "jobs"
-  | "knowledgeGraph"
-  | "debug"
-  | "settings";
+type ViewId = AppViewId;
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
@@ -489,6 +488,50 @@ export function App({
     }
   }
 
+  // These stay below the functions they use: a closure that reaches a function declared later stops
+  // the React Compiler lint from checking this component.
+  // The navigation rail and the application menu open a view the same way.
+  const goToView = useStableCallback((view: ViewId) => {
+    wikiPromptReturn.current = false;
+    if (view === "settings") selectSettingsScope("overview");
+    setActiveView(view);
+  });
+
+  const handleMenuCommand = useStableCallback((command: AppMenuCommand) =>
+    applyMenuCommand(command, {
+      closePanel: () => void dispatchClosePanel(),
+      goTo: goToView,
+      toggleNavigation: () =>
+        updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed }),
+      toggleTheme: toggleThemeMode
+    })
+  );
+
+  useEffect(() => window.app.menu.subscribeCommand(handleMenuCommand), [handleMenuCommand]);
+
+  // Cmd-W: a dialog closes first; the Wiki closes its page the way Back does. The Library and the
+  // panels inside views register their own listeners. With nothing open, nothing happens.
+  useEffect(() => {
+    const removeDialogs = subscribeClosePanel(
+      () => closeTopDialog(openDialogs()),
+      closePanelPriority.dialog
+    );
+    const removeWiki = subscribeClosePanel(() => {
+      if (activeViewRef.current !== "wiki") return false;
+      dispatchWindowNavigation("back");
+      return true;
+    }, closePanelPriority.panel);
+    return () => {
+      removeDialogs();
+      removeWiki();
+    };
+  }, []);
+
+  // The application menu follows the language the interface shows.
+  useEffect(() => {
+    void window.app.menu.setLanguage(appSettings.language).catch(() => undefined);
+  }, [appSettings.language]);
+
   async function waitForDatabaseReady(): Promise<DatabaseStatus> {
     const startedAt = Date.now();
     await delay(100);
@@ -667,11 +710,7 @@ export function App({
                       ? "bg-accent-soft text-accent"
                       : "text-muted-foreground hover:bg-soft hover:text-foreground"
                   )}
-                  onClick={() => {
-                    wikiPromptReturn.current = false;
-                    if (item.id === "settings") selectSettingsScope("overview");
-                    setActiveView(item.id);
-                  }}
+                  onClick={() => goToView(item.id)}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {!appSettings.navigationCollapsed && t(item.label)}
@@ -731,6 +770,7 @@ export function App({
               externalTarget={libraryTarget}
               onNavigate={scrollActiveViewToTop}
               onTargetConsumed={consumeLibraryTarget}
+              onOpenRecent={(target) => openLibrarySource({ ...target, origin: "recents" })}
               onExitToWiki={() => {
                 setLibraryTarget(null);
                 setActiveView("wiki");

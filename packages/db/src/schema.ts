@@ -953,6 +953,45 @@ export const storageSettings = pgTable("storage_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+// Local, non-telemetry record of the objects the user opened: one row per object address
+// (`memora://<kind>/<id>`), with a title snapshot, the last open time, an open count and a pin.
+// It holds no foreign keys: an object that no longer exists is simply left out of reads.
+export const viewHistory = pgTable(
+  "view_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    objectId: uuid("object_id").notNull(),
+    address: text("address").notNull(),
+    title: text("title").notNull(),
+    // The object that hosted this open (a note opened inside its source), to open it again.
+    parentAddress: text("parent_address"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    openCount: integer("open_count").notNull().default(1),
+    pinned: boolean("pinned").notNull().default(false),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true })
+  },
+  (table) => ({
+    addressUidx: uniqueIndex("view_history_address_uidx").on(table.address),
+    orderIdx: index("view_history_order_idx").on(table.pinned, table.openedAt),
+    kindCheck: check(
+      "view_history_kind",
+      sql`${table.kind} in ('source','note','topic','question','entity')`
+    ),
+    addressCheck: check(
+      "view_history_address",
+      sql`${table.address} = 'memora://' || ${table.kind} || '/' || ${table.objectId}::text`
+    ),
+    titleCheck: check("view_history_title", sql`char_length(${table.title}) between 1 and 300`),
+    countCheck: check("view_history_open_count", sql`${table.openCount} >= 1`),
+    pinCheck: check("view_history_pin", sql`(${table.pinned}) = (${table.pinnedAt} is not null)`),
+    parentCheck: check(
+      "view_history_parent",
+      sql`${table.parentAddress} is null or ${table.parentAddress} like 'memora://%/%'`
+    )
+  })
+);
+
 export const integrationClients = pgTable(
   "integration_clients",
   {

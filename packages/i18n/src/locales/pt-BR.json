@@ -389,6 +389,58 @@
     "tray": {
       "open": "Abrir Memora Eterna",
       "quit": "Fechar Memora Eterna"
+    },
+    "menu": {
+      "about": "Sobre o {app}",
+      "settings": "Configurações…",
+      "services": "Serviços",
+      "hide": "Ocultar o {app}",
+      "hideOthers": "Ocultar Outros",
+      "showAll": "Mostrar Tudo",
+      "file": "Arquivo",
+      "closePanel": "Fechar Painel",
+      "edit": "Editar",
+      "undo": "Desfazer",
+      "redo": "Refazer",
+      "cut": "Recortar",
+      "copy": "Copiar",
+      "paste": "Colar",
+      "selectAll": "Selecionar Tudo",
+      "view": "Visualizar",
+      "toggleNavigation": "Mostrar ou Ocultar a Navegação Principal",
+      "fullScreen": "Alternar Tela Cheia",
+      "reload": "Recarregar",
+      "forceReload": "Forçar Recarregamento",
+      "developerTools": "Alternar Ferramentas do Desenvolvedor",
+      "go": "Ir",
+      "back": "Voltar",
+      "forward": "Avançar",
+      "window": "Janela",
+      "minimize": "Minimizar",
+      "zoom": "Zoom",
+      "bringAllToFront": "Trazer Tudo para a Frente",
+      "help": "Ajuda"
+    }
+  },
+  "viewHistory": {
+    "title": "Recentes",
+    "loading": "Carregando itens recentes...",
+    "empty": "Nada aberto ainda. As fontes e notas que você abrir aparecem aqui.",
+    "error": "Não foi possível carregar os itens recentes.",
+    "open": "Abrir {title}",
+    "pin": "Fixar {title}",
+    "unpin": "Desafixar {title}",
+    "pinned": "Fixado",
+    "changeFailed": "Não foi possível salvar a alteração.",
+    "clear": "Limpar recentes",
+    "clearQuestion": "Limpar os itens recentes? Os itens fixados permanecem.",
+    "clearConfirm": "Limpar",
+    "kind": {
+      "source": "Fonte",
+      "note": "Nota",
+      "topic": "Tópico",
+      "question": "Pergunta",
+      "entity": "Entidade"
     }
   },
   "shell": {

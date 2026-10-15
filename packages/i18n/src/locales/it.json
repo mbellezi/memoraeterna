@@ -389,6 +389,58 @@
     "tray": {
       "open": "Apri Memora Eterna",
       "quit": "Chiudi Memora Eterna"
+    },
+    "menu": {
+      "about": "Informazioni su {app}",
+      "settings": "Impostazioni…",
+      "services": "Servizi",
+      "hide": "Nascondi {app}",
+      "hideOthers": "Nascondi altre",
+      "showAll": "Mostra tutte",
+      "file": "File",
+      "closePanel": "Chiudi pannello",
+      "edit": "Modifica",
+      "undo": "Annulla",
+      "redo": "Ripeti",
+      "cut": "Taglia",
+      "copy": "Copia",
+      "paste": "Incolla",
+      "selectAll": "Seleziona tutto",
+      "view": "Vista",
+      "toggleNavigation": "Mostra o nascondi la navigazione principale",
+      "fullScreen": "Attiva o disattiva schermo intero",
+      "reload": "Ricarica",
+      "forceReload": "Forza ricaricamento",
+      "developerTools": "Attiva o disattiva strumenti per sviluppatori",
+      "go": "Vai",
+      "back": "Indietro",
+      "forward": "Avanti",
+      "window": "Finestra",
+      "minimize": "Riduci a icona",
+      "zoom": "Zoom",
+      "bringAllToFront": "Porta tutto in primo piano",
+      "help": "Aiuto"
+    }
+  },
+  "viewHistory": {
+    "title": "Recenti",
+    "loading": "Caricamento degli elementi recenti...",
+    "empty": "Non hai ancora aperto nulla. Le fonti e le note che apri compaiono qui.",
+    "error": "Non è stato possibile caricare gli elementi recenti.",
+    "open": "Apri {title}",
+    "pin": "Fissa {title}",
+    "unpin": "Rimuovi {title} dai fissati",
+    "pinned": "Fissato",
+    "changeFailed": "Non è stato possibile salvare la modifica.",
+    "clear": "Cancella recenti",
+    "clearQuestion": "Cancellare gli elementi recenti? Quelli fissati restano.",
+    "clearConfirm": "Cancella",
+    "kind": {
+      "source": "Fonte",
+      "note": "Nota",
+      "topic": "Argomento",
+      "question": "Domanda",
+      "entity": "Entità"
     }
   },
   "shell": {

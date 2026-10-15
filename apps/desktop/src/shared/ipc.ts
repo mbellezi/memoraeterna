@@ -17,6 +17,12 @@ import {
 } from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
+import type { AppMenuCommand } from "./app-menu.js";
+import type {
+  ViewHistoryEntry,
+  ViewHistoryListInput,
+  ViewHistoryRecordInput
+} from "./view-history.js";
 import type { MaintenanceCommand } from "@app/domain";
 import type {
   ConsultationInput,
@@ -94,6 +100,13 @@ export const ipcChannels = {
   objectsLocate: "app:objects:locate",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
+  menuCommand: "app:menu:command",
+  menuSetLanguage: "app:menu:set-language",
+  viewHistoryRecord: "app:view-history:record",
+  viewHistoryList: "app:view-history:list",
+  viewHistoryPin: "app:view-history:pin",
+  viewHistoryClear: "app:view-history:clear",
+  viewHistoryChanged: "app:view-history:changed",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
   googleBooksKeyStatus: "app:settings:google-books-key:status",
@@ -1669,6 +1682,21 @@ export interface DesktopApi {
   system: {
     getInfo: () => Promise<SystemInfo>;
     subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;
+  };
+  /** The application menu lives in the main process; the renderer receives its commands. */
+  menu: {
+    subscribeCommand: (listener: (command: AppMenuCommand) => void) => () => void;
+    /** The menu follows the interface language the renderer shows. */
+    setLanguage: (language: z.infer<typeof languageCodeSchema>) => Promise<void>;
+  };
+  /** Local, non-telemetry record of the objects that were opened (recents and pins). */
+  viewHistory: {
+    record: (input: ViewHistoryRecordInput) => Promise<ViewHistoryEntry>;
+    list: (input?: ViewHistoryListInput) => Promise<ViewHistoryEntry[]>;
+    setPinned: (address: string, pinned: boolean) => Promise<ViewHistoryEntry | null>;
+    /** Forgets every unpinned entry; pins stay. Resolves with the number of entries removed. */
+    clear: () => Promise<number>;
+    subscribeChanged: (listener: () => void) => () => void;
   };
   database: {
     getStatus: () => Promise<DatabaseStatus>;

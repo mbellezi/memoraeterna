@@ -61,3 +61,8 @@ export function subscribeWindowNavigation(
     }
   };
 }
+
+/** Delivers a navigation request that came from neither the window nor a mouse button. */
+export function dispatchWindowNavigation(direction: NavigationDirection) {
+  return router.dispatch(direction, "native");
+}

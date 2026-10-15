@@ -50,6 +50,15 @@ import {
 } from "../lib/hidden-view";
 import { useStableCallback } from "../lib/stable-callback";
 import { useWriterRouteReady } from "../lib/writer-route";
+import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
+import { useStableCallback } from "../lib/stable-callback";
+import {
+  openedLibraryObjects,
+  recordView,
+  viewsToRecord,
+  type RecentTarget
+} from "../lib/view-history";
+import { RecentObjects } from "./RecentObjects";
 import { ImportView, childSourceType } from "./ImportView";
 import { AiNoteBadge } from "./AiNoteBadge";
 import { Tabs } from "./ui/tabs";
@@ -73,7 +82,7 @@ export interface LibraryExternalTarget {
   sourceRelationId?: string;
   /** The exact passage a citation points at: the reader opens on it, scrolled and highlighted. */
   passage?: PassageAnchor;
-  origin?: "search" | "knowledgeGraph" | "wiki" | "import";
+  origin?: "search" | "knowledgeGraph" | "wiki" | "import" | "recents";
   token: number;
 }
 
@@ -94,7 +103,7 @@ export function libraryHistoryEntryForOpening(
   origin: LibraryExternalTarget["origin"],
   current: LibraryHistoryEntry | null
 ): LibraryHistoryEntry | null {
-  if (origin === "import")
+  if (origin === "import" || origin === "recents")
     return current?.view === "library" ? null : { view: "library", path: [], fromSearch: false };
   return { view: origin ?? "search" };
 }
@@ -126,6 +135,11 @@ export function targetOpeningSource(
   sourceItemId: string | null | undefined
 ): LibraryExternalTarget | null {
   return target && sourceItemId && target.sourceItemId === sourceItemId ? target : null;
+}
+
+/** Close Panel (Cmd-W) closes the open source, and only while the Library is the shown view. */
+export function libraryClosesSource(active: boolean, currentId: string | null): boolean {
+  return active && currentId !== null;
 }
 
 export function libraryBackLabelKey(input: {
@@ -275,6 +289,7 @@ export function LibraryView({
   externalTarget = null,
   onNavigate,
   onTargetConsumed,
+  onOpenRecent,
   onExitToSearch,
   onExitToKnowledgeGraph,
   onExitToWiki,
@@ -288,6 +303,8 @@ export function LibraryView({
   onNavigate?: () => void;
   /** The Library has taken over the target (it now holds it); the owner can drop it. */
   onTargetConsumed?: (token: number) => void;
+  /** Opens a source (and the note in it) from the Recents list; the owner routes it as a target. */
+  onOpenRecent?: (target: RecentTarget) => void;
   onExitToWiki?: () => void;
   onExitToSearch?: () => void;
   onExitToKnowledgeGraph?: () => void;
@@ -328,6 +345,7 @@ export function LibraryView({
   const detailOutcome = useRef<LoadOutcome | null>(null);
   const activeRef = useRef(active);
   const historyInitialized = useRef(false);
+  const recordedViews = useRef<ReadonlySet<string>>(new Set());
   const wasActive = useRef(active);
   const listWasHidden = useRef(false);
   const detailWasHidden = useRef(false);
@@ -458,7 +476,8 @@ export function LibraryView({
     const cameFromSearch =
       externalTarget.origin !== "knowledgeGraph" &&
       externalTarget.origin !== "wiki" &&
-      externalTarget.origin !== "import";
+      externalTarget.origin !== "import" &&
+      externalTarget.origin !== "recents";
     // Opened from another view while hidden: describe where Back leads before adding the source.
     if (!wasActive.current) {
       const opening = libraryHistoryEntryForOpening(
@@ -542,6 +561,24 @@ export function LibraryView({
     };
   }, [currentId, refreshKey, active]);
 
+  // Only the target that opened this very source may focus a note or relabel Back.
+  const shownDetail = detail && detail.id === currentId ? detail : null;
+  const detailTarget = detail ? targetOpeningSource(openedTarget, detail.id) : null;
+  const focusedNoteId =
+    detail && relationNoteTarget?.sourceItemId === detail.id
+      ? relationNoteTarget.noteId
+      : (detailTarget?.atomicNoteId ?? null);
+
+  // Each source or note that is opened (not one that merely stays open) goes to the local history.
+  useEffect(() => {
+    const next = viewsToRecord(
+      active ? openedLibraryObjects(shownDetail, focusedNoteId) : null,
+      recordedViews.current
+    );
+    recordedViews.current = next.recorded;
+    for (const view of next.record) recordView(view);
+  }, [active, shownDetail, focusedNoteId]);
+
   function openSource(id: string) {
     navigateToPath([...stack, id], fromSearch);
   }
@@ -616,9 +653,20 @@ export function LibraryView({
     void load();
   }
 
+  // Cmd-W closes the source that is open, the way Back does; with none open it does nothing. It
+  // stays below the functions it uses: a closure reaching a function declared later would stop the
+  // React Compiler lint from checking this component.
+  const closeOpenSource = useStableCallback(() => {
+    if (!libraryClosesSource(active, currentId)) return false;
+    goBack();
+    return true;
+  });
+  useEffect(
+    () => subscribeClosePanel(closeOpenSource, closePanelPriority.panel),
+    [closeOpenSource]
+  );
+
   if (currentId) {
-    // Only the target that opened this very source may focus a note or relabel Back.
-    const detailTarget = detail ? targetOpeningSource(openedTarget, detail.id) : null;
     return (
       <>
         {detail && detail.id === currentId ? (
@@ -626,11 +674,7 @@ export function LibraryView({
             key={`${detail.id}:${detailTarget?.token ?? 0}`}
             detail={detail}
             focusedSourceRelationId={detailTarget?.sourceRelationId}
-            focusedAtomicNoteId={
-              relationNoteTarget?.sourceItemId === detail.id
-                ? relationNoteTarget.noteId
-                : (detailTarget?.atomicNoteId ?? null)
-            }
+            focusedAtomicNoteId={focusedNoteId}
             active={active}
             metadataEnrichmentEnabled={metadataEnrichmentEnabled}
             allSources={sources}
@@ -750,6 +794,9 @@ export function LibraryView({
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
+      {onOpenRecent && !query.trim() && filter === "all" && offset === 0 ? (
+        <RecentObjects t={t} active={active} onOpen={onOpenRecent} />
+      ) : null}
       {selectedIds.size > 0 ? (
         <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-200 bg-cyan-50/95 px-4 py-3 shadow-sm backdrop-blur dark:border-cyan-900 dark:bg-cyan-950/95">
           <span className="text-sm font-semibold text-cyan-900 dark:text-cyan-100">
@@ -1334,6 +1381,12 @@ export function SourceDetailView({
   const [passageSignal, setPassageSignal] = useState(focusedPassage ? 1 : 0);
   const cited = passageFocus ? resolvePassage(detail.documents, passageFocus.passage) : null;
   const citedChunkId = cited?.status === "found" ? cited.chunkId : null;
+
+  // Cmd-W never discards what is being edited: it is answered here and leaves the editor open.
+  useEffect(
+    () => (editor ? subscribeClosePanel(() => true, closePanelPriority.editing) : undefined),
+    [editor]
+  );
 
   const chain = detail.breadcrumbs.length
     ? detail.breadcrumbs

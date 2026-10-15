@@ -389,6 +389,58 @@
     "tray": {
       "open": "Ouvrir Memora Eterna",
       "quit": "Quitter Memora Eterna"
+    },
+    "menu": {
+      "about": "À propos de {app}",
+      "settings": "Paramètres…",
+      "services": "Services",
+      "hide": "Masquer {app}",
+      "hideOthers": "Masquer les autres",
+      "showAll": "Tout afficher",
+      "file": "Fichier",
+      "closePanel": "Fermer le panneau",
+      "edit": "Édition",
+      "undo": "Annuler",
+      "redo": "Rétablir",
+      "cut": "Couper",
+      "copy": "Copier",
+      "paste": "Coller",
+      "selectAll": "Tout sélectionner",
+      "view": "Présentation",
+      "toggleNavigation": "Afficher ou masquer la navigation principale",
+      "fullScreen": "Plein écran",
+      "reload": "Recharger",
+      "forceReload": "Forcer le rechargement",
+      "developerTools": "Outils de développement",
+      "go": "Aller",
+      "back": "Précédent",
+      "forward": "Suivant",
+      "window": "Fenêtre",
+      "minimize": "Placer dans le Dock",
+      "zoom": "Zoom",
+      "bringAllToFront": "Tout ramener au premier plan",
+      "help": "Aide"
+    }
+  },
+  "viewHistory": {
+    "title": "Récents",
+    "loading": "Chargement des éléments récents...",
+    "empty": "Rien n’a encore été ouvert. Les sources et notes que vous ouvrez apparaissent ici.",
+    "error": "Impossible de charger les éléments récents.",
+    "open": "Ouvrir {title}",
+    "pin": "Épingler {title}",
+    "unpin": "Désépingler {title}",
+    "pinned": "Épinglé",
+    "changeFailed": "Impossible d’enregistrer la modification.",
+    "clear": "Effacer les récents",
+    "clearQuestion": "Effacer les éléments récents ? Les éléments épinglés restent.",
+    "clearConfirm": "Effacer",
+    "kind": {
+      "source": "Source",
+      "note": "Note",
+      "topic": "Sujet",
+      "question": "Question",
+      "entity": "Entité"
     }
   },
   "shell": {

@@ -389,6 +389,58 @@
     "tray": {
       "open": "Abrir Memora Eterna",
       "quit": "Salir de Memora Eterna"
+    },
+    "menu": {
+      "about": "Acerca de {app}",
+      "settings": "Ajustes…",
+      "services": "Servicios",
+      "hide": "Ocultar {app}",
+      "hideOthers": "Ocultar otros",
+      "showAll": "Mostrar todo",
+      "file": "Archivo",
+      "closePanel": "Cerrar panel",
+      "edit": "Edición",
+      "undo": "Deshacer",
+      "redo": "Rehacer",
+      "cut": "Cortar",
+      "copy": "Copiar",
+      "paste": "Pegar",
+      "selectAll": "Seleccionar todo",
+      "view": "Visualización",
+      "toggleNavigation": "Mostrar u ocultar la navegación principal",
+      "fullScreen": "Pantalla completa",
+      "reload": "Recargar",
+      "forceReload": "Forzar recarga",
+      "developerTools": "Herramientas de desarrollo",
+      "go": "Ir",
+      "back": "Atrás",
+      "forward": "Adelante",
+      "window": "Ventana",
+      "minimize": "Minimizar",
+      "zoom": "Zoom",
+      "bringAllToFront": "Traer todo al frente",
+      "help": "Ayuda"
+    }
+  },
+  "viewHistory": {
+    "title": "Recientes",
+    "loading": "Cargando elementos recientes...",
+    "empty": "Aún no has abierto nada. Las fuentes y notas que abras aparecerán aquí.",
+    "error": "No se pudieron cargar los elementos recientes.",
+    "open": "Abrir {title}",
+    "pin": "Fijar {title}",
+    "unpin": "Dejar de fijar {title}",
+    "pinned": "Fijado",
+    "changeFailed": "No se pudo guardar el cambio.",
+    "clear": "Borrar recientes",
+    "clearQuestion": "¿Borrar los elementos recientes? Los fijados se conservan.",
+    "clearConfirm": "Borrar",
+    "kind": {
+      "source": "Fuente",
+      "note": "Nota",
+      "topic": "Tema",
+      "question": "Pregunta",
+      "entity": "Entidad"
     }
   },
   "shell": {

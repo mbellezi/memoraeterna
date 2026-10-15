@@ -14,6 +14,9 @@ import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
 import { ObjectsService } from "./services/objects-service.js";
+import { ViewHistoryService } from "./services/view-history-service.js";
+import { registerViewHistoryIpc } from "./services/view-history-ipc.js";
+import { createApplicationMenuController, registerApplicationMenuIpc } from "./application-menu.js";
 import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
@@ -435,6 +438,37 @@ void app.whenReady().then(() => {
     logger: console
   });
   similarityDebugService = new SimilarityDebugService(() => databaseService?.getPool() ?? null);
+  // Cmd-W closes a panel through the menu; there is no Close Window item, so it cannot quit the app.
+  registerApplicationMenuIpc(
+    ipcMain,
+    createApplicationMenuController({
+      initialLanguage: app.getLocale(),
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      apply: (template) => {
+        try {
+          Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+        } catch (error) {
+          // The menu is not essential: a failure must not stop the application from starting.
+          console.error(
+            `Application menu failed: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      },
+      send: (command) => sendToMainWindow(ipcChannels.menuCommand, command),
+      navigate: (direction) => sendToMainWindow(ipcChannels.windowNavigation, direction)
+    })
+  );
+  registerViewHistoryIpc(
+    ipcMain,
+    new ViewHistoryService({
+      getPool: () => databaseService?.getPool() ?? null,
+      onChanged: () => {
+        for (const contents of webContents.getAllWebContents())
+          if (!contents.isDestroyed()) contents.send(ipcChannels.viewHistoryChanged);
+      }
+    })
+  );
   registerIpcHandlers(
     ipcMain,
     settingsService,
@@ -654,6 +688,11 @@ function createTrayIcon() {
   }
 
   return image;
+}
+
+function sendToMainWindow(channel: string, payload: unknown): void {
+  const contents = activeMainWindow?.webContents;
+  if (contents && !contents.isDestroyed()) contents.send(channel, payload);
 }
 
 function showMainWindow(): void {

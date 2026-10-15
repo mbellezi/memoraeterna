@@ -330,6 +330,13 @@
       "when": 1792015435259,
       "tag": "0046_relation_decision_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792026486931,
+      "tag": "0047_view_history",
+      "breakpoints": true
     }
   ]
 }

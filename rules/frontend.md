@@ -5,8 +5,7 @@ accessibility, visualizations or user-visible backend messages.
 
 ## Stack and structure
 
-- React 19, Tailwind CSS 4, vendored shadcn/ui components and Lucide icons.
-  Build the working knowledge tool, not marketing pages.
+- Build the working knowledge tool, not marketing pages (stack: `STACK.md`).
 - The target information architecture (destinations, workspace zones, object
   pages) is described in `docs/plan.md`. Objects are addressed by stable
   UUID-based `memora://` references, never by titles (target F5).
@@ -39,7 +38,10 @@ accessibility, visualizations or user-visible backend messages.
 - Everything is keyboard-operable with visible focus. Trees use one roving tab
   stop (arrows, Home, End); dialogs trap and restore focus and close with Escape.
 - Single-key shortcuts never fire while typing in inputs or editors, and app
-  shortcuts do not collide with platform conventions.
+  shortcuts do not collide with platform conventions (no Cmd-. Cmd-E Cmd-I).
+  The localized application menu owns them: Cmd-W closes the topmost dialog or
+  panel, never discards unsaved edits, does nothing when nothing is open and
+  never closes the window; Cmd-[ and Cmd-] follow the view history.
 - Canvas and WebGL views (graphs, icicles, maps) offer a text or table
   alternative. Live updates that matter are announced through live regions.
 - Undo affordances stay visible long enough to use and are reachable by keyboard.
@@ -53,8 +55,7 @@ accessibility, visualizations or user-visible backend messages.
 - Product copy is written from the user's side: say what is happening and what
   the user can do. Internal state-machine terms, raw IDs and UUIDs never appear
   in normal UI; they belong in Diagnostics.
-- Destructive actions disclose their scope and require confirmation; cancelable
-  work offers cancellation.
+- Cancelable work offers cancellation (destructive actions: `security-privacy.md`).
 - Model-generated text is rendered as safe React nodes, never raw HTML.
   Reference tags resolve by canonical ID and render as safe links or badges;
   unknown references stay inert.
@@ -74,8 +75,7 @@ accessibility, visualizations or user-visible backend messages.
 ## Visualizations
 
 - Layout, positions and community assignments are presentation state, never
-  canonical identity. Layout physics runs in a renderer Web Worker with
-  Zod-validated messages.
+  canonical identity; layout physics runs in a renderer Web Worker.
 - Graph views show context around a focus and expand on demand instead of
   defaulting to a global hairball; global views stay bounded.
 - Renderers, workers, listeners and animation frames are disposed when a view

@@ -63,6 +63,31 @@ describe("@app/i18n", () => {
     );
   });
 
+  it("keeps the application menu and recents copy complete with the same placeholders", () => {
+    const placeholders = (text: string) =>
+      [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+    for (const namespace of ["menu", "viewHistory"] as const) {
+      const source = namespace === "menu" ? messages.en.app.menu : messages.en.viewHistory;
+      const flat = (value: object, prefix = ""): Array<[string, string]> =>
+        Object.entries(value).flatMap(([key, child]) =>
+          typeof child === "string"
+            ? [[`${prefix}${key}`, child] as [string, string]]
+            : flat(child as object, `${prefix}${key}.`)
+        );
+      const expected = flat(source);
+      for (const locale of supportedLanguageCodes) {
+        const actual = new Map(
+          flat(namespace === "menu" ? messages[locale].app.menu : messages[locale].viewHistory)
+        );
+        expect([...actual.keys()].sort()).toEqual(expected.map(([key]) => key).sort());
+        for (const [key, text] of expected) {
+          expect(actual.get(key), `${locale} ${namespace}.${key}`).toBeTruthy();
+          expect(placeholders(actual.get(key)!).sort()).toEqual(placeholders(text).sort());
+        }
+      }
+    }
+  });
+
   it("exports type-safe message keys and supported locales", () => {
     const key = "settings.storage.obsidianVaultPath" satisfies MessageKey;
 

@@ -93,7 +93,8 @@ describe("baseline seed", () => {
       "0043_wall_clock_instrumentation",
       "0044_relation_decisions",
       "0045_notes_active_at_birth",
-      "0046_relation_decision_audit"
+      "0046_relation_decision_audit",
+      "0047_view_history"
     ]);
   });
 
@@ -158,7 +159,8 @@ describe("baseline seed", () => {
         "0043_wall_clock_instrumentation",
         "0044_relation_decisions",
         "0045_notes_active_at_birth",
-        "0046_relation_decision_audit"
+        "0046_relation_decision_audit",
+        "0047_view_history"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

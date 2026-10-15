@@ -16,6 +16,13 @@ import {
   obsidianEditReceiptSchema
 } from "@app/integration-contracts";
 import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
+import { appMenuCommandSchema } from "../shared/app-menu.js";
+import {
+  viewHistoryEntrySchema,
+  viewHistoryListInputSchema,
+  viewHistoryPinInputSchema,
+  viewHistoryRecordInputSchema
+} from "../shared/view-history.js";
 import {
   obsidianWikiScopeSchema,
   obsidianWikiStatusSchema,
@@ -172,7 +179,8 @@ import {
   similarityDebugClearResultSchema,
   wikiResolveLinksInputSchema,
   wikiResolvedLinksSchema,
-  windowNavigationDirectionSchema
+  windowNavigationDirectionSchema,
+  languageCodeSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
@@ -316,6 +324,61 @@ const api: DesktopApi = {
       };
       ipcRenderer.on(ipcChannels.windowNavigation, handler);
       return () => ipcRenderer.removeListener(ipcChannels.windowNavigation, handler);
+    }
+  },
+  menu: {
+    subscribeCommand(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const command = appMenuCommandSchema.safeParse(payload);
+        if (command.success) listener(command.data);
+      };
+      ipcRenderer.on(ipcChannels.menuCommand, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.menuCommand, handler);
+    },
+    async setLanguage(language) {
+      await ipcRenderer.invoke(ipcChannels.menuSetLanguage, languageCodeSchema.parse(language));
+    }
+  },
+  viewHistory: {
+    async record(input) {
+      return viewHistoryEntrySchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.viewHistoryRecord,
+          viewHistoryRecordInputSchema.parse(input)
+        )
+      );
+    },
+    async list(input = {}) {
+      return viewHistoryEntrySchema
+        .array()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.viewHistoryList,
+            viewHistoryListInputSchema.parse(input)
+          )
+        );
+    },
+    async setPinned(address, pinned) {
+      return viewHistoryEntrySchema
+        .nullable()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.viewHistoryPin,
+            viewHistoryPinInputSchema.parse({ address, pinned })
+          )
+        );
+    },
+    async clear() {
+      return z
+        .number()
+        .int()
+        .min(0)
+        .parse(await ipcRenderer.invoke(ipcChannels.viewHistoryClear));
+    },
+    subscribeChanged(listener) {
+      const handler = () => listener();
+      ipcRenderer.on(ipcChannels.viewHistoryChanged, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.viewHistoryChanged, handler);
     }
   },
   database: {

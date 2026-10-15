@@ -389,6 +389,58 @@
     "tray": {
       "open": "Open Memora Eterna",
       "quit": "Quit Memora Eterna"
+    },
+    "menu": {
+      "about": "About {app}",
+      "settings": "Settings…",
+      "services": "Services",
+      "hide": "Hide {app}",
+      "hideOthers": "Hide Others",
+      "showAll": "Show All",
+      "file": "File",
+      "closePanel": "Close Panel",
+      "edit": "Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All",
+      "view": "View",
+      "toggleNavigation": "Show or Hide Main Navigation",
+      "fullScreen": "Toggle Full Screen",
+      "reload": "Reload",
+      "forceReload": "Force Reload",
+      "developerTools": "Toggle Developer Tools",
+      "go": "Go",
+      "back": "Back",
+      "forward": "Forward",
+      "window": "Window",
+      "minimize": "Minimize",
+      "zoom": "Zoom",
+      "bringAllToFront": "Bring All to Front",
+      "help": "Help"
+    }
+  },
+  "viewHistory": {
+    "title": "Recents",
+    "loading": "Loading recent items...",
+    "empty": "Nothing opened yet. Sources and notes you open appear here.",
+    "error": "Recent items could not be loaded.",
+    "open": "Open {title}",
+    "pin": "Pin {title}",
+    "unpin": "Unpin {title}",
+    "pinned": "Pinned",
+    "changeFailed": "The change could not be saved.",
+    "clear": "Clear recents",
+    "clearQuestion": "Clear recent items? Pinned items stay.",
+    "clearConfirm": "Clear",
+    "kind": {
+      "source": "Source",
+      "note": "Note",
+      "topic": "Topic",
+      "question": "Question",
+      "entity": "Entity"
     }
   },
   "shell": {
