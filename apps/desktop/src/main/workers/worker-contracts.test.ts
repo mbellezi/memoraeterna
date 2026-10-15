@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { workerErrorMessage, workerFailure, workerMessageSchema } from "./worker-contracts.js";
+import { TopicClusteringError } from "@app/domain/topic-tree";
+
+import {
+  workerErrorMessage,
+  workerFailure,
+  workerMessageSchema,
+  workerTaskSchema
+} from "./worker-contracts.js";
 
 describe("worker failure messages", () => {
   it("carry the message and the error code of a filesystem or database failure", () => {
@@ -42,5 +49,25 @@ describe("worker failure messages", () => {
     expect(rebuilt).toBeInstanceOf(Error);
     expect(rebuilt).toMatchObject({ message: "EAGAIN: try again", code: "EAGAIN" });
     expect(workerFailure({ error: "plain" })).not.toHaveProperty("code");
+  });
+
+  it("carry the code of a topic clustering failure across the boundary", () => {
+    const failure = new TopicClusteringError("topic_clustering_timeout", "too slow");
+    const message = workerMessageSchema.parse(workerErrorMessage(failure));
+    expect(message).toEqual({ kind: "error", error: "too slow", code: "topic_clustering_timeout" });
+    expect(workerFailure(message as { error: string; code?: string })).toMatchObject({
+      code: "topic_clustering_timeout"
+    });
+  });
+});
+
+describe("worker tasks", () => {
+  const id = "0f1d4c1e-3c0e-4a39-9d6f-1a2b3c4d5e6f";
+
+  it("name the topic clustering worker and keep its transferred matrix in the payload", () => {
+    const vectors = new Float32Array(4);
+    const task = workerTaskSchema.parse({ id, type: "topic-clustering", payload: { vectors } });
+    expect(task.payload.vectors).toBe(vectors);
+    expect(workerTaskSchema.safeParse({ id, type: "clustering", payload: {} }).success).toBe(false);
   });
 });

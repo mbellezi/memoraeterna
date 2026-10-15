@@ -27,4 +27,5 @@ export * from "./state.js";
 export * from "./stats.js";
 export * from "./undo.js";
 export * from "./vectors.js";
+export * from "./worker-protocol.js";
 export * from "./fixtures/synthetic.js";

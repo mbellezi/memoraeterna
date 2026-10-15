@@ -10,7 +10,8 @@ export const workerTaskSchema = z
       "embedding",
       "atomic-note-generation",
       "obsidian-sync",
-      "asset-storage"
+      "asset-storage",
+      "topic-clustering"
     ]),
     payload: z.record(z.string(), z.unknown())
   })
