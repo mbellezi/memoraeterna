@@ -41,8 +41,8 @@ accessibility, visualizations or user-visible backend messages.
 - Single-key shortcuts never fire while typing in inputs or editors, and app
   shortcuts do not collide with platform or editing conventions (no Cmd-. Cmd-E
   Cmd-I or Option-Arrow). The localized application menu owns them: Cmd-W closes
-  the topmost dialog or panel, never discards unsaved edits, does nothing when
-  nothing is open and never closes the window; Cmd-[ and Cmd-] follow the history.
+  the topmost dialog or panel, does nothing when nothing is open and never closes
+  the window; Cmd-[ and Cmd-] follow the history. No move drops unsaved edits unasked.
 - Canvas and WebGL views (graphs, icicles, maps) offer a text or table
   alternative. Live updates that matter are announced through live regions.
 - Undo affordances stay visible long enough to use and are reachable by keyboard.
