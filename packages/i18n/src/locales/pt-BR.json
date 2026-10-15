@@ -2287,6 +2287,17 @@
     "pageIds": "Páginas da wiki",
     "sourceIds": "Fontes",
     "queued": "As atualizações da projeção usam a fila de tarefas.",
+    "retiredTitle": "Arquivos da wiki antiga",
+    "retiredHint": "A wiki antiga foi removida, então seus arquivos saem da projeção. Arquivos sem alterações vão para .memora-recovery/retired-wiki. Os que você editou ficam onde estão até você movê-los.",
+    "retiredArchived": "Movidos para a recuperação",
+    "retiredAbsent": "Já ausentes do cofre",
+    "retiredKept": "Mantidos por terem edições",
+    "retiredMove": "Mover para a recuperação",
+    "retiredMore": "Há mais arquivos mantidos do que os listados aqui.",
+    "retiredReasonEdited": "Editado no cofre",
+    "retiredReasonUnverified": "Não foi possível comparar com a última versão projetada",
+    "retiredReasonUnsafe": "Não movido: o caminho é um link ou está fora da pasta gerenciada",
+    "retiredReasonLimit": "Não movido: o arquivo é grande demais",
     "errors": {
       "conflict": "O arquivo do cofre mudou. Revise as edições locais.",
       "binding": "O cofre ou o escopo mudou. Reinicie a sincronização.",
@@ -2294,7 +2305,9 @@
       "limit": "A projeção excede o limite. Selecione um escopo menor.",
       "format": "A projeção contém marcadores inválidos ou incompatíveis.",
       "write": "A gravação falhou. O conteúdo anterior permanece recuperável.",
-      "load": "Não foi possível carregar a projeção."
+      "load": "Não foi possível carregar a projeção.",
+      "retired": "Este arquivo da wiki foi retirado. As edições nele não são importadas.",
+      "retiredMove": "Não foi possível mover o arquivo com segurança. Feche-o no Obsidian e tente de novo."
     },
     "historicalPage": "Revisão histórica · somente leitura",
     "finishDraft": "Salve ou cancele o rascunho para abrir o link do Obsidian."

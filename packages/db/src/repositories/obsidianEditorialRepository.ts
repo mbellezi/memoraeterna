@@ -134,7 +134,7 @@ export function createObsidianEditorialRepository(pool: PgPool) {
     async conflicts(binding: string) {
       return (
         await pool.query(
-          `select o.id,o.client_id,o.request,o.receipt from obsidian_editorial_operations o where o.binding_hash=$1 and o.receipt->>'status' in('conflict','deleted') and not exists(select 1 from obsidian_editorial_operations r where ${supersededConflict}) order by o.created_at desc limit 100`,
+          `select o.id,o.client_id,o.request,o.receipt from obsidian_editorial_operations o where o.binding_hash=$1 and o.receipt->>'status' in('conflict','deleted') and not exists(select 1 from obsidian_editorial_operations r where ${supersededConflict}) and not exists(select 1 from obsidian_sync_files f where f.memora_id=o.target_id and f.status::text='retired') order by o.created_at desc limit 100`,
           [binding]
         )
       ).rows;

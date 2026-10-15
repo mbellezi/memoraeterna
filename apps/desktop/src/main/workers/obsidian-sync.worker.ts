@@ -11,11 +11,12 @@ import {
   realpath,
   writeFile
 } from "node:fs/promises";
+import { constants } from "node:fs";
 import { dirname, resolve, sep, isAbsolute } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { normalizeProjectionText } from "@app/integration-contracts";
 import { z } from "zod";
-const payloadSchema = z
+const writePayloadSchema = z
   .object({
     action: z.literal("write"),
     vaultPath: z.string().min(1),
@@ -26,6 +27,25 @@ const payloadSchema = z
     managedRoot: z.string().optional()
   })
   .strict();
+const archivePayloadSchema = z
+  .object({
+    action: z.literal("archive"),
+    vaultPath: z.string().min(1),
+    relativePath: z.string().min(1),
+    managedRoot: z.string().min(1),
+    /** One folder per retire pass under `.memora-recovery/retired-wiki`. */
+    stamp: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    /** The registered hash. Without it the bytes found are archived as they are (explicit user action). */
+    expectedHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional()
+  })
+  .strict();
+const payloadSchema = z.discriminatedUnion("action", [writePayloadSchema, archivePayloadSchema]);
+export type ObsidianArchiveInput = Omit<z.infer<typeof archivePayloadSchema>, "action">;
+export type ObsidianArchiveResult =
+  { outcome: "archived"; archivedPath: string } | { outcome: "absent" };
 const hash = (text: string) =>
   createHash("sha256").update(normalizeProjectionText(text)).digest("hex");
 export async function safeVaultPath(vault: string, path: string): Promise<string> {
@@ -54,10 +74,97 @@ async function readOptional(path: string) {
     throw error;
   }
 }
+/** Reads a regular file without following a final symlink; `null` when it does not exist. */
+export async function readRegularFile(path: string): Promise<Buffer | null> {
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    if (code === "ELOOP") throw new Error("unsafe_obsidian_symlink", { cause: error });
+    throw error;
+  }
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error("unsafe_obsidian_path");
+    if (info.size > 2_000_000) throw new Error("obsidianWiki.errors.limit");
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Moves one retired projection file into `<managedRoot>/.memora-recovery/retired-wiki/<stamp>/`,
+ * keeping its path below the managed root. The copy is created exclusively. The original is then
+ * moved out with an atomic rename and its actual bytes are compared with the copy (and with the
+ * registered hash, when given): a late edit puts the file back and fails with a conflict, so an
+ * edited file is never removed. Symlinks anywhere on either path are rejected.
+ */
+export async function archiveObsidianFile(
+  input: ObsidianArchiveInput,
+  /** Test seam: runs between the copy and the move, where a late edit would land. */
+  hooks: { afterCopy?: () => Promise<void> } = {}
+): Promise<ObsidianArchiveResult> {
+  const rest = input.relativePath.slice(input.managedRoot.length + 1);
+  if (!input.relativePath.startsWith(`${input.managedRoot}/`) || !rest)
+    throw new Error("unsafe_obsidian_path");
+  const source = await safeVaultPath(input.vaultPath, input.relativePath);
+  const bytes = await readRegularFile(source);
+  if (bytes === null) return { outcome: "absent" };
+  if (input.expectedHash && hash(bytes.toString("utf8")) !== input.expectedHash)
+    throw new Error("obsidianWiki.errors.conflict");
+  const archivedPath = `${input.managedRoot}/.memora-recovery/retired-wiki/${input.stamp}/${rest}`;
+  const destination = await safeVaultPath(input.vaultPath, archivedPath);
+  const captured = `${destination}.captured`;
+  await mkdir(dirname(destination), { recursive: true });
+  await safeVaultPath(input.vaultPath, archivedPath);
+  if (
+    await lstat(captured).then(
+      () => true,
+      () => false
+    )
+  )
+    throw new Error("obsidianWiki.errors.write");
+  const copy = await open(destination, "wx", 0o600);
+  try {
+    await copy.writeFile(bytes);
+    await copy.sync();
+  } catch (error) {
+    await copy.close();
+    await unlink(destination).catch(() => undefined);
+    throw error;
+  }
+  await copy.close();
+  await hooks.afterCopy?.();
+  try {
+    await rename(source, captured);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { outcome: "absent" };
+    throw error;
+  }
+  const moved = await readFile(captured);
+  if (!moved.equals(bytes)) {
+    // The file changed between the read and the move: put the newer bytes back unless an editor recreated it.
+    await link(captured, source).catch(() => undefined);
+    throw new Error("obsidianWiki.errors.conflict");
+  }
+  await unlink(captured);
+  return { outcome: "archived", archivedPath };
+}
 export async function runObsidianSync(
   payload: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const input = payloadSchema.parse(jobTaskPayload(payload));
+  if (input.action === "archive")
+    return archiveObsidianFile({
+      vaultPath: input.vaultPath,
+      relativePath: input.relativePath,
+      managedRoot: input.managedRoot,
+      stamp: input.stamp,
+      ...(input.expectedHash ? { expectedHash: input.expectedHash } : {})
+    });
   if (Buffer.byteLength(input.content, "utf8") > 2_000_000)
     throw new Error("obsidianWiki.errors.limit");
   const targetPath = await safeVaultPath(input.vaultPath, input.relativePath);

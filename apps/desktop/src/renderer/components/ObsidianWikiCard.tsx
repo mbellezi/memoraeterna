@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { BookOpen, FileWarning, X } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
 import { EvidenceScopePicker } from "./OrganizationView";
+import { ObsidianRetiredReport } from "./ObsidianRetiredReport";
 import { Button } from "./ui/button";
 type Translator = (key: MessageKey) => string;
 type Status = Awaited<ReturnType<typeof window.app.obsidian.wikiStatus>>;
@@ -47,11 +48,13 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
           ? "obsidianWiki.errors.conflict"
           : message.includes("paused")
             ? "obsidianWiki.errors.paused"
-            : message.includes("binding")
-              ? "obsidianWiki.errors.binding"
-              : message.includes("write")
-                ? "obsidianWiki.errors.write"
-                : "obsidianWiki.errors.load"
+            : message.includes("unsafe_obsidian")
+              ? "obsidianWiki.errors.retiredMove"
+              : message.includes("binding")
+                ? "obsidianWiki.errors.binding"
+                : message.includes("write")
+                  ? "obsidianWiki.errors.write"
+                  : "obsidianWiki.errors.load"
       );
     } finally {
       setBusy(false);
@@ -171,6 +174,17 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
           ) : (
             <p className="text-sm text-slate-500">{t("obsidianWiki.empty")}</p>
           )}
+          <ObsidianRetiredReport
+            t={t}
+            retired={status.retired}
+            busy={busy}
+            active={status.active}
+            onMove={(id) =>
+              void action(async () => {
+                setStatus(await window.app.obsidian.moveRetiredWiki({ id }));
+              })
+            }
+          />
         </>
       )}
       {diff && (

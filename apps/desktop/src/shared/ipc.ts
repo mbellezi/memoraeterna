@@ -141,6 +141,7 @@ export const ipcChannels = {
   obsidianWikiScope: "app:obsidian:wiki:scope",
   obsidianWikiDiff: "app:obsidian:wiki:diff",
   obsidianWikiRecover: "app:obsidian:wiki:recover",
+  obsidianWikiRetiredMove: "app:obsidian:wiki:retired:move",
   obsidianSyncStart: "app:obsidian:sync:start",
   obsidianSyncStatus: "app:obsidian:sync:status",
   monitoringList: "app:monitoring:list",
@@ -377,6 +378,26 @@ export const obsidianWikiScopeSchema = z
     includeDescendants: z.boolean().default(true)
   })
   .strict();
+/** Old wiki files taken out of the projection: archived to recovery, absent, or kept because edited. */
+export const obsidianWikiRetiredSchema = z
+  .object({
+    archived: z.number().int().nonnegative(),
+    absent: z.number().int().nonnegative(),
+    keptTotal: z.number().int().nonnegative(),
+    kept: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            relativePath: z.string(),
+            reason: z.enum(["edited", "unverified", "unsafe", "limit"])
+          })
+          .strict()
+      )
+      .max(200)
+  })
+  .strict();
+export const obsidianWikiRetiredMoveSchema = z.object({ id: z.string().uuid() }).strict();
 export const obsidianWikiStatusSchema = z
   .object({
     active: z.boolean(),
@@ -395,7 +416,8 @@ export const obsidianWikiStatusSchema = z
         status: z.string(),
         error: z.string().nullable()
       })
-    )
+    ),
+    retired: obsidianWikiRetiredSchema
   })
   .strict();
 export const obsidianWikiDiffSchema = z
@@ -1773,6 +1795,9 @@ export interface DesktopApi {
     wikiDiff: (id: string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;
     recoverWiki: (
       input: z.infer<typeof obsidianWikiRecoverSchema>
+    ) => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
+    moveRetiredWiki: (
+      input: z.infer<typeof obsidianWikiRetiredMoveSchema>
     ) => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
     startSync: () => Promise<ObsidianSyncStatus>;
     getSyncStatus: () => Promise<ObsidianSyncStatus>;

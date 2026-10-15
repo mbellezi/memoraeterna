@@ -29,7 +29,9 @@ import {
   similarityDebugRunSchema,
   fileImportProgressSchema,
   fileMetadataExtractionResultSchema,
-  libraryBrowseInputSchema
+  libraryBrowseInputSchema,
+  obsidianWikiRetiredMoveSchema,
+  obsidianWikiStatusSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -471,6 +473,53 @@ describe("desktop IPC contracts", () => {
 
   it("registers the objects.locate channel", () => {
     expect(ipcChannels.objectsLocate).toBe("app:objects:locate");
+    expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
+  });
+
+  it("reports the retired old wiki files in the Obsidian wiki status", () => {
+    const status = {
+      active: true,
+      job: null,
+      scope: { sourceIds: [], pageIds: [], includeDescendants: true },
+      conflicts: [],
+      retired: {
+        archived: 20,
+        absent: 0,
+        keptTotal: 2,
+        kept: [
+          {
+            id: "00000000-0000-4000-8000-000000000005",
+            relativePath: "Memora/Wiki/Topics/Topic 5.md",
+            reason: "edited"
+          }
+        ]
+      }
+    };
+    expect(obsidianWikiStatusSchema.parse(status).retired.kept).toHaveLength(1);
+    expect(() => obsidianWikiStatusSchema.parse({ ...status, retired: undefined })).toThrow();
+    expect(() =>
+      obsidianWikiStatusSchema.parse({
+        ...status,
+        retired: { ...status.retired, kept: [{ ...status.retired.kept[0], reason: "deleted" }] }
+      })
+    ).toThrow();
+    expect(() =>
+      obsidianWikiStatusSchema.parse({ ...status, retired: { ...status.retired, extra: 1 } })
+    ).toThrow();
+    expect(() =>
+      obsidianWikiStatusSchema.parse({
+        ...status,
+        retired: { ...status.retired, kept: Array(201).fill(status.retired.kept[0]) }
+      })
+    ).toThrow();
+  });
+
+  it("moves a kept file to recovery by id only", () => {
+    expect(ipcChannels.obsidianWikiRetiredMove).toBe("app:obsidian:wiki:retired:move");
+    const id = "00000000-0000-4000-8000-000000000005";
+    expect(obsidianWikiRetiredMoveSchema.parse({ id })).toEqual({ id });
+    expect(() => obsidianWikiRetiredMoveSchema.parse({ id: "not-a-uuid" })).toThrow();
+    expect(() => obsidianWikiRetiredMoveSchema.parse({ id, path: "../escape.md" })).toThrow();
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 

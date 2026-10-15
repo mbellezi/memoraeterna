@@ -12,7 +12,8 @@ import {
   obsidianWikiScopeSchema,
   obsidianWikiStatusSchema,
   obsidianWikiDiffSchema,
-  obsidianWikiRecoverSchema
+  obsidianWikiRecoverSchema,
+  obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
@@ -248,6 +249,13 @@ export function registerIpcHandlers(
       await obsidianSyncService.wiki.recover(value.id, value.expectedHash)
     );
   });
+  ipcMain.handle(ipcChannels.obsidianWikiRetiredMove, async (_event, input: unknown) =>
+    obsidianWikiStatusSchema.parse(
+      await obsidianSyncService.wiki.moveRetiredToRecovery(
+        obsidianWikiRetiredMoveSchema.parse(input).id
+      )
+    )
+  );
   ipcMain.handle(ipcChannels.obsidianSyncStart, () => obsidianSyncService.startSynchronization());
   ipcMain.handle(ipcChannels.obsidianSyncStatus, () =>
     obsidianSyncService.getSynchronizationStatus()

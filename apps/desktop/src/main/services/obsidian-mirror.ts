@@ -106,8 +106,9 @@ export async function buildObsidianMirror(
     paths = new Map<string, string>(),
     used = new Map<string, string>(),
     targets: MirrorTarget[] = [];
+  // A retired file never moves, so its path stays taken even while a layout migration re-places the rest.
   for (const row of registry)
-    if (!options.migrate || options.excluded?.has(row.memoraId))
+    if (!options.migrate || row.status === "retired" || options.excluded?.has(row.memoraId))
       used.set(pathIdentity(row.relativePath), row.memoraId);
   function reserve(id: string, path: string) {
     const old = registry.find((f) => f.memoraId === id);

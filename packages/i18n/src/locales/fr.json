@@ -2289,6 +2289,17 @@
     "pageIds": "Pages du wiki",
     "sourceIds": "Sources",
     "queued": "Les mises à jour utilisent la file de tâches.",
+    "retiredTitle": "Anciens fichiers du wiki",
+    "retiredHint": "L’ancien wiki a été supprimé, ses fichiers quittent donc la projection. Les fichiers inchangés passent dans .memora-recovery/retired-wiki. Ceux que vous avez modifiés restent en place jusqu’à ce que vous les déplaciez.",
+    "retiredArchived": "Déplacés vers la récupération",
+    "retiredAbsent": "Déjà absents du coffre",
+    "retiredKept": "Conservés car modifiés",
+    "retiredMove": "Déplacer vers la récupération",
+    "retiredMore": "Plus de fichiers sont conservés que ceux listés ici.",
+    "retiredReasonEdited": "Modifié dans le coffre",
+    "retiredReasonUnverified": "Impossible de comparer avec la dernière version projetée",
+    "retiredReasonUnsafe": "Non déplacé : le chemin est un lien ou sort du dossier géré",
+    "retiredReasonLimit": "Non déplacé : le fichier est trop volumineux",
     "errors": {
       "conflict": "Le fichier a changé. Examinez les modifications locales.",
       "binding": "Le coffre ou le périmètre a changé. Relancez la synchronisation.",
@@ -2296,7 +2307,9 @@
       "limit": "La limite est dépassée. Réduisez le périmètre.",
       "format": "La projection contient des marqueurs non valides.",
       "write": "L’écriture a échoué. Le contenu précédent reste récupérable.",
-      "load": "Impossible de charger la projection."
+      "load": "Impossible de charger la projection.",
+      "retired": "Ce fichier du wiki est retiré. Ses modifications ne sont pas importées.",
+      "retiredMove": "Impossible de déplacer le fichier en toute sécurité. Fermez-le dans Obsidian et réessayez."
     },
     "historicalPage": "Version historique · lecture seule",
     "finishDraft": "Enregistrez ou annulez le brouillon pour ouvrir le lien Obsidian."

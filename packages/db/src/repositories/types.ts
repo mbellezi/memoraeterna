@@ -26,7 +26,8 @@ export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancele
 /** `heavy` runs ingestion; `light` runs short tree and projection work that never waits behind it. */
 export type JobLane = "heavy" | "light";
 export type IngestionRunStatus = "pending" | "running" | "succeeded" | "failed" | "canceled";
-export type ObsidianSyncStatus = "pending" | "synced" | "conflict" | "deleted" | "ignored";
+export type ObsidianSyncStatus =
+  "pending" | "synced" | "conflict" | "deleted" | "ignored" | "retired";
 export type AtomicNoteStatus = "active" | "pending_review" | "approved" | "rejected" | "archived";
 export type AtomicNoteRelationStatus = "pending_review" | "accepted" | "rejected";
 

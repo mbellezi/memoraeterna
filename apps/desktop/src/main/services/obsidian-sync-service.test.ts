@@ -57,6 +57,75 @@ describe("ObsidianSyncService safety", () => {
     await rm(vaultPath, { recursive: true, force: true });
   });
 
+  describe("a retired registry row", () => {
+    const retired = { status: "retired", memoraType: "source_item" };
+    const relativePath = "Memora/Sources/note.md";
+    const service = (pool: SyncRecordPool, vaultPath = "/tmp/memora-test-vault") =>
+      new ObsidianSyncService({
+        getPool: () => pool as unknown as PgPool,
+        getStorageSettings: async () => ({ ...settings, obsidianVaultPath: vaultPath })
+      });
+    const updates = (pool: SyncRecordPool) =>
+      pool.queries.filter((query) => /^(update|delete|insert)/i.test(query));
+
+    it("ignores a deletion event instead of tombstoning the row", async () => {
+      const vaultPath = await mkdtemp(join(tmpdir(), "memora-obsidian-retired-"));
+      const pool = new SyncRecordPool(relativePath, retired);
+      await expect(
+        service(pool, vaultPath).handleDeleted({
+          eventId: "00000000-0000-4000-8000-000000000003",
+          occurredAt: new Date(0).toISOString(),
+          memoraId: "11111111-1111-4111-8111-111111111111",
+          relativePath,
+          syncVersion: 1
+        })
+      ).resolves.toMatchObject({ accepted: false, syncStatus: "ignored" });
+      expect(updates(pool)).toEqual([]);
+      await rm(vaultPath, { recursive: true, force: true });
+    });
+
+    it("ignores a move event instead of following the file", async () => {
+      const vaultPath = await mkdtemp(join(tmpdir(), "memora-obsidian-retired-"));
+      const pool = new SyncRecordPool(relativePath, retired);
+      await expect(
+        service(pool, vaultPath).handleMoved({
+          eventId: "00000000-0000-4000-8000-000000000004",
+          occurredAt: new Date(0).toISOString(),
+          memoraId: "11111111-1111-4111-8111-111111111111",
+          previousRelativePath: relativePath,
+          relativePath: "Memora/Sources/renamed.md",
+          syncVersion: 1,
+          mtimeMs: 2
+        })
+      ).resolves.toMatchObject({ accepted: false, syncStatus: "ignored" });
+      expect(updates(pool)).toEqual([]);
+      await rm(vaultPath, { recursive: true, force: true });
+    });
+
+    it("ignores a changed-file event instead of importing it", async () => {
+      const pool = new SyncRecordPool(relativePath, retired);
+      await expect(
+        service(pool).importNote({
+          requestId: "00000000-0000-4000-8000-000000000005",
+          relativePath,
+          markdown: "# Edited",
+          contentHash: "sha256:" + "c".repeat(64),
+          mtimeMs: 3,
+          frontmatter: {
+            memoraId: "11111111-1111-4111-8111-111111111111",
+            memoraType: "source_item",
+            memoraManaged: true,
+            memoraSyncVersion: 1,
+            memoraContentHash: "c".repeat(64),
+            memoraSourceId: "11111111-1111-4111-8111-111111111111",
+            memoraDocumentId: "33333333-3333-4333-8333-333333333333"
+          }
+        } as never)
+      ).resolves.toMatchObject({ accepted: false, syncStatus: "ignored" });
+      expect(updates(pool)).toEqual([]);
+    });
+  });
+
   it("skips metadata-only containers during projection", async () => {
     const service = new ObsidianSyncService({
       getPool: () => new ContainerPool() as unknown as PgPool,
@@ -77,7 +146,10 @@ class EmptyPool {
 class SyncRecordPool {
   readonly queries: string[] = [];
 
-  public constructor(private readonly relativePath: string) {}
+  public constructor(
+    private readonly relativePath: string,
+    private readonly overrides: Record<string, unknown> = {}
+  ) {}
 
   async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
     this.queries.push(text);
@@ -99,7 +171,8 @@ class SyncRecordPool {
       deletedAt: null,
       metadata: {},
       createdAt: new Date(0),
-      updatedAt: new Date(0)
+      updatedAt: new Date(0),
+      ...this.overrides
     };
     const rows = text.includes("obsidian_sync_files") ? [row] : [];
     return {

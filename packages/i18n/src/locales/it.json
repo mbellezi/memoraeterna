@@ -2282,6 +2282,17 @@
     "pageIds": "Pagine della wiki",
     "sourceIds": "Fonti",
     "queued": "Gli aggiornamenti usano la coda delle attività.",
+    "retiredTitle": "File della vecchia wiki",
+    "retiredHint": "La vecchia wiki è stata rimossa, quindi i suoi file escono dalla proiezione. I file non modificati passano in .memora-recovery/retired-wiki. Quelli che hai modificato restano dove sono finché non li sposti.",
+    "retiredArchived": "Spostati nel ripristino",
+    "retiredAbsent": "Già assenti dal vault",
+    "retiredKept": "Conservati perché modificati",
+    "retiredMove": "Sposta nel ripristino",
+    "retiredMore": "I file conservati sono più di quelli elencati qui.",
+    "retiredReasonEdited": "Modificato nel vault",
+    "retiredReasonUnverified": "Impossibile confrontarlo con l’ultima versione proiettata",
+    "retiredReasonUnsafe": "Non spostato: il percorso è un collegamento o è fuori dalla cartella gestita",
+    "retiredReasonLimit": "Non spostato: il file è troppo grande",
     "errors": {
       "conflict": "Il file è cambiato. Esamina le modifiche locali.",
       "binding": "Il vault o l’ambito è cambiato. Riavvia la sincronizzazione.",
@@ -2289,7 +2300,9 @@
       "limit": "Limite superato. Seleziona un ambito più piccolo.",
       "format": "La proiezione contiene marcatori non validi.",
       "write": "Scrittura non riuscita. Il contenuto precedente è recuperabile.",
-      "load": "Impossibile caricare la proiezione."
+      "load": "Impossibile caricare la proiezione.",
+      "retired": "Questo file della wiki è stato ritirato. Le sue modifiche non vengono importate.",
+      "retiredMove": "Impossibile spostare il file in sicurezza. Chiudilo in Obsidian e riprova."
     },
     "historicalPage": "Revisione storica · sola lettura",
     "finishDraft": "Salva o annulla la bozza per aprire il collegamento Obsidian."

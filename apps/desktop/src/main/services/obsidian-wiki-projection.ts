@@ -39,7 +39,12 @@ import {
 } from "@app/integration-contracts";
 import type { StorageSettings } from "../../shared/ipc.js";
 import { collisionFileName, slugify } from "./obsidian-projection.js";
-import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
+import {
+  safeVaultPath,
+  type ObsidianArchiveInput,
+  type ObsidianArchiveResult
+} from "../workers/obsidian-sync.worker.js";
+import { ObsidianWikiRetirement, createPgRetirementStore } from "./obsidian-wiki-retire.js";
 export { obsidianWikiScopeSchema as ObsidianWikiScopeSchema } from "../../shared/ipc.js";
 import { obsidianWikiScopeSchema as ObsidianWikiScopeSchema } from "../../shared/ipc.js";
 export type ObsidianWikiScope = z.infer<typeof ObsidianWikiScopeSchema>;
@@ -72,6 +77,8 @@ export interface WikiProjectionOptions {
   }) => Promise<{
     mtimeMs: number;
   }>;
+  /** Moves one retired file into `.memora-recovery` (the Obsidian sync worker). */
+  archive: (input: ObsidianArchiveInput) => Promise<ObsidianArchiveResult>;
 }
 interface Target {
   id: string;
@@ -95,6 +102,13 @@ export class ObsidianWikiProjection {
     const pool = this.options.getPool();
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
+  }
+  private retirement() {
+    return new ObsidianWikiRetirement({
+      store: createPgRetirementStore(this.pool()),
+      archive: (input) => this.options.archive(input),
+      hash: projectionHash
+    });
   }
   async layout(): Promise<ObsidianLayoutConfig | null> {
     const value = await createSettingsRepository(this.pool()).get("obsidian.layout");
@@ -206,8 +220,25 @@ export class ObsidianWikiProjection {
       active: active(settings),
       job: job ? { status: job.status, error: job.error } : null,
       scope: await this.scope(),
-      conflicts: await repository.conflicts(this.vaultBinding(settings))
+      conflicts: await repository.conflicts(this.vaultBinding(settings)),
+      retired: await this.retirement().report()
     };
+  }
+  /** "Move to recovery" for a retired wiki file that was kept in the vault because it holds edits. */
+  async moveRetiredToRecovery(id: string) {
+    const settings = await this.options.getStorageSettings();
+    if (!settings.obsidianVaultPath) throw new Error("obsidianWiki.errors.binding");
+    const binding = await this.binding(settings);
+    await this.retirement().moveToRecovery(
+      {
+        vaultPath: settings.obsidianVaultPath,
+        managedRoot: settings.managedRoot,
+        binding: this.vaultBinding(settings),
+        assertBinding: () => this.assertBinding(settings, binding)
+      },
+      id
+    );
+    return this.status();
   }
   async diff(id: string) {
     const row = await createObsidianWikiRepository(this.pool()).getDelivery(id),
@@ -340,6 +371,17 @@ export class ObsidianWikiProjection {
       : await this.plan(settings, scope, sources, notes);
     if (targets.reduce((n, t) => n + t.editorial.length + t.generated.length, 0) > 20000000)
       throw new Error("obsidianWiki.errors.limit");
+    // Wiki files the plan no longer produces leave the projection before anything is written.
+    const retired = await this.retirement().retire(
+      {
+        vaultPath: settings.obsidianVaultPath!,
+        managedRoot: settings.managedRoot,
+        binding: this.vaultBinding(settings),
+        assertBinding: () => this.assertBinding(settings, payload.binding),
+        signal
+      },
+      new Set(targets.map((t) => t.id))
+    );
     for (const target of targets) {
       if (signal?.aborted) throw new Error("obsidianWiki.errors.paused");
       await this.assertBinding(settings, payload.binding);
@@ -350,7 +392,7 @@ export class ObsidianWikiProjection {
         else throw error;
       }
     }
-    return { projected, conflicts, targets: targets.length };
+    return { projected, conflicts, targets: targets.length, retired };
   }
   private async assertBinding(settings: StorageSettings, binding: string) {
     if (await createObsidianLayoutRepository(this.pool()).active(this.vaultBinding(settings)))

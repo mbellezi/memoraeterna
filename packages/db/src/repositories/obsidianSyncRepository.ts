@@ -191,6 +191,22 @@ export function createObsidianSyncRepository(db: Queryable) {
       return row ? mapObsidianSyncFile(row) : null;
     },
 
+    /**
+     * The registered wiki page and index files, by path. Retired rows are kept apart from the rest:
+     * the retire pass reads the live ones, the report the retired ones. The status is compared as
+     * text so the query is valid on a database that has not gained the `retired` value yet.
+     */
+    async listWikiFiles(retired: boolean): Promise<ObsidianSyncFileRecord[]> {
+      const result = await db.query<ObsidianSyncFileRow>(
+        `select ${returning} from obsidian_sync_files
+          where (memora_type in ('wiki_page', 'wiki_index') or entity_type in ('wiki_page', 'wiki_index'))
+            and (status::text = 'retired') = $1
+          order by relative_path`,
+        [retired]
+      );
+      return result.rows.map(mapObsidianSyncFile);
+    },
+
     async list(limit?: number): Promise<ObsidianSyncFileRecord[]> {
       const rows = await listRows<ObsidianSyncFileRow>(db, "obsidian_sync_files", returning, limit);
       return rows.map(mapObsidianSyncFile);

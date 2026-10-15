@@ -27,7 +27,8 @@ import {
   obsidianWikiScopeSchema,
   obsidianWikiStatusSchema,
   obsidianWikiDiffSchema,
-  obsidianWikiRecoverSchema
+  obsidianWikiRecoverSchema,
+  obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
 import { MaintenanceCommandSchema, MaintenanceResponseSchema } from "@app/domain";
 import {
@@ -570,6 +571,14 @@ const api: DesktopApi = {
         await ipcRenderer.invoke(
           ipcChannels.obsidianWikiRecover,
           obsidianWikiRecoverSchema.parse(input)
+        )
+      );
+    },
+    async moveRetiredWiki(input) {
+      return obsidianWikiStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianWikiRetiredMove,
+          obsidianWikiRetiredMoveSchema.parse(input)
         )
       );
     },

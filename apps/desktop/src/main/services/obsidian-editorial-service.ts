@@ -52,6 +52,21 @@ export interface EditorialBase {
   version: number;
   hash: string;
 }
+/** The answer to an edit of a retired file: ignored, with the message key that says why. */
+function retiredReceipt(input: ObsidianEditOperation, syncVersion: number): ObsidianEditReceipt {
+  return obsidianEditReceiptSchema.parse({
+    operationId: input.operationId,
+    targetId: input.targetId,
+    status: "ignored",
+    revision: "retired",
+    syncVersion,
+    contentHash: sha256(input.content),
+    projection: "synced",
+    content: input.content,
+    reason: "obsidianWiki.errors.retired",
+    comparison: null
+  });
+}
 export class ObsidianEditorialService {
   private edits: Promise<void> = Promise.resolve();
   constructor(
@@ -164,6 +179,7 @@ export class ObsidianEditorialService {
       if (
         !file ||
         file.status === "deleted" ||
+        file.status === "retired" ||
         file.metadata.layoutMigration ||
         (file.metadata.projectionFormat === 2 && !supportsLayout)
       )
@@ -360,6 +376,8 @@ export class ObsidianEditorialService {
       hash = sha256(JSON.stringify(input));
     const file = await createObsidianSyncRepository(this.pool()).findByMemoraId(input.targetId);
     if (!file) throw new Error("obsidianWiki.errors.binding");
+    // A retired file is outside the projection: nothing is imported, and the plugin keeps the local text.
+    if (file.status === "retired") return retiredReceipt(input, file.syncVersion);
     if (file.metadata.projectionFormat === 2) {
       const grant = await createIntegrationClientRepository(this.pool()).findById(clientId);
       if (!supportsLayout || !grant?.scopes.includes(obsidianLayoutCapability))

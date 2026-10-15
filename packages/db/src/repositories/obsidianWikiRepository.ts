@@ -95,6 +95,13 @@ export function createObsidianWikiRepository(pool: PgPool) {
         )
       ).rows.map((r) => String(r.id));
     },
+    /** Which of these wiki pages still exist: the retire pass never archives the file of a live page. */
+    async existingPageIds(ids: string[]) {
+      if (!ids.length) return [];
+      return (
+        await pool.query("select id from wiki_pages where id=any($1::uuid[])", [ids])
+      ).rows.map((r) => String(r.id));
+    },
     async scopedPages(ids: string[], allowed: string[]) {
       return scopedProjectionPages(pool, ids, allowed);
     },
@@ -231,8 +238,9 @@ export function createObsidianWikiRepository(pool: PgPool) {
     async conflicts(binding: string) {
       return (
         await pool.query(
-          `select distinct on(memora_id) id,memora_id,relative_path,status,error from obsidian_projection_revisions
-        where binding_hash=$1 order by memora_id,created_at desc,id desc`,
+          `select distinct on(memora_id) id,memora_id,relative_path,status,error from obsidian_projection_revisions r
+        where binding_hash=$1 and not exists(select 1 from obsidian_sync_files f where f.memora_id=r.memora_id and f.status::text='retired')
+        order by memora_id,created_at desc,id desc`,
           [binding]
         )
       ).rows

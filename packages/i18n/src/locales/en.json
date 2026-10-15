@@ -2284,6 +2284,17 @@
     "pageIds": "Wiki pages",
     "sourceIds": "Sources",
     "queued": "Projection updates run through the job queue.",
+    "retiredTitle": "Old wiki files",
+    "retiredHint": "The old wiki was removed, so its files leave the vault projection. Unchanged files move to .memora-recovery/retired-wiki. Files you edited stay where they are until you move them.",
+    "retiredArchived": "Moved to recovery",
+    "retiredAbsent": "Already missing from the vault",
+    "retiredKept": "Kept because they were edited",
+    "retiredMove": "Move to recovery",
+    "retiredMore": "More files are kept than are listed here.",
+    "retiredReasonEdited": "Edited in the vault",
+    "retiredReasonUnverified": "Cannot be compared with the last projected version",
+    "retiredReasonUnsafe": "Not moved: the path is a link or outside the managed folder",
+    "retiredReasonLimit": "Not moved: the file is too large",
     "errors": {
       "conflict": "The vault file changed. Review the local edits before projecting again.",
       "binding": "The vault or projection scope changed. Start synchronization again.",
@@ -2291,7 +2302,9 @@
       "limit": "This projection exceeds its size limit. Select a smaller scope.",
       "format": "A managed projection has invalid or unsupported content markers.",
       "write": "The vault write failed. Your previous content remains recoverable.",
-      "load": "Unable to load wiki projection."
+      "load": "Unable to load wiki projection.",
+      "retired": "This wiki file was retired. Edits to it are not imported.",
+      "retiredMove": "The file could not be moved safely. Close it in Obsidian and try again."
     },
     "historicalPage": "Historical revision · read only",
     "finishDraft": "Finish or cancel your draft to open the incoming Obsidian link."

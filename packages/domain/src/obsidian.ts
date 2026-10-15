@@ -9,7 +9,8 @@ export const ObsidianSyncStatusSchema = z.enum([
   "conflicted",
   "deleted",
   "error",
-  "paused"
+  "paused",
+  "retired"
 ]);
 
 export type ObsidianSyncStatus = z.infer<typeof ObsidianSyncStatusSchema>;

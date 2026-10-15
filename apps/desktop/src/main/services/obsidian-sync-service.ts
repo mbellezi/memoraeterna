@@ -1,7 +1,11 @@
 import { ObsidianLayoutMigration } from "./obsidian-layout-migration.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianEditorialService } from "./obsidian-editorial-service.js";
-import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
+import {
+  safeVaultPath,
+  type ObsidianArchiveInput,
+  type ObsidianArchiveResult
+} from "../workers/obsidian-sync.worker.js";
 import {
   isOutwardProjection,
   parseObsidianMarkdown,
@@ -63,6 +67,8 @@ export interface ObsidianSyncServiceOptions {
     recoveryId?: string;
     managedRoot?: string;
   }) => Promise<{ mtimeMs: number }>;
+  /** Replaces the worker that moves retired wiki files into recovery (in-process tests). */
+  archiveProjection?: (input: ObsidianArchiveInput) => Promise<ObsidianArchiveResult>;
 }
 
 export class ObsidianSyncService {
@@ -91,7 +97,8 @@ export class ObsidianSyncService {
     this.wiki = new ObsidianWikiProjection({
       ...options,
       projectSource: (id, notes, binding) => this.projectSource(id, notes, binding),
-      write: (input) => this.writeProjection(input)
+      write: (input) => this.writeProjection(input),
+      archive: (input) => this.archiveProjection(input)
     });
     this.layoutMigration = new ObsidianLayoutMigration({
       ...options,
@@ -205,7 +212,8 @@ export class ObsidianSyncService {
     const pool = this.requirePool();
     const syncFiles = createObsidianSyncRepository(pool);
     const existing = await syncFiles.findByMemoraId(input.frontmatter.memoraId);
-    if (existing?.metadata.projectionWrite)
+    // A retired file is outside the projection; the wire has no such status, so it is ignored.
+    if (existing?.status === "retired" || existing?.metadata.projectionWrite)
       return { requestId: input.requestId, accepted: false, syncStatus: "ignored" };
     if (
       !existing ||
@@ -328,6 +336,7 @@ export class ObsidianSyncService {
     if (
       !isSyncActive(settings) ||
       !record ||
+      record.status === "retired" ||
       record.metadata.editorialBase ||
       record.metadata.editorialPending ||
       record.metadata.projectionWrite ||
@@ -373,7 +382,12 @@ export class ObsidianSyncService {
     const pool = this.requirePool();
     const repository = createObsidianSyncRepository(pool);
     const record = await repository.findByMemoraId(event.memoraId);
-    if (!record || record.metadata.projectionWrite || isOutwardProjection(record.memoraType))
+    if (
+      !record ||
+      record.status === "retired" ||
+      record.metadata.projectionWrite ||
+      isOutwardProjection(record.memoraType)
+    )
       return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
     if (record.metadata.projectionFormat === 2)
       return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
@@ -947,6 +961,16 @@ export class ObsidianSyncService {
         return candidate;
     }
     throw new Error("obsidian_path_collision_exhausted");
+  }
+
+  /** Moves a retired wiki file into `.memora-recovery/retired-wiki` through the sync worker. */
+  private async archiveProjection(input: ObsidianArchiveInput): Promise<ObsidianArchiveResult> {
+    if (this.options.archiveProjection) return this.options.archiveProjection(input);
+    const result = await this.workers.execute("obsidian-sync", { action: "archive", ...input });
+    if (result.outcome === "absent") return { outcome: "absent" };
+    if (result.outcome === "archived" && typeof result.archivedPath === "string")
+      return { outcome: "archived", archivedPath: result.archivedPath };
+    throw new Error("obsidian_worker_invalid_result");
   }
 
   private async writeProjection(input: {
