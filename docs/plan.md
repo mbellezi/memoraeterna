@@ -348,13 +348,17 @@ most one in-flight call.
 
 ### F1b The bridge (weeks 5-6)
 
-- [ ] `objects.locate` (stable contract) and a "Where is this" panel on sources and notes.
+- [x] `objects.locate` (stable contract) and a "Where is this" panel on sources and notes.
 - [ ] Note page v1 as the definitive object-page component, hosted in the Library.
-- [ ] Citations open the exact chunk and SourceSpan.
-- [ ] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
+- [x] Citations open the exact chunk and SourceSpan.
+- [x] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
       menu (⌘W closes a panel); local view-history store.
-- [ ] Static HTML mockups of 8 key screens (Home, Topic, Source, Note, Cmd-K, Inbox, Activity, Map) approved
+- [x] Static HTML mockups of 8 key screens (Home, Topic, Source, Note, Cmd-K, Inbox, Activity, Map) approved
       by the owner.
+
+Measured: `objects.locate` p95 0.75 ms on the restored fixture library and 0.90 ms on a seeded 30,000-note
+library; 326 token pairs pass AA in both themes; mockups approved on 2026-10-15
+(https://claude.ai/artifact/SDrknF4YwtDLdzGF4iwmKG).
 
 Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
 passes AA in both themes; mockups approved.
