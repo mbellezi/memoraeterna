@@ -391,7 +391,9 @@ const GateCandidateSchema = z
     descriptorHash: z.string().min(1).max(200),
     cosine: z.number().finite(),
     labelCosine: z.number().finite().nullable(),
-    logOdds: z.number().finite().nullable()
+    logOdds: z.number().finite().nullable(),
+    /** The ranker cut this candidate's sequence to fit (recorded, never silent; T23). */
+    truncated: z.boolean().optional()
   })
   .strict();
 

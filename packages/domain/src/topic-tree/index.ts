@@ -7,6 +7,7 @@ export * from "./bootstrap.js";
 export * from "./build.js";
 export * from "./config.js";
 export * from "./events.js";
+export * from "./gate.js";
 export * from "./human-ops.js";
 export * from "./hungarian.js";
 export * from "./ids.js";

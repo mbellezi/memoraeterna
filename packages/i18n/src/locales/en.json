@@ -480,7 +480,8 @@
       "topicRebalance": "Topic tree rebalancing",
       "topicAudit": "Topic tree audit",
       "topicName": "Topic naming",
-      "topicLabelEmbed": "Topic labels"
+      "topicLabelEmbed": "Topic labels",
+      "topicGate": "Topic placement decision"
     },
     "progress": {
       "processingSource": "Processing {title}",
@@ -1928,7 +1929,8 @@
       "canceled": "The topic task was canceled."
     },
     "changeSets": {
-      "naming": "Topic names updated: {topics}"
+      "naming": "Topic names updated: {topics}",
+      "gate": "Checked {items} uncertain placements"
     }
   },
   "wiki": {

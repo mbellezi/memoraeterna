@@ -482,7 +482,8 @@
       "topicRebalance": "Rééquilibrage de l’arbre des sujets",
       "topicAudit": "Audit de l’arbre des sujets",
       "topicName": "Nommage des sujets",
-      "topicLabelEmbed": "Étiquettes des sujets"
+      "topicLabelEmbed": "Étiquettes des sujets",
+      "topicGate": "Décision de classement dans les sujets"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
@@ -1933,7 +1934,8 @@
       "canceled": "La tâche sur les sujets a été annulée."
     },
     "changeSets": {
-      "naming": "Noms de sujets mis à jour : {topics}"
+      "naming": "Noms de sujets mis à jour : {topics}",
+      "gate": "{items} classements incertains vérifiés"
     }
   },
   "wiki": {

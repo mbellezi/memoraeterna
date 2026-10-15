@@ -484,7 +484,8 @@
       "topicRebalance": "Reequilibrio del árbol de temas",
       "topicAudit": "Auditoría del árbol de temas",
       "topicName": "Nombre de temas",
-      "topicLabelEmbed": "Etiquetas de temas"
+      "topicLabelEmbed": "Etiquetas de temas",
+      "topicGate": "Decisión de ubicación en temas"
     },
     "progress": {
       "processingSource": "Procesando {title}",
@@ -1935,7 +1936,8 @@
       "canceled": "La tarea de temas se canceló."
     },
     "changeSets": {
-      "naming": "Nombres de temas actualizados: {topics}"
+      "naming": "Nombres de temas actualizados: {topics}",
+      "gate": "{items} ubicaciones dudosas revisadas"
     }
   },
   "wiki": {

@@ -484,7 +484,8 @@
       "topicRebalance": "Reequilíbrio da árvore de tópicos",
       "topicAudit": "Auditoria da árvore de tópicos",
       "topicName": "Nomeação de tópicos",
-      "topicLabelEmbed": "Rótulos de tópicos"
+      "topicLabelEmbed": "Rótulos de tópicos",
+      "topicGate": "Decisão de posicionamento em tópicos"
     },
     "progress": {
       "processingSource": "Processando {title}",
@@ -1931,7 +1932,8 @@
       "canceled": "A tarefa de tópicos foi cancelada."
     },
     "changeSets": {
-      "naming": "Nomes de tópicos atualizados: {topics}"
+      "naming": "Nomes de tópicos atualizados: {topics}",
+      "gate": "{items} posicionamentos incertos verificados"
     }
   },
   "wiki": {

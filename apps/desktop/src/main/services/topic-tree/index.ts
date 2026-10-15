@@ -21,6 +21,7 @@ import { createTopicChangeHooks } from "./topic-hooks.js";
 import type { TopicChangeHooks } from "./topic-hooks.js";
 import { registerTopicTreeIpc } from "./topic-ipc.js";
 import type { TopicsChangedTarget } from "./topic-ipc.js";
+import { TopicGateService } from "./topic-gate.js";
 import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobExecutor } from "./topic-jobs.js";
 import { TopicLabelService } from "./topic-labels.js";
@@ -59,8 +60,9 @@ export interface TopicTreeServicesOptions {
   /**
    * The AI service the naming and label jobs call (T18) and the library's content language. Both
    * are needed to register those jobs; scripts and tests that drive placement alone leave them out.
+   * The gate (T23) needs only the AI service: its validated ranker.
    */
-  ai?: Pick<AiService, "runDefaultTask" | "activeEmbeddingSpace">;
+  ai?: Pick<AiService, "runDefaultTask" | "activeEmbeddingSpace" | "rank" | "decideRouteStatus">;
   getContentLanguage?: () => Promise<string>;
 }
 
@@ -76,6 +78,8 @@ export interface TopicTreeServices {
   /** Topic names (D11) and label vectors; null without `options.ai` and `getContentLanguage`. */
   naming: TopicNamingService | null;
   labels: TopicLabelService | null;
+  /** The placement gate (D10); null without `options.ai`. */
+  gate: TopicGateService | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -93,11 +97,15 @@ export interface TopicTreeServices {
   dispose(): void;
 }
 
-/** What `topics.status` takes from the engine: its phase, what blocks it and the daily cap. */
-export function engineStatusOf(status: TopicServiceStatus): TopicEngineStatus {
+/**
+ * What `topics.status` takes from the engine: its phase, what blocks it and the daily cap.
+ * `noDecider`: items wait for the gate and no validated ranker can decide them (informative, D10).
+ */
+export function engineStatusOf(status: TopicServiceStatus, noDecider = false): TopicEngineStatus {
+  const blocked = status.blocked ?? (noDecider ? "no_decider" : null);
   return {
     phase: status.phase,
-    ...(status.blocked ? { blocked: status.blocked } : {}),
+    ...(blocked ? { blocked } : {}),
     dailyCapReached: status.dailyCapReached
   };
 }
@@ -155,13 +163,33 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(options.now ? { now: options.now } : {})
   });
 
+  // The placement gate (T23, D10) on the `model` worker: only the AI service's validated ranker.
+  const gate = options.ai
+    ? new TopicGateService({
+        getPool,
+        service: topicService,
+        ai: options.ai,
+        aiMode,
+        triggers,
+        changes,
+        ...(logger ? { logger } : {}),
+        ...(options.now ? { now: options.now } : {})
+      })
+    : null;
+
   // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
   let read: TopicReadService | null = null;
   if (options.ipc) {
     const registeredIpc = registerTopicTreeIpc(options.ipc.main, {
       getPool,
       targets: options.ipc.targets,
-      engineStatus: async () => engineStatusOf(await topicService.status()),
+      engineStatus: async () => {
+        const status = await topicService.status();
+        return engineStatusOf(
+          status,
+          (await gate?.waitingForDecider(status.counts.needsGate)) ?? false
+        );
+      },
       ...(options.now ? { now: options.now } : {}),
       ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
     });
@@ -237,6 +265,13 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     };
     changes.subscribe(namingService.onTopicsChanged);
   }
+  if (gate) {
+    executors[topicJobTypes.gate] = {
+      needsModel: true,
+      execute: (job, signal) => gate.runGate(job, signal)
+    };
+    changes.subscribe(gate.onTopicsChanged);
+  }
   registered = new Set(Object.keys(executors));
   const jobs = createTopicJobRegistry(executors, () => topicService.isHeld());
 
@@ -266,6 +301,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     read,
     naming,
     labels,
+    gate,
     budget,
     aiMode,
     jobs,

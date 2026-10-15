@@ -482,7 +482,8 @@
       "topicRebalance": "Ribilanciamento dell’albero degli argomenti",
       "topicAudit": "Verifica dell’albero degli argomenti",
       "topicName": "Denominazione degli argomenti",
-      "topicLabelEmbed": "Etichette degli argomenti"
+      "topicLabelEmbed": "Etichette degli argomenti",
+      "topicGate": "Decisione di collocazione negli argomenti"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
@@ -1926,7 +1927,8 @@
       "canceled": "L’attività sugli argomenti è stata annullata."
     },
     "changeSets": {
-      "naming": "Nomi degli argomenti aggiornati: {topics}"
+      "naming": "Nomi degli argomenti aggiornati: {topics}",
+      "gate": "{items} collocazioni incerte verificate"
     }
   },
   "wiki": {
