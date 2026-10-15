@@ -24,6 +24,24 @@ same 138 notes; only matching differed. Reports: `.cache/golden/matching-f1a*.md
 - The old pipeline reached 27/28 held-out on the note layer with a different extraction of the same texts
   (`docs/archive/matching-benchmark-report.md`).
 
+## Golden library (10 roots, 197 chunks, 160 notes)
+
+Re-recorded with the F1a pipeline (`.cache/golden/runs/2026-10-15T00-47-40-446Z`). Summaries and notes were
+served from the F0 cassette (same prompts), so the 160 notes are the ones of the v6 baseline; the knowledge
+graph and matching ran live.
+
+| Task | F0 (v6) calls / min / output tokens | F1a calls / min / output tokens |
+| --- | --- | --- |
+| knowledge-graph-generation | 312 / 37.0 / 273,977 | 230 / 24.1 / 177,503 |
+| note matching | 176 / 27.7 / ~184,000 | 151 / 11.4 / ~64,800 |
+| generative calls per chunk | 3.06 | 2.51 |
+
+- Wall time 79.8 → 40.0 min (summaries and notes replayed here; they took 6.8 min live in F0).
+- Note matching: **4.29 s per note** (p50 4.14 s, p95 7.97 s, 429 output tokens per call) against 10.4 s
+  in v6: 41% of the baseline, short of the ≤1/3 target that the fixture meets (2.96 s). The golden notes
+  are longer and keep more feasible candidates per call. The remaining gap is being analysed.
+- 105 note relations (v6: 91), 1 source relation (v6: 2), 484 entities (v6: 565, no claims).
+
 ## Why the note layer reads 22-24 (diagnosis)
 
 - Extraction sampling: the F1a run extracted different notes for the same roots, and the four missing
