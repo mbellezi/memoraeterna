@@ -467,13 +467,13 @@ Wave 2:
       shell that hosts the empty state.
 
 Wave 3 (gate A at the end):
-- [ ] T11 Qwen3-Reranker catalog entries, MLX and GGUF (revision, size, license, SHA-256), validated for
+- [x] T11 Qwen3-Reranker catalog entries, MLX and GGUF (revision, size, license, SHA-256), validated for
       `decide` on install.
-- [ ] T12 Topic tables (migration 0053) and the engine write repository: guarded single writer, minimal
+- [x] T12 Topic tables (migration 0053) and the engine write repository: guarded single writer, minimal
       change-sets, exact undo, deletion by cascade (D9, D32).
-- [ ] T12b Paged topic skeleton and vector loading.
-- [ ] T13 Clustering worker with transferred vectors.
-- [ ] T39r Remove curator placement and its "Index of X" pages, route continuation, the organization and
+- [x] T12b Paged topic skeleton and vector loading.
+- [x] T13 Clustering worker with transferred vectors.
+- [x] T39r Remove curator placement and its "Index of X" pages, route continuation, the organization and
       maintenance services, legacy IPC and job types, and T35b's IPC fences.
 
 Wave 4:

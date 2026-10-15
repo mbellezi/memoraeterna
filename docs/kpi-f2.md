@@ -34,3 +34,22 @@ kept until the owner asks to remove them; the old wiki can be read by restoring 
 | Mis-parent audit at depths 2 / 3 / 4 | 3.13 / 1.26 / 0.71% (17 ms) | Spike B 3.1 / 1.3 / 0.7% |
 | REBALANCE settle on that build | 0.2 s, 20 operations, 1.31% of items moved, 0 hard violations | — |
 | Undo | exact (byte-equal dump, bit-equal stats) over 1,000 random sequences and a 1,500-seed stress run | — |
+
+## Wave 3 and gate A (2026-10-15)
+
+| Measure | Result | Bar |
+| --- | --- | --- |
+| Topic tables (0053): bootstrap of a 2,000-item tree | 0.31-0.34 s, stored tree equal to the engine dump, statistics bit-equal | — |
+| PLACE change-set through the repository, p50 / max | 5.5-6.2 / 8.5 ms | — |
+| Undo of the last 5 change-sets | 7.5-14.6 ms each; snapshot hash equal to before | exact |
+| Skeleton load (18,632 notes, 1,500 topics) p50 / p95 | 57 / 70 ms | ≤300 ms |
+| Vector load (18,611 × 1024, binary) p50 / max | 224 / 251 ms (text form 866 ms) | ≤5,000 ms |
+| Ranker install from the local seed + automatic decide validation | MLX 4.5 s, GGUF 3.5 s; a one-byte change voids it | — |
+| IVF recall@10 at nprobe 8 (3,000 / 6,000 samples / production queries) | 0.931 / 0.942 / 0.963 | ≥0.9 |
+| Worker partition | equals the in-process build; partition hash equals Spike B's | equal |
+| E3 weekly churn, Spike B reference engine (chronological / shuffled) | max 4.56% / 3.38%, median 3.36% / 3.01%; 0 hard violations | ≤3% |
+
+Gate A: parity, property tests, worker parity and IVF recall pass. The E3 churn above was measured with the
+reference engine, which has none of T08's stability controls; the gate's "measured path through stability
+settings" is being produced by replaying the real engine (T07 PLACE + T08 REBALANCE with hysteresis, cooldown,
+freeze and budgets) with the settings calibrated on the calibration seeds only.
