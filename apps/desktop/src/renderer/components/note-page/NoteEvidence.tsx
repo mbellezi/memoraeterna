@@ -20,7 +20,7 @@ function EvidenceFigure({
   item: NotePageEvidence;
   onOpenPassage: (sourceItemId: string, passage: PassageAnchor) => void;
 }) {
-  const quote = useRef<HTMLQuoteElement>(null);
+  const quote = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const overflows = useClampOverflow(quote, !expanded);
   const quoteId = useId();
@@ -61,12 +61,14 @@ function EvidenceFigure({
         )}
       </figcaption>
       <blockquote
-        ref={quote}
         id={quoteId}
         lang={item.language ?? undefined}
-        className={`rounded-md bg-soft px-3 py-2 font-reading text-reading leading-6 whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}
+        className="rounded-md bg-soft px-3 py-2 font-reading text-reading leading-6"
       >
-        {item.excerpt}
+        {/* The clamp sits inside the padding, so no part of a hidden line shows. */}
+        <div ref={quote} className={`whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}>
+          {item.excerpt}
+        </div>
       </blockquote>
       {overflows || expanded ? (
         <button

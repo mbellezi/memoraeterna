@@ -323,7 +323,8 @@ describe("Note page relations", () => {
       ),
       { openCard: fixtureId(60) }
     );
-    expect(explained).toContain('<strong class="font-semibold">this note</strong>');
+    // A reference that starts the explanation starts the sentence.
+    expect(explained).toContain('<strong class="font-semibold">This note</strong><span> qualifies');
     expect(explained).toContain("Explained by <strong");
     expect(explained).not.toContain("Writing an explanation");
   });

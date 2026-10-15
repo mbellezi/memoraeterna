@@ -58,6 +58,8 @@ export function NoteEditForm({
         </label>
         <Input
           id={ids.title}
+          // The editor replaces the control that opened it: focus moves into it.
+          autoFocus
           lang={lang}
           value={draft.title}
           onChange={(event) => onChange({ ...draft, title: event.target.value })}

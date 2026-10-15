@@ -81,7 +81,7 @@ export function RelationEvidenceCard({
       role="group"
       aria-label={t("notePage.card.label", { values: { type: word } })}
       className={cn(
-        "absolute left-26 z-10 flex w-120 max-w-full flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg motion-scale-in",
+        "absolute right-0 left-26 z-10 flex max-w-120 flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg motion-scale-in",
         above ? "bottom-[calc(100%-0.5rem)]" : "top-[calc(100%-0.5rem)]"
       )}
     >

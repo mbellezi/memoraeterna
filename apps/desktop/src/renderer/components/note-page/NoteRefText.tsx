@@ -24,14 +24,16 @@ export function NoteRefText({
     other.ideaStatement.length > ideaLength
       ? `${other.ideaStatement.slice(0, ideaLength - 1).trimEnd()}…`
       : other.ideaStatement;
+  const segments = noteRefSegments(text.trimStart(), { thisId, otherId: other.id });
   return (
     <>
-      {noteRefSegments(text, { thisId, otherId: other.id }).map((segment, index) =>
+      {segments.map((segment, index) =>
         typeof segment === "string" ? (
           <span key={index}>{segment}</span>
         ) : segment.ref === "this" ? (
           <strong key={index} className="font-semibold">
-            {t("notePage.card.thisNoteObject")}
+            {/* At the start of the text it begins the sentence. */}
+            {t(index === 0 ? "notePage.card.thisNoteSubject" : "notePage.card.thisNoteObject")}
           </strong>
         ) : segment.ref === "other" ? (
           <strong key={index} className="font-semibold">
