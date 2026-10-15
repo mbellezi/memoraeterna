@@ -30,9 +30,11 @@ import {
   createProcessingTaskRepository,
   createHierarchicalIngestionRepository,
   createSourceItemRepository,
+  type JobLane,
   type JobRecord,
   type JsonObject,
-  type PgPool
+  type PgPool,
+  type UpdateJobInput
 } from "@app/db";
 import { chunkMarkdown } from "@app/conversion";
 
@@ -44,6 +46,13 @@ import { logStructuredError } from "./structured-logging.js";
 import { canManuallyRetryJob } from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
+import {
+  JobLoop,
+  lightWorkers,
+  lightWorkerTypes,
+  type LightJobRegistry,
+  type LightWorker
+} from "./job-lanes.js";
 
 export interface JobSupervisorOptions {
   traceOperation?: <T>(
@@ -84,6 +93,8 @@ export interface JobSupervisorOptions {
     wiki?: ObsidianSyncService["wiki"];
   };
   releaseAiRuntime?: () => Promise<void>;
+  /** Light-lane job types; a worker runs only when it has a type (D33). */
+  lightJobs?: LightJobRegistry;
 }
 
 /** Deterministic: the document has no text, so a retry can only fail again. */
@@ -104,19 +115,37 @@ const supportedJobTypes = new Set<string>([
   "asset-storage"
 ]);
 
+/**
+ * Runs persisted jobs in two lanes: one heavy loop (ingestion and the legacy admissions) and the
+ * light lane's `compute` and `model` workers, which claim disjoint light job types. Each loop runs
+ * one job at a time and never waits for another loop.
+ */
 export class JobSupervisor {
   private readonly workers = new WorkerSupervisor();
   private readonly controllers = new Map<string, AbortController>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
-  private stopping = false;
-  private drainPromise: Promise<void> | null = null;
-  private nextDrainDelay: number | null = null;
+  private readonly heavyLoop: JobLoop;
+  private readonly lightLoops: JobLoop[];
+  private readonly lightJobs: LightJobRegistry;
+  private readonly lightTypes: Readonly<Record<LightWorker, readonly string[]>>;
   private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
   private readonly listeners = new Set<() => void>();
   private readonly workerId = `${hostname()}:${process.pid}`;
 
-  public constructor(private readonly options: JobSupervisorOptions) {}
+  public constructor(private readonly options: JobSupervisorOptions) {
+    this.lightJobs = options.lightJobs ?? {};
+    for (const type of Object.keys(this.lightJobs))
+      if (supportedJobTypes.has(type)) throw new Error(`job_lane_conflict:${type}`);
+    this.lightTypes = lightWorkerTypes(this.lightJobs);
+    // Only the heavy loop polls the idle release, as often as before the lanes existed.
+    this.heavyLoop = this.createLoop(
+      async () => (await this.runOnce()) !== null,
+      () => this.releaseIdleRuntime()
+    );
+    this.lightLoops = lightWorkers
+      .filter((worker) => this.lightTypes[worker].length > 0)
+      .map((worker) => this.createLoop(async () => (await this.runLightOnce(worker)) !== null));
+  }
 
   public async start(): Promise<void> {
     if (this.running) return;
@@ -124,23 +153,21 @@ export class JobSupervisor {
     await createJobRepository(pool).recoverInterrupted();
     await createIngestionRunRepository(pool).recoverInterrupted();
     this.running = true;
-    this.stopping = false;
-    this.schedule(0);
+    for (const loop of this.loops()) loop.start();
   }
 
+  /** Stops every loop and resolves once each one's job in progress has ended. */
   public async stop(): Promise<void> {
-    this.stopping = true;
     this.running = false;
-    this.nextDrainDelay = null;
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
+    const stopped = this.loops().map((loop) => loop.stop());
     for (const controller of this.controllers.values()) controller.abort();
     await this.workers.shutdown();
-    await this.drainPromise;
+    await Promise.all(stopped);
     await Promise.allSettled(this.pendingProgressUpdates);
     this.controllers.clear();
   }
 
+  /** One heavy pass: the legacy admissions, then at most one heavy job. */
   public async runOnce(): Promise<JobRecord | null> {
     try {
       await this.options.reconcileOrganization?.();
@@ -160,12 +187,13 @@ export class JobSupervisor {
     }
     let job = await repository.claimNext(
       this.workerId,
-      [...supportedJobTypes].filter((t) => t !== "maintenance")
+      [...supportedJobTypes].filter((t) => t !== "maintenance"),
+      "heavy"
     );
     if (!job) {
       const pending = await repository.nextQueuedOfType("maintenance");
       if (pending && (await this.options.maintenanceReady?.(pending)))
-        job = await repository.claimNext(this.workerId, ["maintenance"]);
+        job = await repository.claimNext(this.workerId, ["maintenance"], "heavy");
     }
     if (!job) return null;
     this.notify();
@@ -213,15 +241,7 @@ export class JobSupervisor {
         },
         execute
       ) ?? execute());
-      const updated = await repository.update(job.id, {
-        status: controller.signal.aborted ? "canceled" : "succeeded",
-        progress: controller.signal.aborted ? job.progress : 1,
-        result,
-        error: null,
-        lockedAt: null,
-        lockedBy: null,
-        finishedAt: new Date()
-      });
+      const updated = await repository.update(job.id, finishedJob(job, result, controller.signal));
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
         await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
@@ -244,37 +264,63 @@ export class JobSupervisor {
           await runs.fail(job.payload.ingestionRunId, normalizeWorkerError(error));
         }
       }
-      const normalizedError = normalizeWorkerError(error);
-      const updated = await repository.update(job.id, {
-        status: wasCanceled ? "canceled" : shouldRetry ? "queued" : "failed",
-        error: wasCanceled ? null : normalizedError,
-        payload: wasCanceled
-          ? job.payload
-          : appendErrorHistory(job.payload, {
-              message: normalizedError,
-              stage: job.type,
-              attempt: job.attempts,
-              occurredAt: new Date().toISOString()
-            }),
-        runAfter: shouldRetry
-          ? new Date(
-              Date.now() +
-                Math.max(
-                  Math.min(30_000, 1_000 * 2 ** job.attempts),
-                  aiErrorRetryAfterMs(error) ?? 0
-                )
-            )
-          : job.runAfter,
-        lockedAt: null,
-        lockedBy: null,
-        finishedAt: shouldRetry ? null : new Date()
-      });
+      const updated = await repository.update(
+        job.id,
+        failedJob(job, error, wasCanceled, shouldRetry)
+      );
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
         await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
       // A run that failed for good may have been the one the rest of its batch was waiting for.
       if (batchId && job.type === "ingestion" && !wasCanceled && !shouldRetry)
         await this.releaseParkedBatch(batchId);
+      this.notify();
+      return updated;
+    } finally {
+      this.controllers.delete(job.id);
+    }
+  }
+
+  /** One pass of a light worker: at most one light job of its types, never a heavy one. */
+  public async runLightOnce(worker: LightWorker): Promise<JobRecord | null> {
+    const types = this.lightTypes[worker];
+    if (types.length === 0) return null;
+    const repository = createJobRepository(this.requirePool());
+    const job = await repository.claimNext(`${this.workerId}:light-${worker}`, types, "light");
+    if (!job) return null;
+    this.notify();
+    const executor = this.lightJobs[job.type]!;
+    const controller = new AbortController();
+    this.controllers.set(job.id, controller);
+    try {
+      const taskJob = { ...job, payload: jobTaskPayload(job.payload) };
+      const execute = async () =>
+        withPromptPin(
+          job.payload.promptPin ? PromptPinSchema.parse(job.payload.promptPin) : null,
+          () => executor.execute(taskJob, controller.signal)
+        );
+      const result = await (this.options.traceOperation?.(
+        job.type,
+        {
+          jobId: job.id,
+          sourceItemId: job.payload.sourceItemId,
+          origin: "job",
+          lane: "light",
+          attempt: job.attempts
+        },
+        execute
+      ) ?? execute());
+      const updated = await repository.update(job.id, finishedJob(job, result, controller.signal));
+      this.notify();
+      return updated;
+    } catch (error) {
+      const wasCanceled = controller.signal.aborted;
+      const shouldRetry =
+        !wasCanceled && job.attempts < job.maxAttempts && isTransientJobFailure(error);
+      const updated = await repository.update(
+        job.id,
+        failedJob(job, error, wasCanceled, shouldRetry)
+      );
       this.notify();
       return updated;
     } finally {
@@ -293,14 +339,15 @@ export class JobSupervisor {
     try {
       const pool = this.requirePool();
       const parked = await createIngestionRunRepository(pool).findReleasableBatchRun(batchId);
-      if (parked && (await createJobRepository(pool).retry(parked.jobId))) this.schedule(0);
+      if (parked && (await createJobRepository(pool).retry(parked.jobId))) this.wakeLoops("heavy");
     } catch (error) {
       this.options.logger?.warn(normalizeWorkerError(error));
     }
   }
 
-  public wake(): void {
-    this.schedule(0);
+  /** Runs a pass at once: every loop, or only the loops of one lane. */
+  public wake(lane?: JobLane): void {
+    this.wakeLoops(lane);
     this.notify();
   }
 
@@ -311,7 +358,7 @@ export class JobSupervisor {
     const id = await createKnowledgeGraphRepository(this.requirePool()).queueRelationLabels(
       payload
     );
-    this.schedule(0);
+    this.wakeLoops("heavy");
     this.notify();
     return id;
   }
@@ -367,7 +414,7 @@ export class JobSupervisor {
       : null;
     if (!canManuallyRetryJob(current, ingestionRun)) return null;
     const job = await repository.retry(jobId);
-    if (job) this.schedule(0);
+    if (job) this.wakeLoops(job.lane);
     if (job) this.notify();
     return job;
   }
@@ -411,7 +458,7 @@ export class JobSupervisor {
       })
     );
     this.notify();
-    if (this.drainPromise) await this.drainPromise;
+    await Promise.all(this.loops().map((loop) => loop.settled()));
     await Promise.allSettled(this.pendingProgressUpdates);
   }
 
@@ -435,24 +482,29 @@ export class JobSupervisor {
     }));
   }
 
-  private schedule(delay: number): void {
-    if (!this.running || this.stopping) return;
-    if (this.drainPromise) {
-      this.nextDrainDelay = Math.min(this.nextDrainDelay ?? delay, delay);
-      return;
-    }
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.drainPromise = this.drain()
-        .catch((error: unknown) => this.options.logger?.error(normalizeWorkerError(error)))
-        .finally(() => {
-          this.drainPromise = null;
-          const next = this.nextDrainDelay;
-          this.nextDrainDelay = null;
-          if (next !== null) this.schedule(next);
-        });
-    }, delay);
+  private createLoop(pass: () => Promise<boolean>, onIdle?: () => Promise<void>): JobLoop {
+    return new JobLoop({
+      pass,
+      ...(onIdle ? { onIdle } : {}),
+      pollIntervalMs: this.options.pollIntervalMs ?? 500,
+      onError: (error) => this.options.logger?.error(normalizeWorkerError(error))
+    });
+  }
+
+  private loops(): JobLoop[] {
+    return [this.heavyLoop, ...this.lightLoops];
+  }
+
+  private wakeLoops(lane?: JobLane): void {
+    const loops =
+      lane === "heavy" ? [this.heavyLoop] : lane === "light" ? this.lightLoops : this.loops();
+    for (const loop of loops) loop.wake();
+  }
+
+  /** Local models are released only when no loop of either lane runs or has just run a job. */
+  private async releaseIdleRuntime(): Promise<void> {
+    if (this.loops().some((loop) => loop.busy)) return;
+    await this.options.releaseAiRuntime?.();
   }
 
   /**
@@ -1149,19 +1201,6 @@ export class JobSupervisor {
     }
   }
 
-  private async drain(): Promise<void> {
-    if (!this.running || this.stopping) return;
-    let delay = this.options.pollIntervalMs ?? 500;
-    try {
-      const job = await this.runOnce();
-      if (!job) await this.options.releaseAiRuntime?.();
-      if (job) delay = 0;
-    } finally {
-      // A failed admission, database read or idle cleanup must not stop polling.
-      this.schedule(delay);
-    }
-  }
-
   private trackProgress(promise: Promise<unknown>): void {
     this.pendingProgressUpdates.add(promise);
     void promise
@@ -1312,6 +1351,50 @@ function readStringArray(value: unknown): string[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** The update that ends a job whose work returned, or that was canceled while it ran. */
+function finishedJob(job: JobRecord, result: JsonObject, signal: AbortSignal): UpdateJobInput {
+  return {
+    status: signal.aborted ? "canceled" : "succeeded",
+    progress: signal.aborted ? job.progress : 1,
+    result,
+    error: null,
+    lockedAt: null,
+    lockedBy: null,
+    finishedAt: new Date()
+  };
+}
+
+/** The update after a failure: canceled, queued again after a growing backoff, or failed. */
+function failedJob(
+  job: JobRecord,
+  error: unknown,
+  wasCanceled: boolean,
+  shouldRetry: boolean
+): UpdateJobInput {
+  const normalizedError = normalizeWorkerError(error);
+  return {
+    status: wasCanceled ? "canceled" : shouldRetry ? "queued" : "failed",
+    error: wasCanceled ? null : normalizedError,
+    payload: wasCanceled
+      ? job.payload
+      : appendErrorHistory(job.payload, {
+          message: normalizedError,
+          stage: job.type,
+          attempt: job.attempts,
+          occurredAt: new Date().toISOString()
+        }),
+    runAfter: shouldRetry
+      ? new Date(
+          Date.now() +
+            Math.max(Math.min(30_000, 1_000 * 2 ** job.attempts), aiErrorRetryAfterMs(error) ?? 0)
+        )
+      : job.runAfter,
+    lockedAt: null,
+    lockedBy: null,
+    finishedAt: shouldRetry ? null : new Date()
+  };
 }
 
 function appendErrorHistory(

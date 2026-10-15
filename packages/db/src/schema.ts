@@ -782,11 +782,26 @@ export const jobs = pgTable(
     lockedBy: text("locked_by"),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+    /** `heavy` (ingestion) or `light` (tree and projection work); each lane has its own workers. */
+    lane: text("lane").notNull().default("heavy"),
+    /** At most one queued job per key. Claiming or retrying a job drops its key. */
+    dedupeKey: text("dedupe_key"),
     ...timestamps
   },
   (table) => ({
     queueIdx: index("jobs_queue_idx").on(table.status, table.priority, table.runAfter),
-    lockedIdx: index("jobs_locked_idx").on(table.lockedBy, table.lockedAt)
+    lockedIdx: index("jobs_locked_idx").on(table.lockedBy, table.lockedAt),
+    laneQueueIdx: index("jobs_lane_queue_idx")
+      .on(table.lane, table.priority.desc().nullsFirst(), table.runAfter)
+      .where(sql`${table.status} = 'queued'`),
+    dedupeQueuedUidx: uniqueIndex("jobs_dedupe_queued_uidx")
+      .on(table.dedupeKey)
+      .where(sql`${table.dedupeKey} is not null and ${table.status} = 'queued'`),
+    laneCheck: check("jobs_lane", sql`${table.lane} in ('heavy','light')`),
+    dedupeKeyCheck: check(
+      "jobs_dedupe_key",
+      sql`${table.dedupeKey} is null or char_length(${table.dedupeKey}) between 1 and 200`
+    )
   })
 );
 

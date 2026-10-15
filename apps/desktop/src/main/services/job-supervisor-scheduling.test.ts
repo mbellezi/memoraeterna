@@ -94,6 +94,12 @@ describe("ingestion queue scheduling", () => {
     expect(enqueue).toHaveBeenCalledOnce();
     expect(maintenanceTick).toHaveBeenCalledOnce();
     expect(mocks.jobs.claimNext).toHaveBeenCalledOnce();
+    // The heavy pass claims heavy work only; light jobs belong to the light workers.
+    expect(mocks.jobs.claimNext).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(["ingestion"]),
+      "heavy"
+    );
   });
   it("fails a document without text with a localized error and does not retry it", async () => {
     // A web capture whose Defuddle result was empty used to fail here as "missing_markdown".

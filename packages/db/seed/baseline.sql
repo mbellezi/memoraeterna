@@ -2385,3 +2385,10 @@ ALTER TABLE "source_relations" ALTER COLUMN "target_idea" DROP NOT NULL;--> stat
 ALTER TABLE "source_relations" ALTER COLUMN "explanation" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "source_relation_explanations" ADD CONSTRAINT "source_relation_explanations_relation_id_source_relations_id_fk" FOREIGN KEY ("relation_id") REFERENCES "public"."source_relations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "source_relation_explanations" ADD CONSTRAINT "source_relation_explanations_ai_task_run_id_ai_task_runs_id_fk" FOREIGN KEY ("ai_task_run_id") REFERENCES "public"."ai_task_runs"("id") ON DELETE set null ON UPDATE no action;
+
+ALTER TABLE "jobs" ADD COLUMN "lane" text DEFAULT 'heavy' NOT NULL;--> statement-breakpoint
+ALTER TABLE "jobs" ADD COLUMN "dedupe_key" text;--> statement-breakpoint
+CREATE INDEX "jobs_lane_queue_idx" ON "jobs" USING btree ("lane","priority" DESC NULLS FIRST,"run_after") WHERE "jobs"."status" = 'queued';--> statement-breakpoint
+CREATE UNIQUE INDEX "jobs_dedupe_queued_uidx" ON "jobs" USING btree ("dedupe_key") WHERE "jobs"."dedupe_key" is not null and "jobs"."status" = 'queued';--> statement-breakpoint
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_lane" CHECK ("jobs"."lane" in ('heavy','light'));--> statement-breakpoint
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_dedupe_key" CHECK ("jobs"."dedupe_key" is null or char_length("jobs"."dedupe_key") between 1 and 200);

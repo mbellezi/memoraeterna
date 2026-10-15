@@ -1,4 +1,5 @@
 import type { QueryResultRow } from "pg";
+import { sanitizeStoredValue } from "@app/domain";
 import { taskHistoryCutoffKey, terminalTaskStatusesSql } from "./taskHistory.js";
 
 import {
@@ -9,7 +10,7 @@ import {
   mapTimestamp,
   updateRow
 } from "./sql.js";
-import type { JobRecord, JobStatus, JsonObject, Queryable } from "./types.js";
+import type { JobLane, JobRecord, JobStatus, JsonObject, Queryable } from "./types.js";
 
 interface JobRow extends QueryResultRow {
   id: string;
@@ -27,6 +28,8 @@ interface JobRow extends QueryResultRow {
   lockedBy: string | null;
   finishedAt: unknown;
   cancelRequestedAt: unknown;
+  lane: JobLane;
+  dedupeKey: string | null;
   createdAt: unknown;
   updatedAt: unknown;
 }
@@ -37,6 +40,38 @@ export interface CreateJobInput {
   priority?: number;
   maxAttempts?: number;
   runAfter?: Date;
+  /** Defaults to `heavy`. */
+  lane?: JobLane;
+  /** Fails on a key that a queued job already holds; `enqueueDeduped` merges instead. */
+  dedupeKey?: string;
+}
+
+/**
+ * Debounce of a deduped job: each request moves its start to `delayMs` from now, never earlier
+ * than it was and never later than `maxDelayMs` after the first request (unless it already was).
+ */
+export interface JobDebounce {
+  delayMs: number;
+  maxDelayMs: number;
+}
+
+export const defaultJobDebounce: Readonly<JobDebounce> = Object.freeze({
+  delayMs: 10_000,
+  maxDelayMs: 60_000
+});
+
+/** Same bound as the `jobs_dedupe_key` check, in code points like `char_length`. */
+export const jobDedupeKeyMaxLength = 200;
+
+export interface EnqueueDedupedInput {
+  type: string;
+  lane: JobLane;
+  /** Names the work, for example `topic-place:<tree>:<root>`; the queued job keeps its payload. */
+  dedupeKey: string;
+  payload?: JsonObject;
+  priority?: number;
+  maxAttempts?: number;
+  debounce?: JobDebounce;
 }
 
 export interface UpdateJobInput {
@@ -71,6 +106,8 @@ const returning = [
   'locked_by as "lockedBy"',
   'finished_at as "finishedAt"',
   'cancel_requested_at as "cancelRequestedAt"',
+  "lane",
+  'dedupe_key as "dedupeKey"',
   'created_at as "createdAt"',
   'updated_at as "updatedAt"'
 ].join(", ");
@@ -92,6 +129,8 @@ function mapJob(row: JobRow): JobRecord {
     lockedBy: row.lockedBy,
     finishedAt: mapNullableTimestamp(row.finishedAt),
     cancelRequestedAt: mapNullableTimestamp(row.cancelRequestedAt),
+    lane: row.lane,
+    dedupeKey: row.dedupeKey,
     createdAt: mapTimestamp(row.createdAt),
     updatedAt: mapTimestamp(row.updatedAt)
   };
@@ -101,6 +140,20 @@ function mapJob(row: JobRow): JobRecord {
 export const noteEmbeddingJobType = "note-embedding";
 /** Short job: it runs ahead of the long ingestion jobs that were queued before it. */
 const noteEmbeddingJobPriority = 10;
+
+function assertDedupeInput(input: EnqueueDedupedInput, debounce: JobDebounce): void {
+  const keyLength = Array.from(input.dedupeKey).length;
+  if (keyLength < 1 || keyLength > jobDedupeKeyMaxLength) throw new Error("job_dedupe_key_invalid");
+  if (input.lane !== "heavy" && input.lane !== "light") throw new Error("job_lane_invalid");
+  const { delayMs, maxDelayMs } = debounce;
+  if (
+    !Number.isFinite(delayMs) ||
+    !Number.isFinite(maxDelayMs) ||
+    delayMs < 0 ||
+    maxDelayMs < delayMs
+  )
+    throw new Error("job_debounce_invalid");
+}
 
 export function createJobRepository(db: Queryable) {
   return {
@@ -138,11 +191,53 @@ export function createJobRepository(db: Queryable) {
           payload: input.payload ?? {},
           priority: input.priority ?? 0,
           max_attempts: input.maxAttempts ?? 3,
-          run_after: input.runAfter
+          run_after: input.runAfter,
+          lane: input.lane,
+          dedupe_key: input.dedupeKey
         },
         returning
       );
       return mapJob(row);
+    },
+
+    /**
+     * Queues a job unless one with the same key is already queued; then that job absorbs the
+     * request and its start moves by the debounce. A running job never absorbs a request: it may
+     * have read its inputs already, so a new queued job is created next to it. Safe under any
+     * number of concurrent callers (one insert-or-update on the partial unique index).
+     */
+    async enqueueDeduped(
+      input: EnqueueDedupedInput
+    ): Promise<{ job: JobRecord; created: boolean }> {
+      const debounce = input.debounce ?? defaultJobDebounce;
+      assertDedupeInput(input, debounce);
+      const result = await db.query<JobRow & { created: boolean }>(
+        `insert into jobs as j (type, lane, dedupe_key, priority, payload, max_attempts, run_after)
+         values ($1, $2, $3, $4, $5, $6, now() + make_interval(secs => $7::double precision))
+         on conflict (dedupe_key) where dedupe_key is not null and status = 'queued'
+         do update set
+           run_after = greatest(
+             j.run_after,
+             least(excluded.run_after, j.created_at + make_interval(secs => $8::double precision))
+           ),
+           updated_at = now()
+         where j.type = excluded.type and j.lane = excluded.lane
+         returning ${returning}, (j.xmax = 0) as created`,
+        [
+          input.type,
+          input.lane,
+          input.dedupeKey,
+          input.priority ?? 0,
+          sanitizeStoredValue(input.payload ?? {}),
+          input.maxAttempts ?? 3,
+          debounce.delayMs / 1000,
+          debounce.maxDelayMs / 1000
+        ]
+      );
+      const row = result.rows[0];
+      // The key is queued for another type or lane: a caller bug, never merged silently.
+      if (!row) throw new Error("job_dedupe_key_conflict");
+      return { job: mapJob(row), created: row.created === true };
     },
 
     async latestByType(type: string): Promise<JobRecord | null> {
@@ -214,22 +309,40 @@ export function createJobRepository(db: Queryable) {
       ).rows[0];
       return row ? mapJob(row) : null;
     },
-    async claimNext(workerId: string, allowedTypes?: readonly string[]): Promise<JobRecord | null> {
+    /**
+     * Claims the next due job, optionally of one lane and of the given types. The order matches
+     * `jobs_lane_queue_idx`, so a lane claim reads the index in order. The claimed job drops its
+     * dedupe key: from now on a request for the same work queues a new job.
+     */
+    async claimNext(
+      workerId: string,
+      allowedTypes?: readonly string[],
+      lane?: JobLane
+    ): Promise<JobRecord | null> {
+      const values: unknown[] = [workerId];
+      const filters: string[] = [];
+      if (lane) {
+        values.push(lane);
+        filters.push(`and lane = $${values.length}`);
+      }
+      if (allowedTypes) {
+        values.push([...allowedTypes]);
+        filters.push(`and type = any($${values.length}::text[])`);
+      }
       const result = await db.query<JobRow>(
         `with candidate as (
            select id from jobs
-           where status = 'queued' and run_after <= now()
-             and ($2::text[] is null or type = any($2::text[]))
+           where status = 'queued' and run_after <= now() ${filters.join(" ")}
            order by priority desc, run_after asc
            for update skip locked
            limit 1
          )
          update jobs
          set status = 'running', locked_at = now(), locked_by = $1,
-             attempts = attempts + 1, updated_at = now()
+             attempts = attempts + 1, dedupe_key = null, updated_at = now()
          where id = (select id from candidate)
          returning ${returning}`,
-        [workerId, allowedTypes ? [...allowedTypes] : null]
+        values
       );
       const row = result.rows[0];
       return row ? mapJob(row) : null;
@@ -279,7 +392,7 @@ export function createJobRepository(db: Queryable) {
         `update jobs
          set status = 'queued', result = null, error = null, progress = 0, run_after = now(),
              payload = payload - 'dashboardDismissedAt',
-             attempts = 0,
+             attempts = 0, dedupe_key = null,
              locked_at = null, locked_by = null, finished_at = null,
              cancel_requested_at = null, updated_at = now()
          where id = $1 and status in ('failed', 'canceled', 'succeeded')

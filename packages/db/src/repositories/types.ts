@@ -23,6 +23,8 @@ export type SourceItemType =
   | "GenericDocument";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
+/** `heavy` runs ingestion; `light` runs short tree and projection work that never waits behind it. */
+export type JobLane = "heavy" | "light";
 export type IngestionRunStatus = "pending" | "running" | "succeeded" | "failed" | "canceled";
 export type ObsidianSyncStatus = "pending" | "synced" | "conflict" | "deleted" | "ignored";
 export type AtomicNoteStatus = "active" | "pending_review" | "approved" | "rejected" | "archived";
@@ -154,6 +156,9 @@ export interface JobRecord {
   lockedBy: string | null;
   finishedAt: Date | null;
   cancelRequestedAt: Date | null;
+  lane: JobLane;
+  /** Set only while the job waits in the queue; claiming or retrying it drops the key. */
+  dedupeKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
