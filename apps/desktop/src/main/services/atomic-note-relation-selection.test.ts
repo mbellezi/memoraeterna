@@ -144,6 +144,58 @@ describe("lossless feasibility gate", () => {
   });
 });
 
+describe("candidates without a vector", () => {
+  const settings = AtomicNoteMatchingSettingsSchema.parse({});
+
+  it("scores a candidate that has no vector with the weights that do not assume one", () => {
+    const candidate = (noteId: string, hasEmbedding?: boolean) => ({
+      noteId,
+      contentKey: noteId,
+      scores: { vectorScore: 0, textScore: 0.9, metadataScore: 0, graphScore: null },
+      ...(hasEmbedding === undefined ? {} : { hasEmbedding }),
+      decision: { score: 0.9, relationType: "supports" as const }
+    });
+    const [unknown, assumed] = [
+      selectAtomicNoteRelations([candidate("unknown", false)], {
+        hasEmbedding: true,
+        threshold: 0.6,
+        settings
+      })[0]!,
+      // A vector score of 0 under the vector weights: what a missing vector used to become.
+      selectAtomicNoteRelations([candidate("assumed")], {
+        hasEmbedding: true,
+        threshold: 0.6,
+        settings
+      })[0]!
+    ];
+    // textAndMetadata: 0.7 * 0.9 = 0.63, then 0.63 * 0.6 + 0.9 * 0.4; withEmbedding: 0.3 * 0.9 =
+    // 0.27, then 0.27 * 0.6 + 0.9 * 0.4.
+    expect(unknown.finalScore).toBeCloseTo(0.738, 6);
+    expect(unknown.accepted).toBe(true);
+    expect(assumed.finalScore).toBeCloseTo(0.522, 6);
+    expect(assumed.accepted).toBe(false);
+  });
+
+  it("keeps a candidate's own state over the note's, both ways", () => {
+    const scores = { vectorScore: 0.8, textScore: 0.5, metadataScore: 0, graphScore: null };
+    const base = { noteId: "n", contentKey: "n", scores, decision: null };
+    const final = (hasEmbedding: boolean, candidateHasEmbedding?: boolean) =>
+      selectAtomicNoteRelations(
+        [
+          {
+            ...base,
+            ...(candidateHasEmbedding === undefined ? {} : { hasEmbedding: candidateHasEmbedding })
+          }
+        ],
+        { hasEmbedding, threshold: 0.6, settings }
+      )[0]!.finalScore;
+    expect(final(true)).toBeCloseTo((0.55 * 0.8 + 0.3 * 0.5) / 1, 6);
+    expect(final(true, false)).toBeCloseTo(0.7 * 0.5, 6);
+    expect(final(false)).toBeCloseTo(0.7 * 0.5, 6);
+    expect(final(false, true)).toBeCloseTo((0.55 * 0.8 + 0.3 * 0.5) / 1, 6);
+  });
+});
+
 describe("relation decision identity", () => {
   const route = {
     provider: "openai-codex",

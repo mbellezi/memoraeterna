@@ -363,6 +363,25 @@ try {
           }))
       })
       .then((map) => Object.fromEntries(map));
+  // The verdict of the reverse direction (target -> source) on the same content and decider.
+  const reverseVerdicts = (
+    source: string,
+    sourceHash = hashes[source]!,
+    deciderKey = "decider-a"
+  ) =>
+    decisions
+      .findReverseVerdicts({
+        sourceAtomicNoteId: source,
+        sourceContentHash: sourceHash,
+        deciderKey,
+        targets: ids
+          .filter((id) => id !== source)
+          .map((id) => ({
+            atomicNoteId: id,
+            contentHash: hashes[id]!
+          }))
+      })
+      .then((map) => Object.fromEntries(map));
   const rows = async () =>
     (
       await db.query(
@@ -376,6 +395,13 @@ try {
   await record(hi, lo, 0.9, "extends", true, runA);
   assert.deepEqual(await verdicts(hi), { [lo]: { score: 0.9, relationType: "extends" } });
   assert.deepEqual(await verdicts(lo), {}, "the reverse direction is still undecided");
+  // One judgment answers the pair: the undecided direction reads the decided one as its reverse.
+  assert.deepEqual(
+    await reverseVerdicts(lo),
+    { [hi]: { score: 0.9, relationType: "extends" } },
+    "lo reuses the verdict of hi -> lo"
+  );
+  assert.deepEqual(await reverseVerdicts(hi), {}, "hi -> lo has no reverse verdict to reuse");
   const [first] = await rows();
   assert.deepEqual(
     [first.hi_to_lo_ai_task_run_id, first.lo_to_hi_ai_task_run_id, first.lo_to_hi_decided_at],
@@ -438,6 +464,16 @@ try {
   assert.deepEqual(await verdicts(lo, hashes[lo], "decider-b"), {
     [mid]: { score: 0.4, relationType: "related" }
   });
+  assert.deepEqual(
+    await reverseVerdicts(mid, hashes[mid], "decider-b"),
+    { [lo]: { score: 0.4, relationType: "related" } },
+    "a reverse verdict belongs to its own decider"
+  );
+  assert.deepEqual(
+    await reverseVerdicts(mid, hashes[mid], "decider-a"),
+    {},
+    "another decider's verdict is never reused"
+  );
   // Changed content is a different input: no verdict, and recording it drops the stale direction.
   assert.deepEqual(await verdicts(hi, "hash-hi-edited"), {});
   await record(hi, lo, 0.3, "related", false, runC, "decider-a", "hash-hi-edited");
@@ -453,6 +489,16 @@ try {
     "the stale direction loses its run and time with its verdict"
   );
   assert.deepEqual(await verdicts(lo), {}, "the old direction is gone with the old content");
+  assert.deepEqual(
+    await reverseVerdicts(lo),
+    {},
+    "a reverse verdict recorded on the old content is not reused"
+  );
+  assert.deepEqual(
+    await reverseVerdicts(hi, "hash-hi-edited"),
+    {},
+    "the edited note finds nothing to reuse: the other direction went with the old content"
+  );
 
   // Constraints refuse inconsistent rows.
   const insert = `insert into relation_decisions (pair_key, lo_atomic_note_id, hi_atomic_note_id,
@@ -529,6 +575,7 @@ try {
         "0044 and 0046 applied through the baseline seed on an empty database",
         "identical columns, types, nullability, indexes and constraints on both paths",
         "per-direction verdicts keyed by content hashes and decider; reverse direction undecided",
+        "an undecided direction reads the decided one as its reverse, for the same decider and content only",
         "each direction keeps its own AI run and time; a content change resets the pair",
         "constraints refuse inconsistent rows, including run or time without a verdict",
         "per-direction ai_task_run_id set null and note deletion cascade"

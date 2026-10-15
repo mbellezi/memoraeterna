@@ -861,6 +861,7 @@ export class KnowledgeService {
       });
       const repository = createAtomicNoteRepository(pool);
       const noteIds: string[] = [];
+      const persistedNotes: AtomicNoteRecord[] = [];
       for (const generated of parsed.notes) {
         const evidence = generated.evidenceChunkIds.flatMap((chunkId) => {
           const chunk = chunks.find((candidate) => candidate.id === chunkId);
@@ -900,9 +901,38 @@ export class KnowledgeService {
           }
         });
         noteIds.push(note.id);
+        persistedNotes.push(note);
       }
       await hierarchy.completeKnowledgeGeneration(generationId);
-      return { configured: true, generatedCount: noteIds.length, noteIds };
+      // A note is embedded when it is created, so matching never meets a note without a vector.
+      // Embedding is derived data and calls no generative model: a failure here must not repeat the
+      // generation, because matching embeds whatever is still missing.
+      stage = "embedding";
+      let embeddedCount = 0;
+      try {
+        embeddedCount = (
+          await this.ensureAtomicNoteVectors(persistedNotes, {
+            signal,
+            logContext: {
+              ...structuredLogContext,
+              sourceItemId,
+              documentId,
+              stage: "atomic_note_embedding"
+            },
+            operation: "note_creation_embedding"
+          })
+        ).embedded.length;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        logStructuredError(
+          this.options.logger,
+          "atomic_note_embedding_failed",
+          { ...structuredLogContext, sourceItemId, documentId, stage },
+          error,
+          "atomic_note_embedding_failed"
+        );
+      }
+      return { configured: true, generatedCount: noteIds.length, embeddedCount, noteIds };
     } catch (error) {
       logStructuredError(
         this.options.logger,
@@ -1326,6 +1356,80 @@ export class KnowledgeService {
     return { embedded: true };
   }
 
+  /**
+   * The matching vector of each note, embedding the notes that have none for their current text.
+   * Embedding only, never a generative model. The runtime takes one text per call, so a missing
+   * vector costs one call per note, reused by every later match; this is the one place to switch to
+   * a batched call when a route offers one. A note whose call fails or has no model stays without a
+   * vector, which matching scores without vector weights.
+   */
+  private async ensureAtomicNoteVectors(
+    atomicNotes: AtomicNoteRecord[],
+    input: {
+      signal: AbortSignal | undefined;
+      logContext: AiTaskLogContext;
+      operation: string;
+    }
+  ): Promise<{ vectors: Map<string, NoteVector>; embedded: string[] }> {
+    const vectors = new Map<string, NoteVector>();
+    const embedded: string[] = [];
+    if (atomicNotes.length === 0) return { vectors, embedded };
+    const stored = await createEmbeddingRepository(this.requirePool()).findCurrentNoteVectors(
+      atomicNotes.map((note) => ({
+        id: note.id,
+        contentHash: sha256(atomicNoteEmbeddingText(note))
+      }))
+    );
+    for (const [noteId, vector] of stored)
+      vectors.set(noteId, {
+        embedding: vector.embedding,
+        space: {
+          model: vector.model,
+          provider: vector.provider,
+          runtime: vector.runtime,
+          spaceKey: vector.strategy.startsWith(nativeEmbeddingStrategyPrefix)
+            ? vector.strategy.slice(nativeEmbeddingStrategyPrefix.length)
+            : ""
+        }
+      });
+    for (const note of atomicNotes) {
+      if (vectors.has(note.id)) continue;
+      const vector = await this.embedAtomicNoteVector(note, input);
+      if (!vector) continue;
+      vectors.set(note.id, vector);
+      embedded.push(note.id);
+    }
+    return { vectors, embedded };
+  }
+
+  /** Embeds one note with the current embedding route and stores the vector; null when it cannot. */
+  private async embedAtomicNoteVector(
+    note: AtomicNoteRecord,
+    input: { signal: AbortSignal | undefined; logContext: AiTaskLogContext; operation: string }
+  ): Promise<NoteVector | null> {
+    const execution = await this.tryRunDefaultTask(
+      "embedding",
+      atomicNoteEmbeddingText(note),
+      input.signal,
+      withAiSourceItems(
+        { ...input.logContext, atomicNoteId: note.id, operation: input.operation },
+        [note.createdFromSourceItemId]
+      )
+    );
+    const embedding = readEmbedding(execution?.output);
+    if (!execution || !embedding) return null;
+    await this.storeAtomicNoteEmbedding(note, execution, embedding);
+    return {
+      embedding,
+      space: {
+        model: execution.modelId,
+        provider: execution.providerId,
+        runtime: execution.runtime,
+        spaceKey: execution.embeddingSpaceKey ?? ""
+      }
+    };
+  }
+
   private async storeAtomicNoteEmbedding(
     note: AtomicNoteRecord,
     execution: DefaultAiTaskResult,
@@ -1339,7 +1443,7 @@ export class KnowledgeService {
       runtime: execution.runtime,
       usage: "matching",
       strategy: execution.embeddingSpaceKey
-        ? `native-v2:${execution.embeddingSpaceKey}`
+        ? `${nativeEmbeddingStrategyPrefix}${execution.embeddingSpaceKey}`
         : "native-unidentified",
       contentHash: sha256(atomicNoteEmbeddingText(note)),
       embedding
@@ -1367,25 +1471,34 @@ export class KnowledgeService {
       (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
     );
     let persistedCount = 0;
+    const batchNotes = new Map<string, AtomicNoteRecord | null>();
+    for (const noteId of noteIds) batchNotes.set(noteId, await notes.findById(noteId));
+    // Notes are embedded when they are created. Only a note that still has no vector for its
+    // current text (an older library, a failed call) is embedded here, all of the batch before the
+    // first retrieval, so no note is matched while another one of the batch is still invisible.
+    const { vectors } = await this.ensureAtomicNoteVectors(
+      [...batchNotes.values()].filter((candidate): candidate is AtomicNoteRecord => !!candidate),
+      { signal, logContext, operation: "note_matching_embedding" }
+    );
+    // A candidate is embedded at most once per run, whether or not that gave it a usable vector.
+    const embeddingAttempted = new Set<string>();
     for (const [noteIndex, noteId] of noteIds.entries()) {
-      const note = await notes.findById(noteId);
+      const note = batchNotes.get(noteId);
       if (!note) {
         await onProgress?.((noteIndex + 1) / noteIds.length);
         await options.onNoteCompleted?.(noteId, 0);
         continue;
       }
-      const embeddingExecution = await this.tryRunDefaultTask(
-        "embedding",
-        atomicNoteEmbeddingText(note),
-        signal,
-        withAiSourceItems(
-          { ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" },
-          [note.createdFromSourceItemId]
-        )
-      );
-      const embedding = readEmbedding(embeddingExecution?.output);
-      if (embedding && embeddingExecution)
-        await this.storeAtomicNoteEmbedding(note, embeddingExecution, embedding);
+      const noteVector = vectors.get(note.id);
+      const embedding = noteVector?.embedding;
+      const embeddingSpace = noteVector
+        ? {
+            embeddingModel: noteVector.space.model,
+            embeddingSpaceKey: noteVector.space.spaceKey,
+            embeddingProvider: noteVector.space.provider,
+            embeddingRuntime: noteVector.space.runtime
+          }
+        : {};
       const textCandidates = await notes.findTextMatchingCandidates({
         noteId,
         limit: matchingSettings.textCandidateLimit
@@ -1394,14 +1507,7 @@ export class KnowledgeService {
         ? await notes.findVectorMatchingCandidates({
             noteId,
             embedding,
-            ...(embeddingExecution
-              ? {
-                  embeddingModel: embeddingExecution.modelId,
-                  embeddingSpaceKey: embeddingExecution.embeddingSpaceKey ?? "",
-                  embeddingProvider: embeddingExecution.providerId,
-                  embeddingRuntime: embeddingExecution.runtime
-                }
-              : {}),
+            ...embeddingSpace,
             limit: matchingSettings.vectorCandidateLimit
           })
         : [];
@@ -1441,19 +1547,32 @@ export class KnowledgeService {
         matchingSettings.minimumGraphOnlyCandidates,
         matchingSettings.reciprocalRankConstant
       );
-      const scoredCandidates = await notes.scoreMatchingCandidates({
+      const scoringInput = {
         noteId,
         candidateIds: fusedCandidates.map((candidate) => candidate.noteId),
         ...(embedding ? { embedding } : {}),
-        ...(embeddingExecution
-          ? {
-              embeddingModel: embeddingExecution.modelId,
-              embeddingSpaceKey: embeddingExecution.embeddingSpaceKey ?? "",
-              embeddingProvider: embeddingExecution.providerId,
-              embeddingRuntime: embeddingExecution.runtime
-            }
-          : {})
-      });
+        ...embeddingSpace
+      };
+      let scoredCandidates = await notes.scoreMatchingCandidates(scoringInput);
+      if (embedding) {
+        // A candidate without a vector (found by text or graph only) has a vector score that means
+        // "unknown", not "dissimilar": embed it before it is scored. Whatever stays without one is
+        // scored without vector weights below, never as a vector score of 0.
+        const withoutVector = scoredCandidates.filter(
+          (candidate) => candidate.hasVector === false && !embeddingAttempted.has(candidate.note.id)
+        );
+        let embeddedAny = false;
+        for (const candidate of withoutVector) {
+          embeddingAttempted.add(candidate.note.id);
+          const vector = await this.embedAtomicNoteVector(candidate.note, {
+            signal,
+            logContext,
+            operation: "note_matching_embedding"
+          });
+          embeddedAny ||= vector !== null;
+        }
+        if (embeddedAny) scoredCandidates = await notes.scoreMatchingCandidates(scoringInput);
+      }
       const scoresById = new Map(
         scoredCandidates.map((candidate) => [candidate.note.id, candidate])
       );
@@ -1481,6 +1600,8 @@ export class KnowledgeService {
             metadataScore: scoreMetadataOverlap(note.metadata, scored.note.metadata),
             graphScore: candidate.graphScore
           };
+          // A real vector score needs a vector on both notes.
+          const candidateHasEmbedding = hasEmbedding && scored.hasVector !== false;
           return [
             {
               ...candidate,
@@ -1488,10 +1609,11 @@ export class KnowledgeService {
               textScore: scored.textScore,
               vectorScore: scored.vectorScore,
               scores,
+              hasEmbedding: candidateHasEmbedding,
               contentHash: atomicNoteDecisionContentHash(scored.note),
               feasible: canQualifyAtomicNoteRelation({
                 scores,
-                hasEmbedding,
+                hasEmbedding: candidateHasEmbedding,
                 threshold: relationThreshold,
                 settings: matchingSettings
               })
@@ -1517,24 +1639,55 @@ export class KnowledgeService {
         string,
         { score: number; relationType: AtomicNoteRelationType }
       >();
-      if (decider && feasible.length > 0) {
-        const verdicts = await decisions.findVerdicts({
-          sourceAtomicNoteId: note.id,
-          sourceContentHash,
-          deciderKey: decider.key,
-          targets: feasible.map((candidate) => ({
-            atomicNoteId: candidate.note.id,
-            contentHash: candidate.contentHash
-          }))
-        });
+      // A generative decider judges an unordered pair once: the verdict of the reverse direction
+      // (candidate -> this note) on the same content answers this direction too. Nothing is written
+      // for it, so a stored direction is always a real judgment.
+      const reusedVerdicts = new Map<
+        string,
+        { score: number; relationType: AtomicNoteRelationType }
+      >();
+      const collectVerdicts = (
+        verdicts: ReadonlyMap<string, { score: number; relationType: string }>,
+        into: typeof cachedVerdicts
+      ) => {
         for (const [targetId, verdict] of verdicts) {
           const relationType = AtomicNoteRelationTypeSchema.safeParse(verdict.relationType);
           if (relationType.success)
-            cachedVerdicts.set(targetId, { score: verdict.score, relationType: relationType.data });
+            into.set(targetId, { score: verdict.score, relationType: relationType.data });
         }
+      };
+      const verdictTargets = (candidates: typeof feasible) =>
+        candidates.map((candidate) => ({
+          atomicNoteId: candidate.note.id,
+          contentHash: candidate.contentHash
+        }));
+      if (decider && feasible.length > 0) {
+        collectVerdicts(
+          await decisions.findVerdicts({
+            sourceAtomicNoteId: note.id,
+            sourceContentHash,
+            deciderKey: decider.key,
+            targets: verdictTargets(feasible)
+          }),
+          cachedVerdicts
+        );
+        const undecided = feasible.filter((candidate) => !cachedVerdicts.has(candidate.note.id));
+        if (decider.generative && undecided.length > 0)
+          collectVerdicts(
+            await decisions.findReverseVerdicts({
+              sourceAtomicNoteId: note.id,
+              sourceContentHash,
+              deciderKey: decider.key,
+              targets: verdictTargets(undecided)
+            }),
+            reusedVerdicts
+          );
       }
       // Aliases follow the content order of the fused candidates, never their IDs.
-      const pending = feasible.filter((candidate) => !cachedVerdicts.has(candidate.note.id));
+      const pending = feasible.filter(
+        (candidate) =>
+          !cachedVerdicts.has(candidate.note.id) && !reusedVerdicts.has(candidate.note.id)
+      );
       const rerankAliases = new Map(
         pending.map((candidate, index) => [candidate.note.id, `c${index + 1}`])
       );
@@ -1581,7 +1734,7 @@ export class KnowledgeService {
           !candidate ||
           atomicNoteVerdictQualifies({
             scores: candidate.scores,
-            hasEmbedding,
+            hasEmbedding: candidate.hasEmbedding,
             threshold: relationThreshold,
             settings: matchingSettings,
             verdict
@@ -1691,7 +1844,9 @@ export class KnowledgeService {
       const selection = selectAtomicNoteRelations(
         candidates.map((candidate) => {
           const decision =
-            modelDecisions.get(candidate.note.id) ?? cachedVerdicts.get(candidate.note.id);
+            modelDecisions.get(candidate.note.id) ??
+            cachedVerdicts.get(candidate.note.id) ??
+            reusedVerdicts.get(candidate.note.id);
           return {
             ...candidate,
             noteId: candidate.note.id,
@@ -1719,9 +1874,18 @@ export class KnowledgeService {
           ? "model"
           : cachedVerdicts.has(candidate.note.id)
             ? "cache"
-            : candidate.feasible
-              ? "undecided"
-              : "infeasible";
+            : reusedVerdicts.has(candidate.note.id)
+              ? "reverse_cache"
+              : candidate.feasible
+                ? "undecided"
+                : "infeasible";
+        const fromCache = decisionSource === "cache" || decisionSource === "reverse_cache";
+        // The type belongs to the direction it was judged in: for a reused verdict that is
+        // candidate -> this note, which is the direction the relation keeps.
+        const [semanticSourceId, semanticTargetId] =
+          decisionSource === "reverse_cache"
+            ? [candidate.note.id, note.id]
+            : [note.id, candidate.note.id];
         const existingRelation = pairStatuses.has(candidate.note.id);
         let explanation =
           rerankScore === null
@@ -1762,6 +1926,7 @@ export class KnowledgeService {
             relationType,
             contract: atomicNoteMatchingVersion,
             feasible: candidate.feasible,
+            hasVector: candidate.hasEmbedding,
             decisionSource,
             existingRelation,
             graphError,
@@ -1799,12 +1964,12 @@ export class KnowledgeService {
               // the decider it was recorded under. A hybrid acceptance has no decider.
               matchingProfileId: modelDecision
                 ? (rerankExecution?.profileId ?? null)
-                : decisionSource === "cache"
+                : fromCache
                   ? (decider?.profileId ?? null)
                   : null,
               matchingModel: modelDecision
                 ? (rerankExecution?.modelId ?? null)
-                : decisionSource === "cache"
+                : fromCache
                   ? (decider?.modelId ?? null)
                   : null,
               metadata: {
@@ -1820,8 +1985,8 @@ export class KnowledgeService {
                 textRank: candidate.textRank,
                 vectorRank: candidate.vectorRank,
                 graphRank: candidate.graphRank,
-                semanticSourceAtomicNoteId: note.id,
-                semanticTargetAtomicNoteId: candidate.note.id,
+                semanticSourceAtomicNoteId: semanticSourceId,
+                semanticTargetAtomicNoteId: semanticTargetId,
                 pendingReview:
                   note.status === "pending_review" || candidate.note.status === "pending_review"
               }
@@ -1869,7 +2034,7 @@ export class KnowledgeService {
       await this.recordAtomicMatchingDebug({
         noteId: note.id,
         queryText: `${note.title}\n${note.ideaStatement}`,
-        embeddingModel: embeddingExecution?.modelId ?? null,
+        embeddingModel: noteVector?.space.model ?? null,
         dimensions: embedding?.length ?? null,
         hasEmbedding,
         relationThreshold,
@@ -1884,6 +2049,7 @@ export class KnowledgeService {
           candidates: candidates.length,
           infeasible: candidates.length - feasible.length,
           cached: cachedVerdicts.size,
+          reusedReverse: reusedVerdicts.size,
           requested: pending.length,
           repaired: repairedAliases.length,
           undecided: undecidedAliases.length,
@@ -1902,6 +2068,8 @@ export class KnowledgeService {
     key: string;
     profileId: string;
     modelId: string;
+    /** A generative decider judges an unordered pair once; a reranker scores each direction. */
+    generative: boolean;
   } | null> {
     try {
       const route = await createAiConfigRepository(this.requirePool()).getDefaultTask("reranking");
@@ -1924,7 +2092,9 @@ export class KnowledgeService {
           promptFingerprint: promptFingerprint(["notes.match"], capturePromptPin(), route.provider)
         }),
         profileId: route.profileId,
-        modelId: route.modelId
+        modelId: route.modelId,
+        // Only a model that declares the reranking capability scores a pair in both directions.
+        generative: !(route.requiredCapabilities ?? []).includes("reranking")
       };
     } catch {
       // Without a decider identity nothing is cached or recorded; matching itself goes on.
@@ -2019,6 +2189,14 @@ function withAiSourceItems(context: AiTaskLogContext, sourceItemIds: string[]): 
     ...(combined[0] ? { sourceItemId: combined[0] } : {}),
     sourceItemIds: combined
   };
+}
+
+const nativeEmbeddingStrategyPrefix = "native-v2:";
+
+/** A note's matching vector with the embedding space it was built in (the key of its strategy). */
+interface NoteVector {
+  embedding: number[];
+  space: { model: string; provider: string; runtime: string; spaceKey: string };
 }
 
 /** The text a note is embedded from; its hash tells whether a stored vector is still current. */

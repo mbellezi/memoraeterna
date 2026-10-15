@@ -1332,7 +1332,7 @@ export const aiTaskRuns = pgTable(
     attempt: integer("attempt"),
     status: text("status").notNull(),
     error: text("error"),
-    // Row creation time, which equals the end of the call; the call started at finishedAt - durationMs.
+    // The call's start: the row is written when the call ends, so it is stored as finishedAt - durationMs.
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true })
   },

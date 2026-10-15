@@ -6,9 +6,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createAiConfigRepository,
   createAtomicNoteRepository,
   createChunkRepository,
   createDocumentRepository,
+  createEmbeddingRepository,
   createIngestionRunRepository,
   createJobRepository,
   createObsidianSyncRepository,
@@ -24,6 +26,7 @@ import {
 import { AiProviderError } from "@app/ai";
 import { sha256 } from "@app/conversion";
 import {
+  AtomicNoteMatchingSettingsSchema,
   DocumentDivisionCandidateSchema,
   ProcessingPlanRequestSchema,
   SourceDescriptorSchema,
@@ -45,7 +48,8 @@ import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.j
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor } from "./job-supervisor.js";
-import type { KnowledgeService } from "./knowledge-service.js";
+import type { AiService } from "./ai-service.js";
+import { KnowledgeService } from "./knowledge-service.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { YouTubeService } from "./youtube-service.js";
@@ -1124,6 +1128,217 @@ try {
   await drainBatch(retrying);
   await expectMatched(retrying, "A sibling that is retried");
   await matching.stop();
+
+  // Notes are embedded when they are created, and a generative decider judges each unordered pair
+  // once. Real database, retrieval, scoring and decision storage; only the model calls are fakes.
+  // Before this, a note was embedded only when it was matched: an earlier note never saw the notes
+  // that came after it, and each of those pairs was lost.
+  const pairAi = createAiConfigRepository(pool);
+  const pairProvider = await pairAi.upsertProvider({
+    provider: "openai-compatible",
+    displayName: "Pair decider",
+    baseUrl: "http://127.0.0.1:9/v1",
+    metadata: { modelId: "pair-decider", capabilities: ["text-generation", "structured-output"] }
+  });
+  const pairProfile = await pairAi.createProfile({ name: "Pair decider", isDefault: true });
+  await pairAi.updateProfile({
+    id: pairProfile.id,
+    providerConfigId: pairProvider.id,
+    modelId: "pair-decider",
+    runtime: "remote",
+    capabilities: ["text-generation", "structured-output"]
+  });
+  await pairAi.seedTaskRoute("reranking", pairProfile.id);
+  // The notes of the sections above are not part of this check.
+  await pool.query("update atomic_notes set status = 'rejected'");
+  const pairCalls = { embedding: [] as string[], generation: 0, rerankAliases: [] as number[] };
+  const pairAiService = {
+    runDefaultTask: async (
+      task: string,
+      input: string,
+      context: { operation?: string } = {}
+    ): Promise<Record<string, unknown> | null> => {
+      const execution = {
+        providerId: "fake",
+        modelId: task === "embedding" ? "fake-embedding" : "pair-decider",
+        runtime: task === "embedding" ? "local" : "remote",
+        profileId: pairProfile.id
+      };
+      if (task === "embedding") {
+        pairCalls.embedding.push(context.operation ?? "");
+        // Every note is about the same topic, so they all sit close together in vector space.
+        const vector = Array.from({ length: 256 }, (_, index) => (index < 8 ? 1 : 0.01));
+        return { ...execution, output: vector, embeddingSpaceKey: "pair-space", aiTaskRunId: "x" };
+      }
+      const aiTaskRunId = await pairAi.recordTaskRun({
+        profileId: pairProfile.id,
+        taskType: task,
+        provider: "fake",
+        modelId: "pair-decider",
+        runtime: "remote",
+        durationMs: 1_500,
+        status: "succeeded"
+      });
+      if (task === "atomic-note-generation") {
+        pairCalls.generation += 1;
+        const chunkId = input.match(/\[([0-9a-f-]{36})\]/u)?.[1];
+        const count = input.includes("Pair source one") ? 2 : 1;
+        return {
+          ...execution,
+          aiTaskRunId,
+          outputLanguage: "en",
+          output: {
+            notes: Array.from({ length: count }, (_, index) => ({
+              title: `Retrieval practice ${pairCalls.generation}.${index}`,
+              ideaStatement: `Retrieval practice strengthens memory retention ${pairCalls.generation}.${index}.`,
+              bodyMarkdown: `Retrieval practice strengthens memory retention, variant ${index}.`,
+              evidenceChunkIds: [chunkId]
+            }))
+          }
+        };
+      }
+      const aliases = [...input.matchAll(/^\[(c\d+)\]$/gmu)].map((match) => match[1]!);
+      pairCalls.rerankAliases.push(aliases.length);
+      return {
+        ...execution,
+        aiTaskRunId,
+        output: {
+          results: aliases.map((alias) => ({
+            candidateAlias: alias,
+            score: 0.9,
+            relationType: "supports",
+            explanation: `${alias} supports s1.`
+          }))
+        }
+      };
+    }
+  };
+  const pairKnowledge = new KnowledgeService({
+    getPool: () => pool ?? null,
+    aiService: pairAiService as unknown as AiService,
+    userDataPath: workDir,
+    getStorageSettings: settings as never,
+    getUploadedFilesBasePath: async () => null,
+    getAtomicNoteMatchingSettings: async () =>
+      AtomicNoteMatchingSettingsSchema.parse({ graphCandidateLimit: 0 })
+  });
+  const pairSources: Array<{ sourceId: string; documentId: string }> = [];
+  for (const title of ["Pair source one", "Pair source two"]) {
+    const sourceId = await newSource(title, `${title} explains how retrieval practice works.`);
+    const document = (
+      await pool.query<{ id: string; canonical_markdown: string }>(
+        `select id, canonical_markdown from documents where source_item_id = $1`,
+        [sourceId]
+      )
+    ).rows[0]!;
+    await indexDocument(pool, document.id, sourceId, document.canonical_markdown);
+    pairSources.push({ sourceId, documentId: document.id });
+  }
+  const generatedPair = [];
+  for (const { sourceId, documentId } of pairSources)
+    generatedPair.push(await pairKnowledge.generateAtomicNotes(sourceId, documentId));
+  const pairNoteIds = generatedPair.flatMap((result) => result.noteIds);
+  if (pairNoteIds.length !== 3 || generatedPair.some((r) => !("embeddedCount" in r)))
+    throw new Error("The pair sources did not generate three notes.");
+  // Every note has its vector the moment it exists: one embedding call each, none for matching.
+  const storedVectors = await pool.query<{ target_id: string; content_hash: string }>(
+    `select target_id, content_hash from embeddings_256
+     where target_type = 'atomic_note' and target_id = any($1::uuid[])`,
+    [pairNoteIds]
+  );
+  if (
+    storedVectors.rows.length !== 3 ||
+    pairCalls.embedding.length !== 3 ||
+    pairCalls.embedding.some((operation) => operation !== "note_creation_embedding") ||
+    storedVectors.rows.some((row) => !/^[0-9a-f]{64}$/u.test(row.content_hash))
+  )
+    throw new Error(`The notes were not embedded when created: ${pairCalls.embedding.join()}.`);
+
+  // The earlier notes are matched first, and still find the note of the later source.
+  const [firstOfOne, secondOfOne, onlyOfTwo] = pairNoteIds as [string, string, string];
+  await pairKnowledge.matchAtomicNotes([firstOfOne, secondOfOne]);
+  if (pairCalls.embedding.length !== 3)
+    throw new Error("Matching embedded notes that were embedded when created.");
+  const decided = async () =>
+    (
+      await pool!.query<{ lo: string; hi: string; both: boolean }>(
+        `select lo_atomic_note_id as lo, hi_atomic_note_id as hi,
+           (lo_to_hi_score is not null and hi_to_lo_score is not null) as both
+         from relation_decisions`
+      )
+    ).rows;
+  const afterEarlier = await decided();
+  if (!afterEarlier.some((row) => [row.lo, row.hi].includes(onlyOfTwo)))
+    throw new Error("An earlier note did not retrieve and judge the later note.");
+  // The later note is then matched: the pairs it shares with the earlier notes are already judged.
+  const rerankCallsBefore = pairCalls.rerankAliases.length;
+  await pairKnowledge.matchAtomicNotes([onlyOfTwo]);
+  if (pairCalls.rerankAliases.length !== rerankCallsBefore)
+    throw new Error("The later note asked the decider again about pairs it had already judged.");
+  const afterAll = await decided();
+  if (
+    afterAll.length !== 3 ||
+    afterAll.some((row) => row.both) ||
+    pairCalls.rerankAliases.reduce((total, count) => total + count, 0) !== 3
+  )
+    throw new Error(
+      `Three notes make three pairs and one judgment each: ${JSON.stringify(afterAll)} ${pairCalls.rerankAliases.join()}.`
+    );
+  const pairRelations = await pool.query<{ source: string; target: string; sem: string }>(
+    `select source_atomic_note_id as source, target_atomic_note_id as target,
+       metadata->>'semanticSourceAtomicNoteId' as sem from atomic_note_relations
+     where source_atomic_note_id = any($1::uuid[]) and target_atomic_note_id = any($1::uuid[])`,
+    [pairNoteIds]
+  );
+  // Each pair was judged when its earlier note was matched, and keeps that direction.
+  if (pairRelations.rows.length !== 3 || pairRelations.rows.some((row) => row.sem === onlyOfTwo))
+    throw new Error("The judged pairs did not become relations with their semantic direction.");
+  // An AI run is written when the call ends: its start is the end minus its duration.
+  const runTimes = await pool.query<{ total: number; wrong: number }>(
+    `select count(*)::int as total,
+       count(*) filter (where abs(extract(epoch from finished_at - started_at) * 1000 - duration_ms) > 1
+         or started_at >= finished_at)::int as wrong
+     from ai_task_runs where task_type = 'reranking' and provider = 'fake'`
+  );
+  if (runTimes.rows[0]!.total < 1 || runTimes.rows[0]!.wrong !== 0)
+    throw new Error("An AI task run did not start before it finished.");
+  // A stored vector is found by the hash of the note's current text, with the space it lives in;
+  // a candidate without a vector in that space is told apart from a dissimilar one.
+  const firstVector = await createEmbeddingRepository(pool).findCurrentNoteVectors([
+    {
+      id: firstOfOne,
+      contentHash: storedVectors.rows.find((r) => r.target_id === firstOfOne)!.content_hash
+    },
+    { id: secondOfOne, contentHash: "text-that-changed" }
+  ]);
+  if (
+    [...firstVector.keys()].join() !== firstOfOne ||
+    firstVector.get(firstOfOne)!.strategy !== "native-v2:pair-space" ||
+    firstVector.get(firstOfOne)!.model !== "fake-embedding"
+  )
+    throw new Error("The stored vector was not found by the hash of the current text.");
+  const queryVector = firstVector.get(firstOfOne)!.embedding;
+  const scoredIn = async (space: string) =>
+    (
+      await createAtomicNoteRepository(pool!).scoreMatchingCandidates({
+        noteId: firstOfOne,
+        candidateIds: [secondOfOne],
+        embedding: queryVector,
+        embeddingModel: "fake-embedding",
+        embeddingSpaceKey: space,
+        embeddingProvider: "fake",
+        embeddingRuntime: "local"
+      })
+    )[0]!;
+  const inSpace = await scoredIn("pair-space");
+  const elsewhere = await scoredIn("another-space");
+  if (
+    !inSpace.hasVector ||
+    inSpace.vectorScore < 0.99 ||
+    elsewhere.hasVector ||
+    elsewhere.vectorScore !== 0
+  )
+    throw new Error("A candidate without a vector was not told apart from a dissimilar one.");
 
   console.info(
     JSON.stringify(

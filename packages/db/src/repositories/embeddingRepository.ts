@@ -28,6 +28,14 @@ export interface StoredEmbedding {
   embedding: number[];
 }
 
+/** A stored note vector with the embedding space (model, provider, runtime, strategy) it lives in. */
+export interface StoredNoteVector extends StoredEmbedding {
+  model: string;
+  provider: string;
+  runtime: string;
+  strategy: string;
+}
+
 function embeddingTable(dimensions: number): string {
   if (dimensions === 256 || dimensions === 768 || dimensions === 1_024) {
     return `embeddings_${dimensions}`;
@@ -77,6 +85,55 @@ export function createEmbeddingRepository(db: Queryable) {
       }
       return false;
     },
+    /**
+     * The newest vector of each note that was built from exactly the given content, in any
+     * dimension and embedding space. A note without one is missing from the result: it was never
+     * embedded, or its text changed after it was.
+     */
+    async findCurrentNoteVectors(
+      notes: ReadonlyArray<{ id: string; contentHash: string }>
+    ): Promise<Map<string, StoredNoteVector>> {
+      const found = new Map<string, StoredNoteVector>();
+      const newest = new Map<string, number>();
+      if (notes.length === 0) return found;
+      for (const dimensions of [256, 768, 1024]) {
+        const result = await db.query<
+          QueryResultRow & {
+            targetId: string;
+            embedding: string;
+            model: string;
+            provider: string;
+            runtime: string;
+            strategy: string;
+            createdAt: Date | string;
+          }
+        >(
+          `select distinct on (e.target_id) e.target_id as "targetId", e.embedding::text as embedding,
+                  e.model, e.provider, e.runtime, e.strategy, e.created_at as "createdAt"
+             from embeddings_${dimensions} e
+             join unnest($1::uuid[], $2::text[]) as wanted(id, content_hash)
+               on wanted.id = e.target_id and wanted.content_hash = e.content_hash
+            where e.target_type = 'atomic_note'
+            order by e.target_id, e.created_at desc`,
+          [notes.map((note) => note.id), notes.map((note) => note.contentHash)]
+        );
+        for (const row of result.rows) {
+          const createdAt = new Date(row.createdAt).getTime();
+          if ((newest.get(row.targetId) ?? -Infinity) >= createdAt) continue;
+          newest.set(row.targetId, createdAt);
+          found.set(row.targetId, {
+            targetId: row.targetId,
+            embedding: parseVector(row.embedding),
+            model: row.model,
+            provider: row.provider,
+            runtime: row.runtime,
+            strategy: row.strategy
+          });
+        }
+      }
+      return found;
+    },
+
     async upsert(input: UpsertEmbeddingInput): Promise<string> {
       const table = embeddingTable(input.embedding.length);
       const result = await db.query<QueryResultRow & { id: string }>(

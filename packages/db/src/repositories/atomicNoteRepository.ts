@@ -37,6 +37,12 @@ export interface AtomicNoteCandidateRecord {
   note: AtomicNoteRecord;
   textScore: number;
   vectorScore: number;
+  /**
+   * Whether the candidate has a vector in the embedding space it was scored in. Set only by
+   * `scoreMatchingCandidates`: a candidate without one has a vector score of 0 that means
+   * "unknown", not "dissimilar".
+   */
+  hasVector?: boolean;
 }
 
 export interface AtomicNoteGraphInputRecord {
@@ -457,7 +463,10 @@ export function createAtomicNoteRepository(db: Queryable) {
       const vectorScore = dimensions
         ? "coalesce(greatest(0, 1 - (e.embedding <=> $3::vector)), 0)"
         : "0::double precision";
-      const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
+      const hasVector = dimensions ? "(e.embedding is not null)" : "false";
+      const result = await db.query<
+        AtomicNoteRow & { textScore: number; vectorScore: number; hasVector: boolean }
+      >(
         `select ${candidateReturning},
                 least(1, greatest(
                   similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
@@ -467,7 +476,8 @@ export function createAtomicNoteRepository(db: Queryable) {
                     plainto_tsquery('simple', unaccent(source.idea_statement))
                   )
                 )) as "textScore",
-                ${vectorScore} as "vectorScore"
+                ${vectorScore} as "vectorScore",
+                ${hasVector} as "hasVector"
          from atomic_notes source
          join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
          ${vectorJoin}
@@ -487,7 +497,8 @@ export function createAtomicNoteRepository(db: Queryable) {
       return result.rows.map((row) => ({
         note: mapNote(row),
         textScore: Number(row.textScore),
-        vectorScore: Number(row.vectorScore)
+        vectorScore: Number(row.vectorScore),
+        hasVector: row.hasVector === true
       }));
     },
 

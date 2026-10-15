@@ -9,6 +9,7 @@ import {
   type InterpretationRecord
 } from "@app/domain";
 import type { PgPool, PgClient } from "../client.js";
+import { createJobRepository } from "./jobRepository.js";
 import { createWikiRepository } from "./wikiRepository.js";
 
 export function appendInterpretation(
@@ -159,6 +160,12 @@ export async function applyNoteEvolution(
       "insert into atomic_note_revisions(note_id,previous,current,origin) values($1,'{}',$2,'reviewed_evolution')",
       [id, after]
     );
+    // A note is embedded when it is created, so matching finds it: a short job that never calls a
+    // generative model, queued in this transaction (the evolution itself runs no embedding model).
+    await createJobRepository(db).enqueueNoteEmbedding({
+      atomicNoteId: id,
+      sourceItemId: first.sourceItemId
+    });
     notes.push({ id, title: draft.title });
   }
   const repairs = [];

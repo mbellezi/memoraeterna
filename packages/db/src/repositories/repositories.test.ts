@@ -845,6 +845,25 @@ describe("repositories", () => {
     expect(db.queries[2]?.values.slice(21, 23)).toEqual([null, null]);
   });
 
+  it("stores the real start of an AI task run: the end of the call minus its measured duration", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }]]);
+
+    await createAiConfigRepository(db).recordTaskRun({
+      taskType: "reranking",
+      provider: "test",
+      modelId: "test-model",
+      runtime: "remote",
+      durationMs: 2_900,
+      status: "succeeded"
+    });
+
+    const statement = db.queries[0]?.text.replace(/\s+/g, " ") ?? "";
+    // The start is the end minus the measured duration, no longer the same instant as the end.
+    expect(statement).toContain("queue_ms, attempt, finished_at, started_at");
+    expect(statement).toContain("now() - ($17::integer * interval '1 millisecond')");
+    expect(db.queries[0]?.values[16]).toBe(2_900);
+  });
+
   it("keeps the organization step parameters after the wall-clock fields", async () => {
     const db = new FakeQueryable([[{ id: "run-1" }]]);
 
@@ -1026,6 +1045,71 @@ describe("repositories", () => {
         false
       );
     });
+  });
+
+  it("finds the newest vector of each note built from its current text, in any dimension", async () => {
+    const note = "00000000-0000-4000-8000-000000000001";
+    const row = (model: string, createdAt: string, embedding: string) => ({
+      targetId: note,
+      embedding,
+      model,
+      provider: "local",
+      runtime: "mlx",
+      strategy: `native-v2:${model}`,
+      createdAt: new Date(createdAt)
+    });
+    const db = new FakeQueryable([
+      [row("old-model", "2026-10-01T00:00:00Z", "[1,2]")],
+      [],
+      [row("new-model", "2026-10-02T00:00:00Z", "[3,4]")]
+    ]);
+
+    const found = await createEmbeddingRepository(db).findCurrentNoteVectors([
+      { id: note, contentHash: "hash" },
+      { id: "00000000-0000-4000-8000-000000000002", contentHash: "other" }
+    ]);
+
+    expect([...found.keys()]).toEqual([note]);
+    expect(found.get(note)).toEqual({
+      targetId: note,
+      embedding: [3, 4],
+      model: "new-model",
+      provider: "local",
+      runtime: "mlx",
+      strategy: "native-v2:new-model"
+    });
+    expect(db.queries).toHaveLength(3);
+    expect(db.queries[0]?.text).toContain("e.content_hash");
+    expect(db.queries[0]?.text).toContain("e.target_type = 'atomic_note'");
+    expect(db.queries[0]?.values).toEqual([
+      [note, "00000000-0000-4000-8000-000000000002"],
+      ["hash", "other"]
+    ]);
+    const none = new FakeQueryable([]);
+    expect((await createEmbeddingRepository(none).findCurrentNoteVectors([])).size).toBe(0);
+    expect(none.queries).toHaveLength(0);
+  });
+
+  it("tells a scored candidate that has no vector from one that is dissimilar", async () => {
+    const db = new FakeQueryable([[], []]);
+    const notes = createAtomicNoteRepository(db);
+
+    await notes.scoreMatchingCandidates({
+      noteId: "note-1",
+      candidateIds: ["00000000-0000-4000-8000-000000000001"],
+      embedding: Array.from({ length: 256 }, () => 0),
+      embeddingModel: "embedding-model",
+      embeddingSpaceKey: "space",
+      embeddingProvider: "local",
+      embeddingRuntime: "mlx"
+    });
+    await notes.scoreMatchingCandidates({
+      noteId: "note-1",
+      candidateIds: ["00000000-0000-4000-8000-000000000001"]
+    });
+
+    expect(db.queries[0]?.text).toContain('(e.embedding is not null) as "hasVector"');
+    expect(db.queries[1]?.text).toContain('false as "hasVector"');
   });
 
   it("retrieves atomic-note text and vector rankings independently", async () => {

@@ -485,8 +485,10 @@ export function createAiConfigRepository(db: Queryable) {
              profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
              quantization, parameters, capabilities_used,
              input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
-             duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at
-           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,$22,$23,now())
+             duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at, started_at
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,$22,$23,now(),
+             -- The row is written when the call ends, so its real start is the end minus the measured duration.
+             now() - ($17::integer * interval '1 millisecond'))
            returning id
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)

@@ -65,52 +65,79 @@ function directionAssignments(direction: "lo_to_hi" | "hi_to_lo"): string {
   ].join(",\n           ");
 }
 
+interface VerdictLookup {
+  sourceAtomicNoteId: string;
+  sourceContentHash: string;
+  deciderKey: string;
+  targets: ReadonlyArray<{ atomicNoteId: string; contentHash: string }>;
+}
+
+/**
+ * The verdicts of one direction for the pair of `source` and each target, on the current content
+ * of both notes. `forward` reads source -> target, `reverse` reads target -> source. Keys are the
+ * target IDs either way.
+ */
+async function readVerdicts(
+  db: Queryable,
+  input: VerdictLookup,
+  direction: "forward" | "reverse"
+): Promise<Map<string, RelationDecisionVerdict>> {
+  const verdicts = new Map<string, RelationDecisionVerdict>();
+  const targets = input.targets.filter(
+    (target) => target.atomicNoteId !== input.sourceAtomicNoteId
+  );
+  if (!targets.length) return verdicts;
+  const result = await db.query<RelationDecisionRow>(
+    `select lo_atomic_note_id as "loId", hi_atomic_note_id as "hiId",
+       lo_content_hash as "loHash", hi_content_hash as "hiHash",
+       lo_to_hi_score as "loToHiScore", lo_to_hi_relation_type as "loToHiRelationType",
+       hi_to_lo_score as "hiToLoScore", hi_to_lo_relation_type as "hiToLoRelationType"
+     from relation_decisions
+     where decider_key = $1 and pair_key = any($2::text[])`,
+    [
+      input.deciderKey,
+      targets.map(
+        (target) => relationDecisionPair(input.sourceAtomicNoteId, target.atomicNoteId).key
+      )
+    ]
+  );
+  const rows = new Map(result.rows.map((row) => [`${row.loId}:${row.hiId}`, row]));
+  for (const target of targets) {
+    const pair = relationDecisionPair(input.sourceAtomicNoteId, target.atomicNoteId);
+    const row = rows.get(pair.key);
+    if (!row) continue;
+    const sourceIsLo = pair.lo === input.sourceAtomicNoteId;
+    const sameContent = sourceIsLo
+      ? row.loHash === input.sourceContentHash && row.hiHash === target.contentHash
+      : row.hiHash === input.sourceContentHash && row.loHash === target.contentHash;
+    // Source -> target is the lo -> hi column when the source is lo; the reverse reads the other one.
+    const loToHi = sourceIsLo === (direction === "forward");
+    const score = loToHi ? row.loToHiScore : row.hiToLoScore;
+    const relationType = loToHi ? row.loToHiRelationType : row.hiToLoRelationType;
+    if (sameContent && score !== null && relationType !== null)
+      verdicts.set(target.atomicNoteId, { score: Number(score), relationType });
+  }
+  return verdicts;
+}
+
 export function createRelationDecisionRepository(db: Queryable) {
   return {
     /**
      * Verdicts already recorded for `source -> target` by this decider on the current content of
      * both notes. A verdict for the reverse direction or for older content is not returned.
      */
-    async findVerdicts(input: {
-      sourceAtomicNoteId: string;
-      sourceContentHash: string;
-      deciderKey: string;
-      targets: ReadonlyArray<{ atomicNoteId: string; contentHash: string }>;
-    }): Promise<Map<string, RelationDecisionVerdict>> {
-      const verdicts = new Map<string, RelationDecisionVerdict>();
-      const targets = input.targets.filter(
-        (target) => target.atomicNoteId !== input.sourceAtomicNoteId
-      );
-      if (!targets.length) return verdicts;
-      const result = await db.query<RelationDecisionRow>(
-        `select lo_atomic_note_id as "loId", hi_atomic_note_id as "hiId",
-           lo_content_hash as "loHash", hi_content_hash as "hiHash",
-           lo_to_hi_score as "loToHiScore", lo_to_hi_relation_type as "loToHiRelationType",
-           hi_to_lo_score as "hiToLoScore", hi_to_lo_relation_type as "hiToLoRelationType"
-         from relation_decisions
-         where decider_key = $1 and pair_key = any($2::text[])`,
-        [
-          input.deciderKey,
-          targets.map(
-            (target) => relationDecisionPair(input.sourceAtomicNoteId, target.atomicNoteId).key
-          )
-        ]
-      );
-      const rows = new Map(result.rows.map((row) => [`${row.loId}:${row.hiId}`, row]));
-      for (const target of targets) {
-        const pair = relationDecisionPair(input.sourceAtomicNoteId, target.atomicNoteId);
-        const row = rows.get(pair.key);
-        if (!row) continue;
-        const sourceIsLo = pair.lo === input.sourceAtomicNoteId;
-        const sameContent = sourceIsLo
-          ? row.loHash === input.sourceContentHash && row.hiHash === target.contentHash
-          : row.hiHash === input.sourceContentHash && row.loHash === target.contentHash;
-        const score = sourceIsLo ? row.loToHiScore : row.hiToLoScore;
-        const relationType = sourceIsLo ? row.loToHiRelationType : row.hiToLoRelationType;
-        if (sameContent && score !== null && relationType !== null)
-          verdicts.set(target.atomicNoteId, { score: Number(score), relationType });
-      }
-      return verdicts;
+    findVerdicts(input: VerdictLookup): Promise<Map<string, RelationDecisionVerdict>> {
+      return readVerdicts(db, input, "forward");
+    },
+
+    /**
+     * Verdicts recorded for `target -> source`, the reverse of the direction being decided, by this
+     * decider on the current content of both notes, keyed by the target. A generative decider
+     * judges an unordered pair once, so matching reuses these instead of asking again. The type
+     * belongs to `target -> source`: the caller keeps that direction with it.
+     */
+    findReverseVerdicts(input: VerdictLookup): Promise<Map<string, RelationDecisionVerdict>> {
+      return readVerdicts(db, input, "reverse");
     },
 
     /**

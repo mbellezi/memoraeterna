@@ -8,11 +8,9 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - `SourceItem` types are canonical; every ingestion uses a complete typed
   descriptor validated with Zod at preload and main-process boundaries.
 - Metadata values record `manual`, `extracted` or `enriched` provenance.
-  Automation never overwrites a manual value; enrichment results are suggestions
-  applied explicitly.
-- Duplicates are detected (URI/hash, then type-specific identifiers) and the
-  user chooses keep, update or new version; imports never silently discard or
-  overwrite.
+  Automation never overwrites a manual value; enrichment is applied explicitly.
+- Duplicates are detected (URI/hash, then type-specific IDs); the user chooses
+  keep, update or new version; imports never silently discard or overwrite.
 - Catalog containers (book, periodical issue, paper) may exist without a
   document. Parent/child links use IDs, never titles.
 - Native structure (EPUB nav/NCX, PDF outline and page labels) is authoritative
@@ -54,9 +52,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Summaries are versioned and traceable to source revision, model, prompt and
   input hashes; long sources use map-reduce over chunks.
 - Atomic notes use validated structured output and link to their source, chunks
-  and SourceSpans. They are active at birth with an AI-provenance badge; review
-  is optional, never a gate. Human edits protect a note, invalidate its
-  embedding and dependents and queue one embedding job, never generative AI.
+  and SourceSpans. They are active at birth with an AI-provenance badge (review
+  is optional) and are embedded when created, so matching never meets a note
+  without a vector. Human edits protect a note and invalidate its embedding and
+  dependents; one embedding job rebuilds it, never generative AI.
 - Repeated derivations of the same passage are not independent corroboration.
 - Entities and semantic relations are canonical in SQL with evidence. Names are
   retrieval signals, never identity; identity reuse needs conservative
@@ -72,7 +71,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   fails the note visibly, before its checkpoint.
 - Decisions keep each direction's raw score, AI run and time apart from
   calibration, keyed by both notes' content hashes and the decider; a decided
-  direction is reused with the decider that decided it.
+  direction is reused with the decider that decided it. A generative decider
+  judges each unordered pair once: its verdict answers the reverse direction
+  (the type stays with the judged direction) and no row is written for the
+  reuse; a reranker scores both directions (target F3).
 - Relation types use one fixed vocabulary shared by notes and sources; type,
   direction and explanation are assigned only to accepted pairs. Shared topics,
   names, dates or homonyms alone never create a relation; the relation must be
@@ -86,10 +88,9 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - The Topic Tree Engine owns AI-managed structure and is the single writer of AI
   topic parents. Placement is deterministic on embeddings; a decider is consulted
   only for ambiguous cases; LLMs name topics in the content language and write prose.
-- Every current note and root source is reachable from the root, each with one
-  primary parent and a few secondary placements, with no cycles. Shape targets
-  (fan-out, leaf size, depth) live in typed config and are enforced by
-  rebalancing operations.
+- Every current note and root source is reachable from the root with one primary
+  parent and a few secondary placements, and no cycles. Shape targets (fan-out,
+  leaf size, depth) live in typed config and are enforced by rebalancing.
 - Every structural operation is recorded in a reversible change-set. Stability
   controls (hysteresis, cooldown, churn budget) prevent thrashing. Human-created,
   pinned and protected nodes never move automatically.
@@ -98,9 +99,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Search and Ask
 
-- One retriever (full-text, trigram, vector, fused by RRF) serves every search
-  surface (target F5). Text retrieval works without AI; missing embeddings
-  degrade explicitly.
+- One retriever (full-text, trigram, vector; RRF) serves every search surface
+  (target F5). Text search needs no AI; missing embeddings degrade explicitly.
 - Results carry their evidence (chunk ID, SourceSpan, breadcrumbs); IDs are never
   fabricated. Scope and privacy filters apply before retrieval and before any
   provider call. Browsing and asking are read-only; saving is explicit.

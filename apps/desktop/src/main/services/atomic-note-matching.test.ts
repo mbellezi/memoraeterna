@@ -14,10 +14,10 @@ const mocks = vi.hoisted(() => ({
     scoreMatchingCandidates: vi.fn()
   },
   relations: { pairStatuses: vi.fn(), upsert: vi.fn() },
-  decisions: { findVerdicts: vi.fn(), record: vi.fn() },
+  decisions: { findVerdicts: vi.fn(), findReverseVerdicts: vi.fn(), record: vi.fn() },
   aiConfig: { getDefaultTask: vi.fn() },
   graph: { findAtomicNoteCandidates: vi.fn(), listAtomicNoteElements: vi.fn() },
-  embedding: { upsert: vi.fn() },
+  embedding: { upsert: vi.fn(), findCurrentNoteVectors: vi.fn() },
   run: vi.fn()
 }));
 vi.mock("@app/db", async (original) => ({
@@ -112,6 +112,8 @@ beforeEach(() => {
   mocks.graph.listAtomicNoteElements.mockResolvedValue(new Map());
   mocks.relations.pairStatuses.mockResolvedValue(new Map());
   mocks.decisions.findVerdicts.mockResolvedValue(new Map());
+  mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map());
+  mocks.embedding.findCurrentNoteVectors.mockResolvedValue(new Map());
   mocks.aiConfig.getDefaultTask.mockResolvedValue(route());
   respond(defaultVerdicts);
 });
@@ -670,5 +672,332 @@ describe("atomic note matching execution", () => {
     expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(2);
     expect(mocks.decisions.findVerdicts).not.toHaveBeenCalled();
     expect(mocks.decisions.record).not.toHaveBeenCalled();
+  });
+});
+
+describe("note embeddings in matching", () => {
+  const vector = (seed = 0.1) => Array.from({ length: 256 }, () => seed);
+  const storedVector = (embedding = vector(0.2)) => ({
+    embedding,
+    model: "stored-model",
+    provider: "stored-provider",
+    runtime: "local",
+    strategy: "native-v2:stored-space"
+  });
+  const embeddingCalls = () => mocks.run.mock.calls.filter(([task]) => task === "embedding");
+  const embeddedNoteIds = () =>
+    embeddingCalls().map(([, , context]) => (context as { atomicNoteId: string }).atomicNoteId);
+
+  it("embeds every note of the batch that has no vector before the first retrieval, one call each", async () => {
+    mocks.notes.findById.mockImplementation(async (id: string) => note(id));
+    respond(defaultVerdicts, defaultVerdicts, defaultVerdicts);
+    await service().matchAtomicNotes(["n1", "n2", "n3"]);
+    expect(embeddedNoteIds()).toEqual(["n1", "n2", "n3"]);
+    expect(
+      embeddingCalls().every(
+        ([, , context]) =>
+          (context as { operation: string }).operation === "note_matching_embedding"
+      )
+    ).toBe(true);
+    // One lookup for the whole batch, and all the embedding is done before any note is retrieved:
+    // no note is matched while a later note of the batch is still without a vector.
+    expect(mocks.embedding.findCurrentNoteVectors).toHaveBeenCalledOnce();
+    expect(
+      mocks.embedding.findCurrentNoteVectors.mock.calls[0]![0].map((n: { id: string }) => n.id)
+    ).toEqual(["n1", "n2", "n3"]);
+    const lastEmbedding = Math.max(
+      ...mocks.run.mock.calls.flatMap(([task], index) =>
+        task === "embedding" ? [mocks.run.mock.invocationCallOrder[index]!] : []
+      )
+    );
+    expect(lastEmbedding).toBeLessThan(
+      mocks.notes.findTextMatchingCandidates.mock.invocationCallOrder[0]!
+    );
+    expect(mocks.embedding.upsert).toHaveBeenCalledTimes(3);
+    expect(mocks.embedding.upsert.mock.calls[0]![0]).toMatchObject({
+      targetType: "atomic_note",
+      targetId: "n1",
+      usage: "matching"
+    });
+  });
+
+  it("reuses the stored vector of a note instead of embedding it again, and retrieves in its space", async () => {
+    mocks.embedding.findCurrentNoteVectors.mockResolvedValue(
+      new Map([["source", { targetId: "source", ...storedVector() }]])
+    );
+    await service().matchAtomicNotes(["source"]);
+    expect(embeddingCalls()).toHaveLength(0);
+    expect(mocks.embedding.upsert).not.toHaveBeenCalled();
+    const space = {
+      embedding: vector(0.2),
+      embeddingModel: "stored-model",
+      embeddingSpaceKey: "stored-space",
+      embeddingProvider: "stored-provider",
+      embeddingRuntime: "local"
+    };
+    expect(mocks.notes.findVectorMatchingCandidates).toHaveBeenCalledWith(
+      expect.objectContaining(space)
+    );
+    expect(mocks.notes.scoreMatchingCandidates).toHaveBeenCalledWith(
+      expect.objectContaining(space)
+    );
+    expect(rerankCalls()).toHaveLength(1);
+  });
+
+  it("embeds a candidate that has no vector before scoring it, so a later note is retrieved and feasible", async () => {
+    const withVector = (id: string) => ({
+      note: note(id),
+      textScore: 1,
+      vectorScore: 1,
+      hasVector: true
+    });
+    // "c" is a note created after "source" was matched: text finds it, the vector join does not.
+    let scorings = 0;
+    mocks.notes.scoreMatchingCandidates.mockImplementation(async () => {
+      scorings += 1;
+      return [
+        withVector("a"),
+        withVector("b"),
+        scorings === 1
+          ? { note: note("c"), textScore: 0.5, vectorScore: 0, hasVector: false }
+          : { note: note("c"), textScore: 0.5, vectorScore: 0.9, hasVector: true }
+      ];
+    });
+    respond({
+      results: [
+        result("c1", 0.1, "related"),
+        result("c2", 0.1, "related"),
+        result("c3", 0.9, "extends", "c3 adds a condition to s1.")
+      ]
+    });
+    const matched = await service().matchAtomicNotes(["source"]);
+    expect(scorings).toBe(2);
+    expect(embeddedNoteIds()).toEqual(["source", "c"]);
+    expect(rerankCalls()[0]![1]).toContain("Title: c");
+    expect(matched.persistedCount).toBe(1);
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAtomicNoteId: "c",
+        vectorScore: 0.9,
+        metadata: expect.objectContaining({ decisionSource: "model" })
+      })
+    );
+  });
+
+  it("never scores a candidate that still has no vector as a vector score of 0", async () => {
+    // Text 0.9 and no vector. As a vector score of 0 under the vector weights its best case is
+    // 0.562 < 0.6, so it would be dropped before the decider; without vector weights it is not.
+    mocks.notes.scoreMatchingCandidates.mockResolvedValue([
+      { note: note("c"), textScore: 0.9, vectorScore: 0, hasVector: false }
+    ]);
+    mocks.run.mockImplementation(async (task, _prompt, context: { atomicNoteId?: string }) =>
+      task === "embedding"
+        ? context.atomicNoteId === "c"
+          ? null
+          : embeddingResult()
+        : execution({ results: [result("c1", 0.9, "extends", "c1 adds a condition to s1.")] })
+    );
+    const matched = await service().matchAtomicNotes(["source", "second"]);
+    expect(rerankCalls()).toHaveLength(2);
+    expect(rerankCalls()[0]![1]).toContain("Title: c");
+    expect(matched.persistedCount).toBe(2);
+    // textAndMetadata weights: base 0.7 * 0.9 = 0.63, final 0.63 * 0.6 + 0.9 * 0.4.
+    expect(mocks.relations.upsert.mock.calls[0]![0].finalScore).toBeCloseTo(0.738, 3);
+    // Nothing could embed it, and it is tried once per run, not once per note.
+    expect(embeddedNoteIds().filter((id) => id === "c")).toEqual(["c"]);
+    expect(mocks.notes.scoreMatchingCandidates).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a low real vector score alone: only an unknown vector score changes the weights", async () => {
+    mocks.notes.scoreMatchingCandidates.mockResolvedValue(
+      ["a", "b", "c"].map((id) => ({
+        note: note(id),
+        textScore: 0.42,
+        vectorScore: 0.42,
+        hasVector: true
+      }))
+    );
+    respond({ results: ["c1", "c2", "c3"].map((alias) => result(alias, 0.9, "supports")) });
+    expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
+    expect(rerankCalls()).toHaveLength(1);
+    expect(embeddedNoteIds()).toEqual(["source"]);
+  });
+});
+
+describe("one decision per unordered pair with a generative decider", () => {
+  const reverse = { score: 0.95, relationType: "extends" };
+
+  it("answers a direction from the verdict of the reverse direction and asks only for the rest", async () => {
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
+    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    const matched = await service().matchAtomicNotes(["source"]);
+    const prompt = rerankCalls()[0]![1] as string;
+    expect(prompt).toContain("[c1]\nTitle: a");
+    expect(prompt).toContain("[c2]\nTitle: b");
+    expect(prompt).not.toContain("Title: c");
+    expect(mocks.decisions.findReverseVerdicts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceAtomicNoteId: "source",
+        sourceContentHash: atomicNoteDecisionContentHash(note("source")),
+        deciderKey: mocks.decisions.findVerdicts.mock.calls[0]![0].deciderKey,
+        targets: ["a", "b", "c"].map((id) => ({
+          atomicNoteId: id,
+          contentHash: atomicNoteDecisionContentHash(note(id))
+        }))
+      })
+    );
+    expect(matched.persistedCount).toBe(1);
+    // The type belongs to the direction it was judged in: candidate -> this note.
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceAtomicNoteId: "source",
+        targetAtomicNoteId: "c",
+        relationType: "extends",
+        rerankScore: 0.95,
+        explanation: "knowledge.relations.explanations.reranked",
+        matchingModel: "model",
+        metadata: expect.objectContaining({
+          decisionSource: "reverse_cache",
+          semanticSourceAtomicNoteId: "c",
+          semanticTargetAtomicNoteId: "source"
+        })
+      })
+    );
+    // A reused verdict is not a judgment of this direction: no row is written for it.
+    expect(mocks.decisions.record.mock.calls.map(([r]) => r.targetAtomicNoteId).sort()).toEqual([
+      "a",
+      "b"
+    ]);
+  });
+
+  it("keeps the semantic direction of a verdict that was judged in this direction", async () => {
+    await service().matchAtomicNotes(["source"]);
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAtomicNoteId: "c",
+        metadata: expect.objectContaining({
+          decisionSource: "model",
+          semanticSourceAtomicNoteId: "source",
+          semanticTargetAtomicNoteId: "c"
+        })
+      })
+    );
+  });
+
+  it("prefers a verdict judged in this direction and does not look up the reverse of it", async () => {
+    mocks.decisions.findVerdicts.mockResolvedValue(
+      new Map([["c", { score: 0.9, relationType: "supports" }]])
+    );
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
+    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    await service().matchAtomicNotes(["source"]);
+    expect(
+      mocks.decisions.findReverseVerdicts.mock.calls[0]![0].targets.map(
+        (t: { atomicNoteId: string }) => t.atomicNoteId
+      )
+    ).toEqual(["a", "b"]);
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAtomicNoteId: "c",
+        relationType: "supports",
+        metadata: expect.objectContaining({ decisionSource: "cache" })
+      })
+    );
+  });
+
+  it("makes no call when every feasible direction is answered by either direction", async () => {
+    mocks.decisions.findVerdicts.mockResolvedValue(
+      new Map([["a", { score: 0.1, relationType: "related" }]])
+    );
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(
+      new Map([
+        ["b", { score: 0.2, relationType: "related" }],
+        ["c", reverse]
+      ])
+    );
+    const matched = await service().matchAtomicNotes(["source"]);
+    expect(rerankCalls()).toHaveLength(0);
+    expect(matched.persistedCount).toBe(1);
+    expect(mocks.decisions.record).not.toHaveBeenCalled();
+  });
+
+  it("ignores a reverse verdict whose type is not in the vocabulary", async () => {
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(
+      new Map([["c", { score: 0.95, relationType: "invented" }]])
+    );
+    await service().matchAtomicNotes(["source"]);
+    expect(rerankCalls()[0]![1]).toContain("Title: c");
+  });
+
+  it("scores each direction itself when the decider declares the reranking capability", async () => {
+    mocks.aiConfig.getDefaultTask.mockResolvedValue({
+      ...route(),
+      requiredCapabilities: ["reranking"]
+    });
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
+    await service().matchAtomicNotes(["source"]);
+    expect(mocks.decisions.findReverseVerdicts).not.toHaveBeenCalled();
+    expect(rerankCalls()[0]![1]).toContain("Title: c");
+  });
+
+  it("does not reuse anything without a decider identity", async () => {
+    mocks.aiConfig.getDefaultTask.mockRejectedValue(new Error("database_unavailable"));
+    await service().matchAtomicNotes(["source"]);
+    expect(mocks.decisions.findReverseVerdicts).not.toHaveBeenCalled();
+  });
+
+  it("judges a pair of one batch once: the second note reuses what the first one decided", async () => {
+    type Verdict = { score: number; relationType: string };
+    const judged = new Map<string, Verdict>();
+    const related = new Set<string>();
+    const pairOf = (left: string, right: string) => [left, right].sort().join(">");
+    mocks.notes.findById.mockImplementation(async (id: string) => note(id));
+    // Each note finds the other one and finds it feasible: before this, the later note was
+    // invisible to the earlier one and nothing connected the two directions.
+    const other = (id: string) => (id === "s1" ? "s2" : "s1");
+    const candidateOf = ({ noteId }: { noteId: string }) => [
+      { note: note(other(noteId)), textScore: 1, vectorScore: 1, hasVector: true }
+    ];
+    mocks.notes.findTextMatchingCandidates.mockImplementation(async (input) => candidateOf(input));
+    mocks.notes.findVectorMatchingCandidates.mockImplementation(async (input) =>
+      candidateOf(input)
+    );
+    mocks.notes.scoreMatchingCandidates.mockImplementation(async (input) => candidateOf(input));
+    mocks.decisions.record.mockImplementation(
+      async (r: { sourceAtomicNoteId: string; targetAtomicNoteId: string } & Verdict) => {
+        judged.set(`${r.sourceAtomicNoteId}>${r.targetAtomicNoteId}`, {
+          score: r.score,
+          relationType: r.relationType
+        });
+      }
+    );
+    mocks.decisions.findReverseVerdicts.mockImplementation(
+      async (input: { sourceAtomicNoteId: string; targets: Array<{ atomicNoteId: string }> }) =>
+        new Map(
+          input.targets.flatMap(({ atomicNoteId }) => {
+            const verdict = judged.get(`${atomicNoteId}>${input.sourceAtomicNoteId}`);
+            return verdict ? [[atomicNoteId, verdict] as const] : [];
+          })
+        )
+    );
+    mocks.relations.upsert.mockImplementation(
+      async (r: { sourceAtomicNoteId: string; targetAtomicNoteId: string }) =>
+        void related.add(pairOf(r.sourceAtomicNoteId, r.targetAtomicNoteId))
+    );
+    mocks.relations.pairStatuses.mockImplementation(
+      async (noteId: string, ids: string[]) =>
+        new Map(
+          ids
+            .filter((id) => related.has(pairOf(noteId, id)))
+            .map((id) => [id, "pending_review"] as const)
+        )
+    );
+    respond({ results: [result("c1", 0.9, "supports", "c1 supports s1.")] });
+    const matched = await service().matchAtomicNotes(["s1", "s2"]);
+    expect(rerankCalls()).toHaveLength(1);
+    expect(matched.persistedCount).toBe(1);
+    expect([...judged.keys()]).toEqual(["s1>s2"]);
+    // The second note found the relation the first one made and left it as it is.
+    expect(mocks.relations.upsert).toHaveBeenCalledOnce();
   });
 });

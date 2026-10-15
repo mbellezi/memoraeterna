@@ -680,6 +680,11 @@ export interface AtomicNoteRelationSelectionCandidate {
   noteId: string;
   contentKey: string;
   scores: AtomicNoteRelationScoreInputs;
+  /**
+   * Whether this candidate's vector score is real. A candidate that still has no vector is scored
+   * with the weights that do not assume one, never as a vector score of 0. Defaults to the note's.
+   */
+  hasEmbedding?: boolean;
   /** The decider's verdict for this direction, or null when no decision exists. */
   decision: { score: number; relationType: AtomicNoteRelationType } | null;
 }
@@ -707,7 +712,7 @@ export function selectAtomicNoteRelations<T extends AtomicNoteRelationSelectionC
       const score = (rerankScore: number | null) =>
         calculateRelationScore({
           ...candidate.scores,
-          hasEmbedding: options.hasEmbedding,
+          hasEmbedding: candidate.hasEmbedding ?? options.hasEmbedding,
           rerankScore,
           settings: options.settings
         });

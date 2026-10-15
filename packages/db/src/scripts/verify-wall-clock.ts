@@ -222,12 +222,25 @@ try {
   for (const id of [unknown, invalid])
     assert.deepEqual([byId.get(id)?.queue_ms, byId.get(id)?.attempt], [null, null], "unknown");
 
+  // The row is written when the call ends: its start is the end minus the measured duration, to the
+  // millisecond, and a call that took no time starts when it ends.
+  const instant = await ai.recordTaskRun({ ...base, durationMs: 0 });
+  const times = await db.query<{ id: string; measured_ms: number }>(
+    `select id, extract(epoch from finished_at - started_at) * 1000 as measured_ms
+     from ai_task_runs where id = any($1::uuid[])`,
+    [[measured, instant]]
+  );
+  const measuredMs = new Map(times.rows.map((row) => [row.id, Number(row.measured_ms)]));
+  assert.equal(measuredMs.get(measured), 25, "started_at is finished_at minus duration_ms");
+  assert.equal(measuredMs.get(instant), 0, "an instant call starts when it ends");
+
   console.info(
     JSON.stringify({
       verified: [
         "migration history and columns",
         "stage attempts, start and end times through retry, wait, failure, recovery and cancel",
-        "ai_task_runs queue_ms and attempt, null when unknown"
+        "ai_task_runs queue_ms and attempt, null when unknown",
+        "ai_task_runs started_at is the call's real start, finished_at minus duration_ms"
       ],
       migrations: journal.entries.length
     })
