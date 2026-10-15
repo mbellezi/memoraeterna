@@ -338,7 +338,8 @@ export function LibraryView({
   onExitToSearch,
   onExitToKnowledgeGraph,
   onExitToWiki,
-  onOpenWikiPage
+  onOpenWikiPage,
+  onOpenTopic
 }: {
   t: Translator;
   /** The Library stays mounted while hidden; hidden means no loading and no open dialogs. */
@@ -355,6 +356,8 @@ export function LibraryView({
   onExitToKnowledgeGraph?: () => void;
   /** Opens a legacy wiki page (a placement or citation listed by "Where is this"). */
   onOpenWikiPage?: (pageId: string) => void;
+  /** Opens a topic of the topic tree (a placement or a path segment listed by "Where is this"). */
+  onOpenTopic?: (topicId: string) => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
   // The passage a citation asked the reader to show; the source detail takes it over on mount.
@@ -730,6 +733,10 @@ export function LibraryView({
   function navigateObject(navigation: OpenableNavigation) {
     if (navigation.type === "legacyPage") {
       onOpenWikiPage?.(navigation.pageId);
+      return;
+    }
+    if (navigation.type === "topic") {
+      onOpenTopic?.(navigation.topicId);
       return;
     }
     if (navigation.type === "note") {

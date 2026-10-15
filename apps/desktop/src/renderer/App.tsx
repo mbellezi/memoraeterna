@@ -51,7 +51,7 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { routeObsidianLink } from "./lib/obsidian-link";
-import type { PassageAnchor } from "./lib/object-navigation";
+import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
 import { readRememberedTheme, rememberTheme, useResolvedTheme } from "./lib/theme";
@@ -60,6 +60,7 @@ import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
 import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
 import { LibraryView, type LibraryExternalTarget } from "./components/LibraryView";
+import type { OpenableNavigation } from "./components/WhereIsThis";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
 import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog";
@@ -149,6 +150,8 @@ export function App({
 }: AppProps) {
   // Changes each time an old link or call asks for a page of the removed wiki.
   const [wikiNoticeToken, setWikiNoticeToken] = useState<number | null>(null);
+  // The topic the Wiki shows; null shows the Wiki's empty state.
+  const [wikiTopicId, setWikiTopicId] = useState<string | null>(null);
   useEffect(() => {
     const open = (link: ObsidianDeepLink) => {
       const route = routeObsidianLink(link);
@@ -254,6 +257,20 @@ export function App({
       setActiveView("library");
     }
   );
+  // A topic opens in the Wiki, which keeps showing it while the Library or another view is in front.
+  const openTopic = useStableCallback((topicId: string) => {
+    setWikiTopicId(topicId);
+    setActiveView("wiki");
+  });
+  // Where a click on the Topic page leads: another topic, or a source or note in the Library.
+  const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
+    if (navigation.type === "topic") openTopic(navigation.topicId);
+    else if (navigation.type === "legacyPage") openWikiPage();
+    else {
+      const target = libraryTargetForNavigation(navigation);
+      if (target) openAskSource(target.sourceItemId, target.atomicNoteId);
+    }
+  });
   // After an interactive import the new source opens in the Library with the outcome as a toast.
   function openImportedSource(sourceItemId: string, status?: MessageKey) {
     openLibrarySource({ sourceItemId, origin: "import" });
@@ -783,6 +800,7 @@ export function App({
                 setActiveView("knowledgeGraph");
               }}
               onOpenWikiPage={openWikiPage}
+              onOpenTopic={openTopic}
             />
           </div>
           <div hidden={activeView !== "wiki"}>
@@ -790,6 +808,9 @@ export function App({
               t={t}
               active={activeView === "wiki"}
               noticeToken={wikiNoticeToken}
+              topicId={wikiTopicId}
+              onNavigate={openWikiObject}
+              onCloseTopic={() => setWikiTopicId(null)}
               onOpenLibrary={() => goToView("library")}
               onOpenSource={openAskSource}
             />

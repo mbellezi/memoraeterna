@@ -1833,6 +1833,85 @@
       "reembedQueued": "Processo iniciado. Os tópicos continuam quando ele terminar.",
       "reembedFailed": "Não foi possível refazer os embeddings da biblioteca. Tente novamente."
     },
+    "page": {
+      "kind": "Tópico",
+      "close": "Fechar tópico",
+      "rootTitle": "Todos os tópicos",
+      "unnamed": "Tópico sem nome",
+      "provisionalName": "Nome provisório. Ele pode mudar conforme o tópico cresce.",
+      "articleLabel": "Tópico: {title}",
+      "pathLabel": "Caminho",
+      "sideLabel": "Relacionado a este tópico",
+      "error": "Não foi possível carregar este tópico.",
+      "missing": "Este tópico não existe mais. Ele pode ter sido unido a outro ou removido.",
+      "redirected": "O tópico que você abriu foi unido a este.",
+      "empty": "Nenhuma nota ou fonte foi colocada neste tópico ainda.",
+      "counts": {
+        "notes": "{count} notas",
+        "notesOne": "1 nota",
+        "sources": "{count} fontes",
+        "sourcesOne": "1 fonte",
+        "subtopics": "{count} subtópicos",
+        "subtopicsOne": "1 subtópico",
+        "items": "{count} itens",
+        "itemsOne": "1 item",
+        "relations": "{count} relações",
+        "relationsOne": "1 relação"
+      },
+      "aliases": "Também chamado: {names}",
+      "health": {
+        "good": "Saúde boa",
+        "attention": "Precisa de atenção",
+        "violation": "Problema na estrutura"
+      },
+      "when": {
+        "today": "Hoje, {time}",
+        "yesterday": "Ontem, {time}"
+      },
+      "banner": {
+        "undo": "Desfazer",
+        "undoing": "Desfazendo...",
+        "undone": "Mudança desfeita.",
+        "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
+        "failed": "Não foi possível desfazer a mudança. Tente novamente.",
+        "changes": {
+          "build": "Organizado automaticamente. {when}: os tópicos foram criados a partir das suas notas.",
+          "place": "Organizado automaticamente. {when}: novos itens foram colocados.",
+          "placeOne": "Organizado automaticamente. {when}: 1 item foi colocado.",
+          "placeMany": "Organizado automaticamente. {when}: {count} itens foram colocados.",
+          "gate": "Organizado automaticamente. {when}: um item incerto foi colocado.",
+          "rebalance": "Organizado automaticamente. {when}: a estrutura foi reequilibrada.",
+          "audit": "Organizado automaticamente. {when}: itens fora do lugar foram movidos.",
+          "naming": "Organizado automaticamente. {when}: os tópicos receberam nomes.",
+          "areas": "Organizado automaticamente. {when}: as áreas foram reagrupadas.",
+          "rebuild": "Organizado automaticamente. {when}: os tópicos foram refeitos.",
+          "human": "Alterado por você. {when}.",
+          "undo": "Mudança desfeita. {when}.",
+          "other": "Organizado automaticamente. {when}."
+        }
+      },
+      "map": {
+        "title": "Mapa do conteúdo",
+        "hint": "montado a partir da árvore de tópicos, sem IA",
+        "subtopics": "Subtópicos",
+        "moreSubtopics": "Mais {count} subtópicos estão na árvore de tópicos.",
+        "moreSubtopicsOne": "Mais 1 subtópico está na árvore de tópicos.",
+        "notes": "Notas centrais",
+        "notesHint": "por centralidade no tópico",
+        "writtenByYou": "Escrita por você",
+        "noRelations": "Sem relações",
+        "movedFrom": "Movida para cá de {topic}",
+        "seeAll": "Ver as {count} notas",
+        "allNotes": "Todas as notas deste tópico",
+        "showMore": "Mostrar mais notas",
+        "notesError": "Não foi possível carregar as notas.",
+        "sources": "Fontes que contribuem"
+      },
+      "side": {
+        "related": "Tópicos relacionados",
+        "stances": "Relações das notas deste tópico"
+      }
+    },
     "placeholder": {
       "title": "Explore seus tópicos",
       "body": "Escolha um tópico na árvore para ver o que suas notas dizem sobre ele. Tudo o que você adiciona é colocado na árvore para você, e o botão Perguntar responde com base nas suas notas e fontes.",

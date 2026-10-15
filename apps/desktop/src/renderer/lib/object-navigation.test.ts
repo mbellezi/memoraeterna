@@ -3,6 +3,8 @@ import { parseObjectAddress, type ObjectLocateResult } from "@app/domain";
 
 import {
   citationTarget,
+  libraryTargetForNavigation,
+  navigationForAddress,
   navigationForLocated,
   navigationForPathSegment,
   navigationForPlacement,
@@ -114,12 +116,15 @@ describe("resolving a cited passage in the source reader", () => {
   });
 });
 
-const ref = (kind: "source" | "note", n: number, title = `${kind} ${n}`) => ({
+const ref = (kind: "source" | "note" | "topic", n: number, title = `${kind} ${n}`) => ({
   kind,
   id: uuid(n),
   title
 });
-const located = (kind: "source" | "note", path: ReturnType<typeof ref>[]): ObjectLocateResult => ({
+const located = (
+  kind: "source" | "note" | "topic",
+  path: ReturnType<typeof ref>[]
+): ObjectLocateResult => ({
   object: { ...path.at(-1)!, kind },
   primaryPath: path,
   alsoIn: [],
@@ -167,5 +172,57 @@ describe("where an object leads", () => {
 
   it("has nowhere to go for a note whose source is gone", () => {
     expect(navigationForLocated(located("note", [ref("note", 4)]))).toEqual({ type: "none" });
+  });
+});
+
+describe("where a topic leads", () => {
+  it("opens a topic placement, a topic segment of a path and a located topic as the topic itself", () => {
+    expect(
+      navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning", legacy: false })
+    ).toEqual({ type: "topic", topicId: uuid(7) });
+    const path = [ref("topic", 20), ref("topic", 21), ref("note", 22)];
+    expect(navigationForPathSegment(path, 0)).toEqual({ type: "topic", topicId: uuid(20) });
+    expect(navigationForPathSegment(path, 1)).toEqual({ type: "topic", topicId: uuid(21) });
+    expect(navigationForPathSegment(path, 2)).toEqual({ type: "none" });
+    expect(navigationForPathSegment(path.slice(0, 2), 1)).toEqual({ type: "none" });
+    expect(navigationForLocated(located("topic", path.slice(0, 2)))).toEqual({
+      type: "topic",
+      topicId: uuid(21)
+    });
+  });
+
+  it("keeps legacy wiki pages out of the topic tree", () => {
+    expect(
+      navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning", legacy: true })
+    ).toEqual({ type: "legacyPage", pageId: uuid(7) });
+  });
+
+  it("opens a topic address as the topic and locates every other kind first", () => {
+    expect(navigationForAddress(`memora://topic/${uuid(5).toUpperCase()}`)).toEqual({
+      type: "topic",
+      topicId: uuid(5)
+    });
+    expect(navigationForAddress(`memora://note/${uuid(6)}`)).toEqual({
+      type: "resolve",
+      address: `memora://note/${uuid(6)}`
+    });
+    expect(navigationForAddress(`memora://source/${uuid(6)}#passage=${uuid(8)}`)).toEqual({
+      type: "resolve",
+      address: `memora://source/${uuid(6)}#passage=${uuid(8)}`
+    });
+    expect(navigationForAddress("memora://topic/not-a-uuid")).toEqual({ type: "none" });
+    expect(navigationForAddress("https://example.com")).toEqual({ type: "none" });
+  });
+
+  it("turns a source or a note navigation into the Library target in its source", () => {
+    expect(libraryTargetForNavigation({ type: "source", path: [uuid(1), uuid(2)] })).toEqual({
+      sourceItemId: uuid(2)
+    });
+    expect(
+      libraryTargetForNavigation({ type: "note", path: [uuid(1), uuid(2)], noteId: uuid(3) })
+    ).toEqual({ sourceItemId: uuid(2), atomicNoteId: uuid(3) });
+    expect(libraryTargetForNavigation({ type: "source", path: [] })).toBeNull();
+    expect(libraryTargetForNavigation({ type: "topic", topicId: uuid(4) })).toBeNull();
+    expect(libraryTargetForNavigation({ type: "none" })).toBeNull();
   });
 });

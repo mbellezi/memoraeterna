@@ -28,6 +28,9 @@ const view = (
       onOpenTopic={() => undefined}
       onAsk={() => undefined}
       onCloseAsk={() => undefined}
+      topicId={null}
+      onNavigate={() => undefined}
+      onCloseTopic={() => undefined}
       onOpenLibrary={() => undefined}
       onOpenSource={() => undefined}
       {...overrides}
@@ -90,6 +93,9 @@ describe("wiki workspace shell", () => {
         t={createTranslator("en")}
         active
         noticeToken={null}
+        topicId={null}
+        onNavigate={() => undefined}
+        onCloseTopic={() => undefined}
         onOpenLibrary={() => undefined}
         onOpenSource={() => undefined}
       />
@@ -104,12 +110,22 @@ describe("wiki workspace shell", () => {
     expect(view("en", { noticeToken: 1 })).toContain(notice);
   });
 
+  it("hosts the Topic page, with its close control, instead of the empty state when a topic is open", () => {
+    const html = view("en", { topicId: "00000000-0000-4000-8000-000000000001" });
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-label="Close topic"');
+    expect(html).not.toContain("wiki-placeholder-title");
+  });
+
   it("lets a hidden Wiki use up the notice of an old link", () => {
     const html = renderToString(
       <WikiWorkspace
         t={createTranslator("en")}
         active={false}
         noticeToken={1}
+        topicId={null}
+        onNavigate={() => undefined}
+        onCloseTopic={() => undefined}
         onOpenLibrary={() => undefined}
         onOpenSource={() => undefined}
       />

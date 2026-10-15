@@ -1830,6 +1830,85 @@
       "reembedQueued": "Re-embedding started. Topics resume when it finishes.",
       "reembedFailed": "The library could not be re-embedded. Try again."
     },
+    "page": {
+      "kind": "Topic",
+      "close": "Close topic",
+      "rootTitle": "All topics",
+      "unnamed": "Unnamed topic",
+      "provisionalName": "Provisional name. It may change as the topic grows.",
+      "articleLabel": "Topic: {title}",
+      "pathLabel": "Path",
+      "sideLabel": "Related to this topic",
+      "error": "This topic could not be loaded.",
+      "missing": "This topic no longer exists. It may have been merged or removed.",
+      "redirected": "The topic you opened was merged into this one.",
+      "empty": "No notes or sources have been placed in this topic yet.",
+      "counts": {
+        "notes": "{count} notes",
+        "notesOne": "1 note",
+        "sources": "{count} sources",
+        "sourcesOne": "1 source",
+        "subtopics": "{count} subtopics",
+        "subtopicsOne": "1 subtopic",
+        "items": "{count} items",
+        "itemsOne": "1 item",
+        "relations": "{count} relations",
+        "relationsOne": "1 relation"
+      },
+      "aliases": "Also called: {names}",
+      "health": {
+        "good": "Good health",
+        "attention": "Needs attention",
+        "violation": "Structure problem"
+      },
+      "when": {
+        "today": "Today, {time}",
+        "yesterday": "Yesterday, {time}"
+      },
+      "banner": {
+        "undo": "Undo",
+        "undoing": "Undoing...",
+        "undone": "Change undone.",
+        "blocked": "It cannot be undone now: a later change depends on it.",
+        "failed": "The change could not be undone. Try again.",
+        "changes": {
+          "build": "Organized automatically. {when}: topics were built from your notes.",
+          "place": "Organized automatically. {when}: new items were placed.",
+          "placeOne": "Organized automatically. {when}: 1 item was placed.",
+          "placeMany": "Organized automatically. {when}: {count} items were placed.",
+          "gate": "Organized automatically. {when}: an uncertain item was placed.",
+          "rebalance": "Organized automatically. {when}: the structure was rebalanced.",
+          "audit": "Organized automatically. {when}: misplaced items were moved.",
+          "naming": "Organized automatically. {when}: topics were named.",
+          "areas": "Organized automatically. {when}: areas were regrouped.",
+          "rebuild": "Organized automatically. {when}: topics were rebuilt.",
+          "human": "Changed by you. {when}.",
+          "undo": "Change undone. {when}.",
+          "other": "Organized automatically. {when}."
+        }
+      },
+      "map": {
+        "title": "Map of content",
+        "hint": "built from the topic tree, without AI",
+        "subtopics": "Subtopics",
+        "moreSubtopics": "{count} more subtopics are in the topic tree.",
+        "moreSubtopicsOne": "1 more subtopic is in the topic tree.",
+        "notes": "Central notes",
+        "notesHint": "by centrality in the topic",
+        "writtenByYou": "Written by you",
+        "noRelations": "No relations",
+        "movedFrom": "Moved here from {topic}",
+        "seeAll": "See all {count} notes",
+        "allNotes": "All notes in this topic",
+        "showMore": "Show more notes",
+        "notesError": "The notes could not be loaded.",
+        "sources": "Contributing sources"
+      },
+      "side": {
+        "related": "Related topics",
+        "stances": "Relations of this topic's notes"
+      }
+    },
     "placeholder": {
       "title": "Explore your topics",
       "body": "Choose a topic in the tree to see what your notes say about it. Everything you add is placed in the tree for you, and Ask answers from your notes and sources.",

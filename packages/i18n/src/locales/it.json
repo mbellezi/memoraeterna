@@ -1828,6 +1828,85 @@
       "reembedQueued": "Operazione avviata. Gli argomenti riprendono al termine.",
       "reembedFailed": "Non è stato possibile rifare gli embedding della libreria. Riprova."
     },
+    "page": {
+      "kind": "Argomento",
+      "close": "Chiudi argomento",
+      "rootTitle": "Tutti gli argomenti",
+      "unnamed": "Argomento senza nome",
+      "provisionalName": "Nome provvisorio. Può cambiare man mano che l'argomento cresce.",
+      "articleLabel": "Argomento: {title}",
+      "pathLabel": "Percorso",
+      "sideLabel": "Collegato a questo argomento",
+      "error": "Non è stato possibile caricare questo argomento.",
+      "missing": "Questo argomento non esiste più. Potrebbe essere stato unito a un altro o rimosso.",
+      "redirected": "L'argomento che hai aperto è stato unito a questo.",
+      "empty": "In questo argomento non è ancora stata inserita nessuna nota o fonte.",
+      "counts": {
+        "notes": "{count} note",
+        "notesOne": "1 nota",
+        "sources": "{count} fonti",
+        "sourcesOne": "1 fonte",
+        "subtopics": "{count} sottoargomenti",
+        "subtopicsOne": "1 sottoargomento",
+        "items": "{count} elementi",
+        "itemsOne": "1 elemento",
+        "relations": "{count} relazioni",
+        "relationsOne": "1 relazione"
+      },
+      "aliases": "Chiamato anche: {names}",
+      "health": {
+        "good": "Stato buono",
+        "attention": "Richiede attenzione",
+        "violation": "Problema di struttura"
+      },
+      "when": {
+        "today": "Oggi, {time}",
+        "yesterday": "Ieri, {time}"
+      },
+      "banner": {
+        "undo": "Annulla",
+        "undoing": "Annullamento...",
+        "undone": "Modifica annullata.",
+        "blocked": "Non si può annullare ora: una modifica successiva ne dipende.",
+        "failed": "Non è stato possibile annullare la modifica. Riprova.",
+        "changes": {
+          "build": "Organizzato automaticamente. {when}: gli argomenti sono stati creati dalle tue note.",
+          "place": "Organizzato automaticamente. {when}: sono stati inseriti nuovi elementi.",
+          "placeOne": "Organizzato automaticamente. {when}: è stato inserito 1 elemento.",
+          "placeMany": "Organizzato automaticamente. {when}: sono stati inseriti {count} elementi.",
+          "gate": "Organizzato automaticamente. {when}: è stato inserito un elemento incerto.",
+          "rebalance": "Organizzato automaticamente. {when}: la struttura è stata riequilibrata.",
+          "audit": "Organizzato automaticamente. {when}: gli elementi fuori posto sono stati spostati.",
+          "naming": "Organizzato automaticamente. {when}: gli argomenti hanno ricevuto un nome.",
+          "areas": "Organizzato automaticamente. {when}: le aree sono state raggruppate di nuovo.",
+          "rebuild": "Organizzato automaticamente. {when}: gli argomenti sono stati ricostruiti.",
+          "human": "Modificato da te. {when}.",
+          "undo": "Modifica annullata. {when}.",
+          "other": "Organizzato automaticamente. {when}."
+        }
+      },
+      "map": {
+        "title": "Mappa dei contenuti",
+        "hint": "costruita dall'albero degli argomenti, senza IA",
+        "subtopics": "Sottoargomenti",
+        "moreSubtopics": "Altri {count} sottoargomenti sono nell'albero degli argomenti.",
+        "moreSubtopicsOne": "Un altro sottoargomento è nell'albero degli argomenti.",
+        "notes": "Note centrali",
+        "notesHint": "per centralità nell'argomento",
+        "writtenByYou": "Scritta da te",
+        "noRelations": "Nessuna relazione",
+        "movedFrom": "Spostata qui da {topic}",
+        "seeAll": "Vedi tutte le {count} note",
+        "allNotes": "Tutte le note di questo argomento",
+        "showMore": "Mostra altre note",
+        "notesError": "Non è stato possibile caricare le note.",
+        "sources": "Fonti che contribuiscono"
+      },
+      "side": {
+        "related": "Argomenti collegati",
+        "stances": "Relazioni delle note di questo argomento"
+      }
+    },
     "placeholder": {
       "title": "Esplora i tuoi argomenti",
       "body": "Scegli un argomento nell’albero per vedere cosa dicono le tue note. Tutto ciò che aggiungi viene collocato nell’albero per te, e Chiedi risponde a partire dalle tue note e dalle tue fonti.",

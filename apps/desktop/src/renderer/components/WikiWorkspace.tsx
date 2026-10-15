@@ -2,8 +2,10 @@ import { useState } from "react";
 import type { Translator } from "@app/i18n";
 import type { PassageAnchor } from "../lib/object-navigation";
 import { ConsultationDialog } from "./ConsultationDialog";
+import { TopicPage } from "./topic-page/TopicPage";
 import { TopicNavigator } from "./topics/TopicNavigator";
 import { WikiPlaceholder } from "./topics/WikiPlaceholder";
+import type { OpenableNavigation } from "./WhereIsThis";
 import { WikiNavigationPane } from "./WikiNavigationPane";
 
 export interface WikiWorkspaceViewProps {
@@ -19,13 +21,19 @@ export interface WikiWorkspaceViewProps {
   onOpenTopic: (id: string) => void;
   onAsk: () => void;
   onCloseAsk: () => void;
+  /** The topic the Wiki shows; null shows the empty state. */
+  topicId: string | null;
+  /** Where a click on the Topic page leads: another topic, or a source or note in the Library. */
+  onNavigate: (navigation: OpenableNavigation) => void;
+  /** Closes the Topic page and returns to the empty state. */
+  onCloseTopic: () => void;
   onOpenLibrary: () => void;
   onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
 }
 
 /**
  * The topic navigator beside the reading surface, and the Ask dialog above both. The reading surface
- * shows where to start until a topic is open.
+ * shows where to start until a topic is open; an open topic shows its Topic page.
  */
 export function WikiWorkspaceView({
   t,
@@ -36,9 +44,22 @@ export function WikiWorkspaceView({
   onOpenTopic,
   onAsk,
   onCloseAsk,
+  topicId,
+  onNavigate,
+  onCloseTopic,
   onOpenLibrary,
   onOpenSource
 }: WikiWorkspaceViewProps) {
+  if (topicId !== null)
+    return (
+      <TopicPage
+        topicId={topicId}
+        active={active}
+        t={t}
+        onNavigate={onNavigate}
+        onClose={onCloseTopic}
+      />
+    );
   return (
     <div className="flex h-[calc(100vh-7.5rem)] min-h-80 min-w-0 overflow-hidden">
       <WikiNavigationPane t={t}>
@@ -75,7 +96,14 @@ export function WikiWorkspaceView({
 
 export type WikiWorkspaceProps = Pick<
   WikiWorkspaceViewProps,
-  "t" | "active" | "noticeToken" | "onOpenLibrary" | "onOpenSource"
+  | "t"
+  | "active"
+  | "noticeToken"
+  | "topicId"
+  | "onNavigate"
+  | "onCloseTopic"
+  | "onOpenLibrary"
+  | "onOpenSource"
 >;
 
 /**

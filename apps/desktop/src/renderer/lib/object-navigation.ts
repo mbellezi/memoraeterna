@@ -1,5 +1,6 @@
 import {
   formatObjectAddress,
+  parseObjectAddress,
   type ObjectLocateResult,
   type ObjectPlacement,
   type ObjectRef
@@ -124,6 +125,8 @@ export type ObjectNavigation =
   | { type: "note"; path: string[]; noteId: string }
   /** A legacy wiki page, opened in the Wiki. */
   | { type: "legacyPage"; pageId: string }
+  /** A topic of the topic tree (`memora://topic/<id>`), opened in the Wiki. */
+  | { type: "topic"; topicId: string }
   /** Needs `objects.locate` first: the target's own path decides where it opens. */
   | { type: "resolve"; address: string }
   /** The current object itself. */
@@ -132,31 +135,70 @@ export type ObjectNavigation =
 const sourceIds = (path: readonly ObjectRef[]): string[] =>
   path.filter((item) => item.kind === "source").map((item) => item.id);
 
-/** A path segment: a source segment opens that source; the current object leads nowhere. */
+/**
+ * A path segment: a source segment opens that source at its place in the hierarchy and a topic
+ * segment opens that topic; the current object leads nowhere.
+ */
 export function navigationForPathSegment(
   path: readonly ObjectRef[],
   index: number
 ): ObjectNavigation {
   const segment = path[index];
-  if (!segment || index === path.length - 1 || segment.kind !== "source") return { type: "none" };
+  if (!segment || index === path.length - 1) return { type: "none" };
+  if (segment.kind === "topic") return { type: "topic", topicId: segment.id };
+  if (segment.kind !== "source") return { type: "none" };
   return { type: "source", path: sourceIds(path.slice(0, index + 1)) };
 }
 
-/** An entry of "also in" or "cited by": legacy wiki pages open in the Wiki, others are located. */
+/**
+ * An entry of "also in" or "cited by": legacy wiki pages open in the Wiki, a topic opens as itself
+ * and the rest is located first.
+ */
 export function navigationForPlacement(placement: ObjectPlacement): ObjectNavigation {
   if (placement.legacy) return { type: "legacyPage", pageId: placement.id };
+  if (placement.kind === "topic") return { type: "topic", topicId: placement.id };
   return {
     type: "resolve",
     address: formatObjectAddress({ kind: placement.kind, id: placement.id })
   };
 }
 
-/** Where a located object opens: a source at its place in the hierarchy, a note in its source. */
+/**
+ * Where a located object opens: a source at its place in the hierarchy, a note in its source, a
+ * topic as itself.
+ */
 export function navigationForLocated(result: ObjectLocateResult): ObjectNavigation {
+  if (result.object.kind === "topic") return { type: "topic", topicId: result.object.id };
   const path = sourceIds(result.primaryPath);
   if (result.object.kind === "source")
     return path.length > 0 ? { type: "source", path } : { type: "none" };
   if (result.object.kind === "note")
     return path.length > 0 ? { type: "note", path, noteId: result.object.id } : { type: "none" };
   return { type: "none" };
+}
+
+/**
+ * Where an object address leads: a topic opens as itself, anything else is located first, and
+ * text that is not an object address leads nowhere.
+ */
+export function navigationForAddress(address: string): ObjectNavigation {
+  const parsed = parseObjectAddress(address);
+  if (!parsed) return { type: "none" };
+  if (parsed.kind === "topic") return { type: "topic", topicId: parsed.id };
+  return { type: "resolve", address: formatObjectAddress(parsed) };
+}
+
+/** The Library target of a navigation that ends in a source or a note; other navigations have none. */
+export function libraryTargetForNavigation(
+  navigation: ObjectNavigation
+): { sourceItemId: string; atomicNoteId?: string } | null {
+  if (navigation.type === "source") {
+    const sourceItemId = navigation.path.at(-1);
+    return sourceItemId ? { sourceItemId } : null;
+  }
+  if (navigation.type === "note") {
+    const sourceItemId = navigation.path.at(-1);
+    return sourceItemId ? { sourceItemId, atomicNoteId: navigation.noteId } : null;
+  }
+  return null;
 }

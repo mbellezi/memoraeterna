@@ -1837,6 +1837,85 @@
       "reembedQueued": "Proceso iniciado. Los temas continúan cuando termine.",
       "reembedFailed": "No se pudieron rehacer los embeddings de la biblioteca. Inténtalo de nuevo."
     },
+    "page": {
+      "kind": "Tema",
+      "close": "Cerrar tema",
+      "rootTitle": "Todos los temas",
+      "unnamed": "Tema sin nombre",
+      "provisionalName": "Nombre provisional. Puede cambiar a medida que el tema crece.",
+      "articleLabel": "Tema: {title}",
+      "pathLabel": "Ruta",
+      "sideLabel": "Relacionado con este tema",
+      "error": "No se pudo cargar este tema.",
+      "missing": "Este tema ya no existe. Puede haberse unido a otro o haberse eliminado.",
+      "redirected": "El tema que abriste se unió a este.",
+      "empty": "Todavía no se ha colocado ninguna nota ni fuente en este tema.",
+      "counts": {
+        "notes": "{count} notas",
+        "notesOne": "1 nota",
+        "sources": "{count} fuentes",
+        "sourcesOne": "1 fuente",
+        "subtopics": "{count} subtemas",
+        "subtopicsOne": "1 subtema",
+        "items": "{count} elementos",
+        "itemsOne": "1 elemento",
+        "relations": "{count} relaciones",
+        "relationsOne": "1 relación"
+      },
+      "aliases": "También llamado: {names}",
+      "health": {
+        "good": "Buen estado",
+        "attention": "Necesita atención",
+        "violation": "Problema de estructura"
+      },
+      "when": {
+        "today": "Hoy, {time}",
+        "yesterday": "Ayer, {time}"
+      },
+      "banner": {
+        "undo": "Deshacer",
+        "undoing": "Deshaciendo...",
+        "undone": "Cambio deshecho.",
+        "blocked": "No se puede deshacer ahora: un cambio posterior depende de él.",
+        "failed": "No se pudo deshacer el cambio. Inténtalo de nuevo.",
+        "changes": {
+          "build": "Organizado automáticamente. {when}: los temas se crearon a partir de tus notas.",
+          "place": "Organizado automáticamente. {when}: se colocaron elementos nuevos.",
+          "placeOne": "Organizado automáticamente. {when}: se colocó 1 elemento.",
+          "placeMany": "Organizado automáticamente. {when}: se colocaron {count} elementos.",
+          "gate": "Organizado automáticamente. {when}: se colocó un elemento dudoso.",
+          "rebalance": "Organizado automáticamente. {when}: la estructura se reequilibró.",
+          "audit": "Organizado automáticamente. {when}: se movieron elementos mal colocados.",
+          "naming": "Organizado automáticamente. {when}: los temas recibieron un nombre.",
+          "areas": "Organizado automáticamente. {when}: las áreas se reagruparon.",
+          "rebuild": "Organizado automáticamente. {when}: los temas se rehicieron.",
+          "human": "Cambiado por ti. {when}.",
+          "undo": "Cambio deshecho. {when}.",
+          "other": "Organizado automáticamente. {when}."
+        }
+      },
+      "map": {
+        "title": "Mapa del contenido",
+        "hint": "construido a partir del árbol de temas, sin IA",
+        "subtopics": "Subtemas",
+        "moreSubtopics": "Otros {count} subtemas están en el árbol de temas.",
+        "moreSubtopicsOne": "Otro subtema está en el árbol de temas.",
+        "notes": "Notas centrales",
+        "notesHint": "por centralidad en el tema",
+        "writtenByYou": "Escrita por ti",
+        "noRelations": "Sin relaciones",
+        "movedFrom": "Movida aquí desde {topic}",
+        "seeAll": "Ver las {count} notas",
+        "allNotes": "Todas las notas de este tema",
+        "showMore": "Mostrar más notas",
+        "notesError": "No se pudieron cargar las notas.",
+        "sources": "Fuentes que contribuyen"
+      },
+      "side": {
+        "related": "Temas relacionados",
+        "stances": "Relaciones de las notas de este tema"
+      }
+    },
     "placeholder": {
       "title": "Explora tus temas",
       "body": "Elige un tema en el árbol para ver qué dicen tus notas sobre él. Todo lo que agregas se coloca en el árbol por ti, y Preguntar responde a partir de tus notas y fuentes.",

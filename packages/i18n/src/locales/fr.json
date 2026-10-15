@@ -1835,6 +1835,85 @@
       "reembedQueued": "Opération lancée. Les sujets reprennent à la fin.",
       "reembedFailed": "Impossible de refaire les embeddings de la bibliothèque. Réessayez."
     },
+    "page": {
+      "kind": "Sujet",
+      "close": "Fermer le sujet",
+      "rootTitle": "Tous les sujets",
+      "unnamed": "Sujet sans nom",
+      "provisionalName": "Nom provisoire. Il peut changer à mesure que le sujet grandit.",
+      "articleLabel": "Sujet : {title}",
+      "pathLabel": "Chemin",
+      "sideLabel": "Lié à ce sujet",
+      "error": "Ce sujet n’a pas pu être chargé.",
+      "missing": "Ce sujet n’existe plus. Il a peut-être été fusionné avec un autre ou supprimé.",
+      "redirected": "Le sujet que vous avez ouvert a été fusionné avec celui-ci.",
+      "empty": "Aucune note ni source n’a encore été placée dans ce sujet.",
+      "counts": {
+        "notes": "{count} notes",
+        "notesOne": "1 note",
+        "sources": "{count} sources",
+        "sourcesOne": "1 source",
+        "subtopics": "{count} sous-sujets",
+        "subtopicsOne": "1 sous-sujet",
+        "items": "{count} éléments",
+        "itemsOne": "1 élément",
+        "relations": "{count} relations",
+        "relationsOne": "1 relation"
+      },
+      "aliases": "Aussi appelé : {names}",
+      "health": {
+        "good": "Bon état",
+        "attention": "Demande de l’attention",
+        "violation": "Problème de structure"
+      },
+      "when": {
+        "today": "Aujourd’hui, {time}",
+        "yesterday": "Hier, {time}"
+      },
+      "banner": {
+        "undo": "Annuler",
+        "undoing": "Annulation...",
+        "undone": "Modification annulée.",
+        "blocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
+        "failed": "La modification n’a pas pu être annulée. Réessayez.",
+        "changes": {
+          "build": "Organisé automatiquement. {when} : les sujets ont été créés à partir de vos notes.",
+          "place": "Organisé automatiquement. {when} : de nouveaux éléments ont été placés.",
+          "placeOne": "Organisé automatiquement. {when} : 1 élément a été placé.",
+          "placeMany": "Organisé automatiquement. {when} : {count} éléments ont été placés.",
+          "gate": "Organisé automatiquement. {when} : un élément incertain a été placé.",
+          "rebalance": "Organisé automatiquement. {when} : la structure a été rééquilibrée.",
+          "audit": "Organisé automatiquement. {when} : des éléments mal placés ont été déplacés.",
+          "naming": "Organisé automatiquement. {when} : les sujets ont reçu un nom.",
+          "areas": "Organisé automatiquement. {when} : les domaines ont été regroupés de nouveau.",
+          "rebuild": "Organisé automatiquement. {when} : les sujets ont été reconstruits.",
+          "human": "Modifié par vous. {when}.",
+          "undo": "Modification annulée. {when}.",
+          "other": "Organisé automatiquement. {when}."
+        }
+      },
+      "map": {
+        "title": "Carte du contenu",
+        "hint": "construite à partir de l’arbre des sujets, sans IA",
+        "subtopics": "Sous-sujets",
+        "moreSubtopics": "{count} autres sous-sujets sont dans l’arbre des sujets.",
+        "moreSubtopicsOne": "1 autre sous-sujet est dans l’arbre des sujets.",
+        "notes": "Notes centrales",
+        "notesHint": "par centralité dans le sujet",
+        "writtenByYou": "Écrite par vous",
+        "noRelations": "Aucune relation",
+        "movedFrom": "Déplacée ici depuis {topic}",
+        "seeAll": "Voir les {count} notes",
+        "allNotes": "Toutes les notes de ce sujet",
+        "showMore": "Afficher plus de notes",
+        "notesError": "Les notes n’ont pas pu être chargées.",
+        "sources": "Sources qui contribuent"
+      },
+      "side": {
+        "related": "Sujets liés",
+        "stances": "Relations des notes de ce sujet"
+      }
+    },
     "placeholder": {
       "title": "Explorez vos sujets",
       "body": "Choisissez un sujet dans l’arbre pour voir ce que disent vos notes. Tout ce que vous ajoutez est placé dans l’arbre pour vous, et Poser une question répond à partir de vos notes et de vos sources.",
