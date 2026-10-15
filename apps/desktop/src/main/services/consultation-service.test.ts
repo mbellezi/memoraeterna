@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import {
-  resolveOrganizationInstructions,
-  OrganizationConfigurationSchema
-} from "@app/domain";
+import { resolveOrganizationInstructions, OrganizationConfigurationSchema } from "@app/domain";
 import {
   parseConsultationAnswer,
   rankConsultationCandidates,
