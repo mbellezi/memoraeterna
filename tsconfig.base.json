@@ -20,6 +20,7 @@
       "@app/conversion": ["packages/conversion/src/index.ts"],
       "@app/db": ["packages/db/src/index.ts"],
       "@app/domain": ["packages/domain/src/index.ts"],
+      "@app/domain/topic-tree": ["packages/domain/src/topic-tree/index.ts"],
       "@app/i18n": ["packages/i18n/src/index.ts"],
       "@app/integration-contracts": ["packages/integration-contracts/src/index.ts"]
     }

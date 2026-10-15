@@ -11,6 +11,8 @@ const i18nPackage = resolve(rootDir, "../../packages/i18n/src/index.ts");
 const aiPackage = resolve(rootDir, "../../packages/ai/src/index.ts");
 const conversionPackage = resolve(rootDir, "../../packages/conversion/src/index.ts");
 const domainPackage = resolve(rootDir, "../../packages/domain/src/index.ts");
+// The topic-tree engine is main-process only: it has no preload or renderer alias.
+const domainTopicTreePackage = resolve(rootDir, "../../packages/domain/src/topic-tree/index.ts");
 const integrationContractsPackage = resolve(
   rootDir,
   "../../packages/integration-contracts/src/index.ts"
@@ -57,6 +59,8 @@ export default defineConfig({
         "@app/db": dbPackage,
         "@app/ai": aiPackage,
         "@app/conversion": conversionPackage,
+        // Must precede "@app/domain", which would otherwise also match the subpath.
+        "@app/domain/topic-tree": domainTopicTreePackage,
         "@app/domain": domainPackage,
         "@app/integration-contracts": integrationContractsPackage,
         "@desktop": srcDir

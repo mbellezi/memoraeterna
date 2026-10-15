@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./topic-tree": {
+      "types": "./dist/topic-tree/index.d.ts",
+      "import": "./dist/topic-tree/index.js"
     }
   },
   "scripts": {
