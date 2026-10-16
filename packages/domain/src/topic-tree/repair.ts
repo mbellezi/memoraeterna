@@ -413,6 +413,21 @@ function hardConditionsOf(
   return output;
 }
 
+/**
+ * Live topics with a hard condition REBALANCE repairs (I2-I5), sorted. One walk over the tree
+ * (milliseconds at 20k items): REBALANCE adds them to its dirty topics on every run, so a hard
+ * violation never waits for a mark that a writer did not set or a failed run lost.
+ */
+export function hardViolationTopics(state: TopicTreeState, config: TopicTreeConfig): string[] {
+  const output: string[] = [];
+  const visit = (id: string, depth: number): void => {
+    if (hardConditionsOf(state, config, id, depth).length > 0) output.push(id);
+    for (const child of getTopic(state, id).children) visit(child, depth + 1);
+  };
+  visit(state.rootId, 0);
+  return output.sort(compareStrings);
+}
+
 // ---------------------------------------------------------------------------
 // Trials
 

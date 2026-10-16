@@ -132,6 +132,12 @@ export interface TopicGateOptions {
   aiMode: TopicAiMode;
   triggers: TopicTriggers;
   changes: TopicChangeCoalescer;
+  /** An applied gate change-set: the leaves it filled wait for REBALANCE (I4), as after PLACE. */
+  onChangeSet?: (change: {
+    treeId: string;
+    changeSetId: string;
+    generation: number;
+  }) => Promise<void> | void;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -397,6 +403,9 @@ export class TopicGateService {
     const applied =
       outcomes.size === 0 ? null : await this.apply(job, treeId, scope, plan, outcomes, run);
     if (applied?.status === "tree_inactive") return { ...base, status: "tree_inactive" };
+    if (applied?.changeSetId && applied.generation !== undefined) {
+      await this.followChangeSet(treeId, applied.changeSetId, applied.generation);
+    }
     const left = (applied?.deferred ?? 0) > 0 || plan.more;
     if (left && !failure) await this.options.triggers.request(topicJobTypes.gate, treeId, scope);
     const result: JsonObject = {
@@ -778,6 +787,19 @@ export class TopicGateService {
       },
       gate
     );
+  }
+
+  /** The follow-ups of an applied gate change-set (REBALANCE of its topics); never throws. */
+  private async followChangeSet(
+    treeId: string,
+    changeSetId: string,
+    generation: number
+  ): Promise<void> {
+    try {
+      await this.options.onChangeSet?.({ treeId, changeSetId, generation });
+    } catch (error) {
+      this.options.logger?.warn(`Topic follow-up of change-set ${changeSetId} failed`, error);
+    }
   }
 
   /** Adds the day's rank calls to the tree's daily metrics (`gate_calls`); never throws. */

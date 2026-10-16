@@ -33,6 +33,7 @@ import {
   placementRecord,
   recomputeSubtree,
   registerItem,
+  shapeReport,
   topicRecordOf,
   topicTreeConfigWith
 } from "@app/domain/topic-tree";
@@ -43,7 +44,7 @@ import type { AiRankInput, AiRankResult, DecideRouteStatus } from "../ai-service
 import { JobSupervisor } from "../job-supervisor.js";
 import { createTopicTreeServices, engineStatusOf } from "./index.js";
 import type { TopicTreeServices, TopicTreeServicesOptions } from "./index.js";
-import { ItemVectorStore } from "./topic-cache.js";
+import { ItemVectorStore, loadTopicTreeCache } from "./topic-cache.js";
 import { topicGateLimits, topicGateOperation } from "./topic-gate.js";
 import { immediateDebounce } from "./topic-triggers.js";
 
@@ -448,6 +449,68 @@ describe.skipIf(!sidecarAvailable)("the placement gate on the PostgreSQL sidecar
     store: ItemVectorStore;
     editor: ReturnType<typeof createTopicTreeEditor>;
     rootId: string;
+  }
+
+  /** Adds `count` notes on `axis` (one new source) to the seeded topic titled `title`. */
+  async function fillTopic(
+    seed: Seeding,
+    title: string,
+    axis: number,
+    count: number
+  ): Promise<void> {
+    const topic = [...seed.state.topics.values()].find((node) => node.title === title)!;
+    const source = await insertSource(`${title} handbook`);
+    for (let index = 0; index < count; index += 1) {
+      const name = `${title} fact ${index}`;
+      const vector = vectorOn([axis], 10_000 + 1_000 * axis + index);
+      const note = await insertNote(
+        source,
+        index,
+        { title: name, idea: `${name} in one sentence.`, body: `${name}. A passage.` },
+        vector
+      );
+      const key = itemKey("note", note.id);
+      registerItem(seed.state, {
+        key,
+        kind: "note",
+        contentHash: note.hash,
+        rootSource: itemKey("source", source)
+      });
+      seed.store.set(key, vector);
+      seed.editor.placeItem(
+        key,
+        placementRecord(topic.id, { decidedBy: "build", itemFingerprint: note.hash })
+      );
+    }
+  }
+
+  /** Runs every queued `compute` job until none is left, as a drained light lane would. */
+  async function drainCompute(w: World): Promise<JobRecord[]> {
+    const done: JobRecord[] = [];
+    for (let pass = 0; pass < 50; pass += 1) {
+      await pool.query("update jobs set run_after = now() where status = 'queued'");
+      const job = await w.supervisor.runLightOnce("compute");
+      if (!job) return done;
+      done.push(job);
+    }
+    throw new Error("the compute worker never drained");
+  }
+
+  const resultsOf = (jobs: JobRecord[], type: string) =>
+    jobs.filter((job) => job.type === type).map((job) => job.result ?? { error: job.error });
+
+  async function primaryCount(topicId: string): Promise<number> {
+    const result = await pool.query<{ count: string }>(
+      "select count(*) from topic_placements where topic_id = $1 and rank = 0",
+      [topicId]
+    );
+    return Number(result.rows[0]!.count);
+  }
+
+  /** Hard violations of the stored tree as the audit counts them (E1). */
+  async function storedHardViolations(w: World): Promise<number> {
+    const cache = (await loadTopicTreeCache(pool, w.treeId))!;
+    return shapeReport(cache.state, config).violations.hardCount;
   }
 
   /** Makes the queued jobs of one type due and parks the others a day away. */
@@ -919,6 +982,104 @@ describe.skipIf(!sidecarAvailable)("the placement gate on the PostgreSQL sidecar
       // Nothing changed: both still wait, and another gate job is queued for their scope.
       expect(await placements(note.id)).toMatchObject([{ topicId: w.topics.A, needsGate: true }]);
       expect(await queued("topic-gate")).toBe(1);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("splits a leaf the gate filled past its hard maximum before the light lane drains (I4)", async () => {
+    // Sleep and Retrieval practice hold leaf.max - 1 notes each: inside their band.
+    const before = config.leaf.max - 1;
+    const w = await world({
+      seed: async (seed) => {
+        await fillTopic(seed, "Sleep", 0, before - 4);
+        await fillTopic(seed, "Retrieval practice", 1, before - 4);
+      }
+    });
+    try {
+      // An article whose notes sit between the two leaves arrives: PLACE parks every note and the
+      // source at Memory with needs_gate, so its change-set names Memory, not Sleep.
+      const arriving = config.leaf.hardMax - before;
+      const source = await insertSource("Article Sleep before exams");
+      const ids: string[] = [];
+      for (let index = 0; index < arriving; index += 1) {
+        const title = `Sleep before an exam ${index}`;
+        const note = await insertNote(
+          source,
+          index,
+          { title, idea: `${title} helps recall.`, body: `${title}. A longer passage.` },
+          vectorOn([0, 1], 700 + index, 0.02)
+        );
+        ids.push(note.id);
+      }
+      await w.services.triggers.notesChanged(ids);
+      const place = await finished(await runDue(w, "topic-place", "compute"));
+      expect(place.result).toMatchObject({ status: "applied", needsGate: arriving + 1 });
+      // Its follow-ups run beside the gate (as on ENV-C): REBALANCE checks what PLACE touched and
+      // finds nothing to repair; the first audit finds the tree in its bands.
+      const settled = await drainCompute(w);
+      expect(resultsOf(settled, "topic-rebalance")).toEqual([
+        expect.objectContaining({ status: "no_change", unresolvedHard: 0 })
+      ]);
+      expect(await primaryCount(w.topics.A1)).toBe(before);
+
+      // The ranker puts every waiting item in Sleep: one gate change-set takes it past the hard
+      // maximum (leaf size counts the notes and the root source).
+      const gate = await finished(await runDue(w, "topic-gate", "model"));
+      expect(gate.result).toMatchObject({ status: "applied", accepted: arriving + 1 });
+      expect(await primaryCount(w.topics.A1)).toBe(config.leaf.hardMax + 1);
+
+      // The light lane drains: REBALANCE splits Sleep, and no hard violation is left (E1).
+      const drained = await drainCompute(w);
+      expect(resultsOf(drained, "topic-rebalance")).toContainEqual(
+        expect.objectContaining({ status: "applied", unresolvedHard: 0 })
+      );
+      const split = await pool.query<{ summary: { operations: Array<Record<string, unknown>> } }>(
+        `select summary from topic_change_sets
+          where tree_id = $1 and origin = 'rebalance' and status = 'applied'`,
+        [w.treeId]
+      );
+      expect(split.rows.flatMap((row) => row.summary.operations)).toContainEqual(
+        expect.objectContaining({
+          kind: "leaf-split",
+          trigger: "hard",
+          condition: "leaf-above-hard-max",
+          topicId: w.topics.A1
+        })
+      );
+      expect(await primaryCount(w.topics.A1)).toBeLessThanOrEqual(config.leaf.hardMax);
+      expect(await storedHardViolations(w)).toBe(0);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("lets REBALANCE repair a leaf above its hard maximum that no change-set named", async () => {
+    // A tree stored with Sleep already past the hard maximum (a mark lost to a failed run, a
+    // restart or a writer that asks for no REBALANCE): what PLACE touches next is elsewhere.
+    const w = await world({
+      seed: async (seed) => {
+        await fillTopic(seed, "Sleep", 0, config.leaf.hardMax + 2 - 4);
+      }
+    });
+    try {
+      expect(await primaryCount(w.topics.A1)).toBe(config.leaf.hardMax + 2);
+      const source = await insertSource("Article Gulf Stream");
+      const note = await insertNote(
+        source,
+        0,
+        { title: "Gulf Stream", idea: "A warm current.", body: "The Gulf Stream. A passage." },
+        vectorOn([2], 4_343)
+      );
+      await w.services.triggers.notesChanged([note.id]);
+      await runDue(w, "topic-place", "compute");
+      expect((await placements(note.id))[0]).toMatchObject({ topicId: w.topics.B });
+      // Only the REBALANCE that PLACE asked for runs (the audit, which would flag Sleep, is not
+      // due): it still sees the hard violation in the cache and splits Sleep.
+      const rebalance = await finished(await runDue(w, "topic-rebalance", "compute"));
+      expect(rebalance.result).toMatchObject({ status: "applied", unresolvedHard: 0 });
+      expect(await primaryCount(w.topics.A1)).toBeLessThanOrEqual(config.leaf.hardMax);
+      expect(await storedHardViolations(w)).toBe(0);
     } finally {
       await w.dispose();
     }

@@ -16,7 +16,12 @@ import type { ItemKey } from "./ids.js";
 import { checkInvariants } from "./invariants.js";
 import { refreshTopics } from "./operations.js";
 import { treeQuality } from "./quality.js";
-import { churnWeightOf, rebalanceTree, scopeHardViolations } from "./repair.js";
+import {
+  churnWeightOf,
+  hardViolationTopics,
+  rebalanceTree,
+  scopeHardViolations
+} from "./repair.js";
 import type { RebalanceInput, RebalanceResult } from "./repair.js";
 import { createRng } from "./rng.js";
 import type { Rng } from "./rng.js";
@@ -206,6 +211,27 @@ describe("hard violations in a scope", () => {
     );
     // A scope sees only its own subtree.
     expect(scopeHardViolations(state, config, second).size).toBe(0);
+  });
+
+  it("lists every topic with a hard condition, which a REBALANCE over them repairs", () => {
+    const tree = productTree(data, config, { seed: 7 });
+    const { state } = tree;
+    expect(hardViolationTopics(state, config)).toEqual([]);
+    const leaf = innerLeaf(state);
+    growLeaf(tree, leaf, config.leaf.hardMax + 1);
+    const parent = getTopic(state, leaf).parentId as string;
+    const other = topicsByKind(state).leaves.find((id) => getTopic(state, id).parentId !== parent)!;
+    const item = getTopic(state, other).items[0] as ItemKey;
+    setupEditor(tree).placeItem(
+      item,
+      placementRecord(getTopic(state, other).parentId as string, { rank: 1 })
+    );
+    expect(hardViolationTopics(state, config)).toEqual([leaf, other].sort());
+    // No mark names them (only the root is dirty): the scan's topics are enough to repair both.
+    const result = run(tree, { topics: [state.rootId, ...hardViolationTopics(state, config)] });
+    expect(result.unresolvedHard).toEqual([]);
+    expect(hardViolationTopics(state, config)).toEqual([]);
+    expect(checkInvariants(state, config).hard).toBe(0);
   });
 });
 

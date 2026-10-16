@@ -44,6 +44,7 @@ import {
   eventsTopics,
   frozenSubtrees,
   getTopic,
+  hardViolationTopics,
   hasTopics,
   isLive,
   itemKey,
@@ -313,6 +314,14 @@ export class TopicStructureJobs {
    * Protected topics stay where the person put them; their neighbours may need repair.
    */
   public afterHumanChange(treeId: string, changeSetId: string, generation: number): Promise<void> {
+    return this.afterChangeSet(treeId, changeSetId, generation);
+  }
+
+  /**
+   * After a gate change-set (D10): the leaves its decisions filled wait for REBALANCE like those
+   * of a PLACE, so one that a ranker took past its hard maximum is split (I4).
+   */
+  public afterGateChange(treeId: string, changeSetId: string, generation: number): Promise<void> {
     return this.afterChangeSet(treeId, changeSetId, generation);
   }
 
@@ -1485,7 +1494,10 @@ export class TopicStructureJobs {
     const recentItems = new Set<ItemKey>();
     for (const id of frozen) for (const item of getTopic(state, id).items) recentItems.add(item);
     const areas = areasActive(state);
-    const topics = this.takeDirty(tree.id);
+    // Hard violations the cache shows are checked whatever marked them (I4: a lost mark or a
+    // writer that set none never leaves a leaf above its hard maximum after the lane drains).
+    const marked = [...this.takeDirty(tree.id), ...hardViolationTopics(state, config)];
+    const topics = [...new Set(marked)].sort();
     if (topics.length === 0) return { status: "no_change", checked: 0, areasActive: areas };
     // Area-level operations wait for review once the tree had its first Areas grouping (D12, T24).
     const grouped = areas ? await repository.changeSetStatusCounts(tree.id, "areas") : null;

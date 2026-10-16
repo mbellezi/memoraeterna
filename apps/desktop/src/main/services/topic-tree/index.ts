@@ -208,6 +208,9 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
         aiMode,
         triggers,
         changes,
+        // The leaves a gate change-set filled wait for REBALANCE, as after PLACE (I4).
+        onChangeSet: (change) =>
+          structure.afterGateChange(change.treeId, change.changeSetId, change.generation),
         ...(logger ? { logger } : {}),
         ...(options.now ? { now: options.now } : {})
       })
