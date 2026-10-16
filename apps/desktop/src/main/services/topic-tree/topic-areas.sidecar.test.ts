@@ -26,6 +26,7 @@ import {
   createRng,
   createTopicTreeEditor,
   createTopicTreeState,
+  defaultTopicTreeConfig,
   getTopic,
   itemKey,
   liveTopicIds,
@@ -804,7 +805,9 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
     }
 
     // One call of the day left: the first answer is repaired in code and the repair call is not made.
-    const capped = await world({ budgetCalls: { calls: 299 } });
+    const capped = await world({
+      budgetCalls: { calls: defaultTopicTreeConfig.ai.maxBackgroundCallsPerDay - 1 }
+    });
     try {
       capped.setAnswer((prompt) => trueGrouping(prompt, everyNth(prompt, 7)));
       const job = await runAreas(capped);
