@@ -1785,6 +1785,7 @@
       "place": "{items} elementos ubicados en temas",
       "build": "Árbol de temas creado: {topics} temas, {items} elementos",
       "rebuild": "Árbol de temas reconstruido ({items} elementos movidos)",
+      "space": "Árbol de temas trasladado al nuevo modelo de embeddings ({items} elementos movidos)",
       "rebalance": "Temas reorganizados: {operations} cambios, {items} elementos movidos",
       "proposal": "Reorganización de temas propuesta ({items} elementos)",
       "naming": "Nombres de temas actualizados: {topics}",

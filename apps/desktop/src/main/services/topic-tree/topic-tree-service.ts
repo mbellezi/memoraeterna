@@ -78,7 +78,7 @@ import type { HistoryPinEffect } from "./topic-human.js";
 import { emptyPlaceSummary, preparePlacement } from "./topic-place.js";
 import type { PlaceSummary } from "./topic-place.js";
 import { compareTreeSpace } from "./topic-space.js";
-import type { SpaceResolution, SpaceResolver } from "./topic-space.js";
+import type { RouteSpace, SpaceResolution, SpaceResolver } from "./topic-space.js";
 import { immediateDebounce } from "./topic-triggers.js";
 import type { EnqueuedTopicJob, TopicTriggers } from "./topic-triggers.js";
 
@@ -165,6 +165,8 @@ export interface TopicServiceStatus {
   aiMode: TopicAiMode;
   /** The topic barrier holds the topic jobs (D23). */
   held: boolean;
+  /** With `space_changed`: the route's space the tree waits to move to (D26). */
+  route?: RouteSpace;
 }
 
 export interface TopicTreeServiceOptions {
@@ -192,6 +194,11 @@ export interface TopicTreeServiceOptions {
    * failure is logged and never fails the operation.
    */
   onHumanChange?: (change: { treeId: string; changeSetId: string; generation: number }) => unknown;
+  /**
+   * Called once when the status first sees the route's space differ from the active tree's (D26),
+   * so the build that re-embeds and moves the tree runs without waiting for a sweep or a PLACE.
+   */
+  onSpaceChanged?: (treeId: string) => unknown;
 }
 
 interface HeldJob {
@@ -210,6 +217,8 @@ export class TopicTreeService {
   private placedCounts: { treeId: string; placed: number; needsGate: number } | null = null;
   private lastSpace: SpaceResolution | null = null;
   private lastSpaceAt = 0;
+  /** The tree and route space the last `onSpaceChanged` call was for. */
+  private noticedSpaceChange: string | null = null;
 
   public constructor(private readonly options: TopicTreeServiceOptions) {}
 
@@ -305,6 +314,10 @@ export class TopicTreeService {
     this.pendingCount = null;
     const resolution = await this.resolveSpace(true);
     if (resolution.kind === "blocked") return resolution;
+    // The route's space has no note vector yet: its identity (dimensions) is still unknown.
+    if (resolution.kind === "unembedded") {
+      return { kind: "blocked", reason: "waiting_for_embeddings" };
+    }
     const config = this.options.newTreeConfig?.() ?? defaultTopicTreeConfig;
     let tree: TopicTreeRecord;
     try {
@@ -1096,8 +1109,12 @@ export class TopicTreeService {
         : resolution?.kind === "blocked"
           ? resolution.reason
           : null;
+    if (space?.kind === "space_changed") await this.noticeSpaceChange(active.id, space.route);
+    else if (space) this.noticedSpaceChange = null;
     const build = pool ? await createJobRepository(pool).latestByType(topicJobTypes.build) : null;
+    // While the tree waits for a space change, its build checks the re-embedding: not a build yet.
     const building =
+      space?.kind !== "space_changed" &&
       build !== null &&
       (build.status === "queued" || build.status === "running") &&
       build.payload.treeId === active.id;
@@ -1107,8 +1124,25 @@ export class TopicTreeService {
       generation: active.generation,
       phase: building ? "building" : "active",
       blocked,
-      counts: this.counts(active.id)
+      counts: this.counts(active.id),
+      ...(space?.kind === "space_changed" ? { route: space.route } : {})
     };
+  }
+
+  /**
+   * Tells the structure jobs, once per tree and route space, that the route's space moved. A
+   * failure is logged, never thrown: the status is informative and must not fail.
+   */
+  private async noticeSpaceChange(treeId: string, route: RouteSpace): Promise<void> {
+    const key = `${treeId}:${route.spaceKey}`;
+    if (this.noticedSpaceChange === key || !this.options.onSpaceChanged) return;
+    this.noticedSpaceChange = key;
+    try {
+      await this.options.onSpaceChanged(treeId);
+    } catch (error) {
+      this.noticedSpaceChange = null;
+      this.options.logger?.error("The embedding-space change could not be handled", error);
+    }
   }
 
   private counts(treeId: string): TopicServiceCounts {

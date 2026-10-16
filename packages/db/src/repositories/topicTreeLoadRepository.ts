@@ -203,6 +203,28 @@ export interface TopicPendingOptions {
   reasons?: readonly TopicPendingReason[];
 }
 
+/** How far the current notes are embedded in one space (D26). */
+export interface TopicSpaceCoverage {
+  /** Current notes (not rejected, not archived, not superseded). */
+  notes: number;
+  /** Current notes with a vector of the space, in any dimension. */
+  embedded: number;
+  /** Current notes without one that a queued or running `note-embedding` job will embed. */
+  queued: number;
+}
+
+/** A current note without a vector of a space, and the source its embedding job names. */
+export interface TopicUnembeddedNote {
+  id: string;
+  sourceItemId: string;
+}
+
+export interface TopicUnembeddedPage {
+  notes: TopicUnembeddedNote[];
+  /** Pass as `after` to continue; null at the end. */
+  next: string | null;
+}
+
 /** A note's root source (through its owning source, as `pendingItems` reads it) and its status. */
 export interface TopicNoteOwner {
   id: string;
@@ -374,6 +396,19 @@ const newestNoteVector = (
      where target_type = 'atomic_note' and starts_with(strategy, '${noteVectorStrategyPrefix}')
      order by created_at desc limit 1)`;
 
+/** One note vector of the space whose strategy is `$1`, in one embedding table (D26). */
+const spaceNoteVector = (dimensions: number): string => `(select provider, model, runtime, strategy,
+      ${dimensions} as dimensions from ${embeddingTable(dimensions)}
+     where target_type = 'atomic_note' and strategy = $1 limit 1)`;
+
+/** Note `a` has a vector of the space whose strategy is `$1`, in any dimension (index probes). */
+const hasSpaceVector = [256, 768, 1024]
+  .map(
+    (dimensions) => `exists (select 1 from ${embeddingTable(dimensions)} e
+        where e.target_type = 'atomic_note' and e.target_id = a.id and e.strategy = $1)`
+  )
+  .join(" or ");
+
 export const topicLoadSql = {
   tree: `select id, status, space_key as "spaceKey", embedding_provider as provider,
       embedding_model as model, embedding_runtime as runtime, dimensions, config,
@@ -444,6 +479,26 @@ export const topicLoadSql = {
   newestNoteSpace: `select provider, model, runtime, strategy, dimensions from (
       ${[256, 768, 1024].map(newestNoteVector).join("\n      union all ")}
     ) v order by created_at desc limit 1`,
+  // D26: the stored identity of a space named by its key, once a note was embedded in it.
+  noteVectorSpace: `select provider, model, runtime, strategy, dimensions from (
+      ${[256, 768, 1024].map(spaceNoteVector).join("\n      union all ")}
+    ) v limit 1`,
+  // D26: current notes with a vector in a space, and those of the rest that a queued or running
+  // `note-embedding` job will embed.
+  spaceCoverage: `with waiting as materialized (
+      select distinct j.payload->>'atomicNoteId' as id from jobs j
+       where j.type = 'note-embedding' and j.status in ('queued', 'running')
+    ), notes as (
+      select a.id, (${hasSpaceVector}) as covered from atomic_notes a where ${currentNote}
+    )
+    select count(*)::int as notes, count(*) filter (where n.covered)::int as embedded,
+      count(*) filter (where not n.covered and n.id::text in (select id from waiting))::int as queued
+    from notes n`,
+  // D26: a page of current notes without a vector in a space, in id order after the cursor $2.
+  notesWithoutSpaceVector: `select a.id, a.created_from_source_item_id as "sourceItemId"
+    from atomic_notes a
+    where ${currentNote} and ($2::uuid is null or a.id > $2) and not (${hasSpaceVector})
+    order by a.id limit $3`,
   pendingNotes: (dimensions: number, scope: TopicPendingNoteScope): string =>
     `${noteWindows[scope]}, pending as (
       select win.id, p.topic_id, root.id as root_id,
@@ -842,6 +897,53 @@ export function createTopicTreeLoadRepository(db: Queryable) {
         runtime: row.runtime,
         dimensions
       };
+    },
+
+    /**
+     * The stored identity (provider, model, runtime, dimensions) of the space named `spaceKey`,
+     * read from one of its note vectors; null while no note has a vector of it (D26).
+     */
+    async noteVectorSpace(spaceKey: string): Promise<TopicLoadSpace | null> {
+      const result = await db.query<StoredSpaceRow>(topicLoadSql.noteVectorSpace, [
+        `${noteVectorStrategyPrefix}${spaceKey}`
+      ]);
+      const row = result.rows[0];
+      const dimensions = Number(row?.dimensions);
+      if (!row || (dimensions !== 256 && dimensions !== 768 && dimensions !== 1024)) return null;
+      return {
+        spaceKey,
+        provider: row.provider,
+        model: row.model,
+        runtime: row.runtime,
+        dimensions
+      };
+    },
+
+    /** How many current notes have a vector of the space `spaceKey`, and how many wait for one. */
+    async spaceCoverage(spaceKey: string): Promise<TopicSpaceCoverage> {
+      const result = await db.query<
+        QueryResultRow & { notes: number; embedded: number; queued: number }
+      >(topicLoadSql.spaceCoverage, [`${noteVectorStrategyPrefix}${spaceKey}`]);
+      const row = result.rows[0];
+      return {
+        notes: Number(row?.notes ?? 0),
+        embedded: Number(row?.embedded ?? 0),
+        queued: Number(row?.queued ?? 0)
+      };
+    },
+
+    /** A page of current notes without a vector of the space `spaceKey`, in id order. */
+    async notesWithoutSpaceVector(
+      spaceKey: string,
+      options: { after?: string | null; limit?: number } = {}
+    ): Promise<TopicUnembeddedPage> {
+      const limit = positiveInteger(options.limit, topicLoadDefaults.vectorPageSize, 10_000);
+      const result = await db.query<QueryResultRow & TopicUnembeddedNote>(
+        topicLoadSql.notesWithoutSpaceVector,
+        [`${noteVectorStrategyPrefix}${spaceKey}`, options.after ?? null, limit]
+      );
+      const notes = result.rows.map((row) => ({ id: row.id, sourceItemId: row.sourceItemId }));
+      return { notes, next: notes.length === limit ? (notes.at(-1)?.id ?? null) : null };
     },
 
     /** The id of the active tree, or null when none exists yet (D39 creates it). */

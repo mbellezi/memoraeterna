@@ -1044,6 +1044,41 @@ describe("repositories", () => {
       expect(await createEmbeddingRepository(none).hasContentHash("atomic_note", "n", "h")).toBe(
         false
       );
+      // A re-embedding after a space change counts only a vector of the new space (D26).
+      const space = new FakeQueryable([[], [], []]);
+      expect(
+        await createEmbeddingRepository(space).hasContentHash(
+          "atomic_note",
+          "n",
+          "h",
+          "native-v2:b"
+        )
+      ).toBe(false);
+      expect(space.queries.map((query) => query.values[3])).toEqual([
+        "native-v2:b",
+        "native-v2:b",
+        "native-v2:b"
+      ]);
+      expect(none.queries.map((query) => query.values[3])).toEqual([null, null, null]);
+    });
+
+    it("queues the re-embedding of many notes in one statement, naming the space (D26)", async () => {
+      const db = new FakeQueryable([[{}, {}]]);
+      const notes = [
+        { atomicNoteId: "note-1", sourceItemId: "source-1" },
+        { atomicNoteId: "note-2", sourceItemId: "source-1" }
+      ];
+      expect(await createJobRepository(db).enqueueNoteEmbeddings(notes, { spaceKey: "b" })).toBe(2);
+      expect(db.queries).toHaveLength(1);
+      expect(db.queries[0]?.text).toContain("status = 'queued'");
+      expect(db.queries[0]?.values).toEqual([
+        "note-embedding",
+        10,
+        ["note-1", "note-2"],
+        ["source-1", "source-1"],
+        "b"
+      ]);
+      expect(await createJobRepository(new FakeQueryable([])).enqueueNoteEmbeddings([])).toBe(0);
     });
   });
 

@@ -486,12 +486,18 @@ export class JobSupervisor {
   private async executeNoteEmbedding(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
     const atomicNoteId = readString(job.payload, "atomicNoteId");
     const sourceItemId = optionalString(job.payload.sourceItemId);
-    if (!this.options.knowledgeService) return { embedded: false, reason: "knowledge_unavailable" };
-    const result = await this.options.knowledgeService.embedAtomicNote(atomicNoteId, signal, {
+    // A re-embedding after an embedding-space change names the space it embeds into (D26).
+    const spaceKey = optionalString(job.payload.spaceKey);
+    const knowledge = this.options.knowledgeService;
+    if (!knowledge) return { embedded: false, reason: "knowledge_unavailable" };
+    const context = {
       jobId: job.id,
       stage: "note_embedding",
       ...(sourceItemId ? { sourceItemId } : {})
-    });
+    };
+    const result = spaceKey
+      ? await knowledge.embedAtomicNote(atomicNoteId, signal, context, { spaceKey })
+      : await knowledge.embedAtomicNote(atomicNoteId, signal, context);
     // The new vector, or a note that is gone or no longer current, changes its place in the tree.
     // An unchanged vector was embedded (and handed to the tree) by matching already.
     if (

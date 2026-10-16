@@ -1783,6 +1783,7 @@
       "place": "{items} éléments classés dans les sujets",
       "build": "Arbre des sujets construit : {topics} sujets, {items} éléments",
       "rebuild": "Arbre des sujets reconstruit ({items} éléments déplacés)",
+      "space": "Arbre des sujets transféré vers le nouveau modèle d’embedding ({items} éléments déplacés)",
       "rebalance": "Sujets réorganisés : {operations} modifications, {items} éléments déplacés",
       "proposal": "Réorganisation des sujets proposée ({items} éléments)",
       "naming": "Noms de sujets mis à jour : {topics}",

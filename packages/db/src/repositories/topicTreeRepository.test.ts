@@ -401,6 +401,25 @@ describe("topic tree writer (scripted connection)", () => {
     expect(connection.statements).toEqual([]);
   });
 
+  it("never records a move to another embedding space as a proposal (D26)", async () => {
+    const connection = new ScriptedConnection([treeSelect]);
+    const repo = createTopicTreeRepository(scriptedPool(connection));
+    const treeSpace = {
+      spaceKey: "local:test:768",
+      embeddingProvider: "test",
+      embeddingModel: "test-768",
+      embeddingRuntime: "none",
+      dimensions: 768
+    };
+    await expect(
+      repo.applyChangeSet(apply({ treeSpace, status: "pending_review" }))
+    ).rejects.toThrow(/never a proposal/u);
+    await expect(
+      repo.applyChangeSet(apply({ treeSpace: { ...treeSpace, dimensions: 512 } }))
+    ).rejects.toThrow(/Invalid tree space/u);
+    expect(connection.statements).toEqual([]);
+  });
+
   it("records a proposal without touching the structure or the generation", async () => {
     const changeSetId = uuidOf(200);
     const connection = new ScriptedConnection([

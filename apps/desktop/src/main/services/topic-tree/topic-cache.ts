@@ -202,20 +202,33 @@ function sameBits(a: Float64Array, b: Float64Array): boolean {
 /**
  * Loads the cache of one tree: the skeleton (one generation), the owners and vectors of every
  * placed item, the D8 vectors of placed roots and exact statistics. Null when the tree is gone.
+ * `inSpace` loads the same structure with the vectors of another embedding space (the rebuild of
+ * a space change, D26): the cache's tree then carries that space.
  */
 export async function loadTopicTreeCache(
   pool: PgPool,
   treeId: string,
-  logger?: Pick<Console, "warn">
+  logger?: Pick<Console, "warn">,
+  inSpace?: TopicEmbeddingSpace
 ): Promise<TopicTreeCache | null> {
   const repository = createTopicTreeRepository(pool);
   const loader = createTopicTreeLoadRepository(pool);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const tree = await repository.tree(treeId);
-    if (!tree) return null;
+    const record = await repository.tree(treeId);
+    if (!record) return null;
     const skeleton = await loader.loadSkeleton(treeId);
     if (!skeleton) return null;
-    if (skeleton.tree.generation !== tree.generation) continue;
+    if (skeleton.tree.generation !== record.generation) continue;
+    const tree: TopicTreeRecord = inSpace
+      ? {
+          ...record,
+          spaceKey: inSpace.spaceKey,
+          embeddingProvider: inSpace.provider,
+          embeddingModel: inSpace.model,
+          embeddingRuntime: inSpace.runtime,
+          dimensions: inSpace.dimensions
+        }
+      : record;
     const config = treeConfig(tree, logger);
     const space = treeSpace(tree);
     const records: TopicTreeRecords = {

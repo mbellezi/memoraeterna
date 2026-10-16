@@ -82,17 +82,22 @@ export function createEmbeddingRepository(db: Queryable) {
       }
       return false;
     },
-    /** Whether the target already has a vector built from exactly this content (any dimension). */
+    /**
+     * Whether the target already has a vector built from exactly this content (any dimension),
+     * only of the embedding strategy `strategy` when it is given (one space, D26).
+     */
     async hasContentHash(
       targetType: UpsertEmbeddingInput["targetType"],
       targetId: string,
-      contentHash: string
+      contentHash: string,
+      strategy?: string
     ): Promise<boolean> {
       for (const dimensions of [256, 768, 1024]) {
         const result = await db.query(
           `select 1 from embeddings_${dimensions}
-            where target_type = $1 and target_id = $2 and content_hash = $3 limit 1`,
-          [targetType, targetId, contentHash]
+            where target_type = $1 and target_id = $2 and content_hash = $3
+              and ($4::text is null or strategy = $4) limit 1`,
+          [targetType, targetId, contentHash, strategy ?? null]
         );
         if (result.rows.length) return true;
       }

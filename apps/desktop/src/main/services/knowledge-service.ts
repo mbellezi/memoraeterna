@@ -1357,12 +1357,14 @@ export class KnowledgeService {
   /**
    * Rebuilds the vector of one note after a human edit invalidated it. Ordinary background work
    * (the `note-embedding` job): it only calls the embedding model, never a generative one, and a
-   * provider failure is thrown so the job retries it.
+   * provider failure is thrown so the job retries it. A re-embedding after the embedding space
+   * changed (D26) names that space: only a vector of the text in it makes the note `unchanged`.
    */
   public async embedAtomicNote(
     noteId: string,
     signal?: AbortSignal,
-    logContext: AiTaskLogContext = {}
+    logContext: AiTaskLogContext = {},
+    options: { spaceKey?: string } = {}
   ): Promise<{
     embedded: boolean;
     reason?: "note_not_found" | "note_not_current" | "unchanged" | "no_embedding";
@@ -1374,9 +1376,18 @@ export class KnowledgeService {
     if (note.status === "rejected" || note.status === "archived")
       return { embedded: false, reason: "note_not_current" };
     const text = atomicNoteEmbeddingText(note);
-    // Matching may have embedded the edited text already.
-    if (await createEmbeddingRepository(pool).hasContentHash("atomic_note", note.id, sha256(text)))
-      return { embedded: false, reason: "unchanged" };
+    // Matching may have embedded the edited text already (in the space a re-embedding names).
+    const embeddings = createEmbeddingRepository(pool);
+    const hash = sha256(text);
+    const current = options.spaceKey
+      ? await embeddings.hasContentHash(
+          "atomic_note",
+          note.id,
+          hash,
+          `${nativeEmbeddingStrategyPrefix}${options.spaceKey}`
+        )
+      : await embeddings.hasContentHash("atomic_note", note.id, hash);
+    if (current) return { embedded: false, reason: "unchanged" };
     const execution = await this.options.aiService.runDefaultTask(
       "embedding",
       text,

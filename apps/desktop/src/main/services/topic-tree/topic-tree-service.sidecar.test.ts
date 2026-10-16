@@ -470,11 +470,16 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     try {
       const status = await services.service.status();
       expect(status).toMatchObject({ blocked: "space_changed", aiMode: "full", held: false });
-      const [job] = await place([sources[0]!]);
-      expect(job?.result).toMatchObject({ status: "space_changed" });
+      const jobs = await place([sources[0]!]);
+      expect(jobs.find((job) => job.type === "topic-place")?.result).toMatchObject({
+        status: "space_changed"
+      });
     } finally {
       spaceOverride = null;
     }
+    // The waiting PLACE asked the build to check the space change again (T19b): let it run.
+    await pool.query("update jobs set run_after = now() where status = 'queued'");
+    await drain();
     await expect(services.service.status()).resolves.toMatchObject({
       blocked: null,
       phase: "active"

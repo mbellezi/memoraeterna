@@ -178,6 +178,16 @@ const CreateTopicTreeInputSchema = z
   .strict();
 export type CreateTopicTreeInput = z.input<typeof CreateTopicTreeInputSchema>;
 
+/** The embedding space of a tree (its `topic_trees` columns), which a space change moves (D26). */
+const TopicTreeSpaceSchema = CreateTopicTreeInputSchema.pick({
+  spaceKey: true,
+  embeddingProvider: true,
+  embeddingModel: true,
+  embeddingRuntime: true,
+  dimensions: true
+}).strict();
+export type TopicTreeSpaceInput = z.input<typeof TopicTreeSpaceSchema>;
+
 const ChangeSetMetaSchema = z.object({
   id: uuid.optional(),
   origin: z.enum(topicChangeSetOrigins).refine((origin) => origin !== "undo", {
@@ -225,6 +235,12 @@ export interface ApplyChangeSetInput extends TopicChangeSetMeta {
   clock?: number;
   /** A structural configuration change that comes with a rebuild (D39). */
   treeConfig?: { config: Record<string, unknown>; configHash: string };
+  /**
+   * The rebuild in a new embedding space (D26): the tree moves to it with the change-set, whose
+   * statistics are in that space; every statistic it does not supply starts over in the new space
+   * (dirty for a live topic). Never a proposal.
+   */
+  treeSpace?: TopicTreeSpaceInput;
 }
 
 export type TopicConflict =
@@ -1373,6 +1389,8 @@ interface CommitInput {
   stats: readonly TopicStatsWrite[];
   clock?: number | undefined;
   treeConfig?: { config: Record<string, unknown>; configHash: string } | undefined;
+  /** D26: `tree` already carries this space; the tree row moves to it. */
+  treeSpace?: TopicTreeSpaceInput | undefined;
 }
 
 /**
@@ -1422,16 +1440,37 @@ async function commitChangeSet(db: Queryable, input: CommitInput): Promise<Appli
     db,
     live.filter((id) => !supplied.has(id))
   );
+  if (input.treeSpace) {
+    // D26: statistics of the old space (retired topics, unsupplied ones) start over in the new one.
+    await db.query(
+      `update topic_stats s set space_key = $2, n = 0, ls = null, cos_sq_sum = 0,
+              low_cos_percentiles = '{}', coherence = null, dirty = t.retired_at is null,
+              computed_at = now()
+         from topics t where t.id = s.topic_id and t.tree_id = $1 and s.space_key <> $2`,
+      [tree.id, input.treeSpace.spaceKey]
+    );
+  }
   await recount(db, tree.id, [...new Set([...live, ...supplied])]);
+  const space = input.treeSpace;
   await db.query(
     `update topic_trees set generation = generation + 1, clock = coalesce($2::bigint, clock),
-            config = coalesce($3::jsonb, config), config_hash = coalesce($4, config_hash)
+            config = coalesce($3::jsonb, config), config_hash = coalesce($4, config_hash),
+            space_key = coalesce($5, space_key),
+            embedding_provider = coalesce($6, embedding_provider),
+            embedding_model = coalesce($7, embedding_model),
+            embedding_runtime = coalesce($8, embedding_runtime),
+            dimensions = coalesce($9::smallint, dimensions)
       where id = $1`,
     [
       tree.id,
       input.clock ?? null,
       input.treeConfig ? JSON.stringify(input.treeConfig.config) : null,
-      input.treeConfig?.configHash ?? null
+      input.treeConfig?.configHash ?? null,
+      space?.spaceKey ?? null,
+      space?.embeddingProvider ?? null,
+      space?.embeddingModel ?? null,
+      space?.embeddingRuntime ?? null,
+      space?.dimensions ?? null
     ]
   );
   await bumpProjectionClock(db);
@@ -1975,15 +2014,25 @@ export function createTopicTreeRepository(pool: PgPool) {
       if (!Number.isSafeInteger(input.expectedGeneration) || input.expectedGeneration < 0) {
         throw new TopicTreeRepositoryError("invalidInput", "Invalid expected generation");
       }
+      const space = input.treeSpace ? TopicTreeSpaceSchema.safeParse(input.treeSpace) : null;
+      if (space && (!space.success || input.status === "pending_review")) {
+        throw new TopicTreeRepositoryError(
+          "invalidInput",
+          space.success ? "A space change is never a proposal" : "Invalid tree space"
+        );
+      }
+      const treeSpace = space?.data;
       const db = options.client ?? pool;
       return withConflicts(db, input.treeId, () =>
         runWriter(pool, options, [treeLockKey(input.treeId)], async (writer) => {
-          const tree = await requireTree(writer, input.treeId);
+          const stored = await requireTree(writer, input.treeId);
+          // D26: the change-set's statistics are in the new space, and so are its new topics.
+          const tree = treeSpace ? { ...stored, ...treeSpace } : stored;
           const pending = input.status === "pending_review";
           const conflict = treeConflict(tree, pending ? undefined : input.expectedGeneration);
           if (conflict) return conflict;
-          // A structural configuration change is recorded even when its rebuild moves nothing.
-          if (events.length === 0 && (pending || !input.treeConfig))
+          // A structural configuration or space change is recorded even when it moves nothing.
+          if (events.length === 0 && (pending || (!input.treeConfig && !treeSpace)))
             return { kind: "no_change", generation: tree.generation } as const;
           if (pending) {
             const changeSetId = await insertChangeSet(
@@ -2008,7 +2057,8 @@ export function createTopicTreeRepository(pool: PgPool) {
             events,
             stats: input.stats ?? [],
             clock: input.clock,
-            treeConfig: input.treeConfig
+            treeConfig: input.treeConfig,
+            treeSpace
           });
         })
       );

@@ -757,6 +757,8 @@ export class CorpusRunner {
     if (!stored) return { result: "none", space: null };
     const route = await this.options.spaceResolver.resolve();
     if (route.kind === "blocked") return { result: "route_unresolved", space: stored };
+    // The route's space has no note vector at all: the stored vectors are of another space.
+    if (route.kind === "unembedded") return { result: "mismatch", space: stored };
     return { result: sameSpace(route.space, stored) ? "same" : "mismatch", space: stored };
   }
 

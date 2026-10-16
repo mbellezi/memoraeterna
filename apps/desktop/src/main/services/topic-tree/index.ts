@@ -30,6 +30,7 @@ import { TopicLabelService } from "./topic-labels.js";
 import { TopicNamingService } from "./topic-naming.js";
 import { TopicOverviewService } from "./topic-overview.js";
 import type { TopicEngineStatus, TopicReadService } from "./topic-read-service.js";
+import { TopicSpaceChange } from "./topic-space.js";
 import type { SpaceResolver } from "./topic-space.js";
 import { TopicTreeService } from "./topic-tree-service.js";
 import type { EnsureTreeResult, TopicServiceStatus } from "./topic-tree-service.js";
@@ -93,6 +94,8 @@ export interface TopicTreeServices {
   jobs: LightJobRegistry;
   /** The build, REBALANCE and audit jobs (T19). */
   structure: TopicStructureJobs;
+  /** The re-embedding of an embedding-space change and `topics.reembed` (D26, T19b). */
+  spaceChange: TopicSpaceChange;
   /** Startup: ensures the active tree (D39) and enqueues the sweep. Never throws. */
   start(): Promise<void>;
   /** After a library reset's defaults: an empty active tree again (D39). Never throws. */
@@ -146,6 +149,14 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     : undefined;
   // The structure jobs are created below, after the service they run on.
   let structureJobs: TopicStructureJobs | null = null;
+  // T19b: re-embedding after the route's embedding space changed (D26).
+  const spaceChange = new TopicSpaceChange({
+    getPool,
+    spaceResolver: options.spaceResolver,
+    aiMode,
+    ...(logger ? { logger } : {}),
+    ...(options.now ? { now: options.now } : {})
+  });
   const budget = new TopicAiBudget({
     store: options.budgetStore ?? settingsAiBudgetStore(getPool),
     cap: () => service!.config().ai.maxBackgroundCallsPerDay,
@@ -162,6 +173,8 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     // T26: a human change-set asks REBALANCE to check the topics it touched.
     onHumanChange: (change) =>
       structureJobs?.afterHumanChange(change.treeId, change.changeSetId, change.generation),
+    // T19b: the status saw the route's space move; the build re-embeds and moves the tree.
+    onSpaceChanged: (treeId) => structureJobs?.spaceChanged(treeId),
     ...(notifyViewHistory ? { onViewHistoryChanged: notifyViewHistory } : {}),
     ...(options.newTreeConfig ? { newTreeConfig: options.newTreeConfig } : {}),
     ...(options.wake ? { wake: options.wake } : {}),
@@ -179,6 +192,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     aiMode,
     isRegistered,
     effectiveConfig: () => options.newTreeConfig?.() ?? defaultTopicTreeConfig,
+    spaceChange,
     ...(options.clusterTopics ? { clusterTopics: options.clusterTopics } : {}),
     ...(logger ? { logger } : {}),
     ...(options.now ? { now: options.now } : {})
@@ -220,10 +234,13 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       targets: options.ipc.targets,
       engineStatus: async () => {
         const status = await topicService.status();
-        return engineStatusOf(
+        const engine = engineStatusOf(
           status,
           (await gate?.waitingForDecider(status.counts.needsGate)) ?? false
         );
+        // T19b: on a remote route, the notes "Re-embed library" would cover (D26, Q8).
+        const reembedNotes = await spaceChange.reembedNotes(status.route).catch(() => null);
+        return reembedNotes === null ? engine : { ...engine, reembedNotes };
       },
       // T26: the human operations of the topic screens.
       mutate: (input) => topicService.mutate(input),
@@ -236,6 +253,8 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
             cancelOverview: (input) => overview.cancel(input)
           }
         : {}),
+      // T19b: the owner's re-embedding of the library after a space change (D26).
+      reembed: () => spaceChange.reembed(),
       ...(options.now ? { now: options.now } : {}),
       ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
     });
@@ -374,6 +393,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     aiMode,
     jobs,
     structure,
+    spaceChange,
     async start() {
       // ENV-C (T22b): with MEMORA_TOPIC_CORPUS set (DEV only) the topic jobs are held before the
       // supervisor starts and the corpus runner seeds, embeds and builds in the background.

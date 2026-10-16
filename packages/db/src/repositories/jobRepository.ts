@@ -191,6 +191,52 @@ export function createJobRepository(db: Queryable) {
       return (result.rowCount ?? 0) > 0;
     },
 
+    /**
+     * Queues the re-embedding of many notes in one statement after the embedding space changed
+     * (D26), skipping notes that already have a queued job. `spaceKey` names the space the jobs
+     * embed into: a job skips a note only when a vector of its text exists in that space.
+     */
+    async enqueueNoteEmbeddings(
+      notes: readonly { atomicNoteId: string; sourceItemId: string }[],
+      options: { spaceKey?: string } = {}
+    ): Promise<number> {
+      if (notes.length === 0) return 0;
+      const result = await db.query(
+        `insert into jobs (type, priority, payload)
+         select $1, $2, jsonb_build_object('atomicNoteId', n.id, 'sourceItemId', n.source)
+                  || case when $5::text is null then '{}'::jsonb
+                          else jsonb_build_object('spaceKey', $5::text) end
+           from unnest($3::text[], $4::text[]) as n(id, source)
+          where not exists (
+            select 1 from jobs
+             where type = $1 and status = 'queued' and payload->>'atomicNoteId' = n.id
+          )`,
+        [
+          noteEmbeddingJobType,
+          noteEmbeddingJobPriority,
+          notes.map((note) => note.atomicNoteId),
+          notes.map((note) => note.sourceItemId),
+          options.spaceKey ?? null
+        ]
+      );
+      return result.rowCount ?? 0;
+    },
+
+    /**
+     * How many `note-embedding` jobs that named the space `spaceKey` stored a vector (D26), only
+     * those finished at or after `since` when it is given.
+     */
+    async countSpaceEmbeddings(spaceKey: string, since?: Date): Promise<number> {
+      const result = await db.query<QueryResultRow & { count: number }>(
+        `select count(*)::int as count from jobs
+          where type = $1 and status = 'succeeded' and payload->>'spaceKey' = $2
+            and result->>'embedded' = 'true'
+            and ($3::timestamptz is null or finished_at >= $3)`,
+        [noteEmbeddingJobType, spaceKey, since ?? null]
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    },
+
     async create(input: CreateJobInput): Promise<JobRecord> {
       const row = await insertRow<JobRow>(
         db,

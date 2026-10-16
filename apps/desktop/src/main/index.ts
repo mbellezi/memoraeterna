@@ -55,7 +55,7 @@ import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
-import { createStoredVectorSpaceResolver } from "./services/topic-tree/topic-space.js";
+import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
 import {
   navigationDirectionFromAppCommand,
   navigationDirectionFromInput,
@@ -262,11 +262,15 @@ void app.whenReady().then(() => {
   async function initializeKnowledgeDefaults() {
     await promptService.initialize();
   }
-  // The Topic Tree Engine (F2): the topic jobs run on the job supervisor's light lane. The space
-  // resolver reads the newest stored note vector until the AI service resolves the route's space.
+  // The Topic Tree Engine (F2): the topic jobs run on the job supervisor's light lane. The AI
+  // service resolves the embedding route's space without a call (D26).
   topicTreeServices = createTopicTreeServices({
     getPool: () => databaseService?.getPool() ?? null,
-    spaceResolver: createStoredVectorSpaceResolver(() => databaseService?.getPool() ?? null),
+    spaceResolver: createRouteSpaceResolver({
+      getPool: () => databaseService?.getPool() ?? null,
+      ai: aiService,
+      logger: console
+    }),
     env: process.env,
     isPackaged: app.isPackaged,
     wake: () => jobSupervisor?.wake("light"),

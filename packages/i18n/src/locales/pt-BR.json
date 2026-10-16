@@ -1781,6 +1781,7 @@
       "place": "{items} itens organizados em tópicos",
       "build": "Árvore de tópicos criada: {topics} tópicos, {items} itens",
       "rebuild": "Árvore de tópicos reconstruída ({items} itens movidos)",
+      "space": "Árvore de tópicos transferida para o novo modelo de embeddings ({items} itens movidos)",
       "rebalance": "Tópicos reorganizados: {operations} alterações, {items} itens movidos",
       "proposal": "Reorganização de tópicos proposta ({items} itens)",
       "naming": "Nomes de tópicos atualizados: {topics}",

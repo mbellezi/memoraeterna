@@ -283,6 +283,17 @@ describe("ingestion queue scheduling", () => {
       expect(update).toMatchObject({ status: "succeeded", result: { embedded: true } });
     });
 
+    it("embeds into the space a re-embedding names (D26)", async () => {
+      const embedAtomicNote = vi.fn().mockResolvedValue({ embedded: true });
+      await runWith(embedAtomicNote, embeddingJob({ spaceKey: "space-b" }));
+      expect(embedAtomicNote).toHaveBeenCalledWith(
+        "note-1",
+        expect.any(AbortSignal),
+        expect.objectContaining({ jobId: "job" }),
+        { spaceKey: "space-b" }
+      );
+    });
+
     it("finishes without error when there is nothing to embed", async () => {
       const update = await runWith(
         vi.fn().mockResolvedValue({ embedded: false, reason: "note_not_current" })

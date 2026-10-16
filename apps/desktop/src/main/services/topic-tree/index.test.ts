@@ -72,6 +72,20 @@ describe("the topic services factory", () => {
       expect(handlers.size).toBe(topicChannels.length);
     });
 
+    it("answers topics.reembed with the space change's re-embedding (T19b, D26)", async () => {
+      const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
+      const ipc = {
+        handle: (channel: string, handler: (event: unknown, payload?: unknown) => unknown) =>
+          handlers.set(channel, handler)
+      } as unknown as IpcMain;
+      const created = create({ ipc: { main: ipc, targets: () => [] } });
+      const reembed = vi.spyOn(created.spaceChange, "reembed").mockResolvedValue({ queued: 7 });
+      await expect(
+        handlers.get(ipcChannels.topicsReembed)!({}, { confirm: true })
+      ).resolves.toEqual({ queued: 7 });
+      expect(reembed).toHaveBeenCalledOnce();
+    });
+
     it("registers nothing without Electron (scripts and tests drive the same services)", () => {
       const created = create();
       expect(created.read).toBeNull();

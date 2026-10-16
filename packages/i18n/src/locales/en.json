@@ -1778,6 +1778,7 @@
       "place": "Placed {items} items in topics",
       "build": "Built the topic tree: {topics} topics, {items} items",
       "rebuild": "Rebuilt the topic tree ({items} items moved)",
+      "space": "Moved the topic tree to the new embedding model ({items} items moved)",
       "rebalance": "Reorganized topics: {operations} changes, {items} items moved",
       "proposal": "Proposed topic reorganization ({items} items)",
       "naming": "Topic names updated: {topics}",

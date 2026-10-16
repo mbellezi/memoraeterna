@@ -107,6 +107,29 @@ describe("rebuilding the embedding of an edited note", () => {
     expect(mocks.embedding.upsert).not.toHaveBeenCalled();
   });
 
+  it("re-embeds after a space change unless the text has a vector in the new space (D26)", async () => {
+    const hash = createHash("sha256").update(text(note())).digest("hex");
+    // A vector of the same text in the old space does not count: only the named space does.
+    mocks.embedding.hasContentHash.mockImplementation(
+      async (_type: string, _id: string, _hash: string, strategy?: string) => strategy === undefined
+    );
+    expect(
+      await service().embedAtomicNote("note-1", undefined, {}, { spaceKey: "space-1" })
+    ).toEqual({ embedded: true });
+    expect(mocks.embedding.hasContentHash).toHaveBeenCalledWith(
+      "atomic_note",
+      "note-1",
+      hash,
+      "native-v2:space-1"
+    );
+    expect(mocks.run).toHaveBeenCalledOnce();
+    mocks.embedding.hasContentHash.mockResolvedValue(true);
+    expect(
+      await service().embedAtomicNote("note-1", undefined, {}, { spaceKey: "space-1" })
+    ).toEqual({ embedded: false, reason: "unchanged" });
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
   it.each(["rejected", "archived"])("skips a %s note", async (status) => {
     mocks.notes.findById.mockResolvedValue(note(status));
     expect(await service().embedAtomicNote("note-1")).toEqual({

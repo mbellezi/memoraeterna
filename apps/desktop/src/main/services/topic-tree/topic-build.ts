@@ -6,7 +6,9 @@
 // `bootstrap.singleTopicMaxItems` notes runs in the clustering worker thread between the two, so
 // the cache is held only for the short parts. Every change is one change-set through the single
 // writer (D9), and after a bulk build or rebuild the planner statistics of the topic tables are
-// refreshed (ANALYZE), so the pending-item reads keep their index plans.
+// refreshed (ANALYZE), so the pending-item reads keep their index plans. When the route's embedding
+// space is not the tree's (D26), the build waits until `space.reembedCoverage` of the current notes
+// have a vector in the new space, then rebuilds the tree there with its topic IDs kept.
 import { randomUUID } from "node:crypto";
 
 import {
@@ -22,7 +24,8 @@ import type {
   JsonObject,
   PgPool,
   TopicItemInfo,
-  TopicItemVectors
+  TopicItemVectors,
+  TopicTreeSpaceInput
 } from "@app/db";
 import { topicLimits } from "@app/domain";
 import {
@@ -46,6 +49,7 @@ import {
   itemKey,
   level2TopicCount,
   liveTopicIds,
+  notesByRootSource,
   parseItemKey,
   pathOf,
   placeItem,
@@ -91,13 +95,18 @@ import { detectCommunitiesLouvain } from "../../workers/topic-communities.js";
 import { WorkerSupervisor } from "../worker-supervisor.js";
 import { localDay } from "./topic-ai.js";
 import type { TopicAiMode } from "./topic-ai.js";
-import { ItemVectorStore, noteEntries, rootVectorFingerprint } from "./topic-cache.js";
+import {
+  ItemVectorStore,
+  loadTopicTreeCache,
+  noteEntries,
+  rootVectorFingerprint
+} from "./topic-cache.js";
 import type { TopicTreeCache } from "./topic-cache.js";
 import type { TopicChangeCoalescer } from "./topic-changes.js";
 import { TopicTreePayloadSchema, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobType, TopicScope } from "./topic-jobs.js";
-import { compareTreeSpace } from "./topic-space.js";
-import type { SpaceResolver } from "./topic-space.js";
+import { TopicSpaceChange, compareTreeSpace, coverageShare } from "./topic-space.js";
+import type { RouteSpace, SpaceResolution, SpaceResolver } from "./topic-space.js";
 import { structuralConfigHash } from "./topic-tree-service.js";
 import type { TopicTreeService } from "./topic-tree-service.js";
 import { immediateDebounce } from "./topic-triggers.js";
@@ -130,14 +139,27 @@ export interface TopicStructureJobsOptions {
   effectiveConfig: () => TopicTreeConfig;
   /** Default: the clustering worker thread of a supervisor of its own. */
   clusterTopics?: ClusterTopics;
+  /** The re-embedding of a space change (D26); default: one on the same pool and resolver. */
+  spaceChange?: TopicSpaceChange;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
+}
+
+/** A rebuild that moves the tree to the route's embedding space (D26). */
+interface SpaceMove {
+  /** The tree loaded in the new space: the rebuild maps onto it. */
+  target: TopicTreeCache;
+  treeSpace: TopicTreeSpaceInput;
+  /** The space the tree leaves. */
+  from: string;
+  /** The D8 fingerprint of each root source in the new space. */
+  rootFingerprints: Map<ItemKey, string | null>;
 }
 
 /** The inputs of one build, read in the engine's turn. */
 interface BuildPlan {
   kind: "cold" | "rebuild";
-  reason: "cold-start" | RebuildReason;
+  reason: "cold-start" | "space" | RebuildReason;
   generation: number;
   config: TopicTreeConfig;
   configHash: string;
@@ -157,6 +179,8 @@ interface BuildPlan {
   /** Cold start: every item the plan read, current or not (the rest was placed meanwhile). */
   seen: Set<ItemKey>;
   sources: { key: ItemKey; contentHash: string; composite: Float32Array | null }[];
+  /** D26: the rebuild moves the tree to another embedding space. */
+  space: SpaceMove | null;
   loadMs: number;
 }
 
@@ -222,6 +246,7 @@ function readmitter(
 export class TopicStructureJobs {
   private readonly workers: WorkerSupervisor | null;
   private readonly cluster: ClusterTopics;
+  private readonly spaceChange: TopicSpaceChange;
   private lastAudit: { treeId: string; generation: number; day: string } | null = null;
   /**
    * Topics REBALANCE checks next, per tree: those the change-sets since its last run touched, the
@@ -231,6 +256,15 @@ export class TopicStructureJobs {
   private readonly dirty = new Map<string, Set<string>>();
 
   public constructor(private readonly options: TopicStructureJobsOptions) {
+    this.spaceChange =
+      options.spaceChange ??
+      new TopicSpaceChange({
+        getPool: options.getPool,
+        spaceResolver: options.spaceResolver,
+        aiMode: options.aiMode,
+        ...(options.logger ? { logger: options.logger } : {}),
+        ...(options.now ? { now: options.now } : {})
+      });
     if (options.clusterTopics) {
       this.workers = null;
       this.cluster = options.clusterTopics;
@@ -253,8 +287,14 @@ export class TopicStructureJobs {
    * for REBALANCE, which is asked for (debounced), and an audit when one is due.
    */
   public async afterPlace(job: JobRecord, result: JsonObject): Promise<void> {
-    if (result.status !== "applied" || typeof result.changeSetId !== "string") return;
     const treeId = typeof job.payload.treeId === "string" ? job.payload.treeId : null;
+    // D26: a PLACE that waits for the space change (a note was just re-embedded, or a new one
+    // arrived) asks the build to check the coverage of the new space again (debounced).
+    if (treeId && result.status === "space_changed") {
+      await this.guard(() => this.request(topicJobTypes.build, treeId).then(() => undefined));
+      return;
+    }
+    if (result.status !== "applied" || typeof result.changeSetId !== "string") return;
     if (!treeId) return;
     await this.afterChangeSet(treeId, result.changeSetId, Number(result.generation));
   }
@@ -287,10 +327,22 @@ export class TopicStructureJobs {
    * topics the deletions left out of their bands and asks REBALANCE to check them.
    */
   public async afterSweep(result: JsonObject): Promise<void> {
-    if (Number(result.recomputedTopics ?? 0) === 0 || typeof result.treeId !== "string") return;
+    if (typeof result.treeId !== "string") return;
     const treeId = result.treeId;
+    if (result.status === "space_changed") return this.spaceChanged(treeId);
+    if (Number(result.recomputedTopics ?? 0) === 0) return;
     await this.guard(() =>
       this.request(topicJobTypes.audit, treeId, { immediate: true }).then(() => undefined)
+    );
+  }
+
+  /**
+   * The route's embedding space is not the tree's (D26, seen by the sweep or the status): the
+   * build re-embeds the library (local route) or waits for it, then moves the tree.
+   */
+  public spaceChanged(treeId: string): Promise<void> {
+    return this.guard(() =>
+      this.request(topicJobTypes.build, treeId, { immediate: true }).then(() => undefined)
     );
   }
 
@@ -362,10 +414,12 @@ export class TopicStructureJobs {
     return timed(async () => {
       for (let attempt = 0; attempt < topicStructureLimits.buildAttempts; attempt += 1) {
         const resolution = await this.options.spaceResolver.resolve();
+        // D26: until the new space covers the library, the tree waits (outside the engine's turn).
+        const waiting = await this.spaceChangeWait(treeId, resolution);
+        if (waiting) return waiting;
         const planned = await this.options.service.runOnTree(treeId, async (cache) => {
-          if (compareTreeSpace(cache.tree, resolution).kind === "space_changed") {
-            return { kind: "done", result: { status: "space_changed" } } satisfies PlanOutcome;
-          }
+          const space = compareTreeSpace(cache.tree, resolution);
+          if (space.kind === "space_changed") return this.planSpaceMove(cache, space.route, job);
           return this.planBuild(cache);
         });
         if (planned === null) return { status: "tree_inactive" };
@@ -374,11 +428,16 @@ export class TopicStructureJobs {
         if (signal.aborted) throw new Error("topics.errors.canceled");
         const partition = await this.partition(plan, signal);
         if (signal.aborted) throw new Error("topics.errors.canceled");
-        const applied = await this.options.service.runOnTree(treeId, (cache) =>
-          plan.kind === "cold"
-            ? this.applyColdStart(cache, plan, partition, job)
-            : this.applyRebuildPlan(cache, plan, partition, job)
-        );
+        const applied = await this.options.service.runOnTree(treeId, async (cache) => {
+          if (plan.kind === "cold") return this.applyColdStart(cache, plan, partition, job);
+          if (!plan.space) return this.applyRebuildPlan(cache, plan, partition, job);
+          // The tree must still be the one the move was planned on, in its old space.
+          const unchanged =
+            cache.tree.generation === plan.generation && cache.tree.spaceKey === plan.space.from;
+          return unchanged
+            ? this.applyRebuildPlan(plan.space.target, plan, partition, job)
+            : { status: "stale" };
+        });
         if (applied === null) return { status: "tree_inactive" };
         if (applied.status !== "stale") return applied;
       }
@@ -544,6 +603,7 @@ export class TopicStructureJobs {
           ...[...sourceIds].map((id) => itemKey("source", id))
         ]),
         sources,
+        space: null,
         loadMs: round(performance.now() - started)
       }
     };
@@ -553,11 +613,12 @@ export class TopicStructureJobs {
   private planRebuild(
     cache: TopicTreeCache,
     decision: {
-      reason: RebuildReason;
+      reason: RebuildReason | "space";
       config: TopicTreeConfig;
       configHash: string;
       changed: boolean;
-    }
+    },
+    space: SpaceMove | null = null
   ): BuildPlan {
     const started = performance.now();
     const { state, vectors } = cache;
@@ -593,7 +654,185 @@ export class TopicStructureJobs {
       notes: new Map(),
       seen: new Set(),
       sources: [],
+      space,
       loadMs: round(performance.now() - started)
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // A change of embedding space (D26)
+
+  /**
+   * Null when the build can go on: the tree is in the route's space, or the new space covers
+   * `space.reembedCoverage` of the current notes and no queued re-embedding would add to it (the
+   * move maps the whole re-embedded library at once; notes whose jobs failed for good do not hold
+   * it back). Otherwise the tree keeps waiting in its own space (PLACE of new-space items waits
+   * too) while the library is re-embedded: automatically on a local route, after the owner's
+   * `topics.reembed` on a remote one. Spaces are never compared.
+   */
+  private async spaceChangeWait(
+    treeId: string,
+    resolution: SpaceResolution
+  ): Promise<JsonObject | null> {
+    const tree = await createTopicTreeRepository(this.requirePool()).tree(treeId);
+    if (!tree || tree.status !== "active") return null;
+    const space = compareTreeSpace(tree, resolution);
+    if (space.kind !== "space_changed") return null;
+    const { route } = space;
+    const coverage = await this.spaceChange.coverage(route.spaceKey);
+    const share = coverageShare(coverage);
+    const covered = share >= this.options.effectiveConfig().space.reembedCoverage;
+    if (route.space && covered && coverage.queued === 0) return null;
+    const requested = covered ? null : await this.spaceChange.reembedAutomatically(route, coverage);
+    return {
+      status: "space_changed",
+      from: tree.spaceKey,
+      spaceKey: route.spaceKey,
+      coverage: Math.floor(share * 10_000) / 10_000,
+      ...coverage,
+      reembedding: covered ? "finishing" : requested === null ? "waiting_for_action" : "automatic",
+      ...(requested ? { requested } : {})
+    };
+  }
+
+  /**
+   * The move of a tree to the route's space, in the engine's turn: the tree loaded again with the
+   * vectors of the new space (only those, never mixed with the old ones), then a rebuild mapped
+   * onto it by Hungarian matching, or, for a tree without topics or with too few notes, the same
+   * structure with its statistics in the new space.
+   */
+  private async planSpaceMove(
+    cache: TopicTreeCache,
+    route: RouteSpace,
+    job: JobRecord
+  ): Promise<PlanOutcome> {
+    const space = route.space;
+    if (!space) return { kind: "done", result: { status: "space_changed" } };
+    const pool = this.requirePool();
+    const target = await loadTopicTreeCache(pool, cache.tree.id, this.options.logger, space);
+    if (!target || target.tree.generation !== cache.tree.generation) {
+      return { kind: "done", result: { status: "deferred", reason: "generation" } };
+    }
+    const move: SpaceMove = {
+      target,
+      treeSpace: {
+        spaceKey: space.spaceKey,
+        embeddingProvider: space.provider,
+        embeddingModel: space.model,
+        embeddingRuntime: space.runtime,
+        dimensions: space.dimensions
+      },
+      from: cache.tree.spaceKey,
+      rootFingerprints: await this.rootFingerprints(target)
+    };
+    const effective = this.options.effectiveConfig();
+    const hash = structuralConfigHash(effective);
+    const plan = this.planRebuild(
+      target,
+      {
+        reason: "space",
+        config: effective,
+        configHash: hash,
+        changed: hash !== target.tree.configHash
+      },
+      move
+    );
+    if (!hasTopics(target.state) || plan.keys.length < effective.bootstrap.minItems) {
+      return { kind: "done", result: await this.applySpaceSwitch(plan, move, job) };
+    }
+    return { kind: "plan", plan };
+  }
+
+  /** The D8 fingerprint of every root source of a tree loaded in a space (its composite there). */
+  private async rootFingerprints(target: TopicTreeCache): Promise<Map<ItemKey, string | null>> {
+    const { state, vectors, config, space } = target;
+    const roots = [...state.items.values()].filter((entry) => entry.kind === "source");
+    const composites = await createTopicTreeLoadRepository(this.requirePool()).loadItemVectors(
+      space,
+      roots.map((root) => ({ kind: "source" as const, id: parseItemKey(root.key)!.id }))
+    );
+    const rowOf = new Map(composites.keys.map((key, row) => [key, row]));
+    const byRoot = notesByRootSource(state);
+    const output = new Map<ItemKey, string | null>();
+    for (const root of roots) {
+      const row = rowOf.get(root.key);
+      const composite =
+        row === undefined
+          ? null
+          : composites.matrix.data.slice(row * composites.dim, (row + 1) * composites.dim);
+      const vector = rootSourceVectorFromState(
+        state,
+        vectors,
+        root.key,
+        composite,
+        config,
+        byRoot.get(root.key) ?? []
+      );
+      output.set(root.key, rootVectorFingerprint(vector));
+    }
+    return output;
+  }
+
+  /**
+   * A move without a rebuild (no topics yet, or fewer notes than a first topic needs): the same
+   * structure, every live topic's statistics in the new space, one change-set without events.
+   */
+  private async applySpaceSwitch(
+    plan: BuildPlan,
+    move: SpaceMove,
+    job: JobRecord
+  ): Promise<JsonObject> {
+    const { state, vectors, tree } = move.target;
+    const signals = structureSignals(state);
+    const summary = {
+      reason: "space",
+      from: move.from,
+      spaceKey: move.treeSpace.spaceKey,
+      rows: plan.keys.length,
+      notes: signals.notes,
+      leafCoherence: signals.leafCoherence,
+      configHash: tree.configHash
+    };
+    const result = await createTopicTreeRepository(this.requirePool()).applyChangeSet({
+      treeId: tree.id,
+      expectedGeneration: tree.generation,
+      origin: "rebuild",
+      titleKey: "topics.changeSets.space",
+      titleParams: { items: 0 },
+      jobId: job.id,
+      summary,
+      events: [],
+      stats: topicStatsWrites(state, vectors, liveTopicIds(state)),
+      clock: state.clock,
+      treeSpace: move.treeSpace
+    });
+    this.options.service.invalidate();
+    if (result.kind === "conflict") {
+      return result.reason === "treeRetired"
+        ? { status: "tree_inactive" }
+        : { status: "deferred", reason: result.reason };
+    }
+    if (result.kind !== "applied") return { status: "no_change", reason: "space" };
+    this.dirty.delete(tree.id);
+    this.options.changes.record({
+      treeId: tree.id,
+      generation: result.generation,
+      topicIds: null,
+      changeSetId: result.changeSetId
+    });
+    // What waited for the move is placed now, in the new space; labels follow the new space.
+    await this.options.triggers.sweep("requested", {
+      treeId: tree.id,
+      debounce: immediateDebounce
+    });
+    const labels = await this.request(topicJobTypes.labelEmbed, tree.id);
+    return {
+      status: "applied",
+      kind: "space",
+      ...summary,
+      changeSetId: result.changeSetId,
+      generation: result.generation,
+      followUps: { labels }
     };
   }
 
@@ -917,7 +1156,9 @@ export class TopicStructureJobs {
    * Applies a rebuild: the new partition mapped onto the live tree by Hungarian matching on member
    * Jaccard so topic IDs survive (rebuild-map.ts), then root sources re-placed by PLACE on the
    * result. One `rebuild` change-set, `pending_review` when it touches protected structure (and,
-   * for a trigger rebuild, when it re-paths a large share of the items).
+   * for a trigger rebuild, when it re-paths a large share of the items). The move to a new
+   * embedding space (D26, `cache` loaded in that space) is always applied: the tree cannot stay
+   * behind its route, and the change-set can still be undone.
    */
   private async applyRebuildPlan(
     cache: TopicTreeCache,
@@ -964,14 +1205,14 @@ export class TopicStructureJobs {
         continue;
       }
       const outcome = placeItem(context, root.key, {
-        fingerprint: primary.itemFingerprint,
+        fingerprint: plan.space?.rootFingerprints.get(root.key) ?? primary.itemFingerprint,
         force: true
       });
       if (outcome.needsGate) gated.push({ rootSourceId: parseItemKey(root.key)!.id });
     }
     recomputeSubtree(state, vectors);
     const events = [...rebuilt.events, ...editor.events];
-    const review = rebuildNeedsReview(reason, rebuilt.review);
+    const review = reason === "space" ? false : rebuildNeedsReview(reason, rebuilt.review);
     const report = shapeReport(state, plan.config, { areasActive: areasActive(state) });
     const summary = {
       ...this.buildSummary(plan, partition, state, report),
@@ -982,14 +1223,15 @@ export class TopicStructureJobs {
       unnamed: rebuilt.unnamed.length,
       movedShare: rebuilt.movedShare,
       exactMatching: rebuilt.plan.exact,
-      review: { ...rebuilt.review, required: review }
+      review: { ...rebuilt.review, required: review },
+      ...(plan.space ? { from: plan.space.from, spaceKey: plan.space.treeSpace.spaceKey } : {})
     };
     const repository = createTopicTreeRepository(this.requirePool());
     const meta = {
       treeId: tree.id,
       expectedGeneration: tree.generation,
       origin: "rebuild" as const,
-      titleKey: "topics.changeSets.rebuild",
+      titleKey: plan.space ? "topics.changeSets.space" : "topics.changeSets.rebuild",
       titleParams: { items: rebuilt.churn.items.length },
       risk: changeSetRisk(rebuilt.movedShare, plan.config),
       jobId: job.id,
@@ -1012,6 +1254,7 @@ export class TopicStructureJobs {
       ...meta,
       stats: topicStatsWrites(state, vectors, liveTopicIds(state)),
       clock: state.clock,
+      ...(plan.space ? { treeSpace: plan.space.treeSpace } : {}),
       ...(plan.configChanged
         ? {
             treeConfig: {
@@ -1101,6 +1344,8 @@ export class TopicStructureJobs {
     if (areasGroupingDue(built.state, plan.config)) {
       follow.areas = await this.request(topicJobTypes.areas, treeId, { immediate: true });
     }
+    // D26: every label vector is embedded again in the tree's new space.
+    if (plan.space) follow.labels = await this.request(topicJobTypes.labelEmbed, treeId);
     for (const scope of built.gated) {
       follow.gate =
         (follow.gate ?? 0) + (await this.request(topicJobTypes.gate, treeId, { scope }));

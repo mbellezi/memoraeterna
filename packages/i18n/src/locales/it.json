@@ -1776,6 +1776,7 @@
       "place": "{items} elementi collocati negli argomenti",
       "build": "Albero degli argomenti creato: {topics} argomenti, {items} elementi",
       "rebuild": "Albero degli argomenti ricostruito ({items} elementi spostati)",
+      "space": "Albero degli argomenti spostato sul nuovo modello di embedding ({items} elementi spostati)",
       "rebalance": "Argomenti riorganizzati: {operations} modifiche, {items} elementi spostati",
       "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)",
       "naming": "Nomi degli argomenti aggiornati: {topics}",
