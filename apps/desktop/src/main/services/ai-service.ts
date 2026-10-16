@@ -134,6 +134,11 @@ export interface AiServiceOptions {
   mlxHost?: MlxHelperHost;
   /** The machine; it decides whether an MLX ranker can be seeded (D18). Defaults to this one. */
   machine?: { platform: string; arch: string };
+  /**
+   * Called with the task and class routes a seeding just created (never throws into it): the
+   * first-run ranker install follows the first embedding route (owner decision 19).
+   */
+  onRoutesSeeded?: (tasks: readonly string[]) => void;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -733,6 +738,13 @@ export class AiService {
       const ranker = await this.preferredValidatedRanker(profiles);
       if (ranker && (await repository.seedTaskRoute(decideRouteKey, ranker.id)))
         seeded.push(decideRouteKey);
+    }
+    if (seeded.length > 0) {
+      try {
+        this.options.onRoutesSeeded?.(seeded);
+      } catch (error) {
+        this.options.logger?.error("A route seeding listener failed", error);
+      }
     }
     return seeded;
   }

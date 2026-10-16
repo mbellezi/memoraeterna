@@ -21,6 +21,13 @@ export const defaultApiKeyEnv = "MEMORA_E2E_API_KEY";
 export const defaultLocale = "pt-BR";
 /** E6: the light lane may take at most this long to drain after the import's heavy work. */
 export const defaultLaneTimeoutMinutes = 15;
+/**
+ * E6 runs without a ranker on purpose (spec E6 "no ranker, so the gate fallback is exercised",
+ * owner decision 19): the harness's first run keeps the product's first-run ranker install off, no
+ * profile routes `class:decide`, and every ambiguous note takes the topic gate's no-decider
+ * fallback. The setting is kept with the cassette, so a replay runs the same way.
+ */
+export const e2eRanker = "none" as const;
 
 /** What the Settings screen gives a model added for generation (`AiSettingsView`). */
 export const generationCapabilities: readonly AiCapability[] = [
@@ -100,6 +107,8 @@ export const RecordedRouteSchema = z
       LocalWriterSchema.omit({ path: true })
     ]),
     embedding: z.object({ catalogId: z.string().min(1) }).strict(),
+    /** E6 runs without a ranker (`e2eRanker`); cassettes recorded before it was kept had none. */
+    ranker: z.literal(e2eRanker).default(e2eRanker),
     /** What the recorded run produced; a replay must produce the same. */
     result: z
       .object({
@@ -133,6 +142,8 @@ export interface E2eConfig {
   keep: boolean;
   reportDir: string | null;
   json: boolean;
+  /** The ranker of the first run: none, so the gate's no-decider fallback is exercised (E6). */
+  ranker: typeof e2eRanker;
 }
 
 export const usage = `Usage: npm run topics:e2e -- [options]
@@ -145,6 +156,8 @@ export const usage = `Usage: npm run topics:e2e -- [options]
       (--profile <scratch profile> | --route-file <file> | --writer-provider ... | --writer-local ...)
   Self-test of the harness (records and replays a tiny synthetic library; no models):
     npm run topics:e2e -- --synthetic
+
+  Every run is without a ranker, on purpose: E6 exercises the topic gate's no-decider fallback.
 
   --mode record|replay|both  both = record then replay (synthetic only)
   --synthetic                tiny library and synthetic model instead of the PDF and real models
@@ -287,7 +300,8 @@ export function parseE2eArgs(
     workDir: v["work-dir"] ? resolve(v["work-dir"]) : null,
     keep: v.keep === true,
     reportDir: v.report ? resolve(v.report) : null,
-    json: v.json === true
+    json: v.json === true,
+    ranker: e2eRanker
   };
 }
 
@@ -421,6 +435,7 @@ export function recordedRoute(
     source: facts.source,
     writer,
     embedding: { catalogId: spec.embedding.catalogId },
+    ranker: e2eRanker,
     result: { notes: facts.notes, topics: facts.topics }
   });
 }

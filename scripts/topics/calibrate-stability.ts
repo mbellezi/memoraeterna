@@ -67,7 +67,8 @@ import type { ArrivalOrder, GrowthKind, ReplayDataset } from "./datasets.js";
 import { sourceGrowthRun, sourcesInOrder } from "./growth-quality.js";
 import type { FixturePairs, GrowthCalendar } from "./growth-quality.js";
 import { NamingSimulator } from "./naming-sim.js";
-import { createRealEngineFactory } from "./real-engine.js";
+import { createRealEngineFactory, replayGates } from "./real-engine.js";
+import type { ReplayGate } from "./reference-engine.js";
 import { summarizeShape } from "./report-data.js";
 import { growthRun, weeklyRun } from "./replay.js";
 import type { ReplayRun } from "./replay.js";
@@ -281,7 +282,8 @@ async function growthPart(
   seed: number,
   out: string,
   datasets: readonly string[] = ["env-g", "env-f"],
-  calendars: readonly GrowthCalendar[] = ["session", "daily"]
+  calendars: readonly GrowthCalendar[] = ["session", "daily"],
+  gate: ReplayGate = "baseline"
 ): Promise<void> {
   const pairs = await fixturePairs();
   for (const name of datasets) {
@@ -294,6 +296,7 @@ async function growthPart(
           config: configForGridPoint(gridBase, point),
           detect: detectCommunitiesLouvain,
           renameDrifts: renameDriftGrid,
+          gate,
           ...(name === "env-f" && pairs ? { pairs } : {})
         });
         const row: GrowthRow = {
@@ -320,7 +323,8 @@ async function growthPart(
         };
         await appendRow(out, `rows-growth-${seed}-${name}-${calendar}.jsonl`, row);
         log(
-          `growth ${row.point} ${name} ${calendar}: purity ${row.leafPurity} (fresh ` +
+          `growth ${row.point} ${name} ${calendar}${gate === "baseline" ? "" : ` gate ${gate}`}: ` +
+            `purity ${row.leafPurity} (fresh ` +
             `${row.freshPurity}), NMI ${row.leafNmi}, leaves ${row.leaves}/${row.freshLeaves}, ` +
             `rebuilds ${row.rebuilds.join(" ") || "-"}` +
             (row.fixturePasses === null
@@ -698,7 +702,9 @@ async function main(): Promise<number> {
       targets: { type: "string" },
       sizes: { type: "string" },
       limit: { type: "string" },
-      base: { type: "string" }
+      base: { type: "string" },
+      // growth only: how gated items are resolved (real-engine.ts; owner decision 19: fallback)
+      gate: { type: "string" }
     }
   });
   if (values.base === "defaults") gridBase = defaultTopicTreeConfig;
@@ -726,12 +732,15 @@ async function main(): Promise<number> {
         const orders = list(values.orders, "chronological,items") as GrowthKind[];
         await e2Part(corpus, points, seed, orders, out);
       } else if (part === "growth") {
+        const gate = (values.gate ?? "baseline") as ReplayGate;
+        if (!replayGates.includes(gate)) throw new Error("--gate is baseline, off or fallback");
         await growthPart(
           points,
           seed,
           out,
           list(values.datasets, "env-g,env-f"),
-          list(values.calendars, "session,daily") as GrowthCalendar[]
+          list(values.calendars, "session,daily") as GrowthCalendar[],
+          gate
         );
       } else {
         throw new Error(`Unknown part ${part}`);

@@ -284,6 +284,8 @@ export interface FlaggedItems {
   needsGate: number;
   needsSplitCheck: number;
   needsVector: number;
+  /** Decided by the no-decider fallback (`fallback-none`, decision 19): a ranker decides them again. */
+  fallbackNone: number;
 }
 
 export interface TopicTreeAudit {
@@ -333,13 +335,19 @@ export function auditTopicTree(
     if (node.control.dirty) recompute.add(node.id);
   });
   for (const check of statsChecks) if (check.drifted) recompute.add(check.topicId);
-  const flaggedItems: FlaggedItems = { needsGate: 0, needsSplitCheck: 0, needsVector: 0 };
+  const flaggedItems: FlaggedItems = {
+    needsGate: 0,
+    needsSplitCheck: 0,
+    needsVector: 0,
+    fallbackNone: 0
+  };
   for (const key of state.placements.keys()) {
     const placement = primaryPlacement(state, key);
     if (!placement) continue;
     if (placement.needsGate) flaggedItems.needsGate += 1;
     if (placement.needsSplitCheck) flaggedItems.needsSplitCheck += 1;
     if (placement.needsVector) flaggedItems.needsVector += 1;
+    if (placement.decidedBy === "fallback-none") flaggedItems.fallbackNone += 1;
   }
   return {
     invariants,

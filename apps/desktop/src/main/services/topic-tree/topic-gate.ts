@@ -2,10 +2,15 @@
 // never waits for AI: an ambiguous item waits at the deepest admitted common ancestor of its best
 // leaves with `needs_gate`, and this job lets the decider choose among at most
 // `gate.maxCandidates` leaves, or "none of these". Only a validated dedicated ranker decides
-// (D17): the `op:topic_gate` route, else `class:decide`, never a generative model. Without a ready
-// route the items keep `needs_gate`, the status says `no_decider`, and once a route is ready
-// (found by the recheck timer, by the next committed change or by the next gate job) the sweep
-// enqueues every waiting scope again, without waiting for a restart.
+// (D17): the `op:topic_gate` route, else `class:decide`, never a generative model.
+//
+// Without a ready route (owner decision 19, which replaces D10's "gated notes wait") the job gives
+// the waiting items the gate's "none" with no call (`applyNoDeciderFallback`: `needs_split_check`,
+// `decided_by = fallback-none`), so REBALANCE may group them into new topics, and the status says
+// `no_decider`. PLACE does the same at once when it finds no decider. Once a route is ready (found
+// by the recheck timer, by the next committed change or by the next gate job) the sweep enqueues
+// every scope with waiting or fallback items, and this job decides the fallback items again
+// wherever REBALANCE moved them, without waiting for a restart.
 //
 // One job is one scope: a root source with its notes, or one note without a root.
 // 1. In the engine's turn, with no model call (D10): the waiting items are decided again exactly as
@@ -40,6 +45,8 @@ import type { JobRecord, JsonObject, PgPool } from "@app/db";
 import { topicLimits } from "@app/domain";
 import {
   applyGateResolution,
+  applyNoDeciderFallback,
+  awaitsGateDecision,
   centralItems,
   compareContentKeys,
   createTopicTreeEditor,
@@ -165,6 +172,8 @@ interface PlannedItem {
   rootSourceId: string | null;
   /** `redecide`: the item is no longer ambiguous and PLACE's decision applies. */
   action: "rank" | "redecide";
+  /** Flagged `needs_gate` (otherwise a `fallback-none` item a ranker decides again). */
+  needsGate: boolean;
   candidates: PlannedCandidate[];
   /** For a root source: its notes nearest its vector (their titles are the query's `Notes`). */
   sourceNotes: ItemKey[];
@@ -173,14 +182,17 @@ interface PlannedItem {
 interface GatePlan {
   generation: number;
   config: TopicTreeConfig;
+  /** A ranker decides (otherwise the no-decider fallback of owner decision 19 applies). */
+  ranked: boolean;
   items: PlannedItem[];
   /** Waiting items left for another job (`itemsPerJob`). */
   more: boolean;
 }
 
-/** What step 2 decided for one item. */
+/** What step 2 decided for one item (`fallback`: no decider, owner decision 19). */
 type ItemOutcome =
   | { kind: "redecide" }
+  | { kind: "fallback" }
   | {
       kind: "resolved";
       resolution: GateResolution;
@@ -207,23 +219,32 @@ interface ApplyResult {
   accepted: number;
   none: number;
   redecided: number;
+  /** Items given the gate's "none" without a decider (`fallback-none`, decision 19). */
+  fallback: number;
   /** Items whose candidates changed or that no longer waited with the same vector. */
   stale: number;
   /** Items left waiting for the next gate job (the tree moved under their candidates). */
   deferred: number;
 }
 
-/** Items of a scope whose primary placement waits for the gate, in content-key order (D22). */
-function waitingItems(state: TopicTreeState, scope: TopicScope): ItemKey[] {
+/**
+ * Items of a scope whose primary placement waits for the gate, in content-key order (D22): flagged
+ * `needs_gate`, plus, when a ranker can decide (`ranked`), the no-decider fallback's items.
+ */
+function waitingItems(state: TopicTreeState, scope: TopicScope, ranked: boolean): ItemKey[] {
+  const waits = (key: ItemKey) => {
+    const primary = primaryPlacement(state, key);
+    return ranked ? awaitsGateDecision(primary) : primary?.needsGate === true;
+  };
   const keys: ItemKey[] = [];
   if ("noteId" in scope) {
     const key = itemKey("note", scope.noteId);
-    if (state.items.has(key) && primaryPlacement(state, key)?.needsGate) keys.push(key);
+    if (state.items.has(key) && waits(key)) keys.push(key);
   } else {
     const root = itemKey("source", scope.rootSourceId);
     for (const entry of state.items.values()) {
       if (entry.key !== root && entry.rootSource !== root) continue;
-      if (primaryPlacement(state, entry.key)?.needsGate) keys.push(entry.key);
+      if (waits(entry.key)) keys.push(entry.key);
     }
   }
   return keys.sort((a, b) => compareContentKeys(state.items.get(a)!, state.items.get(b)!));
@@ -294,15 +315,23 @@ export class TopicGateService {
   }
 
   /**
-   * True when items wait for the gate and no validated ranker can decide them (`no_decider`, an
-   * informative status, D10). Never throws.
+   * True when items wait for a gate decision (flagged, or decided by the no-decider fallback) and
+   * no validated ranker can decide them (`no_decider`, an informative status). Never throws.
    */
-  public async waitingForDecider(needsGate: number): Promise<boolean> {
-    if (needsGate <= 0 || this.options.aiMode !== "full") return false;
-    const waiting = (await this.routeStatus()) !== "ready";
-    // Items wait and nothing can decide them: a ready route found later sweeps them in.
-    if (waiting) this.block();
-    return waiting;
+  public async waitingForDecider(waiting: number): Promise<boolean> {
+    if (waiting <= 0 || this.options.aiMode !== "full") return false;
+    return !(await this.deciderReady(waiting));
+  }
+
+  /**
+   * Whether a validated ranker can decide gated items now (owner decision 19: PLACE and the sweep
+   * ask). While `waiting` items owe it a decision and none is ready, the route is checked again
+   * until one is, which sweeps them in (T26f). Never throws: an unreadable route is not ready.
+   */
+  public async deciderReady(waiting: number): Promise<boolean> {
+    const ready = (await this.routeStatus()) === "ready";
+    if (!ready && waiting > 0) this.block();
+    return ready;
   }
 
   /**
@@ -374,13 +403,13 @@ export class TopicGateService {
     const route = await this.routeStatus();
     if (route !== "ready") {
       this.block();
-      return { ...base, status: "no_decider", route };
+      return this.fallBack(job, treeId, scope, { ...base, route }, started);
     }
     if (this.routeBlocked) await this.routeReady(treeId);
 
     // 1. The waiting items and their candidates, in the engine's turn.
     const plan = await this.options.service.runOnTree(treeId, async (cache) =>
-      this.plan(cache, scope)
+      this.plan(cache, scope, true)
     );
     if (!plan) return { ...base, status: "tree_inactive" };
     if (plan.items.length === 0) return { ...base, status: "nothing_waiting" };
@@ -398,6 +427,12 @@ export class TopicGateService {
     };
     const { outcomes, failure } = await this.decide(job, treeId, plan, run, signal);
     await this.recordCalls(treeId, run.calls);
+    if (failure === "no_decider") {
+      // The ranker went away mid-run: the items it did not decide get the fallback (decision 19).
+      for (const item of plan.items)
+        if (item.action === "rank" && !outcomes.has(item.key) && item.needsGate)
+          outcomes.set(item.key, { kind: "fallback" });
+    }
 
     // 3. The decisions, in the engine's turn.
     const applied =
@@ -417,6 +452,7 @@ export class TopicGateService {
       accepted: applied?.accepted ?? 0,
       none: applied?.none ?? 0,
       redecided: applied?.redecided ?? 0,
+      fallback: applied?.fallback ?? 0,
       stale: applied?.stale ?? 0,
       deferred: applied?.deferred ?? 0,
       calls: run.calls,
@@ -436,12 +472,71 @@ export class TopicGateService {
     return result;
   }
 
+  /**
+   * No validated decider (owner decision 19): the scope's items that wait with `needs_gate` get
+   * the gate's "none" without a call (`fallback-none`), in one `gate` change-set, so REBALANCE may
+   * group them; items that are no longer ambiguous take PLACE's decision. Once a ranker is ready
+   * the sweep sends them back here and they are decided again.
+   */
+  private async fallBack(
+    job: JobRecord,
+    treeId: string,
+    scope: TopicScope,
+    base: JsonObject,
+    started: number
+  ): Promise<JsonObject> {
+    const plan = await this.options.service.runOnTree(treeId, async (cache) =>
+      this.plan(cache, scope, false)
+    );
+    if (!plan) return { ...base, status: "tree_inactive" };
+    if (plan.items.length === 0) return { ...base, status: "no_decider", items: 0, fallback: 0 };
+    const outcomes = new Map<ItemKey, ItemOutcome>(
+      plan.items.map((item) => [
+        item.key,
+        item.action === "rank" ? { kind: "fallback" } : { kind: "redecide" }
+      ])
+    );
+    const run: RankRun = {
+      calls: 0,
+      cacheHits: 0,
+      unranked: 0,
+      truncated: 0,
+      inputTokens: 0,
+      rankMs: [],
+      aiTaskRunIds: []
+    };
+    const applied = await this.apply(job, treeId, scope, plan, outcomes, run);
+    if (applied.status === "tree_inactive") return { ...base, status: "tree_inactive" };
+    if (applied.changeSetId && applied.generation !== undefined) {
+      await this.followChangeSet(treeId, applied.changeSetId, applied.generation);
+    }
+    const left = applied.deferred > 0 || plan.more;
+    if (left) await this.options.triggers.request(topicJobTypes.gate, treeId, scope);
+    return {
+      ...base,
+      status: "no_decider",
+      items: plan.items.length,
+      ...(applied.changeSetId ? { changeSetId: applied.changeSetId } : {}),
+      ...(applied.generation === undefined ? {} : { generation: applied.generation }),
+      fallback: applied.fallback,
+      redecided: applied.redecided,
+      stale: applied.stale,
+      deferred: applied.deferred,
+      continues: left,
+      ms: round(performance.now() - started, 1)
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Step 1: the plan
 
-  private plan(cache: TopicTreeCache, scope: TopicScope): GatePlan {
+  /**
+   * The waiting items of a scope and what describes their candidates. `ranked`: a ranker will
+   * decide, so the no-decider fallback's items are decided again too.
+   */
+  private plan(cache: TopicTreeCache, scope: TopicScope, ranked: boolean): GatePlan {
     const { state, vectors, config } = cache;
-    const all = waitingItems(state, scope);
+    const all = waitingItems(state, scope, ranked);
     const keys = all.slice(0, topicGateLimits.itemsPerJob);
     const decisions = decideWaitingItems(state, vectors, config, keys);
     const exampleCount = config.gate.descriptorExamples * topicGateLimits.examplesPerTitle;
@@ -477,6 +572,7 @@ export class TopicGateService {
         fingerprint: primary.itemFingerprint,
         rootSourceId: root ? parseItemKey(root)!.id : null,
         action: decision.kind === "gate" ? "rank" : "redecide",
+        needsGate: primary.needsGate,
         candidates,
         sourceNotes:
           entry.kind === "source" && decision.kind === "gate"
@@ -492,6 +588,7 @@ export class TopicGateService {
     return {
       generation: cache.tree.generation,
       config,
+      ranked,
       items,
       more: all.length > keys.length
     };
@@ -845,7 +942,11 @@ export class TopicGateService {
           origin: "gate",
           titleKey: "topics.changeSets.gate",
           titleParams: {
-            items: prepared.counts.accepted + prepared.counts.none + prepared.counts.redecided
+            items:
+              prepared.counts.accepted +
+              prepared.counts.none +
+              prepared.counts.redecided +
+              prepared.counts.fallback
           },
           jobId: job.id,
           aiTaskRunIds: [...new Set(run.aiTaskRunIds)].slice(0, 1_000),
@@ -854,6 +955,7 @@ export class TopicGateService {
             accepted: prepared.counts.accepted,
             none: prepared.counts.none,
             redecided: prepared.counts.redecided,
+            fallback: prepared.counts.fallback,
             stale: prepared.counts.stale,
             deferred: prepared.counts.deferred,
             calls: run.calls,
@@ -923,7 +1025,9 @@ export class TopicGateService {
       const primary = state.items.has(key) ? primaryPlacement(state, key) : undefined;
       const current =
         primary !== undefined &&
-        primary.needsGate &&
+        (outcomes.get(key)?.kind === "fallback"
+          ? primary.needsGate
+          : awaitsGateDecision(primary)) &&
         primary.itemFingerprint === planned.get(key)?.fingerprint;
       if (!current) counts.stale += 1;
       return current;
@@ -953,12 +1057,19 @@ export class TopicGateService {
       const item = planned.get(key)!;
       for (const topic of contributionTopics(state, key)) touched.add(topic);
       const primary = primaryPlacement(state, key)!;
-      if (outcome.kind === "redecide") {
+      if (outcome.kind === "fallback") {
+        const applied = applyNoDeciderFallback(context, key);
+        if (applied.kind === "stale") counts.stale += 1;
+        else if (applied.events > 0) counts.fallback += 1;
+      } else if (outcome.kind === "redecide") {
         const placed = placeItem(context, key, {
           fingerprint: primary.itemFingerprint,
           force: true
         });
-        if (placed.events > 0 && !placed.needsGate) counts.redecided += 1;
+        if (placed.needsGate && !plan.ranked) {
+          // Ambiguous again with no decider: the gate's "none" now (decision 19).
+          if (applyNoDeciderFallback(context, key).events > 0) counts.fallback += 1;
+        } else if (placed.events > 0 && !placed.needsGate) counts.redecided += 1;
         else if (placed.needsGate) counts.deferred += 1;
       } else {
         const decision = fresh.get(key);
@@ -1002,5 +1113,5 @@ export class TopicGateService {
 }
 
 function emptyCounts(): Omit<ApplyResult, "status"> {
-  return { accepted: 0, none: 0, redecided: 0, stale: 0, deferred: 0 };
+  return { accepted: 0, none: 0, redecided: 0, fallback: 0, stale: 0, deferred: 0 };
 }

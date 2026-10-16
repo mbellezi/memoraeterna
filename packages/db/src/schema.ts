@@ -3041,7 +3041,7 @@ export const topicPlacements = pgTable(
     decisionCheck: check(
       "topic_placements_decision",
       sql`${table.management} in ('ai','human')
-        and ${table.decidedBy} in ('build','auto','gate','fallback','human','rebuild')
+        and ${table.decidedBy} in ('build','auto','gate','fallback','fallback-none','human','rebuild')
         and (${table.itemFingerprint} is null or char_length(${table.itemFingerprint}) between 1 and 200)`
     )
   })

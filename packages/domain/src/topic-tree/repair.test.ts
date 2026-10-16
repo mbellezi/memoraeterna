@@ -575,6 +575,38 @@ describe("REBALANCE: mis-parent audit and direct items", () => {
     expect(checked?.movedFromTopicId).toBe(area);
   });
 
+  it("groups no-decider fallback items into a new leaf and keeps their mark (decision 19)", () => {
+    const tree = productTree(data, config, { seed: 7 });
+    const { state } = tree;
+    const area = getTopic(state, state.rootId).children.find(
+      (id) => getTopic(state, id).children.length >= 3
+    ) as string;
+    const editor = setupEditor(tree);
+    const donor = getTopic(state, area)
+      .children.filter((id) => getTopic(state, id).items.length >= 12)
+      .at(0) as string;
+    // A new topic's notes met no ranker: each is the gate's "none" at the area (fallback-none).
+    const fallback = [...getTopic(state, donor).items];
+    for (const item of fallback) {
+      editor.updatePlacement(item, 0, {
+        topicId: area,
+        decidedBy: "fallback-none",
+        needsSplitCheck: true
+      });
+    }
+    recomputeSubtree(state, tree.vectors);
+    const result = run(tree, { topics: [area], force: true });
+    expect(result.applied.map((operation) => operation.kind)).toContain("absorb-direct");
+    const homes = new Set(fallback.map((item) => placementsOf(state, item)[0]?.topicId));
+    expect(homes.has(area)).toBe(false);
+    for (const item of fallback) {
+      const primary = placementsOf(state, item)[0]!;
+      expect(getTopic(state, primary.topicId).children).toEqual([]);
+      // Grouped and shown in their leaf, still owed a ranker decision.
+      expect(primary).toMatchObject({ decidedBy: "fallback-none", needsSplitCheck: false });
+    }
+  });
+
   it("re-admits direct items below the topic when PLACE finds them a place", () => {
     const tree = productTree(data, config, { seed: 7 });
     const { state } = tree;

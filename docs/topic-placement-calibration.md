@@ -230,6 +230,23 @@ Medians over seeds 7-12 at the start values (gated and auto precision at margin 
   gated note as the gate's "none" (`needs_split_check`, movable), keeping a marker so `topic-sweep`
   re-gates it once a ranker validates. REBALANCE can then form leaves from waiting notes (the
   right outcome for new topics) instead of holding them at the root.
+- Adopted as owner decision 19 (`decided_by = fallback-none`), measured with the replay's
+  `--gate fallback` against `--gate off`, calibration seeds 7-9, adopted defaults (medians of 6
+  runs; reports in a worktree's `.cache/topics/reports/decision19`):
+
+  | Run | Gate | Unsorted | E3 max churn (median seed, chron / shuffled) | Fan-out 4-9 (min) | Leaf domain purity |
+  | --- | --- | --- | --- | --- | --- |
+  | Weekly (E3) | off | 4.4% (4.2-4.7%) | 2.1% / 2.4% | 83.9% (80.9%) | 0.885 |
+  | Weekly (E3) | fallback | 4.3% (3.9-4.8%) | 2.5% / 2.4% | 83.8% (79.9%) | 0.886 |
+  | Growth (E2) | off | 2.5% (2.2-2.7%) | - | 87.4% (85.2%) | 0.902 |
+  | Growth (E2) | fallback | 2.0% (1.6-2.3%) | - | 87.2% (84.8%) | 0.905 |
+
+  E1 holds in every run. Source-by-source growth purity (ENV-G, ENV-F) is 0.817 (off) and 0.819
+  (fallback) against 0.901 for the margin-only `baseline`; the ENV-F fixture passes 6 of 6 in all
+  three. The fallback makes gated notes movable, but REBALANCE groups few of them: in the weekly
+  replay (seed 7, chronological) 8 of 899 fallback notes reached a leaf; the rest sit on the root
+  (244) and on internal topics (647, 190 of them in piles of 8 or more on Areas, whose operations
+  are proposals), so Unsorted barely moves. Grouping them is REBALANCE's calibration, not the gate's.
 
 ### Other findings
 

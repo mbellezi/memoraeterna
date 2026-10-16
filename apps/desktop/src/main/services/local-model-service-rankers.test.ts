@@ -13,6 +13,8 @@ import {
 import type { LocalModelRecord } from "@app/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FirstRunRanker } from "./first-run-ranker.js";
+import type { FirstRunRankerAi, FirstRunRankerState } from "./first-run-ranker.js";
 import { LocalModelService } from "./local-model-service.js";
 
 /** An in-memory `local_models` table with the semantics of the repository's upsert and update. */
@@ -648,5 +650,149 @@ describe("the catalog the service synchronizes", () => {
 
     expect(views).toHaveLength(localModelCatalog.length);
     expect(views.map((view) => view.catalogId)).toEqual(expect.arrayContaining([mlxId, ggufId]));
+  });
+});
+
+describe("the first-run ranker on the install path (owner decision 19)", () => {
+  /** The AI service's routes and profile flow, in memory: an embedding route exists. */
+  function fakeAi() {
+    const profiles: Array<Record<string, unknown>> = [];
+    const ai = {
+      listTaskRoutes: vi.fn(async () => [{ task: "embedding", profileId: "p-embedding" }]),
+      listProfiles: vi.fn(async () => structuredClone(profiles)),
+      createProfile: vi.fn(async (input: Record<string, unknown>) => {
+        const profile = { id: `p-${profiles.length + 1}`, status: "active", ...input };
+        profiles.push(profile);
+        return structuredClone(profile);
+      }),
+      updateProfile: vi.fn(async (input: Record<string, unknown>) => {
+        const profile = profiles.find((candidate) => candidate.id === input.id)!;
+        Object.assign(profile, input);
+        return structuredClone(profile);
+      })
+    };
+    return { ai: ai as unknown as FirstRunRankerAi & typeof ai, profiles };
+  }
+
+  /** What a passing model test leaves in the store (no runtime is loaded). */
+  const validating = () =>
+    vi.fn(async (localModelId: string) => {
+      const record = [...store.models.values()].find((candidate) => candidate.id === localModelId)!;
+      record.metadata = {
+        ...(record.metadata as object),
+        decideValidation: await validationFor(entryOf(String(record.catalogId)))
+      };
+      return "validated";
+    });
+
+  beforeEach(() => {
+    installer.downloadLocalModel.mockImplementation(async ({ entry }) => ({
+      modelPath: `/nonexistent/memora-test/local-models/${entry.id}`,
+      sizeBytes: entry.files.reduce(
+        (total: number, file: { sizeBytes: number }) => total + file.sizeBytes,
+        0
+      )
+    }));
+    installer.verifyLocalModelFiles.mockResolvedValue(true);
+    installer.validateCatalogRankerArtifact.mockResolvedValue({ runtime: "gguf" });
+  });
+
+  it("downloads the ranker through the catalog, validates it, and gives it its profile once", async () => {
+    const { ai, profiles } = fakeAi();
+    let state: FirstRunRankerState | null = null;
+    let settling: Promise<unknown> = Promise.resolve();
+    let ranker: FirstRunRanker | null = null;
+    const testModel = validating();
+    const service = newService({
+      testModel,
+      onModelSettled: (catalogId) => {
+        settling = ranker!.onModelSettled(catalogId);
+      }
+    });
+    ranker = new FirstRunRanker({
+      models: service,
+      ai,
+      store: {
+        get: async () => state,
+        set: async (next) => {
+          state = next;
+        }
+      },
+      machine: { platform: "linux", arch: "x64" }
+    });
+
+    // The first embedding route starts it; the first run does not wait for the download.
+    await expect(ranker.ensure()).resolves.toBe("requested");
+    expect(state).toMatchObject({ catalogId: ggufId, state: "requested" });
+    await vi.waitFor(() => expect(testModel).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state).toMatchObject({ state: "ready" }));
+    await settling;
+
+    // The GGUF entry (no MLX on this machine), checked against its pins, validated for decide.
+    expect(installer.downloadLocalModel).toHaveBeenCalledTimes(1);
+    expect(installer.downloadLocalModel.mock.calls[0]![0].entry.id).toBe(ggufId);
+    expect(installer.verifyLocalModelFiles).toHaveBeenCalled();
+    expect(storedRanker(ggufId).capabilities).toContain("reranking");
+    expect(profiles).toEqual([
+      expect.objectContaining({
+        name: "Qwen3-Reranker-0.6B Q8_0 (GGUF)",
+        isDefault: false,
+        privacyMode: "offline_only",
+        localModelId: storedRanker(ggufId).id,
+        runtime: "gguf",
+        capabilities: ["reranking", "offline", "local-files"]
+      })
+    ]);
+
+    // Idempotent: later starts and seedings download nothing and create no second profile.
+    await expect(ranker.ensure()).resolves.toBe("settled_earlier");
+    ranker.onRoutesSeeded(["embedding"]);
+    await expect(ranker.ensure()).resolves.toBe("settled_earlier");
+    await expect(ranker.onModelSettled(ggufId)).resolves.toBeNull();
+    expect(installer.downloadLocalModel).toHaveBeenCalledTimes(1);
+    expect(ai.createProfile).toHaveBeenCalledTimes(1);
+    await service.shutdown();
+  });
+
+  it("never blocks the first run on a failed download, and completes once the owner resumes it", async () => {
+    installer.downloadLocalModel.mockRejectedValueOnce(new Error("errors.localModels.network"));
+    const { ai, profiles } = fakeAi();
+    let state: FirstRunRankerState | null = null;
+    let ranker: FirstRunRanker | null = null;
+    const testModel = validating();
+    const service = newService({
+      testModel,
+      logger: { warn: vi.fn(), error: vi.fn() },
+      onModelSettled: (catalogId) => void ranker!.onModelSettled(catalogId)
+    });
+    ranker = new FirstRunRanker({
+      models: service,
+      ai,
+      store: {
+        get: async () => state,
+        set: async (next) => {
+          state = next;
+        }
+      },
+      machine: { platform: "linux", arch: "x64" },
+      logger: { info: vi.fn(), warn: vi.fn() }
+    });
+
+    await expect(ranker.ensure()).resolves.toBe("requested");
+    await vi.waitFor(() => expect(state).toMatchObject({ state: "failed" }));
+    // The error shows on the model's row, where the embedding model's would.
+    expect(storedRanker(ggufId)).toMatchObject({
+      status: "failed",
+      lastError: "errors.localModels.network"
+    });
+    expect(state).toMatchObject({ catalogId: ggufId, reason: "errors.localModels.network" });
+    expect(profiles).toEqual([]);
+    expect(testModel).not.toHaveBeenCalled();
+
+    // The owner resumes it in Settings: the install validates and the profile follows.
+    await service.resume(ggufId);
+    await vi.waitFor(() => expect(state).toMatchObject({ state: "ready" }));
+    expect(profiles).toHaveLength(1);
+    await service.shutdown();
   });
 });

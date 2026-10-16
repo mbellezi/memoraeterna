@@ -2834,3 +2834,10 @@ ALTER TABLE "topic_overviews" ADD CONSTRAINT "topic_overviews_ai_task_run_id_ai_
 CREATE INDEX "topic_overview_citations_note_idx" ON "topic_overview_citations" USING btree ("note_id") WHERE "topic_overview_citations"."note_id" is not null;--> statement-breakpoint
 CREATE INDEX "topic_overview_citations_chunk_idx" ON "topic_overview_citations" USING btree ("chunk_id") WHERE "topic_overview_citations"."chunk_id" is not null;--> statement-breakpoint
 CREATE INDEX "topic_overview_citations_span_idx" ON "topic_overview_citations" USING btree ("source_span_id") WHERE "topic_overview_citations"."source_span_id" is not null;
+
+-- Owner decision 19 (F2): a gated placement that meets no validated decider is the gate's "none",
+-- recorded as `decided_by = 'fallback-none'`, so the gate decides it again once a ranker validates.
+ALTER TABLE "topic_placements" DROP CONSTRAINT "topic_placements_decision";--> statement-breakpoint
+ALTER TABLE "topic_placements" ADD CONSTRAINT "topic_placements_decision" CHECK ("topic_placements"."management" in ('ai','human')
+        and "topic_placements"."decided_by" in ('build','auto','gate','fallback','fallback-none','human','rebuild')
+        and ("topic_placements"."item_fingerprint" is null or char_length("topic_placements"."item_fingerprint") between 1 and 200));

@@ -47,6 +47,7 @@ import {
   invertEvents,
   isLive,
   itemKey,
+  noDeciderDecision,
   parseItemKey,
   primaryPlacement,
   statsDump
@@ -151,6 +152,8 @@ export interface TopicServiceCounts {
   /** Items waiting for PLACE when last counted; null before the first sweep. */
   pending: number | null;
   needsGate: number;
+  /** Items the no-decider fallback decided (`fallback-none`): a ranker decides them again. */
+  fallbackNone: number;
 }
 
 /** What `topics.status` reports (T16 maps it to the contract). */
@@ -199,6 +202,14 @@ export interface TopicTreeServiceOptions {
    * so the build that re-embeds and moves the tree runs without waiting for a sweep or a PLACE.
    */
   onSpaceChanged?: (treeId: string) => unknown;
+  /**
+   * Owner decision 19: whether a validated decider can rank gated items now (the gate's route),
+   * for `waiting` items that owe it a decision; a route that is not ready is then checked again
+   * until it is (T26f). Without one, PLACE treats a gated item as the gate's "none"
+   * (`fallback-none`); with one, the sweep sends the fallback items to the gate again. Absent (no
+   * AI service): gated items wait for a gate job.
+   */
+  deciderReady?: (waiting: number) => Promise<boolean>;
 }
 
 interface HeldJob {
@@ -214,7 +225,12 @@ export class TopicTreeService {
   private held = false;
   private readonly heldJobs = new Map<string, HeldJob>();
   private pendingCount: number | null = null;
-  private placedCounts: { treeId: string; placed: number; needsGate: number } | null = null;
+  private placedCounts: {
+    treeId: string;
+    placed: number;
+    needsGate: number;
+    fallbackNone: number;
+  } | null = null;
   private lastSpace: SpaceResolution | null = null;
   private lastSpaceAt = 0;
   /** The tree and route space the last `onSpaceChanged` call was for. */
@@ -342,7 +358,7 @@ export class TopicTreeService {
     // No job is queued here: a reset leaves an empty tree and nothing to do (a golden run refuses
     // to start over queued jobs); startup and the sweep that created it look for work themselves.
     this.options.logger?.info(`Topic tree ${tree.id} created in space ${tree.spaceKey}`);
-    this.placedCounts = { treeId: tree.id, placed: 0, needsGate: 0 };
+    this.placedCounts = { treeId: tree.id, placed: 0, needsGate: 0, fallbackNone: 0 };
     this.options.changes.record({
       treeId: tree.id,
       generation: tree.generation,
@@ -447,7 +463,10 @@ export class TopicTreeService {
           cache,
           scope,
           now: this.now().toISOString(),
-          awaitingBuild: (unplaced) => this.awaitingBuild(cache, unplaced)
+          awaitingBuild: (unplaced) => this.awaitingBuild(cache, unplaced),
+          ...(this.options.aiMode === "full" && this.options.deciderReady
+            ? { noDecider: async () => !(await this.options.deciderReady!(1)) }
+            : {})
         });
       } catch (error) {
         this.cache = null;
@@ -641,6 +660,17 @@ export class TopicTreeService {
       ).length;
       if (more) await this.options.triggers.sweep("continue", { treeId });
     }
+    // Owner decision 19: items the no-decider fallback decided go to the gate again once a
+    // validated ranker can decide them (T26f's recheck sweeps when one becomes ready).
+    const fallback = this.fallbackScopes(cache);
+    if (
+      fallback.size > 0 &&
+      this.options.aiMode === "full" &&
+      this.options.deciderReady &&
+      (await this.options.deciderReady(fallback.size))
+    ) {
+      for (const [key, scope] of fallback) gateScopes.set(key, scope);
+    }
     let gateJobs = 0;
     for (const scope of [...gateScopes.values()].sort((a, b) =>
       compareStrings(scopeKey(a), scopeKey(b))
@@ -663,8 +693,24 @@ export class TopicTreeService {
       pending,
       placeJobs,
       gateJobs,
+      fallbackScopes: fallback.size,
       continues: more
     };
+  }
+
+  /** The scopes of the items decided by the no-decider fallback (`fallback-none`), by scope key. */
+  private fallbackScopes(cache: TopicTreeCache): Map<string, TopicScope> {
+    const scopes = new Map<string, TopicScope>();
+    for (const entry of cache.state.items.values()) {
+      const primary = primaryPlacement(cache.state, entry.key);
+      if (primary?.decidedBy !== noDeciderDecision || primary.management !== "ai") continue;
+      const id = parseItemKey(entry.key)!.id;
+      const root =
+        entry.kind === "source" ? id : entry.rootSource ? parseItemKey(entry.rootSource)!.id : null;
+      const scope: TopicScope = root ? { rootSourceId: root } : { noteId: id };
+      scopes.set(scopeKey(scope), scope);
+    }
+    return scopes;
   }
 
   // -------------------------------------------------------------------------
@@ -1099,7 +1145,13 @@ export class TopicTreeService {
         generation: null,
         phase: "active",
         blocked: resolution?.kind === "blocked" ? resolution.reason : "waiting_for_embeddings",
-        counts: { items: 0, placed: 0, pending: this.pendingCount, needsGate: 0 }
+        counts: {
+          items: 0,
+          placed: 0,
+          pending: this.pendingCount,
+          needsGate: 0,
+          fallbackNone: 0
+        }
       };
     }
     const space = resolution ? compareTreeSpace(active, resolution) : null;
@@ -1147,12 +1199,15 @@ export class TopicTreeService {
 
   private counts(treeId: string): TopicServiceCounts {
     const placedCounts =
-      this.placedCounts?.treeId === treeId ? this.placedCounts : { placed: 0, needsGate: 0 };
+      this.placedCounts?.treeId === treeId
+        ? this.placedCounts
+        : { placed: 0, needsGate: 0, fallbackNone: 0 };
     return {
       items: placedCounts.placed + (this.pendingCount ?? 0),
       placed: placedCounts.placed,
       pending: this.pendingCount,
-      needsGate: placedCounts.needsGate
+      needsGate: placedCounts.needsGate,
+      fallbackNone: placedCounts.fallbackNone
     };
   }
 
@@ -1160,13 +1215,15 @@ export class TopicTreeService {
   private rememberCounts(cache: TopicTreeCache): void {
     let placed = 0;
     let needsGate = 0;
+    let fallbackNone = 0;
     for (const key of cache.state.items.keys()) {
       const primary = primaryPlacement(cache.state, key);
       if (!primary) continue;
       placed += 1;
       if (primary.needsGate) needsGate += 1;
+      if (primary.decidedBy === noDeciderDecision) fallbackNone += 1;
     }
-    this.placedCounts = { treeId: cache.tree.id, placed, needsGate };
+    this.placedCounts = { treeId: cache.tree.id, placed, needsGate, fallbackNone };
   }
 
   private adjustPending(delta: number): void {

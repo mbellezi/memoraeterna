@@ -203,7 +203,12 @@ describe("audit", () => {
     const audit = auditTopicTree(state, tree.vectors, config, { seed: 1 });
     expect(audit.reachability).toBeCloseTo(data.matrix.count / (data.matrix.count + 1), 12);
     expect(audit.unreachable.map((violation) => violation.item)).toEqual([orphan]);
-    expect(audit.flaggedItems).toEqual({ needsGate: 1, needsSplitCheck: 1, needsVector: 0 });
+    expect(audit.flaggedItems).toEqual({
+      needsGate: 1,
+      needsSplitCheck: 1,
+      needsVector: 0,
+      fallbackNone: 0
+    });
     expect(audit.recomputeTopics).toContain(leaf.id);
     expect(audit.invariants.hard).toBe(1);
     const expected = auditTopicTree(state, tree.vectors, config, {

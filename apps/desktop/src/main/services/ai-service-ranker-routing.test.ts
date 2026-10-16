@@ -297,7 +297,12 @@ function fakeRanker(runtimeBuild: string, providerId = "local-mlx") {
   };
 }
 
-function service(options: { machine?: { platform: string; arch: string } } = {}) {
+function service(
+  options: {
+    machine?: { platform: string; arch: string };
+    onRoutesSeeded?: (tasks: readonly string[]) => void;
+  } = {}
+) {
   const getContentLanguage = vi.fn(async () => "pt-BR");
   const ai = new AiService({
     userDataPath: "/tmp/ai-ranker-routing-tests",
@@ -306,7 +311,8 @@ function service(options: { machine?: { platform: string; arch: string } } = {})
     resourcesPath: "/tmp",
     isPackaged: false,
     getContentLanguage,
-    machine: options.machine ?? { platform: "darwin", arch: "arm64" }
+    machine: options.machine ?? { platform: "darwin", arch: "arm64" },
+    ...(options.onRoutesSeeded ? { onRoutesSeeded: options.onRoutesSeeded } : {})
   });
   const remote = vi.fn(
     async (request: { taskType: string; input: unknown; workloadClass?: string }) => ({
@@ -673,6 +679,17 @@ describe("seeding the class routes", () => {
     await expect(ai.decideRouteStatus()).resolves.toBe("ready");
 
     expect(db.routes.get(decideRouteKey)).toBe(ids.mlxRankerProfile);
+  });
+
+  it("tells its listener which routes a seeding created (the first-run ranker follows)", async () => {
+    addRanker("mlx");
+    const seeded: string[][] = [];
+    const { ai } = service({ onRoutesSeeded: (tasks) => seeded.push([...tasks]) });
+
+    await ai.decideRouteStatus();
+    await ai.decideRouteStatus();
+
+    expect(seeded).toEqual([expect.arrayContaining([decideRouteKey])]);
   });
 
   it("seeds class:decide with the GGUF ranker on a machine without MLX", async () => {

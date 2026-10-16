@@ -4,7 +4,9 @@
 // imports one paper through the product's IPC handlers with the default plan and waits for the
 // light lane. The AI calls run through a cassette (record, or replay with 0 misses), the topic jobs
 // are held while the import's heavy work runs (D23) and released when it completes, and no ranker
-// exists, so the placement gate falls back. Then E6 is evaluated (`assertions.ts`).
+// exists on purpose (`e2eRanker`: the product's first-run ranker install stays off), so every
+// ambiguous note takes the gate's no-decider fallback (owner decision 19). Then E6 is evaluated
+// (`assertions.ts`).
 //
 // Import this module only after `electron` resolves to the stub (`electron-stub.ts`).
 import { execFileSync } from "node:child_process";
@@ -29,6 +31,7 @@ import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import { registerIpcHandlers } from "../../ipc.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { AiService } from "../ai-service.js";
+import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker.js";
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
 import { IngestionService } from "../ingestion-service.js";
@@ -234,6 +237,7 @@ async function runPass(
   let topicServices: ReturnType<typeof createTopicTreeServices> | null = null;
   let ai: AiService | null = null;
   let localModels: LocalModelService | null = null;
+  let firstRunRanker: FirstRunRanker | null = null;
   let keep = config.keep;
   const errors: string[] = [];
   try {
@@ -282,7 +286,9 @@ async function runPass(
       getContentLanguage: async () => (await settings.getApp()).contentLanguage,
       getUiLanguage: async () => (await settings.getApp()).language,
       getKeepLocalEmbeddingModelsLoaded: async () =>
-        (await settings.getApp()).keepLocalEmbeddingModelsLoaded
+        (await settings.getApp()).keepLocalEmbeddingModelsLoaded,
+      // Wired as the product wires it; E6 keeps it off (`e2eRanker`).
+      onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks)
     });
     ai = service;
     const models = new LocalModelService({
@@ -293,9 +299,17 @@ async function runPass(
       workspaceRoot: config.repositoryRoot,
       env: {},
       isModelInUse: (id) => service.isLocalModelInUse(id),
-      testModel: (id) => service.testLocalModel(id)
+      testModel: (id) => service.testLocalModel(id),
+      onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId)
     });
     localModels = models;
+    firstRunRanker = new FirstRunRanker({
+      models,
+      ai: service,
+      store: settingsFirstRunRankerStore(() => db),
+      enabled: config.ranker !== "none",
+      logger: quietLogger
+    });
     const prompts = new PromptService({ getPool: () => db });
     const topics = createTopicTreeServices({
       getPool: () => db,
@@ -413,7 +427,9 @@ async function runPass(
     // 1. First run: the Settings handlers configure the writer and the embedding model.
     ipc.phase("setup");
     const seeded = await seedFirstRun({ ipc, pool: db, route, apiKey });
-    log("seeded", { routes: seeded.routes });
+    // The product's first run would install the ranker now; E6 keeps it off (`e2eRanker`).
+    const firstRun = await firstRunRanker.ensure();
+    log("seeded", { routes: seeded.routes, firstRunRanker: firstRun });
 
     // 2. The user: import the paper and wait. No Settings handler may be called from here on.
     ipc.phase("user");
@@ -507,7 +523,8 @@ async function runPass(
       stoppedBy,
       errors,
       engine,
-      recorded: recorded ? recorded.result : null
+      recorded: recorded ? recorded.result : null,
+      ranker: { setting: config.ranker, firstRun }
     };
     const report = evaluateE6(store, facts);
     const markdown = renderE6Markdown(report, store);

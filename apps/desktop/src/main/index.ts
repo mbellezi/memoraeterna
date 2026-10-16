@@ -46,6 +46,7 @@ import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
 import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import { IntegrationGateway } from "./services/integration-gateway.js";
+import { FirstRunRanker, settingsFirstRunRankerStore } from "./services/first-run-ranker.js";
 import { runLocalModelInstallStartup } from "./services/local-model-install-startup.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
@@ -165,6 +166,7 @@ let knowledgeService: KnowledgeService | null = null;
 let obsidianSyncService: ObsidianSyncService | null = null;
 let integrationGateway: IntegrationGateway | null = null;
 let localModelService: LocalModelService | null = null;
+let firstRunRanker: FirstRunRanker | null = null;
 let backupService: BackupService | null = null;
 let libraryResetService: LibraryResetService | null = null;
 let similarityDebugService: SimilarityDebugService | null = null;
@@ -243,7 +245,9 @@ void app.whenReady().then(() => {
       for (const contents of webContents.getAllWebContents()) {
         if (!contents.isDestroyed()) contents.send(ipcChannels.aiLocalEmbeddingLoadStatus, payload);
       }
-    }
+    },
+    // Owner decision 19: the library's first embedding route installs the local ranker.
+    onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks)
   });
   localModelService = new LocalModelService({
     getPool: () => databaseService?.getPool() ?? null,
@@ -252,7 +256,18 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     workspaceRoot,
     isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
-    testModel: (localModelId) => aiService!.testLocalModel(localModelId)
+    testModel: (localModelId) => aiService!.testLocalModel(localModelId),
+    onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId)
+  });
+  // Owner decision 19: the first run installs the local ranker next to the embedding model, so the
+  // topic gate has a decider from the start. Golden runs and DEV AI cassettes pin their own routes
+  // and never download a model.
+  firstRunRanker = new FirstRunRanker({
+    models: localModelService,
+    ai: aiService,
+    store: settingsFirstRunRankerStore(() => databaseService?.getPool() ?? null),
+    enabled: !process.env.MEMORA_GOLDEN_RUN && aiCassette === null,
+    logger: console
   });
   backupService = new BackupService({
     getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
@@ -599,18 +614,22 @@ void app.whenReady().then(() => {
           // models are started, installs the named catalog models from the seed folder and gives them
           // a profile, so `class:decide` routes to a ranker. It never throws, and the golden run and
           // the pilots below wait for it. Refused (logged, ignored) when packaged.
-          localModelService?.start().then(() =>
-            localModelService && aiService
-              ? runLocalModelInstallStartup({
-                  env: process.env,
-                  isPackaged: app.isPackaged,
-                  workspaceRoot,
-                  models: localModelService,
-                  ai: aiService,
-                  logger: console
-                })
-              : undefined
-          ),
+          localModelService
+            ?.start()
+            .then(() =>
+              localModelService && aiService
+                ? runLocalModelInstallStartup({
+                    env: process.env,
+                    isPackaged: app.isPackaged,
+                    workspaceRoot,
+                    models: localModelService,
+                    ai: aiService,
+                    logger: console
+                  })
+                : undefined
+            )
+            // Decision 19: finishes a first-run ranker an earlier start left (never throws).
+            .then(() => firstRunRanker?.ensure()),
           verdictOnly ? undefined : jobSupervisor?.start(),
           verdictOnly ? undefined : integrationGateway?.start(),
           verdictOnly ? undefined : obsidianSyncService?.reconcileVault()

@@ -10,7 +10,10 @@
 //   and a ranker run exist), so a gated item is resolved by one of two stand-ins, each through
 //   T07 `applyGateResolution`: `baseline` accepts the best-scoring candidate (the margin-only
 //   baseline that gate precision is reported against, D19, and what the reference engine does with
-//   ambiguous items); `off` leaves it waiting at the fallback ancestor (no validated ranker).
+//   ambiguous items); `off` leaves it waiting at the fallback ancestor (no validated ranker, D10
+//   before owner decision 19); `fallback` is decision 19's no-decider rule, as the product applies
+//   it (`applyNoDeciderFallback`): the gate's "none", a movable new-topic candidate REBALANCE may
+//   group into a new leaf.
 // - REBALANCE: T08 `rebalanceTree` on the topics PLACE touched plus the checks it deferred
 //   (cooldown, freeze, budget, unresolved hard violations), with its stability controls: acceptance
 //   dQ - lambda * churn > 0, per-topic cooldown, the freeze on the "recently viewed" set (its items
@@ -41,6 +44,7 @@ import { createHash } from "node:crypto";
 
 import {
   applyGateResolution,
+  applyNoDeciderFallback,
   applyRebuild,
   areasActive,
   auditTopicTree,
@@ -113,7 +117,7 @@ import type {
   ReplayGate
 } from "./reference-engine.js";
 
-export const replayGates: readonly ReplayGate[] = ["baseline", "off"];
+export const replayGates: readonly ReplayGate[] = ["baseline", "off", "fallback"];
 
 export interface RealEngineOptions {
   /** How gated items are resolved in the replay (see the file header). Default `baseline`. */
@@ -517,7 +521,11 @@ class RealEngine implements ReplayEngine {
   }
 
   private resolveGate(context: PlacementContext, item: ItemKey, decision: PlacementDecision): void {
-    if (decision.kind !== "gate" || this.gate !== "baseline") return;
+    if (decision.kind !== "gate" || this.gate === "off") return;
+    if (this.gate === "fallback") {
+      applyNoDeciderFallback(context, item);
+      return;
+    }
     const resolution: GateResolution = {
       kind: "accept",
       topicId: decision.best.topicId,

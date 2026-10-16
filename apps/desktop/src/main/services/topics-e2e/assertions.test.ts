@@ -26,7 +26,8 @@ function store(overrides: Partial<StoreFacts> = {}): StoreFacts {
       topic({ id: "t2", title: "Sono", notes: 20 }),
       topic({ id: "t3", title: "Teste", notes: 22 })
     ],
-    root: { directNotes: 0, needsGate: 0, needsVector: 0 },
+    root: { directNotes: 0, needsGate: 0, needsVector: 0, fallbackNone: 0 },
+    fallback: { notes: 0, waitingNotes: 0, decisions: 0 },
     e1: {
       items: 64,
       reachable: 64,
@@ -90,6 +91,7 @@ function run(overrides: Partial<RunFacts> = {}): RunFacts {
       counts: { items: 64, placed: 64, pending: 0, needsGate: 0 }
     },
     recorded: { notes: 63, topics: 3 },
+    ranker: { setting: "none", firstRun: "disabled" },
     ...overrides
   };
 }
@@ -109,6 +111,7 @@ describe("the E6 verdict", () => {
       "names",
       "unnamed",
       "e1",
+      "fallback",
       "cassette",
       "replay",
       "lane"
@@ -329,21 +332,42 @@ describe("the E6 verdict", () => {
   });
 
   it("reports the share of notes left at the root and the time to named topics", () => {
-    const report = evaluateE6(
-      store({ root: { directNotes: 9, needsGate: 7, needsVector: 0 } }),
-      run()
-    );
-    expect(report.reported).toMatchObject({ rootDirectNotes: 9, rootNeedsGate: 7 });
-    const markdown = renderE6Markdown(
-      report,
-      store({ root: { directNotes: 9, needsGate: 7, needsVector: 0 } })
-    );
+    const fallback = store({
+      root: { directNotes: 9, needsGate: 0, needsVector: 0, fallbackNone: 7 },
+      fallback: { notes: 12, waitingNotes: 0, decisions: 14 }
+    });
+    const report = evaluateE6(fallback, run());
+    expect(report.reported).toMatchObject({
+      rootDirectNotes: 9,
+      rootNeedsGate: 0,
+      rootFallbackNotes: 7,
+      fallbackNotes: 12,
+      fallbackDecisions: 14,
+      ranker: { setting: "none", firstRun: "disabled" }
+    });
+    const markdown = renderE6Markdown(report, fallback);
     expect(markdown).toContain("# Zero-config end-to-end test (E6): PASSED");
-    expect(markdown).toContain("9 (7 waiting for the gate), 14.3% of the notes");
+    expect(markdown).toContain(
+      "9 (7 from the fallback, 0 waiting for the gate), 14.3% of the notes"
+    );
+    expect(markdown).toContain(
+      "Ranker: none (first-run install disabled): the no-decider fallback decided 14 items; 12 notes"
+    );
     expect(markdown).toContain("Import start to named topics 4:30");
     expect(markdown).toContain("| Esquecimento e memória | llm | pt-BR | 21 |");
     expect(markdown).toContain("Handlers wrapped: 57 Settings, 56 product.");
     expect(markdown).toContain("Engine status: active (no_decider), 64 of 64 items placed");
+  });
+
+  it("fails when a note waits for the gate without a ranker (decision 19)", () => {
+    const report = evaluateE6(
+      store({ fallback: { notes: 3, waitingNotes: 2, decisions: 3 } }),
+      run()
+    );
+    expect(failing(report.checks)).toEqual(["fallback"]);
+    expect(report.checks.find((entry) => entry.id === "fallback")?.detail).toContain(
+      "2 notes wait with needs_gate"
+    );
   });
 
   it("does not know the time to named topics when nothing was named", () => {

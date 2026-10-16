@@ -225,10 +225,11 @@ export const WeeklyReportSchema = z
     /**
      * How gated items were resolved: `baseline` takes the best-scoring candidate (the margin-only
      * baseline, D19; the reference engine's behaviour), `off` leaves them at the fallback ancestor
-     * (the fallback sensitivity run of E3). Serving the gate from the score cache joins the loop
-     * with the T07 gate rule and the T23 descriptors.
+     * (the fallback sensitivity run of E3), `fallback` gives them the gate's "none" (owner decision
+     * 19's no-decider rule). Serving the gate from the score cache joins the loop with the T07 gate
+     * rule and the T23 descriptors.
      */
-    gate: z.enum(["baseline", "off"]),
+    gate: z.enum(["baseline", "off", "fallback"]),
     schedule: z
       .object({
         baseRows: count,

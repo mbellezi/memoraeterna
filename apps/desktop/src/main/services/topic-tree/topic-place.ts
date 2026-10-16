@@ -2,7 +2,10 @@
 // without a root. It reads what changed (unplaced or re-embedded notes, notes that stopped being
 // current, the root's D8 vector), decides each item with the pure engine in content-key order
 // (D22) and returns the events and exact statistics of one change-set; the service commits them.
-// Placement never waits for AI (D10): an ambiguous item waits at an ancestor with `needs_gate`.
+// Placement never waits for AI (D10): an ambiguous item waits at an ancestor with `needs_gate`
+// for the `topic-gate` job, or, when no validated decider exists, is the gate's "none" at once
+// (owner decision 19, `applyNoDeciderFallback`): a new-topic candidate REBALANCE may group, marked
+// `fallback-none` so the gate decides it again once a ranker validates.
 import { createTopicTreeLoadRepository, topicStatsWrites } from "@app/db";
 import type {
   PgPool,
@@ -12,6 +15,7 @@ import type {
   TopicStatsWrite
 } from "@app/db";
 import {
+  applyNoDeciderFallback,
   compareContentKeys,
   createTopicTreeEditor,
   dot,
@@ -51,6 +55,8 @@ export interface PlaceSummary {
   unplaced: number;
   needsGate: number;
   needsVector: number;
+  /** Gated items that met no validated decider: the gate's "none" (`fallback-none`, decision 19). */
+  fallbackNone: number;
 }
 
 export type PlacePreparation =
@@ -80,6 +86,11 @@ export interface PlaceRunInput {
    * unplaced (`unplaced`: this scope's): item-by-item PLACE then waits for the build (D39).
    */
   awaitingBuild: (unplaced: number) => Promise<boolean>;
+  /**
+   * Asked only when this run gated an item: true when no validated decider can rank it, so it is
+   * the gate's "none" at once (owner decision 19). Absent: gated items wait for the gate job.
+   */
+  noDecider?: () => Promise<boolean>;
 }
 
 /** Reasons that need a PLACE decision (the gate reasons wait for the `topic-gate` job). */
@@ -94,7 +105,8 @@ export function emptyPlaceSummary(): PlaceSummary {
     protected: 0,
     unplaced: 0,
     needsGate: 0,
-    needsVector: 0
+    needsVector: 0,
+    fallbackNone: 0
   };
 }
 
@@ -260,6 +272,7 @@ export async function preparePlacement(input: PlaceRunInput): Promise<PlacePrepa
         { key: b, contentHash: y.info.contentHash }
       )
     );
+  const gated: ItemKey[] = [];
   for (const [key, note] of notes) {
     register(state, key, note.info);
     if (note.vector) vectors.set(key, note.vector);
@@ -267,6 +280,7 @@ export async function preparePlacement(input: PlaceRunInput): Promise<PlacePrepa
       fingerprint: note.vector ? note.info.contentHash : null
     });
     if (outcome.kind === "placed") state.clock += 1;
+    if (outcome.needsGate) gated.push(key);
     count(summary, outcome, state, key);
   }
 
@@ -307,9 +321,19 @@ export async function preparePlacement(input: PlaceRunInput): Promise<PlacePrepa
       if (outcome.kind === "placed") state.clock += 1;
       if (vector.vector && outcome.events > 0)
         cache.placedRootVectors.set(key, vector.vector.slice());
+      if (outcome.needsGate) gated.push(key);
       count(summary, outcome, state, key);
     } else {
       summary.unchanged += 1;
+    }
+  }
+
+  // Owner decision 19: with no validated decider, the gated items are the gate's "none" now.
+  if (gated.length > 0 && input.noDecider && (await input.noDecider())) {
+    for (const key of gated) {
+      if (applyNoDeciderFallback(context, key).events === 0) continue;
+      summary.needsGate -= 1;
+      summary.fallbackNone += 1;
     }
   }
 

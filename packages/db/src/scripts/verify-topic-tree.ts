@@ -610,6 +610,26 @@ try {
           )
       );
     await guard.query("rollback");
+    // Migration 0055 (owner decision 19): the no-decider fallback's decision is accepted, an
+    // unknown one is still refused.
+    await guard.query("begin");
+    const fallback = await guard.query(
+      /* D9 guard probe */ `update topic_placements set decided_by = 'fallback-none', needs_split_check = true
+        where tree_id = $1 and note_id = $2 and rank = 0`,
+      [tree.id, note]
+    );
+    assert.equal(fallback.rowCount, 1, "0055 accepts decided_by = fallback-none");
+    await guard
+      .query(
+        /* D9 guard probe */ `update topic_placements set decided_by = 'ranker' where tree_id = $1 and note_id = $2 and rank = 0`,
+        [tree.id, note]
+      )
+      .then(
+        () => assert.fail("an unknown decision must be refused"),
+        (error: { constraint?: string }) =>
+          assert.equal(error.constraint, "topic_placements_decision")
+      );
+    await guard.query("rollback");
   } finally {
     guard.release();
   }

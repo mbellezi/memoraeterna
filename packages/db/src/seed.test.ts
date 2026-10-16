@@ -101,7 +101,8 @@ describe("baseline seed", () => {
       "0051_job_lanes",
       "0052_legacy_detach",
       "0053_topic_tree",
-      "0054_topic_overviews"
+      "0054_topic_overviews",
+      "0055_placement_fallback_none"
     ]);
   });
 
@@ -174,7 +175,8 @@ describe("baseline seed", () => {
         "0051_job_lanes",
         "0052_legacy_detach",
         "0053_topic_tree",
-        "0054_topic_overviews"
+        "0054_topic_overviews",
+        "0055_placement_fallback_none"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

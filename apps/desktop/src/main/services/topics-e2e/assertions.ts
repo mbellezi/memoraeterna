@@ -34,6 +34,8 @@ export interface RunFacts {
   engine: TopicsStatus | null;
   /** Notes and topics the recording produced; a replay must produce the same. */
   recorded: { notes: number; topics: number } | null;
+  /** E6 runs without a ranker (`e2eRanker`); what the first-run ranker did (`disabled`). */
+  ranker: { setting: "none"; firstRun: string };
 }
 
 export interface E6Check {
@@ -45,6 +47,7 @@ export interface E6Check {
     | "names"
     | "unnamed"
     | "e1"
+    | "fallback"
     | "cassette"
     | "replay"
     | "lane";
@@ -68,6 +71,12 @@ export interface E6Report {
     topicsWithNotes: number;
     rootDirectNotes: number;
     rootNeedsGate: number;
+    /** Owner decision 19: notes at the root the no-decider fallback decided (new-topic candidates). */
+    rootFallbackNotes: number;
+    /** Current notes the fallback decided, wherever REBALANCE moved them, and its decisions. */
+    fallbackNotes: number;
+    fallbackDecisions: number;
+    ranker: RunFacts["ranker"];
     /** D27: notes at the root or waiting at an internal topic, over the expected items. */
     unsortedShare: number;
     needsVectorItems: number;
@@ -184,6 +193,16 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
           (e1.hardReasons.length > 0 ? ` (${e1.hardReasons.slice(0, 3).join("; ")})` : "")
       : "the tree could not be read"
   );
+  // Owner decision 19: without a ranker no note waits for the gate; every ambiguous one took the
+  // no-decider fallback (the gate's "none"), a new-topic candidate REBALANCE may group.
+  check(
+    "fallback",
+    "No note waits for the gate without a ranker (decision 19: the no-decider fallback)",
+    store.fallback.waitingNotes === 0,
+    `${store.fallback.waitingNotes} notes wait with needs_gate; ${store.fallback.decisions} items ` +
+      `took the fallback, ${store.fallback.notes} notes still owe a ranker decision ` +
+      `(${store.root.fallbackNone} at the root)`
+  );
   const cassette = run.cassette;
   check(
     "cassette",
@@ -247,6 +266,10 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
       topicsWithNotes: withNotes.length,
       rootDirectNotes: store.root.directNotes,
       rootNeedsGate: store.root.needsGate,
+      rootFallbackNotes: store.root.fallbackNone,
+      fallbackNotes: store.fallback.notes,
+      fallbackDecisions: store.fallback.decisions,
+      ranker: run.ranker,
       unsortedShare: e1?.unsortedShare ?? 0,
       needsVectorItems: e1?.needsVectorItems ?? 0,
       failedWork,
@@ -281,8 +304,11 @@ export function renderE6Markdown(report: E6Report, store: StoreFacts): string {
     "## Reported",
     "",
     `- Notes ${r.notes}; non-root topics ${r.nonRootTopics}, ${r.topicsWithNotes} hold notes.`,
-    `- Notes left at the root (Unsorted, \`needs_gate\` without a ranker): ${r.rootDirectNotes} ` +
-      `(${r.rootNeedsGate} waiting for the gate), ${share(r.rootDirectNotes / Math.max(1, r.notes))} of the notes; ` +
+    `- Ranker: ${r.ranker.setting} (first-run install ${r.ranker.firstRun}): the no-decider fallback ` +
+      `decided ${r.fallbackDecisions} items; ${r.fallbackNotes} notes still owe a ranker decision.`,
+    `- Notes left at the root (Unsorted: fallback new-topic candidates REBALANCE did not group, ` +
+      `unadmitted notes): ${r.rootDirectNotes} (${r.rootFallbackNotes} from the fallback, ` +
+      `${r.rootNeedsGate} waiting for the gate), ${share(r.rootDirectNotes / Math.max(1, r.notes))} of the notes; ` +
       `Unsorted share (D27, notes and root sources) ${share(r.unsortedShare)}; \`needs_vector\` items ${r.needsVectorItems}.`,
     `- Failed ingestion work outside the topics: ${r.failedWork.length > 0 ? r.failedWork.join("; ") : "none"}.`,
     `- Import start to named topics ${formatDuration(r.importToNamedMs)}; to the end of the heavy work ` +

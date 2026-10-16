@@ -56,6 +56,11 @@ export interface LocalModelServiceOptions {
   workspaceRoot?: string;
   /** Environment the DEV seed folder is read from; defaults to `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Called (never awaited, never thrown into) once a download settled (installed, and a ranker
+   * validated, or failed) and after a ranker's test: the first-run ranker finishes on it.
+   */
+  onModelSettled?: (catalogId: string) => void;
 }
 
 const repositoryTokenSettingKey = "local-models.repository-token-ref";
@@ -254,7 +259,10 @@ export class LocalModelService {
     } finally {
       // A ranker's test records or voids its decide validation, which the sync turns into the
       // `reranking` capability (or takes it away).
-      if (entry && isRankerCatalogEntry(entry)) await this.syncCatalog();
+      if (entry && isRankerCatalogEntry(entry)) {
+        await this.syncCatalog();
+        this.settledModel(catalogId);
+      }
     }
   }
 
@@ -600,6 +608,15 @@ export class LocalModelService {
       this.controllers.delete(catalogId);
     }
     if (installed && isRankerCatalogEntry(entry)) await this.validateInstalledRanker(model.id);
+    this.settledModel(catalogId);
+  }
+
+  private settledModel(catalogId: string): void {
+    try {
+      this.options.onModelSettled?.(catalogId);
+    } catch (error) {
+      this.options.logger?.warn(redactSensitiveText(error));
+    }
   }
 
   /**

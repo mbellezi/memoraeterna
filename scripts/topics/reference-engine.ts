@@ -130,7 +130,8 @@ export interface PlaceOptions {
  * How an engine treats an item PLACE sends to the gate: `baseline` takes the best-scoring
  * candidate (the margin-only baseline, D19), `off` leaves it waiting at the fallback ancestor.
  */
-export type ReplayGate = "baseline" | "off";
+/** How gated items are resolved in a replay (real-engine.ts: baseline, off, fallback). */
+export type ReplayGate = "baseline" | "off" | "fallback";
 
 /** What the replay loop needs from an engine. */
 export interface ReplayEngine {

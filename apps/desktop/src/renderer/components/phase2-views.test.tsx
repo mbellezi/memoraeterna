@@ -39,6 +39,7 @@ import {
   LocalModelDefaults,
   localModelPurposes,
   LocalModelsView,
+  rankerNoteKey,
   recommendedParametersForCurrentMode
 } from "./LocalModelsView";
 import { BackupView } from "./BackupView";
@@ -1138,6 +1139,18 @@ describe("phase 2 renderer views", () => {
     expect(
       [generative, embedding, validatedRanker, pendingRanker].map((m) => isRankerModel(m as never))
     ).toEqual([false, false, true, true]);
+  });
+
+  it("tells a ranker's row what topic placement does until the ranker is validated", () => {
+    const ranker = (status: string, capabilities = ["offline", "local-files"]) =>
+      ({ status, capabilities }) as never;
+    expect(rankerNoteKey(ranker("downloading"))).toBe("localModels.rankerInstalling");
+    expect(rankerNoteKey(ranker("verifying"))).toBe("localModels.rankerInstalling");
+    expect(rankerNoteKey(ranker("failed"))).toBe("localModels.rankerFallback");
+    expect(rankerNoteKey(ranker("ready"))).toBe("localModels.rankerPending");
+    expect(rankerNoteKey(ranker("ready", ["reranking", "offline"]))).toBeNull();
+    expect(rankerNoteKey(ranker("not_downloaded"))).toBeNull();
+    expect(t("localModels.rankerFallback")).toContain("start new topics");
   });
 
   it("offers the reranking purpose filter", () => {

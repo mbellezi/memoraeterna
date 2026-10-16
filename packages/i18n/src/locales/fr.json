@@ -1399,6 +1399,8 @@
     "removeConfirmation": "Supprimer ce modele et ses fichiers geres de cette machine ?",
     "testSucceeded": "Inference locale reussie.",
     "rankerPending": "Lancez le test pour valider ce reranker pour les décisions.",
+    "rankerInstalling": "Ce reranker place les notes qui conviennent à plusieurs sujets. Tant qu’il n’est pas prêt, ces notes ouvrent de nouveaux sujets et sont placées à nouveau ensuite.",
+    "rankerFallback": "Sans reranker validé, les notes qui conviennent à plusieurs sujets ouvrent de nouveaux sujets. Elles sont placées à nouveau dès qu’un reranker est prêt.",
     "defaultParameters": "Parametres par defaut du modele",
     "filters": {
       "runtime": "Runtime",
@@ -1819,7 +1821,7 @@
         "no_embedding_route": "Les sujets attendent un modèle d’embedding. Choisissez-en un dans Paramètres.",
         "space_changed": "Le modèle d’embedding a changé. Les sujets reprennent une fois les embeddings de vos notes refaits.",
         "waiting_for_embeddings": "Les notes sont encore en préparation. Les sujets suivent à mesure qu’elles se terminent.",
-        "no_decider": "Les notes difficiles à placer attendent qu’un modèle de reranking soit prêt."
+        "no_decider": "Aucun modèle de reranking n’est encore prêt : les notes difficiles à placer ouvrent de nouveaux sujets et sont placées à nouveau dès qu’il y en a un."
       },
       "dailyCap": "Le nommage des nouveaux sujets est suspendu pour aujourd’hui. Les nouveaux sujets gardent des noms provisoires jusqu’à demain.",
       "reembed": "Refaire les embeddings de la bibliothèque",

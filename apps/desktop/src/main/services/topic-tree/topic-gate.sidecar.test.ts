@@ -53,8 +53,9 @@ import { immediateDebounce } from "./topic-triggers.js";
  * an ambiguous note with `needs_gate`, the `topic-gate` job ranks its candidate leaves on a fake
  * validated ranker routed as `class:decide`, applies the D10 rule as one `gate` change-set and
  * records the decision with its raw log-odds. Also: "none of these", the decision cache, no
- * validated route (and its recovery), the deterministic golden mode, an item that is no longer
- * ambiguous, and a tree that moves while the ranker runs.
+ * validated route (owner decision 19's fallback in PLACE and in the gate job, REBALANCE grouping
+ * fallback notes, and a ranker deciding them again once ready), the deterministic golden mode, an
+ * item that is no longer ambiguous, and a tree that moves while the ranker runs.
  */
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const sidecarPaths = resolvePostgresSidecarPaths({ cwd: workspaceRoot, env: process.env });
@@ -788,25 +789,49 @@ describe.skipIf(!sidecarAvailable)("the placement gate on the PostgreSQL sidecar
     }
   }, 60_000);
 
-  it("waits without a validated ranker, reports no_decider, and resumes once one is ready", async () => {
+  it("treats a gated note as the gate's none without a validated ranker, and decides it again once one is ready", async () => {
     const w = await world();
     try {
+      // Owner decision 19: PLACE finds no validated decider, so the ambiguous note and its root
+      // source are the gate's "none" at once: movable new-topic candidates, marked fallback-none.
       w.route.status = "not_validated";
       const note = await ambiguousNote(w);
-      const job = await finished(await runDue(w, "topic-gate", "model"));
-      expect(job.result).toMatchObject({ status: "no_decider", route: "not_validated" });
+      expect(await placements(note.id)).toMatchObject([
+        { topicId: w.topics.A, needsGate: false, needsSplitCheck: true, decidedBy: "fallback-none" }
+      ]);
+      expect(await sourcePlacement(note.source)).toMatchObject({
+        topicId: w.topics.A,
+        decidedBy: "fallback-none",
+        needsGate: false
+      });
+      expect(await queued("topic-gate")).toBe(0);
       expect(w.ranks).toHaveLength(0);
-      expect(await placements(note.id)).toMatchObject([{ topicId: w.topics.A, needsGate: true }]);
+      const placeSet = await pool.query<{ summary: Record<string, unknown> }>(
+        "select summary from topic_change_sets where tree_id = $1 and origin = 'place'",
+        [w.treeId]
+      );
+      expect(placeSet.rows).toEqual([
+        { summary: expect.objectContaining({ needsGate: 0, fallbackNone: 2 }) }
+      ]);
 
       const status = await w.services.service.status();
-      expect(status.counts.needsGate).toBe(2);
-      const noDecider = await w.services.gate!.waitingForDecider(status.counts.needsGate);
+      expect(status.counts).toMatchObject({ needsGate: 0, fallbackNone: 2 });
+      const noDecider = await w.services.gate!.waitingForDecider(
+        status.counts.needsGate + status.counts.fallbackNone
+      );
       expect(engineStatusOf(status, noDecider)).toMatchObject({ blocked: "no_decider" });
 
+      // A sweep while no ranker is ready sends nothing to the gate.
+      await w.services.triggers.sweep("requested", {
+        treeId: w.treeId,
+        debounce: immediateDebounce
+      });
+      const idle = await finished(await runDue(w, "topic-sweep", "compute"));
+      expect(idle.result).toMatchObject({ gateJobs: 0, fallbackScopes: 1 });
+
       // A ranker becomes ready: the next committed change (after the recheck interval) asks the
-      // sweep to enqueue the waiting scopes, and the gate places the note.
+      // sweep to send the fallback items to the gate, which decides them again (T26f).
       w.route.status = "ready";
-      expect(await w.services.gate!.waitingForDecider(1)).toBe(false);
       w.clock.now += topicGateLimits.routeRecheckMs + 1;
       w.services.changes.record({
         treeId: w.treeId,
@@ -819,13 +844,165 @@ describe.skipIf(!sidecarAvailable)("the placement gate on the PostgreSQL sidecar
         await new Promise((done) => setTimeout(done, 20));
       }
       expect(await queued("topic-sweep")).toBe(1);
-      await runDue(w, "topic-sweep", "compute");
+      const sweep = await finished(await runDue(w, "topic-sweep", "compute"));
+      expect(sweep.result).toMatchObject({ gateJobs: 1, fallbackScopes: 1 });
       const gate = await finished(await runDue(w, "topic-gate", "model"));
-      expect(gate.result).toMatchObject({ status: "applied", accepted: 2 });
+      expect(gate.result).toMatchObject({ status: "applied", accepted: 2, calls: 2 });
       expect((await placements(note.id))[0]).toMatchObject({
         topicId: w.topics.A1,
-        needsGate: false
+        decidedBy: "gate",
+        needsGate: false,
+        needsSplitCheck: false
       });
+      const left = await pool.query<{ count: string }>(
+        "select count(*) from topic_placements where tree_id = $1 and decided_by = 'fallback-none'",
+        [w.treeId]
+      );
+      expect(Number(left.rows[0]!.count)).toBe(0);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("gives items already waiting with needs_gate the fallback when the gate job finds no ranker", async () => {
+    let waitingNote = "";
+    let waitingSource = "";
+    const w = await world({
+      seed: async (seed) => {
+        waitingSource = await insertSource("Waiting article");
+        const vector = vectorOn([0, 1], 999);
+        const note = await insertNote(
+          waitingSource,
+          0,
+          { title: "Sleep and recall", idea: "Sleep helps recall.", body: "Sleep and recall." },
+          vector
+        );
+        waitingNote = note.id;
+        const key = itemKey("note", note.id);
+        registerItem(seed.state, {
+          key,
+          kind: "note",
+          contentHash: note.hash,
+          rootSource: itemKey("source", waitingSource)
+        });
+        seed.store.set(key, vector);
+        // Gated while a ranker was routed; the ranker is gone since.
+        seed.editor.placeItem(
+          key,
+          placementRecord([...seed.state.topics.values()].find((n) => n.title === "Memory")!.id, {
+            decidedBy: "fallback",
+            itemFingerprint: note.hash,
+            needsGate: true
+          })
+        );
+      }
+    });
+    try {
+      w.route.status = "missing";
+      await w.services.triggers.request(
+        "topic-gate",
+        w.treeId,
+        { rootSourceId: waitingSource },
+        { debounce: immediateDebounce }
+      );
+      const job = await finished(await runDue(w, "topic-gate", "model"));
+      expect(job.result).toMatchObject({ status: "no_decider", route: "missing", fallback: 1 });
+      expect(w.ranks).toHaveLength(0);
+      expect(await placements(waitingNote)).toMatchObject([
+        { topicId: w.topics.A, decidedBy: "fallback-none", needsGate: false, needsSplitCheck: true }
+      ]);
+      const gateSet = await pool.query<{ summary: Record<string, unknown> }>(
+        "select summary from topic_change_sets where tree_id = $1 and origin = 'gate'",
+        [w.treeId]
+      );
+      expect(gateSet.rows).toEqual([
+        { summary: expect.objectContaining({ fallback: 1, accepted: 0, calls: 0 }) }
+      ]);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("lets REBALANCE group fallback notes into a new leaf, where a ranker decides them again", async () => {
+    // Fuller leaves, so that no arriving note pulls a leaf's centroid towards the next ones.
+    const w = await world({
+      seed: async (seed) => {
+        await fillTopic(seed, "Sleep", 0, 6);
+        await fillTopic(seed, "Retrieval practice", 1, 6);
+      }
+    });
+    try {
+      w.route.status = "not_validated";
+      const source = await insertSource("Article Sleep before exams");
+      const ids: string[] = [];
+      const arriving = config.repair.directItemsSplitAt + 1;
+      for (let index = 0; index < arriving; index += 1) {
+        const title = `Sleep before an exam ${index}`;
+        const note = await insertNote(
+          source,
+          index,
+          { title, idea: `${title} helps recall.`, body: `${title}. A longer passage.` },
+          vectorOn([0, 1], 700 + index, 0.005)
+        );
+        ids.push(note.id);
+      }
+      await w.services.triggers.notesChanged(ids);
+      const place = await finished(await runDue(w, "topic-place", "compute"));
+      expect(place.result).toMatchObject({ status: "applied", needsGate: 0 });
+      expect(place.result.fallbackNone).toBe(arriving + 1);
+      for (const id of ids) {
+        expect(await placements(id)).toMatchObject([
+          { topicId: w.topics.A, decidedBy: "fallback-none", needsSplitCheck: true }
+        ]);
+      }
+
+      // REBALANCE groups the new-topic candidates into a new leaf below Memory.
+      const drained = await drainCompute(w);
+      expect(resultsOf(drained, "topic-rebalance")).toContainEqual(
+        expect.objectContaining({ status: "applied" })
+      );
+      const homes = new Set<string>();
+      for (const id of ids) {
+        const [primary] = await placements(id);
+        expect(primary).toMatchObject({ decidedBy: "fallback-none", needsSplitCheck: false });
+        homes.add(primary!.topicId);
+      }
+      expect(homes.size).toBe(1);
+      const [leaf] = [...homes];
+      expect([w.topics.A, w.topics.A1, w.topics.A2]).not.toContain(leaf);
+      const parent = await pool.query<{ parentId: string }>(
+        'select parent_id as "parentId" from topics where id = $1',
+        [leaf]
+      );
+      expect(parent.rows[0]?.parentId).toBe(w.topics.A);
+      expect(await storedHardViolations(w)).toBe(0);
+
+      // A ranker is validated: the sweep sends the fallback items to the gate, which decides
+      // them again where REBALANCE put them, and nothing is marked fallback-none afterwards.
+      w.route.status = "ready";
+      await w.services.triggers.sweep("requested", {
+        treeId: w.treeId,
+        debounce: immediateDebounce
+      });
+      const sweep = await finished(await runDue(w, "topic-sweep", "compute"));
+      expect(sweep.result).toMatchObject({ gateJobs: 1, fallbackScopes: 1 });
+      const gate = await finished(await runDue(w, "topic-gate", "model"));
+      // Their new leaf is now the clear best, so PLACE's decision applies without a rank call.
+      expect(gate.result).toMatchObject({
+        status: "applied",
+        items: arriving + 1,
+        redecided: arriving + 1,
+        calls: 0,
+        fallback: 0
+      });
+      for (const id of ids) {
+        expect(await placements(id)).toMatchObject([{ topicId: leaf, decidedBy: "auto" }]);
+      }
+      const remaining = await pool.query<{ count: string }>(
+        "select count(*) from topic_placements where tree_id = $1 and decided_by = 'fallback-none'",
+        [w.treeId]
+      );
+      expect(Number(remaining.rows[0]!.count)).toBe(0);
     } finally {
       await w.dispose();
     }

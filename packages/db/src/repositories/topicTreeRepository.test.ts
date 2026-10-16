@@ -112,8 +112,16 @@ describe("migration 0053 vocabulary", () => {
     expect(sorted(checkList(sql, "topic_placements", "management"))).toEqual(
       sorted(topicPlacementManagements)
     );
-    expect(sorted(checkList(sql, "topic_placements", "decided_by"))).toEqual(
+    // Migration 0055 (owner decision 19) replaced the placement decision check.
+    const decisions = await readFile(
+      join(workspace, "packages/db/drizzle/0055_placement_fallback_none.sql"),
+      "utf8"
+    );
+    expect(sorted(checkList(decisions, "topic_placements", "decided_by"))).toEqual(
       sorted(topicPlacementDecisions)
+    );
+    expect(sorted(checkList(sql, "topic_placements", "decided_by"))).toEqual(
+      sorted(topicPlacementDecisions.filter((decision) => decision !== "fallback-none"))
     );
     expect(sql).toContain(
       `char_length("topics"."title") between 1 and ${topicLimits.titleMaxLength}`

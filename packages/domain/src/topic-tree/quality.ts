@@ -94,7 +94,9 @@ export function bandCost(
 
 /**
  * Direct items an operation may move off an internal topic: not waiting for the gate
- * (`needs_gate`), not waiting for a vector (`needs_vector`) and not placed by a human.
+ * (`needs_gate`), not waiting for a vector (`needs_vector`) and not placed by a human. A gated item
+ * that met no validated decider is the gate's "none" (`fallback-none`, owner decision 19), so it
+ * is movable: REBALANCE may group such new-topic candidates into a new leaf.
  */
 export function isMovableDirectItem(state: TopicTreeState, item: string): boolean {
   const placement = primaryPlacement(state, item);

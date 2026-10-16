@@ -1394,6 +1394,8 @@
     "removeConfirmation": "Remove this model and its managed files from this machine?",
     "testSucceeded": "Local inference succeeded.",
     "rankerPending": "Run the test to validate this reranker for decisions.",
+    "rankerInstalling": "This reranker places notes that fit more than one topic. Until it is ready, those notes start new topics and are placed again afterwards.",
+    "rankerFallback": "Without a validated reranker, notes that fit more than one topic start new topics. They are placed again once a reranker is ready.",
     "defaultParameters": "Default model parameters",
     "filters": {
       "runtime": "Runtime",
@@ -1814,7 +1816,7 @@
         "no_embedding_route": "Topics wait for an embedding model. Choose one in Settings.",
         "space_changed": "The embedding model changed. Topics resume once your notes are re-embedded.",
         "waiting_for_embeddings": "Notes are still being prepared. Topics follow as they finish.",
-        "no_decider": "Notes that are hard to place wait until a reranking model is ready."
+        "no_decider": "No reranking model is ready yet: notes that are hard to place start new topics and are placed again once one is."
       },
       "dailyCap": "Naming new topics is paused for today. New topics keep provisional names until tomorrow.",
       "reembed": "Re-embed library",

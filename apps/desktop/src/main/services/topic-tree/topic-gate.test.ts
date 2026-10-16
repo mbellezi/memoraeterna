@@ -15,10 +15,18 @@ function gateJob(payload: Record<string, unknown>): JobRecord {
   return { id: id(90), type: topicJobTypes.gate, payload } as unknown as JobRecord;
 }
 
+/** The engine's turn without a database: the scope has nothing waiting. */
+function nothingWaits(services: TopicTreeServices) {
+  return vi
+    .spyOn(services.service, "runOnTree")
+    .mockResolvedValue({ generation: 1, ranked: false, items: [], more: false } as never);
+}
+
 /**
  * The gate's wiring without a database (its work on the real schema is the sidecar test): the
- * executor on the `model` worker, the deterministic golden mode, the `no_decider` status and the
- * route recheck that asks the sweep to enqueue waiting scopes.
+ * executor on the `model` worker, the deterministic golden mode, the `no_decider` status (and its
+ * fallback, decision 19), the decider check PLACE and the sweep ask, and the route recheck that
+ * asks the sweep to enqueue waiting scopes.
  */
 describe("the topic gate wiring (T23)", () => {
   let services: TopicTreeServices | null = null;
@@ -88,13 +96,20 @@ describe("the topic gate wiring (T23)", () => {
     expect(await created.gate!.waitingForDecider(5)).toBe(false);
   });
 
-  it("leaves the items waiting without a validated ranker and refuses malformed payloads", async () => {
+  it("falls back without a validated ranker and refuses malformed payloads", async () => {
     const { services: created, ai } = create({ status: "not_validated" });
+    const engine = nothingWaits(created);
     const result = await created.gate!.runGate(
       gateJob({ treeId: id(1), noteId: id(3) }),
       new AbortController().signal
     );
-    expect(result).toMatchObject({ status: "no_decider", route: "not_validated" });
+    expect(result).toMatchObject({
+      status: "no_decider",
+      route: "not_validated",
+      items: 0,
+      fallback: 0
+    });
+    expect(engine).toHaveBeenCalledTimes(1);
     expect(ai.rank).not.toHaveBeenCalled();
     await expect(
       created.gate!.runGate(gateJob({ treeId: id(1) }), new AbortController().signal)
@@ -109,7 +124,7 @@ describe("the topic gate wiring (T23)", () => {
       generation: 3,
       phase: "active",
       blocked: null,
-      counts: { items: 10, placed: 10, pending: 0, needsGate: 2 },
+      counts: { items: 10, placed: 10, pending: 0, needsGate: 2, fallbackNone: 0 },
       dailyCapReached: false,
       aiMode: "full",
       held: false
@@ -133,6 +148,7 @@ describe("the topic gate wiring (T23)", () => {
     const clock = { now: Date.parse("2026-10-15T12:00:00.000Z") };
     const route = { status: "not_validated" as DecideRouteStatus };
     const { services: created, ai } = create(route, { now: () => new Date(clock.now) });
+    nothingWaits(created);
     const sweep = vi.spyOn(created.triggers, "sweep").mockResolvedValue([]);
     const event = { treeId: id(1), generation: 2, topicIds: null, changeSetId: null };
     // Not blocked yet: a commit checks nothing.
@@ -163,6 +179,7 @@ describe("the topic gate wiring (T23)", () => {
     try {
       const route = { status: "not_validated" as DecideRouteStatus };
       const { services: created, ai } = create(route);
+      nothingWaits(created);
       const sweep = vi.spyOn(created.triggers, "sweep").mockResolvedValue([]);
       await created.gate!.runGate(
         gateJob({ treeId: id(1), noteId: id(3) }),
@@ -182,6 +199,29 @@ describe("the topic gate wiring (T23)", () => {
       // Ready: nothing is checked again.
       await vi.advanceTimersByTimeAsync(5 * topicGateLimits.routeRecheckMs);
       expect(ai.decideRouteStatus).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tells PLACE and the sweep whether a ranker decides, and rechecks while items owe it a decision", async () => {
+    vi.useFakeTimers();
+    try {
+      const route = { status: "not_validated" as DecideRouteStatus };
+      const { services: created } = create(route);
+      const gate = created.gate!;
+      // Nothing owes a decision: the answer only, no recheck.
+      expect(await gate.deciderReady(0)).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      // Fallback items owe one (decision 19): the route is checked again until a ranker is ready.
+      expect(await gate.deciderReady(3)).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      const sweep = vi.spyOn(created.triggers, "sweep").mockResolvedValue([]);
+      route.status = "ready";
+      await vi.advanceTimersByTimeAsync(topicGateLimits.routeRecheckMs);
+      expect(sweep).toHaveBeenCalledWith("requested", {});
+      expect(await gate.deciderReady(3)).toBe(true);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();

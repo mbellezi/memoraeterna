@@ -1397,6 +1397,8 @@
     "removeConfirmation": "Remover este modelo e seus arquivos gerenciados desta maquina?",
     "testSucceeded": "A inferencia local funcionou.",
     "rankerPending": "Execute o teste para validar este reranker nas decisões.",
+    "rankerInstalling": "Este reranker coloca as notas que cabem em mais de um tópico. Até ele ficar pronto, essas notas iniciam novos tópicos e são colocadas de novo depois.",
+    "rankerFallback": "Sem um reranker validado, as notas que cabem em mais de um tópico iniciam novos tópicos. Elas são colocadas de novo quando um reranker estiver pronto.",
     "defaultParameters": "Parametros padrao do modelo",
     "filters": {
       "runtime": "Runtime",
@@ -1817,7 +1819,7 @@
         "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Configurações.",
         "space_changed": "O modelo de embeddings mudou. Os tópicos continuam quando os embeddings das suas notas forem refeitos.",
         "waiting_for_embeddings": "As notas ainda estão sendo preparadas. Os tópicos acompanham conforme elas terminam.",
-        "no_decider": "As notas difíceis de colocar esperam até que um modelo de reranking esteja pronto."
+        "no_decider": "Ainda não há um modelo de reranking pronto: as notas difíceis de colocar iniciam novos tópicos e são colocadas de novo quando houver um."
       },
       "dailyCap": "A nomeação de novos tópicos está pausada por hoje. Os novos tópicos mantêm nomes provisórios até amanhã.",
       "reembed": "Refazer os embeddings da biblioteca",

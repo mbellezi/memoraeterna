@@ -799,6 +799,7 @@ Options:
   --sample <n,n> --nprobe <n,n> --queries <n> --full-nprobe <n,n> --target <x>        knn (3000,6000; 4,8,16,32; 300)
   --engine <name>         growth/weekly/calibrate: real (T07 PLACE + T08 REBALANCE, default) | reference (Spike B)
   --gate <mode>           real engine: baseline (gated items take the best candidate, default) | off (they wait)
+                          | fallback (decision 19: the gate's "none", new-topic candidates REBALANCE may group)
   --undo-check            real engine: undo every REBALANCE change-set on a copy and compare the dump
   --areas <on|off>        real engine: the root's children are Areas (D12: Area-level operations are proposals; default on)
   --neutral               daily budgets that constrain nothing (lambda stays: it also picks between fixes)
@@ -934,7 +935,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const gate = (values.gate ?? "baseline") as ReplayGate;
   if (!replayGates.includes(gate) || (values.gate !== undefined && engineName !== "real")) {
-    console.error("--gate is baseline or off, and only for --engine real");
+    console.error("--gate is baseline, off or fallback, and only for --engine real");
     return 2;
   }
 
@@ -971,7 +972,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     command === "growth" || command === "weekly"
       ? [
           engineName === "reference" ? "reference" : "",
-          gate === "off" ? "gateoff" : "",
+          gate === "off" ? "gateoff" : gate === "fallback" ? "gatefallback" : "",
           areas === "off" ? "areasoff" : ""
         ]
           .filter((part) => part !== "")

@@ -10,12 +10,16 @@ import type { ItemKey } from "./ids.js";
 import { setTopicLabel } from "./label.js";
 import {
   applyGateResolution,
+  applyNoDeciderFallback,
+  awaitsGateDecision,
   commonAncestor,
   decidePlacement,
+  noDeciderDecision,
   placeItem,
   resolveGate,
   topicsWithStaleStats
 } from "./place.js";
+import { isMovableDirectItem } from "./quality.js";
 import type { PlacementContext, PlacementDecision } from "./place.js";
 import { createRng } from "./rng.js";
 import { invalidSecondaries } from "./secondary.js";
@@ -594,6 +598,94 @@ describe("applyGateResolution", () => {
     const settledContext = settled.context();
     placeItem(settledContext, settled.query("q"));
     expect(applyGateResolution(settledContext, settled.query("q"), accept).kind).toBe("stale");
+  });
+});
+
+describe("the no-decider fallback (owner decision 19)", () => {
+  function gated(): { hand: Hand; context: PlacementContext } {
+    const hand = handTree({ q: vec(1, 1, 0, 0) });
+    const context = hand.context();
+    placeItem(context, hand.query("q"));
+    expect(primaryPlacement(hand.state, hand.query("q"))?.needsGate).toBe(true);
+    return { hand, context };
+  }
+
+  it("treats a gated item as the gate's none: movable at its ancestor, marked fallback-none", () => {
+    const { hand, context } = gated();
+    const q = hand.query("q");
+    const before = statsDump(hand.state);
+    const outcome = applyNoDeciderFallback(context, q);
+    expect(outcome).toMatchObject({ kind: "updated", to: ids.a, needsGate: false, events: 1 });
+    expect(primaryPlacement(hand.state, q)).toMatchObject({
+      topicId: ids.a,
+      decidedBy: noDeciderDecision,
+      needsGate: false,
+      needsSplitCheck: true,
+      movedFromTopicId: null
+    });
+    expect(placementsOf(hand.state, q)).toHaveLength(1);
+    // Flags never change statistics, and REBALANCE may now move the item (quality.ts).
+    expect(statsDump(hand.state)).toEqual(before);
+    expect(isMovableDirectItem(hand.state, q)).toBe(true);
+    expect(awaitsGateDecision(primaryPlacement(hand.state, q))).toBe(true);
+    // Applied once: the item no longer waits with needs_gate.
+    expect(applyNoDeciderFallback(context, q).kind).toBe("stale");
+  });
+
+  it("is stale for a settled item and protected for a human placement", () => {
+    const settled = handTree({ q: vec(1, 0.02, 0, 0) });
+    const settledContext = settled.context();
+    placeItem(settledContext, settled.query("q"));
+    expect(applyNoDeciderFallback(settledContext, settled.query("q")).kind).toBe("stale");
+    const human = handTree({ q: vec(1, 1, 0, 0) });
+    humanPlaceItem(human.context(), human.query("q"), ids.a1, "primary");
+    expect(applyNoDeciderFallback(human.context(), human.query("q")).kind).toBe("protected");
+  });
+
+  it("lets a ranker decide a fallback item again, wherever REBALANCE moved it", () => {
+    const { hand, context } = gated();
+    const q = hand.query("q");
+    applyNoDeciderFallback(context, q);
+    // Accepted: the ranker's leaf, decided by the gate.
+    const accept = resolveGate([{ topicId: ids.a2, logOdds: 4 }], hand.config.gate);
+    expect(applyGateResolution(context, q, accept)).toMatchObject({ kind: "moved", to: ids.a2 });
+    expect(primaryPlacement(hand.state, q)).toMatchObject({
+      decidedBy: "gate",
+      needsSplitCheck: false
+    });
+    expect(awaitsGateDecision(primaryPlacement(hand.state, q))).toBe(false);
+
+    // "None" for an item REBALANCE grouped into a new leaf: it keeps that leaf, no longer marked.
+    const grouped = gated();
+    const item = grouped.hand.query("q");
+    applyNoDeciderFallback(grouped.context, item);
+    grouped.context.editor.createTopic(uuidOf(200), ids.a);
+    grouped.context.editor.updatePlacement(item, 0, {
+      topicId: uuidOf(200),
+      needsSplitCheck: false
+    });
+    recomputeSubtree(grouped.hand.state, grouped.hand.vectors);
+    const none = resolveGate([{ topicId: ids.a1, logOdds: -5 }], grouped.hand.config.gate);
+    expect(applyGateResolution(grouped.context, item, none)).toMatchObject({
+      kind: "updated",
+      to: uuidOf(200)
+    });
+    expect(primaryPlacement(grouped.hand.state, item)).toMatchObject({
+      topicId: uuidOf(200),
+      decidedBy: "fallback",
+      needsSplitCheck: false
+    });
+
+    // "None" for an item still above the leaves: a plain new-topic candidate (needs_split_check).
+    const waiting = gated();
+    const above = waiting.hand.query("q");
+    applyNoDeciderFallback(waiting.context, above);
+    expect(applyGateResolution(waiting.context, above, none)).toMatchObject({ to: ids.a });
+    expect(primaryPlacement(waiting.hand.state, above)).toMatchObject({
+      decidedBy: "fallback",
+      needsSplitCheck: true
+    });
+    expect(awaitsGateDecision(primaryPlacement(waiting.hand.state, above))).toBe(false);
   });
 });
 

@@ -41,7 +41,13 @@ export interface StoreFacts {
   notesWithoutPrimary: string[];
   topics: E6Topic[];
   /** Notes placed directly on the root (waiting, or Unsorted), and the ones that wait for the gate. */
-  root: { directNotes: number; needsGate: number; needsVector: number };
+  root: { directNotes: number; needsGate: number; needsVector: number; fallbackNone: number };
+  /**
+   * The gate's no-decider fallback (owner decision 19): current notes it decided that still owe a
+   * ranker decision (`fallback-none`, wherever REBALANCE moved them), notes that wait for the gate
+   * anywhere (`needs_gate`), and the items the fallback decided over the run (change-set summaries).
+   */
+  fallback: { notes: number; waitingNotes: number; decisions: number };
   e1: E1Facts | null;
   /** The newest change-set that named a live topic; null when none was named. */
   lastNamedAt: Date | null;
@@ -108,7 +114,8 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
       notesWithPrimary: 0,
       notesWithoutPrimary: notes.slice(0, 10),
       topics: [],
-      root: { directNotes: 0, needsGate: 0, needsVector: 0 },
+      root: { directNotes: 0, needsGate: 0, needsVector: 0, fallbackNone: 0 },
+      fallback: { notes: 0, waitingNotes: 0, decisions: 0 },
       e1: null,
       lastNamedAt: null
     };
@@ -152,12 +159,37 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
     )
   ).rows;
   const root = (
-    await pool.query<{ directNotes: number; needsGate: number; needsVector: number }>(
+    await pool.query<{
+      directNotes: number;
+      needsGate: number;
+      needsVector: number;
+      fallbackNone: number;
+    }>(
       `select count(*) filter (where p.item_kind = 'note')::int as "directNotes",
          count(*) filter (where p.item_kind = 'note' and p.needs_gate)::int as "needsGate",
-         count(*) filter (where p.needs_vector)::int as "needsVector"
+         count(*) filter (where p.needs_vector)::int as "needsVector",
+         count(*) filter (where p.item_kind = 'note' and p.decided_by = 'fallback-none')::int
+           as "fallbackNone"
        from topic_placements p join topics t on t.id = p.topic_id
        where p.tree_id = $1::uuid and p.rank = 0 and t.role = 'root' and t.retired_at is null`,
+      [tree.id]
+    )
+  ).rows[0]!;
+  const fallbackNotes = (
+    await pool.query<{ notes: number; waitingNotes: number }>(
+      `select count(*) filter (where p.decided_by = 'fallback-none')::int as notes,
+         count(*) filter (where p.needs_gate)::int as "waitingNotes"
+       from topic_placements p
+       where p.tree_id = $1::uuid and p.rank = 0 and p.item_kind = 'note'`,
+      [tree.id]
+    )
+  ).rows[0]!;
+  const fallbackDecisions = (
+    await pool.query<{ decisions: number }>(
+      `select coalesce(sum(coalesce((c.summary ->> 'fallbackNone')::int, 0)
+           + coalesce((c.summary ->> 'fallback')::int, 0)), 0)::int as decisions
+       from topic_change_sets c
+       where c.tree_id = $1::uuid and c.status = 'applied' and c.origin in ('place', 'gate')`,
       [tree.id]
     )
   ).rows[0]!;
@@ -177,6 +209,11 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
     notesWithoutPrimary: missing.rows.map((row) => row.id),
     topics,
     root,
+    fallback: {
+      notes: fallbackNotes.notes,
+      waitingNotes: fallbackNotes.waitingNotes,
+      decisions: fallbackDecisions.decisions
+    },
     e1: await collectE1(pool, tree.id, notes, sources),
     lastNamedAt: named?.at ? new Date(named.at) : null
   };

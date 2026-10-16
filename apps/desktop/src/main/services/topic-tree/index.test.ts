@@ -138,7 +138,7 @@ describe("the topic services factory", () => {
         generation: 3,
         phase: "building",
         blocked: "space_changed",
-        counts: { items: 5, placed: 3, pending: 2, needsGate: 0 },
+        counts: { items: 5, placed: 3, pending: 2, needsGate: 0, fallbackNone: 0 },
         dailyCapReached: true,
         aiMode: "full",
         held: false

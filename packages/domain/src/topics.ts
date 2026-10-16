@@ -52,12 +52,17 @@ export const topicPlacementManagements = ["ai", "human"] as const;
 export const TopicPlacementManagementSchema = z.enum(topicPlacementManagements);
 export type TopicPlacementManagement = z.infer<typeof TopicPlacementManagementSchema>;
 
-/** How a placement was decided (`topic_placements.decided_by`). */
+/**
+ * How a placement was decided (`topic_placements.decided_by`). `fallback-none`: the gate's "none"
+ * given without a validated decider (owner decision 19); the gate decides the item again once a
+ * ranker validates.
+ */
 export const topicPlacementDecisions = [
   "build",
   "auto",
   "gate",
   "fallback",
+  "fallback-none",
   "human",
   "rebuild"
 ] as const;

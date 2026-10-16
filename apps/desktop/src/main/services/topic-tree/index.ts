@@ -109,7 +109,8 @@ export interface TopicTreeServices {
 
 /**
  * What `topics.status` takes from the engine: its phase, what blocks it and the daily cap.
- * `noDecider`: items wait for the gate and no validated ranker can decide them (informative, D10).
+ * `noDecider`: items wait for a gate decision (flagged, or the no-decider fallback's, decision 19)
+ * and no validated ranker can decide them (informative).
  */
 export function engineStatusOf(status: TopicServiceStatus, noDecider = false): TopicEngineStatus {
   const blocked = status.blocked ?? (noDecider ? "no_decider" : null);
@@ -129,8 +130,9 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   });
   let registered: ReadonlySet<string> = new Set();
   const isRegistered = (type: string) => registered.has(type);
-  // The service is assigned below, before anything can call these closures.
+  // The service and the gate are assigned below, before anything can call these closures.
   let service: TopicTreeService | null = null;
+  let gateService: TopicGateService | null = null;
   const triggers = new TopicTriggers({
     getPool,
     isRegistered,
@@ -175,6 +177,10 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       structureJobs?.afterHumanChange(change.treeId, change.changeSetId, change.generation),
     // T19b: the status saw the route's space move; the build re-embeds and moves the tree.
     onSpaceChanged: (treeId) => structureJobs?.spaceChanged(treeId),
+    // Owner decision 19: the gate's route tells PLACE and the sweep whether a ranker decides.
+    ...(options.ai
+      ? { deciderReady: (waiting: number) => gateService!.deciderReady(waiting) }
+      : {}),
     ...(notifyViewHistory ? { onViewHistoryChanged: notifyViewHistory } : {}),
     ...(options.newTreeConfig ? { newTreeConfig: options.newTreeConfig } : {}),
     ...(options.wake ? { wake: options.wake } : {}),
@@ -215,6 +221,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
         ...(options.now ? { now: options.now } : {})
       })
     : null;
+  gateService = gate;
 
   // T31: the overview a Topic page writes on open (interactive, cancelable, not capped by D34).
   const overview =
@@ -239,7 +246,8 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
         const status = await topicService.status();
         const engine = engineStatusOf(
           status,
-          (await gate?.waitingForDecider(status.counts.needsGate)) ?? false
+          (await gate?.waitingForDecider(status.counts.needsGate + status.counts.fallbackNone)) ??
+            false
         );
         // T19b: on a remote route, the notes "Re-embed library" would cover (D26, Q8).
         const reembedNotes = await spaceChange.reembedNotes(status.route).catch(() => null);

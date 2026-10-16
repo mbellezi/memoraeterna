@@ -212,6 +212,7 @@ export function LocalModelsView({
                 )
               : 0;
           const licenseAccepted = model.licenseAccepted || acceptedLicenses.has(model.catalogId);
+          const rankerNote = rankerNoteKey(model);
           return (
             <details
               key={model.id}
@@ -255,10 +256,17 @@ export function LocalModelsView({
                   {model.capabilities.join(" · ")}
                 </p>
                 {isRankerModel(model) ? (
-                  // A ranker has no generation parameters to default; its state is its validation.
-                  model.status === "ready" && !model.capabilities.includes("reranking") ? (
-                    <p className="text-sm text-amber-700 dark:text-amber-300">
-                      {t("localModels.rankerPending")}
+                  // A ranker has no generation parameters to default; its state is its validation,
+                  // and what topic placement does until it is ready (owner decision 19).
+                  rankerNote ? (
+                    <p
+                      className={
+                        active
+                          ? "text-sm text-muted-foreground"
+                          : "text-sm text-amber-700 dark:text-amber-300"
+                      }
+                    >
+                      {t(rankerNote)}
                     </p>
                   ) : null
                 ) : (
@@ -431,6 +439,22 @@ export function isRankerModel(model: Pick<LocalModelView, "capabilities">): bool
   return (
     !model.capabilities.includes("text-generation") && !model.capabilities.includes("embedding")
   );
+}
+
+/**
+ * What a ranker's row says besides its progress and error: while it installs, and when it failed,
+ * what topic placement does without it (owner decision 19); once installed, that it still needs
+ * its validation. Null for a validated ranker, or one nobody asked for.
+ */
+export function rankerNoteKey(
+  model: Pick<LocalModelView, "capabilities" | "status">
+): MessageKey | null {
+  if (model.status === "downloading" || model.status === "verifying")
+    return "localModels.rankerInstalling";
+  if (model.status === "failed") return "localModels.rankerFallback";
+  if (model.status === "ready" && !model.capabilities.includes("reranking"))
+    return "localModels.rankerPending";
+  return null;
 }
 
 /** What a model is for, as the purpose filter groups them. */

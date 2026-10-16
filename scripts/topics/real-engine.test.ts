@@ -123,6 +123,31 @@ describe("the real engine", () => {
     expect(waiting(baseline)).toBe(0);
   });
 
+  it("gate fallback (decision 19) gives ambiguous items the gate's none, movable for REBALANCE", () => {
+    const wide = topicTreeConfigWith({ placement: { ambiguityMargin: 0.3 } });
+    const fallback = engineOf(wide, { gate: "fallback" });
+    expect(fallback.name).toBe("t07-t08/gate-fallback");
+    fallback.build(rows.slice(0, 300));
+    const placed = fallback.place(rows.slice(300));
+    expect(placed.ambiguous).toBeGreaterThan(0);
+    const primaries = rows
+      .slice(300)
+      .map((row) => primaryPlacement(fallback.state, rowItemKey(row)));
+    expect(primaries.filter((primary) => primary?.needsGate)).toEqual([]);
+    const marked = primaries.filter((primary) => primary?.decidedBy === "fallback-none");
+    expect(marked).toHaveLength(placed.ambiguous);
+    expect(marked.every((primary) => primary?.needsSplitCheck)).toBe(true);
+    // REBALANCE may move them, so the tree stays valid and the mark survives the moves.
+    fallback.rebalance({ day: 2 });
+    expect(shapeReport(fallback.state, wide).violations.hardCount).toBe(0);
+    const after = rows
+      .slice(300)
+      .filter(
+        (row) => primaryPlacement(fallback.state, rowItemKey(row))?.decidedBy === "fallback-none"
+      );
+    expect(after).toHaveLength(placed.ambiguous);
+  });
+
   it("defers soft operations on frozen topics to the next REBALANCE instead of dropping them", () => {
     const engine = engineOf(crowded);
     engine.build(rows.slice(0, 300));

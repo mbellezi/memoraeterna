@@ -13,7 +13,10 @@
 //               of the ambiguous leaves with `needs_gate`; resolveGate decides later;
 //   unadmitted  no admitted leaf: the deepest admitted internal topic (the root holds Unsorted).
 // The margin is the Spike B definition: the best admitted leaf's score minus the best score of
-// any other leaf the beam reached, admitted or not, so it can be negative.
+// any other leaf the beam reached, admitted or not, so it can be negative. Without a validated
+// decider a gated item is the gate's "none" (`applyNoDeciderFallback`, owner decision 19): it
+// stays at its ancestor as a new-topic candidate REBALANCE may group, marked `fallback-none` until
+// a ranker decides it again.
 //
 // Every order is canonical (score, then topic ID), so the same state, vector and configuration
 // always give the same decision. placeItem keeps the in-memory statistics current along the
@@ -734,11 +737,75 @@ export interface GateApplyOptions {
   candidates?: readonly PlacementCandidate[];
 }
 
+/** The decision of owner decision 19's fallback: the gate's "none" given without a decider. */
+export const noDeciderDecision = "fallback-none" satisfies TopicPlacementDecision;
+
 /**
- * Applies a gate resolution to an item waiting with `needs_gate`. Accept moves it to the chosen
- * leaf (`decided_by = gate`); "none" leaves it at its ancestor flagged `needs_split_check`. The
- * outcome is `stale` when the item no longer waits for the gate or the chosen topic is no longer
- * a live leaf (PLACE decides again), and `protected` for human placements.
+ * The placement waits for a gate decision: flagged `needs_gate`, or decided by the no-decider
+ * fallback (`fallback-none`), which a validated ranker decides again wherever REBALANCE moved it.
+ */
+export function awaitsGateDecision(placement: PlacementRecord | undefined): boolean {
+  return (
+    placement !== undefined &&
+    placement.management === "ai" &&
+    (placement.needsGate || placement.decidedBy === noDeciderDecision)
+  );
+}
+
+/** The item's primary placement for a gate step: absent, human (`protected`) or AI. */
+function gatePrimary(state: TopicTreeState, item: ItemKey): PlacementRecord | "protected" | null {
+  getItem(state, item);
+  const primary = placementsOf(state, item).find((placement) => placement.rank === 0);
+  if (primary?.management === "human") return "protected";
+  return primary ?? null;
+}
+
+/**
+ * Owner decision 19: an item waiting with `needs_gate` while no validated decider exists is the
+ * gate's "none". It stays at its fallback ancestor flagged `needs_split_check` (a new-topic
+ * candidate REBALANCE may group into a new leaf, quality.ts) with `decided_by = fallback-none`, the
+ * mark that survives REBALANCE's moves so the gate decides it again once a ranker validates. The
+ * outcome is `stale` when the item does not wait for the gate, `protected` for human placements.
+ */
+export function applyNoDeciderFallback(context: PlacementContext, item: ItemKey): PlaceOutcome {
+  const { state } = context;
+  const primary = gatePrimary(state, item);
+  if (primary === "protected")
+    return outcomeOf(state, item, null, { kind: "protected" }, "protected");
+  if (!primary || !primary.needsGate) return outcomeOf(state, item, null, null, "stale");
+  const plan: PlacementPlan = {
+    primary: {
+      topicId: primary.topicId,
+      decidedBy: noDeciderDecision,
+      score: primary.score,
+      margin: primary.margin,
+      needsGate: false,
+      needsSplitCheck: true,
+      needsVector: false
+    },
+    secondaries: []
+  };
+  return withStatsUpdate(context, item, () =>
+    outcomeOf(
+      state,
+      item,
+      null,
+      applyPlacementPlan(context, item, plan, {
+        fingerprint: primary.itemFingerprint,
+        markMove: false
+      }),
+      "unchanged"
+    )
+  );
+}
+
+/**
+ * Applies a gate resolution to an item waiting for a gate decision (`awaitsGateDecision`). Accept
+ * moves it to the chosen leaf (`decided_by = gate`). "None" leaves it where it is: an item flagged
+ * `needs_gate`, or a `fallback-none` item still above the leaves, is flagged `needs_split_check`;
+ * a `fallback-none` item REBALANCE already grouped into a leaf keeps that new topic. The outcome is
+ * `stale` when the item no longer waits for the gate or the chosen topic is no longer a live leaf
+ * (PLACE decides again), and `protected` for human placements.
  */
 export function applyGateResolution(
   context: PlacementContext,
@@ -747,19 +814,20 @@ export function applyGateResolution(
   options: GateApplyOptions = {}
 ): PlaceOutcome {
   const { state, vectors, config } = context;
-  getItem(state, item);
-  const primary = placementsOf(state, item).find((placement) => placement.rank === 0);
-  if (primary?.management === "human") {
+  const primary = gatePrimary(state, item);
+  if (primary === "protected")
     return outcomeOf(state, item, null, { kind: "protected" }, "protected");
-  }
-  if (!primary || !primary.needsGate) return outcomeOf(state, item, null, null, "stale");
+  if (!primary || !awaitsGateDecision(primary)) return outcomeOf(state, item, null, null, "stale");
+  const above =
+    primary.topicId === state.rootId ||
+    (state.topics.get(primary.topicId)?.children.length ?? 0) > 0;
   const keep: PlannedPlacement = {
     topicId: primary.topicId,
-    decidedBy: primary.decidedBy,
+    decidedBy: primary.decidedBy === noDeciderDecision ? "fallback" : primary.decidedBy,
     score: primary.score,
     margin: primary.margin,
     needsGate: false,
-    needsSplitCheck: true,
+    needsSplitCheck: primary.needsGate || above,
     needsVector: false
   };
   let plan: PlacementPlan = { primary: keep, secondaries: [] };
