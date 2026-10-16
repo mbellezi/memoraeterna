@@ -90,6 +90,17 @@ point: known accepted-right and accepted-wrong shares, the new-topic absorbed (a
 the balanced accuracy ((known accepted-right + new not absorbed) / 2), against the margin-only
 baseline (every gated note placed at its best admitted leaf) and the start values.
 
+**R3c. Gate with the product's descriptors (registered 2026-10-16 after R3's MLX results, before
+it ran; reported only).** Offline leaves carry TF-IDF names, the product's carry LLM names,
+descriptions and aliases. The exported ENV-C tree has those (1,508 LLM-named topics), so R3b's
+known-topic protocol is repeated against it: per seed 7-12, 10% random notes (`items`) are removed
+from the exported tree (statistics recomputed without them), placed at the R1/R2 values, and every
+gated note is ranked against descriptors with the leaf's LLM title, description, aliases and 3
+central titles of the remaining members. A candidate is right when its leaf's majority
+article-with-twin unit is the note's. Caveat: the held-out notes were members when the leaves were
+named. Reported per decider: the ranker's top-1 against the margin-only choice on the gated notes,
+and accepted precision and share at the start values, the R3 point and the best R3b point.
+
 **R4. Label weight (`placement.labelWeight`).** Grid {0, 0.1, 0.2, 0.3, 0.4, 0.5} on the R3
 holdouts with the leaves' embedded labels; adopt a value above 0 only if top-1 domain improves by at
 least 2 points. Label vectors exist only after naming and label embedding in a profile; when none
