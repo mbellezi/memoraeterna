@@ -101,3 +101,26 @@ Found and fixed on the way:
   graph tables, so replays diverged on a few notes; the cut now keeps every tied path (`4493092`, pre-F2 bug).
 
 Owner preview P: the DEV app was left open with the new navigator and topic page; feedback feeds T24/T29.
+
+## Wave 6 (2026-10-16)
+
+No AI calls and no migration in this wave; the numbers are offline or on scratch PostgreSQL. Live proofs on the
+measurement profiles (ENV-C, ENV-G) follow in wave 7.
+
+| Task | Measure | Result |
+| --- | --- | --- |
+| T23 gate | DS-C new-article holdout, 3 splits, gate precision at the start values | about equal to margin-only placement; the threshold is T29a's to calibrate |
+| T24 Areas | DS-C seeds 1-5, built tree vs. after the Areas-level re-parent pass | mis-parented depth 2: 7.9% → 6.9% (stripped), 3.9% → 3.5% (titled); level-2 silhouette 0.136 → 0.139; NMI unchanged |
+| T24 Areas | E3 churn with the change (evaluation seeds, both orders) | worst week 2.69% (gate A: 2.59%), all runs under 3% |
+| T24 Areas | Regroup time at 18,632 notes | 97-354 ms |
+| T25 Shape | Icicle layout of 2,000 topics | p50 0.8 ms, p95 1.05 ms (bar 50 ms) |
+| T26 human operations | 1,000 replayed inserts after a human move, rename and pin | REBALANCE applied 390 operations; the 3 protected topics did not change |
+| T26 human operations | Mutate / undo latency (72-note library) | median 26 ms / 53 ms, max 204 ms / 237 ms (cold cache) |
+| T26 human operations | Undo of move, create, pin, unpin and place | restores the stored tree dump exactly |
+| T27 locate | `objects.locate` p95 with topic paths, DS-S (30,000 notes, 2,500 topics) | 0.85 ms (bar 50 ms) |
+| T27 locate | ENV-C-shaped synthetic library (18,632 notes, 1,500 topics) | 0.84 ms |
+| T33 Obsidian | No-op / first projection pass at 18.6k notes | about 39 s / 264 s of compute-worker time, paged on the light lane |
+
+Merged with the wave: the five locale files had two `topics.changeSets` blocks, so the first one (`place`,
+`build`, `rebuild`, `rebalance`, `proposal`) never reached the UI; they are one block now. Not delivered: pin and
+unpin of notes and sources from the topic screens (they keep their existing view-history pin).

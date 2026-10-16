@@ -496,12 +496,12 @@ Wave 5 (gate B after T15b and T19; owner preview P at the end):
 - [x] T22b Corpus environment and developer comparison report (`topics:report`, D21).
 
 Wave 6:
-- [ ] T23 Reranker decision gate for ambiguous placements (D10).
-- [ ] T24 Area grouping into 7-16 pinnable Areas (D12) and mis-parent re-parenting.
-- [ ] T25 Shape icicle with a table alternative; warnings with Apply and Dismiss (D29).
-- [ ] T26 Human structure operations (rename, move, create, pin) with undo and review.
-- [ ] T27 `objects.locate` on the topic tree (D24).
-- [ ] T33 Obsidian topic projection replacing the wiki page branch: folder-note MOCs, aliases from redirects,
+- [x] T23 Reranker decision gate for ambiguous placements (D10).
+- [x] T24 Area grouping into 7-16 pinnable Areas (D12) and mis-parent re-parenting.
+- [x] T25 Shape icicle with a table alternative; warnings with Apply and Dismiss (D29).
+- [x] T26 Human structure operations (rename, move, create, pin) with undo and review.
+- [x] T27 `objects.locate` on the topic tree (D24).
+- [x] T33 Obsidian topic projection replacing the wiki page branch: folder-note MOCs, aliases from redirects,
       paged delivery on the light lane replacing the fixed caps, with `rules/integrations.md`.
 
 Wave 7 (gate C at the end):
