@@ -362,7 +362,11 @@ function CitationMarker({
       {open ? (
         <span
           id={cardId}
-          className="absolute left-0 top-full z-20 mt-1 flex w-80 max-w-[80vw] flex-col gap-2 rounded-lg border border-border-strong bg-surface p-3 text-left text-sm font-normal leading-5 text-foreground shadow-lg"
+          className={[
+            "absolute left-0 top-full z-20 mt-1 flex w-80 max-w-[80vw] flex-col gap-2 rounded-lg",
+            "border border-border-strong bg-surface p-3 text-left text-sm font-normal leading-5",
+            "text-foreground shadow-lg"
+          ].join(" ")}
         >
           <span className="font-semibold [overflow-wrap:anywhere]">
             {citation.sourceTitle || t("topics.overview.citation.unknownSource")}

@@ -31,7 +31,11 @@ export function createConsultationRepository(pool: PgPool) {
       case when $3 then 0 else coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(e.canonical_name||' '||e.aliases::text)),terms.q)) from entity_mentions m join entities e on e.id=m.entity_id where m.chunk_id=c.id and m.source_item_id=c.source_item_id),0) end as entity,
       coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(concat_ws(' ',r.source_idea,r.target_idea,r.explanation))),terms.q)) from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins} where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and (not $3 or r.status='accepted') and (e.source_chunk_id=c.id or e.target_chunk_id=c.id) and ${currentSourceRelationEvidenceSql}),0) as relation
       from chunks c join roots on roots.id=c.source_item_id join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id cross join terms
-      where c.source_item_id=any($1::uuid[]) and ${inTopicChunks("$5", "c.id")} and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1')
+      where c.source_item_id=any($1::uuid[]) and ${inTopicChunks("$5", "c.id")}
+        and d.metadata->>'supersededByDocumentId' is null
+        and c.metadata->>'processingMode' is distinct from 'catalog_metadata'
+        and d.metadata->>'processingMode' is distinct from 'catalog_metadata'
+        and c.chunking_version<>'catalog-metadata-v1')
       select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId"`,
           [sourceIds, question, reviewedOnly, vectorIds, topicId]
         )

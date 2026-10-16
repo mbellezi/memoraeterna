@@ -38,7 +38,9 @@ export const sourceScopeSql = `with recursive allowed as (
   )
   select s.id,'source' as kind,s.title,coalesce(s.subtitle,s.source_uri,'') as excerpt,s.id as "sourceItemId",
     s.type as "sourceType",
-    not exists(select 1 from documents d where d.source_item_id=s.id and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'supersededByDocumentId' is null) as "catalogOnly",
+    not exists(select 1 from documents d where d.source_item_id=s.id
+      and d.metadata->>'processingMode' is distinct from 'catalog_metadata'
+      and d.metadata->>'supersededByDocumentId' is null) as "catalogOnly",
     t.path as breadcrumb,unaccent(lower(s.title))=unaccent(lower($1)) as exact
   from source_items s join source_tree t on t.id=s.id
   where s.id in(select id from allowed)

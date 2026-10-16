@@ -22,5 +22,5 @@ tmp/
 temp/
 postgres-data/
 .cache/
-vendor/sidecars/
+vendor/sidecars
 samples/
