@@ -32,14 +32,17 @@ describe("Topic page styles", () => {
 });
 
 describe("Topic page IPC", () => {
-  it("reads the tree and undoes one change, and calls no AI, search or Ask", () => {
+  it("reads the tree and undoes one change; only the overview section writes (T31); no search or Ask", () => {
     const calls = new Set<string>();
     for (const source of Object.values(sources))
       for (const match of source.matchAll(/window\.app\.(\w+)/g)) calls.add(match[1]!);
     expect([...calls]).toEqual(["topics"]);
     for (const [file, source] of Object.entries(sources)) {
+      const allowed = ["page", "notes", "undo", "subscribeChanged"];
+      if (file.endsWith("/topic-overview-controller.ts"))
+        allowed.push("overview", "cancelOverview");
       for (const method of source.matchAll(/\bapi\(\)\s*\.(\w+)/g)) {
-        expect(["page", "notes", "undo", "subscribeChanged"], file).toContain(method[1]);
+        expect(allowed, file).toContain(method[1]);
       }
       expect(source, file).not.toMatch(/\.(consultation|ai|search|relations)\./);
     }

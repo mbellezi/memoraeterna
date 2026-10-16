@@ -119,6 +119,21 @@ cited_by as (
     from linked_notes note
    where note.from_id <> $1::uuid and note.status not in ('rejected', 'archived')
      and note.supersession = 'current'
+  union all
+  -- Live topics of the active tree whose overview cites a passage or span of the source (F2 T31).
+  select t.id, coalesce(t.title, '') as title, 'topic' as kind
+    from (
+      select c.topic_id from topic_overview_citations c
+        join chunks ch on ch.id = c.chunk_id
+       where ch.source_item_id = $1::uuid
+      union
+      select c.topic_id from topic_overview_citations c
+        join source_spans sp on sp.id = c.source_span_id
+       where sp.source_item_id = $1::uuid
+    ) cited
+    join topics t on t.id = cited.topic_id
+   where t.retired_at is null
+     and t.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
 )
 ${finalSelect(
   "(select title from chain where depth = 0)",
@@ -138,8 +153,12 @@ ${placements(`p.note_id = $1::uuid`)},
 ${topicChain},
 ${alsoInTopics},
 cited_by as (
-  -- Overviews that cite a note join here with the overview tables (F2 T31).
-  select null::uuid as id, null::text as title, null::text as kind where false
+  -- Live topics of the active tree whose overview cites the note (F2 T31).
+  select t.id, coalesce(t.title, '') as title, 'topic' as kind
+    from (select distinct c.topic_id from topic_overview_citations c where c.note_id = $1::uuid) cited
+    join topics t on t.id = cited.topic_id
+   where t.retired_at is null
+     and t.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
 )
 ${finalSelect(
   "(select title from note)",

@@ -25,6 +25,11 @@ export const sourceRelationExplanationOperation = "source_relation_explanation";
  * aliases per topic, written fast on the `write-fast` class, so reasoning is off by default.
  */
 export const topicNameOperation = "topic_name";
+/**
+ * The call that writes a topic's overview when its page opens (F2 T31): a few cited paragraphs the
+ * owner waits for, on the `write-fast` class, so reasoning is off by default too.
+ */
+export const topicOverviewOperation = "topic_overview";
 
 /**
  * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
@@ -42,7 +47,9 @@ export function aiTaskBehaviorDefaults(
     taskType === "text-generation" &&
     (operation === relationExplanationOperation ||
       operation === sourceRelationExplanationOperation);
-  const naming = taskType === "structured-output" && operation === topicNameOperation;
+  const naming =
+    taskType === "structured-output" &&
+    (operation === topicNameOperation || operation === topicOverviewOperation);
   return {
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
     // Adapters map "off" to the lowest reasoning level a model supports.

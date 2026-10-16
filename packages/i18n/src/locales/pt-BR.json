@@ -1846,6 +1846,46 @@
       "reembedQueued": "Processo iniciado. Os tópicos continuam quando ele terminar.",
       "reembedFailed": "Não foi possível refazer os embeddings da biblioteca. Tente novamente."
     },
+    "overview": {
+      "title": "Visão geral",
+      "hint": "escrita por IA a partir de {used} de {total} notas",
+      "hintOne": "escrita por IA a partir de 1 nota",
+      "writing": "Escrevendo uma visão geral a partir das notas deste tópico…",
+      "write": "Escrever visão geral",
+      "update": "Atualizar",
+      "cancel": "Cancelar",
+      "stale": "As notas deste tópico mudaram desde que esta visão geral foi escrita.",
+      "writtenOnOpen": "Escrita ao abrir, {when}",
+      "sourcesCited": "{count} fontes citadas",
+      "sourcesCitedOne": "1 fonte citada",
+      "updateFailed": "Não foi possível atualizar a visão geral. A anterior continua visível.",
+      "support": {
+        "verified": "Suporte verificado",
+        "partial": "Suporte verificado em parte: {supported} de {checked} frases",
+        "unchecked": "Suporte não verificado",
+        "checking": "Verificando o suporte…",
+        "unsupported": "Não confirmado pela verificação de suporte"
+      },
+      "citation": {
+        "label": "Citação {n}: {source}",
+        "open": "Abrir no trecho exato",
+        "unavailable": "Este trecho não está mais na versão atual da fonte.",
+        "unknownSource": "Fonte não disponível"
+      },
+      "reasons": {
+        "root": "Visões gerais são escritas para tópicos, não para a biblioteca inteira.",
+        "empty": "Este tópico ainda não tem notas para escrever uma visão geral.",
+        "noWriter": "Nenhum modelo de escrita está configurado. Escolha um em Ajustes › IA para escrever visões gerais.",
+        "unavailable": "Não é possível escrever visões gerais agora.",
+        "canceled": "A escrita foi cancelada."
+      },
+      "errors": {
+        "invalid": "Não foi possível conferir a resposta do modelo com as notas. Tente de novo.",
+        "tooLarge": "As notas deste tópico são longas demais para escrever uma visão geral.",
+        "failed": "Não foi possível escrever a visão geral. Tente de novo.",
+        "timeout": "A escrita da visão geral demorou demais. Tente de novo."
+      }
+    },
     "page": {
       "kind": "Tópico",
       "close": "Fechar tópico",
@@ -2343,9 +2383,10 @@
       "consultation": "Consulta fundamentada",
       "maintenance": "Manutenção automática",
       "diagnostics": "Diagnóstico de modelos",
-      "topic": "Nomes de tópicos e Áreas"
+      "topic": "Nomes de tópicos, Áreas e visões gerais"
     },
     "labels": {
+      "overview": "Visão geral do tópico",
       "knowledge": "Resposta com conhecimento compilado",
       "comparison": "Comparação de fontes",
       "investigation": "Pergunta acompanhada",
@@ -2405,6 +2446,9 @@
       "instruction": "Instrução do ranker"
     },
     "variables": {
+      "max_paragraphs": "Número máximo de parágrafos",
+      "topic": "Nome e descrição do tópico",
+      "evidence": "Notas centrais com seus trechos, numeradas",
       "source_title": "Título da fonte",
       "source_type": "Tipo da fonte",
       "source_language": "Idioma original",
@@ -2484,7 +2528,7 @@
       "consultation": "Responde à pergunta usando apenas o escopo admitido e citações originais.",
       "maintenance": "Revisa alterações limitadas de navegação para a rotina selecionada.",
       "diagnostics": "Executa somente quando um diagnóstico de modelo é solicitado explicitamente.",
-      "topic": "Nomeia tópicos, agrupa-os em Áreas e diz ao ranker de posicionamento o que é um tópico. Os nomes usam sempre o idioma do conteúdo."
+      "topic": "Nomeia tópicos, agrupa-os em Áreas, escreve suas visões gerais com citações e diz a um ranker o que é um tópico e se um trecho sustenta uma frase. Nomes e visões gerais usam sempre o idioma do conteúdo."
     }
   },
   "prompts": {

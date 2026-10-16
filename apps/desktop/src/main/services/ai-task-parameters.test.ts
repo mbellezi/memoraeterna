@@ -7,6 +7,7 @@ import {
   relationExplanationOperation,
   sourceRelationExplanationOperation,
   topicNameOperation,
+  topicOverviewOperation,
   withAiTaskParameterDefaults
 } from "./ai-task-parameters.js";
 
@@ -65,6 +66,19 @@ describe("AI task parameter defaults", () => {
     expect(aiTaskBehaviorDefaults("structured-output", true, topicNameOperation)).toEqual({
       reasoningLevel: "off"
     });
+  });
+
+  it("turns reasoning off for the topic overview the owner waits for, unless the profile asks for it", () => {
+    const options = { operation: topicOverviewOperation };
+    expect(withAiTaskParameterDefaults("structured-output", {}, true, options)).toMatchObject({
+      reasoningLevel: "off"
+    });
+    expect(
+      withAiTaskParameterDefaults("structured-output", { reasoningLevel: "low" }, false, options)
+    ).toMatchObject({ reasoningLevel: "low" });
+    expect(withAiTaskParameterDefaults("text-generation", {}, false, options)).not.toHaveProperty(
+      "reasoningLevel"
+    );
   });
 
   it("turns reasoning off for the relation explanation unless the profile asks for it", () => {

@@ -202,7 +202,18 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
   areas_min: 7,
   areas_max: 16,
   pinned_areas: [{ alias: "A1", title: "Learning", description: "How people learn and remember." }],
-  area_topics: [{ alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] }]
+  area_topics: [{ alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] }],
+  max_paragraphs: 3,
+  topic: { title: "Retrieval practice", description: "How recalling material changes memory." },
+  evidence: [
+    {
+      n: 1,
+      title: "Retrieval with feedback",
+      idea: "Feedback improved delayed recall in a fictional trial.",
+      source: "Fictional recall study",
+      passage: "In a fictional study, retrieval with feedback improved recall."
+    }
+  ]
 };
 function variable(key: string, id: string): PromptVariable {
   const numeric = [
@@ -215,7 +226,8 @@ function variable(key: string, id: string): PromptVariable {
     "max_aliases",
     "areas_target",
     "areas_min",
-    "areas_max"
+    "areas_max",
+    "max_paragraphs"
   ].includes(key);
   return {
     key,
@@ -284,7 +296,7 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                     : parts[1] === "local_ranking"
                       ? "reranking"
                       : "text-generation"
-                  : family === "topic" && parts[1] === "gate"
+                  : family === "topic" && (parts[1] === "gate" || parts[2] === "support")
                     ? "reranking"
                     : family === "shared"
                       ? "fragment"
@@ -451,6 +463,7 @@ for (const definition of promptDefinitions) {
     !id.startsWith("diagnostics.") &&
     // A ranker instruction is plain English text: rankers get no language instruction.
     id !== "topic.gate.instruction" &&
+    id !== "topic.overview.support" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
     !id.includes(".state.") &&

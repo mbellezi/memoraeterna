@@ -1848,6 +1848,46 @@
       "reembedQueued": "Opération lancée. Les sujets reprennent à la fin.",
       "reembedFailed": "Impossible de refaire les embeddings de la bibliothèque. Réessayez."
     },
+    "overview": {
+      "title": "Vue d'ensemble",
+      "hint": "rédigée par l'IA à partir de {used} notes sur {total}",
+      "hintOne": "rédigée par l'IA à partir d'une note",
+      "writing": "Rédaction d'une vue d'ensemble à partir des notes de ce sujet…",
+      "write": "Rédiger la vue d'ensemble",
+      "update": "Mettre à jour",
+      "cancel": "Annuler",
+      "stale": "Les notes de ce sujet ont changé depuis la rédaction de cette vue d'ensemble.",
+      "writtenOnOpen": "Rédigée à l'ouverture, {when}",
+      "sourcesCited": "{count} sources citées",
+      "sourcesCitedOne": "1 source citée",
+      "updateFailed": "La vue d'ensemble n'a pas pu être mise à jour. La précédente reste affichée.",
+      "support": {
+        "verified": "Appui vérifié",
+        "partial": "Appui vérifié en partie : {supported} phrases sur {checked}",
+        "unchecked": "Appui non vérifié",
+        "checking": "Vérification de l'appui…",
+        "unsupported": "Non confirmé par la vérification de l'appui"
+      },
+      "citation": {
+        "label": "Citation {n} : {source}",
+        "open": "Ouvrir au passage exact",
+        "unavailable": "Ce passage ne figure plus dans la version actuelle de sa source.",
+        "unknownSource": "Source indisponible"
+      },
+      "reasons": {
+        "root": "Les vues d'ensemble sont rédigées pour les sujets, pas pour toute la bibliothèque.",
+        "empty": "Ce sujet n'a pas encore de notes à partir desquelles rédiger une vue d'ensemble.",
+        "noWriter": "Aucun modèle de rédaction n'est configuré. Choisissez-en un dans Réglages › IA pour rédiger des vues d'ensemble.",
+        "unavailable": "Les vues d'ensemble ne peuvent pas être rédigées pour le moment.",
+        "canceled": "La rédaction a été annulée."
+      },
+      "errors": {
+        "invalid": "La réponse du modèle n'a pas pu être vérifiée par rapport aux notes. Réessayez.",
+        "tooLarge": "Les notes de ce sujet sont trop longues pour en rédiger une vue d'ensemble.",
+        "failed": "La vue d'ensemble n'a pas pu être rédigée. Réessayez.",
+        "timeout": "La rédaction de la vue d'ensemble a pris trop de temps. Réessayez."
+      }
+    },
     "page": {
       "kind": "Sujet",
       "close": "Fermer le sujet",
@@ -2345,9 +2385,10 @@
       "consultation": "Consultation sourcée",
       "maintenance": "Maintenance automatique",
       "diagnostics": "Diagnostic des modèles",
-      "topic": "Noms de sujets et Domaines"
+      "topic": "Noms de sujets, Domaines et vues d'ensemble"
     },
     "labels": {
+      "overview": "Vue d'ensemble du sujet",
       "knowledge": "Réponse à partir des connaissances",
       "comparison": "Comparaison des sources",
       "investigation": "Question suivie",
@@ -2407,6 +2448,9 @@
       "instruction": "Instruction du ranker"
     },
     "variables": {
+      "max_paragraphs": "Nombre maximal de paragraphes",
+      "topic": "Nom et description du sujet",
+      "evidence": "Notes centrales avec leurs passages, numérotées",
       "source_title": "Titre de la source",
       "source_type": "Type de source",
       "source_language": "Langue originale",
@@ -2486,7 +2530,7 @@
       "consultation": "Répond à une question uniquement dans le périmètre admis avec des citations originales.",
       "maintenance": "Examine les modifications limitées de navigation pour la routine sélectionnée.",
       "diagnostics": "Exécuté uniquement lors d’une demande explicite de diagnostic du modèle.",
-      "topic": "Nomme les sujets, les regroupe en Domaines et explique au ranker de classement ce qu’est un sujet. Les noms utilisent toujours la langue du contenu."
+      "topic": "Nomme les sujets, les regroupe en Domaines, rédige leurs vues d'ensemble citées et indique à un ranker ce qu'est un sujet et si un passage appuie une phrase. Les noms et les vues d'ensemble utilisent toujours la langue du contenu."
     }
   },
   "prompts": {

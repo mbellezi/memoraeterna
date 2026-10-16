@@ -100,8 +100,8 @@ export type ObjectLocateInput = z.infer<typeof ObjectLocateInputSchema>;
  *   not hold yet has the source chain alone. The first entry of a path that starts with a topic is
  *   the tree root, which has no title.
  * - `alsoIn` lists the secondary topic placements of the object.
- * - `citedBy` lists the objects that cite it: other notes derived from a source today and, with
- *   the overviews (F2 T31), the topics whose overview cites it.
+ * - `citedBy` lists the objects that cite it: other notes derived from a source, and the live
+ *   topics whose overview cites the note, or a passage or span of the source (F2 T31).
  *
  * A title is empty when the object has none to show: the tree root and a topic that is not named
  * yet. Clients render their own localized label (D11 stores no placeholder).

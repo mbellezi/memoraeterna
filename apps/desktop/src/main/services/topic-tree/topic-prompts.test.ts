@@ -12,6 +12,12 @@ import {
   parseTopicAreasOutput,
   topicGateInstruction
 } from "./topic-prompts.js";
+import {
+  buildTopicOverviewPrompt,
+  buildTopicOverviewRepairPrompt,
+  parseTopicOverviewOutput,
+  topicOverviewSupportInstruction
+} from "./topic-prompts.js";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 const config = defaultTopicTreeConfig.naming;
@@ -160,5 +166,97 @@ describe("the gate instruction", () => {
     expect(definition.variables).toEqual([]);
     expect(definition.fragmentIds).not.toContain("shared.output_language");
     expect(renderPrompt("topic.gate.instruction")).toBe(text);
+  });
+});
+
+describe("the overview prompts", () => {
+  const overview = {
+    contentLanguage: "fr",
+    topic: {
+      title: "Sommeil et mémoire",
+      description: "Comment le sommeil consolide les souvenirs."
+    },
+    evidence: [
+      {
+        title: "Le sommeil profond consolide",
+        idea: "Le sommeil profond consolide la mémoire.",
+        source: "Livre du sommeil",
+        passage:
+          "Pendant le sommeil profond, le cerveau rejoue les souvenirs. %topic% reste du texte."
+      },
+      {
+        title: "Les siestes aident",
+        idea: "Une courte sieste améliore l'attention.",
+        source: "Article",
+        passage: "Une sieste de vingt minutes améliore l'attention l'après-midi."
+      }
+    ]
+  };
+
+  it("renders the language, the limit, the topic and the numbered evidence, untrusted text left literal", () => {
+    const text = buildTopicOverviewPrompt(overview);
+    expect(text).toContain("French");
+    expect(text).toContain("at most 5 short paragraphs");
+    expect(text).toContain('{"title":"Sommeil et mémoire","description":"Comment le sommeil');
+    expect(text).toContain('{"n":1,"title":"Le sommeil profond consolide"');
+    expect(text).toContain('{"n":2,"title":"Les siestes aident"');
+    expect(text).toContain('"source":"Livre du sommeil"');
+    expect(text).toContain("%topic% reste du texte.");
+    expect(text).toContain('"citations":[1,2,3]');
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/u);
+    const unnamed = buildTopicOverviewPrompt({
+      ...overview,
+      topic: { title: null, description: null }
+    });
+    expect(unnamed).toContain('Topic:\n{"title":null}');
+  });
+
+  it("is a function of content: the same evidence gives the same prompt", () => {
+    expect(buildTopicOverviewPrompt(overview)).toBe(
+      buildTopicOverviewPrompt(structuredClone(overview))
+    );
+    expect(
+      buildTopicOverviewPrompt({ ...overview, evidence: [...overview.evidence].reverse() })
+    ).not.toBe(buildTopicOverviewPrompt(overview));
+  });
+
+  it("repairs once with what was wrong, and parses fenced or bare JSON", () => {
+    const prompt = buildTopicOverviewPrompt(overview);
+    const repair = buildTopicOverviewRepairPrompt(prompt, "Paragraph 1 cites [7].");
+    expect(repair.startsWith(prompt)).toBe(true);
+    expect(repair).toContain("was rejected");
+    expect(repair).toContain("Paragraph 1 cites [7].");
+    const answer = { paragraphs: [{ text: "Texte [1].", citations: [1] }] };
+    expect(parseTopicOverviewOutput(JSON.stringify(answer))).toEqual(answer);
+    expect(parseTopicOverviewOutput(`\`\`\`json\n${JSON.stringify(answer)}\n\`\`\``)).toEqual(
+      answer
+    );
+  });
+
+  it("is declared in the catalog with typed variables; the support check is a ranker instruction", () => {
+    const definition = promptDefinition("topic.overview");
+    expect(definition.task).toBe("structured-output");
+    const types = Object.fromEntries(definition.variables.map((v) => [v.key, v.valueType]));
+    expect(types).toEqual({
+      content_language: "text",
+      max_paragraphs: "integer",
+      topic: "object",
+      evidence: "list",
+      output_contract: "text"
+    });
+    expect(definition.fragmentIds).toContain("shared.output_language");
+    expect(promptDefinition("topic.overview.repair").fragmentIds).toContain("topic.overview");
+    for (const variable of definition.variables) {
+      for (const locale of Object.values(variable.description)) {
+        expect(locale).not.toContain("[[missing");
+      }
+    }
+    const support = promptDefinition("topic.overview.support");
+    expect(support.task).toBe("reranking");
+    expect(support.variables).toEqual([]);
+    expect(support.fragmentIds).not.toContain("shared.output_language");
+    const instruction = topicOverviewSupportInstruction();
+    expect(instruction).toMatch(/^Given a sentence from a summary/u);
+    expect(instruction).not.toContain("%");
   });
 });

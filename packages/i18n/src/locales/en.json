@@ -1843,6 +1843,46 @@
       "reembedQueued": "Re-embedding started. Topics resume when it finishes.",
       "reembedFailed": "The library could not be re-embedded. Try again."
     },
+    "overview": {
+      "title": "Overview",
+      "hint": "written by AI from {used} of {total} notes",
+      "hintOne": "written by AI from 1 note",
+      "writing": "Writing an overview from this topic's notes…",
+      "write": "Write overview",
+      "update": "Update",
+      "cancel": "Cancel",
+      "stale": "This topic's notes changed since this overview was written.",
+      "writtenOnOpen": "Written on open, {when}",
+      "sourcesCited": "{count} sources cited",
+      "sourcesCitedOne": "1 source cited",
+      "updateFailed": "The overview could not be updated. The earlier one is shown.",
+      "support": {
+        "verified": "Support verified",
+        "partial": "Support partly verified: {supported} of {checked} sentences",
+        "unchecked": "Support not checked",
+        "checking": "Checking support…",
+        "unsupported": "Not confirmed by the support check"
+      },
+      "citation": {
+        "label": "Citation {n}: {source}",
+        "open": "Open at the exact passage",
+        "unavailable": "This passage is no longer in the current version of its source.",
+        "unknownSource": "Source no longer available"
+      },
+      "reasons": {
+        "root": "Overviews are written for topics, not for the whole library.",
+        "empty": "This topic has no notes to write an overview from yet.",
+        "noWriter": "No writing model is set up. Choose one in Settings › AI to write overviews.",
+        "unavailable": "Overviews cannot be written right now.",
+        "canceled": "Writing was canceled."
+      },
+      "errors": {
+        "invalid": "The model's answer could not be checked against the notes. Try again.",
+        "tooLarge": "This topic's notes are too long to write an overview from.",
+        "failed": "The overview could not be written. Try again.",
+        "timeout": "Writing the overview took too long. Try again."
+      }
+    },
     "page": {
       "kind": "Topic",
       "close": "Close topic",
@@ -2340,9 +2380,10 @@
       "consultation": "Cited consultation",
       "maintenance": "Automatic maintenance",
       "diagnostics": "Model diagnostics",
-      "topic": "Topic names and Areas"
+      "topic": "Topic names, Areas and overviews"
     },
     "labels": {
+      "overview": "Topic overview",
       "knowledge": "Compiled knowledge answer",
       "comparison": "Source comparison",
       "investigation": "Followed question",
@@ -2402,6 +2443,9 @@
       "instruction": "Ranker instruction"
     },
     "variables": {
+      "max_paragraphs": "Maximum number of paragraphs",
+      "topic": "The topic's name and description",
+      "evidence": "Central notes with their passages, numbered",
       "source_title": "Source title",
       "source_type": "Source type",
       "source_language": "Original language",
@@ -2481,7 +2525,7 @@
       "consultation": "Answers a question using only the admitted scope and original citations.",
       "maintenance": "Reviews bounded navigation changes for the selected routine.",
       "diagnostics": "Runs only when an explicit model diagnostic is requested.",
-      "topic": "Names topics, groups them into Areas and tells a placement ranker what a topic is. Names always use the content language."
+      "topic": "Names topics, groups them into Areas, writes their cited overviews and tells a ranker what a topic is and whether a passage supports a sentence. Names and overviews always use the content language."
     }
   },
   "prompts": {

@@ -51,6 +51,10 @@ function model() {
             }
           ]
         };
+      else if (id === "topic.overview" || id === "topic.overview.repair")
+        output = {
+          paragraphs: [{ text: "Feedback improved delayed recall [1].", citations: [1] }]
+        };
       else if (id === "topic.areas")
         output = {
           areas: [
@@ -102,10 +106,24 @@ describe("bounded catalog sample runner", () => {
         "topic.name",
         "topic.name.repair",
         "topic.areas",
-        "topic.gate.instruction"
+        "topic.gate.instruction",
+        "topic.overview",
+        "topic.overview.repair",
+        "topic.overview.support"
       ]).map((entry) => entry.id)
-    ).toEqual(["topic.name", "topic.name.repair", "topic.areas"]);
+    ).toEqual([
+      "topic.name",
+      "topic.name.repair",
+      "topic.areas",
+      "topic.overview",
+      "topic.overview.repair"
+    ]);
     expect(() => promptSampleCases(["topic.gate.instruction"])).toThrow("prompts.errors.sample");
+    expect(() => promptSampleCases(["topic.overview.support"])).toThrow("prompts.errors.sample");
+    expect(promptDefinitions.find((d) => d.id === "topic.overview.support")).toMatchObject({
+      task: "reranking",
+      variables: []
+    });
   });
   it("executes every registered required variant with real builders and validators, including exact same-root repair and local diagnostics", async () => {
     const ai = model(),

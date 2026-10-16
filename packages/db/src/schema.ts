@@ -3135,3 +3135,88 @@ export const topicCalibrations = pgTable(
     )
   })
 );
+
+/**
+ * The lazy overview of a topic (F2 T31, D16): prose written when its page opens, cached per member
+ * fingerprint, prompt revision and content language. Only `topicOverviewRepository` writes it (D9).
+ */
+export const topicOverviews = pgTable(
+  "topic_overviews",
+  {
+    topicId: uuid("topic_id")
+      .primaryKey()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    /** `[{text, citations:[n]}]`: the markers in the text name rows of `topic_overview_citations`. */
+    paragraphs: jsonb("paragraphs").notNull(),
+    /** The evidence it was written from, in prompt order (`noteId`, `chunkId`, `contentHash`, ...). */
+    evidence: jsonb("evidence")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** The topic's members (primary placements of its subtree) when it was written. */
+    memberFingerprint: text("member_fingerprint").notNull(),
+    /** Notes the topic held when it was written. */
+    memberCount: integer("member_count").notNull(),
+    inputHash: text("input_hash").notNull(),
+    promptRevisionId: text("prompt_revision_id").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    runtime: text("runtime").notNull(),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    language: varchar("language", { length: 16 }).notNull(),
+    /** The ranker's support check: status, unsupported paragraphs, sentence counts, model, runs. */
+    support: jsonb("support")
+      .notNull()
+      .default(sql`'{"status":"unchecked","unsupported":[]}'::jsonb`),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    shapeCheck: check(
+      "topic_overviews_shape",
+      sql`jsonb_typeof(${table.paragraphs}) = 'array' and jsonb_array_length(${table.paragraphs}) between 1 and 12
+        and jsonb_typeof(${table.evidence}) = 'array' and jsonb_array_length(${table.evidence}) <= 40
+        and jsonb_typeof(${table.support}) = 'object' and ${table.memberCount} >= 0`
+    ),
+    textCheck: check(
+      "topic_overviews_text",
+      sql`char_length(${table.memberFingerprint}) between 1 and 200 and char_length(${table.inputHash}) between 1 and 200
+        and char_length(${table.promptRevisionId}) between 1 and 200 and char_length(${table.language}) >= 1`
+    )
+  })
+);
+
+/** The citations of an overview: `n` is the marker number, pointing at an exact chunk and span. */
+export const topicOverviewCitations = pgTable(
+  "topic_overview_citations",
+  {
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topicOverviews.topicId, { onDelete: "cascade" }),
+    n: smallint("n").notNull(),
+    /** Null once the passage was replaced: the excerpt stays readable and the citation unavailable. */
+    chunkId: uuid("chunk_id").references(() => chunks.id, { onDelete: "set null" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, {
+      onDelete: "set null"
+    }),
+    noteId: uuid("note_id").references(() => atomicNotes.id, { onDelete: "set null" }),
+    excerpt: text("excerpt").notNull(),
+    /** SHA-256 of the whole passage the writer saw. */
+    excerptHash: text("excerpt_hash").notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.topicId, table.n] }),
+    noteIdx: index("topic_overview_citations_note_idx")
+      .on(table.noteId)
+      .where(sql`${table.noteId} is not null`),
+    chunkIdx: index("topic_overview_citations_chunk_idx")
+      .on(table.chunkId)
+      .where(sql`${table.chunkId} is not null`),
+    spanIdx: index("topic_overview_citations_span_idx")
+      .on(table.sourceSpanId)
+      .where(sql`${table.sourceSpanId} is not null`),
+    citationCheck: check(
+      "topic_overview_citations_citation",
+      sql`${table.n} between 1 and 40 and char_length(${table.excerpt}) between 1 and 1200
+        and char_length(${table.excerptHash}) between 1 and 200`
+    )
+  })
+);

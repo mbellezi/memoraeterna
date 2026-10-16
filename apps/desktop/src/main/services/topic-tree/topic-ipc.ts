@@ -34,6 +34,14 @@ import {
   type TopicsChangedEvent,
   type TopicsStatus
 } from "@app/domain";
+import {
+  TopicOverviewCancelInputSchema,
+  TopicOverviewInputSchema,
+  TopicOverviewResultSchema,
+  type TopicOverviewCancelInput,
+  type TopicOverviewInput,
+  type TopicOverviewState
+} from "@app/domain";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicReadService, type TopicReadServiceOptions } from "./topic-read-service.js";
 
@@ -49,15 +57,19 @@ export interface TopicReadPort {
 }
 
 /**
- * The operations other tasks install: `mutate`, `undo` and `review` (T26) and `reembed` (T19b). A
- * channel without its handler answers `topics.errors.unavailable` instead of Electron's own error,
- * so the renderer can code against the whole contract before the handler lands.
+ * The operations other tasks install: `mutate`, `undo` and `review` (T26), `reembed` (T19b) and the
+ * overview (T31). A channel without its handler answers `topics.errors.unavailable` (a cancel answers
+ * false) instead of Electron's own error, so the renderer can code against the whole contract
+ * before the handler lands.
  */
 export interface TopicOperationHandlers {
   mutate?: (input: TopicMutation) => Promise<TopicMutationResult>;
   undo?: (input: TopicUndoInput) => Promise<TopicUndoResult>;
   review?: (input: TopicReviewInput) => Promise<TopicReviewResult>;
   reembed?: (input: TopicReembedInput) => Promise<TopicReembedResult>;
+  /** `topics.overview` and its cancel (T31): the overview written on open. */
+  writeOverview?: (input: TopicOverviewInput) => Promise<TopicOverviewState>;
+  cancelOverview?: (input: TopicOverviewCancelInput) => boolean | Promise<boolean>;
 }
 
 export interface TopicIpcDependencies extends TopicOperationHandlers {
@@ -104,6 +116,15 @@ export function registerTopicIpc(ipc: IpcMain, deps: TopicIpcDependencies): void
     const input = TopicReembedInputSchema.parse(payload);
     if (!deps.reembed) throw new Error("topics.errors.unavailable");
     return TopicReembedResultSchema.parse(await deps.reembed(input));
+  });
+  ipc.handle(ipcChannels.topicsOverview, async (_event, payload: unknown) => {
+    const input = TopicOverviewInputSchema.parse(payload);
+    if (!deps.writeOverview) throw new Error("topics.errors.unavailable");
+    return TopicOverviewResultSchema.parse(await deps.writeOverview(input));
+  });
+  ipc.handle(ipcChannels.topicsOverviewCancel, async (_event, payload: unknown) => {
+    const input = TopicOverviewCancelInputSchema.parse(payload);
+    return deps.cancelOverview ? (await deps.cancelOverview(input)) === true : false;
   });
 }
 
@@ -156,14 +177,17 @@ export function registerTopicTreeIpc(
   ipc: IpcMain,
   options: TopicTreeIpcOptions
 ): { read: TopicReadService; emitChanged: TopicsChangedEmitter } {
-  const { targets, onInvalidEvent, mutate, undo, review, reembed, ...readOptions } = options;
+  const { targets, onInvalidEvent, mutate, undo, review, reembed, ...rest } = options;
+  const { writeOverview, cancelOverview, ...readOptions } = rest;
   const read = new TopicReadService(readOptions);
   registerTopicIpc(ipc, {
     read,
     ...(mutate ? { mutate } : {}),
     ...(undo ? { undo } : {}),
     ...(review ? { review } : {}),
-    ...(reembed ? { reembed } : {})
+    ...(reembed ? { reembed } : {}),
+    ...(writeOverview ? { writeOverview } : {}),
+    ...(cancelOverview ? { cancelOverview } : {})
   });
   return { read, emitChanged: createTopicsChangedPublisher(targets, onInvalidEvent) };
 }

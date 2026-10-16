@@ -54,11 +54,13 @@ const operationChannels = [
   ipcChannels.topicsMutate,
   ipcChannels.topicsUndo,
   ipcChannels.topicsReview,
-  ipcChannels.topicsReembed
+  ipcChannels.topicsReembed,
+  ipcChannels.topicsOverview,
+  ipcChannels.topicsOverviewCancel
 ];
 
 describe("topic IPC channels", () => {
-  it("registers every contract of the spec once, and no channel for the overview or the switch", () => {
+  it("registers every contract of the spec once, and no channel for the switch", () => {
     const topicChannels = Object.entries(ipcChannels).filter(([name]) => name.startsWith("topics"));
     expect(topicChannels.map(([name]) => name).sort()).toEqual(
       [
@@ -66,6 +68,8 @@ describe("topic IPC channels", () => {
         "topicsChangeSet",
         "topicsMutate",
         "topicsNotes",
+        "topicsOverview",
+        "topicsOverviewCancel",
         "topicsPage",
         "topicsPath",
         "topicsReembed",
@@ -137,11 +141,14 @@ describe("registerTopicIpc", () => {
       [ipcChannels.topicsMutate, { op: "pin", id: id(1) }],
       [ipcChannels.topicsUndo, { changeSetId: id(2) }],
       [ipcChannels.topicsReview, { changeSetId: id(2), decision: "apply" }],
-      [ipcChannels.topicsReembed, { confirm: true }]
+      [ipcChannels.topicsReembed, { confirm: true }],
+      [ipcChannels.topicsOverview, { id: id(3) }]
     ];
     for (const [channel, payload] of requests) {
       await expect(call(channel, payload), channel).rejects.toThrow("topics.errors.unavailable");
     }
+    // Nothing is being written without the overview service: a cancel stops nothing.
+    expect(await call(ipcChannels.topicsOverviewCancel, { id: id(3) })).toBe(false);
     // An invalid request is refused as such, not as unavailable.
     await expect(call(ipcChannels.topicsMutate, { op: "delete" })).rejects.not.toThrow(
       "topics.errors.unavailable"
@@ -190,6 +197,37 @@ describe("registerTopicIpc", () => {
     await expect(call(ipcChannels.topicsMutate, { op: "unpin", id: id(1) })).rejects.toThrow(
       "topics.errors.protected"
     );
+  });
+
+  it("writes and cancels overviews through the installed service, validating both ways", async () => {
+    const { ipc, call } = fakeIpc();
+    const ready = {
+      status: "ready" as const,
+      stale: false,
+      paragraphs: [{ text: "Sleep consolidates memory [1].", citations: [1] }],
+      citations: [
+        { n: 1, chunkId: id(7), sourceTitle: "Book", excerpt: "Passage.", available: true }
+      ],
+      evidence: { used: 1, total: 4 },
+      writtenAt: at,
+      model: "writer",
+      language: "en",
+      support: { status: "unchecked" as const, unsupported: [] }
+    };
+    const writeOverview = vi.fn(async () => ready);
+    const cancelOverview = vi.fn(() => true);
+    registerTopicIpc(ipc, { read: readPort(), writeOverview, cancelOverview });
+    expect(await call(ipcChannels.topicsOverview, { id: id(3), force: true })).toEqual(ready);
+    expect(writeOverview).toHaveBeenCalledWith({ id: id(3), force: true });
+    expect(await call(ipcChannels.topicsOverviewCancel, { id: id(3) })).toBe(true);
+    expect(cancelOverview).toHaveBeenCalledWith({ id: id(3) });
+    await expect(call(ipcChannels.topicsOverview, { id: "x" })).rejects.toThrow();
+    await expect(
+      call(ipcChannels.topicsOverviewCancel, { id: id(3), force: true })
+    ).rejects.toThrow();
+    writeOverview.mockResolvedValueOnce({ ...ready, paragraphs: "x" } as never);
+    await expect(call(ipcChannels.topicsOverview, { id: id(3) })).rejects.toThrow();
+    expect(writeOverview).toHaveBeenCalledTimes(2);
   });
 
   it("lets a failure of the read service reach the caller untouched", async () => {
@@ -257,7 +295,7 @@ describe("registerTopicTreeIpc", () => {
       targets: () => [{ isDestroyed: () => false, send }],
       mutate
     });
-    expect(handlers.size).toBe(11);
+    expect(handlers.size).toBe(13);
     // The database is not ready, so every read says so; the operation that was installed runs.
     await expect(call(ipcChannels.topicsTree, {})).rejects.toThrow("topics.errors.unavailable");
     await expect(call(ipcChannels.topicsStatus)).rejects.toThrow("topics.errors.unavailable");

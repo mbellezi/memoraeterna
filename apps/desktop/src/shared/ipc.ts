@@ -55,6 +55,7 @@ import type {
   TopicsChangedEvent,
   TopicsStatus
 } from "@app/domain";
+import type { TopicOverviewCancelInput, TopicOverviewInput, TopicOverviewState } from "@app/domain";
 import type {
   MonitoringQuery,
   MonitoringPage,
@@ -112,6 +113,8 @@ export const ipcChannels = {
   topicsReview: "app:topics:review",
   topicsStatus: "app:topics:status",
   topicsReembed: "app:topics:reembed",
+  topicsOverview: "app:topics:overview",
+  topicsOverviewCancel: "app:topics:overview-cancel",
   topicsChanged: "app:topics:changed",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
@@ -1718,6 +1721,10 @@ export interface DesktopApi {
     status: () => Promise<TopicsStatus>;
     /** Re-embeds the library after the embedding space changed. */
     reembed: (input: TopicReembedInput) => Promise<TopicReembedResult>;
+    /** The topic's overview: the cached one, or one written now (`force`: Update). Only writing calls AI. */
+    overview: (input: TopicOverviewInput) => Promise<TopicOverviewState>;
+    /** Stops the overview being written for a topic; true when one was stopped. */
+    cancelOverview: (input: TopicOverviewCancelInput) => Promise<boolean>;
     /** Pushed after a change-set commits, coalesced; never polled. */
     subscribeChanged: (listener: (event: TopicsChangedEvent) => void) => () => void;
   };

@@ -321,8 +321,10 @@ describe("topics.page", () => {
           available: true
         }
       ],
+      evidence: { used: 1, total: 3 },
       writtenAt: at,
       model: "writer",
+      language: "en",
       support: { status: "verified", unsupported: [] }
     };
     for (const state of [

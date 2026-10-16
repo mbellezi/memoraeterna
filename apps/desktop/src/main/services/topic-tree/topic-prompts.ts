@@ -1,16 +1,18 @@
 // The prompts of the Topic Tree Engine (F2 T18): topic names, the repair that re-asks only the
 // rejected topics, the Areas grouping (T24 calls it) and the placement gate's ranker instruction
-// (T23). Every prompt lives in the catalog (`rules/ai.md`); these builders only supply declared,
-// bounded data. Prompts are a function of content, never of IDs (D22): the data they receive is
-// already in content-key order and carries aliases, not IDs.
+// (T23) and the overview with its support check (T31). Every prompt lives in the catalog
+// (`rules/ai.md`); these builders only supply declared, bounded data. Prompts are a function of
+// content, never of IDs (D22): the data they receive is already in content-key order and carries
+// aliases, not IDs.
+import { topicOverviewLimits } from "@app/domain";
 import { namingPromptGroups, parseModelJson } from "@app/domain/topic-tree";
 import type { NamingCall, TopicNamingConfig } from "@app/domain/topic-tree";
 import { z } from "zod";
 
-import { topicNameOperation } from "../ai-task-parameters.js";
+import { topicNameOperation, topicOverviewOperation } from "../ai-task-parameters.js";
 import { joinPrompts, renderPrompt } from "../prompt-runtime.js";
 
-export { topicNameOperation };
+export { topicNameOperation, topicOverviewOperation };
 
 export const topicNamePromptVersion = "topic-name-v1";
 export const topicAreasPromptVersion = "topic-areas-v1";
@@ -105,4 +107,66 @@ export function parseTopicAreasOutput(output: unknown): TopicAreasOutput {
 /** The ranker instruction of the placement gate (F2 D10), rendered from the catalog. */
 export function topicGateInstruction(): string {
   return renderPrompt("topic.gate.instruction");
+}
+
+// ---------------------------------------------------------------------------
+// The overview (T31)
+
+/** The version of the overview contract stored with every overview (with the catalog's revision). */
+export const topicOverviewPromptVersion = "topic-overview-v1";
+
+/** One evidence item as the prompt shows it; its number (E1..En) is its position. */
+export interface TopicOverviewPromptEvidence {
+  title: string;
+  idea: string;
+  /** The title of the source the passage comes from. */
+  source: string;
+  /** The note's whole primary passage: never cut (the evidence budget takes whole items). */
+  passage: string;
+}
+
+export interface TopicOverviewPromptInput {
+  /** The library's content language as configured (`pt-BR`); the renderer writes its full name. */
+  contentLanguage: string;
+  topic: { title: string | null; description: string | null };
+  /** In evidence order (`orderOverviewCandidates`): content, never IDs. */
+  evidence: readonly TopicOverviewPromptEvidence[];
+}
+
+/** The overview prompt: the topic and its numbered evidence, nothing that names an ID. */
+export function buildTopicOverviewPrompt(input: TopicOverviewPromptInput): string {
+  return renderPrompt("topic.overview", {
+    content_language: input.contentLanguage,
+    max_paragraphs: topicOverviewLimits.maxParagraphs,
+    topic: {
+      title: input.topic.title,
+      ...(input.topic.description === null ? {} : { description: input.topic.description })
+    },
+    evidence: input.evidence.map((item, index) => ({
+      n: index + 1,
+      title: item.title,
+      idea: item.idea,
+      source: item.source,
+      passage: item.passage
+    }))
+  });
+}
+
+/** One bounded repair: the first prompt followed by what was wrong with the answer. */
+export function buildTopicOverviewRepairPrompt(prompt: string, validationErrors: string): string {
+  return joinPrompts(
+    prompt,
+    "\n\n",
+    renderPrompt("topic.overview.repair", { validation_errors: validationErrors })
+  );
+}
+
+/** The ranker instruction of the support check, rendered from the catalog. */
+export function topicOverviewSupportInstruction(): string {
+  return renderPrompt("topic.overview.support");
+}
+
+/** The overview answer as JSON (fenced or bare); `validateOverviewOutput` checks its meaning. */
+export function parseTopicOverviewOutput(output: unknown): unknown {
+  return parseModelJson(output);
 }

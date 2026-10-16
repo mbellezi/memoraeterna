@@ -44,6 +44,12 @@ import {
   buildTopicNameRepairPrompt,
   parseTopicAreasOutput
 } from "./topic-tree/topic-prompts.js";
+import {
+  buildTopicOverviewPrompt,
+  buildTopicOverviewRepairPrompt,
+  parseTopicOverviewOutput
+} from "./topic-tree/topic-prompts.js";
+import { validateOverviewOutput } from "@app/domain";
 import { withPromptPin, renderPrompt, joinPrompts, promptFingerprint } from "./prompt-runtime.js";
 import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -438,6 +444,33 @@ export function promptSampleCall(
         }
       };
     }
+    if (promptId === "topic.overview" || promptId === "topic.overview.repair") {
+      const evidence = chunks.map((chunk, index) => ({
+        title: `Recall finding ${index + 1}`,
+        idea: chunk.content,
+        source: source.title,
+        passage: chunk.content
+      }));
+      const prompt = buildTopicOverviewPrompt({
+        contentLanguage: "en",
+        topic: {
+          title: "Retrieval practice",
+          description: "How recalling material changes memory."
+        },
+        evidence
+      });
+      return {
+        input:
+          promptId === "topic.overview"
+            ? prompt
+            : buildTopicOverviewRepairPrompt(prompt, "Paragraph 1 cites no evidence."),
+        task: "structured-output",
+        validate: (o) => {
+          if (!validateOverviewOutput(parseTopicOverviewOutput(o), evidence.length).ok)
+            throw new Error("prompts.errors.sample");
+        }
+      };
+    }
     if (promptId.startsWith("diagnostics.") || promptId.startsWith("embedding.")) {
       const d = promptDefinition(promptId),
         values = Object.fromEntries(d.variables.map((v) => [v.key, v.example]));
@@ -472,10 +505,11 @@ interface SampleCase {
   root: string;
   variant?: string;
 }
-/** Prompts only a dedicated ranker can run: the decide validation and the placement gate. */
+/** Prompts only a dedicated ranker can run: the decide validation, the gate and the support check. */
 const rankerInstructionIds: ReadonlySet<string> = new Set([
   "diagnostics.local_ranking",
-  "topic.gate.instruction"
+  "topic.gate.instruction",
+  "topic.overview.support"
 ]);
 /**
  * The curator, organization and maintenance prompts have no caller since the legacy wiki was

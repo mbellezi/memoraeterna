@@ -60,6 +60,11 @@ import {
   TopicsStatusSchema
 } from "@app/domain";
 import {
+  TopicOverviewCancelInputSchema,
+  TopicOverviewInputSchema,
+  TopicOverviewResultSchema
+} from "@app/domain";
+import {
   monitoringQuerySchema,
   monitoringPageSchema,
   monitoringDetailSchema,
@@ -301,6 +306,19 @@ const api: DesktopApi = {
       TopicReembedResultSchema.parse(
         await ipcRenderer.invoke(ipcChannels.topicsReembed, TopicReembedInputSchema.parse(input))
       ),
+    overview: async (input) =>
+      TopicOverviewResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.topicsOverview, TopicOverviewInputSchema.parse(input))
+      ),
+    cancelOverview: async (input) =>
+      z
+        .boolean()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.topicsOverviewCancel,
+            TopicOverviewCancelInputSchema.parse(input)
+          )
+        ),
     subscribeChanged(listener) {
       const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         const event = TopicsChangedEventSchema.safeParse(payload);

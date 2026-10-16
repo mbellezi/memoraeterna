@@ -100,7 +100,8 @@ describe("baseline seed", () => {
       "0050_source_relation_explanations",
       "0051_job_lanes",
       "0052_legacy_detach",
-      "0053_topic_tree"
+      "0053_topic_tree",
+      "0054_topic_overviews"
     ]);
   });
 
@@ -172,7 +173,8 @@ describe("baseline seed", () => {
         "0050_source_relation_explanations",
         "0051_job_lanes",
         "0052_legacy_detach",
-        "0053_topic_tree"
+        "0053_topic_tree",
+        "0054_topic_overviews"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -28,6 +28,7 @@ import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobExecutor } from "./topic-jobs.js";
 import { TopicLabelService } from "./topic-labels.js";
 import { TopicNamingService } from "./topic-naming.js";
+import { TopicOverviewService } from "./topic-overview.js";
 import type { TopicEngineStatus, TopicReadService } from "./topic-read-service.js";
 import type { SpaceResolver } from "./topic-space.js";
 import { TopicTreeService } from "./topic-tree-service.js";
@@ -84,6 +85,8 @@ export interface TopicTreeServices {
   gate: TopicGateService | null;
   /** The Areas grouping (D12, T24); null without `options.ai` and `getContentLanguage`. */
   areas: TopicAreasService | null;
+  /** The lazy overview of a Topic page (T31); null without `options.ai` and `getContentLanguage`. */
+  overview: TopicOverviewService | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -196,6 +199,19 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       })
     : null;
 
+  // T31: the overview a Topic page writes on open (interactive, cancelable, not capped by D34).
+  const overview =
+    options.ai && options.getContentLanguage
+      ? new TopicOverviewService({
+          getPool,
+          ai: options.ai,
+          getContentLanguage: options.getContentLanguage,
+          aiMode,
+          ...(logger ? { logger } : {}),
+          ...(options.now ? { now: options.now } : {})
+        })
+      : null;
+
   // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
   let read: TopicReadService | null = null;
   if (options.ipc) {
@@ -213,6 +229,13 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       mutate: (input) => topicService.mutate(input),
       undo: (input) => topicService.undo(input),
       review: (input) => topicService.review(input),
+      ...(overview
+        ? {
+            overview: (topicId: string) => overview.state(topicId),
+            writeOverview: (input) => overview.overview(input),
+            cancelOverview: (input) => overview.cancel(input)
+          }
+        : {}),
       ...(options.now ? { now: options.now } : {}),
       ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
     });
@@ -346,6 +369,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     labels,
     gate,
     areas,
+    overview,
     budget,
     aiMode,
     jobs,
@@ -375,6 +399,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       release: () => topicService.releaseTopicJobs()
     },
     dispose: () => {
+      overview?.dispose();
       changes.dispose();
       void structure.dispose();
     }

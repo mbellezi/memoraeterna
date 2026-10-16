@@ -59,6 +59,8 @@ for (const [owner, methods] of Object.entries({
     "review",
     "status",
     "reembed",
+    "overview",
+    "cancelOverview",
     "subscribeChanged"
   ],
   system: ["subscribeNavigation"]

@@ -1841,6 +1841,46 @@
       "reembedQueued": "Operazione avviata. Gli argomenti riprendono al termine.",
       "reembedFailed": "Non è stato possibile rifare gli embedding della libreria. Riprova."
     },
+    "overview": {
+      "title": "Panoramica",
+      "hint": "scritta dall'IA a partire da {used} note su {total}",
+      "hintOne": "scritta dall'IA a partire da 1 nota",
+      "writing": "Scrittura di una panoramica dalle note di questo argomento…",
+      "write": "Scrivi panoramica",
+      "update": "Aggiorna",
+      "cancel": "Annulla",
+      "stale": "Le note di questo argomento sono cambiate da quando questa panoramica è stata scritta.",
+      "writtenOnOpen": "Scritta all'apertura, {when}",
+      "sourcesCited": "{count} fonti citate",
+      "sourcesCitedOne": "1 fonte citata",
+      "updateFailed": "Non è stato possibile aggiornare la panoramica. Resta visibile quella precedente.",
+      "support": {
+        "verified": "Supporto verificato",
+        "partial": "Supporto verificato in parte: {supported} frasi su {checked}",
+        "unchecked": "Supporto non verificato",
+        "checking": "Verifica del supporto…",
+        "unsupported": "Non confermato dalla verifica del supporto"
+      },
+      "citation": {
+        "label": "Citazione {n}: {source}",
+        "open": "Apri nel passaggio esatto",
+        "unavailable": "Questo passaggio non è più nella versione attuale della sua fonte.",
+        "unknownSource": "Fonte non disponibile"
+      },
+      "reasons": {
+        "root": "Le panoramiche si scrivono per gli argomenti, non per l'intera biblioteca.",
+        "empty": "Questo argomento non ha ancora note da cui scrivere una panoramica.",
+        "noWriter": "Nessun modello di scrittura è configurato. Scegline uno in Impostazioni › IA per scrivere panoramiche.",
+        "unavailable": "Al momento non è possibile scrivere panoramiche.",
+        "canceled": "La scrittura è stata annullata."
+      },
+      "errors": {
+        "invalid": "Non è stato possibile verificare la risposta del modello con le note. Riprova.",
+        "tooLarge": "Le note di questo argomento sono troppo lunghe per scriverne una panoramica.",
+        "failed": "Non è stato possibile scrivere la panoramica. Riprova.",
+        "timeout": "La scrittura della panoramica ha richiesto troppo tempo. Riprova."
+      }
+    },
     "page": {
       "kind": "Argomento",
       "close": "Chiudi argomento",
@@ -2338,9 +2378,10 @@
       "consultation": "Consultazione con fonti",
       "maintenance": "Manutenzione automatica",
       "diagnostics": "Diagnostica dei modelli",
-      "topic": "Nomi di argomenti e Aree"
+      "topic": "Nomi di argomenti, Aree e panoramiche"
     },
     "labels": {
+      "overview": "Panoramica dell'argomento",
       "knowledge": "Risposta dal sapere compilato",
       "comparison": "Confronto delle fonti",
       "investigation": "Domanda seguita",
@@ -2400,6 +2441,9 @@
       "instruction": "Istruzione del ranker"
     },
     "variables": {
+      "max_paragraphs": "Numero massimo di paragrafi",
+      "topic": "Nome e descrizione dell'argomento",
+      "evidence": "Note centrali con i loro passaggi, numerate",
       "source_title": "Titolo della fonte",
       "source_type": "Tipo di fonte",
       "source_language": "Lingua originale",
@@ -2479,7 +2523,7 @@
       "consultation": "Risponde alla domanda usando solo l’ambito ammesso e citazioni originali.",
       "maintenance": "Esamina modifiche limitate alla navigazione per la routine selezionata.",
       "diagnostics": "Si esegue solo quando viene richiesto esplicitamente un test del modello.",
-      "topic": "Dà un nome agli argomenti, li raggruppa in Aree e spiega al ranker di collocazione che cos’è un argomento. I nomi usano sempre la lingua dei contenuti."
+      "topic": "Dà un nome agli argomenti, li raggruppa in Aree, ne scrive le panoramiche con citazioni e indica a un ranker che cos'è un argomento e se un passaggio sostiene una frase. Nomi e panoramiche usano sempre la lingua dei contenuti."
     }
   },
   "prompts": {

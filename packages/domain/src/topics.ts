@@ -439,9 +439,12 @@ export type TopicLastChange = z.infer<typeof TopicLastChangeSchema>;
 export const TopicOverviewCitationSchema = z
   .object({
     n: z.number().int().min(1).max(topicReadLimits.overviewCitationsMax),
-    chunkId: uuid,
+    /** The cited passage; absent once its chunk was replaced (the stored excerpt stays readable). */
+    chunkId: uuid.optional(),
     sourceSpanId: uuid.optional(),
     noteId: uuid.optional(),
+    /** The source the passage belongs to; absent when it is gone. */
+    sourceId: uuid.optional(),
     sourceTitle: boundedText(topicReadLimits.itemTitleMax),
     excerpt: boundedText(topicReadLimits.overviewExcerptMax),
     /** The passage still belongs to the current version of its source. */
@@ -476,13 +479,20 @@ export const TopicOverviewStateSchema = z.discriminatedUnion("status", [
         )
         .max(topicReadLimits.overviewParagraphsMax),
       citations: z.array(TopicOverviewCitationSchema).max(topicReadLimits.overviewCitationsMax),
+      /** The notes it was written from, of the notes the topic held then (the page states both). */
+      evidence: z.object({ used: count, total: count }).strict(),
       writtenAt: isoTimestamp,
       model: z.string().min(1).max(200),
+      /** The content language it is written in (BCP 47). */
+      language: z.string().min(1).max(16),
       support: z
         .object({
-          status: z.enum(["verified", "partial", "unchecked"]),
+          /** `checking` while the ranker check that follows the writing runs (it never blocks it). */
+          status: z.enum(["verified", "partial", "unchecked", "checking"]),
           /** Paragraph indexes the support check could not verify. */
-          unsupported: z.array(z.number().int().min(0)).max(topicReadLimits.overviewParagraphsMax)
+          unsupported: z.array(z.number().int().min(0)).max(topicReadLimits.overviewParagraphsMax),
+          /** Sentences the ranker checked and those a cited passage supports. */
+          sentences: z.object({ checked: count, supported: count }).strict().optional()
         })
         .strict()
     })

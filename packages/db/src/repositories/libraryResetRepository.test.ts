@@ -106,7 +106,9 @@ describe("full application reset", () => {
       "topic_structure_events",
       "topic_gate_decisions",
       "topic_daily_metrics",
-      "topic_calibrations"
+      "topic_calibrations",
+      "topic_overviews",
+      "topic_overview_citations"
     ])
       expect(resetClearedTables).toContain(table);
   });
