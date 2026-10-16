@@ -505,16 +505,16 @@ Wave 6:
       paged delivery on the light lane replacing the fixed caps, with `rules/integrations.md`.
 
 Wave 7 (gate C at the end):
-- [ ] T28 Ask about a topic.
+- [x] T28 Ask about a topic.
 - [ ] T29a Calibrate placement and the gate per decider: admission, margin, gate temperature and threshold.
 - [ ] T29b Calibrate stability, growth and structure; adopt the config defaults.
 - [ ] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
 - [ ] T30 Owner blind rating (D20).
-- [ ] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
+- [x] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
 - [ ] T32 Zero-config end-to-end test (`topics:e2e`).
-- [ ] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
-- [ ] T34b `memora://topic/<id>` deep links that resolve topic redirects.
-- [ ] T40r Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
+- [x] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
+- [x] T34b `memora://topic/<id>` deep links that resolve topic redirects.
+- [x] T40r Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
 
 Wave 8 (exit):
 - [ ] T41 Exit measurement (`docs/kpi-f2.md`) and phase close.

@@ -124,3 +124,24 @@ measurement profiles (ENV-C, ENV-G) follow in wave 7.
 Merged with the wave: the five locale files had two `topics.changeSets` blocks, so the first one (`place`,
 `build`, `rebuild`, `rebalance`, `proposal`) never reached the UI; they are one block now. Not delivered: pin and
 unpin of notes and sources from the topic screens (they keep their existing view-history pin).
+
+## Wave 7, code (2026-10-16)
+
+Seven tasks merged (T28, T31, T19b, T34b, T40r, T32's harness, and T26f follow-ups); T31, T19b and T40r had an
+Opus review, and the medium findings of T31 and T19b were fixed before the merge. Verification followed the new
+economical rule: `npm run check:changed` per task, one full `npm run check` (376 test files, 3,855 tests) and the
+stage verifiers (`phase4:e2e`, `db:seed:verify` with 55 migrations, `db:topic-overview:verify`,
+`db:topics:verify`) at the merge.
+
+| Task | Measure | Result |
+| --- | --- | --- |
+| T28 Ask about a topic | Retrieval at 20,000 notes, 220 topics | library 277 ms; root 301 ms; Area (1,000 notes) 24 ms; leaf 8 ms |
+| T28 | Scoped answer cites only the subtree; no wiki repository call | yes (sidecar test, SQL statement spy) |
+| T19b space change | 108 notes, 30 topics, 256-d space moved to 768-d | 30 of 30 topic IDs kept, 0 items moved, 0 hard violations |
+| T19b | Remote route / local route | remote waits for `topics.reembed`; local re-embeds on its own |
+| T32 E6 harness | `topics:e2e --synthetic` (no models) | record 40 calls, replay 40 served, 0 misses, both passes PASSED |
+| T40r removal | Legacy wiki data access removed | rules 800 → 795 lines; long product lines 158 → 157 |
+
+Pending for gate C: the E6 record and replay on the PLOS paper (T32), the live proofs on the measurement
+profiles (T31 on ENV-G, T19b on a copy of ENV-G, T23/T24 on ENV-C), calibration (T29a/T29b), the owner's blind
+rating (T30) and the gate-C measurement (T29c).
