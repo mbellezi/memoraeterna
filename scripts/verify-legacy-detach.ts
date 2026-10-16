@@ -38,13 +38,13 @@ import {
 import { HierarchicalIngestionService } from "../apps/desktop/src/main/services/hierarchical-ingestion-service.js";
 import { IngestionService } from "../apps/desktop/src/main/services/ingestion-service.js";
 import { JobSupervisor } from "../apps/desktop/src/main/services/job-supervisor.js";
-import { seedAutomaticWikiFixture } from "./fixtures/automatic-wiki-fixture.js";
+import { seedLegacyLibraryFixture } from "./fixtures/legacy-library-fixture.js";
 
 /**
  * Real-database proof of the legacy detach (migration 0052_legacy_detach, F2 T35a). It starts its
  * own temporary PostgreSQL sidecar and touches no other database.
  *
- * A. Pending path: a database migrated up to 0051 holds the automatic-wiki fixture, a row in every
+ * A. Pending path: a database migrated up to 0051 holds the legacy library fixture, a row in every
  *    legacy-content table and an evolution row tied to a legacy run. Before 0052 the impact triggers
  *    write events and a TRUNCATE of the 30 legacy tables fails on the evolution FK. 0052 is applied:
  *    no wiki impact trigger, function or FK is left, the enum holds `retired`, the 7 fence triggers
@@ -287,7 +287,7 @@ try {
   const legacy = createPgPool({ connectionString: connection.connectionString, max: 4 });
   pools.push(legacy);
   await runMigrations(legacy, before);
-  const fixture = await seedAutomaticWikiFixture(legacy, true);
+  const fixture = await seedLegacyLibraryFixture(legacy, true);
   const firstNote = fixture.noteIds[0]!;
   const note = (
     await legacy.query<{ source: string; chunk: string }>(
@@ -350,7 +350,12 @@ try {
   const pendingShape = await detachShape(legacy);
   assertDetached(pendingShape, "pending path");
   const countsAfter = await tableCounts(legacy);
-  assert.deepEqual(countsAfter, countsBefore, "every row count is unchanged by 0052");
+  // Later migrations add tables (the topic tree); every table that existed at 0051 keeps its rows.
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(countsBefore).map((name) => [name, countsAfter[name]])),
+    countsBefore,
+    "every row count is unchanged by 0052"
+  );
   assert.ok(await fenced(legacy, "off"), "without the fixture setting a legacy insert is refused");
   const throughputAfter = await chunkThroughput(legacy, "0052");
   const eventsAfterThroughput = Number(

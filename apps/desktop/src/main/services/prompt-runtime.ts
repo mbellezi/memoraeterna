@@ -2,7 +2,6 @@ import { legacyPromptEntryHashes } from "./prompt-legacy-fingerprints.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
-  OrganizationConfigurationSchema,
   promptDefinitions,
   promptDefinition,
   renderPromptTemplate,
@@ -78,17 +77,11 @@ export function promptFingerprint(
             v.serialization,
             v.originResolver
           ]),
-          serializerVersion:
-            d.variables.some((v) => /^(content|relation|source)_language$/.test(v.key)) ||
-            d.id.startsWith("organization.curator") ||
-            d.id.startsWith("organization.evolution") ||
-            [
-              "organization.temporal",
-              "organization.procedure",
-              "organization.consolidation"
-            ].includes(d.id)
-              ? "prompt-language-names-v2"
-              : "prompt-renderer-v1"
+          serializerVersion: d.variables.some((v) =>
+            /^(content|relation|source)_language$/.test(v.key)
+          )
+            ? "prompt-language-names-v2"
+            : "prompt-renderer-v1"
         })
       ];
     })
@@ -175,39 +168,6 @@ export function renderPrompt(
     ...Object.values(values).flatMap((v) => (typeof v === "string" ? promptAudit(v) : []))
   ]);
 }
-export function catalogInstructions(
-  legacy: ReturnType<typeof import("@app/domain").resolveOrganizationInstructions>,
-  functionName: keyof typeof import("@app/domain").organizationPromptFunctions,
-  title: string,
-  language: string,
-  pin: PromptPin
-): typeof legacy {
-  if (!active) return legacy;
-  const prefix = {
-    pageSynthesis: "organization",
-    consultation: "consultation",
-    weekly: "maintenance.weekly",
-    monthly: "maintenance.monthly",
-    cleanup: "maintenance.cleanup"
-  }[functionName];
-  return withPromptPin(pin, () => ({
-    slots: {
-      guidance: renderPrompt(prefix + ".guidance", {
-        page_title: title,
-        content_language: language
-      }),
-      advanced: renderPrompt(prefix + ".advanced", {
-        page_title: title,
-        content_language: language
-      })
-    },
-    origins: {
-      guidance: pin.entries.find((e) => e.id === prefix + ".guidance")?.origin ?? "default",
-      advanced: pin.entries.find((e) => e.id === prefix + ".advanced")?.origin ?? "default"
-    },
-    domainId: legacy.domainId
-  }));
-}
 export function changedPromptIdentity(
   ids: readonly string[],
   pin = capturePromptPin()
@@ -283,31 +243,6 @@ export function legacyPromptFingerprint(
 }
 export function legacyStagePromptFingerprints(providers?: Record<string, string>) {
   return stagePromptFingerprints(defaultPromptPin(), true, providers);
-}
-
-/** Domain metadata stays readable after migration; legacy prose remains in catalog history, never a second live editor. */
-export function organizationMetadataConfiguration(
-  raw: unknown
-): import("@app/domain").OrganizationConfiguration {
-  if (!active) return OrganizationConfigurationSchema.parse(raw);
-  const record = raw as Record<string, unknown>;
-  const slots = {
-    global: {},
-    pageSynthesis: {},
-    consultation: {},
-    weekly: {},
-    monthly: {},
-    cleanup: {}
-  };
-  return OrganizationConfigurationSchema.parse({
-    ...record,
-    ...slots,
-    domains: Array.isArray(record.domains)
-      ? record.domains
-          .map((domain) => ({ ...domain, ...slots, global: undefined, slots: {} }))
-          .map(({ global, ...domain }) => domain)
-      : []
-  });
 }
 
 export function withOutputLanguageInstruction(input: string, language: string): string {

@@ -113,23 +113,8 @@ export function createObsidianEditorialRepository(pool: PgPool) {
       return createObsidianSyncRepository(client).findByMemoraId(targetId);
     },
     async lockCanonical(client: PgClient, type: string, id: string) {
-      if (type === "wiki_page")
-        await client.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");
-      const table =
-        type === "wiki_page"
-          ? "wiki_pages"
-          : type === "atomic_note"
-            ? "atomic_notes"
-            : "source_items";
+      const table = type === "atomic_note" ? "atomic_notes" : "source_items";
       await client.query(`select id from ${table} where id=$1 for update`, [id]);
-    },
-    async page(client: PgClient, id: string) {
-      return (
-        await client.query(
-          "select p.current_revision_id as revision,r.content from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1",
-          [id]
-        )
-      ).rows[0];
     },
     async conflicts(binding: string) {
       return (

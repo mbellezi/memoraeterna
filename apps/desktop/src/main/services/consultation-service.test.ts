@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import { resolveOrganizationInstructions, OrganizationConfigurationSchema } from "@app/domain";
 import {
   parseConsultationAnswer,
   rankConsultationCandidates,
@@ -160,24 +159,5 @@ describe("bounded cited consultation", () => {
     expect(() => packConsultationSnapshot(snapshot, "Question")).toThrow(
       "consultation.errors.context"
     );
-  });
-  it("keeps legacy advanced synthesis instructions away from consultation until a deliberate versioned activation", () => {
-    const old = OrganizationConfigurationSchema.parse({
-      global: { advanced: "Write page {{title}}", guidance: "Global guidance" },
-      pageSynthesis: { guidance: "Page only" },
-      domains: []
-    });
-    const query = resolveOrganizationInstructions(old, null, "Topic", "en", "consultation");
-    expect(query.slots.advanced).not.toBe("Write page Topic");
-    expect(query.slots.guidance).toBe("Global guidance");
-    expect(
-      resolveOrganizationInstructions(
-        { ...old, functionsVersion: 2, consultation: { guidance: "Answer only" } },
-        null,
-        "Topic",
-        "en",
-        "consultation"
-      ).slots
-    ).toEqual({ guidance: "Answer only", advanced: "Write page Topic" });
   });
 });

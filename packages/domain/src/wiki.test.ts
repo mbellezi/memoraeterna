@@ -1,54 +1,44 @@
 import { describe, expect, it } from "vitest";
-import {
-  WikiPageContentSchema,
-  WikiPageListSchema,
-  WikiPageSchema,
-  WikiQuerySchema,
-  WikiSaveInputSchema
-} from "./wiki.js";
+import { WikiQuerySchema, WikiResultsSchema } from "./wiki.js";
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-describe("wiki boundary contracts", () => {
-  it("loads refined page and derived list contracts without runtime composition errors", () => {
-    expect(WikiPageListSchema.parse([])).toEqual([]);
-    expect(WikiPageSchema.safeParse({}).success).toBe(false);
-  });
-  it("rejects duplicate stable section identities and arbitrary mutation fields", () => {
-    expect(
-      WikiPageContentSchema.safeParse({
-        title: "Page",
-        kind: "topic",
-        sections: [
-          { id, title: "First", markdown: "One" },
-          { id, title: "Second", markdown: "Two" }
-        ]
-      }).success
-    ).toBe(false);
-    expect(
-      WikiSaveInputSchema.safeParse({
-        expectedRevisionId: null,
-        content: { title: "Page", kind: "topic" },
-        sql: "delete"
-      }).success
-    ).toBe(false);
-  });
-  it("defaults to bounded current text consultation without AI capabilities", () => {
-    expect(WikiQuerySchema.parse({})).toMatchObject({
-      limit: 30,
-      currentOnly: true,
-      reviewedOnly: false,
+describe("source scope search contracts", () => {
+  it("defaults to a bounded search of sources", () => {
+    expect(WikiQuerySchema.parse({})).toEqual({
+      text: "",
       sourceIds: [],
-      includeDescendants: true
+      includeDescendants: true,
+      kind: "source",
+      limit: 30,
+      offset: 0
     });
     expect(WikiQuerySchema.safeParse({ limit: 1001 }).success).toBe(false);
     expect(WikiQuerySchema.safeParse({ sourceIds: ["not-an-id"] }).success).toBe(false);
   });
-  it("protects manual sections independently from draft review", () => {
+  it("searches sources only and takes no page, review or version filters", () => {
+    for (const input of [
+      { kind: "page" },
+      { kind: "atomic_note" },
+      { pageId: id },
+      { reviewedOnly: true },
+      { currentOnly: false }
+    ])
+      expect(WikiQuerySchema.safeParse(input).success).toBe(false);
+  });
+  it("accepts only source results", () => {
+    const item = {
+      id,
+      kind: "source",
+      title: "A source",
+      excerpt: "",
+      sourceItemId: id,
+      sourceType: "Book",
+      catalogOnly: false,
+      breadcrumb: "A source",
+      exact: true
+    };
+    expect(WikiResultsSchema.parse({ items: [item], hasMore: false }).items).toHaveLength(1);
     expect(
-      WikiPageContentSchema.parse({
-        title: "Page",
-        kind: "topic",
-        sections: [{ id, title: "Idea", markdown: "My interpretation" }]
-      })
-    ).toMatchObject({ review: "draft", sections: [{ protected: true, provenance: "personal" }] });
+      WikiResultsSchema.safeParse({ items: [{ ...item, kind: "page" }], hasMore: false }).success
+    ).toBe(false);
   });
 });

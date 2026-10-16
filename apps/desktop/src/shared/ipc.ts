@@ -30,7 +30,7 @@ import type {
   RelationExplanationResult,
   ObjectLocateResult
 } from "@app/domain";
-import type { WikiPageListSchema, WikiResultsSchema } from "@app/domain";
+import type { WikiResultsSchema } from "@app/domain";
 import type {
   TopicChangeSet,
   TopicChangeSetInput,
@@ -93,7 +93,6 @@ export const ipcChannels = {
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
   promptCommand: "app:prompts:command",
-  wikiList: "app:wiki:list",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
   notesPage: "app:notes:page",
@@ -1728,9 +1727,8 @@ export interface DesktopApi {
     /** Pushed after a change-set commits, coalesced; never polled. */
     subscribeChanged: (listener: (event: TopicsChangedEvent) => void) => () => void;
   };
-  /** The page list and source search of the Ask and Obsidian scope pickers (kept until T20 and T33). */
+  /** The source search of the Ask and Obsidian scope pickers. */
   wiki: {
-    list: () => Promise<z.infer<typeof WikiPageListSchema>>;
     search: (
       input: z.input<typeof import("@app/domain").WikiQuerySchema>
     ) => Promise<z.infer<typeof WikiResultsSchema>>;

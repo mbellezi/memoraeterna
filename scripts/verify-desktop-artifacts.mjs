@@ -46,7 +46,7 @@ new Script(packagedPreload.toString("utf8"), { filename: "packaged-preload.cjs" 
 for (const [owner, methods] of Object.entries({
   prompts: ["command"],
   consultation: ["ask", "cancel"],
-  wiki: ["list", "search"],
+  wiki: ["search"],
   topics: [
     "tree",
     "path",
@@ -68,14 +68,24 @@ for (const [owner, methods] of Object.entries({
   for (const method of methods)
     assert.equal(typeof exposed.get("app")?.[owner]?.[method], "function", `${owner}.${method}`);
 }
-// The legacy wiki, curator, organization and maintenance surface was removed (F2 T39r): the
+// The legacy wiki, curator, organization and maintenance surface was removed (F2 T39r, T40r): the
 // packaged preload must not expose any of it.
 const app = exposed.get("app");
 for (const owner of ["curator", "organization", "maintenance", "investigations"])
   assert.equal(app?.[owner], undefined, `${owner} was removed from the preload`);
 for (const [owner, methods] of Object.entries({
   consultation: ["save"],
-  wiki: ["tree", "context", "get", "history", "linkedTarget", "resolveLinks", "collection", "save"],
+  wiki: [
+    "tree",
+    "context",
+    "get",
+    "history",
+    "linkedTarget",
+    "resolveLinks",
+    "collection",
+    "save",
+    "list"
+  ],
   jobs: ["cancelBatch"]
 }))
   for (const method of methods)

@@ -1,7 +1,7 @@
 import { promptSampleCall } from "./prompt-samples.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { createPromptRepository, createSettingsRepository, type PgPool } from "@app/db";
+import { createPromptRepository, type PgPool } from "@app/db";
 import {
   PromptCommandSchema,
   PromptSampleProgressSchema,
@@ -11,7 +11,6 @@ import {
   promptDefinition,
   renderPromptTemplate,
   promptVariablesUsed,
-  organizationPromptFunctions,
   type PromptPin,
   type PromptRevision,
   type PromptCommand
@@ -46,12 +45,6 @@ export function resolvePromptLayers(
     }
   }
   return pin;
-}
-export function legacyPromptText(text: string): string {
-  return text
-    .replaceAll("%", "%%")
-    .replaceAll("{{title}}", "%page_title%")
-    .replaceAll("{{language}}", "%content_language%");
 }
 function requiresSample(id: string) {
   const d = promptDefinition(id);
@@ -91,106 +84,12 @@ export class PromptService {
     };
   }
   async initialize() {
-    await this.migrateLegacy();
     const rows = await this.repo().publish((rows) =>
       this.bundle(z.array(PromptRevisionSchema).parse(rows))
     );
     this.rows = z.array(PromptRevisionSchema).parse(rows);
     const bundle = this.bundle();
     installPromptPin(bundle.default, bundle.domains);
-  }
-  async migrateLegacy() {
-    const settings = createSettingsRepository(this.options.getPool()!);
-    if (await settings.get("prompts.legacyMigrated")) return;
-    const legacy = await this.repo().legacy(),
-      mapping = new Map<string, string[]>();
-    for (const revision of legacy.revisions) {
-      const configuration = revision.configuration as Record<string, any>,
-        ids: string[] = [];
-      const allDomainIds = [
-        ...new Set(
-          legacy.revisions.flatMap((r) =>
-            (r.configuration.domains ?? []).map((d: { id: string }) => d.id)
-          )
-        )
-      ] as string[];
-      for (const functionName of Object.keys(organizationPromptFunctions) as Array<
-        keyof typeof organizationPromptFunctions
-      >) {
-        const layers = [
-          { level: "global" as const, domainId: null, slots: configuration.global ?? {} },
-          { level: "function" as const, domainId: null, slots: configuration[functionName] ?? {} },
-          ...allDomainIds.flatMap((domainId) => {
-            const d = configuration.domains?.find((d: { id: string }) => d.id === domainId);
-            return [
-              { level: "domain" as const, domainId, slots: d?.slots ?? {} },
-              { level: "domain_function" as const, domainId, slots: d?.[functionName] ?? {} }
-            ];
-          })
-        ];
-        for (const layer of layers)
-          for (const slot of ["guidance", "advanced"]) {
-            const text = layer.slots[slot];
-            const unsupported =
-              slot === "advanced" &&
-              ((functionName === "consultation" && (configuration.functionsVersion ?? 0) < 2) ||
-                (["weekly", "monthly", "cleanup"].includes(functionName) &&
-                  (configuration.functionsVersion ?? 0) < 3));
-            const promptId = organizationPromptFunctions[functionName] + "." + slot;
-            const hasValue = typeof text === "string" && !unsupported,
-              ambiguous =
-                hasValue && /\{\{|\}\}/.test(text.replace(/\{\{(?:title|language)\}\}/g, ""));
-            const fields = hasValue ? { body: legacyPromptText(text) } : {};
-            const legacyKey = [
-              revision.id,
-              layer.level,
-              layer.domainId ?? "",
-              functionName,
-              slot
-            ].join(":");
-            const id = await this.repo().save({
-              promptId,
-              scope: { level: layer.level, domainId: layer.domainId },
-              fields,
-              origin: hasValue ? "legacy" : "reset",
-              legacy: {
-                revisionId: revision.id,
-                functionName,
-                slot,
-                text: typeof text === "string" ? text : null,
-                unsupported,
-                ambiguous,
-                ...(ambiguous ? { compatibilityReader: "literal-legacy-braces-v1" } : {})
-              },
-              legacyKey,
-              createdAt: revision.createdAt
-            });
-            // Unknown legacy braces remain literal, exactly as the old reader; only known title/language tokens are translated.
-            // Importing an existing activation preserves that behavior. Unactivated ambiguous rows remain drafts.
-            // Full configurations replace every slot, including reset rows for removed overrides/domains.
-            ids.push(id);
-          }
-      }
-      mapping.set(revision.id, ids);
-    }
-    // History mappings retain each original activation timestamp. No existing run is rewritten.
-    await this.repo().importActivations(
-      legacy.activations.flatMap((a) =>
-        (mapping.get(a.revisionId) ?? []).map((revisionId) => ({
-          revisionId,
-          createdAt: a.createdAt
-        }))
-      )
-    );
-    // Explicit active pointer wins over historical ordering, exactly as the legacy reader does.
-    if (legacy.activeId)
-      await this.repo().importActivations(
-        (mapping.get(legacy.activeId) ?? []).map((revisionId) => ({
-          revisionId,
-          createdAt: new Date().toISOString()
-        }))
-      );
-    await settings.set("prompts.legacyMigrated", { version: 1 });
   }
   private candidate(
     revision: PromptRevision,
@@ -349,8 +248,6 @@ export class PromptService {
         this.options.ai?.listTaskRoutes() ?? [],
         this.options.ai?.listProfiles() ?? []
       ]);
-      const legacy = await repo.legacy(),
-        config = legacy.revisions.find((r) => r.id === legacy.activeId)?.configuration;
       const revisions = z.array(PromptRevisionSchema).parse(await repo.revisions());
       const activated = new Set((await repo.history()).map((row) => row.revisionId));
       const states = promptDefinitions.map((d) => {
@@ -366,10 +263,7 @@ export class PromptService {
       return {
         definitions: promptDefinitions,
         active: this.rows,
-        domains: (config?.domains ?? []).map((d: { id: string; name: string }) => ({
-          id: d.id,
-          name: d.name
-        })),
+        domains: [],
         states,
         routes,
         profiles: profiles.map((p) => ({

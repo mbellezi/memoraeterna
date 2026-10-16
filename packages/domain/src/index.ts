@@ -20,23 +20,11 @@ export * from "./source-relations.js";
 export * from "./matching-settings.js";
 export * from "./matching-presets.js";
 export * from "./wiki.js";
-export * from "./organization.js";
 
 export * from "./consultation.js";
-export * from "./investigation.js";
-export * from "./maintenance.js";
-export * from "./automatic-wiki.js";
 export * from "./prompt-catalog.js";
 export * from "./prompt-definitions.js";
-export * from "./automatic-wiki-runtime.js";
 export * from "./wiki-reference.js";
-export * from "./automatic-maintenance.js";
-
-export * from "./knowledge-evolution.js";
-export * from "./knowledge-automation.js";
-export * from "./knowledge-rejections.js";
-export * from "./wiki-hierarchy.js";
-export * from "./wiki-hierarchy-runtime.js";
 export * from "./object-address.js";
 export * from "./note-page.js";
 export * from "./relation-explanation.js";

@@ -12,8 +12,7 @@ import {
   SearchResultSchema,
   SourceItemSchema,
   SourceItemTypes,
-  StorageSettingsSchema,
-  WikiLinkedTargetSchema
+  StorageSettingsSchema
 } from "./index.js";
 
 const now = "2026-07-05T12:00:00.000Z";
@@ -117,16 +116,6 @@ describe("@app/domain schemas", () => {
     expect(AtomicNoteSearchResultSchema.safeParse({ ...noteResult, status: "draft" }).success).toBe(
       false
     );
-    const target = {
-      kind: "atomic_note",
-      id: "00000000-0000-4000-8000-000000000001",
-      title: "Title",
-      markdown: "Body",
-      sourceItemId: null,
-      evidence: [],
-      noteState: { status: "active", protected: false, current: true }
-    };
-    expect(WikiLinkedTargetSchema.parse(target).noteState?.status).toBe("active");
   });
 
   it("rejects invalid SourceItem type values", () => {

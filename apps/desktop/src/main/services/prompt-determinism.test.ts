@@ -328,7 +328,7 @@ describe("consultation prompts", () => {
       }));
       const ranked = rankConsultationCandidates(rows, []);
       handles.push(ranked.map((row) => row.excerpt));
-      const snapshot = promptSampleSnapshot(defaultPromptPin(), "consultation");
+      const snapshot = promptSampleSnapshot(defaultPromptPin());
       const template = snapshot.evidence[0]!;
       snapshot.contexts = [];
       snapshot.relations = [];

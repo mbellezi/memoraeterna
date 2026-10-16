@@ -24,8 +24,12 @@ describe("prompt catalog editor", () => {
     };
     visit(root);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toContain("category:maintenance.weekly");
-    expect(keys).toContain("prompt:maintenance.weekly");
+    expect(keys).toContain("category:relations.sources");
+    expect(keys).toContain("prompt:relations.sources.explain");
+    // The curator, organization and maintenance families left the catalog with the legacy wiki.
+    expect(keys.some((key) => /^(category|prompt):(organization|maintenance)/.test(key))).toBe(
+      false
+    );
   });
   it("navigates visible tree siblings, first children and parents with one focus target", () => {
     const items = [
@@ -59,7 +63,7 @@ describe("prompt catalog editor", () => {
       text: "before %content_language%",
       cursor: 25
     });
-    const definition = promptDefinition("organization.guidance");
+    const definition = promptDefinition("consultation.guidance");
     const html = renderToStaticMarkup(
       <PromptField
         definition={definition}

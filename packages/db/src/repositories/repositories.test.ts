@@ -862,25 +862,9 @@ describe("repositories", () => {
     expect(statement).toContain("queue_ms, attempt, finished_at, started_at");
     expect(statement).toContain("now() - ($17::integer * interval '1 millisecond')");
     expect(db.queries[0]?.values[16]).toBe(2_900);
-  });
-
-  it("keeps the organization step parameters after the wall-clock fields", async () => {
-    const db = new FakeQueryable([[{ id: "run-1" }]]);
-
-    await createAiConfigRepository(db).recordTaskRun({
-      taskType: "text-generation",
-      provider: "test",
-      modelId: "test-model",
-      runtime: "remote",
-      durationMs: 12,
-      status: "succeeded",
-      queueMs: 7,
-      organizationRunId: "organization-run",
-      organizationStep: 3
-    });
-
-    expect(db.queries[0]?.text).toContain("select $24::uuid,$25::int,id");
-    expect(db.queries[0]?.values.slice(21)).toEqual([7, null, "organization-run", 3]);
+    // The legacy organization and maintenance step tables are no longer written by any run.
+    expect(statement).not.toMatch(/organization_steps|maintenance_steps/);
+    expect(db.queries[0]?.values).toHaveLength(23);
   });
 
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {

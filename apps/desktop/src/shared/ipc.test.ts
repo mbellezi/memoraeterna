@@ -498,11 +498,11 @@ describe("desktop IPC contracts", () => {
       "wikiGet",
       "wikiSave",
       "wikiHistory",
+      "wikiList",
       "jobsCancelBatch"
     ])
       expect(names, removed).not.toContain(removed);
-    // Legacy reads that stay until the legacy repositories go (T40r).
-    expect(ipcChannels.wikiList).toBe("app:wiki:list");
+    // The source search of the scope pickers stays under the wiki name.
     expect(ipcChannels.wikiSearch).toBe("app:wiki:search");
   });
 

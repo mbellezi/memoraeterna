@@ -3,11 +3,6 @@ import { AtomicNoteGenerationOutputSchema } from "./knowledge.js";
 import { promptMetadataLabels } from "@app/i18n";
 import { shippedPromptBodies } from "./prompt-defaults.js";
 import {
-  builtInOrganizationSlots,
-  builtInConsultationSlots,
-  builtInMaintenanceSlots
-} from "./organization.js";
-import {
   PromptDefinitionSchema,
   type PromptDefinition,
   type PromptVariable
@@ -21,9 +16,7 @@ export const promptCategoryLabels = Object.fromEntries(
     "sources",
     "relations",
     "embedding",
-    "organization",
     "consultation",
-    "maintenance",
     "diagnostics",
     "topic"
   ].map((key) => [key, promptMetadataLabels("categories", key)])
@@ -32,11 +25,6 @@ export function promptLabel(key: string) {
   return promptMetadataLabels("labels", key);
 }
 const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
-  reference_guide: [
-    { handle: "r1", kind: "source", title: "Synthetic recall study" },
-    { handle: "r2", kind: "atomic_note", title: "Recall finding" }
-  ],
-  required_notes: ["r2"],
   chunks: [
     {
       id: "c1",
@@ -136,34 +124,6 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
   ],
   related_knowledge: [],
   current_page: [],
-  current_state: "Discover original evidence before proposing a change.",
-  target: {
-    title: "Retrieval and feedback",
-    kind: "synthesis"
-  },
-  transcript: [
-    {
-      action: {
-        tool: "searchEvidence",
-        query: "feedback"
-      },
-      result: {
-        items: [
-          {
-            handle: "e1",
-            title: "Fictional study"
-          }
-        ]
-      }
-    }
-  ],
-  policy: {
-    routine: "weekly",
-    categories: ["navigation", "evidence"],
-    budget: {
-      changes: 3
-    }
-  },
   source_text: "In a fictional study, retrieval with feedback improved recall.",
   note_title: "Feedback and recall",
   note_idea: "Feedback qualified the observed recall benefit.",
@@ -219,8 +179,6 @@ function variable(key: string, id: string): PromptVariable {
   const numeric = [
     "max_entities",
     "max_relations",
-    "remaining_tools",
-    "remaining_repairs",
     "title_max_chars",
     "description_max_chars",
     "max_aliases",
@@ -310,38 +268,25 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
     purpose: promptMetadataLabels("purposes", family),
     caller: row.caller,
     task,
-    supportsDomain: ["organization", "consultation", "maintenance"].includes(family),
-    defaultVersion: [
-      "organization.curator",
-      "organization.temporal",
-      "organization.procedure",
-      "organization.consolidation"
-    ].includes(row.id)
-      ? "7"
-      : [
-            "organization.curator.repair",
-            "organization.curator.support",
-            "organization.evolution.repair",
-            "organization.evolution.support"
-          ].includes(row.id)
-        ? "5"
-        : // Decide-only compact matching contract (atomic-note-matching-v9).
-          row.id === "notes.match"
-          ? "3"
-          : [
-                "consultation.knowledge",
-                "consultation.investigation",
-                "consultation.gaps",
-                // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
-                "graph.atomic_notes",
-                "graph.source_chunks",
-                "graph.catalog_metadata",
-                "graph.atomic_notes.repair",
-                "graph.source_chunks.repair",
-                "graph.catalog_metadata.repair"
-              ].includes(row.id)
-            ? "2"
-            : "1",
+    supportsDomain: family === "consultation",
+    defaultVersion:
+      // Decide-only compact matching contract (atomic-note-matching-v9).
+      row.id === "notes.match"
+        ? "3"
+        : [
+              "consultation.knowledge",
+              "consultation.investigation",
+              "consultation.gaps",
+              // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
+              "graph.atomic_notes",
+              "graph.source_chunks",
+              "graph.catalog_metadata",
+              "graph.atomic_notes.repair",
+              "graph.source_chunks.repair",
+              "graph.catalog_metadata.repair"
+            ].includes(row.id)
+          ? "2"
+          : "1",
     fields: [
       {
         id: "body",
@@ -400,52 +345,43 @@ export function promptDefinition(id: string): PromptDefinition {
   if (!found) throw new Error("prompts.errors.unknown");
   return found;
 }
-export const organizationPromptFunctions = {
-  pageSynthesis: "organization",
-  consultation: "consultation",
-  weekly: "maintenance.weekly",
-  monthly: "maintenance.monthly",
-  cleanup: "maintenance.cleanup"
-} as const;
-for (const [functionName, prefix] of Object.entries(organizationPromptFunctions)) {
-  const defaults =
-    functionName === "pageSynthesis"
-      ? builtInOrganizationSlots
-      : functionName === "consultation"
-        ? builtInConsultationSlots
-        : builtInMaintenanceSlots[functionName as keyof typeof builtInMaintenanceSlots];
-  for (const slot of ["guidance", "advanced"] as const) {
-    const id = `${prefix}.${slot}`,
-      template = defaults[slot]
-        .replaceAll("{{title}}", "%page_title%")
-        .replaceAll("{{language}}", "%content_language%");
-    const keys = [...new Set([...template.matchAll(/%([a-z][a-z0-9_]*)%/g)].map((m) => m[1]!))];
-    promptDefinitions.push(
-      PromptDefinitionSchema.parse({
-        version: "prompt-catalog-v1",
-        id,
-        category: [prefix.split(".")[0]!, ...prefix.split(".").slice(1)],
-        title: promptLabel(slot),
-        purpose: promptMetadataLabels("purposes", prefix.split(".")[0]!),
-        caller: "Organization instruction " + functionName + "." + slot,
-        task: "structured-output",
-        supportsDomain: true,
-        defaultVersion: "1",
-        fields: [
-          {
-            id: "body",
-            template,
-            editable: true,
-            variableKeys: ["page_title", "content_language"],
-            requiredContractIds: []
-          }
-        ],
-        variables: ["page_title", "content_language"].map((key) => variable(key, id)),
-        fragmentIds: [],
-        fixtureIds: ["organization-legacy-slots"]
-      })
-    );
-  }
+/** What Ask is told when a library keeps no wording of its own: the guidance and advanced slots. */
+const consultationSlots = {
+  guidance:
+    "Attribute claims to their original sources; distinguish uncertainty, disagreements and missing evidence.",
+  advanced:
+    "Answer {{title}} in {{language}} from supplied original evidence. Keep the response read-only, cite each factual paragraph, and disclose limits of the selected material."
+};
+for (const slot of ["guidance", "advanced"] as const) {
+  const id = `consultation.${slot}`,
+    template = consultationSlots[slot]
+      .replaceAll("{{title}}", "%page_title%")
+      .replaceAll("{{language}}", "%content_language%");
+  promptDefinitions.push(
+    PromptDefinitionSchema.parse({
+      version: "prompt-catalog-v1",
+      id,
+      category: ["consultation"],
+      title: promptLabel(slot),
+      purpose: promptMetadataLabels("purposes", "consultation"),
+      caller: "ConsultationService.consultationInstructions",
+      task: "structured-output",
+      supportsDomain: true,
+      defaultVersion: "1",
+      fields: [
+        {
+          id: "body",
+          template,
+          editable: true,
+          variableKeys: ["page_title", "content_language"],
+          requiredContractIds: []
+        }
+      ],
+      variables: ["page_title", "content_language"].map((key) => variable(key, id)),
+      fragmentIds: [],
+      fixtureIds: ["consultation-slots"]
+    })
+  );
 }
 for (const definition of promptDefinitions) {
   if (["notes.extract", "notes.repair"].includes(definition.id))
@@ -466,7 +402,6 @@ for (const definition of promptDefinitions) {
     id !== "topic.overview.support" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
-    !id.includes(".state.") &&
     !id.includes(".validation.")
   )
     definition.fragmentIds.push("shared.output_language");
@@ -475,7 +410,6 @@ for (const definition of promptDefinitions) {
     definition.task !== "fragment" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
-    !id.includes(".state.") &&
     !id.includes(".validation.")
   )
     definition.providerFragments.push({
@@ -483,14 +417,6 @@ for (const definition of promptDefinitions) {
       provider: "openai-codex"
     });
   const additional: Record<string, string[]> = {
-    "organization.legacy_synthesis": [
-      "organization.guidance",
-      "organization.advanced",
-      "organization.state.discover",
-      "organization.state.read",
-      "organization.state.propose",
-      "organization.repair"
-    ],
     "consultation.answer": ["consultation.guidance", "consultation.advanced"],
     "consultation.knowledge": [
       "consultation.guidance",
@@ -500,18 +426,10 @@ for (const definition of promptDefinitions) {
       "consultation.gaps",
       "consultation.repair"
     ],
-    "maintenance.weekly": ["maintenance.weekly.guidance", "maintenance.weekly.advanced"],
-    "maintenance.monthly": ["maintenance.monthly.guidance", "maintenance.monthly.advanced"],
-    "maintenance.cleanup": ["maintenance.cleanup.guidance", "maintenance.cleanup.advanced"],
     "sources.decide": ["sources.validation.default", "sources.validation.same_root"]
   };
   definition.fragmentIds.push(...(additional[id] ?? []));
-  if (
-    id.endsWith(".repair") &&
-    id !== "organization.repair" &&
-    id !== "notes.repair" &&
-    id !== "organization.evolution.repair"
-  )
+  if (id.endsWith(".repair") && id !== "notes.repair")
     definition.fragmentIds.push(
       id === "consultation.repair" ? "consultation.answer" : id.slice(0, -7)
     );

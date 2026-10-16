@@ -4,10 +4,9 @@ import {
   createSourceItemRepository,
   createDocumentRepository,
   createChunkRepository,
-  createWikiRepository,
   type PgPool
 } from "../../packages/db/src/index.js";
-import { WikiPageContentSchema, CuratorChangeSetSchema, type CuratorSnapshot } from "@app/domain";
+
 /**
  * Migration 0052 refuses new legacy content unless `memora.legacy_fixture` is on (D40). This
  * fixture seeds legacy pages on purpose, on scratch databases only. The database default reaches
@@ -26,8 +25,11 @@ export async function allowLegacyFixtureInserts(pool: PgPool): Promise<void> {
   }
 }
 
-/** Versioned synthetic inputs only. Expected outcomes never enter inference context. */
-export async function seedAutomaticWikiFixture(pool: PgPool, withNotes: boolean) {
+/**
+ * A library as the old builds left it: sources with text, notes and one human wiki page. Versioned
+ * synthetic inputs only. The page is written with raw SQL because no legacy repository is left.
+ */
+export async function seedLegacyLibraryFixture(pool: PgPool, withNotes: boolean) {
   await allowLegacyFixtureInserts(pool);
   const fixture = JSON.parse(
     await readFile(new URL("./automatic-wiki/mixed-library.json", import.meta.url), "utf8")
@@ -75,65 +77,29 @@ export async function seedAutomaticWikiFixture(pool: PgPool, withNotes: boolean)
       );
       noteIds.push(id);
     }
-  const humanId = await createWikiRepository(pool).save({
-    expectedRevisionId: null,
-    content: WikiPageContentSchema.parse({
-      title: fixture.existingPages[0].title,
-      kind: "topic",
-      sections: [
-        {
-          id: randomUUID(),
-          title: "Personal interpretation",
-          markdown: fixture.existingPages[0].text
-        }
-      ]
-    }),
-    evidenceChunkIds: []
-  });
-  return {
-    sourceIds: fixture.expected.initialSources.map((key: string) => sources.get(key)!) as string[],
-    noteIds,
+  const humanId = randomUUID(),
+    revisionId = randomUUID(),
+    page = fixture.existingPages[0];
+  await pool.query("insert into wiki_pages(id,title,kind) values($1,$2,'topic')", [
     humanId,
-    sources,
-    chunks,
-    documents,
-    noPrerequisiteStages: fixture.expected.noPrerequisiteStages.map((s: string) =>
-      s === "atomicNoteGeneration" ? "atomicNotes" : s
-    ) as string[]
-  };
-}
-export async function fixtureCuratorProposal(snapshot: CuratorSnapshot) {
-  const raw = JSON.parse(
-    await readFile(new URL("./automatic-wiki/first-change-set.json", import.meta.url), "utf8")
+    page.title
+  ]);
+  await pool.query(
+    "insert into wiki_page_revisions(id,page_id,number,origin,content,content_hash) values($1,$2,1,'human',$3::jsonb,$4)",
+    [
+      revisionId,
+      humanId,
+      JSON.stringify({
+        title: page.title,
+        kind: "topic",
+        sections: [{ id: randomUUID(), title: "Personal interpretation", markdown: page.text }]
+      }),
+      page.text
+    ]
   );
-  raw.groupId = snapshot.groupId;
-  raw.policyRevisionId = snapshot.policy.revisionId;
-  const source = snapshot.references.find((r) => r.kind === "source")!,
-    note = snapshot.references.find((r) => r.kind === "atomic_note");
-  const replace = (value: any): any => {
-    if (value && typeof value === "object" && value.reference === "existing") {
-      const target = value.target.kind === "atomic_note" ? (note ?? source) : source;
-      return {
-        reference: "existing",
-        target: { kind: target.kind, id: target.id },
-        fingerprint: target.fingerprint
-      };
-    }
-    if (Array.isArray(value)) return value.map(replace);
-    if (value && typeof value === "object")
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replace(v)]));
-    return value;
-  };
-  const result = replace(raw);
-  for (const target of result.targets)
-    for (const group of target.tocGroups) {
-      const seen = new Set();
-      group.memberships = group.memberships.filter((m: any) => {
-        const key = m.target.target.kind + m.target.target.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    }
-  return CuratorChangeSetSchema.parse(result);
+  await pool.query("update wiki_pages set current_revision_id=$2 where id=$1", [
+    humanId,
+    revisionId
+  ]);
+  return { noteIds, humanId };
 }

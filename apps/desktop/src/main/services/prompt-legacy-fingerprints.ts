@@ -19,11 +19,6 @@ export const legacyPromptEntryHashes: Record<string, string> = {
   "graph.entity_identity": "01c1ce4cd34137b8cee401215dea340f736f763574fb1c1a77829e480d6d63a4",
   "sources.match": "316ef1cab46b68fed0ee4cc4ffe8cb98f9b0c878065575569a12bf40886f20c7",
   "consultation.answer": "7978851cd4a41e70087991c7c38ca595cae957c4db7fc27f3f43616808ea2d64",
-  "organization.legacy_synthesis":
-    "da1e677308ca965b2853db3c22117b67a2321114a765591266cd2d4e9d285dda",
-  "maintenance.weekly": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
-  "maintenance.monthly": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
-  "maintenance.cleanup": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
   "shared.output_language": "17d56c5b74d22f87bbc854c93ee87f36edbc8b004cba6d9b6a50f8854c7806a3",
   "shared.codex_adapter_instruction":
     "10acd87620579a6128e8b83794a4fec20b81b5a2fc70c9e84728bdae80c0814f",
@@ -43,27 +38,12 @@ export const legacyPromptEntryHashes: Record<string, string> = {
   "graph.relation_labels.repair":
     "fe4785fdfbba033b9cdca2eb9e2b8d3a9f239393672bd10dca3afe32b3b3af1e",
   "consultation.repair": "f98b4ee1838bd1413fb7de825c3d710a6d9ac6089e1b5e1057b337cb5901768b",
-  "organization.repair": "7e74d254f996460fa605f298ec0fde19337b9ca9e36a8b67c0922cfdfbca95da",
-  "organization.state.discover": "8796666cbb0dfa59f4e6cde525fdb781b171d48d7f8a0041a57ce60a7d341ff5",
-  "organization.state.read": "e12ce3b519673e5ba621dd8226e48bc15fe22bcd5a4a99d0191769c9583a5f41",
-  "organization.state.propose": "0b63b01c756575e4fb80714759fd0d9bc391a568a83aab2d942a3517e35da9cd",
   "sources.repair": "c0705900bd686dae66dcfc670a7f1043a70bdc1976c6c504a110eee255f0df5b",
   "sources.validation.default": "240a09a976fe0da1a6b51e0d169632eacbbfd371f64a6750ec48ae31cc47c956",
   "sources.validation.same_root":
     "e62f1edee33e828d48b72100b6cfa03328b9ef1eb8df2086562705e412ed31dd",
   "shared.relation_language": "2f522b95ec0b99ac1da708c50e07b4279931b2aef98f787b82233cb5b6e40f90",
   "embedding.content.catalog": "6a1b5ee967a0a546677614a0401dd704feaf7cf0d2cd8a5c70af0e4a61d1c3db",
-  "organization.guidance": "66b2cdb1b7d0eeda582e87b1273ea735c541d09aaa357f10ca25320474e1a371",
-  "organization.advanced": "19a8400de982520f6125b4784f3028958636d2e68c143d9a950e37a34c94dbf3",
   "consultation.guidance": "510234d8a9c6a50cd9747b603c093be263db8c891fa7d3fe348d7659cf6258ec",
-  "consultation.advanced": "342a520e815eee7cc0d1314c50c4611962d621b957106070199787b4d6dd79c3",
-  "maintenance.weekly.guidance": "22b31809de48a35b912329eb00656b210087cf39c365ae1578f5dc8763ac1aaa",
-  "maintenance.weekly.advanced": "eb8ec7e08396e63764378ee6414aa16c8c24dda580bb7ccbe984093686c3021d",
-  "maintenance.monthly.guidance":
-    "00f9891b35eb442f7bf0f0bb12712cf3e4c07b909fed0cf5ce86dad216062090",
-  "maintenance.monthly.advanced":
-    "a37a67a7103ee61b2f99167660e03553ea0afc5ff3b92d4806207904ee36544b",
-  "maintenance.cleanup.guidance":
-    "53c001168bc402934e55f445c5a7357acb479b8203fa01b184bb93b9adc096f8",
-  "maintenance.cleanup.advanced": "85a5f0a372984ef0ac27c5424979b4837239fd7cd49c41e9f3f5c1b489069be8"
+  "consultation.advanced": "342a520e815eee7cc0d1314c50c4611962d621b957106070199787b4d6dd79c3"
 };

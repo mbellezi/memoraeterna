@@ -1,11 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
-import {
-  ConsultationInputSchema,
-  OrganizationStartSchema,
-  ProcessingPlanRequestSchema
-} from "@app/domain";
+import { ConsultationInputSchema, ProcessingPlanRequestSchema } from "@app/domain";
 import { ProfilePicker } from "./ask/ProfilePicker";
 import type { AiProfile } from "../../shared/ipc";
 
@@ -48,12 +44,9 @@ describe("router-first model controls", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain(t("organization.noModel"));
   });
-  it("accepts routed consultation, organization and batch requests without an override", () => {
+  it("accepts routed consultation and batch requests without an override", () => {
     expect(
       ConsultationInputSchema.parse({ requestId: id, question: "What is this?" }).profileId
-    ).toBeUndefined();
-    expect(
-      OrganizationStartSchema.parse({ title: "Topic", sourceIds: [id] }).profileId
     ).toBeUndefined();
     expect(
       ProcessingPlanRequestSchema.parse({ preset: "custom", requestedStages: ["atomicNotes"] })

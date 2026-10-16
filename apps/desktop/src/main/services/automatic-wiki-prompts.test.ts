@@ -19,8 +19,8 @@ import { buildRelationLabelPrompt } from "./relation-label-processing.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
 import { sourceDecisionPrompt } from "./source-relation-processing.js";
 import { withEmbeddingInputInstruction, withOutputLanguageInstruction } from "./ai-service.js";
-import { consultationPrompt } from "./consultation-service.js";
-import { OrganizationSnapshotSchema, resolveOrganizationInstructions } from "@app/domain";
+import { consultationPrompt, type ConsultationSnapshot } from "./consultation-service.js";
+import { renderPrompt } from "./prompt-runtime.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const chunks = [
   {
@@ -39,18 +39,9 @@ const notes = [
     evidenceChunkIds: [id(1)]
   }
 ];
-const instructions = resolveOrganizationInstructions(
-  { global: {}, pageSynthesis: {}, domains: [] },
-  null,
-  source.title,
-  "en"
-);
-const snapshot = OrganizationSnapshotSchema.parse({
-  version: "wiki-three-tools-v1",
-  targetId: id(3),
-  expectedRevisionId: null,
-  targetHuman: false,
-  baseContent: { title: source.title, kind: "topic" },
+const values = { page_title: source.title, content_language: "en" };
+const snapshot: ConsultationSnapshot = {
+  promptPin: null,
   sourceIds: [id(4)],
   profile: {
     profileId: id(5),
@@ -66,11 +57,12 @@ const snapshot = OrganizationSnapshotSchema.parse({
     contextWindow: 8192
   },
   contentLanguage: "en",
-  configurationId: null,
-  configurationHash: "synthetic",
-  instructions,
-  limits: {},
-  policy: "human_review",
+  instructions: {
+    slots: {
+      guidance: renderPrompt("consultation.guidance", values),
+      advanced: renderPrompt("consultation.advanced", values)
+    }
+  },
   sample: true,
   evidence: [
     {
@@ -86,8 +78,9 @@ const snapshot = OrganizationSnapshotSchema.parse({
       locator: "paragraph 1"
     }
   ],
+  contexts: [],
   relations: []
-});
+};
 describe("A0 legacy rendered prompt goldens (no model or database)", () => {
   it("captures actual summary, extraction, matching, query and language builder outputs", () => {
     const rows = [
@@ -249,16 +242,8 @@ it("registers the former inline families and removes their old prose authority",
     "sources.decide.repair",
     "sources.validation.default",
     "sources.validation.same_root",
-    "organization.legacy_synthesis",
-    "organization.repair",
-    "organization.state.discover",
-    "organization.state.read",
-    "organization.state.propose",
     "consultation.answer",
     "consultation.repair",
-    "maintenance.weekly",
-    "maintenance.monthly",
-    "maintenance.cleanup",
     "shared.output_language",
     "shared.relation_language",
     "shared.codex_adapter_instruction",
@@ -273,6 +258,15 @@ it("registers the former inline families and removes their old prose authority",
     "diagnostics.local_embedding"
   ])
     expect(ids.has(id), id).toBe(true);
+  for (const id of [
+    "organization.legacy_synthesis",
+    "organization.repair",
+    "organization.curator",
+    "organization.guidance",
+    "maintenance.weekly",
+    "maintenance.weekly.guidance"
+  ])
+    expect(ids.has(id), id).toBe(false);
   for (const [path, phrase] of [
     [
       "apps/desktop/src/main/services/knowledge-processing.ts",

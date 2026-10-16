@@ -107,7 +107,7 @@ describe("actual catalog family callers with deterministic model doubles", () =>
   );
   it("executes consultation repair using the persisted pin even when active settings changed", async () => {
     const pin = marked(["consultation.answer", "consultation.repair"]),
-      snapshot = promptSampleSnapshot(pin, "consultation");
+      snapshot = promptSampleSnapshot(pin);
     let count = 0;
     const runOrganizationTask = vi.fn(async () => {
       installPromptPin(defaultPromptPin());

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, Files, FolderOpen, FolderTree, Network } from "lucide-react";
 import type { Translator } from "@app/i18n";
-import type { WikiPage } from "@app/domain";
 import { visibleWikiNavigation } from "./wiki-navigation";
 
 type Page = {
@@ -11,7 +10,7 @@ type Page = {
   position: number;
   archived: boolean;
   hasChildren?: boolean;
-  kind?: WikiPage["kind"];
+  kind?: keyof typeof icons;
 };
 const icons = { topic: BookOpen, entity: Network, collection: FolderTree, synthesis: Files };
 

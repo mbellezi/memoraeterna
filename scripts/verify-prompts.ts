@@ -13,10 +13,8 @@ import {
   createDocumentRepository,
   createChunkRepository,
   createJobRepository,
-  createOrganizationRepository,
   createPromptRepository,
   createAiConfigRepository,
-  createSettingsRepository,
   createIngestionRunRepository,
   createEmbeddingRepository,
   createSearchRepository,
@@ -33,9 +31,7 @@ import {
   PromptPreviewSchema,
   PromptPinSchema,
   PromptSampleProgressSchema,
-  promptDefinition,
-  resolveOrganizationInstructions,
-  OrganizationConfigurationSchema
+  promptDefinition
 } from "@app/domain";
 import { PromptService } from "../apps/desktop/src/main/services/prompt-service.js";
 import {
@@ -99,41 +95,13 @@ try {
     }
   ]);
   const jobs = createJobRepository(pool),
-    legacyJob = await jobs.create({
-      type: "ingestion",
-      payload: { sourceItemId: source.id, documentId: document.id }
-    }),
-    org = createOrganizationRepository(pool),
-    removedDomain = randomUUID();
-  const first = OrganizationConfigurationSchema.parse({
-    functionsVersion: 3,
-    global: { guidance: "Use 50% for {{title}} in {{language}}." },
-    pageSynthesis: { advanced: "First explicit {{title}}." },
-    domains: [
-      {
-        id: removedDomain,
-        name: "Removed domain",
-        sourceIds: [source.id],
-        pageIds: [],
-        slots: { guidance: "Old domain" },
-        pageSynthesis: {}
-      }
-    ]
-  });
-  const firstId = await org.saveDraft(first);
-  await org.activate(firstId, null, []);
-  const second = OrganizationConfigurationSchema.parse({
-      functionsVersion: 3,
-      global: {},
-      pageSynthesis: {},
-      domains: []
-    }),
-    secondId = await org.saveDraft(second);
-  await org.activate(secondId, firstId, []);
-  const ambiguousId = await org.saveDraft({
-    ...second,
-    pageSynthesis: { advanced: "Ambiguous {{unknown}} and 50%" }
-  });
+    // Raw SQL: the repository writes columns (the lane) that the pre-catalog schema does not have.
+    legacyJob = (
+      await pool.query<{ id: string; payload: Record<string, unknown> }>(
+        "insert into jobs(type, payload) values ('ingestion', $1) returning id, payload",
+        [{ sourceItemId: source.id, documentId: document.id }]
+      )
+    ).rows[0]!;
   const oldJobBytes = JSON.stringify(legacyJob.payload),
     before = JSON.stringify(
       (await pool.query("select id,title,metadata from source_items order by id")).rows
@@ -218,32 +186,19 @@ try {
     oldJobBytes,
     "Migration leaves legacy queued snapshots untouched"
   );
-  assert.equal(
-    renderPrompt("organization.guidance", { page_title: "Title", content_language: "en" }),
-    resolveOrganizationInstructions(second, null, "Title", "en").slots.guidance,
-    "A later empty configuration clears earlier overrides"
-  );
-  const legacyHistory = await repo.revisions("organization.advanced");
-  assert.ok(
-    legacyHistory.some(
-      (r) =>
-        r.legacy?.revisionId === ambiguousId && r.legacy?.text === "Ambiguous {{unknown}} and 50%"
-    ),
-    "Ambiguous draft remains recoverable"
-  );
-  assert.ok(
-    (await repo.active()).some((r) => r.scope.domainId === removedDomain && r.origin === "reset"),
-    "Removed domain receives reset history"
-  );
   const revisionCount = (await repo.revisions()).length;
   await prompts.initialize();
-  assert.equal((await repo.revisions()).length, revisionCount, "Migration is idempotent");
+  assert.equal(
+    (await repo.revisions()).length,
+    revisionCount,
+    "Initializing again adds no revision"
+  );
   assert.equal(
     JSON.stringify(
       (await pool.query("select id,title,metadata from source_items order by id")).rows
     ),
     before,
-    "Catalog migration changes no library content"
+    "Catalog startup changes no library content"
   );
   assert.equal((await pool.query("select count(*)::int n from wiki_pages")).rows[0].n, 0);
   const saved = (await prompts.command({
@@ -339,18 +294,11 @@ try {
   assert.equal((await repo.revisions()).find((r) => r.id === secondDraft)!.samplePassed, true);
   assert.equal(revisionWithSample.samplePassed, true);
   const domain = randomUUID();
-  await org.saveDomains([{ id: domain, name: "Science", sourceIds: [source.id], pageIds: [] }]);
-  assert.ok(
-    PromptOverviewSchema.parse(await prompts.command({ command: "list" })).domains.some(
-      (d) => d.id === domain && d.name === "Science"
-    ),
-    "Domains without overrides remain editable"
-  );
   const domainDraft = (await prompts.command({
     command: "save",
-    promptId: "organization.advanced",
+    promptId: "consultation.advanced",
     scope: { level: "domain_function", domainId: domain },
-    fields: { body: "Review %page_title% in %content_language% with scientific caution." }
+    fields: { body: "Answer %page_title% in %content_language% with scientific caution." }
   })) as string;
   await prompts.command({ command: "validate", revisionId: domainDraft, sample: true });
   await prompts.command({ command: "activate", revisionId: domainDraft, expectedActiveId: null });
@@ -708,53 +656,8 @@ try {
     PromptOverviewSchema.parse(await prompts.command({ command: "list" })).definitions.length
   );
   assert.equal((await empty.query("select count(*)::int n from source_items")).rows[0].n, 0);
-  // Separate seeded database checks an explicit rollback pointer without changing the tested user-style upgrade.
-  await empty.query("create database prompts_rollback");
-  const rollbackUrl = new URL(connection.connectionString);
-  rollbackUrl.pathname = "/prompts_rollback";
-  const rollback = createPgPool({ connectionString: rollbackUrl.toString(), max: 2 });
-  try {
-    await runMigrations(rollback, migrations, { seedFolder });
-    const orgRollback = createOrganizationRepository(rollback),
-      oldConfiguration = OrganizationConfigurationSchema.parse({
-        functionsVersion: 3,
-        global: { guidance: "Original 50% {{title}}" },
-        pageSynthesis: {},
-        domains: []
-      });
-    const older = await orgRollback.saveDraft({
-      ...oldConfiguration,
-      pageSynthesis: { advanced: "Older explicit guidance A" }
-    });
-    await orgRollback.activate(older, null, []);
-    oldConfiguration.pageSynthesis.advanced =
-      "Keep {{unknown}} literal for {{title}} with 50% scope.";
-    const original = await orgRollback.saveDraft(oldConfiguration);
-    await orgRollback.activate(original, older, []);
-    const newer = await orgRollback.saveDraft({
-      ...oldConfiguration,
-      global: { guidance: "Newer guidance" }
-    });
-    await orgRollback.activate(newer, original, []);
-    await createSettingsRepository(rollback).set("organization.active", { revisionId: original });
-    const migrated = new PromptService({ getPool: () => rollback });
-    await migrated.initialize();
-    await orgRollback.settings();
-    assert.equal(
-      renderPrompt("organization.guidance", { page_title: "Recall", content_language: "en" }),
-      "Original 50% Recall",
-      "Explicit active rollback pointer wins over newer activation history"
-    );
-    assert.equal(
-      renderPrompt("organization.advanced", { page_title: "Recall", content_language: "en" }),
-      "Keep {{unknown}} literal for Recall with 50% scope.",
-      "Active ambiguous prose retains the versioned literal-compatible behavior instead of resurrecting an older override"
-    );
-  } finally {
-    await closePgPool(rollback);
-  }
   console.log(
-    "Prompt catalog verified on disposable real PostgreSQL: populated upgrade and empty baseline; tables, indexes, FKs, JSON audit column and admission trigger; legacy resets/removed domains/ambiguous drafts/history/idempotency; persisted job and child pins; draft/sample/activation/CAS/restart/reset/restore; all-domain shared validation; unchanged library/no automatic vector work; strict chunk/note/library vector spaces and text fallback; current-artifact generation ownership. All sample receipts use deterministic fixtures; no real inference or user database/vault was used."
+    "Prompt catalog verified on disposable real PostgreSQL: populated upgrade and empty baseline; tables, indexes, FKs, JSON audit column and admission trigger; idempotent startup; persisted job and child pins; draft/sample/activation/CAS/restart/reset/restore; all-domain shared validation; unchanged library/no automatic vector work; strict chunk/note/library vector spaces and text fallback; current-artifact generation ownership. All sample receipts use deterministic fixtures; no real inference or user database/vault was used."
   );
 } finally {
   if (empty) await closePgPool(empty);

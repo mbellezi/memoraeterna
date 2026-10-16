@@ -65,21 +65,17 @@ export function createPromptRepository(pool: PgPool) {
       fields: Record<string, string>;
       origin: string;
       legacy?: unknown;
-      legacyKey?: string;
-      createdAt?: string;
     }) {
       const row = (
         await pool.query(
-          `insert into prompt_revisions(prompt_id,scope,domain_id,fields,origin,legacy,legacy_key,created_at) values($1,$2,$3,$4,$5,$6,$7,coalesce($8::timestamptz,now())) on conflict(legacy_key) do update set legacy_key=excluded.legacy_key returning id`,
+          `insert into prompt_revisions(prompt_id,scope,domain_id,fields,origin,legacy) values($1,$2,$3,$4,$5,$6) returning id`,
           [
             input.promptId,
             input.scope.level,
             input.scope.domainId,
             input.fields,
             input.origin,
-            input.legacy ?? null,
-            input.legacyKey ?? null,
-            input.createdAt ?? null
+            input.legacy ?? null
           ]
         )
       ).rows[0]!;
@@ -144,39 +140,6 @@ export function createPromptRepository(pool: PgPool) {
           [publish(rows)]
         );
         return rows;
-      });
-    },
-    async legacy() {
-      return {
-        revisions: (
-          await pool.query(
-            'select id,configuration,created_at as "createdAt" from organization_settings_revisions order by created_at,id'
-          )
-        ).rows.map((r) => ({ ...r, createdAt: stamp(r.createdAt) })),
-        activations: (
-          await pool.query(
-            'select id,revision_id as "revisionId",created_at as "createdAt" from organization_settings_activations order by created_at,id'
-          )
-        ).rows.map((r) => ({ ...r, createdAt: stamp(r.createdAt) })),
-        activeId: (
-          await pool.query(
-            "select coalesce((select value->>'revisionId' from settings where key='organization.active'),(select revision_id::text from organization_settings_activations order by created_at desc,id desc limit 1)) as id"
-          )
-        ).rows[0]?.id as string | null
-      };
-    },
-    async importActivations(
-      entries: Array<{
-        revisionId: string;
-        createdAt: string;
-      }>
-    ) {
-      await tx(async (db) => {
-        for (const row of entries)
-          await db.query(
-            "insert into prompt_activations(revision_id,created_at) select $1,$2 where not exists(select 1 from prompt_activations where revision_id=$1 and created_at=$2)",
-            [row.revisionId, row.createdAt]
-          );
       });
     },
     async publish(publish: (rows: unknown[]) => unknown) {

@@ -113,8 +113,3 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Freshness depends only on content hashes. Saving settings or changing a model never invalidates coverage.
 - Every applied change is a change-set with undo. Changes that touch human,
   pinned or protected content go to the Inbox for approval.
-
-## Legacy wiki
-
-- Legacy wiki, curator and maintenance code is frozen (minimal fixes only); its
-  data handling follows `rules/data.md` (Legacy data).

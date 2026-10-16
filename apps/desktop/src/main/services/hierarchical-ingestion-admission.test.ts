@@ -6,7 +6,6 @@ import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.j
 
 const mocks = vi.hoisted(() => ({
   settings: { get: vi.fn() },
-  curator: { policy: vi.fn() },
   hierarchy: {
     getBreadcrumbs: vi.fn(),
     createBatch: vi.fn(),
@@ -33,7 +32,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
   createSettingsRepository: () => mocks.settings,
-  createWikiCuratorRepository: () => mocks.curator,
   createHierarchicalIngestionRepository: () => mocks.hierarchy,
   createIngestionRunRepository: () => mocks.runs,
   createJobRepository: () => mocks.jobs,
@@ -79,9 +77,8 @@ describe("full-knowledge admission without the legacy wiki stage (F2 D14)", () =
     const queued = await admit();
 
     expect(queued.queued).toHaveLength(1);
-    // Admission no longer consults the legacy curator policy at all.
+    // Admission reads no organization policy at all.
     expect(mocks.settings.get).not.toHaveBeenCalled();
-    expect(mocks.curator.policy).not.toHaveBeenCalled();
     expect(mocks.runs.skipStage).not.toHaveBeenCalled();
     const run = mocks.runs.create.mock.calls[0]![0];
     expect(run.requestedStages).not.toContain("organizeKnowledge");

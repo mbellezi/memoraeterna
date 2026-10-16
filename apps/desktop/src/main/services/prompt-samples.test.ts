@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { promptDefinitions, PromptSampleProgressSchema } from "@app/domain";
 import { defaultPromptPin, promptAudit } from "./prompt-runtime.js";
-import {
-  isRetiredPromptFamily,
-  runPromptSamples,
-  promptSampleLimits,
-  promptSampleCases
-} from "./prompt-samples.js";
+import { runPromptSamples, promptSampleLimits, promptSampleCases } from "./prompt-samples.js";
 function model() {
   const calls: Array<{ id: string; input: string }> = [];
   return {
@@ -139,10 +134,8 @@ describe("bounded catalog sample runner", () => {
     expect(progress.inapplicable).toEqual({});
     expect(progress.calls).toBe(ai.calls.length);
     expect(progress.auditIds).toHaveLength(ai.calls.length);
-    // The retired curator, organization and maintenance prompts have no sampler (T39r).
-    expect(ids.some(isRetiredPromptFamily)).toBe(true);
-    expect(promptSampleCases(ids).some((entry) => isRetiredPromptFamily(entry.id))).toBe(false);
-    expect(ai.calls.some((c) => isRetiredPromptFamily(c.id))).toBe(false);
+    // The curator, organization and maintenance prompts left the catalog with the legacy wiki.
+    expect(ids.some((id) => /^(organization|maintenance)\./.test(id))).toBe(false);
     expect(
       progress.completedKeys.some((key) => key.startsWith("sources.decide.repair.same_root:"))
     ).toBe(true);

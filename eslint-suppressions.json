@@ -165,19 +165,9 @@
       "count": 2
     }
   },
-  "apps/desktop/src/main/services/prompt-runtime.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "apps/desktop/src/main/services/prompt-samples.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
-    }
-  },
-  "apps/desktop/src/main/services/prompt-service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
     }
   },
   "apps/desktop/src/main/services/relation-type-resolution.ts": {
@@ -392,40 +382,9 @@
       "count": 1
     }
   },
-  "packages/db/src/repositories/automaticMaintenanceRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    }
-  },
-  "packages/db/src/repositories/investigationRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "packages/db/src/repositories/knowledgeEvolution.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 3
-    }
-  },
-  "packages/db/src/repositories/maintenanceRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
   "packages/db/src/repositories/obsidianLayoutRepository.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
-    }
-  },
-  "packages/db/src/repositories/organizationRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
     }
   },
   "packages/db/src/repositories/promptRepository.ts": {
@@ -438,45 +397,9 @@
       "count": 1
     }
   },
-  "packages/db/src/repositories/wikiCuratorRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 7
-    }
-  },
-  "packages/db/src/repositories/wikiHierarchyRepository.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/db/src/repositories/wikiRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 10
-    }
-  },
   "packages/db/src/sidecar/manager.test.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
-    }
-  },
-  "packages/domain/src/automatic-maintenance.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/domain/src/prompt-definitions.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/domain/src/wiki-hierarchy.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
     }
   },
   "packages/integration-contracts/src/obsidian-format.ts": {
@@ -494,21 +417,6 @@
       "count": 19
     }
   },
-  "scripts/fixtures/automatic-wiki-fixture.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    }
-  },
-  "scripts/fixtures/obsidian-hierarchy.ts": {
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/fixtures/wiki-hierarchy-reading.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "scripts/matching-benchmark-status.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -519,120 +427,9 @@
       "count": 1
     }
   },
-  "scripts/verify-ai-context.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    }
-  },
-  "scripts/verify-automatic-wiki-a3.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 13
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/verify-automatic-wiki-a4.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 19
-    }
-  },
-  "scripts/verify-automatic-wiki-a5.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/verify-automatic-wiki-a7.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/verify-automatic-wiki-a8.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 11
-    }
-  },
-  "scripts/verify-automatic-wiki.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/verify-maintenance.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    }
-  },
-  "scripts/verify-obsidian-editing.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/verify-obsidian-layout.ts": {
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/verify-obsidian-wiki.ts": {
-    "prefer-const": {
-      "count": 3
-    }
-  },
-  "scripts/verify-organization.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
   "scripts/verify-prompts.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 4
-    }
-  },
-  "scripts/verify-second-brain-m3.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 4
-    }
-  },
-  "scripts/verify-wiki-hierarchy.ts": {
-    "@typescript-eslint/no-unsafe-function-type": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    }
-  },
-  "scripts/verify-wiki-recomposition.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
     }
   }
 }

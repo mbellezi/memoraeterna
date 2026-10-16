@@ -12,7 +12,6 @@ import {
   createLegacyWipeRepository,
   createPgPool,
   createSourceItemRepository,
-  createWikiRepository,
   legacyWipeTables,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
@@ -20,7 +19,6 @@ import {
   type PgPool,
   type PostgresSidecarConnection
 } from "@app/db";
-import { WikiPageContentSchema } from "@app/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -107,19 +105,29 @@ async function seedLegacyLibrary(pool: PgPool) {
     [notes[0], chunkId, source.id]
   );
 
-  const wiki = createWikiRepository(pool);
   const pageIds: string[] = [];
   for (const title of ["Personal interpretation", "Area page"]) {
-    const saved = await wiki.save({
-      expectedRevisionId: null,
-      content: WikiPageContentSchema.parse({
-        title,
-        kind: "topic",
-        sections: [{ id: randomUUID(), title: "Body", markdown: `${title} text` }]
-      }),
-      evidenceChunkIds: [chunkId]
-    });
-    pageIds.push(saved);
+    const pageId = randomUUID();
+    const revisionId = randomUUID();
+    await pool.query("insert into wiki_pages(id, title, kind) values ($1, $2, 'topic')", [
+      pageId,
+      title
+    ]);
+    await pool.query(
+      `insert into wiki_page_revisions(id, page_id, number, origin, content, content_hash)
+       values ($1, $2, 1, 'human', $3::jsonb, $4)`,
+      [revisionId, pageId, JSON.stringify({ title, kind: "topic", sections: [] }), title]
+    );
+    await pool.query("update wiki_pages set current_revision_id = $2 where id = $1", [
+      pageId,
+      revisionId
+    ]);
+    await pool.query(
+      `insert into wiki_evidence(page_id, source_item_id, document_id, chunk_id, snapshot)
+       values ($1, $2, $3, $4, '{"contentHash":"kept"}')`,
+      [pageId, source.id, document.id, chunkId]
+    );
+    pageIds.push(pageId);
   }
   await pool.query("update wiki_pages set management = 'ai_managed' where id = $1", [pageIds[1]]);
 

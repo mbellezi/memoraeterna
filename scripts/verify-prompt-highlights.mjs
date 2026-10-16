@@ -10,7 +10,7 @@ import React from 'react';import {createRoot} from 'react-dom/client';import {fl
 import {PromptField} from ${JSON.stringify(join(root, "apps/desktop/src/renderer/components/PromptsSettingsView.tsx"))};
 import {promptDefinition} from '@app/domain';import {createTranslator} from '@app/i18n';
 export async function verify(){
- const host=document.createElement('div');document.body.append(host);const root=createRoot(host),d=promptDefinition('organization.curator');const results=[];
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host),d=promptDefinition('consultation.knowledge');const results=[];
  const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
  for(const width of [520,900])for(const sample of [d.fields[0].template,'Unicode 😀 %%escaped%% 50%\\nPOLICY: %policy%\\n'+('long words '.repeat(45))+'%group_id%\\n'+('line\\n'.repeat(20))+'%current_page%\\n']){
   host.style.width=width+'px';const text=sample.replaceAll('\\n','\n');

@@ -34,7 +34,7 @@ import {
   RelationExplainInputSchema,
   RelationExplanationResultSchema
 } from "@app/domain";
-import { WikiPageListSchema, WikiQuerySchema, WikiResultsSchema } from "@app/domain";
+import { WikiQuerySchema, WikiResultsSchema } from "@app/domain";
 import {
   TopicChangeSetInputSchema,
   TopicChangeSetSchema,
@@ -329,7 +329,6 @@ const api: DesktopApi = {
     }
   },
   wiki: {
-    list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
     search: async (input) =>
       WikiResultsSchema.parse(
         await ipcRenderer.invoke(ipcChannels.wikiSearch, WikiQuerySchema.parse(input))

@@ -208,3 +208,21 @@ function normalizeReasoningLevel(
   }
   return supported[0] ?? level;
 }
+
+/** The AI profile a run is pinned to: the model, its runtime and the parameters it was admitted with. */
+export const OrganizationProfileSchema = z
+  .object({
+    profileId: z.string().uuid(),
+    providerConfigId: z.string().uuid().nullable(),
+    localModelId: z.string().uuid().nullable(),
+    provider: z.string(),
+    modelId: z.string(),
+    runtime: z.string(),
+    revision: z.string().nullable(),
+    privacy: z.enum(["offline_only", "allow_remote"]),
+    parameters: z.record(z.string(), z.unknown()),
+    identityHash: z.string(),
+    contextWindow: z.number().positive().nullable()
+  })
+  .strict();
+export type OrganizationProfile = z.infer<typeof OrganizationProfileSchema>;

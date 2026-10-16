@@ -3,7 +3,6 @@ import {
   promptDefinition,
   PromptSampleProgressSchema,
   type PromptSampleProgress,
-  OrganizationSnapshotSchema,
   type PromptPin
 } from "@app/domain";
 import {
@@ -32,7 +31,11 @@ import {
   buildSourceRelationExplanationPrompt,
   buildSourceRelationExplanationRepairPrompt
 } from "./source-relation-explanation.js";
-import { consultationPrompt, parseConsultationAnswer } from "./consultation-service.js";
+import {
+  consultationPrompt,
+  parseConsultationAnswer,
+  type ConsultationSnapshot
+} from "./consultation-service.js";
 import {
   defaultTopicTreeConfig,
   packNamingCalls,
@@ -89,74 +92,51 @@ const rows = [
     ]
   }
 ];
-function instructions(prefix: string) {
+function instructions() {
+  const values = { page_title: "Retrieval and feedback", content_language: "en" };
   return {
     slots: {
-      guidance: renderPrompt(prefix + ".guidance", {
-        page_title: "Retrieval and feedback",
-        content_language: "en"
-      }),
-      advanced: renderPrompt(prefix + ".advanced", {
-        page_title: "Retrieval and feedback",
-        content_language: "en"
-      })
-    },
-    origins: { guidance: "sample", advanced: "sample" },
-    domainId: null
+      guidance: renderPrompt("consultation.guidance", values),
+      advanced: renderPrompt("consultation.advanced", values)
+    }
   };
 }
-export function promptSampleSnapshot(
-  pin: PromptPin,
-  functionName: "pageSynthesis" | "consultation" = "pageSynthesis"
-) {
-  return withPromptPin(pin, () =>
-    OrganizationSnapshotSchema.parse({
-      promptPin: pin,
-      version: "wiki-three-tools-v1",
-      targetId: id(10),
-      expectedRevisionId: null,
-      targetHuman: false,
-      baseContent: { title: "Retrieval and feedback", kind: "synthesis" },
-      sourceIds: [id(11), id(12)],
-      profile: {
-        profileId: id(20),
-        providerConfigId: id(21),
-        localModelId: null,
-        provider: "synthetic",
-        modelId: "synthetic",
-        runtime: "remote",
-        revision: null,
-        privacy: "allow_remote",
-        parameters: {},
-        identityHash: "synthetic",
-        contextWindow: 16384
-      },
-      contentLanguage: "en",
-      configurationId: null,
-      configurationHash: "synthetic",
-      functionName,
-      instructions: instructions(
-        functionName === "pageSynthesis" ? "organization" : "consultation"
-      ),
-      limits: {},
-      policy: "human_review",
-      sample: true,
-      contexts: [],
-      relations: [],
-      evidence: chunks.map((chunk, i) => ({
-        handle: `e${i + 1}`,
-        chunkId: chunk.id,
-        sourceItemId: id(11 + i),
-        documentId: id(30 + i),
-        sourceSpanId: null,
-        contentHash: "synthetic",
-        excerpt: chunk.content,
-        sourceTitle: source.title,
-        documentCreatedAt: "2026-01-01T00:00:00.000Z",
-        locator: null
-      }))
-    })
-  );
+/** A synthetic question prepared for an answer: no database state, so nothing to validate. */
+export function promptSampleSnapshot(pin: PromptPin): ConsultationSnapshot {
+  return withPromptPin(pin, () => ({
+    promptPin: pin,
+    sourceIds: [id(11), id(12)],
+    profile: {
+      profileId: id(20),
+      providerConfigId: id(21),
+      localModelId: null,
+      provider: "synthetic",
+      modelId: "synthetic",
+      runtime: "remote",
+      revision: null,
+      privacy: "allow_remote",
+      parameters: {},
+      identityHash: "synthetic",
+      contextWindow: 16384
+    },
+    contentLanguage: "en",
+    instructions: instructions(),
+    sample: true,
+    contexts: [],
+    relations: [],
+    evidence: chunks.map((chunk, i) => ({
+      handle: `e${i + 1}`,
+      chunkId: chunk.id,
+      sourceItemId: id(11 + i),
+      documentId: id(30 + i),
+      sourceSpanId: null,
+      contentHash: "synthetic",
+      excerpt: chunk.content,
+      sourceTitle: source.title,
+      documentCreatedAt: "2026-01-01T00:00:00.000Z",
+      locator: null
+    }))
+  }));
 }
 export interface PromptSampleCall {
   input: string;
@@ -349,7 +329,7 @@ export function promptSampleCall(
         "consultation.gaps"
       ].includes(promptId)
     ) {
-      const snapshot = promptSampleSnapshot(pin, "consultation");
+      const snapshot = promptSampleSnapshot(pin);
       if (!["consultation.answer", "consultation.repair"].includes(promptId)) {
         snapshot.consultationVersion = "knowledge-consultation-v2";
         snapshot.consultationIntent =
@@ -511,19 +491,10 @@ const rankerInstructionIds: ReadonlySet<string> = new Set([
   "topic.gate.instruction",
   "topic.overview.support"
 ]);
-/**
- * The curator, organization and maintenance prompts have no caller since the legacy wiki was
- * removed (F2 T39r): nothing samples them. The catalog entries stay until the prompt catalog drops
- * them (T40r), and they are inert until then.
- */
-const retiredPromptFamilies = ["organization.", "maintenance."] as const;
-export const isRetiredPromptFamily = (id: string) =>
-  retiredPromptFamilies.some((prefix) => id.startsWith(prefix));
 export function promptSampleCases(ids: string[]): SampleCase[] {
   const cases = new Map<string, SampleCase>();
   const add = (entry: SampleCase) => cases.set(entry.id, entry);
   for (const id of ids) {
-    if (isRetiredPromptFamily(id)) continue;
     if (id === "sources.validation.same_root")
       add({
         id: "sources.decide.repair.same_root",
