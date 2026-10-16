@@ -2162,6 +2162,7 @@
       "actions": {
         "label": "Ações do tópico",
         "more": "Ações do tópico",
+        "itemActions": "Ações do item",
         "rename": "Renomear",
         "create": "Novo subtópico",
         "createTop": "Novo tópico no nível superior",
@@ -2207,6 +2208,8 @@
         "created": "{title} criado em {parent}.",
         "pinned": "{title} fixado. A automação não vai alterá-lo.",
         "unpinned": "{title} desafixado. Continua protegido contra mudanças automáticas.",
+        "itemPinned": "{title} fixado.",
+        "itemUnpinned": "{title} desafixado.",
         "placed": "{title} colocado em {parent}.",
         "alsoPlaced": "{title} agora também aparece em {parent}.",
         "undone": "Mudança desfeita.",

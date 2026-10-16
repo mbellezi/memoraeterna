@@ -2166,6 +2166,7 @@
       "actions": {
         "label": "Acciones del tema",
         "more": "Acciones del tema",
+        "itemActions": "Acciones del elemento",
         "rename": "Renombrar",
         "create": "Nuevo subtema",
         "createTop": "Nuevo tema de primer nivel",
@@ -2211,6 +2212,8 @@
         "created": "{title} creado en {parent}.",
         "pinned": "{title} fijado. La automatización no lo cambiará.",
         "unpinned": "{title} ya no está fijado. Sigue protegido de los cambios automáticos.",
+        "itemPinned": "{title} fijado.",
+        "itemUnpinned": "{title} ya no está fijado.",
         "placed": "{title} colocado en {parent}.",
         "alsoPlaced": "{title} ahora también aparece en {parent}.",
         "undone": "Cambio deshecho.",

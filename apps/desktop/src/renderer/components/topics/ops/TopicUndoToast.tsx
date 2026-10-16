@@ -1,7 +1,7 @@
 import { Undo2, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import type { ShownNotice } from "./topic-ops-controller";
+import { canUndoNotice, type ShownNotice } from "./topic-notice-center";
 import { Button } from "../../ui/button";
 
 export interface TopicUndoToastProps {
@@ -22,13 +22,14 @@ function nameOf(t: Translator, title: string | null): string {
  * The notice that follows a change the person made: what happened, and Undo while it can be
  * undone. The region is always in the page so a screen reader announces a new notice; the notice
  * itself is a few controls in tab order, stays long enough to read and to reach (it waits while
- * hovered or focused), and the U key undoes it from anywhere in the view.
+ * hovered or focused). The app draws one, through `TopicNoticeHost`, which also owns the U key
+ * that undoes it.
  */
 export function TopicUndoToast({ t, notice, onUndo, onDismiss, onHold }: TopicUndoToastProps) {
   const values = notice
     ? { title: nameOf(t, notice.title), parent: nameOf(t, notice.parent) }
     : undefined;
-  const canUndo = notice !== null && notice.changeSetId !== null && notice.state !== "blocked";
+  const canUndo = canUndoNotice(notice);
   const pending = notice?.state === "pending";
   return (
     <div

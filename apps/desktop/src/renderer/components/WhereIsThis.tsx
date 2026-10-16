@@ -3,6 +3,7 @@ import { ChevronRight, MapPin, RefreshCw } from "lucide-react";
 import type { ObjectLocateResult, ObjectRef } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import { isSilentRefresh, showsLoadError, type LoadOutcome } from "../lib/hidden-view";
+import { useTopicsPulse } from "../lib/topics-pulse";
 import {
   navigationForLocated,
   navigationForPathSegment,
@@ -456,16 +457,19 @@ export function useObjectOpener(onNavigate: (navigation: OpenableNavigation) => 
 
 /**
  * What the panel does when it renders: nothing while hidden or when the key already finished
- * (a failure stays visible until Retry), a silent refresh when it is shown again with the same
- * key after a successful load, otherwise a load.
+ * (a failure stays visible until Retry), a silent refresh when the topic tree changed (`pulsed`) or
+ * when it is shown again with the same key after a successful load, otherwise a load.
  */
 export function locateLoadDecision(input: {
   active: boolean;
   wasHidden: boolean;
   outcome: LoadOutcome | null;
   key: string;
+  /** The topic tree changed since the last read: the path may have moved. */
+  pulsed?: boolean;
 }): "skip" | "silent" | "load" {
   if (!input.active) return "skip";
+  if (input.pulsed) return "silent";
   if (isSilentRefresh(input.wasHidden, input.outcome, input.key)) return "silent";
   return input.outcome?.key === input.key ? "skip" : "load";
 }
@@ -473,9 +477,10 @@ export function locateLoadDecision(input: {
 /**
  * Locates `address` (one read, no AI) and shows the answer. A hidden view loads nothing; shown again
  * it refreshes in place when its key is unchanged and the last load succeeded (citations and the
- * path may have changed meanwhile), and re-requests when the address or `refreshKey` changed; a
- * refresh keeps the previous answer on screen instead of blinking back to loading. A failure stays
- * visible and retryable.
+ * path may have changed meanwhile), and re-requests when the address or `refreshKey` changed. While
+ * shown it also reads again, in place, after the topic tree changed (a rebalance, a rename or a
+ * move can change the path). A refresh keeps the previous answer on screen instead of blinking back
+ * to loading. A failure stays visible and retryable.
  */
 export function WhereIsThis({
   t,
@@ -496,6 +501,8 @@ export function WhereIsThis({
   const opener = useObjectOpener(onNavigate);
   const outcome = useRef<LoadOutcome | null>(null);
   const wasHidden = useRef(false);
+  const readPulse = useRef(0);
+  const pulse = useTopicsPulse(active);
   const key = `${address}|${refreshKey}|${attempt}`;
 
   useEffect(() => {
@@ -503,13 +510,15 @@ export function WhereIsThis({
       active,
       wasHidden: wasHidden.current,
       outcome: outcome.current,
-      key
+      key,
+      pulsed: pulse !== readPulse.current
     });
     if (!active) {
       wasHidden.current = true;
       return;
     }
     wasHidden.current = false;
+    readPulse.current = pulse;
     if (decision === "skip") return;
     const silent = decision === "silent";
     let live = true;
@@ -533,7 +542,7 @@ export function WhereIsThis({
     return () => {
       live = false;
     };
-  }, [active, address, key]);
+  }, [active, address, key, pulse]);
 
   return (
     <WhereIsThisView

@@ -15,7 +15,7 @@ import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
 import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
 import { InlineTitleEditor } from "./ops/InlineTitleEditor";
-import { actionRowOf, type NavRowOps } from "./ops/nav-ops";
+import { actionRowOf, actionsLabelKey, itemIdentity, type NavRowOps } from "./ops/nav-ops";
 import { isExpandableRow, type NavRow, type PlaceEntry } from "./topic-navigation";
 
 /** Indent per outline level, and the first level's inset (the 4 px grid). */
@@ -196,8 +196,8 @@ export function TopicNavRow({
         <button
           type="button"
           tabIndex={-1}
-          aria-label={t("topics.ops.actions.more")}
-          title={t("topics.ops.actions.more")}
+          aria-label={t(actionsLabelKey(actionRow))}
+          title={t(actionsLabelKey(actionRow))}
           aria-haspopup="menu"
           className={cn(
             "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0",
@@ -281,7 +281,9 @@ function RowContent({
               <UserRound aria-hidden="true" className="size-3" />
             </Mark>
           ) : null}
-          {node.management === "pinned" ? <PinMark t={t} /> : null}
+          {node.management === "pinned" || ops?.pinnedItems.has(itemIdentity("topic", node.id)) ? (
+            <PinMark t={t} />
+          ) : null}
           <HealthMark t={t} health={node.health} />
           <Count
             value={node.items}
@@ -308,6 +310,7 @@ function RowContent({
               <Hourglass aria-hidden="true" className="size-3" />
             </Mark>
           ) : null}
+          {ops?.pinnedItems.has(itemIdentity(leaf.kind, leaf.id)) ? <PinMark t={t} /> : null}
           {leaf.kind === "source" && leaf.noteCount > 0 ? (
             <Count
               value={leaf.noteCount}

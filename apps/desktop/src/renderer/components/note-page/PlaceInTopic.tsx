@@ -18,7 +18,7 @@ export interface PlaceInTopicProps {
 /**
  * "Place in topic": the person puts the note in a topic of their choice, as its place or as one
  * more topic it shows up in. The placement is theirs: the engine never moves it. The change comes
- * with an Undo that stays long enough to be reached by keyboard.
+ * with an Undo in the window's one notice, which stays long enough to be reached by keyboard.
  */
 export function PlaceInTopic({ t, noteId, noteTitle, active, onPlaced }: PlaceInTopicProps) {
   const ops = useTopicOps(active);

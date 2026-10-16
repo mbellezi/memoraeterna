@@ -5,6 +5,7 @@ import type { Translator } from "@app/i18n";
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import type { PassageAnchor } from "../../lib/object-navigation";
+import { useTopicsPulse } from "../../lib/topics-pulse";
 import { recordView, viewsToRecord, type OpenedObject } from "../../lib/view-history";
 import { dispatchWindowNavigation, subscribeWindowNavigation } from "../../lib/window-navigation";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
@@ -27,6 +28,7 @@ import {
   refreshRelationLimit,
   reviewErrorKind,
   unsavedEditNavigationGuard,
+  withPlacement,
   type ExplanationState,
   type NoteDraft,
   type NoteEditBase
@@ -128,6 +130,8 @@ export function NotePage({
   const [explanations, setExplanations] = useState<Record<string, ExplanationState>>({});
   const [explainRetry, setExplainRetry] = useState(0);
   const [announcement, setAnnouncement] = useState("");
+  const [placedByHand, setPlacedByHand] = useState(0);
+  const topicsPulse = useTopicsPulse(active);
   const [card, dispatchCard] = useReducer(cardReducer, initialCardState);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const editRef = useRef<HTMLButtonElement>(null);
@@ -210,6 +214,29 @@ export function NotePage({
       live = false;
     };
   }, [active, key, noteId]);
+
+  // The path of the note follows the topic tree: it is read again (one cheap locate, not the whole
+  // page) after the tree changed and after the note was placed by hand. A failed read keeps the
+  // path that is shown.
+  const placementAsk = topicsPulse + placedByHand;
+  useEffect(() => {
+    if (!active || placementAsk === 0) return;
+    let live = true;
+    window.app.objects
+      .locate({ address: formatObjectAddress({ kind: "note", id: noteId }) })
+      .then((placement) => {
+        if (!live || !placement) return;
+        setLoad((current) => {
+          if (current.status !== "ready" || current.page.note.id !== noteId) return current;
+          const page = withPlacement(current.page, placement);
+          return page === current.page ? current : { status: "ready", page };
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [active, placementAsk, noteId]);
 
   // A hidden page closes its card and its question about leaving; the editor draft is kept.
   useEffect(() => {
@@ -460,7 +487,7 @@ export function NotePage({
           if (editing && isPristineDraft(editing.base, editing.draft)) cancelEdit();
         }}
         onOpenNote={(id) => leave(() => onOpenNote(id))}
-        place={{ active, onPlaced: reload }}
+        place={{ active, onPlaced: () => setPlacedByHand((current) => current + 1) }}
         onOpenPassage={(sourceItemId, passage) => leave(() => onOpenPassage(sourceItemId, passage))}
         onOpenPlacement={opener.open}
         onCardEvent={dispatchCard}

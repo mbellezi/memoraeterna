@@ -10,6 +10,7 @@ import { applyMenuCommand } from "./lib/menu-commands";
 import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
+import { TopicNoticeHost } from "./components/topics/ops/TopicNoticeHost";
 import {
   currentWikiTopic,
   showInWiki,
@@ -936,6 +937,7 @@ export function App({
         onDismiss={dismissToast}
       />
       <LocalEmbeddingLoadDialog status={localEmbeddingLoadStatus} t={t} />
+      <TopicNoticeHost t={t} />
     </div>
   );
 }

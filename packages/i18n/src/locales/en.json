@@ -2159,6 +2159,7 @@
       "actions": {
         "label": "Topic actions",
         "more": "Topic actions",
+        "itemActions": "Item actions",
         "rename": "Rename",
         "create": "New subtopic",
         "createTop": "New top-level topic",
@@ -2204,6 +2205,8 @@
         "created": "Created {title} under {parent}.",
         "pinned": "Pinned {title}. Automation will not change it.",
         "unpinned": "Unpinned {title}. It stays protected from automatic changes.",
+        "itemPinned": "Pinned {title}.",
+        "itemUnpinned": "Unpinned {title}.",
         "placed": "Placed {title} in {parent}.",
         "alsoPlaced": "{title} now also shows in {parent}.",
         "undone": "Change undone.",

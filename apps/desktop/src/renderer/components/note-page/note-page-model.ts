@@ -391,6 +391,16 @@ export function refreshRelationLimit(shown: number): number {
 }
 
 /**
+ * The page with its place in the topic tree read again (the tree changed, or the note was placed
+ * by hand). It is the same page when the place did not change, so nothing redraws for nothing.
+ */
+export function withPlacement(page: NotePage, placement: NotePage["placement"]): NotePage {
+  return JSON.stringify(page.placement) === JSON.stringify(placement)
+    ? page
+    : { ...page, placement };
+}
+
+/**
  * The page read again, keeping the rows that were shown past its first page ("Show more"), so a
  * refresh never shortens the list. The refreshed rows and total win; kept rows are not re-read.
  */

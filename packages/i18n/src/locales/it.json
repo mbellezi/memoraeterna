@@ -2157,6 +2157,7 @@
       "actions": {
         "label": "Azioni dell’argomento",
         "more": "Azioni dell’argomento",
+        "itemActions": "Azioni dell’elemento",
         "rename": "Rinomina",
         "create": "Nuovo sottoargomento",
         "createTop": "Nuovo argomento di primo livello",
@@ -2202,6 +2203,8 @@
         "created": "{title} creato in {parent}.",
         "pinned": "{title} fissato. L’automazione non lo cambierà.",
         "unpinned": "{title} rimosso dai fissati. Resta protetto dalle modifiche automatiche.",
+        "itemPinned": "{title} fissato.",
+        "itemUnpinned": "{title} rimosso dai fissati.",
         "placed": "{title} messo in {parent}.",
         "alsoPlaced": "{title} ora compare anche in {parent}.",
         "undone": "Modifica annullata.",

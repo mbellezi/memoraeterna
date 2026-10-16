@@ -1,12 +1,13 @@
-import type { TopicPlacementRole } from "@app/domain";
+import { formatObjectAddress, type TopicPlacementRole } from "@app/domain";
 import type { MessageKey } from "@app/i18n";
 
 import type { DesktopApi } from "../../../../shared/ipc";
+import { sharedNoticeCenter, type TopicNoticeCenter } from "./topic-notice-center";
 import {
   checkTitle,
   failureMessage,
   isUnchanged,
-  noticeVisibleMs,
+  itemPinNotice,
   pinNotice,
   titleCheckMessage,
   type OpsNotice,
@@ -14,19 +15,20 @@ import {
 } from "./topic-ops";
 
 export type OpsApi = Pick<DesktopApi["topics"], "mutate" | "undo">;
+/** The view history's pins: a note, a source or a topic that is only pinned there (D28). */
+export type OpsHistoryApi = Pick<DesktopApi["viewHistory"], "record" | "setPinned">;
 
-/**
- * Where a notice stands: `idle` (Undo is offered), `pending` (undoing), `blocked` (a later change
- * depends on it), `failed` (try again) or `none` (it only tells; there is nothing to undo).
- */
-export type NoticeState = "idle" | "pending" | "blocked" | "failed" | "none";
-
-export interface ShownNotice extends OpsNotice {
-  /** Tells notices apart across updates (the live region announces a new one). */
-  id: number;
-  /** The change-set Undo reverts; null for a notice that only tells. */
-  changeSetId: string | null;
-  state: NoticeState;
+/** What pinning a note, a source or a topic pinned only in the view history needs to know. */
+export interface HistoryPinItem {
+  kind: "topic" | "note" | "source";
+  id: string;
+  /** The name the history keeps if the object was never opened; null reads as unnamed. */
+  title: string | null;
+  /**
+   * The host a note opens in (its source's address), asked only when the history has no entry for
+   * the object yet; null when it cannot be found.
+   */
+  host?: (() => Promise<string | null>) | undefined;
 }
 
 /** The dialog a view has open: at most one, and none while the view is hidden. */
@@ -40,26 +42,31 @@ export interface OpsSnapshot {
   busy: boolean;
   /** The last refusal, cleared by the next attempt. */
   error: MessageKey | null;
-  notice: ShownNotice | null;
   dialog: OpsDialog | null;
 }
 
-const idle: OpsSnapshot = { busy: false, error: null, notice: null, dialog: null };
+const idle: OpsSnapshot = { busy: false, error: null, dialog: null };
 
 /**
  * The human structure operations of one view (docs F2 T26), outside React so every rule is tested
  * without a renderer: each operation is one call to `topics.mutate`, a success leaves a notice with
- * Undo that stays long enough to be reached by keyboard, a refusal leaves its message. The views
+ * Undo, a refusal leaves its message. The notice is not the view's: it goes to the window's one
+ * notice center, and goes away with the view that made it when that view is hidden. The views
  * redraw from pushed changes, so nothing here reads the tree.
  */
 export class TopicOpsController {
   private snapshot: OpsSnapshot = idle;
   private readonly listeners = new Set<() => void>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private held = false;
-  private noticeCounter = 0;
+  private readonly center: TopicNoticeCenter;
+  private readonly history: () => OpsHistoryApi;
 
-  constructor(private readonly api: () => OpsApi) {}
+  constructor(
+    private readonly api: () => OpsApi,
+    deps: { center?: TopicNoticeCenter; history?: () => OpsHistoryApi } = {}
+  ) {
+    this.center = deps.center ?? sharedNoticeCenter;
+    this.history = deps.history ?? (() => window.app.viewHistory);
+  }
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -84,7 +91,7 @@ export class TopicOpsController {
       this.update({ error: null });
       return true;
     }
-    return this.run(
+    return this.mutate(
       {
         op: "rename",
         id: topic.id,
@@ -97,7 +104,7 @@ export class TopicOpsController {
 
   /** Moves a topic under another (last child). */
   move(topic: OpsTopic, parent: { id: string; title: string | null }): Promise<boolean> {
-    return this.run(
+    return this.mutate(
       { op: "move", id: topic.id, parentId: parent.id, expectedUpdatedAt: topic.updatedAt },
       { key: "topics.ops.toast.moved", title: topic.title, parent: parent.title }
     );
@@ -110,7 +117,7 @@ export class TopicOpsController {
       this.update({ error: titleCheckMessage[checked.reason] });
       return false;
     }
-    return this.run(
+    return this.mutate(
       { op: "create", parentId: parent.id, title: checked.title },
       { key: "topics.ops.toast.created", title: checked.title, parent: parent.title }
     );
@@ -118,7 +125,37 @@ export class TopicOpsController {
 
   /** Pins or unpins a topic: its place in Pinned and its protection from automation (D28). */
   pin(topic: Pick<OpsTopic, "id" | "title">, pinned: boolean): Promise<boolean> {
-    return this.run({ op: pinned ? "pin" : "unpin", id: topic.id }, pinNotice(pinned, topic.title));
+    return this.mutate(
+      { op: pinned ? "pin" : "unpin", id: topic.id },
+      pinNotice(pinned, topic.title)
+    );
+  }
+
+  /**
+   * Pins or unpins what only the view history holds (D28): a note or a source (pinning one touches
+   * nothing else), or a topic that is pinned there without being protected (its management is not
+   * `pinned`, so the tree has nothing to change and there is nothing to undo). An object that was
+   * never opened has no entry to pin yet: the entry is recorded first, with its host for a note.
+   */
+  pinHistory(item: HistoryPinItem, pinned: boolean): Promise<boolean> {
+    return this.run(async () => {
+      const address = formatObjectAddress({ kind: item.kind, id: item.id });
+      const history = this.history();
+      const entry = await history.setPinned(address, pinned);
+      if (entry === null && pinned) {
+        const host = item.host ? await item.host() : null;
+        // A note opens from its source: without it the entry could not be listed or opened.
+        if (item.kind === "note" && host === null) throw new Error("topics.ops.errors.failed");
+        await history.record({
+          kind: item.kind,
+          id: item.id,
+          title: item.title ?? "",
+          ...(host ? { parentAddress: host } : {})
+        });
+        await history.setPinned(address, true);
+      }
+      return { changeSetId: null, notice: itemPinNotice(pinned, item.title) };
+    });
   }
 
   /** Places a note or a source in a topic: as its place, or as one more place it shows up. */
@@ -127,7 +164,7 @@ export class TopicOpsController {
     topic: { id: string; title: string | null },
     role: TopicPlacementRole
   ): Promise<boolean> {
-    return this.run(
+    return this.mutate(
       { op: "placeItem", item: { kind: item.kind, id: item.id }, topicId: topic.id, role },
       {
         key: role === "primary" ? "topics.ops.toast.placed" : "topics.ops.toast.alsoPlaced",
@@ -138,43 +175,7 @@ export class TopicOpsController {
   }
 
   // -------------------------------------------------------------------------
-  // The notice
-
-  /** Reverts the change the notice names. */
-  async undo(): Promise<void> {
-    const notice = this.snapshot.notice;
-    if (!notice || notice.changeSetId === null || notice.state === "pending") return;
-    const changeSetId = notice.changeSetId;
-    this.setNotice({ ...notice, state: "pending" });
-    this.stopTimer();
-    try {
-      const result = await this.api().undo({ changeSetId });
-      if (!this.owns(notice.id)) return;
-      if (result.status === "undone") {
-        this.show({ key: "topics.ops.toast.undone", title: null, parent: null }, null, "none");
-      } else {
-        this.setNotice({ ...notice, state: "blocked" });
-        this.startTimer();
-      }
-    } catch {
-      if (!this.owns(notice.id)) return;
-      this.setNotice({ ...notice, state: "failed" });
-      this.startTimer();
-    }
-  }
-
-  /** The person left or closed the notice. */
-  dismiss(): void {
-    this.stopTimer();
-    this.update({ notice: null });
-  }
-
-  /** Hovering or focusing the notice keeps it; leaving it starts the wait again. */
-  hold(held: boolean): void {
-    this.held = held;
-    if (held) this.stopTimer();
-    else if (this.snapshot.notice && this.snapshot.notice.state !== "pending") this.startTimer();
-  }
+  // Refusals and dialogs
 
   /** The last refusal is no longer news (a dialog or an editor closed). */
   clearError(): void {
@@ -192,31 +193,32 @@ export class TopicOpsController {
     }
   }
 
-  /** A view that is hidden keeps no dialog, no notice and no refusal. */
+  /** A view that is hidden keeps no dialog, no notice of its own and no refusal. */
   reset(): void {
-    this.stopTimer();
-    this.held = false;
+    this.center.release(this);
     if (this.snapshot !== idle) this.update({ ...idle, busy: this.snapshot.busy });
-  }
-
-  /** The view went away: the notice stops counting down (React may mount it again). */
-  dispose(): void {
-    this.stopTimer();
   }
 
   // -------------------------------------------------------------------------
 
+  private mutate(mutation: Parameters<OpsApi["mutate"]>[0], notice: OpsNotice): Promise<boolean> {
+    return this.run(async () => {
+      const result = await this.api().mutate(mutation);
+      return { changeSetId: result.changeSetId, notice };
+    });
+  }
+
+  /** One operation at a time: its notice when it succeeded, its message when it was refused. */
   private async run(
-    mutation: Parameters<OpsApi["mutate"]>[0],
-    notice: OpsNotice
+    operation: () => Promise<{ changeSetId: string | null; notice: OpsNotice }>
   ): Promise<boolean> {
     if (this.snapshot.busy) return false;
-    this.stopTimer();
     this.update({ busy: true, error: null });
     try {
-      const result = await this.api().mutate(mutation);
+      const done = await operation();
       this.update({ busy: false });
-      this.show(notice, result.changeSetId, "idle");
+      const state = done.changeSetId === null ? "none" : "idle";
+      this.center.show(done.notice, done.changeSetId, state, this);
       return true;
     } catch (error) {
       // The same name or place again is not a failure: there is nothing to undo, and nothing wrong.
@@ -227,31 +229,6 @@ export class TopicOpsController {
       this.update({ busy: false, error: failureMessage(error) });
       return false;
     }
-  }
-
-  private show(notice: OpsNotice, changeSetId: string | null, state: NoticeState): void {
-    this.noticeCounter += 1;
-    this.update({ notice: { ...notice, id: this.noticeCounter, changeSetId, state } });
-    this.startTimer();
-  }
-
-  private setNotice(notice: ShownNotice): void {
-    this.update({ notice });
-  }
-
-  private owns(id: number): boolean {
-    return this.snapshot.notice?.id === id;
-  }
-
-  private startTimer(): void {
-    this.stopTimer();
-    if (this.held || !this.snapshot.notice) return;
-    this.timer = setTimeout(() => this.dismiss(), noticeVisibleMs);
-  }
-
-  private stopTimer(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
   }
 
   private update(patch: Partial<OpsSnapshot>): void {

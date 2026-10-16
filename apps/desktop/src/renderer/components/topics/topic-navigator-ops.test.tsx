@@ -2,11 +2,11 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 
-import { FakeTopics, id, settle } from "./topic-fixtures";
+import { FakeTopics, id, noteLeaf, settle, sourceLeaf } from "./topic-fixtures";
 import type { FakeTopic } from "./topic-fixtures";
 import { TopicNavigatorView, type NavigatorOps } from "./TopicNavigator";
 import { TopicNavigatorStore, type NavigatorSnapshot } from "./topic-navigator-store";
-import type { NavRowOps } from "./ops/nav-ops";
+import { itemIdentity, type NavRowOps } from "./ops/nav-ops";
 import { topicKey } from "./topic-navigation";
 
 const R = id(1);
@@ -34,6 +34,7 @@ const rows = (overrides: Partial<NavRowOps> = {}): NavRowOps => ({
   renamingKey: null,
   invalid: false,
   busy: false,
+  pinnedItems: new Set(),
   onStartRename: noop,
   onCommitRename: noop,
   onCancelRename: noop,
@@ -86,6 +87,43 @@ describe("the navigator with the human operations", () => {
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="New top-level topic"');
     expect(html).toContain('aria-haspopup="dialog"');
+  });
+
+  it("gives the notes and sources of the tree an item actions button, and marks the pinned ones", async () => {
+    const note = noteLeaf(1);
+    const store = new TopicNavigatorStore(
+      new FakeTopics({
+        rootId: R,
+        topics: [
+          { id: R, parentId: null, title: null, children: [A] },
+          { id: A, parentId: R, title: "Memory", leaves: [note, sourceLeaf(1)] }
+        ]
+      }).api
+    );
+    store.setActive(true);
+    await settle();
+    store.expand(A);
+    await settle();
+    const snapshot = store.getSnapshot();
+    const plain = view(snapshot, ops());
+    expect(plain.match(/aria-label="Topic actions"/g)).toHaveLength(1);
+    expect(plain.match(/aria-label="Item actions"/g)).toHaveLength(2);
+    // Still one tab stop for the tree, and no pin mark until the history pins one.
+    expect(plain.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(plain).not.toContain(">Pinned<");
+    const pinned = view(
+      snapshot,
+      ops({ rows: rows({ pinnedItems: new Set([itemIdentity("note", note.id)]) }) })
+    );
+    expect(pinned.match(/>Pinned</g)).toHaveLength(1);
+    // A topic that only the history pins is marked too, though it is not protected.
+    const topicOnly = view(
+      snapshot,
+      ops({ rows: rows({ pinnedItems: new Set([itemIdentity("topic", A)]) }) })
+    );
+    expect(topicOnly.match(/>Pinned</g)).toHaveLength(1);
+    // Read-only without the operations: the leaves have no button either.
+    expect(view(snapshot)).not.toContain("Item actions");
   });
 
   it("hides the new-topic button until the tree is read", () => {

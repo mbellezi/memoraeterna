@@ -63,7 +63,7 @@ describe("Place in topic on the Note page", () => {
     );
   });
 
-  it("keeps a live region for its notice and opens no dialog until asked", () => {
+  it("opens no dialog until asked, and leaves its notice to the window's one host", () => {
     const html = renderToString(
       <PlaceInTopic
         t={createTranslator("en")}
@@ -73,8 +73,10 @@ describe("Place in topic on the Note page", () => {
         onPlaced={noop}
       />
     );
-    expect(html).toContain('role="status"');
     expect(html).not.toContain("<dialog");
+    // A second live region here would announce the same notice twice and could overlap it.
+    expect(html).not.toContain('role="status"');
+    expect(html).not.toContain("data-topic-notice");
   });
 
   it("is written in every language", () => {

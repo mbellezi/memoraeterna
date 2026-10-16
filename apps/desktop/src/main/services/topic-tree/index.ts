@@ -421,6 +421,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     dispose: () => {
       overview?.dispose();
       changes.dispose();
+      gate?.dispose();
       void structure.dispose();
     }
   };

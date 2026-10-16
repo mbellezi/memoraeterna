@@ -8,11 +8,20 @@ import { InlineTitleEditor } from "./InlineTitleEditor";
 import { TopicMoveDialog } from "./TopicMoveDialog";
 import { TopicNameDialog } from "./TopicNameDialog";
 import { TopicUndoToast } from "./TopicUndoToast";
-import { actionRowOf, isPinnedRow, topicMenuItems } from "./nav-ops";
+import {
+  actionRowOf,
+  actionsLabelKey,
+  isPinnedRow,
+  itemIdentity,
+  pinPlanOf,
+  pinnedItemKeys,
+  topicMenuItems
+} from "./nav-ops";
 import { opsErrorText } from "./topic-ops";
-import type { ShownNotice } from "./topic-ops-controller";
+import type { ShownNotice } from "./topic-notice-center";
 import { TopicPickerController } from "./topic-picker";
-import type { NavRow, PlaceRow, TopicRow } from "../topic-navigation";
+import type { LeafRow, NavRow, PlaceEntry, PlaceRow, TopicRow } from "../topic-navigation";
+import { noteLeaf, sourceLeaf } from "../topic-fixtures";
 
 const en = createTranslator("en");
 const noop = () => undefined;
@@ -332,7 +341,7 @@ describe("the actions menu", () => {
     expandable: false,
     expanded: false
   });
-  const placeRow = (pinned: boolean): PlaceRow => ({
+  const placeRow = (pinned: boolean, overrides: Partial<PlaceEntry> = {}): PlaceRow => ({
     type: "place",
     key: "p:x",
     level: 1,
@@ -348,41 +357,187 @@ describe("the actions menu", () => {
       count: 3,
       health: "good",
       management: "ai",
-      source: null
+      source: null,
+      ...overrides
     }
   });
+  const leafRow = (leaf = noteLeaf(1)): LeafRow => ({
+    type: "leaf",
+    key: "l:x",
+    level: 2,
+    parentKey: "t:x",
+    posInSet: 1,
+    setSize: 1,
+    leaf,
+    waiting: false
+  });
   const actions = { rename: noop, create: noop, move: noop, togglePin: noop };
+  const none: ReadonlySet<string> = new Set();
+  const labelsOf = (row: TopicRow | PlaceRow | LeafRow, pinnedItems = none, busy = false) =>
+    topicMenuItems(en, row, actions, busy, pinnedItems).map((item) => item.label);
 
   it("offers a topic its four actions, with Pin or Unpin by its protection", () => {
-    expect(topicMenuItems(en, topicRow(), actions, false).map((item) => item.label)).toEqual([
-      "Rename",
-      "New subtopic",
-      "Move to...",
-      "Pin"
-    ]);
-    expect(topicMenuItems(en, topicRow("pinned"), actions, false).at(-1)?.label).toBe("Unpin");
-    expect(topicMenuItems(en, topicRow(), actions, true).every((item) => item.disabled)).toBe(true);
+    expect(labelsOf(topicRow())).toEqual(["Rename", "New subtopic", "Move to...", "Pin"]);
+    expect(labelsOf(topicRow("pinned")).at(-1)).toBe("Unpin");
+    expect(topicMenuItems(en, topicRow(), actions, true, none).every((item) => item.disabled)).toBe(
+      true
+    );
   });
 
   it("offers a topic in Pinned or Recents only to pin or unpin it", () => {
-    expect(topicMenuItems(en, placeRow(true), actions, false).map((item) => item.label)).toEqual([
-      "Unpin"
-    ]);
-    expect(topicMenuItems(en, placeRow(false), actions, false).map((item) => item.label)).toEqual([
-      "Pin"
-    ]);
-    expect(isPinnedRow(placeRow(true))).toBe(true);
-    expect(isPinnedRow(topicRow())).toBe(false);
+    expect(labelsOf(placeRow(true))).toEqual(["Unpin"]);
+    expect(labelsOf(placeRow(false))).toEqual(["Pin"]);
+    expect(isPinnedRow(placeRow(true), none)).toBe(true);
+    expect(isPinnedRow(topicRow(), none)).toBe(false);
   });
 
-  it("gives actions to topics only: not to leaves, notes in Recents or the Unsorted group", () => {
-    const leaf = { type: "unsorted", key: "unsorted" } as unknown as NavRow;
-    expect(actionRowOf(leaf)).toBeNull();
-    const note = {
-      ...placeRow(false),
-      place: { ...placeRow(false).place, kind: "note" }
-    } as NavRow;
-    expect(actionRowOf(note)).toBeNull();
+  it("offers the notes and sources of the tree, Pinned and Recents a pin through the history (D28)", () => {
+    const note = leafRow(noteLeaf(1));
+    const source = leafRow(sourceLeaf(1));
+    const pinned = new Set([itemIdentity("note", note.leaf.id)]);
+    for (const row of [note, source]) {
+      expect(actionRowOf(row)).toBe(row);
+      expect(labelsOf(row)).toEqual(["Pin"]);
+    }
+    expect(isPinnedRow(note, pinned)).toBe(true);
+    expect(isPinnedRow(source, pinned)).toBe(false);
+    expect(labelsOf(note, pinned)).toEqual(["Unpin"]);
+    // A note or a source in Pinned or Recents is pinned by its entry.
+    const inRecents = placeRow(false, { kind: "note", id: id(5), management: null });
+    expect(actionRowOf(inRecents)).toBe(inRecents);
+    expect(labelsOf(inRecents)).toEqual(["Pin"]);
+    const pinnedSource = placeRow(true, { kind: "source", id: id(6), management: null });
+    expect(labelsOf(pinnedSource)).toEqual(["Unpin"]);
+  });
+
+  it("gives no actions to the Unsorted group or to the rows that only lead on", () => {
+    for (const type of ["unsorted", "more", "status"]) {
+      expect(actionRowOf({ type, key: type } as unknown as NavRow)).toBeNull();
+    }
     expect(actionRowOf(topicRow())).not.toBeNull();
+  });
+
+  it("names what the Pinned list holds: topics, notes and sources", () => {
+    const keys = pinnedItemKeys([
+      placeRow(true).place,
+      placeRow(true, { kind: "note", id: id(5) }).place,
+      placeRow(true, { kind: "source", id: id(6) }).place
+    ]);
+    expect([...keys].sort()).toEqual([`note:${id(5)}`, `source:${id(6)}`, `topic:${id(2)}`]);
+  });
+
+  it("shows a topic of the tree as pinned when the history pins it, and unpins it there alone", () => {
+    const untitled = "Untitled";
+    const inHistory = new Set([itemIdentity("topic", id(2))]);
+    // Not protected (its management is not `pinned`), but in the Pinned list: Unpin is offered.
+    expect(isPinnedRow(topicRow(), inHistory)).toBe(true);
+    expect(labelsOf(topicRow(), inHistory).at(-1)).toBe("Unpin");
+    expect(pinPlanOf(topicRow(), inHistory, untitled)).toEqual({
+      via: "history",
+      kind: "topic",
+      id: id(2),
+      title: "Memory",
+      pinned: false
+    });
+    // Protected and in the list: the change-set unpins both.
+    expect(pinPlanOf(topicRow("pinned"), inHistory, untitled)).toMatchObject({
+      via: "topic",
+      pinned: false
+    });
+    // Protected but not in the list (it was unpinned from Recents): Unpin still takes the protection off.
+    expect(pinPlanOf(topicRow("pinned"), none, untitled)).toMatchObject({
+      via: "topic",
+      pinned: false
+    });
+    expect(
+      pinPlanOf(
+        { ...topicRow(), node: nodeSummary({ id: id(2), title: null, management: "ai" }) },
+        inHistory,
+        untitled
+      )
+    ).toMatchObject({ via: "history", title: "Untitled", pinned: false });
+  });
+
+  it("plans a topic pin as both effects, and unpinning a history-only pin as the history alone", () => {
+    const untitled = "Untitled";
+    expect(pinPlanOf(topicRow(), none, untitled)).toEqual({
+      via: "topic",
+      topic: { id: id(2), title: "Memory" },
+      pinned: true
+    });
+    expect(pinPlanOf(topicRow("pinned"), none, untitled)).toMatchObject({
+      via: "topic",
+      pinned: false
+    });
+    // In Pinned and protected: the change-set unpins both.
+    expect(pinPlanOf(placeRow(true, { management: "pinned" }), none, untitled)).toMatchObject({
+      via: "topic",
+      pinned: false
+    });
+    // In Pinned but not protected: only the history holds the pin, so only it goes.
+    expect(pinPlanOf(placeRow(true), none, untitled)).toEqual({
+      via: "history",
+      kind: "topic",
+      id: id(2),
+      title: "Memory",
+      pinned: false
+    });
+    // The topic's management is not known (it could not be read): the history pin goes too.
+    expect(pinPlanOf(placeRow(true, { management: null, title: null }), none, untitled)).toEqual({
+      via: "history",
+      kind: "topic",
+      id: id(2),
+      title: "Untitled",
+      pinned: false
+    });
+    // In Recents and not protected: pinning protects it (both effects).
+    expect(pinPlanOf(placeRow(false), none, untitled)).toMatchObject({
+      via: "topic",
+      pinned: true
+    });
+  });
+
+  it("plans a note or a source pin through the history alone, from the tree or from the lists", () => {
+    const untitled = "Untitled";
+    const note = leafRow(noteLeaf(1));
+    expect(pinPlanOf(note, none, untitled)).toEqual({
+      via: "history",
+      kind: "note",
+      id: note.leaf.id,
+      title: "Note 1",
+      pinned: true
+    });
+    expect(pinPlanOf(note, new Set([itemIdentity("note", note.leaf.id)]), untitled)).toMatchObject({
+      pinned: false
+    });
+    expect(pinPlanOf(leafRow(sourceLeaf(2, { title: "" })), none, untitled)).toMatchObject({
+      via: "history",
+      kind: "source",
+      title: "Untitled"
+    });
+    const listed = placeRow(true, { kind: "note", id: id(5), title: null });
+    expect(pinPlanOf(listed, none, untitled)).toEqual({
+      via: "history",
+      kind: "note",
+      id: id(5),
+      title: "Untitled",
+      pinned: false
+    });
+  });
+
+  it("calls a row's actions by what the row is, in every language", () => {
+    expect(actionsLabelKey(topicRow())).toBe("topics.ops.actions.more");
+    expect(actionsLabelKey(placeRow(false))).toBe("topics.ops.actions.more");
+    expect(actionsLabelKey(leafRow())).toBe("topics.ops.actions.itemActions");
+    expect(actionsLabelKey(placeRow(false, { kind: "source" }))).toBe(
+      "topics.ops.actions.itemActions"
+    );
+    for (const locale of supportedLanguageCodes) {
+      const t = createTranslator(locale);
+      expect(t("topics.ops.actions.itemActions"), locale).not.toContain("[[missing");
+      for (const key of ["topics.ops.toast.itemPinned", "topics.ops.toast.itemUnpinned"] as const) {
+        expect(t(key, { values: { title: "Alpha" } }), `${locale} ${key}`).toContain("Alpha");
+      }
+    }
   });
 });

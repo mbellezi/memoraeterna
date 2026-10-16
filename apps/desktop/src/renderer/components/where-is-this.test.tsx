@@ -352,6 +352,46 @@ describe("Where is this loading while the view is hidden and shown again", () =>
     );
   });
 
+  it("reads the path again in place when the topic tree changed, and never while hidden", () => {
+    // The finished key would be skipped; a change of the tree asks for one more read, kept silent.
+    expect(
+      locateLoadDecision({
+        active: true,
+        wasHidden: false,
+        outcome: ok,
+        key: "a|0|0",
+        pulsed: true
+      })
+    ).toBe("silent");
+    expect(
+      locateLoadDecision({
+        active: true,
+        wasHidden: false,
+        outcome: null,
+        key: "a|0|0",
+        pulsed: true
+      })
+    ).toBe("silent");
+    expect(
+      locateLoadDecision({
+        active: false,
+        wasHidden: false,
+        outcome: ok,
+        key: "a|0|0",
+        pulsed: true
+      })
+    ).toBe("skip");
+    expect(
+      locateLoadDecision({
+        active: true,
+        wasHidden: false,
+        outcome: ok,
+        key: "a|0|0",
+        pulsed: false
+      })
+    ).toBe("skip");
+  });
+
   it("keeps a failure visible until Retry, even when shown again", () => {
     const failed = { key: "a|0|0", ok: false, hasData: false };
     expect(

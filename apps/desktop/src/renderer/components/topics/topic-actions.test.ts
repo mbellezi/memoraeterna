@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ObjectLocateResult } from "@app/domain";
-import { activateRow, owningSourceOf, toggleRow, type RowActionDeps } from "./topic-actions";
+import {
+  activateRow,
+  noteHostAddress,
+  owningSourceOf,
+  toggleRow,
+  type RowActionDeps
+} from "./topic-actions";
 import {
   placeRows,
   topicRows,
@@ -230,5 +236,29 @@ describe("the source a note opens in", () => {
     expect(owningSourceOf(located([{ kind: "source", id: id(10), title: "Book" }], "note"))).toBe(
       id(10)
     );
+  });
+
+  it("is the address the view history keeps as the host of a pinned note", async () => {
+    const locate = vi.fn(async () =>
+      located([
+        { kind: "source", id: id(10), title: "Book" },
+        { kind: "source", id: id(11), title: "Chapter" },
+        { kind: "note", id: id(5), title: "n" }
+      ])
+    );
+    await expect(noteHostAddress(locate, id(5))).resolves.toBe(`memora://source/${id(11)}`);
+    expect(locate).toHaveBeenCalledWith({ address: `memora://note/${id(5)}` });
+  });
+
+  it("is nothing when the note cannot be found or located, so it is not pinned half-way", async () => {
+    await expect(noteHostAddress(async () => null, id(5))).resolves.toBeNull();
+    await expect(
+      noteHostAddress(async () => located([{ kind: "note", id: id(5), title: "n" }]), id(5))
+    ).resolves.toBeNull();
+    await expect(
+      noteHostAddress(async () => {
+        throw new Error("unavailable");
+      }, id(5))
+    ).resolves.toBeNull();
   });
 });

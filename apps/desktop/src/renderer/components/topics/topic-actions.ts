@@ -1,4 +1,4 @@
-import type { ObjectLocateResult } from "@app/domain";
+import { formatObjectAddress, type ObjectLocateResult } from "@app/domain";
 import { navigationForLocated } from "../../lib/object-navigation";
 import type { TopicNavigatorStore } from "./topic-navigator-store";
 import { unsortedKey, type NavRow } from "./topic-navigation";
@@ -68,4 +68,21 @@ export function activateRow(row: NavRow, deps: RowActionDeps): void {
 export function owningSourceOf(located: ObjectLocateResult | null): string | null {
   const navigation = located ? navigationForLocated(located) : null;
   return navigation?.type === "note" ? (navigation.path.at(-1) ?? null) : null;
+}
+
+/**
+ * The address of the source a note opens in, which the view history keeps as the note's host; null
+ * when the note cannot be located (it was deleted) or `locate` fails.
+ */
+export async function noteHostAddress(
+  locate: (input: { address: string }) => Promise<ObjectLocateResult | null>,
+  noteId: string
+): Promise<string | null> {
+  try {
+    const located = await locate({ address: formatObjectAddress({ kind: "note", id: noteId }) });
+    const sourceId = owningSourceOf(located);
+    return sourceId ? formatObjectAddress({ kind: "source", id: sourceId }) : null;
+  } catch {
+    return null;
+  }
 }

@@ -157,4 +157,63 @@ describe("the topic gate wiring (T23)", () => {
     expect(ai.decideRouteStatus).toHaveBeenCalledTimes(2);
     expect(sweep).toHaveBeenCalledTimes(1);
   });
+
+  it("finds a ranker validated in the middle of a session without a change of the tree", async () => {
+    vi.useFakeTimers();
+    try {
+      const route = { status: "not_validated" as DecideRouteStatus };
+      const { services: created, ai } = create(route);
+      const sweep = vi.spyOn(created.triggers, "sweep").mockResolvedValue([]);
+      await created.gate!.runGate(
+        gateJob({ treeId: id(1), noteId: id(3) }),
+        new AbortController().signal
+      );
+      expect(ai.decideRouteStatus).toHaveBeenCalledTimes(1);
+      // Still not validated after the interval: checked again, nothing swept, and the wait goes on.
+      await vi.advanceTimersByTimeAsync(topicGateLimits.routeRecheckMs);
+      expect(ai.decideRouteStatus).toHaveBeenCalledTimes(2);
+      expect(sweep).not.toHaveBeenCalled();
+      // Validated now: the next check sweeps the waiting scopes of the active tree, once.
+      route.status = "ready";
+      await vi.advanceTimersByTimeAsync(topicGateLimits.routeRecheckMs);
+      expect(ai.decideRouteStatus).toHaveBeenCalledTimes(3);
+      expect(sweep).toHaveBeenCalledTimes(1);
+      expect(sweep).toHaveBeenCalledWith("requested", {});
+      // Ready: nothing is checked again.
+      await vi.advanceTimersByTimeAsync(5 * topicGateLimits.routeRecheckMs);
+      expect(ai.decideRouteStatus).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("checks nothing on a timer outside full AI mode, after the services are disposed, or once swept", async () => {
+    vi.useFakeTimers();
+    try {
+      const route = { status: "missing" as DecideRouteStatus };
+      const { services: created, ai } = create(route, {
+        env: { MEMORA_GOLDEN_RUN: "golden-small", MEMORA_GOLDEN_TOPICS: "deterministic" }
+      });
+      expect(await created.gate!.waitingForDecider(3)).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      await created.gate!.recheckRoute();
+      expect(ai.decideRouteStatus).not.toHaveBeenCalled();
+      created.dispose();
+
+      const second = create(route);
+      expect(await second.services.gate!.waitingForDecider(3)).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      const sweep = vi.spyOn(second.services.triggers, "sweep").mockResolvedValue([]);
+      route.status = "ready";
+      second.services.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(3 * topicGateLimits.routeRecheckMs);
+      expect(sweep).not.toHaveBeenCalled();
+      await second.services.gate!.recheckRoute();
+      expect(sweep).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

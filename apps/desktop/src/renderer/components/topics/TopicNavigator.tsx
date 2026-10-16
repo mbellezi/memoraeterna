@@ -4,11 +4,24 @@ import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import { Button } from "../ui/button";
 import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
-import { isPinnedRow, topicMenuItems, type NavRowOps } from "./ops/nav-ops";
+import {
+  actionsLabelKey,
+  pinnedItemKeys,
+  pinPlanOf,
+  topicMenuItems,
+  type ActionRow,
+  type NavRowOps
+} from "./ops/nav-ops";
 import { opsErrorText } from "./ops/topic-ops";
 import { TopicOpsOverlay, useTopicOps } from "./ops/use-topic-ops";
 import { TopicNavTree } from "./TopicNavTree";
-import { activateRow, owningSourceOf, toggleRow, type RowActionDeps } from "./topic-actions";
+import {
+  activateRow,
+  noteHostAddress,
+  owningSourceOf,
+  toggleRow,
+  type RowActionDeps
+} from "./topic-actions";
 import { TopicStatusLine } from "./TopicStatusLine";
 import {
   TopicNavigatorStore,
@@ -21,9 +34,7 @@ import {
   rootState,
   topicRows,
   unsortedRows,
-  type NavRow,
-  type PlaceRow,
-  type TopicRow
+  type NavRow
 } from "./topic-navigation";
 import { statusLines } from "./topic-status";
 
@@ -40,7 +51,7 @@ export interface NavigatorOps {
   error: MessageKey | null;
   /** The actions of a topic, open at a point. */
   menu: ReactNode;
-  /** The notice with Undo and the open dialog. */
+  /** The open dialog (the notice that follows a change is the window's). */
   overlay: ReactNode;
   /** A new topic at the top level; null while the tree is not read. */
   onCreateTop: (() => void) | null;
@@ -306,7 +317,7 @@ export function TopicNavigator({
   const expanding = useRef<string | null>(null);
   const topicOps = useTopicOps(active);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ row: TopicRow | PlaceRow; anchor: MenuAnchor } | null>(null);
+  const [menu, setMenu] = useState<{ row: ActionRow; anchor: MenuAnchor } | null>(null);
 
   useEffect(() => {
     store.setActive(active);
@@ -400,10 +411,15 @@ export function TopicNavigator({
     setRenaming(null);
     focusRow(key);
   };
+  const pinnedItems = useMemo(
+    () => pinnedItemKeys(snapshot.places.pinned),
+    [snapshot.places.pinned]
+  );
   const rowOps: NavRowOps = {
     renamingKey: renaming,
     invalid: renaming !== null && topicOps.snapshot.error !== null,
     busy: topicOps.snapshot.busy,
+    pinnedItems,
     onStartRename: (row) => {
       controller.clearError();
       setMenu(null);
@@ -420,7 +436,7 @@ export function TopicNavigator({
   };
   const menuNode = menu ? (
     <FloatingMenu
-      label={t("topics.ops.actions.label")}
+      label={t(actionsLabelKey(menu.row))}
       anchor={menu.anchor}
       onClose={() => setMenu(null)}
       items={topicMenuItems(
@@ -439,15 +455,27 @@ export function TopicNavigator({
             menu.row.type === "topic" &&
             topicOps.openDialog({ kind: "move", topic: menu.row.node }),
           togglePin: () => {
-            const row = menu.row;
-            const target =
-              row.type === "topic"
-                ? { id: row.node.id, title: row.node.title }
-                : { id: row.place.id, title: row.place.title };
-            void controller.pin(target, !isPinnedRow(row));
+            const plan = pinPlanOf(menu.row, pinnedItems, t("topics.navigator.untitled"));
+            if (plan.via === "topic") void controller.pin(plan.topic, plan.pinned);
+            else {
+              void controller.pinHistory(
+                {
+                  kind: plan.kind,
+                  id: plan.id,
+                  title: plan.title,
+                  // A note never opened has no entry yet: it is recorded with the source it opens in.
+                  host:
+                    plan.kind === "note"
+                      ? () => noteHostAddress(window.app.objects.locate, plan.id)
+                      : undefined
+                },
+                plan.pinned
+              );
+            }
           }
         },
-        topicOps.snapshot.busy
+        topicOps.snapshot.busy,
+        pinnedItems
       )}
     />
   ) : null;

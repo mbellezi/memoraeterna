@@ -3,8 +3,9 @@
 // leaves with `needs_gate`, and this job lets the decider choose among at most
 // `gate.maxCandidates` leaves, or "none of these". Only a validated dedicated ranker decides
 // (D17): the `op:topic_gate` route, else `class:decide`, never a generative model. Without a ready
-// route the items keep `needs_gate`, the status says `no_decider`, and once a route is ready the
-// next gate job (or the startup sweep) asks the sweep to enqueue every waiting scope again.
+// route the items keep `needs_gate`, the status says `no_decider`, and once a route is ready
+// (found by the recheck timer, by the next committed change or by the next gate job) the sweep
+// enqueues every waiting scope again, without waiting for a restart.
 //
 // One job is one scope: a root source with its notes, or one note without a root.
 // 1. In the engine's turn, with no model call (D10): the waiting items are decided again exactly as
@@ -99,7 +100,11 @@ export const topicGateLimits = {
   commitAttempts: 3,
   /** Decisions a change-set summary lists. */
   summaryDecisions: 100,
-  /** While no route is ready, a committed change checks the route at most this often. */
+  /**
+   * While no route is ready the route is checked again: a committed change checks it at most this
+   * often, and a timer checks it this often when nothing is committed, so a ranker validated in
+   * the middle of a session is found without a change of the tree.
+   */
   routeRecheckMs: 60_000
 } as const;
 
@@ -253,6 +258,8 @@ export class TopicGateService {
   /** The last route check found no ready ranker: items wait, and the next ready check sweeps. */
   private routeBlocked = false;
   private lastRouteCheck = 0;
+  private recheckTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
 
   public constructor(private readonly options: TopicGateOptions) {}
 
@@ -288,7 +295,7 @@ export class TopicGateService {
     if (needsGate <= 0 || this.options.aiMode !== "full") return false;
     const waiting = (await this.routeStatus()) !== "ready";
     // Items wait and nothing can decide them: a ready route found later sweeps them in.
-    if (waiting) this.routeBlocked = true;
+    if (waiting) this.block();
     return waiting;
   }
 
@@ -305,10 +312,46 @@ export class TopicGateService {
   };
 
   /** A route is ready after none was: the sweep enqueues every scope that waits (D10). */
-  private async routeReady(treeId: string): Promise<void> {
+  private async routeReady(treeId?: string): Promise<void> {
     if (!this.routeBlocked) return;
     this.routeBlocked = false;
-    await this.options.triggers.sweep("requested", { treeId });
+    this.stopRecheck();
+    await this.options.triggers.sweep("requested", treeId === undefined ? {} : { treeId });
+  }
+
+  /** Items wait and no route can decide them: the route is checked again on a timer too. */
+  private block(): void {
+    this.routeBlocked = true;
+    if (this.recheckTimer !== null || this.disposed || this.options.aiMode !== "full") return;
+    this.recheckTimer = setTimeout(() => {
+      this.recheckTimer = null;
+      void this.recheckRoute().catch((error: unknown) =>
+        this.options.logger?.warn("Topic gate route check", error)
+      );
+    }, topicGateLimits.routeRecheckMs);
+    // The check never keeps the process alive.
+    this.recheckTimer.unref?.();
+  }
+
+  private stopRecheck(): void {
+    if (this.recheckTimer !== null) clearTimeout(this.recheckTimer);
+    this.recheckTimer = null;
+  }
+
+  /**
+   * Reads the route again while items wait for a decider: a ready route sweeps them in (the active
+   * tree), a route that is still not ready is checked again after the recheck interval.
+   */
+  public async recheckRoute(): Promise<void> {
+    if (!this.routeBlocked || this.disposed || this.options.aiMode !== "full") return;
+    if ((await this.routeStatus()) === "ready") await this.routeReady();
+    else this.block();
+  }
+
+  /** Stops the recheck timer (the services were disposed). */
+  public dispose(): void {
+    this.disposed = true;
+    this.stopRecheck();
   }
 
   // -------------------------------------------------------------------------
@@ -324,7 +367,7 @@ export class TopicGateService {
     const started = performance.now();
     const route = await this.routeStatus();
     if (route !== "ready") {
-      this.routeBlocked = true;
+      this.block();
       return { ...base, status: "no_decider", route };
     }
     if (this.routeBlocked) await this.routeReady(treeId);
@@ -380,7 +423,7 @@ export class TopicGateService {
       this.options.logger?.warn(`Topic gate ${job.id} stopped`, failure);
       throw failure;
     }
-    if (failure === "no_decider") this.routeBlocked = true;
+    if (failure === "no_decider") this.block();
     return result;
   }
 

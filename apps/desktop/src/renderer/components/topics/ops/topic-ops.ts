@@ -85,6 +85,19 @@ export function pinNotice(pinned: boolean, title: string | null): OpsNotice {
   };
 }
 
+/**
+ * The notice that follows a pin that only the view history holds (a note or a source, or a topic
+ * that is pinned there without being protected): it says nothing of protection, which only
+ * `topics.management` gives (D28).
+ */
+export function itemPinNotice(pinned: boolean, title: string | null): OpsNotice {
+  return {
+    key: pinned ? "topics.ops.toast.itemPinned" : "topics.ops.toast.itemUnpinned",
+    title,
+    parent: null
+  };
+}
+
 /** Filters names the way a person types them: without case or accents. */
 export function foldName(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();

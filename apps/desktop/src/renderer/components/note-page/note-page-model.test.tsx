@@ -29,7 +29,8 @@ import {
   refreshRelationLimit,
   relationSentence,
   reviewErrorKind,
-  unsavedEditNavigationGuard
+  unsavedEditNavigationGuard,
+  withPlacement
 } from "./note-page-model";
 import { evidenceItem, fixtureAt, fixtureId, notePage, relationItem } from "./note-page-fixtures";
 
@@ -264,6 +265,32 @@ describe("actions", () => {
     expect(merged.relations.total).toBe(79);
     expect(keepShownRelations(null, refreshed)).toBe(refreshed);
     expect(keepShownRelations(refreshed, shown)).toBe(shown);
+  });
+
+  it("shows a path read again without touching the rest of the page, and nothing when it is the same", () => {
+    const page = notePage();
+    // The topic the note sits under was renamed and the note also shows in another topic.
+    const moved = {
+      ...page.placement,
+      primaryPath: page.placement.primaryPath.map((segment) =>
+        segment.kind === "topic" && segment.title === "Memory"
+          ? { ...segment, title: "Learning and memory" }
+          : segment
+      ),
+      alsoIn: [
+        ...page.placement.alsoIn,
+        { kind: "topic" as const, id: fixtureId(8), title: "Sleep" }
+      ],
+      counts: { ...page.placement.counts, alsoIn: 2 }
+    };
+    const next = withPlacement(page, moved);
+    expect(next).not.toBe(page);
+    expect(next.placement).toEqual(moved);
+    expect(next.note).toBe(page.note);
+    expect(next.relations).toBe(page.relations);
+    expect(next.evidence).toBe(page.evidence);
+    // The same answer is the same page, so the view does not redraw.
+    expect(withPlacement(page, JSON.parse(JSON.stringify(page.placement)))).toBe(page);
   });
 
   it("takes an edit against the version it started from, not a page refreshed meanwhile", () => {

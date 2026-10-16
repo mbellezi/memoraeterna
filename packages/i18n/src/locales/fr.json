@@ -2164,6 +2164,7 @@
       "actions": {
         "label": "Actions du sujet",
         "more": "Actions du sujet",
+        "itemActions": "Actions de l’élément",
         "rename": "Renommer",
         "create": "Nouveau sous-sujet",
         "createTop": "Nouveau sujet de premier niveau",
@@ -2209,6 +2210,8 @@
         "created": "{title} créé sous {parent}.",
         "pinned": "{title} épinglé. L’automatisation ne le modifiera pas.",
         "unpinned": "{title} désépinglé. Il reste protégé des modifications automatiques.",
+        "itemPinned": "{title} épinglé.",
+        "itemUnpinned": "{title} désépinglé.",
         "placed": "{title} placé dans {parent}.",
         "alsoPlaced": "{title} apparaît maintenant aussi dans {parent}.",
         "undone": "Modification annulée.",
