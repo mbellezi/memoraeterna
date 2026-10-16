@@ -3,6 +3,7 @@ import {
   currentSourceRelationEvidenceSql,
   sourceRelationEvidenceJoins
 } from "./sourceRelationRepository.js";
+import { inTopicNotes, topicScopeCtes } from "./topicScopeSql.js";
 import type { PgPool } from "../client.js";
 
 export interface ConsultationContextRecord {
@@ -39,8 +40,24 @@ const dependencyTables: Record<string, string> = {
  */
 export function createKnowledgeConsultationRepository(pool: PgPool) {
   const api = {
-    /** The sources a question may read: the selected ones (all when none) and, optionally, their descendants. */
-    async scope(input: { sourceIds: string[]; includeDescendants: boolean }) {
+    /**
+     * The sources a question may read: the selected ones (all when none) and, optionally, their
+     * descendants; for a topic, the sources holding the passages of the topic's subtree. The
+     * passages themselves stay limited to the topic (`topicMembers`, and the `topicId` of the
+     * retrieval and context reads).
+     */
+    async scope(input: {
+      sourceIds: string[];
+      includeDescendants: boolean;
+      topicId?: string | null | undefined;
+    }) {
+      if (input.topicId)
+        return (
+          await pool.query(
+            `with recursive ${topicScopeCtes("$1")} select distinct c.source_item_id as id from chunks c where c.id in (select chunk_id from topic_chunks) order by 1`,
+            [input.topicId]
+          )
+        ).rows.map((r) => r.id as string);
       return (
         await pool.query(
           `with recursive allowed as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[]) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $2) select id from allowed order by id`,
@@ -48,24 +65,41 @@ export function createKnowledgeConsultationRepository(pool: PgPool) {
         )
       ).rows.map((r) => r.id as string);
     },
+    /**
+     * Which of these passages and notes belong to the topic's subtree. A question about a topic
+     * cites only these, so the check runs again before and after the answer.
+     */
+    async topicMembers(topicId: string, items: { chunkIds: string[]; noteIds: string[] }) {
+      const row = (
+        await pool.query(
+          `with recursive ${topicScopeCtes("$1")} select
+        array(select c.chunk_id from topic_chunks c where c.chunk_id=any($2::uuid[]) order by 1) as "chunkIds",
+        array(select n.note_id from topic_note_ids n where n.note_id=any($3::uuid[]) order by 1) as "noteIds"`,
+          [topicId, items.chunkIds, items.noteIds]
+        )
+      ).rows[0]!;
+      return { chunkIds: row.chunkIds as string[], noteIds: row.noteIds as string[] };
+    },
     async contexts(
       sourceIds: string[],
       chunkIds: string[],
-      reviewedOnly: boolean
+      reviewedOnly: boolean,
+      topicId: string | null = null
     ): Promise<ConsultationContextRecord[]> {
       // Optional text is admitted only with complete original provenance in this bounded scope.
+      // Within a topic, a note is admitted only when it is placed in the topic's subtree.
       const notes = (
         await pool.query(
-          `select n.id,'atomic_note' as kind,n.created_from_source_item_id as "sourceItemId",n.idea_statement||E'\\n'||n.body_markdown as text,n.status as review,${noteFingerprint("n")} as fingerprint,
+          `with recursive ${topicScopeCtes("$4")} select n.id,'atomic_note' as kind,n.created_from_source_item_id as "sourceItemId",n.idea_statement||E'\\n'||n.body_markdown as text,n.status as review,${noteFingerprint("n")} as fingerprint,
       array(select refs.id from (select n.evidence_chunk_id as id union select l.chunk_id from atomic_note_source_links l where l.atomic_note_id=n.id union select e.chunk_id from atomic_note_evidence e where e.note_id=n.id) refs left join chunks rc on rc.id=refs.id order by (select si.title from source_items si where si.id=rc.source_item_id),rc.chunk_index,refs.id) as "chunkIds"
       from atomic_notes n join chunks c on c.id=n.evidence_chunk_id join documents d on d.id=c.document_id
       where n.created_from_source_item_id=any($1::uuid[]) and c.source_item_id=n.created_from_source_item_id and n.evidence_chunk_id=any($2::uuid[]) and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()}
       and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and (e.source_id<>all($1::uuid[]) or e.chunk_id<>all($2::uuid[])))
-      and (not $3 or n.status='approved') and d.metadata->>'supersededByDocumentId' is null
+      and (not $3 or n.status='approved') and d.metadata->>'supersededByDocumentId' is null and ${inTopicNotes("$4", "n.id")}
       and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (l.source_item_id<>lc.source_item_id or l.source_item_id<>all($1::uuid[]) or l.chunk_id<>all($2::uuid[]) or ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))
       order by (select si.title from source_items si where si.id=n.created_from_source_item_id),
         c.chunk_index,n.title,n.idea_statement,n.id limit 20`,
-          [sourceIds, chunkIds, reviewedOnly]
+          [sourceIds, chunkIds, reviewedOnly, topicId]
         )
       ).rows;
       const summaries = reviewedOnly

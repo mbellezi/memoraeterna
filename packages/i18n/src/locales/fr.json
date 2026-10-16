@@ -20,6 +20,7 @@
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Aucun passage original pertinent n’a pu être sélectionné pour cette demande. Ajustez la question ou le périmètre des sources.",
+      "noTopicEvidence": "Ce sujet n’a pas encore de notes ni de sources pour répondre.",
       "failed": "La question n’a pas pu être traitée. Vérifiez le modèle sélectionné et réessayez.",
       "canceled": "Annulée",
       "invalid": "Le modèle n’a pas renvoyé de réponse citée valide. Réessayez.",
@@ -40,6 +41,9 @@
     "function": "Fonction",
     "readOnly": "Les réponses lisent les documents sélectionnés et citent les passages utilisés, sans modifier les connaissances ni lancer de rapprochement.",
     "libraryScope": "Toute la bibliothèque",
+    "topicScope": "Périmètre du sujet",
+    "topicScopeNamed": "Sujet : {title}",
+    "topicScopeHint": "Les réponses s’appuient sur les notes et les passages placés dans « {title} » et ses sous-sujets, et citent les passages originaux concernés.",
     "noSources": "Aucune source ne correspond à la recherche.",
     "reviewedOnly": "Validés uniquement",
     "descendants": "Inclure les sous-éléments des sources",
@@ -1870,6 +1874,11 @@
         "relationsOne": "1 relation"
       },
       "aliases": "Aussi appelé : {names}",
+      "ask": {
+        "heading": "Poser une question",
+        "hint": "Obtenez une réponse citée à partir des notes de ce sujet et de ses sous-sujets.",
+        "button": "Poser une question sur ce sujet"
+      },
       "health": {
         "good": "Bon état",
         "attention": "Demande de l’attention",

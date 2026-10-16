@@ -13,12 +13,14 @@ const main = ["apps/desktop/src/main/services/consultation-service.ts"];
 const data = [
   "packages/db/src/repositories/consultationRepository.ts",
   "packages/db/src/repositories/knowledgeConsultationRepository.ts",
+  "packages/db/src/repositories/topicScopeSql.ts",
   "packages/domain/src/consultation.ts"
 ];
 const renderer = [
   "apps/desktop/src/renderer/components/ConsultationDialog.tsx",
   "apps/desktop/src/renderer/components/ask/EvidenceScopePicker.tsx",
-  "apps/desktop/src/renderer/components/ask/ProfilePicker.tsx"
+  "apps/desktop/src/renderer/components/ask/ProfilePicker.tsx",
+  "apps/desktop/src/renderer/components/topic-page/TopicAskSlot.tsx"
 ];
 const files = [...main, ...data, ...renderer];
 const legacy = /organization|wiki|curator|maintenance|investigation|automatic/i;

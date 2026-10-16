@@ -20,6 +20,7 @@
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No relevant original passages could be selected for this request. Adjust the question or source scope.",
+      "noTopicEvidence": "This topic has no notes or sources to answer from yet.",
       "failed": "The question could not be answered. Check the selected model and try again.",
       "canceled": "Canceled",
       "invalid": "The model did not return a valid cited answer. Try again.",
@@ -40,6 +41,9 @@
     "function": "Function",
     "readOnly": "Answers read your selected material and cite the passages they use. They never edit knowledge or run matching.",
     "libraryScope": "Whole library",
+    "topicScope": "Topic scope",
+    "topicScopeNamed": "Topic: {title}",
+    "topicScopeHint": "Answers use the notes and passages placed in “{title}” and its subtopics, and cite the original passages they rest on.",
     "noSources": "No sources match your search.",
     "reviewedOnly": "Reviewed only",
     "descendants": "Include source descendants",
@@ -1865,6 +1869,11 @@
         "relationsOne": "1 relation"
       },
       "aliases": "Also called: {names}",
+      "ask": {
+        "heading": "Ask",
+        "hint": "Get a cited answer from the notes in this topic and its subtopics.",
+        "button": "Ask about this topic"
+      },
       "health": {
         "good": "Good health",
         "attention": "Needs attention",

@@ -20,6 +20,7 @@
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No se pudieron seleccionar pasajes originales relevantes para esta solicitud. Ajusta la pregunta o el ámbito de las fuentes.",
+      "noTopicEvidence": "Este tema aún no tiene notas ni fuentes para responder.",
       "failed": "No se pudo responder la pregunta. Comprueba el modelo seleccionado y reintenta.",
       "canceled": "Cancelada",
       "invalid": "El modelo no devolvió una respuesta citada válida. Reintenta.",
@@ -40,6 +41,9 @@
     "function": "Función",
     "readOnly": "Las respuestas leen el material seleccionado y citan los pasajes que usan, sin editar el conocimiento ni ejecutar correspondencias.",
     "libraryScope": "Toda la biblioteca",
+    "topicScope": "Ámbito del tema",
+    "topicScopeNamed": "Tema: {title}",
+    "topicScopeHint": "Las respuestas usan las notas y los pasajes colocados en «{title}» y en sus subtemas, y citan los pasajes originales en los que se basan.",
     "noSources": "Ninguna fuente coincide con la búsqueda.",
     "reviewedOnly": "Solo revisados",
     "descendants": "Incluir subelementos de las fuentes",
@@ -1872,6 +1876,11 @@
         "relationsOne": "1 relación"
       },
       "aliases": "También llamado: {names}",
+      "ask": {
+        "heading": "Preguntar",
+        "hint": "Obtén una respuesta con citas a partir de las notas de este tema y de sus subtemas.",
+        "button": "Preguntar sobre este tema"
+      },
       "health": {
         "good": "Buen estado",
         "attention": "Necesita atención",

@@ -87,7 +87,8 @@ export interface ConsultationPromptSnapshot {
 /** A question prepared for an answer: the passages and optional context it may cite. */
 export interface ConsultationSnapshot extends ConsultationPromptSnapshot {
   promptPin: PromptPin | null;
-  consultationScope?: { sourceIds: string[]; includeDescendants: boolean } | undefined;
+  consultationScope?:
+    { sourceIds: string[]; includeDescendants: boolean; topicId?: string } | undefined;
   sourceIds: string[];
   profile: PinnedProfile;
   instructions: { slots: { guidance: string; advanced: string } };
@@ -266,8 +267,21 @@ export class ConsultationService {
   private async fresh(snapshot: ConsultationSnapshot) {
     if (snapshot.sample) return;
     const grounding = createKnowledgeConsultationRepository(this.pool());
-    if (snapshot.consultationScope) {
-      const allowed = await grounding.scope(snapshot.consultationScope);
+    const scope = snapshot.consultationScope;
+    if (scope?.topicId) {
+      // Asked about a topic, the answer may rest only on what the topic's subtree still holds.
+      const noteContexts = snapshot.contexts.filter((c) => c.kind === "atomic_note");
+      const inside = await grounding.topicMembers(scope.topicId, {
+        chunkIds: snapshot.evidence.map((e) => e.chunkId),
+        noteIds: noteContexts.map((c) => c.id)
+      });
+      if (
+        snapshot.evidence.some((e) => !inside.chunkIds.includes(e.chunkId)) ||
+        noteContexts.some((c) => !inside.noteIds.includes(c.id))
+      )
+        throw new Error("consultation.errors.scope");
+    } else if (scope) {
+      const allowed = await grounding.scope(scope);
       if (snapshot.evidence.some((e) => !allowed.includes(e.sourceItemId)))
         throw new Error("consultation.errors.scope");
     }
@@ -317,7 +331,12 @@ export class ConsultationService {
       retrieval = createConsultationRepository(pool),
       grounding = createKnowledgeConsultationRepository(pool);
     const sourceIds = await grounding.scope(input);
-    if (!sourceIds.length) throw new Error("consultation.errors.noRelevantEvidence");
+    if (!sourceIds.length)
+      throw new Error(
+        input.topicId
+          ? "consultation.errors.noTopicEvidence"
+          : "consultation.errors.noRelevantEvidence"
+      );
     const profile = await this.options.ai.pinOrganizationProfile(input.profileId, input.privacy);
     let vectorState: "disabled" | "available" | "unavailable" =
       input.mode === "text" ? "disabled" : "unavailable";
@@ -331,13 +350,17 @@ export class ConsultationService {
           signal
         );
         if (embedded && Array.isArray(embedded.output) && embedded.embeddingSpaceKey) {
-          vectors = await retrieval.vector(sourceIds, {
-            embedding: embedded.output.map(Number),
-            model: embedded.modelId,
-            provider: embedded.providerId,
-            runtime: embedded.runtime,
-            spaceKey: embedded.embeddingSpaceKey
-          });
+          vectors = await retrieval.vector(
+            sourceIds,
+            {
+              embedding: embedded.output.map(Number),
+              model: embedded.modelId,
+              provider: embedded.providerId,
+              runtime: embedded.runtime,
+              spaceKey: embedded.embeddingSpaceKey
+            },
+            input.topicId ?? null
+          );
           vectorState = "available";
         }
       } catch {
@@ -347,7 +370,8 @@ export class ConsultationService {
       sourceIds,
       input.question,
       input.reviewedOnly,
-      vectors.map((v) => v.id)
+      vectors.map((v) => v.id),
+      input.topicId ?? null
     );
     const selected = rankConsultationCandidates(
       candidates.filter((c) => c.excerpt.length <= 12000),
@@ -369,7 +393,8 @@ export class ConsultationService {
       await grounding.contexts(
         sourceIds,
         evidence.map((e) => e.chunkId),
-        input.reviewedOnly
+        input.reviewedOnly,
+        input.topicId ?? null
       )
     )
       .map(({ chunkIds, ...c }) => ({ ...c, handles: chunkIds.map(handleOf) }))
@@ -406,7 +431,8 @@ export class ConsultationService {
       consultationIntent: input.intent,
       consultationScope: {
         sourceIds: input.sourceIds,
-        includeDescendants: input.includeDescendants
+        includeDescendants: input.includeDescendants,
+        ...(input.topicId ? { topicId: input.topicId } : {})
       },
       sourceIds,
       profile,
@@ -427,6 +453,7 @@ export class ConsultationService {
         question: input.question,
         scope: {
           sourceIds: input.sourceIds,
+          ...(input.topicId ? { topicId: input.topicId } : {}),
           includeDescendants: input.includeDescendants,
           reviewedOnly: input.reviewedOnly
         },

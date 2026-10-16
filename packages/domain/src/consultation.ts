@@ -2,8 +2,8 @@ import { z } from "zod";
 
 /**
  * Ask: a cited answer from the library's notes and original passages. It reads sources, chunks,
- * notes, summary concepts, entity mentions and source relations only; it has no page, domain or
- * organization scope and never writes knowledge.
+ * notes, summary concepts, entity mentions and source relations only; its scope is the whole
+ * library, chosen sources or one topic with its subtopics, and it never writes knowledge.
  */
 export const consultationVersion = "knowledge-consultation-v2" as const;
 
@@ -64,6 +64,12 @@ export const ConsultationInputSchema = z
     requestId: z.string().uuid(),
     question: z.string().trim().min(3).max(1000),
     sourceIds: z.array(z.string().uuid()).max(100).default([]),
+    /**
+     * Ask about one topic: the passages behind the notes placed in the topic or any of its
+     * subtopics (primary or secondary placement) and the sources placed there. It replaces the
+     * source scope, so the two never come together.
+     */
+    topicId: z.string().uuid().optional(),
     includeDescendants: z.boolean().default(false),
     profileId: z.string().uuid().optional(),
     privacy: z.enum(["offline_only", "allow_remote"]).default("offline_only"),
@@ -71,7 +77,11 @@ export const ConsultationInputSchema = z
     mode: z.enum(["text", "hybrid"]).default("text"),
     relationContext: z.boolean().default(true)
   })
-  .strict();
+  .strict()
+  .refine((input) => input.topicId === undefined || input.sourceIds.length === 0, {
+    message: "consultation.errors.scope",
+    path: ["topicId"]
+  });
 export const ConsultationAnswerSchema = z
   .object({
     change: z
@@ -105,6 +115,8 @@ export const ConsultationResultSchema = z
     scope: z
       .object({
         sourceIds: z.array(z.string().uuid()),
+        /** The topic the question was about; `sourceIds` is then empty. */
+        topicId: z.string().uuid().optional(),
         includeDescendants: z.boolean(),
         reviewedOnly: z.boolean()
       })

@@ -110,6 +110,41 @@ describe("the Ask dialog", () => {
     expect(html).toContain("Evidence scope (2)");
     expect(html).toMatch(/<input type="checkbox" checked=""\/> Reviewed only/);
   });
+  it("asks about a topic instead of the library: the topic is the scope and no source picker shows", () => {
+    const t = createTranslator("en"),
+      html = dialog({
+        initialProfiles: profiles,
+        topic: { id: id(50), title: "Forgetting curve" }
+      });
+    expect(html).toContain("Topic: Forgetting curve");
+    expect(html).toContain("Forgetting curve” and its subtopics");
+    expect(html).not.toContain(t("consultation.libraryScope"));
+    expect(html).not.toContain(t("organization.sourceScope"));
+    expect(html).not.toContain(t("consultation.descendants"));
+    expect(html).toContain(t("consultation.reviewedOnly"));
+    expect(html).toContain(t("consultation.ask"));
+  });
+  it("names the topic scope of an answer", () => {
+    const t = createTranslator("en"),
+      html = visible(
+        renderToString(
+          <ConsultationAnswer
+            t={t}
+            result={result({
+              scope: {
+                sourceIds: [],
+                topicId: id(50),
+                includeDescendants: false,
+                reviewedOnly: false
+              }
+            })}
+            onOpenSource={() => {}}
+          />
+        )
+      );
+    expect(html).toContain(t("consultation.topicScope"));
+    expect(html).not.toContain(t("consultation.libraryScope"));
+  });
   it("renders in every locale", () => {
     for (const locale of supportedLanguageCodes) {
       const t = createTranslator(locale),

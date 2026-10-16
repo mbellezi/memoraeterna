@@ -20,6 +20,7 @@
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Não foi possível selecionar trechos originais relevantes para esta solicitação. Ajuste a pergunta ou o escopo de fontes.",
+      "noTopicEvidence": "Este tópico ainda não tem notas nem fontes para responder.",
       "failed": "Não foi possível responder à pergunta. Verifique o modelo selecionado e tente novamente.",
       "canceled": "Cancelada",
       "invalid": "O modelo não devolveu uma resposta citada válida. Tente novamente.",
@@ -40,6 +41,9 @@
     "function": "Função",
     "readOnly": "As respostas leem o material selecionado e citam os trechos que usam. Elas não editam o conhecimento nem executam correspondências.",
     "libraryScope": "Biblioteca inteira",
+    "topicScope": "Escopo do tópico",
+    "topicScopeNamed": "Tópico: {title}",
+    "topicScopeHint": "As respostas usam as notas e os trechos colocados em “{title}” e em seus subtópicos, e citam os trechos originais em que se baseiam.",
     "noSources": "Nenhuma fonte corresponde à busca.",
     "reviewedOnly": "Somente revisados",
     "descendants": "Incluir subitens das fontes",
@@ -1868,6 +1872,11 @@
         "relationsOne": "1 relação"
       },
       "aliases": "Também chamado: {names}",
+      "ask": {
+        "heading": "Perguntar",
+        "hint": "Receba uma resposta com citações a partir das notas deste tópico e de seus subtópicos.",
+        "button": "Perguntar sobre este tópico"
+      },
       "health": {
         "good": "Saúde boa",
         "attention": "Precisa de atenção",

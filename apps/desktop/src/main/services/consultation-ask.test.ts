@@ -11,17 +11,38 @@ const mocks = vi.hoisted(() => ({
   retrieval: { candidates: vi.fn(), vector: vi.fn() },
   grounding: {
     scope: vi.fn(),
+    topicMembers: vi.fn(),
     contexts: vi.fn(),
     relations: vi.fn(),
     relationDependencies: vi.fn(),
     validate: vi.fn()
-  }
+  },
+  /** Every wiki, organization, curator or investigation repository the database package offers. */
+  legacy: { names: [] as string[], calls: [] as string[] }
 }));
-vi.mock("@app/db", async (original) => ({
-  ...(await original<typeof import("@app/db")>()),
-  createConsultationRepository: () => mocks.retrieval,
-  createKnowledgeConsultationRepository: () => mocks.grounding
-}));
+vi.mock("@app/db", async (original) => {
+  const db = await original<typeof import("@app/db")>();
+  const legacy = Object.entries(db).filter(
+    ([name, value]) =>
+      /^create\w*(wiki|organization|curator|investigation)\w*$/i.test(name) &&
+      typeof value === "function"
+  );
+  mocks.legacy.names = legacy.map(([name]) => name);
+  return {
+    ...db,
+    ...Object.fromEntries(
+      legacy.map(([name, factory]) => [
+        name,
+        (...args: unknown[]) => {
+          mocks.legacy.calls.push(name);
+          return (factory as (...a: unknown[]) => unknown)(...args);
+        }
+      ])
+    ),
+    createConsultationRepository: () => mocks.retrieval,
+    createKnowledgeConsultationRepository: () => mocks.grounding
+  };
+});
 
 const profile = consultationSnapshot().profile,
   sourceId = "00000000-0000-4000-8000-00000000000a",
@@ -236,6 +257,116 @@ describe("asking a question over notes and original passages", () => {
     const { service: ask } = service();
     for (const scope of [{ pageId: randomUUID() }, { domainId: randomUUID() }, { version: "x" }])
       await expect(ask.ask(request(scope))).rejects.toThrow();
+    expect(mocks.grounding.scope).not.toHaveBeenCalled();
+  });
+});
+
+describe("asking about a topic", () => {
+  const topicId = "00000000-0000-4000-8000-0000000000b1";
+  beforeEach(() => {
+    mocks.legacy.calls.length = 0;
+    mocks.grounding.topicMembers.mockImplementation(async (_topic, items) => items);
+  });
+  it("limits the sources, passages, semantic hits and notes to the topic and reads no wiki repository", async () => {
+    const a = row(1),
+      b = row(2),
+      noteId = randomUUID();
+    mocks.retrieval.candidates.mockResolvedValue([a, b]);
+    mocks.retrieval.vector.mockResolvedValue([{ id: a.chunkId, score: 0.9 }]);
+    mocks.grounding.contexts.mockResolvedValue([
+      {
+        id: noteId,
+        kind: "atomic_note",
+        sourceItemId: sourceId,
+        text: "Practice helps.",
+        review: "active",
+        fingerprint: "note",
+        chunkIds: [a.chunkId],
+        dependencies: [{ kind: "atomic_note", id: noteId, fingerprint: "note" }]
+      }
+    ]);
+    const { ai, service: ask } = service();
+    ai.runConsultationEmbedding.mockResolvedValue({
+      output: [0.1, 0.2],
+      modelId: "embedding-model",
+      providerId: "embedding-provider",
+      runtime: "test",
+      embeddingSpaceKey: "space"
+    } as never);
+    const question = "Does retrieval practice help?";
+    const result = await ask.ask(request({ topicId, mode: "hybrid" }));
+    expect(result.scope).toEqual({
+      sourceIds: [],
+      topicId,
+      includeDescendants: false,
+      reviewedOnly: false
+    });
+    expect(result.coverage.vector).toBe("available");
+    expect(result.evidence.map((e) => e.chunkId)).toEqual([a.chunkId, b.chunkId]);
+    expect(result.contexts.map((c) => c.id)).toEqual([noteId]);
+    expect(mocks.grounding.scope).toHaveBeenCalledWith(expect.objectContaining({ topicId }));
+    expect(mocks.retrieval.vector).toHaveBeenCalledWith(
+      [sourceId],
+      expect.objectContaining({ spaceKey: "space" }),
+      topicId
+    );
+    expect(mocks.retrieval.candidates).toHaveBeenCalledWith(
+      [sourceId],
+      question,
+      false,
+      [a.chunkId],
+      topicId
+    );
+    expect(mocks.grounding.contexts).toHaveBeenCalledWith(
+      [sourceId],
+      [a.chunkId, b.chunkId],
+      false,
+      topicId
+    );
+    // What the answer cites is checked against the topic before the model runs and after it.
+    expect(mocks.grounding.topicMembers).toHaveBeenCalledWith(topicId, {
+      chunkIds: [a.chunkId, b.chunkId],
+      noteIds: [noteId]
+    });
+    // The topic scope is not the source scope: the source check does not run for it.
+    expect(mocks.grounding.scope).toHaveBeenCalledTimes(1);
+    expect(mocks.legacy.names.length, "the spy covers the wiki repositories").toBeGreaterThan(0);
+    expect(mocks.legacy.calls).toEqual([]);
+  });
+  it("leaves a library question on the source scope, without any topic check", async () => {
+    const { service: ask } = service();
+    await ask.ask(request());
+    expect(mocks.grounding.topicMembers).not.toHaveBeenCalled();
+    expect(mocks.retrieval.candidates.mock.calls[0]![4]).toBeNull();
+    expect(mocks.grounding.contexts.mock.calls[0]![3]).toBeNull();
+  });
+  it("refuses an answer that would rest on a passage outside the topic, without calling a model", async () => {
+    const { ai, service: ask } = service();
+    mocks.grounding.topicMembers.mockResolvedValue({ chunkIds: [], noteIds: [] });
+    await expect(ask.ask(request({ topicId }))).rejects.toThrow("consultation.errors.scope");
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+    expect(mocks.legacy.calls).toEqual([]);
+  });
+  it("flags the answer as stale when a note left the topic while the model answered", async () => {
+    const { service: ask } = service();
+    mocks.grounding.topicMembers.mockImplementationOnce(async (_topic, items) => items);
+    mocks.grounding.topicMembers.mockResolvedValue({ chunkIds: [], noteIds: [] });
+    const result = await ask.ask(request({ topicId }));
+    expect(result.coverage.stale).toBe(true);
+    expect(result.answer).toEqual(answer);
+  });
+  it("says the topic has nothing to answer from, without calling a model", async () => {
+    const { ai, service: ask } = service();
+    mocks.grounding.scope.mockResolvedValue([]);
+    await expect(ask.ask(request({ topicId }))).rejects.toThrow(
+      "consultation.errors.noTopicEvidence"
+    );
+    expect(mocks.retrieval.candidates).not.toHaveBeenCalled();
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+  });
+  it("refuses a topic together with chosen sources", async () => {
+    const { service: ask } = service();
+    await expect(ask.ask(request({ topicId, sourceIds: [sourceId] }))).rejects.toThrow();
     expect(mocks.grounding.scope).not.toHaveBeenCalled();
   });
 });

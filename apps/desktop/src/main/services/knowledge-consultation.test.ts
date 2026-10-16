@@ -40,6 +40,51 @@ describe("knowledge-first consultation contract", () => {
       []
     );
   });
+  it("scopes a question to one topic, which replaces the source scope", () => {
+    const input = { requestId, question: "Question" },
+      topicId = randomUUID();
+    expect(ConsultationInputSchema.parse(input).topicId).toBeUndefined();
+    expect(ConsultationInputSchema.parse({ ...input, topicId })).toMatchObject({
+      topicId,
+      sourceIds: [],
+      includeDescendants: false
+    });
+    expect(() =>
+      ConsultationInputSchema.parse({ ...input, topicId, sourceIds: [randomUUID()] })
+    ).toThrow("consultation.errors.scope");
+    expect(() => ConsultationInputSchema.parse({ ...input, topicId: "not-an-id" })).toThrow();
+    expect(() => ConsultationInputSchema.parse({ ...input, topicId: null })).toThrow();
+    const scope = { sourceIds: [], topicId, includeDescendants: false, reviewedOnly: false };
+    const result = {
+      id: requestId,
+      question,
+      scope,
+      answer: {
+        paragraphs: [{ markdown: "Finding [e1]", citations: ["e1"], contextIds: [] }],
+        gaps: []
+      },
+      evidence: [consultationEvidence(1)],
+      contexts: [],
+      coverage: {
+        retrieved: 1,
+        selected: 1,
+        sourceCount: 1,
+        limited: false,
+        vector: "disabled" as const,
+        signals: ["text"],
+        stale: false
+      },
+      model: "fixture-model",
+      inputTokens: null,
+      outputTokens: null,
+      costEstimate: null,
+      promptFingerprint: "fingerprint"
+    };
+    expect(ConsultationResultSchema.parse(result).scope.topicId).toBe(topicId);
+    expect(() =>
+      ConsultationResultSchema.parse({ ...result, scope: { ...scope, topicId: "x" } })
+    ).toThrow();
+  });
   it("describes a result by its sources only and rejects a page scope or a wiki context", () => {
     const result = {
       id: requestId,

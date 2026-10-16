@@ -4,7 +4,6 @@ import { createTranslator, messages, supportedLanguageCodes, type Translator } f
 
 import type { NotesListState, TopicPageLoad, TopicPageSnapshot } from "./topic-page-controller";
 import { TopicOverviewSlot } from "./TopicOverviewSlot";
-import { TopicAskSlot } from "./TopicAskSlot";
 import { TopicPageView, type TopicPageViewProps } from "./TopicPageView";
 import { noteLeaf, topicFixtureId, topicPage } from "./topic-page-fixtures";
 
@@ -402,7 +401,7 @@ describe("Topic page side column", () => {
 });
 
 describe("Topic page slots", () => {
-  it("leaves the overview and Ask slots empty for the tasks that fill them", () => {
+  it("leaves the overview slot empty for the task that fills it", () => {
     const actions = { openTopic: noop, openNote: noop, openSource: noop };
     const topic = { id: topicFixtureId(3), title: "Forgetting curve" };
     expect(
@@ -416,7 +415,6 @@ describe("Topic page slots", () => {
         />
       )
     ).toBe("");
-    expect(renderToString(<TopicAskSlot t={en} topic={topic} active actions={actions} />)).toBe("");
   });
 });
 

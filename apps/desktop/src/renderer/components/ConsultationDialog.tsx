@@ -93,7 +93,11 @@ export function ConsultationAnswer({
         <h3 className="mb-2 text-xl font-semibold">{result.question}</h3>
         <p className="mb-3 text-xs text-cyan-700 dark:text-cyan-300">
           {t(
-            result.scope.sourceIds.length ? "organization.sourceScope" : "consultation.libraryScope"
+            result.scope.topicId
+              ? "consultation.topicScope"
+              : result.scope.sourceIds.length
+                ? "organization.sourceScope"
+                : "consultation.libraryScope"
           )}{" "}
           · {t("consultation.sourceCount", { values: { count: result.coverage.sourceCount } })}
         </p>
@@ -202,8 +206,9 @@ export function ConsultationAnswer({
 }
 
 /**
- * Ask over the whole library or chosen sources. It depends on no page and no host: the caller may
- * seed the question, the sources and the reviewed-only filter, and open a cited passage.
+ * Ask over the whole library, chosen sources or one topic. It depends on no page and no host: the
+ * caller may seed the question, the sources (or the topic, which replaces them) and the
+ * reviewed-only filter, and open a cited passage.
  */
 export function ConsultationDialog({
   t,
@@ -213,9 +218,12 @@ export function ConsultationDialog({
   active = true,
   initialSourceIds = [],
   initialReviewed = false,
-  initialProfiles
+  initialProfiles,
+  topic
 }: {
   initialSourceIds?: string[];
+  /** Ask about this topic and its subtopics instead of the library or chosen sources. */
+  topic?: { id: string; title: string };
   initialReviewed?: boolean;
   /** Profiles the caller already has; the dialog skips its own load. */
   initialProfiles?: AiProfile[];
@@ -278,8 +286,9 @@ export function ConsultationDialog({
           intent,
           requestId: id,
           question,
-          sourceIds: sources,
-          includeDescendants: descendants,
+          sourceIds: topic ? [] : sources,
+          ...(topic ? { topicId: topic.id } : {}),
+          includeDescendants: topic ? false : descendants,
           profileId: profile || undefined,
           privacy: "allow_remote",
           reviewedOnly: reviewed,
@@ -341,9 +350,11 @@ export function ConsultationDialog({
             <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)}>
               <summary className="cursor-pointer text-sm font-medium">
                 {t("consultation.question")} ·{" "}
-                {sources.length
-                  ? `${t("organization.sourceScope")} (${sources.length})`
-                  : t("consultation.libraryScope")}
+                {topic
+                  ? t("consultation.topicScopeNamed", { values: { title: topic.title } })
+                  : sources.length
+                    ? `${t("organization.sourceScope")} (${sources.length})`
+                    : t("consultation.libraryScope")}
               </summary>
               <fieldset
                 disabled={busy}
@@ -357,23 +368,31 @@ export function ConsultationDialog({
                     onChange={(e) => setQuestion(e.target.value)}
                   />
                 </label>
-                <details>
-                  <summary className="cursor-pointer text-sm">
-                    {t("organization.sourceScope")} {sources.length ? `(${sources.length})` : ""}
-                  </summary>
-                  <div className="mt-3">
-                    <EvidenceScopePicker selected={sources} onChange={setSources} t={t} />
-                  </div>
-                </details>
+                {topic ? (
+                  <p className="text-sm text-secondary-foreground">
+                    {t("consultation.topicScopeHint", { values: { title: topic.title } })}
+                  </p>
+                ) : (
+                  <details>
+                    <summary className="cursor-pointer text-sm">
+                      {t("organization.sourceScope")} {sources.length ? `(${sources.length})` : ""}
+                    </summary>
+                    <div className="mt-3">
+                      <EvidenceScopePicker selected={sources} onChange={setSources} t={t} />
+                    </div>
+                  </details>
+                )}
                 <div className="flex flex-wrap gap-4 text-sm">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={descendants}
-                      onChange={(e) => setDescendants(e.target.checked)}
-                    />{" "}
-                    {t("consultation.descendants")}
-                  </label>
+                  {topic ? null : (
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={descendants}
+                        onChange={(e) => setDescendants(e.target.checked)}
+                      />{" "}
+                      {t("consultation.descendants")}
+                    </label>
+                  )}
                   <label>
                     <input
                       type="checkbox"

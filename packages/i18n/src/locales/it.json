@@ -20,6 +20,7 @@
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti.",
+      "noTopicEvidence": "Questo argomento non ha ancora note né fonti da cui rispondere.",
       "failed": "Non è stato possibile rispondere alla domanda. Verifica il modello selezionato e riprova.",
       "canceled": "Annullata",
       "invalid": "Il modello non ha restituito una risposta citata valida. Riprova.",
@@ -40,6 +41,9 @@
     "function": "Funzione",
     "readOnly": "Le risposte leggono il materiale selezionato e citano i brani usati, senza modificare la conoscenza né avviare corrispondenze automatiche.",
     "libraryScope": "Intera biblioteca",
+    "topicScope": "Ambito dell’argomento",
+    "topicScopeNamed": "Argomento: {title}",
+    "topicScopeHint": "Le risposte usano le note e i brani collocati in «{title}» e nei suoi sottoargomenti, e citano i brani originali su cui si basano.",
     "noSources": "Nessuna fonte corrisponde alla ricerca.",
     "reviewedOnly": "Solo revisionati",
     "descendants": "Includi sottoelementi delle fonti",
@@ -1863,6 +1867,11 @@
         "relationsOne": "1 relazione"
       },
       "aliases": "Chiamato anche: {names}",
+      "ask": {
+        "heading": "Chiedi",
+        "hint": "Ottieni una risposta con citazioni dalle note di questo argomento e dei suoi sottoargomenti.",
+        "button": "Chiedi su questo argomento"
+      },
       "health": {
         "good": "Stato buono",
         "attention": "Richiede attenzione",
