@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { Layers, MessageCircle, X } from "lucide-react";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 import { Button } from "../ui/button";
+
+/** What a link that led to the Wiki found: a page of the old wiki, or a topic the tree does not have. */
+export type WikiNoticeKind = "removedPage" | "topicNotFound";
+
+const noticeCopy = {
+  removedPage: "topics.placeholder.notice",
+  topicNotFound: "topics.placeholder.topicNotFound"
+} as const satisfies Record<WikiNoticeKind, MessageKey>;
 
 export interface WikiPlaceholderViewProps {
   t: Translator;
-  /** Shown above the message when the Wiki was opened by a link to a page that no longer exists. */
+  /** Shown above the message when the Wiki was opened by a link to something that is gone. */
   notice: boolean;
+  /** What the notice says; a page of the removed wiki when not given. */
+  noticeKind?: WikiNoticeKind | undefined;
   onAsk: () => void;
   onDismissNotice: () => void;
   onOpenLibrary: () => void;
@@ -19,6 +29,7 @@ export interface WikiPlaceholderViewProps {
 export function WikiPlaceholderView({
   t,
   notice,
+  noticeKind = "removedPage",
   onAsk,
   onDismissNotice,
   onOpenLibrary
@@ -33,7 +44,7 @@ export function WikiPlaceholderView({
           role="status"
           className="flex w-full items-center gap-3 rounded-lg border border-border-strong bg-info-soft p-3 text-sm text-foreground"
         >
-          <p className="min-w-0 flex-1">{t("topics.placeholder.notice")}</p>
+          <p className="min-w-0 flex-1">{t(noticeCopy[noticeKind])}</p>
           <Button
             variant="ghost"
             className="shrink-0"
@@ -66,8 +77,9 @@ export function WikiPlaceholderView({
 export interface WikiPlaceholderProps {
   t: Translator;
   active: boolean;
-  /** Changes each time an old link or call asks for a wiki page; null when none did. */
+  /** Changes each time a link asks for something that is gone; null when none did. */
   noticeToken: number | null;
+  noticeKind?: WikiNoticeKind | undefined;
   onOpenLibrary: () => void;
   onAsk: () => void;
 }
@@ -77,6 +89,7 @@ export function WikiPlaceholder({
   t,
   active,
   noticeToken,
+  noticeKind,
   onOpenLibrary,
   onAsk
 }: WikiPlaceholderProps) {
@@ -87,6 +100,7 @@ export function WikiPlaceholder({
     <WikiPlaceholderView
       t={t}
       notice={noticeToken !== null && noticeToken !== seenToken}
+      noticeKind={noticeKind}
       onAsk={onAsk}
       onDismissNotice={() => setSeenToken(noticeToken)}
       onOpenLibrary={onOpenLibrary}

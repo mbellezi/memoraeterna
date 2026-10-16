@@ -2134,6 +2134,7 @@
       "openLibrary": "Open Library",
       "ask": "Ask",
       "notice": "That link pointed to a page of the old wiki, which no longer exists.",
+      "topicNotFound": "That link pointed to a topic that no longer exists. It may have been removed.",
       "dismiss": "Dismiss"
     },
     "unnamed": "Unnamed topic",

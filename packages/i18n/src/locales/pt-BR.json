@@ -2137,6 +2137,7 @@
       "openLibrary": "Abrir a Biblioteca",
       "ask": "Perguntar",
       "notice": "Esse link apontava para uma página da wiki antiga, que não existe mais.",
+      "topicNotFound": "Esse link apontava para um tópico que não existe mais. Ele pode ter sido removido.",
       "dismiss": "Dispensar"
     },
     "unnamed": "Tópico sem nome",

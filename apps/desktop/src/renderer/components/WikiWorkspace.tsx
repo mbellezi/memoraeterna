@@ -9,7 +9,7 @@ import { ShapeScreen } from "./topic-shape/ShapeScreen";
 import { panelDomId, tabDomId, ViewSwitch } from "./topic-shape/ViewSwitch";
 import { lensAfterNavigation, lensAfterTopicChange, type WikiLens } from "./topic-shape/wiki-lens";
 import { TopicNavigator } from "./topics/TopicNavigator";
-import { WikiPlaceholder } from "./topics/WikiPlaceholder";
+import { WikiPlaceholder, type WikiNoticeKind } from "./topics/WikiPlaceholder";
 import type { OpenableNavigation } from "./WhereIsThis";
 import { WikiNavigationPane } from "./WikiNavigationPane";
 
@@ -17,8 +17,10 @@ export interface WikiWorkspaceViewProps {
   t: Translator;
   /** Whether the Wiki is the view on screen. A hidden Wiki loads nothing and keeps no modal open. */
   active: boolean;
-  /** Changes each time an old link or call asks for a page of the removed wiki; null when none did. */
+  /** Changes each time a link asks for a page of the removed wiki or a topic that is gone; null when none did. */
   noticeToken: number | null;
+  /** What the notice says; a page of the removed wiki when not given. */
+  noticeKind?: WikiNoticeKind | undefined;
   /** The topic open in the reading surface; null shows where to start. */
   topicId: string | null;
   /** Whether the Ask dialog is mounted; it loads when it mounts and not before. */
@@ -49,6 +51,7 @@ export function WikiWorkspaceView({
   t,
   active,
   noticeToken,
+  noticeKind,
   topicId,
   askOpen,
   onAsk,
@@ -120,6 +123,7 @@ export function WikiWorkspaceView({
               t={t}
               active={topicActive && topicId === null}
               noticeToken={noticeToken}
+              noticeKind={noticeKind}
               onOpenLibrary={onOpenLibrary}
               onAsk={onAsk}
             />

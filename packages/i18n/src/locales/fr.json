@@ -2139,6 +2139,7 @@
       "openLibrary": "Ouvrir la Bibliothèque",
       "ask": "Poser une question",
       "notice": "Ce lien pointait vers une page de l'ancien wiki, qui n'existe plus.",
+      "topicNotFound": "Ce lien pointait vers un sujet qui n’existe plus. Il a peut-être été supprimé.",
       "dismiss": "Fermer"
     },
     "unnamed": "Sujet sans nom",

@@ -8,8 +8,8 @@ import {
 } from "./lib/close-panel";
 import { applyMenuCommand } from "./lib/menu-commands";
 import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
-import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
+import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
 import {
   currentWikiTopic,
   showInWiki,
@@ -56,7 +56,7 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
-import { routeObsidianLink } from "./lib/obsidian-link";
+import { createObsidianLinkOpener, type ObsidianLinkActions } from "./lib/obsidian-link";
 import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
@@ -154,8 +154,10 @@ export function App({
   initialSettings,
   initialSystemInfo = null
 }: AppProps) {
-  // Changes each time an old link or call asks for a page of the removed wiki.
-  const [wikiNoticeToken, setWikiNoticeToken] = useState<number | null>(null);
+  // Changes each time a link asks for a page of the removed wiki or for a topic that is gone.
+  const [wikiNotice, setWikiNotice] = useState<{ token: number; kind: WikiNoticeKind } | null>(
+    null
+  );
   // What the Wiki shows (a topic, or where to start), as the history its Back and Forward follow.
   const [wikiHistory, setWikiHistory] = useState(startWikiTopicHistory);
   // What Back and Forward step from: they arrive outside render, after the last commit.
@@ -163,26 +165,6 @@ export function App({
   useEffect(() => {
     wikiHistoryRef.current = wikiHistory;
   }, [wikiHistory]);
-  useEffect(() => {
-    const open = (link: ObsidianDeepLink) => {
-      const route = routeObsidianLink(link);
-      if (route.type === "removedWikiPage") {
-        // The notice is shown where the Wiki starts, so an open topic gives way to it.
-        setWikiNoticeToken((current) => (current ?? 0) + 1);
-        setWikiHistory((current) => showInWiki(current, null));
-        setActiveView("wiki");
-      } else {
-        libraryTargetToken.current += 1;
-        setLibraryTarget({ ...route.target, token: libraryTargetToken.current });
-        setActiveView("library");
-      }
-    };
-    const off = window.app.obsidian.onOpen(open);
-    void window.app.obsidian.pendingOpen().then((target) => {
-      if (target) open(target);
-    });
-    return off;
-  }, []);
   const [activeView, setActiveView] = useState<ViewId>("library");
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
@@ -270,6 +252,36 @@ export function App({
     setWikiHistory((current) => showInWiki(current, topicId));
     setActiveView("wiki");
   });
+  // A link from Obsidian: the Wiki shows its notice where it starts, so an open topic gives way to it.
+  const showWikiNotice = useStableCallback((kind: WikiNoticeKind) => {
+    setWikiNotice((current) => ({ token: (current?.token ?? 0) + 1, kind }));
+    setWikiHistory((current) => showInWiki(current, null));
+    setActiveView("wiki");
+  });
+  // What each kind of link does here; a topic that was merged opens its successor and says so.
+  const obsidianLinkActions = useStableCallback((): ObsidianLinkActions => ({
+    removedWikiPage: () => showWikiNotice("removedPage"),
+    source: (target) => {
+      libraryTargetToken.current += 1;
+      setLibraryTarget({ ...target, token: libraryTargetToken.current });
+      setActiveView("library");
+    },
+    topic: (topicId, redirected) => {
+      openTopic(topicId);
+      if (redirected) pushToast(t("topics.page.redirected"), "info");
+    },
+    topicNotFound: () => showWikiNotice("topicNotFound")
+  }));
+  const [openObsidianLink] = useState(() =>
+    createObsidianLinkOpener({ topics: () => window.app.topics, actions: obsidianLinkActions })
+  );
+  useEffect(() => {
+    const off = window.app.obsidian.onOpen((link) => void openObsidianLink(link));
+    void window.app.obsidian.pendingOpen().then((target) => {
+      if (target) void openObsidianLink(target);
+    });
+    return off;
+  }, [openObsidianLink]);
   // Closing the Topic page (its button or Cmd-W) shows where to start; Back opens the topic again.
   const closeWikiTopic = useStableCallback(() =>
     setWikiHistory((current) => showInWiki(current, null))
@@ -828,7 +840,8 @@ export function App({
             <WikiWorkspace
               t={t}
               active={activeView === "wiki"}
-              noticeToken={wikiNoticeToken}
+              noticeToken={wikiNotice?.token ?? null}
+              noticeKind={wikiNotice?.kind}
               topicId={currentWikiTopic(wikiHistory)}
               onNavigate={openWikiObject}
               onCloseTopic={closeWikiTopic}

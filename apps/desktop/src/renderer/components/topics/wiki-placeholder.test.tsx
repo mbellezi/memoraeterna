@@ -78,6 +78,41 @@ describe("the notice for a link to the removed wiki", () => {
     expect(view({ notice: false })).not.toContain(t("topics.placeholder.notice"));
   });
 
+  it("says a topic is gone, in every language, when a link led to one the tree does not have", () => {
+    expect(view({ notice: true, noticeKind: "topicNotFound" })).toContain(
+      t("topics.placeholder.topicNotFound")
+    );
+    expect(view({ notice: true, noticeKind: "topicNotFound" })).not.toContain(
+      t("topics.placeholder.notice")
+    );
+    // Without a kind it is still the notice about the removed wiki.
+    expect(view({ notice: true, noticeKind: undefined })).toContain(t("topics.placeholder.notice"));
+    for (const language of supportedLanguageCodes) {
+      const copy = messages[language].topics.placeholder.topicNotFound;
+      const html = view({
+        t: createTranslator(language),
+        notice: true,
+        noticeKind: "topicNotFound"
+      });
+      expect(copy.trim(), language).not.toBe("");
+      expect(html.replaceAll("&#x27;", "'"), language).toContain(copy);
+      if (language !== "en")
+        expect(copy, language).not.toBe(messages.en.topics.placeholder.topicNotFound);
+    }
+    const html = renderToString(
+      <WikiPlaceholder
+        t={t}
+        active
+        noticeToken={2}
+        noticeKind="topicNotFound"
+        onOpenLibrary={() => undefined}
+        onAsk={() => undefined}
+      />
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain(t("topics.placeholder.topicNotFound"));
+  });
+
   it("belongs to one visit: a Wiki that is hidden has used it up", () => {
     expect(placeholder(1, false)).not.toContain(t("topics.placeholder.notice"));
     expect(placeholder(1, false)).not.toContain('role="status"');
