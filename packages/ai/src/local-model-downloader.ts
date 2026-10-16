@@ -183,7 +183,8 @@ export const localModelSeedDirectories: Readonly<Record<string, string>> = {
   "gguf-qwen3-reranker-0.6b-q8-0": "qwen3-reranker-0.6b-q8_0-gguf"
 };
 
-export type LocalModelSeedErrorCode = "packaged_build";
+export type LocalModelSeedErrorCode =
+  "packaged_build" | "seed_not_set" | "not_seedable" | "seed_incomplete";
 
 export class LocalModelSeedError extends Error {
   public constructor(
@@ -214,6 +215,34 @@ export function resolveLocalModelSeedRoot(
     );
   }
   return isAbsolute(configured) ? resolve(configured) : resolve(options.baseDirectory, configured);
+}
+
+/**
+ * Throws unless the DEV seed folder holds every pinned file of the entry at its declared size. A
+ * download that is allowed to fall back to the network (a file the seed lacks is fetched) must not
+ * run when the seed alone is meant to install the model, so the DEV install knob asks first. The
+ * bytes are verified by the install itself.
+ */
+export async function assertLocalModelSeeded(
+  entry: Pick<LocalModelCatalogEntry, "id" | "files">,
+  seedRoot: string
+): Promise<void> {
+  const directory = localModelSeedDirectories[entry.id];
+  if (!directory) {
+    throw new LocalModelSeedError(
+      "not_seedable",
+      `${entry.id} has no seed folder (seedable: ${Object.keys(localModelSeedDirectories).join(", ")})`
+    );
+  }
+  for (const file of entry.files) {
+    const source = resolveManagedModelPath(join(seedRoot, directory), file.path);
+    if ((await fileSize(source)) !== file.sizeBytes) {
+      throw new LocalModelSeedError(
+        "seed_incomplete",
+        `${directory}/${file.path} is missing from the seed folder or has another size`
+      );
+    }
+  }
 }
 
 /**

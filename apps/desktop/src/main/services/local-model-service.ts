@@ -3,6 +3,7 @@ import { totalmem } from "node:os";
 import { basename, extname, join, relative } from "node:path";
 
 import {
+  assertLocalModelSeeded,
   decideValidationForCatalogEntry,
   detectLocalRuntimeCompatibility,
   downloadLocalModel,
@@ -12,6 +13,7 @@ import {
   localModelCatalogVersion,
   localModelExpectedSize,
   localModelManifestHash,
+  LocalModelSeedError,
   localParameterCapabilities,
   redactSensitiveText,
   resolveLocalModelSeedRoot,
@@ -141,6 +143,24 @@ export class LocalModelService {
     await repository.updateModel(model.id, { status: "downloading", lastError: null });
     this.schedule(model.catalogId);
     return this.toView((await repository.findById(model.id))!);
+  }
+
+  /**
+   * DEV only (`MEMORA_LOCAL_MODEL_INSTALL`, see `local-model-install-startup.ts`): installs one
+   * catalog model through the normal install path, with the DEV seed folder standing in for the
+   * network, and returns once the install has settled. A ranker is also validated for decide before
+   * this returns, exactly as after a Settings install. It throws before anything is downloaded
+   * unless the seed folder holds every pinned file, so it can never reach the network.
+   */
+  public async installFromSeed(catalogId: string): Promise<LocalModelView> {
+    const entry = requiredCatalogEntry(catalogId);
+    if (!this.seedRoot)
+      throw new LocalModelSeedError("seed_not_set", "MEMORA_LOCAL_MODEL_SEED_DIR is not usable");
+    await assertLocalModelSeeded(entry, this.seedRoot);
+    const requested = await this.requestDownload({ catalogId, acceptLicense: false });
+    if (requested.status === "ready") return requested;
+    await this.settled(catalogId);
+    return this.toView(await this.requireCatalogModel(catalogId));
   }
 
   public async cancel(catalogId: string): Promise<LocalModelView> {
@@ -444,6 +464,14 @@ export class LocalModelService {
       return;
     this.queue.push(catalogId);
     this.startPump();
+  }
+
+  /** Resolves once the catalog model is neither downloading nor waiting its turn. */
+  private async settled(catalogId: string): Promise<void> {
+    while (this.activeCatalogId === catalogId || this.queue.includes(catalogId)) {
+      if (!this.pumpPromise) return;
+      await this.pumpPromise;
+    }
   }
 
   private startPump(): void {

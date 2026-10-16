@@ -8,6 +8,7 @@ import { aiRouteKeys } from "@app/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AiService, decideRouteKey, writeFastRouteKey } from "./ai-service.js";
+import { runLocalModelInstallStartup } from "./local-model-install-startup.js";
 
 /**
  * Routing of F2 T14 (D17, D18): the operation override, the stated class route and the task route,
@@ -75,6 +76,28 @@ vi.mock("@app/db", async () => {
           const [profileId, task] = key.split("|") as [string, string];
           return { profileId, task, parameters: {} };
         }),
+      // The profile writes of the Settings flow: create, then attach the model (the join of
+      // `getDefaultTask` is the selection, which follows the model the profile holds).
+      createProfile: vi.fn(async (input: Record<string, unknown>) => {
+        const record = profile(`00000000-0000-4000-8000-0000000001${db.profiles.length}0`, {
+          providerConfigId: null,
+          modelId: null,
+          runtime: null,
+          capabilities: [],
+          createdAt: new Date("2026-03-01T00:00:00Z"),
+          ...input
+        });
+        db.profiles.push(record);
+        return record;
+      }),
+      updateProfile: vi.fn(async (input: Record<string, unknown>) => {
+        const { id, ...changes } = input;
+        const record = db.profiles.find((candidate) => candidate.id === id)!;
+        Object.assign(record, changes);
+        const model = db.models.get(String(record.localModelId));
+        if (model) db.selections.set(String(id), rankerSelection(String(id), model as never));
+        return record;
+      }),
       seedTaskRoute: vi.fn(async (task: string, profileId: string) => {
         if (db.routes.has(task)) return false;
         db.routes.set(task, profileId);
@@ -701,5 +724,102 @@ describe("seeding the class routes", () => {
     await ai.runDefaultTask("embedding", "text");
 
     expect(db.routes.has(writeFastRouteKey)).toBe(false);
+  });
+});
+
+describe("the DEV install knob (MEMORA_LOCAL_MODEL_INSTALL)", () => {
+  const knobEnv = {
+    MEMORA_LOCAL_MODEL_INSTALL: "mlx-qwen3-reranker-0.6b",
+    MEMORA_LOCAL_MODEL_SEED_DIR: "/work/.cache/models"
+  };
+
+  /** The model service as the knob sees it: the install adds the validated model row. */
+  function modelService() {
+    const model = rankerModel(ids.mlxRanker, mlxEntry, mlxBuild);
+    const view = {
+      id: model.id,
+      catalogId: mlxEntry.id,
+      modelId: model.modelId,
+      displayName: mlxEntry.displayName,
+      runtime: "mlx",
+      status: "not_downloaded",
+      capabilities: ["offline", "local-files"],
+      lastError: null
+    };
+    return {
+      model,
+      list: vi.fn(async () => [{ ...view }] as never),
+      installFromSeed: vi.fn(async () => {
+        db.models.set(model.id, model);
+        Object.assign(view, { status: "ready", capabilities: model.capabilities });
+        return { ...view } as never;
+      }),
+      test: vi.fn(async () => "validated")
+    };
+  }
+
+  const startKnob = (ai: AiService, models: ReturnType<typeof modelService>) =>
+    runLocalModelInstallStartup({
+      env: knobEnv,
+      isPackaged: false,
+      workspaceRoot: "/work",
+      models,
+      ai,
+      logger: { info: vi.fn(), warn: vi.fn() }
+    });
+
+  it("gives the installed ranker a profile, and class:decide then resolves to it", async () => {
+    const models = modelService();
+    const { ai, mlxRanker, remote } = service();
+    await expect(ai.decideRouteStatus("topic_gate")).resolves.toBe("missing");
+
+    const [outcome] = await startKnob(ai, models);
+
+    expect(outcome).toMatchObject({ state: "ready" });
+    expect(outcome!.message).toContain("class:decide ready");
+    const created = db.profiles.find((candidate) => candidate.localModelId === ids.mlxRanker)!;
+    expect(created).toMatchObject({
+      name: "Qwen3-Reranker-0.6B (MLX)",
+      privacyMode: "offline_only",
+      runtime: "mlx",
+      capabilities: ["reranking", "offline", "local-files"],
+      isDefault: false
+    });
+    expect(db.routes.get(decideRouteKey)).toBe(created.id);
+    await expect(ai.decideRouteStatus("topic_gate")).resolves.toBe("ready");
+    // The gate's rank call now runs on the new ranker, never on the writer.
+    const result = await ai.rank(gateInput);
+    expect(result).toMatchObject({ profileId: created.id, localModelId: ids.mlxRanker });
+    expect(mlxRanker.run).toHaveBeenCalledOnce();
+    expect(remote).not.toHaveBeenCalled();
+    // The prompt routes and the default profile are untouched.
+    expect(db.profiles.find((candidate) => candidate.isDefault)!.id).toBe(ids.writer);
+    expect(db.routes.get("reranking")).toBe(ids.writer);
+  });
+
+  it("is idempotent: a second start changes no profile and no route", async () => {
+    const models = modelService();
+    const { ai } = service();
+    await startKnob(ai, models);
+    const profiles = structuredClone(db.profiles);
+    const routes = new Map(db.routes);
+    models.installFromSeed.mockClear();
+
+    const [outcome] = await startKnob(ai, models);
+
+    expect(outcome!.message).toMatch(/^left alone: /u);
+    expect(models.installFromSeed).not.toHaveBeenCalled();
+    expect(db.profiles).toEqual(profiles);
+    expect(db.routes).toEqual(routes);
+  });
+
+  it("leaves a class:decide route that is set already where it is", async () => {
+    addRanker("gguf", { route: true });
+    const { ai } = service();
+
+    await startKnob(ai, modelService());
+
+    expect(db.routes.get(decideRouteKey)).toBe(ids.ggufRankerProfile);
+    expect(db.profiles.some((candidate) => candidate.localModelId === ids.mlxRanker)).toBe(true);
   });
 });

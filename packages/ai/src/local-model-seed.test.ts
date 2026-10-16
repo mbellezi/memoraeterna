@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  assertLocalModelSeeded,
   downloadLocalModel,
   localModelSeedDirectories,
   LocalModelSeedError,
@@ -198,5 +199,59 @@ describe("downloading with a seed folder", () => {
     });
 
     expect(fetchStub).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checking that the seed folder holds a whole model", () => {
+  let work: string;
+  beforeEach(async () => {
+    work = await mkdtemp(join(tmpdir(), "memora-model-seed-check-"));
+  });
+  afterEach(async () => {
+    await rm(work, { recursive: true, force: true });
+  });
+
+  const small = (id: string, contents: Record<string, string>) => ({
+    id,
+    files: Object.entries(contents).map(([path, content]) => ({
+      path,
+      sizeBytes: Buffer.byteLength(content),
+      sha256: digest(content)
+    }))
+  });
+
+  it("passes when every pinned file is there at its declared size", async () => {
+    const files = { "config.json": "{}", "model.safetensors": "weights" };
+    const folder = join(work, localModelSeedDirectories["mlx-qwen3-reranker-0.6b"]!);
+    await mkdir(folder, { recursive: true });
+    for (const [name, content] of Object.entries(files))
+      await writeFile(join(folder, name), content);
+
+    await expect(
+      assertLocalModelSeeded(small("mlx-qwen3-reranker-0.6b", files), work)
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses a missing file and a file of another size, so nothing is fetched", async () => {
+    const files = { "config.json": "{}", "model.safetensors": "weights" };
+    const folder = join(work, localModelSeedDirectories["mlx-qwen3-reranker-0.6b"]!);
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, "config.json"), "{}");
+
+    const missing = assertLocalModelSeeded(small("mlx-qwen3-reranker-0.6b", files), work);
+    await expect(missing).rejects.toMatchObject({ code: "seed_incomplete" });
+    await expect(missing).rejects.toThrow("model.safetensors is missing from the seed folder");
+
+    await writeFile(join(folder, "model.safetensors"), "shorter");
+    await writeFile(join(folder, "config.json"), "{ }");
+    await expect(
+      assertLocalModelSeeded(small("mlx-qwen3-reranker-0.6b", files), work)
+    ).rejects.toMatchObject({ code: "seed_incomplete" });
+  });
+
+  it("refuses an entry that has no seed folder", async () => {
+    await expect(
+      assertLocalModelSeeded(small("mlx-gemma-4-e4b-it-4bit", { "config.json": "{}" }), work)
+    ).rejects.toMatchObject({ code: "not_seedable" });
   });
 });

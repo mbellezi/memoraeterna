@@ -390,6 +390,14 @@ the library, with a value other than `1`, and unless the profile folder is insid
 (symbolic links resolved), so the owner's profile can never be reset by it. The script refuses a profile whose
 content language is not the one its cassette was recorded with (pt-BR): a replay would miss every prompt.
 
+A profile cloned from the owner's DEV profile has no ranker, so the topic placement gate (`class:decide`)
+never decides. `recipe` therefore prints an optional first start with the DEV-only
+`MEMORA_LOCAL_MODEL_INSTALL=mlx-qwen3-reranker-0.6b` (and `MEMORA_LOCAL_MODEL_SEED_DIR=<repository>/.cache/models`),
+which installs the ranker from the seed folder, creates its AI profile, validates it and routes
+`class:decide` to it, then quits after `MEMORA_SMOKE_AUTO_QUIT_MS`. It is idempotent, refused when
+packaged or without the seed folder, and must run without `MEMORA_AI_CASSETTE` (the validation scores
+real pairs on the local ranker). See "DEV install at startup" in `local-models-and-packaging.md`.
+
 `npm run topics:export -- --db <dev-connection.json | scratch-<slug>.json | postgres url> --name env-f` exports
 the tree of a running profile through a read-only session: `.cache/topics/exports/<name>/export.json` (tree,
 names, placements, gate log, change-sets, daily metrics, shape audit) and the replay store

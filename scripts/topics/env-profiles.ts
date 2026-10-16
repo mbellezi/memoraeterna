@@ -12,7 +12,8 @@
 // profile's cassette was recorded with, copies the cassette (`golden-small-v9-a` to
 // `golden-small-f2`, never over an existing copy) and writes `profile.json`. The source profile is
 // only read. `recipe` prints the command that populates the profile (record mode, G1 `full`, the
-// per-source topic barrier). Starting the app takes the DEV-app slot (D35): the orchestrator runs it.
+// per-source topic barrier), after an optional first start that installs the ranker (T22c). Starting
+// the app takes the DEV-app slot (D35): the orchestrator runs it.
 import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -453,6 +454,43 @@ export async function checkProfile(input: {
   return { ok: problems.length === 0, profileDirectory, problems, record };
 }
 
+/** `localModelInstallKnob` of the app; a test keeps them equal (this script loads no app module). */
+export const rankerInstallKnob = "MEMORA_LOCAL_MODEL_INSTALL";
+
+/** The catalog ids of the Qwen3-Reranker entries: MLX on this machine, GGUF where there is no MLX. */
+export const rankerCatalogIds = {
+  mlx: "mlx-qwen3-reranker-0.6b",
+  gguf: "gguf-qwen3-reranker-0.6b-q8-0"
+} as const;
+
+/**
+ * The optional first start of a recipe (T22c): a cloned DEV profile has no ranker, so the topic
+ * placement gate (`class:decide`) never decides and notes wait at the root. The DEV-only
+ * `MEMORA_LOCAL_MODEL_INSTALL` installs the Qwen3-Reranker from the seed folder (the artifacts
+ * already in `.cache/models`), creates its AI profile and runs the decide validation; the app then
+ * quits after `MEMORA_SMOKE_AUTO_QUIT_MS`, which counts from the end of startup, after the install.
+ */
+export function rankerInstallRecipe(input: { profile: string; workspaceRoot: string }): string {
+  const lines = [
+    `MEMORA_USER_DATA_DIR=${input.profile}`,
+    `MEMORA_WORKSPACE_ROOT=${input.workspaceRoot}`,
+    `MEMORA_LOCAL_MODEL_SEED_DIR=${join(input.workspaceRoot, ".cache", "models")}`,
+    `${rankerInstallKnob}=${rankerCatalogIds.mlx}`,
+    "MEMORA_DEV_BACKGROUND=1",
+    "MEMORA_SMOKE_AUTO_QUIT_MS=5000"
+  ];
+  return [
+    "Optional first start, when the profile has no ranker (without one the topic placement gate,",
+    "class:decide, never decides and 10-17% of the notes wait at the root). It installs the",
+    "Qwen3-Reranker from the DEV seed folder, creates its AI profile and runs the decide validation,",
+    "then quits (DEV-app and local-model slots; the log has one MODEL_INSTALL line, ending in",
+    `"class:decide ready"). It is idempotent. Use ${rankerCatalogIds.gguf} on a machine without MLX.`,
+    "Run it without MEMORA_AI_CASSETTE: the validation scores real pairs on the local ranker, which a",
+    "replay cassette does not hold:",
+    `  ${lines.join(" \\\n  ")} \\\n  npm run dev -w @app/desktop`
+  ].join("\n");
+}
+
 /** The commands that populate a profile (the orchestrator runs them in the DEV-app slot). */
 export function populateRecipe(input: {
   kind: ProfileKind;
@@ -480,6 +518,9 @@ export function populateRecipe(input: {
       `  ${[...base, ...extra].join(" \\\n  ")} \\\n  npm run dev -w @app/desktop`;
     return [
       `${definition.label}: ${definition.description}.`,
+      "",
+      rankerInstallRecipe({ profile, workspaceRoot: input.workspaceRoot }),
+      "",
       "Populate it with the DEV corpus runner (T22b, MEMORA_TOPIC_CORPUS) in separate starts of the DEV app,",
       "one at a time (the DEV-app slot, and the local-model slot while the notes embed):",
       "",
@@ -510,6 +551,8 @@ export function populateRecipe(input: {
   ];
   return [
     `${definition.label}: ${definition.description}.`,
+    "",
+    rankerInstallRecipe({ profile, workspaceRoot: input.workspaceRoot }),
     "",
     `Record (the first run; extraction is served from the cassette copy, only the topic calls are new):`,
     `  ${[...common, "MEMORA_AI_CASSETTE=record", `MEMORA_GOLDEN_MAX_TOKENS=${cap}`].join(" \\\n  ")} \\\n  npm run dev -w @app/desktop`,

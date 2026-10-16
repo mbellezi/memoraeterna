@@ -108,6 +108,47 @@ found there with the declared size is cloned into the managed directory instead 
 verified against its SHA-256 like any download. A seeded file whose bytes differ from the pin fails
 the install; it never falls back to the network. Packaged builds refuse the variable.
 
+### DEV install at startup (F2 T22c)
+
+A measurement profile cloned from the owner's DEV profile has no ranker, so the topic placement gate
+(`class:decide`) never decides and notes wait at the root. Installing one normally needs the Settings
+screen; `MEMORA_LOCAL_MODEL_INSTALL=<catalogId>[,<catalogId>...]` does it at startup from the seed
+folder. It needs `MEMORA_LOCAL_MODEL_SEED_DIR` and is refused (one `MODEL_INSTALL refused` log line,
+then ignored) in a packaged build, without the seed folder, or with a malformed value. Only the catalog
+entries with a seed folder can be named (`mlx-qwen3-reranker-0.6b`, `gguf-qwen3-reranker-0.6b-q8-0`);
+an unknown id, or one without a seed folder, is refused on its own line and the rest go on. The folder
+layout is `<seed dir>/<seed folder>/<pinned files>`, the one `.cache/models` already has.
+
+Once the local models have started (a golden run or pilot waits for it), for each id in order:
+
+1. a model that is not installed is installed through the normal install path
+   (`LocalModelService.installFromSeed`): the seed folder must hold every pinned file at its declared
+   size, or nothing is installed and nothing is downloaded; sizes and SHA-256 are verified as for any
+   download, the ranker's artifact checks and its decide validation (the model test) follow, as after a
+   Settings install;
+2. an installed ranker that is not validated runs the same model test;
+3. a validated model that no active profile holds gets the profile the Settings flow creates: a
+   profile named `<display name> (<RUNTIME>)`, offline only, output language `ui`, that is the default
+   one only when it is the first profile, with the model and the capabilities the model exposes;
+   saving it seeds the missing routes, so `class:decide` takes the validated ranker (the MLX one first);
+   an existing route is never changed.
+
+It is idempotent (an installed, validated, held model is "left alone") and never touches a remote
+provider. Each model gets one log line: `MODEL_INSTALL <id>: installed from the seed folder, validated
+for decide, profile "..." created, class:decide ready`, or `left alone: ...`, or `failed: ...` with the
+reason. A failed model never keeps the app from starting. The validation scores real pairs on the local
+ranker, so run the start without `MEMORA_AI_CASSETTE`. `npx tsx scripts/topics/env-profiles.ts recipe`
+prints the start as the optional first step of each measurement profile.
+
+```sh
+MEMORA_USER_DATA_DIR=<repository>/.cache/profiles/env-f \
+MEMORA_WORKSPACE_ROOT=<repository> \
+MEMORA_LOCAL_MODEL_SEED_DIR=<repository>/.cache/models \
+MEMORA_LOCAL_MODEL_INSTALL=mlx-qwen3-reranker-0.6b \
+MEMORA_SMOKE_AUTO_QUIT_MS=5000 \
+npm run dev -w @app/desktop
+```
+
 ## Download and storage
 
 Managed models live under `userData/local-models/<catalog-id>`. The downloader:

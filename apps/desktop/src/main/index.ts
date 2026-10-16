@@ -46,6 +46,7 @@ import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
 import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import { IntegrationGateway } from "./services/integration-gateway.js";
+import { runLocalModelInstallStartup } from "./services/local-model-install-startup.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
@@ -594,7 +595,22 @@ void app.whenReady().then(() => {
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!verdictOnly) await topicTreeServices?.start();
         await Promise.all([
-          localModelService?.start(),
+          // DEV-only (MEMORA_LOCAL_MODEL_INSTALL, needs MEMORA_LOCAL_MODEL_SEED_DIR): once the local
+          // models are started, installs the named catalog models from the seed folder and gives them
+          // a profile, so `class:decide` routes to a ranker. It never throws, and the golden run and
+          // the pilots below wait for it. Refused (logged, ignored) when packaged.
+          localModelService?.start().then(() =>
+            localModelService && aiService
+              ? runLocalModelInstallStartup({
+                  env: process.env,
+                  isPackaged: app.isPackaged,
+                  workspaceRoot,
+                  models: localModelService,
+                  ai: aiService,
+                  logger: console
+                })
+              : undefined
+          ),
           verdictOnly ? undefined : jobSupervisor?.start(),
           verdictOnly ? undefined : integrationGateway?.start(),
           verdictOnly ? undefined : obsidianSyncService?.reconcileVault()

@@ -2,8 +2,10 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { findLocalModelCatalogEntry, localModelSeedDirectories } from "@app/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { localModelInstallKnob } from "../../apps/desktop/src/main/services/local-model-install-startup.js";
 import {
   checkProfile,
   createProfile,
@@ -14,6 +16,9 @@ import {
   profileKinds,
   profileRecordFile,
   profilesRoot,
+  rankerCatalogIds,
+  rankerInstallKnob,
+  rankerInstallRecipe,
   resetStartEnvironment,
   type AppRunInput,
   type CreateProfileInput,
@@ -327,6 +332,39 @@ describe("check and recipe", () => {
     expect(
       (await checkProfile({ kind: "env-g", name: "env-f", workspaceRoot: workspace })).problems
     ).toContain("the profile is env-f, not env-g");
+  });
+
+  it("starts every recipe with the optional install of the ranker (T22c)", () => {
+    for (const kind of profileKinds) {
+      const text = populateRecipe({ kind, workspaceRoot: "/repo", maxTokens: 1000 });
+      const [header, install] = text.split("\n\n");
+      expect(header).toContain(profileDefinitions[kind].label);
+      expect(install).toContain("Optional first start");
+      expect(install).toContain("MEMORA_USER_DATA_DIR=/repo/.cache/profiles/" + kind);
+      expect(install).toContain("MEMORA_LOCAL_MODEL_SEED_DIR=/repo/.cache/models");
+      expect(install).toContain("MEMORA_LOCAL_MODEL_INSTALL=mlx-qwen3-reranker-0.6b");
+      expect(install).toContain("MEMORA_SMOKE_AUTO_QUIT_MS=");
+      expect(install).toContain("npm run dev -w @app/desktop");
+      // The install start does not run the golden or corpus runner.
+      expect(install).not.toMatch(/MEMORA_(GOLDEN|TOPIC_CORPUS|AI_CASSETTE)\w*=/u);
+      expect(text.indexOf("Optional first start")).toBeLessThan(
+        text.indexOf(
+          kind === "env-c" ? "MEMORA_TOPIC_CORPUS_STAGE=seed" : "MEMORA_AI_CASSETTE=record"
+        )
+      );
+    }
+    expect(rankerInstallRecipe({ profile: "/p", workspaceRoot: "/repo" })).toContain(
+      "MEMORA_USER_DATA_DIR=/p"
+    );
+  });
+
+  it("names the knob and catalog ids the app reads, and the seed folder layout it expects", () => {
+    expect(rankerInstallKnob).toBe(localModelInstallKnob);
+    for (const id of Object.values(rankerCatalogIds)) {
+      expect(findLocalModelCatalogEntry(id)).toBeDefined();
+      // `.cache/models/<folder>/<pinned files>` is what the seed downloader reads.
+      expect(localModelSeedDirectories[id]).toMatch(/^qwen3-reranker-0\.6b-/u);
+    }
   });
 
   it("prints the record and replay commands with the G1 knobs", () => {

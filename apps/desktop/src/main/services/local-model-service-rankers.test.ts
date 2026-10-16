@@ -2,6 +2,7 @@ import {
   createDecideValidation,
   findLocalModelCatalogEntry,
   localModelCatalog,
+  LocalModelSeedError,
   qwen3RerankerPrompt,
   rankerCatalogArtifactSha256,
   runRankerSmoke,
@@ -21,12 +22,14 @@ const store = vi.hoisted(() => ({
   jobs: new Map<string, Record<string, unknown>>()
 }));
 const installer = vi.hoisted(() => ({
+  assertLocalModelSeeded: vi.fn(),
   downloadLocalModel: vi.fn(),
   verifyLocalModelFiles: vi.fn(),
   validateCatalogRankerArtifact: vi.fn()
 }));
 vi.mock("@app/ai", async () => ({
   ...(await vi.importActual<typeof import("@app/ai")>("@app/ai")),
+  assertLocalModelSeeded: installer.assertLocalModelSeeded,
   downloadLocalModel: installer.downloadLocalModel,
   verifyLocalModelFiles: installer.verifyLocalModelFiles,
   validateCatalogRankerArtifact: installer.validateCatalogRankerArtifact
@@ -447,6 +450,165 @@ describe("installing a ranker", () => {
     await vi.waitFor(() => expect(installer.downloadLocalModel).toHaveBeenCalledTimes(1));
 
     expect(installer.downloadLocalModel.mock.calls[0]![0]).not.toHaveProperty("seedRoot");
+  });
+});
+
+describe("installing from the DEV seed folder at startup", () => {
+  const seedDir = "/work/memora/.cache/models";
+  const devService = (
+    overrides: Partial<ConstructorParameters<typeof LocalModelService>[0]> = {}
+  ) =>
+    newService({
+      env: { MEMORA_LOCAL_MODEL_SEED_DIR: seedDir },
+      isPackaged: false,
+      workspaceRoot: "/work/memora",
+      ...overrides
+    });
+  /** What a passing model test leaves in the store. */
+  const validating = () =>
+    vi.fn(async (localModelId: string) => {
+      const record = [...store.models.values()].find((candidate) => candidate.id === localModelId)!;
+      record.metadata = {
+        ...(record.metadata as object),
+        decideValidation: await validationFor(entryOf(String(record.catalogId)))
+      };
+      return "validated";
+    });
+
+  beforeEach(() => {
+    installer.assertLocalModelSeeded.mockResolvedValue(undefined);
+    installer.downloadLocalModel.mockImplementation(async ({ entry }) => ({
+      modelPath: `/nonexistent/memora-test/local-models/${entry.id}`,
+      sizeBytes: entry.files.reduce(
+        (total: number, file: { sizeBytes: number }) => total + file.sizeBytes,
+        0
+      )
+    }));
+    installer.verifyLocalModelFiles.mockResolvedValue(true);
+    installer.validateCatalogRankerArtifact.mockResolvedValue({ runtime: "mlx" });
+  });
+
+  it("installs through the normal install path with the seed root, and returns after the decide validation", async () => {
+    const testModel = validating();
+    const service = devService({ testModel });
+
+    const view = await service.installFromSeed(mlxId);
+
+    // Nothing is awaited with waitFor: the call itself returns when the ranker is validated.
+    expect(installer.assertLocalModelSeeded).toHaveBeenCalledWith(
+      expect.objectContaining({ id: mlxId }),
+      seedDir
+    );
+    expect(installer.downloadLocalModel).toHaveBeenCalledTimes(1);
+    expect(installer.downloadLocalModel.mock.calls[0]![0]).toMatchObject({
+      seedRoot: seedDir,
+      entry: expect.objectContaining({ id: mlxId })
+    });
+    expect(installer.validateCatalogRankerArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ id: mlxId }),
+      `/nonexistent/memora-test/local-models/${mlxId}`
+    );
+    expect(testModel).toHaveBeenCalledWith(storedRanker(mlxId).id);
+    expect(view).toMatchObject({ catalogId: mlxId, status: "ready" });
+    expect(view.capabilities).toEqual(["reranking", "offline", "local-files"]);
+  });
+
+  it("leaves an unvalidated ranker installed without reranking when the model test fails", async () => {
+    const warn = vi.fn();
+    const service = devService({
+      testModel: vi.fn(async () => {
+        throw new Error("errors.localModels.rankerSmokeFailed");
+      }),
+      logger: { warn, error: vi.fn() }
+    });
+
+    const view = await service.installFromSeed(mlxId);
+
+    expect(view.status).toBe("ready");
+    expect(view.capabilities).not.toContain("reranking");
+  });
+
+  it("reports a failed install instead of throwing", async () => {
+    installer.downloadLocalModel.mockRejectedValue(
+      new Error("errors.localModels.checksumMismatch")
+    );
+    const service = devService({
+      testModel: validating(),
+      logger: { warn: vi.fn(), error: vi.fn() }
+    });
+
+    const view = await service.installFromSeed(ggufId);
+
+    expect(view).toMatchObject({
+      status: "failed",
+      lastError: "errors.localModels.checksumMismatch"
+    });
+  });
+
+  it("waits for a model queued behind another one", async () => {
+    const service = devService({ testModel: validating() });
+
+    const [mlx, gguf] = await Promise.all([
+      service.installFromSeed(mlxId),
+      service.installFromSeed(ggufId)
+    ]);
+
+    expect([mlx.status, gguf.status]).toEqual(["ready", "ready"]);
+    expect(mlx.capabilities).toContain("reranking");
+    expect(gguf.capabilities).toContain("reranking");
+    expect(installer.downloadLocalModel).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing for a model that is installed already", async () => {
+    const service = devService({ testModel: validating() });
+    await service.installFromSeed(mlxId);
+    installer.downloadLocalModel.mockClear();
+
+    const view = await service.installFromSeed(mlxId);
+
+    expect(view.status).toBe("ready");
+    expect(installer.downloadLocalModel).not.toHaveBeenCalled();
+  });
+
+  it("downloads nothing when there is no seed folder or the build is packaged", async () => {
+    for (const service of [
+      newService({ env: {}, isPackaged: false, testModel: validating() }),
+      newService({
+        env: { MEMORA_LOCAL_MODEL_SEED_DIR: seedDir },
+        isPackaged: true,
+        logger: { warn: vi.fn(), error: vi.fn() },
+        testModel: validating()
+      })
+    ]) {
+      await expect(service.installFromSeed(mlxId)).rejects.toMatchObject({
+        code: "seed_not_set"
+      });
+    }
+    expect(installer.downloadLocalModel).not.toHaveBeenCalled();
+  });
+
+  it("downloads nothing when the seed folder lacks a pinned file", async () => {
+    installer.assertLocalModelSeeded.mockRejectedValue(
+      new LocalModelSeedError(
+        "seed_incomplete",
+        "model.safetensors is missing from the seed folder"
+      )
+    );
+    const service = devService({ testModel: validating() });
+
+    await expect(service.installFromSeed(mlxId)).rejects.toMatchObject({ code: "seed_incomplete" });
+
+    expect(installer.downloadLocalModel).not.toHaveBeenCalled();
+    expect((await service.list()).find((view) => view.catalogId === mlxId)!.status).toBe(
+      "not_downloaded"
+    );
+  });
+
+  it("rejects an id that is not in the catalog", async () => {
+    await expect(devService().installFromSeed("mlx-nothing")).rejects.toThrow(
+      "errors.localModels.notFound"
+    );
+    expect(installer.downloadLocalModel).not.toHaveBeenCalled();
   });
 });
 
