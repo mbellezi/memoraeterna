@@ -79,6 +79,17 @@ of new-topic notes at that margin is reported against D19 (b), at most 50%.
   note, at most 0.3 s.
 - Config default (used when no calibration row applies): the MLX decider's values (D18, MLX first).
 
+**R3b. Gate: existing topic or new topic (registered 2026-10-16 after R3's MLX results, before
+it ran; reported only, it changes no adopted value).** R3's domain proxy rewards accepting a
+new-article note into any same-domain leaf, which is the absorption seen on ENV-G. R3b asks whether
+the ranker separates notes that belong to an existing topic from notes of a new topic, at the
+article level. Known-topic gated notes come from ENV-C `items` holdouts (10%, seeds 7-12, the R1/R2
+values, the R3 texts); a candidate is right when its leaf's majority article-with-twin unit is the
+note's. New-topic gated notes are R3's (no base leaf holds their article). Per decider and grid
+point: known accepted-right and accepted-wrong shares, the new-topic absorbed (accepted) share, and
+the balanced accuracy ((known accepted-right + new not absorbed) / 2), against the margin-only
+baseline (every gated note placed at its best admitted leaf) and the start values.
+
 **R4. Label weight (`placement.labelWeight`).** Grid {0, 0.1, 0.2, 0.3, 0.4, 0.5} on the R3
 holdouts with the leaves' embedded labels; adopt a value above 0 only if top-1 domain improves by at
 least 2 points. Label vectors exist only after naming and label embedding in a profile; when none
