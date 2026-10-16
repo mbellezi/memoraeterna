@@ -77,8 +77,13 @@ export type NamingAi = Pick<AiService, "runDefaultTask">;
 export const topicNamingLimits = {
   /** A topic that got no LLM name is not tried again for this long (a restart tries it once). */
   retryMs: 15 * 60_000,
-  /** The least time between two checks of LLM-named topics for membership drift. */
-  driftCheckMs: 60 * 60_000,
+  /**
+   * The least time between two checks of LLM-named topics for membership drift after the tree
+   * changed (a new generation), so a library that grows within one session is named again.
+   */
+  driftCheckMs: 60_000,
+  /** A check also runs this long after the last one (cascaded deletions keep the generation). */
+  driftRecheckMs: 60 * 60_000,
   /** Commit attempts of one level after generation or event conflicts. */
   commitAttempts: 3,
   /** A call's output allowance: a base plus this many tokens per topic named. */
@@ -172,7 +177,8 @@ function memberSourceId(member: NamingMember): string | null {
 
 export class TopicNamingService {
   private readonly attempted = new Map<string, number>();
-  private readonly driftChecked = new Map<string, number>();
+  /** The last drift check per tree: when, and the tree generation it saw. */
+  private readonly driftChecked = new Map<string, { at: number; generation: number | null }>();
   /** No model route: naming falls back to provisional names until this time. */
   private routeBlockedUntil = 0;
 
@@ -193,9 +199,18 @@ export class TopicNamingService {
     return at !== undefined && this.now().getTime() - at < topicNamingLimits.retryMs;
   }
 
-  private driftDue(treeId: string): boolean {
-    const at = this.driftChecked.get(treeId);
-    return at === undefined || this.now().getTime() - at >= topicNamingLimits.driftCheckMs;
+  /**
+   * Whether LLM-named topics are due a drift check: never checked in this process, `driftCheckMs`
+   * after the last check when the tree changed since (`generation`, null when not known yet), or
+   * `driftRecheckMs` after it in any case.
+   */
+  private driftDue(treeId: string, generation: number | null = null): boolean {
+    const last = this.driftChecked.get(treeId);
+    if (last === undefined) return true;
+    const elapsed = this.now().getTime() - last.at;
+    if (elapsed >= topicNamingLimits.driftRecheckMs) return true;
+    const changed = generation === null || last.generation !== generation;
+    return changed && elapsed >= topicNamingLimits.driftCheckMs;
   }
 
   // -------------------------------------------------------------------------
@@ -206,7 +221,10 @@ export class TopicNamingService {
    * LLM-named topics are due a drift check. Cheap (two small queries) so it can run after every
    * committed change; never throws. In a deterministic golden run (G1) it does nothing.
    */
-  public async requestIfNeeded(treeId: string | null): Promise<void> {
+  public async requestIfNeeded(
+    treeId: string | null,
+    generation: number | null = null
+  ): Promise<void> {
     if (!treeId || this.options.aiMode !== "full") return;
     if (!this.options.isRegistered(topicJobTypes.name)) return;
     try {
@@ -217,7 +235,7 @@ export class TopicNamingService {
         (id) => !this.cooling(id)
       );
       let due = pending.length > 0;
-      if (!due && this.driftDue(treeId)) {
+      if (!due && this.driftDue(treeId, generation)) {
         due = (await repository.namingNeeds(treeId)).llmNamed > 0;
       }
       if (due) await this.options.triggers.request(topicJobTypes.name, treeId);
@@ -228,7 +246,7 @@ export class TopicNamingService {
 
   /** The `topicsChanged` listener: any committed change may have created topics. */
   public readonly onTopicsChanged = (event: TopicsChangedEvent): void => {
-    void this.requestIfNeeded(event.treeId);
+    void this.requestIfNeeded(event.treeId, event.generation);
   };
 
   // -------------------------------------------------------------------------
@@ -244,16 +262,24 @@ export class TopicNamingService {
     const waiting = (await repository.pendingNamingTopicIds(treeId)).filter(
       (id) => !this.cooling(id)
     );
-    const drifting = this.driftDue(treeId);
-    if (waiting.length === 0 && !drifting) return { status: "nothing_to_name", treeId };
+    if (waiting.length === 0 && !this.driftDue(treeId)) {
+      return { status: "nothing_to_name", treeId };
+    }
 
     const cache = await loadTopicTreeCache(pool, treeId, this.options.logger);
     if (!cache || cache.tree.status !== "active") return { status: "tree_inactive", treeId };
     if (signal.aborted) throw new Error("topics.errors.canceled");
     const contentLanguage = await this.options.getContentLanguage();
 
+    // Members drift when items arrive, leave or are replaced (REBALANCE, rebuilds, PLACE).
+    const drifting = this.driftDue(treeId, cache.tree.generation);
     const drift = drifting ? await this.driftOf(cache, repository) : null;
-    if (drifting) this.driftChecked.set(treeId, this.now().getTime());
+    if (drifting) {
+      this.driftChecked.set(treeId, {
+        at: this.now().getTime(),
+        generation: cache.tree.generation
+      });
+    }
     const candidates = namingCandidates(cache.state, cache.config, {
       skip: new Set([...cache.state.topics.keys()].filter((id) => this.cooling(id))),
       ...(drift ? { drift: (id: string) => drift.get(id) ?? null } : {})
@@ -360,6 +386,11 @@ export class TopicNamingService {
       blockRoute: () => {
         this.routeBlockedUntil = this.now().getTime() + topicNamingLimits.retryMs;
       },
+      // A naming commit right after the drift check changes no membership: the check stays valid.
+      committed: (treeId, before, after) => {
+        const last = this.driftChecked.get(treeId);
+        if (last && last.generation === before) last.generation = after;
+      },
       pool
     };
   }
@@ -376,6 +407,8 @@ interface RunServices {
   now: () => Date;
   routeBlocked: () => boolean;
   blockRoute: () => void;
+  /** A naming change-set moved the tree from generation `before` to `after`. */
+  committed: (treeId: string, before: number, after: number) => void;
   pool: PgPool;
 }
 
@@ -791,6 +824,7 @@ class NamingRun {
         this.counters.llmNamed += llmCount;
         this.counters.provisional += applied.length - llmCount;
         this.adoptNames(applied, changeSetId);
+        this.lib.committed(treeId, rows.generation, result.generation);
         const ids = applied.map((item) => item.topicId);
         this.lib.changes.record({
           treeId,

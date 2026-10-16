@@ -15,7 +15,12 @@ import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
 import { detectCommunitiesLouvain } from "../../apps/desktop/src/main/workers/topic-communities.js";
 import { shuffledOrder } from "./datasets.js";
-import { createRealEngine, createRealEngineFactory, neutralStability } from "./real-engine.js";
+import {
+  RealEngine,
+  createRealEngine,
+  createRealEngineFactory,
+  neutralStability
+} from "./real-engine.js";
 import type { RealEngineOptions } from "./real-engine.js";
 import { reportedMargins } from "./reference-engine.js";
 import type { ReplayEngine } from "./reference-engine.js";
@@ -44,7 +49,7 @@ const applied = (counts: Record<string, number | undefined>): number =>
 // Small leaves overflow their soft maximum (8) as rows arrive, so REBALANCE has soft work.
 const crowded = topicTreeConfigWith({
   leaf: { min: 2, target: 5, max: 8 },
-  repair: { cooldownInserts: 0 }
+  repair: { cooldownInserts: 0, cooldownShare: 0 }
 });
 
 describe("the real engine", () => {
@@ -211,6 +216,73 @@ describe("the real engine", () => {
       return canonicalStateDump(engine.state);
     };
     expect(run()).toBe(run());
+  });
+});
+
+describe("the real engine: fresh items, cold start and rebuild triggers (T29b)", () => {
+  const engineWith = (config: TopicTreeConfig, options: RealEngineOptions = {}): RealEngine =>
+    new RealEngine(
+      { matrix: dataset.matrix, config, seed: 11, detect: detectCommunitiesLouvain },
+      options
+    );
+
+  it("moves the day's arrivals for free with stability.freshHours, never older ones", () => {
+    const strict = topicTreeConfigWith({ stability: { churnWeight: 100 } }, crowded);
+    const run = (freshHours: number, day: number): number => {
+      const engine = engineWith(topicTreeConfigWith({ stability: { freshHours } }, strict));
+      // A library that arrived on day 1: the cold start and every placement are that day's.
+      engine.coldStart(rows.slice(0, 300), 1);
+      engine.place(rows.slice(300), { day: 1 });
+      return engine.rebalance({ day }).movedItems;
+    };
+    // A heavy lambda refuses the soft splits of established items...
+    const established = run(0, 1);
+    // ...but the day's arrivals are fresh: moving them is no churn.
+    expect(run(24, 1)).toBeGreaterThan(established);
+    // A day later they are established again.
+    expect(run(24, 2)).toBe(established);
+  });
+
+  it("starts small libraries with the small-library rule and larger ones with Louvain", () => {
+    const small = engineWith(defaultTopicTreeConfig);
+    small.coldStart(rows.slice(0, 20));
+    const topics = getTopic(small.state, small.state.rootId).children;
+    expect(topics.length).toBeGreaterThanOrEqual(1);
+    expect(topics.length).toBeLessThanOrEqual(defaultTopicTreeConfig.bootstrap.maxInitialSplit);
+    expect(small.state.placements.size).toBe(20);
+    const large = engineWith(defaultTopicTreeConfig);
+    expect(large.coldStart(rows.slice(0, 200)).rows).toBe(200);
+    expect(large.state.placements.size).toBe(200);
+  });
+
+  it("rebuilds a young library that doubled, and holds a mature one's large rebuild", () => {
+    const engine = engineWith(defaultTopicTreeConfig, { areasActive: "dynamic" });
+    engine.coldStart(rows.slice(0, 40), 1);
+    expect(engine.evaluateRebuild({ day: 1 })).toBeNull();
+    engine.place(rows.slice(40, 90), { day: 2 });
+    const rebuilt = engine.evaluateRebuild({ day: 2 });
+    expect(rebuilt?.trigger).toBe("doubling");
+    expect(rebuilt?.movedItems).toBeGreaterThan(0);
+    const shape = shapeReport(engine.state, defaultTopicTreeConfig, {
+      expectedItems: rowKeys(rows.slice(0, 90))
+    });
+    expect(shape.reachability).toBe(1);
+    expect(shape.violations.hardCount).toBe(0);
+    // The baseline moved with the rebuild: nothing triggers again at once.
+    expect(engine.evaluateRebuild({ day: 2 })).toBeNull();
+    // Past rebuild.doublingMaxItems the library is not young: a trigger rebuild that moves
+    // established items waits for review, and holds every later one.
+    const mature = topicTreeConfigWith({
+      rebuild: { doublingMaxItems: 10, qualityDrop: 0, reviewChurnShare: 0 }
+    });
+    const old = engineWith(mature);
+    old.coldStart(rows.slice(0, 300), 1);
+    old.place(rows.slice(300), { day: 5 });
+    expect(old.evaluateRebuild({ day: 9 })).toEqual({
+      trigger: "quality-drop:review",
+      movedItems: 0
+    });
+    expect(old.evaluateRebuild({ day: 10 })).toBeNull();
   });
 });
 

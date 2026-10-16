@@ -8,7 +8,9 @@
 //   cooldown, nothing the operation touches is frozen, and the day's operation and move budgets
 //   (and repair.softMoveShare per operation) hold. `force` lifts cooldown, freeze and budgets,
 //   never acceptance or protection. The mis-parent correction (D12) weighs its churn once
-//   instead of lambda times (churnWeightOf).
+//   instead of lambda times (churnWeightOf). Fresh items (placed recently, never seen where they
+//   are; stability.ts) are no churn and do not count against the move budgets, so a new source
+//   that landed in an unrelated leaf can still be split off at once.
 // - No operation may add a hard violation, and an operation that touches protected structure
 //   (human or pinned topics, human placements) or, once Areas exist and were grouped
 //   (`areaLevelReview`), the Area level (D12) comes back as a proposal (`pending_review`) instead
@@ -128,6 +130,11 @@ export interface RebalanceInput {
   topics?: Iterable<string>;
   /** Items opened recently: their churn counts stability.recentChurnWeight times. */
   recentItems?: ReadonlySet<ItemKey>;
+  /**
+   * Fresh items (stability.freshHours, outside recently opened topics): moving them is no churn
+   * and does not count against the daily move budget or repair.softMoveShare.
+   */
+  freshItems?: ReadonlySet<ItemKey>;
   /** The root's band is the Areas band and Area-level operations are proposals (D12). */
   areasActive?: boolean;
   /**
@@ -198,8 +205,11 @@ export interface RebalanceResult {
   unresolvedHard: { topicId: string; condition: RebalanceCondition }[];
   /** Live topics the applied events touched (recompute and push these). */
   touchedTopics: string[];
-  /** Distinct items whose primary path changed, weighted, and their share of placed items. */
-  churn: { items: number; weighted: number; share: number };
+  /**
+   * Distinct items whose primary path changed, weighted, and their share of placed items;
+   * `budgeted` leaves the fresh ones out (what the daily move budget counts).
+   */
+  churn: { items: number; weighted: number; share: number; budgeted: number };
   trials: number;
   /** maxTrials stopped the run before every check was done. */
   exhausted: boolean;
@@ -504,6 +514,10 @@ function shapeContext(env: Environment, editor: TopicTreeEditor): ShapeContext {
     newTopicId: input.newTopicId,
     now: input.now,
     markMoves: true,
+    sidewaysMaxFanOut:
+      input.config.repair.sidewaysSplitLimit === "targetMax"
+        ? input.config.fanOut.targetMax
+        : input.config.fanOut.max,
     ...(input.readmit ? { readmit: input.readmit } : {})
   };
 }
@@ -564,7 +578,7 @@ function runTrial(
   }
   const deltaQuality = subtreeQuality(state, vectors, config, scope, quality).total - qualityBefore;
   const hardAfter = scopeHardViolations(state, config, scope);
-  const churn = eventChurn(state, events, config, input.recentItems);
+  const churn = eventChurn(state, events, config, input.recentItems, input.freshItems);
   const outcome: Outcome = {
     kind: operation.kind,
     topicId: candidate.topicId,
@@ -643,7 +657,7 @@ function judge(
   if (outcome.areaLevel) return { status: "propose", score, reason: "area-level" };
   if (outcome.trigger === "soft" && !force) {
     if (outcome.frozen) return { status: "skip", reason: "frozen" };
-    const moved = outcome.churn.items.length;
+    const moved = outcome.churn.items.length - outcome.churn.fresh;
     // As in the batch repair (build.ts), repair.softMoveShare bounds the operations that re-path
     // whole subtrees; leaf-level ones are bounded by the daily budget only.
     const repathsSubtrees = subtreeOperationKinds.has(outcome.kind);
@@ -701,13 +715,14 @@ export function rebalanceTree(input: RebalanceInput): RebalanceResult {
     skipped: [],
     unresolvedHard: [],
     touchedTopics: [],
-    churn: { items: 0, weighted: 0, share: 0 },
+    churn: { items: 0, weighted: 0, share: 0, budgeted: 0 },
     trials: 0,
     exhausted: false
   };
   const proposalKeys = new Set<string>();
   const touched = new Set<string>();
   const movedItems = new Set<ItemKey>();
+  const fresh = input.freshItems ?? new Set<ItemKey>();
   const checked = new Set<string>();
   const initial = input.topics ? [...input.topics] : [...state.topics.keys()];
 
@@ -747,7 +762,7 @@ export function rebalanceTree(input: RebalanceInput): RebalanceResult {
     result.churn.weighted += outcome.churn.weighted;
     for (const id of eventsTopics(outcome.events)) touched.add(id);
     if (outcome.trigger === "soft" && !force) {
-      consumeDailyBudget(state, input.day, outcome.churn.items.length);
+      consumeDailyBudget(state, input.day, outcome.churn.items.length - outcome.churn.fresh);
     }
   };
 
@@ -758,7 +773,7 @@ export function rebalanceTree(input: RebalanceInput): RebalanceResult {
     if (trigger === "hard") {
       candidates = hardCandidates(env, id, depth);
     } else {
-      if (!force && isCoolingDown(state, config, id)) {
+      if (!force && isCoolingDown(state, config, id, total)) {
         for (const candidate of softCandidates(env, id, depth)) {
           result.skipped.push(skipOf(candidate, "cooldown", null));
         }
@@ -861,6 +876,9 @@ export function rebalanceTree(input: RebalanceInput): RebalanceResult {
     .filter((id) => state.topics.has(id) && isLive(getTopic(state, id)))
     .sort(compareStrings);
   result.churn.items = movedItems.size;
+  result.churn.budgeted = [...movedItems].filter(
+    (item) => !fresh.has(item) || input.recentItems?.has(item) === true
+  ).length;
   result.churn.share = total > 0 ? movedItems.size / total : 0;
   return result;
 }

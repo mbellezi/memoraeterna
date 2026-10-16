@@ -31,7 +31,7 @@ const busy = neutralStability(
   topicTreeConfigWith({
     leaf: { min: 2, target: 3, max: 5, hardMax: 9 },
     bootstrap: { singleTopicMaxItems: 9 },
-    repair: { cooldownInserts: 0, mergeMaxSize: 9 }
+    repair: { cooldownInserts: 0, cooldownShare: 0, mergeMaxSize: 9 }
   })
 );
 

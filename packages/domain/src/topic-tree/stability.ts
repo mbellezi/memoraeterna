@@ -1,9 +1,10 @@
-// Stability controls of REBALANCE (plan 4.1 "Stability"): per-topic cooldown, freeze on topics
-// the user recently opened or edited, daily operation and move budgets, recently opened items
-// weighted up in churn, and the exact churn of a set of structure events. Hysteresis is the band
-// model of quality.ts; the "moved from X" hint is written by the operations (ShapeContext
-// markMoves). Protection (human and pinned topics) is not a stability control: operations.ts
-// turns anything that touches protected structure into a proposal.
+// Stability controls of REBALANCE (plan 4.1 "Stability"): per-topic cooldown scaled with the
+// library, freeze on topics the user recently opened or edited, daily operation and move budgets,
+// recently opened items weighted up in churn, fresh items (placed within stability.freshHours,
+// never seen where they are) free to move, and the exact churn of a set of structure events.
+// Hysteresis is the band model of quality.ts; the "moved from X" hint is written by the
+// operations (ShapeContext markMoves). Protection (human and pinned topics) is not a stability
+// control: operations.ts turns anything that touches protected structure into a proposal.
 import type { TopicChangeSetRisk } from "../topics.js";
 import type { TopicTreeConfig } from "./config.js";
 import type { StructureEvent } from "./events.js";
@@ -79,14 +80,48 @@ export function consumeDailyBudget(state: TopicTreeState, day: string, movedItem
 // ---------------------------------------------------------------------------
 // Cooldown and freeze
 
-/** A soft repair on a topic waits repair.cooldownInserts inserts after its previous repair. */
+/**
+ * The cooldown in inserts: max(repair.cooldownInserts, repair.cooldownShare x placed items), so a
+ * small library is repaired again after a few of its own arrivals, not after a fixed number that
+ * only a large library reaches.
+ */
+export function cooldownInsertsFor(config: TopicTreeConfig, placedItems: number): number {
+  const { cooldownInserts, cooldownShare } = config.repair;
+  return Math.max(cooldownInserts, Math.ceil(cooldownShare * Math.max(0, placedItems)));
+}
+
+/** A soft repair on a topic waits cooldownInsertsFor(placed items) inserts after its last repair. */
 export function isCoolingDown(
   state: TopicTreeState,
   config: TopicTreeConfig,
-  topicId: string
+  topicId: string,
+  placedItems: number = placedItemCount(state)
 ): boolean {
   const clock = getTopic(state, topicId).control.repairClock;
-  return clock !== null && state.clock - clock < config.repair.cooldownInserts;
+  return clock !== null && state.clock - clock < cooldownInsertsFor(config, placedItems);
+}
+
+/**
+ * The start of the fresh window (stability.freshHours before `now`), or null when freshness is
+ * off. Items whose primary placement is newer and that sit outside recently opened topics are
+ * fresh (the service reads placement times; the replay counts days).
+ */
+export function freshWindowStart(now: string, config: TopicTreeConfig): string | null {
+  const hours = config.stability.freshHours;
+  if (!(hours > 0)) return null;
+  const end = Date.parse(now);
+  if (Number.isNaN(end)) throw new RangeError(`Invalid instant ${now}`);
+  return new Date(end - hours * 3_600_000).toISOString();
+}
+
+/** Fresh items: recently placed ones minus those in recently opened topics (never fresh). */
+export function freshItemsOf(
+  recentlyPlaced: Iterable<ItemKey>,
+  recentItems: ReadonlySet<ItemKey> = new Set()
+): Set<ItemKey> {
+  const output = new Set<ItemKey>();
+  for (const item of recentlyPlaced) if (!recentItems.has(item)) output.add(item);
+  return output;
 }
 
 export interface TopicOpen {
@@ -163,10 +198,15 @@ export function eventsTopics(events: readonly StructureEvent[]): Set<string> {
 export interface EventChurn {
   /** Items whose primary path (topic IDs from the root) changed, in first-seen order. */
   items: ItemKey[];
-  /** items, with recently opened ones counted stability.recentChurnWeight times. */
+  /**
+   * items, with recently opened ones counted stability.recentChurnWeight times and fresh ones
+   * (placed recently, never seen where they were) not at all.
+   */
   weighted: number;
   /** How many of `items` were recently opened. */
   recent: number;
+  /** How many of `items` were fresh: they count neither in `weighted` nor in move budgets. */
+  fresh: number;
 }
 
 /**
@@ -180,7 +220,8 @@ export function eventChurn(
   state: TopicTreeState,
   events: readonly StructureEvent[],
   config: TopicTreeConfig,
-  recentItems: ReadonlySet<ItemKey> = new Set()
+  recentItems: ReadonlySet<ItemKey> = new Set(),
+  freshItems: ReadonlySet<ItemKey> = new Set()
 ): EventChurn {
   const beforeParent = new Map<string, string | null>();
   const beforeTopic = new Map<ItemKey, string | null>();
@@ -219,6 +260,7 @@ export function eventChurn(
   const items: ItemKey[] = [];
   let weighted = 0;
   let recent = 0;
+  let fresh = 0;
   for (const item of candidates) {
     const earlier = beforeTopic.has(item)
       ? (beforeTopic.get(item) ?? null)
@@ -227,11 +269,16 @@ export function eventChurn(
     if (earlier === null || later === null) continue;
     if (pathBefore(earlier) === pathOf(state, later).join("/")) continue;
     items.push(item);
-    const isRecent = recentItems.has(item);
-    if (isRecent) recent += 1;
-    weighted += isRecent ? config.stability.recentChurnWeight : 1;
+    if (recentItems.has(item)) {
+      recent += 1;
+      weighted += config.stability.recentChurnWeight;
+    } else if (freshItems.has(item)) {
+      fresh += 1;
+    } else {
+      weighted += 1;
+    }
   }
-  return { items, weighted, recent };
+  return { items, weighted, recent, fresh };
 }
 
 /** Risk of a change-set from the share of items it moved (D29 lists high-risk ones for review). */

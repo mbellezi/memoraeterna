@@ -8,6 +8,7 @@ import {
   dominantRootSource,
   frozenSubtrees,
   hasTopics,
+  isYoungLibrary,
   level2TopicCount,
   modularity,
   protectedSubtrees,
@@ -321,8 +322,9 @@ describe("rebuild triggers", () => {
   });
 
   it("rebuilds on a drop of the weighted leaf coherence", () => {
-    expect(rebuildTrigger(signals({ leafCoherence: 0.76 }), baseline, config)).toBeNull();
-    expect(rebuildTrigger(signals({ leafCoherence: 0.75 }), baseline, config)).toBe("quality-drop");
+    // rebuild.qualityDrop (0.03) below the baseline's 0.8.
+    expect(rebuildTrigger(signals({ leafCoherence: 0.775 }), baseline, config)).toBeNull();
+    expect(rebuildTrigger(signals({ leafCoherence: 0.77 }), baseline, config)).toBe("quality-drop");
     expect(
       rebuildTrigger(signals({ leafCoherence: 0.1 }), { notes: 100, leafCoherence: null }, config)
     ).toBeNull();
@@ -353,15 +355,35 @@ describe("rebuild triggers", () => {
     expect(structureSignals(state)).toMatchObject({ decidedSinceBuild: 3, unadmitted: 1 });
   });
 
-  it("asks for review for protected structure, and for a large share only on a trigger", () => {
+  it("asks for review for protected structure, and for a large share only on a mature trigger", () => {
     expect(rebuildNeedsReview("config", { largeShare: true, protectedTouched: false })).toBe(false);
     expect(rebuildNeedsReview("config", { largeShare: false, protectedTouched: true })).toBe(true);
+    // A young library keeps up with its growth: a doubling is reviewed for protection only.
     expect(rebuildNeedsReview("doubling", { largeShare: true, protectedTouched: false })).toBe(
+      false
+    );
+    expect(rebuildNeedsReview("doubling", { largeShare: false, protectedTouched: true })).toBe(
       true
     );
     expect(rebuildNeedsReview("quality-drop", { largeShare: false, protectedTouched: false })).toBe(
       false
     );
+    expect(rebuildNeedsReview("quality-drop", { largeShare: true, protectedTouched: false })).toBe(
+      true
+    );
+    expect(
+      rebuildNeedsReview("unadmitted-burst", { largeShare: true, protectedTouched: false })
+    ).toBe(true);
+    // A young library restructures freely; protection still waits for the owner.
+    const large = { largeShare: true, protectedTouched: false };
+    expect(rebuildNeedsReview("quality-drop", large, true)).toBe(false);
+    expect(rebuildNeedsReview("unadmitted-burst", large, true)).toBe(false);
+    expect(rebuildNeedsReview("quality-drop", { ...large, protectedTouched: true }, true)).toBe(
+      true
+    );
+    const config = defaultTopicTreeConfig;
+    expect(isYoungLibrary(config.rebuild.doublingMaxItems, config)).toBe(true);
+    expect(isYoungLibrary(config.rebuild.doublingMaxItems + 1, config)).toBe(false);
   });
 });
 

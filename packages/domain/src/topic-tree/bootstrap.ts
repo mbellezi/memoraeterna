@@ -434,14 +434,28 @@ export function rebuildTrigger(
 }
 
 /**
- * Whether a rebuild waits for the owner (D29): a structural configuration change only when it
- * touches protected structure (D39); a trigger rebuild also when it re-paths a large share.
+ * A young library: at most rebuild.doublingMaxItems placed notes, the range where the tree is
+ * still rebuilt as the library doubles. Its structure is not settled yet, so a rebuild there is
+ * not held for review because of the share of items it re-paths.
+ */
+export function isYoungLibrary(notes: number, config: TopicTreeConfig): boolean {
+  return notes <= config.rebuild.doublingMaxItems;
+}
+
+/**
+ * Whether a rebuild waits for the owner (D29): always when it touches protected structure; a
+ * trigger rebuild of a library that is no longer young (isYoungLibrary) also when it re-paths a
+ * large share of established (not fresh) items. A structural configuration change (D39) and a
+ * doubling (which only fires while the library is young) are not reviewed for their share.
  */
 export function rebuildNeedsReview(
   reason: RebuildReason,
-  review: { largeShare: boolean; protectedTouched: boolean }
+  review: { largeShare: boolean; protectedTouched: boolean },
+  young = false
 ): boolean {
-  return review.protectedTouched || (reason !== "config" && review.largeShare);
+  if (review.protectedTouched) return true;
+  if (reason === "config" || reason === "doubling" || young) return false;
+  return review.largeShare;
 }
 
 // ---------------------------------------------------------------------------

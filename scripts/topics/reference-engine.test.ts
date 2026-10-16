@@ -35,7 +35,7 @@ function engineOf(config: TopicTreeConfig = defaultTopicTreeConfig, seed = 11): 
 // Small leaves overflow their soft maximum (8) as rows arrive, so REBALANCE has soft work.
 const crowded = topicTreeConfigWith({
   leaf: { min: 2, target: 5, max: 8 },
-  repair: { cooldownInserts: 0 }
+  repair: { cooldownInserts: 0, cooldownShare: 0 }
 });
 
 describe("the reference engine", () => {

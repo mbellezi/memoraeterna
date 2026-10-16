@@ -95,7 +95,7 @@ function preOrdered(nodes: MutableNode[]): MutableNode[] {
 function rebuild(
   tree: ProductTree,
   partition: readonly RebuildPartitionNode[],
-  overrides: { config?: TopicTreeConfig; dryRun?: boolean } = {}
+  overrides: { config?: TopicTreeConfig; dryRun?: boolean; freshItems?: Set<ItemKey> } = {}
 ): RebuildResult {
   return applyRebuild({
     state: tree.state,
@@ -104,7 +104,8 @@ function rebuild(
     partition,
     newTopicId: tree.newTopicId,
     now: fixtureNow,
-    ...(overrides.dryRun === undefined ? {} : { dryRun: overrides.dryRun })
+    ...(overrides.dryRun === undefined ? {} : { dryRun: overrides.dryRun }),
+    ...(overrides.freshItems === undefined ? {} : { freshItems: overrides.freshItems })
   });
 }
 
@@ -269,7 +270,16 @@ describe("rebuild mapping", () => {
     expect(canonicalStateDump(state)).toBe(before);
     expect(dry.movedShare).toBeGreaterThan(config.rebuild.reviewChurnShare);
     expect(dry.review).toMatchObject({ largeShare: true, required: true });
+    expect(dry.establishedShare).toBe(dry.movedShare);
     expect(dry.events.length).toBeGreaterThan(0);
+    // Fresh items (placed recently, never seen) leave the review share: the same move of a
+    // library that arrived in this session needs no review.
+    const fresh = rebuild(tree, partition, { dryRun: true, freshItems: new Set(tree.keys) });
+    expect(fresh.movedShare).toBe(dry.movedShare);
+    expect(fresh.establishedShare).toBe(0);
+    expect(fresh.churn.weighted).toBe(0);
+    expect(fresh.review).toMatchObject({ largeShare: false, required: false });
+    expect(canonicalStateDump(state)).toBe(before);
     // The dry run's events apply exactly to the unchanged state.
     applyEvents(state, dry.events);
     expect(checkInvariants(state, config).hard).toBe(0);

@@ -183,7 +183,7 @@ describe("weeklyRun", () => {
     // Small leaves overflow their soft maximum often, so REBALANCE has soft work to do.
     const config = topicTreeConfigWith({
       leaf: { min: 2, target: 5, max: 8 },
-      repair: { cooldownInserts: 0 }
+      repair: { cooldownInserts: 0, cooldownShare: 0 }
     });
 
     it("applies soft operations by default", () => {

@@ -62,42 +62,70 @@ describe("topic tree configuration", () => {
       directItemsSplitAt: 8,
       mergeMaxSize: 22,
       siblingMergeCosine: 0.85,
-      cooldownInserts: 931,
+      cooldownInserts: 10,
+      cooldownShare: 0.083,
       pushDownGroupSize: 6,
+      sidewaysSplitLimit: "targetMax",
       softMoveShare: 0.05
     });
     expect(config.splitSignal).toEqual({ signal: "off", threshold: null });
     expect(config.louvain).toMatchObject({ knn: 10, resolutionTries: 8, resolutionStep: 1.6 });
     expect(config.knn).toEqual({ exactLimit: 3000, nprobe: 8 });
     expect(config.bootstrap).toMatchObject({ minItems: 12, singleTopicMaxItems: 30 });
-    expect(config.rebuild).toMatchObject({ doublingMaxItems: 1000, hungarianExactMaxTopics: 300 });
-    expect(config.naming).toMatchObject({
-      maxTopicsPerCall: 24,
-      centralMembers: 5,
-      renameDrift: 0.3
-    });
-    expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10 });
+    expect(config.rebuild).toMatchObject({ hungarianExactMaxTopics: 300 });
+    expect(config.naming).toMatchObject({ maxTopicsPerCall: 24, centralMembers: 5 });
+    expect(config.areas).toMatchObject({ min: 7, max: 16 });
     expect(config.ai.areasRepairMaxMissingShare).toBe(0.1);
     expect(config.audit.misParentMargin).toBe(0.1);
     expect(config.space.reembedCoverage).toBe(0.95);
     expect(config.unsorted).toEqual({ shareTarget: 0.02, minItems: 50 });
-    expect(config.ai.maxBackgroundCallsPerDay).toBe(300);
+    expect(config.ai.maxBackgroundCallsPerDay).toBe(270);
     expect(config.jobs).toEqual({ debounceMs: 10_000, debounceCapMs: 60_000 });
     expect(config.build.workerThreshold).toBe(45);
   });
 
   it("holds the stability values the E3 calibration chose (calibration seeds 7-12)", () => {
     const config = defaultTopicTreeConfig;
+    // Gate A (dailyMovedShare, dailyMovedMin, misParentMargin) and T29b grid S (lambda, fresh
+    // items, the cooldown scaled with the library: max(10, 0.083 x items)).
     expect(config.stability).toEqual({
-      churnWeight: 6,
+      churnWeight: 4,
       recentChurnWeight: 3,
       freezeHours: 24,
+      freshHours: 24,
       dailyOperations: 60,
       dailyMovedShare: 0.002,
       dailyMovedMin: 30
     });
-    expect(config.repair.cooldownInserts).toBe(931);
+    expect(config.repair).toMatchObject({ cooldownInserts: 10, cooldownShare: 0.083 });
     expect(config.audit.misParentMargin).toBe(0.1);
+  });
+
+  it("holds the structure values T29b calibrated (calibration seeds 7-12)", () => {
+    const config = defaultTopicTreeConfig;
+    // Rule F: leaves split sideways only while their parent stays in I3's target band.
+    expect(config.repair.sidewaysSplitLimit).toBe("targetMax");
+    // Rules DB and Q: the rebuild triggers; review only for an established share past 0.25.
+    expect(config.rebuild).toMatchObject({
+      doublingMaxItems: 1000,
+      qualityDrop: 0.03,
+      unadmittedBurstShare: 0.1,
+      unadmittedBurstMinItems: 20,
+      reviewChurnShare: 0.25
+    });
+    // Rule B: the cold start of a small library.
+    expect(config.bootstrap).toMatchObject({
+      minItems: 12,
+      singleTopicMaxItems: 30,
+      maxInitialSplit: 4,
+      modularityMin: 0.2
+    });
+    // Rule R: renameDrift (the registered fallback; the 2% weekly bar is not met by any value).
+    expect(config.naming.renameDrift).toBe(0.5);
+    // Rule A: the Areas band, target and the level-2 topics a grouping needs.
+    expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10, minLevel2Topics: 20 });
+    // D34: three times the busiest day of background topic AI calls (89), rounded up to tens.
+    expect(config.ai.maxBackgroundCallsPerDay).toBe(270);
   });
 
   it("is frozen so no consumer can change a default", () => {
@@ -184,7 +212,7 @@ describe("topic tree configuration", () => {
     );
     expect(canonicalTopicTreeConfig(reordered)).toBe(json);
     expect(
-      json.startsWith('{"ai":{"areasRepairMaxMissingShare":0.1,"maxBackgroundCallsPerDay":300}')
+      json.startsWith('{"ai":{"areasRepairMaxMissingShare":0.1,"maxBackgroundCallsPerDay":270}')
     ).toBe(true);
     expect(canonicalTopicTreeConfig(topicTreeConfigWith({ gate: { theta: 0.6 } }))).not.toBe(json);
   });

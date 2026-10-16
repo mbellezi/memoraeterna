@@ -196,6 +196,17 @@ export const WeekRowSchema = z
     ambiguous: count,
     unadmitted: count,
     rebuild: z.object({ trigger: z.string(), movedItems: count }).strict().nullable(),
+    /** Simulated naming (naming-sim.ts, T29b): per `naming.renameDrift` threshold. */
+    naming: z
+      .object({
+        named: count,
+        renamed: z.record(z.string(), count),
+        calls: z.record(z.string(), count),
+        staleness: z.record(z.string(), share),
+        topics: count
+      })
+      .strict()
+      .optional(),
     topics: count,
     rootChildren: count,
     depthMean: z.number().min(0),

@@ -986,6 +986,67 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     }
   }, 60_000);
 
+  it("names topics again within the session once members were replaced, not only added", async () => {
+    const w = await world();
+    try {
+      await runNaming(w);
+      const first = await rows(w);
+      // A REBALANCE-like change: two of A1's four notes and two of A2's swap places, so both
+      // leaves keep their size while half of their members changed (a drift of 2/3).
+      const cache = (await loadTopicTreeCache(pool, w.treeId))!;
+      const editor = createTopicTreeEditor(cache.state);
+      for (const id of w.notes.A1!.slice(0, 2)) {
+        editor.updatePlacement(itemKey("note", id), 0, { topicId: w.topics.A2 });
+      }
+      for (const id of w.notes.A2!.slice(0, 2)) {
+        editor.updatePlacement(itemKey("note", id), 0, { topicId: w.topics.A1 });
+      }
+      recomputeSubtree(cache.state, cache.vectors);
+      const moved = await createTopicTreeRepository(pool).applyChangeSet({
+        treeId: w.treeId,
+        expectedGeneration: cache.tree.generation,
+        origin: "rebalance",
+        titleKey: "topics.changeSets.rebalance",
+        events: editor.events,
+        stats: topicStatsWrites(cache.state, cache.vectors, liveTopicIds(cache.state))
+      });
+      if (moved.kind !== "applied") throw new Error(`the move was not applied: ${moved.kind}`);
+      w.services.service.invalidate();
+      // Two minutes later, in the same session: the committed change asks for naming again.
+      w.clock.now += 2 * 60_000;
+      await pool.query("delete from jobs where type = 'topic-name'");
+      await w.services.naming!.requestIfNeeded(w.treeId, moved.generation);
+      expect(
+        await count("select count(*) from jobs where type = 'topic-name' and status = 'queued'")
+      ).toBe(1);
+      const titles = ["Sono e recuperação", "Recuperação e sono"];
+      w.setResponder((call) => ({
+        topics: call.groups.flatMap((group) =>
+          group.topics.map((topic, index) => ({
+            ...item(topic, group),
+            title: titles[index] ?? "Assunto geral"
+          }))
+        )
+      }));
+      const drifted = await runDue(w, "topic-name");
+      expect(drifted.result).toMatchObject({ status: "named", candidates: 2, llmNamed: 2 });
+      const second = await rows(w);
+      expect(second.A1?.namedBy).not.toBe(first.A1?.namedBy);
+      expect(second.A2?.namedBy).not.toBe(first.A2?.namedBy);
+      // The parent's members are the same, and the other branch did not change.
+      expect(second.A?.namedBy).toBe(first.A?.namedBy);
+      expect(second.B1?.namedBy).toBe(first.B1?.namedBy);
+      // Nothing changed since that check: no new drift check is asked for.
+      w.clock.now += 2 * 60_000;
+      await pool.query("delete from jobs where type = 'topic-name'");
+      const generation = (await createTopicTreeRepository(pool).tree(w.treeId))!.generation;
+      await w.services.naming!.requestIfNeeded(w.treeId, generation);
+      expect(await count("select count(*) from jobs where type = 'topic-name'")).toBe(0);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
   it("keeps provisional names and reports the cap once D34's daily calls are spent", async () => {
     const w = await world({ config: configWith({ ai: { maxBackgroundCallsPerDay: 1 } }) });
     try {

@@ -18,7 +18,8 @@
 // members (I9). A matched topic whose title would collide with a new sibling (I7) loses its AI
 // title first (`unnamed`, so naming runs again); human-named and protected titles are never
 // cleared. Human placements stay where they are. Touching protected structure, or moving more
-// than rebuild.reviewChurnShare of the items, marks the change-set for review.
+// than rebuild.reviewChurnShare of the items (fresh ones left out, stability.ts), marks the
+// change-set for review.
 import { contentAnchor } from "./build.js";
 import type { ShapeContext } from "./build.js";
 import type { TopicTreeConfig } from "./config.js";
@@ -214,6 +215,8 @@ export interface RebuildInput {
   now: string;
   /** Items opened recently: their churn counts stability.recentChurnWeight times. */
   recentItems?: ReadonlySet<ItemKey>;
+  /** Fresh items (stability.freshHours): no churn, and not part of the review share. */
+  freshItems?: ReadonlySet<ItemKey>;
   /** Compute the change-set and restore the state (for a change-set that waits for review). */
   dryRun?: boolean;
 }
@@ -232,6 +235,8 @@ export interface RebuildResult {
   churn: EventChurn;
   /** Share of placed items whose primary path changed. */
   movedShare: number;
+  /** The same share without fresh items: what the review threshold is compared with. */
+  establishedShare: number;
   review: { largeShare: boolean; protectedTouched: boolean; required: boolean };
 }
 
@@ -404,12 +409,13 @@ export function applyRebuild(input: RebuildInput): RebuildResult {
 
   recomputeSubtree(state, vectors);
   const events = [...editor.events];
-  const churn = eventChurn(state, events, config, input.recentItems);
+  const churn = eventChurn(state, events, config, input.recentItems, input.freshItems);
   const total = placedItemCount(state);
   const movedShare = total > 0 ? churn.items.length / total : 0;
+  const establishedShare = total > 0 ? (churn.items.length - churn.fresh) / total : 0;
   const protectedTouched =
     protectedConflict || kept.length > 0 || eventsTouchProtected(state, events);
-  const largeShare = movedShare > config.rebuild.reviewChurnShare;
+  const largeShare = establishedShare > config.rebuild.reviewChurnShare;
   if (input.dryRun) {
     applyEvents(state, invertEvents(events));
     recomputeSubtree(state, vectors);
@@ -423,6 +429,7 @@ export function applyRebuild(input: RebuildInput): RebuildResult {
     keptItems,
     churn,
     movedShare,
+    establishedShare,
     review: { largeShare, protectedTouched, required: largeShare || protectedTouched }
   };
 }

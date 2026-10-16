@@ -21,6 +21,7 @@ import { groupsOf, sphericalKMeans } from "./kmeans.js";
 import { knnGraph } from "./knn.js";
 import type { KnnGraph } from "./knn.js";
 import { createRng, deriveSeed } from "./rng.js";
+import { cooldownInsertsFor } from "./stability.js";
 import {
   createTopicTreeState,
   depthOf,
@@ -133,6 +134,8 @@ export interface ShapeContext {
   readonly readmit?: (item: ItemKey, from: string) => string | null;
   /** Record "moved from" hints on the items an operation moves (off in builds). */
   readonly markMoves?: boolean;
+  /** A leaf splits sideways while its parent has fewer children than this (default fanOut.max). */
+  readonly sidewaysMaxFanOut?: number;
 }
 
 export interface RepairOptions {
@@ -267,7 +270,8 @@ function partition(
 /**
  * Splits an oversized leaf with balanced spherical k-means: sideways under its parent when there
  * is room (the leaf keeps its largest part, so most items keep their path); a root leaf, or a leaf
- * under a full parent, splits downward so the overflow does not cascade upward.
+ * under a full parent (`sidewaysMaxFanOut` children, fanOut.max by default), splits downward so
+ * the overflow does not cascade upward.
  */
 export function splitLeaf(context: ShapeContext, leafId: string): ShapeOperation | null {
   const { state, config } = context;
@@ -275,7 +279,9 @@ export function splitLeaf(context: ShapeContext, leafId: string): ShapeOperation
   const size = leaf.items.length;
   if (size <= config.leaf.max || leaf.children.length > 0) return null;
   const parentFull =
-    leaf.parentId !== null && getTopic(state, leaf.parentId).children.length >= config.fanOut.max;
+    leaf.parentId !== null &&
+    getTopic(state, leaf.parentId).children.length >=
+      (context.sidewaysMaxFanOut ?? config.fanOut.max);
   const sideways =
     leaf.parentId !== null && (!parentFull || depthOf(state, leafId) + 1 > config.depth.cap);
   let k = Math.max(2, Math.round(size / config.leaf.target), Math.ceil(size / config.leaf.max));
@@ -617,7 +623,7 @@ export function repairTopic(
   const cooled =
     options.force ||
     repairClock === null ||
-    state.clock - repairClock >= config.repair.cooldownInserts;
+    state.clock - repairClock >= cooldownInsertsFor(config, state.placements.size);
   if (node.children.length === 0) {
     const size = node.items.length;
     if (size > config.leaf.hardMax || (size > config.leaf.max && cooled)) {

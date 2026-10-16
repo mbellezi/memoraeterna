@@ -47,7 +47,7 @@ import { recomputeSubtree, statsDump } from "./stats.js";
 // trees. config.test.ts asserts the calibrated defaults.
 const config = topicTreeConfigWith({
   stability: { churnWeight: 1, dailyMovedShare: 0.02 },
-  repair: { cooldownInserts: 25 },
+  repair: { cooldownInserts: 25, cooldownShare: 0 },
   audit: { misParentMargin: 0.05 }
 });
 const data = gaussianClusters({
@@ -145,6 +145,43 @@ describe("REBALANCE: hard violations", () => {
     expect(getTopic(state, leaf).items.length).toBeLessThanOrEqual(config.leaf.hardMax);
     expect(result.unresolvedHard).toEqual([]);
     expect(checkInvariants(state, config).hard).toBe(0);
+  });
+
+  it("splits a leaf downward once its parent holds the limit of repair.sidewaysSplitLimit", () => {
+    const split = (limit: "max" | "targetMax") => {
+      const engineConfig = topicTreeConfigWith({ repair: { sidewaysSplitLimit: limit } }, config);
+      const tree = productTree(data, config, { seed: 7 });
+      const { state } = tree;
+      const leaf = innerLeaf(state);
+      const parent = getTopic(state, leaf).parentId as string;
+      const editor = setupEditor(tree);
+      // Small new leaves fill the parent up to the top of the target band.
+      while (getTopic(state, parent).children.length < config.fanOut.targetMax) {
+        const donor = topicsByKind(state).leaves.find(
+          (id) => getTopic(state, id).parentId !== parent && getTopic(state, id).items.length >= 8
+        );
+        if (donor === undefined) throw new Error("no donor leaf left");
+        const id = tree.newTopicId();
+        editor.createTopic(id, parent);
+        for (const item of getTopic(state, donor).items.slice(0, 4)) {
+          editor.updatePlacement(item, 0, { topicId: id });
+        }
+      }
+      recomputeSubtree(state, tree.vectors);
+      growLeaf(tree, leaf, config.leaf.hardMax + 2);
+      const result = run(tree, { topics: [leaf], hardOnly: true }, engineConfig);
+      expect(result.applied[0]?.kind).toBe("leaf-split");
+      return {
+        parentChildren: getTopic(state, parent).children.length,
+        leafChildren: getTopic(state, leaf).children.length
+      };
+    };
+    // The default (`max`): the parent has room up to fanOut.max, so the leaf splits sideways.
+    expect(split("max").parentChildren).toBeGreaterThan(config.fanOut.targetMax);
+    // `targetMax` keeps the parent in the target band: the leaf becomes a topic of its own.
+    const downward = split("targetMax");
+    expect(downward.parentChildren).toBe(config.fanOut.targetMax);
+    expect(downward.leafChildren).toBeGreaterThanOrEqual(config.fanOut.targetMin);
   });
 
   it("push down a topic above fanOut.hardMax but never the root once Areas exist", () => {
@@ -389,6 +426,32 @@ describe("REBALANCE: stability controls", () => {
     expect(result.skipped.some((skip) => skip.reason === "budget")).toBe(true);
   });
 
+  it("moves fresh items for free: no churn and no move budget, opened items never fresh", () => {
+    const tree = productTree(data, config, { seed: 7 });
+    const leaf = innerLeaf(tree.state);
+    growLeaf(tree, leaf, config.leaf.max + 4);
+    const strict = topicTreeConfigWith(
+      { stability: { churnWeight: 50, dailyMovedShare: 0, dailyMovedMin: 0 } },
+      config
+    );
+    const before = canonicalStateDump(tree.state);
+    const established = run(tree, { topics: [leaf] }, strict);
+    expect(established.applied).toEqual([]);
+    expect(canonicalStateDump(tree.state)).toBe(before);
+    const members = new Set<ItemKey>(getTopic(tree.state, leaf).items);
+    // Opened (recent) items are never fresh: the split is still refused.
+    const opened = run(tree, { topics: [leaf], freshItems: members, recentItems: members }, strict);
+    expect(opened.applied).toEqual([]);
+    const fresh = run(tree, { topics: [leaf], freshItems: members }, strict);
+    const split = fresh.applied[0];
+    expect(split).toMatchObject({ trigger: "soft", kind: "leaf-split" });
+    expect(split?.churn.weighted).toBe(0);
+    expect(split?.churn.fresh).toBe(split?.churn.items.length);
+    expect(fresh.churn.items).toBeGreaterThan(0);
+    expect(fresh.churn.budgeted).toBe(0);
+    expect(tree.state.budget.movedItems).toBe(0);
+  });
+
   it("waits out the cooldown, leaves frozen topics alone, and `force` lifts both", () => {
     const tree = productTree(data, config, { seed: 7 });
     const { state } = tree;
@@ -460,11 +523,11 @@ describe("REBALANCE: mis-parent audit and direct items", () => {
   });
 
   it("weighs a mis-parent correction's churn once, so it passes at the calibrated lambda", () => {
-    // The E3 calibration's lambda (6) exceeds what Q prices a mis-parent at (items x (1 + gain)):
-    // counted lambda times, no re-parent could ever pass.
+    // The calibrated lambda (4; gate A chose 6) exceeds what Q prices a mis-parent at
+    // (items x (1 + gain)): counted lambda times, no re-parent could ever pass.
     const calibrated = topicTreeConfigWith({ audit: { misParentMargin: 0.05 } });
-    expect(calibrated.stability.churnWeight).toBe(6);
-    expect(churnWeightOf("mis-parented", calibrated)).toBeCloseTo(1 / 6, 12);
+    expect(calibrated.stability.churnWeight).toBe(4);
+    expect(churnWeightOf("mis-parented", calibrated)).toBeCloseTo(1 / 4, 12);
     expect(churnWeightOf("leaf-above-max", calibrated)).toBe(1);
     const tree = productTree(data, calibrated, { seed: 7 });
     const { state } = tree;

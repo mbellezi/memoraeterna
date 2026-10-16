@@ -22,8 +22,17 @@
 //   they go through REBALANCE acceptance (D12).
 // - Undo (optional): each day's REBALANCE change-set is undone on a copy of the tree with T07
 //   `undoChangeSet` and must restore the pre-REBALANCE canonical dump byte for byte.
-// - Rebuilds (E3 step 3) are not evaluated: the domain maps a rebuild (rebuild-map.ts) but has no
-//   trigger evaluation yet (T19), so, as with the reference, no rebuild runs in the replay.
+// - Fresh items (stability.freshHours, T29b): an item placed on day d is fresh at a REBALANCE on
+//   day d' while (d' - d) x 24 h < freshHours, unless it sits in a frozen ("recently viewed")
+//   topic; its churn and moves then count for nothing, as in the service.
+// - Rebuilds (E3 step 3, T19/T29b): `evaluateRebuild` checks the rebuild triggers (bootstrap.ts)
+//   against the last build, as the service now does after every PLACE; a triggered rebuild
+//   re-clusters every placed row (the small-library rule up to bootstrap.singleTopicMaxItems,
+//   Louvain above, rows in content order) and maps it onto the live tree (rebuild-map.ts). One that
+//   needs review (D29; a young library never does for its share) is counted and holds every later
+//   rebuild, since nobody approves it here.
+// - The cold start (`coldStart`, T19): the small-library rule or Louvain on the first rows, so a
+//   library grown source by source starts as the product's does.
 //
 // Every row is a note (the DS-C stores hold notes only), exactly the reference's item set; root
 // sources and their vectors (D8) need app exports with source rows (T22a) and are not modelled.
@@ -31,6 +40,8 @@ import { createHash } from "node:crypto";
 
 import {
   applyGateResolution,
+  applyRebuild,
+  areasActive,
   auditTopicTree,
   buildLouvain,
   canonicalStateDump,
@@ -40,22 +51,36 @@ import {
   createTopicTreeState,
   decidePlacement,
   getTopic,
+  insertPlacement,
+  insertTopic,
   isLive,
+  isYoungLibrary,
+  level2TopicCount,
   placeItem,
+  placementRecord,
   primaryPlacement,
   rebalanceTree,
+  rebuildNeedsReview,
+  rebuildTrigger,
   recomputePaths,
+  recomputeSubtree,
   registerItem,
   rowContentHash,
   rowItemKey,
   rowVectors,
   rowView,
   setFrozenTopics,
+  smallLibraryPartition,
+  structureSignals,
+  topicRecord,
   topicTreeConfigWith,
-  undoChangeSet
+  undoChangeSet,
+  walkTopics
 } from "@app/domain/topic-tree";
 import type {
+  BuildBaseline,
   BuildResult,
+  RebuildPartitionNode,
   GateResolution,
   ItemKey,
   ItemVectorSource,
@@ -76,6 +101,7 @@ import type {
   PlaceSummary,
   RebalanceContext,
   RebalanceSummary,
+  RebuildSummary,
   ReplayEngine,
   ReplayEngineFactory,
   ReplayEngineInput,
@@ -89,9 +115,13 @@ export interface RealEngineOptions {
   gate?: ReplayGate;
   /**
    * The root's band is the Areas band and Area-level operations are proposals (D12). The product
-   * applies Areas at bootstrap, so a library of E3's size has them. Default true.
+   * applies Areas at bootstrap, so a library of E3's size has them. Default true. `dynamic` asks
+   * the tree, as the service does: Areas exist once a level-1 topic has children, and Area-level
+   * operations are proposals once the tree is large enough for the Areas grouping.
    */
-  areasActive?: boolean;
+  areasActive?: boolean | "dynamic";
+  /** Evaluate the rebuild triggers in `evaluateRebuild` (default true). */
+  rebuilds?: boolean;
   /** Audit before every REBALANCE (default true). */
   audit?: boolean;
   /** Undo every REBALANCE change-set on a copy and compare the dump (default false). */
@@ -130,7 +160,9 @@ function buildKey(seed: number, rows: readonly number[], config: TopicTreeConfig
   delete parsed.stability;
   const repair = { ...(parsed.repair as Record<string, unknown>) };
   delete repair.cooldownInserts;
+  delete repair.cooldownShare;
   delete repair.softMoveShare;
+  delete repair.sidewaysSplitLimit;
   parsed.repair = repair;
   const hash = createHash("sha256");
   hash.update(JSON.stringify(parsed));
@@ -148,6 +180,21 @@ function addCount(into: OperationCounts, kind: string, by = 1): void {
 
 const deferredReasons: ReadonlySet<string> = new Set(["cooldown", "frozen", "budget"]);
 
+/** The pre-order partition of a built state (items are its `row:<n>` keys). */
+function partitionOfState(state: TopicTreeState): RebuildPartitionNode[] {
+  const nodes: RebuildPartitionNode[] = [];
+  const keys = new Map<string, number>();
+  walkTopics(state, (node) => {
+    keys.set(node.id, nodes.length);
+    nodes.push({
+      key: nodes.length,
+      parent: node.parentId === null ? null : (keys.get(node.parentId) as number),
+      items: [...node.items]
+    });
+  });
+  return nodes;
+}
+
 class RealEngine implements ReplayEngine {
   readonly name: string;
   private current: TopicTreeState;
@@ -156,8 +203,13 @@ class RealEngine implements ReplayEngine {
   private readonly dirty = new Set<string>();
   private frozenItems: ReadonlySet<ItemKey> = new Set();
   private day = 0;
+  /** Items placed by day (fresh items). */
+  private readonly placedOn = new Map<number, ItemKey[]>();
+  private baseline: BuildBaseline | null = null;
+  private reviewPending = false;
   readonly gate: ReplayGate;
-  private readonly areasActive: boolean;
+  private readonly areasOption: boolean | "dynamic";
+  private readonly runRebuilds: boolean;
   private readonly runAudit: boolean;
   private readonly undoCheck: boolean;
   private auditSummary: EngineAuditSummary = {
@@ -173,7 +225,8 @@ class RealEngine implements ReplayEngine {
     private readonly options: RealEngineOptions
   ) {
     this.gate = options.gate ?? "baseline";
-    this.areasActive = options.areasActive ?? true;
+    this.areasOption = options.areasActive ?? true;
+    this.runRebuilds = options.rebuilds ?? true;
     this.runAudit = options.audit ?? true;
     this.undoCheck = options.undoCheck ?? false;
     this.name = `t07-t08/gate-${this.gate}`;
@@ -218,7 +271,157 @@ class RealEngine implements ReplayEngine {
     this.currentVectors = cached.result.vectors;
     this.nextTopicId = Math.max(...[...this.current.topics.keys()].map(Number)) + 1;
     this.dirty.clear();
+    this.placedOn.clear();
+    this.recordBaseline();
     return { ...cached.summary };
+  }
+
+  /**
+   * The cold start (T19) on `rows`: up to bootstrap.singleTopicMaxItems rows the small-library
+   * rule (one topic unless a 2-4 split is modular enough), Louvain above. The rows are fresh.
+   */
+  coldStart(rows: readonly number[], day = this.day): BuildSummary {
+    this.day = Math.max(this.day, day);
+    const sorted = [...rows].sort((a, b) => a - b);
+    if (sorted.length > this.input.config.bootstrap.singleTopicMaxItems) {
+      const summary = this.build(sorted);
+      this.markPlaced(sorted.map(rowItemKey));
+      return summary;
+    }
+    const started = performance.now();
+    const state = createTopicTreeState({ dim: this.input.matrix.dim, rootId: "0" });
+    let next = 1;
+    for (const group of this.smallGroups(sorted)) {
+      const topicId = String(next++);
+      insertTopic(state, topicRecord(topicId, state.rootId));
+      for (const row of group) {
+        const key = rowItemKey(row);
+        registerItem(state, {
+          key,
+          kind: "note",
+          contentHash: rowContentHash(row),
+          rootSource: null
+        });
+        insertPlacement(state, key, placementRecord(topicId, { decidedBy: "build" }));
+      }
+    }
+    this.current = state;
+    this.currentVectors = rowVectors(this.input.matrix);
+    recomputeSubtree(state, this.currentVectors);
+    this.nextTopicId = next;
+    this.dirty.clear();
+    this.placedOn.clear();
+    this.markPlaced(sorted.map(rowItemKey));
+    this.recordBaseline();
+    const totalMs = performance.now() - started;
+    return { rows: sorted.length, knnMs: 0, communitiesMs: 0, repairMs: 0, totalMs, repairs: 0 };
+  }
+
+  private smallGroups(rows: readonly number[]): number[][] {
+    return smallLibraryPartition(
+      this.input.matrix,
+      rows,
+      this.input.config,
+      this.input.seed,
+      this.input.detect
+    ).groups;
+  }
+
+  /** The partition a rebuild of `rows` gets (the service's small rule or the Louvain worker). */
+  private partitionRows(rows: readonly number[]): RebuildPartitionNode[] {
+    const sorted = [...rows].sort((a, b) => a - b);
+    if (sorted.length <= this.input.config.bootstrap.singleTopicMaxItems) {
+      return [
+        { key: 0, parent: null, items: [] },
+        ...this.smallGroups(sorted).map((group, index) => ({
+          key: index + 1,
+          parent: 0,
+          items: group.map(rowItemKey)
+        }))
+      ];
+    }
+    const built = buildLouvain(this.input.matrix, sorted, {
+      seed: this.input.seed,
+      config: this.input.config,
+      detectCommunities: this.input.detect
+    });
+    return partitionOfState(built.state);
+  }
+
+  private recordBaseline(): void {
+    const signals = structureSignals(this.current);
+    this.baseline = { notes: signals.notes, leafCoherence: signals.leafCoherence };
+  }
+
+  private markPlaced(items: readonly ItemKey[], day = this.day): void {
+    const list = this.placedOn.get(day) ?? [];
+    list.push(...items);
+    this.placedOn.set(day, list);
+  }
+
+  /** Items placed within stability.freshHours of `day`, outside the frozen topics. */
+  private freshItems(day = this.day): Set<ItemKey> {
+    const hours = this.input.config.stability.freshHours;
+    const output = new Set<ItemKey>();
+    if (!(hours > 0)) return output;
+    for (const [placedDay, items] of this.placedOn) {
+      if ((day - placedDay) * 24 >= hours || placedDay > day) continue;
+      for (const item of items) if (!this.frozenItems.has(item)) output.add(item);
+    }
+    return output;
+  }
+
+  private areas(): { areasActive: boolean; areaLevelReview: boolean } {
+    if (this.areasOption !== "dynamic") {
+      return { areasActive: this.areasOption, areaLevelReview: true };
+    }
+    return {
+      areasActive: areasActive(this.current),
+      areaLevelReview: level2TopicCount(this.current) >= this.input.config.areas.minLevel2Topics
+    };
+  }
+
+  /**
+   * The rebuild triggers against the last build (the service checks them after every PLACE). A
+   * triggered rebuild is applied unless it needs review (D29), which holds later rebuilds.
+   */
+  evaluateRebuild(context: RebalanceContext): RebuildSummary | null {
+    if (!this.runRebuilds || this.reviewPending || this.baseline === null) return null;
+    this.day = Math.max(this.day, context.day);
+    const trigger = rebuildTrigger(
+      structureSignals(this.current),
+      this.baseline,
+      this.input.config
+    );
+    if (trigger === null) return null;
+    const rows: number[] = [];
+    for (const [item] of this.current.placements) {
+      if (!primaryPlacement(this.current, item)) continue;
+      const row = this.currentVectors.rowOf(item);
+      if (row !== undefined) rows.push(row);
+    }
+    const partition = this.partitionRows(rows);
+    const input = {
+      state: this.current,
+      vectors: this.currentVectors,
+      config: this.input.config,
+      partition,
+      newTopicId: () => String(this.nextTopicId++),
+      now: this.now(),
+      recentItems: this.frozenItems,
+      freshItems: this.freshItems()
+    };
+    const young = isYoungLibrary(structureSignals(this.current).notes, this.input.config);
+    const dry = applyRebuild({ ...input, dryRun: true });
+    if (rebuildNeedsReview(trigger, dry.review, young)) {
+      this.reviewPending = true;
+      return { trigger: `${trigger}:review`, movedItems: 0 };
+    }
+    const result = applyRebuild(input);
+    recomputeSubtree(this.current, this.currentVectors);
+    this.dirty.clear();
+    this.recordBaseline();
+    return { trigger, movedItems: result.churn.items.length };
   }
 
   private now(): string {
@@ -262,7 +465,8 @@ class RealEngine implements ReplayEngine {
       day: this.now().slice(0, 10),
       newTopicId: () => String(this.nextTopicId++),
       recentItems: this.frozenItems,
-      areasActive: this.areasActive,
+      freshItems: this.freshItems(),
+      ...this.areas(),
       readmit: (item, from) => this.readmit(item, from),
       ...overrides
     };
@@ -301,6 +505,7 @@ class RealEngine implements ReplayEngine {
 
   place(rows: readonly number[], options: PlaceOptions = {}): PlaceSummary {
     const started = performance.now();
+    if (options.day !== undefined) this.day = Math.max(this.day, options.day);
     const state = this.current;
     const summary: PlaceSummary = {
       placed: 0,
@@ -341,6 +546,7 @@ class RealEngine implements ReplayEngine {
       }
       const topicId = primaryPlacement(state, item)?.topicId;
       if (topicId !== undefined) this.dirty.add(topicId);
+      this.markPlaced([item]);
       if (options.localRepair) RealEngine.count(this.rebalanceDirty(), summary.operations);
     }
     summary.ms = performance.now() - started;
@@ -351,7 +557,7 @@ class RealEngine implements ReplayEngine {
   private audit(): void {
     const audit = auditTopicTree(this.current, this.currentVectors, this.input.config, {
       seed: this.input.seed + this.day,
-      areasActive: this.areasActive,
+      areasActive: this.areas().areasActive,
       expectedItems: []
     });
     this.auditSummary.audits += 1;

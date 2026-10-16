@@ -7,11 +7,15 @@ import { gaussianClusters } from "./fixtures/synthetic.js";
 import {
   changeSetRisk,
   consumeDailyBudget,
+  cooldownInsertsFor,
   dailyBudget,
   eventChurn,
   eventsTopics,
+  freshItemsOf,
+  freshWindowStart,
   isCoolingDown,
   localDay,
+  placedItemCount,
   recentlyOpenedTopics,
   setFrozenTopics
 } from "./stability.js";
@@ -72,6 +76,49 @@ describe("cooldown and freeze", () => {
     expect(isCoolingDown(tree.state, config, id)).toBe(false);
   });
 
+  it("scales the cooldown with the library: max(cooldownInserts, cooldownShare x items)", () => {
+    const scaled = topicTreeConfigWith({ repair: { cooldownInserts: 25, cooldownShare: 0.05 } });
+    expect(cooldownInsertsFor(scaled, 170)).toBe(25);
+    expect(cooldownInsertsFor(scaled, 18_632)).toBe(932);
+    expect(cooldownInsertsFor(topicTreeConfigWith({ repair: { cooldownShare: 0 } }), 18_632)).toBe(
+      defaultTopicTreeConfig.repair.cooldownInserts
+    );
+    const tree = productTree(data, scaled, { seed: 1 });
+    const id = liveTopicIds(tree.state)[1] as string;
+    getTopic(tree.state, id).control.repairClock = 0;
+    tree.state.clock = 24;
+    expect(isCoolingDown(tree.state, scaled, id)).toBe(true);
+    tree.state.clock = 25;
+    expect(isCoolingDown(tree.state, scaled, id)).toBe(false);
+    // The same topic in a library of 1,000 placed items waits 50 inserts.
+    expect(isCoolingDown(tree.state, scaled, id, 1000)).toBe(true);
+    expect(placedItemCount(tree.state)).toBe(data.matrix.count);
+  });
+
+  it("keeps fresh items: placed within stability.freshHours, outside opened topics", () => {
+    expect(freshWindowStart("2026-10-15T12:00:00.000Z", config)).toBe(
+      config.stability.freshHours > 0
+        ? new Date(
+            Date.parse("2026-10-15T12:00:00.000Z") - config.stability.freshHours * 3.6e6
+          ).toISOString()
+        : null
+    );
+    const day = topicTreeConfigWith({ stability: { freshHours: 24 } });
+    expect(freshWindowStart("2026-10-15T12:00:00.000Z", day)).toBe("2026-10-14T12:00:00.000Z");
+    expect(
+      freshWindowStart(
+        "2026-10-15T12:00:00.000Z",
+        topicTreeConfigWith({
+          stability: { freshHours: 0 }
+        })
+      )
+    ).toBeNull();
+    expect([...freshItemsOf(["note:a", "note:b", "note:c"], new Set(["note:b"]))]).toEqual([
+      "note:a",
+      "note:c"
+    ]);
+  });
+
   it("freezes topics opened within stability.freezeHours", () => {
     const opens = [
       { topicId: "a", at: "2026-10-15T11:00:00.000Z" },
@@ -117,6 +164,17 @@ describe("churn of structure events", () => {
     expect(subtree.items.length).toBe(getTopic(state, b).stats.n + 1);
     expect(subtree.recent).toBe(1);
     expect(subtree.weighted).toBe(subtree.items.length - 1 + config.stability.recentChurnWeight);
+    // Fresh items move for free; a recently opened item is never fresh.
+    const freshly = eventChurn(
+      state,
+      editor.events.slice(before),
+      config,
+      recent,
+      new Set(subtree.items)
+    );
+    expect(freshly.items).toEqual(subtree.items);
+    expect(freshly.fresh).toBe(subtree.items.length - 1);
+    expect(freshly.weighted).toBe(config.stability.recentChurnWeight);
     // Moving it back within the same events is no churn.
     editor.moveTopic(b, state.rootId);
     expect(eventChurn(state, editor.events.slice(before), config).items).toEqual([]);

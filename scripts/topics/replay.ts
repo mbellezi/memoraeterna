@@ -99,6 +99,7 @@ import {
   summarizePoints
 } from "./calibration.js";
 import type { StabilityPoint } from "./calibration.js";
+import type { NamingSimulator } from "./naming-sim.js";
 import { createRealEngineFactory, neutralStability, replayGates } from "./real-engine.js";
 import type { RealEngineOptions } from "./real-engine.js";
 import { createReferenceEngine } from "./reference-engine.js";
@@ -380,6 +381,8 @@ export interface WeeklyOptions {
   schedule?: SimulatedSchedule;
   /** E3 bar: the largest weekly churn (*cal.*, spec 8). */
   maxWeeklyChurn?: number;
+  /** Simulated naming after every day (renames per `naming.renameDrift` threshold, T29b). */
+  naming?: NamingSimulator;
 }
 
 export function weeklyRun(
@@ -425,12 +428,14 @@ export function weeklyRun(
     skippedCooldown: undefined as number | undefined,
     proposals: undefined as number | undefined,
     ambiguous: 0,
-    unadmitted: 0
+    unadmitted: 0,
+    rebuild: null as WeekRow["rebuild"]
   };
   const flush = (rebuild: WeekRow["rebuild"]): void => {
     const rows = [...present];
     const measurement = churnSince(snapshot, engine.state);
     const shape = shapeReport(engine.state, run.config, { expectedItems: rowKeys(rows) });
+    const naming = options.naming?.takeWeek(engine.state);
     weeks.push({
       week: week.number,
       arrivals: week.arrivals,
@@ -447,6 +452,7 @@ export function weeklyRun(
       ambiguous: week.ambiguous,
       unadmitted: week.unadmitted,
       rebuild,
+      ...(naming ? { naming } : {}),
       topics: shape.topics,
       rootChildren: rootChildCount(engine.state),
       depthMean: round(shape.itemDepth.mean),
@@ -478,7 +484,8 @@ export function weeklyRun(
         skippedCooldown: undefined,
         proposals: undefined,
         ambiguous: 0,
-        unadmitted: 0
+        unadmitted: 0,
+        rebuild: null
       };
       snapshot = pathSnapshot(engine.state, present);
     }
@@ -486,8 +493,19 @@ export function weeklyRun(
     engine.setFrozen(
       new Set(fastestGrowingTopics(engine.state, recent.slice(-daysPerWeek).flat(), freezeTopics))
     );
-    const placed = engine.place(day.rows);
+    const placed = engine.place(day.rows, { day: day.day });
+    // The service checks the rebuild triggers after every PLACE (T29b), not only in the audit.
+    const rebuilt = engine.evaluateRebuild?.({ day: day.day }) ?? null;
+    if (rebuilt) {
+      week.rebuild = week.rebuild
+        ? {
+            trigger: `${week.rebuild.trigger}+${rebuilt.trigger}`,
+            movedItems: week.rebuild.movedItems + rebuilt.movedItems
+          }
+        : rebuilt;
+    }
     const rebalanced = engine.rebalance({ day: day.day });
+    options.naming?.step(engine.state);
     for (const row of day.rows) present.push(row);
     recent.push(day.rows);
     week.arrivals += day.rows.length;
@@ -503,10 +521,7 @@ export function weeklyRun(
     }
     addCounts(week.operations, placed.operations);
     addCounts(week.operations, rebalanced.operations);
-    if (lastDayOfWeek(index)) {
-      const rebuild = engine.evaluateRebuild?.({ day: day.day }) ?? null;
-      flush(rebuild);
-    }
+    if (lastDayOfWeek(index)) flush(week.rebuild);
   });
 
   const churns = weeks.map((entry) => entry.churn);

@@ -817,10 +817,34 @@ describe("newestNoteVectorSpace", () => {
   });
 });
 
+describe("recentlyPlacedItems", () => {
+  it("returns the item keys of primary automatic placements made since a time", async () => {
+    const since = new Date("2026-10-15T12:00:00.000Z");
+    const { db, calls } = stub(
+      new Map<string, Handler>([
+        [
+          topicLoadSql.recentlyPlaced,
+          () => [
+            { itemKind: "note", itemId: id(3).toUpperCase() },
+            { itemKind: "source", itemId: id(4) }
+          ]
+        ]
+      ])
+    );
+    await expect(
+      createTopicTreeLoadRepository(db).recentlyPlacedItems(id(1), since)
+    ).resolves.toEqual([`note:${id(3)}`, `source:${id(4)}`]);
+    expect(calls[0]?.values).toEqual([id(1), since]);
+    expect(topicLoadSql.recentlyPlaced).toContain("p.rank = 0 and p.management = 'ai'");
+    expect(topicLoadSql.recentlyPlaced).toContain("p.placed_at >= $2");
+  });
+});
+
 describe("statements", () => {
   const statements = [
     topicLoadSql.tree,
     topicLoadSql.activeTree,
+    topicLoadSql.recentlyPlaced,
     topicLoadSql.generation,
     topicLoadSql.placements,
     topicLoadSql.topics,

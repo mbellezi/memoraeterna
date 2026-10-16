@@ -416,6 +416,11 @@ export const topicLoadSql = {
       created_at as "createdAt", activated_at as "activatedAt", retired_at as "retiredAt"
     from topic_trees where id = $1`,
   activeTree: `select id from topic_trees where status = 'active'`,
+  // Primary automatic placements made at or after $2: the fresh items of stability.freshHours.
+  recentlyPlaced: `select p.item_kind as "itemKind", coalesce(p.note_id, p.source_item_id) as "itemId"
+    from topic_placements p
+    where p.tree_id = $1 and p.rank = 0 and p.management = 'ai' and p.placed_at >= $2
+    order by p.item_kind, coalesce(p.note_id, p.source_item_id)`,
   generation: `select generation::text as generation from topic_trees where id = $1`,
   // Keyset pages in the order of the unique index (tree, kind, item, rank).
   placements: `select p.id, p.item_kind as "itemKind", coalesce(p.note_id, p.source_item_id) as "itemId",
@@ -950,6 +955,17 @@ export function createTopicTreeLoadRepository(db: Queryable) {
     async activeTreeId(): Promise<string | null> {
       const result = await db.query<QueryResultRow & { id: string }>(topicLoadSql.activeTree);
       return result.rows[0]?.id ?? null;
+    },
+
+    /**
+     * Items whose primary automatic placement was made at or after `since` (a later move keeps
+     * the time): the candidates for fresh items (stability.freshHours), in item-key order.
+     */
+    async recentlyPlacedItems(treeId: string, since: Date): Promise<ItemKey[]> {
+      const result = await db.query<
+        QueryResultRow & { itemKind: "note" | "source"; itemId: string }
+      >(topicLoadSql.recentlyPlaced, [treeId, since]);
+      return result.rows.map((row) => itemKey(row.itemKind, row.itemId));
     },
 
     /**

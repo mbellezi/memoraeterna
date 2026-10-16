@@ -505,7 +505,9 @@ describe("Areas: the regroup", () => {
     const planted = first!.members.pop() as string;
     second!.members.push(planted);
     const defaults = topicTreeConfigWith({ areas: { minLevel2Topics: 8 } }, defaultTopicTreeConfig);
-    expect(defaults.stability.churnWeight).toBe(6);
+    // The calibrated lambda (T29b: 4) is above 1: a re-parent passes only because its churn
+    // counts once (repair.ts churnWeightOf).
+    expect(defaults.stability.churnWeight).toBe(4);
     const result = regroupAreas({
       state: world.state,
       vectors: world.vectors,

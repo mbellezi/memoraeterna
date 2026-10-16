@@ -111,12 +111,22 @@ const RepairSchema = z
     /** Sibling leaves merge when their centroids reach this cosine (result <= mergeMaxSize). */
     siblingMergeCosine: cosine.default(0.85),
     /**
-     * Soft repairs on a node wait this many inserts after its previous repair (the E3 stability
-     * calibration, see StabilitySchema; Spike B start value 25).
+     * Soft repairs on a node wait max(cooldownInserts, cooldownShare x placed items) inserts after
+     * its previous repair, so the cooldown scales with the library: 0.083 is one simulated E3 week
+     * at the 60% base, the floor 10 lets a 170-note library repair a topic again after one source
+     * (T29b, see StabilitySchema; gate A: a fixed 931).
      */
-    cooldownInserts: int(0, 100_000).default(931),
+    cooldownInserts: int(0, 100_000).default(10),
+    cooldownShare: share.default(0.083),
     /** Push-down groups children into groups of about this size. */
     pushDownGroupSize: int(2, 64).default(6),
+    /**
+     * REBALANCE splits a leaf sideways while its parent has fewer children than this bound of
+     * I3 (`max`, or `targetMax` to keep parents in the target band), downward otherwise. Builds
+     * always use `max`. T29b grid F: `targetMax` keeps E2 after growth (weekly replays end at
+     * 82-87% fan-out 4-9 instead of 63-75%).
+     */
+    sidewaysSplitLimit: z.enum(["max", "targetMax"]).default("targetMax"),
     /** Churn budget: a soft repair re-pathing more than this share of all items is skipped. */
     softMoveShare: share.default(0.05)
   })
@@ -134,15 +144,35 @@ const RepairSchema = z
  * 5.90%), median fan-out 4-9 75.2%, median depth 3.45; leaves within 3-30 fall to 82.9% (99.5%),
  * because lambda 6 leaves most soft splits to the hard limit. On the evaluation seeds (20261014,
  * 1-5, both orders) the worst weekly churn was then 2.59%.
+ *
+ * Growth calibration (T29b, 2026-10-16; `scripts/topics/calibrate-stability.ts`, rules registered
+ * in the T29b evidence before they ran, calibration seeds only): gate A's fixed cooldown left a
+ * library grown source by source with unrelated sources inside existing leaves. Grid S (lambda,
+ * fresh items, a cooldown scaled with the library; 17 configurations x E3 weekly, E2 growth and
+ * ENV-G/ENV-F source-by-source growth against a fresh build, seed 7) chose lambda 4, fresh items
+ * of 24 h and a cooldown of max(10, 0.083 x items): grown-tree leaf purity against the fresh build
+ * 0.767 (gate A's values 0.702; with rule Q's quality drop 0.893). Confirmed on seeds 7-9 with
+ * rule F's sideways limit: E3 at the median seed 2.68% (chronological) and 2.23% (shuffled), E2
+ * median 87.2% (min 85.2%), E1 in every run.
  */
 const StabilitySchema = z
   .object({
-    /** lambda (E3 calibration, above; start value 1). */
-    churnWeight: z.number().min(0).max(1000).default(6),
+    /** lambda (T29b growth calibration, above; gate A 6, start value 1). */
+    churnWeight: z.number().min(0).max(1000).default(4),
     /** Churn of items in recently opened topics counts this many times. */
     recentChurnWeight: z.number().min(1).max(1000).default(3),
     /** Topics opened or edited within this many hours are frozen for soft operations. */
     freezeHours: z
+      .number()
+      .min(0)
+      .max(24 * 365)
+      .default(24),
+    /**
+     * Items placed within this many hours, outside recently opened topics, are fresh: the owner
+     * has not seen them where they are, so moving them is no churn (acceptance, daily move budget,
+     * the review share of a rebuild). 0 turns it off (T29b growth calibration, above).
+     */
+    freshHours: z
       .number()
       .min(0)
       .max(24 * 365)
@@ -226,7 +256,12 @@ const BuildSchema = z
   })
   .strict();
 
-/** Cold start (T19): items wait at the root below minItems; then one bootstrap build. */
+/**
+ * Cold start (T19): items wait at the root below minItems; then one bootstrap build. T29b rule B
+ * (DS-G subsets of 11-30 notes, the rating appendix in the T29b evidence): modularityMin 0.2 keeps
+ * one source in at most two topics most often (32 of 56 subsets against 29 at 0.1); minItems and
+ * singleTopicMaxItems (= leaf.max) stay.
+ */
 const BootstrapSchema = z
   .object({
     minItems: int(1, 10_000).default(12),
@@ -235,24 +270,34 @@ const BootstrapSchema = z
     /** The largest initial split tried for a single-topic-sized library. */
     maxInitialSplit: int(2, 16).default(4),
     /** Modularity a 2..maxInitialSplit split must reach to beat a single topic. */
-    modularityMin: z.number().min(0).max(1).default(0.1),
+    modularityMin: z.number().min(0).max(1).default(0.2),
     /** Chapter seeding: share of items from one root with at least chapterMinChildren children. */
     chapterSeedShare: share.default(0.8),
     chapterMinChildren: int(1, 1000).default(2)
   })
   .strict();
 
-/** Rebuild triggers (T19): doubling while small, a quality drop or an unadmitted burst. */
+/**
+ * Rebuild triggers (T19): doubling while small, a quality drop or an unadmitted burst; the service
+ * checks them after every PLACE. T29b: doubling up to 1,000 notes keeps a library grown article by
+ * article within 2 points of a fresh build's leaf purity (rule DB: 96.3% against 97.4% at the
+ * median of seeds 7-9; 90.5% at 500); a quality drop of 0.03 rebuilds a young library that
+ * absorbed unrelated sources (rule Q: ENV-G/ENV-F growth purity 0.893 against 0.767 at 0.05) and
+ * never fired on the DS-C weekly replays.
+ */
 const RebuildSchema = z
   .object({
     /** Rebuild each time the library doubles, up to this many items. */
     doublingMaxItems: int(0, 1_000_000).default(1000),
     /** Drop of the weighted leaf coherence since the last build that triggers a rebuild. */
-    qualityDrop: share.default(0.05),
+    qualityDrop: share.default(0.03),
     /** Share of recent placements left unadmitted that triggers a rebuild. */
     unadmittedBurstShare: share.default(0.1),
     unadmittedBurstMinItems: int(1, 100_000).default(20),
-    /** A rebuild re-pathing more than this share of items waits for review. */
+    /**
+     * A trigger rebuild of a library past doublingMaxItems re-pathing more than this share of
+     * established (not fresh) items waits for review; a young library's does not (bootstrap.ts).
+     */
     reviewChurnShare: share.default(0.25),
     /** Old-to-new topic mapping is exact (Hungarian) up to this many topics, greedy above. */
     hungarianExactMaxTopics: int(1, 100_000).default(300)
@@ -269,8 +314,12 @@ const NamingSchema = z
     descriptionMaxChars: int(1, 400).default(200),
     maxAliases: int(0, 10).default(5),
     repairAttempts: int(0, 3).default(1),
-    /** Re-name when the share of members changed since naming reaches this. */
-    renameDrift: share.default(0.3),
+    /**
+     * Re-name when the share of members changed since naming reaches this. T29b rule R: no value
+     * up to 0.5 keeps the E3 replay's weekly renames within 2% (0.5: 7.4% at worst, 0.3: 18.5%),
+     * so the registered fallback 0.5 is used; a drift check runs a minute after any change.
+     */
+    renameDrift: share.default(0.5),
     /** The TF-IDF fallback needs at least this many content-language members. */
     fallbackMinItems: int(1, 100).default(2),
     fallbackMaxTerms: int(1, 10).default(3)
@@ -322,10 +371,15 @@ const UnsortedSchema = z
   })
   .strict();
 
-/** Background topic AI (D34): naming, Areas and label embeddings per local day. */
+/**
+ * Background topic AI (D34): naming, Areas and label embeddings per local day. T29b: 3 x the
+ * busiest day seen, rounded up to tens: ENV-C's cold start (17,735 notes) made 80 naming calls, 1
+ * Areas call and would make 8 label calls on a remote embedding route (89); ENV-G's growth day 8;
+ * the replays' busiest simulated day 40.
+ */
 const AiSchema = z
   .object({
-    maxBackgroundCallsPerDay: int(0, 1_000_000).default(300),
+    maxBackgroundCallsPerDay: int(0, 1_000_000).default(270),
     /**
      * Repair of an Areas answer (D12): topics the answer left in no Area join the nearest Area in
      * code; only when a larger share of the topics is missing, or the answer is otherwise invalid

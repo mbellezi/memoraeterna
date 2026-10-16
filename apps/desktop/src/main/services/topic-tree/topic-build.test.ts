@@ -1,11 +1,22 @@
 import type { JobRecord, PgPool } from "@app/db";
-import { defaultTopicTreeConfig, topicTreeConfigWith } from "@app/domain/topic-tree";
+import {
+  createTopicTreeState,
+  defaultTopicTreeConfig,
+  insertPlacement,
+  insertTopic,
+  itemKey,
+  placementRecord,
+  registerItem,
+  topicRecord,
+  topicTreeConfigWith
+} from "@app/domain/topic-tree";
 import { describe, expect, it, vi } from "vitest";
 
 import { TopicStructureJobs } from "./topic-build.js";
 import type { TopicStructureJobsOptions } from "./topic-build.js";
 import type { TopicChangeCoalescer } from "./topic-changes.js";
 import { topicJobTypes } from "./topic-jobs.js";
+import type { TopicTreeCache } from "./topic-cache.js";
 import type { TopicTreeService } from "./topic-tree-service.js";
 import { immediateDebounce } from "./topic-triggers.js";
 import type { TopicTriggers } from "./topic-triggers.js";
@@ -104,5 +115,72 @@ describe("the structure jobs' follow-ups", () => {
       failing.jobs.afterPlace(placeJob, { status: "applied", generation: 1, changeSetId })
     ).resolves.toBeUndefined();
     expect(quiet.error).toHaveBeenCalled();
+  });
+});
+
+describe("rebuild triggers after PLACE", () => {
+  const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+  /** A cached tree of one leaf holding `notes` notes PLACE decided. */
+  function cacheWith(notes: number): TopicTreeCache {
+    const state = createTopicTreeState({ dim: 4, rootId: uuid(900) });
+    insertTopic(state, topicRecord(uuid(901), uuid(900)));
+    for (let index = 0; index < notes; index += 1) {
+      const key = itemKey("note", uuid(index + 1));
+      registerItem(state, { key, kind: "note", contentHash: `h${index}`, rootSource: null });
+      insertPlacement(state, key, placementRecord(uuid(901), { decidedBy: "auto" }));
+    }
+    return { state, config: defaultTopicTreeConfig } as unknown as TopicTreeCache;
+  }
+
+  /** Structure jobs whose last build counted `built` notes and whose cached tree holds `notes`. */
+  function triggered(built: number, notes: number, status = "applied") {
+    const pool = {
+      query: async (text: string) =>
+        text.includes("origin in ('build', 'rebuild')")
+          ? {
+              rows: [
+                {
+                  id: uuid(800),
+                  origin: "build",
+                  status,
+                  summary: { notes: built, leafCoherence: 0.5 },
+                  createdAt: new Date(2026, 9, 15)
+                }
+              ],
+              rowCount: 1
+            }
+          : { rows: [], rowCount: 0 }
+    } as unknown as PgPool;
+    const cache = cacheWith(notes);
+    const service = {
+      config: () => defaultTopicTreeConfig,
+      runOnTree: async (_id: string, run: (value: TopicTreeCache) => Promise<unknown>) => run(cache)
+    } as unknown as TopicTreeService;
+    return structure({ getPool: () => pool, service });
+  }
+
+  it("asks for a build when the library doubled since the last build, within one session", async () => {
+    const { jobs, request } = triggered(12, 24);
+    await jobs.afterPlace(placeJob, { status: "applied", generation: 4, changeSetId });
+    const builds = request.mock.calls.filter(
+      (call) => (call as unknown[])[0] === topicJobTypes.build
+    );
+    // Debounced like PLACE's other follow-ups; the build job decides again before it runs.
+    expect(builds.map((call) => (call as unknown[]).slice(0, 4))).toEqual([
+      [topicJobTypes.build, treeId, null, {}]
+    ]);
+  });
+
+  it("asks for nothing below the trigger, while a rebuild waits for review, or past the bound", async () => {
+    for (const [built, notes, status] of [
+      [12, 23, "applied"],
+      [12, 24, "pending_review"],
+      [600, 1_200, "applied"]
+    ] as const) {
+      const { jobs, requested } = triggered(built, notes, status);
+      await jobs.afterPlace(placeJob, { status: "applied", generation: 4, changeSetId });
+      expect(requested()).not.toContain(topicJobTypes.build);
+    }
   });
 });

@@ -102,7 +102,10 @@ export interface EngineAuditSummary {
 }
 
 export interface RebuildSummary {
-  /** Why a rebuild ran (trigger name) and how many items changed path. */
+  /**
+   * Why a rebuild ran (trigger name) and how many items changed path; `<trigger>:review` when it
+   * waits for the owner instead (D29), which holds every later rebuild in the replay.
+   */
   trigger: string;
   movedItems: number;
 }
@@ -115,6 +118,8 @@ export interface PlaceOptions {
    * hard limit at once, and REBALANCE does the rest.
    */
   localRepair?: boolean;
+  /** The simulated day of the arrivals (fresh items, stability.freshHours); default the last. */
+  day?: number;
 }
 
 /**

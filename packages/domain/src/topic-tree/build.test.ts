@@ -38,6 +38,7 @@ import {
   registerItem
 } from "./state.js";
 import type { TopicTreeState } from "./state.js";
+import { cooldownInsertsFor } from "./stability.js";
 import { recomputeSubtree, statsDump } from "./stats.js";
 import { keyedVectors } from "./vectors.js";
 
@@ -181,9 +182,10 @@ describe("shape operations", () => {
     keys.slice(31).forEach((key) => editor.updatePlacement(key, 0, { topicId: other }));
     recomputeSubtree(state, context.vectors);
     getTopic(state, leaf).control.repairClock = 90;
-    state.clock = 90 + config.repair.cooldownInserts - 1;
+    const cooldown = cooldownInsertsFor(config, state.placements.size);
+    state.clock = 90 + cooldown - 1;
     expect(repairDirty(context, new Set([leaf]))).toEqual([]);
-    state.clock = 90 + config.repair.cooldownInserts;
+    state.clock = 90 + cooldown;
     expect(repairDirty(context, new Set([leaf])).map((operation) => operation.kind)).toContain(
       "leaf-split"
     );

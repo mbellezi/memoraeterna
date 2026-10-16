@@ -42,11 +42,14 @@ import {
   decidePlacement,
   dominantRootSource,
   eventsTopics,
+  freshItemsOf,
+  freshWindowStart,
   frozenSubtrees,
   getTopic,
   hardViolationTopics,
   hasTopics,
   isLive,
+  isYoungLibrary,
   itemKey,
   level2TopicCount,
   liveTopicIds,
@@ -294,7 +297,8 @@ export class TopicStructureJobs {
 
   /**
    * After an applied PLACE change-set: the topics it touched (read from its stored events) wait
-   * for REBALANCE, which is asked for (debounced), and an audit when one is due.
+   * for REBALANCE, which is asked for (debounced), an audit when one is due, and a build when a
+   * rebuild trigger holds (rebuildIfTriggered).
    */
   public async afterPlace(job: JobRecord, result: JsonObject): Promise<void> {
     const treeId = typeof job.payload.treeId === "string" ? job.payload.treeId : null;
@@ -307,6 +311,26 @@ export class TopicStructureJobs {
     if (result.status !== "applied" || typeof result.changeSetId !== "string") return;
     if (!treeId) return;
     await this.afterChangeSet(treeId, result.changeSetId, Number(result.generation));
+    await this.guard(() => this.rebuildIfTriggered(treeId));
+  }
+
+  /**
+   * The rebuild triggers (doubling, quality drop, unadmitted burst; bootstrap.ts) checked after a
+   * PLACE on the cached tree against the last build, so a library that grows several times over
+   * within one session is rebuilt without waiting for the next audit. Cheap: one query and one
+   * pass over the cached placements. The build is asked for (debounced) and decides again.
+   */
+  private async rebuildIfTriggered(treeId: string): Promise<void> {
+    const latest = await createTopicTreeRepository(this.requirePool()).latestStructureBuild(treeId);
+    if (!latest || latest.status === "pending_review") return;
+    const baseline = baselineOf(latest.summary);
+    if (!baseline) return;
+    const trigger = await this.options.service.runOnTree(treeId, async (cache) =>
+      hasTopics(cache.state)
+        ? rebuildTrigger(structureSignals(cache.state), baseline, cache.config)
+        : null
+    );
+    if (trigger) await this.request(topicJobTypes.build, treeId);
   }
 
   /**
@@ -1234,10 +1258,13 @@ export class TopicStructureJobs {
       // Notes that left the tree since the plan (a cascade, a status change) are not mapped.
       items: node.items.filter((item) => primaryPlacement(state, item) !== undefined)
     }));
+    // A young library (bootstrap.ts) is read before the rebuild changes the state.
+    const youngNotes = structureSignals(state).notes;
     const now = this.now().toISOString();
     const recent = await this.frozenTopics(state, plan.config, now);
     const recentItems = new Set<ItemKey>();
     for (const id of recent) for (const item of getTopic(state, id).items) recentItems.add(item);
+    const freshItems = await this.freshItems(tree.id, plan.config, now, recentItems);
     const rebuilt = applyRebuild({
       state,
       vectors,
@@ -1245,7 +1272,8 @@ export class TopicStructureJobs {
       partition: nodes,
       newTopicId: () => randomUUID(),
       now,
-      recentItems
+      recentItems,
+      freshItems
     });
     // Root sources follow their notes: each is decided again on the rebuilt tree (D8).
     const editor = createTopicTreeEditor(state);
@@ -1270,7 +1298,7 @@ export class TopicStructureJobs {
     const review =
       reason === "space"
         ? rebuilt.review.protectedTouched
-        : rebuildNeedsReview(reason, rebuilt.review);
+        : rebuildNeedsReview(reason, rebuilt.review, isYoungLibrary(youngNotes, plan.config));
     const report = shapeReport(state, plan.config, { areasActive: areasActive(state) });
     const summary = {
       ...this.buildSummary(plan, partition, state, report),
@@ -1280,6 +1308,7 @@ export class TopicStructureJobs {
       kept: rebuilt.kept.length,
       unnamed: rebuilt.unnamed.length,
       movedShare: rebuilt.movedShare,
+      establishedShare: rebuilt.establishedShare,
       exactMatching: rebuilt.plan.exact,
       review: { ...rebuilt.review, required: review },
       ...(plan.space ? { from: plan.space.from, spaceKey: plan.space.treeSpace.spaceKey } : {})
@@ -1499,6 +1528,7 @@ export class TopicStructureJobs {
     const marked = [...this.takeDirty(tree.id), ...hardViolationTopics(state, config)];
     const topics = [...new Set(marked)].sort();
     if (topics.length === 0) return { status: "no_change", checked: 0, areasActive: areas };
+    const freshItems = await this.freshItems(tree.id, config, iso, recentItems);
     // Area-level operations wait for review once the tree had its first Areas grouping (D12, T24).
     const grouped = areas ? await repository.changeSetStatusCounts(tree.id, "areas") : null;
     const areaLevelReview = grouped !== null && grouped.applied + grouped.undone > 0;
@@ -1513,6 +1543,7 @@ export class TopicStructureJobs {
       newTopicId: () => randomUUID(),
       topics,
       recentItems,
+      freshItems,
       areasActive: areas,
       areaLevelReview,
       readmit: readmitter(state, vectors, config)
@@ -1535,6 +1566,7 @@ export class TopicStructureJobs {
       areasActive: areas,
       areaLevelReview,
       frozenTopics: frozen.size,
+      freshItems: freshItems.size,
       trials: result.trials,
       exhausted: result.exhausted,
       unresolvedHard: result.unresolvedHard.length,
@@ -1569,6 +1601,7 @@ export class TopicStructureJobs {
             netGain: operation.netGain
           })),
           movedItems: result.churn.items,
+          freshMoved: result.churn.items - result.churn.budgeted,
           movedShare: result.churn.share
         },
         events: result.events,
@@ -1603,7 +1636,8 @@ export class TopicStructureJobs {
         day,
         increments: {
           opsApplied: result.applied.length,
-          itemsMoved: result.churn.items,
+          // The daily move budget counts established items only; path changes count them all.
+          itemsMoved: result.churn.budgeted,
           primaryPathChanges: result.churn.items
         }
       });
@@ -1692,6 +1726,25 @@ export class TopicStructureJobs {
         return node !== undefined && isLive(node);
       })
     );
+  }
+
+  /**
+   * Fresh items (stability.freshHours): primary automatic placements made within the window,
+   * outside the recently opened topics. Moving them is no churn (stability.ts).
+   */
+  private async freshItems(
+    treeId: string,
+    config: TopicTreeConfig,
+    now: string,
+    recentItems: ReadonlySet<ItemKey>
+  ): Promise<Set<ItemKey>> {
+    const since = freshWindowStart(now, config);
+    if (since === null) return new Set();
+    const placed = await createTopicTreeLoadRepository(this.requirePool()).recentlyPlacedItems(
+      treeId,
+      new Date(since)
+    );
+    return freshItemsOf(placed, recentItems);
   }
 
   // -------------------------------------------------------------------------
