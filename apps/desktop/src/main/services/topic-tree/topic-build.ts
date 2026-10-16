@@ -8,10 +8,14 @@
 // writer (D9), and after a bulk build or rebuild the planner statistics of the topic tables are
 // refreshed (ANALYZE), so the pending-item reads keep their index plans. When the route's embedding
 // space is not the tree's (D26), the build waits until `space.reembedCoverage` of the current notes
-// have a vector in the new space, then rebuilds the tree there with its topic IDs kept.
+// have a vector in the new space, then rebuilds the tree there with its topic IDs kept. A trigger
+// rebuild (doubling, quality drop, unadmitted burst) that would leave the tree worse is not applied
+// but recorded as rejected (bootstrap.ts judgeTriggerRebuild), and after any applied rebuild a
+// matched topic whose members changed past `naming.rebuildRenameDrift` is named again.
 import { randomUUID } from "node:crypto";
 
 import {
+  createTopicNamingRepository,
   createTopicTreeLoadRepository,
   createTopicTreeRepository,
   createViewHistoryRepository,
@@ -49,11 +53,14 @@ import {
   hardViolationTopics,
   hasTopics,
   isLive,
+  isTriggerRebuild,
   isYoungLibrary,
   itemKey,
+  judgeTriggerRebuild,
   level2TopicCount,
   liveTopicIds,
   notesByRootSource,
+  notesInLeaves,
   parseItemKey,
   pathOf,
   placeItem,
@@ -62,11 +69,13 @@ import {
   rebalanceTree,
   rebuildNeedsReview,
   rebuildPartitionOf,
+  rebuildQuality,
   rebuildTrigger,
   recentlyOpenedTopics,
   recomputePaths,
   recomputeSubtree,
   registerItem,
+  rejectedRebuildBaseline,
   rootSourceVectorFromState,
   rowView,
   setFrozenTopics,
@@ -77,7 +86,8 @@ import {
   topicClusteringMaxSeedGroups,
   topicClusteringRowOrder,
   topicRecordOf,
-  topicsWithStaleStats
+  topicsWithStaleStats,
+  unadmittedTopics
 } from "@app/domain/topic-tree";
 import type {
   BuildBaseline,
@@ -86,12 +96,16 @@ import type {
   FrozenSubtree,
   ItemKey,
   PlacementContext,
+  RebuildQuality,
   RebuildReason,
+  RebuildTrigger,
   RowPartitionNode,
+  StructureSignals,
   TopicClusteringRequest,
   TopicClusteringResult,
   TopicTreeConfig,
-  TopicTreeState
+  TopicTreeState,
+  TriggerRebuildVerdict
 } from "@app/domain/topic-tree";
 
 import { jobTaskPayload } from "../../job-task-payload.js";
@@ -109,6 +123,7 @@ import type { TopicTreeCache } from "./topic-cache.js";
 import type { TopicChangeCoalescer } from "./topic-changes.js";
 import { TopicTreePayloadSchema, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobType, TopicScope } from "./topic-jobs.js";
+import { namedMembershipSketches } from "./topic-naming.js";
 import { TopicSpaceChange, compareTreeSpace, coverageShare } from "./topic-space.js";
 import type { RouteSpace, SpaceResolution, SpaceResolver } from "./topic-space.js";
 import { structuralConfigHash } from "./topic-tree-service.js";
@@ -235,11 +250,24 @@ function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
   return [...output].sort();
 }
 
+/**
+ * The trigger baseline a build or rebuild change-set records in its summary; a rejected trigger
+ * rebuild (a `dismissed` rebuild record) also carries the PLACE decisions and waiting items it saw.
+ */
 function baselineOf(summary: Record<string, unknown> | undefined): BuildBaseline | null {
   const notes = summary?.notes;
   if (typeof notes !== "number" || !Number.isFinite(notes)) return null;
   const coherence = summary?.leafCoherence;
-  return { notes, leafCoherence: typeof coherence === "number" ? coherence : null };
+  const count = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  const decided = count(summary?.decided);
+  const unadmitted = count(summary?.unadmitted);
+  return {
+    notes,
+    leafCoherence: typeof coherence === "number" ? coherence : null,
+    ...(decided === undefined ? {} : { decided }),
+    ...(unadmitted === undefined ? {} : { unadmitted })
+  };
 }
 
 /** Where REBALANCE re-admits a direct item below `from`: the decision's topic, if deeper. */
@@ -1258,13 +1286,29 @@ export class TopicStructureJobs {
       // Notes that left the tree since the plan (a cascade, a status change) are not mapped.
       items: node.items.filter((item) => primaryPlacement(state, item) !== undefined)
     }));
-    // A young library (bootstrap.ts) is read before the rebuild changes the state.
-    const youngNotes = structureSignals(state).notes;
+    // Read before the rebuild changes the state: a young library (bootstrap.ts), and for a trigger
+    // rebuild the tree it is judged against and the topics where items wait unadmitted.
+    const signals = structureSignals(state);
+    const youngNotes = signals.notes;
+    const trigger = isTriggerRebuild(reason) ? reason : null;
+    const judged = trigger ? notesInLeaves(state, vectors) : null;
+    const current = judged
+      ? {
+          quality: rebuildQuality(state, vectors, plan.config, judged),
+          waiting: unadmittedTopics(state)
+        }
+      : null;
     const now = this.now().toISOString();
     const recent = await this.frozenTopics(state, plan.config, now);
     const recentItems = new Set<ItemKey>();
     for (const id of recent) for (const item of getTopic(state, id).items) recentItems.add(item);
     const freshItems = await this.freshItems(tree.id, plan.config, now, recentItems);
+    // The members each LLM-named topic was named for: a matched topic that changed past
+    // naming.rebuildRenameDrift of them is named again (rebuild-map.ts).
+    const named = await namedMembershipSketches(
+      createTopicNamingRepository(this.requirePool()),
+      state
+    );
     const rebuilt = applyRebuild({
       state,
       vectors,
@@ -1273,7 +1317,8 @@ export class TopicStructureJobs {
       newTopicId: () => randomUUID(),
       now,
       recentItems,
-      freshItems
+      freshItems,
+      namedSketch: (topicId) => named.get(topicId) ?? null
     });
     // Root sources follow their notes: each is decided again on the rebuilt tree (D8).
     const editor = createTopicTreeEditor(state);
@@ -1294,6 +1339,22 @@ export class TopicStructureJobs {
       if (outcome.needsGate) gated.push({ rootSourceId: parseItemKey(root.key)!.id });
     }
     recomputeSubtree(state, vectors);
+    if (trigger && current && judged) {
+      const verdict = judgeTriggerRebuild(
+        current.quality,
+        rebuildQuality(state, vectors, plan.config, judged),
+        plan.config
+      );
+      if (!verdict.accepted) {
+        return this.rejectRebuild(cache, plan, partition, job, {
+          trigger,
+          verdict,
+          signals,
+          waiting: current.waiting,
+          movedShare: rebuilt.movedShare
+        });
+      }
+    }
     const events = [...rebuilt.events, ...editor.events];
     const review =
       reason === "space"
@@ -1307,6 +1368,7 @@ export class TopicStructureJobs {
       retired: rebuilt.retired.length,
       kept: rebuilt.kept.length,
       unnamed: rebuilt.unnamed.length,
+      renamed: rebuilt.renamed.length,
       movedShare: rebuilt.movedShare,
       establishedShare: rebuilt.establishedShare,
       exactMatching: rebuilt.plan.exact,
@@ -1373,13 +1435,88 @@ export class TopicStructureJobs {
     const created = rebuilt.plan.createdKeys.map(
       (key) => rebuilt.plan.topicIdOfKey.get(key) as string
     );
+    // New topics, titles cleared for a collision and merged topics named again ask for naming.
     return this.finishBuild(cache, plan, partition, result, {
       state,
-      created: [...created, ...rebuilt.unnamed],
+      created: [...created, ...rebuilt.unnamed, ...rebuilt.renamed],
       gated,
       summary,
       applyMs: round(performance.now() - started)
     });
+  }
+
+  /**
+   * A trigger rebuild that would leave the tree worse (judgeTriggerRebuild) is not applied. It is
+   * recorded as a `dismissed` rebuild change-set with no events, whose summary carries why and the
+   * trigger baseline of the tree left in place (rejectedRebuildBaseline), so the same trigger waits
+   * until the library changes again. The topics where items wait unadmitted are handed to
+   * REBALANCE, which re-admits them or forms new leaves from them.
+   */
+  private async rejectRebuild(
+    cache: TopicTreeCache,
+    plan: BuildPlan,
+    partition: Partition,
+    job: JobRecord,
+    rejected: {
+      trigger: RebuildTrigger;
+      verdict: TriggerRebuildVerdict;
+      signals: StructureSignals;
+      waiting: string[];
+      movedShare: number;
+    }
+  ): Promise<JsonObject> {
+    // The cache holds the rejected rebuild's result, not the stored tree.
+    this.options.service.invalidate();
+    const { verdict } = rejected;
+    const reading = (quality: RebuildQuality) => ({
+      leafCoherence: quality.leafCoherence,
+      meanDepth: quality.shape.meanDepth,
+      fanOutInTarget: quality.shape.fanOutInTarget,
+      singleChildTopics: quality.shape.singleChildTopics,
+      hardViolations: quality.hardViolations
+    });
+    const summary = {
+      reason: rejected.trigger,
+      method: partition.method,
+      rows: plan.keys.length,
+      configHash: plan.configHash,
+      ...rejectedRebuildBaseline(rejected.signals),
+      rejected: {
+        reasons: verdict.reasons,
+        current: reading(verdict.before),
+        rebuilt: reading(verdict.after),
+        movedShare: rejected.movedShare
+      }
+    };
+    const recorded = await createTopicTreeRepository(this.requirePool()).recordRejectedChangeSet({
+      treeId: cache.tree.id,
+      origin: "rebuild",
+      titleKey: "topics.changeSets.rebuild",
+      titleParams: { items: 0 },
+      jobId: job.id,
+      summary
+    });
+    if (rejected.waiting.length > 0) {
+      this.markDirty(cache.tree.id, rejected.waiting);
+      await this.request(topicJobTypes.rebalance, cache.tree.id);
+    }
+    this.options.logger?.info(
+      `Topic ${rejected.trigger} rebuild ${job.id} rejected (${verdict.reasons.join(", ")}): ` +
+        `leaf coherence ${verdict.before.leafCoherence} -> ${verdict.after.leafCoherence}`
+    );
+    return {
+      status: "rejected",
+      kind: plan.kind,
+      reason: rejected.trigger,
+      rejectedBy: verdict.reasons,
+      changeSetId: recorded.changeSetId,
+      leafCoherence: {
+        current: verdict.before.leafCoherence,
+        rebuilt: verdict.after.leafCoherence
+      },
+      movedShare: rejected.movedShare,
+      waitingTopics: rejected.waiting.length
+    };
   }
 
   private buildSummary(

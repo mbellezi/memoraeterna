@@ -29,8 +29,9 @@
 //   against the last build, as the service now does after every PLACE; a triggered rebuild
 //   re-clusters every placed row (the small-library rule up to bootstrap.singleTopicMaxItems,
 //   Louvain above, rows in content order) and maps it onto the live tree (rebuild-map.ts). One that
-//   needs review (D29; a young library never does for its share) is counted and holds every later
-//   rebuild, since nobody approves it here.
+//   would leave the tree worse (judgeTriggerRebuild) is rejected and moves the trigger baseline to
+//   the current tree, as in the service. One that needs review (D29; a young library never does
+//   for its share) is counted and holds every later rebuild, since nobody approves it here.
 // - The cold start (`coldStart`, T19): the small-library rule or Louvain on the first rows, so a
 //   library grown source by source starts as the product's does.
 //
@@ -55,16 +56,20 @@ import {
   insertTopic,
   isLive,
   isYoungLibrary,
+  judgeTriggerRebuild,
   level2TopicCount,
+  notesInLeaves,
   placeItem,
   placementRecord,
   primaryPlacement,
   rebalanceTree,
   rebuildNeedsReview,
+  rebuildQuality,
   rebuildTrigger,
   recomputePaths,
   recomputeSubtree,
   registerItem,
+  rejectedRebuildBaseline,
   rowContentHash,
   rowItemKey,
   rowVectors,
@@ -411,9 +416,31 @@ class RealEngine implements ReplayEngine {
       recentItems: this.frozenItems,
       freshItems: this.freshItems()
     };
-    const young = isYoungLibrary(structureSignals(this.current).notes, this.input.config);
-    const dry = applyRebuild({ ...input, dryRun: true });
-    if (rebuildNeedsReview(trigger, dry.review, young)) {
+    const signals = structureSignals(this.current);
+    const young = isYoungLibrary(signals.notes, this.input.config);
+    // The service judges the rebuilt tree first (judgeTriggerRebuild): the trial runs on a copy
+    // (in place of the former dry run, so topic IDs are drawn as before), and a rejected rebuild
+    // leaves the tree as it is and moves the trigger baseline to it.
+    const judged = notesInLeaves(this.current, this.currentVectors);
+    const before = rebuildQuality(this.current, this.currentVectors, this.input.config, judged);
+    const copy = cloneTopicTreeState(this.current);
+    const trial = applyRebuild({ ...input, state: copy });
+    recomputeSubtree(copy, this.currentVectors);
+    const verdict = judgeTriggerRebuild(
+      before,
+      rebuildQuality(copy, this.currentVectors, this.input.config, judged),
+      this.input.config
+    );
+    if (!verdict.accepted) {
+      this.baseline = rejectedRebuildBaseline(signals);
+      return {
+        trigger: `${trigger}:rejected`,
+        movedItems: 0,
+        rejectedBy: verdict.reasons,
+        leafCoherence: [verdict.before.leafCoherence, verdict.after.leafCoherence]
+      };
+    }
+    if (rebuildNeedsReview(trigger, trial.review, young)) {
       this.reviewPending = true;
       return { trigger: `${trigger}:review`, movedItems: 0 };
     }

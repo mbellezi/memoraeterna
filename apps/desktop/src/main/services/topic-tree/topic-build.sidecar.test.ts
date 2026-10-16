@@ -10,6 +10,7 @@ import {
   createJobRepository,
   createLibraryResetRepository,
   createPgPool,
+  createTopicNamingRepository,
   createTopicTreeLoadRepository,
   createTopicTreeRepository,
   noteVectorStrategyPrefix,
@@ -18,6 +19,7 @@ import {
   runMigrations,
   topicTreeRecordsDump,
   type JobRecord,
+  type JsonObject,
   type PgPool,
   type PostgresSidecarConnection,
   type TopicLoadSpace
@@ -29,6 +31,7 @@ import {
   gaussianClusters,
   getTopic,
   itemKey,
+  membershipSketch,
   placementRecord,
   rowItemKey,
   shapeReport,
@@ -38,7 +41,12 @@ import {
   topicTreeConfigWith,
   walkTopics
 } from "@app/domain/topic-tree";
-import type { ItemKey, TopicTreeConfig, TopicTreeState } from "@app/domain/topic-tree";
+import type {
+  ItemKey,
+  StructureEvent,
+  TopicTreeConfig,
+  TopicTreeState
+} from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { clusterTopics } from "../../workers/topic-clustering.worker.js";
@@ -49,6 +57,7 @@ import type { TopicTreeServices } from "./index.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
 import { loadTopicTreeCache } from "./topic-cache.js";
+import type { TopicTreeCache } from "./topic-cache.js";
 import { topicJobTypes } from "./topic-jobs.js";
 import { createStoredVectorSpaceResolver } from "./topic-space.js";
 import type { SpaceResolution } from "./topic-space.js";
@@ -59,8 +68,9 @@ import { TopicTriggers, immediateDebounce } from "./topic-triggers.js";
  * The structure jobs (T19) on the real schema and a throwaway PostgreSQL sidecar: the cold start
  * of a small and of a large library (equal to the in-process Louvain build over content-key rows),
  * chapter seeding, the follow-up jobs, REBALANCE, the audit, a structural configuration change
- * rebuilt with Hungarian mapping and undone exactly, a pinned subtree in a rebuild, and a changed
- * embedding space. Clustering runs the worker's code in process.
+ * rebuilt with Hungarian mapping and undone exactly, a pinned subtree in a rebuild, a changed
+ * embedding space, a trigger rebuild rejected because it would leave the tree worse, and a merged
+ * topic named again. Clustering runs the worker's code in process (or a test's own partition).
  */
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const sidecarPaths = resolvePostgresSidecarPaths({ cwd: workspaceRoot, env: process.env });
@@ -159,6 +169,8 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
   let supervisor: JobSupervisor;
   let current: TopicTreeConfig = smallConfig;
   let spaceOverride: SpaceResolution | null = null;
+  /** A clustering a test hands the builds instead of the worker's (null: the worker's). */
+  let clusterOverride: ClusterTopics | null = null;
   /** Content hash (vector) of every inserted note. */
   const noteHash = new Map<string, string>();
 
@@ -331,7 +343,7 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
       isPackaged: false,
       logger: quiet,
       newTreeConfig: () => current,
-      clusterTopics: clusterInProcess,
+      clusterTopics: (request, signal) => (clusterOverride ?? clusterInProcess)(request, signal),
       budgetStore: { read: async () => null, write: async () => undefined }
     });
     supervisor = new JobSupervisor({
@@ -854,5 +866,260 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
       "update jobs set status = 'canceled' where status = 'queued' and type = any($1)",
       [[topicJobTypes.audit, topicJobTypes.rebalance]]
     );
+  });
+
+  /** The worker's rows of a rebuild of `state`: placed notes with a vector, in content order. */
+  function rebuildRows(cache: TopicTreeCache): ItemKey[] {
+    const items = [...cache.state.items.values()]
+      .filter(
+        (entry) =>
+          entry.kind === "note" &&
+          cache.vectors.rowOf(entry.key) !== undefined &&
+          cache.state.placements.get(entry.key)?.some((placement) => placement.rank === 0)
+      )
+      .map((entry) => ({ key: entry.key, contentHash: entry.contentHash }));
+    return [...topicClusteringRowOrder(items).keys];
+  }
+
+  /**
+   * A clustering that returns the live tree as it is, except leaf `from`: its notes join `into`,
+   * one each for the `spill` leaves at the end (so `into`, larger than the rest, keeps its ID).
+   */
+  function mergedTree(
+    cache: TopicTreeCache,
+    into: string,
+    from: string,
+    spill: readonly string[]
+  ): ClusterTopics {
+    const rowOf = new Map(rebuildRows(cache).map((key, row) => [key, row]));
+    const nodes: { key: number; parent: number | null; items: number[] }[] = [];
+    const keyOf = new Map<string, number>();
+    const rows = (id: string) =>
+      getTopic(cache.state, id).items.flatMap((item) => {
+        const row = rowOf.get(item);
+        return row === undefined ? [] : [row];
+      });
+    const moved = rows(from);
+    const extra = new Map<string, number[]>([[into, moved.slice(0, moved.length - spill.length)]]);
+    spill.forEach((id, index) => extra.set(id, [moved[moved.length - spill.length + index]!]));
+    walkTopics(cache.state, (node) => {
+      if (node.id === from) return;
+      keyOf.set(node.id, nodes.length);
+      nodes.push({
+        key: nodes.length,
+        parent: node.parentId === null ? null : (keyOf.get(node.parentId) as number),
+        items: [...rows(node.id), ...(extra.get(node.id) ?? [])]
+      });
+    });
+    return async (request, signal) => ({
+      ...(await clusterInProcess(request, signal)),
+      nodes,
+      frozenNodes: []
+    });
+  }
+
+  it("rejects a trigger rebuild that would leave the tree worse, until the library changes again", async () => {
+    await reset(baseConfig);
+    for (let group = 0; group < 3; group += 1) {
+      await insertNotes(await insertSource(`Subject ${group}`), fixtureNotes(groupRows(group)));
+    }
+    expect((await services.ensureActiveTree())?.kind).toBe("ready");
+    const [cold] = resultOf(await placeAll(), topicJobTypes.build).filter(
+      (result) => result.status === "applied"
+    );
+    expect(cold).toMatchObject({ kind: "cold", notes: 54 });
+    // The library doubles: PLACE asks for a doubling rebuild (debounced).
+    for (let group = 3; group < 6; group += 1) {
+      await insertNotes(await insertSource(`Subject ${group}`), fixtureNotes(groupRows(group)));
+    }
+    await placeAll();
+    expect(
+      await count("select count(*) from jobs where type = 'topic-build' and status = 'queued'")
+    ).toBe(1);
+    const tree = await activeTree();
+    const repository = createTopicTreeRepository(pool);
+    const before = topicTreeRecordsDump(await repository.readTreeRecords(tree.id));
+    // The rebuilt tree has the worker's shape but every leaf mixes the subjects.
+    clusterOverride = async (request, signal) => {
+      const real = await clusterInProcess(request, signal);
+      const filled = real.nodes.filter((node) => node.items.length > 0);
+      const all = filled.flatMap((node) => node.items).sort((a, b) => a - b);
+      const mixed = filled.map(() => [] as number[]);
+      all.forEach((row, index) => mixed[index % filled.length]!.push(row));
+      return {
+        ...real,
+        nodes: real.nodes.map((node) => {
+          const at = filled.indexOf(node);
+          return at < 0 ? node : { ...node, items: mixed[at]! };
+        })
+      };
+    };
+    let rebuild: JsonObject | undefined;
+    try {
+      [rebuild] = resultOf(await runQueued(topicJobTypes.build), topicJobTypes.build);
+    } finally {
+      clusterOverride = null;
+    }
+    expect(rebuild).toMatchObject({ status: "rejected", kind: "rebuild", reason: "doubling" });
+    expect(rebuild?.rejectedBy).toContain("coherence");
+    const coherence = rebuild?.leafCoherence as { current: number; rebuilt: number };
+    expect(coherence.rebuilt).toBeLessThan(
+      coherence.current - baseConfig.rebuild.acceptCoherenceTolerance
+    );
+    // Nothing changed, and the rejection is recorded with the tree it left as the baseline.
+    expect(topicTreeRecordsDump(await repository.readTreeRecords(tree.id))).toBe(before);
+    const record = await pool.query<{
+      origin: string;
+      status: string;
+      generation: string | null;
+      summary: Record<string, unknown>;
+    }>("select origin, status, generation, summary from topic_change_sets where id = $1", [
+      rebuild?.changeSetId
+    ]);
+    expect(record.rows[0]).toMatchObject({
+      origin: "rebuild",
+      status: "dismissed",
+      generation: null
+    });
+    expect(record.rows[0]?.summary).toMatchObject({
+      reason: "doubling",
+      notes: 108,
+      rejected: { reasons: rebuild?.rejectedBy }
+    });
+    expect(
+      await count("select count(*) from topic_structure_events where change_set_id = $1", [
+        rebuild?.changeSetId
+      ])
+    ).toBe(0);
+    expect((await repository.latestStructureBuild(tree.id))?.changeSetId).toBe(
+      rebuild?.changeSetId
+    );
+    // Items PLACE left waiting go to REBALANCE, which re-admits them or forms leaves from them.
+    if (Number(rebuild?.waitingTopics) > 0) {
+      expect(
+        await count(
+          "select count(*) from jobs where type = 'topic-rebalance' and status = 'queued'"
+        )
+      ).toBeGreaterThan(0);
+    }
+    // The same trigger does not fire again: neither a build nor the audit asks for it.
+    await services.triggers.request(topicJobTypes.build, tree.id, null, {
+      debounce: immediateDebounce
+    });
+    expect(resultOf(await drain(), topicJobTypes.build)[0]).toMatchObject({ status: "no_change" });
+    await services.triggers.request(topicJobTypes.audit, tree.id, null, {
+      debounce: immediateDebounce
+    });
+    expect(resultOf(await drain(), topicJobTypes.audit)[0]).toMatchObject({ rebuild: null });
+    // REBALANCE settles the grown tree in place of the rebuild.
+    const [settled] = resultOf(await runQueued(topicJobTypes.rebalance), topicJobTypes.rebalance);
+    expect(["applied", "no_change"]).toContain(settled?.status);
+    await expectReachable();
+    await expectExact();
+  });
+
+  it("names a topic a rebuild merged another one into again, keeping the other names", async () => {
+    services.service.invalidate();
+    const tree = await activeTree();
+    const repository = createTopicTreeRepository(pool);
+    let cache = (await loadTopicTreeCache(pool, tree.id))!;
+    // Every topic gets an LLM name; the naming change-set keeps each topic's members (drift).
+    const namingId = randomUUID();
+    const named: StructureEvent[] = [];
+    const sketches: Record<string, ReturnType<typeof membershipSketch>> = {};
+    walkTopics(cache.state, (node) => {
+      if (node.id === cache.state.rootId) return;
+      named.push({
+        op: "topic.rename",
+        topicId: node.id,
+        before: {
+          title: node.title,
+          nameState: node.nameState,
+          nameSource: node.nameSource,
+          nameLanguage: node.nameLanguage,
+          namedChangeSetId: node.namedChangeSetId,
+          aliases: [...node.aliases]
+        },
+        after: {
+          title: `Tópico ${named.length + 1}`,
+          nameState: "named",
+          nameSource: "llm",
+          nameLanguage: "pt-BR",
+          namedChangeSetId: namingId,
+          aliases: []
+        }
+      });
+      sketches[node.id] = membershipSketch(cache.state, node.id);
+    });
+    const naming = await repository.applyChangeSet({
+      id: namingId,
+      treeId: tree.id,
+      expectedGeneration: cache.tree.generation,
+      origin: "naming",
+      titleKey: "topics.changeSets.naming",
+      summary: { sketches },
+      events: named
+    });
+    expect(naming.kind).toBe("applied");
+    services.service.invalidate();
+    cache = (await loadTopicTreeCache(pool, tree.id))!;
+    // Two sibling leaves of six notes: four of one join the other, which keeps its ID (a majority
+    // of its new members are its own) and changes by 4/6; the last two go one each to two other
+    // leaves (1/6 each, under the threshold), and the emptied leaf retires.
+    const clustered = new Set(rebuildRows(cache));
+    const notesOf = (id: string) =>
+      getTopic(cache.state, id).items.filter((item) => clustered.has(item)).length;
+    const leaves: string[] = [];
+    walkTopics(cache.state, (node) => {
+      if (node.children.length === 0 && node.id !== cache.state.rootId) leaves.push(node.id);
+    });
+    const into = leaves[0]!;
+    const from = getTopic(cache.state, getTopic(cache.state, into).parentId!).children.find(
+      (id) => id !== into && getTopic(cache.state, id).children.length === 0
+    )!;
+    const spill = leaves.filter((id) => id !== into && id !== from).slice(0, 2);
+    expect([into, from, ...spill].map(notesOf)).toEqual([6, 6, 6, 6]);
+    clusterOverride = mergedTree(cache, into, from, spill);
+    // A structural configuration change asks for the rebuild (never judged, D39).
+    current = topicTreeConfigWith({ leaf: { target: 3 } }, baseConfig);
+    let rebuild: JsonObject | undefined;
+    try {
+      await services.triggers.request(topicJobTypes.build, tree.id, null, {
+        debounce: immediateDebounce
+      });
+      [rebuild] = resultOf(await drain(), topicJobTypes.build);
+    } finally {
+      clusterOverride = null;
+    }
+    expect(rebuild).toMatchObject({ status: "applied", reason: "config", renamed: 1 });
+    const topics = await pool.query<{
+      id: string;
+      title: string | null;
+      state: string;
+      source: string | null;
+      retired: boolean;
+    }>(
+      `select id, title, name_state as state, name_source as source, retired_at is not null as retired
+         from topics where tree_id = $1 and role = 'topic'`,
+      [tree.id]
+    );
+    const row = (id: string) => topics.rows.find((entry) => entry.id === id)!;
+    // The merged topic keeps its title as a provisional one until naming replaces it.
+    expect(row(into)).toMatchObject({
+      title: getTopic(cache.state, into).title,
+      state: "provisional",
+      source: "llm",
+      retired: false
+    });
+    expect(row(from).retired).toBe(true);
+    // Every other topic kept its members, and its name.
+    expect(
+      topics.rows
+        .filter((entry) => !entry.retired && entry.state !== "named")
+        .map((entry) => entry.id)
+    ).toEqual([into]);
+    // The naming job takes it at once: it waits for a name like a new topic.
+    expect(await createTopicNamingRepository(pool).pendingNamingTopicIds(tree.id)).toEqual([into]);
+    await expectReachable();
   });
 });

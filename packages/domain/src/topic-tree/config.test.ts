@@ -122,6 +122,10 @@ describe("topic tree configuration", () => {
     });
     // Rule R: renameDrift (the registered fallback; the 2% weekly bar is not met by any value).
     expect(config.naming.renameDrift).toBe(0.5);
+    // Rule T: a trigger rebuild may lose at most this much weighted leaf coherence; a merged
+    // topic is named again from a change of 0.3 of its named members (growth keeps 0.5).
+    expect(config.rebuild.acceptCoherenceTolerance).toBe(0.005);
+    expect(config.naming.rebuildRenameDrift).toBe(0.3);
     // Rule A: the Areas band, target and the level-2 topics a grouping needs.
     expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10, minLevel2Topics: 20 });
     // D34: three times the busiest day of background topic AI calls (89), rounded up to tens.

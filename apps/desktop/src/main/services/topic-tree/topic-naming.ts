@@ -169,6 +169,29 @@ const emptyCounters = (): RunCounters => ({
   changeSets: 0
 });
 
+/**
+ * The members each LLM-named topic had when it was named: the sketch its naming change-set
+ * recorded (topics without one are left out). Drift and a rebuild's re-naming are measured from it.
+ */
+export async function namedMembershipSketches(
+  repository: Pick<ReturnType<typeof createTopicNamingRepository>, "changeSetSummaries">,
+  state: TopicTreeState
+): Promise<Map<string, MembershipSketch>> {
+  const named = [...state.topics.values()].filter(
+    (node) => node.nameState === "named" && node.nameSource === "llm" && node.namedChangeSetId
+  );
+  const summaries = await repository.changeSetSummaries(
+    named.map((node) => node.namedChangeSetId as string)
+  );
+  const sketches = new Map<string, MembershipSketch>();
+  for (const node of named) {
+    const parsed = NamingSummarySchema.safeParse(summaries.get(node.namedChangeSetId as string));
+    const then = parsed.success ? parsed.data.sketches?.[node.id] : undefined;
+    if (then) sketches.set(node.id, then);
+  }
+  return sketches;
+}
+
 /** The root source behind a prompt member, for the audit's participating sources. */
 function memberSourceId(member: NamingMember): string | null {
   const key = member.kind === "source" ? member.key : member.rootSource;
@@ -355,17 +378,9 @@ export class TopicNamingService {
     cache: TopicTreeCache,
     repository: ReturnType<typeof createTopicNamingRepository>
   ): Promise<Map<string, number>> {
-    const named = [...cache.state.topics.values()].filter(
-      (node) => node.nameState === "named" && node.nameSource === "llm" && node.namedChangeSetId
-    );
-    const summaries = await repository.changeSetSummaries(
-      named.map((node) => node.namedChangeSetId as string)
-    );
     const drift = new Map<string, number>();
-    for (const node of named) {
-      const parsed = NamingSummarySchema.safeParse(summaries.get(node.namedChangeSetId as string));
-      const then = parsed.success ? parsed.data.sketches?.[node.id] : undefined;
-      if (then) drift.set(node.id, membershipDrift(then, membershipSketch(cache.state, node.id)));
+    for (const [topicId, then] of await namedMembershipSketches(repository, cache.state)) {
+      drift.set(topicId, membershipDrift(then, membershipSketch(cache.state, topicId)));
     }
     return drift;
   }
@@ -505,9 +520,10 @@ class NamingRun {
         const parent = this.state.topics.get(candidate.parentId);
         group = {
           parentId: candidate.parentId,
-          // A provisional title is a draft, not a name worth showing the model.
+          // A provisional title (a TF-IDF draft, or a merged topic's old name waiting to be
+          // replaced) is not a name worth showing the model.
           parentTitle:
-            parent && parent.title !== null && parent.nameSource !== "tfidf" ? parent.title : null,
+            parent && parent.title !== null && parent.nameState === "named" ? parent.title : null,
           namedSiblings: this.siblingTitles(candidate.parentId, runIds),
           topics: []
         };

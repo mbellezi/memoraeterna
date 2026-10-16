@@ -15,6 +15,7 @@ import { gaussianClusters } from "./fixtures/synthetic.js";
 import { itemKey } from "./ids.js";
 import type { ItemKey } from "./ids.js";
 import { checkInvariants } from "./invariants.js";
+import { membershipSketch } from "./naming.js";
 import { applyRebuild, planRebuild, RebuildMappingError } from "./rebuild-map.js";
 import type { RebuildPartitionNode, RebuildResult } from "./rebuild-map.js";
 import { createRng } from "./rng.js";
@@ -324,6 +325,100 @@ describe("rebuild mapping", () => {
     expect(getTopic(state, childA).title).toBeNull();
     expect(getTopic(state, childB).title).toBe("musica");
     expect(checkInvariants(state, config).hard).toBe(0);
+  });
+
+  it("names a merged topic again, never a topic the rebuild left alone or a human name", () => {
+    const tree = productTree(data, config, { seed: 7 });
+    const { state } = tree;
+    const area = getTopic(state, state.rootId).children.find(
+      (id) => getTopic(state, id).children.length >= 4
+    ) as string;
+    const bySize = [...getTopic(state, area).children].sort(
+      (a, b) =>
+        getTopic(state, b).items.length - getTopic(state, a).items.length || a.localeCompare(b)
+    );
+    const [y, w, v, x] = bySize as [string, string, string, string];
+    const editor = createTopicTreeEditor(state, { record: false });
+    walkTopics(state, (node) => {
+      if (node.id === state.rootId) return;
+      editor.renameTopic(node.id, {
+        title: `Tópico ${node.id.slice(-4)}`,
+        nameState: "named",
+        nameSource: node.id === w ? "human" : "llm"
+      });
+    });
+    const sizes = [y, w, v, x].map((id) => getTopic(state, id).items.length);
+    // x is merged into y (y keeps a majority, so its ID); one item of v moves to the human-named w.
+    expect(sizes[3]! / sizes[0]!).toBeGreaterThanOrEqual(config.naming.rebuildRenameDrift);
+    const partition = partitionOf(state);
+    const of = (topic: string): MutableNode =>
+      nodeWith(partition, getTopic(state, topic).items[0] as ItemKey);
+    const xNode = of(x);
+    of(y).items.push(...xNode.items);
+    const moved = of(v).items.pop() as ItemKey;
+    of(w).items.push(moved);
+    const before = canonicalStateDump(state);
+    const dry = rebuild(
+      tree,
+      partition.filter((node) => node !== xNode),
+      { dryRun: true }
+    );
+    expect(dry.renamed).toEqual([y]);
+    expect(canonicalStateDump(state)).toBe(before);
+    const result = rebuild(
+      tree,
+      partition.filter((node) => node !== xNode)
+    );
+    expect(result.retired.map((entry) => entry.topicId)).toEqual([x]);
+    expect(result.renamed).toEqual([y]);
+    // The title stays, as a provisional one, until naming writes the new one.
+    expect(getTopic(state, y)).toMatchObject({
+      title: `Tópico ${y.slice(-4)}`,
+      nameState: "provisional",
+      nameSource: "llm"
+    });
+    // v lost one member (under the threshold); w is human-named; the Area kept its members.
+    expect(getTopic(state, v).nameState).toBe("named");
+    expect(getTopic(state, w).nameState).toBe("named");
+    expect(getTopic(state, area).nameState).toBe("named");
+    // Undo restores the name state with the structure.
+    applyEvents(state, invertEvents(result.events));
+    recomputeSubtree(state, tree.vectors);
+    expect(canonicalStateDump(state)).toBe(before);
+  });
+
+  it("measures the change from the members a topic was named for", () => {
+    const tree = productTree(data, config, { seed: 7 });
+    const { state } = tree;
+    const leaves = topicsByKind(state).leaves;
+    const [a, b] = leaves as [string, string];
+    const editor = createTopicTreeEditor(state, { record: false });
+    for (const id of [a, b]) {
+      editor.renameTopic(id, { title: `T ${id.slice(-4)}`, nameState: "named", nameSource: "llm" });
+    }
+    // b gains one member in the rebuild: a small change of its current members, but b was named
+    // when it held only a third of them, so the change since naming passes the threshold.
+    const partition = partitionOf(state);
+    const nodeA = nodeWith(partition, getTopic(state, a).items[0] as ItemKey);
+    nodeWith(partition, getTopic(state, b).items[0] as ItemKey).items.push(
+      nodeA.items.pop() as ItemKey
+    );
+    const named = membershipSketch(state, b);
+    const third = {
+      n: Math.ceil(named.n / 3),
+      hashes: named.hashes.slice(0, Math.ceil(named.n / 3))
+    };
+    const result = applyRebuild({
+      state,
+      vectors: tree.vectors,
+      config,
+      partition,
+      newTopicId: tree.newTopicId,
+      now: fixtureNow,
+      namedSketch: (topicId) => (topicId === b ? third : null)
+    });
+    expect(result.renamed).toEqual([b]);
+    expect(getTopic(state, a).nameState).toBe("named");
   });
 
   it("rejects malformed partitions", () => {

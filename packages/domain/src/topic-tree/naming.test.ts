@@ -11,6 +11,7 @@ import {
   clipIdea,
   describeRejections,
   isIdentifierShaped,
+  membershipChange,
   membershipDrift,
   membershipSketch,
   membershipSketchSize,
@@ -165,6 +166,31 @@ describe("membership drift", () => {
     expect(membershipDrift(then, now)).toBeGreaterThan(0.3);
     expect(membershipDrift(then, now)).toBeLessThan(0.7);
     expect(membershipDrift(then, then)).toBe(0);
+  });
+
+  it("measures a rebuild's change as a share of the members the topic was named for", () => {
+    const of = (count: number, from = 0) => {
+      const built = world(count, from);
+      return membershipSketch(built.state, built.topic(1));
+    };
+    // 21 members that gain 7 (O Alienista + The Gift of the Magi): drift 1/4, change 1/3.
+    expect(membershipDrift(of(21), of(28))).toBeCloseTo(0.25, 12);
+    expect(membershipChange(of(21), of(28))).toBeCloseTo(1 / 3, 12);
+    // 11 that gain 9 (A Cartomante + The Tell-Tale Heart): 9/11.
+    expect(membershipChange(of(11), of(20))).toBeCloseTo(9 / 11, 12);
+    // Losing half, or gaining a tenth.
+    expect(membershipChange(of(20), of(10))).toBeCloseTo(0.5, 12);
+    expect(membershipChange(of(20), of(22))).toBeCloseTo(0.1, 12);
+    expect(membershipChange(of(20), of(20))).toBe(0);
+    // Bounded by 1: a topic that tripled, or one replaced entirely.
+    expect(membershipChange(of(10), of(30))).toBe(1);
+    expect(membershipChange(of(10), of(10, 100))).toBe(1);
+    expect(membershipChange({ n: 0, hashes: [] }, { n: 0, hashes: [] })).toBe(0);
+    expect(membershipChange({ n: 0, hashes: [] }, of(3))).toBe(1);
+    // Large topics: within the sketch's error.
+    const change = membershipChange(of(600), of(700));
+    expect(change).toBeGreaterThan(0.05);
+    expect(change).toBeLessThan(0.35);
   });
 
   it("treats two empty topics as unchanged and an empty one against a full one as changed", () => {

@@ -986,6 +986,69 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     }
   }, 60_000);
 
+  it("names a topic a rebuild merged again at once, from its members and not its old title", async () => {
+    const w = await world();
+    try {
+      await runNaming(w);
+      const first = await rows(w);
+      // A rebuild matched A1 onto a merged node: its LLM title stays, provisional (rebuild-map.ts).
+      const repository = createTopicTreeRepository(pool);
+      const tree = (await repository.tree(w.treeId))!;
+      const current = (
+        await createTopicNamingRepository(pool).topicRows(w.treeId, [w.topics.A1])
+      ).topics.get(w.topics.A1)!;
+      const naming = {
+        title: current.title,
+        nameSource: current.nameSource,
+        nameLanguage: current.nameLanguage,
+        namedChangeSetId: current.namedChangeSetId,
+        aliases: current.aliases
+      };
+      const marked = await repository.applyChangeSet({
+        treeId: w.treeId,
+        expectedGeneration: tree.generation,
+        origin: "rebuild",
+        titleKey: "topics.changeSets.rebuild",
+        events: [
+          {
+            op: "topic.rename",
+            topicId: w.topics.A1,
+            before: { ...naming, nameState: "named" },
+            after: { ...naming, nameState: "provisional" }
+          }
+        ]
+      });
+      if (marked.kind !== "applied") throw new Error(`the rebuild was not applied: ${marked.kind}`);
+      w.services.service.invalidate();
+      // No drift check is due (no time passed): the provisional title alone asks for naming.
+      await pool.query("delete from jobs where type = 'topic-name'");
+      await w.services.naming!.requestIfNeeded(w.treeId, marked.generation);
+      expect(
+        await count("select count(*) from jobs where type = 'topic-name' and status = 'queued'")
+      ).toBe(1);
+      w.setResponder((call) => ({
+        topics: call.groups.flatMap((group) =>
+          group.topics.map((topic) => ({ ...item(topic, group), title: "Recuperação e sono" }))
+        )
+      }));
+      const callsBefore = w.calls.length;
+      const renamed = await runDue(w, "topic-name");
+      expect(renamed.result).toMatchObject({ status: "named", candidates: 1, llmNamed: 1 });
+      const call = w.calls[callsBefore]!;
+      // Named from scratch: the old title is not offered to keep.
+      expect(call.groups[0]!.topics[0]!.current_title).toBeUndefined();
+      const second = await rows(w);
+      expect(second.A1).toMatchObject({
+        title: "Recuperação e sono",
+        state: "named",
+        source: "llm"
+      });
+      expect(second.A2?.namedBy).toBe(first.A2?.namedBy);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
   it("names topics again within the session once members were replaced, not only added", async () => {
     const w = await world();
     try {

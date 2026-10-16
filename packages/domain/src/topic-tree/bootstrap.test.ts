@@ -8,18 +8,29 @@ import {
   dominantRootSource,
   frozenSubtrees,
   hasTopics,
+  isTriggerRebuild,
   isYoungLibrary,
+  judgeTriggerRebuild,
   level2TopicCount,
   modularity,
+  notesInLeaves,
   protectedSubtrees,
   rebuildNeedsReview,
   rebuildPartitionOf,
+  rebuildQuality,
   rebuildTrigger,
+  rejectedRebuildBaseline,
   smallLibraryPartition,
   smallPartitionNodes,
-  structureSignals
+  structureSignals,
+  unadmittedTopics
 } from "./bootstrap.js";
-import type { BuildBaseline, ChapterSeedItem, StructureSignals } from "./bootstrap.js";
+import type {
+  BuildBaseline,
+  ChapterSeedItem,
+  RebuildQuality,
+  StructureSignals
+} from "./bootstrap.js";
 import type { CommunityGraph, DetectCommunities } from "./build.js";
 import { defaultTopicTreeConfig, topicTreeConfigWith } from "./config.js";
 import { createTopicTreeEditor } from "./events.js";
@@ -355,6 +366,55 @@ describe("rebuild triggers", () => {
     expect(structureSignals(state)).toMatchObject({ decidedSinceBuild: 3, unadmitted: 1 });
   });
 
+  it("counts only the unadmitted items that still wait above the leaves", () => {
+    const { state, keys } = areaTree(2, 2, 5);
+    const editor = createTopicTreeEditor(state, { record: false });
+    const area = getTopic(state, state.rootId).children[0]!;
+    // Unadmitted at the root and at an Area (internal) topic: both wait.
+    editor.updatePlacement(keys[0]!, 0, { decidedBy: "fallback", topicId: state.rootId });
+    editor.updatePlacement(keys[1]!, 0, { decidedBy: "fallback", topicId: area });
+    // A fallback REBALANCE has since moved into a leaf (it keeps decided_by) no longer waits.
+    editor.updatePlacement(keys[2]!, 0, { decidedBy: "fallback" });
+    // Nor does a gate "none" waiting for a split check.
+    editor.updatePlacement(keys[3]!, 0, {
+      decidedBy: "fallback",
+      topicId: state.rootId,
+      needsSplitCheck: true
+    });
+    expect(structureSignals(state)).toMatchObject({ decidedSinceBuild: 4, unadmitted: 2 });
+    expect(unadmittedTopics(state)).toEqual([area, state.rootId].sort());
+  });
+
+  it("counts a burst from the baseline a rejected rebuild left", () => {
+    const rejected: BuildBaseline = { ...baseline, decided: 150, unadmitted: 25 };
+    // 25 items already waited when the rebuild was rejected: 19 more are not a burst.
+    expect(
+      rebuildTrigger(signals({ unadmitted: 44, decidedSinceBuild: 200 }), rejected, config)
+    ).toBeNull();
+    // 20 more of 50 new decisions are.
+    expect(
+      rebuildTrigger(signals({ unadmitted: 45, decidedSinceBuild: 200 }), rejected, config)
+    ).toBe("unadmitted-burst");
+    // ... but not when they are under 10% of the decisions since the rejection.
+    expect(
+      rebuildTrigger(signals({ unadmitted: 45, decidedSinceBuild: 400 }), rejected, config)
+    ).toBeNull();
+    const moved = rejectedRebuildBaseline(
+      signals({ notes: 160, leafCoherence: 0.78, unadmitted: 21, decidedSinceBuild: 79 })
+    );
+    expect(moved).toEqual({ notes: 160, leafCoherence: 0.78, decided: 79, unadmitted: 21 });
+    // The same tree triggers nothing against its own baseline.
+    expect(
+      rebuildTrigger(
+        signals({ notes: 160, leafCoherence: 0.78, unadmitted: 21, decidedSinceBuild: 79 }),
+        moved,
+        config
+      )
+    ).toBeNull();
+    expect(["doubling", "quality-drop", "unadmitted-burst"].every(isTriggerRebuild)).toBe(true);
+    expect(["config", "space", "cold-start"].some(isTriggerRebuild)).toBe(false);
+  });
+
   it("asks for review for protected structure, and for a large share only on a mature trigger", () => {
     expect(rebuildNeedsReview("config", { largeShare: true, protectedTouched: false })).toBe(false);
     expect(rebuildNeedsReview("config", { largeShare: false, protectedTouched: true })).toBe(true);
@@ -386,6 +446,199 @@ describe("rebuild triggers", () => {
     expect(isYoungLibrary(config.rebuild.doublingMaxItems + 1, config)).toBe(false);
   });
 });
+
+describe("trigger rebuild acceptance", () => {
+  const quality = (overrides: Partial<RebuildQuality> = {}): RebuildQuality => ({
+    notes: 2_000,
+    leafCoherence: 0.78,
+    shape: {
+      meanDepth: 3.6,
+      fanOutInTarget: 0.85,
+      internalTopics: 40,
+      singleChildTopics: 0,
+      areas: 9
+    },
+    hardViolations: 0,
+    ...overrides
+  });
+  const shape = (overrides: Partial<RebuildQuality["shape"]>) => ({
+    ...quality().shape,
+    ...overrides
+  });
+
+  it("rejects a rebuild whose weighted leaf coherence falls by more than the tolerance", () => {
+    const tolerance = config.rebuild.acceptCoherenceTolerance;
+    expect(tolerance).toBe(0.005);
+    expect(judgeTriggerRebuild(quality(), quality({ leafCoherence: 0.78 }), config)).toMatchObject({
+      accepted: true,
+      reasons: []
+    });
+    // Summation noise and small losses within the tolerance pass; the ENV-G merge (0.78 -> 0.73)
+    // does not.
+    expect(
+      judgeTriggerRebuild(quality(), quality({ leafCoherence: 0.7756 }), config).accepted
+    ).toBe(true);
+    expect(judgeTriggerRebuild(quality(), quality({ leafCoherence: 0.73 }), config)).toMatchObject({
+      accepted: false,
+      reasons: ["coherence"]
+    });
+    expect(
+      judgeTriggerRebuild(quality(), quality({ leafCoherence: null }), config).reasons
+    ).toEqual(["coherence"]);
+    const strict = topicTreeConfigWith({ rebuild: { acceptCoherenceTolerance: 0 } });
+    expect(
+      judgeTriggerRebuild(quality(), quality({ leafCoherence: 0.7799 }), strict).accepted
+    ).toBe(false);
+  });
+
+  it("keeps the E2 bars past a young library, and never adds single children or hard violations", () => {
+    const deep = quality({ shape: shape({ meanDepth: 4.6 }) });
+    const thin = quality({ shape: shape({ fanOutInTarget: 0.79 }) });
+    expect(judgeTriggerRebuild(quality(), deep, config).reasons).toEqual(["mean-depth"]);
+    expect(judgeTriggerRebuild(quality(), thin, config).reasons).toEqual(["fan-out"]);
+    // Below a bar already, a rebuild may not get worse there, and may get better.
+    const below = quality({ shape: shape({ meanDepth: 4.8, fanOutInTarget: 0.7 }) });
+    expect(
+      judgeTriggerRebuild(
+        below,
+        quality({ shape: shape({ meanDepth: 4.9, fanOutInTarget: 0.6 }) }),
+        config
+      ).reasons
+    ).toEqual(["mean-depth", "fan-out"]);
+    expect(
+      judgeTriggerRebuild(
+        below,
+        quality({ shape: shape({ meanDepth: 4.7, fanOutInTarget: 0.75 }) }),
+        config
+      ).accepted
+    ).toBe(true);
+    // A young library (at most rebuild.doublingMaxItems notes) is not held to E2's corpus bars.
+    const young = { notes: config.rebuild.doublingMaxItems };
+    expect(judgeTriggerRebuild(quality(young), { ...thin, ...young }, config).accepted).toBe(true);
+    expect(
+      judgeTriggerRebuild(
+        quality(young),
+        quality({ ...young, shape: shape({ singleChildTopics: 1 }) }),
+        config
+      ).reasons
+    ).toEqual(["single-child"]);
+    expect(
+      judgeTriggerRebuild(quality(young), quality({ ...young, hardViolations: 1 }), config).reasons
+    ).toEqual(["hard-violation"]);
+  });
+
+  it("measures a mixed rebuild of a tree as worse and the tree itself as no worse", () => {
+    const { state, vectors, keys, newTopicId } = areaTree(2, 2, 5);
+    const judged = notesInLeaves(state, vectors);
+    expect(judged.size).toBe(20);
+    const before = rebuildQuality(state, vectors, config, judged);
+    expect(before).toMatchObject({ notes: 20, hardViolations: 0 });
+    // On the notes a tree holds in leaves, the measure is its weighted leaf coherence.
+    expect(before.leafCoherence).toBeCloseTo(structureSignals(state).leafCoherence!, 6);
+    // The same partition: nothing changes.
+    const same = cloneTopicTreeState(state);
+    applyRebuild({
+      state: same,
+      vectors,
+      config,
+      partition: partitionOfTree(state),
+      newTopicId,
+      now
+    });
+    expect(
+      judgeTriggerRebuild(before, rebuildQuality(same, vectors, config, judged), config).accepted
+    ).toBe(true);
+    // Leaves that mix two clusters each: lower coherence, rejected.
+    const mixed = cloneTopicTreeState(state);
+    applyRebuild({
+      state: mixed,
+      vectors,
+      config,
+      partition: [
+        { key: 0, parent: null, items: [] },
+        { key: 1, parent: 0, items: [] },
+        { key: 2, parent: 1, items: [...keys.slice(0, 3), ...keys.slice(5, 8)] },
+        { key: 3, parent: 1, items: [...keys.slice(3, 5), ...keys.slice(8, 10)] },
+        { key: 4, parent: 0, items: [] },
+        { key: 5, parent: 4, items: keys.slice(10, 15) },
+        { key: 6, parent: 4, items: keys.slice(15, 20) }
+      ],
+      newTopicId,
+      now
+    });
+    const verdict = judgeTriggerRebuild(
+      before,
+      rebuildQuality(mixed, vectors, config, judged),
+      config
+    );
+    expect(verdict.accepted).toBe(false);
+    expect(verdict.reasons).toContain("coherence");
+  });
+
+  it("judges a burst rebuild on the notes the current tree placed, not on those left waiting", () => {
+    const { state, vectors, keys, newTopicId } = areaTree(2, 2, 5);
+    // The notes of the second Area's second leaf wait unadmitted at the root instead.
+    const area = getTopic(state, state.rootId).children[1]!;
+    const leaf = getTopic(state, area).children[1]!;
+    const waiting = [...getTopic(state, leaf).items];
+    expect(waiting).toEqual(keys.slice(15, 20));
+    const editor = createTopicTreeEditor(state, { record: false });
+    for (const item of waiting) {
+      editor.updatePlacement(item, 0, { decidedBy: "fallback", topicId: state.rootId });
+    }
+    editor.retireTopic(leaf, area, now);
+    recomputeSubtree(state, vectors);
+    expect(structureSignals(state).unadmitted).toBe(5);
+    const judged = notesInLeaves(state, vectors);
+    expect([...judged].sort()).toEqual(keys.slice(0, 15).sort());
+    const before = rebuildQuality(state, vectors, config, judged);
+    // The rebuild gives the waiting notes a leaf and keeps the rest: it is judged on the 15
+    // notes that had a leaf, so the less central newcomers do not count against it.
+    const rebuilt = cloneTopicTreeState(state);
+    applyRebuild({
+      state: rebuilt,
+      vectors,
+      config,
+      partition: [
+        { key: 0, parent: null, items: [] },
+        { key: 1, parent: 0, items: [] },
+        { key: 2, parent: 1, items: keys.slice(0, 5) },
+        { key: 3, parent: 1, items: keys.slice(5, 10) },
+        { key: 4, parent: 0, items: [] },
+        { key: 5, parent: 4, items: keys.slice(10, 15) },
+        { key: 6, parent: 4, items: waiting }
+      ],
+      newTopicId,
+      now
+    });
+    expect(structureSignals(rebuilt).unadmitted).toBe(0);
+    const verdict = judgeTriggerRebuild(
+      before,
+      rebuildQuality(rebuilt, vectors, config, judged),
+      config
+    );
+    expect(verdict.accepted).toBe(true);
+    expect(verdict.after.leafCoherence).toBeCloseTo(verdict.before.leafCoherence!, 6);
+  });
+});
+
+/** The pre-order partition of a live tree (items as they are placed now). */
+function partitionOfTree(state: TopicTreeState) {
+  const nodes: { key: number; parent: number | null; items: ItemKey[] }[] = [];
+  const keyOf = new Map<string, number>();
+  const visit = (id: string): void => {
+    const node = getTopic(state, id);
+    keyOf.set(id, nodes.length);
+    nodes.push({
+      key: nodes.length,
+      parent: node.parentId === null ? null : (keyOf.get(node.parentId) as number),
+      items: [...node.items]
+    });
+    for (const child of node.children) visit(child);
+  };
+  visit(state.rootId);
+  return nodes;
+}
 
 describe("protected subtrees in a rebuild", () => {
   /** root -> A (pinned) -> A1; A holds x3, A1 holds x1 and x2; root -> B holds y1..y4. */

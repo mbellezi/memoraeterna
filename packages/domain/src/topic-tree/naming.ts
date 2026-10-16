@@ -174,6 +174,19 @@ export function membershipDrift(then: MembershipSketch, now: MembershipSketch): 
   return 1 - shared / k;
 }
 
+/**
+ * The share of the members a topic had at `then` that changed by `now`: members added plus
+ * members removed over the members it had, at most 1 (from the sketches' Jaccard estimate; exact
+ * while both are smaller than the sketch). Unlike membershipDrift it does not shrink as a topic
+ * grows: a 21-member topic that gains 7 changed by 1/3 (drift 1/4), one of 11 that gains 9 by 9/11.
+ */
+export function membershipChange(then: MembershipSketch, now: MembershipSketch): number {
+  if (then.n === 0) return now.n === 0 ? 0 : 1;
+  const jaccard = 1 - membershipDrift(then, now);
+  const shared = (jaccard * (then.n + now.n)) / (1 + jaccard);
+  return Math.min(1, Math.max(0, (then.n + now.n - 2 * shared) / then.n));
+}
+
 // ---------------------------------------------------------------------------
 // Central members and the batches of a call
 

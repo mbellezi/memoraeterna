@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   canonicalStateDump,
+  createTopicTreeEditor,
   defaultTopicTreeConfig,
   getTopic,
   leafTopics,
   primaryPlacement,
+  recomputeSubtree,
   rowItemKey,
   shapeReport,
   topicTreeConfigWith,
@@ -283,6 +285,35 @@ describe("the real engine: fresh items, cold start and rebuild triggers (T29b)",
       movedItems: 0
     });
     expect(old.evaluateRebuild({ day: 10 })).toBeNull();
+  });
+
+  it("rejects a trigger rebuild that would leave the tree worse, and moves the baseline", () => {
+    const engine = engineWith(defaultTopicTreeConfig, { areasActive: "dynamic" });
+    engine.coldStart(rows.slice(0, 100), 1);
+    engine.place(rows.slice(100, 200), { day: 2 });
+    // Every leaf of the grown tree is cut into pairs: far more coherent leaves than any rebuild
+    // at leaf.target makes, so the doubling rebuild would lower the coherence of what is placed.
+    const editor = createTopicTreeEditor(engine.state, { record: false });
+    let next = 1_000_000;
+    for (const node of leafTopics(engine.state)) {
+      if (node.parentId === null) continue;
+      const items = [...node.items];
+      for (let at = 2; at + 1 < items.length; at += 2) {
+        const pair = String(next++);
+        editor.createTopic(pair, node.parentId);
+        for (const item of items.slice(at, at + 2)) {
+          editor.updatePlacement(item, 0, { topicId: pair });
+        }
+      }
+    }
+    recomputeSubtree(engine.state, engine.vectors);
+    const before = canonicalStateDump(engine.state);
+    const rejected = engine.evaluateRebuild({ day: 2 });
+    expect(rejected).toMatchObject({ trigger: "doubling:rejected", movedItems: 0 });
+    expect(rejected?.rejectedBy).toContain("coherence");
+    expect(canonicalStateDump(engine.state)).toBe(before);
+    // The baseline is the tree left in place: the same trigger does not fire again.
+    expect(engine.evaluateRebuild({ day: 3 })).toBeNull();
   });
 });
 

@@ -21,12 +21,19 @@
 // `rebuild.doublingMaxItems` notes, when the weighted leaf coherence dropped by
 // `rebuild.qualityDrop` since the last build, or when at least `rebuild.unadmittedBurstShare` of
 // the items PLACE decided since the last build (and at least `rebuild.unadmittedBurstMinItems`)
-// are left unadmitted at an internal topic or the root.
+// are left unadmitted at an internal topic or the root (an item REBALANCE has since given a leaf
+// no longer waits). A trigger rebuild is applied only when it does not make the tree worse
+// (judgeTriggerRebuild: the weighted leaf coherence, within `rebuild.acceptCoherenceTolerance`,
+// past a young library the E2 shape bars, hard violations); a rejected one changes nothing and
+// its baseline is the current tree, so the same trigger waits until the library changes again.
+// Items it left waiting stay movable direct items, which REBALANCE re-admits or forms leaves from.
 //
 // Areas (D12). The root's children are the Areas level once the top two levels exist (a level-1
 // topic has children): from then on the root's fan-out band is the Areas band and every Area-level
 // REBALANCE operation is a proposal. The LLM grouping into Areas runs after a build that left at
 // least `areas.minLevel2Topics` level-2 topics (T24).
+import { areaShape, areaShapeBars } from "./areas.js";
+import type { AreaShape } from "./areas.js";
 import type { CommunityGraph, DetectCommunities } from "./build.js";
 import { communityGraphOf, contentAnchor } from "./build.js";
 import type { TopicTreeConfig } from "./config.js";
@@ -35,11 +42,12 @@ import type { ItemKey } from "./ids.js";
 import { groupsOf, sphericalKMeans } from "./kmeans.js";
 import { knnGraph } from "./knn.js";
 import type { RebuildPartitionNode } from "./rebuild-map.js";
+import { hardViolationTopics } from "./repair.js";
 import { createRng, deriveSeed } from "./rng.js";
 import { getTopic, isLive, isProtected, primaryPlacement, walkTopics } from "./state.js";
-import type { TopicTreeState } from "./state.js";
-import { addRow, dotAt, norm, unit } from "./vectors.js";
-import type { EmbeddingMatrix } from "./vectors.js";
+import type { PlacementRecord, TopicTreeState } from "./state.js";
+import { addRow, dotAt, dotRowVec, norm, unit } from "./vectors.js";
+import type { EmbeddingMatrix, ItemVectorSource } from "./vectors.js";
 
 // ---------------------------------------------------------------------------
 // Cold start
@@ -347,12 +355,21 @@ export function areasGroupingDue(state: TopicTreeState, config: TopicTreeConfig)
 // ---------------------------------------------------------------------------
 // Rebuild triggers
 
-/** What a build records in its change-set summary for the triggers of the next rebuild. */
+/**
+ * What a build records in its change-set summary for the triggers of the next rebuild; a rejected
+ * trigger rebuild records the tree it left in place (rejectedRebuildBaseline).
+ */
 export interface BuildBaseline {
   /** Placed notes right after the build. */
   notes: number;
   /** Weighted leaf coherence right after the build (null when it had no leaf with notes). */
   leafCoherence: number | null;
+  /**
+   * PLACE decisions and items waiting unadmitted already counted when the baseline was taken
+   * (0 after a build, whose items PLACE did not decide): a burst counts only what came after.
+   */
+  decided?: number;
+  unadmitted?: number;
 }
 
 const placeDecisions: ReadonlySet<string> = new Set(["auto", "gate", "fallback"]);
@@ -364,8 +381,19 @@ export interface StructureSignals {
   leafCoherence: number | null;
   /** Items whose primary placement PLACE decided since the last build (not waiting for a vector). */
   decidedSinceBuild: number;
-  /** Of those, the items left unadmitted (fallback, no gate or split check pending). */
+  /**
+   * Of those, the items still waiting unadmitted: a fallback with no gate or split check pending,
+   * at the root or an internal topic (one REBALANCE has moved into a leaf no longer waits).
+   */
   unadmitted: number;
+}
+
+/** A PLACE fallback that waits unadmitted above the leaves (see StructureSignals). */
+function waitsUnadmitted(state: TopicTreeState, primary: PlacementRecord): boolean {
+  if (primary.decidedBy !== "fallback" || primary.needsVector) return false;
+  if (primary.needsGate || primary.needsSplitCheck) return false;
+  const topic = state.topics.get(primary.topicId);
+  return topic !== undefined && (topic.id === state.rootId || topic.children.length > 0);
 }
 
 export function structureSignals(state: TopicTreeState): StructureSignals {
@@ -379,9 +407,7 @@ export function structureSignals(state: TopicTreeState): StructureSignals {
     // Builds, rebuilds and humans decide the rest; PLACE decides auto, gate and fallback.
     if (primary.needsVector || !placeDecisions.has(primary.decidedBy)) continue;
     decided += 1;
-    if (primary.decidedBy === "fallback" && !primary.needsGate && !primary.needsSplitCheck) {
-      unadmitted += 1;
-    }
+    if (waitsUnadmitted(state, primary)) unadmitted += 1;
   }
   let ls = 0;
   let n = 0;
@@ -423,14 +449,178 @@ export function rebuildTrigger(
   ) {
     return "quality-drop";
   }
+  const unadmitted = signals.unadmitted - (baseline.unadmitted ?? 0);
+  const decided = signals.decidedSinceBuild - (baseline.decided ?? 0);
   if (
-    signals.unadmitted >= rebuild.unadmittedBurstMinItems &&
-    signals.decidedSinceBuild > 0 &&
-    signals.unadmitted / signals.decidedSinceBuild >= rebuild.unadmittedBurstShare
+    unadmitted >= rebuild.unadmittedBurstMinItems &&
+    decided > 0 &&
+    unadmitted / decided >= rebuild.unadmittedBurstShare
   ) {
     return "unadmitted-burst";
   }
   return null;
+}
+
+/** Topics where PLACE left items waiting unadmitted (the root or internal topics), sorted. */
+export function unadmittedTopics(state: TopicTreeState): string[] {
+  const topics = new Set<string>();
+  for (const [item] of state.placements) {
+    const primary = primaryPlacement(state, item);
+    if (primary && waitsUnadmitted(state, primary)) topics.add(primary.topicId);
+  }
+  return [...topics].sort(compareStrings);
+}
+
+/** A trigger rebuild, the only kind judgeTriggerRebuild judges (never a configuration or space). */
+export function isTriggerRebuild(reason: string): reason is RebuildTrigger {
+  return reason === "doubling" || reason === "quality-drop" || reason === "unadmitted-burst";
+}
+
+// ---------------------------------------------------------------------------
+// Rebuild acceptance
+
+/**
+ * The notes with a vector whose primary topic is a leaf: the items the weighted leaf coherence of
+ * the tree covers (items waiting above the leaves are not in it).
+ */
+export function notesInLeaves(state: TopicTreeState, vectors: ItemVectorSource): Set<ItemKey> {
+  const output = new Set<ItemKey>();
+  for (const [item] of state.placements) {
+    if (state.items.get(item)?.kind !== "note" || vectors.rowOf(item) === undefined) continue;
+    const primary = primaryPlacement(state, item);
+    const topic = primary ? state.topics.get(primary.topicId) : undefined;
+    if (topic && topic.id !== state.rootId && topic.children.length === 0) output.add(item);
+  }
+  return output;
+}
+
+/**
+ * The mean cosine of `items` to the centroid of the topic that holds each of them now: on the
+ * notes a tree holds in leaves, its weighted leaf coherence (sum |LS| / sum n is the mean member
+ * cosine to the leaf centroid). Null when no item is placed.
+ */
+export function itemsCoherence(
+  state: TopicTreeState,
+  vectors: ItemVectorSource,
+  items: Iterable<ItemKey>
+): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const item of items) {
+    const row = vectors.rowOf(item);
+    const primary = primaryPlacement(state, item);
+    const topic = primary ? state.topics.get(primary.topicId) : undefined;
+    if (row === undefined || !topic) continue;
+    sum += dotRowVec(vectors.matrix, row, topic.stats.centroid);
+    count += 1;
+  }
+  return count > 0 ? sum / count : null;
+}
+
+/** What a trigger rebuild is judged on, read on the tree before and after it. */
+export interface RebuildQuality {
+  /** Notes with a primary placement (a young library is not held to the E2 bars). */
+  notes: number;
+  /**
+   * The weighted leaf coherence the quality drop watches, measured on the notes the current tree
+   * holds in leaves (`judged`): a burst rebuild that gives waiting items a leaf is judged on how
+   * it keeps the placed ones, not on items the current tree left out.
+   */
+  leafCoherence: number | null;
+  /** The E2 readings (areas.ts areaShape): mean depth, fan-out in its band, single children. */
+  shape: AreaShape;
+  /** Topics with a hard violation (I2-I5, I7). */
+  hardViolations: number;
+}
+
+/** The quality of a tree for judgeTriggerRebuild; `judged`: notesInLeaves of the current tree. */
+export function rebuildQuality(
+  state: TopicTreeState,
+  vectors: ItemVectorSource,
+  config: TopicTreeConfig,
+  judged: ReadonlySet<ItemKey>
+): RebuildQuality {
+  return {
+    notes: structureSignals(state).notes,
+    leafCoherence: itemsCoherence(state, vectors, judged),
+    shape: areaShape(state, config),
+    hardViolations: hardViolationTopics(state, config).length
+  };
+}
+
+export const triggerRebuildRejections = [
+  "coherence",
+  "mean-depth",
+  "fan-out",
+  "single-child",
+  "hard-violation"
+] as const;
+export type TriggerRebuildRejection = (typeof triggerRebuildRejections)[number];
+
+export interface TriggerRebuildVerdict {
+  accepted: boolean;
+  reasons: TriggerRebuildRejection[];
+  before: RebuildQuality;
+  after: RebuildQuality;
+}
+
+/**
+ * Whether a trigger rebuild leaves the tree no worse: its weighted leaf coherence is not lower
+ * than the current one by more than `rebuild.acceptCoherenceTolerance`; past the young-library
+ * bound (isYoungLibrary: E2 is measured at the corpus scale, a tree of a few internal topics only
+ * reports it) the E2 bars (mean depth at most 4.5, at least 80% of internal topics in the fan-out
+ * target band) still hold, or the reading does not get worse where the current tree already
+ * misses its bar (as D12's Areas acceptance); and it adds no single-child topic and no hard
+ * violation.
+ */
+export function judgeTriggerRebuild(
+  before: RebuildQuality,
+  after: RebuildQuality,
+  config: TopicTreeConfig
+): TriggerRebuildVerdict {
+  const reasons: TriggerRebuildRejection[] = [];
+  if (
+    before.leafCoherence !== null &&
+    (after.leafCoherence === null ||
+      after.leafCoherence < before.leafCoherence - config.rebuild.acceptCoherenceTolerance)
+  ) {
+    reasons.push("coherence");
+  }
+  const shapeBars = !isYoungLibrary(before.notes, config);
+  const depthBar = areaShapeBars.meanDepthMax;
+  if (
+    shapeBars &&
+    (before.shape.meanDepth <= depthBar
+      ? after.shape.meanDepth > depthBar
+      : after.shape.meanDepth > before.shape.meanDepth)
+  ) {
+    reasons.push("mean-depth");
+  }
+  const fanOutBar = areaShapeBars.fanOutInTargetMin;
+  if (
+    shapeBars &&
+    (before.shape.fanOutInTarget >= fanOutBar
+      ? after.shape.fanOutInTarget < fanOutBar
+      : after.shape.fanOutInTarget < before.shape.fanOutInTarget)
+  ) {
+    reasons.push("fan-out");
+  }
+  if (after.shape.singleChildTopics > before.shape.singleChildTopics) reasons.push("single-child");
+  if (after.hardViolations > before.hardViolations) reasons.push("hard-violation");
+  return { accepted: reasons.length === 0, reasons, before, after };
+}
+
+/**
+ * The baseline a rejected trigger rebuild records: the tree it left in place, so a doubling counts
+ * from its notes, a quality drop from its coherence and a burst from the items already waiting.
+ */
+export function rejectedRebuildBaseline(signals: StructureSignals): Required<BuildBaseline> {
+  return {
+    notes: signals.notes,
+    leafCoherence: signals.leafCoherence,
+    decided: signals.decidedSinceBuild,
+    unadmitted: signals.unadmitted
+  };
 }
 
 /**

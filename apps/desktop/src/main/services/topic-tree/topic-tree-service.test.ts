@@ -14,6 +14,8 @@ describe("the structural configuration hash (D39)", () => {
       { jobs: { debounceMs: 1_000, debounceCapMs: 2_000 } },
       { audit: { everyChangeSets: 7 } },
       { naming: { renameDrift: 0.5 } },
+      { naming: { rebuildRenameDrift: 0.2 } },
+      { rebuild: { acceptCoherenceTolerance: 0.02 } },
       { overview: { maxEvidenceItems: 3 } },
       { build: { workerThreshold: 100 } },
       { stability: { dailyOperations: 3 } }

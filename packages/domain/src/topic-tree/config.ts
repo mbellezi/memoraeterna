@@ -213,7 +213,13 @@ const SplitSignalSchema = z
   })
   .strict();
 
-/** Louvain over the cosine kNN graph (the Spike B builder). */
+/**
+ * Louvain over the cosine kNN graph (the Spike B builder). Known limit, measured 2026-10-16 on
+ * ENV-G (160 notes, calibration seeds 7-9) and left unchanged: at 10-NN a source of at most k notes
+ * cannot be a community of its own, so two short stories that share vocabulary (9-11 notes each)
+ * share a 20-note leaf, which the leaf band (max 30) keeps; 5-NN separates them but worsens the
+ * ENV-F fixture on one seed. A smaller kNN for small libraries needs its own calibration.
+ */
 const LouvainSchema = z
   .object({
     knn: int(2, 100).default(10),
@@ -302,6 +308,18 @@ const RebuildSchema = z
     unadmittedBurstShare: share.default(0.1),
     unadmittedBurstMinItems: int(1, 100_000).default(20),
     /**
+     * A trigger rebuild is applied only when it does not make the tree worse on what the triggers
+     * watch: the rebuilt weighted leaf coherence is at least the current one minus this, and past
+     * a young library the E2 shape bars hold (bootstrap.ts judgeTriggerRebuild). A rejected one
+     * changes nothing and moves the trigger baseline to the current tree. A structural
+     * configuration or space change is never judged. Rule T (calibration seeds 7-9, DS-C doubling
+     * to 1,000 rows and ENV-G/ENV-F grown source by source): 0 rejects ENV-F rebuilds that differ
+     * by summation noise (-0.0004) and raises the fixture's forbidden share from 0.14 to 0.25;
+     * 0.005 is the smallest value whose ENV-G/ENV-F readings equal accepting every rebuild and
+     * whose DS-C median leaf domain purity stays within 2 points of a fresh build (0.964 / 0.974).
+     */
+    acceptCoherenceTolerance: z.number().min(0).max(1).default(0.005),
+    /**
      * A trigger rebuild of a library past doublingMaxItems re-pathing more than this share of
      * established (not fresh) items waits for review; a young library's does not (bootstrap.ts).
      */
@@ -327,6 +345,14 @@ const NamingSchema = z
      * so the registered fallback 0.5 is used; a drift check runs a minute after any change.
      */
     renameDrift: share.default(0.5),
+    /**
+     * After a rebuild mapped old topics onto new ones (rebuild-map.ts), an LLM-named topic it
+     * matched and whose members changed by at least this share of the members it was named for
+     * (added plus removed over named, naming.ts membershipChange) is named again at once, so a
+     * merge never keeps a name that describes part of it; growth keeps renameDrift. Operational:
+     * it never changes the configuration hash that triggers a rebuild.
+     */
+    rebuildRenameDrift: share.default(0.3),
     /** The TF-IDF fallback needs at least this many content-language members. */
     fallbackMinItems: int(1, 100).default(2),
     fallbackMaxTerms: int(1, 10).default(3)

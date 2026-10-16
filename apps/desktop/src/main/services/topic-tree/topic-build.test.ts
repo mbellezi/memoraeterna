@@ -134,7 +134,12 @@ describe("rebuild triggers after PLACE", () => {
   }
 
   /** Structure jobs whose last build counted `built` notes and whose cached tree holds `notes`. */
-  function triggered(built: number, notes: number, status = "applied") {
+  function triggered(
+    built: number,
+    notes: number,
+    status = "applied",
+    summary: Record<string, unknown> = {}
+  ) {
     const pool = {
       query: async (text: string) =>
         text.includes("origin in ('build', 'rebuild')")
@@ -142,9 +147,9 @@ describe("rebuild triggers after PLACE", () => {
               rows: [
                 {
                   id: uuid(800),
-                  origin: "build",
+                  origin: status === "dismissed" ? "rebuild" : "build",
                   status,
-                  summary: { notes: built, leafCoherence: 0.5 },
+                  summary: { notes: built, leafCoherence: 0.5, ...summary },
                   createdAt: new Date(2026, 9, 15)
                 }
               ],
@@ -182,5 +187,18 @@ describe("rebuild triggers after PLACE", () => {
       await jobs.afterPlace(placeJob, { status: "applied", generation: 4, changeSetId });
       expect(requested()).not.toContain(topicJobTypes.build);
     }
+  });
+
+  it("counts from the tree a rejected rebuild left in place, so the trigger does not repeat", async () => {
+    // The last build counted 12 notes; a doubling rebuild at 24 was rejected (a dismissed
+    // rebuild record carrying the tree it kept as the baseline): 24 notes trigger nothing more.
+    const rejected = { decided: 12, unadmitted: 0, rejected: { reasons: ["coherence"] } };
+    const quiet = triggered(24, 24, "dismissed", rejected);
+    await quiet.jobs.afterPlace(placeJob, { status: "applied", generation: 4, changeSetId });
+    expect(quiet.requested()).not.toContain(topicJobTypes.build);
+    // Once the library doubled again from there, it does.
+    const doubled = triggered(12, 48, "dismissed", rejected);
+    await doubled.jobs.afterPlace(placeJob, { status: "applied", generation: 4, changeSetId });
+    expect(doubled.requested()).toContain(topicJobTypes.build);
   });
 });

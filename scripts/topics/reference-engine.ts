@@ -104,10 +104,14 @@ export interface EngineAuditSummary {
 export interface RebuildSummary {
   /**
    * Why a rebuild ran (trigger name) and how many items changed path; `<trigger>:review` when it
-   * waits for the owner instead (D29), which holds every later rebuild in the replay.
+   * waits for the owner instead (D29), which holds every later rebuild in the replay, and
+   * `<trigger>:rejected` when the rebuilt tree would be worse (judgeTriggerRebuild).
    */
   trigger: string;
   movedItems: number;
+  /** A rejected rebuild: why, and the weighted leaf coherence before and after it. */
+  rejectedBy?: string[];
+  leafCoherence?: [number | null, number | null];
 }
 
 export interface PlaceOptions {

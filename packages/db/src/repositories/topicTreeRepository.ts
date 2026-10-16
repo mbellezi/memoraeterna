@@ -1338,7 +1338,7 @@ async function insertChangeSet(
   db: Queryable,
   treeId: string,
   meta: StoredChangeSetMeta,
-  status: "applied" | "pending_review",
+  status: "applied" | "pending_review" | "dismissed",
   generation: number | null,
   undoOf: string | null
 ): Promise<string> {
@@ -1874,6 +1874,23 @@ export function createTopicTreeRepository(pool: PgPool) {
     /** The structure events of a change-set, in order. */
     async changeSetEvents(changeSetId: string, db: Queryable = pool): Promise<StructureEvent[]> {
       return (await readEvents(db, [changeSetId])).get(changeSetId) ?? [];
+    },
+
+    /**
+     * Records a change-set the engine itself declined (a trigger rebuild that would leave the tree
+     * worse): status `dismissed`, no events, no generation; the tree and its structure are not
+     * touched. Its summary says why, and `latestStructureBuild` reads it like any rebuild.
+     */
+    async recordRejectedChangeSet(
+      input: TopicChangeSetMeta & { treeId: string },
+      options: TopicWriterOptions = {}
+    ): Promise<{ changeSetId: string }> {
+      const meta = parseMeta(input);
+      return runWriter(pool, options, [treeLockKey(input.treeId)], async (writer) => {
+        const tree = await requireTree(writer, input.treeId);
+        const changeSetId = await insertChangeSet(writer, tree.id, meta, "dismissed", null, null);
+        return { changeSetId };
+      });
     },
 
     /** The latest build or rebuild change-set of a tree, whatever its status; null before any. */

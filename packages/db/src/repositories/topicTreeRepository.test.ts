@@ -436,6 +436,45 @@ describe("topic tree writer (scripted connection)", () => {
     expect(writes[1]).toMatch(/^insert into topic_structure_events/u);
   });
 
+  it("records a rejected change-set as dismissed, with no events, generation or structure write", async () => {
+    const changeSetId = uuidOf(201);
+    let inserted: unknown[] = [];
+    const connection = new ScriptedConnection([
+      treeSelect,
+      [
+        /insert into topic_change_sets/u,
+        (values) => {
+          inserted = [...values];
+          return [{ id: changeSetId }];
+        }
+      ]
+    ]);
+    const result = await createTopicTreeRepository(
+      scriptedPool(connection)
+    ).recordRejectedChangeSet({
+      treeId,
+      origin: "rebuild",
+      titleKey: "topics.changeSets.rebuild",
+      summary: { reason: "unadmitted-burst", notes: 160, rejected: { reasons: ["coherence"] } }
+    });
+    expect(result).toEqual({ changeSetId });
+    const writes = connection.writes();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatch(/^insert into topic_change_sets/u);
+    // Origin, status and generation: a dismissed rebuild that never reached the tree.
+    expect([inserted[2], inserted[3], inserted[11]]).toEqual(["rebuild", "dismissed", null]);
+    expect(JSON.parse(String(inserted[10]))).toMatchObject({
+      rejected: { reasons: ["coherence"] }
+    });
+    await expect(
+      createTopicTreeRepository(scriptedPool(connection)).recordRejectedChangeSet({
+        treeId,
+        origin: "rebuild",
+        titleKey: ""
+      })
+    ).rejects.toThrow(/Invalid change-set/u);
+  });
+
   it("runs inside a caller's transaction behind a savepoint and restores its settings", async () => {
     const connection = new ScriptedConnection([
       treeSelect,

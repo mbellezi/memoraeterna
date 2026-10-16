@@ -17,9 +17,12 @@
 // topics retire bottom-up with a redirect to the deepest topic that holds a majority of their
 // members (I9). A matched topic whose title would collide with a new sibling (I7) loses its AI
 // title first (`unnamed`, so naming runs again); human-named and protected titles are never
-// cleared. Human placements stay where they are. Touching protected structure, or moving more
-// than rebuild.reviewChurnShare of the items (fresh ones left out, stability.ts), marks the
-// change-set for review.
+// cleared. Last, a matched LLM-named topic whose members the rebuild changed, by at least
+// naming.rebuildRenameDrift of the members it was named for (its naming sketch, else its members
+// before the rebuild), keeps its title as a provisional one, so naming runs again at once and a
+// merge never keeps a name that describes part of it. Human placements stay where they are.
+// Touching protected structure, or moving more than rebuild.reviewChurnShare of the items (fresh
+// ones left out, stability.ts), marks the change-set for review.
 import { contentAnchor } from "./build.js";
 import type { ShapeContext } from "./build.js";
 import type { TopicTreeConfig } from "./config.js";
@@ -29,6 +32,8 @@ import { maxWeightMatching } from "./hungarian.js";
 import type { WeightedEdge } from "./hungarian.js";
 import { compareStrings, normalizeTopicTitle } from "./ids.js";
 import type { ItemKey } from "./ids.js";
+import { mayAutoName, membershipChange, membershipDrift, membershipSketch } from "./naming.js";
+import type { MembershipSketch } from "./naming.js";
 import {
   dropSecondariesOnPath,
   evacuateSecondaries,
@@ -219,6 +224,11 @@ export interface RebuildInput {
   freshItems?: ReadonlySet<ItemKey>;
   /** Compute the change-set and restore the state (for a change-set that waits for review). */
   dryRun?: boolean;
+  /**
+   * The members an LLM-named topic had when it was named (the sketch its naming change-set
+   * recorded), or null when not known; then its members before the rebuild stand in.
+   */
+  namedSketch?: (topicId: string) => MembershipSketch | null;
 }
 
 export interface RebuildResult {
@@ -228,6 +238,11 @@ export interface RebuildResult {
   retired: { topicId: string; redirectTo: string }[];
   /** AI-named topics whose title was cleared to avoid a sibling collision (to be named again). */
   unnamed: string[];
+  /**
+   * Matched LLM-named topics whose members changed by naming.rebuildRenameDrift or more: their
+   * title is now provisional, so they are named again.
+   */
+  renamed: string[];
   /** Unmatched topics kept live because protected structure blocked emptying them. */
   kept: string[];
   /** Partition items left where they were (human placements). */
@@ -242,6 +257,11 @@ export interface RebuildResult {
 
 function canClearTitle(node: TopicNode): boolean {
   return node.title !== null && !isProtected(node) && node.nameSource !== "human";
+}
+
+/** A topic named by the model that automation may name again (step 4 of the module comment). */
+function isNamedByModel(node: TopicNode): boolean {
+  return mayAutoName(node) && node.nameState === "named" && node.nameSource === "llm";
 }
 
 /**
@@ -300,6 +320,12 @@ export function applyRebuild(input: RebuildInput): RebuildResult {
       id,
       subtreeItems(state, id).filter((item) => inPartition.has(item))
     );
+  }
+  // The members of the matched LLM-named topics before the rebuild (step 4).
+  const namedBefore = new Map<string, MembershipSketch>();
+  for (const match of plan.matched) {
+    const node = getTopic(state, match.topicId);
+    if (isNamedByModel(node)) namedBefore.set(node.id, membershipSketch(state, node.id));
   }
   const unnamed: string[] = [];
   let protectedConflict = false;
@@ -407,6 +433,19 @@ export function applyRebuild(input: RebuildInput): RebuildResult {
     retired.push({ topicId: id, redirectTo });
   }
 
+  // 4. Matched topics whose members changed past naming.rebuildRenameDrift are named again.
+  const renamed: string[] = [];
+  for (const [topicId, before] of namedBefore) {
+    const node = getTopic(state, topicId);
+    if (!isNamedByModel(node)) continue; // its title was cleared in step 1
+    const after = membershipSketch(state, topicId);
+    if (membershipDrift(before, after) === 0) continue; // the rebuild left its members alone
+    const then = input.namedSketch?.(topicId) ?? before;
+    if (membershipChange(then, after) < config.naming.rebuildRenameDrift) continue;
+    editor.renameTopic(topicId, { nameState: "provisional" });
+    renamed.push(topicId);
+  }
+
   recomputeSubtree(state, vectors);
   const events = [...editor.events];
   const churn = eventChurn(state, events, config, input.recentItems, input.freshItems);
@@ -425,6 +464,7 @@ export function applyRebuild(input: RebuildInput): RebuildResult {
     events,
     retired,
     unnamed,
+    renamed,
     kept,
     keptItems,
     churn,
