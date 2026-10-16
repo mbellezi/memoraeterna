@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avaliação de tópicos</title>
+    <style>
+      /*__TOKENS_CSS__*/
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--surface-canvas);
+        color: var(--text-primary);
+        font-family: var(--font-family-ui);
+        font-size: var(--type-reading);
+        line-height: var(--type-body-leading);
+      }
+      main,
+      .top-inner {
+        max-width: 48rem;
+        margin: 0 auto;
+        padding: 0 var(--space-4);
+      }
+      header.top {
+        background: var(--surface-raised);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .top-inner {
+        padding-top: var(--space-4);
+        padding-bottom: var(--space-4);
+      }
+      h1 {
+        margin: 0;
+        font-size: var(--type-display);
+        line-height: var(--type-display-leading);
+      }
+      h2 {
+        margin: 0;
+        font-size: var(--type-title);
+        line-height: var(--type-title-leading);
+        overflow-wrap: anywhere;
+      }
+      h3 {
+        margin: var(--space-4) 0 var(--space-2);
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+        font-weight: var(--weight-semibold);
+      }
+      p {
+        margin: 0 0 var(--space-3);
+      }
+      .muted {
+        color: var(--text-secondary);
+      }
+      .intro {
+        margin: var(--space-4) 0;
+        color: var(--text-secondary);
+      }
+      .intro h2 {
+        color: var(--text-primary);
+        margin-bottom: var(--space-2);
+      }
+      .intro ul {
+        margin: 0;
+        padding-left: var(--space-5);
+      }
+      .intro li {
+        margin-bottom: var(--space-1);
+      }
+      button {
+        font: inherit;
+        font-size: var(--type-body);
+        color: var(--text-primary);
+        background: var(--surface-raised);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-3);
+        padding: var(--space-2) var(--space-3);
+        min-height: 2.25rem;
+        cursor: pointer;
+      }
+      button:hover:not([disabled]) {
+        background: var(--surface-hover);
+      }
+      button[disabled] {
+        cursor: default;
+        color: var(--text-tertiary);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .skip {
+        position: absolute;
+        left: var(--space-2);
+        top: -4rem;
+        background: var(--surface-raised);
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-3);
+      }
+      .skip:focus {
+        top: var(--space-2);
+      }
+      .progress {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--surface-canvas);
+        border-bottom: 1px solid var(--border-subtle);
+        margin: 0 calc(-1 * var(--space-4));
+        padding: var(--space-2) var(--space-4);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-1) var(--space-3);
+        font-size: var(--type-body);
+      }
+      .progress .count {
+        font-weight: var(--weight-bold);
+      }
+      .bar {
+        flex: 1 1 5rem;
+        height: 0.5rem;
+        border-radius: var(--radius-5);
+        background: var(--surface-soft);
+        border: 1px solid var(--border-strong);
+        overflow: hidden;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width var(--motion-base);
+      }
+      #save-status {
+        flex: 1 0 100%;
+        margin: 0;
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+      }
+      #save-status:empty {
+        display: none;
+      }
+      #save-status.failed {
+        color: var(--state-danger);
+        font-weight: var(--weight-semibold);
+      }
+      ol.topics {
+        list-style: none;
+        margin: var(--space-4) 0;
+        padding: 0;
+        display: grid;
+        gap: var(--space-4);
+      }
+      .card {
+        background: var(--surface-raised);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-4);
+        padding: var(--space-4);
+        scroll-margin-top: 5rem;
+      }
+      .card.done {
+        border-left: 0.25rem solid var(--state-success);
+      }
+      .card-head {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin-bottom: var(--space-1);
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+      }
+      .card .state {
+        color: var(--state-success);
+        font-weight: var(--weight-semibold);
+      }
+      .description {
+        margin: var(--space-2) 0 var(--space-3);
+      }
+      ul.chips {
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin: 0 0 var(--space-3);
+        padding: 0;
+        font-size: var(--type-small);
+      }
+      ul.chips li {
+        background: var(--surface-soft);
+        border-radius: var(--radius-5);
+        padding: 0 var(--space-3);
+      }
+      .chips-label {
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+        margin-bottom: var(--space-1);
+      }
+      ul.members {
+        list-style: none;
+        margin: 0 0 var(--space-4);
+        padding: 0;
+        display: grid;
+        gap: var(--space-3);
+      }
+      ul.members li {
+        border-left: 3px solid var(--border-strong);
+        padding-left: var(--space-3);
+      }
+      ul.members strong {
+        display: block;
+        font-size: var(--type-body);
+        overflow-wrap: anywhere;
+      }
+      ul.members .idea {
+        display: block;
+        font-size: var(--type-body);
+        overflow-wrap: anywhere;
+      }
+      ul.members .source {
+        display: block;
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+        overflow-wrap: anywhere;
+      }
+      .questions {
+        display: grid;
+        gap: var(--space-3);
+      }
+      fieldset {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-3);
+        margin: 0;
+        padding: var(--space-3);
+      }
+      legend {
+        font-weight: var(--weight-semibold);
+        padding: 0 var(--space-2);
+      }
+      .hint {
+        margin: 0 0 var(--space-2);
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+      }
+      .choices {
+        display: inline-flex;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-3);
+        overflow: hidden;
+      }
+      .choice {
+        position: relative;
+        display: block;
+      }
+      .choice + .choice {
+        border-left: 1px solid var(--border-strong);
+      }
+      .choice input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .choice span {
+        display: block;
+        min-width: 5rem;
+        min-height: 2.25rem;
+        padding: var(--space-2) var(--space-4);
+        text-align: center;
+        font-size: var(--type-body);
+        background: var(--surface-raised);
+      }
+      .choice input:hover + span {
+        background: var(--surface-hover);
+      }
+      .choice input:focus-visible + span {
+        outline: 2px solid var(--accent);
+        outline-offset: -4px;
+      }
+      .choice.yes input:checked + span {
+        background: var(--state-success);
+        color: var(--text-on-solid);
+        font-weight: var(--weight-bold);
+      }
+      .choice.no input:checked + span {
+        background: var(--state-danger);
+        color: var(--text-on-solid);
+        font-weight: var(--weight-bold);
+      }
+      .choice.yes input:checked + span::before {
+        content: "✓ ";
+      }
+      .choice.no input:checked + span::before {
+        content: "✕ ";
+      }
+      label.notes {
+        display: block;
+        margin-top: var(--space-3);
+        font-size: var(--type-small);
+        color: var(--text-secondary);
+      }
+      label.notes textarea {
+        display: block;
+        width: 100%;
+        min-height: 2.75rem;
+        margin-top: var(--space-1);
+        padding: var(--space-2);
+        font: inherit;
+        font-size: var(--type-body);
+        color: var(--text-primary);
+        background: var(--surface-canvas);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-3);
+        resize: vertical;
+      }
+      .message {
+        margin: var(--space-4) 0;
+        padding: var(--space-3) var(--space-4);
+        border-radius: var(--radius-3);
+        border: 1px solid var(--border-strong);
+        background: var(--surface-soft);
+      }
+      .message.error {
+        background: var(--state-danger-soft);
+        color: var(--state-danger);
+      }
+      .message.success {
+        background: var(--state-success-soft);
+        color: var(--state-success);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bar > span {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#topicos">Ir para os tópicos</a>
+    <header class="top">
+      <div class="top-inner">
+        <h1>Avaliação de tópicos</h1>
+      </div>
+    </header>
+    <main>
+      <div id="load-error" class="message error" role="alert" hidden>
+        Não foi possível ler os dados desta página. Gere a amostra novamente com o comando de
+        avaliação.
+      </div>
+      <div id="empty" class="message" hidden>Não há tópicos para avaliar.</div>
+
+      <section class="intro" aria-labelledby="como">
+        <h2 id="como">Como avaliar</h2>
+        <ul>
+          <li>
+            Cada tópico mostra o nome, a descrição, os nomes alternativos e uma amostra aleatória de
+            suas notas (podem ser menos de 8 se o tópico tiver poucas).
+          </li>
+          <li>
+            <strong>Coerente?</strong> Sim, se as notas tratam de um mesmo assunto que você
+            colocaria numa mesma pasta. Uma ou outra nota destoante ainda pode ser Sim.
+          </li>
+          <li>
+            <strong>Bem nomeado?</strong> Sim, se o nome indica esse assunto e está no idioma do
+            conteúdo das notas.
+          </li>
+          <li>
+            Suas respostas são salvas automaticamente neste computador. Se a página recarregar, você
+            continua de onde parou.
+          </li>
+        </ul>
+      </section>
+
+      <div class="progress" id="progress" hidden>
+        <span aria-live="polite"
+          >Avaliados <span class="count" id="rated">0</span>/<span class="count" id="total"
+            >0</span
+          ></span
+        >
+        <div
+          class="bar"
+          id="bar"
+          role="progressbar"
+          aria-label="Progresso da avaliação"
+          aria-valuemin="0"
+          aria-valuemax="1"
+          aria-valuenow="0"
+        >
+          <span id="bar-fill"></span>
+        </div>
+        <button type="button" id="next">Próximo sem resposta</button>
+        <p id="save-status" role="status"></p>
+      </div>
+
+      <ol class="topics" id="topicos" aria-label="Tópicos para avaliar"></ol>
+
+      <div id="finished" class="message success" role="status" hidden>
+        Pronto: todos os tópicos foram avaliados e as respostas estão salvas neste computador. Você
+        pode fechar esta página.
+      </div>
+    </main>
+
+    <script id="page-data" type="application/json">
+      __PAGE_DATA__
+    </script>
+    <script>
+      (function () {
+        "use strict";
+
+        var data;
+        try {
+          data = JSON.parse(document.getElementById("page-data").textContent);
+          if (!data || !Array.isArray(data.topics) || typeof data.answerKey !== "string") {
+            throw new Error("bad data");
+          }
+        } catch (error) {
+          document.getElementById("load-error").hidden = false;
+          return;
+        }
+        var topics = data.topics;
+        if (topics.length === 0) {
+          document.getElementById("empty").hidden = false;
+          return;
+        }
+
+        function el(tag, attrs, children) {
+          var node = document.createElement(tag);
+          Object.keys(attrs || {}).forEach(function (name) {
+            if (name === "text") node.textContent = attrs[name];
+            else if (name === "className") node.className = attrs[name];
+            else node.setAttribute(name, attrs[name]);
+          });
+          (children || []).forEach(function (child) {
+            if (child) node.appendChild(child);
+          });
+          return node;
+        }
+
+        // Answers: { key: { coerente: true|false|null, bemNomeado: true|false|null, notas: "" } }.
+        // They live in localStorage; the local server mirrors every write to answers.json and
+        // restores them into an empty browser before this script runs.
+        var answers = {};
+        try {
+          answers = JSON.parse(window.localStorage.getItem(data.answerKey) || "{}") || {};
+        } catch (error) {
+          answers = {};
+        }
+
+        var saveStatus = document.getElementById("save-status");
+        function showSave(ok) {
+          saveStatus.className = ok ? "" : "failed";
+          saveStatus.textContent = ok
+            ? "Respostas salvas neste computador."
+            : "⚠ Não foi possível salvar. Confira se o terminal com o servidor local continua aberto e tente de novo.";
+        }
+        window.addEventListener("evalserver-save", function (event) {
+          showSave(Boolean(event.detail && event.detail.ok));
+        });
+        function save() {
+          try {
+            window.localStorage.setItem(data.answerKey, JSON.stringify(answers));
+          } catch (error) {
+            showSave(false);
+          }
+        }
+        function answerOf(key) {
+          if (!answers[key]) answers[key] = { coerente: null, bemNomeado: null, notas: "" };
+          return answers[key];
+        }
+        function isRated(key) {
+          var answer = answers[key];
+          return Boolean(
+            answer &&
+            (answer.coerente === true || answer.coerente === false) &&
+            (answer.bemNomeado === true || answer.bemNomeado === false)
+          );
+        }
+
+        var cards = [];
+        var rated = document.getElementById("rated");
+        var total = document.getElementById("total");
+        var bar = document.getElementById("bar");
+        var barFill = document.getElementById("bar-fill");
+        var next = document.getElementById("next");
+        var finished = document.getElementById("finished");
+
+        function updateProgress() {
+          var done = 0;
+          topics.forEach(function (topic, index) {
+            var rating = isRated(topic.key);
+            if (rating) done += 1;
+            cards[index].card.classList.toggle("done", rating);
+            cards[index].state.hidden = !rating;
+          });
+          rated.textContent = String(done);
+          total.textContent = String(topics.length);
+          bar.setAttribute("aria-valuemax", String(topics.length));
+          bar.setAttribute("aria-valuenow", String(done));
+          barFill.style.width = Math.round((100 * done) / topics.length) + "%";
+          next.disabled = done === topics.length;
+          finished.hidden = done !== topics.length;
+        }
+
+        function question(topic, field, label, hint) {
+          var hintId = "dica-" + field + "-" + topic.key;
+          var group = el("div", { className: "choices" });
+          [
+            ["true", "Sim", "yes"],
+            ["false", "Não", "no"]
+          ].forEach(function (option) {
+            var input = el("input", {
+              type: "radio",
+              name: field + "-" + topic.key,
+              value: option[0],
+              "aria-describedby": hintId
+            });
+            var current = (answers[topic.key] || {})[field];
+            input.checked =
+              current !== null && current !== undefined && String(current) === option[0];
+            input.addEventListener("change", function () {
+              answerOf(topic.key)[field] = option[0] === "true";
+              save();
+              updateProgress();
+            });
+            group.appendChild(
+              el("label", { className: "choice " + option[2] }, [
+                input,
+                el("span", { text: option[1] })
+              ])
+            );
+          });
+          return el("fieldset", { className: "question" }, [
+            el("legend", { text: label }),
+            el("p", { className: "hint", id: hintId, text: hint }),
+            group
+          ]);
+        }
+
+        var list = document.getElementById("topicos");
+        topics.forEach(function (topic, index) {
+          var titleId = "titulo-" + topic.key;
+          var state = el("span", { className: "state", text: "✓ Respondido" });
+          state.hidden = true;
+          var members = el(
+            "ul",
+            { className: "members", "aria-label": "Amostra de notas do tópico" },
+            (topic.members || []).map(function (member) {
+              return el("li", {}, [
+                el("strong", { text: member.title }),
+                member.idea ? el("span", { className: "idea", text: member.idea }) : null,
+                member.source
+                  ? el("span", { className: "source", text: "Fonte: " + member.source })
+                  : null
+              ]);
+            })
+          );
+          var aliases =
+            topic.aliases && topic.aliases.length > 0
+              ? [
+                  el("p", { className: "chips-label", text: "Nomes alternativos" }),
+                  el(
+                    "ul",
+                    { className: "chips", "aria-label": "Nomes alternativos" },
+                    topic.aliases.map(function (alias) {
+                      return el("li", { text: alias });
+                    })
+                  )
+                ]
+              : [];
+          var notes = el("textarea", { rows: "2" });
+          notes.value = (answers[topic.key] || {}).notas || "";
+          notes.addEventListener("input", function () {
+            answerOf(topic.key).notas = notes.value;
+            save();
+          });
+          var card = el("li", { className: "card", id: "topico-" + (index + 1) }, [
+            el(
+              "article",
+              { "aria-labelledby": titleId },
+              [
+                el("div", { className: "card-head" }, [
+                  el("span", { text: "Tópico " + (index + 1) + " de " + topics.length }),
+                  state
+                ]),
+                el("h2", { id: titleId, text: topic.name }),
+                topic.description
+                  ? el("p", { className: "description", text: topic.description })
+                  : el("p", { className: "description muted", text: "Sem descrição." })
+              ]
+                .concat(aliases)
+                .concat([
+                  el("h3", { text: "Amostra de notas" }),
+                  members,
+                  el("div", { className: "questions" }, [
+                    question(
+                      topic,
+                      "coerente",
+                      "Coerente?",
+                      "As notas tratam de um mesmo assunto, que você colocaria numa mesma pasta."
+                    ),
+                    question(
+                      topic,
+                      "bemNomeado",
+                      "Bem nomeado (inclui estar no idioma do conteúdo)?",
+                      "O nome indica esse assunto e está no mesmo idioma das notas."
+                    )
+                  ]),
+                  el("label", { className: "notes" }, [
+                    document.createTextNode("Observações (opcional)"),
+                    notes
+                  ])
+                ])
+            )
+          ]);
+          cards.push({ card: card, state: state, topic: topic });
+          list.appendChild(card);
+        });
+        document.getElementById("progress").hidden = false;
+        updateProgress();
+
+        // Brings the first topic that still needs an answer into view (and, when asked, focuses
+        // its first unanswered question so the keyboard continues from there).
+        function goToNextUnanswered(focus) {
+          for (var index = 0; index < topics.length; index += 1) {
+            if (isRated(topics[index].key)) continue;
+            var card = cards[index].card;
+            card.scrollIntoView({ block: "start" });
+            if (focus) {
+              var groups = card.querySelectorAll("fieldset");
+              for (var at = 0; at < groups.length; at += 1) {
+                if (!groups[at].querySelector("input:checked")) {
+                  groups[at].querySelector("input").focus({ preventScroll: true });
+                  break;
+                }
+              }
+            }
+            return;
+          }
+        }
+        next.addEventListener("click", function () {
+          goToNextUnanswered(true);
+        });
+
+        // Resuming after a reload: land on the first topic that still needs an answer.
+        if (finished.hidden && Object.keys(answers).length > 0) goToNextUnanswered(false);
+      })();
+    </script>
+  </body>
+</html>
