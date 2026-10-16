@@ -59,7 +59,8 @@
     "topics:report": "tsx scripts/topics/report.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
-    "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast"
+    "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast",
+    "check:changed": "node scripts/check-changed.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

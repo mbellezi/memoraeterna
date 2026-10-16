@@ -50,10 +50,10 @@ This is the small contract that applies to every repository task. Read it with
 - UI changes cover loading, empty, error and success states.
 - Ask before irreversible, externally visible, expensive or destructive actions
   that the task did not authorize.
-- Verify with `npm run check` (typecheck, tests, format check, lint and the
-  quality ratchet). If it is unavailable, run `npm run typecheck`, `npm test`
-  and `npm run format:check`. Also run the checks a selected domain rule
-  requires (for example real-database migration verification).
+- Verify economically: per change, `npm run check:changed` (incremental
+  typecheck, related tests, format and lint of the changed files) plus any
+  domain-rule check; the full `npm run check` and e2e suites only close a stage
+  (wave merge, gate, phase exit) or follow cross-cutting changes.
 - Start DEV only with `npm run dev -w @app/desktop` from the repository root.
 
 ## 4. Agent model tiers
