@@ -313,9 +313,11 @@ it("rejects the old plugin manual-import fallback before ordinary source ingesti
   });
   expect(handshake.status).toBe(200);
   const session = (await handshake.json()) as IntegrationHandshakeResponse;
-  // The old parser returns null for wiki types; its actual fallback shape omits frontmatter entirely.
+  // The old parser returns null for wiki types and topic maps; its actual fallback shape omits
+  // frontmatter entirely, so a topic map an old plugin sends back is refused like a wiki page.
   for (const markdown of [
     `---\nmemora_id: "${randomUUID()}"\nmemora_type: "wiki_page"\nmemora_managed: true\n---\n# My wiki`,
+    `---\nmemora_id: "${randomUUID()}"\nmemora_type: "topic"\nmemora_managed: true\naliases: ["Old"]\n---\n# Topic`,
     `---\n"memora_type": "future_wiki"\n---\n# Future page`
   ]) {
     const response = await fetch(`${status.baseUrl}/v1/obsidian/import`, {

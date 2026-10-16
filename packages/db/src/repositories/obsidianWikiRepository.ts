@@ -1,12 +1,52 @@
 import type { PgPool } from "../client.js";
 import { createJobRepository } from "./jobRepository.js";
 import { readNoteEvidence, retainedNoteCurrentSql } from "./noteEvidence.js";
-import { scopedProjectionPages } from "./wikiProjectionLineage.js";
 import {
   currentSourceRelationSql,
   currentSourceRelationEvidenceSql,
   sourceRelationEvidenceJoins
 } from "./sourceRelationRepository.js";
+import type { Queryable } from "./types.js";
+
+/** The vault projection's job: one per pass, queued again page by page (D30, D33). */
+export const projectionJobType = "obsidian-wiki";
+export interface ProjectionNoteRef {
+  id: string;
+  title: string;
+  sourceId: string | null;
+  ownership: string;
+  status: string;
+  sourceIds: string[];
+}
+export interface TopicProjectionTopic {
+  id: string;
+  parentId: string | null;
+  role: "root" | "topic";
+  title: string | null;
+  nameState: "named" | "provisional" | "unnamed";
+  aliases: string[];
+  description: string | null;
+  position: number;
+}
+export interface TopicProjectionPlacement {
+  topicId: string;
+  kind: "note" | "source";
+  itemId: string;
+  rootSourceId: string | null;
+  /** Waits at this topic for the gate or a split check (shown as unsorted, D27). */
+  waiting: boolean;
+}
+export interface TopicProjectionRows {
+  treeId: string;
+  generation: number;
+  rootId: string;
+  /** Live topics in position order. */
+  topics: TopicProjectionTopic[];
+  /** Retired topics that redirect to a successor: their titles become the successor's aliases. */
+  redirects: Array<{ id: string; title: string; redirectTo: string }>;
+  /** Primary placements, by topic, then centrality (highest first). */
+  placements: TopicProjectionPlacement[];
+}
 export interface ProjectionDelivery {
   id: string;
   memora_id: string;
@@ -22,7 +62,29 @@ export interface ProjectionDelivery {
   status: string;
   error: string | null;
 }
+/** Notes a projection of these sources may hold ($1 source IDs, $2 the whole library). */
+const noteScopeSql = `($2 or n.created_from_source_item_id=any($1::uuid[])) and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and not $2 and not(e.source_id=any($1::uuid[]))) and n.status not in('rejected','archived')
+        and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and not(l.source_item_id=any($1::uuid[])))`;
+/** ":<tree>@<generation>" of the active topic tree, or "" without one. */
+async function treeGeneration(db: Queryable): Promise<string> {
+  const tree = (
+    await db.query<{ id: string; generation: string }>(
+      "select id,generation::text as generation from topic_trees where status='active' limit 1"
+    )
+  ).rows[0];
+  return tree ? `:${tree.id}@${tree.generation}` : "";
+}
 export function createObsidianWikiRepository(pool: PgPool) {
+  const liveTopicIds = async (ids: string[]) => {
+    if (!ids.length) return [];
+    return (
+      await pool.query(
+        `select t.id from topics t join topic_trees tree on tree.id=t.tree_id and tree.status='active'
+        where t.id=any($1::uuid[]) and t.retired_at is null`,
+        [ids]
+      )
+    ).rows.map((r) => String(r.id));
+  };
   return {
     async withTargetLock<T>(id: string, work: () => Promise<T>): Promise<T> {
       const db = await pool.connect();
@@ -34,6 +96,14 @@ export function createObsidianWikiRepository(pool: PgPool) {
         db.release();
       }
     },
+    /**
+     * Admits a projection pass when the canonical data, the active topic tree or the binding changed
+     * since the last pass (or `force`). The generation names both: the projection clock, which row
+     * triggers and committed topic change-sets bump, and the active tree's generation, which no
+     * skipped bump can hide. A pass is one light job that re-enqueues itself page after page; while
+     * it runs or waits nothing new is queued, and a pass that ends behind the clocks is followed by a
+     * new one. A projection job an older build queued on the heavy lane is canceled and replaced.
+     */
     async enqueue(binding: string, force = false) {
       const db = await pool.connect();
       try {
@@ -41,24 +111,45 @@ export function createObsidianWikiRepository(pool: PgPool) {
         await db.query(
           "insert into obsidian_projection_clock(id,generation) values(1,0) on conflict(id) do nothing"
         );
-        const generation = String(
+        const clock = String(
           (await db.query("select generation from obsidian_projection_clock where id=1 for update"))
             .rows[0].generation
         );
-        const jobs = createJobRepository(db),
-          latest = await jobs.latestByType("obsidian-wiki");
+        const generation = clock + (await treeGeneration(db));
+        const jobs = createJobRepository(db);
+        let latest = await jobs.latestByType(projectionJobType);
+        if (latest && latest.lane !== "light" && latest.status === "queued") {
+          await jobs.requestCancel(latest.id);
+          latest = null;
+        }
+        const current =
+          latest?.payload.generation === generation && latest.payload.binding === binding;
+        // A pass the app stopped mid-way (quit, not a cancel the user asked for) goes on from its
+        // checkpoint; a pass that failed waits for a change or an explicit start.
         if (
           latest &&
-          (["queued", "running"].includes(latest.status) ||
-            (!force &&
-              latest.payload.generation === generation &&
-              latest.payload.binding === binding))
+          !force &&
+          current &&
+          latest.status === "canceled" &&
+          !latest.cancelRequestedAt &&
+          typeof latest.payload.cursor === "string"
         ) {
+          const resumed = await jobs.create({
+            type: projectionJobType,
+            lane: "light",
+            payload: latest.payload,
+            maxAttempts: 3
+          });
+          await db.query("commit");
+          return resumed.id;
+        }
+        if (latest && (["queued", "running"].includes(latest.status) || (!force && current))) {
           await db.query("commit");
           return latest.id;
         }
         const job = await jobs.create({
-          type: "obsidian-wiki",
+          type: projectionJobType,
+          lane: "light",
           payload: { binding, generation },
           maxAttempts: 3
         });
@@ -71,6 +162,13 @@ export function createObsidianWikiRepository(pool: PgPool) {
         db.release();
       }
     },
+    /** The generation a pass plans at now: the projection clock and the active tree's generation. */
+    async currentGeneration() {
+      const clock = (
+        await pool.query("select generation from obsidian_projection_clock where id=1")
+      ).rows[0]?.generation;
+      return String(clock ?? 0) + (await treeGeneration(pool));
+    },
     async sources(sourceIds: string[], includeDescendants: boolean) {
       return (
         await pool.query(
@@ -80,40 +178,12 @@ export function createObsidianWikiRepository(pool: PgPool) {
           (select jsonb_build_object('id',ss.id,'text',ss.summary,'provider',ss.provider,'model',ss.model,'runtime',ss.runtime,'generatedAt',ss.generated_at,'promptVersion',ss.prompt_version,'inputHash',ss.input_hash,'generationId',ss.generation_id,'stale',coalesce(s.metadata->>'summaryStale'='true',false)) from source_summaries ss where ss.source_item_id=s.id and ss.is_current order by ss.generated_at desc,ss.id desc limit 1) as summary,
           (select dv.position from document_divisions dv join document_structures st on st.id=dv.structure_id where dv.child_source_item_id=s.id and st.status in ('confirmed','materialized') order by st.revision desc,dv.position limit 1) as position,
           jsonb_build_object('creators',s.metadata->'creators','publicationDate',s.metadata->'publicationDate','publisher',s.metadata->'publisher') as metadata,
-          (select coalesce(jsonb_agg(item),'[]') from (select w.creators,w.identifiers,i.publication_date as "publicationDate",i.publisher,i.edition,i.isbn,i.doi,i.issn from source_item_bibliographic_links l join bibliographic_works w on w.id=l.work_id left join bibliographic_instances i on i.id=l.instance_id where l.source_item_id=s.id order by l.id limit 21) item) as bibliography,
+          (select coalesce(jsonb_agg(item),'[]') from (select w.creators,w.identifiers,i.publication_date as "publicationDate",i.publisher,i.edition,i.isbn,i.doi,i.issn from source_item_bibliographic_links l join bibliographic_works w on w.id=l.work_id left join bibliographic_instances i on i.id=l.instance_id where l.source_item_id=s.id order by l.id) item) as bibliography,
           not exists(select 1 from documents d where d.source_item_id=s.id and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'supersededByDocumentId' is null) as "catalogOnly"
-        from source_items s where s.id in(select id from scope) order by s.id limit 1001`,
+        from source_items s where s.id in(select id from scope) order by s.id`,
           [sourceIds, includeDescendants]
         )
       ).rows;
-    },
-    async pages(ids: string[] = []) {
-      return (
-        await pool.query(
-          "select id from wiki_pages where cardinality($1::uuid[])=0 or id=any($1::uuid[]) order by id limit 1001",
-          [ids]
-        )
-      ).rows.map((r) => String(r.id));
-    },
-    /** Which of these wiki pages still exist: the retire pass never archives the file of a live page. */
-    async existingPageIds(ids: string[]) {
-      if (!ids.length) return [];
-      return (
-        await pool.query("select id from wiki_pages where id=any($1::uuid[])", [ids])
-      ).rows.map((r) => String(r.id));
-    },
-    async scopedPages(ids: string[], allowed: string[]) {
-      return scopedProjectionPages(pool, ids, allowed);
-    },
-    async pageBytes(id: string) {
-      return Number(
-        (
-          await pool.query(
-            "select octet_length(r.content::text) + coalesce((select sum(octet_length(e.snapshot::text)) from wiki_evidence e where e.page_id=p.id and exists(select 1 from jsonb_array_elements(r.content->'sections') s where s->'evidenceIds' ? e.id::text)),0) as bytes from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1",
-            [id]
-          )
-        ).rows[0]?.bytes ?? 0
-      );
     },
     async exportEligible(
       sourceId: string | null,
@@ -137,7 +207,23 @@ export function createObsidianWikiRepository(pool: PgPool) {
       ).rows[0];
       return row?.allowed === true;
     },
-    async notes(sourceIds: string[], wholeLibrary = false) {
+    /**
+     * The notes a projection of these sources may write, without their bodies: what planning paths
+     * and links needs. The whole library when `wholeLibrary`; never truncated.
+     */
+    async noteRefs(sourceIds: string[], wholeLibrary = false): Promise<ProjectionNoteRef[]> {
+      return (
+        await pool.query<ProjectionNoteRef>(
+          `select n.id,n.title,n.created_from_source_item_id as "sourceId",n.ownership,n.status,
+        array(select source_id from atomic_note_evidence where note_id=n.id) as "sourceIds"
+        from atomic_notes n where ${noteScopeSql} order by n.id`,
+          [sourceIds, wholeLibrary]
+        )
+      ).rows;
+    },
+    /** The full rows of these notes, for rendering one page of a pass. */
+    async noteDetails(ids: string[]) {
+      if (!ids.length) return [];
       return (
         await pool.query(
           `select n.id,n.title,n.body_markdown as "bodyMarkdown",n.updated_at as "updatedAt",n.evidence_chunk_id as "evidenceChunkId",n.created_from_source_item_id as "sourceId",n.status,n.metadata,n.ownership, array(select source_id from atomic_note_evidence where note_id=n.id) as "sourceIds",array(select next_id from atomic_note_evolution where previous_id=n.id) as "successorIds",
@@ -145,9 +231,8 @@ export function createObsidianWikiRepository(pool: PgPool) {
           and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id
             where l.atomic_note_id=n.id and (ld.id is null or lc.source_item_id is distinct from l.source_item_id or ld.metadata->>'supersededByDocumentId' is not null))) as current
         from atomic_notes n left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id
-        where ($2 or n.created_from_source_item_id=any($1::uuid[])) and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and not $2 and not(e.source_id=any($1::uuid[]))) and n.status not in('rejected','archived')
-        and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and not(l.source_item_id=any($1::uuid[]))) order by n.id limit 2001`,
-          [sourceIds, wholeLibrary]
+        where n.id=any($1::uuid[]) order by n.id`,
+          [ids]
         )
       ).rows;
     },
@@ -158,33 +243,95 @@ export function createObsidianWikiRepository(pool: PgPool) {
         content: e.excerpt
       }));
     },
-    async relations(sourceIds: string[]) {
-      const rows = (
+    /** The source relations between these sources, without their evidence. */
+    async relationRefs(sourceIds: string[]) {
+      return (
         await pool.query(
           `select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current
         from source_relations r join source_items a on a.id=r.source_item_id join source_items b on b.id=r.target_source_item_id
-        where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) order by r.id limit 1001`,
+        where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) order by r.id`,
           [sourceIds]
         )
       ).rows;
-      if (rows.length > 1000) throw new Error("obsidianWiki.errors.limit");
-      let bytes = Buffer.byteLength(JSON.stringify(rows));
-      for (const row of rows) {
-        row.evidence = (
-          await pool.query(
-            `select e.id,e.origin,e.snapshot,${currentSourceRelationEvidenceSql} as current,
+    },
+    /** The evidence of one source relation, for rendering its file. */
+    async relationEvidence(relationId: string) {
+      return (
+        await pool.query(
+          `select e.id,e.origin,e.snapshot,${currentSourceRelationEvidenceSql} as current,
         sc.document_id as "sourceDocumentId",tc.document_id as "targetDocumentId",
         coalesce(ss.label,ss.selector,ss.page::text) as "sourceLocator",coalesce(ts.label,ts.selector,ts.page::text) as "targetLocator"
         from source_relation_evidence e ${sourceRelationEvidenceJoins}
         left join source_spans ss on ss.id=sc.source_span_id left join source_spans ts on ts.id=tc.source_span_id
-        where e.relation_id=$1 order by e.created_at,e.id limit 101`,
-            [row.id]
+        where e.relation_id=$1 order by e.created_at,e.id`,
+          [relationId]
+        )
+      ).rows;
+    },
+    /**
+     * What the topic maps of content are made of, read in one snapshot: the active tree, its live
+     * topics, the retired topics that redirect to a successor and every primary placement by
+     * centrality. Null when no tree is active.
+     */
+    async topicProjection(): Promise<TopicProjectionRows | null> {
+      const db = await pool.connect();
+      try {
+        await db.query("begin isolation level repeatable read read only");
+        const tree = (
+          await db.query<{ id: string; generation: string; rootId: string }>(
+            `select t.id,t.generation::text as generation,r.id as "rootId" from topic_trees t
+          join topics r on r.tree_id=t.id and r.role='root' and r.retired_at is null
+          where t.status='active' limit 1`
+          )
+        ).rows[0];
+        if (!tree) {
+          await db.query("commit");
+          return null;
+        }
+        const topics = (
+          await db.query<TopicProjectionTopic>(
+            `select id,parent_id as "parentId",role,title,name_state as "nameState",aliases,description,position
+          from topics where tree_id=$1 and retired_at is null order by position,id`,
+            [tree.id]
           )
         ).rows;
-        bytes += Buffer.byteLength(JSON.stringify(row.evidence));
-        if (bytes > 20_000_000) throw new Error("obsidianWiki.errors.limit");
+        const redirects = (
+          await db.query<{ id: string; title: string; redirectTo: string }>(
+            `select id,title,redirect_to as "redirectTo" from topics
+          where tree_id=$1 and retired_at is not null and redirect_to is not null and title is not null order by id`,
+            [tree.id]
+          )
+        ).rows;
+        const placements = (
+          await db.query<TopicProjectionPlacement>(
+            `select p.topic_id as "topicId",p.item_kind as kind,coalesce(p.note_id,p.source_item_id) as "itemId",
+          p.root_source_item_id as "rootSourceId",(p.needs_gate or p.needs_split_check) as waiting
+          from topic_placements p where p.tree_id=$1 and p.rank=0
+          order by p.topic_id,p.centrality desc nulls last,p.id`,
+            [tree.id]
+          )
+        ).rows;
+        await db.query("commit");
+        return {
+          treeId: tree.id,
+          generation: Number(tree.generation),
+          rootId: tree.rootId,
+          topics,
+          redirects,
+          placements
+        };
+      } catch (error) {
+        await db.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        db.release();
       }
-      return rows;
+    },
+    /** Which of these topics are live in the active tree: the retire pass never takes their files. */
+    liveTopicIds,
+    /** Whether a topic is still live in the active tree, read just before its map is written. */
+    async topicLive(id: string) {
+      return (await liveTopicIds([id])).length === 1;
     },
     async latest(memoraId: string, binding: string): Promise<ProjectionDelivery | null> {
       return (

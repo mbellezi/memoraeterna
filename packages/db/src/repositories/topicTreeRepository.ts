@@ -1350,6 +1350,20 @@ async function insertChangeSet(
   return result.rows[0]!.id;
 }
 
+/**
+ * D30: a committed change-set makes the vault projection stale, so it bumps the projection clock
+ * (the topic tables have no projection triggers). The bump never waits for the clock row: a
+ * transaction that holds it is bumping it itself, and waiting could deadlock with one that also
+ * reaches `topic_stats` (a cascade marking paths dirty). A skipped bump hides nothing, because the
+ * projection's admission also compares the active tree's generation.
+ */
+async function bumpProjectionClock(db: Queryable): Promise<void> {
+  await db.query(
+    `update obsidian_projection_clock set generation = generation + 1
+      where id = (select id from obsidian_projection_clock where id = 1 for update skip locked)`
+  );
+}
+
 interface CommitInput {
   tree: TopicTreeRecord;
   /** A new change-set row, or the pending one being applied. */
@@ -1420,6 +1434,7 @@ async function commitChangeSet(db: Queryable, input: CommitInput): Promise<Appli
       input.treeConfig?.configHash ?? null
     ]
   );
+  await bumpProjectionClock(db);
   const dirty = [...new Set([...live, ...supplied])].filter(
     (id) => !supplied.has(id) || preDirty.has(id)
   );

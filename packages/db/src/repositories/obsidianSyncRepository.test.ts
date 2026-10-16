@@ -35,10 +35,10 @@ const row = {
   updatedAt: new Date("2026-10-15T11:00:00Z")
 };
 
-describe("obsidianSyncRepository.listWikiFiles", () => {
-  it("lists wiki page and index files by path and maps the rows", async () => {
+describe("obsidianSyncRepository.listRetirableFiles", () => {
+  it("lists wiki page, wiki index and topic map files by path and maps the rows", async () => {
     const { db, query } = fake([row]);
-    const files = await createObsidianSyncRepository(db).listWikiFiles(true);
+    const files = await createObsidianSyncRepository(db).listRetirableFiles(true);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({
       memoraId: row.memoraId,
@@ -48,8 +48,8 @@ describe("obsidianSyncRepository.listWikiFiles", () => {
       metadata: { retired: { outcome: "kept" } }
     });
     const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
-    expect(sql).toContain("memora_type in ('wiki_page', 'wiki_index')");
-    expect(sql).toContain("entity_type in ('wiki_page', 'wiki_index')");
+    expect(sql).toContain("memora_type in ('wiki_page', 'wiki_index', 'topic')");
+    expect(sql).toContain("entity_type in ('wiki_page', 'wiki_index', 'topic')");
     expect(sql).toContain("(status::text = 'retired') = $1");
     expect(sql).toContain("order by relative_path");
     expect(params).toEqual([true]);
@@ -57,20 +57,21 @@ describe("obsidianSyncRepository.listWikiFiles", () => {
 
   it("asks for the live rows with the opposite flag", async () => {
     const { db, query } = fake();
-    expect(await createObsidianSyncRepository(db).listWikiFiles(false)).toEqual([]);
+    expect(await createObsidianSyncRepository(db).listRetirableFiles(false)).toEqual([]);
     expect((query.mock.calls[0] as unknown as [string, unknown[]])[1]).toEqual([false]);
   });
 });
 
 describe("obsidianWikiRepository", () => {
-  it("finds which of the given pages still exist, and asks nothing for an empty list", async () => {
+  it("finds which of the given topics are live in the active tree, and asks nothing for none", async () => {
     const { pool, query } = fake([{ id: "a" }, { id: "b" }]);
     const repository = createObsidianWikiRepository(pool);
-    expect(await repository.existingPageIds([])).toEqual([]);
+    expect(await repository.liveTopicIds([])).toEqual([]);
     expect(query).not.toHaveBeenCalled();
-    expect(await repository.existingPageIds(["a", "b", "c"])).toEqual(["a", "b"]);
+    expect(await repository.liveTopicIds(["a", "b", "c"])).toEqual(["a", "b"]);
     const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
-    expect(sql).toContain("from wiki_pages where id=any($1::uuid[])");
+    expect(sql).toContain("tree.status='active'");
+    expect(sql).toContain("t.retired_at is null");
     expect(params).toEqual([["a", "b", "c"]]);
   });
 

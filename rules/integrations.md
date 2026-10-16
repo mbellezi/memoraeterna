@@ -43,8 +43,8 @@ deep links.
   migrations that check local edits before moving anything.
 - The projection follows the topic tree: topics project as folder-note maps of
   content, redirects become aliases, sources and notes keep their registered
-  paths. Delivery is paged or incremental; oversized scopes fail visibly and are
-  never silently truncated (target F2).
+  paths. Delivery is paged with a persisted checkpoint; an oversized file fails
+  visibly by name, nothing is silently truncated, and topic maps are outward-only.
 - Scope and canonical revisions are revalidated immediately before every write.
   Writes are serialized per target, compare actual file bytes before promotion,
   reject symlinks inside the vault, use exclusive temporary files, and keep

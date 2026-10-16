@@ -789,6 +789,59 @@ describe.skipIf(!sidecarInstalled)("topic tree writer on a real PostgreSQL datab
     await expect(repo.changeSetMeta(randomUUID(), movedId)).resolves.toBeNull();
   }, 60_000);
 
+  it("bumps the projection clock once per committed change-set and never waits for it (D30)", async () => {
+    const repo = createTopicTreeRepository(db());
+    const tree = (await repo.activeTree())!;
+    const clock = async () =>
+      Number(
+        (await db().query("select generation from obsidian_projection_clock where id = 1")).rows[0]
+          .generation
+      );
+    const topic = (await repo.readTreeRecords(tree.id)).topics.find((t) => t.role === "topic")!;
+    let name = {
+      title: topic.title,
+      nameState: topic.nameState,
+      nameSource: topic.nameSource,
+      nameLanguage: topic.nameLanguage,
+      namedChangeSetId: topic.namedChangeSetId,
+      aliases: topic.aliases
+    };
+    const rename = async (title: string, expectedGeneration: number) => {
+      const after = { ...name, title, nameState: "named" as const, nameSource: "human" as const };
+      const result = await repo.applyChangeSet({
+        treeId: tree.id,
+        expectedGeneration,
+        origin: "human",
+        titleKey: "topics.changeSets.human",
+        events: [{ op: "topic.rename", topicId: topic.id, before: name, after }]
+      });
+      name = after;
+      return result;
+    };
+    const before = await clock();
+    const named = await rename("Projected name", tree.generation);
+    expect(named).toMatchObject({ kind: "applied", generation: tree.generation + 1 });
+    expect(await clock()).toBe(before + 1);
+
+    // Another transaction holds the clock row: the change-set commits at once and leaves the bump
+    // to it; the tree generation still moves, which the projection's admission also compares.
+    const holder = await db().connect();
+    try {
+      await holder.query("begin");
+      await holder.query(
+        "update obsidian_projection_clock set generation = generation where id = 1"
+      );
+      const started = Date.now();
+      const again = await rename("Projected again", tree.generation + 1);
+      expect(again).toMatchObject({ kind: "applied", generation: tree.generation + 2 });
+      expect(Date.now() - started).toBeLessThan(topicTreeRepositoryLimits.lockTimeoutMs);
+      await holder.query("commit");
+    } finally {
+      holder.release();
+    }
+    expect(await clock()).toBe(before + 1);
+  }, 30_000);
+
   it("blocks an undo whose inverse would break I2 or the depth cap, like the engine", async () => {
     await createLibraryResetRepository(db()).reset();
     const source = randomUUID();

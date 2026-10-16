@@ -101,7 +101,6 @@ export interface JobSupervisorOptions {
 const emptyDocumentError = "errors.conversion.emptyResult";
 
 const supportedJobTypes = new Set<string>([
-  "obsidian-wiki",
   "relation-labels",
   "ingestion",
   "markdown-conversion",
@@ -113,10 +112,14 @@ const supportedJobTypes = new Set<string>([
   "asset-storage"
 ]);
 
+/** The vault projection (D30): a pass is one job, queued again page by page, on `compute`. */
+const projectionJobType = "obsidian-wiki";
+
 /**
- * Runs persisted jobs in two lanes: one heavy loop (ingestion and the vault projection) and the
- * light lane's `compute` and `model` workers, which claim disjoint light job types. Each loop runs
- * one job at a time and never waits for another loop.
+ * Runs persisted jobs in two lanes: one heavy loop (ingestion) and the light lane's `compute` and
+ * `model` workers, which claim disjoint light job types. The vault projection is a light `compute`
+ * job, delivered page by page, so placements interleave with it. Each loop runs one job at a time
+ * and never waits for another loop.
  */
 export class JobSupervisor {
   private readonly workers = new WorkerSupervisor();
@@ -131,7 +134,20 @@ export class JobSupervisor {
   private readonly workerId = `${hostname()}:${process.pid}`;
 
   public constructor(private readonly options: JobSupervisorOptions) {
-    this.lightJobs = options.lightJobs ?? {};
+    const wiki = options.obsidianSyncService?.wiki;
+    if (wiki && options.lightJobs?.[projectionJobType])
+      throw new Error(`job_lane_conflict:${projectionJobType}`);
+    this.lightJobs = {
+      ...options.lightJobs,
+      ...(wiki
+        ? {
+            [projectionJobType]: {
+              needsModel: false,
+              execute: (job: JobRecord, signal: AbortSignal) => wiki.execute(job, signal)
+            }
+          }
+        : {})
+    };
     for (const type of Object.keys(this.lightJobs))
       if (supportedJobTypes.has(type)) throw new Error(`job_lane_conflict:${type}`);
     this.lightTypes = lightWorkerTypes(this.lightJobs);
@@ -165,14 +181,9 @@ export class JobSupervisor {
     this.controllers.clear();
   }
 
-  /** One heavy pass: the vault projection admission, then at most one heavy job. */
+  /** One heavy pass: at most one heavy job. */
   public async runOnce(): Promise<JobRecord | null> {
     const repository = createJobRepository(this.requirePool());
-    try {
-      await this.options.obsidianSyncService?.wiki?.enqueue();
-    } catch {
-      this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable");
-    }
     const job = await repository.claimNext(this.workerId, [...supportedJobTypes], "heavy");
     if (!job) return null;
     this.notify();
@@ -186,19 +197,17 @@ export class JobSupervisor {
         withPromptPin(
           job.payload.promptPin ? PromptPinSchema.parse(job.payload.promptPin) : null,
           async () =>
-            job.type === "obsidian-wiki"
-              ? await this.options.obsidianSyncService!.wiki!.execute(taskJob, controller.signal)
-              : job.type === "relation-labels"
-                ? await this.options.processRelationLabels!(taskJob, controller.signal)
-                : job.type === "ingestion"
-                  ? await this.executeIngestion(taskJob, controller)
-                  : job.type === "note-embedding"
-                    ? await this.executeNoteEmbedding(taskJob, controller.signal)
-                    : await this.workers.execute(job.type as WorkerTask["type"], taskJob.payload, {
-                        signal: controller.signal,
-                        onProgress: (progress) =>
-                          this.trackProgress(repository.reportProgress(job.id, progress))
-                      })
+            job.type === "relation-labels"
+              ? await this.options.processRelationLabels!(taskJob, controller.signal)
+              : job.type === "ingestion"
+                ? await this.executeIngestion(taskJob, controller)
+                : job.type === "note-embedding"
+                  ? await this.executeNoteEmbedding(taskJob, controller.signal)
+                  : await this.workers.execute(job.type as WorkerTask["type"], taskJob.payload, {
+                      signal: controller.signal,
+                      onProgress: (progress) =>
+                        this.trackProgress(repository.reportProgress(job.id, progress))
+                    })
         );
       const result = await (this.options.traceOperation?.(
         job.type,
@@ -252,6 +261,14 @@ export class JobSupervisor {
    * type is skipped while held: its jobs stay queued (the topic barrier, D23).
    */
   public async runLightOnce(worker: LightWorker): Promise<JobRecord | null> {
+    // The vault projection's admission runs where its pages run: a pass starts when the canonical
+    // data, the topic tree or the binding changed since the last one.
+    if (worker === "compute" && this.lightTypes.compute.includes(projectionJobType))
+      try {
+        await this.options.obsidianSyncService?.wiki?.enqueue();
+      } catch {
+        this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable");
+      }
     const types = this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.());
     if (types.length === 0) return null;
     const repository = createJobRepository(this.requirePool());
@@ -279,7 +296,10 @@ export class JobSupervisor {
         },
         execute
       ) ?? execute());
-      const updated = await repository.update(job.id, finishedJob(job, result, controller.signal));
+      const updated = await repository.update(
+        job.id,
+        lightJobUpdate(job, result, controller.signal)
+      );
       this.notify();
       return updated;
     } catch (error) {
@@ -1329,6 +1349,39 @@ function readStringArray(value: unknown): string[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * A light job that did one step of a longer task returns the payload of its next step as
+ * `continueWith`: the same job is queued again with it, due at once, behind the work already
+ * waiting, with its attempts counted afresh. Its own step's result is kept. Paged work (the vault
+ * projection, D30) so stays one job that a crash re-runs from its last step.
+ */
+export const lightJobContinuation = "continueWith";
+
+/** The update after a light job's step: queued again with its next payload, or finished. */
+export function lightJobUpdate(
+  job: JobRecord,
+  result: JsonObject,
+  signal: AbortSignal = new AbortController().signal
+): UpdateJobInput {
+  const { [lightJobContinuation]: next, ...stepResult } = result;
+  if (!next || typeof next !== "object" || Array.isArray(next) || signal.aborted)
+    return finishedJob(job, stepResult, signal);
+  return {
+    status: "queued",
+    payload: {
+      ...(next as JsonObject),
+      ...(job.payload.promptPin ? { promptPin: job.payload.promptPin } : {})
+    },
+    result: stepResult,
+    error: null,
+    attempts: 0,
+    runAfter: new Date(),
+    lockedAt: null,
+    lockedBy: null,
+    finishedAt: null
+  };
 }
 
 /** The update that ends a job whose work returned, or that was canceled while it ran. */

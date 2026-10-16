@@ -127,14 +127,20 @@ export const captureYouTubeVideoRequestSchema = z
   .strict();
 export type CaptureYouTubeVideoRequest = z.infer<typeof captureYouTubeVideoRequestSchema>;
 
+/**
+ * What a managed vault file projects. `topic` is a topic's map of content (a folder note): an
+ * outward-only projection, so it is never an editorial target (`obsidianEditOperationSchema`).
+ */
 export const obsidianMemoraTypeSchema = z.enum([
   "source_item",
   "atomic_note",
   "wiki_page",
   "wiki_index",
   "source_reference",
-  "source_relation"
+  "source_relation",
+  "topic"
 ]);
+export type ObsidianMemoraType = z.infer<typeof obsidianMemoraTypeSchema>;
 export const obsidianManagedFrontmatterSchema = z
   .object({
     memoraId: z.string().uuid(),

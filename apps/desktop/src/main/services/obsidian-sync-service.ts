@@ -12,7 +12,11 @@ import {
   serializeManagedFrontmatter,
   normalizeProjectionText
 } from "@app/integration-contracts";
-import { ObsidianWikiProjection, projectionHash } from "./obsidian-wiki-projection.js";
+import {
+  ObsidianWikiProjection,
+  projectionHash,
+  type ObsidianDeliveryConfig
+} from "./obsidian-wiki-projection.js";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import { join, posix, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -69,6 +73,8 @@ export interface ObsidianSyncServiceOptions {
   }) => Promise<{ mtimeMs: number }>;
   /** Replaces the worker that moves retired wiki files into recovery (in-process tests). */
   archiveProjection?: (input: ObsidianArchiveInput) => Promise<ObsidianArchiveResult>;
+  /** The vault projection's page sizes (tests and proofs shrink them). */
+  delivery?: Partial<ObsidianDeliveryConfig>;
 }
 
 export class ObsidianSyncService {
@@ -155,7 +161,7 @@ export class ObsidianSyncService {
       );
       if (!eligibleSources.some((s) => s.id === sourceItemId)) return { projected: 0 };
       allowedNoteIds = new Set(
-        (await projectionRepository.notes(eligibleSources.map((s) => String(s.id)))).map((n) =>
+        (await projectionRepository.noteRefs(eligibleSources.map((s) => String(s.id)))).map((n) =>
           String(n.id)
         )
       );

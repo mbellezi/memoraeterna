@@ -31,7 +31,9 @@ import {
   fileMetadataExtractionResultSchema,
   libraryBrowseInputSchema,
   obsidianWikiRetiredMoveSchema,
-  obsidianWikiStatusSchema
+  obsidianWikiScopeSchema,
+  obsidianWikiStatusSchema,
+  storedObsidianWikiScopeSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -499,7 +501,7 @@ describe("desktop IPC contracts", () => {
       "jobsCancelBatch"
     ])
       expect(names, removed).not.toContain(removed);
-    // The two reads the Ask and Obsidian scope pickers still use.
+    // Legacy reads that stay until the legacy repositories go (T40r).
     expect(ipcChannels.wikiList).toBe("app:wiki:list");
     expect(ipcChannels.wikiSearch).toBe("app:wiki:search");
   });
@@ -508,7 +510,8 @@ describe("desktop IPC contracts", () => {
     const status = {
       active: true,
       job: null,
-      scope: { sourceIds: [], pageIds: [], includeDescendants: true },
+      delivery: { state: "running", total: 20_412, delivered: 600, failed: 1 },
+      scope: { sourceIds: [], includeDescendants: true },
       conflicts: [],
       retired: {
         archived: 20,
@@ -538,6 +541,39 @@ describe("desktop IPC contracts", () => {
       obsidianWikiStatusSchema.parse({
         ...status,
         retired: { ...status.retired, kept: Array(201).fill(status.retired.kept[0]) }
+      })
+    ).toThrow();
+  });
+
+  it("scopes the projection by sources only, and reads a stored scope that still names pages", () => {
+    const id = "00000000-0000-4000-8000-000000000005";
+    expect(obsidianWikiScopeSchema.parse({})).toEqual({ sourceIds: [], includeDescendants: true });
+    expect(() => obsidianWikiScopeSchema.parse({ sourceIds: [], pageIds: [id] })).toThrow();
+    expect(
+      storedObsidianWikiScopeSchema.parse({
+        sourceIds: [id],
+        pageIds: [],
+        includeDescendants: false
+      })
+    ).toEqual({ sourceIds: [id], includeDescendants: false });
+    expect(() => storedObsidianWikiScopeSchema.parse({ sourceIds: [], other: 1 })).toThrow();
+  });
+
+  it("reports where a delivery pass stands", () => {
+    const status = {
+      active: true,
+      job: { status: "queued", error: null },
+      delivery: { state: "running", total: 10, delivered: 4, failed: 0 },
+      scope: { sourceIds: [], includeDescendants: true },
+      conflicts: [],
+      retired: { archived: 0, absent: 0, keptTotal: 0, kept: [] }
+    };
+    expect(obsidianWikiStatusSchema.parse(status).delivery?.delivered).toBe(4);
+    expect(obsidianWikiStatusSchema.parse({ ...status, delivery: null }).delivery).toBeNull();
+    expect(() =>
+      obsidianWikiStatusSchema.parse({
+        ...status,
+        delivery: { ...status.delivery, state: "paged" }
       })
     ).toThrow();
   });

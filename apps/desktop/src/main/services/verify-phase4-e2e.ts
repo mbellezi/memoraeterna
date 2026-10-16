@@ -47,7 +47,7 @@ import "./verify-worker-host.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
-import { JobSupervisor } from "./job-supervisor.js";
+import { JobSupervisor, lightJobUpdate } from "./job-supervisor.js";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
 import { ObjectsService } from "./objects-service.js";
@@ -458,20 +458,27 @@ try {
 
   // The projection is a mirror job: it creates the layout on a fresh install and writes the vault.
   const jobsRepository = createJobRepository(pool);
+  // A pass is one light job delivered page by page: each page queues the job again.
   const projectVault = async () => {
     const jobId = await obsidian!.wiki.enqueue(true);
-    const job = jobId ? await jobsRepository.findById(jobId) : null;
-    if (!jobId || !job) throw new Error("Projection job was not queued.");
-    await jobsRepository.update(jobId, { status: "running" });
-    const result = await obsidian!.wiki.execute(job);
-    await jobsRepository.update(jobId, { status: "succeeded", result });
-    return result;
+    if (!jobId) throw new Error("Projection job was not queued.");
+    const total = { projected: 0, conflicts: 0, failed: 0 };
+    for (;;) {
+      const job = await jobsRepository.claimNext("phase4-e2e", ["obsidian-wiki"], "light");
+      if (!job) throw new Error("A projection page was not queued on the light lane.");
+      const result = await obsidian!.wiki.execute(job);
+      await jobsRepository.update(job.id, lightJobUpdate(job, result));
+      total.projected += result.projected;
+      total.conflicts += result.conflicts;
+      total.failed += result.failed;
+      if (result.done) return total;
+    }
   };
   const countIngestionJobs = async () =>
     (await jobsRepository.list()).filter((job) => job.type === "ingestion").length;
   const ingestionJobsBeforeProjection = await countIngestionJobs();
   const projection = await projectVault();
-  if (projection.conflicts !== 0 || projection.projected < 3) {
+  if (projection.conflicts !== 0 || projection.failed !== 0 || projection.projected < 3) {
     throw new Error(`Unexpected projection result: ${JSON.stringify(projection)}`);
   }
   const layout = await createSettingsRepository(pool).get<{ version?: number }>("obsidian.layout");

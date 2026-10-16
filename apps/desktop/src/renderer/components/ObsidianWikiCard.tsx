@@ -2,28 +2,33 @@ import { ObsidianLayoutCard } from "./ObsidianLayoutCard";
 import { ObsidianEditorialCard } from "./ObsidianEditorialCard";
 import { useEffect, useRef, useState } from "react";
 import { BookOpen, FileWarning, X } from "lucide-react";
-import type { MessageKey } from "@app/i18n";
+import type { MessageKey, TranslateOptions } from "@app/i18n";
 import { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
 import { ObsidianRetiredReport } from "./ObsidianRetiredReport";
 import { Button } from "./ui/button";
-type Translator = (key: MessageKey) => string;
+type Translator = (key: MessageKey, options?: TranslateOptions) => string;
 type Status = Awaited<ReturnType<typeof window.app.obsidian.wikiStatus>>;
 type Diff = Awaited<ReturnType<typeof window.app.obsidian.wikiDiff>>;
-const control =
-  "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950";
+type Conflict = Status["conflicts"][number];
+const errorKeys = ["conflict", "binding", "paused", "limit", "format", "write"] as const;
+/** The message of a failed job or file, from the error key it carries. */
+const errorMessage = (error: string | null): MessageKey =>
+  `obsidianWiki.errors.${errorKeys.find((key) => error?.includes(key)) ?? "write"}`;
+/** A file the projection could not write and that has nothing to review (too large, invalid). */
+export const isFailedFile = (row: Conflict) =>
+  row.status === "error" && /errors\.(limit|format|binding)/.test(row.error ?? "");
 export function ObsidianWikiCard({ t }: { t: Translator }) {
   const [status, setStatus] = useState<Status | null>(null),
     [scope, setScope] = useState<Status["scope"] | null>(null),
-    [pages, setPages] = useState<Array<{ id: string; title: string }>>([]),
     [error, setError] = useState<MessageKey | null>(null),
     [busy, setBusy] = useState(false),
     [diff, setDiff] = useState<Diff | null>(null);
   useEffect(() => {
-    void Promise.all([window.app.obsidian.wikiStatus(), window.app.wiki.list()])
-      .then(([value, list]) => {
+    void window.app.obsidian
+      .wikiStatus()
+      .then((value) => {
         setStatus(value);
         setScope(value.scope);
-        setPages(list);
       })
       .catch(() => setError("obsidianWiki.errors.load"));
     const timer = setInterval(
@@ -60,17 +65,19 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
       setBusy(false);
     }
   }
+  const failed = status?.conflicts.filter(isFailedFile) ?? [];
+  const pending = status?.conflicts.filter((row) => !isFailedFile(row)) ?? [];
   return (
-    <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+    <section className="grid gap-3 rounded-2xl border border-border bg-surface p-5">
       <h3 className="flex items-center gap-2 font-semibold">
-        <BookOpen size={18} />
+        <BookOpen size={18} aria-hidden="true" />
         {t("obsidianWiki.title")}
       </h3>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-muted-foreground">
         {t("obsidianEditing.scopeHint")} {t("obsidianWiki.queued")}
       </p>
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {t(error)}
         </p>
       )}
@@ -78,16 +85,12 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
         <p role="status" className="text-sm">
           {t(`jobs.status.${status.job.status}`)}
           {status.job.error && (
-            <span className="ml-2 text-red-600">
-              {t(
-                (["conflict", "binding", "paused", "limit", "format", "write"]
-                  .map((key) => `obsidianWiki.errors.${key}`)
-                  .find((key) => status.job!.error!.includes(key)) ??
-                  "obsidianWiki.errors.write") as MessageKey
-              )}
-            </span>
+            <span className="ml-2 text-danger">{t(errorMessage(status.job.error))}</span>
           )}
         </p>
+      )}
+      {status?.delivery && status.delivery.total > 0 && (
+        <DeliveryProgress t={t} delivery={status.delivery} />
       )}
       {!status ? (
         <p role="status">{t("obsidianWiki.loading")}</p>
@@ -113,27 +116,7 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
                   />
                   {t("obsidianWiki.descendants")}
                 </label>
-                <label className="grid gap-2 text-sm">
-                  {t("obsidianWiki.pageIds")}
-                  <span className="text-xs text-slate-500">{t("obsidianWiki.allPages")}</span>
-                  <select
-                    multiple
-                    className={`${control} h-32`}
-                    value={scope.pageIds}
-                    onChange={(e) =>
-                      setScope({
-                        ...scope,
-                        pageIds: Array.from(e.target.selectedOptions, (o) => o.value)
-                      })
-                    }
-                  >
-                    {pages.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <p className="text-xs text-muted-foreground">{t("obsidianWiki.topicScope")}</p>
                 <Button
                   className="justify-self-start"
                   onClick={() =>
@@ -148,20 +131,24 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
               </fieldset>
             )}
           </details>
-          {status.conflicts.length ? (
+          <ObsidianFailedFiles t={t} failed={failed} />
+          {pending.length ? (
             <div className="grid gap-2">
               <h4 className="flex items-center gap-2 text-sm font-medium">
-                <FileWarning size={16} />
+                <FileWarning size={16} aria-hidden="true" />
                 {t("obsidianWiki.pending")}
               </h4>
-              {status.conflicts.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex min-w-0 items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-950"
-                >
-                  <span className="min-w-0 flex-1 break-words text-xs">{c.relative_path}</span>
+              {pending.map((c) => (
+                <div key={c.id} className="flex min-w-0 items-center gap-3 rounded-xl bg-soft p-3">
+                  <span
+                    id={`obsidian-pending-${c.id}`}
+                    className="min-w-0 flex-1 break-words text-xs"
+                  >
+                    {c.relative_path}
+                  </span>
                   <Button
                     disabled={busy}
+                    aria-describedby={`obsidian-pending-${c.id}`}
                     onClick={() =>
                       void action(async () => setDiff(await window.app.obsidian.wikiDiff(c.id)))
                     }
@@ -172,7 +159,9 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">{t("obsidianWiki.empty")}</p>
+            failed.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t("obsidianWiki.empty")}</p>
+            )
           )}
           <ObsidianRetiredReport
             t={t}
@@ -208,6 +197,77 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
       <ObsidianLayoutCard t={t} />
       <ObsidianEditorialCard t={t} />
     </section>
+  );
+}
+/** Files the projection could not write, each by its vault path and why; nothing when none. */
+export function ObsidianFailedFiles({ t, failed }: { t: Translator; failed: Conflict[] }) {
+  if (!failed.length) return null;
+  return (
+    <section aria-labelledby="obsidian-failed-title" className="grid gap-2">
+      <h4 id="obsidian-failed-title" className="flex items-center gap-2 text-sm font-medium">
+        <FileWarning size={16} className="text-danger" aria-hidden="true" />
+        {t("obsidianWiki.failedTitle")}
+      </h4>
+      <ul className="grid gap-2">
+        {failed.map((row) => (
+          <li key={row.id} className="grid min-w-0 gap-1 rounded-xl bg-soft p-3">
+            <span className="break-words text-xs">{row.relative_path}</span>
+            <span className="text-xs text-muted-foreground">
+              {t(
+                row.error?.includes("limit") ? "obsidianWiki.fileTooLarge" : errorMessage(row.error)
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+/** Where the paged delivery stands: files delivered of the pass's total, and any that failed. */
+export function DeliveryProgress({
+  t,
+  delivery
+}: {
+  t: Translator;
+  delivery: NonNullable<Status["delivery"]>;
+}) {
+  const values = {
+    delivered: delivery.delivered,
+    total: delivery.total,
+    failed: delivery.failed
+  };
+  const key: MessageKey =
+    delivery.state === "running"
+      ? "obsidianWiki.deliveryRunning"
+      : delivery.state === "done"
+        ? "obsidianWiki.deliveryDone"
+        : "obsidianWiki.deliveryStopped";
+  return (
+    <div className="grid gap-1" data-testid="obsidian-delivery">
+      <p role="status" aria-live="polite" className="text-sm">
+        {t(key, { values })}
+        {delivery.failed > 0 && (
+          <span className="ml-2 text-danger">{t("obsidianWiki.deliveryFailed", { values })}</span>
+        )}
+      </p>
+      {delivery.state === "running" && (
+        <div
+          className="h-1.5 overflow-hidden rounded-full bg-soft"
+          role="progressbar"
+          aria-label={t("obsidianWiki.deliveryLabel")}
+          aria-valuemin={0}
+          aria-valuemax={delivery.total}
+          aria-valuenow={Math.min(delivery.delivered, delivery.total)}
+        >
+          <div
+            className="h-full rounded-full bg-accent"
+            style={{
+              width: `${(100 * Math.min(delivery.delivered, delivery.total)) / delivery.total}%`
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 function ProjectionDiff({
@@ -247,19 +307,19 @@ function ProjectionDiff({
         e.preventDefault();
         onClose();
       }}
-      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-auto rounded-2xl bg-slate-50 p-5 text-slate-950 backdrop:bg-slate-950/60 dark:bg-slate-950 dark:text-slate-50"
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-auto rounded-2xl bg-soft p-5 text-foreground backdrop:bg-background/70"
     >
       <header className="flex items-center gap-3">
         <h2 id="projection-diff-title" className="min-w-0 flex-1 break-words font-semibold">
           {diff.relativePath}
         </h2>
         <Button autoFocus aria-label={t("organization.close")} onClick={onClose}>
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </Button>
       </header>
-      <p className="my-4 text-sm text-slate-500">{t("obsidianWiki.recoveryHint")}</p>
+      <p className="my-4 text-sm text-muted-foreground">{t("obsidianWiki.recoveryHint")}</p>
       {error && (
-        <p role="alert" className="mb-4 text-sm text-red-600">
+        <p role="alert" className="mb-4 text-sm text-danger">
           {t(error)}
         </p>
       )}
@@ -267,7 +327,7 @@ function ProjectionDiff({
         {(["base", "local", "proposed"] as const).map((kind) => (
           <section key={kind} className="min-w-0">
             <h3 className="mb-2 text-sm font-semibold">{t(`obsidianWiki.${kind}`)}</h3>
-            <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
+            <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-surface p-3 text-xs">
               {diff[kind]}
             </pre>
           </section>

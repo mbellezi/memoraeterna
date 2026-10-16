@@ -2253,7 +2253,6 @@
     "readOnly": "Un plugin compatible con permiso de edición guarda títulos y secciones en Memora. Sin él, las ediciones quedan locales. Navegación, pruebas y relaciones generadas son de solo lectura.",
     "scope": "Alcance de la proyección",
     "allSources": "Todas las fuentes (selección vacía)",
-    "allPages": "Todas las páginas (selección vacía)",
     "descendants": "Incluir descendientes",
     "saveScope": "Guardar alcance",
     "pending": "Ediciones locales pendientes",
@@ -2266,7 +2265,6 @@
     "saved": "Alcance guardado",
     "empty": "No hay ediciones pendientes.",
     "loading": "Cargando proyección…",
-    "pageIds": "Páginas de la wiki",
     "sourceIds": "Fuentes",
     "queued": "Las actualizaciones usan la cola de tareas.",
     "retiredTitle": "Archivos de la wiki antigua",
@@ -2292,7 +2290,16 @@
       "retiredMove": "No se pudo mover el archivo de forma segura. Ciérrelo en Obsidian e inténtelo de nuevo."
     },
     "historicalPage": "Revisión histórica · solo lectura",
-    "finishDraft": "Guarde o cancele el borrador para abrir el enlace de Obsidian."
+    "finishDraft": "Guarde o cancele el borrador para abrir el enlace de Obsidian.",
+    "topicUp": "Arriba",
+    "topicScope": "Cada tema con notas o fuentes en este alcance recibe un mapa de contenido en la bóveda.",
+    "deliveryRunning": "Actualizando la bóveda: {delivered} de {total} archivos revisados.",
+    "deliveryDone": "La última pasada revisó los {total} archivos.",
+    "deliveryStopped": "La última pasada se detuvo tras {delivered} de {total} archivos. Continúa con la próxima actualización.",
+    "deliveryFailed": "{failed} no se pudieron escribir.",
+    "deliveryLabel": "Progreso de la actualización de la bóveda",
+    "failedTitle": "Archivos no escritos",
+    "fileTooLarge": "Demasiado grande para escribirse en la bóveda. El resto de la bóveda está al día."
   },
   "obsidianEditing": {
     "review": "Revisar sincronización",
@@ -2559,8 +2566,6 @@
     "error": "La migración requiere atención. Resuelve o excluye los archivos indicados y crea otra vista previa.",
     "bibliography": "Bibliografía",
     "summary": "Resumen generado",
-    "interpretation": "Interpretación humana",
-    "noInterpretation": "No se ha escrito ninguna interpretación.",
     "usedBy": "Conocimiento que usa esta fuente",
     "materialized": "El texto original está en las fuentes hijas ordenadas; la fuente padre no lo duplica.",
     "assetOmitted": "Adjunto omitido por la opción de almacenamiento",

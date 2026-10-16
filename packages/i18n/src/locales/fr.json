@@ -2251,7 +2251,6 @@
     "readOnly": "Un plugin compatible avec le droit d’écriture enregistre les titres et sections dans Memora. Sans lui, les modifications restent locales. Navigation, preuves et relations générées restent en lecture seule.",
     "scope": "Périmètre de projection",
     "allSources": "Toutes les sources (sélection vide)",
-    "allPages": "Toutes les pages (sélection vide)",
     "descendants": "Inclure les descendants",
     "saveScope": "Enregistrer le périmètre",
     "pending": "Modifications locales en attente",
@@ -2264,7 +2263,6 @@
     "saved": "Périmètre enregistré",
     "empty": "Aucune modification en attente.",
     "loading": "Chargement de la projection…",
-    "pageIds": "Pages du wiki",
     "sourceIds": "Sources",
     "queued": "Les mises à jour utilisent la file de tâches.",
     "retiredTitle": "Anciens fichiers du wiki",
@@ -2290,7 +2288,16 @@
       "retiredMove": "Impossible de déplacer le fichier en toute sécurité. Fermez-le dans Obsidian et réessayez."
     },
     "historicalPage": "Version historique · lecture seule",
-    "finishDraft": "Enregistrez ou annulez le brouillon pour ouvrir le lien Obsidian."
+    "finishDraft": "Enregistrez ou annulez le brouillon pour ouvrir le lien Obsidian.",
+    "topicUp": "Niveau supérieur",
+    "topicScope": "Chaque sujet dont des notes ou des sources sont dans ce périmètre reçoit une carte de contenu dans le coffre.",
+    "deliveryRunning": "Mise à jour du coffre : {delivered} fichiers vérifiés sur {total}.",
+    "deliveryDone": "Le dernier passage a vérifié les {total} fichiers.",
+    "deliveryStopped": "Le dernier passage s’est arrêté après {delivered} fichiers sur {total}. Il reprendra à la prochaine mise à jour.",
+    "deliveryFailed": "{failed} n’ont pas pu être écrits.",
+    "deliveryLabel": "Progression de la mise à jour du coffre",
+    "failedTitle": "Fichiers non écrits",
+    "fileTooLarge": "Trop volumineux pour être écrit dans le coffre. Le reste du coffre est à jour."
   },
   "obsidianEditing": {
     "review": "Réviser la synchronisation",
@@ -2557,8 +2564,6 @@
     "error": "La migration nécessite une intervention. Résolvez ou excluez les fichiers indiqués, puis créez un nouvel aperçu.",
     "bibliography": "Bibliographie",
     "summary": "Résumé généré",
-    "interpretation": "Interprétation humaine",
-    "noInterpretation": "Aucune interprétation rédigée.",
     "usedBy": "Connaissances utilisant cette source",
     "materialized": "Le texte original se trouve dans les sources enfants ordonnées ; le parent ne le duplique pas.",
     "assetOmitted": "Pièce jointe omise par le choix de stockage",

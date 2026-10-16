@@ -1,4 +1,3 @@
-import { wikiReadingPagesSql } from "./wikiReadingSql.js";
 import { validateCanonicalWikiBindings } from "./wikiHierarchyCanonical.js";
 import { wikiAreaIds } from "@app/domain";
 import { readNoteEvidence, retainedNoteCurrentSql } from "./noteEvidence.js";
@@ -370,31 +369,6 @@ export function createWikiRepository(pool: PgPool) {
             : null,
         path
       };
-    },
-    async context(input: { pageId: string; view: string; after: string | null; limit: number }) {
-      // Principal children and nested subtopic TOCs share reading context without copying identities.
-      const rows = (
-        await pool.query(
-          `with recursive ${wikiReadingPagesSql("$1")}, owners as(select id from page_context), edges as(
-        select m.target_kind kind,m.target_id id,'semantic' edge,'outgoing' direction,(m.snapshot->>'purpose') reason,m.page_id via from wiki_memberships m join owners o on o.id=m.page_id
-        union select 'page',m.page_id,'semantic','incoming',(m.snapshot->>'purpose'),m.page_id from wiki_memberships m where m.target_kind='page' and m.target_id=$1
-        union select 'page',p.id,'structural','outgoing','child',p.id from wiki_pages p where p.parent_id=$1 and not p.archived
-        union select 'page',p.parent_id,'structural','incoming','parent',p.id from wiki_pages p where p.id=$1 and p.parent_id is not null
-        union select 'page',p.id,'semantic','incoming','link',p.id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived and (r.content->'automatic'->'links' @> jsonb_build_array(jsonb_build_object('kind','page','id',$1::text)) or r.content->'collectionIds' ? $1::text)
-        union select link->>'kind',(link->>'id')::uuid,'semantic','outgoing','link',p.id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id join owners o on o.id=p.id cross join lateral jsonb_array_elements(coalesce(r.content->'automatic'->'links','[]')) link
-        union select 'source',refs.source_id,'evidential','outgoing','evidence',m.page_id from wiki_memberships m join owners o on o.id=m.page_id join atomic_notes n on m.target_kind='atomic_note' and n.id=m.target_id and n.status not in('rejected','archived') cross join lateral (select n.created_from_source_item_id source_id union select source_item_id from atomic_note_source_links where atomic_note_id=n.id union select source_id from atomic_note_evidence where note_id=n.id) refs
-        union select 'source',p.toc_owner_id,'semantic','outgoing','source',p.id from owners o join wiki_pages p on p.id=o.id where p.toc_owner_kind='source'
-        union select 'source',e.source_item_id,'evidential','outgoing','evidence',o.id from owners o join wiki_pages p on p.id=o.id join wiki_dependencies d on d.revision_id=p.current_revision_id and d.kind='source' join wiki_evidence e on e.page_id=o.id and e.source_item_id=d.input_id
-      ), named as(select distinct e.kind,e.id,e.edge,e.direction,e.reason,e.via as "viaPageId",coalesce(p.title,s.title,n.title,n.idea_statement,en.canonical_name,'') title,concat(e.kind,':',e.id,':',e.edge,':',e.direction,':',e.via,':',e.reason) key from edges e left join wiki_pages p on e.kind='page' and p.id=e.id and not p.archived left join source_items s on e.kind='source' and s.id=e.id left join atomic_notes n on e.kind='atomic_note' and n.id=e.id and n.status not in('rejected','archived') left join entities en on e.kind='entity' and en.id=e.id where coalesce(p.id,s.id,n.id,en.id) is not null)
-      , contextual as(
-       select key,kind,id,title,edge,direction,reason,"viaPageId",jsonb_build_array(jsonb_build_object('viaPageId',"viaPageId",'reason',reason,'edge',edge,'direction',direction)) associations from named where $2='connections'
-       union all select kind||':'||id::text,kind,id,max(title),case when bool_or(edge='evidential') then 'evidential' else 'semantic' end,'outgoing',string_agg(distinct reason,', ' order by reason),min("viaPageId"::text)::uuid,jsonb_agg(distinct jsonb_build_object('viaPageId',"viaPageId",'reason',reason,'edge',edge,'direction',direction)) from named where ($2='notes' and kind='atomic_note' or $2='sources' and kind='source') group by kind,id
-      ) select c.*,coalesce(p.title,'') as "viaTitle" from contextual c left join wiki_pages p on p.id=c."viaPageId" where ($3::text is null or key>$3) order by key limit $4`,
-          [input.pageId, input.view, input.after, input.limit + 1]
-        )
-      ).rows;
-      const items = rows.slice(0, input.limit);
-      return { items, next: rows.length > input.limit ? items.at(-1)!.key : null };
     },
     async move(input: {
       id: string;

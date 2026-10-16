@@ -2246,7 +2246,6 @@
     "readOnly": "A compatible plugin with editorial permission saves title and section edits to Memora. Without it, edits stay local. Generated navigation, evidence and relations are read only.",
     "scope": "Projection scope",
     "allSources": "All sources (leave selection empty)",
-    "allPages": "All wiki pages (leave selection empty)",
     "descendants": "Include source descendants",
     "saveScope": "Save scope",
     "pending": "Local edits pending",
@@ -2259,7 +2258,6 @@
     "saved": "Scope saved",
     "empty": "No pending wiki edits.",
     "loading": "Loading projection…",
-    "pageIds": "Wiki pages",
     "sourceIds": "Sources",
     "queued": "Projection updates run through the job queue.",
     "retiredTitle": "Old wiki files",
@@ -2285,7 +2283,16 @@
       "retiredMove": "The file could not be moved safely. Close it in Obsidian and try again."
     },
     "historicalPage": "Historical revision · read only",
-    "finishDraft": "Finish or cancel your draft to open the incoming Obsidian link."
+    "finishDraft": "Finish or cancel your draft to open the incoming Obsidian link.",
+    "topicUp": "Up",
+    "topicScope": "Every topic with notes or sources in this scope gets a map of content in the vault.",
+    "deliveryRunning": "Updating the vault: {delivered} of {total} files checked.",
+    "deliveryDone": "The last pass checked all {total} files.",
+    "deliveryStopped": "The last pass stopped after {delivered} of {total} files. It continues with the next update.",
+    "deliveryFailed": "{failed} could not be written.",
+    "deliveryLabel": "Vault update progress",
+    "failedTitle": "Files not written",
+    "fileTooLarge": "Too large to write to the vault. The rest of the vault is up to date."
   },
   "obsidianEditing": {
     "review": "Sync review",
@@ -2552,8 +2559,6 @@
     "error": "Migration needs attention. Resolve or exclude the listed files, then preview again.",
     "bibliography": "Bibliography",
     "summary": "Generated summary",
-    "interpretation": "Human interpretation",
-    "noInterpretation": "No interpretation has been authored.",
     "usedBy": "Knowledge using this source",
     "materialized": "Original text is available in the ordered child sources; this parent does not duplicate it.",
     "assetOmitted": "Attachment omitted by storage choice",

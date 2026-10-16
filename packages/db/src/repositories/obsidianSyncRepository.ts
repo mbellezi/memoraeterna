@@ -196,13 +196,26 @@ export function createObsidianSyncRepository(db: Queryable) {
      * the retire pass reads the live ones, the report the retired ones. The status is compared as
      * text so the query is valid on a database that has not gained the `retired` value yet.
      */
-    async listWikiFiles(retired: boolean): Promise<ObsidianSyncFileRecord[]> {
+    /**
+     * The registered files a projection pass may retire: old wiki pages and indexes, and topic maps
+     * (live or retired, by `retired`).
+     */
+    async listRetirableFiles(retired: boolean): Promise<ObsidianSyncFileRecord[]> {
       const result = await db.query<ObsidianSyncFileRow>(
         `select ${returning} from obsidian_sync_files
-          where (memora_type in ('wiki_page', 'wiki_index') or entity_type in ('wiki_page', 'wiki_index'))
+          where (memora_type in ('wiki_page', 'wiki_index', 'topic')
+              or entity_type in ('wiki_page', 'wiki_index', 'topic'))
             and (status::text = 'retired') = $1
           order by relative_path`,
         [retired]
+      );
+      return result.rows.map(mapObsidianSyncFile);
+    },
+
+    /** Every registered file, by path: what planning a whole projection reads. */
+    async listAll(): Promise<ObsidianSyncFileRecord[]> {
+      const result = await db.query<ObsidianSyncFileRow>(
+        `select ${returning} from obsidian_sync_files order by relative_path`
       );
       return result.rows.map(mapObsidianSyncFile);
     },

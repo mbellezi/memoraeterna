@@ -81,24 +81,36 @@ describe("ingestion queue scheduling", () => {
     expect(release).toHaveBeenCalledTimes(2);
   });
 
-  it("attempts foreground claims even when the vault projection admission fails", async () => {
+  it("admits the vault projection on the compute worker and claims even when admission fails", async () => {
     const enqueue = vi.fn().mockRejectedValue(new Error("missing projection clock"));
     supervisor = new JobSupervisor({
       getPool: () => ({}) as PgPool,
-      obsidianSyncService: { projectSource: vi.fn(), wiki: { enqueue } } as unknown as NonNullable<
+      obsidianSyncService: {
+        projectSource: vi.fn(),
+        wiki: { enqueue, execute: vi.fn() }
+      } as unknown as NonNullable<
         ConstructorParameters<typeof JobSupervisor>[0]["obsidianSyncService"]
       >
     });
     mocks.jobs.claimNext.mockResolvedValue(null);
+    // The heavy pass neither admits nor claims the projection: it is light work (D30, D33).
     await expect(supervisor.runOnce()).resolves.toBeNull();
-    expect(enqueue).toHaveBeenCalledOnce();
-    expect(mocks.jobs.claimNext).toHaveBeenCalledOnce();
-    // The heavy pass claims heavy work only; light jobs belong to the light workers.
-    expect(mocks.jobs.claimNext).toHaveBeenCalledWith(
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(mocks.jobs.claimNext).toHaveBeenLastCalledWith(
       expect.any(String),
-      expect.arrayContaining(["ingestion"]),
+      expect.not.arrayContaining(["obsidian-wiki"]),
       "heavy"
     );
+    await expect(supervisor.runLightOnce("compute")).resolves.toBeNull();
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(mocks.jobs.claimNext).toHaveBeenLastCalledWith(
+      expect.any(String),
+      ["obsidian-wiki"],
+      "light"
+    );
+    // The model worker never admits or claims it.
+    await expect(supervisor.runLightOnce("model")).resolves.toBeNull();
+    expect(enqueue).toHaveBeenCalledOnce();
   });
   it("cancels the active jobs of a batch and its pending and running runs", async () => {
     supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });

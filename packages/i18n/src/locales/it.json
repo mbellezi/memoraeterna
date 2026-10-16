@@ -2244,7 +2244,6 @@
     "readOnly": "Un plugin compatibile con permesso editoriale salva titoli e sezioni in Memora. Senza, le modifiche restano locali. Navigazione, prove e relazioni generate sono di sola lettura.",
     "scope": "Ambito della proiezione",
     "allSources": "Tutte le fonti (selezione vuota)",
-    "allPages": "Tutte le pagine (selezione vuota)",
     "descendants": "Includi discendenti",
     "saveScope": "Salva ambito",
     "pending": "Modifiche locali in attesa",
@@ -2257,7 +2256,6 @@
     "saved": "Ambito salvato",
     "empty": "Nessuna modifica in attesa.",
     "loading": "Caricamento proiezione…",
-    "pageIds": "Pagine della wiki",
     "sourceIds": "Fonti",
     "queued": "Gli aggiornamenti usano la coda delle attività.",
     "retiredTitle": "File della vecchia wiki",
@@ -2283,7 +2281,16 @@
       "retiredMove": "Impossibile spostare il file in sicurezza. Chiudilo in Obsidian e riprova."
     },
     "historicalPage": "Revisione storica · sola lettura",
-    "finishDraft": "Salva o annulla la bozza per aprire il collegamento Obsidian."
+    "finishDraft": "Salva o annulla la bozza per aprire il collegamento Obsidian.",
+    "topicUp": "Livello superiore",
+    "topicScope": "Ogni argomento con note o fonti in questo ambito riceve una mappa dei contenuti nel vault.",
+    "deliveryRunning": "Aggiornamento del vault: {delivered} di {total} file verificati.",
+    "deliveryDone": "L’ultimo passaggio ha verificato tutti i {total} file.",
+    "deliveryStopped": "L’ultimo passaggio si è fermato dopo {delivered} di {total} file. Riprende al prossimo aggiornamento.",
+    "deliveryFailed": "{failed} non sono stati scritti.",
+    "deliveryLabel": "Avanzamento dell’aggiornamento del vault",
+    "failedTitle": "File non scritti",
+    "fileTooLarge": "Troppo grande per essere scritto nel vault. Il resto del vault è aggiornato."
   },
   "obsidianEditing": {
     "review": "Revisione sincronizzazione",
@@ -2550,8 +2557,6 @@
     "error": "La migrazione richiede attenzione. Risolvi o escludi i file indicati e crea una nuova anteprima.",
     "bibliography": "Bibliografia",
     "summary": "Riepilogo generato",
-    "interpretation": "Interpretazione umana",
-    "noInterpretation": "Nessuna interpretazione scritta.",
     "usedBy": "Conoscenza che usa questa fonte",
     "materialized": "Il testo originale è nelle fonti figlie ordinate; il genitore non lo duplica.",
     "assetOmitted": "Allegato omesso per scelta di archiviazione",

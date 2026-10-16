@@ -27,6 +27,7 @@ import type { StorageSettings } from "../../shared/ipc.js";
 import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
 import { projectionHash, type ObsidianWikiProjection } from "./obsidian-wiki-projection.js";
 import type { MirrorTarget } from "./obsidian-mirror.js";
+import { withTopicAliases } from "./obsidian-topic-projection.js";
 
 export function renderMirrorTarget(target: MirrorTarget, version: number, user = "") {
   if (!target.layout) throw new Error("obsidianWiki.errors.format");
@@ -51,7 +52,8 @@ export function renderMirrorTarget(target: MirrorTarget, version: number, user =
         ...(target.sourceId ? { memoraSourceId: target.sourceId } : {}),
         ...(target.documentId ? { memoraDocumentId: target.documentId } : {})
       },
-      user
+      // A topic map owns its `aliases` line; any other user frontmatter is kept.
+      target.type === "topic" ? withTopicAliases(user, target.aliases ?? []) : user
     ) +
     "\n" +
     target.editorial +
@@ -218,7 +220,7 @@ export class ObsidianLayoutMigration {
       binding = this.binding(s),
       repo = createObsidianLayoutRepository(this.pool());
     if (await repo.active(binding)) throw new Error("obsidianWiki.errors.conflict");
-    const registry = await createObsidianSyncRepository(this.pool()).list(),
+    const registry = await createObsidianSyncRepository(this.pool()).listAll(),
       plan = await this.options.wiki.mirror(config, true),
       targets: Record<string, any>[] = [];
     for (const target of plan) {

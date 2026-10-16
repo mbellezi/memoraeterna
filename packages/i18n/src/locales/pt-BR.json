@@ -2249,7 +2249,6 @@
     "readOnly": "Um plugin compatível com permissão de edição salva títulos e seções no Memora. Sem ele, as edições ficam locais. Navegação, evidências e relações geradas são somente leitura.",
     "scope": "Escopo da projeção",
     "allSources": "Todas as fontes (seleção vazia)",
-    "allPages": "Todas as páginas (seleção vazia)",
     "descendants": "Incluir descendentes das fontes",
     "saveScope": "Salvar escopo",
     "pending": "Edições locais pendentes",
@@ -2262,7 +2261,6 @@
     "saved": "Escopo salvo",
     "empty": "Nenhuma edição da wiki pendente.",
     "loading": "Carregando projeção…",
-    "pageIds": "Páginas da wiki",
     "sourceIds": "Fontes",
     "queued": "As atualizações da projeção usam a fila de tarefas.",
     "retiredTitle": "Arquivos da wiki antiga",
@@ -2288,7 +2286,16 @@
       "retiredMove": "Não foi possível mover o arquivo com segurança. Feche-o no Obsidian e tente de novo."
     },
     "historicalPage": "Revisão histórica · somente leitura",
-    "finishDraft": "Salve ou cancele o rascunho para abrir o link do Obsidian."
+    "finishDraft": "Salve ou cancele o rascunho para abrir o link do Obsidian.",
+    "topicUp": "Acima",
+    "topicScope": "Cada tópico com notas ou fontes neste escopo ganha um mapa de conteúdo no cofre.",
+    "deliveryRunning": "Atualizando o cofre: {delivered} de {total} arquivos verificados.",
+    "deliveryDone": "A última passagem verificou todos os {total} arquivos.",
+    "deliveryStopped": "A última passagem parou após {delivered} de {total} arquivos. Ela continua na próxima atualização.",
+    "deliveryFailed": "{failed} não puderam ser gravados.",
+    "deliveryLabel": "Progresso da atualização do cofre",
+    "failedTitle": "Arquivos não gravados",
+    "fileTooLarge": "Grande demais para ser gravado no cofre. O restante do cofre está atualizado."
   },
   "obsidianEditing": {
     "review": "Revisar sincronização",
@@ -2555,8 +2562,6 @@
     "error": "A migração requer atenção. Resolva ou exclua os arquivos indicados e gere outra prévia.",
     "bibliography": "Bibliografia",
     "summary": "Resumo gerado",
-    "interpretation": "Interpretação humana",
-    "noInterpretation": "Nenhuma interpretação foi escrita.",
     "usedBy": "Conhecimento que usa esta fonte",
     "materialized": "O texto original está nas fontes filhas ordenadas; esta fonte pai não o duplica.",
     "assetOmitted": "Anexo omitido pela opção de armazenamento",

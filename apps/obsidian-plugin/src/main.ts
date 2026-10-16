@@ -11,6 +11,7 @@ import {
 } from "obsidian";
 import { createTranslator, type LanguageCode, type MessageKey, type Translator } from "@app/i18n";
 import {
+  editableTargetType,
   normalizeProjectionText,
   parseObsidianMarkdown,
   type ObsidianEditOperation,
@@ -431,9 +432,11 @@ export default class MemoraObsidianPlugin extends Plugin {
         if (registered) {
           Object.assign(registered, {
             deleted: receipt.status === "deleted",
+            // An outward-only projection (a topic map) never becomes an editorial target.
             targetType:
-              parseObsidianMarkdown(receipt.content)?.frontmatter.memoraType ??
-              registered.targetType,
+              editableTargetType(
+                parseObsidianMarkdown(receipt.content)?.frontmatter.memoraType ?? ""
+              ) ?? registered.targetType,
             revision: receipt.revision,
             syncVersion: receipt.syncVersion,
             contentHash: receipt.contentHash,

@@ -1,36 +1,37 @@
-import { renderInterpretationHistory } from "./interpretation-projection.js";
 import { inspectMirrorAssets, projectMirrorAssets } from "./obsidian-asset-projection.js";
 import { createObsidianLayoutRepository } from "@app/db";
-import { buildObsidianMirror } from "./obsidian-mirror.js";
-import { boundedWikiPath } from "./obsidian-layout-paths.js";
+import {
+  buildObsidianMirror,
+  planObsidianMirror,
+  targetKey,
+  type MirrorPlan,
+  type PlannedTarget,
+  type RenderedTarget
+} from "./obsidian-mirror.js";
 import { obsidianLayoutConfigSchema, type ObsidianLayoutConfig } from "@app/integration-contracts";
 import { jobTaskPayload } from "../job-task-payload.js";
 import { createSourceItemRepository } from "@app/db";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { posix } from "node:path";
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import {
   createDocumentRepository,
   createJobRepository,
   createObsidianSyncRepository,
   createObsidianWikiRepository,
-  createWikiRepository,
   createSettingsRepository,
   type PgPool,
   type JobRecord,
   type ProjectionDelivery
 } from "@app/db";
-import { WikiPageSchema, type WikiPage } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import {
-  markdownHeading,
   normalizeProjectionText,
   parseObsidianMarkdown,
   parseWikiRegions,
   serializeManagedFrontmatter,
-  sectionStart,
-  sectionEnd,
   wikiGeneratedStart,
   wikiGeneratedEnd,
   wikiLink,
@@ -44,17 +45,78 @@ import {
   type ObsidianArchiveInput,
   type ObsidianArchiveResult
 } from "../workers/obsidian-sync.worker.js";
-import { ObsidianWikiRetirement, createPgRetirementStore } from "./obsidian-wiki-retire.js";
+import {
+  ObsidianWikiRetirement,
+  createPgRetirementStore,
+  type RetireSummary
+} from "./obsidian-wiki-retire.js";
+import {
+  planTopicProjection,
+  renderTopicMoc,
+  withTopicAliases
+} from "./obsidian-topic-projection.js";
 export { obsidianWikiScopeSchema as ObsidianWikiScopeSchema } from "../../shared/ipc.js";
-import { obsidianWikiScopeSchema as ObsidianWikiScopeSchema } from "../../shared/ipc.js";
+import {
+  obsidianWikiScopeSchema as ObsidianWikiScopeSchema,
+  storedObsidianWikiScopeSchema
+} from "../../shared/ipc.js";
 export type ObsidianWikiScope = z.infer<typeof ObsidianWikiScopeSchema>;
 const INDEX = "7cfe90b4-11fb-447d-9673-849b6a3dc000",
   CATALOG = "7cfe90b4-11fb-447d-9673-849b6a3dc001",
   RELATIONS = "7cfe90b4-11fb-447d-9673-849b6a3dc002";
+/**
+ * Paged delivery (D30): a pass delivers its targets in pages on the light lane, one page per job,
+ * and each page queues the next with its cursor, so placements interleave with the projection and a
+ * crash resumes from the last cursor. There is no count cap: a file larger than `fileBytes` fails
+ * alone, by name, and the pass goes on.
+ */
+export interface ObsidianDeliveryConfig {
+  /** Targets one page delivers at most. */
+  pageTargets: number;
+  /** Rendered bytes after which a page stops; a page always delivers at least one target. */
+  pageBytes: number;
+  /** Work after which a page stops, so placements on the same worker wait at most about this long. */
+  pageMs: number;
+  /** The largest managed file (the sync worker refuses larger writes too). */
+  fileBytes: number;
+  /** Targets rendered at once inside a page. */
+  renderBatch: number;
+  /** Failed files a page result names (the count is always exact). */
+  reportedFailures: number;
+}
+export const obsidianDeliveryConfig: Readonly<ObsidianDeliveryConfig> = Object.freeze({
+  pageTargets: 200,
+  pageBytes: 4_000_000,
+  pageMs: 1_000,
+  fileBytes: 2_000_000,
+  renderBatch: 8,
+  reportedFailures: 50
+});
 export const projectionHash = (text: string) =>
   createHash("sha256").update(normalizeProjectionText(text)).digest("hex");
 const active = (s: StorageSettings) =>
   s.obsidianSyncEnabled && !s.obsidianSyncPaused && Boolean(s.obsidianVaultPath);
+const passSchema = z
+  .object({
+    startedAt: z.string(),
+    total: z.number().int().nonnegative(),
+    delivered: z.number().int().nonnegative(),
+    projected: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative()
+  })
+  .strict();
+/** One page's job: the pass (binding, generation) and the checkpoint where this page starts. */
+const pagePayloadSchema = z
+  .object({
+    binding: z.string(),
+    generation: z.string(),
+    cursor: z.string().min(1).nullable().optional(),
+    page: z.number().int().nonnegative().optional(),
+    pass: passSchema.optional()
+  })
+  .strict();
+type Pass = z.infer<typeof passSchema>;
 export interface WikiProjectionOptions {
   getPool: () => PgPool | null;
   getStorageSettings: () => Promise<StorageSettings>;
@@ -79,6 +141,8 @@ export interface WikiProjectionOptions {
   }>;
   /** Moves one retired file into `.memora-recovery` (the Obsidian sync worker). */
   archive: (input: ObsidianArchiveInput) => Promise<ObsidianArchiveResult>;
+  /** Delivery page sizes (tests shrink them). */
+  delivery?: Partial<ObsidianDeliveryConfig>;
 }
 interface Target {
   id: string;
@@ -95,9 +159,19 @@ interface Target {
   rootSourceId?: string;
   divisionId?: string;
   documentRevisionId?: string;
+  aliases?: string[];
+}
+/** A pass's plan: what it delivers, in order; first-generation sources go through `projectSource`. */
+interface DeliveryPlan extends MirrorPlan {
+  sourceUnits: ReadonlySet<string>;
+  allowedNotes: Set<string>;
 }
 export class ObsidianWikiProjection {
+  private planCache: { key: string; plan: DeliveryPlan } | null = null;
   constructor(private readonly options: WikiProjectionOptions) {}
+  private delivery() {
+    return { ...obsidianDeliveryConfig, ...this.options.delivery };
+  }
   private pool() {
     const pool = this.options.getPool();
     if (!pool) throw new Error("errors.database.notReady");
@@ -165,8 +239,8 @@ export class ObsidianWikiProjection {
       ...(excluded ? { excluded } : {})
     });
   }
-  async scope() {
-    return ObsidianWikiScopeSchema.parse(
+  async scope(): Promise<ObsidianWikiScope> {
+    return storedObsidianWikiScopeSchema.parse(
       (await createSettingsRepository(this.pool()).get("obsidian.wiki.scope")) ?? {}
     );
   }
@@ -219,6 +293,7 @@ export class ObsidianWikiProjection {
     return {
       active: active(settings),
       job: job ? { status: job.status, error: job.error } : null,
+      delivery: job ? deliveryProgress(job) : null,
       scope: await this.scope(),
       conflicts: await repository.conflicts(this.vaultBinding(settings)),
       retired: await this.retirement().report()
@@ -262,9 +337,6 @@ export class ObsidianWikiProjection {
     if (!row) throw new Error("obsidianWiki.errors.binding");
     const latest = await repository.latest(row.memora_id, row.binding_hash);
     if (latest?.id !== row.id) throw new Error("obsidianWiki.errors.conflict");
-    const canonical = await createWikiRepository(this.pool()).get(row.memora_id);
-    if (canonical && canonical.revisionId !== row.revision_id)
-      throw new Error("obsidianWiki.errors.conflict");
     const settings = await this.options.getStorageSettings();
     if (row.binding_hash !== this.vaultBinding(settings))
       throw new Error("obsidianWiki.errors.binding");
@@ -272,7 +344,7 @@ export class ObsidianWikiProjection {
     const scope = await this.scope(),
       eligible = await repository.sources(scope.sourceIds, scope.includeDescendants),
       frame = parseObsidianMarkdown(row.content)?.frontmatter;
-    if (frame?.memoraType === "source_item") {
+    if (frame?.memoraType === "source_item" && !frame.memoraLayout) {
       if (!eligible.some((s) => s.id === row.memora_id) || !frame.memoraDocumentId)
         throw new Error("obsidianWiki.errors.binding");
       const document = await createDocumentRepository(this.pool()).findById(frame.memoraDocumentId);
@@ -282,16 +354,9 @@ export class ObsidianWikiProjection {
       )
         throw new Error("obsidianWiki.errors.conflict");
     } else {
-      const plan = await this.plan(
-          settings,
-          scope,
-          eligible,
-          await repository.notes(
-            eligible.map((s) => String(s.id)),
-            !scope.sourceIds.length
-          )
-        ),
-        current = plan.find((t) => t.id === row.memora_id);
+      const plan = await this.deliveryPlan(settings, await this.layout(), null),
+        planned = plan.targets.find((t) => t.id === row.memora_id),
+        current = planned ? (await plan.render([planned]))[0]?.target : undefined;
       if (
         !current ||
         current.revision !== row.revision_id ||
@@ -314,23 +379,16 @@ export class ObsidianWikiProjection {
     await this.deliver(replacement, settings, await this.binding(settings));
     return this.status();
   }
+  /**
+   * Delivers one page of a pass and returns the checkpoint of the next one (`continueWith`), with
+   * which the light lane queues this job again. The first page copies the attachments and retires
+   * the files the plan no longer produces, before anything is written.
+   */
   async execute(job: JobRecord, signal?: AbortSignal) {
-    const payload = z
-      .object({ binding: z.string(), generation: z.string() })
-      .strict()
-      .parse(jobTaskPayload(job.payload));
+    const started = performance.now();
+    const payload = pagePayloadSchema.parse(jobTaskPayload(job.payload));
     const settings = await this.options.getStorageSettings();
     await this.assertBinding(settings, payload.binding);
-    const repository = createObsidianWikiRepository(this.pool()),
-      scope = await this.scope();
-    const sources = await repository.sources(scope.sourceIds, scope.includeDescendants);
-    if (sources.length > 1000) throw new Error("obsidianWiki.errors.limit");
-    const ids = sources.map((s) => String(s.id)),
-      notes = await repository.notes(ids, !scope.sourceIds.length);
-    if (notes.length > 2000) throw new Error("obsidianWiki.errors.limit");
-    const allowedNotes = new Set(notes.map((n) => String(n.id)));
-    let projected = 0,
-      conflicts = 0;
     let layout = await this.layout();
     if (
       !layout &&
@@ -344,81 +402,203 @@ export class ObsidianWikiProjection {
       });
       await createSettingsRepository(this.pool()).set("obsidian.layout", layout);
     }
-    for (const source of layout ? [] : sources) {
-      if (signal?.aborted) throw new Error("obsidianWiki.errors.paused");
-      await this.assertBinding(settings, payload.binding);
-      if (!source.catalogOnly) {
-        try {
-          projected += (
-            await this.options.projectSource(String(source.id), allowedNotes, payload.binding)
-          ).projected;
-        } catch (error) {
-          if (String(error).includes("conflict")) conflicts++;
-          else throw error;
-        }
-      }
-    }
-    if (layout)
-      await projectMirrorAssets(
-        this.pool(),
-        settings,
-        await this.assets(layout),
-        (await this.options.assetRoots?.()) ?? {},
-        () => this.assertBinding(settings, payload.binding)
+    const cursor = payload.cursor ?? null;
+    const plan = await this.deliveryPlan(settings, layout, {
+      generation: payload.generation,
+      first: !cursor
+    });
+    const config = this.delivery();
+    let retired: RetireSummary | undefined;
+    if (!cursor) {
+      if (layout)
+        await projectMirrorAssets(
+          this.pool(),
+          settings,
+          await this.assets(layout),
+          (await this.options.assetRoots?.()) ?? {},
+          () => this.assertBinding(settings, payload.binding)
+        );
+      // Files the plan no longer produces leave the projection before anything is written.
+      retired = await this.retirement().retire(
+        {
+          vaultPath: settings.obsidianVaultPath!,
+          managedRoot: settings.managedRoot,
+          binding: this.vaultBinding(settings),
+          assertBinding: () => this.assertBinding(settings, payload.binding),
+          signal
+        },
+        new Set(plan.targets.map((t) => t.id))
       );
-    const targets = layout
-      ? await this.mirror(layout)
-      : await this.plan(settings, scope, sources, notes);
-    if (targets.reduce((n, t) => n + t.editorial.length + t.generated.length, 0) > 20000000)
-      throw new Error("obsidianWiki.errors.limit");
-    // Wiki files the plan no longer produces leave the projection before anything is written.
-    const retired = await this.retirement().retire(
-      {
-        vaultPath: settings.obsidianVaultPath!,
-        managedRoot: settings.managedRoot,
-        binding: this.vaultBinding(settings),
-        assertBinding: () => this.assertBinding(settings, payload.binding),
-        signal
-      },
-      new Set(targets.map((t) => t.id))
-    );
-    for (const target of targets) {
-      if (signal?.aborted) throw new Error("obsidianWiki.errors.paused");
+    }
+    const pass: Pass = payload.pass ?? {
+      startedAt: new Date().toISOString(),
+      total: plan.targets.length,
+      delivered: 0,
+      projected: 0,
+      conflicts: 0,
+      failed: 0
+    };
+    pass.total = plan.targets.length;
+    let index = cursor ? firstAfter(plan.targets, cursor) : 0;
+    let delivered = 0,
+      bytes = 0,
+      projected = 0,
+      conflicts = 0;
+    const failures: Array<{ relativePath: string; error: string }> = [];
+    let failed = 0;
+    const fail = async (planned: PlannedTarget, error: string) => {
+      failed += 1;
+      if (failures.length < config.reportedFailures)
+        failures.push({ relativePath: planned.path, error });
+      await this.recordFailure(planned, settings, error);
+    };
+    page: while (index < plan.targets.length) {
+      const batch = plan.targets.slice(
+        index,
+        index + Math.min(config.renderBatch, config.pageTargets - delivered)
+      );
+      const rendered: RenderedTarget[] = await plan.render(
+        batch.filter((planned) => !plan.sourceUnits.has(planned.id))
+      );
+      const byId = new Map(rendered.map((entry) => [entry.planned.id, entry]));
+      // A paused sync or a changed vault stops the page here; every write checks again just
+      // before it happens (`deliver`).
       await this.assertBinding(settings, payload.binding);
-      try {
-        projected += await this.project(target, settings, payload.binding);
-      } catch (error) {
-        if (/conflict|format|write|limit/.test(String(error))) conflicts++;
-        else throw error;
+      for (const planned of batch) {
+        if (signal?.aborted) throw new Error("obsidianWiki.errors.paused");
+        if (plan.sourceUnits.has(planned.id)) {
+          try {
+            projected += (
+              await this.options.projectSource(planned.id, plan.allowedNotes, payload.binding)
+            ).projected;
+          } catch (error) {
+            if (String(error).includes("conflict")) conflicts++;
+            else throw error;
+          }
+        } else {
+          const entry = byId.get(planned.id)!;
+          if (entry.error) await fail(planned, entry.error);
+          else if (entry.target) {
+            const target = entry.target!;
+            bytes += Buffer.byteLength(target.editorial) + Buffer.byteLength(target.generated);
+            try {
+              projected += await this.project(target, settings, payload.binding);
+            } catch (error) {
+              if (String(error).includes("errors.limit"))
+                await fail(planned, "obsidianWiki.errors.limit");
+              else if (/conflict|format|write/.test(String(error))) conflicts++;
+              else throw error;
+            }
+          }
+        }
+        index += 1;
+        delivered += 1;
+        if (
+          delivered >= config.pageTargets ||
+          bytes >= config.pageBytes ||
+          performance.now() - started >= config.pageMs
+        )
+          break page;
       }
     }
-    return { projected, conflicts, targets: targets.length, retired };
+    const done = index >= plan.targets.length;
+    const next: Pass = {
+      ...pass,
+      delivered: pass.delivered + delivered,
+      projected: pass.projected + projected,
+      conflicts: pass.conflicts + conflicts,
+      failed: pass.failed + failed
+    };
+    const page = payload.page ?? 0;
+    // The job re-enqueues itself with the checkpoint of the next page (the light lane's
+    // continuation): a crash re-runs the page that was running, from its own cursor.
+    return {
+      ...(done
+        ? {}
+        : {
+            continueWith: {
+              binding: payload.binding,
+              generation: payload.generation,
+              cursor: plan.targets[index - 1]!.key,
+              page: page + 1,
+              pass: next
+            }
+          }),
+      projected,
+      conflicts,
+      failed,
+      failures,
+      targets: plan.targets.length,
+      page,
+      delivered: next.delivered,
+      done,
+      pass: next,
+      ms: Math.round(performance.now() - started),
+      ...(retired ? { retired } : {})
+    };
   }
-  private async assertBinding(settings: StorageSettings, binding: string) {
-    if (await createObsidianLayoutRepository(this.pool()).active(this.vaultBinding(settings)))
-      throw new Error("obsidianWiki.errors.paused");
-    const current = await this.options.getStorageSettings();
-    if (!active(current)) throw new Error("obsidianWiki.errors.paused");
-    if (
-      settings.obsidianVaultPath !== current.obsidianVaultPath ||
-      settings.managedRoot !== current.managedRoot ||
-      (await this.binding(current)) !== binding
-    )
-      throw new Error("obsidianWiki.errors.binding");
+  /** A file that failed alone, by name: listed with the projection's conflicts until it delivers. */
+  private async recordFailure(planned: PlannedTarget, settings: StorageSettings, error: string) {
+    const repository = createObsidianWikiRepository(this.pool());
+    const row = await repository.prepare({
+      memora_id: planned.id,
+      revision_id: "failed",
+      binding_hash: this.vaultBinding(settings),
+      relative_path: planned.path,
+      content: "",
+      editable_hash: projectionHash(""),
+      generated_hash: projectionHash(""),
+      rendered_hash: projectionHash(""),
+      base_hash: null,
+      before_content: null
+    });
+    await repository.finish(row.id, "error", error);
   }
-  private async plan(
+  /**
+   * The plan of a pass: made when the pass starts and kept for its pages (same pass generation,
+   * binding, layout and locale), so a pass plans the library once even while ingestion moves the
+   * clock. Each page still renders fresh rows, skips what was deleted meanwhile and revalidates
+   * before every write; what was added meanwhile goes to the next pass, which the moved clock
+   * admits. Without a pass generation (recovery) the plan is always made afresh.
+   */
+  private async deliveryPlan(
+    settings: StorageSettings,
+    layout: ObsidianLayoutConfig | null,
+    pass: { generation: string; first: boolean } | null
+  ): Promise<DeliveryPlan> {
+    const locale = (await this.options.getLocale?.()) ?? "en";
+    const key = JSON.stringify([await this.binding(settings), pass?.generation, layout, locale]);
+    if (pass && !pass.first && this.planCache?.key === key) return this.planCache.plan;
+    const scope = await this.scope();
+    let plan: DeliveryPlan;
+    if (layout) {
+      const mirror = await planObsidianMirror(this.pool(), settings.managedRoot, scope, layout, {
+        assets: await this.assets(layout)
+      });
+      plan = { ...mirror, sourceUnits: new Set(), allowedNotes: new Set() };
+    } else plan = await this.planLegacy(settings, scope, locale);
+    this.planCache = { key, plan };
+    return plan;
+  }
+  /**
+   * The first-generation plan (no layout setting): sources with a document go through
+   * `projectSource`; source references, knowledge notes, topic maps, source relations and the three
+   * indexes are planned and rendered here, under the English folders that layout used.
+   */
+  private async planLegacy(
     settings: StorageSettings,
     scope: ObsidianWikiScope,
-    sources: Record<string, any>[],
-    notes: Record<string, any>[]
-  ): Promise<Target[]> {
+    locale: string
+  ): Promise<DeliveryPlan> {
     const pool = this.pool(),
       repo = createObsidianWikiRepository(pool),
-      sync = createObsidianSyncRepository(pool),
-      wiki = createWikiRepository(pool),
-      locale = (await this.options.getLocale?.()) ?? "en";
+      sync = createObsidianSyncRepository(pool);
     const t = (key: MessageKey) => translate(locale, key);
     const relationStatus = (status: string) => t(("sourceRelations." + status) as MessageKey);
+    const sources = await repo.sources(scope.sourceIds, scope.includeDescendants);
+    const ids = sources.map((s) => String(s.id));
+    const notes = await repo.noteRefs(ids, !scope.sourceIds.length);
+    const allowedNotes = new Set(notes.map((n) => String(n.id)));
     const bibliography = (source: Record<string, any>) =>
       [source.metadata, ...(source.bibliography ?? [])]
         .flatMap((item) => {
@@ -448,28 +628,9 @@ export class ObsidianWikiProjection {
           ].filter(Boolean);
         })
         .join("\n\n");
-    const pageIds = await repo.pages(scope.pageIds);
-    if (pageIds.length > 1000) throw new Error("obsidianWiki.errors.limit");
-    const allowed = new Set(sources.map((s) => String(s.id)));
-    const scopedPages = new Set(
-      scope.sourceIds.length ? await repo.scopedPages(pageIds, [...allowed]) : pageIds
-    );
-    const pages: WikiPage[] = [];
-    let pageBytes = 0;
-    for (const id of pageIds) {
-      if (!scopedPages.has(id)) continue;
-      if (scope.pageIds.length && !scope.pageIds.includes(id)) continue;
-      const bytes = await repo.pageBytes(id);
-      pageBytes += bytes;
-      if (bytes > 2_000_000 || pageBytes > 20_000_000) throw new Error("obsidianWiki.errors.limit");
-      const p = WikiPageSchema.parse(await wiki.get(id));
-      if (!p.archived || (await sync.findByMemoraId(p.id))) pages.push(p);
-    }
-    const relations = await repo.relations([...allowed]);
-    if (relations.length > 1000 || relations.some((r) => r.evidence.length > 100))
-      throw new Error("obsidianWiki.errors.limit");
-    if (sources.some((source) => (source.bibliography ?? []).length > 20))
-      throw new Error("obsidianWiki.errors.limit");
+    const allowed = new Set(ids);
+    const relations = await repo.relationRefs([...allowed]);
+    const registry = new Map((await sync.listAll()).map((file) => [file.memoraId, file]));
     const paths = new Map<string, string>(),
       used = new Set<string>(),
       missing = new Set<string>();
@@ -477,12 +638,11 @@ export class ObsidianWikiProjection {
     const reserve = async (
       id: string,
       type: Target["type"],
-      title: string,
       directory: string,
       base: string,
       sourceId?: string
     ) => {
-      const old = await sync.findByMemoraId(id);
+      const old = registry.get(id);
       if (old?.metadata.editorialTombstone || old?.status === "deleted") missing.add(id);
       let path = old?.relativePath;
       if (path && !path.startsWith(`${settings.managedRoot}/`))
@@ -505,8 +665,8 @@ export class ObsidianWikiProjection {
       if (!path) throw new Error("obsidianWiki.errors.limit");
       paths.set(id, path);
       used.add(path);
-      if (!old)
-        await sync.create({
+      if (!old) {
+        const row = await sync.create({
           memoraId: id,
           entityId: id,
           entityType: type,
@@ -519,108 +679,88 @@ export class ObsidianWikiProjection {
           status: "pending",
           metadata: { projectionFormat: 1, bindingHash: this.vaultBinding(settings) }
         });
+        registry.set(id, row);
+      }
       return path;
     };
     for (const source of sources) {
-      const old = await sync.findByMemoraId(source.id);
+      const old = registry.get(source.id);
       if (old?.metadata.editorialTombstone || old?.status === "deleted") missing.add(source.id);
       if (old) paths.set(source.id, old.relativePath);
       if (source.catalogOnly)
         await reserve(
           source.id,
           "source_reference",
-          source.title,
           posix.join(settings.managedRoot, "Sources", "References"),
           `${slugify(source.title)}.md`,
           source.id
         );
     }
     for (const note of notes) {
-      const file = await sync.findByMemoraId(note.id);
+      const file = registry.get(note.id);
       if (file?.metadata.editorialTombstone || file?.status === "deleted") missing.add(note.id);
       if (file) paths.set(note.id, file.relativePath);
       else if (note.ownership === "knowledge")
         await reserve(
           note.id,
           "atomic_note",
-          note.title,
           posix.join(settings.managedRoot, "Atomic notes"),
           `${slugify(note.title)}.md`
         );
     }
-    await reserve(
-      INDEX,
-      "wiki_index",
-      t("wiki.title"),
-      posix.join(settings.managedRoot, "Wiki"),
-      "index.md"
-    );
+    // Topic maps: planned synchronously against the registry, then registered like the rest.
+    const sourceById = new Map(sources.map((s) => [String(s.id), s]));
+    const noteById = new Map(notes.map((n) => [n.id, n]));
+    const wanted = new Map<string, string>();
+    const topics = planTopicProjection(await repo.topicProjection(), {
+      folder: posix.join(settings.managedRoot, "Topics"),
+      rootFile: "Topics",
+      language: locale,
+      wholeLibrary: !scope.sourceIds.length,
+      projected: (kind, id) => (kind === "note" ? noteById.has(id) : sourceById.has(id)),
+      registered: (id) => registry.has(id),
+      reserve: (id, path) => {
+        const registered = registry.get(id)?.relativePath;
+        const final = registered ?? path;
+        wanted.set(id, final);
+        return final;
+      }
+    });
+    for (const entry of topics?.planned ?? [])
+      await reserve(
+        entry.topic.id,
+        "topic",
+        posix.dirname(wanted.get(entry.topic.id)!),
+        posix.basename(wanted.get(entry.topic.id)!)
+      );
+    await reserve(INDEX, "wiki_index", posix.join(settings.managedRoot, "Wiki"), "index.md");
     await reserve(
       CATALOG,
       "wiki_index",
-      t("obsidianWiki.catalog"),
       posix.join(settings.managedRoot, "Wiki", "Sources"),
       "index.md"
     );
     await reserve(
       RELATIONS,
       "wiki_index",
-      t("obsidianWiki.connections"),
       posix.join(settings.managedRoot, "Wiki", "Connections"),
       "index.md"
     );
-    const groups = {
-      topic: "Topics",
-      entity: "Entities",
-      collection: "Collections",
-      synthesis: "Syntheses"
-    };
-    const place = async (page: WikiPage, seen = new Set<string>()): Promise<string> => {
-      if (paths.has(page.id)) return paths.get(page.id)!;
-      const registered = await sync.findByMemoraId(page.id);
-      if (registered)
-        return reserve(
-          page.id,
-          "wiki_page",
-          page.title,
-          posix.dirname(registered.relativePath),
-          posix.basename(registered.relativePath)
-        );
-      if (seen.has(page.id)) throw new Error("wiki.errors.cycle");
-      seen.add(page.id);
-      const parent = pages.find((p) => p.id === page.parentId);
-      let directory = posix.join(settings.managedRoot, "Wiki", groups[page.kind]);
-      if (parent) {
-        const parentPath = await place(parent, seen);
-        directory = parentPath.endsWith("/index.md")
-          ? posix.dirname(parentPath)
-          : parentPath.replace(/\.md$/, "");
-      }
-      const owns = pages.some((p) => p.parentId === page.id),
-        relative = owns ? posix.join(slugify(page.title), "index.md") : `${slugify(page.title)}.md`;
-      const path = boundedWikiPath(
-        posix.join(directory, relative),
-        posix.join(settings.managedRoot, "Wiki", groups[page.kind], relative)
-      );
-      return reserve(page.id, "wiki_page", page.title, posix.dirname(path), posix.basename(path));
-    };
-    for (const p of pages) await place(p);
     for (const r of relations)
       await reserve(
         r.id,
         "source_relation",
-        `${r.sourceTitle} ${r.targetTitle}`,
         posix.join(settings.managedRoot, "Wiki", "Connections"),
         `${slugify(r.sourceTitle)}--${slugify(r.targetTitle)}.md`
       );
     const link = (id: string, title: string, kind = "source") => {
       if (!missing.has(id)) return wikiLink(paths.get(id), title, id, kind);
-      const note = notes.find((n) => n.id === id),
+      const note = noteById.get(id),
         relation = relations.find((r) => r.id === id);
       return (
         (relation
           ? `[${safeWikiLabel(title)}](memora://open/source/${relation.source_item_id}?relation=${id})`
-          : wikiLink(undefined, title, note ? note.sourceId : id, note ? "source" : kind)) +
+          : wikiLink(undefined, title, note?.sourceId ?? id, note ? "source" : kind)) +
         " · " +
         t("obsidianEditing.deleted")
       );
@@ -631,21 +771,6 @@ export class ObsidianWikiProjection {
         : safeWikiLabel(title) + " · " + t("obsidianWiki.unavailable");
     const list = (items: Record<string, any>[], kind = "wiki") =>
       items.map((p) => `- ${link(p.id, p.title, kind)}`).join("\n");
-    const typed = (target: { kind: string; id: string }) => {
-      const entity =
-        target.kind === "source"
-          ? sources.find((s) => s.id === target.id)
-          : target.kind === "atomic_note"
-            ? notes.find((n) => n.id === target.id)
-            : pages.find((p) => !p.archived && (p.id === target.id || p.entityId === target.id));
-      return entity
-        ? link(
-            entity.id,
-            entity.title,
-            target.kind === "source" ? "source" : target.kind === "atomic_note" ? "note" : "wiki"
-          )
-        : t("obsidianWiki.unavailable");
-    };
     const add = (
       id: string,
       type: Target["type"],
@@ -653,7 +778,7 @@ export class ObsidianWikiProjection {
       title: string,
       editorial: string,
       generated: string,
-      sourceId?: string
+      extra: Partial<Target> = {}
     ) => {
       targets.push({
         id,
@@ -663,19 +788,9 @@ export class ObsidianWikiProjection {
         path: paths.get(id)!,
         editorial,
         generated,
-        ...(sourceId ? { sourceId } : {})
+        ...extra
       });
     };
-    const sourceReferences = (text: string) =>
-      text
-        .replace(
-          /<source-ref\b[^>]*\bid=["']([^"']+)["'][^>]*\/?>(?:<\/source-ref>)?/g,
-          (_m, id: string) => {
-            const source = sources.find((s) => s.id === id);
-            return source ? link(id, source.title) : t("obsidianWiki.unavailable");
-          }
-        )
-        .replace(/<\/?source-ref[^>]*>/g, t("obsidianWiki.unavailable"));
     const quote = (text: string) =>
       text
         .split("\n")
@@ -690,14 +805,17 @@ export class ObsidianWikiProjection {
         source.title,
         `# ${safeWikiLabel(source.title)}\n\n`,
         `${t("obsidianWiki.catalogOnly")}\n\n${t(("import.sourceTypes." + source.type) as MessageKey)}\n\n${bibliography(source)}\n\n${safeWikiLabel(source.subtitle ?? "")}\n\n${safeWikiLabel(source.sourceUri ?? "")}\n\n${list(children, "source")}\n\n${link(CATALOG, t("obsidianWiki.catalog"), "wiki")}`,
-        source.id
+        { sourceId: source.id }
       );
     }
-    for (const note of notes.filter((n) => n.ownership === "knowledge")) {
-      const originals = await createObsidianWikiRepository(this.pool()).noteEvidence(
-        note.id,
-        note.evidenceChunkId
-      );
+    const knowledge = notes.filter((n) => n.ownership === "knowledge");
+    const details = new Map(
+      (await repo.noteDetails(knowledge.map((n) => n.id))).map((row) => [String(row.id), row])
+    );
+    for (const ref of knowledge) {
+      const note = details.get(ref.id);
+      if (!note) continue;
+      const originals = await repo.noteEvidence(note.id, note.evidenceChunkId);
       add(
         note.id,
         "atomic_note",
@@ -711,102 +829,23 @@ export class ObsidianWikiProjection {
               `[${i + 1}] ${evidenceSourceLink(e.sourceId, e.sourceTitle)} · ${e.documentId} · ${t(e.current ? "obsidianWiki.current" : "obsidianWiki.historical")}\n\n${quote(e.content)}`
           ),
           ...(note.successorIds ?? []).map((id: string) =>
-            link(id, notes.find((n) => n.id === id)?.title ?? id, "note")
+            link(id, noteById.get(id)?.title ?? id, "note")
           )
         ].join("\n\n")
       );
     }
-    for (const page of pages) {
-      const editorial =
-        `# ${markdownHeading(page.title)}\n\n` +
-        page.sections
-          .map((s) => {
-            return `${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${sourceReferences(s.markdown)}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`;
-          })
-          .join("\n") +
-        "\n";
-      const pageSources = new Set(page.evidence.map((e) => e.sourceItemId));
-      const citations = page.evidence
-        .map(
-          (e) =>
-            `### ${e.id}\n\n${evidenceSourceLink(e.sourceItemId, e.sourceTitle)} · ${e.documentId} · ${safeWikiLabel(e.locator ?? "")} · ${e.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${quote(e.excerpt)}\n\n^memora-evidence-${e.id}\n\n[${t("obsidianWiki.openApp")}](memora://open/wiki/${page.id}?revision=${page.revisionId}&evidence=${e.id})`
-        )
-        .join("\n\n");
-      const sectionEvidence = page.sections
-        .map(
-          (s) =>
-            `- [[#^memora-section-${s.id}|${safeWikiLabel(s.title)}]] · ${t(("wiki.provenanceTypes." + s.provenance) as MessageKey)} · ${s.evidenceReview === "needs_review" ? t("wiki.needsEvidenceReview") : t("wiki.reviewed")}${s.protected ? " · " + t("obsidianWiki.protected") : ""}: ${s.evidenceIds.map((e) => `[[#^memora-evidence-${e}|${page.evidence.findIndex((x) => x.id === e) + 1}]]`).join(", ")}`
-        )
-        .join("\n");
-      const children = pages.filter(
-        (p) =>
-          !p.archived &&
-          (p.parentId === page.id ||
-            p.collectionIds.includes(page.id) ||
-            (p.automatic?.role.kind === "collection" && p.automatic.role.owner?.id === page.id))
-      );
-      const ancestors: WikiPage[] = [],
-        visited = new Set([page.id]);
-      let parentId = page.parentId;
-      while (parentId && !visited.has(parentId)) {
-        visited.add(parentId);
-        const parent = pages.find((p) => p.id === parentId && !p.archived);
-        if (!parent) break;
-        ancestors.unshift(parent);
-        parentId = parent.parentId;
-      }
-      const breadcrumb = ancestors.map((p) => link(p.id, p.title, "wiki")).join(" → ");
-      const navigation = (page.automatic?.groups ?? [])
-        .map(
-          (g) =>
-            `## ${markdownHeading(g.title)}\n\n${g.explanation ?? ""}\n\n` +
-            (page.automatic?.memberships ?? [])
-              .filter((m) => m.groupId === g.id)
-              .sort((a, b) => a.order - b.order)
-              .map(
-                (m) => `- ${typed(m.target)} · ${t(("hierarchy.link." + m.purpose) as MessageKey)}`
-              )
-              .join("\n")
-        )
-        .join("\n\n");
-      const generated = [
-        t("obsidianWiki.readOnly"),
-        `${page.archived ? t("maintenance.archivedRecoverable") : t(("wiki." + page.review) as MessageKey)} · ${page.revisionId}`,
-        page.aliases.map(safeWikiLabel).join(", "),
-        link(INDEX, t("wiki.title"), "wiki"),
-        breadcrumb,
-        page.entityId ? `${t("hierarchy.entityBinding")}: ${page.entityId}` : "",
-        navigation,
-        ...(page.automatic?.links ?? []).map(typed),
-        list(children),
-        list(pages.filter((p) => page.collectionIds.includes(p.id))),
-        sectionEvidence,
-        renderInterpretationHistory(
-          page.sections.flatMap((s) => s.interpretations ?? []),
-          t
-        ),
-        citations,
-        list(
-          notes.filter(
-            (n) =>
-              (pageSources.has(n.sourceId) ||
-                n.sourceIds?.some((id: string) => pageSources.has(id))) &&
-              paths.has(n.id)
-          ),
-          "note"
-        ),
-        list(
-          relations
-            .filter(
-              (r) => pageSources.has(r.source_item_id) && pageSources.has(r.target_source_item_id)
-            )
-            .map((r) => ({ id: r.id, title: `${r.sourceTitle} → ${r.targetTitle}` }))
-        ),
-        "[ " + t("obsidianWiki.openApp") + ` ](memora://open/wiki/${page.id})`
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      add(page.id, "wiki_page", page.revisionId, page.title, editorial, generated);
+    for (const entry of topics?.planned ?? []) {
+      const moc = renderTopicMoc(topics!, entry, {
+        language: locale,
+        link: (id, title, kind) => link(id, title, kind),
+        pathOf: (id) => paths.get(id),
+        titleOf: (kind, id) =>
+          (kind === "note" ? noteById.get(id)?.title : sourceById.get(id)?.title) ?? id,
+        home: { id: INDEX, title: t("wiki.title") }
+      });
+      add(entry.topic.id, "topic", moc.revision, moc.title, moc.editorial, moc.generated, {
+        aliases: moc.aliases
+      });
     }
     for (const r of relations) {
       // Relations decided without prose have none stored: their explanation is written on open.
@@ -822,7 +861,7 @@ export class ObsidianWikiProjection {
                   : t("obsidianWiki.unavailable")
           )
           .replace(/<\/?source-ref[^>]*>/g, t("obsidianWiki.unavailable"));
-      const evidence = r.evidence
+      const evidence = (await repo.relationEvidence(r.id))
         .map(
           (e: Record<string, any>) =>
             `### ${e.id} · ${e.origin === "atomic_notes" ? t("sourceRelations.atomicNotes") : t("sourceRelations.sourceAnalysis")} · ${e.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)} · ${e.sourceDocumentId ?? e.snapshot.sourceId} · ${safeWikiLabel(e.sourceLocator ?? "")}\n\n${quote(e.snapshot.sourceExcerpt ?? "")}\n\n${link(r.target_source_item_id, r.targetTitle)} · ${e.targetDocumentId ?? e.snapshot.targetId} · ${safeWikiLabel(e.targetLocator ?? "")}\n\n${quote(e.snapshot.targetExcerpt ?? "")}`
@@ -831,28 +870,34 @@ export class ObsidianWikiProjection {
       add(
         r.id,
         "source_relation",
-        projectionHash(JSON.stringify(r)),
+        projectionHash(JSON.stringify([r, evidence])),
         `${r.sourceTitle} → ${r.targetTitle}`,
         `# ${safeWikiLabel(r.sourceTitle)} → ${safeWikiLabel(r.targetTitle)}\n\n`,
         `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)} → ${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n[${t("obsidianWiki.openApp")}](memora://open/source/${r.source_item_id}?relation=${r.id})`
       );
     }
+    const topicRoot = topics?.planned[0];
+    const areas = topics
+      ? (topics.children.get(topics.rows.rootId) ?? [])
+          .map((topic) => topics.byId.get(topic.id))
+          .filter((entry) => entry !== undefined)
+          .map((entry) => ({ id: entry.topic.id, title: entry.title }))
+      : [];
+    const indexGenerated = [
+      topicRoot ? link(topicRoot.topic.id, topicRoot.title, "wiki") : "",
+      list(areas),
+      link(CATALOG, t("obsidianWiki.catalog"), "wiki"),
+      link(RELATIONS, t("obsidianWiki.connections"), "wiki")
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     add(
       INDEX,
       "wiki_index",
-      projectionHash(JSON.stringify(pages.map((p) => [p.id, p.revisionId]))),
+      projectionHash(indexGenerated),
       t("wiki.title"),
       `# ${t("wiki.title")}\n\n`,
-      [
-        list(
-          pages.filter(
-            (p) =>
-              !p.archived && !pages.some((parent) => parent.id === p.parentId && !parent.archived)
-          )
-        ),
-        link(CATALOG, t("obsidianWiki.catalog"), "wiki"),
-        link(RELATIONS, t("obsidianWiki.connections"), "wiki")
-      ].join("\n\n")
+      indexGenerated
     );
     add(
       CATALOG,
@@ -863,7 +908,7 @@ export class ObsidianWikiProjection {
       sources
         .map(
           (s) =>
-            `- ${link(s.id, s.title)}${s.parentId && allowed.has(s.parentId) ? " ← " + link(s.parentId, sources.find((p) => p.id === s.parentId)!.title) : ""}${s.catalogOnly ? " · " + t("obsidianWiki.catalogOnly") : ""}`
+            `- ${link(s.id, s.title)}${s.parentId && allowed.has(s.parentId) ? " ← " + link(s.parentId, sourceById.get(String(s.parentId))!.title) : ""}${s.catalogOnly ? " · " + t("obsidianWiki.catalogOnly") : ""}`
         )
         .join("\n")
     );
@@ -880,7 +925,50 @@ export class ObsidianWikiProjection {
         }))
       )
     );
-    return targets;
+    const rendered = new Map(targets.map((target) => [target.id, target]));
+    const sourceUnits = new Set(sources.filter((s) => !s.catalogOnly).map((s) => String(s.id)));
+    const planned: PlannedTarget[] = [
+      ...[...sourceUnits].map((id) => ({
+        key: targetKey("source_item", id),
+        id,
+        type: "source_item" as const,
+        path: paths.get(id) ?? ""
+      })),
+      ...targets.map((target) => ({
+        key: targetKey(target.type, target.id),
+        id: target.id,
+        type: target.type,
+        path: target.path
+      }))
+    ].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    return {
+      targets: planned,
+      sourceUnits,
+      allowedNotes,
+      // Rendered when the pass was planned; a topic retired meanwhile is skipped.
+      render: async (batch) => {
+        const live = new Set(
+          await repo.liveTopicIds(batch.filter((e) => e.type === "topic").map((e) => e.id))
+        );
+        return batch.map((entry) =>
+          entry.type === "topic" && !live.has(entry.id)
+            ? { planned: entry }
+            : { planned: entry, target: rendered.get(entry.id)! }
+        );
+      }
+    };
+  }
+  private async assertBinding(settings: StorageSettings, binding: string) {
+    if (await createObsidianLayoutRepository(this.pool()).active(this.vaultBinding(settings)))
+      throw new Error("obsidianWiki.errors.paused");
+    const current = await this.options.getStorageSettings();
+    if (!active(current)) throw new Error("obsidianWiki.errors.paused");
+    if (
+      settings.obsidianVaultPath !== current.obsidianVaultPath ||
+      settings.managedRoot !== current.managedRoot ||
+      (await this.binding(current)) !== binding
+    )
+      throw new Error("obsidianWiki.errors.binding");
   }
   async projectDocument(
     id: string,
@@ -973,15 +1061,18 @@ export class ObsidianWikiProjection {
       (target.layout && file?.metadata.layoutExcluded)
     )
       return 0;
+    // A retired file produced again (a topic restored by an undo) starts afresh at its path: its
+    // archived bytes stay in recovery, and a file still in place is a conflict, never overwritten.
+    const reviving = file?.status === "retired";
     const path = await safeVaultPath(settings.obsidianVaultPath!, target.path),
       local = await readOptional(path);
     const localHash = local === null ? null : projectionHash(local);
-    if (latest && latest.status !== "written" && localHash === latest.rendered_hash) {
+    if (!reviving && latest && latest.status !== "written" && localHash === latest.rendered_hash) {
       await this.receipt(latest, settings);
       file = await sync.findByMemoraId(target.id);
       latest = await repo.latest(target.id, binding);
     }
-    const actualBase = await repo.base(target.id, binding);
+    const actualBase = reviving ? null : await repo.base(target.id, binding);
     const parsed = local === null ? null : parseObsidianMarkdown(local);
     const adoptLegacy =
       target.type === "source_reference" &&
@@ -1024,7 +1115,12 @@ export class ObsidianWikiProjection {
           : { memoraWikiSchema: 1, memoraRevisionId: target.revision }),
       ...(target.sourceId ? { memoraSourceId: target.sourceId } : {})
     };
-    let content = serializeManagedFrontmatter(fm, parsed?.userFrontmatter ?? "") + "\n" + body,
+    // A topic map owns its `aliases` line; any other user frontmatter is kept.
+    const user =
+      target.type === "topic"
+        ? withTopicAliases(parsed?.userFrontmatter ?? "", target.aliases ?? [])
+        : (parsed?.userFrontmatter ?? "");
+    let content = serializeManagedFrontmatter(fm, user) + "\n" + body,
       renderedHash = projectionHash(content);
     if (
       actualBase &&
@@ -1032,7 +1128,7 @@ export class ObsidianWikiProjection {
       fm.memoraSyncVersion <= (file?.syncVersion ?? 0)
     ) {
       fm.memoraSyncVersion = (file?.syncVersion ?? 0) + 1;
-      content = serializeManagedFrontmatter(fm, parsed?.userFrontmatter ?? "") + "\n" + body;
+      content = serializeManagedFrontmatter(fm, user) + "\n" + body;
       renderedHash = projectionHash(content);
     }
     if (
@@ -1041,6 +1137,9 @@ export class ObsidianWikiProjection {
       renderedHash === actualBase.rendered_hash
     )
       return 0;
+    // The per-file cap fails this file visibly, by name; the pass goes on.
+    if (Buffer.byteLength(content) > this.delivery().fileBytes)
+      throw new Error("obsidianWiki.errors.limit");
     if (
       latest &&
       ["conflict", "error"].includes(latest.status) &&
@@ -1067,7 +1166,10 @@ export class ObsidianWikiProjection {
     if (
       (actualBase && localHash !== actualBase.rendered_hash) ||
       (!actualBase && local !== null && !adoptLegacy) ||
-      (!actualBase && file?.metadata.bindingHash && file.metadata.bindingHash !== binding)
+      (!reviving &&
+        !actualBase &&
+        file?.metadata.bindingHash &&
+        file.metadata.bindingHash !== binding)
     ) {
       await repo.finish(delivery.id, "conflict", "obsidianWiki.errors.conflict");
       await sync.update(file!.id, { status: "conflict" });
@@ -1103,6 +1205,9 @@ export class ObsidianWikiProjection {
           if (!current || new Date(current.updated_at).toISOString() !== row.revision_id)
             throw new Error("obsidianWiki.errors.conflict");
         }
+        // A topic map is written only while its topic is live in the active tree.
+        if (targetFrame?.memoraType === "topic" && !(await repo.topicLive(row.memora_id)))
+          throw new Error("obsidianWiki.errors.binding");
         const registry = createObsidianSyncRepository(this.pool()),
           registered = await registry.findByMemoraId(row.memora_id);
         if (registered)
@@ -1144,7 +1249,10 @@ export class ObsidianWikiProjection {
     const sync = createObsidianSyncRepository(this.pool()),
       file = await sync.findByMemoraId(row.memora_id);
     if (!file) throw new Error("obsidianWiki.errors.binding");
-    const { projectionWrite: _pending, ...metadata } = file.metadata;
+    // A delivered file is live again: no write in flight and, for a revived file, no retirement.
+    const metadata = { ...file.metadata };
+    delete metadata.projectionWrite;
+    delete metadata.retired;
     await sync.update(file.id, {
       contentHash:
         parsed.frontmatter.memoraType === "source_item" && !parsed.frontmatter.memoraLayout
@@ -1188,10 +1296,38 @@ export class ObsidianWikiProjection {
     await createObsidianWikiRepository(this.pool()).finish(row.id, "written");
   }
 }
+/** The first planned target after a cursor (targets are sorted by key). */
+function firstAfter(targets: readonly PlannedTarget[], cursor: string) {
+  let low = 0,
+    high = targets.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (targets[middle]!.key <= cursor) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+/** Where the current pass stands, from the latest projection job (a page waiting or done). */
+function deliveryProgress(job: JobRecord) {
+  const payload = (job.payload ?? {}) as Record<string, unknown>;
+  const result = (job.result ?? {}) as Record<string, unknown>;
+  const pass = passSchema.safeParse(result.pass ?? payload.pass);
+  const running = job.status === "queued" || job.status === "running";
+  return {
+    state: running
+      ? ("running" as const)
+      : job.status === "succeeded"
+        ? ("done" as const)
+        : ("stopped" as const),
+    total: pass.success ? pass.data.total : 0,
+    delivered: pass.success ? pass.data.delivered : 0,
+    failed: pass.success ? pass.data.failed : 0
+  };
+}
 async function readOptional(path: string): Promise<string | null> {
   try {
     const file = await stat(path);
-    if (file.size > 2000000) throw new Error("obsidianWiki.errors.limit");
+    if (file.size > obsidianDeliveryConfig.fileBytes) throw new Error("obsidianWiki.errors.limit");
     return await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;

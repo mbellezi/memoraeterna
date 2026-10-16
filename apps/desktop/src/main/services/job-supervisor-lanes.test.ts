@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiProviderError } from "@app/ai";
 import type { JobLane, JobRecord, PgPool } from "@app/db";
-import { JobSupervisor } from "./job-supervisor.js";
+import { JobSupervisor, lightJobUpdate } from "./job-supervisor.js";
 import type { LightJobRegistry } from "./job-lanes.js";
 
 /** An in-memory jobs table that claims like the repository: lane, type set, due, priority order. */
@@ -225,6 +225,66 @@ describe("heavy and light lanes", () => {
     });
   });
 
+  it("delivers the vault projection a page at a time on the compute worker, between placements", async () => {
+    const order: string[] = [];
+    const execute = vi.fn(async (job: JobRecord) => {
+      order.push(`page:${String(job.payload.cursor ?? "start")}`);
+      // A page re-enqueues its job with the next cursor, behind anything already waiting.
+      return job.payload.cursor ? { done: true } : { done: false, continueWith: { cursor: "2:a" } };
+    });
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({
+        "topic-place": {
+          needsModel: false,
+          execute: async (job: JobRecord) => {
+            order.push(`place:${job.id}`);
+            return { placed: 1 };
+          }
+        }
+      }),
+      obsidianSyncService: {
+        projectSource: vi.fn(),
+        wiki: { enqueue: vi.fn().mockResolvedValue(null), execute }
+      } as unknown as NonNullable<
+        ConstructorParameters<typeof JobSupervisor>[0]["obsidianSyncService"]
+      >
+    });
+    const first = enqueue("obsidian-wiki", "light");
+    const place = enqueue("topic-place", "light");
+    place.runAfter = new Date(Date.now() + 1);
+    vi.advanceTimersByTime(5);
+    for (let pass = 0; pass < 3; pass += 1) await supervisor.runLightOnce("compute");
+    expect(order).toEqual(["page:start", `place:${place.id}`, "page:2:a"]);
+    // One job for the whole pass: its last page finished it, with that page's result.
+    expect(queue.jobs.filter((job) => job.type === "obsidian-wiki")).toHaveLength(1);
+    expect(statusOf(first)).toBe("succeeded");
+    expect(queue.find(first.id)).toMatchObject({
+      payload: { cursor: "2:a" },
+      result: { done: true }
+    });
+    expect(claims.every((claim) => claim.lane === "light")).toBe(true);
+    expect(claims[0]?.types).toEqual(["obsidian-wiki", "topic-place"]);
+    // Never on the heavy loop.
+    await expect(supervisor.runOnce()).resolves.toBeNull();
+  });
+
+  it("refuses a second executor for the vault projection", () => {
+    expect(
+      () =>
+        new JobSupervisor({
+          getPool: pool,
+          lightJobs: { "obsidian-wiki": { needsModel: false, execute: async () => ({}) } },
+          obsidianSyncService: {
+            projectSource: vi.fn(),
+            wiki: { enqueue: vi.fn(), execute: vi.fn() }
+          } as unknown as NonNullable<
+            ConstructorParameters<typeof JobSupervisor>[0]["obsidianSyncService"]
+          >
+        })
+    ).toThrow("job_lane_conflict:obsidian-wiki");
+  });
+
   it("runs only the heavy loop when no light job type is registered", async () => {
     supervisor = new JobSupervisor({ getPool: pool, pollIntervalMs: 100 });
     await supervisor.start();
@@ -368,5 +428,50 @@ describe("heavy and light lanes", () => {
       id: place.id,
       status: "succeeded"
     });
+  });
+});
+
+describe("lightJobUpdate", () => {
+  const job = () =>
+    ({
+      ...enqueue("obsidian-wiki", "light", {
+        cursor: "1:a",
+        promptPin: { stage: "x" },
+        errorHistory: [{ message: "earlier" }]
+      }),
+      status: "running",
+      attempts: 2
+    }) as JobRecord;
+
+  it("finishes a job whose step returned no continuation", () => {
+    expect(lightJobUpdate(job(), { done: true })).toMatchObject({
+      status: "succeeded",
+      result: { done: true },
+      progress: 1
+    });
+  });
+
+  it("queues the same job again with its next payload, due now, attempts counted afresh", () => {
+    vi.setSystemTime(new Date("2026-10-15T12:00:00Z"));
+    const update = lightJobUpdate(job(), { done: false, continueWith: { cursor: "1:b" } });
+    expect(update).toEqual({
+      status: "queued",
+      payload: { cursor: "1:b", promptPin: { stage: "x" } },
+      result: { done: false },
+      error: null,
+      attempts: 0,
+      runAfter: new Date("2026-10-15T12:00:00Z"),
+      lockedAt: null,
+      lockedBy: null,
+      finishedAt: null
+    });
+  });
+
+  it("does not continue a job that was stopped", () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      lightJobUpdate(job(), { continueWith: { cursor: "1:b" } }, controller.signal)
+    ).toMatchObject({ status: "canceled", result: {} });
   });
 });

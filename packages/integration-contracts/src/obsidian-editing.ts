@@ -22,6 +22,21 @@ const path = z
 export const obsidianBindingSchema = z
   .object({ vaultId: id, binding: hash, managedRoot: path })
   .strict();
+/** Managed file types an editorial operation may target; outward-only projections (`topic`) are not. */
+export const obsidianEditableTargetTypeSchema = z.enum([
+  "wiki_page",
+  "source_item",
+  "atomic_note",
+  "source_reference",
+  "wiki_index",
+  "source_relation"
+]);
+export type ObsidianEditableTargetType = z.infer<typeof obsidianEditableTargetTypeSchema>;
+/** The editorial target type of a managed file's type, or null for an outward-only projection. */
+export function editableTargetType(type: string): ObsidianEditableTargetType | null {
+  const parsed = obsidianEditableTargetTypeSchema.safeParse(type);
+  return parsed.success ? parsed.data : null;
+}
 export const obsidianEditOperationSchema = z
   .object({
     version: z.literal(1),
@@ -29,14 +44,7 @@ export const obsidianEditOperationSchema = z
     vaultId: id,
     binding: hash,
     targetId: id,
-    targetType: z.enum([
-      "wiki_page",
-      "source_item",
-      "atomic_note",
-      "source_reference",
-      "wiki_index",
-      "source_relation"
-    ]),
+    targetType: obsidianEditableTargetTypeSchema,
     kind: z.enum(["edit", "move", "delete", "detach"]),
     relativePath: path,
     previousRelativePath: path.optional(),

@@ -1,35 +1,35 @@
-import { renderInterpretationHistory } from "./interpretation-projection.js";
 import { posix } from "node:path";
 import { createHash } from "node:crypto";
 import {
   createDocumentRepository,
   createObsidianSyncRepository,
   createObsidianWikiRepository,
-  createWikiRepository,
   createObsidianEditorialRepository,
-  type PgPool
+  type ObsidianSyncFileRecord,
+  type PgPool,
+  type ProjectionNoteRef
 } from "@app/db";
-import { wikiAreaIds, WikiPageSchema, type WikiPage } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import {
-  outsideCodeFences,
   markdownHeading,
   wikiLink,
   safeWikiLabel,
-  sectionStart,
-  sectionEnd,
   sourceOriginalStart,
   sourceOriginalEnd,
   type ObsidianLayoutConfig,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
 import {
-  boundedWikiPath,
   layoutLabels,
   pathIdentity,
   portableName,
   sourceLayoutPath
 } from "./obsidian-layout-paths.js";
+import {
+  planTopicProjection,
+  renderTopicMoc,
+  type TopicProjection
+} from "./obsidian-topic-projection.js";
 import type { ObsidianWikiScope } from "./obsidian-wiki-projection.js";
 
 export interface MirrorTarget {
@@ -47,6 +47,30 @@ export interface MirrorTarget {
   rootSourceId?: string;
   divisionId?: string;
   documentRevisionId?: string;
+  /** A topic map's frontmatter `aliases` (redirected and earlier titles). */
+  aliases?: string[];
+}
+/** One file a pass delivers: planned with its path, rendered only when its page comes. */
+export interface PlannedTarget {
+  /** Delivery order and checkpoint cursor: the kind's rank, then the ID. */
+  key: string;
+  id: string;
+  type: MirrorTarget["type"];
+  path: string;
+}
+/**
+ * A rendered target; or why this one file could not be rendered (it fails alone, by name); or
+ * neither, when its object was deleted after the pass was planned (the next pass retires it).
+ */
+export interface RenderedTarget {
+  planned: PlannedTarget;
+  target?: MirrorTarget;
+  error?: string;
+}
+export interface MirrorPlan {
+  /** Every target, in delivery order. */
+  targets: PlannedTarget[];
+  render(targets: readonly PlannedTarget[]): Promise<RenderedTarget[]>;
 }
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 const stableId = (key: string) => {
@@ -56,6 +80,20 @@ const stableId = (key: string) => {
 const INDEX = "7cfe90b4-11fb-447d-9673-849b6a3dc000",
   CATALOG = "7cfe90b4-11fb-447d-9673-849b6a3dc001",
   RELATIONS = "7cfe90b4-11fb-447d-9673-849b6a3dc002";
+/** Delivery rank of each kind: sources, notes, topic maps, relations, then the indexes. */
+export const targetRank: Record<MirrorTarget["type"], number> = {
+  source_item: 0,
+  source_reference: 0,
+  atomic_note: 1,
+  topic: 2,
+  source_relation: 3,
+  wiki_page: 4,
+  wiki_index: 4
+};
+export const targetKey = (type: MirrorTarget["type"], id: string) => `${targetRank[type]}:${id}`;
+/** Errors that fail one file of a pass, by name; any other error stops the pass. */
+export const fileError = (error: unknown) =>
+  /obsidianWiki\.errors\.(limit|binding|format)/.exec(String(error))?.[0] ?? null;
 export interface MirrorAsset {
   id: string;
   sourceId: string | null;
@@ -68,7 +106,8 @@ export interface MirrorAsset {
   path: string;
   available: boolean;
 }
-/** Both renderers consume the immutable canonical page memberships. Paths have no editorial authority. */
+
+/** Every target of a layout v2 mirror, rendered at once (the explicit layout migration). */
 export async function buildObsidianMirror(
   pool: PgPool,
   root: string,
@@ -76,42 +115,49 @@ export async function buildObsidianMirror(
   config: ObsidianLayoutConfig,
   options: { migrate?: boolean; excluded?: Set<string>; assets?: MirrorAsset[] } = {}
 ): Promise<MirrorTarget[]> {
+  const plan = await planObsidianMirror(pool, root, scope, config, options);
+  const rendered = await plan.render(plan.targets);
+  const failed = rendered.find((entry) => entry.error);
+  if (failed) throw new Error(failed.error);
+  return rendered.flatMap((entry) => (entry.target ? [entry.target] : []));
+}
+
+/**
+ * Plans a layout v2 mirror: every target and its path, with nothing rendered. Paths and links come
+ * from light rows (titles, parents, registered paths); a page of targets is rendered on demand. The
+ * whole library is planned, never a truncated part of it. Topics take the place of the old wiki
+ * pages: each live topic is a folder-note map of content (`obsidian-topic-projection.ts`).
+ */
+export async function planObsidianMirror(
+  pool: PgPool,
+  root: string,
+  scope: ObsidianWikiScope,
+  config: ObsidianLayoutConfig,
+  options: { migrate?: boolean; excluded?: Set<string>; assets?: MirrorAsset[] } = {}
+): Promise<MirrorPlan> {
   const repo = createObsidianWikiRepository(pool),
-    registry = await createObsidianSyncRepository(pool).list(),
+    registry = await createObsidianSyncRepository(pool).listAll(),
+    registered = new Map<string, ObsidianSyncFileRecord>(registry.map((f) => [f.memoraId, f])),
+    wholeLibrary = !scope.sourceIds.length,
     sources = await repo.sources(scope.sourceIds, scope.includeDescendants),
-    notes = await repo.notes(
+    sourcesById = new Map(sources.map((s) => [String(s.id), s])),
+    notes = await repo.noteRefs(
       sources.map((s) => s.id),
-      !scope.sourceIds.length
-    );
-  if (sources.length > 1000 || notes.length > 2000) throw new Error("obsidianWiki.errors.limit");
-  const allowed = new Set(sources.map((s) => String(s.id))),
-    pages: WikiPage[] = [];
-  const pageIds = await repo.pages(scope.pageIds);
-  if (pageIds.length > 1000) throw new Error("obsidianWiki.errors.limit");
-  const scopedPages = new Set(
-    scope.sourceIds.length ? await repo.scopedPages(pageIds, [...allowed]) : pageIds
-  );
-  for (const id of pageIds) {
-    if (!scopedPages.has(id)) continue;
-    if ((await repo.pageBytes(id)) > 2_000_000) throw new Error("obsidianWiki.errors.limit");
-    const page = WikiPageSchema.parse(await createWikiRepository(pool).get(id));
-    if (!page.archived || registry.some((f) => f.memoraId === id)) pages.push(page);
-  }
-  if (pages.length > 1000) throw new Error("obsidianWiki.errors.limit");
-  const relations = await repo.relations([...allowed]);
-  if (relations.length > 1000 || relations.some((r) => r.evidence.length > 100))
-    throw new Error("obsidianWiki.errors.limit");
+      wholeLibrary
+    ),
+    notesById = new Map(notes.map((n) => [n.id, n]));
+  const allowed = new Set(sources.map((s) => String(s.id)));
+  const relations = await repo.relationRefs([...allowed]);
   const l = layoutLabels(config.language),
     t = (key: MessageKey) => translate(config.language, key),
     paths = new Map<string, string>(),
-    used = new Map<string, string>(),
-    targets: MirrorTarget[] = [];
+    used = new Map<string, string>();
   // A retired file never moves, so its path stays taken even while a layout migration re-places the rest.
   for (const row of registry)
     if (!options.migrate || row.status === "retired" || options.excluded?.has(row.memoraId))
       used.set(pathIdentity(row.relativePath), row.memoraId);
   function reserve(id: string, path: string) {
-    const old = registry.find((f) => f.memoraId === id);
+    const old = registered.get(id);
     if (old && !old.relativePath.startsWith(root + "/"))
       throw new Error("obsidianWiki.errors.binding");
     if (old && (!options.migrate || options.excluded?.has(id))) path = old.relativePath;
@@ -127,6 +173,12 @@ export async function buildObsidianMirror(
     return path;
   }
   const sourceDirectories = new Map<string, string>();
+  const parents = new Set(
+    sources
+      .map((s) => s.parentId)
+      .filter(Boolean)
+      .map(String)
+  );
   const placeSource = (source: (typeof sources)[number], seen = new Set<string>()): string => {
     if (paths.has(source.id)) return paths.get(source.id)!;
     if (seen.has(source.id)) throw new Error("wiki.errors.cycle");
@@ -137,7 +189,7 @@ export async function buildObsidianMirror(
       sources,
       config.language
     );
-    const parent = sources.find((p) => p.id === source.parentId);
+    const parent = source.parentId ? sourcesById.get(String(source.parentId)) : undefined;
     if (parent) {
       const parentPath = placeSource(parent, seen);
       path = posix.join(
@@ -152,7 +204,7 @@ export async function buildObsidianMirror(
     }
     if (
       ["Book", "AcademicPaper", "PeriodicalIssue"].includes(source.type) ||
-      sources.some((p) => p.parentId === source.id)
+      parents.has(String(source.id))
     ) {
       let directory = posix.dirname(path);
       if (!["Book", "AcademicPaper", "PeriodicalIssue"].includes(source.type))
@@ -167,87 +219,16 @@ export async function buildObsidianMirror(
   for (const source of sources) placeSource(source);
   for (const note of notes)
     reserve(note.id, posix.join(root, l.notes, portableName(note.title) + ".md"));
-  const pagePath = (page: WikiPage, seen = new Set<string>()): string => {
-    if (paths.has(page.id)) return paths.get(page.id)!;
-    // Resolve registered placement before considering any newly desired ancestors.
-    const registered = registry.find((f) => f.memoraId === page.id);
-    if (registered && (!options.migrate || options.excluded?.has(page.id)))
-      return reserve(page.id, registered.relativePath);
-    if (seen.has(page.id)) throw new Error("wiki.errors.cycle");
-    seen.add(page.id);
-    const parent = pages.find((p) => p.id === page.parentId),
-      role = page.automatic?.role;
-    const area =
-      role?.kind === "synthesis" && role.role === "investigation"
-        ? l.investigations
-        : role?.kind === "collection" && role.role === "map"
-          ? l.maps
-          : page.kind === "topic"
-            ? l.topics
-            : page.kind === "entity"
-              ? l.entities
-              : page.kind === "synthesis"
-                ? l.syntheses
-                : l.maps;
-    const place = (path: string) =>
-      reserve(
-        page.id,
-        boundedWikiPath(path, posix.join(root, "Wiki", area, portableName(page.title) + ".md"))
-      );
-    const systemArea = Object.entries(wikiAreaIds).find(([, id]) => id === page.id)?.[0];
-    if (systemArea) {
-      const areaNames: Record<string, string> = {
-        themes: l.topics,
-        entities: l.entities,
-        syntheses: l.syntheses,
-        investigations: l.investigations,
-        maps: l.maps
-      };
-      const folder = areaNames[systemArea];
-      return reserve(
-        page.id,
-        folder
-          ? posix.join(root, "Wiki", folder, l.index + ".md")
-          : posix.join(root, "Wiki", l.entities, portableName(page.title), l.index + ".md")
-      );
-    }
-    if (
-      role?.kind === "collection" &&
-      role.role === "source_toc" &&
-      role.owner?.kind === "source" &&
-      paths.has(role.owner.id)
-    )
-      return place(posix.join(posix.dirname(paths.get(role.owner.id)!), l.sourceNotes + ".md"));
-    if (role?.kind === "collection" && role.role === "topic_toc" && role.owner?.kind === "page") {
-      const owner = pages.find((p) => p.id === role.owner!.id);
-      if (owner) return place(posix.join(posix.dirname(pagePath(owner, seen)), l.index + ".md"));
-    }
-    let directory = posix.join(root, "Wiki", area);
-    if (parent) {
-      const path = pagePath(parent, seen);
-      directory =
-        parent.kind === "topic" || posix.basename(path) === l.index + ".md"
-          ? posix.dirname(path)
-          : path.replace(/\.md$/, "");
-    }
-    const index = page.kind === "topic" || pages.some((p) => p.parentId === page.id);
-    const hasToc = pages.some(
-      (p) =>
-        p.automatic?.role.kind === "collection" &&
-        p.automatic.role.role === "topic_toc" &&
-        p.automatic.role.owner?.id === page.id
-    );
-    const relative = index
-      ? posix.join(portableName(page.title), (hasToc ? portableName(page.title) : l.index) + ".md")
-      : portableName(page.title) + ".md";
-    // Folder depth is a portable placement choice; logical ancestry remains complete.
-    // Keep room for reserve's full-ID collision suffix within the 900-byte limit.
-    return reserve(
-      page.id,
-      boundedWikiPath(posix.join(directory, relative), posix.join(root, "Wiki", area, relative))
-    );
-  };
-  for (const page of pages) pagePath(page);
+  const topicsLabel = portableName(translate(config.language, "topics.navigator.topics"));
+  const topics = planTopicProjection(await repo.topicProjection(), {
+    folder: posix.join(root, topicsLabel),
+    rootFile: topicsLabel,
+    language: config.language,
+    wholeLibrary,
+    projected: (kind, id) => (kind === "note" ? notesById.has(id) : sourcesById.has(id)),
+    registered: (id) => registered.has(id),
+    reserve
+  });
   reserve(INDEX, posix.join(root, "Wiki", l.index + ".md"));
   reserve(CATALOG, posix.join(root, l.sources, l.index + ".md"));
   reserve(RELATIONS, posix.join(root, "Wiki", t("obsidianWiki.connections"), l.index + ".md"));
@@ -267,6 +248,20 @@ export async function buildObsidianMirror(
     ["home", ""]
   ] as const)
     reserve(stableId(key), posix.join(root, area, (key === "home" ? l.home : l.index) + ".md"));
+
+  const planned: PlannedTarget[] = [];
+  const plan = (id: string, type: MirrorTarget["type"]) =>
+    planned.push({ key: targetKey(type, id), id, type, path: paths.get(id)! });
+  for (const source of sources)
+    plan(source.id, source.catalogOnly ? "source_reference" : "source_item");
+  for (const note of notes) plan(note.id, "atomic_note");
+  for (const entry of topics?.planned ?? []) plan(entry.topic.id, "topic");
+  for (const r of relations) plan(r.id, "source_relation");
+  for (const id of [INDEX, CATALOG, RELATIONS, stableId("notes"), stableId("assets")])
+    plan(id, "wiki_index");
+  plan(stableId("home"), "wiki_index");
+  planned.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
   const missing = new Set(
     registry
       .filter((f) => f.status === "deleted" || f.metadata.editorialTombstone)
@@ -274,12 +269,117 @@ export async function buildObsidianMirror(
   );
   const link = (id: string, title: string, kind = "source") =>
     wikiLink(missing.has(id) ? undefined : paths.get(id), title, id, kind);
+  const context: MirrorContext = {
+    pool,
+    config,
+    scope,
+    sources,
+    sourcesById,
+    notes,
+    notesById,
+    allowed,
+    relations,
+    topics,
+    paths,
+    link,
+    homeId: stableId("home"),
+    assets: options.assets ?? []
+  };
+  return { targets: planned, render: (targets) => renderMirrorTargets(context, targets) };
+}
+
+interface MirrorContext {
+  pool: PgPool;
+  config: ObsidianLayoutConfig;
+  scope: ObsidianWikiScope;
+  sources: Awaited<ReturnType<ReturnType<typeof createObsidianWikiRepository>["sources"]>>;
+  sourcesById: Map<string, MirrorContext["sources"][number]>;
+  notes: ProjectionNoteRef[];
+  notesById: Map<string, ProjectionNoteRef>;
+  allowed: Set<string>;
+  relations: Awaited<ReturnType<ReturnType<typeof createObsidianWikiRepository>["relationRefs"]>>;
+  topics: TopicProjection | null;
+  paths: Map<string, string>;
+  link: (id: string, title: string, kind?: string) => string;
+  homeId: string;
+  assets: MirrorAsset[];
+  /** Built on the first render: notes by source, and the topics that hold each note and source. */
+  bySource?: Map<string, ProjectionNoteRef[]>;
+  topicsOf?: Map<string, Set<string>>;
+}
+
+function indexes(context: MirrorContext) {
+  if (!context.bySource) {
+    const bySource = new Map<string, ProjectionNoteRef[]>();
+    for (const note of context.notes)
+      for (const id of new Set([note.sourceId, ...(note.sourceIds ?? [])]))
+        if (id) bySource.set(id, [...(bySource.get(id) ?? []), note]);
+    const topicsOf = new Map<string, Set<string>>();
+    const add = (id: string | null, topicId: string) => {
+      if (!id) return;
+      const set = topicsOf.get(id) ?? new Set<string>();
+      set.add(topicId);
+      topicsOf.set(id, set);
+    };
+    for (const placement of context.topics?.rows.placements ?? []) {
+      if (!context.topics?.byId.has(placement.topicId)) continue;
+      add(placement.itemId, placement.topicId);
+      if (placement.kind === "note") add(`root:${placement.rootSourceId}`, placement.topicId);
+    }
+    context.bySource = bySource;
+    context.topicsOf = topicsOf;
+  }
+  return { bySource: context.bySource, topicsOf: context.topicsOf! };
+}
+
+/** Which of these rows still exist (IDs of one table, read in one statement). */
+async function existingIds(
+  pool: PgPool,
+  table: "source_items" | "source_relations",
+  ids: string[]
+) {
+  if (!ids.length) return [];
+  return (await pool.query(`select id from ${table} where id = any($1::uuid[])`, [ids])).rows.map(
+    (row) => String(row.id)
+  );
+}
+
+/** Renders a page of planned targets; a file that cannot be rendered fails alone, by name. */
+async function renderMirrorTargets(
+  context: MirrorContext,
+  targets: readonly PlannedTarget[]
+): Promise<RenderedTarget[]> {
+  const { pool, config, sources, sourcesById, notes, notesById, allowed, link, paths } = context;
+  const repo = createObsidianWikiRepository(pool),
+    l = layoutLabels(config.language),
+    t = (key: MessageKey) => translate(config.language, key);
+  const { bySource, topicsOf } = indexes(context);
+  const relationsById = new Map(context.relations.map((r) => [String(r.id), r]));
+  const details = new Map(
+    (await repo.noteDetails(targets.filter((p) => p.type === "atomic_note").map((p) => p.id))).map(
+      (row) => [String(row.id), row]
+    )
+  );
+  // What was deleted since the pass was planned is skipped, never rendered from the old plan.
+  const ofType = (...types: Array<MirrorTarget["type"]>) =>
+    targets.filter((p) => types.includes(p.type)).map((p) => p.id);
+  const existing = new Set([
+    ...(await existingIds(pool, "source_items", ofType("source_item", "source_reference"))),
+    ...(await existingIds(pool, "source_relations", ofType("source_relation"))),
+    ...(await repo.liveTopicIds(ofType("topic")))
+  ]);
   const evidenceSourceLink = (id: string, title: string) =>
     allowed.has(id)
       ? link(id, title)
       : safeWikiLabel(title) + " · " + t("obsidianWiki.unavailable");
   const list = (items: Array<{ id: string; title: string }>, kind = "wiki") =>
     items.map((item) => "- " + link(item.id, item.title, kind)).join("\n");
+  const topicList = (ids: Iterable<string>) =>
+    [...ids]
+      .map((id) => context.topics?.byId.get(id))
+      .filter((entry) => entry !== undefined)
+      .sort((a, b) => a.title.localeCompare(b.title) || a.topic.id.localeCompare(b.topic.id))
+      .map((entry) => ({ id: entry.topic.id, title: entry.title }));
   const quote = (text: string) =>
     text
       .split("\n")
@@ -290,25 +390,17 @@ export async function buildObsidianMirror(
       .replace(
         /<source-ref\b[^>]*\bid=["']([^"']+)["'][^>]*\/?>(?:<\/source-ref>)?/g,
         (_match, id: string) => {
-          const source = sources.find((s) => s.id === id);
+          const source = sourcesById.get(id);
           return source ? link(id, source.title) : t("obsidianWiki.unavailable");
         }
       )
       .replace(/<\/?source-ref[^>]*>/g, t("obsidianWiki.unavailable"));
-  const typed = (target: { kind: string; id: string }) => {
-    const entity =
-      target.kind === "source"
-        ? sources.find((s) => s.id === target.id)
-        : target.kind === "atomic_note"
-          ? notes.find((n) => n.id === target.id)
-          : pages.find((p) => !p.archived && (p.id === target.id || p.entityId === target.id));
-    return entity
-      ? link(entity.id, entity.title, target.kind === "source" ? "source" : "wiki")
-      : t("obsidianWiki.unavailable");
-  };
-  const add = (target: Omit<MirrorTarget, "path" | "layout">) =>
-    targets.push({ ...target, path: paths.get(target.id)!, layout: config });
-  for (const source of sources) {
+  const out: RenderedTarget[] = [];
+  const add = (planned: PlannedTarget, target: Omit<MirrorTarget, "path" | "layout">) =>
+    out.push({ planned, target: { ...target, path: planned.path, layout: config } });
+
+  const renderSource = async (planned: PlannedTarget) => {
+    const source = sourcesById.get(planned.id)!;
     const children = sources
       .filter((s) => s.parentId === source.id)
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id.localeCompare(b.id));
@@ -325,26 +417,13 @@ export async function buildObsidianMirror(
     const seen = new Set<string>();
     while (rootSource.parentId && !seen.has(rootSource.id)) {
       seen.add(rootSource.id);
-      const parent = sources.find((s) => s.id === rootSource.parentId);
+      const parent = sourcesById.get(String(rootSource.parentId));
       if (!parent) break;
       rootSource = parent;
     }
     const documentRevisionId = document
       ? await createObsidianEditorialRepository(pool).documentRevision(pool, document.id)
       : undefined;
-    const ownedToc = pages.find(
-      (p) =>
-        p.automatic?.role.kind === "collection" &&
-        p.automatic.role.role === "source_toc" &&
-        p.automatic.role.owner?.id === source.id
-    );
-    const usedBy = pages.filter(
-      (p) =>
-        p.evidence.some((e) => e.sourceItemId === source.id) ||
-        p.automatic?.memberships.some(
-          (m) => m.target.kind === "source" && m.target.id === source.id
-        )
-    );
     const bibliography = [source.metadata, ...(source.bibliography ?? [])]
       .map((data) =>
         Object.entries(data)
@@ -357,7 +436,7 @@ export async function buildObsidianMirror(
       )
       .filter(Boolean)
       .join("\n\n");
-    const assets = (options.assets ?? []).filter(
+    const assets = context.assets.filter(
       (a) =>
         a.sourceId === source.id || a.sourceId === rootSource.id || a.documentId === document?.id
     );
@@ -368,11 +447,15 @@ export async function buildObsidianMirror(
           : `- ${safeWikiLabel(a.originalFileName)} · ${t(config.attachments === "omit" ? "obsidianLayout.assetOmitted" : "obsidianLayout.assetUnavailable")}`
       )
       .join("\n");
+    const sourceTopics = new Set([
+      ...(topicsOf.get(source.id) ?? []),
+      ...(topicsOf.get(`root:${source.id}`) ?? [])
+    ]);
     const generated = [
       source.parentId
         ? link(
             source.parentId,
-            sources.find((p) => p.id === source.parentId)?.title ?? t("obsidianWiki.unavailable")
+            sourcesById.get(String(source.parentId))?.title ?? t("obsidianWiki.unavailable")
           )
         : "",
       `## ${t("obsidianLayout.bibliography")}`,
@@ -386,41 +469,17 @@ export async function buildObsidianMirror(
       source.summary
         ? `## ${t("obsidianLayout.summary")}\n\n${quote(source.summary.text)}\n\n${safeWikiLabel(source.summary.provider)} · ${safeWikiLabel(source.summary.model)} · ${safeWikiLabel(source.summary.runtime)} · ${source.summary.generatedAt} · ${source.summary.stale ? t("wiki.needsEvidenceReview") : t("obsidianWiki.current")} · ${source.summary.id}`
         : "",
-      `## ${t("obsidianLayout.interpretation")}`,
-      ownedToc?.sections.some((s) => s.provenance === "personal")
-        ? ownedToc.sections
-            .filter((s) => s.provenance === "personal")
-            .map(
-              (s) =>
-                "[[" +
-                paths.get(ownedToc.id)!.replace(/\.md$/, "") +
-                "#^memora-section-" +
-                s.id +
-                "|" +
-                safeWikiLabel(s.title) +
-                "]]"
-            )
-            .join("\n")
-        : t("obsidianLayout.noInterpretation"),
       list(children, "source"),
       `## ${l.sourceNotes}`,
-      [
-        ownedToc ? link(ownedToc.id, ownedToc.title, "wiki") : "",
-        list(
-          notes.filter((n) => n.sourceId === source.id || n.sourceIds?.includes(source.id)),
-          "note"
-        )
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-      `## ${t("obsidianLayout.usedBy")}`,
-      list(usedBy),
+      list(bySource.get(source.id) ?? [], "note"),
+      sourceTopics.size ? `## ${t("obsidianLayout.usedBy")}` : "",
+      list(topicList(sourceTopics)),
       `## ${l.assets}`,
       assetLinks || t("obsidianLayout.assetUnavailable")
     ]
       .filter(Boolean)
       .join("\n\n");
-    add({
+    add(planned, {
       id: source.id,
       type: document ? "source_item" : "source_reference",
       revision: source.updatedAt.toISOString(),
@@ -435,19 +494,16 @@ export async function buildObsidianMirror(
       editorial: `# ${markdownHeading(source.title)}\n\n${sourceOriginalStart}\n${original}\n${sourceOriginalEnd}\n\n`,
       generated
     });
-  }
-  for (const note of notes) {
+  };
+
+  const renderNote = async (planned: PlannedTarget) => {
+    const note = details.get(planned.id)!;
     const originals = await repo.noteEvidence(note.id, note.evidenceChunkId),
       evidence = originals.find((e) => e.id === note.evidenceChunkId),
-      source = sources.find((s) => s.id === note.sourceId);
+      source = sourcesById.get(String(note.sourceId));
     if (originals.length > 100) throw new Error("obsidianWiki.errors.limit");
-    if (scope.sourceIds.length && originals.some((e) => !allowed.has(e.sourceId)))
+    if (context.scope.sourceIds.length && originals.some((e) => !allowed.has(e.sourceId)))
       throw new Error("obsidianWiki.errors.binding");
-    const memberships = pages.filter((p) =>
-      p.automatic?.memberships.some(
-        (m) => m.target.kind === "atomic_note" && m.target.id === note.id
-      )
-    );
     const noteState = [
       t(("knowledge.notes.status." + note.status) as MessageKey),
       // AI provenance until a person approves, edits or discards the note.
@@ -463,7 +519,7 @@ export async function buildObsidianMirror(
           `[${i + 1}] ${evidenceSourceLink(e.sourceId, e.sourceTitle)} · ${e.documentId} · ${e.id} · ${e.sourceSpanId ?? ""} · ${safeWikiLabel(e.locator ?? "")} · ${t(e.current ? "obsidianWiki.current" : "obsidianWiki.historical")}\n\n${quote(e.content)}`
       )
       .join("\n\n");
-    add({
+    add(planned, {
       id: note.id,
       type: "atomic_note",
       revision: note.updatedAt.toISOString(),
@@ -477,169 +533,43 @@ export async function buildObsidianMirror(
         source ? link(source.id, source.title) : "",
         originalReferences || t("obsidianWiki.unavailable"),
         note.successorIds
-          ?.map((id: string) => link(id, notes.find((n) => n.id === id)?.title ?? id, "note"))
+          ?.map((id: string) => link(id, notesById.get(id)?.title ?? id, "note"))
           .join("\n"),
-        list(memberships)
+        list(topicList(topicsOf.get(note.id) ?? []))
       ]
         .filter(Boolean)
         .join("\n\n")
     });
-  }
-  for (const page of pages) {
-    const ancestors: WikiPage[] = [],
-      visited = new Set([page.id]);
-    let parentId = page.parentId;
-    while (parentId && !visited.has(parentId)) {
-      visited.add(parentId);
-      const parent = pages.find((p) => p.id === parentId && !p.archived);
-      if (!parent) break;
-      ancestors.unshift(parent);
-      parentId = parent.parentId;
-    }
-    const breadcrumb = ancestors.map((p) => link(p.id, p.title, "wiki")).join(" → ");
-    const linkMap: Array<{ rendered: string; canonical: string }> = [];
-    const prose = (text: string) => {
-      const value = references(text),
-        mask = outsideCodeFences(value);
-      return value.replace(
-        /\[([^\]]+)\]\(memora:(page|source|atomic_note|entity)\/([0-9a-f-]{36})\)/g,
-        (canonical, label: string, kind: string, id: string, offset: number) => {
-          if (!mask.slice(offset, offset + canonical.length).trim()) return canonical;
-          const entity =
-            kind === "source"
-              ? sources.find((s) => s.id === id)
-              : kind === "atomic_note"
-                ? notes.find((n) => n.id === id)
-                : pages.find((p) => p.id === id || p.entityId === id);
-          if (!entity) return canonical;
-          const rendered = link(entity.id, label, kind === "source" ? "source" : "wiki");
-          if (!linkMap.some((m) => m.rendered === rendered && m.canonical === canonical))
-            linkMap.push({ rendered, canonical });
-          return rendered;
-        }
-      );
-    };
-    const renderedSections = page.sections.map((s) => ({ ...s, markdown: prose(s.markdown) }));
-    const sectionReferences = page.sections
-      .map((section) => {
-        const assessment = section.assessment,
-          review =
-            assessment?.humanReview === "verified" ||
-            (!assessment &&
-              section.provenance === "personal" &&
-              section.evidenceReview === "verified")
-              ? t("wiki.reviewed")
-              : t("wiki.needsEvidenceReview");
-        const support =
-          assessment?.support === "validated" &&
-          assessment.sectionRevisionId === section.sectionRevisionId &&
-          assessment.freshness === "current"
-            ? assessment.supportMethod === "model_checked"
-              ? t("automaticWiki.modelAssessment")
-              : assessment.humanReview === "verified"
-                ? t("wiki.reviewed")
-                : t("automaticWiki.assessment")
-            : t("wiki.needsEvidenceReview");
-        return (
-          "### " +
-          ("[[#^memora-section-" + section.id + "|" + safeWikiLabel(section.title) + "]]") +
-          "\n\n" +
-          [
-            t(("wiki.provenanceTypes." + section.provenance) as MessageKey),
-            section.protected ? t("obsidianWiki.protected") : "",
-            review,
-            support
-          ]
-            .filter(Boolean)
-            .join(" · ") +
-          "\n\n" +
-          section.evidenceIds
-            .map(
-              (id, i) =>
-                i +
-                1 +
-                ". [[#^memora-evidence-" +
-                id +
-                "|" +
-                safeWikiLabel(
-                  page.evidence.find((e) => e.id === id)?.sourceTitle ??
-                    t("obsidianWiki.unavailable")
-                ) +
-                "]]"
-            )
-            .join("\n")
-        );
-      })
-      .join("\n\n");
-    const groups = page.automatic?.groups ?? [],
-      memberships = page.automatic?.memberships ?? [];
-    const navigation = groups
-      .map(
-        (group) =>
-          `## ${markdownHeading(group.title)}\n\n${group.explanation ?? ""}\n\n` +
-          memberships
-            .filter((m) => m.groupId === group.id)
-            .sort((a, b) => a.order - b.order)
-            .map(
-              (m) => `- ${typed(m.target)} · ${t(("hierarchy.link." + m.purpose) as MessageKey)}`
-            )
-            .join("\n")
-      )
-      .join("\n\n");
-    const citations = page.evidence
-      .map(
-        (e) =>
-          `### ${e.id}\n\n${evidenceSourceLink(e.sourceItemId, e.sourceTitle)} · ${e.documentId} · ${e.chunkId} · ${e.sourceSpanId ?? ""} · ${safeWikiLabel(e.locator ?? "")} · ${e.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${quote(e.excerpt)}\n\n^memora-evidence-${e.id}\n\n[${t("obsidianWiki.openApp")}](memora://open/wiki/${page.id}?revision=${page.revisionId}&evidence=${e.id})`
-      )
-      .join("\n\n");
-    add({
-      id: page.id,
-      type: "wiki_page",
-      revision: page.revisionId,
-      title: page.title,
-      linkMap,
-      editorial:
-        `# ${markdownHeading(page.title)}\n\n` +
-        renderedSections
-          .map(
-            (s) =>
-              `${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${references(s.markdown)}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`
-          )
-          .join("\n") +
-        "\n",
-      generated: [
-        breadcrumb,
-        page.entityId ? `${t("hierarchy.entityBinding")}: ${page.entityId}` : "",
-        page.archived
-          ? t("maintenance.archivedRecoverable")
-          : t(("wiki." + page.review) as MessageKey),
-        navigation,
-        list(
-          pages.filter(
-            (p) =>
-              !p.archived &&
-              (p.parentId === page.id ||
-                (p.automatic?.role.kind === "collection" && p.automatic.role.owner?.id === page.id))
-          )
-        ),
-        ...(page.automatic?.links ?? []).map(typed),
-        sectionReferences,
-        renderInterpretationHistory(
-          page.sections.flatMap((s) => s.interpretations ?? []),
-          t
-        ),
-        citations,
-        link(INDEX, t("wiki.title"), "wiki")
-      ]
-        .filter(Boolean)
-        .join("\n\n")
+  };
+
+  const renderTopic = (planned: PlannedTarget) => {
+    const entry = context.topics!.byId.get(planned.id)!;
+    const moc = renderTopicMoc(context.topics!, entry, {
+      language: config.language,
+      link: (id, title, kind) => link(id, title, kind),
+      pathOf: (id) => paths.get(id),
+      titleOf: (kind, id) =>
+        (kind === "note" ? notesById.get(id)?.title : sourcesById.get(id)?.title) ?? id,
+      home: { id: context.homeId, title: l.home }
     });
-  }
-  for (const r of relations)
-    add({
+    add(planned, {
+      id: planned.id,
+      type: "topic",
+      revision: moc.revision,
+      title: moc.title,
+      editorial: moc.editorial,
+      generated: moc.generated,
+      aliases: moc.aliases
+    });
+  };
+
+  const renderRelation = async (planned: PlannedTarget) => {
+    const r = relationsById.get(planned.id)!;
+    const evidence = await repo.relationEvidence(r.id);
+    add(planned, {
       id: r.id,
       type: "source_relation",
-      revision: digest(JSON.stringify(r)),
+      revision: digest(JSON.stringify({ ...r, evidence })),
       title: r.sourceTitle + " → " + r.targetTitle,
       editorial: `# ${markdownHeading(r.sourceTitle + " → " + r.targetTitle)}\n\n`,
       generated: [
@@ -652,63 +582,85 @@ export async function buildObsidianMirror(
         ...[r.source_idea, r.target_idea, r.explanation]
           .filter((text): text is string => typeof text === "string")
           .map(references),
-        ...r.evidence.map(
+        ...evidence.map(
           (e: Record<string, any>) =>
             `${e.id} · ${e.sourceDocumentId ?? ""} · ${e.targetDocumentId ?? ""} · ${e.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${quote(e.snapshot.sourceExcerpt ?? "")}\n\n${quote(e.snapshot.targetExcerpt ?? "")}`
         )
       ].join("\n\n")
     });
-  add({
-    id: RELATIONS,
-    type: "wiki_index",
-    revision: digest(JSON.stringify(relations)),
-    title: t("obsidianWiki.connections"),
-    editorial: `# ${t("obsidianWiki.connections")}\n\n`,
-    generated: list(
-      relations.map((r) => ({ id: r.id, title: r.sourceTitle + " → " + r.targetTitle }))
-    )
-  });
-  const indexes: [string, string, string][] = [
-    [
-      INDEX,
-      t("wiki.title"),
-      list(pages.filter((p) => !p.archived && !pages.some((parent) => parent.id === p.parentId)))
-    ],
-    [CATALOG, l.sources, list(sources, "source")],
-    [stableId("notes"), l.notes, list(notes, "note")],
-    [
-      stableId("assets"),
-      l.assets,
-      (options.assets ?? [])
-        .map(
-          (a) =>
-            `${a.originalFileName} · ${a.available ? a.path : t("obsidianLayout.assetOmitted")}`
+  };
+
+  const renderIndex = (planned: PlannedTarget) => {
+    const topicRoot = context.topics?.planned[0];
+    const areas = context.topics
+      ? (context.topics.children.get(context.topics.rows.rootId) ?? [])
+          .map((topic) => context.topics!.byId.get(topic.id))
+          .filter((entry) => entry !== undefined)
+          .map((entry) => ({ id: entry.topic.id, title: entry.title }))
+      : [];
+    const generated: Record<string, [string, string]> = {
+      [INDEX]: [
+        t("wiki.title"),
+        [topicRoot ? link(topicRoot.topic.id, topicRoot.title, "wiki") : "", list(areas)]
+          .filter(Boolean)
+          .join("\n\n") || t("topics.page.empty")
+      ],
+      [CATALOG]: [l.sources, list(sources, "source")],
+      [RELATIONS]: [
+        t("obsidianWiki.connections"),
+        list(
+          context.relations.map((r) => ({ id: r.id, title: r.sourceTitle + " → " + r.targetTitle }))
         )
-        .join("\n")
-    ],
-    [
-      stableId("home"),
-      l.home,
-      [
-        link(INDEX, t("wiki.title"), "wiki"),
-        link(CATALOG, l.sources, "wiki"),
-        link(stableId("notes"), l.notes, "wiki"),
-        link(stableId("assets"), l.assets, "wiki")
-      ].join("\n\n")
-    ]
-  ];
-  for (const [id, title, generated] of indexes)
-    add({
-      id,
+      ],
+      [stableId("notes")]: [l.notes, list(notes, "note")],
+      [stableId("assets")]: [
+        l.assets,
+        context.assets
+          .map(
+            (a) =>
+              `${a.originalFileName} · ${a.available ? a.path : t("obsidianLayout.assetOmitted")}`
+          )
+          .join("\n")
+      ],
+      [stableId("home")]: [
+        l.home,
+        [
+          link(INDEX, t("wiki.title"), "wiki"),
+          link(CATALOG, l.sources, "wiki"),
+          link(stableId("notes"), l.notes, "wiki"),
+          link(stableId("assets"), l.assets, "wiki")
+        ].join("\n\n")
+      ]
+    };
+    const [title, body] = generated[planned.id]!;
+    add(planned, {
+      id: planned.id,
       type: "wiki_index",
-      revision: digest(generated),
+      revision: digest(body),
       title,
       editorial: `# ${markdownHeading(title)}\n\n`,
-      generated
+      generated: body
     });
-  if (
-    targets.reduce((sum, t) => sum + Buffer.byteLength(t.editorial + t.generated), 0) > 20_000_000
-  )
-    throw new Error("obsidianWiki.errors.limit");
-  return targets;
+  };
+
+  for (const planned of targets) {
+    try {
+      const gone =
+        planned.type === "atomic_note"
+          ? !details.has(planned.id)
+          : planned.type !== "wiki_index" && !existing.has(planned.id);
+      if (gone) out.push({ planned });
+      else if (planned.type === "source_item" || planned.type === "source_reference")
+        await renderSource(planned);
+      else if (planned.type === "atomic_note") await renderNote(planned);
+      else if (planned.type === "topic") renderTopic(planned);
+      else if (planned.type === "source_relation") await renderRelation(planned);
+      else renderIndex(planned);
+    } catch (error) {
+      const failure = fileError(error);
+      if (!failure) throw error;
+      out.push({ planned, error: failure });
+    }
+  }
+  return out;
 }

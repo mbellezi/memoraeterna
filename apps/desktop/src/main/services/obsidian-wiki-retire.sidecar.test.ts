@@ -133,7 +133,9 @@ describe.skipIf(!sidecarAvailable)("retiring the old wiki files on PostgreSQL", 
           const result = await runObsidianSync({ action: "write", ...input });
           return { mtimeMs: Number(result.mtimeMs) };
         },
-        archiveProjection: (input) => archiveObsidianFile(input)
+        archiveProjection: (input) => archiveObsidianFile(input),
+        // One job run delivers the whole small vault, however busy the machine is.
+        delivery: { pageMs: 60_000 }
       });
       if (layoutV2)
         await createSettingsRepository(pool).set(
@@ -218,7 +220,7 @@ describe.skipIf(!sidecarAvailable)("retiring the old wiki files on PostgreSQL", 
       // The projection went on to write its own index files, and none of them collided.
       expect(result.conflicts).toBe(0);
       expect(result.projected).toBeGreaterThan(0);
-      const rows = await createObsidianSyncRepository(pool).listWikiFiles(true);
+      const rows = await createObsidianSyncRepository(pool).listRetirableFiles(true);
       expect(rows).toHaveLength(PAGES);
       expect(rows.every((row) => row.status === "retired" && row.metadata.retired)).toBe(true);
       const files = await snapshot(vaultPath);
@@ -274,14 +276,14 @@ describe.skipIf(!sidecarAvailable)("retiring the old wiki files on PostgreSQL", 
         language: "en",
         attachments: "omit"
       });
-      const scope = { sourceIds: [], pageIds: [], includeDescendants: true };
+      const scope = { sourceIds: [], includeDescendants: true };
       const where = async (migrate = false) =>
         (await buildObsidianMirror(pool, "Memora", scope, config, { migrate })).find(
           (t) => t.id === source.id
         )!.path;
       const wanted = await where();
       // Put a retired, kept page file exactly where that source wants to go.
-      const row = (await createObsidianSyncRepository(pool).listWikiFiles(true)).find(
+      const row = (await createObsidianSyncRepository(pool).listRetirableFiles(true)).find(
         (file) => file.relativePath === kept
       )!;
       await pool.query("update obsidian_sync_files set relative_path=$2 where id=$1", [

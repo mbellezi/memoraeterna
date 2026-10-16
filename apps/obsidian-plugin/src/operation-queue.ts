@@ -1,4 +1,5 @@
 import {
+  editableTargetType,
   obsidianEditOperationSchema,
   obsidianEditReceiptSchema,
   parseObsidianMarkdown,
@@ -206,7 +207,8 @@ export class ObsidianOperationQueue {
             if (frame && local) {
               next.operation = {
                 ...next.operation,
-                targetType: frame.frontmatter.memoraType,
+                targetType:
+                  editableTargetType(frame.frontmatter.memoraType) ?? next.operation.targetType,
                 baseRevision: receipt.revision,
                 baseVersion: receipt.syncVersion,
                 baseHash: receipt.contentHash,

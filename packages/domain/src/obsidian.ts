@@ -23,7 +23,8 @@ export const ObsidianSyncEntityTypeSchema = z.enum([
   "wiki_page",
   "wiki_index",
   "source_reference",
-  "source_relation"
+  "source_relation",
+  "topic"
 ]);
 
 export type ObsidianSyncEntityType = z.infer<typeof ObsidianSyncEntityTypeSchema>;

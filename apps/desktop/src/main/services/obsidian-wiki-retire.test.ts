@@ -33,13 +33,13 @@ const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).diges
 class MemoryStore implements RetirementStore {
   readonly files = new Map<string, ObsidianSyncFileRecord>();
   readonly written = new Map<string, string>();
-  readonly pages = new Set<string>();
+  readonly topics = new Set<string>();
   readonly events: string[] = [];
   failOn = new Set<string>();
 
   add(input: {
     n: number;
-    type?: "wiki_page" | "wiki_index";
+    type?: "wiki_page" | "wiki_index" | "topic";
     path: string;
     status?: ObsidianSyncFileRecord["status"];
     metadata?: Record<string, unknown>;
@@ -67,7 +67,7 @@ class MemoryStore implements RetirementStore {
     this.files.set(file.memoraId, file);
     return file;
   }
-  async wikiFiles(retired: boolean) {
+  async retirableFiles(retired: boolean) {
     return [...this.files.values()]
       .filter((file) => (file.status === "retired") === retired)
       .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
@@ -86,8 +86,8 @@ class MemoryStore implements RetirementStore {
   async writtenHash(memoraId: string, binding: string) {
     return binding === BINDING ? (this.written.get(memoraId) ?? null) : null;
   }
-  async existingPageIds(ids: string[]) {
-    return ids.filter((pageId) => this.pages.has(pageId));
+  async liveTopicIds(ids: string[]) {
+    return ids.filter((topicId) => this.topics.has(topicId));
   }
   async withTarget<T>(memoraId: string, work: () => Promise<T>) {
     this.events.push(`lock:${memoraId}`);
@@ -145,10 +145,10 @@ async function projectedPage(
   vaultPath: string,
   store: MemoryStore,
   n: number,
-  extra: { type?: "wiki_page" | "wiki_index"; dir?: string } = {}
+  extra: { type?: "wiki_page" | "wiki_index" | "topic"; dir?: string } = {}
 ) {
   const path = `Memora/${extra.dir ?? "Wiki/Topics"}/Page ${String(n).padStart(2, "0")}.md`;
-  const content = `---\nmemora_id: ${id(n)}\nmemora_type: wiki_page\n---\n# Page ${n}\n`;
+  const content = `---\nmemora_id: ${id(n)}\nmemora_type: ${extra.type ?? "wiki_page"}\n---\n# Page ${n}\n`;
   await put(vaultPath, path, content);
   store.add({ n, path, ...(extra.type ? { type: extra.type } : {}) });
   store.written.set(id(n), projectionHash(content));
@@ -231,22 +231,26 @@ describe("retiring the vault files of the old wiki", () => {
     expect(retireWrites).not.toHaveBeenCalled();
   });
 
-  it("leaves what the plan still produces alone, and the file of a page that still exists", async () => {
+  it("leaves what the plan still produces alone, and the map of a topic that is still live", async () => {
     const vaultPath = await newVault();
     const { store, retirement, context } = setup(vaultPath);
     const index = await projectedPage(vaultPath, store, 1, { type: "wiki_index", dir: "Wiki" });
-    const live = await projectedPage(vaultPath, store, 2);
-    const gone = await projectedPage(vaultPath, store, 3);
-    store.pages.add(id(2));
+    const live = await projectedPage(vaultPath, store, 2, { type: "topic", dir: "Topics/A" });
+    const merged = await projectedPage(vaultPath, store, 3, { type: "topic", dir: "Topics/B" });
+    const page = await projectedPage(vaultPath, store, 4);
+    store.topics.add(id(2));
 
     const summary = await retirement.retire(context(), new Set([id(1)]));
 
-    expect(summary).toEqual({ archived: 1, kept: 0, absent: 0, failed: 0 });
+    // The live topic is only out of the scope; the merged topic's map and every page file go.
+    expect(summary).toEqual({ archived: 2, kept: 0, absent: 0, failed: 0 });
     expect(await readFile(join(vaultPath, index.path), "utf8")).toBe(index.content);
     expect(await readFile(join(vaultPath, live.path), "utf8")).toBe(live.content);
-    await expect(stat(join(vaultPath, gone.path))).rejects.toThrow("ENOENT");
+    await expect(stat(join(vaultPath, merged.path))).rejects.toThrow("ENOENT");
+    await expect(stat(join(vaultPath, page.path))).rejects.toThrow("ENOENT");
     expect(store.files.get(id(1))!.status).toBe("synced");
     expect(store.files.get(id(2))!.status).toBe("synced");
+    expect(store.files.get(id(3))!.status).toBe("retired");
   });
 
   it("retires an index the plan stopped producing, which is not a page", async () => {
@@ -440,7 +444,7 @@ describe("retiring the vault files of the old wiki", () => {
   it("does nothing when there is nothing to retire", async () => {
     const vaultPath = await newVault();
     const { store, retirement, context } = setup(vaultPath);
-    const existing = vi.spyOn(store, "existingPageIds");
+    const existing = vi.spyOn(store, "liveTopicIds");
     expect(await retirement.retire(context(), new Set())).toEqual({
       archived: 0,
       kept: 0,

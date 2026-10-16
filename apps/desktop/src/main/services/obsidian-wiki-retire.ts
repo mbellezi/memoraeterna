@@ -15,8 +15,9 @@ import {
 } from "../workers/obsidian-sync.worker.js";
 
 /**
- * Retires the vault files of the old wiki. A registered `wiki_page` or `wiki_index` file that the
- * current projection plan no longer produces (every page file once the wiki is wiped) is taken out
+ * Retires vault files the projection no longer produces: the old wiki's pages and indexes (every
+ * page file, now that topics replace pages) and the maps of topics that left the tree (merged or
+ * removed). A registered file of those kinds that the current plan does not produce is taken out
  * of the projection without ever deleting what a person may have written:
  *
  * - bytes equal to the last projected file: archived to
@@ -26,7 +27,8 @@ import {
  * - no file at the path: the row is `retired`.
  *
  * A retired row keeps its relative path, so the registry still reserves the path (a new target is
- * placed beside it, never over it). Nothing here deletes a vault file.
+ * placed beside it, never over it). The map of a live topic is never retired, even when the
+ * projection scope leaves it out. Nothing here deletes a vault file.
  */
 export const retiredOutcomes = ["archived", "kept", "absent"] as const;
 export const keptReasons = ["edited", "unverified", "unsafe", "limit"] as const;
@@ -61,14 +63,14 @@ const reportedKeptLimit = 200;
 
 /** The database operations the retirement needs, so the logic runs without PostgreSQL in tests. */
 export interface RetirementStore {
-  /** Registered wiki page and index files: the live ones, or the retired ones. */
-  wikiFiles(retired: boolean): Promise<ObsidianSyncFileRecord[]>;
+  /** Registered wiki page, wiki index and topic map files: the live ones, or the retired ones. */
+  retirableFiles(retired: boolean): Promise<ObsidianSyncFileRecord[]>;
   find(memoraId: string): Promise<ObsidianSyncFileRecord | null>;
   retire(file: ObsidianSyncFileRecord, metadata: RetiredMetadata): Promise<void>;
   /** `rendered_hash` of the last file written for this target in this vault, if any. */
   writtenHash(memoraId: string, binding: string): Promise<string | null>;
-  /** Which of these wiki pages still exist. */
-  existingPageIds(ids: string[]): Promise<string[]>;
+  /** Which of these topics are live in the active tree. */
+  liveTopicIds(ids: string[]): Promise<string[]>;
   /** Serializes work on one target with projection writes and editorial operations. */
   withTarget<T>(memoraId: string, work: () => Promise<T>): Promise<T>;
 }
@@ -77,7 +79,7 @@ export function createPgRetirementStore(pool: PgPool): RetirementStore {
   const sync = createObsidianSyncRepository(pool),
     wiki = createObsidianWikiRepository(pool);
   return {
-    wikiFiles: (retired) => sync.listWikiFiles(retired),
+    retirableFiles: (retired) => sync.listRetirableFiles(retired),
     find: (memoraId) => sync.findByMemoraId(memoraId),
     retire: async (file, metadata) => {
       await sync.update(file.id, {
@@ -87,7 +89,7 @@ export function createPgRetirementStore(pool: PgPool): RetirementStore {
     },
     writtenHash: async (memoraId, binding) =>
       (await wiki.base(memoraId, binding))?.rendered_hash ?? null,
-    existingPageIds: (ids) => wiki.existingPageIds(ids),
+    liveTopicIds: (ids) => wiki.liveTopicIds(ids),
     withTarget: (memoraId, work) => wiki.withTargetLock(memoraId, work)
   };
 }
@@ -126,20 +128,21 @@ export class ObsidianWikiRetirement {
   }
 
   /**
-   * Retires every registered wiki file the plan does not produce, except the file of a page that
-   * still exists (out of the projection scope, not gone). Safe to run again: retired rows are skipped.
+   * Retires every registered retirable file the plan does not produce, except the map of a topic
+   * that is still live (out of the projection scope, not gone). Safe to run again: retired rows are
+   * skipped.
    */
   async retire(context: RetireContext, produced: ReadonlySet<string>): Promise<RetireSummary> {
     const summary: RetireSummary = { archived: 0, kept: 0, absent: 0, failed: 0 };
     const store = this.options.store;
-    const pending = (await store.wikiFiles(false)).filter(
+    const pending = (await store.retirableFiles(false)).filter(
       (file) => file.status !== "retired" && !produced.has(file.memoraId)
     );
     if (!pending.length) return summary;
     const alive = new Set<string>();
-    const pageIds = pending.filter((f) => f.memoraType === "wiki_page").map((f) => f.memoraId);
-    for (let i = 0; i < pageIds.length; i += 500)
-      for (const id of await store.existingPageIds(pageIds.slice(i, i + 500))) alive.add(id);
+    const topicIds = pending.filter((f) => f.memoraType === "topic").map((f) => f.memoraId);
+    for (let i = 0; i < topicIds.length; i += 500)
+      for (const id of await store.liveTopicIds(topicIds.slice(i, i + 500))) alive.add(id);
     const stamp = this.now().replace(/[^0-9A-Za-z]/g, "-");
     for (const candidate of pending) {
       if (alive.has(candidate.memoraId)) continue;
@@ -253,7 +256,7 @@ export class ObsidianWikiRetirement {
 
   async report(): Promise<RetiredReport> {
     const report: RetiredReport = { archived: 0, absent: 0, keptTotal: 0, kept: [] };
-    for (const file of await this.options.store.wikiFiles(true)) {
+    for (const file of await this.options.store.retirableFiles(true)) {
       const metadata = retiredMetadata(file);
       if (!metadata) continue;
       if (metadata.outcome === "archived") report.archived += 1;

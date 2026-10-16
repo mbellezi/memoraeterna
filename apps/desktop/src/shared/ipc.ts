@@ -373,13 +373,20 @@ export const storageSettingsUpdateSchema = storageSettingsSchema
   .partial()
   .strict();
 
+/** Which sources the vault projection holds; every topic the projection reaches gets its map. */
 export const obsidianWikiScopeSchema = z
   .object({
     sourceIds: z.array(z.string().uuid()).max(100).default([]),
-    pageIds: z.array(z.string().uuid()).max(100).default([]),
     includeDescendants: z.boolean().default(true)
   })
   .strict();
+/** The stored scope: a scope saved before topic maps replaced wiki pages may still name pages. */
+export const storedObsidianWikiScopeSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const scope = { ...(value as Record<string, unknown>) };
+  delete scope.pageIds;
+  return scope;
+}, obsidianWikiScopeSchema);
 /** Old wiki files taken out of the projection: archived to recovery, absent, or kept because edited. */
 export const obsidianWikiRetiredSchema = z
   .object({
@@ -408,6 +415,16 @@ export const obsidianWikiStatusSchema = z
         status: z.enum(["queued", "running", "succeeded", "failed", "canceled", "retrying"]),
         error: z.string().nullable()
       })
+      .nullable(),
+    /** The current or last delivery pass: files delivered so far, of how many, and failed ones. */
+    delivery: z
+      .object({
+        state: z.enum(["running", "done", "stopped"]),
+        total: z.number().int().nonnegative(),
+        delivered: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative()
+      })
+      .strict()
       .nullable(),
     scope: obsidianWikiScopeSchema,
     conflicts: z.array(

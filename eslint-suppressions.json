@@ -149,10 +149,7 @@
   },
   "apps/desktop/src/main/services/obsidian-wiki-projection.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
+      "count": 4
     }
   },
   "apps/desktop/src/main/services/prompt-catalog-ai.test.ts": {
