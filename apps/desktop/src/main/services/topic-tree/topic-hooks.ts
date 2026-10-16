@@ -25,6 +25,8 @@ export interface TopicChangeHooks {
    * exist exactly when the deletion commits.
    */
   itemsRemoved(options?: TopicHookOptions): Promise<void>;
+  /** A re-embedding job of a space change ended (D26): the build looks at the new space again. */
+  reembeddingEnded?(options?: TopicHookOptions): Promise<void>;
 }
 
 const savepoint = "topic_hook";
@@ -68,6 +70,9 @@ export function createTopicChangeHooks(
       guarded("notesChanged", options, () => triggers.notesChanged(noteIds, options)),
     sourcesChanged: (sourceItemIds, options = {}) =>
       guarded("sourcesChanged", options, () => triggers.sourcesChanged(sourceItemIds, options)),
-    itemsRemoved: (options = {}) => guarded("itemsRemoved", options, () => triggers.repair(options))
+    itemsRemoved: (options = {}) =>
+      guarded("itemsRemoved", options, () => triggers.repair(options)),
+    reembeddingEnded: (options = {}) =>
+      guarded("reembeddingEnded", options, () => triggers.reembeddingEnded(options))
   };
 }

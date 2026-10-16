@@ -8,7 +8,8 @@ import { renderPrompt } from "./prompt-runtime.js";
 const mocks = vi.hoisted(() => ({
   notes: { findById: vi.fn() },
   embedding: { hasContentHash: vi.fn(), upsert: vi.fn() },
-  run: vi.fn()
+  run: vi.fn(),
+  routeKey: vi.fn()
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
@@ -44,7 +45,10 @@ const embedded = {
 const service = () =>
   new KnowledgeService({
     getPool: () => ({}) as PgPool,
-    aiService: { runDefaultTask: mocks.run } as unknown as AiService,
+    aiService: {
+      runDefaultTask: mocks.run,
+      embeddingRouteSpaceKey: mocks.routeKey
+    } as unknown as AiService,
     userDataPath: "/tmp/test",
     getStorageSettings: async () => ({}) as never,
     getUploadedFilesBasePath: async () => null
@@ -55,6 +59,7 @@ beforeEach(() => {
   mocks.notes.findById.mockResolvedValue(note());
   mocks.embedding.hasContentHash.mockResolvedValue(false);
   mocks.run.mockResolvedValue(embedded);
+  mocks.routeKey.mockResolvedValue("space-1");
 });
 
 describe("rebuilding the embedding of an edited note", () => {
@@ -127,6 +132,22 @@ describe("rebuilding the embedding of an edited note", () => {
     expect(
       await service().embedAtomicNote("note-1", undefined, {}, { spaceKey: "space-1" })
     ).toEqual({ embedded: false, reason: "unchanged" });
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it("ends without a call once the route writes to another space than the job names (D26, Q8)", async () => {
+    mocks.routeKey.mockResolvedValue("space-2");
+    expect(
+      await service().embedAtomicNote("note-1", undefined, {}, { spaceKey: "space-1" })
+    ).toEqual({ embedded: false, reason: "space_moved" });
+    mocks.routeKey.mockResolvedValue(null);
+    expect(
+      await service().embedAtomicNote("note-1", undefined, {}, { spaceKey: "space-1" })
+    ).toEqual({ embedded: false, reason: "space_moved" });
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.embedding.upsert).not.toHaveBeenCalled();
+    // An edit's job names no space: it embeds through whatever route is active.
+    expect(await service().embedAtomicNote("note-1")).toEqual({ embedded: true });
     expect(mocks.run).toHaveBeenCalledOnce();
   });
 

@@ -45,7 +45,8 @@ function hooks() {
   return {
     notesChanged: vi.fn(async () => undefined),
     sourcesChanged: vi.fn(async () => undefined),
-    itemsRemoved: vi.fn(async () => undefined)
+    itemsRemoved: vi.fn(async () => undefined),
+    reembeddingEnded: vi.fn(async () => undefined)
   } satisfies TopicChangeHooks;
 }
 
@@ -94,10 +95,14 @@ describe("reviewing a note", () => {
 
 describe("the note-embedding job", () => {
   async function runEmbeddingJob(
-    result: { embedded: boolean; reason?: string },
-    topicHooks?: TopicChangeHooks
+    result: { embedded: boolean; reason?: string } | Error,
+    topicHooks?: TopicChangeHooks,
+    payload: Record<string, string> = {}
   ) {
-    const embedAtomicNote = vi.fn(async () => result);
+    const embedAtomicNote = vi.fn(async () => {
+      if (result instanceof Error) throw result;
+      return result;
+    });
     const supervisor = new JobSupervisor({
       getPool: () => ({}) as PgPool,
       knowledgeService: { embedAtomicNote } as unknown as KnowledgeService,
@@ -109,7 +114,7 @@ describe("the note-embedding job", () => {
       attempts: 1,
       maxAttempts: 3,
       progress: 0,
-      payload: { atomicNoteId: noteId }
+      payload: { atomicNoteId: noteId, ...payload }
     } satisfies Partial<JobRecord>);
     mocks.jobs.update.mockResolvedValue({ id: "job" });
     await supervisor.runOnce();
@@ -142,5 +147,35 @@ describe("the note-embedding job", () => {
 
   it("runs without hooks", async () => {
     await expect(runEmbeddingJob({ embedded: true })).resolves.toBeUndefined();
+  });
+
+  it("asks the topic build to look again whenever a re-embedding of a space change ends (D26)", async () => {
+    const space = { spaceKey: "space-b" };
+    for (const result of [
+      { embedded: true },
+      { embedded: false, reason: "no_embedding" },
+      { embedded: false, reason: "unchanged" },
+      { embedded: false, reason: "space_moved" },
+      // A failure that is not retried ends the job for good.
+      new Error("errors.ai.invalidRequest")
+    ]) {
+      const sink = hooks();
+      await runEmbeddingJob(result, sink, space);
+      expect(sink.reembeddingEnded).toHaveBeenCalledOnce();
+      // Only once the job's row says it ended, so the build never counts it as on its way.
+      const updated = mocks.jobs.update.mock.invocationCallOrder.at(-1)!;
+      expect(sink.reembeddingEnded.mock.invocationCallOrder[0]).toBeGreaterThan(updated);
+    }
+    // A failure that is retried, and an edit's job (no space), leave the build alone.
+    const retried = hooks();
+    await runEmbeddingJob(new Error("errors.localModels.modelBusy"), retried, space);
+    expect(mocks.jobs.update).toHaveBeenLastCalledWith(
+      "job",
+      expect.objectContaining({ status: "queued" })
+    );
+    expect(retried.reembeddingEnded).not.toHaveBeenCalled();
+    const edit = hooks();
+    await runEmbeddingJob({ embedded: false, reason: "no_embedding" }, edit);
+    expect(edit.reembeddingEnded).not.toHaveBeenCalled();
   });
 });

@@ -21,21 +21,24 @@ import {
 import {
   checkTopicClusteringResult,
   gaussianClusters,
+  getTopic,
   shapeReport,
   TopicClusteringRequestSchema,
-  topicTreeConfigWith
+  topicTreeConfigWith,
+  walkTopics
 } from "@app/domain/topic-tree";
-import type { TopicTreeConfig } from "@app/domain/topic-tree";
+import type { TopicClusteringResult, TopicTreeConfig } from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { clusterTopics } from "../../workers/topic-clustering.worker.js";
 import { JobSupervisor } from "../job-supervisor.js";
+import type { KnowledgeService } from "../knowledge-service.js";
 import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices } from "./index.js";
 import type { ClusterTopics } from "./topic-build.js";
 import { loadTopicTreeCache } from "./topic-cache.js";
 import { topicJobTypes } from "./topic-jobs.js";
-import { TopicSpaceChange } from "./topic-space.js";
+import { TopicSpaceChange, topicSpaceLimits } from "./topic-space.js";
 import type { SpaceResolution } from "./topic-space.js";
 import { immediateDebounce } from "./topic-triggers.js";
 
@@ -64,6 +67,13 @@ const spaceB: TopicLoadSpace = {
   model: "synthetic-b-768",
   runtime: "none",
   dimensions: 768
+};
+const spaceC: TopicLoadSpace = {
+  spaceKey: "topic-space-test-c-1024",
+  provider: "test",
+  model: "synthetic-c-1024",
+  runtime: "none",
+  dimensions: 1024
 };
 const config: TopicTreeConfig = topicTreeConfigWith({
   fanOut: { min: 2, max: 4, targetMin: 2, targetMax: 3, hardMax: 6, rootTarget: 3 },
@@ -106,10 +116,29 @@ const vectorB = (row: number): Float32Array => {
   return out;
 };
 
+/** A second rotation, into a 1024-d space. */
+const permC = Array.from({ length: 1024 }, (_, index) => index);
+for (let index = permC.length - 1, state = 11; index > 0; index -= 1) {
+  state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+  const other = state % (index + 1);
+  [permC[index], permC[other]] = [permC[other]!, permC[index]!];
+}
+const vectorC = (row: number): Float32Array => {
+  const source = vectorA(row);
+  const out = new Float32Array(1024);
+  for (let index = 0; index < 256; index += 1) {
+    out[permC[index]!] = (index % 5 === 0 ? -1 : 1) * (source[index] as number);
+  }
+  return out;
+};
+
+/** A test may change what the clustering returns (after it was checked). */
+let perturb: ((result: TopicClusteringResult) => void) | null = null;
 const clusterInProcess: ClusterTopics = async (request) => {
   const parsed = TopicClusteringRequestSchema.parse(request);
   const result = clusterTopics(parsed);
   checkTopicClusteringResult(result, parsed);
+  perturb?.(result);
   return result;
 };
 
@@ -379,6 +408,57 @@ describe.skipIf(!sidecarAvailable)("an embedding-space change on the PostgreSQL 
     ]);
   });
 
+  it("sends the next note first when one ended without a vector, and bounds every retry", async () => {
+    const errors: unknown[] = [];
+    const change = new TopicSpaceChange({
+      getPool: () => pool,
+      spaceResolver: { resolve: async () => route },
+      aiMode: "full",
+      logger: { ...quiet, error: (message: unknown) => errors.push(message) }
+    });
+    const jobsOf = async (spaceKey: string) =>
+      (
+        await pool.query<{ id: string; note: string; status: string }>(
+          `select id, payload->>'atomicNoteId' as note, status from jobs
+            where type = 'note-embedding' and payload->>'spaceKey' = $1 order by created_at, id`,
+          [spaceKey]
+        )
+      ).rows;
+    const endWithoutVector = (spaceKey: string) =>
+      pool.query(
+        `update jobs set status = 'failed', finished_at = now()
+          where type = 'note-embedding' and status = 'queued' and payload->>'spaceKey' = $1`,
+        [spaceKey]
+      );
+    // The first note's job ends without a vector (its note went away, or the call failed for
+    // good): the next note goes first, a bounded number of times.
+    const spaceD = { spaceKey: "topic-space-test-d", space: null, local: true };
+    const none = { notes: 109, embedded: 0, queued: 0 };
+    for (let attempt = 0; attempt < topicSpaceLimits.probeAttempts; attempt += 1) {
+      await expect(change.reembedAutomatically(spaceD, none)).resolves.toBe(1);
+      await expect(change.reembedAutomatically(spaceD, none)).resolves.toBe(0);
+      await endWithoutVector(spaceD.spaceKey);
+    }
+    await expect(change.reembedAutomatically(spaceD, none)).resolves.toBe(0);
+    await expect(change.reembedAutomatically(spaceD, none)).resolves.toBe(0);
+    const sent = await jobsOf(spaceD.spaceKey);
+    expect(sent).toHaveLength(topicSpaceLimits.probeAttempts);
+    expect(new Set(sent.map((job) => job.note)).size).toBe(topicSpaceLimits.probeAttempts);
+    expect(errors).toHaveLength(1);
+
+    // Once a note has a vector of the space, the library goes; it goes again only when none of
+    // its jobs is left and the coverage is still short, a bounded number of times.
+    const spaceE = { spaceKey: "topic-space-test-e", space: null, local: true };
+    const some = { notes: 109, embedded: 1, queued: 0 };
+    for (let round = 0; round < topicSpaceLimits.automaticRounds; round += 1) {
+      await expect(change.reembedAutomatically(spaceE, some)).resolves.toBe(109);
+      await expect(change.reembedAutomatically(spaceE, some)).resolves.toBe(0);
+      await endWithoutVector(spaceE.spaceKey);
+    }
+    await expect(change.reembedAutomatically(spaceE, some)).resolves.toBe(0);
+    expect((await jobsOf(spaceE.spaceKey)).filter((job) => job.status === "queued")).toEqual([]);
+  });
+
   it("re-embeds on the owner's action on a remote route, and by itself on a local one", async () => {
     // topics.reembed: every current note without a vector in the route's space, once.
     await expect(services.spaceChange.reembed()).resolves.toEqual({ queued: 108 });
@@ -523,5 +603,150 @@ describe.skipIf(!sidecarAvailable)("an embedding-space change on the PostgreSQL 
     const status = await services.service.status();
     expect(status.blocked).toBeNull();
     expect(status.route).toBeUndefined();
+  });
+
+  it("moves with its structure kept when the rebuild touches protected structure, which waits for review (D29)", async () => {
+    services.service.invalidate();
+    const tree = await activeTree();
+    const repository = createTopicTreeRepository(pool);
+    // A pinned leaf below the first level: the rebuild in the new space will re-parent it.
+    const before = (await loadTopicTreeCache(pool, tree.id))!;
+    let pinned: string | null = null;
+    walkTopics(before.state, (node) => {
+      if (
+        pinned === null &&
+        node.children.length === 0 &&
+        node.items.length > 0 &&
+        node.parentId !== before.state.rootId
+      )
+        pinned = node.id;
+    });
+    const pinnedId = pinned as unknown as string;
+    const parentBefore = getTopic(before.state, pinnedId).parentId;
+    expect(
+      (
+        await repository.applyChangeSet({
+          treeId: tree.id,
+          expectedGeneration: before.tree.generation,
+          origin: "human",
+          titleKey: "topics.changeSets.pin",
+          events: [
+            {
+              op: "topic.manage",
+              topicId: pinnedId,
+              before: { management: "ai" },
+              after: { management: "pinned" }
+            }
+          ]
+        })
+      ).kind
+    ).toBe("applied");
+    const liveBefore = await liveTopics();
+
+    // A local route in a third space. The heavy lane runs the re-embedding jobs: three of them
+    // fail for good, and those run last.
+    const failing = new Set([...rowOf.keys()].sort().slice(-3));
+    const heavy = new JobSupervisor({
+      getPool: () => pool,
+      knowledgeService: {
+        embedAtomicNote: async (noteId: string) => {
+          if (failing.has(noteId)) throw new Error("errors.ai.invalidRequest");
+          // The same text in every space: the waiting note's too.
+          const row = rowOf.get(noteId);
+          const hash = row === undefined ? sha("waiting") : sha(`note-${row}`);
+          await insertVector(noteId, spaceC, hash, vectorC(row ?? 0));
+          return { embedded: true };
+        }
+      } as unknown as KnowledgeService,
+      topicHooks: services.hooks,
+      pollIntervalMs: 20,
+      logger: quiet
+    });
+    const runHeavy = async () => {
+      while (await heavy.runOnce());
+    };
+    const queuedBuilds = () =>
+      count("select count(*) from jobs where type = 'topic-build' and status = 'queued'");
+    try {
+      await routeTo({ kind: "unembedded", spaceKey: spaceC.spaceKey, local: true });
+      expect(await runBuild()).toMatchObject({ reembedding: "automatic", requested: 1 });
+      route = { kind: "ready", space: spaceC, local: true };
+      await runHeavy();
+      // The first note landed; its job's end asked the build to look again (debounced).
+      expect(await queuedBuilds()).toBe(1);
+      expect(await runBuild()).toMatchObject({ reembedding: "automatic", requested: 108 });
+      await pool.query(
+        `update jobs set run_after = now() + interval '1 day'
+          where type = 'note-embedding' and payload->>'atomicNoteId' = any($1::text[])`,
+        [[...failing]]
+      );
+      await runHeavy();
+      // 106 of 109 notes are covered; the build waits for the three jobs still on their way.
+      expect(await runBuild()).toMatchObject({
+        status: "space_changed",
+        embedded: 106,
+        queued: 3,
+        reembedding: "finishing"
+      });
+      // Nothing else asks for a build: the last jobs fail for good, and their ends do.
+      await pool.query("update jobs set status = 'canceled' where type = 'topic-build'");
+      await pool.query("update jobs set run_after = now() where type = 'note-embedding'");
+      await runHeavy();
+      expect(
+        await count("select count(*) from jobs where type = 'note-embedding' and status = 'failed'")
+      ).toBeGreaterThanOrEqual(3);
+      expect(await queuedBuilds()).toBe(1);
+
+      // The new space's partition re-parents the pinned leaf: protected structure.
+      perturb = (result) => {
+        for (const key of result.frozenNodes ?? []) {
+          const node = result.nodes.find((entry) => entry.key === key);
+          if (node) node.parent = 0;
+        }
+      };
+      await pool.query("update jobs set run_after = now() where type = 'topic-build'");
+      const [moved] = resultOf(await drain(), topicJobTypes.build) as JsonResult[];
+      expect(moved).toMatchObject({
+        status: "applied",
+        kind: "space",
+        from: spaceB.spaceKey,
+        spaceKey: spaceC.spaceKey,
+        review: { status: "pending_review", protectedTouched: true },
+        // The notes whose jobs failed are queued once more on a local route.
+        followUps: { reembed: 3 }
+      });
+      // The tree moved with its structure (every topic ID) kept, its statistics in the new space.
+      expect(await activeTree()).toMatchObject({ spaceKey: spaceC.spaceKey, dimensions: 1024 });
+      expect(await liveTopics()).toEqual(liveBefore);
+      const switched = (await loadTopicTreeCache(pool, tree.id))!;
+      expect(getTopic(switched.state, pinnedId).parentId).toBe(parentBefore);
+      expect(switched.staleStoredStats).toEqual([]);
+      expect(
+        await count(
+          `select count(*) from topic_stats s join topics t on t.id = s.topic_id
+            where t.tree_id = $1 and s.space_key <> $2`,
+          [tree.id, spaceC.spaceKey]
+        )
+      ).toBe(0);
+      expect(
+        new Set(
+          (await queuedEmbeddings()).rows
+            .filter((job) => job.space === spaceC.spaceKey)
+            .map((job) => job.note)
+        )
+      ).toEqual(failing);
+      // The owner applies the proposal on the moved tree.
+      const review = moved!.review as JsonResult;
+      await expect(
+        services.service.review({ changeSetId: review.changeSetId as string, decision: "apply" })
+      ).resolves.toEqual({ status: "applied" });
+      const applied = (await loadTopicTreeCache(pool, tree.id))!;
+      expect(getTopic(applied.state, pinnedId).parentId).toBe(applied.state.rootId);
+      expect(applied.space).toEqual(spaceC);
+      expect(applied.staleStoredStats).toEqual([]);
+    } finally {
+      perturb = null;
+      await heavy.stop();
+    }
   });
 });

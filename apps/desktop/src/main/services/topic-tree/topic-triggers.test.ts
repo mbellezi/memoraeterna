@@ -194,6 +194,17 @@ describe("topic triggers", () => {
     expect([...db.queued.keys()]).toEqual([`topic-audit:${tree}`, `topic-place:${tree}:${rootA}`]);
   });
 
+  it("ask the active tree's build to look again when a re-embedding job ended (D26)", async () => {
+    const { triggers: api } = triggers(["topic-place", "topic-sweep", "topic-build"]);
+    const [build] = await api.reembeddingEnded();
+    expect(build?.job).toMatchObject({ type: "topic-build", dedupeKey: `topic-build:${tree}` });
+    expect(db.enqueued[0]?.input.debounce).toEqual(debounce);
+    await api.reembeddingEnded();
+    expect([...db.queued.keys()]).toEqual([`topic-build:${tree}`]);
+    db.activeTree = null;
+    await expect(api.reembeddingEnded()).resolves.toEqual([]);
+  });
+
   describe("repair after a cascade (D32)", () => {
     const withRebalance = ["topic-place", "topic-sweep", "topic-rebalance"];
 

@@ -121,6 +121,17 @@ export class TopicTriggers {
     ];
   }
 
+  /**
+   * A re-embedding job of an embedding-space change ended, with or without a vector (D26): the
+   * build of the active tree checks the new space's coverage again (debounced).
+   */
+  public async reembeddingEnded(options: TopicTriggerOptions = {}): Promise<EnqueuedTopicJob[]> {
+    const db = this.database(options);
+    if (!db) return [];
+    const treeId = await this.activeTreeId(db);
+    return treeId ? this.enqueue(db, topicJobTypes.build, treeId, null, options) : [];
+  }
+
   /** PLACE of known scopes of a tree (the sweep's fan-out). */
   public async place(
     treeId: string,

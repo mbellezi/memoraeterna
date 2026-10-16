@@ -18,7 +18,8 @@ function fakeTriggers(failure?: Error) {
   const triggers = {
     notesChanged: record("notesChanged"),
     sourcesChanged: record("sourcesChanged"),
-    repair: record("repair")
+    repair: record("repair"),
+    reembeddingEnded: record("reembeddingEnded")
   };
   return { triggers, calls, api: triggers as unknown as TopicTriggers };
 }
@@ -43,9 +44,11 @@ describe("topic change hooks", () => {
     await hooks.notesChanged([noteId]);
     await hooks.sourcesChanged([sourceId]);
     await hooks.itemsRemoved();
+    await hooks.reembeddingEnded?.();
     expect(triggers.notesChanged).toHaveBeenCalledWith([noteId], {});
     expect(triggers.sourcesChanged).toHaveBeenCalledWith([sourceId], {});
     expect(triggers.repair).toHaveBeenCalledWith({});
+    expect(triggers.reembeddingEnded).toHaveBeenCalledWith({});
   });
 
   it("never fail their caller: a failing trigger is logged and the sweep repairs it", async () => {
@@ -55,10 +58,12 @@ describe("topic change hooks", () => {
     await expect(hooks.notesChanged([noteId])).resolves.toBeUndefined();
     await expect(hooks.sourcesChanged([sourceId])).resolves.toBeUndefined();
     await expect(hooks.itemsRemoved()).resolves.toBeUndefined();
+    await expect(hooks.reembeddingEnded?.()).resolves.toBeUndefined();
     expect(logger.warn.mock.calls.map(([message]) => message)).toEqual([
       "Topic hook notesChanged failed; the topic sweep repairs it",
       "Topic hook sourcesChanged failed; the topic sweep repairs it",
-      "Topic hook itemsRemoved failed; the topic sweep repairs it"
+      "Topic hook itemsRemoved failed; the topic sweep repairs it",
+      "Topic hook reembeddingEnded failed; the topic sweep repairs it"
     ]);
     // Without a logger a failure is just as quiet.
     await expect(createTopicChangeHooks(api).itemsRemoved()).resolves.toBeUndefined();

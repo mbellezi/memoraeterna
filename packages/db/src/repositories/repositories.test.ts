@@ -1071,6 +1071,8 @@ describe("repositories", () => {
       expect(await createJobRepository(db).enqueueNoteEmbeddings(notes, { spaceKey: "b" })).toBe(2);
       expect(db.queries).toHaveLength(1);
       expect(db.queries[0]?.text).toContain("status = 'queued'");
+      // A job queued for another space does not hold a note back: it ends without a call.
+      expect(db.queries[0]?.text).toContain("payload->>'spaceKey' is not distinct from $5");
       expect(db.queries[0]?.values).toEqual([
         "note-embedding",
         10,
@@ -1079,6 +1081,18 @@ describe("repositories", () => {
         "b"
       ]);
       expect(await createJobRepository(new FakeQueryable([])).enqueueNoteEmbeddings([])).toBe(0);
+    });
+
+    it("tells whether a re-embedding job of a space is still queued or running (D26)", async () => {
+      const db = new FakeQueryable([[{ open: true }], [{ open: false }]]);
+      const jobs = createJobRepository(db);
+      expect(await jobs.hasOpenSpaceEmbeddings("b")).toBe(true);
+      expect(await jobs.hasOpenSpaceEmbeddings("c")).toBe(false);
+      expect(db.queries[0]?.text).toContain("status in ('queued', 'running')");
+      expect(db.queries.map((query) => query.values)).toEqual([
+        ["note-embedding", "b"],
+        ["note-embedding", "c"]
+      ]);
     });
   });
 

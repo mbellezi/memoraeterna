@@ -193,8 +193,9 @@ export function createJobRepository(db: Queryable) {
 
     /**
      * Queues the re-embedding of many notes in one statement after the embedding space changed
-     * (D26), skipping notes that already have a queued job. `spaceKey` names the space the jobs
-     * embed into: a job skips a note only when a vector of its text exists in that space.
+     * (D26), skipping notes that already have a queued job for the same space (a job of another
+     * space ends without a call). `spaceKey` names the space the jobs embed into: a job skips a
+     * note only when a vector of its text exists in that space.
      */
     async enqueueNoteEmbeddings(
       notes: readonly { atomicNoteId: string; sourceItemId: string }[],
@@ -210,6 +211,7 @@ export function createJobRepository(db: Queryable) {
           where not exists (
             select 1 from jobs
              where type = $1 and status = 'queued' and payload->>'atomicNoteId' = n.id
+               and payload->>'spaceKey' is not distinct from $5::text
           )`,
         [
           noteEmbeddingJobType,
@@ -235,6 +237,16 @@ export function createJobRepository(db: Queryable) {
         [noteEmbeddingJobType, spaceKey, since ?? null]
       );
       return Number(result.rows[0]?.count ?? 0);
+    },
+
+    /** Whether a `note-embedding` job that names the space `spaceKey` is queued or running. */
+    async hasOpenSpaceEmbeddings(spaceKey: string): Promise<boolean> {
+      const result = await db.query<QueryResultRow & { open: boolean }>(
+        `select exists (select 1 from jobs where type = $1 and status in ('queued', 'running')
+            and payload->>'spaceKey' = $2) as open`,
+        [noteEmbeddingJobType, spaceKey]
+      );
+      return result.rows[0]?.open === true;
     },
 
     async create(input: CreateJobInput): Promise<JobRecord> {

@@ -225,6 +225,7 @@ export class JobSupervisor {
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
         await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
+      await this.reembeddingEnded(job);
       this.notify();
       return updated;
     } catch (error) {
@@ -249,6 +250,7 @@ export class JobSupervisor {
       // A run that failed for good may have been the one the rest of its batch was waiting for.
       if (batchId && job.type === "ingestion" && !wasCanceled && !shouldRetry)
         await this.releaseParkedBatch(batchId);
+      if (!shouldRetry) await this.reembeddingEnded(job);
       this.notify();
       return updated;
     } finally {
@@ -507,6 +509,16 @@ export class JobSupervisor {
     )
       await this.options.topicHooks?.notesChanged([atomicNoteId]);
     return { ...result };
+  }
+
+  /**
+   * A re-embedding job of a space change (D26) ended for good, with or without a vector: the topic
+   * build looks at the new space's coverage again, so a last job that failed cannot leave it
+   * waiting. Called once the job's row says so.
+   */
+  private async reembeddingEnded(job: JobRecord): Promise<void> {
+    if (job.type !== "note-embedding" || !optionalString(job.payload.spaceKey)) return;
+    await this.options.topicHooks?.reembeddingEnded?.();
   }
 
   /** Chunk replacement hands the topic tree its repair in the replacing transaction (T15b). */

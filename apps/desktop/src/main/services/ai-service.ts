@@ -1528,8 +1528,34 @@ export class AiService {
    * when no embedding model is routed.
    */
   public async activeEmbeddingSpace(): Promise<ActiveEmbeddingSpace | null> {
-    const pool = this.requirePool();
-    const repository = createAiConfigRepository(pool);
+    const routed = await this.routedEmbedding();
+    if (!routed) return null;
+    const { selection, parameters, spaceKey } = routed;
+    const newest = await createEmbeddingRepository(this.requirePool()).newestNoteVectorSpace();
+    return {
+      spaceKey,
+      profileId: selection.profileId,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      local: Boolean(selection.localModelId),
+      dimensions: typeof parameters.dimensions === "number" ? parameters.dimensions : null,
+      newestNoteSpaceKey: newest?.spaceKey ?? null,
+      confirmed: newest?.spaceKey === spaceKey
+    };
+  }
+
+  /** The space key of the routed embedding model, computed without an AI call (D26); null without one. */
+  public async embeddingRouteSpaceKey(): Promise<string | null> {
+    return (await this.routedEmbedding())?.spaceKey ?? null;
+  }
+
+  /** The routed embedding model, its call parameters and its space key, without an AI call. */
+  private async routedEmbedding(): Promise<{
+    selection: TaskSelection;
+    parameters: JsonObject;
+    spaceKey: string;
+  } | null> {
+    const repository = createAiConfigRepository(this.requirePool());
     let selection = await repository.getDefaultTask("embedding");
     if (!selection) {
       await this.seedTaskRoutes(repository);
@@ -1546,17 +1572,7 @@ export class AiService {
         runtime: selection.localModelId ? "local" : "remote"
       }
     );
-    const newest = await createEmbeddingRepository(pool).newestNoteVectorSpace();
-    return {
-      spaceKey,
-      profileId: selection.profileId,
-      provider: selection.provider,
-      modelId: selection.modelId,
-      local: Boolean(selection.localModelId),
-      dimensions: typeof parameters.dimensions === "number" ? parameters.dimensions : null,
-      newestNoteSpaceKey: newest?.spaceKey ?? null,
-      confirmed: newest?.spaceKey === spaceKey
-    };
+    return { selection, parameters, spaceKey };
   }
 
   /** The effective parameters of an embedding call on this route, as `executeDefaultTask` sets them. */

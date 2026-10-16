@@ -7,9 +7,10 @@
 // When the route's space is not the tree's, the tree waits in its own space (`space_changed`):
 // PLACE of new-space items waits, and the current notes are re-embedded into the route's space by
 // the `note-embedding` jobs, automatically on a local route and through the owner's
-// `topics.reembed` on a remote one (Q8). Once `space.reembedCoverage` of the current notes have a
-// vector there, `topic-build` rebuilds the tree in the new space and maps it onto the old one by
-// Hungarian matching, so topic IDs survive (topic-build.ts).
+// `topics.reembed` on a remote one (Q8). A job ends without a call once the route left its space,
+// and every job's end asks the build to look again. Once `space.reembedCoverage` of the current
+// notes have a vector there, `topic-build` rebuilds the tree in the new space and maps it onto the
+// old one by Hungarian matching, so topic IDs survive (topic-build.ts).
 import {
   createJobRepository,
   createTopicTreeLoadRepository,
@@ -169,7 +170,11 @@ export function coverageShare(coverage: TopicSpaceCoverage): number {
 /** Bounds of the re-embedding requests (engine parameters live in the tree's configuration). */
 export const topicSpaceLimits = {
   /** Notes queued per statement. */
-  reembedPage: 1_000
+  reembedPage: 1_000,
+  /** First notes sent into a space no note has a vector of, per space and process. */
+  probeAttempts: 3,
+  /** Times a local route queues the library of one space, per process (failures never loop). */
+  automaticRounds: 3
 } as const;
 
 export interface TopicSpaceChangeOptions {
@@ -185,10 +190,13 @@ export interface TopicSpaceChangeOptions {
  * jobs that fill it, the automatic request of a local route and the owner's `topics.reembed`.
  */
 export class TopicSpaceChange {
-  /** Spaces this process re-embedded on its own: once each, so a drift can never loop. */
-  private readonly automatic = new Set<string>();
-  /** When this process sent the first note into a space no note had a vector of. */
-  private readonly probedAt = new Map<string, Date>();
+  /** Times this process queued the library of each space on its own (bounded: nothing loops). */
+  private readonly automatic = new Map<string, number>();
+  /**
+   * The first notes this process sent into a space no note had a vector of: when the first went,
+   * how many went, and the last one (the next goes after it).
+   */
+  private readonly probes = new Map<string, { at: Date; count: number; note: string }>();
 
   public constructor(private readonly options: TopicSpaceChangeOptions) {}
 
@@ -242,7 +250,10 @@ export class TopicSpaceChange {
    * has a vector of the route's space, one note goes first: the library follows only once that
    * vector landed in the space the route was resolved to, so a space key computed without a call
    * that disagreed with the calls could never re-embed the library in vain (it is logged instead).
-   * The library is queued once per space and process. Returns the jobs queued.
+   * A first note whose job ended without a vector (the note went away, the call failed for good)
+   * is followed by the next one, `probeAttempts` times. The library is queued again only when no
+   * job of the space is left and the coverage is still short, `automaticRounds` times per space
+   * and process. Returns the jobs queued.
    */
   public async reembedAutomatically(
     route: RouteSpace,
@@ -250,34 +261,84 @@ export class TopicSpaceChange {
   ): Promise<number | null> {
     if (route.local !== true || this.options.aiMode !== "full") return null;
     const key = route.spaceKey;
-    if (this.automatic.has(key)) return 0;
-    if (coverage.embedded === 0) {
-      const since = this.probedAt.get(key);
-      if (!since) {
-        this.probedAt.set(key, this.now());
-        return this.queue(key, 1);
-      }
-      const jobs = createJobRepository(this.requirePool());
-      // The first note is still on its way: nothing more until its vector lands.
-      if ((await jobs.countSpaceEmbeddings(key, since)) === 0) return 0;
-      this.automatic.add(key);
-      this.options.logger?.error(
-        `Re-embedded notes did not land in the embedding space ${key}; the library is not re-embedded`
-      );
-      return 0;
-    }
-    this.automatic.add(key);
+    const rounds = this.automatic.get(key) ?? 0;
+    if (rounds >= topicSpaceLimits.automaticRounds) return 0;
+    const jobs = createJobRepository(this.requirePool());
+    if (coverage.embedded === 0) return this.probe(key);
+    // Jobs of an earlier round are still on their way: their ends ask the build to look again.
+    if (rounds > 0 && (await jobs.hasOpenSpaceEmbeddings(key))) return 0;
+    this.automatic.set(key, rounds + 1);
     let queued: number;
     try {
       queued = await this.queue(key);
     } catch (error) {
-      this.automatic.delete(key);
+      this.automatic.set(key, rounds);
       throw error;
     }
     this.options.logger?.info(
       `Embedding space changed to ${key}: ${queued} notes queued for re-embedding`
     );
     return queued;
+  }
+
+  /** One note sent first into a space no note has a vector of (see `reembedAutomatically`). */
+  private async probe(key: string): Promise<number> {
+    const pool = this.requirePool();
+    const jobs = createJobRepository(pool);
+    const loader = createTopicTreeLoadRepository(pool);
+    const probe = this.probes.get(key);
+    if (probe) {
+      // The first note is still on its way: nothing more until its job ends.
+      if (await jobs.hasOpenSpaceEmbeddings(key)) return 0;
+      // A job of this space stored a vector, yet none is in the space (read again: it may have
+      // landed since the caller's read): the space computed without a call disagrees with calls.
+      const landed = (await jobs.countSpaceEmbeddings(key, probe.at)) > 0;
+      if (landed && (await this.coverage(key)).embedded === 0) {
+        this.stopAutomatic(key, "Re-embedded notes did not land in the embedding space");
+        return 0;
+      }
+      if (landed) return 0;
+      if (probe.count >= topicSpaceLimits.probeAttempts) {
+        this.stopAutomatic(key, "No note could be embedded in the embedding space");
+        return 0;
+      }
+    }
+    let page = await loader.notesWithoutSpaceVector(key, { after: probe?.note ?? null, limit: 1 });
+    if (page.notes.length === 0 && probe) {
+      page = await loader.notesWithoutSpaceVector(key, { limit: 1 });
+    }
+    const note = page.notes[0];
+    if (!note) return 0;
+    const queued = await jobs.enqueueNoteEmbeddings(
+      [{ atomicNoteId: note.id, sourceItemId: note.sourceItemId }],
+      { spaceKey: key }
+    );
+    if (queued > 0) {
+      this.probes.set(key, {
+        at: probe?.at ?? this.now(),
+        count: (probe?.count ?? 0) + 1,
+        note: note.id
+      });
+    }
+    return queued;
+  }
+
+  private stopAutomatic(key: string, reason: string): void {
+    this.automatic.set(key, topicSpaceLimits.automaticRounds);
+    this.options.logger?.error(`${reason} ${key}; the library is not re-embedded`);
+  }
+
+  /**
+   * After the tree moved to a local route's space (D26): the current notes the re-embedding
+   * missed (their jobs failed for good) are queued once more, at no cost (Q8). Null on a remote
+   * route or without topic AI: a remote route is paid only on the owner's action.
+   */
+  public async reembedMissed(route: {
+    spaceKey: string;
+    local: boolean | null;
+  }): Promise<number | null> {
+    if (route.local !== true || this.options.aiMode !== "full") return null;
+    return this.queue(route.spaceKey);
   }
 
   /** `topics.reembed`: the owner re-embeds the library into the route's space (D26, Q8). */

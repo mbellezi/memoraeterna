@@ -1358,7 +1358,9 @@ export class KnowledgeService {
    * Rebuilds the vector of one note after a human edit invalidated it. Ordinary background work
    * (the `note-embedding` job): it only calls the embedding model, never a generative one, and a
    * provider failure is thrown so the job retries it. A re-embedding after the embedding space
-   * changed (D26) names that space: only a vector of the text in it makes the note `unchanged`.
+   * changed (D26) names that space: only a vector of the text in it makes the note `unchanged`,
+   * and once the route writes to another space the job ends without a call (`space_moved`), so a
+   * remote route is only ever paid on the owner's action for its own space (Q8).
    */
   public async embedAtomicNote(
     noteId: string,
@@ -1367,7 +1369,7 @@ export class KnowledgeService {
     options: { spaceKey?: string } = {}
   ): Promise<{
     embedded: boolean;
-    reason?: "note_not_found" | "note_not_current" | "unchanged" | "no_embedding";
+    reason?: "note_not_found" | "note_not_current" | "unchanged" | "no_embedding" | "space_moved";
   }> {
     const pool = this.requirePool();
     const note = await createAtomicNoteRepository(pool).findById(noteId);
@@ -1388,6 +1390,11 @@ export class KnowledgeService {
         )
       : await embeddings.hasContentHash("atomic_note", note.id, hash);
     if (current) return { embedded: false, reason: "unchanged" };
+    if (
+      options.spaceKey &&
+      (await this.options.aiService.embeddingRouteSpaceKey()) !== options.spaceKey
+    )
+      return { embedded: false, reason: "space_moved" };
     const execution = await this.options.aiService.runDefaultTask(
       "embedding",
       text,

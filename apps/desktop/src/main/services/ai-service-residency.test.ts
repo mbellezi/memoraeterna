@@ -369,6 +369,8 @@ describe("the embedding space key", () => {
       newestNoteSpaceKey: null,
       confirmed: false
     });
+    // The key alone, as a re-embedding job checks it before its call (D26).
+    await expect(ai.embeddingRouteSpaceKey()).resolves.toBe(called!.embeddingSpaceKey);
   });
 
   it("is the same without a call as after a local embedding call, and confirms the newest vector", async () => {
@@ -406,5 +408,6 @@ describe("the embedding space key", () => {
   it("is null when no embedding model is routed", async () => {
     const { ai } = service();
     await expect(ai.activeEmbeddingSpace()).resolves.toBeNull();
+    await expect(ai.embeddingRouteSpaceKey()).resolves.toBeNull();
   });
 });

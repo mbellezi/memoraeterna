@@ -154,6 +154,15 @@ interface SpaceMove {
   from: string;
   /** The D8 fingerprint of each root source in the new space. */
   rootFingerprints: Map<ItemKey, string | null>;
+  /** The route's model runs on this machine (Q8); null when the resolver cannot tell. */
+  local: boolean | null;
+}
+
+/** The move alone (D26): the tree's structure with every live topic's statistics in the new space. */
+interface SpaceSwitch {
+  stats: ReturnType<typeof topicStatsWrites>;
+  clock: number;
+  summary: Record<string, unknown>;
 }
 
 /** The inputs of one build, read in the engine's turn. */
@@ -723,7 +732,8 @@ export class TopicStructureJobs {
         dimensions: space.dimensions
       },
       from: cache.tree.spaceKey,
-      rootFingerprints: await this.rootFingerprints(target)
+      rootFingerprints: await this.rootFingerprints(target),
+      local: route.local
     };
     const effective = this.options.effectiveConfig();
     const hash = structuralConfigHash(effective);
@@ -738,7 +748,8 @@ export class TopicStructureJobs {
       move
     );
     if (!hasTopics(target.state) || plan.keys.length < effective.bootstrap.minItems) {
-      return { kind: "done", result: await this.applySpaceSwitch(plan, move, job) };
+      const writes = this.spaceSwitchWrites(move, plan);
+      return { kind: "done", result: await this.applySpaceSwitch(move, job, writes) };
     }
     return { kind: "plan", plan };
   }
@@ -773,26 +784,37 @@ export class TopicStructureJobs {
     return output;
   }
 
-  /**
-   * A move without a rebuild (no topics yet, or fewer notes than a first topic needs): the same
-   * structure, every live topic's statistics in the new space, one change-set without events.
-   */
-  private async applySpaceSwitch(
-    plan: BuildPlan,
-    move: SpaceMove,
-    job: JobRecord
-  ): Promise<JsonObject> {
+  /** The move alone, read from the tree loaded in the new space before any rebuild changes it. */
+  private spaceSwitchWrites(move: SpaceMove, plan: BuildPlan): SpaceSwitch {
     const { state, vectors, tree } = move.target;
     const signals = structureSignals(state);
-    const summary = {
-      reason: "space",
-      from: move.from,
-      spaceKey: move.treeSpace.spaceKey,
-      rows: plan.keys.length,
-      notes: signals.notes,
-      leafCoherence: signals.leafCoherence,
-      configHash: tree.configHash
+    return {
+      stats: topicStatsWrites(state, vectors, liveTopicIds(state)),
+      clock: state.clock,
+      summary: {
+        reason: "space",
+        from: move.from,
+        spaceKey: move.treeSpace.spaceKey,
+        rows: plan.keys.length,
+        notes: signals.notes,
+        leafCoherence: signals.leafCoherence,
+        configHash: tree.configHash
+      }
     };
+  }
+
+  /**
+   * A move without a rebuild (no topics yet, fewer notes than a first topic needs, or a rebuild
+   * that waits for review): the same structure, every live topic's statistics in the new space,
+   * one change-set without events. `propose` records the rebuild for review once the tree moved.
+   */
+  private async applySpaceSwitch(
+    move: SpaceMove,
+    job: JobRecord,
+    writes: SpaceSwitch,
+    propose?: (generation: number) => Promise<JsonObject>
+  ): Promise<JsonObject> {
+    const { tree } = move.target;
     const result = await createTopicTreeRepository(this.requirePool()).applyChangeSet({
       treeId: tree.id,
       expectedGeneration: tree.generation,
@@ -800,10 +822,10 @@ export class TopicStructureJobs {
       titleKey: "topics.changeSets.space",
       titleParams: { items: 0 },
       jobId: job.id,
-      summary,
+      summary: writes.summary,
       events: [],
-      stats: topicStatsWrites(state, vectors, liveTopicIds(state)),
-      clock: state.clock,
+      stats: writes.stats,
+      clock: writes.clock,
       treeSpace: move.treeSpace
     });
     this.options.service.invalidate();
@@ -820,20 +842,40 @@ export class TopicStructureJobs {
       topicIds: null,
       changeSetId: result.changeSetId
     });
-    // What waited for the move is placed now, in the new space; labels follow the new space.
+    const review = propose ? await propose(result.generation) : null;
+    // What waited for the move is placed now, in the new space.
     await this.options.triggers.sweep("requested", {
       treeId: tree.id,
       debounce: immediateDebounce
     });
-    const labels = await this.request(topicJobTypes.labelEmbed, tree.id);
+    const followUps = await this.spaceFollowUps(tree.id, move, {});
     return {
       status: "applied",
       kind: "space",
-      ...summary,
+      ...writes.summary,
       changeSetId: result.changeSetId,
       generation: result.generation,
-      followUps: { labels }
+      ...(review ? { review } : {}),
+      followUps
     };
+  }
+
+  /**
+   * After a move: every label vector is embedded again in the tree's new space, and on a local
+   * route the notes the re-embedding missed are queued once more.
+   */
+  private async spaceFollowUps(
+    treeId: string,
+    move: SpaceMove,
+    follow: Record<string, number>
+  ): Promise<Record<string, number>> {
+    follow.labels = await this.request(topicJobTypes.labelEmbed, treeId);
+    const missed = await this.spaceChange.reembedMissed({
+      spaceKey: move.treeSpace.spaceKey,
+      local: move.local
+    });
+    if (missed !== null) follow.reembed = missed;
+    return follow;
   }
 
   /** One Float32Array holding the rows of `keys` in order (it owns its buffer: it is transferred). */
@@ -1157,8 +1199,10 @@ export class TopicStructureJobs {
    * Jaccard so topic IDs survive (rebuild-map.ts), then root sources re-placed by PLACE on the
    * result. One `rebuild` change-set, `pending_review` when it touches protected structure (and,
    * for a trigger rebuild, when it re-paths a large share of the items). The move to a new
-   * embedding space (D26, `cache` loaded in that space) is always applied: the tree cannot stay
-   * behind its route, and the change-set can still be undone.
+   * embedding space (D26, `cache` loaded in that space) always happens, since the tree cannot stay
+   * behind its route: when its rebuild touches protected structure, the tree moves with its
+   * structure unchanged and the rebuild waits for the owner as a proposal on the moved tree (D29).
+   * A large share alone needs no review there, as for a configuration: the move is not a trigger.
    */
   private async applyRebuildPlan(
     cache: TopicTreeCache,
@@ -1170,6 +1214,8 @@ export class TopicStructureJobs {
     const { state, vectors, tree } = cache;
     const reason = plan.reason;
     if (!hasTopics(state) || reason === "cold-start") return { status: "stale" };
+    // D26: the move alone, read before the rebuild changes the state, in case it waits for review.
+    const switched = plan.space ? this.spaceSwitchWrites(plan.space, plan) : null;
     const nodes = rebuildPartitionOf(partition.nodes, plan.keys, {
       state,
       frozen: plan.frozen,
@@ -1212,7 +1258,10 @@ export class TopicStructureJobs {
     }
     recomputeSubtree(state, vectors);
     const events = [...rebuilt.events, ...editor.events];
-    const review = reason === "space" ? false : rebuildNeedsReview(reason, rebuilt.review);
+    const review =
+      reason === "space"
+        ? rebuilt.review.protectedTouched
+        : rebuildNeedsReview(reason, rebuilt.review);
     const report = shapeReport(state, plan.config, { areasActive: areasActive(state) });
     const summary = {
       ...this.buildSummary(plan, partition, state, report),
@@ -1238,6 +1287,25 @@ export class TopicStructureJobs {
       summary,
       events
     };
+    if (review && plan.space && switched) {
+      // The tree moves with its structure; the rebuild is proposed on the moved tree (D29).
+      return this.applySpaceSwitch(plan.space, job, switched, async (generation) => {
+        const pending = await repository.applyChangeSet({
+          ...meta,
+          expectedGeneration: generation,
+          titleKey: "topics.changeSets.rebuild",
+          status: "pending_review"
+        });
+        return pending.kind === "pending"
+          ? {
+              status: "pending_review",
+              changeSetId: pending.changeSetId,
+              movedShare: rebuilt.movedShare,
+              protectedTouched: rebuilt.review.protectedTouched
+            }
+          : { status: "no_change" };
+      });
+    }
     if (review) {
       const pending = await repository.applyChangeSet({ ...meta, status: "pending_review" });
       // The cache holds the proposal's result, not the stored tree.
@@ -1344,8 +1412,7 @@ export class TopicStructureJobs {
     if (areasGroupingDue(built.state, plan.config)) {
       follow.areas = await this.request(topicJobTypes.areas, treeId, { immediate: true });
     }
-    // D26: every label vector is embedded again in the tree's new space.
-    if (plan.space) follow.labels = await this.request(topicJobTypes.labelEmbed, treeId);
+    if (plan.space) await this.spaceFollowUps(treeId, plan.space, follow);
     for (const scope of built.gated) {
       follow.gate =
         (follow.gate ?? 0) + (await this.request(topicJobTypes.gate, treeId, { scope }));
