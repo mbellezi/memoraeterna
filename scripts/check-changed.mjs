@@ -4,6 +4,7 @@
 //                                          working tree (staged, unstaged and untracked)
 //   npm run check:changed -- --base <ref>  files changed since <ref>, plus the working tree
 //   npm run check:changed -- --list        print the changed files and stop
+//   npm run check:changed -- --workers <n> cap the test workers (a loaded machine times tests out)
 //
 // Steps: whitespace and final newline, Prettier and ESLint on the changed files; the incremental
 // `tsc -b` (only changed projects and their dependents rebuild) plus the script projects that hold
@@ -16,7 +17,11 @@ import { parseArgs } from "node:util";
 
 const root = process.cwd();
 const { values } = parseArgs({
-  options: { base: { type: "string" }, list: { type: "boolean", default: false } }
+  options: {
+    base: { type: "string" },
+    list: { type: "boolean", default: false },
+    workers: { type: "string" }
+  }
 });
 
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -109,6 +114,7 @@ step("tests (vitest related)", bin("vitest"), [
   "related",
   "--run",
   "--passWithNoTests",
+  ...(values.workers ? [`--maxWorkers=${values.workers}`] : []),
   ...changed,
   ...built
 ]);
