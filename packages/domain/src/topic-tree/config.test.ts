@@ -46,7 +46,7 @@ describe("topic tree configuration", () => {
       leafFloor: 0,
       spreadFactor: 2.5,
       spreadFloor: 0.03,
-      ambiguityMargin: 0.015,
+      ambiguityMargin: 0.01,
       labelWeight: 0
     });
     expect(config.gate).toMatchObject({
@@ -126,6 +126,30 @@ describe("topic tree configuration", () => {
     expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10, minLevel2Topics: 20 });
     // D34: three times the busiest day of background topic AI calls (89), rounded up to tens.
     expect(config.ai.maxBackgroundCallsPerDay).toBe(270);
+  });
+
+  it("holds the placement and gate values T29a calibrated (calibration seeds 7-12)", () => {
+    const config = defaultTopicTreeConfig;
+    // T29a's adopted configOverrides: only the ambiguity margin moved from its start value
+    // (0.015); T29b's rule FC confirmed it with the stability defaults above.
+    const adopted: Record<string, unknown> = {
+      "placement.spreadFactor": 2.5,
+      "placement.admissionFloor": 0.15,
+      "placement.spreadFloor": 0.03,
+      "placement.leafFloor": 0,
+      "placement.ambiguityMargin": 0.01,
+      "placement.labelWeight": 0,
+      "gate.temperature": 1,
+      "gate.tau": 0,
+      "gate.theta": 0.5,
+      "splitSignal.signal": "off",
+      "splitSignal.threshold": null,
+      "repair.siblingMergeCosine": 0.85,
+      "audit.misParentMargin": 0.1
+    };
+    const values = flatten(config);
+    const actual = Object.fromEntries(Object.keys(adopted).map((path) => [path, values.get(path)]));
+    expect(actual).toEqual(adopted);
   });
 
   it("is frozen so no consumer can change a default", () => {

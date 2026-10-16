@@ -196,7 +196,13 @@ describe("the registered grid base", () => {
     expect(base.repair.sidewaysSplitLimit).toBe("max");
     expect(base.rebuild.qualityDrop).toBe(0.05);
     expect(base.bootstrap.modularityMin).toBe(0.1);
+    expect(base.placement.ambiguityMargin).toBe(0.015);
     expect(base.stability).toEqual(defaultTopicTreeConfig.stability);
+  });
+
+  it("adds nothing to the adopted defaults at the adopted point (the final readings)", () => {
+    const point = parseGridPointId("l4-f24-s0.083-c10-t-q0.03");
+    expect(configForGridPoint(defaultTopicTreeConfig, point)).toEqual(defaultTopicTreeConfig);
   });
 });
 

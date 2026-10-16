@@ -87,13 +87,15 @@ export function parseGridPointId(id: string): StabilityGridPoint {
 /**
  * The base the grids were registered on: today's defaults with the start values of the knobs
  * T29b adopted later (sideways splits up to fanOut.max, a 0.05 quality drop, a 0.1 cold-start
- * modularity), so a grid row replays as it ran. `--base defaults` replays on today's defaults.
+ * modularity, T29a's 0.015 ambiguity margin), so a grid row replays as it ran. `--base defaults`
+ * replays on today's defaults.
  */
 export function registeredGridBase(
   config: TopicTreeConfig = defaultTopicTreeConfig
 ): TopicTreeConfig {
   return topicTreeConfigWith(
     {
+      placement: { ambiguityMargin: 0.015 },
       repair: { sidewaysSplitLimit: "max" },
       rebuild: { qualityDrop: 0.05 },
       bootstrap: { modularityMin: 0.1 }

@@ -43,7 +43,14 @@ const DepthSchema = z
   })
   .strict();
 
-/** PLACE (D10): beam descent with node-relative admission max(a_min, m_c - z * max(s_c, floor)). */
+/**
+ * PLACE (D10): beam descent with node-relative admission max(a_min, m_c - z * max(s_c, floor)).
+ * T29a (2026-10-16, `scripts/topics/calibrate-placement.ts`, calibration seeds 7-12, rules in
+ * `docs/topic-placement-calibration.md`): z, a_min, spreadFloor and leafFloor keep their start
+ * values (no change beat the 1-point bar without costing more than 2 points of known-topic
+ * admission); the ambiguity margin falls to 0.01, the smallest with auto precision >= 90% in every
+ * split (D19 a); labelWeight stays 0 (not measured). Confirmed with T29b's defaults (rule FC).
+ */
 const PlacementSchema = z
   .object({
     beam: int(1, 16).default(3),
@@ -55,8 +62,8 @@ const PlacementSchema = z
     spreadFactor: z.number().min(0).max(10).default(2.5),
     /** Lower bound on s_c for nodes too small to estimate it. */
     spreadFloor: z.number().min(0).max(1).default(0.03),
-    /** top1 - top2 leaf score below this sends the item to the gate (theta_m). */
-    ambiguityMargin: z.number().min(0).max(1).default(0.015),
+    /** top1 - top2 leaf score below this sends the item to the gate (theta_m; T29a, start 0.015). */
+    ambiguityMargin: z.number().min(0).max(1).default(0.01),
     /** Use the leave-one-out mean member cosine for m_c. */
     leaveOneOutMean: z.boolean().default(true),
     /** Internal nodes also admit at this lower percentile (0-0.1) of member cosines; 0 disables. */
