@@ -71,6 +71,15 @@ concurrency and automatic correction.
     later-phase work into F2: minimal model residency (Q11, from F3) and the removal of maintenance v1, the
     calendar routines and the Automation screen (Q12, from F4). The owner authorized wiping the legacy wiki
     early (D37-D40): it is wiped at gate W, before its replacement exists, and there is no switch.
+19. **The local ranker is installed at first run, with a fallback** (2026-10-16): the first-run path installs the
+    Qwen3-Reranker-0.6B (MLX first, GGUF fallback) next to the embedding model, so the placement gate has a
+    decider from the start. Without a decider (not installed, removed or invalid), an ambiguous note is treated
+    as the gate's "none" (a new-topic candidate REBALANCE may group) and is decided again once a ranker is
+    validated; nothing waits at the root for ever. This replaces D10's "gated notes wait".
+20. **Topic renames: growth drift 0.5 now, theme drift later** (2026-10-16): growth renaming keeps
+    `renameDrift` 0.5 (7.4% of topics per week in the accelerated corpus replay); the ≤2%/week target is
+    reported, not gating, in F2. Merged topics are renamed after a rebuild (drift 0.3). A drift measured on the
+    theme (the name's label vector against the topic centroid) moves to the F4 gardener.
 
 ## 3. The five swaps
 
