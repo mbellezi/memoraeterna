@@ -47,6 +47,8 @@ dated measurements, not rules.
 - [f2-decisions.md](f2-decisions.md) — the binding F2 decisions (D1-D40), owner-question defaults, gates and
   measurement datasets for the Topic Tree Engine.
 - [kpi-f2.md](kpi-f2.md) — F2 measurements, starting with gate W (the legacy wiki wipe).
+- [topic-placement-calibration.md](topic-placement-calibration.md) — F2 T29a: the registered rules
+  and the evidence for the placement and gate parameters of the Topic Tree Engine.
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only
   AI cassettes (record/replay) and the golden runner.
 

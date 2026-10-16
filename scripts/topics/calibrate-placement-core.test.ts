@@ -10,8 +10,10 @@ import {
   chooseMargin,
   chooseMergeCosine,
   chooseMisParentMargin,
+  existingOrNewTable,
   gateAccepts,
   gatePoints,
+  joinCorpusNotes,
   marginGrid,
   median,
   rocAuc,
@@ -112,6 +114,7 @@ describe("placement outcomes", () => {
     const summary = summarizeLoso(notes, 0.015);
     expect(summary.score).toBe(0.5);
     expect(summary.waiting).toBe(0.5);
+    expect(summary.gated).toBe(0.25);
     expect(summary.gatedBaselinePrecision).toBe(1);
   });
 });
@@ -148,6 +151,7 @@ function row(
           knownAutoRight: 0,
           newNotAbsorbed: 0,
           waiting: 0.1,
+          gated: 0.05,
           gatedBaselinePrecision: 0.7
         }
       : null;
@@ -317,5 +321,70 @@ describe("R7 mis-parent margin", () => {
     expect(choice.withoutFloor).toBe(0);
     expect(choice.chosen).toBe(0.1);
     expect(choice.table.find((entry) => entry.margin === 0.1)?.recall).toBe(1);
+  });
+});
+
+describe("ENV-C corpus join", () => {
+  const articles = new Map([
+    [
+      "en:Photosynthesis",
+      {
+        key: "en:Photosynthesis",
+        domain: "biology",
+        notes: [
+          { id: "c0", title: "", text: "Intro." },
+          { id: "c1", title: "Light", text: "Light reactions." }
+        ]
+      }
+    ]
+  ]);
+  const row = (index: number, order: number, title: string) => ({
+    index,
+    lang: "en",
+    rootSourceId: "r1",
+    rootTitle: "Photosynthesis",
+    title,
+    order
+  });
+
+  it("joins the k-th note of a root to the article's k-th note", () => {
+    const joined = joinCorpusNotes([row(5, 11, "Light"), row(2, 10, "")], articles);
+    expect(joined.map((note) => [note.index, note.corpusId, note.domain, note.group])).toEqual([
+      [2, "c0", "biology", "en:Photosynthesis"],
+      [5, "c1", "biology", "en:Photosynthesis"]
+    ]);
+  });
+
+  it("refuses a count or title mismatch", () => {
+    expect(() => joinCorpusNotes([row(0, 0, "")], articles)).toThrow(/1 exported notes/u);
+    expect(() => joinCorpusNotes([row(0, 0, "X"), row(1, 1, "Light")], articles)).toThrow(/title/u);
+  });
+});
+
+describe("R3b existing or new topic", () => {
+  it("rewards accepting known-topic notes and refusing new-topic ones", () => {
+    const known: GateNote[] = [7, 8].flatMap((seed) => [
+      { seed, logOdds: [5, -5], right: [true, false], bestRight: true },
+      { seed, logOdds: [5, -5], right: [false, true], bestRight: false }
+    ]);
+    const fresh: GateNote[] = [7, 8].map((seed) => ({
+      seed,
+      logOdds: [-6, -7],
+      right: [false, false],
+      bestRight: false
+    }));
+    const { rows, baseline } = existingOrNewTable(known, fresh);
+    const start = rows.find((row) => row.id === "T1-tau0-theta0.5")!;
+    expect(start).toMatchObject({
+      knownAcceptedRight: 0.5,
+      knownAcceptedWrong: 0.5,
+      newAbsorbed: 0
+    });
+    expect(start.balanced).toBe(0.75);
+    expect(baseline).toMatchObject({
+      knownAcceptedRight: 0.5,
+      knownAcceptedWrong: 0.5,
+      newAbsorbed: 1
+    });
   });
 });

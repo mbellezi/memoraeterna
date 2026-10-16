@@ -335,6 +335,8 @@ export interface LosoSummary {
   newNotAbsorbed: number;
   /** Notes left waiting with no decider (gated or unadmitted). */
   waiting: number;
+  /** Gated notes (an admitted leaf below the margin): they keep `needs_gate` until a decider runs. */
+  gated: number;
   /** Precision of the best admitted leaf on the gated notes (the margin-only fallback). */
   gatedBaselinePrecision: number;
 }
@@ -362,6 +364,7 @@ export function summarizeLoso(outcomes: readonly LosoOutcome[], margin: number):
     knownAutoRight,
     newNotAbsorbed,
     waiting: share(waiting, outcomes.length),
+    gated: share(gated, outcomes.length),
     gatedBaselinePrecision: share(gatedRight, gated)
   };
 }
@@ -379,6 +382,8 @@ export interface AdmissionRow {
   values: AdmissionPoint;
   summary: OutcomeSummary | null;
   loso: LosoSummary | null;
+  /** LOSO summaries at every margin of `marginGrid` (R8 reads the adopted margin). */
+  losoByMargin?: { margin: number; summary: LosoSummary }[];
 }
 
 export interface AdmissionChoice {
@@ -734,6 +739,80 @@ export function chooseGate(notes: readonly GateNote[]): GateChoice {
 }
 
 // ---------------------------------------------------------------------------
+// R3b: existing topic or new topic (reported only)
+
+export interface ExistingOrNewRow {
+  id: string;
+  point: GatePoint | null;
+  /** Known-topic gated notes accepted into their article's leaf / into another leaf. */
+  knownAcceptedRight: number;
+  knownAcceptedWrong: number;
+  /** New-topic gated notes accepted into some leaf (absorbed). */
+  newAbsorbed: number;
+  /** (known accepted-right + new not absorbed) / 2. */
+  balanced: number;
+}
+
+function existingOrNewOf(
+  id: string,
+  point: GatePoint | null,
+  known: readonly GateNote[],
+  fresh: readonly GateNote[],
+  decide: (note: GateNote) => { accepted: boolean; index: number }
+): ExistingOrNewRow {
+  const seeds = [...new Set([...known, ...fresh].map((note) => note.seed))].sort((a, b) => a - b);
+  const perSeed = seeds.map((seed) => {
+    const k = known.filter((note) => note.seed === seed);
+    const f = fresh.filter((note) => note.seed === seed);
+    let right = 0;
+    let wrong = 0;
+    for (const note of k) {
+      const verdict = decide(note);
+      if (!verdict.accepted) continue;
+      if (note.right[verdict.index]) right += 1;
+      else wrong += 1;
+    }
+    const absorbed = f.filter((note) => decide(note).accepted).length;
+    return {
+      right: share(right, k.length),
+      wrong: share(wrong, k.length),
+      absorbed: share(absorbed, f.length)
+    };
+  });
+  const knownAcceptedRight = median(perSeed.map((entry) => entry.right));
+  const newAbsorbed = median(perSeed.map((entry) => entry.absorbed));
+  return {
+    id,
+    point,
+    knownAcceptedRight,
+    knownAcceptedWrong: median(perSeed.map((entry) => entry.wrong)),
+    newAbsorbed,
+    balanced: (knownAcceptedRight + (1 - newAbsorbed)) / 2
+  };
+}
+
+/**
+ * R3b over every gate point, plus the margin-only baseline (every gated note placed at its best
+ * admitted leaf: `bestRight` decides right or wrong, and every new-topic note is absorbed).
+ * `known` notes are right at the article level; every `fresh` (new-topic) note is wrong anywhere.
+ */
+export function existingOrNewTable(
+  known: readonly GateNote[],
+  fresh: readonly GateNote[]
+): { rows: ExistingOrNewRow[]; baseline: ExistingOrNewRow } {
+  const rows = gatePoints().map((point) =>
+    existingOrNewOf(gatePointId(point), point, known, fresh, (note) =>
+      gateAccepts(note.logOdds, point)
+    )
+  );
+  const baseline = existingOrNewOf("margin-only", null, known, fresh, (note) => ({
+    accepted: true,
+    index: note.bestRight ? note.right.indexOf(true) : note.right.indexOf(false)
+  }));
+  return { rows, baseline };
+}
+
+// ---------------------------------------------------------------------------
 // R5: split signals
 
 export interface LeafSignals {
@@ -920,6 +999,80 @@ export function chooseMisParentMargin(runs: readonly MisParentRun[]): {
 }
 
 // ---------------------------------------------------------------------------
+// ENV-C labels: the corpus join
+
+/** An ENV-C replay row with the fields the join reads. */
+export interface ExportNoteRow {
+  /** Index in the replay store. */
+  index: number;
+  lang: string;
+  rootSourceId: string;
+  rootTitle: string;
+  title: string;
+  order: number;
+}
+
+/** A corpus article (`.cache/corpus`) with its notes in corpus order. */
+export interface CorpusArticleNotes {
+  key: string;
+  domain: string;
+  notes: readonly { id: string; title: string; text: string }[];
+}
+
+export interface JoinedNote {
+  index: number;
+  domain: string;
+  /** The article key `lang:title` (the DS-C group). */
+  group: string;
+  corpusId: string;
+  text: string;
+}
+
+/**
+ * Joins exported ENV-C notes to the corpus they were seeded from: the root's article is
+ * `lang:rootTitle`, and its notes were seeded in corpus order, so the k-th exported note of a root
+ * (by `order`) is the article's k-th note. Counts and section titles must agree.
+ */
+export function joinCorpusNotes(
+  rows: readonly ExportNoteRow[],
+  articles: ReadonlyMap<string, CorpusArticleNotes>
+): JoinedNote[] {
+  const byRoot = new Map<string, ExportNoteRow[]>();
+  for (const row of rows) {
+    const list = byRoot.get(row.rootSourceId) ?? [];
+    list.push(row);
+    byRoot.set(row.rootSourceId, list);
+  }
+  const joined: JoinedNote[] = [];
+  for (const [root, list] of [...byRoot].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    list.sort((a, b) => a.order - b.order || a.index - b.index);
+    const first = list[0]!;
+    const key = `${first.lang}:${first.rootTitle}`;
+    const article = articles.get(key);
+    if (!article) throw new Error(`Root ${root} (${key}) is not a corpus article`);
+    if (article.notes.length !== list.length) {
+      throw new Error(
+        `${key}: ${list.length} exported notes, ${article.notes.length} in the corpus`
+      );
+    }
+    list.forEach((row, position) => {
+      const note = article.notes[position]!;
+      if (row.title !== note.title) {
+        throw new Error(`${key} note ${position}: title "${row.title}" is not "${note.title}"`);
+      }
+      joined.push({
+        index: row.index,
+        domain: article.domain,
+        group: article.key,
+        corpusId: note.id,
+        text: note.text
+      });
+    });
+  }
+  return joined.sort((a, b) => a.index - b.index);
+}
+
+// ---------------------------------------------------------------------------
 // The adopted values (the JSON T29b and the calibration rows read)
 
 export interface AdoptedGate {
@@ -931,7 +1084,8 @@ export interface AdoptedGate {
   temperature: number;
   tau: number;
   theta: number;
-  how: GateChoice["how"];
+  /** "eligible": a calibrated point; "kept-start": no eligible point, the start values stay. */
+  how: "eligible" | "kept-start";
   metrics: Record<string, number | string | null>;
 }
 

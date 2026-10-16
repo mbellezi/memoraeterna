@@ -133,6 +133,123 @@ meeting the bar without the floor are reported.
 share of notes left waiting without a decider, the precision a margin-only fallback (best admitted
 leaf) would give them, and the calibrated gate's outcome on the same notes.
 
-## Evidence
+## Evidence (2026-10-16)
 
-Results are filled in after the runs.
+All runs on calibration seeds 7-12 (R3's DS-C cross-check: 7-9). Values in
+`<cache>/topics/calibration/placement-adopted.json`, rows in `runs/`, ranker scores in
+`gate-scores/` (one file per decider key).
+
+| Parameter | Config path | Start → value | Dataset | Method | Rule | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| z | `placement.spreadFactor` | 2.5 → **2.5** | ENV-C, DS-C (known, new), DS-G/F LOSO | R1 sweep | R1 (b) | z 2 / 1.5 gain 2.8 / 4.3 LOSO points but cost 3.2 / 8.9 points of corpus known-topic admission (bar 2): not adopted |
+| a_min | `placement.admissionFloor` | 0.15 → **0.15** | same | R1 sweep | R1 (b) | 0.10-0.25 identical; 0.35 costs 4.4 points of admission |
+| spreadFloor | `placement.spreadFloor` | 0.03 → **0.03** | same | R1 sweep | R1 (b) | best gain 0.7 point (0.05), under the 1-point bar |
+| leafFloor | `placement.leafFloor` | 0 → **0** | same | R1 sweep | R1 (b) | 0.3-0.4 change nothing; 0.5 lowers LOSO by 0.5 and corpus admission by 3.5 points |
+| Ambiguity margin | `placement.ambiguityMargin` | 0.015 → **0.01** | ENV-C, DS-C known | R2 grid | smallest with auto precision ≥ 90% on every split | 0.01: min 90.1%, median 91.2% (0.005: min 89.7%); gated 11.2% of known-topic notes, 24.0% (ENV-C) / 24.4% (DS-C) of new-topic notes (D19 b ≤ 50%: pass) |
+| Gate T, τ, θ (MLX) | `gate.temperature`, `gate.tau`, `gate.theta`; `topic_calibrations` | 1, 0, 0.5 → **1, 0, 0.5** | ENV-C new articles, 2,601 gated notes | R3 grid | R3 | no eligible point (no point reaches 90% precision); the fallback step returns T 2, τ −2, θ 0.3 (70.0%, 60% accepted) and is **not applied** (deviation D-1); start: 67.1% precision, 34.7% accepted, none 65.3%; margin-only 67.3%; p95 192 ms (D19 c: pass) |
+| Gate T, τ, θ (GGUF) | `topic_calibrations` row | 1, 0, 0.5 → **1, 0, 0.5** | same | R3 grid | R3 | no eligible point; fallback T 1, τ −2, θ 0.4 (69.0%, 54% accepted) not applied (D-1); start 68.0%, 32.2% accepted; p95 327 ms under a loaded machine (D19 c: fail; wave 4 measured 159 ms) |
+| Label weight | `placement.labelWeight` | 0 → **0** | none | R4 | R4 | not measured: no label vectors offline (they need an embedding model, which this task may not load) |
+| Split signal (I8) | `splitSignal.signal`, `.threshold` | off → **off** | ENV-C, DS-C full builds; ENV-C gate | R5 AUC | AUC ≥ 0.75 everywhere | best: low coherence 0.669 (ENV-C) / 0.637 (DS-C); bimodality 0.46 / 0.44; 2-means silhouette 0.50 / 0.51; kNN modularity 0.49 / 0.48; gate none share 0.54 (10 impure leaves) |
+| Sibling merge | `repair.siblingMergeCosine` | 0.85 → **0.85** | ENV-C, DS-C full builds | R6 | precision ≥ 90% every seed, ≥ 20 pairs per dataset | no cosine qualifies per seed; pooled precision 91.3% at 0.80 (381 pairs), 96.1% at 0.82 (155), 96.6% at 0.85 (29 pairs in 12 builds: merges rarely apply) |
+| Mis-parent margin | `audit.misParentMargin` | 0.1 → **0.1** | ENV-C, DS-C full builds, 497 planted errors | R7 | smallest ≥ 0.1 with precision ≥ 90% in every run | no margin meets it per run (worst run 77-82% at 0.1-0.2); pooled precision 91.8% at 0.075, **95.4% at 0.1** (recall 41.4%), 98.4% at 0.2 (recall 12.5%); the gate-A value stays |
+
+### R1 details
+
+Medians over seeds 7-12 at the start values (gated and auto precision at margin 0.01):
+
+| Set | Holdout | Top-1 domain | Admitted | Gated | Auto precision | Right leaf admitted | Wrong leaf admitted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ENV-C | known | 88.5% | 97.2% | 10.5% | 91.3% | 93.7% | 29.8% |
+| ENV-C | new | 67.6% | 85.7% | 24.0% | 71.5% | 66.9% | 36.6% |
+| DS-C | known | 87.5% | 97.0% | 11.6% | 91.1% | 92.9% | 29.9% |
+| DS-C | new | 69.4% | 85.6% | 24.4% | 72.9% | 66.8% | 33.5% |
+
+- Parity with Spike B (DS-C, start values, margin 0.03): known top-1 87.5% (Spike B 88.9%),
+  admitted 97.0% (98.0%), gated 26.3% (27.8%), auto precision 92.5% (92.3%); new top-1 69.4%
+  (69.9%), admitted 85.6% (87.3%), gated 43.3% (48.4%), auto precision 74.2% (71.9%). Five of eight
+  are within 1 point or better; known top-1 (−1.4) and new admitted (−1.7) are close, and new-topic
+  gated is 5.1 points lower. The splits differ (calibration seeds 7-12 against Spike B's 20261014
+  and 1-5) and the F2 engine adds the leave-one-out mean and the internal percentile to admission,
+  so this is reported, not acted on.
+- LOSO medians (start values, margin 0.015): ENV-G 44.1% (23% of its held-out notes have a known
+  topic), ENV-F 75.4% (90% known). z pulls the two sets apart: z 1.5 raises ENV-G to 58.8% and
+  lowers ENV-F to 69.2%; z 3.5 lowers ENV-G to 32.2% and raises ENV-F to 77.5%. A tighter z keeps
+  new-topic notes out of existing leaves (the absorption seen in the ENV-G record run) at the cost
+  of known-topic admission; the registered guard keeps 2.5.
+
+### R3, R3b and R3c details
+
+- The ranker's confidence carries no precision signal on R3's labels: on ENV-C new-article gated
+  notes, accepted precision per seed is 58-76% when 13% of the notes are accepted, 64-79% at 35%
+  and 66-72% at 60% (MLX), and the ranker's top-1 equals the margin-only choice (MLX 67.8%, GGUF 67.3% against
+  67.3%; on the 1,282 notes whose candidates mix right and wrong domains, 749 / 747 against 748).
+  DS-C cross-check at the start values (MLX, 1,309 notes): 74.7% precision, 34.9% accepted,
+  margin-only 69.4%.
+- R3b (article level; 1,203 known-topic and 2,601 new-topic gated notes):
+
+  | Decider | Point | Known accepted right | Known accepted wrong | New absorbed | Balanced |
+  | --- | --- | --- | --- | --- | --- |
+  | both | margin-only | 48.0% | 52.0% | 100% | 24.0% |
+  | MLX | start T 1, τ 0, θ 0.5 | 33.9% | 26.6% | 34.7% | 49.6% |
+  | MLX | R3 fallback T 2, τ −2, θ 0.3 | 42.7% | 37.7% | 60.5% | 41.1% |
+  | MLX | best balanced T 0.5, τ 3, θ 0.5 | 23.8% | 13.7% | 13.4% | 55.2% |
+  | GGUF | start | 31.6% | 24.5% | 32.2% | 49.7% |
+  | GGUF | R3 fallback T 1, τ −2, θ 0.4 | 40.6% | 35.8% | 54.2% | 43.2% |
+  | GGUF | best balanced T 0.5, τ 3, θ 0.5 | 23.0% | 13.6% | 12.3% | 55.4% |
+
+- R3c (LLM descriptors of the exported ENV-C tree, 1,018 known-topic gated notes; 73% have a right
+  candidate): ranker top-1 48.8% (MLX) / 48.5% (GGUF) against margin-only 46.0%; on the 739 mixed
+  notes 66.3% / 65.9% against 62.4%. Accepted precision: start 58.4% (54% accepted) / 61.1% (50%);
+  R3 fallback 57.0% (78%) / 57.3% (70%); T 0.5, τ 3, θ 0.5 65.0% (36%) / 65.3% (31%). With the
+  product's descriptors the ranker adds about 3-4 points over the centroid order, far from the 90%
+  bar.
+- **Deviation D-1.** R3's registered rule has no eligible point, so it fell back to its step 3.
+  That output is within the flat precision curve above, and R3b (registered before it ran) shows it
+  raises new-topic absorption from 35% to 60% (MLX) and lowers balanced accuracy. T29a therefore
+  keeps the start values for both deciders and reports the fallback output; applying it instead is
+  one change to `gate.*` (orchestrator decision). A future gate calibration needs labels that tell a
+  known topic from a new one (R3b's protocol) and the product's LLM descriptors (R3c); on those, the
+  stricter T 0.5, τ 3, θ 0.5 cuts absorption to 13% while placing 24% of known-topic gated notes in
+  their article's leaf.
+
+### R8: the no-decider fallback (D10, D19)
+
+- D19 (a) does not depend on the decider: auto precision on known topics is ≥ 90% from margin 0.01.
+  D19 (b) holds: 24% of new-topic notes are gated at 0.01 (ENV-C 24.0%, DS-C 24.4%). D19 (c) is
+  met by MLX (p95 192 ms) and not by GGUF under load (327 ms).
+- Without a decider every gated note keeps `needs_gate`, and REBALANCE never moves such an item
+  (`isMovableDirectItem`), so it waits at its fallback ancestor until a ranker validates: 24% of
+  new-article notes and 10.5% of known-topic notes on ENV-C, plus the unadmitted notes (15% of new,
+  about 3% of known), which are movable. On the LOSO sets 6.6% (ENV-G) and 7.2% (ENV-F) of held-out
+  notes are gated and 40.6% / 4.4% unadmitted; the record runs' 10-17% Unsorted is this.
+- Margin-only placement should not take over: the best admitted leaf of a gated note is right for
+  67% of new-article notes by domain, 48% of known-topic notes by article (R3b), and 32% (ENV-G) /
+  39% (ENV-F) of LOSO notes by fresh-build leaf, far below D19 (a)'s 90%; it would absorb every
+  new-topic note.
+- Suggested instead (an engine change, not made here): with no validated decide route, treat a
+  gated note as the gate's "none" (`needs_split_check`, movable), keeping a marker so `topic-sweep`
+  re-gates it once a ranker validates. REBALANCE can then form leaves from waiting notes (the
+  right outcome for new topics) instead of holding them at the root.
+
+### Other findings
+
+- The product does not read `topic_calibrations` yet: `topic-gate.ts` resolves with
+  `plan.config.gate`. The per-decider rows (`save-calibration.ts`) record the calibration; the gate
+  uses them only once it looks up `activeCalibration(spaceKey, deciderKey)`.
+- The registered per-run precision rules of R6 and R7 are too strict for their sample sizes (2-45
+  proposals or pairs per run); their pooled precision meets 90% from 0.80 and 0.075.
+
+## Reproduce
+
+```sh
+export MEMORA_TOPICS_CACHE=<checkout>/.cache
+npx tsx scripts/topics/calibrate-placement.ts admission --dataset env-c --holdout known   # and new; corpus-notitle
+npx tsx scripts/topics/calibrate-placement.ts loso --dataset env-g                        # and env-f
+npx tsx scripts/topics/calibrate-placement.ts structure --dataset env-c                   # and corpus-notitle
+npx tsx scripts/topics/calibrate-placement.ts adopt                                       # R1, R2
+npx tsx scripts/topics/calibrate-placement.ts gate-collect --dataset env-c                # R3 (and --holdout known: R3b)
+npx tsx scripts/topics/calibrate-placement.ts gate-collect --dataset env-c-named          # R3c
+npx tsx scripts/topics/calibrate-placement.ts gate-score --runtime mlx --dataset env-c    # local-model lock; gguf too
+npx tsx scripts/topics/calibrate-placement.ts adopt
+npx tsx scripts/topics/save-calibration.ts --db <profile>/database/dev-connection.json --dry-run
+```
