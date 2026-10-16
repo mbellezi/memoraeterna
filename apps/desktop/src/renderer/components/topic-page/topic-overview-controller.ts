@@ -28,7 +28,8 @@ export interface TopicOverviewSnapshot {
  * The overview section's state outside React (the page's own controller is the precedent): the
  * page tells it what it read and whether it is shown; it asks the main process only to write a
  * missing overview, to join a writing in progress or to wait once for a support verdict, and on
- * Write, Update, Retry and Cancel. An answer for a topic the page no longer shows is dropped.
+ * Write, Update, Retry and Cancel. An answer for a topic the page no longer shows, or for a
+ * request a later one replaced (an Update while a verdict was awaited), is dropped.
  */
 export class TopicOverviewController {
   private snapshot: TopicOverviewSnapshot;
@@ -36,6 +37,8 @@ export class TopicOverviewController {
   private topicId: string | null = null;
   private page: TopicOverviewState = { status: "absent", canWrite: false };
   private active = false;
+  /** The latest request: an answer to an earlier one for the same topic is dropped. */
+  private latest: { topicId: string; seq: number } | null = null;
 
   constructor(
     private readonly deps: {
@@ -64,10 +67,14 @@ export class TopicOverviewController {
     this.consider();
   }
 
-  /** Write (or, with `force`, Update) the overview of the topic shown; Retry after a failure. */
+  /**
+   * Write (or, with `force`, Update) the overview of the topic shown; Retry after a failure. An
+   * Update does not wait for the support verdict of the overview it replaces.
+   */
   write(force: boolean): void {
     if (this.topicId === null) return;
-    if (this.current()?.request?.status === "requesting") return;
+    const request = this.current()?.request;
+    if (request?.status === "requesting" && !(request.verdict && force)) return;
     this.request(this.topicId, force);
   }
 
@@ -93,8 +100,10 @@ export class TopicOverviewController {
   private consider(): void {
     if (!this.active || this.topicId === null) return;
     const local = this.current();
-    if (shouldRequestOverview(overviewView(this.page, local), local, this.active)) {
-      this.request(this.topicId, false);
+    const view = overviewView(this.page, local);
+    if (shouldRequestOverview(view, local, this.active)) {
+      // Asking again about a ready overview only waits for its support verdict.
+      this.request(this.topicId, false, view.kind === "ready");
     }
   }
 
@@ -103,8 +112,11 @@ export class TopicOverviewController {
     return local && local.topicId === this.topicId ? local : null;
   }
 
-  private request(topicId: string, force: boolean): void {
-    this.publish(overviewRequested(this.current() ?? overviewLocal(topicId), force));
+  private request(topicId: string, force: boolean, verdict = false): void {
+    const seq = (this.latest?.seq ?? 0) + 1;
+    this.latest = { topicId, seq };
+    const replaced = () => this.latest?.topicId === topicId && this.latest.seq !== seq;
+    this.publish(overviewRequested(this.current() ?? overviewLocal(topicId), force, verdict));
     let answer: Promise<TopicOverviewState>;
     try {
       answer = this.deps.api().overview(force ? { id: topicId, force: true } : { id: topicId });
@@ -113,12 +125,12 @@ export class TopicOverviewController {
     }
     answer.then(
       (state) => {
-        if (topicId !== this.topicId) return;
+        if (topicId !== this.topicId || replaced()) return;
         this.publish(overviewAnswered(this.current() ?? overviewLocal(topicId), state));
         this.consider();
       },
       (error: unknown) => {
-        if (topicId !== this.topicId) return;
+        if (topicId !== this.topicId || replaced()) return;
         this.publish(
           overviewFailed(this.current() ?? overviewLocal(topicId), overviewErrorKey(error))
         );

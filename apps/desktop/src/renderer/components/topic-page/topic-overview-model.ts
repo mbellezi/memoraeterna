@@ -16,9 +16,12 @@ import type { MessageKey, Translator } from "@app/i18n";
 
 export type ReadyOverview = Extract<TopicOverviewState, { status: "ready" }>;
 
-/** The slot's own request for one topic and what came back. */
+/**
+ * The slot's own request for one topic and what came back. A `verdict` request only waits for the
+ * support verdict of an overview already shown: it writes nothing and the overview stays readable.
+ */
 export type OverviewRequest =
-  | { status: "requesting"; force: boolean }
+  | { status: "requesting"; force: boolean; verdict: boolean }
   | { status: "answered"; state: TopicOverviewState }
   | { status: "error"; messageKey: string };
 
@@ -47,8 +50,16 @@ export function overviewLocal(topicId: string): OverviewLocal {
 }
 
 /** A request starts; an Update (`force`) clears an earlier cancel. */
-export function overviewRequested(local: OverviewLocal, force: boolean): OverviewLocal {
-  return { ...local, request: { status: "requesting", force }, canceled: local.canceled && !force };
+export function overviewRequested(
+  local: OverviewLocal,
+  force: boolean,
+  verdict = false
+): OverviewLocal {
+  return {
+    ...local,
+    request: { status: "requesting", force, verdict: verdict && !force },
+    canceled: local.canceled && !force
+  };
 }
 
 /** An answer arrived. A ready one whose support was checking has had its verdict awaited. */
@@ -90,15 +101,16 @@ function newer(first: ReadyOverview, second: ReadyOverview): ReadyOverview {
 
 /**
  * The state to show for the page's reading and the slot's own request. A request in flight shows
- * as writing over the overview it updates; an update that did not land keeps the earlier overview
- * with a notice; a failure with nothing to keep shows the failure.
+ * as writing over the overview it updates, except a wait for the support verdict, which shows the
+ * overview as ready (its support reads "checking"); an update that did not land keeps the earlier
+ * overview with a notice; a failure with nothing to keep shows the failure.
  */
 export function overviewView(page: TopicOverviewState, local: OverviewLocal | null): OverviewView {
   const pageReady = page.status === "ready" ? page : null;
   const lastReady = local?.lastReady ?? null;
   const base = pageReady && lastReady ? newer(pageReady, lastReady) : (pageReady ?? lastReady);
   const request = local?.request ?? null;
-  if (request?.status === "requesting") {
+  if (request?.status === "requesting" && !(request.verdict && base)) {
     return { kind: "writing", previous: base, updating: request.force };
   }
   if (request?.status === "error") {

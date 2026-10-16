@@ -144,6 +144,18 @@ describe("what the overview section shows", () => {
     const written = overviewAnswered(overviewRequested(overviewLocal(topicId), false), checking);
     expect(written.awaitedCheck).toBeNull();
     expect(shouldRequestOverview(overviewView(absent(true), written), written, true)).toBe(true);
+    // While the verdict is awaited the overview stays readable; an Update is a writing again.
+    const awaiting = overviewRequested(written, false, true);
+    expect(overviewView(absent(true), awaiting)).toEqual({
+      kind: "ready",
+      overview: checking,
+      noticeKey: null
+    });
+    expect(shouldRequestOverview(overviewView(absent(true), awaiting), awaiting, true)).toBe(false);
+    expect(overviewView(absent(true), overviewRequested(written, true, true))).toMatchObject({
+      kind: "writing",
+      updating: true
+    });
     const still = overviewAnswered(overviewRequested(written, false), checking);
     expect(still.awaitedCheck).toBe(writtenAt);
     expect(shouldRequestOverview(overviewView(absent(true), still), still, true)).toBe(false);
@@ -366,6 +378,46 @@ describe("the overview controller", () => {
     await settle();
     expect(fake.calls).toHaveLength(2);
     expect(seen).toContain("requesting");
+  });
+
+  it("shows the overview while its support verdict is awaited, and Update does not wait for it", async () => {
+    const checking = ready({ support: { status: "checking", unsupported: [] } });
+    const { fake, pending } = api([checking]);
+    const controller = new TopicOverviewController({ api: () => fake, now: () => now });
+    controller.show(topicId, absent(true), true);
+    await settle();
+    expect(fake.calls).toEqual([{ id: topicId }, { id: topicId }]);
+    // The verdict is awaited: the overview reads as ready and checking, with no Cancel.
+    const view = overviewView(absent(true), controller.getSnapshot().local);
+    expect(view).toEqual({ kind: "ready", overview: checking, noticeKey: null });
+    expect(shouldRequestOverview(view, controller.getSnapshot().local, true)).toBe(false);
+    const html = render(view);
+    expect(html).toContain("Checking support…");
+    expect(html).toContain('aria-busy="false"');
+    expect(html).not.toContain(">Cancel<");
+    // Update during the wait writes at once; the wait's late answer is dropped.
+    controller.write(true);
+    expect(fake.calls).toEqual([{ id: topicId }, { id: topicId }, { id: topicId, force: true }]);
+    expect(overviewView(absent(true), controller.getSnapshot().local)).toEqual({
+      kind: "writing",
+      previous: checking,
+      updating: true
+    });
+    pending[0]!({ status: "writing" });
+    await settle();
+    expect(overviewView(absent(true), controller.getSnapshot().local)).toMatchObject({
+      kind: "writing",
+      updating: true
+    });
+    expect(fake.calls).toHaveLength(3);
+    const rewritten = ready({ writtenAt: "2026-10-16T09:00:00.000Z" });
+    pending[1]!(rewritten);
+    await settle();
+    expect(overviewView(absent(true), controller.getSnapshot().local)).toEqual({
+      kind: "ready",
+      overview: rewritten,
+      noticeKey: null
+    });
   });
 
   it("updates on request, cancels, and drops an answer for a topic no longer shown", async () => {
