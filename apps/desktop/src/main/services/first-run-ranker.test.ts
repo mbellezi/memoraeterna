@@ -120,7 +120,7 @@ function world(
 describe("the first-run ranker (owner decision 19)", () => {
   it("waits for the library's first embedding route, then requests the MLX ranker once", async () => {
     const w = world({ routes: ["summarization"] });
-    await expect(w.ranker.ensure()).resolves.toBe("waiting_for_embedding");
+    await expect(w.ranker.begin()).resolves.toBe("waiting_for_embedding");
     expect(w.models.requestDownload).not.toHaveBeenCalled();
     expect(w.store.set).not.toHaveBeenCalled();
 
@@ -129,7 +129,13 @@ describe("the first-run ranker (owner decision 19)", () => {
     await w.ranker.ensure();
     expect(w.models.requestDownload).not.toHaveBeenCalled();
 
+    // A start never begins a first run: a library whose embedding route predates it gets none.
     w.ai.listTaskRoutes.mockResolvedValue([{ task: "embedding", profileId: "p-1" }]);
+    await expect(w.ranker.ensure()).resolves.toBe("not_started");
+    expect(w.models.requestDownload).not.toHaveBeenCalled();
+
+    // The seeding that creates the embedding route begins it.
+    w.ranker.onRoutesSeeded(["embedding", "summarization"]);
     await expect(w.ranker.ensure()).resolves.toBe("requested");
     expect(w.models.requestDownload).toHaveBeenCalledWith({ catalogId: mlx, acceptLicense: false });
     expect(w.state()).toEqual({
@@ -140,21 +146,20 @@ describe("the first-run ranker (owner decision 19)", () => {
     });
     // While it downloads, later starts and seedings request nothing more.
     await expect(w.ranker.ensure()).resolves.toBe("requested");
-    w.ranker.onRoutesSeeded(["embedding"]);
-    await w.ranker.ensure();
+    await expect(w.ranker.begin()).resolves.toBe("requested");
     expect(w.models.requestDownload).toHaveBeenCalledTimes(1);
     expect(firstRunRankerSettingKey).toBe("local-models.first-run-ranker");
   });
 
   it("takes the GGUF ranker where MLX does not run, or where its MLX entry cannot run", async () => {
     const linux = world({ extra: { machine: { platform: "linux", arch: "x64" } } });
-    await linux.ranker.ensure();
+    await linux.ranker.begin();
     expect(linux.models.requestDownload).toHaveBeenCalledWith({
       catalogId: gguf,
       acceptLicense: false
     });
     const small = world({ views: [view(mlx, { compatible: false }), view(gguf)] });
-    await small.ranker.ensure();
+    await small.ranker.begin();
     expect(small.models.requestDownload).toHaveBeenCalledWith({
       catalogId: gguf,
       acceptLicense: false
@@ -162,7 +167,7 @@ describe("the first-run ranker (owner decision 19)", () => {
     const none = world({
       views: [view(mlx, { compatible: false }), view(gguf, { compatible: false })]
     });
-    await expect(none.ranker.ensure()).resolves.toBe("skipped");
+    await expect(none.ranker.begin()).resolves.toBe("skipped");
     expect(none.models.requestDownload).not.toHaveBeenCalled();
     expect(none.state()).toMatchObject({ catalogId: null, state: "skipped" });
     await expect(none.ranker.ensure()).resolves.toBe("skipped");
@@ -170,7 +175,7 @@ describe("the first-run ranker (owner decision 19)", () => {
 
   it("gives a validated ranker the Settings profile once, so class:decide seeds itself", async () => {
     const w = world({ profiles: [{ id: "p-1", name: "Embedding", status: "active" }] });
-    await w.ranker.ensure();
+    await w.ranker.begin();
     w.install(mlx);
     await expect(w.ranker.onModelSettled(mlx)).resolves.toBe("ready");
     expect(w.ai.createProfile).toHaveBeenCalledWith({
@@ -198,7 +203,7 @@ describe("the first-run ranker (owner decision 19)", () => {
 
   it("records a failed download or validation without throwing, and completes on a later success", async () => {
     const w = world();
-    await w.ranker.ensure();
+    await w.ranker.begin();
     w.fail(mlx, "errors.localModels.checksumMismatch");
     await expect(w.ranker.onModelSettled(mlx)).resolves.toBe("failed");
     expect(w.state()).toMatchObject({
@@ -223,7 +228,7 @@ describe("the first-run ranker (owner decision 19)", () => {
     refused.models.requestDownload.mockRejectedValue(
       new Error("errors.localModels.mlxUnavailable")
     );
-    await expect(refused.ranker.ensure()).resolves.toBe("failed");
+    await expect(refused.ranker.begin()).resolves.toBe("failed");
     expect(refused.state()).toMatchObject({
       catalogId: mlx,
       state: "failed",
@@ -231,7 +236,7 @@ describe("the first-run ranker (owner decision 19)", () => {
     });
     const broken = world();
     broken.store.get.mockRejectedValue(new Error("errors.database.notReady"));
-    await expect(broken.ranker.ensure()).resolves.toBe("failed");
+    await expect(broken.ranker.begin()).resolves.toBe("failed");
     expect(broken.models.requestDownload).not.toHaveBeenCalled();
   });
 
@@ -240,7 +245,7 @@ describe("the first-run ranker (owner decision 19)", () => {
       views: [view(mlx), view(gguf, { status: "ready", capabilities: ["reranking"] })],
       profiles: [{ id: "p-7", status: "active", localModelId: `model-${gguf}` }]
     });
-    await expect(w.ranker.ensure()).resolves.toBe("ready");
+    await expect(w.ranker.begin()).resolves.toBe("ready");
     expect(w.models.requestDownload).not.toHaveBeenCalled();
     expect(w.ai.createProfile).not.toHaveBeenCalled();
     expect(w.ai.updateProfile).not.toHaveBeenCalled();
@@ -250,6 +255,7 @@ describe("the first-run ranker (owner decision 19)", () => {
   it("does nothing when turned off (golden runs, the E6 harness)", async () => {
     const w = world({ extra: { enabled: false } });
     await expect(w.ranker.ensure()).resolves.toBe("disabled");
+    await expect(w.ranker.begin()).resolves.toBe("disabled");
     w.ranker.onRoutesSeeded(["embedding"]);
     await w.ranker.ensure();
     expect(w.store.get).not.toHaveBeenCalled();

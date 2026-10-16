@@ -722,7 +722,7 @@ describe("the first-run ranker on the install path (owner decision 19)", () => {
     });
 
     // The first embedding route starts it; the first run does not wait for the download.
-    await expect(ranker.ensure()).resolves.toBe("requested");
+    await expect(ranker.begin()).resolves.toBe("requested");
     expect(state).toMatchObject({ catalogId: ggufId, state: "requested" });
     await vi.waitFor(() => expect(testModel).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(state).toMatchObject({ state: "ready" }));
@@ -747,7 +747,7 @@ describe("the first-run ranker on the install path (owner decision 19)", () => {
     // Idempotent: later starts and seedings download nothing and create no second profile.
     await expect(ranker.ensure()).resolves.toBe("settled_earlier");
     ranker.onRoutesSeeded(["embedding"]);
-    await expect(ranker.ensure()).resolves.toBe("settled_earlier");
+    await expect(ranker.begin()).resolves.toBe("settled_earlier");
     await expect(ranker.onModelSettled(ggufId)).resolves.toBeNull();
     expect(installer.downloadLocalModel).toHaveBeenCalledTimes(1);
     expect(ai.createProfile).toHaveBeenCalledTimes(1);
@@ -778,7 +778,7 @@ describe("the first-run ranker on the install path (owner decision 19)", () => {
       logger: { info: vi.fn(), warn: vi.fn() }
     });
 
-    await expect(ranker.ensure()).resolves.toBe("requested");
+    await expect(ranker.begin()).resolves.toBe("requested");
     await vi.waitFor(() => expect(state).toMatchObject({ state: "failed" }));
     // The error shows on the model's row, where the embedding model's would.
     expect(storedRanker(ggufId)).toMatchObject({

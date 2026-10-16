@@ -29,11 +29,11 @@ import type {
  *
  * It never blocks the first run and never throws: a refused, failed or canceled download, or a
  * ranker that does not validate, is recorded and logged, the model's row shows the error, and the
- * topic gate keeps its no-decider fallback. It happens once per library (the state is a setting):
- * a ranker the owner removes later is not installed again, and a library that had its embedding
- * route before this existed gets no download. A start finishes what an earlier one left (an
- * interrupted download resumes in `LocalModelService.start`; a validated ranker without a profile
- * gets one).
+ * topic gate keeps its no-decider fallback. It happens once per library (the state is a setting),
+ * when the route seeding creates the embedding route: a ranker the owner removes later is not
+ * installed again, and a library whose embedding route predates this gets no download. A start
+ * only finishes what an earlier one left (an interrupted download resumes in
+ * `LocalModelService.start`; a validated ranker without a profile gets one).
  */
 
 export const firstRunRankerSettingKey = "local-models.first-run-ranker";
@@ -109,6 +109,7 @@ export function settingsFirstRunRankerStore(getPool: () => PgPool | null): First
 /** What one `ensure` or settle step found or did. */
 export type FirstRunRankerOutcome =
   | "disabled"
+  | "not_started"
   | "waiting_for_embedding"
   | "requested"
   | "ready"
@@ -128,11 +129,19 @@ export class FirstRunRanker {
   public constructor(private readonly options: FirstRunRankerOptions) {}
 
   /**
-   * Starts the install when this library has an embedding route and never had a first-run ranker,
-   * or finishes one an earlier start left. Never throws; calls run one after another.
+   * At startup: finishes a first-run ranker an earlier start left; it never starts one (a library
+   * without the state had its embedding route before, or has none yet). Never throws.
    */
   public ensure(): Promise<FirstRunRankerOutcome> {
-    return this.serial(() => this.ensureNow());
+    return this.serial(() => this.ensureNow(false));
+  }
+
+  /**
+   * The first run: starts the install when this library has an embedding route and never had a
+   * first-run ranker, or finishes one under way. Never throws; calls run one after another.
+   */
+  public begin(): Promise<FirstRunRankerOutcome> {
+    return this.serial(() => this.ensureNow(true));
   }
 
   /**
@@ -151,7 +160,7 @@ export class FirstRunRanker {
   /** Routes a seeding created (`AiService.onRoutesSeeded`): the first embedding route starts it. */
   public onRoutesSeeded(tasks: readonly string[]): void {
     if (!tasks.includes("embedding")) return;
-    void this.ensure();
+    void this.begin();
   }
 
   private serial<T>(run: () => Promise<T>): Promise<T> {
@@ -160,11 +169,12 @@ export class FirstRunRanker {
     return next;
   }
 
-  private async ensureNow(): Promise<FirstRunRankerOutcome> {
+  private async ensureNow(starting: boolean): Promise<FirstRunRankerOutcome> {
     if (this.options.enabled === false) return "disabled";
     try {
       const state = await this.read();
       if (state) return state.state === "ready" ? "settled_earlier" : await this.finish(state);
+      if (!starting) return "not_started";
       const routes = await this.options.ai.listTaskRoutes();
       if (!routes.some((route) => route.task === "embedding")) return "waiting_for_embedding";
       return await this.start();
