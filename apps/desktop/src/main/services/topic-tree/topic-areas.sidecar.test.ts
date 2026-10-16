@@ -90,13 +90,26 @@ interface PromptPinned {
   title: string;
 }
 
-/** The topics and pinned Areas a grouping prompt carries (the JSON lists after their labels). */
-function promptOf(input: string): { pinned: PromptPinned[]; topics: PromptTopic[] } {
-  const pinnedStart = input.lastIndexOf("Pinned areas:\n") + "Pinned areas:\n".length;
-  const topicsLabel = input.lastIndexOf("\nTopics:\n");
+/** Where the repair prompt starts after the grouping prompt (the catalog's `topic.areas.repair`). */
+const repairMarker = "\n\nThe grouping you gave for the topics above was rejected.";
+
+/**
+ * The topics and pinned Areas a grouping prompt carries (the JSON lists after their labels), and
+ * the repair text that follows them when the model is asked a second time.
+ */
+function promptOf(input: string): {
+  pinned: PromptPinned[];
+  topics: PromptTopic[];
+  repair: string | null;
+} {
+  const cut = input.indexOf(repairMarker);
+  const grouping = cut < 0 ? input : input.slice(0, cut);
+  const pinnedStart = grouping.lastIndexOf("Pinned areas:\n") + "Pinned areas:\n".length;
+  const topicsLabel = grouping.lastIndexOf("\nTopics:\n");
   return {
-    pinned: JSON.parse(input.slice(pinnedStart, topicsLabel)) as PromptPinned[],
-    topics: JSON.parse(input.slice(topicsLabel + "\nTopics:\n".length)) as PromptTopic[]
+    pinned: JSON.parse(grouping.slice(pinnedStart, topicsLabel)) as PromptPinned[],
+    topics: JSON.parse(grouping.slice(topicsLabel + "\nTopics:\n".length)) as PromptTopic[],
+    repair: cut < 0 ? null : input.slice(cut + 2)
   };
 }
 
@@ -117,7 +130,11 @@ function trueGrouping(prompt: { topics: PromptTopic[] }, skip = new Set<string>(
   };
 }
 
-type Answer = (prompt: { pinned: PromptPinned[]; topics: PromptTopic[] }) => unknown;
+type Answer = (prompt: {
+  pinned: PromptPinned[];
+  topics: PromptTopic[];
+  repair: string | null;
+}) => unknown;
 
 describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () => {
   let workDir = "";
@@ -609,14 +626,32 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
     const w = await world({ layout: "grouped" });
     try {
       const before = topicTreeRecordsDump(await records(w));
-      w.setAnswer((prompt) => {
-        const grouping = trueGrouping(prompt);
-        grouping.areas[0]!.members.pop();
-        return grouping;
-      });
+      // One Area for everything is outside the band (3-6) whatever code does with it: the model
+      // is asked once more, answers alike, and nothing changes.
+      w.setAnswer((prompt) => ({
+        areas: [
+          {
+            new: { title: "Tudo", description: "Tudo." },
+            members: prompt.topics.map((topic) => topic.alias)
+          }
+        ]
+      }));
       const invalid = await runAreas(w);
-      expect(invalid.result).toMatchObject({ status: "invalid" });
-      expect(invalid.result?.issues).toEqual([expect.objectContaining({ code: "missing-topic" })]);
+      expect(invalid.result).toMatchObject({
+        status: "invalid",
+        calls: 2,
+        inputTokens: 1800,
+        outputTokens: 600,
+        repairRevision: 1
+      });
+      expect(invalid.result?.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: "area-count" })])
+      );
+      expect(invalid.result?.repair).toMatchObject({ reason: "invalid", repairCall: "answer" });
+      expect(w.calls).toHaveLength(2);
+      expect(w.calls[1]?.input).toContain(
+        "The answer makes 1 Area (pinned Areas included); make between 3 and 6"
+      );
 
       // Scrambled: each Area takes one topic of every subject, but not the stored ones.
       w.setAnswer((prompt) => ({
@@ -639,6 +674,203 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
         "select 1 from jobs where type = 'topic-areas' and status = 'queued'"
       );
       expect(queued.rowCount).toBe(0);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  /** The aliases of every `step`-th topic of a prompt, starting at the first. */
+  const everyNth = (prompt: { topics: PromptTopic[] }, step: number): Set<string> =>
+    new Set(prompt.topics.filter((_, index) => index % step === 0).map((topic) => topic.alias));
+
+  async function areasChangeSetRow(w: World) {
+    const result = await pool.query<{
+      summary: Record<string, unknown>;
+      ai_task_run_ids: string[];
+    }>(
+      `select summary, ai_task_run_ids from topic_change_sets
+        where tree_id = $1 and origin = 'areas' order by created_at, id`,
+      [w.treeId]
+    );
+    return result.rows[0] as (typeof result.rows)[number];
+  }
+
+  it("repairs an answer that left a topic out in code, without asking again", async () => {
+    const w = await world();
+    try {
+      w.setAnswer((prompt) => trueGrouping(prompt, new Set([prompt.topics[3]!.alias])));
+      const job = await runAreas(w);
+      expect(job.result).toMatchObject({ status: "applied", calls: 1, repairRevision: 1 });
+      expect(job.result?.repair).toMatchObject({
+        repaired: 1,
+        how: "deterministic",
+        answer: "first",
+        reason: null,
+        repairCall: "none",
+        placed: 1,
+        issues: { "missing-topic": 1 }
+      });
+      expect(w.calls).toHaveLength(1);
+      // The left-out topic joined the Area of its own subject: every subject sits in one Area.
+      const stored = await records(w);
+      for (const group of w.leaves) {
+        const parents = new Set(
+          group.map((leaf) => stored.topics.find((topic) => topic.id === leaf)?.parentId)
+        );
+        expect(parents.size).toBe(1);
+      }
+      // The change-set records the repair beside the measurements.
+      const row = await areasChangeSetRow(w);
+      expect(row.summary).toMatchObject({ calls: 1, accepted: true, bootstrap: true });
+      expect(row.summary.repair).toMatchObject({ repaired: 1, how: "deterministic" });
+      expect(row.ai_task_run_ids).toHaveLength(1);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("asks once more when many topics are missing and applies its complete answer", async () => {
+    const w = await world();
+    try {
+      // 3 of 20 topics (15%) are more than the repair share: the first answer is repaired in code,
+      // but the model is asked again, and its complete answer needs no repair.
+      w.setAnswer((prompt) =>
+        trueGrouping(prompt, prompt.repair === null ? everyNth(prompt, 7) : new Set())
+      );
+      const job = await runAreas(w);
+      expect(job.result).toMatchObject({
+        status: "applied",
+        calls: 2,
+        inputTokens: 1800,
+        outputTokens: 600
+      });
+      expect(job.result?.repair).toMatchObject({
+        repaired: 0,
+        how: "call",
+        answer: "second",
+        reason: "missing-share",
+        repairCall: "answer",
+        issues: { "missing-topic": 3 }
+      });
+      expect(w.calls).toHaveLength(2);
+      const [grouping, repair] = w.calls as [World["calls"][number], World["calls"][number]];
+      // Recorded like the first call: same operation and route class, attempt 1, same sources.
+      const recorded = {
+        operation: "topic_areas",
+        workloadClass: "write-fast",
+        priority: "background",
+        stage: "topic_areas",
+        promptVersion: "topic-areas-v1",
+        contentLanguage
+      };
+      expect(grouping.context).toMatchObject({ ...recorded, attempt: 0 });
+      expect(repair.context).toMatchObject({ ...recorded, attempt: 1 });
+      expect(repair.context.sourceItemIds).toEqual(grouping.context.sourceItemIds);
+      // The repair prompt is the grouping prompt plus the problems, in aliases and content only.
+      expect(repair.input.startsWith(grouping.input)).toBe(true);
+      expect(repair.input).toContain(
+        "Topics in no Area (put each in exactly one Area): T1, T8, T15"
+      );
+      expect(repair.input).toContain("in Brazilian Portuguese");
+      for (const id of [...w.areas, ...w.leaves.flat()]) expect(repair.input).not.toContain(id);
+
+      const row = await areasChangeSetRow(w);
+      expect(row.summary).toMatchObject({ calls: 2, inputTokens: 1800, outputTokens: 600 });
+      expect(row.summary.repair).toMatchObject({ how: "call", answer: "second" });
+      expect(row.ai_task_run_ids).toHaveLength(2);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("uses the answer that needed less repair, and stops at the daily cap", async () => {
+    const w = await world();
+    try {
+      // The repair call's answer misses 7 topics against 3: the first answer, repaired, is used.
+      w.setAnswer((prompt) =>
+        trueGrouping(prompt, everyNth(prompt, prompt.repair === null ? 7 : 3))
+      );
+      const job = await runAreas(w);
+      expect(job.result).toMatchObject({ status: "applied", calls: 2 });
+      expect(job.result?.repair).toMatchObject({
+        repaired: 3,
+        how: "deterministic",
+        answer: "first",
+        reason: "missing-share",
+        repairCall: "answer"
+      });
+    } finally {
+      await w.dispose();
+    }
+
+    // One call of the day left: the first answer is repaired in code and the repair call is not made.
+    const capped = await world({ budgetCalls: { calls: 299 } });
+    try {
+      capped.setAnswer((prompt) => trueGrouping(prompt, everyNth(prompt, 7)));
+      const job = await runAreas(capped);
+      expect(job.result).toMatchObject({ status: "applied", calls: 1 });
+      expect(job.result?.repair).toMatchObject({
+        repaired: 3,
+        how: "deterministic",
+        repairCall: "cap_reached"
+      });
+      expect(capped.calls).toHaveLength(1);
+    } finally {
+      await capped.dispose();
+    }
+  }, 90_000);
+
+  it("asks again for an answer in the wrong shape, and gives up after the one repair", async () => {
+    const w = await world({ layout: "grouped" });
+    try {
+      const before = topicTreeRecordsDump(await records(w));
+      w.setAnswer(() => ({ areas: "none" }));
+      const unreadable = await runAreas(w);
+      expect(unreadable.result).toMatchObject({ status: "invalid_output", calls: 2 });
+      expect(w.calls).toHaveLength(2);
+      expect(w.calls[1]?.input).toContain(
+        "The answer was not valid JSON of the required shape. Return only the JSON."
+      );
+      expect(topicTreeRecordsDump(await records(w))).toBe(before);
+
+      w.setAnswer((prompt) => (prompt.repair === null ? { areas: "none" } : trueGrouping(prompt)));
+      const mended = await runAreas(w);
+      expect(mended.result).toMatchObject({ status: "applied", calls: 2 });
+      expect(mended.result?.repair).toMatchObject({
+        how: "call",
+        answer: "second",
+        reason: "unreadable"
+      });
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("asks again, once, about a build judged invalid before the repair existed", async () => {
+    const w = await world();
+    try {
+      w.setAnswer((prompt) => ({
+        areas: [
+          {
+            new: { title: "Tudo", description: "Tudo." },
+            members: prompt.topics.map((t) => t.alias)
+          }
+        ]
+      }));
+      const invalid = await runAreas(w);
+      expect(invalid.result).toMatchObject({ status: "invalid", repairRevision: 1 });
+      const queued = async () =>
+        (await pool.query("select 1 from jobs where type = 'topic-areas' and status = 'queued'"))
+          .rowCount;
+      // Judged by the repair: final for this build.
+      await w.services.areas!.requestIfNeeded(w.treeId);
+      expect(await queued()).toBe(0);
+      // The same result without a revision came from the code before the repair.
+      await pool.query(
+        `update jobs set result = result - 'repairRevision' where type = 'topic-areas'`
+      );
+      await w.services.areas!.requestIfNeeded(w.treeId);
+      expect(await queued()).toBe(1);
     } finally {
       await w.dispose();
     }

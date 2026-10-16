@@ -13,6 +13,15 @@
 // regroup of a tree whose level-2 topics changed meanwhile is dropped). The call is background
 // work under D34's daily cap, audited with the participating sources, and never made in a
 // deterministic golden run (G1).
+//
+// An incomplete or malformed answer is repaired before it is judged (`areas.ts`): code first (a
+// topic left out joins the Area with the nearest members, a topic named twice stays in the nearest,
+// an Area left empty is dropped), then the answer is validated again. Only when more than
+// `ai.areasRepairMaxMissingShare` of the topics were missing, or the answer is still invalid or not
+// JSON of the required shape, is the model asked once more, with the problems listed (the same
+// operation and audit as the first call, attempt 1, under the same cap). Of the answers that
+// validate, the one that needed less repair is used. The change-set summary records what was
+// repaired and how (`summary.repair`); the acceptance check is the same for a repaired answer.
 import { randomUUID } from "node:crypto";
 
 import {
@@ -25,23 +34,32 @@ import type { JobRecord, JsonObject, PgPool } from "@app/db";
 import {
   areaGroupingInput,
   areaGroupingSignature,
+  areaRepairChanged,
+  areaRepairVectors,
   areasGroupingDue,
+  areaUnreadableAnswerLine,
   centralItems,
   changeSetRisk,
+  checkAreaAnswer,
   clipIdea,
   cloneTopicTreeState,
+  describeAreaIssues,
   isLive,
   level2TopicCount,
   parseItemKey,
   pathOf,
   regroupAreas,
+  repairedTopics,
   validateAreaProposal
 } from "@app/domain/topic-tree";
 import type {
+  AreaAnswerCheck,
   AreaGroupingInput,
   AreaProposal,
+  AreaVectors,
   ItemKey,
   RegroupAreasResult,
+  TopicTreeConfig,
   TopicTreeState
 } from "@app/domain/topic-tree";
 
@@ -54,6 +72,7 @@ import type { TopicChangeCoalescer } from "./topic-changes.js";
 import { TopicTreePayloadSchema, topicJobTypes } from "./topic-jobs.js";
 import {
   buildTopicAreasPrompt,
+  buildTopicAreasRepairPrompt,
   parseTopicAreasOutput,
   topicAreasOperation,
   topicAreasPromptVersion
@@ -73,6 +92,15 @@ export const topicAreasLimits = {
   /** A note title in the prompt is cut here. */
   memberTitleMaxChars: 160
 } as const;
+
+/**
+ * The revision of the answer repair a job result records. A build whose last grouping was judged
+ * `invalid` (or unreadable) before the repair existed is asked about once more by `requestIfNeeded`.
+ */
+export const topicAreasRepairRevision = 1;
+
+/** Outcomes that the repair can turn into a grouping: a result of an older revision is not final. */
+const repairableStatuses: ReadonlySet<string> = new Set(["invalid", "invalid_output"]);
 
 /** Job outcomes after which the same build is not asked about again (the model judged it). */
 const settledStatuses: ReadonlySet<string> = new Set([
@@ -117,21 +145,55 @@ interface Prepared {
   units: number;
   fixed: number;
   sourceItemIds: string[];
+  /** What the repair of an answer compares: the input and a copy of the statistics it needs. */
+  input: AreaGroupingInput;
+  vectors: AreaVectors;
+  config: TopicTreeConfig;
 }
 
 type PrepareOutcome = Prepared | { kind: "done"; result: JsonObject };
 
+interface AttemptUsage {
+  aiTaskRunId: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
+/** One call and what it returned: an answer, an answer in the wrong shape, or no answer at all. */
+type Attempt =
+  | ({ kind: "answer"; proposal: AreaProposal } & AttemptUsage)
+  | ({ kind: "unreadable" } & AttemptUsage)
+  | { kind: "stopped"; result: JsonObject };
+
 type Asked =
   | {
       kind: "answer";
+      /** The answer to validate and apply: repaired in code when it needed it. */
       proposal: AreaProposal;
-      aiTaskRunId: string;
+      /** What was repaired and how (`summary.repair`). */
+      repair: JsonObject;
+      aiTaskRunIds: string[];
+      calls: number;
       inputTokens: number | null;
       outputTokens: number | null;
     }
   | { kind: "done"; result: JsonObject };
 
 const round = (value: number, digits = 4): number => Number(value.toFixed(digits));
+
+/** A sum of token counts; unknown as soon as one of them is (never invented). */
+function sumTokens(values: readonly (number | null)[]): number | null {
+  return values.every((value) => value !== null)
+    ? values.reduce<number>((sum, value) => sum + (value as number), 0)
+    : null;
+}
+
+/** Issues by code, for the summary. */
+function issueCounts(issues: readonly { code: string }[]): JsonObject {
+  const counts: Record<string, number> = {};
+  for (const issue of issues) counts[issue.code] = (counts[issue.code] ?? 0) + 1;
+  return counts;
+}
 
 /** Every live topic on the paths from `ids` to the root. */
 function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
@@ -177,6 +239,48 @@ function measurements(result: RegroupAreasResult): JsonObject {
   };
 }
 
+/** `summary.repair`: what the repair did to the answer in use, and how (see the file comment). */
+function repairSummary(args: {
+  /** The check of the answer in use (null when nothing could be read). */
+  check: AreaAnswerCheck | null;
+  answer: "first" | "second";
+  /** The check of the first answer, whose problems the repair call was asked about. */
+  first: AreaAnswerCheck | null;
+  /** Why the model was asked again (null when it was not). */
+  reason: string | null;
+  second: Attempt | null;
+}): JsonObject {
+  const { check, answer, first, reason, second } = args;
+  const deterministic = check !== null && areaRepairChanged(check.report);
+  const how =
+    answer === "second"
+      ? deterministic
+        ? "call+deterministic"
+        : "call"
+      : deterministic
+        ? "deterministic"
+        : "none";
+  return {
+    repaired: check === null ? 0 : repairedTopics(check.report),
+    how,
+    answer,
+    reason,
+    repairCall:
+      second === null
+        ? "none"
+        : second.kind === "stopped"
+          ? String(second.result.status)
+          : second.kind,
+    placed: check?.report.placed ?? 0,
+    deduplicated: check?.report.deduplicated ?? 0,
+    unknownTopics: check?.report.unknownTopics ?? 0,
+    mergedAreas: check?.report.mergedAreas ?? 0,
+    droppedAreas: check?.report.droppedAreas ?? 0,
+    missingShare: round(first?.missingShare ?? 0),
+    issues: issueCounts(first?.issues ?? [])
+  };
+}
+
 export class TopicAreasService {
   public constructor(private readonly options: TopicAreasOptions) {}
 
@@ -208,12 +312,18 @@ export class TopicAreasService {
       if (latest && (latest.status === "queued" || latest.status === "running")) return;
       const build = (await repository.latestStructureBuild(treeId))?.changeSetId ?? null;
       const result = latest?.result ?? null;
+      // An answer judged invalid before the repair existed (no revision, or an older one) is
+      // asked about once more; a result of this revision is final for the build.
+      const repaired =
+        typeof result?.repairRevision === "number" &&
+        result.repairRevision >= topicAreasRepairRevision;
       if (
         result &&
         result.treeId === treeId &&
         (result.build ?? null) === build &&
         typeof result.status === "string" &&
-        settledStatuses.has(result.status)
+        settledStatuses.has(result.status) &&
+        (repaired || !repairableStatuses.has(result.status))
       ) {
         return;
       }
@@ -235,6 +345,7 @@ export class TopicAreasService {
     const finish = (result: JsonObject): JsonObject => ({
       treeId,
       ...result,
+      repairRevision: topicAreasRepairRevision,
       ms: round(performance.now() - started, 1)
     });
     const prepared = await this.options.service.runOnTree(treeId, (cache) => this.prepare(cache));
@@ -251,7 +362,7 @@ export class TopicAreasService {
     };
     if (asked.kind === "done") return finish({ ...base, ...asked.result });
     const usage: JsonObject = {
-      calls: 1,
+      calls: asked.calls,
       inputTokens: asked.inputTokens,
       outputTokens: asked.outputTokens
     };
@@ -343,14 +454,111 @@ export class TopicAreasService {
       contentLanguage,
       units: input.units.length,
       fixed: input.fixed.length,
-      sourceItemIds: [...sources].sort()
+      sourceItemIds: [...sources].sort(),
+      input,
+      vectors: areaRepairVectors(state, input),
+      config
     };
   }
 
-  /** The model call, outside the engine's turn, within the daily cap (D34). */
+  /**
+   * The model call, outside the engine's turn, within the daily cap (D34), and its one repair. The
+   * answer is checked and repaired in code (`checkAreaAnswer`); the model is asked once more only
+   * when many topics are missing, the answer is still invalid after the repair, or it was not JSON
+   * of the required shape. Of the answers that validate, the one that needed less repair is used.
+   */
   private async ask(prepared: Prepared, job: JobRecord, signal: AbortSignal): Promise<Asked> {
+    const first = await this.call(prepared, prepared.prompt, 0, job, signal);
+    if (first.kind === "stopped") return { kind: "done", result: first.result };
+    const { input, config, vectors } = prepared;
+    const firstCheck =
+      first.kind === "answer" ? checkAreaAnswer(input, first.proposal, config, vectors) : null;
+    const reason = firstCheck === null ? "unreadable" : firstCheck.callReason;
+
+    let second: Attempt | null = null;
+    let secondCheck: AreaAnswerCheck | null = null;
+    if (reason !== null) {
+      if (signal.aborted) throw new Error("topics.errors.canceled");
+      const problems =
+        first.kind === "answer" && firstCheck !== null
+          ? describeAreaIssues(input, first.proposal, firstCheck.issues, config)
+          : areaUnreadableAnswerLine;
+      second = await this.call(
+        prepared,
+        buildTopicAreasRepairPrompt(prepared.prompt, prepared.contentLanguage, problems),
+        1,
+        job,
+        signal
+      );
+      if (second.kind === "answer") {
+        secondCheck = checkAreaAnswer(input, second.proposal, config, vectors);
+      }
+    }
+
+    const used: AttemptUsage[] = [
+      first,
+      ...(second !== null && second.kind !== "stopped" ? [second] : [])
+    ];
+    const tokens = {
+      calls: used.length,
+      inputTokens: sumTokens(used.map((attempt) => attempt.inputTokens)),
+      outputTokens: sumTokens(used.map((attempt) => attempt.outputTokens))
+    };
+    const aiTaskRunIds = used.map((attempt) => attempt.aiTaskRunId);
+    const summary = (check: AreaAnswerCheck | null, answer: "first" | "second"): JsonObject =>
+      repairSummary({ check, answer, first: firstCheck, reason, second });
+
+    // The answer that validates after the repair and needed the fewest topics repaired; the repair
+    // call's answer wins a tie (it was written knowing the problems).
+    let chosen: { answer: "first" | "second"; check: AreaAnswerCheck } | null = null;
+    for (const [answer, check] of [
+      ["first", firstCheck],
+      ["second", secondCheck]
+    ] as const) {
+      if (check === null || !check.validation.ok) continue;
+      if (chosen === null || repairedTopics(check.report) <= repairedTopics(chosen.check.report)) {
+        chosen = { answer, check };
+      }
+    }
+    if (chosen !== null) {
+      return {
+        kind: "answer",
+        proposal: chosen.check.proposal,
+        repair: summary(chosen.check, chosen.answer),
+        aiTaskRunIds,
+        ...tokens
+      };
+    }
+    const last = secondCheck ?? firstCheck;
+    if (last === null) {
+      return {
+        kind: "done",
+        result: { status: "invalid_output", ...tokens, repair: summary(null, "first") }
+      };
+    }
+    return {
+      kind: "done",
+      result: {
+        status: "invalid",
+        issues: (last.validation.ok ? [] : last.validation.issues)
+          .slice(0, 50)
+          .map((issue) => ({ ...issue })),
+        ...tokens,
+        repair: summary(last, secondCheck !== null ? "second" : "first")
+      }
+    };
+  }
+
+  /** One structured-output call and its parse; `attempt` 0 is the grouping, 1 its repair. */
+  private async call(
+    prepared: Prepared,
+    prompt: string,
+    attempt: number,
+    job: JobRecord,
+    signal: AbortSignal
+  ): Promise<Attempt> {
     if (!(await this.options.budget.reserve(1))) {
-      return { kind: "done", result: { status: "cap_reached" } };
+      return { kind: "stopped", result: { status: "cap_reached" } };
     }
     const logContext: AiTaskLogContext = {
       jobId: job.id,
@@ -361,14 +569,14 @@ export class TopicAreasService {
       priority: "background",
       contentLanguage: prepared.contentLanguage,
       promptVersion: topicAreasPromptVersion,
-      attempt: 0,
+      attempt,
       sourceItemIds: prepared.sourceItemIds
     };
     let result;
     try {
       result = await this.options.ai.runDefaultTask(
         "structured-output",
-        prepared.prompt,
+        prompt,
         logContext,
         signal,
         {
@@ -383,7 +591,7 @@ export class TopicAreasService {
       if (signal.aborted) throw error;
       this.options.logger?.warn("The topic Areas call failed", error);
       return {
-        kind: "done",
+        kind: "stopped",
         result: {
           status: "call_failed",
           error: error instanceof Error ? error.message.slice(0, 200) : "unknown"
@@ -391,26 +599,17 @@ export class TopicAreasService {
       };
     }
     // No route can serve structured output: nothing changes until one exists.
-    if (!result) return { kind: "done", result: { status: "no_route" } };
-    const tokens = {
-      calls: 1,
-      inputTokens: result.inputTokens ?? null,
-      outputTokens: result.outputTokens ?? null,
-      aiTaskRunId: result.aiTaskRunId
-    };
-    let proposal: AreaProposal;
-    try {
-      proposal = parseTopicAreasOutput(result.output);
-    } catch {
-      return { kind: "done", result: { status: "invalid_output", ...tokens } };
-    }
-    return {
-      kind: "answer",
-      proposal,
+    if (!result) return { kind: "stopped", result: { status: "no_route" } };
+    const usage: AttemptUsage = {
       aiTaskRunId: result.aiTaskRunId,
-      inputTokens: tokens.inputTokens,
-      outputTokens: tokens.outputTokens
+      inputTokens: result.inputTokens ?? null,
+      outputTokens: result.outputTokens ?? null
     };
+    try {
+      return { kind: "answer", proposal: parseTopicAreasOutput(result.output), ...usage };
+    } catch {
+      return { kind: "unreadable", ...usage };
+    }
   }
 
   /** The second turn: validation, the regroup on a copy, acceptance, and the change-set. */
@@ -430,7 +629,8 @@ export class TopicAreasService {
     if (!checked.ok) {
       return {
         status: "invalid",
-        issues: checked.issues.slice(0, 50).map((issue) => ({ ...issue }))
+        issues: checked.issues.slice(0, 50).map((issue) => ({ ...issue })),
+        repair: asked.repair
       };
     }
     const copy = cloneTopicTreeState(state);
@@ -451,7 +651,8 @@ export class TopicAreasService {
     });
     const measured: JsonObject = {
       ...measurements(result),
-      titleIssues: checked.proposal.titleIssues.slice(0, 20).map((issue) => ({ ...issue }))
+      titleIssues: checked.proposal.titleIssues.slice(0, 20).map((issue) => ({ ...issue })),
+      repair: asked.repair
     };
     if (!result.acceptance.accepted) return { status: "rejected", ...measured };
     if (result.events.length === 0) return { status: "no_change", ...measured };
@@ -472,13 +673,13 @@ export class TopicAreasService {
       },
       risk: review ? "high" : changeSetRisk(result.churn.share, config),
       jobId: job.id,
-      aiTaskRunIds: [asked.aiTaskRunId],
+      aiTaskRunIds: asked.aiTaskRunIds,
       summary: {
         ...measured,
         bootstrap: prepared.bootstrap,
         build: prepared.build,
         language: prepared.contentLanguage,
-        calls: 1,
+        calls: asked.calls,
         inputTokens: asked.inputTokens,
         outputTokens: asked.outputTokens
       },

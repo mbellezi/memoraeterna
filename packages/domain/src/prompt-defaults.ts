@@ -689,6 +689,18 @@ export const shippedPromptBodies = [
       'Area covers."},"members":["T3","T4"]}]}'
   },
   {
+    // The one repair of an Areas answer that code could not mend (F2 T24f): the grouping prompt, then what was wrong.
+    id: "topic.areas.repair",
+    caller:
+      "apps/desktop/src/main/services/topic-tree/topic-prompts.ts:buildTopicAreasRepairPrompt",
+    template:
+      "The grouping you gave for the topics above was rejected. Group the same topics again and correct these problems:\n" +
+      "%validation_errors%\n" +
+      "Return the complete corrected grouping, in the same JSON shape, with every topic alias in exactly one Area. Keep " +
+      "every Area title and description in %content_language%, and every Area title different from the others.",
+    keys: ["validation_errors", "content_language"]
+  },
+  {
     // The ranker instruction of the placement gate (F2 D10). A dedicated ranker takes it as plain
     // text with the note as the query and the topic descriptor as the document.
     id: "topic.gate.instruction",

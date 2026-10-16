@@ -82,6 +82,25 @@ export function buildTopicAreasPrompt(input: TopicAreasPromptInput): string {
   });
 }
 
+/**
+ * The one repair of an Areas answer that code could not mend: the grouping prompt followed by what
+ * was wrong with the answer (aliases and counts, never IDs) and the language the titles stay in.
+ */
+export function buildTopicAreasRepairPrompt(
+  prompt: string,
+  contentLanguage: string,
+  validationErrors: string
+): string {
+  return joinPrompts(
+    prompt,
+    "\n\n",
+    renderPrompt("topic.areas.repair", {
+      content_language: contentLanguage,
+      validation_errors: validationErrors
+    })
+  );
+}
+
 /** The wire contract of the Areas answer: a pinned Area to add to, or a new Area, with members. */
 export const TopicAreasOutputSchema = z.object({
   areas: z.array(

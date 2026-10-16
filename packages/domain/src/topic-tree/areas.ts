@@ -12,6 +12,13 @@
 //   single-child chain: its member is promoted to the Areas level as it is. Titles are best effort:
 //   an Area whose proposed title fails the naming rules (length, identifier-shaped, generic, equal
 //   to a member's, taken by another Area) is created unnamed and naming names it later.
+// - repair: an answer that fails validation is repaired in code first. A topic the answer left in
+//   no Area joins the Area whose members' centroid is nearest, a topic in several Areas stays in
+//   the nearest of them, unknown aliases are ignored, a pinned Area named twice is merged and an
+//   Area left without topics is dropped; the repaired answer is validated again. Only when more
+//   than `ai.areasRepairMaxMissingShare` of the topics were missing, or the repaired answer is still
+//   invalid, is the model asked once more (the service makes that call, `describeAreaIssues`
+//   lists what was wrong), and the answer that needed less repair is used.
 // - the regroup as structure events: groups are mapped onto the current AI Areas by maximum member
 //   Jaccard (hungarian.ts) so Area IDs survive; unmatched groups become new Areas, emptied Areas
 //   retire with a redirect to the Area that took most of their topics, and their direct items
@@ -343,6 +350,366 @@ export function validateAreaProposal(
     });
   }
   return { ok: true, proposal: { groups, areaCount, promoted, titleIssues } };
+}
+
+// ---------------------------------------------------------------------------
+// Repair of an incomplete answer
+
+/** What the repair needs of a topic: the items under it and the sum of their unit vectors. */
+export interface AreaTopicVector {
+  n: number;
+  ls: Float64Array;
+}
+export type AreaVectors = ReadonlyMap<string, AreaTopicVector>;
+
+/**
+ * Copies the statistics the repair compares: those of the units and of the children fixed Areas
+ * keep. The copy keeps the repair independent of the tree, which moves on while the model answers.
+ */
+export function areaRepairVectors(state: TopicTreeState, input: AreaGroupingInput): AreaVectors {
+  const vectors = new Map<string, AreaTopicVector>();
+  const add = (id: string): void => {
+    const node = state.topics.get(id);
+    if (!node || !isLive(node) || node.stats.n === 0) return;
+    vectors.set(id, { n: node.stats.n, ls: Float64Array.from(node.stats.ls) });
+  };
+  for (const unit of input.units) add(unit.topicId);
+  for (const area of input.fixed) for (const id of area.kept) add(id);
+  return vectors;
+}
+
+/** What the deterministic repair did to an answer. */
+export interface AreaRepairReport {
+  /** Topics the answer put in no Area that joined the nearest one (or only in an Area it had no right to name). */
+  placed: number;
+  /** Topics the answer put in several Areas (or twice in one) that stay in the nearest only. */
+  deduplicated: number;
+  /** Aliases that are no topic of the list and were ignored. */
+  unknownTopics: number;
+  /** Pinned Areas the answer named again, merged into their first entry. */
+  mergedAreas: number;
+  /** Areas dropped: named a pinned Area that does not exist, or left without a topic. */
+  droppedAreas: number;
+}
+
+export const noAreaRepair: Readonly<AreaRepairReport> = Object.freeze({
+  placed: 0,
+  deduplicated: 0,
+  unknownTopics: 0,
+  mergedAreas: 0,
+  droppedAreas: 0
+});
+
+/** Topics the repair put in an Area (`repaired: n` of the change-set summary). */
+export function repairedTopics(report: AreaRepairReport): number {
+  return report.placed + report.deduplicated;
+}
+
+/** Whether the repair changed anything of the answer. */
+export function areaRepairChanged(report: AreaRepairReport): boolean {
+  return (
+    report.placed +
+      report.deduplicated +
+      report.unknownTopics +
+      report.mergedAreas +
+      report.droppedAreas >
+    0
+  );
+}
+
+interface RepairEntry {
+  /** The pinned Area it adds to, or null for a new Area. */
+  fixed: FixedArea | null;
+  title: string;
+  description: string;
+  /** Topics it keeps, once each, in the order the answer gave them. */
+  units: string[];
+}
+
+/** Cosine between two summed vectors; -Infinity when either has no direction. */
+function sumCosine(a: Float64Array | undefined, b: Float64Array | undefined): number {
+  if (!a || !b) return Number.NEGATIVE_INFINITY;
+  const norms = Math.sqrt(dot(a, a) * dot(b, b));
+  return norms > 0 ? dot(a, b) / norms : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * Repairs an answer in code, without a model (see the module comment). Titles and descriptions
+ * are the model's own and are never changed or invented, so a repaired answer keeps the language
+ * and the title rules `validateAreaProposal` applies. The result may still be invalid: an Area
+ * count outside the band, an Area above the hard fan-out, or no Area to join.
+ */
+export function repairAreaProposal(
+  input: AreaGroupingInput,
+  proposal: AreaProposal,
+  config: TopicTreeConfig,
+  vectors: AreaVectors
+): { proposal: AreaProposal; report: AreaRepairReport } {
+  const unitByAlias = new Map(input.units.map((unit) => [aliasKey(unit.alias), unit]));
+  const unitIndex = new Map(input.units.map((unit, index) => [unit.topicId, index]));
+  const fixedByAlias = new Map(input.fixed.map((area) => [aliasKey(area.alias), area]));
+  const report: AreaRepairReport = { ...noAreaRepair };
+
+  // The entries: what the answer says, unknown aliases ignored and repeats of a pinned Area
+  // merged. The members of an entry that names no pinned Area are placed like missing topics.
+  const fixedEntries = new Map<string, RepairEntry>();
+  const entries: RepairEntry[] = [];
+  const mentions = new Map<string, number>();
+  for (const raw of proposal.areas) {
+    let entry: RepairEntry;
+    if ("alias" in raw) {
+      const fixed = fixedByAlias.get(aliasKey(raw.alias));
+      if (!fixed) {
+        report.droppedAreas += 1;
+        continue;
+      }
+      const known = fixedEntries.get(fixed.topicId);
+      if (known) report.mergedAreas += 1;
+      entry = known ?? { fixed, title: "", description: "", units: [] };
+      if (!known) {
+        fixedEntries.set(fixed.topicId, entry);
+        entries.push(entry);
+      }
+    } else {
+      entry = { fixed: null, title: raw.new.title, description: raw.new.description, units: [] };
+      entries.push(entry);
+    }
+    for (const member of raw.members) {
+      const unit = unitByAlias.get(aliasKey(member));
+      if (!unit) {
+        report.unknownTopics += 1;
+        continue;
+      }
+      mentions.set(unit.topicId, (mentions.get(unit.topicId) ?? 0) + 1);
+      if (!entry.units.includes(unit.topicId)) entry.units.push(unit.topicId);
+    }
+  }
+  for (const count of mentions.values()) if (count > 1) report.deduplicated += 1;
+  // A pinned Area the answer did not name still exists, and a missing topic may join it.
+  for (const fixed of input.fixed) {
+    if (fixedEntries.has(fixed.topicId)) continue;
+    const entry: RepairEntry = { fixed, title: "", description: "", units: [] };
+    fixedEntries.set(fixed.topicId, entry);
+    entries.push(entry);
+  }
+  const isEmptyNew = (entry: RepairEntry): boolean =>
+    entry.fixed === null && entry.units.length === 0;
+  report.droppedAreas += entries.filter(isEmptyNew).length;
+
+  // Fixed Areas first in alias order, then new Areas by their first topic: the order of
+  // `validateAreaProposal`, so ties below never depend on how the model ordered its answer.
+  const fixedOrder = new Map(input.fixed.map((area, index) => [area.topicId, index]));
+  const firstUnit = (entry: RepairEntry): number =>
+    Math.min(...entry.units.map((id) => unitIndex.get(id) as number));
+  const ordered = entries
+    .filter((entry) => !isEmptyNew(entry))
+    .sort((a, b) =>
+      a.fixed && b.fixed
+        ? (fixedOrder.get(a.fixed.topicId) as number) - (fixedOrder.get(b.fixed.topicId) as number)
+        : a.fixed
+          ? -1
+          : b.fixed
+            ? 1
+            : firstUnit(a) - firstUnit(b)
+    );
+
+  // The centroid of an entry's members: the sum of their vectors, from the topics only it
+  // claims and the children a pinned Area keeps.
+  const claims = new Map<string, RepairEntry[]>();
+  for (const entry of ordered) {
+    for (const id of entry.units) claims.set(id, [...(claims.get(id) ?? []), entry]);
+  }
+  const sums = new Map<RepairEntry, Float64Array>();
+  const accumulate = (entry: RepairEntry, id: string): void => {
+    const vector = vectors.get(id);
+    if (!vector) return;
+    const sum = sums.get(entry) ?? new Float64Array(vector.ls.length);
+    for (let i = 0; i < sum.length; i += 1) sum[i] = (sum[i] as number) + (vector.ls[i] as number);
+    sums.set(entry, sum);
+  };
+  for (const entry of ordered) {
+    for (const id of entry.fixed?.kept ?? []) accumulate(entry, id);
+    for (const id of entry.units) if (claims.get(id)?.length === 1) accumulate(entry, id);
+  }
+  const nearest = (id: string, among: readonly RepairEntry[]) => {
+    const own = vectors.get(id)?.ls;
+    let best: { entry: RepairEntry; score: number } | null = null;
+    for (const entry of among) {
+      const score = sumCosine(own, sums.get(entry));
+      if (best === null || score > best.score) best = { entry, score };
+    }
+    return best;
+  };
+
+  // A topic in several Areas stays in the nearest of them.
+  const keeps = new Map<string, RepairEntry>();
+  for (const unit of input.units) {
+    const claimants = claims.get(unit.topicId) ?? [];
+    if (claimants.length > 1) keeps.set(unit.topicId, nearest(unit.topicId, claimants)!.entry);
+  }
+  for (const [id, keeper] of keeps) {
+    for (const entry of claims.get(id) as RepairEntry[]) {
+      if (entry !== keeper) entry.units.splice(entry.units.indexOf(id), 1);
+    }
+    claims.set(id, [keeper]);
+    accumulate(keeper, id);
+  }
+
+  // A topic in no Area joins the nearest Area that has room, one topic at a time in alias order.
+  // With no vectors to compare it joins the smallest Area.
+  const size = (entry: RepairEntry): number => (entry.fixed?.kept.length ?? 0) + entry.units.length;
+  for (const unit of input.units) {
+    if ((claims.get(unit.topicId) ?? []).length > 0) continue;
+    const room = ordered.filter((entry) => size(entry) < config.fanOut.hardMax);
+    const best = nearest(unit.topicId, room);
+    if (best === null) continue;
+    const target =
+      best.score === Number.NEGATIVE_INFINITY
+        ? room.reduce((smallest, entry) => (size(entry) < size(smallest) ? entry : smallest))
+        : best.entry;
+    target.units.push(unit.topicId);
+    claims.set(unit.topicId, [target]);
+    report.placed += 1;
+  }
+
+  // The repaired answer. An Area whose topics all went elsewhere is dropped.
+  const areas: AreaProposalEntry[] = [];
+  for (const entry of ordered) {
+    const members = [...entry.units]
+      .sort((a, b) => (unitIndex.get(a) as number) - (unitIndex.get(b) as number))
+      .map((id) => (input.units[unitIndex.get(id) as number] as AreaUnit).alias);
+    if (entry.fixed) {
+      if (members.length > 0) areas.push({ alias: entry.fixed.alias, members });
+    } else if (members.length === 0) report.droppedAreas += 1;
+    else areas.push({ new: { title: entry.title, description: entry.description }, members });
+  }
+  return { proposal: { areas }, report };
+}
+
+/** An answer checked and, when it is not valid, repaired in code (see the module comment). */
+export interface AreaAnswerCheck {
+  /** The issues of the answer as the model gave it (none when it was valid). */
+  issues: AreaProposalIssue[];
+  /** The answer after the repair: the answer itself when it was valid. */
+  proposal: AreaProposal;
+  report: AreaRepairReport;
+  /** The repaired answer, validated. */
+  validation: AreaProposalValidation;
+  /** Topics the answer put in no Area, as a share of all the topics. */
+  missingShare: number;
+  /** Why the model should be asked once more: many topics missing, or invalid after repair. */
+  callReason: "missing-share" | "invalid" | null;
+}
+
+export function checkAreaAnswer(
+  input: AreaGroupingInput,
+  proposal: AreaProposal,
+  config: TopicTreeConfig,
+  vectors: AreaVectors
+): AreaAnswerCheck {
+  const given = validateAreaProposal(input, proposal, config);
+  if (given.ok) {
+    return {
+      issues: [],
+      proposal,
+      report: { ...noAreaRepair },
+      validation: given,
+      missingShare: 0,
+      callReason: null
+    };
+  }
+  const repaired = repairAreaProposal(input, proposal, config, vectors);
+  const validation = validateAreaProposal(input, repaired.proposal, config);
+  const missingShare = input.units.length > 0 ? repaired.report.placed / input.units.length : 0;
+  return {
+    issues: given.issues,
+    proposal: repaired.proposal,
+    report: repaired.report,
+    validation,
+    missingShare,
+    callReason: !validation.ok
+      ? "invalid"
+      : missingShare > config.ai.areasRepairMaxMissingShare
+        ? "missing-share"
+        : null
+  };
+}
+
+/** The line of the repair prompt for an answer that was not JSON of the required shape. */
+export const areaUnreadableAnswerLine =
+  "The answer was not valid JSON of the required shape. Return only the JSON.";
+
+/** The most aliases a line of the repair prompt lists. */
+const repairLineAliases = 20;
+
+/**
+ * The lines of the repair prompt: what was wrong with an answer, in a fixed order, with aliases
+ * (never IDs) and counts only, so the prompt stays a function of content. Aliases the model made
+ * up are shown reduced to plain characters.
+ */
+export function describeAreaIssues(
+  input: AreaGroupingInput,
+  proposal: AreaProposal,
+  issues: readonly AreaProposalIssue[],
+  config: TopicTreeConfig
+): string {
+  const unitIndex = new Map(input.units.map((unit, index) => [unit.alias, index]));
+  const unknown = Number.MAX_SAFE_INTEGER;
+  const listOf = (code: AreaProposalIssueCode): string | null => {
+    const found = [
+      ...new Set(
+        issues.flatMap((issue) =>
+          issue.code === code && issue.alias !== null
+            ? [issue.alias.replace(/[^\p{L}\p{N}_.-]/gu, "").slice(0, 16)]
+            : []
+        )
+      )
+    ].filter((alias) => alias !== "");
+    found.sort(
+      (a, b) =>
+        (unitIndex.get(a) ?? unknown) - (unitIndex.get(b) ?? unknown) || compareStrings(a, b)
+    );
+    if (found.length === 0) return null;
+    const shown = found.slice(0, repairLineAliases).join(", ");
+    return found.length > repairLineAliases
+      ? `${shown} and ${found.length - repairLineAliases} more`
+      : shown;
+  };
+  const lines: string[] = [];
+  const add = (code: AreaProposalIssueCode, text: (list: string) => string): void => {
+    const list = listOf(code);
+    if (list !== null) lines.push(text(list));
+  };
+  add("missing-topic", (list) => `Topics in no Area (put each in exactly one Area): ${list}`);
+  add("duplicate-topic", (list) => `Topics in more than one Area (keep each in one): ${list}`);
+  add("unknown-topic", (list) => `Not topics of the list (use only the aliases given): ${list}`);
+  add(
+    "unknown-area",
+    (list) => `Not pinned Areas (add to a pinned Area only by its alias): ${list}`
+  );
+  add("duplicate-area", (list) => `Pinned Areas listed more than once (list each once): ${list}`);
+  const empty = issues.filter((issue) => issue.code === "empty-area").length;
+  if (empty > 0) {
+    lines.push(
+      `${empty} ${empty === 1 ? "Area has" : "Areas have"} no topic (every Area needs at least one)`
+    );
+  }
+  if (issues.some((issue) => issue.code === "area-count")) {
+    const known = new Set(input.units.map((unit) => aliasKey(unit.alias)));
+    const created = proposal.areas.filter(
+      (entry) => "new" in entry && entry.members.some((member) => known.has(aliasKey(member)))
+    ).length;
+    const count = input.fixed.length + created;
+    lines.push(
+      `The answer makes ${count} ${count === 1 ? "Area" : "Areas"} (pinned Areas included); ` +
+        `make between ${config.areas.min} and ${config.areas.max}`
+    );
+  }
+  add(
+    "area-too-large",
+    (list) => `Too many topics in the Area of ${list} (at most ${config.fanOut.hardMax} per Area)`
+  );
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------

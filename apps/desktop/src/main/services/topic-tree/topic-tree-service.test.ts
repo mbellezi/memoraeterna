@@ -10,6 +10,7 @@ describe("the structural configuration hash (D39)", () => {
   it("ignores operational settings: the daily cap, the debounce, audits, naming, overviews", () => {
     for (const overrides of [
       { ai: { maxBackgroundCallsPerDay: 5 } },
+      { ai: { areasRepairMaxMissingShare: 0.3 } },
       { jobs: { debounceMs: 1_000, debounceCapMs: 2_000 } },
       { audit: { everyChangeSets: 7 } },
       { naming: { renameDrift: 0.5 } },

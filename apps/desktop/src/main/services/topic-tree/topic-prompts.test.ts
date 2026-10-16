@@ -7,6 +7,7 @@ import { renderPrompt } from "../prompt-runtime.js";
 import {
   TopicAreasOutputSchema,
   buildTopicAreasPrompt,
+  buildTopicAreasRepairPrompt,
   buildTopicNamePrompt,
   buildTopicNameRepairPrompt,
   parseTopicAreasOutput,
@@ -153,6 +154,33 @@ describe("the Areas prompt", () => {
     ).toHaveLength(2);
     expect(TopicAreasOutputSchema.safeParse({ areas: [{ members: ["T1"] }] }).success).toBe(false);
     expect(() => parseTopicAreasOutput("not json")).toThrow();
+  });
+
+  it("follows the grouping prompt with what was wrong, in the language the titles stay in", () => {
+    const base = buildTopicAreasPrompt(areas);
+    const issues = "Topics in no Area (put each in exactly one Area): T6, T9";
+    const text = buildTopicAreasRepairPrompt(base, "es", issues);
+    expect(text.startsWith(`${base}\n\n`)).toBe(true);
+    const repair = text.slice(base.length);
+    expect(repair).toContain("was rejected");
+    expect(repair).toContain(issues);
+    expect(repair).toContain("title and description in Spanish");
+    expect(repair).toContain("every topic alias in exactly one Area");
+    expect(text).not.toMatch(/%[a-z_]+%/u);
+    // Content only: the same problems give the same prompt, and no ID is in it.
+    expect(buildTopicAreasRepairPrompt(base, "es", issues)).toBe(text);
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/u);
+  });
+
+  it("is declared in the catalog next to the grouping prompt", () => {
+    const definition = promptDefinition("topic.areas.repair");
+    expect(definition.task).toBe("structured-output");
+    expect(definition.variables.map((variable) => variable.key).sort()).toEqual([
+      "content_language",
+      "validation_errors"
+    ]);
+    expect(definition.fragmentIds).toContain("topic.areas");
+    expect(definition.fragmentIds).toContain("shared.output_language");
   });
 });
 

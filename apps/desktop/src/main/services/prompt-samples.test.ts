@@ -101,6 +101,7 @@ describe("bounded catalog sample runner", () => {
         "topic.name",
         "topic.name.repair",
         "topic.areas",
+        "topic.areas.repair",
         "topic.gate.instruction",
         "topic.overview",
         "topic.overview.repair",
@@ -110,6 +111,7 @@ describe("bounded catalog sample runner", () => {
       "topic.name",
       "topic.name.repair",
       "topic.areas",
+      "topic.areas.repair",
       "topic.overview",
       "topic.overview.repair"
     ]);

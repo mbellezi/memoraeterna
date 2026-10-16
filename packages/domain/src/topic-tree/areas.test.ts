@@ -3,15 +3,27 @@ import { describe, expect, it } from "vitest";
 import {
   areaGroupingInput,
   areaGroupingSignature,
+  areaRepairChanged,
+  areaRepairVectors,
   areaShape,
   centroidSilhouette,
+  checkAreaAnswer,
+  describeAreaIssues,
   judgeAreaRegroup,
   levelOneTopic,
   regroupAreas,
+  repairAreaProposal,
+  repairedTopics,
   silhouettePoints,
   validateAreaProposal
 } from "./areas.js";
-import type { AreaGroupingInput, AreaProposal, AreaShape, ValidAreaProposal } from "./areas.js";
+import type {
+  AreaGroupingInput,
+  AreaProposal,
+  AreaShape,
+  AreaVectors,
+  ValidAreaProposal
+} from "./areas.js";
 import { topicTreeConfigWith } from "./config.js";
 import { defaultTopicTreeConfig } from "./config.js";
 import { applyEvents, createTopicTreeEditor, invertEvents } from "./events.js";
@@ -565,5 +577,388 @@ describe("Areas: acceptance", () => {
     expect(mixed).toBeLessThan(good);
     expect(centroidSilhouette(world.state, points, () => "one")).toBe(0);
     expect(areaShape(world.state, config)).toMatchObject({ areas: 8, singleChildTopics: 0 });
+  });
+});
+
+describe("Areas: repair of an incomplete answer", () => {
+  const world = areaWorld((cluster) => groupOfCluster(cluster));
+  const input = areaGroupingInput(world.state);
+  const vectors = areaRepairVectors(world.state, input);
+  const full = trueProposal(world, input);
+
+  type NewEntry = { new: { title: string; description: string }; members: string[] };
+  const entryOf = (proposal: AreaProposal, group: number) =>
+    proposal.areas.find((area) => "new" in area && area.new.title === areaNames[group]) as NewEntry;
+  const membersAt = (proposal: AreaProposal, group: number): string[] =>
+    [...entryOf(proposal, group).members].sort();
+  const copy = (): AreaProposal => structuredClone(full);
+
+  it("puts a missing topic in the Area whose members are nearest", () => {
+    const answer = copy();
+    const missing = entryOf(answer, 5).members.pop() as string;
+    const check = checkAreaAnswer(input, answer, config, vectors);
+    expect(check.issues).toEqual([{ code: "missing-topic", alias: missing }]);
+    expect(check.report).toMatchObject({ placed: 1, deduplicated: 0, droppedAreas: 0 });
+    expect(repairedTopics(check.report)).toBe(1);
+    expect(areaRepairChanged(check.report)).toBe(true);
+    expect(check.missingShare).toBeCloseTo(1 / 32);
+    expect(check.callReason).toBeNull();
+    expect(check.validation.ok).toBe(true);
+    expect(membersAt(check.proposal, 5)).toEqual(membersAt(full, 5));
+    // Titles and descriptions are the model's own, one Area per title, in content order.
+    const titles = (proposal: AreaProposal) =>
+      proposal.areas
+        .map((area) => ("new" in area ? area.new : null))
+        .sort((a, b) => (a?.title ?? "").localeCompare(b?.title ?? ""));
+    expect(titles(check.proposal)).toEqual(titles(full));
+  });
+
+  it("repairs a good grouping that left a topic out, and the Areas regroup as the complete one", () => {
+    const mixed = areaWorld();
+    const mixedInput = areaGroupingInput(mixed.state);
+    const answer = trueProposal(mixed, mixedInput);
+    (answer.areas[3] as NewEntry).members.pop();
+    const check = checkAreaAnswer(
+      mixedInput,
+      answer,
+      config,
+      areaRepairVectors(mixed.state, mixedInput)
+    );
+    expect(check.callReason).toBeNull();
+    const result = regroup(mixed, valid(mixedInput, check.proposal), mixedInput);
+    expect(result.acceptance.accepted).toBe(true);
+    expect(result.acceptance.silhouette.after).toBeGreaterThan(result.acceptance.silhouette.before);
+    expect(checkInvariants(mixed.state, config, { areasActive: true }).hard).toBe(0);
+  });
+
+  it("repairs the same way under other IDs: the repair is a function of content", () => {
+    const other = areaWorld((cluster) => groupOfCluster(cluster), 500_000_000);
+    const otherInput = areaGroupingInput(other.state);
+    const answer = copy();
+    entryOf(answer, 2).members.pop();
+    entryOf(answer, 7).members.splice(1, 1);
+    const plain = checkAreaAnswer(input, answer, config, vectors);
+    const moved = checkAreaAnswer(
+      otherInput,
+      answer,
+      config,
+      areaRepairVectors(other.state, otherInput)
+    );
+    expect(plain.report.placed).toBe(2);
+    expect(moved.proposal).toEqual(plain.proposal);
+    expect(moved.report).toEqual(plain.report);
+  });
+
+  it("keeps a topic named in several Areas only in the nearest one", () => {
+    const answer = copy();
+    const kept = entryOf(answer, 3).members[0] as string;
+    entryOf(answer, 0).members.push(kept);
+    entryOf(answer, 6).members.push(kept, kept);
+    const check = checkAreaAnswer(input, answer, config, vectors);
+    expect(check.issues.map((issue) => issue.code)).toContain("duplicate-topic");
+    expect(check.report).toMatchObject({ placed: 0, deduplicated: 1 });
+    expect(check.validation.ok).toBe(true);
+    for (const group of [0, 3, 6]) {
+      expect(membersAt(check.proposal, group)).toEqual(membersAt(full, group));
+    }
+    expect(check.callReason).toBeNull();
+  });
+
+  it("ignores unknown aliases, merges a repeated pinned Area and drops Areas it empties", () => {
+    const pinned = areaWorld((cluster) => groupOfCluster(cluster));
+    createTopicTreeEditor(pinned.state, { record: false }).manageTopic(
+      pinned.areas[0] as string,
+      "pinned"
+    );
+    const pinnedInput = areaGroupingInput(pinned.state);
+    const units = pinnedInput.units;
+    expect(units).toHaveLength(28);
+    // The pinned Area is named twice (once as "a1"), an unknown pinned alias holds two topics, an
+    // unknown topic sits in the first entry and a new Area holds nothing known.
+    const answer: AreaProposal = {
+      areas: [
+        { alias: "A1", members: [units[0]!.alias, "T999"] },
+        { alias: "a1", members: [units[1]!.alias] },
+        { alias: "A9", members: [units[2]!.alias, units[3]!.alias] },
+        { new: { title: "Vazia", description: "Nada." }, members: ["T998"] },
+        ...Array.from({ length: 6 }, (_, area) => ({
+          new: { title: areaNames[area + 1] as string, description: "Area." },
+          members: units.slice(4 + area * 4, 8 + area * 4).map((unit) => unit.alias)
+        }))
+      ]
+    };
+    const check = checkAreaAnswer(
+      pinnedInput,
+      answer,
+      config,
+      areaRepairVectors(pinned.state, pinnedInput)
+    );
+    expect(check.issues.map((issue) => issue.code).sort()).toEqual([
+      "duplicate-area",
+      "empty-area",
+      "unknown-area",
+      "unknown-topic",
+      "unknown-topic"
+    ]);
+    // The two topics of the unknown pinned Area are placed like missing ones.
+    expect(check.report).toEqual({
+      placed: 2,
+      deduplicated: 0,
+      unknownTopics: 2,
+      mergedAreas: 1,
+      droppedAreas: 2
+    });
+    expect(check.validation.ok).toBe(true);
+    const pinnedEntries = check.proposal.areas.filter((area) => "alias" in area);
+    expect(pinnedEntries).toHaveLength(1);
+    expect(pinnedEntries[0]).toMatchObject({ alias: "A1" });
+    expect(check.proposal.areas.some((area) => "new" in area && area.new.title === "Vazia")).toBe(
+      false
+    );
+    expect(check.proposal.areas.flatMap((area) => area.members).sort()).toEqual(
+      units.map((unit) => unit.alias).sort()
+    );
+    expect(check.callReason).toBeNull();
+  });
+
+  it("asks the model again only for many missing topics or an answer that stays invalid", () => {
+    // 4 of 32 topics (12.5%) missing is more than the share, 3 (9.4%) is not.
+    const many = copy();
+    for (const group of [0, 1, 2, 3]) entryOf(many, group).members.pop();
+    const manyCheck = checkAreaAnswer(input, many, config, vectors);
+    expect(manyCheck.validation.ok).toBe(true);
+    expect(manyCheck.missingShare).toBeCloseTo(4 / 32);
+    expect(manyCheck.callReason).toBe("missing-share");
+    const few = copy();
+    for (const group of [0, 1, 2]) entryOf(few, group).members.pop();
+    expect(checkAreaAnswer(input, few, config, vectors).callReason).toBeNull();
+    // The share is configuration.
+    const strict = topicTreeConfigWith({
+      areas: { minLevel2Topics: 8 },
+      ai: { areasRepairMaxMissingShare: 0 }
+    });
+    expect(checkAreaAnswer(input, few, strict, vectors).callReason).toBe("missing-share");
+
+    // One Area only is out of the band, which code does not fix.
+    const everything: AreaProposal = {
+      areas: [
+        { new: { title: "Tudo", description: "Tudo." }, members: input.units.map((u) => u.alias) }
+      ]
+    };
+    const wide = checkAreaAnswer(input, everything, config, vectors);
+    expect(wide.validation.ok).toBe(false);
+    expect(wide.callReason).toBe("invalid");
+    // Nothing usable at all: there is no Area to join.
+    const nothing = checkAreaAnswer(input, { areas: [] }, config, vectors);
+    expect(nothing.validation.ok).toBe(false);
+    expect(nothing.report.placed).toBe(0);
+    expect(nothing.callReason).toBe("invalid");
+  });
+
+  it("returns a valid answer as it is", () => {
+    const check = checkAreaAnswer(input, full, config, vectors);
+    expect(check.proposal).toBe(full);
+    expect(check.issues).toEqual([]);
+    expect(areaRepairChanged(check.report)).toBe(false);
+    expect(check.callReason).toBeNull();
+  });
+
+  it("copies the statistics it compares", () => {
+    const fresh = areaWorld((cluster) => groupOfCluster(cluster));
+    const freshInput = areaGroupingInput(fresh.state);
+    const snapshot = areaRepairVectors(fresh.state, freshInput);
+    const unit = freshInput.units[0]!.topicId;
+    const before = Array.from(snapshot.get(unit)!.ls);
+    getTopic(fresh.state, unit).stats.ls.fill(0);
+    expect(Array.from(snapshot.get(unit)!.ls)).toEqual(before);
+    expect(snapshot.get(unit)!.n).toBe(8);
+  });
+});
+
+describe("Areas: repair on a small hand-made input", () => {
+  // Topics on two axes: T1-T3 and T7 on x, T4-T6 on y.
+  const units = ["u1", "u2", "u3", "u4", "u5", "u6", "u7"].map((topicId, index) => ({
+    alias: `T${index + 1}`,
+    topicId,
+    areaId: "old",
+    depth: 2 as const,
+    title: null
+  }));
+  const small: AreaGroupingInput = { rootId: "root", units, fixed: [], areas: ["old"] };
+  const point = (x: number, y: number) => ({ n: 4, ls: Float64Array.from([x, y]) });
+  const vectors: AreaVectors = new Map([
+    ["u1", point(4, 0.2)],
+    ["u2", point(4, 0.1)],
+    ["u3", point(3.9, 0.5)],
+    ["u4", point(0.3, 4)],
+    ["u5", point(0.1, 4)],
+    ["u6", point(0.4, 3.9)],
+    ["u7", point(4, 0.1)]
+  ]);
+  const band = topicTreeConfigWith({
+    fanOut: { min: 2, targetMin: 2, targetMax: 3, max: 4, hardMax: 4, rootTarget: 0 },
+    areas: { min: 2, target: 2, max: 2, minLevel2Topics: 4 }
+  });
+  const area = (title: string, members: string[]) => ({
+    new: { title, description: `${title}.` },
+    members
+  });
+
+  it("joins a missing topic to the nearest Area, and the smallest one when nothing compares", () => {
+    const answer: AreaProposal = {
+      areas: [area("Eixo x", ["T1", "T2", "T7"]), area("Eixo y", ["T4", "T6"])]
+    };
+    const nearest = repairAreaProposal(small, answer, band, vectors);
+    expect(nearest.proposal.areas).toEqual([
+      area("Eixo x", ["T1", "T2", "T3", "T7"]),
+      area("Eixo y", ["T4", "T5", "T6"])
+    ]);
+    expect(nearest.report).toEqual({
+      placed: 2,
+      deduplicated: 0,
+      unknownTopics: 0,
+      mergedAreas: 0,
+      droppedAreas: 0
+    });
+
+    // Without statistics a topic joins the Area with the fewest topics, ties to the first.
+    const lopsided: AreaProposal = {
+      areas: [area("Eixo x", ["T1", "T2", "T4"]), area("Eixo y", ["T6"])]
+    };
+    const blind = repairAreaProposal(small, lopsided, band, new Map());
+    expect(blind.proposal.areas).toEqual([
+      area("Eixo x", ["T1", "T2", "T4", "T7"]),
+      area("Eixo y", ["T3", "T5", "T6"])
+    ]);
+  });
+
+  it("never fills an Area above the hard fan-out", () => {
+    // The x Area holds four topics already (the hard fan-out): T7 is on x but joins y.
+    const answer: AreaProposal = {
+      areas: [area("Eixo x", ["T1", "T2", "T3", "T4"]), area("Eixo y", ["T5", "T6"])]
+    };
+    const repaired = repairAreaProposal(small, answer, band, vectors);
+    expect(repaired.proposal.areas).toEqual([
+      area("Eixo x", ["T1", "T2", "T3", "T4"]),
+      area("Eixo y", ["T5", "T6", "T7"])
+    ]);
+    expect(validateAreaProposal(small, repaired.proposal, band).ok).toBe(true);
+  });
+
+  it("keeps a duplicated topic where it is nearest, whatever the order of the answer", () => {
+    const answer: AreaProposal = {
+      areas: [area("Eixo y", ["T4", "T5", "T6"]), area("Eixo x", ["T1", "T2", "T3", "T4", "T7"])]
+    };
+    const repaired = repairAreaProposal(small, answer, topicTreeConfigWith({}), vectors);
+    expect(repaired.report.deduplicated).toBe(1);
+    expect(repaired.proposal.areas).toEqual([
+      area("Eixo x", ["T1", "T2", "T3", "T7"]),
+      area("Eixo y", ["T4", "T5", "T6"])
+    ]);
+  });
+
+  it("joins a pinned Area when its kept children are the nearest members", () => {
+    const wide = topicTreeConfigWith({ areas: { min: 2, target: 2, max: 3, minLevel2Topics: 4 } });
+    const withPinned: AreaGroupingInput = {
+      ...small,
+      fixed: [
+        {
+          alias: "A1",
+          topicId: "pinned",
+          title: "Fixo",
+          description: null,
+          kept: ["k1", "k2"],
+          reason: "protected"
+        }
+      ]
+    };
+    const withKept = new Map(vectors).set("k1", point(5, 0.1)).set("k2", point(5, 0.2));
+    const answer: AreaProposal = { areas: [area("Eixo y", ["T4", "T5", "T6"])] };
+    const repaired = repairAreaProposal(withPinned, answer, wide, withKept);
+    expect(repaired.proposal.areas).toEqual([
+      { alias: "A1", members: ["T1", "T2", "T3", "T7"] },
+      area("Eixo y", ["T4", "T5", "T6"])
+    ]);
+    expect(validateAreaProposal(withPinned, repaired.proposal, wide).ok).toBe(true);
+  });
+
+  it("leaves a topic unplaced when no Area has room, and the validation says so", () => {
+    const tiny = topicTreeConfigWith({
+      fanOut: { min: 2, targetMin: 2, targetMax: 2, max: 2, hardMax: 2, rootTarget: 0 },
+      areas: { min: 2, target: 2, max: 2, minLevel2Topics: 4 }
+    });
+    const four: AreaGroupingInput = { ...small, units: units.slice(0, 5) };
+    const answer: AreaProposal = {
+      areas: [area("Eixo x", ["T1", "T2"]), area("Eixo y", ["T4", "T5"])]
+    };
+    const repaired = repairAreaProposal(four, answer, tiny, vectors);
+    expect(repaired.report.placed).toBe(0);
+    const check = checkAreaAnswer(four, answer, tiny, vectors);
+    expect(check.validation).toEqual({
+      ok: false,
+      issues: [{ code: "missing-topic", alias: "T3" }]
+    });
+    expect(check.callReason).toBe("invalid");
+  });
+});
+
+describe("Areas: the lines of the repair prompt", () => {
+  const units = Array.from({ length: 26 }, (_, index) => ({
+    alias: `T${index + 1}`,
+    topicId: `u${index + 1}`,
+    areaId: "old",
+    depth: 2 as const,
+    title: null
+  }));
+  const input: AreaGroupingInput = { rootId: "root", units, fixed: [], areas: ["old"] };
+  const band = topicTreeConfigWith({
+    fanOut: { min: 2, targetMin: 2, targetMax: 3, max: 4, hardMax: 4, rootTarget: 0 },
+    areas: { min: 2, target: 2, max: 2, minLevel2Topics: 4 }
+  });
+  const area = (title: string, members: string[]) => ({
+    new: { title, description: `${title}.` },
+    members
+  });
+  const describe_ = (proposal: AreaProposal, small = input): string => {
+    const result = validateAreaProposal(small, proposal, band);
+    if (result.ok) throw new Error("expected an invalid answer");
+    return describeAreaIssues(small, proposal, result.issues, band);
+  };
+
+  it("lists the problems by alias in a fixed order and reduces made-up aliases to plain text", () => {
+    const six: AreaGroupingInput = { ...input, units: units.slice(0, 6) };
+    const answer: AreaProposal = {
+      areas: [area("A", ["T1", "T1", "T2", "T9<>"]), area("B", ["T2", "T3"]), area("C", ["T4"])]
+    };
+    expect(describe_(answer, six)).toBe(
+      [
+        "Topics in no Area (put each in exactly one Area): T5, T6",
+        "Topics in more than one Area (keep each in one): T1, T2",
+        "Not topics of the list (use only the aliases given): T9",
+        "The answer makes 3 Areas (pinned Areas included); make between 2 and 2"
+      ].join("\n")
+    );
+  });
+
+  it("is the same for the same answer and names no ID", () => {
+    const answer: AreaProposal = { areas: [area("A", ["T3", "T1"]), area("B", ["T2"])] };
+    const text = describe_(answer);
+    expect(text).toBe(describe_(structuredClone(answer)));
+    expect(text).not.toMatch(/\bu\d+\b/u);
+  });
+
+  it("cuts a long list and reports an empty Area, the Area count and an Area that is too large", () => {
+    const text = describe_({
+      areas: [area("Vazia", []), area("A", ["T1", "T2", "T3", "T4", "T5"])]
+    });
+    const listed = Array.from({ length: 20 }, (_, index) => `T${index + 6}`).join(", ");
+    expect(text).toBe(
+      [
+        `Topics in no Area (put each in exactly one Area): ${listed} and 1 more`,
+        "1 Area has no topic (every Area needs at least one)",
+        "The answer makes 1 Area (pinned Areas included); make between 2 and 2",
+        "Too many topics in the Area of T1 (at most 4 per Area)"
+      ].join("\n")
+    );
   });
 });

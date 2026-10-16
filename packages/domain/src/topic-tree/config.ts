@@ -325,7 +325,14 @@ const UnsortedSchema = z
 /** Background topic AI (D34): naming, Areas and label embeddings per local day. */
 const AiSchema = z
   .object({
-    maxBackgroundCallsPerDay: int(0, 1_000_000).default(300)
+    maxBackgroundCallsPerDay: int(0, 1_000_000).default(300),
+    /**
+     * Repair of an Areas answer (D12): topics the answer left in no Area join the nearest Area in
+     * code; only when a larger share of the topics is missing, or the answer is otherwise invalid
+     * after that, is the model asked once more. Operational, not structural: it never changes the
+     * configuration hash that triggers a rebuild.
+     */
+    areasRepairMaxMissingShare: share.default(0.1)
   })
   .strict();
 

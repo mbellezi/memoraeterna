@@ -77,6 +77,7 @@ describe("topic tree configuration", () => {
       renameDrift: 0.3
     });
     expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10 });
+    expect(config.ai.areasRepairMaxMissingShare).toBe(0.1);
     expect(config.audit.misParentMargin).toBe(0.1);
     expect(config.space.reembedCoverage).toBe(0.95);
     expect(config.unsorted).toEqual({ shareTarget: 0.02, minItems: 50 });
@@ -118,6 +119,7 @@ describe("topic tree configuration", () => {
       { leaf: { target: 40 } },
       { depth: { target: 8, cap: 7 } },
       { areas: { max: 17 } },
+      { ai: { areasRepairMaxMissingShare: 1.5 } },
       { areas: { min: 11, target: 10 } },
       { placement: { ambiguityMargin: -0.1 } },
       { gate: { theta: 1.5 } },
@@ -181,7 +183,9 @@ describe("topic tree configuration", () => {
       Object.fromEntries(Object.entries(defaultTopicTreeConfig).reverse())
     );
     expect(canonicalTopicTreeConfig(reordered)).toBe(json);
-    expect(json.startsWith('{"ai":{"maxBackgroundCallsPerDay":300}')).toBe(true);
+    expect(
+      json.startsWith('{"ai":{"areasRepairMaxMissingShare":0.1,"maxBackgroundCallsPerDay":300}')
+    ).toBe(true);
     expect(canonicalTopicTreeConfig(topicTreeConfigWith({ gate: { theta: 0.6 } }))).not.toBe(json);
   });
 });

@@ -43,6 +43,7 @@ import {
 } from "@app/domain/topic-tree";
 import {
   buildTopicAreasPrompt,
+  buildTopicAreasRepairPrompt,
   buildTopicNamePrompt,
   buildTopicNameRepairPrompt,
   parseTopicAreasOutput
@@ -404,18 +405,26 @@ export function promptSampleCall(
         }
       };
     }
-    if (promptId === "topic.areas") {
+    if (promptId === "topic.areas" || promptId === "topic.areas.repair") {
       const areas = defaultTopicTreeConfig.areas;
+      const prompt = buildTopicAreasPrompt({
+        contentLanguage: "en",
+        areas: { target: areas.target, min: areas.min, max: areas.max },
+        pinned: [{ alias: "A1", title: "Learning", description: "How people learn." }],
+        topics: [
+          { alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] },
+          { alias: "T2", titles: ["Ocean currents", "Tides"] }
+        ]
+      });
       return {
-        input: buildTopicAreasPrompt({
-          contentLanguage: "en",
-          areas: { target: areas.target, min: areas.min, max: areas.max },
-          pinned: [{ alias: "A1", title: "Learning", description: "How people learn." }],
-          topics: [
-            { alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] },
-            { alias: "T2", titles: ["Ocean currents", "Tides"] }
-          ]
-        }),
+        input:
+          promptId === "topic.areas"
+            ? prompt
+            : buildTopicAreasRepairPrompt(
+                prompt,
+                "en",
+                "Topics in no Area (put each in exactly one Area): T2"
+              ),
         task: "structured-output",
         validate: (o) => {
           const members = parseTopicAreasOutput(o).areas.flatMap((area) => area.members);
