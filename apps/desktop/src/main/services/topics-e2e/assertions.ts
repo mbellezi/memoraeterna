@@ -71,6 +71,8 @@ export interface E6Report {
     /** D27: notes at the root or waiting at an internal topic, over the expected items. */
     unsortedShare: number;
     needsVectorItems: number;
+    /** Failed ingestion work outside the topic jobs, empty when none. */
+    failedWork: string[];
     importToNamedMs: number | null;
     importToHeavyDoneMs: number | null;
     importToDrainedMs: number | null;
@@ -208,24 +210,28 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
         `${run.recorded.notes} notes and ${run.recorded.topics} topics`
     );
   }
+  // E6 gates on the topic side only (spec section 8): the lane drained in time, nothing threw and
+  // no topic job failed. Failed ingestion work (a weak local writer's invalid knowledge-graph JSON,
+  // for example) is reported, not gating.
   const failedRuns = store.ingestionRuns.filter((row) => row.status !== "succeeded");
+  const failedTopicJobs = store.failedJobs.filter((row) => row.type.startsWith("topic-"));
+  const failedOtherJobs = store.failedJobs.filter((row) => !row.type.startsWith("topic-"));
   check(
     "lane",
-    "The import and the light lane finished in time without failed work",
-    run.stoppedBy === null &&
-      run.errors.length === 0 &&
-      failedRuns.length === 0 &&
-      store.failedStages === 0 &&
-      store.failedJobs.length === 0,
+    "The import and the light lane finished in time without failed topic work",
+    run.stoppedBy === null && run.errors.length === 0 && failedTopicJobs.length === 0,
     run.stoppedBy !== null
       ? `stopped by ${run.stoppedBy}`
       : [
-          ...failedRuns.map((row) => `${row.count} ingestion runs ${row.status}`),
-          ...(store.failedStages > 0 ? [`${store.failedStages} failed stages`] : []),
-          ...store.failedJobs.map((row) => `${row.count} failed ${row.type} jobs`),
+          ...failedTopicJobs.map((row) => `${row.count} failed ${row.type} jobs`),
           ...run.errors
         ].join("; ") || "drained"
   );
+  const failedWork = [
+    ...failedRuns.map((row) => `${row.count} ingestion runs ${row.status}`),
+    ...(store.failedStages > 0 ? [`${store.failedStages} failed stages`] : []),
+    ...failedOtherJobs.map((row) => `${row.count} failed ${row.type} jobs`)
+  ];
 
   return {
     format: "memora-topics-e2e",
@@ -243,6 +249,7 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
       rootNeedsGate: store.root.needsGate,
       unsortedShare: e1?.unsortedShare ?? 0,
       needsVectorItems: e1?.needsVectorItems ?? 0,
+      failedWork,
       importToNamedMs: between(run.timing.importStartedAt, store.lastNamedAt),
       importToHeavyDoneMs: between(run.timing.importStartedAt, run.timing.heavyDoneAt),
       importToDrainedMs: between(run.timing.importStartedAt, run.timing.drainedAt),
@@ -277,6 +284,7 @@ export function renderE6Markdown(report: E6Report, store: StoreFacts): string {
     `- Notes left at the root (Unsorted, \`needs_gate\` without a ranker): ${r.rootDirectNotes} ` +
       `(${r.rootNeedsGate} waiting for the gate), ${share(r.rootDirectNotes / Math.max(1, r.notes))} of the notes; ` +
       `Unsorted share (D27, notes and root sources) ${share(r.unsortedShare)}; \`needs_vector\` items ${r.needsVectorItems}.`,
+    `- Failed ingestion work outside the topics: ${r.failedWork.length > 0 ? r.failedWork.join("; ") : "none"}.`,
     `- Import start to named topics ${formatDuration(r.importToNamedMs)}; to the end of the heavy work ` +
       `${formatDuration(r.importToHeavyDoneMs)}; to a drained light lane ${formatDuration(r.importToDrainedMs)} (m:ss).`,
     `- AI cassette ${r.cassette.mode}: ${r.cassette.served} served, ${r.cassette.recorded} recorded, ` +

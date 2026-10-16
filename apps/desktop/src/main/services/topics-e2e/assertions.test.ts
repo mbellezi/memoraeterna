@@ -301,18 +301,31 @@ describe("the E6 verdict", () => {
     expect(failing(report.checks)).toEqual(["cassette"]);
   });
 
-  it("fails when the light lane timed out, the run stopped, work failed or something threw", () => {
+  it("fails when the light lane timed out, the run stopped, a topic job failed or something threw", () => {
     expect(failing(evaluateE6(store(), run({ stoppedBy: "drain_timeout" })).checks)).toEqual([
       "lane"
     ]);
     expect(failing(evaluateE6(store(), run({ errors: ["boom"] })).checks)).toEqual(["lane"]);
     expect(
-      failing(evaluateE6(store({ ingestionRuns: [{ status: "failed", count: 1 }] }), run()).checks)
-    ).toEqual(["lane"]);
-    expect(failing(evaluateE6(store({ failedStages: 2 }), run()).checks)).toEqual(["lane"]);
-    expect(
       failing(evaluateE6(store({ failedJobs: [{ type: "topic-name", count: 1 }] }), run()).checks)
     ).toEqual(["lane"]);
+  });
+
+  it("reports failed ingestion work outside the topics without failing E6", () => {
+    const report = evaluateE6(
+      store({
+        ingestionRuns: [{ status: "failed", count: 2 }],
+        failedStages: 2,
+        failedJobs: [{ type: "knowledge-graph-generation", count: 2 }]
+      }),
+      run()
+    );
+    expect(failing(report.checks)).toEqual([]);
+    expect(report.reported.failedWork).toEqual([
+      "2 ingestion runs failed",
+      "2 failed stages",
+      "2 failed knowledge-graph-generation jobs"
+    ]);
   });
 
   it("reports the share of notes left at the root and the time to named topics", () => {
