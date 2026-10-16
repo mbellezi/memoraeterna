@@ -28,6 +28,7 @@ import {
   getTopic,
   itemKey,
   liveTopicIds,
+  namingCandidates,
   placementRecord,
   recomputeSubtree,
   registerItem,
@@ -35,7 +36,7 @@ import {
   topicRecordOf,
   topicTreeConfigWith
 } from "@app/domain/topic-tree";
-import type { StructureEvent, TopicTreeConfig } from "@app/domain/topic-tree";
+import type { StructureEvent, TopicRenamePayload, TopicTreeConfig } from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { JobSupervisor } from "../job-supervisor.js";
@@ -43,6 +44,7 @@ import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices, TopicTreeServicesOptions } from "./index.js";
 import { ItemVectorStore, loadTopicTreeCache } from "./topic-cache.js";
 import { topicLabelHash } from "./topic-labels.js";
+import { topicNamingLimits } from "./topic-naming.js";
 import { treeSpace } from "./topic-space.js";
 import { immediateDebounce } from "./topic-triggers.js";
 
@@ -1221,6 +1223,238 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       const named = await rows(w);
       expect(named.A2).toMatchObject({ title: "Sono e descanso", source: "human" });
       expect(named.A1?.title).toBe("Prática de recuperação");
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // Names that change hands within a level (ENV-G: a rebuild left a stale provisional title)
+
+  const unnamedPayload: TopicRenamePayload = {
+    title: null,
+    nameState: "unnamed",
+    nameSource: null,
+    nameLanguage: null,
+    namedChangeSetId: null,
+    aliases: []
+  };
+  const provisionalPayload = (title: string): TopicRenamePayload => ({
+    title,
+    nameState: "provisional",
+    nameSource: "llm",
+    nameLanguage: contentLanguage,
+    namedChangeSetId: null,
+    aliases: []
+  });
+
+  /** Another engine writer (a rebuild) renames topics, in order, from their stored rows. */
+  async function retitle(
+    w: World,
+    changes: Array<{ topicId: string; after: TopicRenamePayload }>
+  ): Promise<number> {
+    const repository = createTopicTreeRepository(pool);
+    const tree = (await repository.tree(w.treeId))!;
+    const stored = (
+      await createTopicNamingRepository(pool).topicRows(
+        w.treeId,
+        changes.map((change) => change.topicId)
+      )
+    ).topics;
+    const current = new Map<string, TopicRenamePayload>();
+    const events: StructureEvent[] = changes.map(({ topicId, after }) => {
+      const row = stored.get(topicId)!;
+      const before = current.get(topicId) ?? {
+        title: row.title,
+        nameState: row.nameState,
+        nameSource: row.nameSource,
+        nameLanguage: row.nameLanguage,
+        namedChangeSetId: row.namedChangeSetId,
+        aliases: row.aliases
+      };
+      current.set(topicId, after);
+      return { op: "topic.rename", topicId, before, after };
+    });
+    const result = await repository.applyChangeSet({
+      treeId: w.treeId,
+      expectedGeneration: tree.generation,
+      origin: "rebuild",
+      titleKey: "topics.changeSets.rebuild",
+      events
+    });
+    if (result.kind !== "applied") throw new Error(`the rebuild was not applied: ${result.kind}`);
+    w.services.service.invalidate();
+    return result.generation;
+  }
+
+  /** The two areas in the order a naming level writes them. */
+  async function areasInLevelOrder(w: World): Promise<[string, string]> {
+    const cache = (await loadTopicTreeCache(pool, w.treeId))!;
+    const level = namingCandidates(cache.state, cache.config).filter(
+      (candidate) => candidate.depth === 1
+    );
+    return level.map((candidate) => candidate.topicId) as [string, string];
+  }
+
+  /** The rename events of the naming change-set that named a topic, in write order. */
+  async function renamesOf(changeSetId: string) {
+    const result = await pool.query<{
+      topicId: string;
+      before: { title: string | null };
+      after: { title: string | null };
+    }>(
+      `select topic_id as "topicId", before, after from topic_structure_events
+        where change_set_id = $1 and op = 'topic.rename' order by seq`,
+      [changeSetId]
+    );
+    return result.rows.map((row) => ({
+      topicId: row.topicId,
+      before: row.before.title,
+      after: row.after.title
+    }));
+  }
+
+  it("writes a name a sibling gives up in the same level, whatever their order (ENV-G)", async () => {
+    const w = await world();
+    try {
+      const natural: Record<string, string> = {
+        [w.topics.A]: "Memória e aprendizagem",
+        [w.topics.B]: "Mares e oceanos"
+      };
+      // The first area of the level earns the title a rebuild left on the later one, provisional:
+      // the later one must give it up before the first one takes it.
+      const [first, later] = await areasInLevelOrder(w);
+      await retitle(w, [{ topicId: later, after: provisionalPayload(natural[first]!) }]);
+      const job = await runNaming(w);
+      expect(job.result).toMatchObject({
+        status: "named",
+        candidates: 6,
+        asked: 6,
+        firstTryAccepted: 6,
+        llmNamed: 6,
+        dropped: 0,
+        stillUnnamed: 0,
+        kept: 0,
+        changeSets: 2
+      });
+      const named = await rows(w);
+      expect(named.A).toMatchObject({ title: "Memória e aprendizagem", state: "named" });
+      expect(named.B).toMatchObject({ title: "Mares e oceanos", state: "named" });
+      // One rename per topic, the giver first.
+      expect(await renamesOf(named.A!.namedBy!)).toEqual([
+        { topicId: later, before: natural[first], after: natural[later] },
+        { topicId: first, before: null, after: natural[first] }
+      ]);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("swaps two siblings' titles through an unnamed step that undo replays backwards", async () => {
+    const w = await world();
+    try {
+      // A rebuild swapped the areas' members: each one holds the title the other one earns.
+      await retitle(w, [
+        { topicId: w.topics.A, after: provisionalPayload("Mares e oceanos") },
+        { topicId: w.topics.B, after: provisionalPayload("Memória e aprendizagem") }
+      ]);
+      const before = await rows(w);
+      const [first, other] = await areasInLevelOrder(w);
+      const job = await runNaming(w);
+      expect(job.result).toMatchObject({ llmNamed: 6, dropped: 0, kept: 0, changeSets: 2 });
+      const named = await rows(w);
+      expect(named.A).toMatchObject({ title: "Memória e aprendizagem", state: "named" });
+      expect(named.B).toMatchObject({ title: "Mares e oceanos", state: "named" });
+      const titleOf = (id: string) => (id === w.topics.A ? named.A!.title : named.B!.title);
+      const oldTitleOf = (id: string) => (id === w.topics.A ? before.A!.title : before.B!.title);
+      expect(await renamesOf(named.A!.namedBy!)).toEqual([
+        { topicId: first, before: oldTitleOf(first), after: null },
+        { topicId: other, before: oldTitleOf(other), after: titleOf(other) },
+        { topicId: first, before: null, after: titleOf(first) }
+      ]);
+      // Undo writes the inverse backwards: every intermediate state keeps sibling titles unique.
+      await expect(
+        w.services.service.undo({ changeSetId: named.A!.namedBy! })
+      ).resolves.toMatchObject({ status: "undone" });
+      const undone = await rows(w);
+      expect(undone.A).toMatchObject({ title: "Mares e oceanos", state: "provisional" });
+      expect(undone.B).toMatchObject({ title: "Memória e aprendizagem", state: "provisional" });
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("re-queues a dropped name with its reason and reports repeated drops until it is written", async () => {
+    const w = await world();
+    try {
+      await runNaming(w);
+      // A rebuild cleared A1's name; while the model answers, another writer keeps retitling it.
+      await retitle(w, [{ topicId: w.topics.A1, after: unnamedPayload }]);
+      let interfere = true;
+      let draft = 0;
+      w.setResponder(async (call) => {
+        if (interfere) {
+          draft += 1;
+          await retitle(w, [
+            { topicId: w.topics.A1, after: provisionalPayload(`Rascunho ${draft}`) }
+          ]);
+        }
+        return {
+          topics: call.groups.flatMap((group) => group.topics.map((topic) => item(topic, group)))
+        };
+      });
+      await pool.query("delete from jobs where type = 'topic-name'");
+      const queued = () =>
+        count("select count(*) from jobs where type = 'topic-name' and status = 'queued'");
+
+      const first = await runNaming(w);
+      expect(first.result).toMatchObject({
+        status: "named",
+        candidates: 1,
+        firstTryAccepted: 1,
+        llmNamed: 0,
+        dropped: 1,
+        droppedBy: { changed: 1 },
+        stillUnnamed: 1,
+        requeued: 1,
+        repeatedDrops: []
+      });
+      // Re-queued at once (no change-set was written, so nothing else would have asked).
+      expect(await queued()).toBe(1);
+
+      const second = await runDue(w, "topic-name");
+      expect(second.result).toMatchObject({
+        candidates: 1,
+        dropped: 1,
+        kept: 1,
+        stillUnnamed: 0,
+        requeued: 1,
+        repeatedDrops: [{ topicId: w.topics.A1, drops: 2, reason: "changed" }]
+      });
+
+      // The last drop in a row that re-queues: the topic then waits like one the model missed.
+      for (let drops = 3; drops < topicNamingLimits.requeueDrops; drops += 1) {
+        await runDue(w, "topic-name");
+      }
+      const last = await runDue(w, "topic-name");
+      expect(last.result).toMatchObject({
+        dropped: 1,
+        requeued: 0,
+        repeatedDrops: [
+          { topicId: w.topics.A1, drops: topicNamingLimits.requeueDrops, reason: "changed" }
+        ]
+      });
+      expect(await queued()).toBe(0);
+      await w.services.naming!.requestIfNeeded(w.treeId);
+      expect(await queued()).toBe(0);
+
+      // After the retry time, the name is written and the drop record is gone.
+      interfere = false;
+      w.clock.now += topicNamingLimits.retryMs;
+      await w.services.naming!.requestIfNeeded(w.treeId);
+      const named = await runDue(w, "topic-name");
+      expect(named.result).toMatchObject({ llmNamed: 1, dropped: 0, repeatedDrops: [] });
+      expect((await rows(w)).A1).toMatchObject({ title: "Prática de recuperação", state: "named" });
     } finally {
       await w.dispose();
     }

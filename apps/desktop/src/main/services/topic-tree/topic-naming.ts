@@ -9,6 +9,9 @@
 // written as one `naming` change-set with the topics' membership sketches, which is how drift is
 // measured later. A model call never runs inside the engine lock or a transaction (D10): the tree
 // is read first, the calls follow, and the write re-checks every topic against the stored rows.
+// The repository writes events one by one under the sibling-title index, so a level's renames are
+// ordered for every intermediate state to keep sibling titles unique. A name the write still drops
+// is never lost silently: the job says why, re-queues the topic and reports repeated drops.
 //
 // Human-named, human-managed and pinned topics are never named (RULES.md). In a deterministic
 // golden run (G1) nothing is named at all. Background calls count against D34's daily cap; at the
@@ -49,6 +52,7 @@ import type {
   RejectedName,
   StructureEvent,
   TopicRecord,
+  TopicRenamePayload,
   TopicTreeState,
   UnaliasedTopic
 } from "@app/domain/topic-tree";
@@ -91,6 +95,13 @@ export const topicNamingLimits = {
   outputTokensPerTopic: 220,
   /** The model calls of one job that failed in a row before it stops asking and falls back. */
   consecutiveFailures: 2,
+  /**
+   * A dropped name re-queues its topic at once until it was dropped this many times in a row; the
+   * topic then waits `retryMs` like one the model could not name (the job keeps reporting it).
+   */
+  requeueDrops: 3,
+  /** Topics listed in a job result's `repeatedDrops`. */
+  repeatedDropsListed: 50,
   /** A note title in a prompt is cut here (the idea has `naming.ideaMaxChars`). */
   memberTitleMaxChars: 160
 } as const;
@@ -128,6 +139,21 @@ interface PlannedName {
   sketch: MembershipSketch | null;
 }
 
+/**
+ * Why a planned name was not written: the topic left automation (retired, moved under the root,
+ * human-named or protected), its stored row changed since the snapshot, a sibling that keeps its
+ * title holds the name, or the write kept conflicting. Only `gone` does not re-queue the topic.
+ */
+export const namingDropReasons = ["gone", "changed", "titleTaken", "conflict"] as const;
+export type NamingDropReason = (typeof namingDropReasons)[number];
+
+/** A topic whose names were dropped by consecutive jobs, while it waits for a written name. */
+interface DropRecord {
+  treeId: string;
+  drops: number;
+  reason: NamingDropReason;
+}
+
 interface RunCounters {
   calls: number;
   repairCalls: number;
@@ -140,9 +166,17 @@ interface RunCounters {
   repairAccepted: number;
   llmNamed: number;
   provisional: number;
+  /** Unnamed candidates that got no name in this job (except those that left automation). */
   stillUnnamed: number;
+  /** Provisional and drifting candidates that keep their current name. */
   kept: number;
+  /** Planned names that were not written, and why. */
   dropped: number;
+  droppedBy: Record<NamingDropReason, number>;
+  /** Topics whose dropped name re-queued them for the next job. */
+  requeued: number;
+  /** Topics dropped by two or more jobs in a row, with their count and last reason. */
+  repeatedDrops: Array<{ topicId: string; drops: number; reason: NamingDropReason }>;
   failedCalls: number;
   capReached: boolean;
   noRoute: boolean;
@@ -163,6 +197,9 @@ const emptyCounters = (): RunCounters => ({
   stillUnnamed: 0,
   kept: 0,
   dropped: 0,
+  droppedBy: { gone: 0, changed: 0, titleTaken: 0, conflict: 0 },
+  requeued: 0,
+  repeatedDrops: [],
   failedCalls: 0,
   capReached: false,
   noRoute: false,
@@ -192,6 +229,18 @@ export async function namedMembershipSketches(
   return sketches;
 }
 
+/** The name fields of a topic without a name (a cycle of renames passes through it). */
+function unnamedName(): TopicRenamePayload {
+  return {
+    title: null,
+    nameState: "unnamed",
+    nameSource: null,
+    nameLanguage: null,
+    namedChangeSetId: null,
+    aliases: []
+  };
+}
+
 /** The root source behind a prompt member, for the audit's participating sources. */
 function memberSourceId(member: NamingMember): string | null {
   const key = member.kind === "source" ? member.key : member.rootSource;
@@ -200,6 +249,8 @@ function memberSourceId(member: NamingMember): string | null {
 
 export class TopicNamingService {
   private readonly attempted = new Map<string, number>();
+  /** Topics whose last names were dropped, until a name is written (in this process). */
+  private readonly drops = new Map<string, DropRecord>();
   /** The last drift check per tree: when, and the tree generation it saw. */
   private readonly driftChecked = new Map<string, { at: number; generation: number | null }>();
   /** No model route: naming falls back to provisional names until this time. */
@@ -236,6 +287,14 @@ export class TopicNamingService {
     return changed && elapsed >= topicNamingLimits.driftCheckMs;
   }
 
+  /** Whether a topic of the tree was re-queued by a dropped name and may be asked again now. */
+  private requeuedIn(treeId: string): boolean {
+    for (const [topicId, record] of this.drops) {
+      if (record.treeId === treeId && !this.cooling(topicId)) return true;
+    }
+    return false;
+  }
+
   // -------------------------------------------------------------------------
   // Requesting the job
 
@@ -257,7 +316,7 @@ export class TopicNamingService {
       const pending = (await repository.pendingNamingTopicIds(treeId)).filter(
         (id) => !this.cooling(id)
       );
-      let due = pending.length > 0;
+      let due = pending.length > 0 || this.requeuedIn(treeId);
       if (!due && this.driftDue(treeId, generation)) {
         due = (await repository.namingNeeds(treeId)).llmNamed > 0;
       }
@@ -281,11 +340,13 @@ export class TopicNamingService {
     const pool = this.requirePool();
     const repository = createTopicNamingRepository(pool);
 
-    // Cheap exit: every waiting topic was tried lately and no drift check is due.
+    // Cheap exit: every waiting topic was tried lately, no dropped name re-queued one and no
+    // drift check is due.
     const waiting = (await repository.pendingNamingTopicIds(treeId)).filter(
       (id) => !this.cooling(id)
     );
-    if (waiting.length === 0 && !this.driftDue(treeId)) {
+    const requeued = this.requeuedIn(treeId);
+    if (waiting.length === 0 && !requeued && !this.driftDue(treeId)) {
       return { status: "nothing_to_name", treeId };
     }
 
@@ -294,8 +355,9 @@ export class TopicNamingService {
     if (signal.aborted) throw new Error("topics.errors.canceled");
     const contentLanguage = await this.options.getContentLanguage();
 
-    // Members drift when items arrive, leave or are replaced (REBALANCE, rebuilds, PLACE).
-    const drifting = this.driftDue(treeId, cache.tree.generation);
+    // Members drift when items arrive, leave or are replaced (REBALANCE, rebuilds, PLACE). A
+    // re-queued drift rename is a candidate again only through a drift check.
+    const drifting = requeued || this.driftDue(treeId, cache.tree.generation);
     const drift = drifting ? await this.driftOf(cache, repository) : null;
     if (drifting) {
       this.driftChecked.set(treeId, {
@@ -332,10 +394,24 @@ export class TopicNamingService {
       await this.options.triggers.request(topicJobTypes.labelEmbed, treeId);
     }
     await this.recordCalls(treeId, counters.calls + counters.repairCalls);
+    // A dropped name asks again (debounced), even when this job wrote nothing another change
+    // would answer to.
+    if (counters.requeued > 0) await this.requeue(treeId);
     this.options.logger?.info(
       `Topic naming ${job.id}: ${counters.llmNamed} named, ${counters.provisional} provisional, ` +
-        `${counters.stillUnnamed} unnamed, ${counters.calls} calls and ${counters.repairCalls} repairs`
+        `${counters.stillUnnamed} unnamed, ${counters.dropped} dropped ` +
+        `(${namingDropReasons.map((reason) => `${reason} ${counters.droppedBy[reason]}`).join(", ")}), ` +
+        `${counters.requeued} re-queued, ${counters.calls} calls and ${counters.repairCalls} repairs`
     );
+    counters.repeatedDrops.sort(
+      (a, b) => b.drops - a.drops || compareStrings(a.topicId, b.topicId)
+    );
+    if (counters.repeatedDrops.length > 0) {
+      this.options.logger?.warn(
+        `Topic naming ${job.id}: names of ${counters.repeatedDrops.length} topics were dropped ` +
+          `by consecutive jobs: ${JSON.stringify(counters.repeatedDrops)}`
+      );
+    }
     return {
       status: "named",
       treeId,
@@ -345,6 +421,9 @@ export class TopicNamingService {
       stillUnnamed: counters.stillUnnamed,
       kept: counters.kept,
       dropped: counters.dropped,
+      droppedBy: { ...counters.droppedBy },
+      requeued: counters.requeued,
+      repeatedDrops: counters.repeatedDrops.slice(0, topicNamingLimits.repeatedDropsListed),
       calls: counters.calls,
       repairCalls: counters.repairCalls,
       asked: counters.asked,
@@ -357,6 +436,15 @@ export class TopicNamingService {
       noRoute: counters.noRoute,
       changeSets: counters.changeSets
     };
+  }
+
+  /** Requests the naming job again for re-queued topics; never throws. */
+  private async requeue(treeId: string): Promise<void> {
+    try {
+      await this.options.triggers.request(topicJobTypes.name, treeId);
+    } catch (error) {
+      this.options.logger?.warn("Topic naming could not be requested again", error);
+    }
   }
 
   /** Adds the day's model calls to the tree's daily metrics (`naming_calls`); never throws. */
@@ -396,6 +484,7 @@ export class TopicNamingService {
       ...(this.options.logger ? { logger: this.options.logger } : {}),
       newId: this.options.newId ?? randomUUID,
       attempted: this.attempted,
+      drops: this.drops,
       now: () => this.now(),
       routeBlocked: () => this.now().getTime() < this.routeBlockedUntil,
       blockRoute: () => {
@@ -419,6 +508,7 @@ interface RunServices {
   logger?: Pick<Console, "info" | "warn" | "error">;
   newId: () => string;
   attempted: Map<string, number>;
+  drops: Map<string, DropRecord>;
   now: () => Date;
   routeBlocked: () => boolean;
   blockRoute: () => void;
@@ -431,6 +521,13 @@ interface RunServices {
 // One run of the job
 
 type LevelOutcome = "done" | "tree_inactive";
+
+/** What the write of a level did: the topics whose names were written and the dropped ones. */
+interface LevelWrite {
+  outcome: LevelOutcome;
+  written: ReadonlySet<string>;
+  dropped: ReadonlyMap<string, NamingDropReason>;
+}
 
 /** What one level asked of the model; the level's naming change-set records it. */
 interface LevelUsage {
@@ -570,30 +667,77 @@ class NamingRun {
       const provisional = await this.fallback(needFallback, plan);
       plan.push(...provisional);
     }
-    const planned = new Set(plan.map((item) => item.topicId));
-    const attemptedAt = this.lib.now().getTime();
+    const used = (key: keyof Omit<typeof levelStart, "runIds">): number =>
+      this.counters[key] - levelStart[key];
+    const written =
+      plan.length === 0
+        ? ({ outcome: "done", written: new Set(), dropped: new Map() } satisfies LevelWrite)
+        : await this.commit(plan, {
+            calls: used("calls"),
+            repairCalls: used("repairCalls"),
+            failedCalls: used("failedCalls"),
+            inputTokens: used("inputTokens"),
+            outputTokens: used("outputTokens"),
+            asked: used("asked"),
+            firstTryAccepted: used("firstTryAccepted"),
+            repairAccepted: used("repairAccepted"),
+            aiTaskRunIds: this.counters.aiTaskRunIds.slice(levelStart.runIds)
+          });
+    if (written.outcome === "tree_inactive") return "tree_inactive";
+    this.settle(level, names, written);
+    return "done";
+  }
+
+  /**
+   * What a level's candidates wait for after the write. A topic the model named is not cooling;
+   * one it could not name waits `retryMs`. A dropped name re-queues its topic with the reason
+   * (unless the topic left automation) until `requeueDrops` jobs in a row dropped it; it then
+   * waits `retryMs` too, and every job that drops it again lists it in `repeatedDrops`.
+   */
+  private settle(
+    level: readonly NamingCandidate[],
+    names: ReadonlyMap<string, AcceptedName>,
+    write: LevelWrite
+  ): void {
+    const now = this.lib.now().getTime();
+    const treeId = this.cache.tree.id;
     for (const candidate of level) {
-      if (names.has(candidate.topicId)) this.lib.attempted.delete(candidate.topicId);
-      else this.lib.attempted.set(candidate.topicId, attemptedAt);
-      if (!planned.has(candidate.topicId)) {
+      const id = candidate.topicId;
+      const reason = write.dropped.get(id);
+      if (reason !== undefined) {
+        this.counters.dropped += 1;
+        this.counters.droppedBy[reason] += 1;
+      }
+      if (write.written.has(id)) {
+        this.lib.drops.delete(id);
+        if (names.has(id)) this.lib.attempted.delete(id);
+        else this.lib.attempted.set(id, now);
+        continue;
+      }
+      // Not written: the topic keeps the name it had (none, a provisional one or an old one).
+      if (reason !== "gone") {
         if (candidate.reason === "unnamed") this.counters.stillUnnamed += 1;
         else this.counters.kept += 1;
       }
+      if (reason === undefined) {
+        this.lib.attempted.set(id, now);
+        continue;
+      }
+      if (reason === "gone") {
+        this.lib.drops.delete(id);
+        this.lib.attempted.set(id, now);
+        continue;
+      }
+      const drops = (this.lib.drops.get(id)?.drops ?? 0) + 1;
+      this.lib.drops.set(id, { treeId, drops, reason });
+      if (drops >= 2) this.counters.repeatedDrops.push({ topicId: id, drops, reason });
+      if (drops < topicNamingLimits.requeueDrops) {
+        this.lib.attempted.delete(id);
+        this.counters.requeued += 1;
+      } else {
+        this.lib.attempted.set(id, now);
+      }
     }
-    if (plan.length === 0) return "done";
-    const used = (key: keyof Omit<typeof levelStart, "runIds">): number =>
-      this.counters[key] - levelStart[key];
-    return this.commit(plan, {
-      calls: used("calls"),
-      repairCalls: used("repairCalls"),
-      failedCalls: used("failedCalls"),
-      inputTokens: used("inputTokens"),
-      outputTokens: used("outputTokens"),
-      asked: used("asked"),
-      firstTryAccepted: used("firstTryAccepted"),
-      repairAccepted: used("repairAccepted"),
-      aiTaskRunIds: this.counters.aiTaskRunIds.slice(levelStart.runIds)
-    });
   }
 
   /**
@@ -779,63 +923,69 @@ class NamingRun {
 
   // ----- writing a level -----
 
-  private async commit(plan: PlannedName[], level: LevelUsage): Promise<LevelOutcome> {
+  /**
+   * Writes a level's names as one change-set. Every attempt reads the stored rows again and
+   * rebuilds the events: a name that no longer fits is dropped with its reason and the others are
+   * written. An event the repository refuses drops that topic's name only; a tree that keeps
+   * moving (`commitAttempts` generation conflicts) drops what is left.
+   */
+  private async commit(plan: PlannedName[], level: LevelUsage): Promise<LevelWrite> {
     const treeId = this.cache.tree.id;
     const naming = createTopicNamingRepository(this.lib.pool);
     const repository = createTopicTreeRepository(this.lib.pool);
-    for (let attempt = 0; attempt < topicNamingLimits.commitAttempts; attempt += 1) {
+    const dropped = new Map<string, NamingDropReason>();
+    const done = (written: ReadonlySet<string> = new Set()): LevelWrite => ({
+      outcome: "done",
+      written,
+      dropped
+    });
+    let pending = plan;
+    let moved = 0;
+    while (pending.length > 0) {
       const rows = await naming.topicRows(
         treeId,
-        plan.map((item) => item.topicId)
+        pending.map((item) => item.topicId)
       );
-      if (rows.status !== "active") return "tree_inactive";
+      if (rows.status !== "active")
+        return { outcome: "tree_inactive", written: new Set(), dropped };
       const changeSetId = this.lib.newId();
-      const { events, applied, dropped } = this.eventsFor(plan, rows, changeSetId);
-      if (events.length === 0) {
-        this.counters.dropped += dropped;
-        return "done";
-      }
+      const built = this.eventsFor(pending, rows, changeSetId);
+      for (const [topicId, reason] of built.dropped) dropped.set(topicId, reason);
+      const { events, applied } = built;
+      if (events.length === 0) return done();
       const sketches: Record<string, MembershipSketch> = {};
       for (const item of applied) if (item.sketch) sketches[item.topicId] = item.sketch;
       const llmCount = applied.filter((item) => item.kind === "llm").length;
       const aiTaskRunIds = [...new Set(level.aiTaskRunIds)].slice(0, 1_000);
-      let result;
-      try {
-        result = await repository.applyChangeSet({
-          id: changeSetId,
-          treeId,
-          expectedGeneration: rows.generation,
-          origin: "naming",
-          titleKey: "topics.changeSets.naming",
-          titleParams: { topics: applied.length },
-          risk: "low",
-          jobId: this.job.id,
-          aiTaskRunIds,
-          summary: {
-            llm: llmCount,
-            provisional: applied.length - llmCount,
-            language: this.contentLanguage,
-            // What this level asked of the model, for the naming measurements (first-try validity,
-            // repair rate, calls and tokens per topic).
-            calls: level.calls,
-            repairCalls: level.repairCalls,
-            failedCalls: level.failedCalls,
-            inputTokens: level.inputTokens,
-            outputTokens: level.outputTokens,
-            asked: level.asked,
-            firstTryAccepted: level.firstTryAccepted,
-            repairAccepted: level.repairAccepted,
-            sketches
-          },
-          events
-        });
-      } catch (error) {
-        // The sibling-title index refused a name a person just took: read the rows again.
-        if ((error as { code?: string }).code === "23505") continue;
-        throw error;
-      }
+      const result = await repository.applyChangeSet({
+        id: changeSetId,
+        treeId,
+        expectedGeneration: rows.generation,
+        origin: "naming",
+        titleKey: "topics.changeSets.naming",
+        titleParams: { topics: applied.length },
+        risk: "low",
+        jobId: this.job.id,
+        aiTaskRunIds,
+        summary: {
+          llm: llmCount,
+          provisional: applied.length - llmCount,
+          language: this.contentLanguage,
+          // What this level asked of the model, for the naming measurements (first-try validity,
+          // repair rate, calls and tokens per topic).
+          calls: level.calls,
+          repairCalls: level.repairCalls,
+          failedCalls: level.failedCalls,
+          inputTokens: level.inputTokens,
+          outputTokens: level.outputTokens,
+          asked: level.asked,
+          firstTryAccepted: level.firstTryAccepted,
+          repairAccepted: level.repairAccepted,
+          sketches
+        },
+        events
+      });
       if (result.kind === "applied") {
-        this.counters.dropped += dropped;
         this.counters.changeSets += 1;
         this.counters.llmNamed += llmCount;
         this.counters.provisional += applied.length - llmCount;
@@ -848,47 +998,65 @@ class NamingRun {
           topicIds: ids.length > topicLimits.changedTopicIdsMax ? null : ids,
           changeSetId
         });
-        return "done";
+        return done(new Set(ids));
       }
-      if (result.kind === "no_change") {
-        this.counters.dropped += dropped;
-        return "done";
+      // Nothing to change: the stored names already are these.
+      if (result.kind === "no_change") return done();
+      if (result.kind === "conflict" && result.reason === "treeRetired") {
+        return { outcome: "tree_inactive", written: new Set(), dropped };
       }
-      if (result.kind === "conflict" && result.reason === "treeRetired") return "tree_inactive";
-      // Another writer moved the tree or a row: read the rows again and rebuild the events.
+      // No event of a plan is a no-op, so the repository's event index is the plan's.
+      const refused =
+        result.kind === "conflict" && result.reason === "event" && result.code !== "busy"
+          ? events[result.eventIndex]?.topicId
+          : undefined;
+      if (refused !== undefined && applied.some((item) => item.topicId === refused)) {
+        // The stored tree refused this topic's rename (a title a sibling holds, a changed row):
+        // the others are written without it.
+        this.lib.logger?.warn(
+          `Topic naming ${this.job.id}: the name of topic ${refused} was refused (${
+            result.kind === "conflict" && result.reason === "event" ? result.code : "conflict"
+          })`
+        );
+        dropped.set(refused, "conflict");
+        pending = applied.filter((item) => item.topicId !== refused);
+        continue;
+      }
+      // Another writer moved the tree: read the rows again and rebuild the events.
+      moved += 1;
+      if (moved >= topicNamingLimits.commitAttempts) {
+        // The stored tree kept moving: these names are not written, and their topics re-queue.
+        for (const item of applied) dropped.set(item.topicId, "conflict");
+        return done();
+      }
+      pending = applied;
     }
-    // The stored tree kept moving: these names are not written, and the topics are tried again
-    // when their cooldown ends.
-    this.counters.dropped += plan.length;
-    return "done";
+    return done();
   }
 
-  /** The events of a plan against the stored rows; a name that no longer fits is dropped. */
+  /**
+   * The events of a plan against the stored rows, in an order that keeps sibling titles unique in
+   * every intermediate state (the repository writes them one by one under the sibling-title index).
+   * A name that no longer fits is dropped: its topic left automation (`gone`), its row changed
+   * since the snapshot (`changed`), or a sibling that keeps its title holds it (`titleTaken`; a
+   * dropped name keeps its topic's title, which may take a title back from another name).
+   *
+   * A topic gives its title up before the sibling that takes it is renamed; titles that go round a
+   * cycle of siblings (a swap) are freed by clearing one topic first, as Areas do: it passes
+   * through `unnamed` and takes its name last. Undo writes the inverse backwards, through the same
+   * states.
+   */
   private eventsFor(
     plan: readonly PlannedName[],
     rows: TopicNamingRows,
     changeSetId: string
-  ): { events: StructureEvent[]; applied: PlannedName[]; dropped: number } {
-    const events: StructureEvent[] = [];
-    const applied: PlannedName[] = [];
-    let dropped = 0;
-    const renamed = new Set(plan.map((item) => item.topicId));
-    // Titles taken under each parent: the stored siblings that keep theirs, then the accepted ones.
-    const taken = new Map<string, Set<string>>();
-    const takenUnder = (parentId: string): Set<string> => {
-      let set = taken.get(parentId);
-      if (!set) {
-        set = new Set(
-          (rows.siblings.get(parentId) ?? []).flatMap((sibling) =>
-            sibling.title !== null && !renamed.has(sibling.id)
-              ? [normalizeTopicTitle(sibling.title)]
-              : []
-          )
-        );
-        taken.set(parentId, set);
-      }
-      return set;
-    };
+  ): {
+    events: StructureEvent[];
+    applied: PlannedName[];
+    dropped: Map<string, NamingDropReason>;
+  } {
+    const dropped = new Map<string, NamingDropReason>();
+    let fitting: Array<{ item: PlannedName; current: TopicRecord; parentId: string }> = [];
     for (const item of plan) {
       const current = rows.topics.get(item.topicId);
       if (
@@ -896,53 +1064,118 @@ class NamingRun {
         current.retiredAt !== null ||
         current.parentId === null ||
         current.management !== "ai" ||
-        current.nameSource === "human" ||
-        current.title !== item.expectTitle ||
-        current.nameState !== item.expectState
+        current.nameSource === "human"
       ) {
-        dropped += 1;
+        dropped.set(item.topicId, "gone");
         continue;
       }
-      const used = takenUnder(current.parentId);
-      const normal = normalizeTopicTitle(item.title);
-      if (used.has(normal)) {
-        dropped += 1;
+      if (current.title !== item.expectTitle || current.nameState !== item.expectState) {
+        dropped.set(item.topicId, "changed");
         continue;
       }
-      used.add(normal);
-      const llm = item.kind === "llm";
-      const language = this.contentLanguage;
+      fitting.push({ item, current, parentId: current.parentId });
+    }
+
+    // Final titles: unique under each parent with the stored siblings that keep theirs (the
+    // first name in plan order keeps a title two names claim). Each drop can free or take one
+    // title, so the check runs again until no name clashes.
+    for (;;) {
+      const renamed = new Set(fitting.map((entry) => entry.item.topicId));
+      const taken = new Map<string, Set<string>>();
+      let clash: (typeof fitting)[number] | null = null;
+      for (const entry of fitting) {
+        let used = taken.get(entry.parentId);
+        if (!used) {
+          used = new Set(
+            (rows.siblings.get(entry.parentId) ?? []).flatMap((sibling) =>
+              sibling.title !== null && !renamed.has(sibling.id)
+                ? [normalizeTopicTitle(sibling.title)]
+                : []
+            )
+          );
+          taken.set(entry.parentId, used);
+        }
+        const normal = normalizeTopicTitle(entry.item.title);
+        if (used.has(normal)) {
+          clash = entry;
+          break;
+        }
+        used.add(normal);
+      }
+      if (clash === null) break;
+      dropped.set(clash.item.topicId, "titleTaken");
+      fitting = fitting.filter((entry) => entry !== clash);
+    }
+
+    // Write order. `holder` maps a parent and a current title to the renamed topic holding it.
+    const titleKey = (parentId: string, title: string) =>
+      `${parentId}\u0000${normalizeTopicTitle(title)}`;
+    const holder = new Map<string, (typeof fitting)[number]>();
+    for (const entry of fitting) {
+      if (entry.current.title !== null) {
+        holder.set(titleKey(entry.parentId, entry.current.title), entry);
+      }
+    }
+    const nameOf = (current: TopicRecord) => ({
+      title: current.title,
+      nameState: current.nameState,
+      nameSource: current.nameSource,
+      nameLanguage: current.nameLanguage,
+      namedChangeSetId: current.namedChangeSetId,
+      aliases: [...current.aliases]
+    });
+    const events: StructureEvent[] = [];
+    const pending = new Set(fitting);
+    const cleared = new Set<(typeof fitting)[number]>();
+    const language = this.contentLanguage;
+    while (pending.size > 0) {
+      let progressed = false;
+      for (const entry of fitting) {
+        if (!pending.has(entry)) continue;
+        const holding = holder.get(titleKey(entry.parentId, entry.item.title));
+        if (holding && holding !== entry && pending.has(holding) && !cleared.has(holding)) {
+          continue;
+        }
+        const { item, current } = entry;
+        const llm = item.kind === "llm";
+        events.push({
+          op: "topic.rename",
+          topicId: item.topicId,
+          before: cleared.has(entry) ? unnamedName() : nameOf(current),
+          after: {
+            title: item.title,
+            nameState: llm ? "named" : "provisional",
+            nameSource: llm ? "llm" : "tfidf",
+            nameLanguage: language,
+            namedChangeSetId: changeSetId,
+            aliases: llm ? item.aliases : []
+          }
+        });
+        if (llm && item.description !== null && item.description !== current.description) {
+          events.push({
+            op: "topic.describe",
+            topicId: item.topicId,
+            before: { description: current.description },
+            after: { description: item.description }
+          });
+        }
+        pending.delete(entry);
+        progressed = true;
+      }
+      if (progressed) continue;
+      // Every waiting name waits for a sibling that waits too: a cycle. Its first topic in plan
+      // order gives its title up first.
+      const first = fitting.find((entry) => pending.has(entry) && !cleared.has(entry));
+      if (!first) throw new Error("Topic naming could not order the renames of a level");
       events.push({
         op: "topic.rename",
-        topicId: item.topicId,
-        before: {
-          title: current.title,
-          nameState: current.nameState,
-          nameSource: current.nameSource,
-          nameLanguage: current.nameLanguage,
-          namedChangeSetId: current.namedChangeSetId,
-          aliases: [...current.aliases]
-        },
-        after: {
-          title: item.title,
-          nameState: llm ? "named" : "provisional",
-          nameSource: llm ? "llm" : "tfidf",
-          nameLanguage: language,
-          namedChangeSetId: changeSetId,
-          aliases: llm ? item.aliases : []
-        }
+        topicId: first.item.topicId,
+        before: nameOf(first.current),
+        after: unnamedName()
       });
-      if (llm && item.description !== null && item.description !== current.description) {
-        events.push({
-          op: "topic.describe",
-          topicId: item.topicId,
-          before: { description: current.description },
-          after: { description: item.description }
-        });
-      }
-      applied.push(item);
+      cleared.add(first);
     }
-    return { events, applied, dropped };
+    return { events, applied: fitting.map((entry) => entry.item), dropped };
   }
 
   /** Mirrors the written names in the snapshot, so the next level sees its parents' names. */
