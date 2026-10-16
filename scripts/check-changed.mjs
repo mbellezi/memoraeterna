@@ -98,11 +98,19 @@ for (const project of [...scriptProjects]
 
 if (code.length > 0) step("eslint", bin("eslint"), code);
 
+// Other workspaces import a package through its built `dist` (fresh after `tsc -b`), so a changed
+// package source also names its built file: tests in dependent workspaces are related through it.
+const built = changed
+  .map((file) => /^(packages\/[^/]+)\/src\/(.+?)(\.tsx?)?$/u.exec(file))
+  .filter((match) => match && !/\.test$/u.test(match[2]))
+  .map((match) => `${match[1]}/dist/${match[2]}${match[3] ? ".js" : ""}`)
+  .filter((file) => existsSync(join(root, file)));
 step("tests (vitest related)", bin("vitest"), [
   "related",
   "--run",
   "--passWithNoTests",
-  ...changed
+  ...changed,
+  ...built
 ]);
 step("ratchet", process.execPath, ["scripts/quality-ratchet.mjs"]);
 step("contrast", bin("tsx"), ["scripts/contrast/check-contrast.ts"]);
