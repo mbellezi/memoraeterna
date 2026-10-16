@@ -196,3 +196,22 @@ served and 0 misses, 0 calls to the 57 wrapped Settings handlers, 88 of 88 notes
 named by the LLM in pt-BR, 0 unnamed, E1 100%, Unsorted 3.4%, import to named topics 1:56 in replay (23:06 live).
 Reported: with a local writer, 8 knowledge-graph jobs and 1 note job failed on invalid JSON (a 4B writer: 7); E6
 now gates on the topic side and reports other failed work. Small local writers need JSON repair for the KG.
+
+## E4 first panel (2026-10-17) — gate C not passed yet
+
+Sample seed 20261016 (30 topics: ENV-C 6 Areas, 6 level-2, 8 level 3+; 5 leaves each from ENV-G and ENV-F;
+config_hash 82befc7b on all three), rated blind by three independent Opus 5.5 judges (decision 21), majority vote,
+unanimous on 25/30.
+
+| Stratum | Coherent | Well named | Both |
+| --- | --- | --- | --- |
+| ENV-C Areas (6) | 1 | 0 | 0 |
+| ENV-C level 2 (6) | 4 | 2 | 2 |
+| ENV-C level 3+ (8) | 8 | 3 | 3 |
+| ENV-G leaves (5) | 2 | 1 | 1 |
+| ENV-F leaves (5) | 0 | 2 | 0 |
+| **Total** | **15/30** | **8/30** | **6/30** (bar 24/30) |
+
+Failure modes: names cover only part of the topic (naming sees 5 central members; Areas named after one child);
+Louvain Areas over a 25-domain corpus are broad mixes; small libraries merge distinct sources (10-NN) and mix
+homonyms (ENV-F's "Aurora", "Cache", "Memória"). Iteration: names that cover the whole topic first, then coherence.

@@ -80,6 +80,10 @@ concurrency and automatic correction.
     `renameDrift` 0.5 (7.4% of topics per week in the accelerated corpus replay); the ≤2%/week target is
     reported, not gating, in F2. Merged topics are renamed after a rebuild (drift 0.3). A drift measured on the
     theme (the name's label vector against the topic centroid) moves to the F4 gardener.
+21. **Objective ratings by a panel of Opus 5.5 judges** (2026-10-16): objective evaluations such as E4's blind
+    topic rating are done by three independent, blind Claude Opus 5.5 judges (each sees only what the rating page
+    shows), with the majority per question; the pass rule is unchanged (D20, at least 24/30 rated both coherent
+    and well named). The owner may still rate; the panel replaces the owner's 45 minutes as the gate.
 
 ## 3. The five swaps
 
