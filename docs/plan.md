@@ -511,7 +511,7 @@ Wave 7 (gate C at the end):
 - [ ] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
 - [ ] T30 Owner blind rating (D20).
 - [x] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
-- [ ] T32 Zero-config end-to-end test (`topics:e2e`).
+- [x] T32 Zero-config end-to-end test (`topics:e2e`).
 - [x] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
 - [x] T34b `memora://topic/<id>` deep links that resolve topic redirects.
 - [x] T40r Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.

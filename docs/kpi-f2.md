@@ -189,3 +189,10 @@ both rankers: no grid point reached 90% accepted precision and the rule's fallba
 The live gate on ENV-C (40 held-out articles, MLX ranker): 202 decisions, 130 accepted and 72 "none", rank calls
 about 130-360 ms. Not met and reported: rename drift 7.4% of topics per week against the 2% target; the LLM Areas
 grouping is rejected by its silhouette rule, so the Louvain level-1 topics stay as Areas.
+
+**E6 (zero-config, T32).** Recorded once with a local MLX writer (Qwen3.5-9B) and the local GGUF embedding model
+(no remote call, the owner's OAuth route is not usable outside the app), then replayed: PASSED with 422 calls
+served and 0 misses, 0 calls to the 57 wrapped Settings handlers, 88 of 88 notes placed, 13 topics with notes all
+named by the LLM in pt-BR, 0 unnamed, E1 100%, Unsorted 3.4%, import to named topics 1:56 in replay (23:06 live).
+Reported: with a local writer, 8 knowledge-graph jobs and 1 note job failed on invalid JSON (a 4B writer: 7); E6
+now gates on the topic side and reports other failed work. Small local writers need JSON repair for the KG.
