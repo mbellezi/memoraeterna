@@ -506,8 +506,8 @@ Wave 6:
 
 Wave 7 (gate C at the end):
 - [x] T28 Ask about a topic.
-- [ ] T29a Calibrate placement and the gate per decider: admission, margin, gate temperature and threshold.
-- [ ] T29b Calibrate stability, growth and structure; adopt the config defaults.
+- [x] T29a Calibrate placement and the gate per decider: admission, margin, gate temperature and threshold.
+- [x] T29b Calibrate stability, growth and structure; adopt the config defaults.
 - [ ] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
 - [ ] T30 Owner blind rating (D20).
 - [x] T31 Lazy topic overview (migration 0054) written on open, with verified citations.

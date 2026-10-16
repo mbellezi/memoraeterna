@@ -145,3 +145,47 @@ stage verifiers (`phase4:e2e`, `db:seed:verify` with 55 migrations, `db:topic-ov
 Pending for gate C: the E6 record and replay on the PLOS paper (T32), the live proofs on the measurement
 profiles (T31 on ENV-G, T19b on a copy of ENV-G, T23/T24 on ENV-C), calibration (T29a/T29b), the owner's blind
 rating (T30) and the gate-C measurement (T29c).
+
+## Measurement profiles and calibration (2026-10-16)
+
+**Profiles.** ENV-G and ENV-F (golden library and matching fixture, grown source by source through the real
+app) and ENV-C (the 17,735-note corpus re-embedded through the app's GGUF route at 105 notes/s, built by the
+corpus runner) were created from the DEV profile. The MLX Qwen3-Reranker-0.6B was installed into all three with
+the new DEV knob (`MEMORA_LOCAL_MODEL_INSTALL`, validated for `decide`). Topic calls are recorded to
+`golden-small-f2`, `matching-fixture-f2` and `corpus-f2` (0 misses on every run).
+
+**Defects the profiles exposed, all fixed in this wave:**
+- Growth absorbed unrelated sources into existing leaves (ENV-G: short stories inside "Comparação de modelos de
+  memória"): the REBALANCE cooldown was a fixed 931 inserts, rebuild triggers ran only in the daily audit and
+  names were not refreshed within a session. T29b made the cooldown scale with the library, lets fresh items
+  move freely for 24 h, checks the triggers after every PLACE and re-checks name drift a minute after changes.
+- A leaf stayed above its hard maximum after the gate moved 21 notes into it (E1 fail on ENV-C): the gate did
+  not request REBALANCE; it does now, and REBALANCE scans for hard violations on every run (2 ms at ENV-C size).
+- An Areas answer missing one topic was dropped without repair: incomplete answers are now repaired.
+
+**Calibration (seeds 7-12 only; evidence in `docs/topic-placement-calibration.md` and `.cache/topics/reports/t29b`).**
+Changed defaults: ambiguity margin 0.015 → 0.01; churn weight 6 → 4; cooldown = max(10, 8.3% of placed items)
+(was 931); fresh items 24 h; sideways splits limited to the 4-9 band; rebuild quality drop 0.05 → 0.03; bootstrap
+modularity 0.1 → 0.2; rename drift 0.3 → 0.5; background AI calls 300 → 270 per day. Gate T/τ/θ keep 1/0/0.5 for
+both rankers: no grid point reached 90% accepted precision and the rule's fallback would absorb more new topics
+(the ranker's top choice matches margin-only placement on 67-68% of new-article notes).
+
+**Gate C replays (evaluation seeds 20261014 and 1-5, both orders, replay config `15d990301e09`).**
+
+| Exit | Result | Bar |
+| --- | --- | --- |
+| E1 | reachability 1, 0 orphans, 0 hard violations in all 24 runs | 100%, 0, 0 |
+| E2 depth / fan-out 4-9 | median depth 3.71; median 85.2-86.5%, lowest 83.3% | ≤4.5; ≥80%, none <75% |
+| E3 weekly churn at the median seed | 2.55% chronological, 2.38% shuffled | ≤3% |
+
+**Profiles rebuilt with the calibrated `config_hash` 82befc7b (T30).**
+
+| Profile | Topics | Depth | Fan-out 4-9 | Unsorted | E1 |
+| --- | --- | --- | --- | --- | --- |
+| ENV-C (rebuild, 1,117 of 1,518 topic IDs kept) | 1,570 | 3.70 | 88.2% | 0.1% | pass |
+| ENV-G (grown source by source) | 17 (14 leaves) | 1.49 | — | 0% (was 10%) | pass |
+| ENV-F (grown source by source) | 16 (13 leaves) | 1.39 | — | 0% (was 16.7%) | pass |
+
+The live gate on ENV-C (40 held-out articles, MLX ranker): 202 decisions, 130 accepted and 72 "none", rank calls
+about 130-360 ms. Not met and reported: rename drift 7.4% of topics per week against the 2% target; the LLM Areas
+grouping is rejected by its silhouette rule, so the Louvain level-1 topics stay as Areas.
