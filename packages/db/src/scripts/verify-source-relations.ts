@@ -21,6 +21,7 @@ import {
   createEmbeddingRepository,
   createSourceRelationExplanationRepository,
   listSourceRelations,
+  noteRelationFingerprintSql,
   sourceRelationExplainable,
   sourceRelationExplanationPlan,
   sourceRelationIdentityKey,
@@ -260,14 +261,16 @@ try {
     values ($1::uuid,$2,$2,$2,$3,$4,'test','test','local','test',$1::uuid::text)`,
       [noteIds[index], c.content, c.sourceItemId, c.id]
     );
-  const noteRelation = await createAtomicNoteRelationRepository(pool).upsert({
-    sourceAtomicNoteId: noteIds[0]!,
-    targetAtomicNoteId: noteIds[1]!,
+  // Decided from the higher UUID to the lower one: stored as the sorted pair, read `hi_to_lo`.
+  const { relation: noteRelation } = await createAtomicNoteRelationRepository(pool).upsertDecided({
+    subjectAtomicNoteId: noteIds[0]!,
+    objectAtomicNoteId: noteIds[1]!,
     relationType: "supports",
+    band: null,
     finalScore: 0.95,
-    explanation: "test",
-    metadata: { semanticSourceAtomicNoteId: noteIds[0]!, semanticTargetAtomicNoteId: noteIds[1]! }
+    explanation: "test"
   });
+  assert.equal(noteRelation.direction, "hi_to_lo");
   assert.deepEqual(
     await createAtomicNoteRelationRepository(pool).pairStatuses(noteIds[0]!, [noteIds[1]!]),
     new Map([[noteIds[1]!, "pending_review"]])
@@ -384,10 +387,22 @@ try {
     join(migrations, "0048_note_fingerprint_without_review_status.sql"),
     "utf8"
   );
-  assert.equal((await pool.query(rekey)).rowCount, 1);
-  assert.equal(await isCurrent(), true, "The migration re-keys evidence stale only by approval");
+  assert.equal(
+    (await pool.query(rekey)).rowCount,
+    1,
+    "0048 re-keys evidence stale only by approval"
+  );
   assert.equal((await pool.query(rekey)).rowCount, 0, "The migration is idempotent");
-  assert.equal(await isCurrent(), true);
+  // 0048's formula still hashed the relation's status and metadata; 0056 re-keyed every current
+  // evidence row to the facts-only formula (checked by `npm run db:relations:verify`).
+  assert.equal(await isCurrent(), false, "A pre-0056 fingerprint is not the facts-only one");
+  await pool.query(
+    `update source_relation_evidence e set snapshot = jsonb_set(e.snapshot, '{noteFingerprint}',
+       to_jsonb(${noteRelationFingerprintSql("n", "a", "b")}))
+     from atomic_note_relations n, atomic_notes a, atomic_notes b
+     where n.id = e.note_relation_id and a.id = e.source_note_id and b.id = e.target_note_id`
+  );
+  assert.equal(await isCurrent(), true, "Re-keyed to the facts-only formula, as 0056 does");
   await repository.commitDecision(
     "direct",
     book.id,

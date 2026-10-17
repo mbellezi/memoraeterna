@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   customType,
@@ -1606,6 +1607,11 @@ export const atomicNoteEntityLinks = pgTable(
   })
 );
 
+/** Every relation type a reader may meet (`noteRelationReadTypes` of `@app/domain`, F3 D10). */
+const noteRelationReadTypesSql = sql.raw(
+  "('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','contrasts','similar_to','mentions','related')"
+);
+
 export const atomicNoteRelations = pgTable(
   "atomic_note_relations",
   {
@@ -1616,7 +1622,8 @@ export const atomicNoteRelations = pgTable(
     targetAtomicNoteId: uuid("target_atomic_note_id")
       .notNull()
       .references(() => atomicNotes.id, { onDelete: "cascade" }),
-    relationType: text("relation_type").notNull().default("related"),
+    // Null marks an untyped relations v2 row (neutral stance, typed later; F3 D20).
+    relationType: text("relation_type"),
     vectorScore: doublePrecision("vector_score"),
     graphScore: doublePrecision("graph_score"),
     rerankScore: doublePrecision("rerank_score"),
@@ -1630,6 +1637,16 @@ export const atomicNoteRelations = pgTable(
     metadata: jsonb("metadata")
       .notNull()
       .default(sql`'{}'::jsonb`),
+    // Relations v2 (F3 D8, D9): the pair is stored once (source < target by UUID) and reads in
+    // `direction`; automation's band, calibrated probability and veto stay apart from `status`,
+    // which keeps its human meaning (`pending_review` = no human verdict). Legacy rows: band null.
+    direction: text("direction").notNull(),
+    band: text("band"),
+    probability: real("probability"),
+    deciderKey: text("decider_key"),
+    typerKey: text("typer_key"),
+    vetoedAt: timestamp("vetoed_at", { withTimezone: true }),
+    vetoSource: text("veto_source"),
     ...timestamps
   },
   (table) => ({
@@ -1638,6 +1655,29 @@ export const atomicNoteRelations = pgTable(
     sourceTargetUidx: uniqueIndex("atomic_note_relations_source_target_uidx").on(
       table.sourceAtomicNoteId,
       table.targetAtomicNoteId
+    ),
+    pair: check(
+      "atomic_note_relations_pair",
+      sql`${table.sourceAtomicNoteId} < ${table.targetAtomicNoteId}`
+    ),
+    values: check(
+      "atomic_note_relations_values",
+      sql`${table.direction} in ('lo_to_hi','hi_to_lo','symmetric','unknown')
+        and (${table.band} is null or ${table.band} in ('apply','suggest'))
+        and (${table.probability} is null or ${table.probability} between 0 and 1)
+        and (${table.vetoSource} is null or ${table.vetoSource} in ('explainer','typer'))
+        and (${table.vetoSource} is null) = (${table.vetoedAt} is null)
+        and (${table.relationType} is null or ${table.relationType} in ${noteRelationReadTypesSql})`
+    ),
+    v2: check(
+      "atomic_note_relations_v2",
+      sql`(${table.relationType} is not null or ${table.band} is not null)
+        and (${table.direction} <> 'unknown' or ${table.band} is null)
+        and (${table.band} is null or (
+          (${table.relationType} is null or ${table.relationType} in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as'))
+          and case when ${table.relationType} in ('supports','extends','depends_on','example_of','clarifies')
+                then ${table.direction} in ('lo_to_hi','hi_to_lo')
+                else ${table.direction} = 'symmetric' end))`
     )
   })
 );
@@ -1671,8 +1711,12 @@ export const relationDecisions = pgTable(
       onDelete: "set null"
     }),
     hiToLoDecidedAt: timestamp("hi_to_lo_decided_at", { withTimezone: true }),
+    // Pair-level outcome of the pre-F3 matcher: no longer written (F3 D12), dropped in F4.
     relationType: text("relation_type"),
-    accepted: boolean("accepted").notNull().default(false)
+    accepted: boolean("accepted").notNull().default(false),
+    // `probability`: a generative verdict in [0, 1] with its type per direction. `log_odds`: a
+    // ranker's raw, uncalibrated score per direction, with no per-direction type (F3 D12).
+    scoreScale: text("score_scale").notNull().default("probability")
   },
   (table) => ({
     pairDeciderUidx: uniqueIndex("relation_decisions_pair_decider_uidx").on(
@@ -1685,13 +1729,23 @@ export const relationDecisions = pgTable(
       "relation_decisions_pair",
       sql`${table.loAtomicNoteId} < ${table.hiAtomicNoteId} and ${table.pairKey} = ${table.loAtomicNoteId}::text || ':' || ${table.hiAtomicNoteId}::text`
     ),
+    scoreScale: check(
+      "relation_decisions_score_scale",
+      sql`${table.scoreScale} in ('probability','log_odds')`
+    ),
     directions: check(
       "relation_decisions_directions",
       sql`(${table.loToHiScore} is not null or ${table.hiToLoScore} is not null)
-        and (${table.loToHiScore} is null) = (${table.loToHiRelationType} is null)
-        and (${table.hiToLoScore} is null) = (${table.hiToLoRelationType} is null)
-        and coalesce(${table.loToHiScore}, 0) between 0 and 1
-        and coalesce(${table.hiToLoScore}, 0) between 0 and 1`
+        and case when ${table.scoreScale} = 'log_odds' then
+              ${table.loToHiRelationType} is null and ${table.hiToLoRelationType} is null
+              and (${table.loToHiScore} is null or (${table.loToHiScore} > '-Infinity'::float8 and ${table.loToHiScore} < 'Infinity'::float8))
+              and (${table.hiToLoScore} is null or (${table.hiToLoScore} > '-Infinity'::float8 and ${table.hiToLoScore} < 'Infinity'::float8))
+            else
+              (${table.loToHiScore} is null) = (${table.loToHiRelationType} is null)
+              and (${table.hiToLoScore} is null) = (${table.hiToLoRelationType} is null)
+              and coalesce(${table.loToHiScore}, 0) between 0 and 1
+              and coalesce(${table.hiToLoScore}, 0) between 0 and 1
+            end`
     ),
     decidedAt: check(
       "relation_decisions_decided_at",
@@ -1700,15 +1754,11 @@ export const relationDecisions = pgTable(
         and (${table.loToHiScore} is not null or ${table.loToHiAiTaskRunId} is null)
         and (${table.hiToLoScore} is not null or ${table.hiToLoAiTaskRunId} is null)`
     ),
-    accepted: check(
-      "relation_decisions_accepted",
-      sql`(${table.relationType} is not null) = ${table.accepted}`
-    ),
     types: check(
       "relation_decisions_types",
-      sql`coalesce(${table.loToHiRelationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')
-        and coalesce(${table.hiToLoRelationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')
-        and coalesce(${table.relationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')`
+      sql`coalesce(${table.loToHiRelationType}, 'related') in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','contrasts','similar_to','mentions','related')
+        and coalesce(${table.hiToLoRelationType}, 'related') in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','contrasts','similar_to','mentions','related')
+        and coalesce(${table.relationType}, 'related') in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','contrasts','similar_to','mentions','related')`
     )
   })
 );
@@ -1741,6 +1791,153 @@ export const atomicNoteRelationExplanations = pgTable(
   })
 );
 
+// The typer's verdict on an unordered note pair (F3 D20), reused only while both notes' rendered
+// inputs are unchanged. `none` is a veto: the pair keeps this row and no relation is persisted, so
+// recalibration never asks again. `direction` is null for `none`.
+export const relationTypings = pgTable(
+  "relation_typings",
+  {
+    pairKey: text("pair_key").notNull(),
+    typerKey: text("typer_key").notNull(),
+    loHash: text("lo_hash").notNull(),
+    hiHash: text("hi_hash").notNull(),
+    relationType: text("relation_type").notNull(),
+    direction: text("direction"),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.pairKey, table.typerKey] }),
+    verdict: check(
+      "relation_typings_verdict",
+      sql`${table.relationType} in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','none')
+        and case when ${table.relationType} = 'none' then ${table.direction} is null
+                 when ${table.relationType} in ('supports','extends','depends_on','example_of','clarifies')
+                   then ${table.direction} in ('lo_to_hi','hi_to_lo')
+                 else ${table.direction} = 'symmetric' end
+        and char_length(${table.pairKey}) between 1 and 200 and char_length(${table.typerKey}) between 1 and 200
+        and char_length(${table.loHash}) between 1 and 200 and char_length(${table.hiHash}) between 1 and 200`
+    )
+  })
+);
+
+// Per-note matching state (F3 D19): the cosine of the note's k-th vector candidate when it was
+// decided, which later notes compare against to include it as a reverse neighbour.
+export const noteMatchState = pgTable(
+  "note_match_state",
+  {
+    noteId: uuid("note_id")
+      .primaryKey()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    deciderKey: text("decider_key").notNull(),
+    spaceKey: text("space_key").notNull(),
+    kthCosine: real("kth_cosine"),
+    matchedAt: timestamp("matched_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    values: check(
+      "note_match_state_values",
+      sql`char_length(${table.deciderKey}) between 1 and 200 and char_length(${table.spaceKey}) between 1 and 200
+        and (${table.kthCosine} is null or ${table.kthCosine} between -1 and 1)`
+    )
+  })
+);
+
+// Per-root source matching state (F3 D27): arrival order, the nearest root found by discovery and
+// its cosine (reverse neighbours beat it), in one embedding space.
+export const sourceMatchState = pgTable(
+  "source_match_state",
+  {
+    rootId: uuid("root_id")
+      .primaryKey()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    matchSeq: bigserial("match_seq", { mode: "number" }).notNull(),
+    nearestRootId: uuid("nearest_root_id").references(() => sourceItems.id, {
+      onDelete: "set null"
+    }),
+    nearestCosine: real("nearest_cosine"),
+    spaceKey: text("space_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    matchedAt: timestamp("matched_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    seqUidx: uniqueIndex("source_match_state_match_seq_uidx").on(table.matchSeq),
+    nearestIdx: index("source_match_state_space_nearest_idx").on(
+      table.spaceKey,
+      table.nearestRootId
+    ),
+    values: check(
+      "source_match_state_values",
+      sql`(${table.nearestRootId} is null or ${table.nearestRootId} <> ${table.rootId})
+        and (${table.nearestCosine} is null or ${table.nearestCosine} between -1 and 1)
+        and char_length(${table.spaceKey}) between 1 and 200 and char_length(${table.fingerprint}) between 1 and 200`
+    )
+  })
+);
+
+// One automatic (or review) pass over relations (F3 D14); its events can be reverted exactly.
+export const relationMatchRuns = pgTable(
+  "relation_match_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    // Runs keep the root ID without a foreign key: history outlives a deleted source (F2 D32).
+    rootId: uuid("root_id"),
+    deciderKey: text("decider_key"),
+    calibrationVersion: text("calibration_version"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    outcome: text("outcome"),
+    counts: jsonb("counts")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    timings: jsonb("timings")
+      .notNull()
+      .default(sql`'{}'::jsonb`)
+  },
+  (table) => ({
+    rootIdx: index("relation_match_runs_root_started_idx").on(table.rootId, table.startedAt),
+    values: check(
+      "relation_match_runs_values",
+      sql`${table.kind} in ('match','link','type','promote','discover','review','veto','reconcile','retype')
+        and (${table.outcome} is null or char_length(${table.outcome}) between 1 and 200)
+        and jsonb_typeof(${table.counts}) = 'object' and jsonb_typeof(${table.timings}) = 'object'`
+    )
+  })
+);
+
+// Append-only log of every automatic relation change (F3 D14), with the row before and after.
+// Events keep relation IDs without foreign keys (F2 D32): history outlives deleted relations.
+export const relationEvents = pgTable(
+  "relation_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Global append order: reverting a run walks its events backwards.
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => relationMatchRuns.id, { onDelete: "cascade" }),
+    relationKind: text("relation_kind").notNull(),
+    relationId: uuid("relation_id"),
+    pairKey: text("pair_key").notNull(),
+    kind: text("kind").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    seqUidx: uniqueIndex("relation_events_seq_uidx").on(table.seq),
+    runIdx: index("relation_events_run_idx").on(table.runId),
+    relationIdx: index("relation_events_relation_idx").on(table.relationId),
+    values: check(
+      "relation_events_values",
+      sql`${table.relationKind} in ('note','source')
+        and ${table.kind} in ('applied','suggested','typed','untyped','vetoed','kept','removed','promoted','retired','reconciled')
+        and char_length(${table.pairKey}) between 1 and 200`
+    )
+  })
+);
+
 export const sourceRelations = pgTable(
   "source_relations",
   {
@@ -1758,12 +1955,16 @@ export const sourceRelations = pgTable(
     sourceIdea: text("source_idea"),
     targetIdea: text("target_idea"),
     explanation: text("explanation"),
-    importance: doublePrecision("importance").notNull(),
-    confidence: doublePrecision("confidence").notNull(),
+    // A judged relation carries the judge's scores; a promoted one (design E, F3 D27) has none
+    // (unknown stays unknown) and counts the note relations it was promoted from.
+    importance: doublePrecision("importance"),
+    confidence: doublePrecision("confidence"),
     status: atomicNoteRelationStatus("status").notNull().default("pending_review"),
     metadata: jsonb("metadata")
       .notNull()
       .default(sql`'{}'::jsonb`),
+    origin: text("origin").notNull().default("judged"),
+    supportCount: integer("support_count"),
     ...timestamps
   },
   (table) => ({
@@ -1776,11 +1977,19 @@ export const sourceRelations = pgTable(
     ),
     scores: check(
       "source_relations_scores",
-      sql`${table.importance} between 0 and 1 and ${table.confidence} between 0 and 1`
+      sql`(${table.importance} is null or ${table.importance} between 0 and 1)
+        and (${table.confidence} is null or ${table.confidence} between 0 and 1)`
+    ),
+    origin: check(
+      "source_relations_origin",
+      sql`${table.origin} in ('judged','promoted')
+        and (${table.origin} <> 'judged' or (${table.importance} is not null and ${table.confidence} is not null))
+        and (${table.origin} <> 'promoted' or (${table.supportCount} is not null and ${table.supportCount} >= 1))
+        and (${table.supportCount} is null or ${table.supportCount} >= 1)`
     ),
     type: check(
       "source_relations_type",
-      sql`${table.relationType} in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')`
+      sql`${table.relationType} in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as','contrasts','similar_to','mentions','related')`
     )
   })
 );

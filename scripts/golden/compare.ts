@@ -61,11 +61,18 @@ for (const [name, run] of [
   if (run.status !== "completed")
     differences.push(`run ${name} status is ${run.status}${run.error ? `: ${run.error}` : ""}`);
 
+// Digests a later runner added: a run recorded before them has none, so they are compared only
+// when both runs have them (the directed note-relation tuples of relations v2, F3 D8).
+const laterDigests = new Set(["noteRelationsDirected"]);
 const outputKeys = new Set([...Object.keys(a.outputs ?? {}), ...Object.keys(b.outputs ?? {})]);
 console.log("Content");
 for (const key of [...outputKeys].sort()) {
   const x = a.outputs?.[key];
   const y = b.outputs?.[key];
+  if (laterDigests.has(key) && (!x || !y)) {
+    console.log(`  ${key.padEnd(16)} not compared (only in run ${x ? "A" : "B"})`);
+    continue;
+  }
   const same = x?.sha256 === y?.sha256 && x?.count === y?.count;
   console.log(
     `  ${key.padEnd(16)} ${same ? "same" : "DIFFERENT"}  ${x?.count ?? "-"} / ${y?.count ?? "-"}`

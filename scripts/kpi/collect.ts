@@ -1,3 +1,5 @@
+import { noteRelationStateSql } from "@app/db";
+
 import {
   aggregateAi,
   aggregateAutomation,
@@ -214,12 +216,29 @@ class Collector {
         if (total !== null) embeddings[table] = total;
       }
 
+      // Relations v2 (F3 D9): what automation applied or suggested and what it withdrew, read
+      // through the visibility predicates; a library before migration 0056 has no such states.
+      const noteRelationStates = await this.part(
+        "library.noteRelationStates",
+        [["atomic_note_relations", "band", "vetoed_at"]],
+        async () => {
+          const [row] = await this.rows<{ applied: number; suggested: number; withdrawn: number }>(
+            `select count(*) filter (where ${noteRelationStateSql.applied("r")})::int as applied,
+                    count(*) filter (where ${noteRelationStateSql.suggested("r")})::int as suggested,
+                    count(*) filter (where ${noteRelationStateSql.withdrawn("r")})::int as withdrawn
+               from atomic_note_relations r`
+          );
+          return row ?? { applied: 0, suggested: 0, withdrawn: 0 };
+        }
+      );
+
       return {
         sources,
         documents: await count("documents"),
         chunks: await count("chunks"),
         notes,
         noteRelations: await byStatus("atomic_note_relations"),
+        noteRelationStates,
         sourceRelations: await byStatus("source_relations"),
         entities: await count("entities"),
         embeddings

@@ -16,6 +16,11 @@ import {
 } from "@app/domain";
 
 import type { PgPool } from "../client.js";
+import {
+  currentNoteSql,
+  earlierVersionNoteRelationSql,
+  shownNoteRelationSql
+} from "./note-relation-sql.js";
 import { createObjectLocateRepository } from "./objectLocateRepository.js";
 import { relationExplanationPlan } from "./relationExplanationRepository.js";
 import { mapNullableTimestamp, mapTimestamp } from "./sql.js";
@@ -181,31 +186,42 @@ select (select count(*)::int from items) as total,
 
 /**
  * $1 note ID, $2 limit, $3 offset, $4 excerpt characters. One row with the exact total and one page
- * of relations to notes that are neither discarded nor archived, ordered by the stored score (which
- * never leaves this statement's ordering). The direction comes from the decided metadata: the stored
- * endpoints are sorted by ID. Every counted relation is listed: a knowledge-owned note outlives its
- * home source (it has no foreign key to it), so that source is a left join. `left()` counts
- * characters (code points) and the contract bounds the excerpt in the same unit.
+ * of relations, ordered by the stored score (which never leaves this statement's ordering): the
+ * shown relations (D9) and the applied relations to an earlier version of a note (flagged
+ * `superseded` on the other note). The direction comes from the stored `direction` (F3 D8): the
+ * endpoint columns are the canonical pair, sorted by ID. Every counted relation is listed: a
+ * knowledge-owned note outlives its home source (it has no foreign key to it), so that source is a
+ * left join. `left()` counts characters (code points) and the contract bounds the excerpt in the
+ * same unit.
  */
+const self = { alias: "s", current: "s.current" };
+const other = { alias: "o", current: "o.current" };
 const relationsSql = `
-with rel as (
-  select r.id, r.relation_type as type, r.final_score, r.explanation, r.matching_model,
+with self as materialized (
+  select n.id, n.status, ${currentNoteSql("n")} as current from atomic_notes n where n.id = $1::uuid
+),
+rel as (
+  select r.id, coalesce(r.relation_type, 'related') as type, r.final_score, r.explanation, r.matching_model,
          r.metadata->>'decisionSource' as decision_source,
-         r.metadata->>'semanticSourceAtomicNoteId' as semantic_source_id,
-         case r.metadata->>'semanticSourceAtomicNoteId'
-              when $1::uuid::text then 'outgoing'
-              when o.id::text then 'incoming'
-              else 'unknown' end as direction,
+         (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
+                           when 'hi_to_lo' then r.target_atomic_note_id end)::text as semantic_source_id,
+         case when r.direction not in ('lo_to_hi', 'hi_to_lo') then 'unknown'
+              when (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
+                                     else r.target_atomic_note_id end) = $1::uuid then 'outgoing'
+              else 'incoming' end as direction,
          o.id as other_id, o.title as other_title
     from atomic_note_relations r
-    -- One primary-key lookup per relation (the limit keeps it a lookup), even for a hub note.
+    cross join self s
+    -- Primary-key lookups per relation (the limit keeps them lookups), even for a hub note; each
+    -- endpoint's currency is read once.
     cross join lateral (
-      select o.id, o.title, o.status from atomic_notes o
+      select o.id, o.title, o.status, ${currentNoteSql("o")} as current from atomic_notes o
        where o.id = case when r.source_atomic_note_id = $1::uuid
                          then r.target_atomic_note_id else r.source_atomic_note_id end
        limit 1) o
    where (r.source_atomic_note_id = $1::uuid or r.target_atomic_note_id = $1::uuid)
-     and r.status <> 'rejected' and o.status not in ('rejected', 'archived')
+     and (${shownNoteRelationSql("r", [self, other])}
+          or ${earlierVersionNoteRelationSql("r", self, other)})
 ),
 page as (
   select rel.*, row_number() over (order by rel.final_score desc, rel.other_title, rel.id) as ord

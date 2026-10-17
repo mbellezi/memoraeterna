@@ -7,6 +7,11 @@ import {
   type RelationExplanationDirection
 } from "@app/domain";
 
+import {
+  earlierVersionNoteRelationSql,
+  shownNoteRelationSql,
+  withdrawnNoteRelationSql
+} from "./note-relation-sql.js";
 import { mapTimestamp } from "./sql.js";
 import type { Queryable } from "./types.js";
 
@@ -70,7 +75,10 @@ export interface RelationExplanationContext {
   relationId: string;
   type: string;
   status: string;
+  /** The decided subject of a directed relation, from its stored direction; null otherwise. */
   semanticSourceId: string | null;
+  /** The Note page lists the relation (D9): only a listed relation is explained. */
+  listed: boolean;
   a: RelationExplanationNote;
   b: RelationExplanationNote;
   stored: StoredRelationExplanation | null;
@@ -116,6 +124,7 @@ interface ContextRow extends QueryResultRow {
   type: string;
   status: string;
   semanticSourceId: string | null;
+  listed: boolean;
   a: RelationExplanationNote;
   b: RelationExplanationNote;
   stored: { text: string; inputHash: string; model: string; writtenAt: string } | null;
@@ -128,10 +137,18 @@ const noteJson = (alias: string, chunk: string) => `jsonb_build_object(
     'passage', case when ${chunk}.id is null then null else jsonb_build_object(
       'chunkId', ${chunk}.id, 'content', ${chunk}.content, 'contentHash', ${chunk}.content_hash) end)`;
 
-/** $1 relation ID. One row by primary keys: the relation, both notes, their passages and the cache. */
+/**
+ * $1 relation ID. One row by primary keys: the relation, both notes, their passages and the cache.
+ * The subject of a directed relation comes from its stored direction (F3 D8); an untyped relation
+ * reads as neutral. `listed`: the Note page lists the relation (shown, withdrawn, or to an earlier
+ * version of a note), which is what may be explained.
+ */
 const contextSql = `
-select r.id as "relationId", r.relation_type as type, r.status::text as status,
-       r.metadata->>'semanticSourceAtomicNoteId' as "semanticSourceId",
+select r.id as "relationId", coalesce(r.relation_type, 'related') as type, r.status::text as status,
+       (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
+                         when 'hi_to_lo' then r.target_atomic_note_id end)::text as "semanticSourceId",
+       (${shownNoteRelationSql("r", ["a", "b"])} or ${withdrawnNoteRelationSql("r", ["a", "b"])}
+        or ${earlierVersionNoteRelationSql("r", "a", "b")}) as listed,
        ${noteJson("a", "ac")} as a, ${noteJson("b", "bc")} as b,
        case when x.relation_id is null then null else jsonb_build_object(
          'text', x.text, 'inputHash', x.input_hash, 'model', x.model, 'writtenAt', x.written_at) end as stored
@@ -177,6 +194,7 @@ export function createRelationExplanationRepository(db: Queryable) {
         type: row.type,
         status: row.status,
         semanticSourceId: row.semanticSourceId,
+        listed: row.listed,
         a: row.a,
         b: row.b,
         stored: row.stored

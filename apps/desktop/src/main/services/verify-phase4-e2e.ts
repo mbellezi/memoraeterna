@@ -28,6 +28,7 @@ import { sha256 } from "@app/conversion";
 import {
   AtomicNoteMatchingSettingsSchema,
   DocumentDivisionCandidateSchema,
+  isSymmetricNoteRelationType,
   ProcessingPlanRequestSchema,
   SourceDescriptorSchema,
   processingPresetStages
@@ -1286,14 +1287,27 @@ try {
     throw new Error(
       `Three notes make three pairs and one judgment each: ${JSON.stringify(afterAll)} ${pairCalls.rerankAliases.join()}.`
     );
-  const pairRelations = await pool.query<{ source: string; target: string; sem: string }>(
-    `select source_atomic_note_id as source, target_atomic_note_id as target,
-       metadata->>'semanticSourceAtomicNoteId' as sem from atomic_note_relations
+  const pairRelations = await pool.query<{
+    source: string;
+    target: string;
+    sem: string | null;
+    type: string | null;
+  }>(
+    `select source_atomic_note_id as source, target_atomic_note_id as target, relation_type as type,
+       (case direction when 'lo_to_hi' then source_atomic_note_id
+                       when 'hi_to_lo' then target_atomic_note_id end)::text as sem
+       from atomic_note_relations
      where source_atomic_note_id = any($1::uuid[]) and target_atomic_note_id = any($1::uuid[])`,
     [pairNoteIds]
   );
-  // Each pair was judged when its earlier note was matched, and keeps that direction.
-  if (pairRelations.rows.length !== 3 || pairRelations.rows.some((row) => row.sem === onlyOfTwo))
+  // Each pair was judged when its earlier note was matched, and keeps that direction (the stored
+  // `direction` of relations v2; a symmetric type reads both ways).
+  if (
+    pairRelations.rows.length !== 3 ||
+    pairRelations.rows.some(
+      (row) => row.sem === onlyOfTwo || (row.sem === null && !isSymmetricNoteRelationType(row.type))
+    )
+  )
     throw new Error("The judged pairs did not become relations with their semantic direction.");
   // An AI run is written when the call ends: its start is the end minus its duration.
   const runTimes = await pool.query<{ total: number; wrong: number }>(

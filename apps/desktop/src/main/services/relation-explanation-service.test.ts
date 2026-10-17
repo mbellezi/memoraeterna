@@ -35,6 +35,7 @@ const context = (
   type: "supports",
   status: "pending_review",
   semanticSourceId: ids.b,
+  listed: true,
   a: {
     id: ids.a,
     title: "Retrieval",
@@ -192,7 +193,9 @@ describe("RelationExplanationService", () => {
     const { service, runDefaultTask } = setup();
     repository.readContext.mockResolvedValueOnce(null);
     expect(await service.explain({ relationId: ids.relation })).toBeNull();
-    repository.readContext.mockResolvedValueOnce(context({ status: "rejected" }));
+    // A relation the Note page does not list (removed by the owner, or between notes that are no
+    // longer current) is not explained.
+    repository.readContext.mockResolvedValueOnce(context({ status: "rejected", listed: false }));
     expect(await service.explain({ relationId: ids.relation })).toBeNull();
     repository.readContext.mockResolvedValueOnce(
       context({ b: { ...context().b, status: "archived" } })

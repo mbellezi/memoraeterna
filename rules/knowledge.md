@@ -23,9 +23,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   writer route is ready, otherwise to searchable processing (chunks and
   embeddings, no generative AI); integrations use searchable processing.
   Import-only stays an explicit choice. A finished import opens its source.
-- Saving source content or metadata creates revisions and never starts
-  generative AI work. Reviewed or human-edited artifacts are never silently
-  overwritten or deleted by reprocessing.
+- Saving source content or metadata creates revisions and never starts generative AI work.
+  Reviewed or human-edited artifacts are never silently overwritten or deleted by reprocessing.
 
 ## Conversion
 
@@ -75,10 +74,11 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   judges each unordered pair once: its verdict answers the reverse direction
   (the type stays with the judged direction) and no row is written for the
   reuse; a reranker scores both directions (target F3).
-- Relation types use one fixed vocabulary shared by notes and sources; type,
-  direction and explanation are assigned only to accepted pairs. Shared topics,
-  names, dates or homonyms alone never create a relation; the relation must be
-  supported by evidence from both endpoints (target F3).
+- Relation types use one fixed vocabulary shared by notes and sources; type, direction and
+  explanation are assigned only to accepted pairs. Shared topics, names, dates or homonyms alone
+  never create a relation; it must be supported by evidence from both endpoints and is shown only
+  while both have current evidence. A note relation stores its pair once with an explicit
+  direction; automation's band (applied or suggested) stays apart from the human review status.
 - Source relations come from accepted note relations plus decider-confirmed
   discovery pairs, never same-root pairs. Matching runs per source as soon as its
   notes exist, with no batch barrier (target F3).

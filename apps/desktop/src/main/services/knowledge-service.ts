@@ -15,6 +15,7 @@ import {
   type AtomicNoteRelationType,
   CanonicalMatchingSettingsSchema,
   generativeDeciderCapabilities,
+  noteRelationPair,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
@@ -420,18 +421,24 @@ export class KnowledgeService {
       })),
       atomicNotes: notes.map(serializeNote),
       graph,
-      relations: relations.map((relation) => ({
-        id: relation.id,
-        sourceAtomicNoteId: relation.sourceAtomicNoteId,
-        targetAtomicNoteId: relation.targetAtomicNoteId,
-        sourceTitle: relation.sourceTitle,
-        targetTitle: relation.targetTitle,
-        sourceStatus: relation.sourceStatus,
-        targetStatus: relation.targetStatus,
-        relationType: relation.relationType,
-        finalScore: relation.finalScore,
-        explanation: relation.explanation
-      }))
+      // The relations the Note pages show (D9): withdrawn and removed ones stay out.
+      relations: relations
+        .filter((relation) => relation.shown)
+        .map((relation) => ({
+          id: relation.id,
+          sourceAtomicNoteId: relation.sourceAtomicNoteId,
+          targetAtomicNoteId: relation.targetAtomicNoteId,
+          sourceTitle: relation.sourceTitle,
+          targetTitle: relation.targetTitle,
+          sourceStatus: relation.sourceStatus,
+          targetStatus: relation.targetStatus,
+          // The stored pair is sorted by ID; the direction says how it reads (F3 D8). An untyped
+          // relation reads neutral.
+          direction: relation.direction,
+          relationType: relation.relationType ?? "related",
+          finalScore: relation.finalScore,
+          explanation: relation.explanation
+        }))
     };
   }
 
@@ -1906,11 +1913,12 @@ export class KnowledgeService {
                 : "infeasible";
         const fromCache = decisionSource === "cache" || decisionSource === "reverse_cache";
         // The type belongs to the direction it was judged in: for a reused verdict that is
-        // candidate -> this note, which is the direction the relation keeps.
-        const [semanticSourceId, semanticTargetId] =
+        // candidate -> this note, which is the direction the relation keeps (stored as the canonical
+        // pair and its `direction`, F3 D8; never in metadata).
+        const pair =
           decisionSource === "reverse_cache"
-            ? [candidate.note.id, note.id]
-            : [note.id, candidate.note.id];
+            ? noteRelationPair(candidate.note.id, note.id, relationType)
+            : noteRelationPair(note.id, candidate.note.id, relationType);
         const existingRelation = pairStatuses.has(candidate.note.id);
         // The decider writes no prose: a decided relation keeps the localized fallback until its
         // explanation is written on demand.
@@ -1967,9 +1975,13 @@ export class KnowledgeService {
         if (selected.accepted && !existingRelation) {
           const persistRelation = () =>
             relations.upsert({
-              sourceAtomicNoteId: note.id,
-              targetAtomicNoteId: candidate.note.id,
+              loAtomicNoteId: pair.lo,
+              hiAtomicNoteId: pair.hi,
+              direction: pair.direction,
               relationType,
+              // The interim generative matcher has no calibrated band: its rows read as applied,
+              // like legacy rows, until the relations v2 matcher replaces it (T51).
+              band: null,
               vectorScore: candidate.vectorScore,
               graphScore,
               rerankScore,
@@ -2000,8 +2012,6 @@ export class KnowledgeService {
                 textRank: candidate.textRank,
                 vectorRank: candidate.vectorRank,
                 graphRank: candidate.graphRank,
-                semanticSourceAtomicNoteId: semanticSourceId,
-                semanticTargetAtomicNoteId: semanticTargetId,
                 pendingReview:
                   note.status === "pending_review" || candidate.note.status === "pending_review"
               }
@@ -2032,7 +2042,6 @@ export class KnowledgeService {
             deciderKey: decider.key,
             score: modelDecision.score,
             relationType: modelDecision.relationType,
-            accepted: selected.accepted,
             aiTaskRunId: modelDecision.aiTaskRunId
           });
         await onProgress?.(

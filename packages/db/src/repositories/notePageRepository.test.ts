@@ -3,6 +3,11 @@ import type { QueryResult, QueryResultRow } from "pg";
 
 import { NotePageRelationsSchema, notePageLimits, objectLocatePathLimit } from "@app/domain";
 import type { PgPool } from "../client.js";
+import {
+  currentNoteSql,
+  earlierVersionNoteRelationSql,
+  shownNoteRelationSql
+} from "./note-relation-sql.js";
 import { createNotePageRepository } from "./notePageRepository.js";
 import { relationExplanationPlan } from "./relationExplanationRepository.js";
 
@@ -129,7 +134,7 @@ function setup(
       if (answers.fail === "evidence") throw new Error("boom");
       return [evidenceRow];
     }
-    if (text.includes("with rel as"))
+    if (/\brel as \(/u.test(text))
       return answers.relations ?? [{ total: 1, self, items: [relationItem()] }];
     return [located];
   };
@@ -367,9 +372,18 @@ describe("note page repository", () => {
     expect(evidence).toContain(`left(page.excerpt, ${notePageLimits.evidenceExcerptCharacters})`);
   });
 
-  it("hides discarded relations and discarded or archived notes", () => {
+  it("lists shown relations and applied ones to earlier versions, through the predicate module", () => {
     const { relations } = setup().repository.statements;
-    expect(relations).toContain("r.status <> 'rejected'");
-    expect(relations).toContain("o.status not in ('rejected', 'archived')");
+    // Relations v2 (D9): shown between current notes, or applied to an earlier version of a note;
+    // each note's currency is read once (`s.current`, `o.current`).
+    const self = { alias: "s", current: "s.current" };
+    const other = { alias: "o", current: "o.current" };
+    expect(relations).toContain(shownNoteRelationSql("r", [self, other]));
+    expect(relations).toContain(earlierVersionNoteRelationSql("r", self, other));
+    expect(relations).toContain(`${currentNoteSql("n")} as current`);
+    expect(relations).toContain(`${currentNoteSql("o")} as current`);
+    // The direction is the stored column, never the metadata.
+    expect(relations).toContain("case r.direction when 'lo_to_hi'");
+    expect(relations).not.toContain("metadata->>'semantic");
   });
 });

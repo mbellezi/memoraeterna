@@ -180,10 +180,11 @@ try {
       [noteIds[i], content, id, chunkId]
     );
   }
-  const relation = await createAtomicNoteRelationRepository(pool).upsert({
-    sourceAtomicNoteId: noteIds[0]!,
-    targetAtomicNoteId: noteIds[1]!,
+  const { relation } = await createAtomicNoteRelationRepository(pool).upsertDecided({
+    subjectAtomicNoteId: noteIds[0]!,
+    objectAtomicNoteId: noteIds[1]!,
     relationType: "supports",
+    band: null,
     finalScore: 0.9,
     explanation: "Synthetic evidence"
   });

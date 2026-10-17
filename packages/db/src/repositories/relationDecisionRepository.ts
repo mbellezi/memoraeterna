@@ -18,10 +18,42 @@ export interface RelationDecisionInput {
   deciderKey: string;
   score: number;
   relationType: string;
-  /** Whether matching accepted the pair when this verdict was recorded. */
-  accepted: boolean;
   /** The AI run that produced this direction's verdict; the other direction keeps its own. */
   aiTaskRunId: string | null;
+}
+
+/**
+ * A ranker's raw scores of both directions of a pair (F3 D12, D13): log-odds as the ranker answered
+ * them, before any calibration, with no per-direction type. `loInputHash`/`hiInputHash` are the
+ * SHA-256 of the exact text the decider saw for each note (its rendered input), and `deciderKey` the
+ * decider cache key; a stored score is reused only while all three match.
+ */
+export interface RankerScoresInput {
+  loAtomicNoteId: string;
+  hiAtomicNoteId: string;
+  loInputHash: string;
+  hiInputHash: string;
+  deciderKey: string;
+  /** Raw log-odds of lo -> hi and hi -> lo; a direction not scored by this call is null. */
+  loToHi: number | null;
+  hiToLo: number | null;
+  aiTaskRunId: string | null;
+}
+
+/** Stored raw log-odds of a pair, per direction (null when that direction was never scored). */
+export interface RankerScores {
+  loToHi: number | null;
+  hiToLo: number | null;
+}
+
+export interface RankerScoresLookup {
+  deciderKey: string;
+  pairs: ReadonlyArray<{
+    loAtomicNoteId: string;
+    hiAtomicNoteId: string;
+    loInputHash: string;
+    hiInputHash: string;
+  }>;
 }
 
 interface RelationDecisionRow extends QueryResultRow {
@@ -93,7 +125,7 @@ async function readVerdicts(
        lo_to_hi_score as "loToHiScore", lo_to_hi_relation_type as "loToHiRelationType",
        hi_to_lo_score as "hiToLoScore", hi_to_lo_relation_type as "hiToLoRelationType"
      from relation_decisions
-     where decider_key = $1 and pair_key = any($2::text[])`,
+     where decider_key = $1 and pair_key = any($2::text[]) and score_scale = 'probability'`,
     [
       input.deciderKey,
       targets.map(
@@ -143,31 +175,30 @@ export function createRelationDecisionRepository(db: Queryable) {
     /**
      * Records one direction with its own AI run and time. The other direction's verdict, run and
      * time are kept while both content hashes are unchanged and discarded when either note changed,
-     * so a row never mixes content versions.
+     * so a row never mixes content versions. The pair-level outcome (`accepted`, `relation_type`) is
+     * no longer written (F3 D12): acceptance is calibration's, outside this raw table.
      */
     async record(input: RelationDecisionInput): Promise<void> {
       const pair = relationDecisionPair(input.sourceAtomicNoteId, input.targetAtomicNoteId);
       const sourceIsLo = pair.lo === input.sourceAtomicNoteId;
       const verdict = [input.score, input.relationType, input.aiTaskRunId];
-      await db.query(
+      const result = await db.query(
         `insert into relation_decisions as d (
            pair_key, lo_atomic_note_id, hi_atomic_note_id, lo_content_hash, hi_content_hash,
            decider_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_ai_task_run_id,
            lo_to_hi_decided_at, hi_to_lo_score, hi_to_lo_relation_type, hi_to_lo_ai_task_run_id,
-           hi_to_lo_decided_at, relation_type, accepted
+           hi_to_lo_decided_at, score_scale
          ) values ($1, $2, $3, $4, $5, $6, $7::double precision, $8, $9::uuid,
            case when $7::double precision is not null then now() end,
            $10::double precision, $11, $12::uuid,
-           case when $10::double precision is not null then now() end, $13, $14)
+           case when $10::double precision is not null then now() end, 'probability')
          on conflict (pair_key, decider_key) do update set
            ${directionAssignments("lo_to_hi")},
            ${directionAssignments("hi_to_lo")},
-           relation_type = case when ${sameContent} and d.accepted
-             then d.relation_type else excluded.relation_type end,
-           accepted = case when ${sameContent}
-             then d.accepted or excluded.accepted else excluded.accepted end,
            lo_content_hash = excluded.lo_content_hash,
-           hi_content_hash = excluded.hi_content_hash`,
+           hi_content_hash = excluded.hi_content_hash
+         where d.score_scale = excluded.score_scale
+         returning 1`,
         [
           pair.key,
           pair.lo,
@@ -176,11 +207,97 @@ export function createRelationDecisionRepository(db: Queryable) {
           sourceIsLo ? input.targetContentHash : input.sourceContentHash,
           input.deciderKey,
           ...(sourceIsLo ? verdict : [null, null, null]),
-          ...(sourceIsLo ? [null, null, null] : verdict),
-          input.accepted ? input.relationType : null,
-          input.accepted
+          ...(sourceIsLo ? [null, null, null] : verdict)
         ]
       );
+      if (result.rowCount === 0)
+        throw new Error("A relation decider key cannot record verdicts on two score scales.");
+    },
+
+    /**
+     * Records a ranker's raw log-odds for one or both directions of a pair (`score_scale =
+     * log_odds`, no type). A direction this call does not score keeps its stored score while both
+     * rendered-input hashes are unchanged, and is discarded when either changed.
+     */
+    async recordRankerScores(input: RankerScoresInput): Promise<void> {
+      const pair = relationDecisionPair(input.loAtomicNoteId, input.hiAtomicNoteId);
+      if (pair.lo !== input.loAtomicNoteId)
+        throw new Error("Ranker scores need the canonical pair (lo < hi).");
+      if (input.loToHi === null && input.hiToLo === null)
+        throw new Error("Ranker scores need at least one scored direction.");
+      for (const score of [input.loToHi, input.hiToLo])
+        if (score !== null && !Number.isFinite(score))
+          throw new Error("A ranker score must be a finite log-odds value.");
+      const result = await db.query(
+        `insert into relation_decisions as d (
+           pair_key, lo_atomic_note_id, hi_atomic_note_id, lo_content_hash, hi_content_hash,
+           decider_key, lo_to_hi_score, lo_to_hi_ai_task_run_id, lo_to_hi_decided_at,
+           hi_to_lo_score, hi_to_lo_ai_task_run_id, hi_to_lo_decided_at, score_scale
+         ) values ($1, $2, $3, $4, $5, $6, $7::double precision,
+           case when $7::double precision is not null then $9::uuid end,
+           case when $7::double precision is not null then now() end,
+           $8::double precision,
+           case when $8::double precision is not null then $9::uuid end,
+           case when $8::double precision is not null then now() end, 'log_odds')
+         on conflict (pair_key, decider_key) do update set
+           ${directionAssignments("lo_to_hi")},
+           ${directionAssignments("hi_to_lo")},
+           lo_content_hash = excluded.lo_content_hash,
+           hi_content_hash = excluded.hi_content_hash
+         where d.score_scale = excluded.score_scale
+         returning 1`,
+        [
+          pair.key,
+          pair.lo,
+          pair.hi,
+          input.loInputHash,
+          input.hiInputHash,
+          input.deciderKey,
+          input.loToHi,
+          input.hiToLo,
+          input.aiTaskRunId
+        ]
+      );
+      if (result.rowCount === 0)
+        throw new Error("A relation decider key cannot record verdicts on two score scales.");
+    },
+
+    /**
+     * Stored ranker scores of these pairs by this decider, keyed by pair key (`lo:hi`), only where
+     * both rendered-input hashes still match (D13). Pairs never scored are absent.
+     */
+    async findRankerScores(lookup: RankerScoresLookup): Promise<Map<string, RankerScores>> {
+      const scores = new Map<string, RankerScores>();
+      if (!lookup.pairs.length) return scores;
+      const wanted = new Map(
+        lookup.pairs.map((pair) => [
+          relationDecisionPair(pair.loAtomicNoteId, pair.hiAtomicNoteId).key,
+          pair
+        ])
+      );
+      const result = await db.query<RelationDecisionRow>(
+        `select lo_atomic_note_id as "loId", hi_atomic_note_id as "hiId",
+           lo_content_hash as "loHash", hi_content_hash as "hiHash",
+           lo_to_hi_score as "loToHiScore", hi_to_lo_score as "hiToLoScore"
+         from relation_decisions
+         where decider_key = $1 and pair_key = any($2::text[]) and score_scale = 'log_odds'`,
+        [lookup.deciderKey, [...wanted.keys()]]
+      );
+      for (const row of result.rows) {
+        const key = `${row.loId}:${row.hiId}`;
+        const pair = wanted.get(key);
+        if (!pair) continue;
+        const [loHash, hiHash] =
+          pair.loAtomicNoteId === row.loId
+            ? [pair.loInputHash, pair.hiInputHash]
+            : [pair.hiInputHash, pair.loInputHash];
+        if (row.loHash !== loHash || row.hiHash !== hiHash) continue;
+        scores.set(key, {
+          loToHi: row.loToHiScore === null ? null : Number(row.loToHiScore),
+          hiToLo: row.hiToLoScore === null ? null : Number(row.hiToLoScore)
+        });
+      }
+      return scores;
     }
   };
 }

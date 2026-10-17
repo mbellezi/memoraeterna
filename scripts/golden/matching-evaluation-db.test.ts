@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 
 import {
   closePgPool,
+  createAtomicNoteRelationRepository,
   createPgPool,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
@@ -309,12 +310,17 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
     return uid(n);
   }
 
-  async function relate(a: string, b: string, status: string) {
-    await q(
-      `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, final_score, explanation, status)
-       values ($1, $2, 0.9, 'x', $3::atomic_note_relation_status)`,
-      [a, b, status]
-    );
+  /** Through the canonical upsert (relations v2): the sorted pair, typed, with its direction. */
+  async function relate(a: string, b: string, status: "accepted" | "rejected" | "pending_review") {
+    await createAtomicNoteRelationRepository(pool).upsertDecided({
+      subjectAtomicNoteId: a,
+      objectAtomicNoteId: b,
+      relationType: "supports",
+      band: null,
+      finalScore: 0.9,
+      explanation: "x",
+      status
+    });
   }
 
   async function call(
@@ -481,19 +487,29 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
     expect(embeddings.aiCalls.map((c) => c.task)).toEqual(["embedding"]);
   });
 
-  it("reads shown and applied verdicts, operations, chunks and call times with the status reading", async () => {
+  it("reads shown and applied verdicts, operations, chunks and call times with the v2 reading", async () => {
     const input = await readLibrary({ connectionString, description: "test" }, mapping, {
       tasks: ["reranking"],
       since: null,
       until: null,
       statuses: ["accepted"]
     });
-    // With only `accepted` counted, the pending relations are neither shown nor applied.
+    // The library has the relations v2 columns (migration 0056), so the counted statuses give way
+    // to D9: a human accept and the legacy (unbanded, unvetoed) pending relations are applied, a
+    // removed one is neither shown nor applied.
     const shown = input.noteRelations.filter((row) => row.shown);
-    expect(shown).toHaveLength(1);
-    expect(shown[0]).toMatchObject({ status: "accepted", shown: true, applied: true });
+    expect(shown.map((row) => row.status).sort()).toEqual([
+      "accepted",
+      "pending_review",
+      "pending_review"
+    ]);
+    expect(input.noteRelations.find((row) => row.status === "rejected")).toMatchObject({
+      shown: false,
+      applied: false
+    });
     expect(input.noteRelations.every((row) => row.shown === row.applied)).toBe(true);
-    expect(input.sourceRelations.every((row) => row.origin === null)).toBe(true);
+    // Every source relation of a migrated library was judged (0056 adds `origin`).
+    expect(input.sourceRelations.every((row) => row.origin === "judged")).toBe(true);
     expect(input.chunks).toBeGreaterThan(0);
     // Every call of the window by task and operation, whatever task the evaluation costs.
     expect(input.operations?.find((row) => row.task === "embedding")).toMatchObject({

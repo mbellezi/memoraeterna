@@ -33,6 +33,7 @@ import {
   X
 } from "lucide-react";
 import {
+  AtomicNoteRelationTypeSchema,
   formatObjectAddress,
   SourceItemTypes,
   type ProcessingPlanRequest,
@@ -42,6 +43,7 @@ import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import { relationPairArrow, relationTypeView } from "../lib/relation-stance";
 import {
   isSilentRefresh,
   showsLoadError,
@@ -2203,7 +2205,7 @@ export function SourceDetailView({
                     <div className="flex items-start justify-between gap-4">
                       <p className="text-sm font-medium">
                         <SourceReferenceBadge number={1} title={relation.sourceTitle} />
-                        {relation.sourceTitle} ↔{" "}
+                        {relation.sourceTitle} {relationPairArrow(relation.direction)}{" "}
                         <SourceReferenceBadge number={2} title={relation.targetTitle} />
                         {relation.targetTitle}
                       </p>
@@ -2670,8 +2672,13 @@ function noteStatusKey(status: string): MessageKey {
   return `knowledge.notes.status.${status}` as MessageKey;
 }
 
+const legacyRelationTypes = new Set(AtomicNoteRelationTypeSchema.options as readonly string[]);
+
+/** The legacy types keep their Library words; the relations v2 write types read as on the Note page. */
 function relationTypeKey(type: string): MessageKey {
-  return `knowledge.relations.types.${type}` as MessageKey;
+  return legacyRelationTypes.has(type)
+    ? (`knowledge.relations.types.${type}` as MessageKey)
+    : relationTypeView(type).wordKey;
 }
 
 function PageControls({

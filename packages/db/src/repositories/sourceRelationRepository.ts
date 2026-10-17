@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import { symmetricSourceRelationTypes } from "@app/domain";
 import type { PgPool } from "../client.js";
+import { noteRelationStateSql } from "./note-relation-sql.js";
 import type { JsonObject, Queryable } from "./types.js";
 
 export interface SourceRelationChunk {
@@ -85,29 +86,47 @@ const byTitleThenId = (id: string) =>
 // Discarded and archived notes stay non-current through the explicit status checks below.
 const noteFacts = (alias: string) =>
   `concat_ws('|',${alias}.id::text,${alias}.idea_statement,${alias}.body_markdown,${alias}.supersession_status)`;
-const noteFingerprint = `md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
-  least(${noteFacts("a")},${noteFacts("b")}),greatest(${noteFacts("a")},${noteFacts("b")})))`;
 
 /**
- * The note relations between two roots that source matching may use: accepted by note matching
- * (never rejected), between current, source-owned notes whose evidence chunks are current. Legacy
- * storage sorts UUIDs, so direction comes from the validated matching metadata. $1 and $2 are the
- * two roots, in either order.
+ * The facts-only fingerprint of a note relation as source evidence (F3 D11): the relation ID, both
+ * endpoints, the direction, the type and both notes' facts, lower endpoint first. Status, band,
+ * probability, veto and `metadata` are not facts of the evidence, so writing them never makes a
+ * source relation stale; a change of type or direction does. `a` and `b` are the relation's two
+ * endpoint notes in either order. Migration 0056 re-keyed every stored fingerprint to this formula.
+ */
+export function noteRelationFingerprintSql(relation: string, a: string, b: string): string {
+  const loFirst = `${a}.id = ${relation}.source_atomic_note_id`;
+  return `md5(concat_ws('|',${relation}.id::text,${relation}.source_atomic_note_id::text,
+  ${relation}.target_atomic_note_id::text,${relation}.direction,coalesce(${relation}.relation_type,''),
+  case when ${loFirst} then ${noteFacts(a)} else ${noteFacts(b)} end,
+  case when ${loFirst} then ${noteFacts(b)} else ${noteFacts(a)} end))`;
+}
+const noteFingerprint = noteRelationFingerprintSql("n", "a", "b");
+
+/**
+ * The note relations between two roots that source matching may use: applied (F3 D9, D23), between
+ * current, source-owned notes whose evidence chunks are current. `a` reads to `b` in the stored
+ * direction (a symmetric relation reads from its lower endpoint; the prompt orients symmetric types
+ * by content); a relation whose direction is unknown is left out, as it was before relations v2.
+ * The endpoints join on the relation's own columns. $1 and $2 are the two roots, in either order.
  */
 const pairNoteRelationsSql = `from atomic_note_relations n
-        join atomic_notes a on a.id::text = n.metadata->>'semanticSourceAtomicNoteId'
-        join atomic_notes b on b.id::text = n.metadata->>'semanticTargetAtomicNoteId'
+        join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end
+        join atomic_notes b on b.id = case when n.direction = 'hi_to_lo' then n.source_atomic_note_id else n.target_atomic_note_id end
         join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
         join chunks ca on ca.id = a.evidence_chunk_id join documents da on da.id = ca.document_id
         join chunks cb on cb.id = b.evidence_chunk_id join documents db on db.id = cb.document_id
         where ((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))
           and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
+          and n.direction <> 'unknown'
           and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
-          and n.status <> 'rejected' and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
+          and ${noteRelationStateSql.applied("n")} and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
           and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null`;
 
 // Currentness is derived at read time, so edits and review changes never leave live stale edges.
+// Note-origin evidence is current only while its note relation is applied (F3 C3): an automatic
+// veto is not a status, and a withdrawn note relation stops supporting its source relation.
 export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.source_chunk_id
   left join chunks tc on tc.id = e.target_chunk_id
   left join documents sd on sd.id = sc.document_id left join documents td on td.id = tc.document_id
@@ -117,7 +136,7 @@ export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.sou
 export const currentSourceRelationEvidenceSql = `(sc.id is not null and tc.id is not null
   and sd.metadata->>'supersededByDocumentId' is null and td.metadata->>'supersededByDocumentId' is null
   and sc.content_hash = e.snapshot->>'sourceHash' and tc.content_hash = e.snapshot->>'targetHash'
-  and (e.origin = 'source_analysis' or (n.id is not null and n.status <> 'rejected'
+  and (e.origin = 'source_analysis' or (n.id is not null and ${noteRelationStateSql.applied("n")}
     and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
     and a.supersession_status = 'current' and b.supersession_status = 'current'
     and ${noteFingerprint} = e.snapshot->>'noteFingerprint')))`;
@@ -186,7 +205,7 @@ export function createSourceRelationRepository(pool: PgPool) {
         from atomic_note_relations n join atomic_notes a on a.id = n.source_atomic_note_id
         join atomic_notes b on b.id = n.target_atomic_note_id join tree ta on ta.id = a.created_from_source_item_id
         join tree tb on tb.id = b.created_from_source_item_id
-        where ta.root_id <> tb.root_id and $1 in (ta.root_id, tb.root_id) and n.status <> 'rejected'
+        where ta.root_id <> tb.root_id and $1 in (ta.root_id, tb.root_id) and ${noteRelationStateSql.applied("n")}
           and not exists (select 1 from source_relation_evidence existing_evidence where existing_evidence.note_relation_id = n.id)
           and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'

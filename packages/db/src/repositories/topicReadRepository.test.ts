@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closePgPool, createPgPool, type PgPool } from "../client.js";
 import { runMigrations } from "../migrations.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
+import { createAtomicNoteRelationRepository } from "./atomicNoteRelationRepository.js";
 import { TopicReadError, createTopicReadRepository, topicReadSql } from "./topicReadRepository.js";
 import {
   createTopicTreeRepository,
@@ -212,15 +213,17 @@ describe.skipIf(!sidecarInstalled)("topic read repository on a real PostgreSQL d
       [3, 11, "clarifies", "pending_review"],
       [1, 99, "mentions", "accepted"]
     ];
-    for (const [from, to, type, status] of relations) {
-      const [first, second] = [note(from), note(to)].sort();
-      await db().query(
-        `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id,
-           relation_type, final_score, explanation, status)
-         values ($1, $2, $3, 0.5, 'why', $4)`,
-        [first, second, type, status]
-      );
-    }
+    // Through the canonical upsert: the sorted pair with its decided direction (relations v2).
+    for (const [from, to, type, status] of relations)
+      await createAtomicNoteRelationRepository(db()).upsertDecided({
+        subjectAtomicNoteId: note(from),
+        objectAtomicNoteId: note(to),
+        relationType: type,
+        band: null,
+        finalScore: 0.5,
+        explanation: "why",
+        status: status as "accepted" | "rejected" | "pending_review"
+      });
 
     // Tree: the root, three Areas (C is a leaf) and three subtopics.
     const repo = writer();

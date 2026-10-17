@@ -1166,6 +1166,8 @@ export const sourceDetailSchema = z
           targetTitle: z.string().min(1),
           sourceStatus: z.string().min(1),
           targetStatus: z.string().min(1),
+          // The pair is sorted by ID; how it reads (F3 D8).
+          direction: z.enum(["lo_to_hi", "hi_to_lo", "symmetric", "unknown"]),
           relationType: z.string().min(1),
           finalScore: z.number().min(0).max(1),
           explanation: z.string().min(1)

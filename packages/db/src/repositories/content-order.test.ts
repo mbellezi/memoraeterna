@@ -104,7 +104,7 @@ describe("content-stable query order", () => {
       expect(query).toMatch(
         /ranked_source\.id = [a-z_.]+root_id\),|ranked_source\.id = scored\.id\),/
       );
-    const notes = pool.queries.find((query) => query.includes("semanticSourceAtomicNoteId"));
+    const notes = pool.queries.find((query) => query.includes("n.direction <> 'unknown'"));
     expect(notes).toContain(
       "order by n.final_score desc, a.idea_statement, b.idea_statement, n.id"
     );

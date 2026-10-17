@@ -257,10 +257,11 @@ try {
     throw new Error("Hybrid atomic note candidate search failed.");
   }
 
-  const relation = await createAtomicNoteRelationRepository(pool).upsert({
-    sourceAtomicNoteId: firstNote.id,
-    targetAtomicNoteId: secondNote.id,
+  const { relation } = await createAtomicNoteRelationRepository(pool).upsertDecided({
+    subjectAtomicNoteId: firstNote.id,
+    objectAtomicNoteId: secondNote.id,
     relationType: "supports",
+    band: null,
     vectorScore: candidates[0].vectorScore,
     graphScore: 1,
     finalScore: 0.9,

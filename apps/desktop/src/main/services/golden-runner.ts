@@ -1960,11 +1960,27 @@ async function contentDigests(pool: Query, ids: string[]) {
         left join source_items p on p.id = s.parent_source_item_id
         where n.created_from_source_item_id = any($1::uuid[])`)
     ),
-    // Note relations are stored as unordered pairs (endpoints sorted by UUID), so the
-    // pair is digested in title order; directed storage arrives with Relations v2 (F3).
+    // Note relations as unordered pairs in title order (comparable with runs recorded before
+    // relations v2), and the directed tuples of relations v2 (F3 D8): subject > object for a
+    // directed relation, ~ for a symmetric one, ? for a legacy one whose direction is unknown, with
+    // the type, status, band and veto source.
     noteRelations: contentDigest(
       await rows(`select least(sn.title, tn.title) || '|' || greatest(sn.title, tn.title) || '|' ||
           coalesce(r.relation_type::text, '') || '|' || coalesce(r.status::text, '') as line
+        from atomic_note_relations r
+        join atomic_notes sn on sn.id = r.source_atomic_note_id
+        join atomic_notes tn on tn.id = r.target_atomic_note_id
+        where sn.created_from_source_item_id = any($1::uuid[])
+           or tn.created_from_source_item_id = any($1::uuid[])`)
+    ),
+    noteRelationsDirected: contentDigest(
+      await rows(`select case r.direction
+            when 'lo_to_hi' then sn.title || ' > ' || tn.title
+            when 'hi_to_lo' then tn.title || ' > ' || sn.title
+            when 'symmetric' then least(sn.title, tn.title) || ' ~ ' || greatest(sn.title, tn.title)
+            else least(sn.title, tn.title) || ' ? ' || greatest(sn.title, tn.title) end || '|' ||
+          coalesce(r.relation_type::text, '') || '|' || r.status::text || '|' ||
+          coalesce(r.band, '') || '|' || coalesce(r.veto_source, '') as line
         from atomic_note_relations r
         join atomic_notes sn on sn.id = r.source_atomic_note_id
         join atomic_notes tn on tn.id = r.target_atomic_note_id

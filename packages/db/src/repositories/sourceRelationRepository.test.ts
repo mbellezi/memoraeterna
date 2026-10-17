@@ -3,9 +3,11 @@ import { join } from "node:path";
 import type { QueryResult, QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 import type { PgPool } from "../client.js";
+import { noteRelationStateSql } from "./note-relation-sql.js";
 import {
   createSourceRelationRepository,
-  currentSourceRelationEvidenceSql
+  currentSourceRelationEvidenceSql,
+  noteRelationFingerprintSql
 } from "./sourceRelationRepository.js";
 
 const citedExclusion =
@@ -29,10 +31,16 @@ describe("source pair note relations", () => {
     expect(keyed!.text).not.toContain(citedExclusion);
     expect(keyed!.text).not.toContain("limit");
     expect(keyed!.values).toEqual(["a", "b"]);
-    // Both read the same eligible note relations (never rejected, current notes and chunks).
+    // Both read the same eligible note relations (applied, current notes and chunks), joined on the
+    // relation's endpoint columns in its stored direction (relations v2), never on metadata.
     for (const { text } of [listed!, keyed!]) {
-      expect(text).toContain("n.status <> 'rejected'");
+      expect(text).toContain(noteRelationStateSql.applied("n"));
       expect(text).toContain("a.supersession_status = 'current'");
+      expect(text).toContain(
+        "join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end"
+      );
+      expect(text).toContain("n.direction <> 'unknown'");
+      expect(text).not.toContain("n.metadata");
     }
   });
 });
@@ -58,5 +66,34 @@ describe("source-relation evidence currency", () => {
       "utf8"
     );
     for (const alias of ["a", "b"]) expect(migration).toContain(noteFacts(alias));
+  });
+
+  it("fingerprints facts only: never the relation's status, band, probability, veto or metadata (D11)", () => {
+    const fingerprint = noteRelationFingerprintSql("n", "a", "b").replace(/\s+/g, " ");
+    expect(currentSourceRelationEvidenceSql.replace(/\s+/g, " ")).toContain(fingerprint);
+    for (const column of ["status", "band", "probability", "vetoed_at", "veto_source", "metadata"])
+      expect(fingerprint).not.toContain(`n.${column}`);
+    for (const fact of [
+      "n.id::text",
+      "n.source_atomic_note_id",
+      "n.target_atomic_note_id",
+      "n.direction"
+    ])
+      expect(fingerprint).toContain(fact);
+    expect(fingerprint).toContain("coalesce(n.relation_type,'')");
+    // Migration 0056 re-keyed the stored fingerprints with the same facts, lower endpoint first.
+    const migration = readFileSync(
+      join(import.meta.dirname, "../../drizzle/0056_relations_v2.sql"),
+      "utf8"
+    ).replace(/\s+/g, "");
+    for (const alias of ["a", "b"]) expect(migration).toContain(noteFacts(alias));
+    expect(migration).toContain(
+      "n.id::text,n.source_atomic_note_id::text,n.target_atomic_note_id::text,n.direction,coalesce(n.relation_type,''),casewhena.id=n.source_atomic_note_id"
+    );
+  });
+
+  it("counts note-origin evidence only while its note relation is applied (C3)", () => {
+    expect(currentSourceRelationEvidenceSql).toContain(noteRelationStateSql.applied("n"));
+    expect(currentSourceRelationEvidenceSql).not.toContain("n.status <> 'rejected'");
   });
 });

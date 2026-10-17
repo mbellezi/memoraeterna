@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import { AtomicNoteRelationTypeSchema } from "@app/domain";
 import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 
-import { relationTypeView, stanceTextClass, stances } from "./relation-stance";
+import { relationPairArrow, relationTypeView, stanceTextClass, stances } from "./relation-stance";
+
+describe("relation pair arrow", () => {
+  it("points from the subject of a directed pair and has none for an undirected one", () => {
+    expect(relationPairArrow("lo_to_hi")).toBe("→");
+    expect(relationPairArrow("hi_to_lo")).toBe("←");
+    expect(relationPairArrow("symmetric")).toBe("↔");
+    expect(relationPairArrow("unknown")).toBe("↔");
+  });
+});
 
 describe("relation stance map", () => {
   it("maps every stored type and the future ones to a stance, a word, a verb and a direction", () => {
@@ -13,7 +22,8 @@ describe("relation stance map", () => {
       similar_to: ["related", false],
       depends_on: ["depends_on", true],
       clarifies: ["related", true],
-      mentions: ["related", true],
+      // Legacy `mentions` reads neutral, both ways (relations v2 vocabulary, D10).
+      mentions: ["related", false],
       related: ["related", false],
       contradicts: ["contradicts", false],
       example_of: ["example_of", true],

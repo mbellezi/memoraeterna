@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import {
   closePgPool,
   createAiConfigRepository,
-  createAtomicNoteRelationRepository,
   createChunkRepository,
   createDocumentRepository,
   createPgPool,
@@ -24,8 +23,10 @@ import {
  * Real-database check of `relation_decisions` (migrations 0044 and 0046): both applied as pending
  * migrations on a database with history and data (0046 over legacy pair-level audit rows), and
  * through the baseline seed on an empty one; columns, indexes and constraints; per-direction
- * verdicts keyed by content hashes and decider, each with its own AI run and time; and cascades.
- * It starts its own temporary PostgreSQL sidecar and never touches an existing database.
+ * verdicts keyed by content hashes and decider, each with its own AI run and time; the score scale
+ * of 0056 (ranker log-odds rows without types, reused only on equal rendered inputs; no pair-level
+ * outcome written); and cascades. It starts its own temporary PostgreSQL sidecar and never touches
+ * an existing database.
  */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -113,13 +114,14 @@ try {
          'verify', 'local', 'verify', $1::uuid::text)`,
       [id, source.id, chunkId]
     );
-  const relation = await createAtomicNoteRelationRepository(db).upsert({
-    sourceAtomicNoteId: hi,
-    targetAtomicNoteId: lo,
-    relationType: "supports",
-    finalScore: 0.9,
-    explanation: "verify"
-  });
+  // A relation as the matcher stored it before relations v2 (this database is at 0043).
+  const relation = (
+    await db.query<{ id: string }>(
+      `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+         final_score, explanation) values ($1, $2, 'supports', 0.9, 'verify') returning id`,
+      [lo, hi]
+    )
+  ).rows[0]!;
   const aiConfig = createAiConfigRepository(db);
   const newRun = () =>
     aiConfig.recordTaskRun({
@@ -289,14 +291,14 @@ try {
       "lo_to_hi_relation_type:text:YES",
       "lo_to_hi_score:double precision:YES",
       "pair_key:text:NO",
-      "relation_type:text:YES"
+      "relation_type:text:YES",
+      "score_scale:text:NO"
     ].sort(),
-    "per-direction audit columns replace the pair-level ones"
+    "per-direction audit columns replace the pair-level ones; 0056 adds the score scale"
   );
   assert.deepEqual(
     migrated.constraints,
     [
-      "relation_decisions_accepted:c",
       "relation_decisions_decided_at:c",
       "relation_decisions_directions:c",
       "relation_decisions_hi_atomic_note_id_atomic_notes_id_fk:f",
@@ -305,8 +307,10 @@ try {
       "relation_decisions_lo_to_hi_ai_task_run_id_ai_task_runs_id_fk:f",
       "relation_decisions_pair:c",
       "relation_decisions_pkey:p",
+      "relation_decisions_score_scale:c",
       "relation_decisions_types:c"
-    ].sort()
+    ].sort(),
+    "0056 drops relation_decisions_accepted and adds the scale check"
   );
   assert.ok(
     migrated.indexes.some((def) =>
@@ -333,7 +337,6 @@ try {
     target: string,
     score: number,
     relationType: string,
-    accepted: boolean,
     aiTaskRunId: string | null,
     deciderKey = "decider-a",
     sourceHash = hashes[source]!
@@ -346,7 +349,6 @@ try {
       deciderKey,
       score,
       relationType,
-      accepted,
       aiTaskRunId
     });
   const verdicts = (source: string, sourceHash = hashes[source]!, deciderKey = "decider-a") =>
@@ -392,7 +394,7 @@ try {
       )
     ).rows;
 
-  await record(hi, lo, 0.9, "extends", true, runA);
+  await record(hi, lo, 0.9, "extends", runA);
   assert.deepEqual(await verdicts(hi), { [lo]: { score: 0.9, relationType: "extends" } });
   assert.deepEqual(await verdicts(lo), {}, "the reverse direction is still undecided");
   // One judgment answers the pair: the undecided direction reads the decided one as its reverse.
@@ -409,7 +411,7 @@ try {
     "only the recorded direction has a run and a time"
   );
   assert.ok(first.hi_to_lo_decided_at instanceof Date, "the recorded direction has a time");
-  await record(lo, hi, 0.2, "related", false, runB);
+  await record(lo, hi, 0.2, "related", runB);
   assert.deepEqual(await verdicts(lo), { [hi]: { score: 0.2, relationType: "related" } });
   assert.deepEqual(await verdicts(hi), { [lo]: { score: 0.9, relationType: "extends" } });
   const [both] = await rows();
@@ -430,8 +432,9 @@ try {
       lo_to_hi_relation_type: "related",
       hi_to_lo_score: 0.9,
       hi_to_lo_relation_type: "extends",
-      relation_type: "extends",
-      accepted: true,
+      // The pair-level outcome is no longer written (F3 D12): calibration owns acceptance.
+      relation_type: null,
+      accepted: false,
       decider_key: "decider-a"
     }
   );
@@ -449,7 +452,7 @@ try {
   assert.ok(both.lo_to_hi_decided_at instanceof Date);
   assert.ok(both.lo_to_hi_decided_at.getTime() >= first.hi_to_lo_decided_at.getTime());
   // Deciding a direction again replaces its run, even with no run at all.
-  await record(hi, lo, 0.95, "extends", true, null);
+  await record(hi, lo, 0.95, "extends", null);
   const [again] = await rows();
   assert.deepEqual(
     [again.hi_to_lo_ai_task_run_id, again.lo_to_hi_ai_task_run_id],
@@ -457,9 +460,9 @@ try {
     "the recording direction takes the new run, the other keeps its own"
   );
   assert.ok(again.hi_to_lo_decided_at.getTime() >= both.hi_to_lo_decided_at.getTime());
-  await record(hi, lo, 0.9, "extends", true, runA);
+  await record(hi, lo, 0.9, "extends", runA);
   // Another decider keeps its own row; a different decider key never answers for this one.
-  await record(lo, mid, 0.4, "related", false, runC, "decider-b");
+  await record(lo, mid, 0.4, "related", runC, "decider-b");
   assert.deepEqual(await verdicts(lo), { [hi]: { score: 0.2, relationType: "related" } });
   assert.deepEqual(await verdicts(lo, hashes[lo], "decider-b"), {
     [mid]: { score: 0.4, relationType: "related" }
@@ -476,7 +479,7 @@ try {
   );
   // Changed content is a different input: no verdict, and recording it drops the stale direction.
   assert.deepEqual(await verdicts(hi, "hash-hi-edited"), {});
-  await record(hi, lo, 0.3, "related", false, runC, "decider-a", "hash-hi-edited");
+  await record(hi, lo, 0.3, "related", runC, "decider-a", "hash-hi-edited");
   const [pair] = (await rows()).filter((row) => row.pair_key === `${lo}:${hi}`);
   assert.deepEqual(
     [pair.lo_to_hi_score, pair.hi_to_lo_score, pair.accepted, pair.relation_type],
@@ -500,12 +503,83 @@ try {
     "the edited note finds nothing to reuse: the other direction went with the old content"
   );
 
+  // Ranker rows (0056, F3 D12): raw log-odds per direction, no type, reused only on equal
+  // rendered-input hashes and decider key; they never answer a generative lookup.
+  const rankerKey = "decider-ranker";
+  await decisions.recordRankerScores({
+    loAtomicNoteId: lo,
+    hiAtomicNoteId: hi,
+    loInputHash: "render-lo",
+    hiInputHash: "render-hi",
+    deciderKey: rankerKey,
+    loToHi: 4.25,
+    hiToLo: -1.5,
+    aiTaskRunId: runC
+  });
+  const rankerPair = [
+    { loAtomicNoteId: lo, hiAtomicNoteId: hi, loInputHash: "render-lo", hiInputHash: "render-hi" }
+  ];
+  assert.deepEqual(
+    Object.fromEntries(
+      await decisions.findRankerScores({ deciderKey: rankerKey, pairs: rankerPair })
+    ),
+    { [`${lo}:${hi}`]: { loToHi: 4.25, hiToLo: -1.5 } },
+    "both directions' raw log-odds are stored"
+  );
+  assert.equal(
+    (
+      await decisions.findRankerScores({
+        deciderKey: rankerKey,
+        pairs: [{ ...rankerPair[0]!, hiInputHash: "render-hi-edited" }]
+      })
+    ).size,
+    0,
+    "a changed rendered input is never reused"
+  );
+  assert.deepEqual(
+    await verdicts(hi, hashes[hi], rankerKey),
+    {},
+    "ranker rows never answer a probability lookup"
+  );
+  const [rankerRow] = (
+    await db.query(
+      `select score_scale, lo_to_hi_relation_type, hi_to_lo_relation_type, relation_type, accepted,
+              lo_to_hi_ai_task_run_id, hi_to_lo_ai_task_run_id
+         from relation_decisions where decider_key = $1`,
+      [rankerKey]
+    )
+  ).rows;
+  assert.deepEqual(rankerRow, {
+    score_scale: "log_odds",
+    lo_to_hi_relation_type: null,
+    hi_to_lo_relation_type: null,
+    relation_type: null,
+    accepted: false,
+    lo_to_hi_ai_task_run_id: runC,
+    hi_to_lo_ai_task_run_id: runC
+  });
+  await assert.rejects(
+    decisions.record({
+      sourceAtomicNoteId: lo,
+      targetAtomicNoteId: hi,
+      sourceContentHash: "render-lo",
+      targetContentHash: "render-hi",
+      deciderKey: rankerKey,
+      score: 0.5,
+      relationType: "supports",
+      aiTaskRunId: null
+    }),
+    /two score scales/,
+    "one decider key never mixes scales"
+  );
+  await db.query("delete from relation_decisions where decider_key = $1", [rankerKey]);
+
   // Constraints refuse inconsistent rows.
   const insert = `insert into relation_decisions (pair_key, lo_atomic_note_id, hi_atomic_note_id,
     lo_content_hash, hi_content_hash, decider_key, lo_to_hi_score, lo_to_hi_relation_type,
     lo_to_hi_decided_at, lo_to_hi_ai_task_run_id, hi_to_lo_decided_at, hi_to_lo_ai_task_run_id,
-    relation_type, accepted)
-    values ($1, $2, $3, 'a', 'b', 'decider-c', $4, $5, $6, $7, $8, $9, $10, $11)`;
+    relation_type, accepted, score_scale)
+    values ($1, $2, $3, 'a', 'b', 'decider-c', $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
   const at = new Date();
   // A valid lo -> hi verdict with its time; each case breaks exactly one rule.
   const valid = {
@@ -519,27 +593,28 @@ try {
     hiAt: null as Date | null,
     hiRun: null as string | null,
     relationType: null as string | null,
-    accepted: false
+    accepted: false,
+    scale: "probability"
+  };
+  const values = (change: Partial<typeof valid>) => {
+    const v = { ...valid, ...change };
+    return [
+      v.pair,
+      v.lo,
+      v.hi,
+      v.score,
+      v.type,
+      v.loAt,
+      v.loRun,
+      v.hiAt,
+      v.hiRun,
+      v.relationType,
+      v.accepted,
+      v.scale
+    ];
   };
   const invalid = async (label: string, change: Partial<typeof valid>) => {
-    const v = { ...valid, ...change };
-    await assert.rejects(
-      db.query(insert, [
-        v.pair,
-        v.lo,
-        v.hi,
-        v.score,
-        v.type,
-        v.loAt,
-        v.loRun,
-        v.hiAt,
-        v.hiRun,
-        v.relationType,
-        v.accepted
-      ]),
-      /check constraint/,
-      label
-    );
+    await assert.rejects(db.query(insert, values(change)), /check constraint/, label);
   };
   await invalid("pair order", { pair: `${hi}:${lo}`, lo: hi, hi: lo });
   await invalid("pair key", { pair: `${lo}:${mid}x` });
@@ -547,10 +622,21 @@ try {
   await invalid("score without type", { type: null });
   await invalid("no direction", { score: null, type: null, loAt: null });
   await invalid("type list", { type: "invented" });
-  await invalid("accepted type", { score: 0.9, type: "supports", accepted: true });
   await invalid("score without time", { loAt: null });
   await invalid("time without score", { hiAt: at });
   await invalid("run without score", { hiRun: runA });
+  await invalid("score scale list", { scale: "logit" });
+  await invalid("a log-odds row has no type", { scale: "log_odds", score: 3.5 });
+  await invalid("log-odds are finite", { scale: "log_odds", type: null, score: Infinity });
+  await invalid("log-odds are a number", { scale: "log_odds", type: null, score: Number.NaN });
+  // A log-odds score outside [0, 1] is valid, and so is a write-vocabulary type (0056).
+  for (const change of [
+    { scale: "log_odds", type: null, score: -3.5 },
+    { type: "contradicts", score: 0.75 }
+  ]) {
+    await db.query(insert, values(change));
+    await db.query("delete from relation_decisions where decider_key = 'decider-c'");
+  }
 
   // Cascades: a deleted audit run is unlinked in its direction, a deleted note takes its decisions.
   await db.query("delete from ai_task_runs where id = any($1::uuid[])", [[runA, runB, runC]]);
@@ -577,6 +663,7 @@ try {
         "per-direction verdicts keyed by content hashes and decider; reverse direction undecided",
         "an undecided direction reads the decided one as its reverse, for the same decider and content only",
         "each direction keeps its own AI run and time; a content change resets the pair",
+        "0056: ranker rows store raw log-odds per direction with no type, on their own scale",
         "constraints refuse inconsistent rows, including run or time without a verdict",
         "per-direction ai_task_run_id set null and note deletion cascade"
       ],

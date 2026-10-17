@@ -29,6 +29,7 @@ import { StructureEventSchema } from "@app/domain/topic-tree";
 import type { StructureEvent } from "@app/domain/topic-tree";
 
 import type { PgPool } from "../client.js";
+import { shownNoteRelationSql } from "./note-relation-sql.js";
 import { mapTimestamp } from "./sql.js";
 import type { Queryable } from "./types.js";
 
@@ -246,10 +247,10 @@ export const topicReadSql = {
                       where ev.atomic_note_id = n.id and ev.action = 'edit')) as human,
          (select count(*)::int from (
             select x.target_atomic_note_id as other from atomic_note_relations x
-             where x.source_atomic_note_id = n.id and x.status <> 'rejected'
+             where x.source_atomic_note_id = n.id and ${shownNoteRelationSql("x")}
             union all
             select x.source_atomic_note_id from atomic_note_relations x
-             where x.target_atomic_note_id = n.id and x.status <> 'rejected') r
+             where x.target_atomic_note_id = n.id and ${shownNoteRelationSql("x")}) r
            join atomic_notes o on o.id = r.other and o.status not in ('rejected', 'archived')
          ) as "relationCount",
          p.centrality, p.moved_from_topic_id as "movedFromId", p.moved_at as "movedAt",
@@ -281,14 +282,15 @@ export const topicReadSql = {
       select r.id, r.relation_type, r.other
         from mine m
         cross join lateral (
-          (select x.id, x.relation_type, x.target_atomic_note_id as other
+          (select x.id, coalesce(x.relation_type, 'related') as relation_type,
+                  x.target_atomic_note_id as other
              from atomic_note_relations x
-            where x.source_atomic_note_id = m.note_id and x.status <> 'rejected'
+            where x.source_atomic_note_id = m.note_id and ${shownNoteRelationSql("x")}
             order by x.final_score desc, x.id limit $3::int)
           union all
-          (select x.id, x.relation_type, x.source_atomic_note_id
+          (select x.id, coalesce(x.relation_type, 'related'), x.source_atomic_note_id
              from atomic_note_relations x
-            where x.target_atomic_note_id = m.note_id and x.status <> 'rejected'
+            where x.target_atomic_note_id = m.note_id and ${shownNoteRelationSql("x")}
             order by x.final_score desc, x.id limit $3::int)
         ) r
     ), live as materialized (

@@ -26,7 +26,7 @@ describe("the relation visibility clause", () => {
     ]);
     // Applied: a human accept, or an unvetoed pending relation with band apply or no band.
     const applied = visibility.applied("r");
-    expect(applied).toContain("r.status::text = 'accepted'");
+    expect(applied).toContain("r.status = 'accepted'");
     expect(applied).toContain("r.vetoed_at is null");
     expect(applied).toContain("r.band = 'apply' or r.band is null");
     // Shown adds the unvetoed suggestions.

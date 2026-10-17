@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { directedNoteRelationTypes } from "./knowledge.js";
 import { withinCharacters } from "./note-page.js";
 
 /**
@@ -25,15 +26,12 @@ export const relationExplanationLimits = {
   maxOutputTokens: 2_048
 } as const;
 
-/** Relation types that read in one direction (the others read the same both ways). */
-export const directedRelationTypes = [
-  "supports",
-  "extends",
-  "depends_on",
-  "example_of",
-  "clarifies",
-  "mentions"
-] as const;
+/**
+ * Relation types that read in one direction (the others read the same both ways): the directed
+ * write types of the relations v2 vocabulary (D10). Legacy `mentions` reads as neutral, like its
+ * stance on screen.
+ */
+export const directedRelationTypes = directedNoteRelationTypes;
 
 export function isDirectedRelationType(type: string): boolean {
   return (directedRelationTypes as readonly string[]).includes(type);

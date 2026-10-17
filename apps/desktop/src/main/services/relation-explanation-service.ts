@@ -169,10 +169,13 @@ export class RelationExplanationService {
   }
 }
 
-/** A discarded relation, or one to a discarded or archived note, is not shown and not explained. */
+/**
+ * Only a relation the Note page lists is explained (relations v2 visibility, D9): never a removed
+ * one, or one to a discarded or archived note.
+ */
 function explainable(context: RelationExplanationContext): boolean {
   return (
-    context.status !== "rejected" &&
+    context.listed &&
     !unavailableStatuses.has(context.a.status) &&
     !unavailableStatuses.has(context.b.status)
   );

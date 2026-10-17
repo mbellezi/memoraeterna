@@ -44,7 +44,6 @@ const decision = (source: string, target: string, aiTaskRunId: string | null) =>
   deciderKey: "decider",
   score: 0.8,
   relationType: "supports",
-  accepted: true,
   aiTaskRunId
 });
 
@@ -139,5 +138,118 @@ describe("relation decision repository", () => {
     query.mockClear();
     expect((await repository.findReverseVerdicts({ ...lookup(hi, hi), targets: [] })).size).toBe(0);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("no longer writes the pair-level outcome, and reads generative verdicts on the probability scale", async () => {
+    const { repository, query } = setup([storedRow()]);
+    await repository.record(decision(lo, hi, null));
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    const normalized = sql.replace(/\s+/g, " ");
+    expect(normalized).not.toMatch(/(?<![a-z_])accepted/);
+    expect(normalized).not.toMatch(/(?<![a-z_.])relation_type(?![a-z_])/);
+    expect(normalized).toContain("'probability')");
+    expect(normalized).toContain("where d.score_scale = excluded.score_scale");
+    expect(values).toHaveLength(12);
+    await repository.findVerdicts(lookup(lo, hi));
+    expect((query.mock.calls[1] as unknown as [string])[0]).toContain(
+      "score_scale = 'probability'"
+    );
+  });
+});
+
+describe("ranker scores (F3 D12, D13)", () => {
+  const scores = (overrides: Record<string, unknown> = {}) => ({
+    loAtomicNoteId: lo,
+    hiAtomicNoteId: hi,
+    loInputHash: "render-lo",
+    hiInputHash: "render-hi",
+    deciderKey: "ranker-cache-key",
+    loToHi: 4.5,
+    hiToLo: -2.25,
+    aiTaskRunId: "run-1",
+    ...overrides
+  });
+
+  it("stores raw log-odds of both directions with no type, on the log-odds scale", async () => {
+    const { repository, query } = setup();
+    await repository.recordRankerScores(scores());
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql.replace(/\s+/g, " ")).toContain("'log_odds')");
+    expect(sql).not.toContain("lo_to_hi_relation_type, lo_to_hi_ai_task_run_id");
+    expect(values).toEqual([
+      `${lo}:${hi}`,
+      lo,
+      hi,
+      "render-lo",
+      "render-hi",
+      "ranker-cache-key",
+      4.5,
+      -2.25,
+      "run-1"
+    ]);
+  });
+
+  it("refuses an unsorted pair, no score and a score that is not a finite number", async () => {
+    const { repository, query } = setup();
+    await expect(
+      repository.recordRankerScores(scores({ loAtomicNoteId: hi, hiAtomicNoteId: lo }))
+    ).rejects.toThrow("canonical");
+    await expect(
+      repository.recordRankerScores(scores({ loToHi: null, hiToLo: null }))
+    ).rejects.toThrow("at least one");
+    for (const bad of [Number.POSITIVE_INFINITY, Number.NaN])
+      await expect(repository.recordRankerScores(scores({ loToHi: bad }))).rejects.toThrow(
+        "finite"
+      );
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("reuses a stored score only with the decider key and both rendered-input hashes unchanged", async () => {
+    const row = {
+      loId: lo,
+      hiId: hi,
+      loHash: "render-lo",
+      hiHash: "render-hi",
+      loToHiScore: 4.5,
+      hiToLoScore: -2.25
+    };
+    const pair = {
+      loAtomicNoteId: lo,
+      hiAtomicNoteId: hi,
+      loInputHash: "render-lo",
+      hiInputHash: "render-hi"
+    };
+    const { repository, query } = setup([row]);
+    expect(
+      Object.fromEntries(await repository.findRankerScores({ deciderKey: "k", pairs: [pair] }))
+    ).toEqual({ [`${lo}:${hi}`]: { loToHi: 4.5, hiToLo: -2.25 } });
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("score_scale = 'log_odds'");
+    expect(values).toEqual(["k", [`${lo}:${hi}`]]);
+    // Named in the other order, the hashes follow their notes.
+    expect(
+      (
+        await repository.findRankerScores({
+          deciderKey: "k",
+          pairs: [
+            {
+              loAtomicNoteId: hi,
+              hiAtomicNoteId: lo,
+              loInputHash: "render-hi",
+              hiInputHash: "render-lo"
+            }
+          ]
+        })
+      ).size
+    ).toBe(1);
+    expect(
+      (
+        await repository.findRankerScores({
+          deciderKey: "k",
+          pairs: [{ ...pair, hiInputHash: "render-hi-edited" }]
+        })
+      ).size
+    ).toBe(0);
+    expect((await repository.findRankerScores({ deciderKey: "k", pairs: [] })).size).toBe(0);
   });
 });

@@ -300,6 +300,10 @@ export function renderMarkdown(report: KpiReport): string {
                 : "n/a"
             ],
             [
+              "Note relations (applied, suggested, withdrawn)",
+              library.noteRelationStates ? counts({ ...library.noteRelationStates }) : "n/a"
+            ],
+            [
               "Source relations",
               library.sourceRelations
                 ? `${fmtInt(library.sourceRelations.total)}: ${counts(library.sourceRelations.byStatus)}`

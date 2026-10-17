@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PgPool } from "../client.js";
 import { createKnowledgeGraphDashboardRepository } from "./knowledgeGraphDashboardRepository.js";
+import { appliedNoteRelationSql } from "./note-relation-sql.js";
 
 class FakeGraphPool {
   readonly queries: string[] = [];
@@ -104,7 +105,9 @@ describe("knowledge graph dashboard repository", () => {
       confidence: 0.92
     });
     expect(pool.queries[0]).toContain("supersession_status = 'current'");
-    expect(pool.queries[1]).toContain("relation.status <> 'rejected'");
+    // Applied relations are drawn (D9), directed ones from their subject (the stored direction).
+    expect(pool.queries[1]).toContain(appliedNoteRelationSql("relation"));
+    expect(pool.queries[1]).toContain("case when relation.direction = 'hi_to_lo'");
   });
 
   it("loads every source-connection detail only when its card is opened", async () => {

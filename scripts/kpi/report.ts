@@ -34,6 +34,12 @@ export interface LibraryKpi {
     readonly total: number;
     readonly byStatus: Record<string, number>;
   } | null;
+  /** Relations v2 states (F3 D9); null before migration 0056. */
+  readonly noteRelationStates: {
+    readonly applied: number;
+    readonly suggested: number;
+    readonly withdrawn: number;
+  } | null;
   readonly sourceRelations: {
     readonly total: number;
     readonly byStatus: Record<string, number>;

@@ -684,6 +684,7 @@ export class ObsidianSyncService {
       AtomicNoteRelationRecord & {
         sourceTitle: string;
         targetTitle: string;
+        applied: boolean;
       }
     >,
     allowedNoteIds?: Set<string>
@@ -691,7 +692,8 @@ export class ObsidianSyncService {
     const repository = createObsidianSyncRepository(this.requirePool());
     const relatedNotes: ObsidianRelatedNote[] = [];
     for (const relation of relations) {
-      if (relation.status === "rejected") continue;
+      // The vault links applied relations only (D9): suggestions are reviewed in Memora.
+      if (!relation.applied) continue;
       const isSource = relation.sourceAtomicNoteId === noteId;
       const isTarget = relation.targetAtomicNoteId === noteId;
       if (!isSource && !isTarget) continue;
@@ -704,7 +706,8 @@ export class ObsidianSyncService {
         ? normalizeRelativePath(syncFile.relativePath).replace(/\.md$/i, "")
         : slugify(title).replace(/\.md$/i, "");
       relatedNotes.push({
-        relationType: relation.relationType,
+        // An untyped relation reads neutral (D20).
+        relationType: relation.relationType ?? "related",
         title,
         target,
         noteId: relatedId,

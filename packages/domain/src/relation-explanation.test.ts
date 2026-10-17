@@ -14,9 +14,17 @@ const high = "00000000-0000-4000-8000-000000000002";
 
 describe("relation explanation order", () => {
   it("knows which stored and future types read in one direction", () => {
-    for (const type of ["supports", "extends", "depends_on", "example_of", "clarifies", "mentions"])
+    for (const type of ["supports", "extends", "depends_on", "example_of", "clarifies"])
       expect(isDirectedRelationType(type)).toBe(true);
-    for (const type of ["contrasts", "contradicts", "similar_to", "same_as", "related", "unknown"])
+    for (const type of [
+      "contrasts",
+      "contradicts",
+      "similar_to",
+      "same_as",
+      "related",
+      "mentions",
+      "unknown"
+    ])
       expect(isDirectedRelationType(type)).toBe(false);
   });
 

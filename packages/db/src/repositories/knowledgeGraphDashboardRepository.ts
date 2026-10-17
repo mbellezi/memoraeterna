@@ -1,6 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
+import { appliedNoteRelationSql } from "./note-relation-sql.js";
 import { currentSourceRelationSql } from "./sourceRelationRepository.js";
 import type { AtomicNoteStatus, SourceItemType } from "./types.js";
 
@@ -380,12 +381,18 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
   const noteIds = selectedRows.map((row) => row.id);
   if (noteIds.length === 0) return { mode: "atomic_notes", nodes: [], edges: [], truncated: false };
 
+  // Applied relations are drawn (D9). A directed relation points from its subject to its object;
+  // a symmetric or legacy undirected one keeps the canonical (sorted) order. Untyped reads neutral.
   const edgeResult = await pool.query<AtomicNoteEdgeRow>(
-    `select relation.id, relation.source_atomic_note_id as source,
-            relation.target_atomic_note_id as target, relation.relation_type as "relationType",
+    `select relation.id,
+            case when relation.direction = 'hi_to_lo' then relation.target_atomic_note_id
+                 else relation.source_atomic_note_id end as source,
+            case when relation.direction = 'hi_to_lo' then relation.source_atomic_note_id
+                 else relation.target_atomic_note_id end as target,
+            coalesce(relation.relation_type, 'related') as "relationType",
             relation.explanation, relation.final_score as "finalScore"
      from atomic_note_relations relation
-     where relation.status <> 'rejected'
+     where ${appliedNoteRelationSql("relation")}
        and relation.source_atomic_note_id = any($1::uuid[])
        and relation.target_atomic_note_id = any($1::uuid[])
      order by relation.final_score desc, relation.id

@@ -95,11 +95,16 @@ export interface AtomicNoteRecord {
   updatedAt: Date;
 }
 
+/**
+ * A stored note relation (relations v2, F3 D8/D9). `sourceAtomicNoteId < targetAtomicNoteId` by
+ * UUID: the columns are the canonical pair, never the direction, which `direction` holds.
+ */
 export interface AtomicNoteRelationRecord {
   id: string;
   sourceAtomicNoteId: string;
   targetAtomicNoteId: string;
-  relationType: string;
+  /** Null for an untyped relations v2 row. */
+  relationType: string | null;
   vectorScore: number | null;
   graphScore: number | null;
   rerankScore: number | null;
@@ -109,6 +114,13 @@ export interface AtomicNoteRelationRecord {
   matchingProfileId: string | null;
   matchingModel: string | null;
   metadata: JsonObject;
+  direction: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown";
+  band: "apply" | "suggest" | null;
+  probability: number | null;
+  deciderKey: string | null;
+  typerKey: string | null;
+  vetoedAt: Date | null;
+  vetoSource: "explainer" | "typer" | null;
   createdAt: Date;
   updatedAt: Date;
 }

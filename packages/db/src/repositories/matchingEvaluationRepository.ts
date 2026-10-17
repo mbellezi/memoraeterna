@@ -1,7 +1,12 @@
-import type { PgPool } from "../client.js";
+import { NoteRelationDirectionSchema } from "@app/domain";
 import { z } from "zod";
 
+import type { PgPool } from "../client.js";
+import { noteRelationStateSql } from "./note-relation-sql.js";
+
 const savedMatchingSchema = z.object({
+  // Relations v2 rows (F3 D8): the canonical pair with its direction. A snapshot taken before
+  // migration 0056 has no direction and is refused rather than guessed.
   noteRelations: z
     .array(
       z
@@ -9,7 +14,8 @@ const savedMatchingSchema = z.object({
           id: z.string().uuid(),
           source_atomic_note_id: z.string().uuid(),
           target_atomic_note_id: z.string().uuid(),
-          status: z.literal("pending_review")
+          status: z.literal("pending_review"),
+          direction: NoteRelationDirectionSchema
         })
         .passthrough()
     )
@@ -82,7 +88,7 @@ export function createMatchingEvaluationRepository(pool: PgPool) {
           (select count(*)::int from source_items) as total,
           (select count(*)::int from source_items where id=any($1::uuid[])) as selected,
           (select count(*)::int from source_relations where status <> 'pending_review') +
-          (select count(*)::int from atomic_note_relations where status <> 'pending_review') as reviewed,
+          (select count(*)::int from atomic_note_relations r where ${noteRelationStateSql.reviewed("r")}) as reviewed,
           (select count(*)::int from jobs j join ingestion_runs r on r.job_id=j.id where j.status in ('queued','running')) as active`,
             [sourceIds]
           )

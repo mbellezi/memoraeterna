@@ -310,15 +310,17 @@ try {
     otherChunks.chunkIds[1]
   ]);
   await db.query("delete from chunks where id = $1", [otherChunks.chunkIds[1]]);
+  // Decided from the page's note to the other one unless `subjectAtomicNoteId` says otherwise.
   const relate = (
     otherId: string,
     finalScore: number,
-    input: Partial<Parameters<typeof relations.upsert>[0]> = {}
+    input: Partial<Parameters<typeof relations.upsertDecided>[0]> = {}
   ) =>
-    relations.upsert({
-      sourceAtomicNoteId: note,
-      targetAtomicNoteId: otherId,
+    relations.upsertDecided({
+      subjectAtomicNoteId: note,
+      objectAtomicNoteId: otherId,
       relationType: "supports",
+      band: null,
       finalScore,
       explanation: "knowledge.relations.explanations.reranked",
       ...input
@@ -326,23 +328,23 @@ try {
   await relate(outgoing, 0.9, {
     explanation: `Both describe recall in <note-ref id="${note}" />.`,
     matchingModel: "decider-a",
-    metadata: {
-      decisionSource: "model",
-      semanticSourceAtomicNoteId: note,
-      semanticTargetAtomicNoteId: outgoing
-    }
+    metadata: { decisionSource: "model" }
   });
   await relate(incoming, 0.8, {
+    subjectAtomicNoteId: incoming,
+    objectAtomicNoteId: note,
     relationType: "extends",
     explanation: "A cached explanation.",
     matchingModel: "decider-a",
-    metadata: {
-      decisionSource: "cache",
-      semanticSourceAtomicNoteId: incoming,
-      semanticTargetAtomicNoteId: note
-    }
+    metadata: { decisionSource: "cache" }
   });
-  await relate(unknown, 0.7, { explanation: "knowledge.relations.explanations.hybrid" });
+  const legacy = await relate(unknown, 0.7, {
+    explanation: "knowledge.relations.explanations.hybrid"
+  });
+  // A legacy relation whose decided direction was never recorded (migration 0056's `unknown`).
+  await db.query("update atomic_note_relations set direction = 'unknown' where id = $1", [
+    legacy.relation.id
+  ]);
   await relate(rejectedRelation, 0.99, { status: "rejected" });
   await relate(rejectedNote, 0.98);
   await relate(archivedNote, 0.97);
@@ -519,10 +521,11 @@ try {
     [emojiNote, 0.9],
     [orphan, 0.8]
   ] as const)
-    await relations.upsert({
-      sourceAtomicNoteId: hub,
-      targetAtomicNoteId: target,
+    await relations.upsertDecided({
+      subjectAtomicNoteId: hub,
+      objectAtomicNoteId: target,
       relationType: "supports",
+      band: null,
       finalScore,
       explanation: "knowledge.relations.explanations.reranked"
     });

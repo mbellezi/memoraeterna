@@ -56,6 +56,17 @@ export function relationTypeView(type: string): RelationTypeView {
   };
 }
 
+/**
+ * How a stored note pair reads from its first note to its second: the stored endpoints are sorted
+ * by ID (relations v2, D8), so a directed relation points either way; a symmetric relation, or a
+ * legacy one whose direction is unknown, reads both ways.
+ */
+export function relationPairArrow(
+  direction: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown"
+): string {
+  return direction === "lo_to_hi" ? "→" : direction === "hi_to_lo" ? "←" : "↔";
+}
+
 /** Literal classes, so the styles are generated: `text-stance-<stance>` from tokens.css. */
 export const stanceTextClass: Record<Stance, string> = {
   supports: "text-stance-supports",

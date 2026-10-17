@@ -128,7 +128,7 @@ describe("atomic note matching execution", () => {
     expect(mocks.relations.upsert).toHaveBeenCalledOnce();
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         relationType: "extends",
         rerankScore: 0.95,
         // The decider writes no prose: the explanation is written later, on demand.
@@ -157,14 +157,13 @@ describe("atomic note matching execution", () => {
       })
     );
     const records = mocks.decisions.record.mock.calls.map(([record]) => record);
-    expect(records.map((r) => [r.targetAtomicNoteId, r.score, r.relationType, r.accepted])).toEqual(
-      [
-        ["c", 0.95, "extends", true],
-        // Qualifies but exceeds the per-note limit: recorded as not accepted.
-        ["b", 0.7, "supports", false],
-        ["a", 0.1, "supports", false]
-      ]
-    );
+    // Raw verdicts only: whether matching accepted the pair is not stored with them (F3 D12).
+    expect(records.map((r) => [r.targetAtomicNoteId, r.score, r.relationType])).toEqual([
+      ["c", 0.95, "extends"],
+      ["b", 0.7, "supports"],
+      ["a", 0.1, "supports"]
+    ]);
+    expect(records.some((r) => "accepted" in r)).toBe(false);
     expect(new Set(records.map((r) => r.deciderKey)).size).toBe(1);
     expect(
       records.every((r) => r.sourceAtomicNoteId === "source" && r.aiTaskRunId === "run-1")
@@ -287,7 +286,7 @@ describe("atomic note matching execution", () => {
     expect(mocks.relations.upsert).toHaveBeenCalledOnce();
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         rerankScore: 0.9,
         explanation: "knowledge.relations.explanations.reranked"
       })
@@ -394,7 +393,7 @@ describe("atomic note matching execution", () => {
     expect(matched.persistedCount).toBe(1);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         explanation: "knowledge.relations.explanations.reranked"
       })
     );
@@ -411,7 +410,7 @@ describe("atomic note matching execution", () => {
     expect(optional.persistedCount).toBe(2);
     expect(
       mocks.relations.upsert.mock.calls.map(([input]) => [
-        input.targetAtomicNoteId,
+        input.loAtomicNoteId,
         input.metadata.decisionSource
       ])
     ).toEqual([
@@ -535,7 +534,7 @@ describe("atomic note matching execution", () => {
     expect(matched.persistedCount).toBe(1);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         relationType: "extends",
         rerankScore: 0.95,
         explanation: "knowledge.relations.explanations.reranked",
@@ -577,12 +576,10 @@ describe("atomic note matching execution", () => {
     expect(rerankCalls()).toHaveLength(1);
     expect(rerankCalls()[0]![1]).toContain("Title: c");
     expect(matched.persistedCount).toBe(1);
-    expect(mocks.relations.upsert.mock.calls.map(([input]) => input.targetAtomicNoteId)).toEqual([
-      "b"
-    ]);
+    expect(mocks.relations.upsert.mock.calls.map(([input]) => input.loAtomicNoteId)).toEqual(["b"]);
     expect(
       mocks.decisions.record.mock.calls.find(([r]) => r.targetAtomicNoteId === "c")?.[0]
-    ).toMatchObject({ accepted: true, score: 0.95 });
+    ).toMatchObject({ score: 0.95 });
   });
 
   it("records nothing when the reranking route changes during the call", async () => {
@@ -606,7 +603,7 @@ describe("atomic note matching execution", () => {
     // The cached verdict belongs to the decider it was looked up under, not to the new route.
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         matchingModel: "model",
         metadata: expect.objectContaining({ decisionSource: "cache" })
       })
@@ -733,7 +730,7 @@ describe("note embeddings in matching", () => {
     expect(matched.persistedCount).toBe(1);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         vectorScore: 0.9,
         metadata: expect.objectContaining({ decisionSource: "model" })
       })
@@ -803,22 +800,27 @@ describe("one decision per unordered pair with a generative decider", () => {
       })
     );
     expect(matched.persistedCount).toBe(1);
-    // The type belongs to the direction it was judged in: candidate -> this note.
+    // The type belongs to the direction it was judged in: candidate -> this note, stored as the
+    // sorted pair ("c" < "source") read from its lower note (relations v2).
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceAtomicNoteId: "source",
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
+        hiAtomicNoteId: "source",
+        direction: "lo_to_hi",
+        band: null,
         relationType: "extends",
         rerankScore: 0.95,
         explanation: "knowledge.relations.explanations.reranked",
         matchingModel: "model",
-        metadata: expect.objectContaining({
-          decisionSource: "reverse_cache",
-          semanticSourceAtomicNoteId: "c",
-          semanticTargetAtomicNoteId: "source"
-        })
+        metadata: expect.objectContaining({ decisionSource: "reverse_cache" })
       })
     );
+    // No direction is written into metadata (D8).
+    expect(
+      Object.keys(mocks.relations.upsert.mock.calls[0]![0].metadata).filter((key) =>
+        key.startsWith("semantic")
+      )
+    ).toEqual([]);
     // A reused verdict is not a judgment of this direction: no row is written for it.
     expect(mocks.decisions.record.mock.calls.map(([r]) => r.targetAtomicNoteId).sort()).toEqual([
       "a",
@@ -828,14 +830,13 @@ describe("one decision per unordered pair with a generative decider", () => {
 
   it("keeps the semantic direction of a verdict that was judged in this direction", async () => {
     await service().matchAtomicNotes(["source"]);
+    // Judged this note -> "c": the sorted pair ("c" < "source") reads from its higher note.
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
-        metadata: expect.objectContaining({
-          decisionSource: "model",
-          semanticSourceAtomicNoteId: "source",
-          semanticTargetAtomicNoteId: "c"
-        })
+        loAtomicNoteId: "c",
+        hiAtomicNoteId: "source",
+        direction: "hi_to_lo",
+        metadata: expect.objectContaining({ decisionSource: "model" })
       })
     );
   });
@@ -854,7 +855,7 @@ describe("one decision per unordered pair with a generative decider", () => {
     ).toEqual(["a", "b"]);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAtomicNoteId: "c",
+        loAtomicNoteId: "c",
         relationType: "supports",
         metadata: expect.objectContaining({ decisionSource: "cache" })
       })
@@ -948,8 +949,8 @@ describe("one decision per unordered pair with a generative decider", () => {
         )
     );
     mocks.relations.upsert.mockImplementation(
-      async (r: { sourceAtomicNoteId: string; targetAtomicNoteId: string }) =>
-        void related.add(pairOf(r.sourceAtomicNoteId, r.targetAtomicNoteId))
+      async (r: { loAtomicNoteId: string; hiAtomicNoteId: string }) =>
+        void related.add(pairOf(r.loAtomicNoteId, r.hiAtomicNoteId))
     );
     mocks.relations.pairStatuses.mockImplementation(
       async (noteId: string, ids: string[]) =>

@@ -98,6 +98,8 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     });
     expect(library.documents).toBe(1);
     expect(library.chunks).toBe(1);
+    // A migrated library reads the relations v2 states (none here).
+    expect(library.noteRelationStates).toEqual({ applied: 0, suggested: 0, withdrawn: 0 });
     expect(library.embeddings).toEqual({
       embeddings_256: 0,
       embeddings_768: 0,

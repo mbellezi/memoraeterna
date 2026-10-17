@@ -115,21 +115,40 @@ export interface NoteRelationSeedOptions {
 /**
  * Note-page data on top of `librarySeedSteps` (same session): one SourceSpan per chunk (every
  * fourth with a page), relations with mixed types, scores and explanations (half are message keys,
- * half text with a note reference; a quarter lack decision metadata; a third have an explanation
- * written on open), hub notes, human edits on 5% of the notes and retained evidence snapshots on 1%.
+ * half text with a note reference; a quarter lack decision metadata and read in an unknown
+ * direction; a third have an explanation written on open), hub notes, human edits on 5% of the
+ * notes and retained evidence snapshots on 1%. Relations are stored as relations v2 rows (F3 D8):
+ * the sorted pair with its direction; an eighth are banded v2 rows with the write vocabulary
+ * (half of those suggested, a quarter of the applied ones withdrawn), the rest legacy rows.
  */
 export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[] => {
-  const types = "array['supports','contrasts','extends','similar_to','depends_on','clarifies']";
-  const relation = (from: string, to: string, salt: string) => `
-     select least(${from}.id, ${to}.id), greatest(${from}.id, ${to}.id),
-            (${types})[1 + ((${from}.rn + ${salt}) % 6)::int],
-            ((${from}.rn * 7 + ${salt} * 13) % 100) / 100.0,
-            case when (${from}.rn + ${salt}) % 2 = 0 then 'knowledge.relations.explanations.reranked'
-                 else 'Both describe it in <note-ref id="' || ${from}.id || '" />.' end,
+  const legacyTypes =
+    "array['supports','contrasts','extends','similar_to','depends_on','clarifies']";
+  const writeTypes =
+    "array['supports','contradicts','extends','same_as','depends_on','example_of','clarifies']";
+  /** Inserts one relation per row of `pairs` (columns f, t: the decided subject and object; k: a salt). */
+  const insertRelations = (pairs: string) => `
+    insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+        direction, band, probability, vetoed_at, veto_source, final_score, explanation,
+        matching_model, metadata)
+     select least(x.f, x.t), greatest(x.f, x.t), x.type,
+            case when x.type in ('contrasts','similar_to','contradicts','same_as') then 'symmetric'
+                 when not x.v2 and x.k % 4 = 0 then 'unknown'
+                 when x.f < x.t then 'lo_to_hi' else 'hi_to_lo' end,
+            case when x.v2 then case when x.k % 16 = 1 then 'suggest' else 'apply' end end,
+            case when x.v2 then x.score end,
+            case when x.v2 and x.k % 32 = 9 then now() end,
+            case when x.v2 and x.k % 32 = 9 then 'explainer' end,
+            x.score,
+            case when x.k % 2 = 0 then 'knowledge.relations.explanations.reranked'
+                 else 'Both describe it in <note-ref id="' || x.f || '" />.' end,
             'seed-decider',
-            case when (${from}.rn + ${salt}) % 4 = 0 then '{}'::jsonb
-                 else jsonb_build_object('decisionSource', 'model', 'semanticSourceAtomicNoteId', ${from}.id,
-                                         'semanticTargetAtomicNoteId', ${to}.id) end`;
+            case when x.k % 4 = 0 then '{}'::jsonb else jsonb_build_object('decisionSource', 'model') end
+       from (select p.f, p.t, p.k, p.score, p.k % 8 = 1 as v2,
+                    case when p.k % 8 = 1 then (${writeTypes})[1 + ((p.k / 8) % 7)::int]
+                         else (${legacyTypes})[1 + (p.k % 6)::int] end as type
+               from (${pairs}) p) x
+     on conflict do nothing`;
   return [
     // Write triggers (the projection clock) are irrelevant to a throwaway benchmark.
     `alter table chunks disable trigger user`,
@@ -141,20 +160,16 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
      select id, document_id, source_item_id, chunk_index * 100, chunk_index * 100 + 90,
             case when chunk_index % 4 = 0 then 1 + chunk_index / 4 end from t_span`,
     `update chunks c set source_span_id = s.id from t_span s where s.chunk_id = c.id`,
-    `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
-        final_score, explanation, matching_model, metadata)
-     ${relation("a", "b", "j")}
+    insertRelations(`select a.id as f, b.id as t, a.rn + j as k,
+            ((a.rn * 7 + j * 13) % 100) / 100.0 as score
        from t_note_rank a cross join generate_series(1, ${options.relationsPerNote}) j
        join t_note_rank b on b.rn = 1 + ((a.rn * 7919 + j * 104729) % (select count(*) from t_note_rank))
-      where a.id <> b.id
-     on conflict do nothing`,
-    `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
-        final_score, explanation, matching_model, metadata)
-     ${relation("a", "b", "j")}
+      where a.id <> b.id`),
+    insertRelations(`select a.id as f, b.id as t, a.rn + j as k,
+            ((a.rn * 7 + j * 13) % 100) / 100.0 as score
        from t_note_rank a cross join generate_series(1, ${options.hubRelations}) j
        join t_note_rank b on b.rn = 1 + ((a.rn * 31 + j * 997) % (select count(*) from t_note_rank))
-      where a.rn <= ${options.hubNotes} and a.id <> b.id
-     on conflict do nothing`,
+      where a.rn <= ${options.hubNotes} and a.id <> b.id`),
     `alter table chunks enable trigger user`,
     `alter table atomic_note_relations enable trigger user`,
     // A third of the relations were opened and explained (stale or current, it is the same read).

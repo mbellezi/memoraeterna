@@ -62,8 +62,13 @@ const sourceRelations = results.sourceRelations
   .filter((r: any) => r.inPartition);
 const noteRelations = results.noteRelations
   .map((r: any) => {
-    const a = notes.get(r.metadata?.semanticSourceAtomicNoteId ?? r.source_atomic_note_id),
-      b = notes.get(r.metadata?.semanticTargetAtomicNoteId ?? r.target_atomic_note_id);
+    // Relations v2 rows store the sorted pair and the direction it reads in (F3 D8).
+    const [subject, object] =
+      r.direction === "hi_to_lo"
+        ? [r.target_atomic_note_id, r.source_atomic_note_id]
+        : [r.source_atomic_note_id, r.target_atomic_note_id];
+    const a = notes.get(subject),
+      b = notes.get(object);
     const x = root(a.created_from_source_item_id),
       y = root(b.created_from_source_item_id);
     return {

@@ -73,8 +73,21 @@ const noteRelations = results.noteRelations.map((r: any) => {
     type: r.relation_type,
     score: r.final_score,
     rerank: r.rerank_score,
-    semanticSource: notes.get(r.metadata?.semanticSourceAtomicNoteId)?.title,
-    semanticTarget: notes.get(r.metadata?.semanticTargetAtomicNoteId)?.title
+    // The decided direction of a relations v2 row (F3 D8); none for a symmetric or unknown one.
+    semanticSource: notes.get(
+      r.direction === "lo_to_hi"
+        ? r.source_atomic_note_id
+        : r.direction === "hi_to_lo"
+          ? r.target_atomic_note_id
+          : undefined
+    )?.title,
+    semanticTarget: notes.get(
+      r.direction === "lo_to_hi"
+        ? r.target_atomic_note_id
+        : r.direction === "hi_to_lo"
+          ? r.source_atomic_note_id
+          : undefined
+    )?.title
   };
 });
 const identityChecks = results.entities
