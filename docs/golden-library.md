@@ -243,6 +243,44 @@ text or a password.
   reported as such: missing roots, or note-matching calls answered from a cassette, whose durations are
   near zero. Time is therefore only judged on a record run; quality is the same in a replay. `--check`
   exits 0 when everything passes, 1 when a measure fails, 2 when none failed but one is undecided.
+- **The held-out partition is sealed** (F3 decision D3) until `.cache/f3/freeze/frozen.json` exists (`--frozen`
+  names another file): the report and the JSON hold tuning results only, the held-out exit measures read "not
+  decided", and `--check` exits 2. The figures quoted below were taken before the seal.
+
+### F3 measurement
+
+The F3 harness (decisions D2 and D3) adds an evaluator gate and four offline scripts; none calls a model.
+
+```sh
+# X1 and S1 over the samples (shown relations, applied-only beside; mean and minimum; source report)
+npm run golden:evaluate -- --gate f3 --sample S0=<db or stored json> --sample S1=... --live-judge S0,S1 --check
+# the offline export the scripts below read: candidate lists, decisions and relations (ids and scores only)
+npm run golden:evaluate -- --db <connection.json> --export-relations .cache/f3/m0/<name>-export.json
+# the two held-out aggregates gate 0 may read before the freeze, and nothing else
+npm run golden:evaluate -- --pre-freeze-feasibility --relations <export.json> --scores <pair-scores.json>
+npm run golden:rescore -- --export <export.json> --rule legacy-blend|decider-only:0.65|ranker:max:3.3125 [--parity <stored report>]
+npm run golden:recall -- --export <export.json> [--k 20]
+npm run golden:reverse-only -- --spike-dataset <dataset.json> --spike-scores <scores.json> --rule max:3.3125
+npm run golden:calls -- --summary .cache/golden/runs/<run>/summary.json
+```
+
+- An export holds the held-out candidate lists too: only the scripts here read it, and they apply the freeze
+  guard. Run them from the repository root, where the default paths resolve.
+- A relation counts as **shown** (applied, suggested or kept) or **applied** through
+  `scripts/golden/relation-visibility.ts`, the swap point for the relations v2 predicates; before the band
+  columns exist both follow the counted statuses.
+- Before the freeze, pair-level output (`rescore`, `candidate-recall`) covers tuning pairs only. `rescore --parity`
+  prints whether the rescored root pairs equal a stored report's, and that report's own counts when they do.
+- `reverse-only` gives the literal loss of a set of old acceptances (R_v6 from Spike A's files, R_v9 from an
+  export), split by same-root pairs, and the adjudicated loss when `--labels` names the panel's verdicts.
+- `calls-per-chapter` counts generative calls per chunk and per 30-chunk reference chapter by AI task (a golden
+  run summary) or by operation (an export of `ai_task_runs`); embeddings and rankers do not count.
+- Parity with published numbers: `rescore --rule legacy-blend` on the end state of v9 sample A or B (an export
+  of its backup) reproduces the stored `matching-v9a.json` (24/28) and `matching-v9b.json` (23/28) note
+  layers; `reverse-only` on Spike A's stored MLX scores at `max:3.3125` loses 12 of 37; `calls-per-chapter` on
+  the golden F1a summary gives 2.51 generative calls per chunk. The unit tests rebuild the first on the real
+  fixture mapping and read the stored files for the other two (they skip without them;
+  `MEMORA_CACHE_ROOT=<main checkout>/.cache` runs them from a worktree).
 
 ### Checked against the old pipeline
 

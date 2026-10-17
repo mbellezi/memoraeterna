@@ -5,6 +5,7 @@ import {
   defaultEvaluationOptions,
   evaluateMatching,
   renderEvaluationMarkdown,
+  sealHeldOut,
   summarizeCalls,
   type AiCallRow,
   type EvaluationInput,
@@ -441,5 +442,147 @@ describe("renderEvaluationMarkdown", () => {
     const evaluation = evaluateMatching(library());
     expect(renderEvaluationMarkdown(evaluation)).toBe(renderEvaluationMarkdown(evaluation));
     expect(JSON.stringify(evaluation)).not.toMatch(/postgres(ql)?:\/\//u);
+  });
+});
+
+describe("evaluateMatching: shown and applied relations (F3 gate)", () => {
+  // A1 with C1 is applied, B1 with C1 only suggested, C1 with F1 withdrawn, C1 with E1 kept by the owner.
+  const flagged = () =>
+    library({
+      noteRelations: [
+        { ...relation("n1", "n4"), shown: true, applied: true },
+        { ...relation("n3", "n4"), shown: true, applied: false },
+        { ...relation("n4", "n8"), shown: false, applied: false },
+        { ...relation("n4", "n7", "rejected"), shown: true, applied: false }
+      ]
+    });
+
+  it("counts the clause's verdicts instead of the status and keeps applied-only beside them", () => {
+    const result = evaluateMatching(flagged());
+    const shown = result.partitions.holdout.layers.notes;
+    const applied = result.partitions.holdout.layers.notesApplied;
+    expect(shown.expected).toMatchObject({ hit: 3, hitPairs: ["A1/C1", "B1/C1", "C1/E1"] });
+    expect(shown.forbidden.hit).toBe(0);
+    expect(applied.expected).toMatchObject({ hit: 1, hitPairs: ["A1/C1"] });
+    expect(result.partitions.holdout.layers.either.expected.hit).toBe(3);
+  });
+
+  it("reads a library without verdicts by status, shown and applied alike", () => {
+    const legacy = evaluateMatching(library());
+    const layers = legacy.partitions.holdout.layers;
+    expect(layers.notesApplied.expected.hitPairs).toEqual(layers.notes.expected.hitPairs);
+  });
+});
+
+describe("sealHeldOut (decision D3)", () => {
+  it("empties the held-out result, keeps tuning and costs, and leaves the exit undecided", () => {
+    const evaluation = evaluateMatching(library());
+    const sealed = sealHeldOut(evaluation, "no frozen.json");
+    const layer = sealed.partitions.holdout.layers.notes;
+    expect(sealed.partitions.holdout.sealed).toBe(true);
+    expect(layer.expected).toMatchObject({ total: 3, hit: 0, hitPairs: [], missPairs: [] });
+    expect(layer.forbidden.hitPairs).toEqual([]);
+    expect(sealed.partitions.tuning).toEqual(evaluation.partitions.tuning);
+    expect(sealed.cost).toEqual(evaluation.cost);
+    expect(sealed.exit.pass).toBeNull();
+    expect(sealed.exit.expected.pass).toBeNull();
+    expect(sealed.resolution.warnings.at(-1)).toBe(
+      "held-out sealed until the freeze (decision D3): no frozen.json"
+    );
+    // The serialized report holds none of the held-out pair names.
+    const json = JSON.stringify(sealed);
+    for (const pair of ["A1/C1", "B1/C1", "C1/E1", "C1/F1"]) expect(json).not.toContain(pair);
+  });
+
+  it("prints a sealed partition as sealed, in the exit table and in the partition section", () => {
+    const text = renderEvaluationMarkdown(
+      sealHeldOut(evaluateMatching(library()), "no frozen.json")
+    );
+    expect(text).toContain("| Expected root pairs linked | sealed | at least 27/3 | not decided |");
+    expect(text).toContain("Result sealed until the freeze (decision D3).");
+    expect(text).not.toContain("C1/F1");
+  });
+});
+
+describe("evaluateMatching: source report and calls per chapter", () => {
+  const sourceCall = (sourceItemId: string, extra: Partial<AiCallRow> = {}): AiCallRow =>
+    call({
+      operation: "source_relation_matching",
+      noteId: null,
+      sourceItemId,
+      promptVersion: "source-v5",
+      startedAt: "2026-10-30T12:00:00.000Z",
+      finishedAt: "2026-10-30T12:00:04.000Z",
+      ...extra
+    });
+
+  it("reports replayed source calls, AI seconds, wall seconds, calls per source and relation origins", () => {
+    const result = evaluateMatching(
+      library({
+        sourceRelations: [
+          { ...relation("s-a1", "s-b1", "accepted"), origin: "judged" },
+          { ...relation("s-c1", "s-e1"), origin: "promoted" },
+          { ...relation("s-a1b", "s-f1"), origin: "promoted" },
+          { ...relation("s-d1", "s-b1", "rejected"), origin: "promoted" },
+          relation("s-e1", "s-f1")
+        ],
+        aiCalls: [
+          sourceCall("s-c1", { durationMs: 2000, replayed: true }),
+          sourceCall("s-c1", { durationMs: 3000, finishedAt: "2026-10-30T12:00:09.000Z" }),
+          sourceCall("s-a1b", { durationMs: 1000 })
+        ]
+      })
+    );
+    const sources = result.cost.sourceMatching;
+    expect(sources.roots).toBe(2);
+    expect(sources.group).toMatchObject({ calls: 3, replayed: 1 });
+    expect(sources.callsPerRoot).toBe(1.5);
+    expect(sources.secondsPerRoot).toBe(3);
+    // C1: 12:00:00 to 12:00:09; A1: 12:00:00 to 12:00:04.
+    expect(sources.wallSecondsPerRoot).toBe(6.5);
+    expect(sources.relationsByOrigin).toEqual({ promoted: 2, judged: 1, unknown: 1 });
+    const text = renderEvaluationMarkdown(result);
+    expect(text).toContain("| Source matching, per root | 2 roots | 3 | 1 | 1.50 | 3.00 |");
+    expect(text).toContain(
+      "Source matching: 3.00 AI-call seconds and 6.50 wall seconds per source, 1.50 calls per source, 1 of 3 calls replayed from a cassette; source relations promoted 2, judged 1, origin unknown 1."
+    );
+  });
+
+  it("leaves wall seconds unknown without call timestamps", () => {
+    const result = evaluateMatching(
+      library({
+        aiCalls: [
+          call({ operation: "source_relation_matching", noteId: null, sourceItemId: "s-c1" })
+        ]
+      })
+    );
+    expect(result.cost.sourceMatching.wallSecondsPerRoot).toBeNull();
+  });
+
+  it("derives generative calls per 30-chunk chapter from the operations and the chunk count", () => {
+    const result = evaluateMatching(
+      library({
+        chunks: 60,
+        operations: [
+          {
+            task: "knowledge-graph-generation",
+            operation: "graph_atomic_notes",
+            calls: 90,
+            replayed: 0
+          },
+          { task: "reranking", operation: "note_matching_reranking", calls: 30, replayed: 10 },
+          { task: "embedding", operation: "note_embedding", calls: 500, replayed: 0 }
+        ]
+      })
+    );
+    expect(result.cost.callsPerChapter?.generative).toEqual({
+      calls: 120,
+      perChunk: 2,
+      perChapter: 60
+    });
+    expect(renderEvaluationMarkdown(result)).toContain(
+      "120 generative calls over 60 chunks: 2.00 per chunk, 60.0 per 30-chunk chapter"
+    );
+    expect(evaluateMatching(library()).cost.callsPerChapter).toBeNull();
   });
 });

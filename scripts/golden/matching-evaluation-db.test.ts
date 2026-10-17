@@ -21,9 +21,12 @@ import {
   parseEvaluateArgs,
   readEvaluationInput,
   readLibrary,
+  readLibraryExport,
+  readRelationsExportData,
   resolveEvaluationConnection
 } from "./matching-evaluation-db.ts";
 import { buildMatchingFixture, parseMatchingFixture, pairKey } from "./matching-fixture.ts";
+import { relationsExportSchema } from "./relations-export.ts";
 
 const workspace = resolve(import.meta.dirname, "..", "..");
 const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
@@ -71,6 +74,137 @@ describe("parseEvaluateArgs", () => {
     expect(() => parseEvaluateArgs(["--db", "x", "--statuses", "approved"])).toThrow("--statuses");
     expect(() => parseEvaluateArgs(["--db", "x", "--min-expected=-1"])).toThrow(">= 0");
     expect(() => parseEvaluateArgs(["--db", "x", "--surprise"])).toThrow();
+  });
+
+  it("reads the F3 gate: labelled samples, the live-judge list, the sample count and the freeze record", () => {
+    const command = parseEvaluateArgs([
+      "--gate",
+      "f3",
+      "--sample",
+      "S0=.cache/f3/scratch/s0.json",
+      "--sample",
+      "S1=postgres://u:p@127.0.0.1:1/db?sslmode=disable",
+      "--sample",
+      "stored.json",
+      "--live-judge",
+      "S0, S1",
+      "--min-samples",
+      "3",
+      "--frozen",
+      "/x/frozen.json"
+    ]);
+    expect(command).toMatchObject({
+      kind: "run",
+      gate: "f3",
+      db: null,
+      samples: [
+        { label: "S0", source: ".cache/f3/scratch/s0.json" },
+        { label: "S1", source: "postgres://u:p@127.0.0.1:1/db?sslmode=disable" },
+        { label: null, source: "stored.json" }
+      ],
+      liveJudge: ["S0", "S1"],
+      minSamples: 3,
+      frozen: "/x/frozen.json"
+    });
+    // A single library is a sample too, labelled by --label.
+    expect(parseEvaluateArgs(["--gate", "f3", "--db", "x.json", "--label", "S0"])).toMatchObject({
+      gate: "f3",
+      db: "x.json",
+      samples: []
+    });
+    expect(parseEvaluateArgs(["--db", "x.json"])).toMatchObject({
+      gate: "f1a",
+      samples: [],
+      liveJudge: [],
+      minSamples: 4,
+      frozen: null
+    });
+  });
+
+  it("refuses a gate without samples, samples without the gate and nonsense counts", () => {
+    expect(() => parseEvaluateArgs(["--gate", "f3"])).toThrow("--gate f3 needs --sample");
+    expect(() => parseEvaluateArgs(["--gate", "f2", "--db", "x"])).toThrow(
+      "--gate takes f1a or f3"
+    );
+    expect(() => parseEvaluateArgs(["--db", "x", "--sample", "S0=a.json"])).toThrow(
+      "belongs to --gate f3"
+    );
+    expect(() => parseEvaluateArgs(["--gate", "f3", "--db", "x", "--min-samples", "0"])).toThrow(
+      "--min-samples"
+    );
+  });
+
+  it("takes the pre-freeze feasibility mode with its two inputs and nothing that could print more", () => {
+    expect(
+      parseEvaluateArgs([
+        "--pre-freeze-feasibility",
+        "--relations",
+        "r.json",
+        "--scores",
+        "s.json",
+        "--k",
+        "16",
+        "--rule",
+        "max:3.16",
+        "--label",
+        "GGUF"
+      ])
+    ).toEqual({
+      kind: "feasibility",
+      relations: "r.json",
+      scores: "s.json",
+      mapping: ".cache/golden/matching-fixture/mapping.json",
+      k: 16,
+      rule: { aggregation: "max", threshold: 3.16 },
+      label: "GGUF"
+    });
+    expect(
+      parseEvaluateArgs(["--pre-freeze-feasibility", "--relations", "r.json", "--scores", "s.json"])
+    ).toMatchObject({ k: 20, rule: { aggregation: "max", threshold: 3.3125 } });
+    expect(() => parseEvaluateArgs(["--pre-freeze-feasibility", "--relations", "r.json"])).toThrow(
+      "needs --relations and --scores"
+    );
+    for (const extra of [
+      ["--db", "x"],
+      ["--json", "o.json"],
+      ["--out", "o.md"],
+      ["--check"],
+      ["--gate", "f3"]
+    ])
+      expect(() =>
+        parseEvaluateArgs([
+          "--pre-freeze-feasibility",
+          "--relations",
+          "r",
+          "--scores",
+          "s",
+          ...extra
+        ])
+      ).toThrow("prints two aggregates and nothing else");
+    expect(() =>
+      parseEvaluateArgs([
+        "--pre-freeze-feasibility",
+        "--relations",
+        "r",
+        "--scores",
+        "s",
+        "--k",
+        "0"
+      ])
+    ).toThrow("--k");
+  });
+
+  it("takes the relations export mode with a database", () => {
+    expect(parseEvaluateArgs(["--db", "x.json", "--export-relations", "out.json"])).toEqual({
+      kind: "export",
+      db: "x.json",
+      out: "out.json",
+      statuses: ["accepted", "pending_review"],
+      label: null
+    });
+    expect(() => parseEvaluateArgs(["--export-relations", "out.json"])).toThrow(
+      "--db is required."
+    );
   });
 });
 
@@ -345,6 +479,141 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
       until: new Date("2026-09-10T00:00:00Z")
     });
     expect(embeddings.aiCalls.map((c) => c.task)).toEqual(["embedding"]);
+  });
+
+  it("reads shown and applied verdicts, operations, chunks and call times with the status reading", async () => {
+    const input = await readLibrary({ connectionString, description: "test" }, mapping, {
+      tasks: ["reranking"],
+      since: null,
+      until: null,
+      statuses: ["accepted"]
+    });
+    // With only `accepted` counted, the pending relations are neither shown nor applied.
+    const shown = input.noteRelations.filter((row) => row.shown);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ status: "accepted", shown: true, applied: true });
+    expect(input.noteRelations.every((row) => row.shown === row.applied)).toBe(true);
+    expect(input.sourceRelations.every((row) => row.origin === null)).toBe(true);
+    expect(input.chunks).toBeGreaterThan(0);
+    // Every call of the window by task and operation, whatever task the evaluation costs.
+    expect(input.operations?.find((row) => row.task === "embedding")).toMatchObject({
+      operation: "embedding",
+      calls: 1
+    });
+    expect(
+      input.operations?.find((row) => row.operation === "note_matching_reranking")
+    ).toMatchObject({ task: "reranking", calls: 3, replayed: 1 });
+    const timed = input.aiCalls.find((row) => row.operation === "source_relation_matching")!;
+    expect(timed.startedAt).toBe("2026-09-09T01:10:00.000Z");
+    expect(timed.finishedAt).toMatch(/Z$/u);
+  });
+
+  it("exports candidate lists, decisions and relations as the offline scripts read them", async () => {
+    const [n1, n2, n3] = [uid(1), uid(2), uid(3)];
+    const run = await q(
+      `insert into similarity_debug_runs (kind, query_text, query_target_id, mode, requested_limit, strategy)
+       values ('atomic_note_matching', 'q', $1, 'hybrid', 20, 'fused') returning id`,
+      [n1]
+    );
+    await q(
+      `insert into similarity_debug_results (run_id, target_type, target_id, final_rank, text_rank,
+         vector_rank, vector_score, text_score, rerank_score, final_score, passed_threshold)
+       values ($1, 'atomic_note', $2, 2, 5, 1, 0.8, 0.4, 0.9, 0.7, true),
+              ($1, 'atomic_note', $3, 7, null, 3, 0.6, null, null, 0.3, null)`,
+      [(run.rows[0] as { id: string }).id, n2, n3]
+    );
+    await q(
+      `insert into relation_decisions (pair_key, lo_atomic_note_id, hi_atomic_note_id, lo_content_hash,
+         hi_content_hash, decider_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_decided_at,
+         relation_type, accepted)
+       values ($1, $2, $3, 'h1', 'h2', 'key', 0.9, 'supports', now(), 'supports', true)`,
+      [`${n1}:${n2}`, n1, n2]
+    );
+    const data = await readRelationsExportData(pool);
+    const parsed = relationsExportSchema.parse(data);
+    expect(parsed.candidates).toHaveLength(2);
+    expect(data.candidates).toEqual([
+      expect.objectContaining({
+        sourceNoteId: n1,
+        targetNoteId: n2,
+        finalRank: 2,
+        textRank: 5,
+        vectorRank: 1,
+        vectorScore: 0.8,
+        rerankScore: 0.9,
+        passedThreshold: true
+      }),
+      expect.objectContaining({
+        targetNoteId: n3,
+        finalRank: 7,
+        textRank: null,
+        rerankScore: null
+      })
+    ]);
+    expect(data.decisions).toEqual([
+      expect.objectContaining({
+        loNoteId: n1,
+        hiNoteId: n2,
+        loToHiScore: 0.9,
+        hiToLoScore: null,
+        loToHiType: "supports",
+        accepted: true
+      })
+    ]);
+    // Relations keep their pair columns and carry the visibility verdicts of the status reading.
+    expect(data.relations.length).toBeGreaterThan(0);
+    expect(data.relations.every((row) => typeof row.shown === "boolean")).toBe(true);
+    // Ids and scores only: the export holds no note text.
+    expect(JSON.stringify(data)).not.toContain("body");
+    const copy = await readLibraryExport(
+      { connectionString, description: "127.0.0.1:1/db" },
+      { label: "unit" }
+    );
+    expect(copy.context).toMatchObject({ label: "unit", database: "127.0.0.1:1/db" });
+    expect(copy.context.generatedAt).toMatch(/Z$/u);
+  });
+
+  it("reads the relations v2 verdicts when the band columns exist", async () => {
+    await q("create database v2_library");
+    const url = new URL(connectionString);
+    url.pathname = "/v2_library";
+    const v2 = new pg.Client({ connectionString: url.toString() });
+    await v2.connect();
+    try {
+      await v2.query(`
+        create table source_items (id uuid primary key, title text not null, parent_source_item_id uuid);
+        create table atomic_notes (id uuid primary key, created_from_source_item_id uuid not null);
+        create table atomic_note_relations (source_atomic_note_id uuid, target_atomic_note_id uuid,
+          status text, band text, vetoed_at timestamptz);
+        create table source_relations (source_item_id uuid, target_source_item_id uuid, status text,
+          origin text);
+        create table ai_task_runs (id uuid primary key, task_type text, status text, duration_ms integer,
+          input_tokens integer, output_tokens integer, started_at timestamptz default now());
+        insert into source_items values ('${uid(1)}', '${mapping.roots[0]!.title}', null);
+        insert into atomic_notes values ('${uid(2)}', '${uid(1)}'), ('${uid(3)}', '${uid(1)}');
+        insert into source_relations values ('${uid(1)}', '${uid(1)}', 'pending_review', 'promoted');
+        insert into atomic_note_relations values
+          ('${uid(2)}', '${uid(3)}', 'pending_review', 'apply', null),
+          ('${uid(2)}', '${uid(4)}', 'pending_review', 'suggest', null),
+          ('${uid(2)}', '${uid(5)}', 'pending_review', null, null),
+          ('${uid(2)}', '${uid(6)}', 'pending_review', 'apply', now()),
+          ('${uid(2)}', '${uid(7)}', 'rejected', 'apply', null),
+          ('${uid(2)}', '${uid(8)}', 'accepted', 'suggest', now());`);
+      const input = await readEvaluationInput(v2, mapping, {
+        tasks: ["reranking"],
+        since: null,
+        until: null
+      });
+      const verdicts = input.noteRelations.map(
+        (row) => `${row.targetId.slice(-1)}:${row.shown ? "S" : "-"}${row.applied ? "A" : "-"}`
+      );
+      // apply: shown and applied; suggest: shown only; no band: legacy applied; vetoed: neither;
+      // rejected: neither; a human accept stays applied whatever band or veto it carries.
+      expect(verdicts).toEqual(["3:SA", "4:S-", "5:SA", "6:--", "7:--", "8:SA"]);
+      expect(input.sourceRelations[0]!.origin).toBe("promoted");
+    } finally {
+      await v2.end();
+    }
   });
 
   it("opens a session that cannot write", async () => {
