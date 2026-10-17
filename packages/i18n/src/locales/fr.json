@@ -475,6 +475,11 @@
       "topicLabelEmbed": "Étiquettes des sujets",
       "topicGate": "Décision de classement dans les sujets"
     },
+    "relations": {
+      "link": "Liaison des relations",
+      "retype": "Typage des relations",
+      "promote": "Relations entre sources à partir des notes"
+    },
     "progress": {
       "processingSource": "Traitement de {title}",
       "percentComplete": "{percent}% termine",

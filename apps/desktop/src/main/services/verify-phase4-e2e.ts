@@ -19,6 +19,7 @@ import {
   createSettingsRepository,
   createSourceItemRepository,
   PostgresSidecarManager,
+  relationDecisionPair,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool
@@ -49,6 +50,10 @@ import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.j
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor, lightJobUpdate } from "./job-supervisor.js";
+import { canManuallyRetryJob } from "./job-retry.js";
+import { resetRelationLinkRuntime, setRelationLinkRuntime } from "./relations/link-runtime.js";
+import { enqueueRelationLink, type StoredDecidedNote } from "./relations/relation-link.js";
+import type { RelationTypingResult, TypingPair } from "./relations/relation-typing.js";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
 import { ObjectsService } from "./objects-service.js";
@@ -913,34 +918,78 @@ try {
 
   await processing.stop();
 
-  // Note and source matching are collective stages: the last job of a batch runs them for every
-  // run, and the earlier runs park theirs. A run that failed or was canceled for good must neither
-  // hold the others behind it (a first sibling that fails) nor leave the parked ones with nobody
-  // to run them (a last sibling that fails). The fake knowledge service stands in for the AI.
-  const matched = { notes: [] as string[], sources: [] as string[] };
-  // Sources whose note generation fails once (a transient provider error) or whose note matching
-  // always fails, and the source each generated note belongs to.
-  const generationFailsOnce = new Set<string>();
-  const matchingFails = new Set<string>();
+  // X5 (F3 D24): a source decides its own notes as soon as they exist and links in its own light
+  // job on the `relations` worker, so a failing source never delays its siblings. Five sources in
+  // one batch, faults on the second: (a) a deterministic ranker error on its notes, (b) the local
+  // helper killed during its rank call, (c) a remote 500 storm on its typing and discovery, (e) a
+  // transient failure re-queued (the siblings link before its retry), (f) a link-job failure. Case
+  // (d), a knowledge-graph failure, is T55k's. The fake knowledge service stands in for the AI.
+  type X5Fault = "a" | "b" | "c" | "e" | "f";
+  // One bounded call of the faulted source: a rank call or a typing call that ends in failure.
+  const boundedCallMs = 300;
+  const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+  const x5 = {
+    fault: null as X5Fault | null,
+    failing: "",
+    killed: false,
+    generationFailed: false,
+    decidedNotes: [] as string[],
+    typingPriorities: [] as string[],
+    discovered: [] as string[]
+  };
   const noteSource = new Map<string, string>();
-  const knowledge = {
+  const x5Profile = await createAiConfigRepository(pool).createProfile({
+    name: "X5 decider",
+    isDefault: false
+  });
+  const decidedNote = (noteId: string, candidateId: string): StoredDecidedNote => ({
+    noteId,
+    sourceItemId: noteSource.get(noteId)!,
+    decider: {
+      kind: "ranker",
+      mode: "ranker",
+      deciderKey: "x5-ranker",
+      calibration: "provisional",
+      profileId: x5Profile.id,
+      modelId: "x5-ranker"
+    },
+    pairs: [
+      {
+        noteId,
+        candidateId,
+        candidateSourceItemId: noteSource.get(candidateId)!,
+        band: "apply",
+        probability: null,
+        score: 5,
+        calibration: "provisional",
+        relationType: null,
+        subjectId: null,
+        decisionSource: "model",
+        vectorScore: 0.9,
+        graphScore: null
+      }
+    ]
+  });
+  const x5Knowledge = {
     isHierarchicalRoot: async () => false,
     summarizeSource: async () => ({ configured: true, generated: false }),
     summarizeHierarchiesForBatch: async () => ({ generatedCount: 0 }),
     generateKnowledgeGraph: async () => ({ configured: true, generated: false }),
     generateAtomicNotes: async (sourceItemId: string, documentId: string) => {
-      if (generationFailsOnce.delete(sourceItemId))
+      if (x5.fault === "e" && sourceItemId === x5.failing && !x5.generationFailed) {
+        x5.generationFailed = true;
         throw new AiProviderError("provider_unavailable", {
           kind: "http",
           transient: true,
           status: 503
         });
+      }
       const [chunk] = await createChunkRepository(pool!).listByDocument(documentId);
       if (!chunk) throw new Error("The chunking stage left no chunk.");
       const note = await createAtomicNoteRepository(pool!).upsertGenerated({
-        title: "Note",
+        title: `Note of ${sourceItemId}`,
         bodyMarkdown: "A fact.",
-        ideaStatement: "A fact.",
+        ideaStatement: `The fact of ${sourceItemId}.`,
         sourceItemId,
         evidenceChunkId: chunk.id,
         evidenceLinks: [{ chunkId: chunk.id }],
@@ -953,21 +1002,89 @@ try {
       noteSource.set(note.id, sourceItemId);
       return { configured: true, generatedCount: 1, noteIds: [note.id] };
     },
-    matchAtomicNotes: async (noteIds: string[]) => {
-      if (noteIds.some((id) => matchingFails.has(noteSource.get(id) ?? "")))
-        throw new Error("matching_failed");
-      matched.notes.push(...noteIds);
-      return { persistedCount: 0 };
+    matchAtomicNotes: async (
+      noteIds: string[],
+      _signal: AbortSignal,
+      _progress: unknown,
+      context: { sourceItemId?: string },
+      options: {
+        onNoteDecided?: (note: StoredDecidedNote) => void | Promise<void>;
+        onNoteCompleted?: (noteId: string, persisted: number) => void | Promise<void>;
+      }
+    ) => {
+      if (context.sourceItemId === x5.failing && x5.fault === "a")
+        throw new Error("errors.matching.rerankingFailed", {
+          cause: new Error("ranker_rejected_input")
+        });
+      if (context.sourceItemId === x5.failing && x5.fault === "b" && !x5.killed) {
+        x5.killed = true;
+        await pause(boundedCallMs);
+        throw new Error("errors.matching.rerankingFailed", {
+          cause: new Error("errors.localModels.runtimeFailed")
+        });
+      }
+      // Each note accepts one pair with the note decided before it (arrival order).
+      for (const noteId of noteIds) {
+        const previous = x5.decidedNotes.at(-1);
+        x5.decidedNotes.push(noteId);
+        if (previous) await options.onNoteDecided?.(decidedNote(noteId, previous));
+        await options.onNoteCompleted?.(noteId, 0);
+      }
+      return { persistedCount: 0, decided: noteIds.length, accepted: 1, decider: "ranker" };
     },
-    matchSourceRelations: async (sourceIds: string[]) => {
-      matched.sources.push(...sourceIds);
+    typeRelationPairs: async (
+      pairs: readonly TypingPair[],
+      options: { priority?: string }
+    ): Promise<RelationTypingResult> => {
+      x5.typingPriorities.push(String(options.priority));
+      const result: RelationTypingResult = {
+        typerKey: "x5-typer",
+        pairs: new Map(),
+        calls: 0,
+        repairs: 0,
+        cacheHits: 0,
+        failedAttempts: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        aiTaskRunIds: []
+      };
+      for (const pair of pairs) {
+        const { lo, hi, key } = relationDecisionPair(pair.first.id, pair.second.id);
+        // The 500 storm: both typing attempts fail, and the pair is persisted untyped (D20).
+        const storm =
+          x5.fault === "c" &&
+          [pair.first.id, pair.second.id].some((id) => noteSource.get(id) === x5.failing);
+        if (storm) {
+          await pause(boundedCallMs);
+          result.failedAttempts += 2;
+        } else result.calls += 1;
+        result.pairs.set(key, {
+          pairKey: key,
+          loNoteId: lo,
+          hiNoteId: hi,
+          band: pair.band,
+          outcome: storm
+            ? { kind: "untyped", reason: "failed" }
+            : { kind: "typed", relationType: "supports", direction: "lo_to_hi", origin: "model" },
+          aiTaskRunId: null,
+          shownFirstNoteId: lo
+        });
+      }
+      return result;
+    },
+    discoverSourceRelations: async (input: { rootId: string }) => {
+      if (input.rootId === x5.failing && x5.fault === "c")
+        throw new AiProviderError("provider_unavailable", {
+          kind: "http",
+          transient: true,
+          status: 500
+        });
+      if (input.rootId === x5.failing && x5.fault === "f")
+        throw new Error("errors.sourceRelations.invalidOutput");
+      x5.discovered.push(input.rootId);
       return { persistedCount: 0 };
     }
   };
-  const matching = new JobSupervisor({
-    getPool: () => pool ?? null,
-    knowledgeService: knowledge as unknown as KnowledgeService
-  });
   const matchingStages = [
     "chunking",
     "embedding",
@@ -986,12 +1103,6 @@ try {
         processingPlan: importOnly
       })
     ).sourceItemId;
-    // An empty document is what an earlier version stored for a page it could not convert.
-    if (!content)
-      await pool!.query(
-        `update documents set canonical_markdown = '', content_hash = $2 where source_item_id = $1`,
-        [sourceId, sha256("")]
-      );
     return sourceId;
   };
   const queueBatch = async (sourceIds: string[]) => {
@@ -1018,125 +1129,187 @@ try {
         [runId, stage]
       )
     ).rows[0]?.status;
-  const jobStatus = async (jobId: string) =>
-    (await createJobRepository(pool!).findById(jobId))?.status;
-  const drainBatch = async (queued: Array<{ jobId: string }>) => {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const statuses = await Promise.all(queued.map((item) => jobStatus(item.jobId)));
-      if (statuses.every((status) => status !== "queued" && status !== "running")) return;
-      await matching.runOnce();
+  const runX5 = async (fault: X5Fault | null) => {
+    Object.assign(x5, {
+      fault,
+      killed: false,
+      generationFailed: false,
+      decidedNotes: [],
+      typingPriorities: [],
+      discovered: []
+    });
+    const label = fault ?? "control";
+    const sourceIds: string[] = [];
+    for (let index = 1; index <= 5; index += 1)
+      sourceIds.push(await newSource(`X5 ${label} ${index}`, `X5 ${label} source ${index} fact.`));
+    x5.failing = fault ? sourceIds[1]! : "";
+    const queued = await queueBatch(sourceIds);
+    const supervisor = new JobSupervisor({
+      getPool: () => pool ?? null,
+      knowledgeService: x5Knowledge as unknown as KnowledgeService,
+      pollIntervalMs: 25
+    });
+    const started = Date.now();
+    const linked = new Map<string, number>();
+    await supervisor.start();
+    try {
+      for (const deadline = Date.now() + 60_000; ;) {
+        const state = await pool!.query<{
+          runId: string;
+          status: string;
+          jobStatus: string;
+          linkJobs: number;
+        }>(
+          `select run.id as "runId", run.status::text as status, job.status::text as "jobStatus",
+                  (select count(*)::int from jobs link where link.type = 'relation-link'
+                     and link.status in ('queued', 'running')
+                     and link.payload->>'rootId' = run.source_item_id::text) as "linkJobs"
+           from ingestion_runs run join jobs job on job.id = run.job_id
+           where run.id = any($1::uuid[])`,
+          [queued.map((item) => item.runId)]
+        );
+        for (const row of state.rows)
+          if (row.status === "succeeded" && !linked.has(row.runId))
+            linked.set(row.runId, Date.now() - started);
+        const settled = state.rows.every(
+          (row) =>
+            ["succeeded", "failed", "canceled"].includes(row.status) &&
+            !["queued", "running"].includes(row.jobStatus) &&
+            row.linkJobs === 0
+        );
+        if (settled && state.rows.length === queued.length) break;
+        if (Date.now() > deadline) throw new Error(`X5 ${label} did not settle.`);
+        await pause(25);
+      }
+    } finally {
+      await supervisor.stop();
     }
-    throw new Error("The batch jobs did not settle.");
-  };
-  const expectMatched = async (
-    healthy: Array<{ sourceItemId: string; runId: string }>,
-    context: string
-  ) => {
-    for (const item of healthy) {
-      const statuses = [
-        await stageStatus(item.runId, "atomicNoteMatching"),
-        await stageStatus(item.runId, "sourceMatching")
-      ];
-      if (statuses.join() !== "completed,completed" || !matched.sources.includes(item.sourceItemId))
-        throw new Error(`${context}: matching of ${item.sourceItemId} was ${statuses.join()}.`);
-    }
-    const notes = await createAtomicNoteRepository(pool!).listBySourceItem(
-      healthy[0]!.sourceItemId
+    const runs = createIngestionRunRepository(pool!);
+    const records = await Promise.all(queued.map((item) => runs.findById(item.runId)));
+    const jobsOf = await Promise.all(
+      queued.map((item) => createJobRepository(pool!).findById(item.jobId))
     );
-    if (!notes.every((note) => matched.notes.includes(note.id)) || notes.length === 0)
-      throw new Error(`${context}: the notes of a healthy source were not matched.`);
+    return { label, queued, linked, records, jobs: jobsOf };
   };
-
-  // A sibling that fails first: its pending stages must not hold the others.
-  matched.notes.length = matched.sources.length = 0;
-  const firstFails = await queueBatch([
-    await newSource("Matching A", ""),
-    await newSource("Matching B", "Matching batch B holds its own fact."),
-    await newSource("Matching C", "Matching batch C holds its own fact.")
-  ]);
-  const [failedFirst, ...healthyFirst] = firstFails;
-  await drainBatch(firstFails);
+  // Each sibling links within one bounded call of the control run (X5's pass bar, local ≤1.1 s).
+  const x5Delays: Record<string, number> = {};
+  const siblingsOnTime = (
+    control: Awaited<ReturnType<typeof runX5>>,
+    faulted: Awaited<ReturnType<typeof runX5>>
+  ) => {
+    let delay = Number.NEGATIVE_INFINITY;
+    for (const index of [0, 2, 3, 4]) {
+      const run = faulted.records[index]!;
+      const at = faulted.linked.get(run.id);
+      const reference = control.linked.get(control.records[index]!.id)!;
+      if (run.status !== "succeeded" || at === undefined)
+        throw new Error(`X5 ${faulted.label}: sibling ${index + 1} ended ${run.status}.`);
+      if (at > reference + 1_100)
+        throw new Error(
+          `X5 ${faulted.label}: sibling ${index + 1} linked at ${at} ms, control ${reference} ms.`
+        );
+      delay = Math.max(delay, at - reference);
+    }
+    // The largest sibling delay against the control run, in ms (reported).
+    x5Delays[faulted.label] = delay;
+  };
+  const control = await runX5(null);
+  if (control.records.some((run) => run?.status !== "succeeded"))
+    throw new Error(
+      `X5 control: a run did not succeed: ${JSON.stringify(
+        control.records.map((run) => [run?.status, run?.error, run?.currentStage])
+      )}`
+    );
+  for (const run of control.records)
+    if ((await stageStatus(run!.id, "sourceMatching")) !== "completed")
+      throw new Error("X5 control: a run completed before its link job.");
+  // No barrier: the first source linked before the last one had decided its notes.
+  const lastDecided = await pool.query<{ at: Date }>(
+    `select completed_at as at from ingestion_run_stages
+     where ingestion_run_id = $1 and stage = 'atomicNoteMatching'`,
+    [control.records[4]!.id]
+  );
+  if (control.records[0]!.completedAt!.getTime() > lastDecided.rows[0]!.at.getTime())
+    throw new Error("X5 control: the first source waited for the batch before it linked.");
+  const controlRelations = await pool.query<{ type: string | null; direction: string }>(
+    `select relation_type as type, direction from atomic_note_relations
+     where source_atomic_note_id = any($1::uuid[]) or target_atomic_note_id = any($1::uuid[])`,
+    [x5.decidedNotes]
+  );
   if (
-    (await createIngestionRunRepository(pool).findById(failedFirst!.runId))?.status !== "failed" ||
-    matched.sources.includes(failedFirst!.sourceItemId)
-  ) {
-    throw new Error("The failed sibling was matched or did not fail.");
-  }
-  await expectMatched(healthyFirst, "A sibling that failed first");
+    controlRelations.rows.length !== 4 ||
+    controlRelations.rows.some((row) => row.type !== "supports" || row.direction !== "lo_to_hi") ||
+    x5.discovered.length !== 5 ||
+    x5.typingPriorities.some((priority) => priority !== "P2")
+  )
+    throw new Error(
+      `X5 control: the link jobs did not type, persist and discover: ${JSON.stringify(
+        controlRelations.rows
+      )} ${x5.discovered.length}.`
+    );
 
-  // A sibling that fails last: the others park, then the failure releases them.
-  matched.notes.length = matched.sources.length = 0;
-  const lastFails = await queueBatch([
-    await newSource("Matching D", "Matching batch D holds its own fact."),
-    await newSource("Matching E", "Matching batch E holds its own fact."),
-    await newSource("Matching F", "")
-  ]);
-  const [parkedD, parkedE, failedLast] = lastFails;
-  await matching.runOnce();
-  await matching.runOnce();
+  // (a) A deterministic ranker error fails the source once, and it stays retryable.
+  const deterministic = await runX5("a");
+  siblingsOnTime(control, deterministic);
   if (
-    (await stageStatus(parkedD!.runId, "atomicNoteMatching")) !== "waiting_for_review" ||
-    (await stageStatus(parkedE!.runId, "atomicNoteMatching")) !== "waiting_for_review" ||
-    matched.sources.length !== 0
-  ) {
-    throw new Error("The runs did not park their matching behind the pending sibling.");
-  }
-  await matching.runOnce();
-  if ((await jobStatus(failedLast!.jobId)) !== "failed") {
-    throw new Error("The last sibling did not fail.");
-  }
-  await drainBatch(lastFails);
-  await expectMatched([parkedD!, parkedE!], "A sibling that failed last");
+    deterministic.records[1]!.status !== "failed" ||
+    deterministic.records[1]!.error !== "errors.matching.rerankingFailed" ||
+    deterministic.jobs[1]!.status !== "failed" ||
+    (await stageStatus(deterministic.records[1]!.id, "atomicNoteMatching")) !== "failed" ||
+    !canManuallyRetryJob(deterministic.jobs[1]!, deterministic.records[1]!)
+  )
+    throw new Error("X5 a: the ranker error did not fail its source retryably.");
 
-  // A sibling whose job was canceled before it ran leaves its run pending: it is out as well.
-  matched.notes.length = matched.sources.length = 0;
-  const canceledSibling = await queueBatch([
-    await newSource("Matching G", "Matching batch G holds its own fact."),
-    await newSource("Matching H", "Matching batch H holds its own fact."),
-    await newSource("Matching I", "Matching batch I holds its own fact.")
-  ]);
-  await matching.requestCancel(canceledSibling[0]!.jobId);
-  await drainBatch(canceledSibling);
-  await expectMatched(canceledSibling.slice(1), "A canceled sibling");
+  // (b) A helper killed during the rank call is transient: the job is queued again and succeeds.
+  const killed = await runX5("b");
+  siblingsOnTime(control, killed);
+  if (
+    killed.records[1]!.status !== "succeeded" ||
+    !killed.jobs[1]!.payload.errorHistory ||
+    (await stageStatus(killed.records[1]!.id, "sourceMatching")) !== "completed"
+  )
+    throw new Error("X5 b: the killed helper's source was not retried to completion.");
 
-  // A sibling whose own note matching fails is isolated: it neither stops the others' note
-  // matching nor, being settled, their source matching.
-  matched.notes.length = matched.sources.length = 0;
-  const matchingFailure = await queueBatch([
-    await newSource("Matching J", "Matching batch J holds its own fact."),
-    await newSource("Matching K", "Matching batch K holds its own fact."),
-    await newSource("Matching L", "Matching batch L holds its own fact.")
-  ]);
-  matchingFails.add(matchingFailure[0]!.sourceItemId);
-  await drainBatch(matchingFailure);
-  matchingFails.clear();
-  if ((await stageStatus(matchingFailure[0]!.runId, "atomicNoteMatching")) !== "failed") {
-    throw new Error("The note matching failure of one sibling was not recorded on its run.");
-  }
-  await expectMatched(matchingFailure.slice(1), "A sibling whose matching failed");
+  // (c) A 500 storm: typing falls back to untyped (a link job never fails for typing), discovery
+  // fails after the link job's retries, and only the faulted source's run ends failed.
+  const storm = await runX5("c");
+  siblingsOnTime(control, storm);
+  const stormRun = storm.records[1]!;
+  const untypedOfStorm = await pool.query<{ count: number }>(
+    `select count(*)::int as count from atomic_note_relations r
+     join atomic_notes n on n.id in (r.source_atomic_note_id, r.target_atomic_note_id)
+     where n.created_from_source_item_id = $1 and r.relation_type is null`,
+    [stormRun.sourceItemId]
+  );
+  if (
+    stormRun.status !== "failed" ||
+    (await stageStatus(stormRun.id, "sourceMatching")) !== "failed" ||
+    (untypedOfStorm.rows[0]?.count ?? 0) < 1 ||
+    !canManuallyRetryJob(storm.jobs[1]!, stormRun)
+  )
+    throw new Error(`X5 c: the storm's source ended ${stormRun.status} (${stormRun.error}).`);
 
-  // A sibling that fails transiently is coming back: the others still wait for its retry, and the
-  // matching then covers all of them together.
-  matched.notes.length = matched.sources.length = 0;
-  const retrying = await queueBatch([
-    await newSource("Matching M", "Matching batch M holds its own fact."),
-    await newSource("Matching N", "Matching batch N holds its own fact."),
-    await newSource("Matching O", "Matching batch O holds its own fact.")
-  ]);
-  generationFailsOnce.add(retrying[0]!.sourceItemId);
-  for (let step = 0; step < 3; step += 1) await matching.runOnce();
-  const retryingStatus = [
-    await jobStatus(retrying[0]!.jobId),
-    await stageStatus(retrying[1]!.runId, "atomicNoteMatching"),
-    await stageStatus(retrying[2]!.runId, "atomicNoteMatching")
-  ].join();
-  if (retryingStatus !== "queued,waiting_for_review,waiting_for_review" || matched.sources.length) {
-    throw new Error(`The siblings did not wait for the retry: ${retryingStatus}.`);
-  }
-  await pool.query(`update jobs set run_after = now() where id = $1`, [retrying[0]!.jobId]);
-  await drainBatch(retrying);
-  await expectMatched(retrying, "A sibling that is retried");
-  await matching.stop();
+  // (e) A transient failure is retried after its backoff; the siblings linked before the retry.
+  const transient = await runX5("e");
+  siblingsOnTime(control, transient);
+  const retriedAt = transient.linked.get(transient.records[1]!.id);
+  if (
+    transient.records[1]!.status !== "succeeded" ||
+    retriedAt === undefined ||
+    [0, 2, 3, 4].some((index) => transient.linked.get(transient.records[index]!.id)! > retriedAt)
+  )
+    throw new Error("X5 e: the siblings waited for the transient source's retry.");
+
+  // (f) A link-job failure ends only its source, retryably.
+  const linkFailure = await runX5("f");
+  siblingsOnTime(control, linkFailure);
+  if (
+    linkFailure.records[1]!.status !== "failed" ||
+    linkFailure.records[1]!.error !== "errors.sourceRelations.invalidOutput" ||
+    (await stageStatus(linkFailure.records[1]!.id, "sourceMatching")) !== "failed" ||
+    !canManuallyRetryJob(linkFailure.jobs[1]!, linkFailure.records[1]!)
+  )
+    throw new Error("X5 f: the link-job failure did not end its source retryably.");
 
   // Notes are embedded when they are created, and a generative decider judges each unordered pair
   // once. Real database, retrieval, scoring and decision storage; only the model calls are fakes.
@@ -1259,7 +1432,21 @@ try {
 
   // The earlier notes are matched first, and still find the note of the later source.
   const [firstOfOne, secondOfOne, onlyOfTwo] = pairNoteIds as [string, string, string];
-  await pairKnowledge.matchAtomicNotes([firstOfOne, secondOfOne]);
+  const handedOn = new Map<string, StoredDecidedNote[]>();
+  const handOff = {
+    onNoteDecided: (decided: StoredDecidedNote) =>
+      void handedOn.set(decided.sourceItemId, [
+        ...(handedOn.get(decided.sourceItemId) ?? []),
+        decided
+      ])
+  };
+  await pairKnowledge.matchAtomicNotes(
+    [firstOfOne, secondOfOne],
+    undefined,
+    undefined,
+    {},
+    handOff
+  );
   if (pairCalls.embedding.length !== 3)
     throw new Error("Matching embedded notes that were embedded when created.");
   const decided = async () =>
@@ -1275,7 +1462,7 @@ try {
     throw new Error("An earlier note did not retrieve and judge the later note.");
   // The later note is then matched: the pairs it shares with the earlier notes are already judged.
   const rerankCallsBefore = pairCalls.rerankAliases.length;
-  await pairKnowledge.matchAtomicNotes([onlyOfTwo]);
+  await pairKnowledge.matchAtomicNotes([onlyOfTwo], undefined, undefined, {}, handOff);
   if (pairCalls.rerankAliases.length !== rerankCallsBefore)
     throw new Error("The later note asked the decider again about pairs it had already judged.");
   const afterAll = await decided();
@@ -1287,6 +1474,29 @@ try {
     throw new Error(
       `Three notes make three pairs and one judgment each: ${JSON.stringify(afterAll)} ${pairCalls.rerankAliases.join()}.`
     );
+  // Deciding persists no relation (D21): each source's link job does, in arrival order.
+  const pairRuns = createIngestionRunRepository(pool);
+  for (const { sourceId } of pairSources) {
+    const parked = await pairRuns.create({ sourceItemId: sourceId, status: "running" });
+    await pairRuns.completeStage(parked.id, "atomicNoteMatching", {
+      decided: handedOn.get(sourceId) ?? []
+    });
+    await pairRuns.parkForLinking(parked.id, { rootId: sourceId });
+    await enqueueRelationLink(pool, { rootId: sourceId });
+  }
+  const pairLinks = new JobSupervisor({
+    getPool: () => pool ?? null,
+    knowledgeService: pairKnowledge
+  });
+  // The judge of this check is the note decider: discovery is left out (no remote relation call).
+  setRelationLinkRuntime({ drain: true, remoteCallsOff: true });
+  try {
+    while (await pairLinks.runLightOnce("relations")) {
+      // Each link job runs to its end; the loop stops when none is due.
+    }
+  } finally {
+    resetRelationLinkRuntime();
+  }
   const pairRelations = await pool.query<{
     source: string;
     target: string;
@@ -1404,7 +1614,8 @@ try {
         explicitConflict: conflict.status,
         stablePath: movedRecord.relativePath,
         inferredDeletions: afterDelete.deleted,
-        searchEvidence: search[0]?.excerpt
+        searchEvidence: search[0]?.excerpt,
+        x5SiblingDelayMs: x5Delays
       },
       null,
       2

@@ -35,6 +35,12 @@ import {
   type GoldenTopicsConfig
 } from "./golden-topics.js";
 import { readGoldenPinConfig, setExtractionPin, type GoldenPinConfig } from "./extraction-pin.js";
+import {
+  goldenLinkRuntime,
+  readGoldenRelationsMode,
+  setRelationLinkRuntime,
+  type GoldenRelationsMode
+} from "./relations/link-runtime.js";
 import { readSchemaProbeCalls, runSchemaProbe } from "./schema-probe.js";
 import type { LibraryResetService } from "./library-reset-service.js";
 
@@ -325,6 +331,11 @@ export interface GoldenRunEnvironment {
   /** MEMORA_GOLDEN_PIN (F3 D5): `extraction` (the default of a golden run) keeps the recording-era parse path. */
   pin: GoldenPinConfig;
   /**
+   * MEMORA_GOLDEN_RELATIONS (F3 5.6): `live` (the default) or `local`, which switches relation
+   * remote calls off for a non-regression replay. Link jobs drain one at a time either way (D24).
+   */
+  relations: GoldenRelationsMode;
+  /**
    * MEMORA_GOLDEN_SCHEMA_PROBE=<calls> (F3 T55): instead of the manifest, a few structured calls carry a
    * strict output schema through the AI service and the cassette. Null when not requested.
    */
@@ -385,6 +396,7 @@ export function readGoldenRunEnvironment(
     sourcePairsPath: rawSourcePairs ? resolve(options.workspaceRoot, rawSourcePairs) : null,
     topics: readGoldenTopicsConfig(env, { isPackaged: false }),
     pin: readGoldenPinConfig(env, { isPackaged: false }),
+    relations: readGoldenRelationsMode(env, { isPackaged: false }) ?? "live",
     schemaProbeCalls: readSchemaProbeCalls(env)
   };
 }
@@ -607,6 +619,9 @@ export async function prepareGoldenRun(
   // Everything that can stop the run has passed: extraction now runs the path the pin names (D5).
   setExtractionPin(environment.pin);
   log(options, "pin", { mode: environment.pin.mode });
+  // Link jobs run first in, first out with no coalescing, so replays are deterministic (D24).
+  setRelationLinkRuntime(goldenLinkRuntime(environment.relations));
+  log(options, "relations", { mode: environment.relations, linkPool: "drain" });
   return {
     manifest,
     backup: preparedBackup,

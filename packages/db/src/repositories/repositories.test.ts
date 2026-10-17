@@ -528,41 +528,51 @@ describe("repositories", () => {
 
     await runs.completeStage("run-1", "summarization");
     await runs.skipStage("run-1", "embedding", "reason");
-    await runs.completeStageForBatch("batch-1", "sourceMatching");
     await runs.failStage("run-1", "knowledgeGraph", "failed");
-    await runs.waitForBatchStage("run-1", "atomicNoteMatching");
     await runs.fail("run-2", "failed");
     await runs.cancel("run-3");
 
     const stageWrites = db.queries.filter((q) =>
       /(insert into|update) ingestion_run_stages/.test(q.text)
     );
-    expect(stageWrites).toHaveLength(7);
+    expect(stageWrites).toHaveLength(5);
     for (const query of stageWrites) expect(query.text).toContain("ended_at");
     // Completion and skipping always end the attempt; failure and cancellation end only open ones.
     expect(stageWrites[0]?.text).toContain("ended_at = now()");
     expect(stageWrites[1]?.text).toContain("ended_at = now()");
-    expect(stageWrites[2]?.text).toContain("ended_at = now()");
-    for (const query of stageWrites.slice(3)) {
+    for (const query of stageWrites.slice(2)) {
       expect(query.text).toMatch(
         /case when \S+\.status = 'running' and \S+\.ended_at is null then now\(\)/
       );
     }
   });
 
-  it("does not wait on abandoned runs or settled stages of a batch", async () => {
-    const db = new FakeQueryable([[{ count: "2" }], [], [{ runId: "run-1", jobId: "job-1" }], []]);
+  it("parks a source stage for its link job and keeps parked runs out of crash recovery", async () => {
+    const db = new FakeQueryable([[], [], [], []]);
     const runs = createIngestionRunRepository(db);
 
-    expect(await runs.countIncompleteBatchStage("batch-1", "atomicNotes")).toBe(2);
-    expect(await runs.listBatchParticipants("batch-1")).toEqual([]);
-    expect(await runs.findReleasableBatchRun("batch-1")).toEqual({
-      runId: "run-1",
-      jobId: "job-1"
-    });
-    expect(await runs.findReleasableBatchRun("batch-2")).toBeNull();
+    await runs.parkForLinking("run-1", { rootId: "root-1" });
+    await runs.recoverInterrupted();
 
-    const [count, participants, releasable] = db.queries.map((query) => query.text);
+    const [stage, checkpoint, recoverStages, recoverRuns] = db.queries.map((query) => query.text);
+    // The parked stage waits with reason `linking`; its attempt stays open for the link job.
+    expect(stage).toContain("'waiting_for_review'");
+    expect(db.queries[0]?.values).toEqual(["run-1", { rootId: "root-1" }, "linking"]);
+    expect(stage).toContain("ingestion_run_stages.attempts + 1");
+    expect(checkpoint).toContain("'parkedAt', clock_timestamp()");
+    expect(checkpoint).toContain("current_stage = 'sourceMatching'");
+    // A parked run's ingestion job ended on purpose: recovery leaves it to its link job.
+    for (const text of [recoverStages, recoverRuns])
+      expect(text).toContain("parked.skip_reason = 'linking'");
+  });
+
+  it("counts only the live runs of a batch that have a stage still to finish", async () => {
+    const db = new FakeQueryable([[{ count: "2" }]]);
+    const runs = createIngestionRunRepository(db);
+
+    expect(await runs.countIncompleteBatchStage("batch-1", "summarization")).toBe(2);
+
+    const [count] = db.queries.map((query) => query.text);
     // Only stages that can still progress are waited on; a failed or canceled stage is settled
     // unless its job is queued or running again.
     expect(count).toContain("stage_state.status in ('pending', 'running', 'waiting_for_review')");
@@ -570,23 +580,12 @@ describe("repositories", () => {
       "stage_state.status in ('failed', 'canceled') and job.status in ('queued', 'running')"
     );
     // A run is abandoned when it or its job failed or was canceled and no job can retry it.
-    for (const text of [count, participants, releasable]) {
-      expect(text).toContain("left join jobs");
-      expect(text).toMatch(
-        /\.status in \('failed', 'canceled'\) or \w+\.status in \('failed', 'canceled'\)/
-      );
-      expect(text).toMatch(/coalesce\(\w+\.status::text, ''\) not in \('queued', 'running'\)/);
-    }
-    // Releasing needs a finished run with parked matching and no live run left in the batch.
-    expect(releasable).toContain("job.status = 'succeeded'");
-    expect(releasable).toContain("stage_state.status = 'waiting_for_review'");
-    expect(releasable).toContain("other.status in ('pending', 'running')");
-    expect(db.queries.map((query) => query.values)).toEqual([
-      ["batch-1", "atomicNotes"],
-      ["batch-1"],
-      ["batch-1"],
-      ["batch-2"]
-    ]);
+    expect(count).toContain("left join jobs");
+    expect(count).toMatch(
+      /\.status in \('failed', 'canceled'\) or \w+\.status in \('failed', 'canceled'\)/
+    );
+    expect(count).toMatch(/coalesce\(\w+\.status::text, ''\) not in \('queued', 'running'\)/);
+    expect(db.queries.map((query) => query.values)).toEqual([["batch-1", "summarization"]]);
   });
 
   it("serializes ingestion stage lists as JSON", async () => {

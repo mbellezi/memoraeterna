@@ -3,8 +3,63 @@ import { describe, expect, it } from "vitest";
 import {
   canDeleteCanceledJob,
   canManuallyRetryJob,
-  hasIncompleteIngestionStages
+  hasIncompleteIngestionStages,
+  isParkedForLinking,
+  stageRetryStages
 } from "./job-retry.js";
+
+describe("runs parked for their link job and the stage-level retry (F3 D24, D25)", () => {
+  const waiting = { status: "skipped", reason: "waiting_for_decider" };
+
+  it("offers no manual retry while the link job has the run", () => {
+    const parked = {
+      status: "running" as const,
+      stagesCheckpoint: {
+        atomicNoteMatching: { status: "completed" },
+        sourceMatching: { status: "linking" }
+      }
+    };
+    expect(isParkedForLinking(parked)).toBe(true);
+    expect(canManuallyRetryJob({ type: "ingestion", status: "succeeded" }, parked)).toBe(false);
+    // Its link job failed for good: the run failed and is retried as any failed run.
+    const failed = { ...parked, status: "failed" as const };
+    expect(isParkedForLinking(failed)).toBe(false);
+    expect(canManuallyRetryJob({ type: "ingestion", status: "succeeded" }, failed)).toBe(true);
+  });
+
+  it("re-runs both matching stages skipped for a decider, or one failed stage alone", () => {
+    const skipped = {
+      status: "succeeded" as const,
+      stagesCheckpoint: { atomicNoteMatching: waiting, sourceMatching: waiting }
+    };
+    expect(stageRetryStages(skipped, "atomicNoteMatching")).toEqual([
+      "atomicNoteMatching",
+      "sourceMatching"
+    ]);
+    const graph = {
+      status: "succeeded" as const,
+      stagesCheckpoint: { knowledgeGraph: { status: "failed" }, atomicNoteMatching: waiting }
+    };
+    expect(stageRetryStages(graph, "knowledgeGraph")).toEqual(["knowledgeGraph"]);
+    // Not finished, not skipped for a decider, or skipped for another reason: no stage retry.
+    expect(stageRetryStages({ ...skipped, status: "running" }, "atomicNoteMatching")).toBeNull();
+    expect(
+      stageRetryStages(
+        { status: "succeeded", stagesCheckpoint: { sourceMatching: { status: "completed" } } },
+        "sourceMatching"
+      )
+    ).toBeNull();
+    expect(
+      stageRetryStages(
+        {
+          status: "succeeded",
+          stagesCheckpoint: { atomicNoteMatching: { status: "skipped", reason: "not_requested" } }
+        },
+        "atomicNoteMatching"
+      )
+    ).toBeNull();
+  });
+});
 
 const completedStages = {
   chunking: { status: "completed" },

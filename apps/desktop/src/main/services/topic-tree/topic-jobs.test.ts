@@ -84,7 +84,9 @@ describe("the topic job registry", () => {
     );
     expect(lightWorkerTypes(registry)).toEqual({
       compute: ["topic-place", "topic-sweep"],
-      model: ["topic-gate"]
+      model: ["topic-gate"],
+      // The link jobs of relations v2 have a worker of their own (F3 D24); no topic job uses it.
+      relations: []
     });
   });
 

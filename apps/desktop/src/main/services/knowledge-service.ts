@@ -6,12 +6,20 @@ import {
 } from "./prompt-runtime.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
-import { matchSources } from "./source-relation-processing.js";
+import { matchSources, sourceMatchingOperation } from "./source-relation-processing.js";
 import {
-  persistDecidedPairs,
   RelationMatcher,
+  type DecidedNote,
   type MatchNotesResult
 } from "./relations/relation-matcher.js";
+import {
+  createTyperRouteResolver,
+  typeRelationPairs,
+  type RelationTypingOptions,
+  type TypingPair
+} from "./relations/relation-typing.js";
+import type { RelationDiscoveryInput } from "./relations/relation-link.js";
+import { relationDailyCapError } from "./relations/relation-call-budget.js";
 import {
   CanonicalMatchingSettingsSchema,
   knowledgeGraphBatchFor,
@@ -27,7 +35,11 @@ import {
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+import { executionLane } from "@app/ai";
 import {
+  aiRouteKeys,
+  createAiConfigRepository,
+  createRelationTypingRepository,
   createAtomicNoteRelationRepository,
   createSourceRelationRepository,
   createSourceRelationExplanationRepository,
@@ -1570,9 +1582,9 @@ export class KnowledgeService {
 
   /**
    * Relations v2 for these notes (F3 T51): the relation matcher retrieves, decides, calibrates and
-   * bands each note in order (`relations/relation-matcher.ts`). Until the link job of T52 takes the
-   * hand-off over, a decided note's accepted pairs are persisted at once, in one `match` run whose
-   * events record every change (a ranker pair untyped, D20's fallback). Mode `ranker` without a
+   * bands each note in order (`relations/relation-matcher.ts`). A decided note's accepted pairs go
+   * to `onNoteDecided`; no relation is persisted here (D21): ingestion keeps them in its checkpoint
+   * and the link job of the source types and persists them (T52). Mode `ranker` without a
    * validated ranker makes no call and returns `skipped: "waiting_for_decider"`.
    */
   public async matchAtomicNotes(
@@ -1583,6 +1595,8 @@ export class KnowledgeService {
     options: {
       /** Called once a note is decided and its pairs handed on: a resumable checkpoint. */
       onNoteCompleted?: (noteId: string, persistedCount: number) => void | Promise<void>;
+      /** Receives each decided note that accepted a pair, before its `onNoteCompleted`. */
+      onNoteDecided?: (note: DecidedNote) => void | Promise<void>;
       /** The visibility fence of a re-match run (F3 3.17): retrieval sees only these roots. */
       fence?: RetrievalFence;
     } = {}
@@ -1608,24 +1622,110 @@ export class KnowledgeService {
       logContext,
       operation: "note_matching_embedding"
     });
-    const handOff = persistDecidedPairs({ pool, ai: this.options.aiService, logContext });
-    try {
-      const result = await this.relationMatcher.matchNotes({
-        noteIds,
-        vectors,
-        signal,
-        logContext,
-        onProgress,
-        onNoteCompleted: options.onNoteCompleted,
-        fence: options.fence,
-        handOff
-      });
-      await handOff.finish("succeeded");
-      return result;
-    } catch (error) {
-      await handOff.finish("failed").catch(() => undefined);
-      throw error;
-    }
+    return this.relationMatcher.matchNotes({
+      noteIds,
+      vectors,
+      signal,
+      logContext,
+      onProgress,
+      onNoteCompleted: options.onNoteCompleted,
+      fence: options.fence,
+      handOff: async (note) => {
+        await options.onNoteDecided?.(note);
+        return 0;
+      }
+    });
+  }
+
+  /**
+   * Whether note matching would decide now: false while mode `ranker` waits for a validated ranker
+   * (C7). Matching stages skipped to wait are re-run by the stage-level retry once it is true.
+   */
+  public async noteDeciderAvailable(): Promise<boolean> {
+    return this.relationMatcher.deciderAvailable();
+  }
+
+  /**
+   * The link job's typing step (F3 D20, `relations/relation-typing.ts`) on the writer route of
+   * `op:relation_typing` / `class:write-fast`, with the typing cache. The routes are read after the
+   * legacy mapping wrote the class routes, as for any call.
+   */
+  public async typeRelationPairs(
+    pairs: readonly TypingPair[],
+    options: RelationTypingOptions,
+    signal?: AbortSignal
+  ) {
+    const pool = this.requirePool();
+    const resolve = createTyperRouteResolver(createAiConfigRepository(pool));
+    const contentLanguage = await this.options.getContentLanguage?.();
+    return typeRelationPairs(
+      {
+        ai: this.options.aiService,
+        store: createRelationTypingRepository(pool),
+        resolveRoute: async () => {
+          await this.options.aiService.ensureLegacyRouteMapping?.();
+          return resolve();
+        },
+        ...(contentLanguage ? { contentLanguage } : {}),
+        ...(this.options.logger
+          ? { logger: { warn: (message, error) => this.options.logger!.warn(message, error) } }
+          : {})
+      },
+      pairs,
+      options,
+      signal
+    );
+  }
+
+  /**
+   * The link job's discovery step for one root. Until T53's design E it is the v5 source matcher
+   * on the root, its calls at the link job's priority and each remote one asked of the daily cap
+   * first (D26): a refused call stops the pass with `errors.relations.dailyCapReached`, and the
+   * pass's saved state lets the next link job resume it.
+   */
+  public async discoverSourceRelations(input: RelationDiscoveryInput, signal?: AbortSignal) {
+    const pool = this.requirePool();
+    const ai = this.options.aiService;
+    const judgeLane = async (): Promise<"local" | "remote"> => {
+      const route = await createAiConfigRepository(pool).getDefaultTask(
+        "reranking",
+        undefined,
+        aiRouteKeys("reranking", { operation: sourceMatchingOperation, workloadClass: "decide" })
+      );
+      return route && executionLane(route).lane !== "local" ? "remote" : "local";
+    };
+    return matchSources({
+      pool,
+      ai: {
+        runDefaultTask: async (task, prompt, context, callSignal, limits) => {
+          // The v5 source judge only ever runs the reranking task.
+          if (task !== "reranking") throw new Error("relation_discovery_task_invalid");
+          if (!(await input.reserveCall(await judgeLane()))) throw new Error(relationDailyCapError);
+          // The source judge on its op: route and class decide (D16, R5), at the link job's priority.
+          return ai.runDefaultTask(
+            "reranking",
+            prompt,
+            {
+              ...context,
+              operation: sourceMatchingOperation,
+              workloadClass: "decide",
+              priority: input.priority
+            },
+            callSignal,
+            limits
+          );
+        }
+      },
+      sourceIds: [input.rootId],
+      runKey: input.runKey,
+      settings: SourceRelationSettingsSchema.parse(
+        (await this.options.getSourceRelationSettings?.()) ?? {}
+      ),
+      contentLanguage: (await this.options.getContentLanguage?.()) ?? "en",
+      regenerate: input.regenerate,
+      ...(signal ? { signal } : {}),
+      context: input.context
+    });
   }
 
   private async tryRunDefaultTask(

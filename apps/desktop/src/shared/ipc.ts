@@ -107,6 +107,7 @@ export const ipcChannels = {
   relationsCancelExplain: "app:relations:cancel-explain",
   relationsExplainSource: "app:relations:explain-source",
   relationsCancelExplainSource: "app:relations:cancel-explain-source",
+  relationsChanged: "app:relations:changed",
   topicsTree: "app:topics:tree",
   topicsPath: "app:topics:path",
   topicsPage: "app:topics:page",
@@ -295,6 +296,12 @@ export const googleBooksKeyInputSchema = z
   })
   .strict();
 export const googleBooksKeyStatusSchema = z.object({ configured: z.boolean() }).strict();
+
+/** The `relationsChanged` push (F3 3.11 step 4): the notes whose relations a commit changed. */
+export const RelationsChangedEventSchema = z
+  .object({ noteIds: z.array(z.string().uuid()).min(1).max(200) })
+  .strict();
+export type RelationsChangedEvent = z.infer<typeof RelationsChangedEventSchema>;
 
 export const relationLabelsInputSchema = z
   .object({ mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema })
@@ -1805,6 +1812,8 @@ export interface DesktopApi {
     explainSource: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
     /** Stops the source relation's explanation being written; true when one was stopped. */
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
+    /** Pushed after a link job commits (F3 3.11), coalesced: the notes whose relations changed. */
+    subscribeChanged: (listener: (event: RelationsChangedEvent) => void) => () => void;
   };
   /**
    * The topic tree (docs/plan.md F2): reads without AI, human operations through the engine, and a

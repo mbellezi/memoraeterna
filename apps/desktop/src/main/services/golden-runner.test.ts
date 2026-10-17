@@ -34,6 +34,7 @@ import {
   type GoldenRunOptions
 } from "./golden-runner.js";
 import { isExtractionPinned, setExtractionPin } from "./extraction-pin.js";
+import { relationLinkRuntime, resetRelationLinkRuntime } from "./relations/link-runtime.js";
 import { createTopicTreeServices } from "./topic-tree/index.js";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -333,6 +334,7 @@ describe("golden run environment", () => {
       sourcePairsPath: null,
       topics: { golden: true, mode: "deterministic", arrival: "per-source" },
       pin: { read: true, mode: "extraction" },
+      relations: "live",
       schemaProbeCalls: null
     });
     expect(
@@ -1670,7 +1672,26 @@ describe("golden pin: MEMORA_GOLDEN_PIN (F3 D5)", () => {
     expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_PIN: "everything" }, options)).toBeNull();
   });
 
+  it("reads MEMORA_GOLDEN_RELATIONS: relation remote calls off under local (F3 5.6)", () => {
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json" }, options)?.relations).toBe(
+      "live"
+    );
+    expect(
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_RELATIONS: "local" },
+        options
+      )?.relations
+    ).toBe("local");
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_RELATIONS: "remote" },
+        options
+      )
+    ).toThrow("MEMORA_GOLDEN_RELATIONS must be live or local");
+  });
+
   it("sets the pin once the run is prepared, and not when the preparation is refused", async () => {
+    resetRelationLinkRuntime();
     const manifestPath = await writeSources(testManifest());
     const refused = fakeServices({ pendingJobs: [{ type: "ingestion", count: 1 }] });
     await expect(
@@ -1686,10 +1707,14 @@ describe("golden pin: MEMORA_GOLDEN_PIN (F3 D5)", () => {
       )
     ).rejects.toThrow("idle job queue");
     expect(isExtractionPinned()).toBe(false);
+    expect(relationLinkRuntime()).toEqual({ drain: false, remoteCallsOff: false });
 
     const services = fakeServices();
     await prepareGoldenRun(prepareInput(manifestPath, services));
     expect(isExtractionPinned()).toBe(true);
+    // Link jobs drain first in, first out from then on (D24).
+    expect(relationLinkRuntime()).toEqual({ drain: true, remoteCallsOff: false });
+    resetRelationLinkRuntime();
 
     const unpinned = fakeServices();
     await prepareGoldenRun(

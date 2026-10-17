@@ -230,7 +230,8 @@ export const processingStageDependencies: Readonly<
   atomicNotes: ["chunking"],
   knowledgeGraph: ["chunking"],
   atomicNoteMatching: ["atomicNotes"],
-  sourceMatching: ["summarization", "embedding"],
+  // Source relations come from the source's decided note pairs (F3 D24, D27).
+  sourceMatching: ["summarization", "embedding", "atomicNoteMatching"],
   obsidianProjection: ["materialization"],
   aggregateSummarization: ["summarization"]
 };

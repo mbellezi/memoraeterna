@@ -64,6 +64,37 @@ describe("jobs view model", () => {
       expect(cards[2]!.progress).toBeLessThan(cards[1]!.progress);
     }
   );
+  it("shows a run whose source stage waits for its link job as running (F3 D24)", () => {
+    const [card] = groupJobs([
+      jobRecordSchema.parse({
+        id: "00000000-0000-4000-8000-000000000101",
+        type: "ingestion",
+        status: "succeeded",
+        progress: 1,
+        attempts: 1,
+        maxAttempts: 3,
+        canCancel: false,
+        canRetry: false,
+        error: null,
+        errorHistory: [],
+        aiExecution: null,
+        createdAt: "2026-10-17T20:12:52.308Z",
+        updatedAt: "2026-10-17T20:12:52.560Z",
+        ingestionRun: {
+          id: "00000000-0000-4000-8000-000000000102",
+          status: "running",
+          currentStage: "sourceMatching",
+          effectiveStages: ["atomicNoteMatching", "sourceMatching"],
+          stagesCheckpoint: {
+            atomicNoteMatching: { status: "completed" },
+            sourceMatching: { status: "linking", metadata: { rootId: "root" } }
+          }
+        }
+      })
+    ]);
+    expect(card).toMatchObject({ status: "running", currentStage: "sourceMatching" });
+    expect(card!.progress).toBeLessThan(1);
+  });
   describe("a run stored with the retired organization stage (F2 D14)", () => {
     const storedRun = (
       currentStage: string,

@@ -3,6 +3,7 @@ import { AiProviderError } from "@app/ai";
 import type { JobRecord, PgPool } from "@app/db";
 import { JobSupervisor } from "./job-supervisor.js";
 import type { KnowledgeService } from "./knowledge-service.js";
+import { resetRelationLinkRuntime, setRelationLinkRuntime } from "./relations/link-runtime.js";
 
 const mocks = vi.hoisted(() => ({
   jobs: {
@@ -11,6 +12,9 @@ const mocks = vi.hoisted(() => ({
     retry: vi.fn(),
     claimNext: vi.fn(),
     update: vi.fn(),
+    create: vi.fn(),
+    reportProgress: vi.fn(),
+    enqueueDeduped: vi.fn(),
     activeIdsForBatch: vi.fn(),
     requestCancel: vi.fn()
   },
@@ -18,17 +22,34 @@ const mocks = vi.hoisted(() => ({
     recoverInterrupted: vi.fn(),
     findById: vi.fn(),
     fail: vi.fn(),
-    findReleasableBatchRun: vi.fn(),
     listByBatch: vi.fn(),
-    cancel: vi.fn()
+    cancel: vi.fn(),
+    startOrResume: vi.fn(),
+    beginStage: vi.fn(),
+    updateStageProgress: vi.fn(),
+    completeStage: vi.fn(),
+    skipStage: vi.fn(),
+    parkForLinking: vi.fn(),
+    complete: vi.fn(),
+    update: vi.fn(),
+    countIncompleteBatchStage: vi.fn(),
+    listLinkingSourceItems: vi.fn(),
+    listSkippedMatching: vi.fn(),
+    reopenStages: vi.fn()
   },
-  hierarchy: { refreshBatch: vi.fn() }
+  hierarchy: { refreshBatch: vi.fn() },
+  documents: { findById: vi.fn() },
+  chunks: { listByDocument: vi.fn() },
+  notes: { listBySourceItem: vi.fn() }
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
   createJobRepository: () => mocks.jobs,
   createIngestionRunRepository: () => mocks.runs,
-  createHierarchicalIngestionRepository: () => mocks.hierarchy
+  createHierarchicalIngestionRepository: () => mocks.hierarchy,
+  createDocumentRepository: () => mocks.documents,
+  createChunkRepository: () => mocks.chunks,
+  createAtomicNoteRepository: () => mocks.notes
 }));
 let supervisor: JobSupervisor | undefined;
 beforeEach(() => {
@@ -321,61 +342,285 @@ describe("ingestion queue scheduling", () => {
       expect(update).toMatchObject({ status: "failed", error: "missing_atomicNoteId" });
     });
   });
-  describe("a batch run that fails for good", () => {
-    const failingJob = (attempts: number) => ({
-      id: "job",
-      type: "ingestion",
+  describe("per-source matching with no barrier (F3 D24)", () => {
+    // A run that only matches: every earlier stage is outside its plan.
+    const matchingRun = (overrides: Record<string, unknown> = {}) => ({
+      id: "run",
+      batchId: "batch",
+      trigger: "library_action",
+      runKind: "initial",
+      effectiveStages: ["atomicNoteMatching", "sourceMatching"],
+      stagesCheckpoint: {},
+      ...overrides
+    });
+    const decided = {
+      noteId: "note-1",
+      sourceItemId: "source",
+      decider: {
+        kind: "ranker",
+        mode: "ranker",
+        deciderKey: "decider",
+        calibration: "provisional",
+        profileId: "profile",
+        modelId: "ranker"
+      },
+      pairs: []
+    };
+    const ingest = async (
+      knowledge: Partial<Record<keyof KnowledgeService, unknown>>,
+      run = matchingRun(),
+      payload: Record<string, unknown> = {}
+    ) => {
+      const pool = { query: vi.fn().mockResolvedValue({ rows: [{ id: "root" }] }) };
+      supervisor = new JobSupervisor({
+        getPool: () => pool as unknown as PgPool,
+        knowledgeService: knowledge as unknown as KnowledgeService
+      });
+      mocks.jobs.claimNext.mockResolvedValue({
+        id: "job",
+        type: "ingestion",
+        attempts: 1,
+        maxAttempts: 3,
+        payload: {
+          ingestionRunId: "run",
+          documentId: "document",
+          sourceItemId: "source",
+          batchId: "batch",
+          markdown: "Text.",
+          ...payload
+        }
+      });
+      mocks.jobs.create.mockResolvedValue({ id: "stage-job" });
+      mocks.jobs.update.mockImplementation(async (id: string, input: object) => ({ id, ...input }));
+      mocks.jobs.enqueueDeduped.mockResolvedValue({ job: { id: "link-job" }, created: true });
+      mocks.documents.findById.mockResolvedValue({ metadata: {} });
+      mocks.chunks.listByDocument.mockResolvedValue([]);
+      mocks.notes.listBySourceItem.mockResolvedValue([{ id: "note-1", status: "pending_review" }]);
+      mocks.runs.startOrResume.mockResolvedValue(run);
+      const job = await supervisor.runOnce();
+      return { job, pool };
+    };
+
+    it("decides the run's own notes at once and parks its source stage for the root's link job", async () => {
+      const matchAtomicNotes = vi.fn(
+        async (
+          _ids: string[],
+          _signal: AbortSignal,
+          _progress: unknown,
+          _context: unknown,
+          options: {
+            onNoteDecided: (note: unknown) => void;
+            onNoteCompleted: (id: string, count: number) => Promise<void>;
+          }
+        ) => {
+          options.onNoteDecided(decided);
+          await options.onNoteCompleted("note-1", 0);
+          return { persistedCount: 0, decided: 1, accepted: 0, decider: "ranker" };
+        }
+      );
+      const { job } = await ingest({ matchAtomicNotes });
+      expect(job).toMatchObject({ status: "succeeded" });
+      // No batch barrier: matching never asks whether a sibling is still generating notes.
+      expect(mocks.runs.countIncompleteBatchStage).not.toHaveBeenCalled();
+      expect(matchAtomicNotes).toHaveBeenCalledWith(
+        ["note-1"],
+        expect.any(AbortSignal),
+        expect.any(Function),
+        expect.objectContaining({ ingestionRunId: "run", sourceItemId: "source", priority: "P2" }),
+        expect.objectContaining({ onNoteDecided: expect.any(Function) })
+      );
+      // The decided pairs stay in the stage checkpoint for the link job (D21).
+      expect(mocks.runs.completeStage).toHaveBeenCalledWith(
+        "run",
+        "atomicNoteMatching",
+        expect.objectContaining({ decided: [decided] })
+      );
+      expect(mocks.runs.parkForLinking).toHaveBeenCalledWith("run", { rootId: "root" });
+      expect(mocks.jobs.enqueueDeduped).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "relation-link",
+          lane: "light",
+          dedupeKey: "relation-link:root",
+          payload: { rootId: "root", batchId: "batch" }
+        })
+      );
+      // The run completes when its link job does, not here.
+      expect(mocks.runs.complete).not.toHaveBeenCalled();
+    });
+
+    it("decides an interactive import at P1", async () => {
+      const matchAtomicNotes = vi.fn().mockResolvedValue({ persistedCount: 0 });
+      await ingest({ matchAtomicNotes }, matchingRun({ trigger: "interactive_import" }));
+      expect(matchAtomicNotes.mock.calls[0]![3]).toMatchObject({ priority: "P1" });
+    });
+
+    it("skips both matching stages and completes the run while no ranker is validated (C7)", async () => {
+      const matchAtomicNotes = vi
+        .fn()
+        .mockResolvedValue({ persistedCount: 0, skipped: "waiting_for_decider", decider: null });
+      await ingest({ matchAtomicNotes });
+      expect(mocks.runs.skipStage.mock.calls).toEqual([
+        ["run", "atomicNoteMatching", "waiting_for_decider"],
+        ["run", "sourceMatching", "waiting_for_decider"]
+      ]);
+      expect(mocks.runs.parkForLinking).not.toHaveBeenCalled();
+      expect(mocks.jobs.enqueueDeduped).not.toHaveBeenCalled();
+      expect(mocks.runs.complete).toHaveBeenCalledWith("run");
+    });
+
+    it("re-runs matching skipped for a decider through the stage-level retry once one validates", async () => {
+      const skipped = { status: "skipped", reason: "waiting_for_decider" };
+      const waiting = {
+        id: "waiting-run",
+        jobId: "waiting-job",
+        status: "succeeded",
+        stagesCheckpoint: { atomicNoteMatching: skipped, sourceMatching: skipped }
+      };
+      const noteDeciderAvailable = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+      supervisor = new JobSupervisor({
+        getPool: () => ({}) as PgPool,
+        pollIntervalMs: 100,
+        knowledgeService: { noteDeciderAvailable } as unknown as KnowledgeService
+      });
+      mocks.runs.listLinkingSourceItems.mockResolvedValue([]);
+      mocks.runs.listSkippedMatching.mockResolvedValue([waiting]);
+      mocks.runs.findById.mockResolvedValue(waiting);
+      mocks.runs.reopenStages.mockResolvedValue(waiting);
+      mocks.jobs.findById.mockResolvedValue({ id: "waiting-job", status: "succeeded" });
+      mocks.jobs.claimNext.mockResolvedValue(null);
+      await supervisor.start();
+      await vi.advanceTimersByTimeAsync(0);
+      // Still no ranker: nothing is retried.
+      expect(noteDeciderAvailable).toHaveBeenCalledOnce();
+      expect(mocks.runs.reopenStages).not.toHaveBeenCalled();
+      // The idle check runs at most every 30 s; then a ranker is ready.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mocks.runs.reopenStages).toHaveBeenCalledWith("waiting-run", [
+        "atomicNoteMatching",
+        "sourceMatching"
+      ]);
+      expect(mocks.jobs.retry).toHaveBeenCalledWith("waiting-job");
+    });
+
+    it("never retries a stage of a run whose job is still queued or running", async () => {
+      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+      mocks.runs.findById.mockResolvedValue({
+        id: "run",
+        jobId: "job",
+        status: "succeeded",
+        stagesCheckpoint: {
+          atomicNoteMatching: { status: "skipped", reason: "waiting_for_decider" }
+        }
+      });
+      mocks.jobs.findById.mockResolvedValue({ id: "job", status: "queued" });
+      await expect(supervisor.retryStage("run", "atomicNoteMatching")).resolves.toBeNull();
+      expect(mocks.runs.reopenStages).not.toHaveBeenCalled();
+    });
+
+    it("queues the link job of every run parked at a restart", async () => {
+      const pool = { query: vi.fn().mockResolvedValue({ rows: [{ id: "root" }] }) };
+      supervisor = new JobSupervisor({
+        getPool: () => pool as unknown as PgPool,
+        knowledgeService: {} as KnowledgeService
+      });
+      mocks.runs.listLinkingSourceItems.mockResolvedValue(["chapter"]);
+      mocks.jobs.enqueueDeduped.mockResolvedValue({ job: { id: "link-job" }, created: false });
+      mocks.jobs.claimNext.mockResolvedValue(null);
+      await supervisor.start();
+      expect(mocks.jobs.enqueueDeduped).toHaveBeenCalledWith(
+        expect.objectContaining({ dedupeKey: "relation-link:root", payload: { rootId: "root" } })
+      );
+    });
+  });
+  describe("a light job that ends for good", () => {
+    const lightJob = (attempts: number) => ({
+      id: "light-job",
+      type: "relation-test",
       attempts,
       maxAttempts: 3,
-      payload: {
-        ingestionRunId: "run",
-        batchId: "batch",
-        documentId: "document",
-        sourceItemId: "source",
-        markdown: "",
-        processingMode: "content"
+      lockedAt: new Date(),
+      payload: {}
+    });
+    const runFailing = async (error: unknown, attempts: number) => {
+      const ended = vi.fn();
+      supervisor = new JobSupervisor({
+        getPool: () => ({}) as PgPool,
+        lightJobs: {
+          "relation-test": {
+            needsModel: true,
+            worker: "relations",
+            execute: vi.fn().mockRejectedValue(error),
+            ended
+          }
+        }
+      });
+      mocks.jobs.claimNext.mockResolvedValue(lightJob(attempts));
+      mocks.jobs.update.mockImplementation(async (id: string, input: object) => ({ id, ...input }));
+      await supervisor.runLightOnce("relations");
+      return ended;
+    };
+
+    it("settles the work it owned when no attempt is left", async () => {
+      const ended = await runFailing(new Error("errors.sourceRelations.invalidOutput"), 1);
+      expect(ended).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "light-job" }),
+        expect.any(Error),
+        false
+      );
+    });
+
+    it("leaves its work alone while it is queued again", async () => {
+      const busy = new AiProviderError("busy", { kind: "http", transient: true, status: 500 });
+      expect(await runFailing(busy, 1)).not.toHaveBeenCalled();
+      expect(await runFailing(busy, 3)).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+      ["the product pool of 2", false, [0, 1]],
+      ["one link job at a time in drain mode", true, [0]]
+    ])("runs the relations worker with %s", async (_name, drain, slots) => {
+      setRelationLinkRuntime({ drain });
+      try {
+        supervisor = new JobSupervisor({
+          getPool: () => ({}) as PgPool,
+          pollIntervalMs: 100,
+          knowledgeService: {} as KnowledgeService
+        });
+        mocks.runs.listLinkingSourceItems.mockResolvedValue([]);
+        mocks.jobs.claimNext.mockResolvedValue(null);
+        const light = vi.spyOn(supervisor, "runLightOnce").mockResolvedValue(null);
+        await supervisor.start();
+        await vi.advanceTimersByTimeAsync(0);
+        const claimed = light.mock.calls
+          .filter(([worker]) => worker === "relations")
+          .map(([, slot]) => slot);
+        expect([...new Set(claimed)].sort()).toEqual(slots);
+      } finally {
+        resetRelationLinkRuntime();
       }
     });
 
-    it("queues the job of a sibling that parked its matching behind it", async () => {
-      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
-      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
-      mocks.jobs.update.mockResolvedValue({ id: "job", status: "failed" });
-      mocks.runs.findReleasableBatchRun.mockResolvedValue({ runId: "parked", jobId: "parked-job" });
-      mocks.jobs.retry.mockResolvedValue({ id: "parked-job", status: "queued" });
-      await supervisor.runOnce();
-      expect(mocks.runs.findReleasableBatchRun).toHaveBeenCalledWith("batch");
-      expect(mocks.jobs.retry).toHaveBeenCalledWith("parked-job");
-    });
-
-    it("releases nothing while the failure is still going to be retried", async () => {
-      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
-      // A provider that is briefly unavailable is not a deterministic failure: the job is queued again.
-      vi.spyOn(
-        supervisor as never as { executeIngestion: () => Promise<unknown> },
-        "executeIngestion"
-      ).mockRejectedValue(
-        new AiProviderError("busy", { kind: "http", transient: true, status: 503 })
+    it("claims relation jobs on the relations worker only", async () => {
+      supervisor = new JobSupervisor({
+        getPool: () => ({}) as PgPool,
+        lightJobs: {
+          "relation-test": { needsModel: true, worker: "relations", execute: vi.fn() },
+          "topic-test": { needsModel: true, execute: vi.fn() }
+        }
+      });
+      mocks.jobs.claimNext.mockResolvedValue(null);
+      await supervisor.runLightOnce("relations", 1);
+      expect(mocks.jobs.claimNext).toHaveBeenLastCalledWith(
+        expect.stringMatching(/:light-relations-1$/u),
+        ["relation-test"],
+        "light"
       );
-      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
-      mocks.jobs.update.mockResolvedValue({ id: "job", status: "queued" });
-      await supervisor.runOnce();
-      expect(mocks.jobs.update).toHaveBeenCalledWith(
-        "job",
-        expect.objectContaining({ status: "queued" })
+      await supervisor.runLightOnce("model");
+      expect(mocks.jobs.claimNext).toHaveBeenLastCalledWith(
+        expect.stringMatching(/:light-model$/u),
+        ["topic-test"],
+        "light"
       );
-      expect(mocks.runs.findReleasableBatchRun).not.toHaveBeenCalled();
-      expect(mocks.jobs.retry).not.toHaveBeenCalled();
-    });
-
-    it("keeps going when the release itself cannot be determined", async () => {
-      const logger = { error: vi.fn(), warn: vi.fn() };
-      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool, logger });
-      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
-      mocks.jobs.update.mockResolvedValue({ id: "job", status: "failed" });
-      mocks.runs.findReleasableBatchRun.mockRejectedValue(new Error("database restarting"));
-      await expect(supervisor.runOnce()).resolves.toMatchObject({ status: "failed" });
-      expect(logger.warn).toHaveBeenCalledWith("database restarting");
     });
   });
   it("coalesces retries during an active drain instead of starting overlapping ingestion", async () => {

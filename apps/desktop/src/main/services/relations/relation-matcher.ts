@@ -42,7 +42,6 @@ import {
   createLocalModelRepository,
   createNoteMatchStateRepository,
   createRelationDecisionRepository,
-  createRelationMatchRunRepository,
   createSettingsRepository,
   createSimilarityDebugRepository,
   operationRouteKey,
@@ -213,6 +212,37 @@ export function mapGenerativeRelationType(
   }
 }
 
+// --- the reverse guard (D19) ----------------------------------------------------------------------
+
+/**
+ * The cosine of a note's K-th vector candidate, stored once the note is decided (`kth_cosine`);
+ * null when it had fewer than K candidates, which opens its guard to every later note.
+ */
+export function kthVectorCosine(cosines: readonly number[], k: number): number | null {
+  return cosines.length >= k ? cosines[k - 1]! : null;
+}
+
+/**
+ * The reverse guard (D19): the earlier decided notes of the note's vector window (its top
+ * guardFactor x K, best first) that its fused list missed and whose own K-th cosine the note
+ * reaches. `states` holds the decided notes only; a note not decided yet is never added.
+ */
+export function reverseGuardIds(
+  window: ReadonlyArray<{ id: string; cosine: number }>,
+  fusedIds: ReadonlySet<string>,
+  states: ReadonlyMap<string, { kthCosine: number | null }>
+): string[] {
+  return window
+    .filter((candidate) => {
+      if (fusedIds.has(candidate.id)) return false;
+      const state = states.get(candidate.id);
+      return (
+        state !== undefined && (state.kthCosine === null || candidate.cosine >= state.kthCosine)
+      );
+    })
+    .map((candidate) => candidate.id);
+}
+
 // --- public shapes --------------------------------------------------------------------------------
 
 /** A note's matching vector and the embedding space it lives in. */
@@ -269,8 +299,8 @@ export interface DecidedNote {
 
 /**
  * Hands one decided note's accepted pairs on, after its decisions and match state are committed and
- * before its checkpoint, and resolves to the relations it persisted. The link job of T52 takes this
- * over; until then the interim hand-off persists them (see {@link persistDecidedPairs}).
+ * before its checkpoint, and resolves to the relations it persisted. Ingestion keeps them in the
+ * stage checkpoint and persists none (0): the link job (`relation-link.ts`, T52) does (D21).
  */
 export type DecidedNoteHandOff = (note: DecidedNote) => Promise<number>;
 
@@ -368,8 +398,6 @@ const isCurrentNote = (note: AtomicNoteRecord) =>
 const noteContentKey = (note: { title: string; ideaStatement: string }) =>
   contentKey(note.title, note.ideaStatement);
 
-const sigmoid = (value: number) => 1 / (1 + Math.exp(-value));
-
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
 
@@ -446,6 +474,18 @@ export class RelationMatcher {
       ...input,
       noteIds: notes.filter(isCurrentNote).map((note) => note.id)
     });
+  }
+
+  /**
+   * Whether an admission now would decide: false while mode `ranker` waits for a validated ranker
+   * (C7) or a required decider has no route. Matching skipped to wait re-runs once it is true.
+   */
+  public async deciderAvailable(): Promise<boolean> {
+    try {
+      return (await this.resolveDecider()) !== waitingForDeciderSkipReason;
+    } catch {
+      return false;
+    }
   }
 
   // --- decider resolution -------------------------------------------------------------------------
@@ -743,7 +783,10 @@ export class RelationMatcher {
       retrieval.rrfK
     );
     const k = retrieval.fusedK;
-    const kthCosine = vectorList.length >= k ? vectorList[k - 1]!.vectorScore : null;
+    const kthCosine = kthVectorCosine(
+      vectorList.map((candidate) => candidate.vectorScore),
+      k
+    );
     // The reverse guard (D19): earlier decided notes in the vector top guardFactor x K whose own
     // k-th cosine this note reaches (every later note, for one decided with fewer than K). The k-th
     // cosine is the one stored when x was decided, as D19 says. A refreshed one (x's k-th over the
@@ -758,16 +801,11 @@ export class RelationMatcher {
             vector.space.spaceKey
           )
         : new Map();
-    const guardIds = window
-      .filter((candidate) => {
-        if (fusedIds.has(candidate.note.id)) return false;
-        const state = states.get(candidate.note.id);
-        return (
-          state !== undefined &&
-          (state.kthCosine === null || candidate.vectorScore >= state.kthCosine)
-        );
-      })
-      .map((candidate) => candidate.note.id);
+    const guardIds = reverseGuardIds(
+      window.map((candidate) => ({ id: candidate.note.id, cosine: candidate.vectorScore })),
+      fusedIds,
+      states
+    );
     const ids = [...fusedIds, ...guardIds];
     const scored = ids.length
       ? await notes.scoreMatchingCandidates({
@@ -1235,84 +1273,6 @@ export class RelationMatcher {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
-}
-
-/**
- * The interim hand-off (until T52's link job): persists a decided note's accepted pairs at once,
- * each with its band, probability and decider key, in one `match` run whose events record every
- * change (D14). A ranker pair is untyped (D20's untyped fallback: neutral stance, typed later); a
- * generative pair keeps its mapped v9 type and judged direction. A pair a person decided is never
- * changed (I-R3). Resolves to the relations it created or changed.
- */
-export function persistDecidedPairs(input: {
-  pool: PgPool;
-  ai?: Pick<AiService, "traceOperation">;
-  logContext?: AiTaskLogContext;
-}): DecidedNoteHandOff & { finish: (outcome: "succeeded" | "failed") => Promise<void> } {
-  const relations = createAtomicNoteRelationRepository(input.pool);
-  const runs = createRelationMatchRunRepository(input.pool);
-  let runId: string | null = null;
-  let persisted = 0;
-  const handOff = async (note: DecidedNote) => {
-    runId ??= (
-      await runs.start({
-        kind: "match",
-        rootId: input.logContext?.sourceItemId ?? note.sourceItemId,
-        deciderKey: note.decider.deciderKey,
-        calibrationVersion: note.decider.calibration
-      })
-    ).id;
-    let count = 0;
-    for (const pair of note.pairs) {
-      const subject = pair.subjectId ?? note.noteId;
-      const object = subject === note.noteId ? pair.candidateId : note.noteId;
-      const write = () =>
-        relations.upsertDecided({
-          subjectAtomicNoteId: subject,
-          objectAtomicNoteId: object,
-          relationType: pair.relationType,
-          band: pair.band,
-          probability: pair.probability,
-          deciderKey: note.decider.deciderKey,
-          vectorScore: pair.vectorScore,
-          graphScore: pair.graphScore,
-          rerankScore: note.decider.kind === "generative" ? pair.score : null,
-          // D17: the calibrated probability; without one, the decider's own probability.
-          finalScore:
-            pair.probability ?? (note.decider.kind === "ranker" ? sigmoid(pair.score) : pair.score),
-          // The decider writes no prose: the explanation is written on demand.
-          explanation: "knowledge.relations.explanations.reranked",
-          matchingProfileId: note.decider.profileId,
-          matchingModel: note.decider.modelId,
-          metadata: {
-            version: relationMatcherVersion,
-            decisionSource: pair.decisionSource,
-            calibration: pair.calibration,
-            score: pair.score
-          },
-          runId
-        });
-      const context = withSourceItems({ ...input.logContext, atomicNoteId: note.noteId }, [
-        note.sourceItemId,
-        pair.candidateSourceItemId
-      ]);
-      const written = await (input.ai?.traceOperation?.(
-        "atomic_note_relation_creation",
-        context,
-        write,
-        { targetAtomicNoteId: pair.candidateId, band: pair.band, relationType: pair.relationType }
-      ) ?? write());
-      if (written.change === "created" || written.change === "updated") count += 1;
-    }
-    persisted += count;
-    return count;
-  };
-  return Object.assign(handOff, {
-    /** Closes the run, when anything was handed on. */
-    finish: async (outcome: "succeeded" | "failed") => {
-      if (runId) await runs.finish(runId, { outcome, counts: { persisted } });
-    }
-  });
 }
 
 function deciderSummary(decider: Decider): MatchDeciderSummary {

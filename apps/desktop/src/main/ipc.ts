@@ -15,6 +15,7 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
+import { RelationsChangedEventSchema } from "../shared/ipc.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
@@ -403,6 +404,13 @@ export function registerIpcHandlers(
   jobSupervisor.subscribe(() => {
     for (const contents of webContents.getAllWebContents()) {
       if (!contents.isDestroyed()) contents.send(ipcChannels.jobsChanged);
+    }
+  });
+  // F3 3.11: the notes whose relations a link job committed, coalesced by the supervisor.
+  jobSupervisor.subscribeRelationsChanged((event) => {
+    const payload = RelationsChangedEventSchema.parse(event);
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, payload);
     }
   });
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {

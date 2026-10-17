@@ -65,7 +65,7 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 - Jobs, ingestion runs, stage checkpoints and processing batches persist in PostgreSQL. UI progress,
   states and errors are localized views of persisted work, never its owner.
 - Workers claim jobs atomically (`FOR UPDATE SKIP LOCKED`) in two lanes, `heavy` (ingestion) and `light`
-  (tree and projection work); light work never waits behind heavy work or a model call it does not make.
+  (tree, relation and projection work); light work never waits behind heavy work or a model call it does not make.
 - Stages are resumable from checkpoints after restart, crash, timeout or
   cancellation, without repeating validated work or replaying an uncertain
   provider call. Unrequested stages are recorded as skipped, not pending.

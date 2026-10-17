@@ -16,7 +16,6 @@ import { atomicNoteDeciderKey, atomicNoteDecisionContentHash } from "../knowledg
 import {
   deriveDeciderMode,
   mapGenerativeRelationType,
-  persistDecidedPairs,
   rankerCalibrationIdentity,
   rankerDeciderCacheKey,
   relationDecideInstruction,
@@ -1044,102 +1043,6 @@ describe("the generative decider", () => {
     expect(mapGenerativeRelationType("similar_to")).toBeNull();
     expect(mapGenerativeRelationType("related")).toBeNull();
     expect(mapGenerativeRelationType("mentions")).toBeNull();
-  });
-});
-
-describe("the interim hand-off", () => {
-  it("persists accepted pairs in one match run: untyped for the ranker, typed and directed for the generative decider", async () => {
-    mocks.runs.start.mockResolvedValue({ id: "run-1" });
-    mocks.relations.upsertDecided.mockResolvedValue({ change: "created" });
-    const handOff = persistDecidedPairs({ pool: {} as PgPool, ai: ai as unknown as AiService });
-    const base = {
-      candidateSourceItemId: "source-x",
-      probability: null,
-      calibration: "provisional" as const,
-      decisionSource: "model" as const,
-      vectorScore: 0.5,
-      graphScore: null
-    };
-    const ranked = await handOff({
-      noteId: "n-source",
-      sourceItemId: "source-n-source",
-      decider: {
-        kind: "ranker",
-        mode: "ranker",
-        deciderKey: "ranker-key",
-        calibration: "provisional",
-        profileId: "ranker-profile",
-        modelId: "Qwen3-Reranker-0.6B"
-      },
-      pairs: [
-        {
-          ...base,
-          noteId: "n-source",
-          candidateId: "n-b",
-          band: "apply",
-          score: 3.5,
-          relationType: null,
-          subjectId: null
-        }
-      ]
-    });
-    const generated = await handOff({
-      noteId: "n-source",
-      sourceItemId: "source-n-source",
-      decider: {
-        kind: "generative",
-        mode: "ranker-else-generative",
-        deciderKey: "writer-key",
-        calibration: "uncalibrated",
-        profileId: "writer-profile",
-        modelId: "writer"
-      },
-      pairs: [
-        {
-          ...base,
-          noteId: "n-source",
-          candidateId: "n-c",
-          band: "suggest",
-          score: 0.9,
-          calibration: "uncalibrated",
-          relationType: "supports",
-          subjectId: "n-c",
-          decisionSource: "reverse_cache"
-        }
-      ]
-    });
-    await handOff.finish("succeeded");
-    expect([ranked, generated]).toEqual([1, 1]);
-    expect(mocks.runs.start).toHaveBeenCalledOnce();
-    expect(mocks.runs.start).toHaveBeenCalledWith(expect.objectContaining({ kind: "match" }));
-    expect(mocks.runs.finish).toHaveBeenCalledWith("run-1", {
-      outcome: "succeeded",
-      counts: { persisted: 2 }
-    });
-    const [first, second] = mocks.relations.upsertDecided.mock.calls.map(([input]) => input);
-    expect(first).toMatchObject({
-      subjectAtomicNoteId: "n-source",
-      objectAtomicNoteId: "n-b",
-      relationType: null,
-      band: "apply",
-      probability: null,
-      deciderKey: "ranker-key",
-      rerankScore: null,
-      finalScore: 1 / (1 + Math.exp(-3.5)),
-      runId: "run-1"
-    });
-    // The judged subject of a reused verdict is the candidate.
-    expect(second).toMatchObject({
-      subjectAtomicNoteId: "n-c",
-      objectAtomicNoteId: "n-source",
-      relationType: "supports",
-      band: "suggest",
-      rerankScore: 0.9,
-      finalScore: 0.9,
-      runId: "run-1"
-    });
-    // No direction is ever written into metadata (D8).
-    expect(Object.keys(first.metadata).some((key) => key.startsWith("semantic"))).toBe(false);
   });
 });
 

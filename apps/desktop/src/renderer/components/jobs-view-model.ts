@@ -117,6 +117,8 @@ function deferredStagePresentation(
   const base = stage === "sourceMatching" ? 0.95 : 0.89;
   if (state.status === "waiting_for_batch" || state.status === "pending")
     return { status: "queued", progress: base, stage, error };
+  // A source stage parked for its link job (F3 D24) runs: the link job completes the run.
+  if (state.status === "linking") return { status: "running", progress: base, stage, error };
   if (state.status === "running" || state.status === "failed" || state.status === "canceled")
     return {
       status: state.status,

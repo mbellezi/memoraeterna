@@ -142,7 +142,8 @@ try {
   assert.equal(retried.ended_at, null);
   await runs.completeStage(run.id, "summarization");
 
-  // A stage that starts through its first progress update gets a start, and waiting ends the attempt.
+  // A stage that starts through its first progress update gets a start; further updates of the
+  // open attempt leave it alone.
   assert.equal((await stage(run.id, "embedding")).started_at, null);
   await runs.updateStageProgress(run.id, "embedding", 0);
   const progressStart = await stage(run.id, "embedding");
@@ -150,17 +151,28 @@ try {
   assert.ok(
     progressStart.started_at && progressStart.attempt_started_at && !progressStart.ended_at
   );
-  await runs.waitForBatchStage(run.id, "embedding");
-  const waiting = await stage(run.id, "embedding");
-  assert.equal(waiting.status, "waiting_for_review");
-  assert.ok(waiting.ended_at);
   await pause();
   await runs.updateStageProgress(run.id, "embedding", 0.2);
   const resumed = await stage(run.id, "embedding");
-  assert.equal(resumed.attempts, 2);
+  assert.equal(resumed.attempts, 1);
   assert.equal(resumed.ended_at, null);
-  assert.deepEqual(resumed.started_at, progressStart.started_at);
-  after(resumed.attempt_started_at, waiting.ended_at, "resumed attempt starts after the wait");
+  assert.deepEqual(resumed.attempt_started_at, progressStart.attempt_started_at);
+
+  // A source stage parked for its link job (F3 D24) keeps one attempt open, from the park to the
+  // link job's completion: the link latency is the stage's time.
+  await runs.update(run.id, { status: "running" });
+  await runs.parkForLinking(run.id, { rootId: run.id });
+  const parked = await stage(run.id, "sourceMatching");
+  assert.equal(parked.status, "waiting_for_review");
+  assert.equal(parked.attempts, 1);
+  assert.ok(parked.attempt_started_at && !parked.ended_at);
+  await pause();
+  assert.ok(await runs.completeLinking(run.id, { linked: true }));
+  const linked = await stage(run.id, "sourceMatching");
+  assert.equal(linked.status, "completed");
+  after(linked.ended_at, parked.attempt_started_at, "the link job ends the parked attempt");
+  assert.equal(await runs.completeLinking(run.id), null, "a completed run is not parked");
+  await runs.update(run.id, { status: "running", completedAt: null });
 
   // Run-level failure ends the open attempt of the current stage.
   await runs.beginStage(run.id, "embedding");
@@ -238,7 +250,7 @@ try {
     JSON.stringify({
       verified: [
         "migration history and columns",
-        "stage attempts, start and end times through retry, wait, failure, recovery and cancel",
+        "stage attempts, start and end times through retry, link park, failure, recovery and cancel",
         "ai_task_runs queue_ms and attempt, null when unknown",
         "ai_task_runs started_at is the call's real start, finished_at minus duration_ms"
       ],

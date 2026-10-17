@@ -1139,7 +1139,10 @@ function jobTypeMessageKey(type: string): MessageKey {
         "topic-name": "jobs.types.topicName",
         "topic-areas": "jobs.types.topicAreas",
         "topic-label-embed": "jobs.types.topicLabelEmbed",
-        "topic-gate": "jobs.types.topicGate"
+        "topic-gate": "jobs.types.topicGate",
+        "relation-link": "jobs.relations.link",
+        "relation-retype": "jobs.relations.retype",
+        "relation-promote": "jobs.relations.promote"
       } as Record<string, MessageKey>
     )[type] ?? "jobs.types.ingestion"
   );

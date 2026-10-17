@@ -1,7 +1,12 @@
 import { jobTaskPayload } from "../job-task-payload.js";
 import { promptStageProviders } from "./prompt-strategies.js";
 import { aiErrorRetryAfterMs } from "@app/ai";
-import { PromptPinSchema } from "@app/domain";
+import {
+  PromptPinSchema,
+  relationsConfig as defaultRelationsConfig,
+  waitingForDeciderSkipReason,
+  type RelationsConfig
+} from "@app/domain";
 import {
   withPromptPin,
   capturePromptPin,
@@ -11,12 +16,29 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
-import { runIndividualStageBatch } from "./individual-stage-batch.js";
 import {
-  atomicNoteMatchingCheckpointMetadata,
   matchAtomicNotesFromCheckpoint,
   readAtomicNoteMatchingCheckpoint
 } from "./atomic-note-matching-checkpoint.js";
+import { InFlightRegistry } from "./relations/in-flight-registry.js";
+import { relationLinkRuntime } from "./relations/link-runtime.js";
+import {
+  createRelationCallBudget,
+  localDay,
+  type RelationCallBudget
+} from "./relations/relation-call-budget.js";
+import {
+  enqueueRelationLink,
+  enqueueRelationRetypeSweep,
+  hasUntypedRelations,
+  isInteractiveRun,
+  linkRootOf,
+  RelationLinker
+} from "./relations/relation-link.js";
+import {
+  RelationsChangedEmitter,
+  type RelationsChangedEvent
+} from "./relations/relations-changed.js";
 import {
   createChunkRepository,
   createDocumentRepository,
@@ -43,7 +65,7 @@ import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
-import { canManuallyRetryJob } from "./job-retry.js";
+import { canManuallyRetryJob, isWaitingForDecider, stageRetryStages } from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 import {
@@ -95,7 +117,14 @@ export interface JobSupervisorOptions {
    * vector was written and a document whose chunks were replaced all reach the topic tree.
    */
   topicHooks?: TopicChangeHooks;
+  /** Relations v2 typed configuration (link pool, typing, cap); the defaults when absent. */
+  relationsConfig?: RelationsConfig;
+  /** The daily cap of background remote relation calls; the settings counter when absent. */
+  relationCallBudget?: RelationCallBudget;
 }
+
+/** How often an idle heavy loop looks for relation maintenance (decider waits, the daily sweep). */
+const relationMaintenanceIntervalMs = 30_000;
 
 /** Deterministic: the document has no text, so a retry can only fail again. */
 const emptyDocumentError = "errors.conversion.emptyResult";
@@ -116,10 +145,11 @@ const supportedJobTypes = new Set<string>([
 const projectionJobType = "obsidian-wiki";
 
 /**
- * Runs persisted jobs in two lanes: one heavy loop (ingestion) and the light lane's `compute` and
- * `model` workers, which claim disjoint light job types. The vault projection is a light `compute`
- * job, delivered page by page, so placements interleave with it. Each loop runs one job at a time
- * and never waits for another loop.
+ * Runs persisted jobs in two lanes: one heavy loop (ingestion) and the light lane's `compute`,
+ * `model` and `relations` workers, which claim disjoint light job types. The vault projection is a
+ * light `compute` job, delivered page by page, so placements interleave with it. The link jobs of
+ * relations v2 run on the `relations` worker, with a pool of their own (F3 D24). Each loop runs one
+ * job at a time and never waits for another loop.
  */
 export class JobSupervisor {
   private readonly workers = new WorkerSupervisor();
@@ -132,13 +162,28 @@ export class JobSupervisor {
   private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
   private readonly listeners = new Set<() => void>();
   private readonly workerId = `${hostname()}:${process.pid}`;
+  private readonly relationsConfig: RelationsConfig;
+  /** The link jobs of relations v2 (F3 D24); present with a knowledge service. */
+  private readonly linker: RelationLinker | null;
+  private readonly relationsChanged: RelationsChangedEmitter;
+  private lastRelationMaintenance = Number.NEGATIVE_INFINITY;
+  private retypeSweepDay: string | null = null;
 
   public constructor(private readonly options: JobSupervisorOptions) {
     const wiki = options.obsidianSyncService?.wiki;
     if (wiki && options.lightJobs?.[projectionJobType])
       throw new Error(`job_lane_conflict:${projectionJobType}`);
+    this.relationsConfig = options.relationsConfig ?? defaultRelationsConfig;
+    this.relationsChanged = new RelationsChangedEmitter({
+      onListenerError: (error) => this.options.logger?.warn(normalizeWorkerError(error))
+    });
+    this.linker = options.knowledgeService ? this.createLinker(options.knowledgeService) : null;
+    const relationJobs = this.linker?.jobs() ?? {};
+    for (const type of Object.keys(relationJobs))
+      if (options.lightJobs?.[type]) throw new Error(`job_lane_conflict:${type}`);
     this.lightJobs = {
       ...options.lightJobs,
+      ...relationJobs,
       ...(wiki
         ? {
             [projectionJobType]: {
@@ -154,18 +199,84 @@ export class JobSupervisor {
     // Only the heavy loop polls the idle release, as often as before the lanes existed.
     this.heavyLoop = this.createLoop(
       async () => (await this.runOnce()) !== null,
-      () => this.releaseIdleRuntime()
+      () => this.idle()
+    );
+    // The `relations` worker has a pool: each loop claims only while its slot is in the pool of
+    // the current runtime (1 in drain mode, so link jobs run first in, first out).
+    const relationSlots = Math.max(
+      this.relationsConfig.link.poolSize,
+      this.relationsConfig.link.drainPoolSize
     );
     this.lightLoops = lightWorkers
       .filter((worker) => this.lightTypes[worker].length > 0)
-      .map((worker) => this.createLoop(async () => (await this.runLightOnce(worker)) !== null));
+      .flatMap((worker) =>
+        worker === "relations"
+          ? Array.from({ length: relationSlots }, (_, slot) =>
+              this.createLoop(
+                async () =>
+                  slot < this.relationsPoolSize() &&
+                  (await this.runLightOnce(worker, slot)) !== null
+              )
+            )
+          : [this.createLoop(async () => (await this.runLightOnce(worker)) !== null)]
+      );
+  }
+
+  /** The link jobs and their steps, which the knowledge service provides (T52). */
+  private createLinker(knowledge: KnowledgeService): RelationLinker {
+    return new RelationLinker({
+      getPool: () => this.requirePool(),
+      steps: {
+        typeRelationPairs: (pairs, options, signal) =>
+          knowledge.typeRelationPairs(pairs, options, signal),
+        discoverSourceRelations: (input, signal) => knowledge.discoverSourceRelations(input, signal)
+      },
+      registry: new InFlightRegistry(),
+      budget:
+        this.options.relationCallBudget ??
+        createRelationCallBudget({
+          db: () => this.requirePool(),
+          cap: () => this.relationsConfig.ai.maxBackgroundCallsPerDay
+        }),
+      config: this.relationsConfig,
+      relationsChanged: (noteIds) => this.relationsChanged.changed(noteIds),
+      runsSettled: async (runs) => {
+        const hierarchy = createHierarchicalIngestionRepository(this.requirePool());
+        for (const batchId of new Set(runs.flatMap((run) => (run.batchId ? [run.batchId] : []))))
+          await hierarchy.refreshBatch(batchId);
+        this.notify();
+      },
+      ...(this.options.logger ? { logger: this.options.logger } : {})
+    });
+  }
+
+  /** The link jobs that run at once: the configured pool, or the drain pool (golden, re-match). */
+  private relationsPoolSize(): number {
+    return relationLinkRuntime().drain
+      ? this.relationsConfig.link.drainPoolSize
+      : this.relationsConfig.link.poolSize;
+  }
+
+  /** The `relationsChanged` push (F3 3.11 step 4): notes whose relations a link job changed. */
+  public subscribeRelationsChanged(listener: (event: RelationsChangedEvent) => void): () => void {
+    return this.relationsChanged.subscribe(listener);
   }
 
   public async start(): Promise<void> {
     if (this.running) return;
     const pool = this.requirePool();
     await createJobRepository(pool).recoverInterrupted();
-    await createIngestionRunRepository(pool).recoverInterrupted();
+    const runs = createIngestionRunRepository(pool);
+    await runs.recoverInterrupted();
+    // A run parked for its link job survives a restart: its root's link job is queued again (a
+    // queued one absorbs the request), so no run is left waiting for a job that is gone.
+    if (this.linker)
+      try {
+        for (const sourceItemId of await runs.listLinkingSourceItems())
+          await enqueueRelationLink(pool, { rootId: await linkRootOf(pool, sourceItemId) });
+      } catch (error) {
+        this.options.logger?.warn(normalizeWorkerError(error));
+      }
     this.running = true;
     for (const loop of this.loops()) loop.start();
   }
@@ -179,6 +290,7 @@ export class JobSupervisor {
     await Promise.all(stopped);
     await Promise.allSettled(this.pendingProgressUpdates);
     this.controllers.clear();
+    this.relationsChanged.flush();
   }
 
   /** One heavy pass: at most one heavy job. */
@@ -244,12 +356,10 @@ export class JobSupervisor {
         job.id,
         failedJob(job, error, wasCanceled, shouldRetry)
       );
+      // A failed run holds back no sibling: each source decides and links by itself (F3 D24).
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
         await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
-      // A run that failed for good may have been the one the rest of its batch was waiting for.
-      if (batchId && job.type === "ingestion" && !wasCanceled && !shouldRetry)
-        await this.releaseParkedBatch(batchId);
       if (!shouldRetry) await this.reembeddingEnded(job);
       this.notify();
       return updated;
@@ -260,9 +370,10 @@ export class JobSupervisor {
 
   /**
    * One pass of a light worker: at most one light job of its types, never a heavy one. A held
-   * type is skipped while held: its jobs stay queued (the topic barrier, D23).
+   * type is skipped while held: its jobs stay queued (the topic barrier, D23). `slot` names the
+   * loop of a pooled worker (`relations`).
    */
-  public async runLightOnce(worker: LightWorker): Promise<JobRecord | null> {
+  public async runLightOnce(worker: LightWorker, slot = 0): Promise<JobRecord | null> {
     // The vault projection's admission runs where its pages run: a pass starts when the canonical
     // data, the topic tree or the binding changed since the last one.
     if (worker === "compute" && this.lightTypes.compute.includes(projectionJobType))
@@ -274,7 +385,11 @@ export class JobSupervisor {
     const types = this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.());
     if (types.length === 0) return null;
     const repository = createJobRepository(this.requirePool());
-    const job = await repository.claimNext(`${this.workerId}:light-${worker}`, types, "light");
+    const job = await repository.claimNext(
+      `${this.workerId}:light-${worker}${slot > 0 ? `-${slot}` : ""}`,
+      types,
+      "light"
+    );
     if (!job) return null;
     this.notify();
     const executor = this.lightJobs[job.type]!;
@@ -312,27 +427,17 @@ export class JobSupervisor {
         job.id,
         failedJob(job, error, wasCanceled, shouldRetry)
       );
+      // A job that ended for good settles the work it owned (the runs a link job completes).
+      if (!shouldRetry)
+        try {
+          await executor.ended?.(job, error, wasCanceled);
+        } catch (settleError) {
+          this.options.logger?.warn(normalizeWorkerError(settleError));
+        }
       this.notify();
       return updated;
     } finally {
       this.controllers.delete(job.id);
-    }
-  }
-
-  /**
-   * Collective stages (note and source matching) run in the last job that reaches them, and every
-   * earlier run parks its own and finishes. When that last job fails instead, nothing would ever
-   * run them: the job of one parked run is queued again, and its checkpoints make it do only the
-   * matching, now that the failed run no longer holds the batch. A cancellation does not release:
-   * it is a stop, and parked work resumes with the manual retry.
-   */
-  private async releaseParkedBatch(batchId: string): Promise<void> {
-    try {
-      const pool = this.requirePool();
-      const parked = await createIngestionRunRepository(pool).findReleasableBatchRun(batchId);
-      if (parked && (await createJobRepository(pool).retry(parked.jobId))) this.wakeLoops("heavy");
-    } catch (error) {
-      this.options.logger?.warn(normalizeWorkerError(error));
     }
   }
 
@@ -387,9 +492,39 @@ export class JobSupervisor {
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)
       : null;
     if (!canManuallyRetryJob(current, ingestionRun)) return null;
+    // A finished run whose matching waited for a ranker re-runs it (the stage-level retry, D25).
+    const reopen =
+      ingestionRun && isWaitingForDecider(ingestionRun.stagesCheckpoint.atomicNoteMatching)
+        ? stageRetryStages(ingestionRun, "atomicNoteMatching")
+        : null;
+    if (ingestionRun && reopen)
+      await createIngestionRunRepository(pool).reopenStages(ingestionRun.id, reopen);
     const job = await repository.retry(jobId);
     if (job) this.wakeLoops(job.lane);
     if (job) this.notify();
+    return job;
+  }
+
+  /**
+   * The stage-level retry (F3 D25): re-runs one skipped or failed stage of a finished run, and the
+   * stages skipped with it (both matching stages after a wait for a validated ranker, C7), by
+   * queueing the run's ingestion job again: its other stages keep their checkpoints. Null when the
+   * stage cannot be retried that way or the run's job is still queued or running.
+   */
+  public async retryStage(runId: string, stage: string): Promise<JobRecord | null> {
+    const pool = this.requirePool();
+    const runs = createIngestionRunRepository(pool);
+    const jobs = createJobRepository(pool);
+    const run = await runs.findById(runId);
+    if (!run?.jobId) return null;
+    const stages = stageRetryStages(run, stage);
+    if (!stages) return null;
+    const current = await jobs.findById(run.jobId);
+    if (!current || current.status === "queued" || current.status === "running") return null;
+    if (!(await runs.reopenStages(run.id, stages))) return null;
+    const job = await jobs.retry(run.jobId);
+    if (job) this.wakeLoops("heavy");
+    this.notify();
     return job;
   }
 
@@ -473,6 +608,42 @@ export class JobSupervisor {
     const loops =
       lane === "heavy" ? [this.heavyLoop] : lane === "light" ? this.lightLoops : this.loops();
     for (const loop of loops) loop.wake();
+  }
+
+  /** What an idle heavy loop does: relation maintenance, then the idle runtime release. */
+  private async idle(): Promise<void> {
+    try {
+      await this.relationMaintenance();
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
+    }
+    await this.releaseIdleRuntime();
+  }
+
+  /**
+   * Relation work no job asks for, at most every 30 s: runs whose matching was skipped to wait for
+   * a validated ranker (C7) re-run through the stage-level retry once a decider is ready, and the
+   * day's untyped re-typing sweep is queued once (D20). Golden and re-match runs (drain mode)
+   * queue no sweep: their work is the runs they drain.
+   */
+  private async relationMaintenance(): Promise<void> {
+    const knowledge = this.options.knowledgeService;
+    if (!this.linker || typeof knowledge?.noteDeciderAvailable !== "function") return;
+    const now = Date.now();
+    if (now - this.lastRelationMaintenance < relationMaintenanceIntervalMs) return;
+    this.lastRelationMaintenance = now;
+    const pool = this.requirePool();
+    const waiting = await createIngestionRunRepository(pool).listSkippedMatching(
+      waitingForDeciderSkipReason
+    );
+    if (waiting.length > 0 && (await knowledge.noteDeciderAvailable()))
+      for (const run of waiting) await this.retryStage(run.id, "atomicNoteMatching");
+    const day = localDay(new Date(now));
+    if (!relationLinkRuntime().drain && this.retypeSweepDay !== day) {
+      this.retypeSweepDay = day;
+      if ((await hasUntypedRelations(pool)) && (await enqueueRelationRetypeSweep(pool)))
+        this.wakeLoops("light");
+    }
   }
 
   /** Local models are released only when no loop of either lane runs or has just run a job. */
@@ -890,210 +1061,83 @@ export class JobSupervisor {
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.89);
     const batchId = run.batchId ?? optionalString(job.payload.batchId);
-    // The collective stages below run for the runs of the batch that are still live: a run that
-    // failed or was canceled for good neither holds them back nor takes part in them.
-    const noteMatchingRuns = batchId
-      ? (await runs.listBatchParticipants(batchId)).filter((item) =>
-          participatesInAtomicNoteMatching(item.effectiveStages)
-        )
-      : shouldRun("atomicNoteMatching")
-        ? [run]
-        : [];
-    const pendingNoteMatching = noteMatchingRuns.filter(
-      (item) =>
-        item.sourceItemId &&
-        (item.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined)?.status !== "completed"
-    );
-    if (pendingNoteMatching.length > 0) {
-      const waiting = batchId
-        ? (await runs.countIncompleteBatchStage(batchId, "atomicNotes")) > 0
-        : false;
-      // Waiting or restarting keeps the per-note checkpoint of an earlier attempt.
-      const matchingCheckpoint = (item: typeof run) =>
-        atomicNoteMatchingCheckpointMetadata(item.stagesCheckpoint.atomicNoteMatching);
-      if (waiting) {
-        if (shouldRun("atomicNoteMatching"))
-          await runs.waitForBatchStage(
-            ingestionRunId,
-            "atomicNoteMatching",
-            matchingCheckpoint(run)
-          );
-      } else {
-        const failures = await runIndividualStageBatch({
-          runs: pendingNoteMatching,
-          signal,
-          wait: async (item) => {
-            await runs.waitForBatchStage(item.id, "atomicNoteMatching", matchingCheckpoint(item));
-            await runs.update(item.id, { currentStage: "atomicNoteMatching" });
-            this.notify();
-          },
-          start: async (item) => {
-            await runs.updateStageProgress(
-              item.id,
-              "atomicNoteMatching",
-              0,
-              matchingCheckpoint(item)
-            );
-            this.notify();
-          },
-          process: async (item) => {
-            const itemSourceId = item.sourceItemId!;
-            const itemNoteIds = (
-              await createAtomicNoteRepository(pool).listBySourceItem(itemSourceId)
+    // Note matching decides this run's own notes as soon as they exist: no batch barrier, so a
+    // failing sibling never delays it (F3 D24). An interactive import decides and links at P1.
+    const priority = isInteractiveRun(run) || job.payload.interactive === true ? "P1" : "P2";
+    const noteMatching = run.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined;
+    let waitingForDecider = isWaitingForDecider(noteMatching);
+    if (shouldRun("atomicNoteMatching") && !isSettledStage(noteMatching)) {
+      await runs.beginStage(ingestionRunId, "atomicNoteMatching");
+      this.notify();
+      const matchNoteIds = (await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId))
+        .filter((note) => note.status !== "rejected")
+        .map((note) => note.id);
+      const matchContext = { ingestionRunId, sourceItemId, documentId };
+      const matched: Record<string, unknown> =
+        this.options.knowledgeService && matchNoteIds.length > 0
+          ? await this.runInlineStageJob(
+              "atomic-note-matching",
+              { ...matchContext, noteIds: matchNoteIds },
+              (stageJobId) =>
+                matchAtomicNotesFromCheckpoint({
+                  noteIds: matchNoteIds,
+                  checkpoint: readAtomicNoteMatchingCheckpoint(noteMatching),
+                  save: async (progress, metadata) => {
+                    await createJobRepository(pool).reportProgress(stageJobId, progress);
+                    await runs.updateStageProgress(
+                      ingestionRunId,
+                      "atomicNoteMatching",
+                      progress,
+                      metadata
+                    );
+                    this.notify();
+                  },
+                  // A progress tick inside a note never rewrites the stage checkpoint.
+                  reportProgress: async (progress) => {
+                    await createJobRepository(pool).reportProgress(stageJobId, progress);
+                    this.notify();
+                  },
+                  // Decided pairs stay in the checkpoint until the link job persists them (D21).
+                  match: (noteIds, onProgress, onNoteCompleted, onNoteDecided) =>
+                    this.options.knowledgeService!.matchAtomicNotes(
+                      noteIds,
+                      signal,
+                      onProgress,
+                      {
+                        ...matchContext,
+                        jobId: stageJobId,
+                        stage: "atomic_note_matching",
+                        priority
+                      },
+                      { onNoteCompleted, onNoteDecided }
+                    )
+                }),
+              controller
             )
-              .filter((note) => note.status !== "rejected")
-              .map((note) => note.id);
-            const itemDocumentId =
-              item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
-            const itemContext = {
-              ingestionRunId: item.id,
-              sourceItemId: itemSourceId,
-              ...(itemDocumentId ? { documentId: itemDocumentId } : {})
-            };
-            return this.options.knowledgeService && itemNoteIds.length > 0
-              ? this.runInlineStageJob(
-                  "atomic-note-matching",
-                  { ...itemContext, noteIds: itemNoteIds },
-                  (stageJobId) =>
-                    matchAtomicNotesFromCheckpoint({
-                      noteIds: itemNoteIds,
-                      checkpoint: readAtomicNoteMatchingCheckpoint(
-                        item.stagesCheckpoint.atomicNoteMatching
-                      ),
-                      save: async (progress, metadata) => {
-                        await createJobRepository(pool).reportProgress(stageJobId, progress);
-                        await runs.updateStageProgress(
-                          item.id,
-                          "atomicNoteMatching",
-                          progress,
-                          metadata
-                        );
-                        this.notify();
-                      },
-                      // A progress tick inside a note never rewrites the stage checkpoint.
-                      reportProgress: async (progress) => {
-                        await createJobRepository(pool).reportProgress(stageJobId, progress);
-                        this.notify();
-                      },
-                      match: (noteIds, onProgress, onNoteCompleted) =>
-                        this.options.knowledgeService!.matchAtomicNotes(
-                          noteIds,
-                          signal,
-                          onProgress,
-                          { ...itemContext, jobId: stageJobId, stage: "atomic_note_matching" },
-                          { onNoteCompleted }
-                        )
-                    }),
-                  controller
-                )
-              : { persistedCount: 0, completed: 0, total: 0 };
-          },
-          complete: async (item, result) => {
-            await runs.completeStage(item.id, "atomicNoteMatching", result);
-            this.notify();
-          },
-          fail: async (item, error) => {
-            await runs.failStage(
-              item.id,
-              "atomicNoteMatching",
-              normalizeWorkerError(error),
-              signal.aborted
-            );
-            this.notify();
-          }
-        });
-        if (failures.has(ingestionRunId)) throw failures.get(ingestionRunId);
-      }
+          : { persistedCount: 0, completed: 0, total: 0, decided: [] };
+      if (matched.skipped === waitingForDeciderSkipReason) {
+        // Mode `ranker` without a validated ranker (C7): no call was made; the matching stages
+        // are skipped, the run completes, and a ranker validation re-runs them (D25).
+        await runs.skipStage(ingestionRunId, "atomicNoteMatching", waitingForDeciderSkipReason);
+        waitingForDecider = true;
+      } else await runs.completeStage(ingestionRunId, "atomicNoteMatching", matched as JsonObject);
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.95);
-    // A collective stage runs after every selected summary/embedding and optional note match.
-    // The final participant may be a catalog job, so inspect the batch rather than only this run.
-    const sourceMatchingRuns = batchId
-      ? (await runs.listBatchParticipants(batchId)).filter((item) =>
-          item.effectiveStages.includes("sourceMatching")
-        )
-      : effectiveStages.has("sourceMatching")
-        ? [run]
-        : [];
-    const pendingSourceMatching = sourceMatchingRuns.filter(
-      (item) =>
-        (item.stagesCheckpoint.sourceMatching as JsonObject | undefined)?.status !== "completed"
-    );
-    if (pendingSourceMatching.length > 0) {
-      const waiting = batchId
-        ? (
-            await Promise.all(
-              ["summarization", "embedding", "atomicNotes", "atomicNoteMatching"].map((stage) =>
-                runs.countIncompleteBatchStage(batchId, stage)
-              )
-            )
-          ).some((count) => count > 0)
-        : false;
-      if (waiting) {
-        if (effectiveStages.has("sourceMatching"))
-          await runs.waitForBatchStage(ingestionRunId, "sourceMatching");
-      } else if (this.options.knowledgeService) {
-        const failures = await runIndividualStageBatch({
-          runs: pendingSourceMatching.filter((item) => item.sourceItemId !== null),
-          signal,
-          wait: async (item) => {
-            await runs.waitForBatchStage(item.id, "sourceMatching");
-            await runs.update(item.id, { currentStage: "sourceMatching" });
-            this.notify();
-          },
-          start: async (item) => {
-            await runs.updateStageProgress(item.id, "sourceMatching", 0, {});
-            this.notify();
-          },
-          process: (item) => {
-            const itemSourceId = item.sourceItemId!;
-            const itemDocumentId =
-              item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
-            const itemContext = {
-              ingestionRunId: item.id,
-              sourceItemId: itemSourceId,
-              ...(itemDocumentId ? { documentId: itemDocumentId } : {})
-            };
-            return this.runInlineStageJob(
-              "source-matching",
-              itemContext,
-              (stageJobId) =>
-                this.options.knowledgeService!.matchSourceRelations(
-                  [itemSourceId],
-                  batchId ?? item.id,
-                  signal,
-                  async (progress, counts) => {
-                    await this.reportInlineProgress(stageJobId, progress);
-                    await runs.updateStageProgress(item.id, "sourceMatching", progress, counts);
-                    this.notify();
-                  },
-                  { ...itemContext, jobId: stageJobId, stage: "sourceMatching" },
-                  job.payload.regenerateSourceRelations === true ||
-                    item.previousArtifactPolicy === "regenerate_selected"
-                ),
-              controller
-            );
-          },
-          complete: async (item, result) => {
-            await runs.completeStage(item.id, "sourceMatching", result);
-            this.notify();
-          },
-          fail: async (item, error) => {
-            await runs.failStage(
-              item.id,
-              "sourceMatching",
-              normalizeWorkerError(error),
-              signal.aborted
-            );
-            this.notify();
-          }
-        });
-        if (failures.has(ingestionRunId)) {
-          await runs.update(ingestionRunId, { currentStage: "sourceMatching" });
-          throw failures.get(ingestionRunId);
-        }
+    const sourceMatching = run.stagesCheckpoint.sourceMatching as JsonObject | undefined;
+    let linkRoot: string | null = null;
+    if (shouldRun("sourceMatching") && !isSettledStage(sourceMatching)) {
+      if (waitingForDecider) {
+        await runs.skipStage(ingestionRunId, "sourceMatching", waitingForDeciderSkipReason);
+      } else if (!this.linker) {
+        await runs.completeStage(ingestionRunId, "sourceMatching", { configured: false });
+      } else {
+        // The link job of the source's root types, persists and discovers (3.11); the run parks
+        // its source stage for it once this job's last stage has run, below.
+        linkRoot = await linkRootOf(pool, sourceItemId);
       }
+      this.notify();
     }
     const projectionCheckpoint = run.stagesCheckpoint.obsidianProjection as JsonObject | undefined;
     if (shouldRun("obsidianProjection") && projectionCheckpoint?.status !== "completed") {
@@ -1110,9 +1154,24 @@ export class JobSupervisor {
       this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
-    await runs.complete(ingestionRunId);
+    if (linkRoot) {
+      // Parked last, so the link job never races this job's own writes: the run stays running and
+      // completes when its link job does (D24).
+      await runs.parkForLinking(ingestionRunId, { rootId: linkRoot });
+      await enqueueRelationLink(pool, {
+        rootId: linkRoot,
+        batchId: batchId ?? null,
+        interactive: priority === "P1"
+      });
+      this.wakeLoops("light");
+    } else await runs.complete(ingestionRunId);
     this.notify();
-    return { ingestionRunId, documentId, sourceItemId };
+    return {
+      ingestionRunId,
+      documentId,
+      sourceItemId,
+      ...(linkRoot ? { linking: linkRoot } : {})
+    };
   }
 
   private async createContentChunks(job: JobRecord, markdown: string, signal: AbortSignal) {
@@ -1352,6 +1411,11 @@ function meanVector(vectors: number[][]): number[] | null {
 
 export function participatesInAtomicNoteMatching(effectiveStages: readonly unknown[]): boolean {
   return effectiveStages.includes("atomicNoteMatching");
+}
+
+/** A stage checkpoint that needs no more work: completed, or skipped (not requested, or waiting). */
+function isSettledStage(checkpoint: JsonObject | undefined): boolean {
+  return checkpoint?.status === "completed" || checkpoint?.status === "skipped";
 }
 
 function normalizeWorkerError(error: unknown): string {

@@ -32,7 +32,9 @@ describe("relations config", () => {
     });
     expect(relationsConfig.maxShownPerNote).toBe(10);
     expect(relationsConfig.hysteresisLogOdds).toBe(0.5);
-    expect(relationsConfig.typing).toEqual({ pairsPerCall: 24, maxAttempts: 2 });
+    expect(relationsConfig.typing).toEqual({ pairsPerCall: 24, maxAttempts: 2, coalesceBelow: 6 });
+    expect(relationsConfig.link).toEqual({ poolSize: 2, drainPoolSize: 1 });
+    expect(relationsConfig.ai).toEqual({ maxBackgroundCallsPerDay: 500 });
     expect(relationsConfig.escalation).toEqual({ enabled: false });
     // Parsing nothing gives the same defaults, with no calibration (every decider uncalibrated).
     expect(RelationsConfigSchema.parse({})).toEqual({ ...relationsConfig, calibrations: [] });

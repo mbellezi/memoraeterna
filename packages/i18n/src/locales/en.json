@@ -473,6 +473,11 @@
       "topicLabelEmbed": "Topic labels",
       "topicGate": "Topic placement decision"
     },
+    "relations": {
+      "link": "Linking relations",
+      "retype": "Typing relations",
+      "promote": "Source relations from note links"
+    },
     "progress": {
       "processingSource": "Processing {title}",
       "percentComplete": "{percent}% complete",

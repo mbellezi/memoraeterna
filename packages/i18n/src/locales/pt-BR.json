@@ -477,6 +477,11 @@
       "topicLabelEmbed": "Rótulos de tópicos",
       "topicGate": "Decisão de posicionamento em tópicos"
     },
+    "relations": {
+      "link": "Vinculando relações",
+      "retype": "Tipificando relações",
+      "promote": "Relações entre fontes a partir das notas"
+    },
     "progress": {
       "processingSource": "Processando {title}",
       "percentComplete": "{percent}% concluido",

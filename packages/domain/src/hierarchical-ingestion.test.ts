@@ -203,7 +203,7 @@ describe("the retired organizeKnowledge stage (F2 D14)", () => {
 });
 
 describe("hierarchical ingestion", () => {
-  it("includes source matching in full knowledge and resolves it without generating notes", () => {
+  it("includes source matching in full knowledge and resolves it after note matching (F3 D24)", () => {
     const input = {
       preset: "custom" as const,
       requestedStages: ["sourceMatching" as const],
@@ -215,7 +215,9 @@ describe("hierarchical ingestion", () => {
     const plan = resolveProcessingPlan(input);
     expect(plan.effectiveStages).toContain("summarization");
     expect(plan.effectiveStages).toContain("embedding");
-    expect(plan.effectiveStages).not.toContain("atomicNotes");
+    // A source's relations are built from its decided note pairs: the notes and their matching run first.
+    expect(plan.effectiveStages).toContain("atomicNotes");
+    expect(plan.effectiveStages).toContain("atomicNoteMatching");
     expect(plan.effectiveStages).not.toContain("knowledgeGraph");
     expect(
       resolveProcessingPlan({ ...input, preset: "full_knowledge", requestedStages: [] })

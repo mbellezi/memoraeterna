@@ -4,11 +4,12 @@ import { KnowledgeService } from "./knowledge-service.js";
 import { atomicNoteDecisionContentHash } from "./knowledge-processing.js";
 import type { AiService } from "./ai-service.js";
 import type { PgPool } from "@app/db";
+import type { DecidedNote } from "./relations/relation-matcher.js";
 
 // KnowledgeService.matchAtomicNotes delegates to the relations v2 matcher (F3 T51); the matcher's
 // own behaviour is tested in `relations/relation-matcher.test.ts`. These tests cover what the
-// service adds: the notes' vectors, the interim hand-off that persists accepted pairs, and the
-// checkpoints, with the generative decider of a profile that has no ranker.
+// service adds: the notes' vectors, the hand-off of accepted pairs (persisted later by the link
+// job, F3 D21, T52) and the checkpoints, with the generative decider of a profile with no ranker.
 const mocks = vi.hoisted(() => ({
   notes: {
     findById: vi.fn(),
@@ -129,46 +130,52 @@ beforeEach(() => {
 });
 
 describe("atomic note matching through the relations v2 matcher", () => {
-  it("persists each decided note's accepted pairs before its checkpoint, in one match run", async () => {
+  it("hands each decided note's accepted pairs on before its checkpoint, persisting none", async () => {
     const completed: Array<[string, number]> = [];
+    const handedOn: DecidedNote[] = [];
+    const order: string[] = [];
+    mocks.decisions.record.mockImplementation(async () => void order.push("record"));
     const matched = await service().matchAtomicNotes(
       ["source"],
       undefined,
       undefined,
       { sourceItemId: "source-source" },
-      { onNoteCompleted: (noteId, persisted) => void completed.push([noteId, persisted]) }
+      {
+        onNoteDecided: (decided) => {
+          order.push("handOff");
+          handedOn.push(decided);
+        },
+        onNoteCompleted: (noteId, persisted) => {
+          order.push("checkpoint");
+          completed.push([noteId, persisted]);
+        }
+      }
     );
     // The decider's verdict alone decides: 0.70 and 0.95 pass, 0.10 does not (no blend).
     expect(matched).toMatchObject({
-      persistedCount: 2,
+      persistedCount: 0,
       decided: 1,
       accepted: 2,
       decider: "generative"
     });
+    expect(handedOn).toHaveLength(1);
     expect(
-      mocks.relations.upsertDecided.mock.calls.map(([input]) => [
-        input.objectAtomicNoteId,
-        input.relationType,
-        input.band,
-        input.rerankScore
+      handedOn[0]!.pairs.map((pair) => [
+        pair.candidateId,
+        pair.relationType,
+        pair.band,
+        pair.score,
+        pair.subjectId
       ])
     ).toEqual([
-      ["c", "extends", "suggest", 0.95],
-      ["b", "supports", "suggest", 0.7]
+      ["c", "extends", "suggest", 0.95, "source"],
+      ["b", "supports", "suggest", 0.7, "source"]
     ]);
-    expect(mocks.relations.upsertDecided.mock.calls[0]![0]).toMatchObject({
-      subjectAtomicNoteId: "source",
-      runId: "match-run",
-      explanation: "knowledge.relations.explanations.reranked"
-    });
-    expect(mocks.runs.start).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "match", rootId: "source-source" })
-    );
-    expect(mocks.runs.finish).toHaveBeenCalledWith("match-run", {
-      outcome: "succeeded",
-      counts: { persisted: 2 }
-    });
-    // Raw verdicts are recorded before the relations, and the checkpoint follows them.
+    expect(handedOn[0]!.decider).toMatchObject({ kind: "generative", profileId: "profile" });
+    // No relation row and no match run before the link job commits (D21).
+    expect(mocks.relations.upsertDecided).not.toHaveBeenCalled();
+    expect(mocks.runs.start).not.toHaveBeenCalled();
+    // Raw verdicts are recorded before the hand-off, and the checkpoint follows it.
     const records = mocks.decisions.record.mock.calls.map(([record]) => record);
     expect(records.map((r) => [r.targetAtomicNoteId, r.score, r.relationType])).toEqual([
       ["a", 0.1, "supports"],
@@ -180,10 +187,8 @@ describe("atomic note matching through the relations v2 matcher", () => {
       sourceContentHash: atomicNoteDecisionContentHash(note("source")),
       aiTaskRunId: "run-1"
     });
-    expect(mocks.decisions.record.mock.invocationCallOrder.at(-1)).toBeLessThan(
-      mocks.relations.upsertDecided.mock.invocationCallOrder[0]!
-    );
-    expect(completed).toEqual([["source", 2]]);
+    expect(order).toEqual(["record", "record", "record", "handOff", "checkpoint"]);
+    expect(completed).toEqual([["source", 0]]);
   });
 
   it("closes the run as failed and checkpoints nothing when the required decider fails", async () => {
@@ -354,11 +359,9 @@ describe("note embeddings in matching", () => {
 });
 
 describe("one decision per unordered pair with a generative decider", () => {
-  it("judges a pair of one batch once: the second note finds the relation the first one made", async () => {
+  it("judges a pair of one batch once: the second note reuses the first one's verdict", async () => {
     type Verdict = { score: number; relationType: string };
     const judged = new Map<string, Verdict>();
-    const related = new Set<string>();
-    const pairOf = (left: string, right: string) => [left, right].sort().join(">");
     // Each note finds the other one.
     const other = (id: string) => (id === "s1" ? "s2" : "s1");
     const candidateOf = ({ noteId }: { noteId: string }) => [
@@ -377,26 +380,43 @@ describe("one decision per unordered pair with a generative decider", () => {
         });
       }
     );
-    mocks.relations.upsertDecided.mockImplementation(
-      async (r: { subjectAtomicNoteId: string; objectAtomicNoteId: string }) => {
-        related.add(pairOf(r.subjectAtomicNoteId, r.objectAtomicNoteId));
-        return { change: "created" };
-      }
-    );
-    mocks.relations.pairStatuses.mockImplementation(
-      async (noteId: string, ids: string[]) =>
+    // The verdict judged from the other note answers this direction too (no relation exists yet:
+    // the link job persists the pair after both notes are decided).
+    mocks.decisions.findReverseVerdicts.mockImplementation(
+      async (input: { sourceAtomicNoteId: string; targets: Array<{ atomicNoteId: string }> }) =>
         new Map(
-          ids
-            .filter((id) => related.has(pairOf(noteId, id)))
-            .map((id) => [id, "pending_review"] as const)
+          input.targets.flatMap(({ atomicNoteId }) => {
+            const verdict = judged.get(`${atomicNoteId}>${input.sourceAtomicNoteId}`);
+            return verdict ? [[atomicNoteId, verdict] as const] : [];
+          })
         )
     );
     respond({ results: [result(1, 90, "supports")] });
-    const matched = await service().matchAtomicNotes(["s1", "s2"]);
+    const handedOn: DecidedNote[] = [];
+    const matched = await service().matchAtomicNotes(
+      ["s1", "s2"],
+      undefined,
+      undefined,
+      {},
+      {
+        onNoteDecided: (decided) => void handedOn.push(decided)
+      }
+    );
     expect(rerankCalls()).toHaveLength(1);
-    expect(matched.persistedCount).toBe(1);
+    expect(matched.persistedCount).toBe(0);
     expect([...judged.keys()]).toEqual(["s1>s2"]);
-    // The pair is already related when the second note is decided: it takes no part.
-    expect(mocks.relations.upsertDecided).toHaveBeenCalledOnce();
+    // Both notes hand the pair on; the reused verdict keeps its judged subject (s1), and the link
+    // job persists the pair once.
+    expect(
+      handedOn.map((decided) => [
+        decided.noteId,
+        decided.pairs[0]!.decisionSource,
+        decided.pairs[0]!.subjectId
+      ])
+    ).toEqual([
+      ["s1", "model", "s1"],
+      ["s2", "reverse_cache", "s1"]
+    ]);
+    expect(mocks.relations.upsertDecided).not.toHaveBeenCalled();
   });
 });

@@ -475,6 +475,11 @@
       "topicLabelEmbed": "Etichette degli argomenti",
       "topicGate": "Decisione di collocazione negli argomenti"
     },
+    "relations": {
+      "link": "Collegamento delle relazioni",
+      "retype": "Tipizzazione delle relazioni",
+      "promote": "Relazioni tra fonti dalle note"
+    },
     "progress": {
       "processingSource": "Elaborazione di {title}",
       "percentComplete": "{percent}% completato",

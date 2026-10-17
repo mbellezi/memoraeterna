@@ -1,7 +1,7 @@
 // The typed configuration of relations v2 (F3 D46; spec 4.4): retrieval, decide, calibrations and
 // bands. Every number note matching uses lives here, not in rules (RULES.md section 1). Values
-// marked (cal.) in docs/f3-decisions.md are start values: T52 adds the link job, the daily cap and
-// coalescing, T53 discovery, and T58 writes the frozen calibrations and bands (defaults only).
+// marked (cal.) in docs/f3-decisions.md are start values: T52 added the link job, the daily cap and
+// coalescing; T53 adds discovery, and T58 writes the frozen calibrations and bands (defaults only).
 import { z } from "zod";
 
 import {
@@ -28,6 +28,12 @@ export const relationsDeciderModeSettingKey = "relations.deciderMode";
 
 /** The skip reason of matching stages that wait for a validated ranker (mode `ranker`, C7). */
 export const waitingForDeciderSkipReason = "waiting_for_decider";
+
+/** The park reason of a run's `sourceMatching` stage while its link job runs (D24). */
+export const linkingParkReason = "linking";
+
+/** The daily counter of remote relation calls (D26): `{ day, calls, interactiveCalls }`. */
+export const relationsDailyCallsSettingKey = "relations.ai.dailyCalls";
 
 /** The decide contract of the ranker decider; part of its cache key and calibration identity. */
 export const relationDecideContract = "relation-decide-v1";
@@ -109,7 +115,32 @@ const TypingSchema = z
     /** Accepted pairs per `relations.type` call (D20). */
     pairsPerCall: int(1, 64).default(24),
     /** Typing attempts before a pair is persisted untyped. */
-    maxAttempts: int(1, 5).default(2)
+    maxAttempts: int(1, 5).default(2),
+    /**
+     * Small-source coalescing (D20, product only): a link job with fewer pairs than this to type
+     * also types the pending pairs of other due link jobs, up to `pairsPerCall` in one call.
+     */
+    coalesceBelow: int(0, 64).default(6)
+  })
+  .strict();
+
+const LinkSchema = z
+  .object({
+    /** Link jobs the `relations` worker runs at once (D24, cal.). */
+    poolSize: int(1, 8).default(2),
+    /** The pool of golden and re-match runs: first in, first out, so replays are deterministic. */
+    drainPoolSize: int(1, 8).default(1)
+  })
+  .strict();
+
+const RelationAiSchema = z
+  .object({
+    /**
+     * Background (P2, P3) remote typing and discovery calls per local day (D26, cal.); interactive
+     * (P1) link-job calls count toward it but are never refused. Golden and re-match runs are not
+     * counted (their token cap bounds them).
+     */
+    maxBackgroundCallsPerDay: int(0, 1_000_000).default(500)
   })
   .strict();
 
@@ -124,6 +155,8 @@ export const RelationsConfigSchema = z
     /** Reconcile keeps a relation applied until its score falls this far below apply (log-odds). */
     hysteresisLogOdds: z.number().min(0).max(10).default(0.5),
     typing: TypingSchema.prefault({}),
+    link: LinkSchema.prefault({}),
+    ai: RelationAiSchema.prefault({}),
     /** The uncertain-band escalation (T58e); off until the selection rule adopts it. */
     escalation: z
       .object({ enabled: z.boolean().default(false) })
