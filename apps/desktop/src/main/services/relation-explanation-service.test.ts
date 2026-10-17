@@ -5,7 +5,7 @@ import type { PgPool, RelationExplanationContext } from "@app/db";
 import { relationExplanationLimits } from "@app/domain";
 
 import { ipcChannels } from "../../shared/ipc.js";
-import { ActiveDeadline } from "./ai-execution-queue.js";
+import { ActiveDeadline } from "@app/ai";
 
 const repository = vi.hoisted(() => ({ readContext: vi.fn(), save: vi.fn() }));
 vi.mock("@app/db", async (importOriginal) => ({

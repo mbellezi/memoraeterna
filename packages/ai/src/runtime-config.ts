@@ -17,7 +17,10 @@ export const mlxRuntimeConfigSchema = z
     cacheLimitMb: z.number().int().min(0).max(65_536),
     /** Optional relaxed cap of all MLX allocations, in MiB. Unset leaves MLX's own default. */
     memoryLimitMb: z.number().int().min(256).max(1_048_576).optional(),
-    /** Deadline of one request from the moment it starts executing, not from its wait for a turn. */
+    /**
+     * Deadline of one request that states none, from the moment it starts executing, not from its
+     * wait for a turn. The adapters state their workload class's local deadline (F3 D31).
+     */
     requestTimeoutMs: z.number().int().min(100).max(3_600_000),
     /** Deadline of `health`, which also pays the process start. */
     healthTimeoutMs: z.number().int().min(100).max(600_000),
@@ -101,6 +104,151 @@ export function mlxHelperEnvironment(
     environment[mlxMemoryLimitEnvironmentVariable] = String(config.memoryLimitMb);
   }
   return environment;
+}
+
+/** `serial` or `product`: the lane mode of a DEV run (F3 D29); ignored in packaged builds. */
+export const aiLanesEnvironmentVariable = "MEMORA_AI_LANES";
+
+const laneMilliseconds = z.number().int().positive().max(3_600_000);
+
+/**
+ * Typed configuration of the AI lane scheduler (F3 D29-D31): lane limits and their adaptation to
+ * rate limits, the aging of background priorities, and the deadlines of local runtimes. Remote
+ * deadlines and retries live in `aiRuntimeConfigSchema` (remote-execution.ts).
+ */
+export const aiLaneRuntimeConfigSchema = z
+  .object({
+    /** `serial` runs every lane at one call (golden and re-match runs); `product` uses the limits. */
+    mode: z.enum(["product", "serial"]),
+    lanes: z
+      .object({
+        /** Concurrent calls of one API-key provider configuration, and its upper bound under AIMD. */
+        apiKeyMax: z.number().int().min(1).max(32),
+        /** Concurrent calls of one ChatGPT/Codex OAuth configuration. */
+        codexMax: z.number().int().min(1).max(32),
+        /** The lowest limit a rate limit can halve a remote lane to. */
+        minimum: z.number().int().min(1).max(32),
+        /** Consecutive successful responses that raise a remote lane's limit by one. */
+        increaseAfterSuccesses: z.number().int().min(1).max(10_000),
+        /** Factor a rate-limited lane's limit is multiplied by (rounded down, never below `minimum`). */
+        decreaseFactor: z.number().gt(0).lt(1),
+        /**
+         * Longest pause of a rate-limited lane. A longer stated reset (a plan limit of an hour) is
+         * not waited out by every entry: after this the next call asks again and fails visibly.
+         */
+        maxPauseMs: laneMilliseconds
+      })
+      .strict(),
+    aging: z
+      .object({
+        /** Waiting time after which a P3 entry competes as P2. */
+        p3ToP2Ms: laneMilliseconds,
+        /** Further waiting time after which a P2 entry (or an aged P3 entry) competes as P1. */
+        p2ToP1Ms: laneMilliseconds
+      })
+      .strict(),
+    localDeadlines: z
+      .object({
+        /** Total deadline of one local call per workload class, from its execution start. */
+        totalMs: z
+          .object({
+            embed: laneMilliseconds,
+            decide: laneMilliseconds,
+            "write-fast": laneMilliseconds,
+            "write-quality": laneMilliseconds,
+            answer: laneMilliseconds
+          })
+          .strict(),
+        /** Longest silence between tokens of a streamed local generation, once it started. */
+        tokenStallMs: laneMilliseconds,
+        /**
+         * How long a local call may take to settle after its deadline cancelled it. A GGUF call
+         * still running then is abandoned and its runtime is `wedged` until it is disposed.
+         */
+        graceMs: laneMilliseconds
+      })
+      .strict()
+  })
+  .strict();
+
+export type AiLaneRuntimeConfig = z.infer<typeof aiLaneRuntimeConfigSchema>;
+export type AiLocalDeadlines = AiLaneRuntimeConfig["localDeadlines"];
+export interface AiLaneRuntimeConfigInput {
+  mode?: AiLaneRuntimeConfig["mode"];
+  lanes?: Partial<AiLaneRuntimeConfig["lanes"]>;
+  aging?: Partial<AiLaneRuntimeConfig["aging"]>;
+  localDeadlines?: Partial<Omit<AiLocalDeadlines, "totalMs">> & {
+    totalMs?: Partial<AiLocalDeadlines["totalMs"]>;
+  };
+}
+
+/** Start values (cal.): T61 measures local p99s and sets min(cap, 3 x p99); B5 measures Codex. */
+export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
+  mode: "product",
+  lanes: {
+    apiKeyMax: 4,
+    codexMax: 2,
+    minimum: 1,
+    increaseAfterSuccesses: 20,
+    decreaseFactor: 0.5,
+    maxPauseMs: 60_000
+  },
+  aging: { p3ToP2Ms: 60_000, p2ToP1Ms: 120_000 },
+  localDeadlines: {
+    totalMs: {
+      embed: 30_000,
+      decide: 10_000,
+      "write-fast": 180_000,
+      "write-quality": 900_000,
+      answer: 300_000
+    },
+    tokenStallMs: 60_000,
+    graceMs: 2_000
+  }
+};
+
+/**
+ * Resolves the lane configuration. Precedence: explicit input, then `MEMORA_AI_LANES` in an
+ * unpackaged build, then serial lanes for a golden run (`MEMORA_GOLDEN_RUN`, F3 D5), then the
+ * defaults. An unknown value of the variable is ignored.
+ */
+export function resolveAiLaneRuntimeConfig(
+  input: AiLaneRuntimeConfigInput = {},
+  context: { environment?: NodeJS.ProcessEnv; packaged?: boolean } = {}
+): AiLaneRuntimeConfig {
+  const environment = context.environment ?? process.env;
+  const stated = context.packaged ? undefined : environment[aiLanesEnvironmentVariable]?.trim();
+  const fromEnvironment =
+    stated === "serial" || stated === "product"
+      ? stated
+      : !context.packaged && environment.MEMORA_GOLDEN_RUN?.trim()
+        ? "serial"
+        : undefined;
+  const { totalMs, ...localDeadlines } = input.localDeadlines ?? {};
+  return aiLaneRuntimeConfigSchema.parse({
+    mode: input.mode ?? fromEnvironment ?? defaultAiLaneRuntimeConfig.mode,
+    lanes: { ...defaultAiLaneRuntimeConfig.lanes, ...definedEntries(input.lanes) },
+    aging: { ...defaultAiLaneRuntimeConfig.aging, ...definedEntries(input.aging) },
+    localDeadlines: {
+      ...defaultAiLaneRuntimeConfig.localDeadlines,
+      ...definedEntries(localDeadlines),
+      totalMs: { ...defaultAiLaneRuntimeConfig.localDeadlines.totalMs, ...definedEntries(totalMs) }
+    }
+  });
+}
+
+/** The total deadline of a local call of a workload class. */
+export function localDeadlineMs(
+  deadlines: AiLocalDeadlines,
+  workloadClass: keyof AiLocalDeadlines["totalMs"]
+): number {
+  return deadlines.totalMs[workloadClass];
+}
+
+function definedEntries<T extends object>(value: T | undefined): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value ?? {}).filter(([, entry]) => entry !== undefined)
+  ) as Partial<T>;
 }
 
 function readLimit(value: string | undefined): number | undefined {

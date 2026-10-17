@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ActiveDeadline } from "./ai-execution-queue.js";
-import { AiService, aiTaskPriority } from "./ai-service.js";
+import { ActiveDeadline } from "@app/ai";
+import { AiService } from "./ai-service.js";
 
 const state = vi.hoisted(() => ({
   selection: {} as Record<string, unknown>,
@@ -23,7 +23,9 @@ function service(run: (input: string, signal?: AbortSignal) => Promise<unknown>)
     getPool: () => ({}) as never,
     workspaceRoot: "/tmp",
     resourcesPath: "/tmp",
-    isPackaged: false
+    isPackaged: false,
+    // One call at a time on the remote lane, so the order behind the call in flight shows.
+    lanes: { mode: "serial" }
   });
   const adapter = {
     describe: () => ({
@@ -76,19 +78,6 @@ afterEach(() => {
 });
 
 describe("AI call priority", () => {
-  it("serves what the user waits for first and everything else as background work", () => {
-    expect(aiTaskPriority({ embeddingInputType: "query" })).toBe("interactive");
-    expect(aiTaskPriority({ origin: "consultation" })).toBe("interactive");
-    expect(aiTaskPriority({ origin: "settings" })).toBe("interactive");
-    expect(aiTaskPriority({ embeddingInputType: "document", origin: "ingestion" })).toBe(
-      "background"
-    );
-    expect(aiTaskPriority({ origin: "organization" })).toBe("background");
-    expect(aiTaskPriority({})).toBe("background");
-    expect(aiTaskPriority({ origin: "job", priority: "interactive" })).toBe("interactive");
-    expect(aiTaskPriority({ origin: "consultation", priority: "background" })).toBe("background");
-  });
-
   it("runs an Ask question right after the call in flight, ahead of queued background work", async () => {
     const gate = Promise.withResolvers<void>();
     const started = Promise.withResolvers<void>();

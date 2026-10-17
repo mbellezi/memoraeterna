@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import type { PgPool } from "@app/db";
 import { ConsultationResultSchema } from "@app/domain";
 
-import { ActiveDeadline } from "./ai-execution-queue.js";
+import { ActiveDeadline } from "@app/ai";
 import { askTimeoutMs, ConsultationService } from "./consultation-service.js";
 import { consultationSnapshot } from "./consultation-fixture.js";
 

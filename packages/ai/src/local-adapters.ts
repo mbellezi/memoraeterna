@@ -8,10 +8,17 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
+import { LocalDeadlineError, runWithLocalDeadline } from "./local-deadline.js";
 import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
 import { MlxHelperHost } from "./mlx-helper-host.js";
 import { hasGeneration, localParameterCapabilities } from "./parameter-capabilities.js";
-import { resolveMlxRuntimeConfig, type MlxRuntimeConfigInput } from "./runtime-config.js";
+import { requestWorkloadClass } from "./remote-execution.js";
+import {
+  defaultAiLaneRuntimeConfig,
+  localDeadlineMs,
+  type AiLocalDeadlines,
+  type MlxRuntimeConfigInput
+} from "./runtime-config.js";
 
 /**
  * Tasks a generative local model runs by prompting. `reranking` is here as the decision route: a
@@ -46,6 +53,72 @@ export interface LocalAdapterOptions {
   quantization?: string;
   catalogId?: string;
   parameterCapabilities?: AiModelParameterCapabilities;
+  /** Local deadlines per workload class (F3 D31); the typed defaults when left out. */
+  localDeadlines?: AiLocalDeadlines;
+}
+
+/** The deadline of a local request: its stated class's, else its task type's class's. */
+export function localRequestDeadlineMs(
+  request: Pick<AiTaskRequest, "taskType" | "workloadClass">,
+  deadlines: AiLocalDeadlines = defaultAiLaneRuntimeConfig.localDeadlines
+): number {
+  return localDeadlineMs(deadlines, requestWorkloadClass(request));
+}
+
+/**
+ * A GGUF runtime's deadline guard. A call runs under its class deadline and cancels cooperatively;
+ * one that ignores the cancellation is abandoned after the grace period and wedges the runtime, which
+ * refuses calls until the abandoned one ended and the runtime was disposed (the next call reloads).
+ */
+export class LocalRuntimeGuard {
+  private wedged: Promise<void> | null = null;
+
+  public constructor(
+    private readonly deadlines: AiLocalDeadlines,
+    private readonly dispose: () => Promise<void>
+  ) {}
+
+  public get isWedged(): boolean {
+    return this.wedged !== null;
+  }
+
+  public run<T>(
+    request: Pick<AiTaskRequest, "taskType" | "workloadClass">,
+    signal: AbortSignal | undefined,
+    run: (signal: AbortSignal, touch: () => void) => Promise<T>,
+    options: { streamed?: boolean } = {}
+  ): Promise<T> {
+    const deadlineMs = localRequestDeadlineMs(request, this.deadlines);
+    if (this.wedged) {
+      return Promise.reject(
+        new LocalDeadlineError("The local model runtime is still stopping an abandoned call.", {
+          code: "wedged",
+          deadlineMs
+        })
+      );
+    }
+    return runWithLocalDeadline({
+      deadlineMs,
+      graceMs: this.deadlines.graceMs,
+      signal,
+      ...(options.streamed ? { stallMs: this.deadlines.tokenStallMs } : {}),
+      run,
+      wedged: (settled) => {
+        const recovery = settled
+          .then(
+            () => undefined,
+            () => undefined
+          )
+          .then(() => this.dispose())
+          .catch(() => undefined)
+          .finally(() => {
+            if (this.wedged === recovery) this.wedged = null;
+          });
+        this.wedged = recovery;
+        return recovery;
+      }
+    });
+  }
 }
 
 export interface LocalExecutionResult {
@@ -57,6 +130,7 @@ export interface LocalExecutionResult {
 
 export class NodeLlamaCppAdapter implements AiModelAdapter {
   private readonly runtime: NodeLlamaRuntime | null;
+  private readonly guard: LocalRuntimeGuard;
   private readonly execute: (input: {
     modelPath: string;
     prompt: string;
@@ -90,6 +164,15 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     this.runtime = execute || executeEmbedding ? null : new NodeLlamaRuntime(options.modelPath);
     this.execute = execute ?? ((input) => this.runtime!.generate(input));
     this.executeEmbedding = executeEmbedding ?? ((input) => this.runtime!.embed(input));
+    this.guard = new LocalRuntimeGuard(
+      options.localDeadlines ?? defaultAiLaneRuntimeConfig.localDeadlines,
+      () => this.dispose()
+    );
+  }
+
+  /** The runtime ignored a deadline and is wedged until the abandoned call ended (F3 D31). */
+  public get wedged(): boolean {
+    return this.guard.isWedged;
   }
 
   public describe(): AiModelDescriptor {
@@ -108,32 +191,29 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     await this.runtime?.ensureLoaded(signal);
   }
 
+  /**
+   * Runs under the class deadline. Cancellation stops the sequence (its context is disposed) and
+   * keeps the model loaded; only an abandoned call disposes the runtime.
+   */
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
-    const abort = () => {
-      void this.dispose();
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    try {
-      const result =
-        input.taskType === "embedding"
-          ? await this.executeEmbedding({
-              modelPath: this.options.modelPath,
-              text: promptFromInput(input.input),
-              parameters: input.parameters,
-              ...(signal ? { signal } : {})
-            })
-          : await this.execute({
-              modelPath: this.options.modelPath,
-              prompt: promptFromInput(input.input),
-              parameters: input.parameters,
-              ...(signal ? { signal } : {})
-            });
-      return taskResult(input, "local-gguf", this.options.modelId, result);
-    } finally {
-      signal?.removeEventListener("abort", abort);
-    }
+    const result = await this.guard.run(input, signal, (bounded) =>
+      input.taskType === "embedding"
+        ? this.executeEmbedding({
+            modelPath: this.options.modelPath,
+            text: promptFromInput(input.input),
+            parameters: input.parameters,
+            signal: bounded
+          })
+        : this.execute({
+            modelPath: this.options.modelPath,
+            prompt: promptFromInput(input.input),
+            parameters: input.parameters,
+            signal: bounded
+          })
+    );
+    return taskResult(input, "local-gguf", this.options.modelId, result);
   }
 
   public async runStreaming(
@@ -144,13 +224,23 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     const input = aiTaskRequestSchema.parse(request);
     if (input.taskType === "embedding") return this.run(input, signal);
     if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
-    const result = await this.execute({
-      modelPath: this.options.modelPath,
-      prompt: promptFromInput(input.input),
-      parameters: input.parameters,
-      ...(signal ? { signal } : {}),
-      onProgress
-    });
+    // Each streamed chunk restarts the token stall bound once the first one arrived.
+    const result = await this.guard.run(
+      input,
+      signal,
+      (bounded, touch) =>
+        this.execute({
+          modelPath: this.options.modelPath,
+          prompt: promptFromInput(input.input),
+          parameters: input.parameters,
+          signal: bounded,
+          onProgress: (event) => {
+            touch();
+            onProgress(event);
+          }
+        }),
+      { streamed: true }
+    );
     onProgress({ progress: 1 });
     return taskResult(input, "local-gguf", this.options.modelId, result);
   }
@@ -162,6 +252,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
 
 export interface MlxAdapterOptions extends LocalAdapterOptions {
   helperPath: string;
+  /** Replaces the class deadline of every request (tests). */
   timeoutMs?: number;
   /** Memory bounds and deadlines of the helper process this adapter owns. */
   runtimeConfig?: MlxRuntimeConfigInput;
@@ -211,9 +302,10 @@ export class MlxAdapter implements AiModelAdapter {
       modelPath: this.options.modelPath,
       prompt: promptFromInput(input.input),
       parameters: input.parameters,
+      // The class deadline from execution start (F3 D31); until the helper can cancel (T61), the
+      // host kills it at the deadline.
       timeoutMs:
-        this.options.timeoutMs ??
-        (this.host?.config ?? resolveMlxRuntimeConfig(this.options.runtimeConfig)).requestTimeoutMs,
+        this.options.timeoutMs ?? localRequestDeadlineMs(input, this.options.localDeadlines),
       ...(signal ? { signal } : {})
     });
     return taskResult(input, "local-mlx", this.options.modelId, {

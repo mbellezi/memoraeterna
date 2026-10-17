@@ -1393,13 +1393,57 @@ export const aiTaskRuns = pgTable(
     // (0 = first try, 1 = first repair or retry) for pipeline calls that report one.
     queueMs: integer("queue_ms"),
     attempt: integer("attempt"),
+    // The scheduler's view of the call (F3 D29-D31), null on rows written before it: the lane
+    // (`local` or `remote:<providerConfigId>`), the workload class, the priority (0 = P0), the
+    // effective total deadline and whether the call met it or was aborted by it (`none` when it had
+    // none), the time spent sleeping for retries off the lane and re-waiting for the lane between
+    // attempts (excluded from the deadline). `is_repair` marks a second call for the same items
+    // after a validation failure; `schema_mode` how structured output was requested.
+    lane: text("lane"),
+    workloadClass: text("workload_class"),
+    priority: smallint("priority"),
+    deadlineMs: integer("deadline_ms"),
+    deadlineOutcome: text("deadline_outcome"),
+    isRepair: boolean("is_repair").notNull().default(false),
+    schemaMode: text("schema_mode"),
+    retryWaitMs: integer("retry_wait_ms"),
+    requeueMs: integer("requeue_ms"),
     status: text("status").notNull(),
     error: text("error"),
     // The call's start: the row is written when the call ends, so it is stored as finishedAt - durationMs.
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true })
   },
-  (table) => ({ taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType) })
+  (table) => ({
+    taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType),
+    classIdx: index("ai_task_runs_started_class_idx").on(table.startedAt, table.workloadClass),
+    laneCheck: check(
+      "ai_task_runs_lane",
+      sql`${table.lane} is null or ${table.lane} = 'local' or ${table.lane} ~ '^remote:.{1,200}$'`
+    ),
+    classCheck: check(
+      "ai_task_runs_workload_class",
+      sql`${table.workloadClass} is null or ${table.workloadClass} in ('embed','decide','write-fast','write-quality','answer')`
+    ),
+    priorityCheck: check(
+      "ai_task_runs_priority",
+      sql`${table.priority} is null or ${table.priority} between 0 and 3`
+    ),
+    deadlineCheck: check(
+      "ai_task_runs_deadline",
+      sql`(${table.deadlineMs} is null or ${table.deadlineMs} > 0)
+        and (${table.deadlineOutcome} is null or ${table.deadlineOutcome} in ('met','aborted','none'))`
+    ),
+    schemaModeCheck: check(
+      "ai_task_runs_schema_mode",
+      sql`${table.schemaMode} is null or ${table.schemaMode} in ('strict','json','grammar','none')`
+    ),
+    waitsCheck: check(
+      "ai_task_runs_waits",
+      sql`(${table.retryWaitMs} is null or ${table.retryWaitMs} >= 0)
+        and (${table.requeueMs} is null or ${table.requeueMs} >= 0)`
+    )
+  })
 );
 
 // Retain canonical task audit independently from user-prunable monitoring data.

@@ -26,7 +26,7 @@ import {
   type ConsultationRelation,
   type ConsultationResult
 } from "@app/domain";
-import { ActiveDeadline } from "./ai-execution-queue.js";
+import { ActiveDeadline } from "@app/ai";
 import type { AiService } from "./ai-service.js";
 
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */

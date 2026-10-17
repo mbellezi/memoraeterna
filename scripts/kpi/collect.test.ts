@@ -113,6 +113,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
       stageAttempts: true,
       aiQueueMs: true,
       aiAttempt: true,
+      aiLanes: true,
       monitoring: true
     });
     expect(report.asOf).toEqual({ value: "2026-03-11T10:00:00.000Z", basis: "explicit" });
@@ -144,6 +145,19 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     const reranking = ai.byTask.find((entry) => entry.task === "reranking");
     expect(reranking?.calls).toBe(4);
     expect(reranking?.durationSeconds).toMatchObject({ n: 3, min: 4, max: 14 });
+    // The lane columns: the scheduler's call by lane kind and class, older calls as unknown.
+    expect(ai.byLane).toEqual([
+      expect.objectContaining({ lane: "unknown", workloadClass: "unknown", calls: 5 }),
+      expect.objectContaining({
+        lane: "remote: prov",
+        workloadClass: "decide",
+        calls: 1,
+        withDeadline: 1,
+        deadlineAborted: 0,
+        pastDeadline: 0
+      })
+    ]);
+    expect(renderMarkdown(report)).toContain("| remote: prov | decide | 1 |");
   });
 
   it("separates note matching from source pair matching", () => {
@@ -298,6 +312,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
         stageAttempts: false,
         aiQueueMs: false,
         aiAttempt: false,
+        aiLanes: false,
         monitoring: false
       });
       const ai = data(old.ai);
@@ -727,6 +742,13 @@ async function seed(pool: PgPool): Promise<void> {
       ]
     );
   }
+  // One call written by the lane scheduler (0057); the others predate it.
+  await q(
+    `update ai_task_runs set lane = $1, workload_class = 'decide', priority = 2, deadline_ms = 45000,
+       deadline_outcome = 'met', requeue_ms = 0
+     where id = $2`,
+    [`remote:${uid(301)}`, uid(81)]
+  );
   await q(
     `insert into monitoring_operations (kind, operation, stage, status, duration_ms, started_at, finished_at)
      values ('operation', 'atomic-note-matching', 'atomic-note-matching', 'succeeded', 30000, now(), now())`

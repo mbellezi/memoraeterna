@@ -32,7 +32,7 @@ import {
   type TopicOverviewState
 } from "@app/domain";
 
-import { ActiveDeadline } from "../ai-execution-queue.js";
+import { ActiveDeadline } from "@app/ai";
 import type { AiService, AiTaskLogContext } from "../ai-service.js";
 import { promptFingerprint } from "../prompt-runtime.js";
 import type { TopicAiMode } from "./topic-ai.js";

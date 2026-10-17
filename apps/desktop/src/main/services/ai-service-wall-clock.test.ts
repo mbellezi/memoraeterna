@@ -22,7 +22,9 @@ function service(run: () => Promise<unknown>) {
     getPool: () => ({}) as never,
     workspaceRoot: "/tmp",
     resourcesPath: "/tmp",
-    isPackaged: false
+    isPackaged: false,
+    // One call at a time on the remote lane, so the second call waits behind the first.
+    lanes: { mode: "serial" }
   });
   const adapter = {
     describe: () => ({

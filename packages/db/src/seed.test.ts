@@ -102,7 +102,9 @@ describe("baseline seed", () => {
       "0052_legacy_detach",
       "0053_topic_tree",
       "0054_topic_overviews",
-      "0055_placement_fallback_none"
+      "0055_placement_fallback_none",
+      "0056_relations_v2",
+      "0057_ai_task_run_lanes"
     ]);
   });
 
@@ -176,7 +178,9 @@ describe("baseline seed", () => {
         "0052_legacy_detach",
         "0053_topic_tree",
         "0054_topic_overviews",
-        "0055_placement_fallback_none"
+        "0055_placement_fallback_none",
+        "0056_relations_v2",
+        "0057_ai_task_run_lanes"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

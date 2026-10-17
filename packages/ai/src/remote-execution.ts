@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { z } from "zod";
 import type { AiTaskType } from "@app/domain";
 
+import { ActiveDeadline } from "./active-deadline.js";
 import type { AiTaskRequest, AiTaskResult, AiWorkloadClass } from "./contracts.js";
 import {
   AiProviderError,
@@ -10,6 +11,7 @@ import {
   isTransientAiError,
   toProviderNetworkError
 } from "./provider-error.js";
+import { lanePermitOf } from "./scheduler/execution.js";
 
 /** The class a task type falls in when its caller states none; it sets the total deadline only. */
 export function aiWorkloadClass(taskType: AiTaskType): AiWorkloadClass {
@@ -54,9 +56,10 @@ const milliseconds = z.number().int().positive();
 
 /**
  * Typed configuration of the remote execution deadlines and retries. Deadlines count from the start of
- * the execution (not from admission to the queue); connect, first-byte, no-answer and stall deadlines
- * apply to streamed responses, the total deadline to every call and to its retries together. Bytes alone
- * never extend a stream: only progress does (answer text, and reasoning text before the answer).
+ * the execution (not from admission to a lane); connect, first-byte, no-answer and stall deadlines
+ * apply to streamed responses, the total deadline to every call and to its retries together, retry
+ * backoffs included, but not the time a retried attempt waits for its lane again. Bytes alone never
+ * extend a stream: only progress does (answer text, and reasoning text before the answer).
  */
 export const aiRuntimeConfigSchema = z
   .object({
@@ -106,8 +109,8 @@ export const aiRuntimeConfigSchema = z
         baseDelayMs: milliseconds,
         maxDelayMs: milliseconds,
         /**
-         * Longest `Retry-After` the adapter waits for while it holds the single execution slot; a longer
-         * wait is left to the caller, which re-queues the work.
+         * Longest `Retry-After` the adapter waits for inside the call (off its lane); a longer wait is
+         * left to the caller, which re-queues the work.
          */
         maxInlineRetryAfterMs: z.number().int().nonnegative()
       })
@@ -322,9 +325,36 @@ export function withCallReport(
   };
 }
 
+/** Whether a failure is the provider's rate limit (429, or a stream error naming one). */
+export function isRateLimitFailure(error: unknown): boolean {
+  for (let depth = 0; depth < 5 && error !== undefined && error !== null; depth++) {
+    if (error instanceof AiProviderError)
+      return (
+        error.transient &&
+        (error.status === 429 || /rate[_ ]?limit|usage_limit/i.test(error.code ?? ""))
+      );
+    error = (error as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** The total deadline of a remote call of a class: the class's, longer for a server on this machine. */
+export function remoteTotalDeadlineMs(
+  config: AiRuntimeConfig,
+  workloadClass: AiWorkloadClass,
+  local = false
+): number {
+  return Math.round(
+    config.deadlines.totalMs[workloadClass] * (local ? config.deadlines.localTotalFactor : 1)
+  );
+}
+
 /**
  * Runs one remote call with deadlines counted from now and bounded retries of transient failures.
- * `attempt` performs a single request through the {@link RemoteAttempt} it receives.
+ * `attempt` performs a single request through the {@link RemoteAttempt} it receives. When the call
+ * runs on a scheduler lane (its signal carries a `LanePermit`), a retry backoff gives the lane up and
+ * the total deadline stands still while the retried attempt waits for the lane again; every response
+ * reports its outcome and rate limits to the lane.
  */
 export async function runRemoteCall<T>(
   context: RemoteExecutionContext,
@@ -334,23 +364,18 @@ export async function runRemoteCall<T>(
   const { config } = context;
   const workload =
     options.workloadClass ?? (options.taskType ? aiWorkloadClass(options.taskType) : "embed");
-  const totalMs = Math.round(
-    config.deadlines.totalMs[workload] * (context.local ? config.deadlines.localTotalFactor : 1)
-  );
+  const totalMs = remoteTotalDeadlineMs(config, workload, context.local === true);
   const maxAttempts = options.retry === false ? 1 : config.retry.maxAttempts;
-  const startedAt = Date.now();
-  const total = new AbortController();
-  const totalTimer = setTimeout(
-    () =>
-      total.abort(
-        new AiProviderError(`AI provider request exceeded its ${totalMs} ms deadline.`, {
-          kind: "timeout",
-          transient: true
-        })
-      ),
-    totalMs
-  );
+  // The clock of the total deadline stops while a retried attempt waits for its lane again.
+  const total = new ActiveDeadline(totalMs, undefined, {
+    reason: () =>
+      new AiProviderError(`AI provider request exceeded its ${totalMs} ms deadline.`, {
+        kind: "timeout",
+        transient: true
+      })
+  });
   const caller = options.signal;
+  const permit = lanePermitOf(caller);
   const highReasoning = options.parameters !== undefined && isHighReasoning(options.parameters);
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
@@ -390,6 +415,7 @@ export async function runRemoteCall<T>(
       try {
         const value = await attempt(call);
         countRequests(call);
+        permit?.observeOutcome("ok");
         options.report?.({
           attempts: report.attempts,
           failedUsage: { ...report.failedUsage },
@@ -408,14 +434,28 @@ export async function runRemoteCall<T>(
       } finally {
         call.dispose();
       }
-      if (caller?.aborted || total.signal.aborted) throw failure;
-      if (!isTransientAiError(failure) || number >= maxAttempts) throw failure;
+      if (caller?.aborted) throw failure;
       const retryAfterMs = aiErrorRetryAfterMs(failure);
+      if (permit) {
+        if (isRateLimitFailure(failure)) permit.observeRateLimit(retryAfterMs ?? null);
+        permit.observeOutcome(isTransientAiError(failure) ? "transient" : "permanent");
+      }
+      if (total.signal.aborted) throw failure;
+      if (!isTransientAiError(failure) || number >= maxAttempts) throw failure;
       if (retryAfterMs !== undefined && retryAfterMs > config.retry.maxInlineRetryAfterMs)
         throw failure;
       const delay = retryDelayMs(number - 1, config.retry, retryAfterMs, context.random);
-      if (Date.now() - startedAt + delay >= totalMs) throw failure;
-      await sleep(delay, [...(caller ? [caller] : []), total.signal]);
+      // The paused clock: time spent waiting for the lane again does not use the deadline up.
+      if (total.elapsedMs + delay >= totalMs) throw failure;
+      const signals = [...(caller ? [caller] : []), total.signal];
+      if (permit) {
+        await permit.releaseDuring(() => sleep(delay, signals), { pause: [total] });
+        // A cancellation or deadline during the wait for the lane ends the call.
+        caller?.throwIfAborted();
+        total.signal.throwIfAborted();
+      } else {
+        await sleep(delay, signals);
+      }
     }
   } catch (error) {
     if (typeof error === "object" && error !== null)
@@ -426,7 +466,7 @@ export async function runRemoteCall<T>(
       });
     throw error;
   } finally {
-    clearTimeout(totalTimer);
+    total.dispose();
   }
 }
 

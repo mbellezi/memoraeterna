@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
-  createAiConfigRepository,
   createChunkRepository,
   createDocumentRepository,
   createPgPool,
@@ -122,16 +121,15 @@ try {
       [lo, hi]
     )
   ).rows[0]!;
-  const aiConfig = createAiConfigRepository(db);
-  const newRun = () =>
-    aiConfig.recordTaskRun({
-      taskType: "reranking",
-      provider: "verify",
-      modelId: "verify-model",
-      runtime: "remote",
-      durationMs: 1,
-      status: "succeeded"
-    });
+  // An AI run the decisions reference, written with the columns every schema step has: the
+  // repository writer targets the latest schema, which this database reaches only at the end.
+  const newRun = async () =>
+    (
+      await db.query<{ id: string }>(
+        `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status, finished_at)
+         values ('reranking', 'verify', 'verify-model', 'remote', 1, 'succeeded', now()) returning id`
+      )
+    ).rows[0]!.id;
 
   // 0044 and 0045 first: legacy rows keep one AI run and time for the whole pair.
   await runMigrations(db, await migrationsBefore(auditIndex, "drizzle-before-0046"));

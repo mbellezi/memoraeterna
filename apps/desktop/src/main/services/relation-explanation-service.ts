@@ -11,7 +11,7 @@ import {
   type RelationExplanationResult
 } from "@app/domain";
 
-import { ActiveDeadline } from "./ai-execution-queue.js";
+import { ActiveDeadline } from "@app/ai";
 import type { AiService } from "./ai-service.js";
 import { relationExplanationOperation } from "./ai-task-parameters.js";
 import {

@@ -256,7 +256,7 @@ export function renderMarkdown(report: KpiReport): string {
         ],
         [
           "Wall-clock columns",
-          `stage attempts ${database.instrumentation.stageAttempts ? "yes" : "no"}, AI queue_ms ${database.instrumentation.aiQueueMs ? "yes" : "no"}, AI attempt ${database.instrumentation.aiAttempt ? "yes" : "no"}, monitoring ${database.instrumentation.monitoring ? "yes" : "no"}`
+          `stage attempts ${database.instrumentation.stageAttempts ? "yes" : "no"}, AI queue_ms ${database.instrumentation.aiQueueMs ? "yes" : "no"}, AI attempt ${database.instrumentation.aiAttempt ? "yes" : "no"}, AI lanes ${database.instrumentation.aiLanes ? "yes" : "no"}, monitoring ${database.instrumentation.monitoring ? "yes" : "no"}`
         ],
         ["Generated", report.generatedAt],
         ["As of", `${report.asOf.value ?? "unknown"} (${report.asOf.basis})`]
@@ -369,6 +369,32 @@ export function renderMarkdown(report: KpiReport): string {
           ai.byRoute.map((group) =>
             aiRow([group.task, `${group.provider} / ${group.model} / ${group.runtime}`], group)
           )
+        ),
+        "By lane and workload class (calls written before the lane scheduler show as unknown; past deadline is more than 2 s over the deadline, lane re-waits excluded):",
+        "",
+        table(
+          [
+            "Lane",
+            "Class",
+            "Calls",
+            "Failed or canceled",
+            "Queue p50 / p95 (s)",
+            "Lane re-wait p50 / p95 (s)",
+            "Deadline aborted (with deadline)",
+            "Past deadline",
+            "Repairs"
+          ],
+          ai.byLane.map((group) => [
+            group.lane,
+            group.workloadClass,
+            fmtInt(group.calls),
+            fmtInt(group.failedOrCanceled),
+            fmtPair(group.queueSeconds),
+            fmtPair(group.requeueSeconds),
+            `${fmtInt(group.deadlineAborted)} (${fmtInt(group.withDeadline)})`,
+            fmtInt(group.pastDeadline),
+            fmtInt(group.repairs)
+          ])
         )
       ].join("\n")
     )

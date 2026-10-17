@@ -9,11 +9,6 @@
       "count": 3
     }
   },
-  "apps/desktop/src/main/services/ai-execution-queue.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "apps/desktop/src/main/services/ai-organization-pinning.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 18

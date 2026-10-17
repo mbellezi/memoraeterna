@@ -8,7 +8,11 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
-import type { LocalAdapterOptions } from "./local-adapters.js";
+import {
+  LocalRuntimeGuard,
+  localRequestDeadlineMs,
+  type LocalAdapterOptions
+} from "./local-adapters.js";
 import { sha256File } from "./local-model-downloader.js";
 import type { MlxHelperScoreResult, MlxScoreInput } from "./local-runtime-protocol.js";
 import { MlxHelperError, MlxHelperHost, type MlxHelperCallOptions } from "./mlx-helper-host.js";
@@ -25,7 +29,7 @@ import {
   type RankResult
 } from "./ranker-input.js";
 import { checkGgufRankerFacts, ggufRankerFacts } from "./ranker-validation.js";
-import { resolveMlxRuntimeConfig, type MlxRuntimeConfigInput } from "./runtime-config.js";
+import { defaultAiLaneRuntimeConfig, type MlxRuntimeConfigInput } from "./runtime-config.js";
 
 /**
  * Dedicated local rankers (D17): Qwen3-Reranker on the MLX helper's `score` command, or as a GGUF
@@ -74,7 +78,10 @@ interface RankerAdapterOptions extends LocalAdapterOptions {
 
 export interface MlxRankerAdapterOptions extends RankerAdapterOptions {
   helperPath: string;
-  /** Deadline of one rank call from the start of its execution; defaults to the helper's. */
+  /**
+   * Deadline of one rank call from the start of its execution; defaults to the `decide` class's
+   * local deadline (F3 D31).
+   */
   timeoutMs?: number;
   runtimeConfig?: MlxRuntimeConfigInput;
   /** The helper shared with the generative and embedding adapters (one helper process, D18). */
@@ -121,8 +128,7 @@ export class MlxRerankerAdapter implements AiModelAdapter {
     if (!this.canHandle(input)) throw unsupported();
     const rank = parseRankRequest(input.input);
     const timeoutMs =
-      this.options.timeoutMs ??
-      (this.host?.config ?? resolveMlxRuntimeConfig(this.options.runtimeConfig)).requestTimeoutMs;
+      this.options.timeoutMs ?? localRequestDeadlineMs(input, this.options.localDeadlines);
     let result: MlxHelperScoreResult;
     try {
       result = await this.score(
@@ -221,6 +227,7 @@ export type NodeLlamaRankerAdapterOptions = RankerAdapterOptions;
 export class NodeLlamaRankerAdapter implements AiModelAdapter {
   private readonly config: RankerRuntimeConfig;
   private readonly runtime: GgufRankingRuntime;
+  private readonly guard: LocalRuntimeGuard;
   private tail: Promise<unknown> = Promise.resolve();
 
   public constructor(
@@ -229,6 +236,16 @@ export class NodeLlamaRankerAdapter implements AiModelAdapter {
   ) {
     this.config = resolveRankerRuntimeConfig(options.rankerConfig);
     this.runtime = runtime ?? new NodeLlamaRankingRuntime(options.modelPath, this.config);
+    // An abandoned rank call disposes the runtime once it ended; the next call loads it again.
+    this.guard = new LocalRuntimeGuard(
+      options.localDeadlines ?? defaultAiLaneRuntimeConfig.localDeadlines,
+      () => this.runtime.dispose()
+    );
+  }
+
+  /** The runtime ignored a deadline and is wedged until the abandoned call ended (F3 D31). */
+  public get wedged(): boolean {
+    return this.guard.isWedged;
   }
 
   public describe(): AiModelDescriptor {
@@ -252,10 +269,10 @@ export class NodeLlamaRankerAdapter implements AiModelAdapter {
     if (!this.canHandle(input)) throw unsupported();
     const rank = parseRankRequest(input.input);
     // One rank call at a time: the ranking contexts are shared and evicted between instructions.
-    const run = this.tail.then(
-      () => this.rankOnce(input, rank, signal),
-      () => this.rankOnce(input, rank, signal)
-    );
+    // The deadline counts from the call's own start, not from its turn behind an earlier one.
+    const bounded = () =>
+      this.guard.run(input, signal, (deadlineSignal) => this.rankOnce(input, rank, deadlineSignal));
+    const run = this.tail.then(bounded, bounded);
     this.tail = run.catch(() => undefined);
     return run;
   }

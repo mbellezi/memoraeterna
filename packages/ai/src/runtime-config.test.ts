@@ -1,10 +1,65 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  defaultAiLaneRuntimeConfig,
   defaultMlxRuntimeConfig,
+  localDeadlineMs,
   mlxHelperEnvironment,
+  resolveAiLaneRuntimeConfig,
   resolveMlxRuntimeConfig
 } from "./runtime-config.js";
+
+describe("resolveAiLaneRuntimeConfig", () => {
+  it("starts API-key lanes at 4, Codex lanes at 2, ages P3 after 60 s and P2 after 120 s", () => {
+    const config = resolveAiLaneRuntimeConfig({}, { environment: {} });
+    expect(config).toEqual(defaultAiLaneRuntimeConfig);
+    expect(config.mode).toBe("product");
+    expect(config.lanes).toMatchObject({ apiKeyMax: 4, codexMax: 2, minimum: 1 });
+    expect(config.aging).toEqual({ p3ToP2Ms: 60_000, p2ToP1Ms: 120_000 });
+    expect(config.localDeadlines.totalMs).toEqual({
+      embed: 30_000,
+      decide: 10_000,
+      "write-fast": 180_000,
+      "write-quality": 900_000,
+      answer: 300_000
+    });
+    expect(localDeadlineMs(config.localDeadlines, "decide")).toBe(10_000);
+  });
+
+  it("runs serial lanes for golden runs and on MEMORA_AI_LANES=serial, never in packaged builds", () => {
+    const serial = { environment: { MEMORA_AI_LANES: " serial " } };
+    expect(resolveAiLaneRuntimeConfig({}, serial).mode).toBe("serial");
+    expect(
+      resolveAiLaneRuntimeConfig({}, { environment: { MEMORA_GOLDEN_RUN: "m.json" } }).mode
+    ).toBe("serial");
+    expect(
+      resolveAiLaneRuntimeConfig(
+        {},
+        { environment: { MEMORA_GOLDEN_RUN: "m.json", MEMORA_AI_LANES: "product" } }
+      ).mode
+    ).toBe("product");
+    expect(resolveAiLaneRuntimeConfig({}, { ...serial, packaged: true }).mode).toBe("product");
+    expect(resolveAiLaneRuntimeConfig({}, { environment: { MEMORA_AI_LANES: "fast" } }).mode).toBe(
+      "product"
+    );
+    expect(resolveAiLaneRuntimeConfig({ mode: "product" }, serial).mode).toBe("product");
+  });
+
+  it("merges partial input and refuses values outside the schema", () => {
+    const config = resolveAiLaneRuntimeConfig(
+      { lanes: { codexMax: 3 }, localDeadlines: { totalMs: { decide: 5_000 } } },
+      { environment: {} }
+    );
+    expect(config.lanes).toMatchObject({ codexMax: 3, apiKeyMax: 4 });
+    expect(config.localDeadlines.totalMs).toMatchObject({ decide: 5_000, embed: 30_000 });
+    expect(() =>
+      resolveAiLaneRuntimeConfig({ lanes: { codexMax: 0 } }, { environment: {} })
+    ).toThrow();
+    expect(() =>
+      resolveAiLaneRuntimeConfig({ lanes: { decreaseFactor: 1 } }, { environment: {} })
+    ).toThrow();
+  });
+});
 
 describe("resolveMlxRuntimeConfig", () => {
   it("bounds the buffer cache by default and leaves the overall limit to MLX", () => {

@@ -148,6 +148,14 @@ export interface AiRunRow {
   readonly operation: string | null;
   readonly noteId: string | null;
   readonly sourceId: string | null;
+  /** The scheduler's columns (migration 0057); absent or null on rows written before it. */
+  readonly lane?: string | null;
+  readonly workloadClass?: string | null;
+  readonly deadlineMs?: number | null;
+  readonly deadlineOutcome?: string | null;
+  /** Lane re-waits between attempts, excluded from the deadline. */
+  readonly requeueMs?: number | null;
+  readonly isRepair?: boolean | null;
 }
 
 export interface TokenTotal {
@@ -181,10 +189,66 @@ export interface AiRouteGroup extends AiGroup {
   readonly runtime: string;
 }
 
+/** The calls of one lane kind and workload class (F3 D29-D31). */
+export interface AiLaneGroup {
+  /** `local`, `remote: <provider>`, or `unknown` for rows written before the lane scheduler. */
+  readonly lane: string;
+  readonly workloadClass: string;
+  readonly calls: number;
+  readonly failedOrCanceled: number;
+  readonly queueSeconds: Distribution | null;
+  /** Lane re-waits after retry backoffs, of the calls that recorded them. */
+  readonly requeueSeconds: Distribution | null;
+  /** Calls that recorded a deadline. */
+  readonly withDeadline: number;
+  /** Calls a deadline ended (`deadline_outcome = aborted`). */
+  readonly deadlineAborted: number;
+  /** Calls that ran more than 2 s past their deadline, lane re-waits excluded (exit X6). */
+  readonly pastDeadline: number;
+  readonly repairs: number;
+}
+
 export interface AiKpi {
   readonly total: AiGroup;
   readonly byTask: ReadonlyArray<AiGroup & { readonly task: string }>;
   readonly byRoute: readonly AiRouteGroup[];
+  readonly byLane: readonly AiLaneGroup[];
+}
+
+/** Grace a call has past its deadline before it counts as past deadline (F3 D2, X6). */
+const pastDeadlineGraceMs = 2_000;
+
+function laneName(row: AiRunRow): string {
+  if (row.lane === "local") return "local";
+  if (row.lane?.startsWith("remote:")) return `remote: ${row.provider}`;
+  return "unknown";
+}
+
+function isPastDeadline(row: AiRunRow): boolean {
+  const deadline = nonNegative(row.deadlineMs ?? null);
+  const duration = nonNegative(row.durationMs);
+  if (deadline === null || duration === null) return false;
+  return duration - (nonNegative(row.requeueMs ?? null) ?? 0) > deadline + pastDeadlineGraceMs;
+}
+
+export function aiLaneGroups(rows: readonly AiRunRow[]): AiLaneGroup[] {
+  return [...groupBy(rows, (row) => [laneName(row), row.workloadClass ?? "unknown"].join("\u0000"))]
+    .map(([key, list]) => {
+      const [lane, workloadClass] = key.split("\u0000") as [string, string];
+      return {
+        lane,
+        workloadClass,
+        calls: list.length,
+        failedOrCanceled: list.filter((row) => row.status !== "succeeded").length,
+        queueSeconds: toSeconds(summarize(list.map((row) => nonNegative(row.queueMs)))),
+        requeueSeconds: toSeconds(summarize(list.map((row) => nonNegative(row.requeueMs ?? null)))),
+        withDeadline: list.filter((row) => nonNegative(row.deadlineMs ?? null) !== null).length,
+        deadlineAborted: list.filter((row) => row.deadlineOutcome === "aborted").length,
+        pastDeadline: list.filter(isPastDeadline).length,
+        repairs: list.filter((row) => row.isRepair === true).length
+      };
+    })
+    .sort((a, b) => b.calls - a.calls || a.lane.localeCompare(b.lane));
 }
 
 const nonNegative = (value: number | null): number | null =>
@@ -247,7 +311,8 @@ export function aggregateAi(rows: readonly AiRunRow[]): AiKpi {
           ...aiGroup(list)
         };
       })
-      .sort(byCallsDescending)
+      .sort(byCallsDescending),
+    byLane: aiLaneGroups(rows)
   };
 }
 

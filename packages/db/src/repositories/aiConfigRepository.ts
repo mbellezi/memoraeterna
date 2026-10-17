@@ -109,6 +109,11 @@ function nonNegativeInteger(value: number | null | undefined): number | null {
     : null;
 }
 
+function positiveInteger(value: number | null | undefined): number | null {
+  const rounded = nonNegativeInteger(value);
+  return rounded !== null && rounded > 0 ? rounded : null;
+}
+
 function mapProvider(row: ProviderRow): AiProviderConfigRecord {
   return {
     ...row,
@@ -526,6 +531,22 @@ export function createAiConfigRepository(db: Queryable) {
       error?: string | null;
       sourceItemIds?: string[];
       promptCompositions?: unknown[];
+      /** The scheduler lane: `local` or `remote:<providerConfigId>`; omitted when unknown. */
+      lane?: string | null;
+      workloadClass?: string | null;
+      /** 0 for P0 (interactive) to 3 for P3 (maintenance). */
+      priority?: number | null;
+      /** The effective total deadline of the call, from its execution start. */
+      deadlineMs?: number | null;
+      /** `met`, `aborted` (a deadline ended the call) or `none` (the call had no deadline). */
+      deadlineOutcome?: "met" | "aborted" | "none" | null;
+      /** A second call for the same items after a validation failure. */
+      isRepair?: boolean;
+      schemaMode?: "strict" | "json" | "grammar" | "none" | null;
+      /** Time spent sleeping for retries, off the lane. */
+      retryWaitMs?: number | null;
+      /** Time spent waiting for the lane again between attempts, excluded from the deadline. */
+      requeueMs?: number | null;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
         `with inserted_run as (
@@ -533,10 +554,13 @@ export function createAiConfigRepository(db: Queryable) {
              profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
              quantization, parameters, capabilities_used,
              input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
-             duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at, started_at
+             duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at, started_at,
+             lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode,
+             retry_wait_ms, requeue_ms
            ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,$22,$23,now(),
              -- The row is written when the call ends, so its real start is the end minus the measured duration.
-             now() - ($17::integer * interval '1 millisecond'))
+             now() - ($17::integer * interval '1 millisecond'),
+             $24,$25,$26,$27,$28,$29,$30,$31,$32)
            returning id
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)
@@ -570,7 +594,21 @@ export function createAiConfigRepository(db: Queryable) {
           [...new Set(input.sourceItemIds ?? [])],
           JSON.stringify(input.promptCompositions ?? []),
           nonNegativeInteger(input.queueMs),
-          nonNegativeInteger(input.attempt)
+          nonNegativeInteger(input.attempt),
+          input.lane ?? null,
+          input.workloadClass ?? null,
+          typeof input.priority === "number" &&
+          Number.isInteger(input.priority) &&
+          input.priority >= 0 &&
+          input.priority <= 3
+            ? input.priority
+            : null,
+          positiveInteger(input.deadlineMs),
+          input.deadlineOutcome ?? null,
+          input.isRepair === true,
+          input.schemaMode ?? null,
+          nonNegativeInteger(input.retryWaitMs),
+          nonNegativeInteger(input.requeueMs)
         ]
       );
       const row = result.rows[0];

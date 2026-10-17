@@ -91,6 +91,8 @@ export interface DatabaseInfo {
     readonly stageAttempts: boolean;
     readonly aiQueueMs: boolean;
     readonly aiAttempt: boolean;
+    /** The lane scheduler's columns on `ai_task_runs` (0057). */
+    readonly aiLanes: boolean;
     readonly monitoring: boolean;
   };
 }

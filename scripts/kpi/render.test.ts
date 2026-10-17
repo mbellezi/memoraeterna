@@ -59,6 +59,7 @@ describe("renderMarkdown", () => {
         stageAttempts: false,
         aiQueueMs: false,
         aiAttempt: false,
+        aiLanes: false,
         monitoring: true
       }
     },

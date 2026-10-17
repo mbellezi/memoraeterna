@@ -175,7 +175,8 @@ describe("canonical prompt audit and FIFO callers", () => {
   });
   it("does not borrow revisions for identical bytes and audits started failure/cancellation only", async () => {
     const { s } = service(async (_request, signal) => {
-      if (signal) throw new Error("interrupted");
+      // Every adapter call gets its execution's own signal; only a cancelled one is interrupted.
+      if (signal?.aborted) throw new Error("interrupted");
       throw new Error("failed");
     });
     for (const marker of ["REVISION_A", "REVISION_B"])

@@ -355,6 +355,12 @@ class Collector {
         operation: string | null;
         note_id: string | null;
         source_id: string | null;
+        lane: string | null;
+        workload_class: string | null;
+        deadline_ms: number | null;
+        deadline_outcome: string | null;
+        requeue_ms: number | null;
+        is_repair: boolean | null;
       }>(
         `select a.task_type as task, a.provider, a.model_id as model, a.runtime, a.status,
                 a.duration_ms::float8 as duration_ms,
@@ -365,7 +371,13 @@ class Collector {
                 a.cost_estimate::float8 as cost,
                 ${monitoring ? "m.operation" : "null::text"} as operation,
                 ${monitoring ? "m.note_id" : "null::text"} as note_id,
-                ${monitoring ? "m.source_id" : "null::text"} as source_id
+                ${monitoring ? "m.source_id" : "null::text"} as source_id,
+                ${has("lane") ? "a.lane" : "null::text"} as lane,
+                ${has("workload_class") ? "a.workload_class" : "null::text"} as workload_class,
+                ${has("deadline_ms") ? "a.deadline_ms::float8" : "null::float8"} as deadline_ms,
+                ${has("deadline_outcome") ? "a.deadline_outcome" : "null::text"} as deadline_outcome,
+                ${has("requeue_ms") ? "a.requeue_ms::float8" : "null::float8"} as requeue_ms,
+                ${has("is_repair") ? "a.is_repair" : "null::boolean"} as is_repair
          from ai_task_runs a
          ${
            monitoring
@@ -400,7 +412,13 @@ class Collector {
         cost: row.cost,
         operation: row.operation,
         noteId: row.note_id,
-        sourceId: row.source_id
+        sourceId: row.source_id,
+        lane: row.lane,
+        workloadClass: row.workload_class,
+        deadlineMs: row.deadline_ms,
+        deadlineOutcome: row.deadline_outcome,
+        requeueMs: row.requeue_ms,
+        isRepair: row.is_repair
       }));
     })();
     return this.aiRows;
@@ -690,6 +708,14 @@ class Collector {
       ),
       aiQueueMs: this.schema.hasColumns("ai_task_runs", "queue_ms"),
       aiAttempt: this.schema.hasColumns("ai_task_runs", "attempt"),
+      aiLanes: this.schema.hasColumns(
+        "ai_task_runs",
+        "lane",
+        "workload_class",
+        "deadline_ms",
+        "deadline_outcome",
+        "requeue_ms"
+      ),
       monitoring: this.schema.hasTable("monitoring_operations")
     };
   }

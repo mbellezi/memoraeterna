@@ -39,6 +39,8 @@ function service(
     workspaceRoot: "/tmp",
     resourcesPath: "/tmp",
     isPackaged: false,
+    // One call at a time on the remote lane, so the order behind the call in flight shows.
+    lanes: { mode: "serial" },
     ...(monitoring ? { monitoring: monitoring as never } : {})
   });
   const registered = {

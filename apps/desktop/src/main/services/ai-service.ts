@@ -16,6 +16,7 @@ import {
   decideValidationForCatalogEntry,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
+  hasCapabilities,
   hasGeneration,
   isDecideValidationCurrent,
   isDedicatedRanker,
@@ -40,7 +41,11 @@ import {
   validateCatalogRankerArtifact,
   type AiModelAdapter,
   type AiProgressEvent,
+  type AiLaneRuntimeConfig,
+  type AiLaneRuntimeConfigInput,
+  type AiRuntimeConfig,
   type AiRuntimeConfigInput,
+  type AiScheduler,
   type AiTaskRequest,
   type AiTaskResult,
   type AiWorkloadClass,
@@ -48,7 +53,21 @@ import {
   type RankerSmokeReport,
   type RankRequest,
   type RankResult,
-  aiCassetteReplayedUsageKey
+  type LanePermit,
+  ActiveDeadline,
+  aiCassetteReplayedUsageKey,
+  bindLanePermit,
+  createAiScheduler,
+  executionLane,
+  isDeadlineFailure,
+  isRemoteExecution,
+  localDeadlineMs,
+  LocalDeadlineError,
+  priorityNumber,
+  remoteTotalDeadlineMs,
+  requestWorkloadClass,
+  resolveAiLaneRuntimeConfig,
+  resolveAiRuntimeConfig
 } from "@app/ai";
 import {
   aiRouteKeys,
@@ -93,7 +112,7 @@ import type {
 import { aiConfigurableTaskSchema, aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
-import { ActiveDeadline, AiExecutionQueue, type AiQueuePriority } from "./ai-execution-queue.js";
+import { aiTaskPriority, type AiPriorityInput } from "./ai-priority.js";
 import {
   withAiTaskParameterDefaults,
   discoveredContextWindow,
@@ -110,8 +129,6 @@ import {
 } from "./openai-codex-oauth.js";
 import { extname, join } from "node:path";
 
-const aiExecutionQueue = new AiExecutionQueue();
-
 export interface AiServiceOptions {
   userDataPath: string;
   getPool: () => PgPool | null;
@@ -127,6 +144,16 @@ export interface AiServiceOptions {
   openExternal?: (url: string) => Promise<void>;
   /** Deadline and retry overrides of the remote adapters; the defaults apply to what is left out. */
   runtime?: AiRuntimeConfigInput;
+  /**
+   * Lane limits, aging and local deadlines (F3 D29-D31); the typed defaults, `MEMORA_AI_LANES` in
+   * an unpackaged build and the serial lanes of golden runs apply to what is left out.
+   */
+  lanes?: AiLaneRuntimeConfigInput;
+  /**
+   * The lane scheduler. Each service owns one by default; services that model one machine (tests)
+   * share one explicitly.
+   */
+  scheduler?: AiScheduler;
   /**
    * The MLX helper every MLX adapter shares: one helper process holds at most one generative, one
    * embedding and one ranker model (D18). Created on first use when left out; proofs inject one.
@@ -154,8 +181,8 @@ export interface AiRankInput {
   instruction: string;
   query: string;
   documents: string[];
-  /** Queue class; background unless the user waits for the answer (D18). */
-  priority?: AiQueuePriority;
+  /** Lane priority; background (P2) unless the user waits for the answer (D18, F3 D30). */
+  priority?: AiPriorityInput;
   /** Sources whose content takes part in the call, for the audit. */
   sourceIds?: string[];
   jobId?: string;
@@ -283,7 +310,9 @@ export interface AiTaskLogContext {
   workloadClass?: AiWorkloadClass;
   embeddingInputType?: "query" | "document";
   /** Overrides the priority derived from the context; see {@link aiTaskPriority}. */
-  priority?: AiQueuePriority;
+  priority?: AiPriorityInput;
+  /** A second call for the same items after a validation failure; operations named `*_repair` are. */
+  isRepair?: boolean;
   onProgress?: (event: AiProgressEvent) => void;
   onProviderStart?: () => Promise<void>;
 }
@@ -306,7 +335,7 @@ interface PromptAdmission {
   compositions: PromptCompositionSnapshot[];
   pin: PromptPin;
   language: string;
-  /** Wait in the AI execution queue, set when execution starts. */
+  /** Admission to execution start on the lane, set when execution starts. */
   queueMs?: number;
 }
 
@@ -323,20 +352,6 @@ export function reportedRetryIndex(
   return typeof attempt === "number" && Number.isInteger(attempt) && attempt >= 0
     ? attempt
     : undefined;
-}
-/**
- * Queue class of a call. The user is waiting for query embeddings, Ask answers (origin `consultation`)
- * and actions started from the settings; everything else is background work. Callers may state it.
- */
-export function aiTaskPriority(
-  context: Pick<AiTaskLogContext, "priority" | "origin" | "embeddingInputType">
-): AiQueuePriority {
-  if (context.priority) return context.priority;
-  return context.embeddingInputType === "query" ||
-    context.origin === "consultation" ||
-    context.origin === "settings"
-    ? "interactive"
-    : "background";
 }
 /** Wall-clock fields for the AI task audit; each is omitted when it was not measured or reported. */
 function queueAndAttempt(
@@ -363,10 +378,12 @@ const selectionIdentity = (s: TaskSelection) =>
     s.quantization
   ]);
 export class AiService {
-  public isBusy(): boolean {
-    return aiExecutionQueue.busy;
-  }
   private readonly credentials: CredentialService;
+  /** Lanes, priorities and local deadlines of every call (F3 D29-D31); no module state. */
+  private readonly scheduler: AiScheduler;
+  private readonly laneConfig: AiLaneRuntimeConfig;
+  private readonly remoteRuntime: AiRuntimeConfig;
+  private readonly localDeadlineHistory = new LocalDeadlineHistory();
   private readonly activeLocalModels = new Set<string>();
   private readonly registry = new AiModelRegistry();
   private readonly oauthRefreshes = new Map<string, Promise<OpenAiCodexCredential>>();
@@ -383,6 +400,9 @@ export class AiService {
   public constructor(private readonly options: AiServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
     this.mlxHost = options.mlxHost ?? null;
+    this.laneConfig = resolveAiLaneRuntimeConfig(options.lanes, { packaged: options.isPackaged });
+    this.remoteRuntime = resolveAiRuntimeConfig(options.runtime);
+    this.scheduler = options.scheduler ?? createAiScheduler(this.laneConfig);
   }
 
   public async listProviders(): Promise<AiProviderConfig[]> {
@@ -908,7 +928,7 @@ export class AiService {
     _legacyPrivacy: "offline_only" | "allow_remote",
     sourceItemIds: string[],
     signal: AbortSignal,
-    priority?: AiQueuePriority
+    priority?: AiPriorityInput
   ) {
     return this.admitTask(
       "embedding",
@@ -1032,164 +1052,142 @@ export class AiService {
   ): Promise<DefaultAiTaskResult | null> {
     const pin = capturePromptPin(),
       baseAudit = context.promptCompositions ?? promptAudit(input);
-    // Reserve FIFO order synchronously, while source-free routing preparation runs without model loading or telemetry.
-    const prepared = this.preparePromptAdmission(task, input, context, pin, baseAudit, pinned).then(
-      (value) => ({ value }),
-      (error) => ({ error })
-    );
-    let entered = false,
-      admission: PromptAdmission | null = null;
-    // Time spent waiting for the execution slot does not count against the caller's own timeout.
+    // The admission is reserved now, so FIFO order and aging count from here while the source-free
+    // routing preparation reads the route that decides the lane, without model loading or telemetry.
+    const reservation = this.scheduler.reserve();
+    // Preparing and waiting for the lane do not count against the caller's own timeout.
     const deadline = ActiveDeadline.of(signal);
     deadline?.pause();
-    let waiting = true;
-    const stopWaiting = () => {
-      if (!waiting) return;
-      waiting = false;
+    let preparing = true;
+    const prepared = () => {
+      if (!preparing) return;
+      preparing = false;
       deadline?.resume();
     };
     try {
-      return await aiExecutionQueue.run(
-        (timing) =>
+      const admission = await untilAborted(
+        this.preparePromptAdmission(task, input, context, pin, baseAudit, pinned),
+        signal
+      );
+      if (!admission) return null;
+      const { lane, remoteKind } = executionLane(admission.selection);
+      const execution = this.scheduler.run(
+        {
+          lane,
+          remoteKind,
+          priority: aiTaskPriority(context),
+          workloadClass: requestWorkloadClass({
+            taskType: task,
+            workloadClass: context.workloadClass
+          }),
+          signal,
+          label: context.operation ?? context.stage ?? task,
+          reservation,
+          pauses: deadline ? [deadline] : []
+        },
+        (permit) =>
           withPromptPin(pin, async () => {
-            stopWaiting();
-            const result = await prepared;
-            if ("error" in result) throw result.error;
-            admission = result.value ? { ...result.value, queueMs: timing.queueMs } : null;
-            if (!admission) return null;
             await beforeProvider?.();
             signal?.throwIfAborted();
-            entered = true;
             return this.executeDefaultTask(
               task,
-              input,
               context,
               signal,
               limits,
               pinned,
               beforeProvider,
-              admission
+              { ...admission, queueMs: permit.queueMs },
+              permit
             );
-          }),
-        signal,
-        { priority: aiTaskPriority(context) }
+          })
       );
-    } catch (error) {
-      if (!entered || !admission || (error && typeof error === "object" && "aiTaskRunId" in error))
-        throw error;
-      const completed = admission as PromptAdmission,
-        selection = completed.selection;
-      const aiTaskRunId = await createAiConfigRepository(this.requirePool()).recordTaskRun({
-        profileId: selection.profileId,
-        taskType: task,
-        provider: selection.provider,
-        modelId: selection.modelId,
-        runtime: selection.runtime,
-        parameters: pinned?.parameters ?? {
-          ...selection.modelDefaultParameters,
-          ...selection.parameters
-        },
-        promptCompositions: completed.compositions,
-        inputHash: sha256(completed.input),
-        durationMs: 0,
-        ...queueAndAttempt(completed, context),
-        status: signal?.aborted ? "canceled" : "failed",
-        error: redactSensitiveText(error),
-        sourceItemIds: taskSourceItemIds(context)
-      });
-      if (error instanceof Error) Object.assign(error, { aiTaskRunId });
-      throw error;
+      // The scheduler stops the caller's clock itself while the call waits for its lane.
+      prepared();
+      const complete = await execution;
+      // The lane is free again: the audit and the monitoring entry are written outside it.
+      return await complete();
     } finally {
-      stopWaiting();
+      prepared();
     }
   }
 
+  /**
+   * Runs one admitted call on its lane. It returns what completes the call once the lane is
+   * released (F3 D38): the audit row and the monitoring entry, then the result or the error.
+   */
   private async executeDefaultTask(
-    taskType:
-      | "text-generation"
-      | "embedding"
-      | "summarization"
-      | "knowledge-graph-generation"
-      | "atomic-note-generation"
-      | "reranking"
-      | "structured-output",
-    input: string,
+    taskType: RoutedTask,
     logContext: AiTaskLogContext,
-    signal?: AbortSignal,
-    limits?: { maxOutputTokens: number },
-    pinned?: OrganizationProfile,
-    beforeProvider?: () => Promise<void>,
-    admission?: PromptAdmission
-  ): Promise<DefaultAiTaskResult | null> {
+    signal: AbortSignal | undefined,
+    limits: { maxOutputTokens: number } | undefined,
+    pinned: OrganizationProfile | undefined,
+    beforeProvider: (() => Promise<void>) | undefined,
+    admission: PromptAdmission,
+    permit: LanePermit
+  ): Promise<() => Promise<DefaultAiTaskResult>> {
     const { onProgress, onProviderStart, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
-    const selection =
-      admission?.selection ??
-      (await repository.getDefaultTask(
-        taskType,
-        pinned?.profileId,
-        taskRouteKeys(taskType, logContext)
-      ));
-    if (!selection) {
-      if (pinned) throw new Error("organization.errors.model");
-      return null;
-    }
-    if (pinned) {
-      const current = await this.pinOrganizationProfile(pinned.profileId, pinned.privacy);
-      if (current.identityHash !== pinned.identityHash)
-        throw new Error("organization.errors.modelChanged");
-    }
-    let parameters = aiModelParametersSchema.parse(
-      withAiTaskParameterDefaults(
-        taskType,
-        pinned?.parameters ?? { ...selection.modelDefaultParameters, ...selection.parameters },
-        Boolean(selection.localModelId),
-        {
-          admitted: !!pinned,
-          contextWindowLimit: discoveredContextWindow(selection.providerMetadata),
-          operation: logContext.operation
-        }
-      )
-    );
-    if (limits)
-      parameters.maxTokens = Math.min(
-        parameters.maxTokens ?? 16384,
-        Math.max(1, Math.floor(limits.maxOutputTokens))
-      );
-    const plannedOutputTokens = parameters.maxTokens ?? 16384;
-    if (!selection.localModelId) {
-      const caps = providerParameterCapabilities({
-        provider: selection.provider as AiProviderConfig["provider"],
-        modelId: selection.modelId,
-        baseUrl: selection.baseUrl,
-        capabilities: parseCapabilities(
-          selection.providerMetadata?.capabilities ?? selection.requiredCapabilities
+    const selection = admission.selection;
+    const deadlineMs = this.callDeadlineMs(selection, taskType, logContext.workloadClass);
+    const lane = (failure?: { error: unknown }) =>
+      laneAudit(permit, deadlineMs, logContext, signal, failure);
+    let parameters: ReturnType<typeof aiModelParametersSchema.parse>;
+    let keepLocalEmbeddingModelLoaded = true;
+    try {
+      if (pinned) {
+        const current = await this.pinOrganizationProfile(pinned.profileId, pinned.privacy);
+        if (current.identityHash !== pinned.identityHash)
+          throw new Error("organization.errors.modelChanged");
+      }
+      parameters = aiModelParametersSchema.parse(
+        withAiTaskParameterDefaults(
+          taskType,
+          pinned?.parameters ?? { ...selection.modelDefaultParameters, ...selection.parameters },
+          Boolean(selection.localModelId),
+          {
+            admitted: !!pinned,
+            contextWindowLimit: discoveredContextWindow(selection.providerMetadata),
+            operation: logContext.operation
+          }
         )
-      });
-      parameters = normalizeAiModelParameters(parameters, caps);
-    }
-    const outputLanguage =
-      admission?.language ??
-      logContext.contentLanguage ??
-      (await this.options.getContentLanguage?.()) ??
-      "en";
-    const taskInput =
-      admission?.input ??
-      (taskType === "embedding"
-        ? withEmbeddingInputInstruction(
-            input,
-            selection.modelId,
-            selection.repository,
-            structuredLogContext.embeddingInputType
+      );
+      if (limits)
+        parameters.maxTokens = Math.min(
+          parameters.maxTokens ?? 16384,
+          Math.max(1, Math.floor(limits.maxOutputTokens))
+        );
+      if (!selection.localModelId) {
+        const caps = providerParameterCapabilities({
+          provider: selection.provider as AiProviderConfig["provider"],
+          modelId: selection.modelId,
+          baseUrl: selection.baseUrl,
+          capabilities: parseCapabilities(
+            selection.providerMetadata?.capabilities ?? selection.requiredCapabilities
           )
-        : withOutputLanguageInstruction(input, outputLanguage));
-    const keepLocalEmbeddingModelLoaded =
-      taskType === "embedding" && selection.localModelId
-        ? ((await this.options.getKeepLocalEmbeddingModelsLoaded?.()) ?? true)
-        : true;
+        });
+        parameters = normalizeAiModelParameters(parameters, caps);
+      }
+      if (taskType === "embedding" && selection.localModelId)
+        keepLocalEmbeddingModelLoaded =
+          (await this.options.getKeepLocalEmbeddingModelsLoaded?.()) ?? true;
+    } catch (error) {
+      // Nothing was sent to a model: the audit row records the failed admission.
+      return () =>
+        this.recordUnstartedTask(taskType, logContext, signal, pinned, admission, error, lane);
+    }
+    const plannedOutputTokens = parameters.maxTokens ?? 16384;
+    const outputLanguage = admission.language;
+    const taskInput = admission.input;
+    const releaseEmbeddingModel = async () => {
+      if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded)
+        await this.releaseLocalModel(selection.localModelId).catch((error) => {
+          this.options.logger?.error("Failed to release local embedding runtime", error);
+        });
+    };
     const started = Date.now();
-    const capture = await this.options.monitoring?.start({
+    // Not awaited on the lane: the entry is completed after the lane is released.
+    const capture = this.startMonitoring({
       kind: "ai",
       operation: logContext.operation ?? logContext.stage ?? taskType,
       taskType,
@@ -1222,9 +1220,7 @@ export class AiService {
       ) {
         const plannedTokens = estimateAiPlanningTokens(
           taskInput,
-          selection.provider === "openai-codex"
-            ? (admission?.instruction ?? renderPrompt("shared.codex_adapter_instruction"))
-            : "",
+          selection.provider === "openai-codex" ? admission.instruction : "",
           plannedOutputTokens
         );
         if (plannedTokens > parameters.contextWindow)
@@ -1254,12 +1250,16 @@ export class AiService {
           this.options.logger?.error("Failed to attach AI execution metadata to job", error);
         }
       }
-      const adapter = this.registry.resolve({
-        providerId: descriptor.providerId,
-        modelId: descriptor.modelId,
-        requiredCapabilities,
-        offlineOnly: Boolean(selection.localModelId)
-      });
+      // A remote adapter is used as it was created: on concurrent lanes another call may register
+      // one with the same provider and model ids meanwhile. Local adapters are resident.
+      const adapter = selection.localModelId
+        ? this.registry.resolve({
+            providerId: descriptor.providerId,
+            modelId: descriptor.modelId,
+            requiredCapabilities,
+            offlineOnly: true
+          })
+        : withCapabilities(configuredAdapter, requiredCapabilities);
       const request: AiTaskRequest = {
         taskType,
         input: taskInput,
@@ -1267,14 +1267,13 @@ export class AiService {
         modelId: selection.modelId,
         requiredCapabilities,
         parameters,
-        metadata: {
-          applicationInstruction:
-            admission?.instruction ?? renderPrompt("shared.codex_adapter_instruction")
-        },
-        // A stated class sets the remote deadlines; the operation names the caller.
+        metadata: { applicationInstruction: admission.instruction },
+        // A stated class sets the deadlines; the operation names the caller.
         ...(logContext.workloadClass ? { workloadClass: logContext.workloadClass } : {}),
         ...requestOperation(logContext.operation)
       };
+      // The adapter's signal carries the lane permit, so retry backoffs sleep off the lane.
+      const execution = laneSignal(signal, permit);
       const progress = createProgressReporter(onProgress);
       const run = async () => {
         await beforeProvider?.();
@@ -1288,8 +1287,8 @@ export class AiService {
         await onProviderStart?.();
         // Remote generation always streams, so its connect, first-byte and stall deadlines apply.
         return adapter.runStreaming && runsStreaming(adapter, taskType)
-          ? adapter.runStreaming(request, signal, progress)
-          : adapter.run(request, signal);
+          ? adapter.runStreaming(request, execution, progress)
+          : adapter.run(request, execution);
       };
       const runLocal = async () => {
         const needsLoad =
@@ -1300,7 +1299,7 @@ export class AiService {
             modelId: selection.modelId
           });
           try {
-            await adapter.ensureLoaded?.(signal);
+            await adapter.ensureLoaded?.(execution);
             this.options.onLocalEmbeddingLoadStatus?.({
               state: "ready",
               modelId: selection.modelId
@@ -1320,122 +1319,194 @@ export class AiService {
         ? await this.withLocalModelUsage(selection.localModelId, runLocal)
         : await run();
       progress({ progress: 1 });
-      const aiTaskRunId = await repository.recordTaskRun({
-        profileId: selection.profileId,
-        taskType,
-        provider: result.providerId,
-        modelId: result.modelId,
-        runtime: selection.localModelId ? selection.runtime : result.runtime,
-        capabilitiesUsed: requiredCapabilities,
-        adapter: result.tokenUsage?.[aiCassetteReplayedUsageKey]
-          ? "cassette-replay"
-          : selection.localModelId
-            ? localAdapterName(selection.runtime)
-            : result.providerId,
-        repository: selection.repository,
-        revision: selection.revision,
-        quantization: selection.quantization,
-        parameters: auditedParameters(parameters, result.requestOptions),
-        promptCompositions: admission?.compositions ?? promptAudit(taskInput),
-        inputHash: sha256(taskInput),
-        outputHash: sha256(JSON.stringify(result.output)),
-        ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
-        ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
-        ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
-        durationMs: result.durationMs,
-        ...queueAndAttempt(admission, logContext),
-        status: "succeeded",
-        sourceItemIds
-      });
-      await this.options.monitoring?.finish(capture, {
-        status: "succeeded",
-        aiTaskRunId,
-        durationMs: Date.now() - started,
-        tokenUsage: monitoringUsage(result),
-        parameters: auditedParameters(parameters, result.requestOptions),
-        output: result.output,
-        ...(result.attempts !== undefined
-          ? { details: callDetails(result.attempts, result.retriedUsage) }
-          : {}),
-        ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {})
-      });
-      if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
-        await this.releaseLocalModel(selection.localModelId).catch((error) => {
-          this.options.logger?.error("Failed to release local embedding runtime", error);
+      this.localDeadlineHistory.settled(selection.localModelId, taskInput);
+      await releaseEmbeddingModel();
+      return async () => {
+        const aiTaskRunId = await repository.recordTaskRun({
+          profileId: selection.profileId,
+          taskType,
+          provider: result.providerId,
+          modelId: result.modelId,
+          runtime: selection.localModelId ? selection.runtime : result.runtime,
+          capabilitiesUsed: requiredCapabilities,
+          adapter: result.tokenUsage?.[aiCassetteReplayedUsageKey]
+            ? "cassette-replay"
+            : selection.localModelId
+              ? localAdapterName(selection.runtime)
+              : result.providerId,
+          repository: selection.repository,
+          revision: selection.revision,
+          quantization: selection.quantization,
+          parameters: auditedParameters(parameters, result.requestOptions),
+          promptCompositions: admission.compositions,
+          inputHash: sha256(taskInput),
+          outputHash: sha256(JSON.stringify(result.output)),
+          ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
+          ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
+          ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
+          durationMs: result.durationMs,
+          ...queueAndAttempt(admission, logContext),
+          ...lane(),
+          status: "succeeded",
+          sourceItemIds
         });
-      }
-      return {
-        ...result,
-        profileId: selection.profileId,
-        aiTaskRunId,
-        outputLanguage,
-        embeddingSpaceKey: embeddingSpaceKey(
-          { ...selection, parameters, promptStrategy: embeddingPromptIdentity() },
-          result
-        )
+        await this.options.monitoring?.finish(await capture, {
+          status: "succeeded",
+          aiTaskRunId,
+          durationMs: Date.now() - started,
+          tokenUsage: monitoringUsage(result),
+          parameters: auditedParameters(parameters, result.requestOptions),
+          output: result.output,
+          ...(result.attempts !== undefined
+            ? { details: callDetails(result.attempts, result.retriedUsage) }
+            : {}),
+          ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {})
+        });
+        return {
+          ...result,
+          profileId: selection.profileId,
+          aiTaskRunId,
+          outputLanguage,
+          embeddingSpaceKey: embeddingSpaceKey(
+            { ...selection, parameters, promptStrategy: embeddingPromptIdentity() },
+            result
+          )
+        };
       };
-    } catch (error) {
+    } catch (caught) {
+      // An abandoned local call keeps the local lane until its runtime is disposed (F3 D31).
+      const recovery = caught instanceof LocalDeadlineError ? caught.recovery : undefined;
+      if (recovery) permit.holdUntil(recovery);
+      const error = this.localDeadlineHistory.verdict(selection.localModelId, taskInput, caught, {
+        aborted: Boolean(signal?.aborted),
+        deadlineMs
+      });
       // What the failed call cost and the wire options of its last request, which may be a fallback.
-      const failedReport = remoteCallReport(error);
-      const aiTaskRunId = await repository.recordTaskRun({
-        profileId: selection.profileId,
-        taskType,
-        provider: selection.provider,
-        modelId: selection.modelId,
-        runtime: selection.runtime,
-        adapter: selection.localModelId ? localAdapterName(selection.runtime) : selection.provider,
-        repository: selection.repository,
-        revision: selection.revision,
-        quantization: selection.quantization,
-        parameters: auditedParameters(parameters, failedReport?.requestOptions),
-        promptCompositions: admission?.compositions ?? promptAudit(taskInput),
-        inputHash: sha256(taskInput),
-        durationMs: Date.now() - started,
-        ...queueAndAttempt(admission, logContext),
-        ...failedCallUsage(error),
-        status: signal?.aborted ? "canceled" : "failed",
-        error: redactSensitiveText(error),
-        sourceItemIds
-      });
-      await this.options.monitoring?.finish(capture, {
-        status: signal?.aborted ? "canceled" : "failed",
-        aiTaskRunId,
-        durationMs: Date.now() - started,
-        error: redactSensitiveText(error),
-        parameters: auditedParameters(parameters, failedReport?.requestOptions),
-        ...(failedReport
-          ? {
-              tokenUsage: failedMonitoringUsage(failedReport.failedUsage),
-              details: callDetails(failedReport.attempts, failedReport.failedUsage)
-            }
-          : {})
-      });
-      if (taskType === "atomic-note-generation") {
-        logStructuredError(
-          this.options.logger,
-          "atomic_note_ai_task_failed",
-          {
-            ...structuredLogContext,
-            stage: structuredLogContext.stage ?? "ai_execution",
-            taskType,
-            profileId: selection.profileId,
-            providerId: selection.provider,
-            modelId: selection.modelId,
-            runtime: selection.runtime,
-            aiTaskRunId
-          },
-          error,
-          "atomic_note_ai_task_failed"
-        );
-      }
-      if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
-        await this.releaseLocalModel(selection.localModelId).catch((releaseError) => {
-          this.options.logger?.error("Failed to release local embedding runtime", releaseError);
+      const failedReport = remoteCallReport(caught);
+      const durationMs = Date.now() - started;
+      await releaseEmbeddingModel();
+      return async () => {
+        const aiTaskRunId = await repository.recordTaskRun({
+          profileId: selection.profileId,
+          taskType,
+          provider: selection.provider,
+          modelId: selection.modelId,
+          runtime: selection.runtime,
+          adapter: selection.localModelId
+            ? localAdapterName(selection.runtime)
+            : selection.provider,
+          repository: selection.repository,
+          revision: selection.revision,
+          quantization: selection.quantization,
+          parameters: auditedParameters(parameters, failedReport?.requestOptions),
+          promptCompositions: admission.compositions,
+          inputHash: sha256(taskInput),
+          durationMs,
+          ...queueAndAttempt(admission, logContext),
+          ...failedCallUsage(caught),
+          ...lane({ error }),
+          status: signal?.aborted ? "canceled" : "failed",
+          error: redactSensitiveText(error),
+          sourceItemIds
         });
-      }
-      if (error instanceof Error) Object.assign(error, { aiTaskRunId });
-      throw error;
+        await this.options.monitoring?.finish(await capture, {
+          status: signal?.aborted ? "canceled" : "failed",
+          aiTaskRunId,
+          durationMs: Date.now() - started,
+          error: redactSensitiveText(error),
+          parameters: auditedParameters(parameters, failedReport?.requestOptions),
+          ...(failedReport
+            ? {
+                tokenUsage: failedMonitoringUsage(failedReport.failedUsage),
+                details: callDetails(failedReport.attempts, failedReport.failedUsage)
+              }
+            : {})
+        });
+        if (taskType === "atomic-note-generation") {
+          logStructuredError(
+            this.options.logger,
+            "atomic_note_ai_task_failed",
+            {
+              ...structuredLogContext,
+              stage: structuredLogContext.stage ?? "ai_execution",
+              taskType,
+              profileId: selection.profileId,
+              providerId: selection.provider,
+              modelId: selection.modelId,
+              runtime: selection.runtime,
+              aiTaskRunId
+            },
+            error,
+            "atomic_note_ai_task_failed"
+          );
+        }
+        if (error instanceof Error) Object.assign(error, { aiTaskRunId });
+        throw error;
+      };
     }
+  }
+
+  /** The audit of an admitted call that failed before anything was sent to a model. */
+  private async recordUnstartedTask(
+    taskType: RoutedTask,
+    context: AiTaskLogContext,
+    signal: AbortSignal | undefined,
+    pinned: OrganizationProfile | undefined,
+    admission: PromptAdmission,
+    error: unknown,
+    lane: (failure?: { error: unknown }) => LaneAuditFields
+  ): Promise<never> {
+    const selection = admission.selection;
+    const aiTaskRunId = await createAiConfigRepository(this.requirePool()).recordTaskRun({
+      profileId: selection.profileId,
+      taskType,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      runtime: selection.runtime,
+      parameters: pinned?.parameters ?? {
+        ...selection.modelDefaultParameters,
+        ...selection.parameters
+      },
+      promptCompositions: admission.compositions,
+      inputHash: sha256(admission.input),
+      durationMs: 0,
+      ...queueAndAttempt(admission, context),
+      ...lane({ error }),
+      status: signal?.aborted ? "canceled" : "failed",
+      error: redactSensitiveText(error),
+      sourceItemIds: taskSourceItemIds(context)
+    });
+    if (error instanceof Error) Object.assign(error, { aiTaskRunId });
+    throw error;
+  }
+
+  /** The total deadline of a call on a route (F3 D31): the local one, else the remote one. */
+  private callDeadlineMs(
+    selection: Pick<TaskSelection, "localModelId" | "provider" | "baseUrl" | "providerConfigId">,
+    taskType: AiTaskRequest["taskType"],
+    statedClass: AiWorkloadClass | undefined
+  ): number {
+    const workloadClass = requestWorkloadClass({ taskType, workloadClass: statedClass });
+    if (selection.localModelId)
+      return localDeadlineMs(this.laneConfig.localDeadlines, workloadClass);
+    // OpenAI-compatible servers on this machine get the longer local total (remote-execution.ts).
+    const servedLocally =
+      selection.provider === "openai-compatible" && !isRemoteExecution(selection);
+    return remoteTotalDeadlineMs(this.remoteRuntime, workloadClass, servedLocally);
+  }
+
+  /** Starts a monitoring entry without waiting for it; a failed start is no entry. */
+  private startMonitoring(
+    input: Parameters<MonitoringService["start"]>[0]
+  ): Promise<Awaited<ReturnType<MonitoringService["start"]>> | undefined> {
+    const monitoring = this.options.monitoring;
+    if (!monitoring) return Promise.resolve(undefined);
+    return Promise.resolve()
+      .then(() => monitoring.start(input))
+      .catch((error: unknown) => {
+        this.options.logger?.error("Failed to start an AI monitoring entry", error);
+        return undefined;
+      });
   }
 
   public async traceOperation<T>(
@@ -1451,7 +1522,19 @@ export class AiService {
   }
 
   public isLocalModelInUse(localModelId: string): boolean {
-    return this.activeLocalModels.has(localModelId);
+    if (this.activeLocalModels.has(localModelId)) return true;
+    return residencySlots.some((slot) => {
+      const occupant = this.resident[slot];
+      return occupant?.localModelId === localModelId && isWedged(occupant.adapter);
+    });
+  }
+
+  /**
+   * Whether a resident model is in use: running a call, or wedged by a call that ignored its
+   * deadline (F3 D31), whose runtime is disposed by its own recovery once that call ended.
+   */
+  private occupied(occupant: ResidentLocalAdapter): boolean {
+    return this.activeLocalModels.has(occupant.localModelId) || isWedged(occupant.adapter);
   }
 
   /**
@@ -1465,7 +1548,7 @@ export class AiService {
       const occupant = this.resident[slot];
       if (!occupant) continue;
       if (!force) {
-        if (this.activeLocalModels.has(occupant.localModelId)) continue;
+        if (this.occupied(occupant)) continue;
         if (slot === "rank") continue;
         if (keepEmbedding && occupant.adapter.describe().capabilities.includes("embedding"))
           continue;
@@ -1489,6 +1572,7 @@ export class AiService {
    * check, and is audited with the evaluated tokens and cost 0.
    */
   public async rank(input: AiRankInput, signal?: AbortSignal): Promise<AiRankResult> {
+    // Validated before it waits for the lane.
     const request = parseRankRequest({
       instruction: input.instruction,
       query: input.query,
@@ -1496,29 +1580,23 @@ export class AiService {
     });
     const pin = capturePromptPin();
     const compositions = input.promptCompositions ?? promptAudit(input.instruction);
+    // The wait for the local lane does not count against the caller's own timeout.
     const deadline = ActiveDeadline.of(signal);
-    deadline?.pause();
-    let waiting = true;
-    const stopWaiting = () => {
-      if (!waiting) return;
-      waiting = false;
-      deadline?.resume();
-    };
-    try {
-      return await aiExecutionQueue.run(
-        (timing) =>
-          withPromptPin(pin, () => {
-            stopWaiting();
-            return this.executeRank(input, request, compositions, timing.queueMs, signal);
-          }),
+    const complete = await this.scheduler.run(
+      {
+        lane: "local",
+        priority: aiTaskPriority({ priority: input.priority }),
+        workloadClass: "decide",
         signal,
-        { priority: input.priority ?? "background" }
-      );
-    } finally {
-      stopWaiting();
-    }
+        label: input.operation,
+        pauses: deadline ? [deadline] : []
+      },
+      (permit) =>
+        withPromptPin(pin, () => this.executeRank(input, request, compositions, permit, signal))
+    );
+    // The audit and the monitoring entry are written once the lane is free.
+    return complete();
   }
-
   /** Whether rank calls of an operation have a ranker to run on (see {@link DecideRouteStatus}). */
   public async decideRouteStatus(operation?: string): Promise<DecideRouteStatus> {
     try {
@@ -1665,13 +1743,14 @@ export class AiService {
     input: AiRankInput,
     request: RankRequest,
     compositions: PromptCompositionSnapshot[],
-    queueMs: number,
+    permit: LanePermit,
     signal: AbortSignal | undefined
-  ): Promise<AiRankResult> {
+  ): Promise<() => Promise<AiRankResult>> {
     signal?.throwIfAborted();
     const repository = createAiConfigRepository(this.requirePool());
     const { selection, model, entry } = await this.resolveDecideRoute(repository, input.operation);
     const sourceItemIds = [...new Set(input.sourceIds ?? [])];
+    const queueMs = permit.queueMs;
     const taskRequest: AiTaskRequest = {
       ...rankTaskRequest(request),
       profileId: selection.profileId,
@@ -1681,6 +1760,9 @@ export class AiService {
     };
     const taskInput = String(taskRequest.input);
     const adapterName = localAdapterName(model.runtime);
+    const deadlineMs = localDeadlineMs(this.laneConfig.localDeadlines, "decide");
+    const lane = (failure?: { error: unknown }) =>
+      laneAudit(permit, deadlineMs, { operation: input.operation }, signal, failure);
     const audit = {
       profileId: selection.profileId,
       taskType: "reranking",
@@ -1710,14 +1792,19 @@ export class AiService {
       }
     }
     const started = Date.now();
-    const capture = await this.options.monitoring?.start({
+    // Not awaited on the lane: the entry is completed after the lane is released.
+    const capture = this.startMonitoring({
       kind: "ai",
       operation: input.operation,
       taskType: "reranking",
       stage: input.stage ?? input.operation,
       context: {
         origin:
-          input.priority === "interactive" ? "interactive" : input.jobId ? "job" : "background",
+          aiTaskPriority({ priority: input.priority }) === "P0"
+            ? "interactive"
+            : input.jobId
+              ? "job"
+              : "background",
         ...(input.jobId ? { jobId: input.jobId } : {}),
         workloadClass: "decide",
         routeKey: selection.routeKey,
@@ -1762,74 +1849,100 @@ export class AiService {
           offlineOnly: true
         });
         signal?.throwIfAborted();
-        const ran = await adapter.run(taskRequest, signal);
+        const ran = await adapter.run(taskRequest, laneSignal(signal, permit));
         return { result: ran, output: readRankResult(ran, request.documents.length) };
       });
+      this.localDeadlineHistory.settled(model.id, taskInput);
       const inputTokens = output.tokenCounts.reduce((total, count) => total + count, 0);
-      const aiTaskRunId = await repository.recordTaskRun({
-        ...audit,
-        outputHash: sha256(JSON.stringify(result.output)),
-        inputTokens,
-        outputTokens: 0,
-        costEstimate: 0,
-        durationMs: result.durationMs,
-        status: "succeeded"
-      });
-      await this.options.monitoring?.finish(capture, {
-        status: "succeeded",
-        aiTaskRunId,
-        durationMs: Date.now() - started,
-        tokenUsage: { inputTokens, outputTokens: 0, totalTokens: inputTokens },
-        costEstimate: 0,
-        parameters: {},
-        output
-      });
-      return {
-        ...output,
-        aiTaskRunId,
-        profileId: selection.profileId,
-        localModelId: model.id,
-        provider: selection.provider,
-        modelId: selection.modelId,
-        runtime: model.runtime,
-        durationMs: result.durationMs,
-        queueMs
+      return async () => {
+        const aiTaskRunId = await repository.recordTaskRun({
+          ...audit,
+          outputHash: sha256(JSON.stringify(result.output)),
+          inputTokens,
+          outputTokens: 0,
+          costEstimate: 0,
+          durationMs: result.durationMs,
+          ...lane(),
+          status: "succeeded"
+        });
+        await this.options.monitoring?.finish(await capture, {
+          status: "succeeded",
+          aiTaskRunId,
+          durationMs: Date.now() - started,
+          tokenUsage: { inputTokens, outputTokens: 0, totalTokens: inputTokens },
+          costEstimate: 0,
+          parameters: {},
+          output
+        });
+        return {
+          ...output,
+          aiTaskRunId,
+          profileId: selection.profileId,
+          localModelId: model.id,
+          provider: selection.provider,
+          modelId: selection.modelId,
+          runtime: model.runtime,
+          durationMs: result.durationMs,
+          queueMs
+        };
       };
-    } catch (error) {
-      const aiTaskRunId = await repository.recordTaskRun({
-        ...audit,
-        durationMs: Date.now() - started,
-        status: signal?.aborted ? "canceled" : "failed",
-        error: redactSensitiveText(error)
+    } catch (caught) {
+      // An abandoned GGUF call keeps the local lane until its runtime is disposed (F3 D31).
+      if (caught instanceof LocalDeadlineError && caught.recovery)
+        permit.holdUntil(caught.recovery);
+      const error = this.localDeadlineHistory.verdict(model.id, taskInput, caught, {
+        aborted: Boolean(signal?.aborted),
+        deadlineMs
       });
-      await this.options.monitoring?.finish(capture, {
-        status: signal?.aborted ? "canceled" : "failed",
-        aiTaskRunId,
-        durationMs: Date.now() - started,
-        error: redactSensitiveText(error),
-        parameters: {}
-      });
-      if (error instanceof Error) Object.assign(error, { aiTaskRunId });
-      throw error;
+      const durationMs = Date.now() - started;
+      return async () => {
+        const aiTaskRunId = await repository.recordTaskRun({
+          ...audit,
+          durationMs,
+          ...lane({ error }),
+          status: signal?.aborted ? "canceled" : "failed",
+          error: redactSensitiveText(error)
+        });
+        await this.options.monitoring?.finish(await capture, {
+          status: signal?.aborted ? "canceled" : "failed",
+          aiTaskRunId,
+          durationMs: Date.now() - started,
+          error: redactSensitiveText(error),
+          parameters: {}
+        });
+        if (error instanceof Error) Object.assign(error, { aiTaskRunId });
+        throw error;
+      };
     }
   }
 
   public async testLocalModel(localModelId: string): Promise<string> {
     const pin = capturePromptPin();
-    return aiExecutionQueue.run(
-      () => withPromptPin(pin, () => this.executeLocalModelTest(localModelId)),
-      undefined,
-      { priority: "interactive" }
+    const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
+    if (!model) throw new Error("errors.common.notFound");
+    // Settings tests are interactive: P0 on the local lane, in the class of what they test.
+    const workloadClass = localModelTestClass(model);
+    return this.scheduler.run(
+      { lane: "local", priority: "P0", workloadClass, label: "local_model_test" },
+      (permit) =>
+        withPromptPin(pin, () => this.executeLocalModelTest(localModelId, permit, workloadClass))
     );
   }
 
-  private async executeLocalModelTest(localModelId: string): Promise<string> {
+  private async executeLocalModelTest(
+    localModelId: string,
+    permit: LanePermit,
+    workloadClass: AiWorkloadClass
+  ): Promise<string> {
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model) throw new Error("errors.common.notFound");
     const catalogEntry = findLocalModelCatalogEntry(model.catalogId);
     // A dedicated ranker is validated, not prompted: artifact checks, then the ranking smoke test.
     if (catalogEntry && isRankerCatalogEntry(catalogEntry))
-      return this.executeRankerValidation(model, catalogEntry);
+      return this.executeRankerValidation(model, catalogEntry, permit);
+    const deadlineMs = localDeadlineMs(this.laneConfig.localDeadlines, workloadClass);
+    const lane = (failure?: { error: unknown }) =>
+      laneAudit(permit, deadlineMs, {}, undefined, failure);
     const configuredAdapter = await this.createLocalAdapter(localModelId);
     const descriptor = configuredAdapter.describe();
     const embeddingOnly =
@@ -1897,6 +2010,7 @@ export class AiService {
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         costEstimate: 0,
         durationMs: result.durationMs,
+        ...lane(),
         status: "succeeded"
       });
       await this.options.monitoring?.finish(capture, {
@@ -1927,6 +2041,7 @@ export class AiService {
         inputHash: sha256(input),
         promptCompositions: promptAudit(input),
         durationMs: Date.now() - started,
+        ...lane({ error }),
         status: "failed",
         error: redactSensitiveText(error)
       });
@@ -1936,6 +2051,7 @@ export class AiService {
         durationMs: Date.now() - started,
         error: redactSensitiveText(error)
       });
+      if (error instanceof LocalDeadlineError && error.recovery) permit.holdUntil(error.recovery);
       throw error;
     }
   }
@@ -1949,8 +2065,12 @@ export class AiService {
    */
   private async executeRankerValidation(
     model: LocalModelRecord,
-    entry: LocalModelCatalogEntry
+    entry: LocalModelCatalogEntry,
+    permit: LanePermit
   ): Promise<string> {
+    const deadlineMs = localDeadlineMs(this.laneConfig.localDeadlines, "decide");
+    const lane = (failure?: { error: unknown }) =>
+      laneAudit(permit, deadlineMs, {}, undefined, failure);
     const models = createLocalModelRepository(this.requirePool());
     const repository = createAiConfigRepository(this.requirePool());
     const instruction = renderPrompt("diagnostics.local_ranking");
@@ -2011,6 +2131,7 @@ export class AiService {
             ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
             costEstimate: 0,
             durationMs: result.durationMs,
+            ...lane(),
             status: "succeeded"
           });
           inputTokens += result.inputTokens ?? 0;
@@ -2019,9 +2140,12 @@ export class AiService {
           lastAiTaskRunId = await repository.recordTaskRun({
             ...audit(request, taskRequest),
             durationMs: Date.now() - callStarted,
+            ...lane({ error }),
             status: "failed",
             error: redactSensitiveText(error)
           });
+          if (error instanceof LocalDeadlineError && error.recovery)
+            permit.holdUntil(error.recovery);
           throw error;
         }
       };
@@ -2068,7 +2192,8 @@ export class AiService {
       throw error;
     } finally {
       // The ranker is not kept resident by the test; routed use manages its own residency.
-      if (this.resident.rank?.localModelId === model.id && !this.activeLocalModels.has(model.id))
+      const ranker = this.resident.rank;
+      if (ranker?.localModelId === model.id && !this.occupied(ranker))
         await this.releaseSlot("rank").catch(() => undefined);
       await this.stopIdleMlxHelper(false).catch(() => undefined);
     }
@@ -2115,8 +2240,7 @@ export class AiService {
   ): Promise<ResidentLocalAdapter> {
     const occupant = this.resident[slot];
     if (occupant) {
-      if (this.activeLocalModels.has(occupant.localModelId))
-        throw new Error("errors.localModels.modelBusy");
+      if (this.occupied(occupant)) throw new Error("errors.localModels.modelBusy");
       await this.releaseSlot(slot);
     }
     const adapter =
@@ -2144,13 +2268,13 @@ export class AiService {
     if (occupant.runtime === "mlx") this.mlxHoldsReleasedModel = true;
   }
 
-  /** Releases one local model unless it is running a call. */
+  /** Releases one local model unless it is running a call or wedged. */
   private async releaseLocalModel(localModelId: string): Promise<void> {
     if (this.activeLocalModels.has(localModelId)) return;
     const slot = residencySlots.find((candidate) => {
       return this.resident[candidate]?.localModelId === localModelId;
     });
-    if (slot) await this.releaseSlot(slot);
+    if (slot && !this.occupied(this.resident[slot]!)) await this.releaseSlot(slot);
     await this.stopIdleMlxHelper(false);
   }
 
@@ -2181,7 +2305,7 @@ export class AiService {
 
   private buildRankerAdapter(model: LocalModelRecord, capabilities: AiCapability[]): RankerAdapter {
     const options = {
-      ...localAdapterOptions(model, capabilities),
+      ...localAdapterOptions(model, capabilities, this.laneConfig.localDeadlines),
       parameterCapabilities: {}
     };
     return model.runtime === "mlx"
@@ -2195,7 +2319,7 @@ export class AiService {
 
   private buildLocalAdapter(model: LocalModelRecord, capabilities: AiCapability[]): AiModelAdapter {
     const options = {
-      ...localAdapterOptions(model, capabilities),
+      ...localAdapterOptions(model, capabilities, this.laneConfig.localDeadlines),
       parameterCapabilities: localModelParameterCapabilities(model, capabilities)
     };
     return model.runtime === "mlx"
@@ -2339,9 +2463,15 @@ export class AiService {
       .adapter;
   }
 
-  private registerAdapter<T extends AiModelAdapter>(adapter: T): T {
+  /**
+   * Registers an adapter and returns the instance the registry holds for it (wrapped by the DEV
+   * cassette when one is installed). It is read back synchronously, so a concurrent call on another
+   * lane that registers an adapter under the same provider and model ids cannot swap it.
+   */
+  private registerAdapter(adapter: AiModelAdapter): AiModelAdapter {
     this.registry.register(adapter);
-    return adapter;
+    const { providerId, modelId } = adapter.describe();
+    return this.registry.resolve({ providerId, modelId, requiredCapabilities: [] });
   }
 
   private resolveMlxHelperPath(): string {
@@ -2439,7 +2569,11 @@ function rankerReadyForDecide(model: LocalModelRecord, entry: LocalModelCatalogE
   );
 }
 
-function localAdapterOptions(model: LocalModelRecord, capabilities: AiCapability[]) {
+function localAdapterOptions(
+  model: LocalModelRecord,
+  capabilities: AiCapability[],
+  localDeadlines: AiLaneRuntimeConfig["localDeadlines"]
+) {
   return {
     modelId: model.modelId,
     modelPath: resolveLocalModelPath(model),
@@ -2447,8 +2581,141 @@ function localAdapterOptions(model: LocalModelRecord, capabilities: AiCapability
     catalogId: model.catalogId,
     repository: model.repository,
     revision: model.revision,
-    quantization: model.quantization
+    quantization: model.quantization,
+    localDeadlines
   };
+}
+
+/** A GGUF adapter whose runtime ignored a deadline and still runs the abandoned call (F3 D31). */
+function isWedged(adapter: AiModelAdapter): boolean {
+  return (adapter as { wedged?: unknown }).wedged === true;
+}
+
+/** The adapter, when its model declares what the call needs (as `AiModelRegistry.resolve` checks). */
+function withCapabilities(
+  adapter: AiModelAdapter,
+  required: readonly AiCapability[]
+): AiModelAdapter {
+  if (!hasCapabilities(adapter.describe(), required))
+    throw new Error("errors.ai.noCompatibleModel");
+  return adapter;
+}
+
+/** The class a settings test of a local model runs in: rankers decide, embedders embed. */
+function localModelTestClass(model: LocalModelRecord): AiWorkloadClass {
+  const entry = findLocalModelCatalogEntry(model.catalogId);
+  if (
+    entry ? isRankerCatalogEntry(entry) : isDedicatedRanker(parseCapabilities(model.capabilities))
+  )
+    return "decide";
+  return model.capabilities.includes("embedding") && !model.capabilities.includes("text-generation")
+    ? "embed"
+    : "answer";
+}
+
+/**
+ * The adapter's own signal for one execution: it follows the caller's and carries the lane permit,
+ * so the remote retry loop sleeps off the lane and reports rate limits to it.
+ */
+function laneSignal(signal: AbortSignal | undefined, permit: LanePermit): AbortSignal {
+  const own = AbortSignal.any(signal ? [signal] : []);
+  bindLanePermit(own, permit);
+  return own;
+}
+
+type LaneAuditFields = {
+  lane: string;
+  workloadClass: AiWorkloadClass;
+  priority: number;
+  deadlineMs: number;
+  deadlineOutcome: "met" | "aborted";
+  isRepair: boolean;
+  retryWaitMs: number;
+  requeueMs: number;
+};
+
+/**
+ * The scheduler's audit of one execution (0057): its lane, class, priority and deadline, whether a
+ * deadline ended it (a cancelled call met its deadline), the retry sleeps off the lane and the
+ * re-waits for it. `failure` is set when the call failed.
+ */
+function laneAudit(
+  permit: LanePermit,
+  deadlineMs: number,
+  context: Pick<AiTaskLogContext, "isRepair" | "operation">,
+  signal: AbortSignal | undefined,
+  failure?: { error: unknown }
+): LaneAuditFields {
+  return {
+    lane: permit.lane,
+    workloadClass: permit.workloadClass,
+    priority: priorityNumber(permit.priority),
+    deadlineMs,
+    deadlineOutcome:
+      failure && !signal?.aborted && isDeadlineFailure(failure.error) ? "aborted" : "met",
+    isRepair: context.isRepair ?? context.operation?.endsWith("_repair") ?? false,
+    retryWaitMs: permit.releasedMs,
+    requeueMs: permit.requeueMs
+  };
+}
+
+/** Rejects as soon as `signal` aborts, so an admission is cancelled promptly while it prepares. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) {
+    work.catch(() => undefined);
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      work.catch(() => undefined);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/**
+ * Local inputs whose last call ended on its deadline (F3 D31): a second consecutive deadline on the
+ * same model and input is deterministic, so it fails without a job retry. Bounded, oldest first out.
+ */
+class LocalDeadlineHistory {
+  private static readonly capacity = 64;
+  private readonly timedOut = new Set<string>();
+
+  /** A call on this model and input settled without a deadline. */
+  public settled(localModelId: string | null, input: string): void {
+    if (localModelId) this.timedOut.delete(this.key(localModelId, input));
+  }
+
+  /** The error a failed local call reports: the repeated-deadline one on its second deadline. */
+  public verdict(
+    localModelId: string | null,
+    input: string,
+    error: unknown,
+    call: { aborted: boolean; deadlineMs: number }
+  ): unknown {
+    if (!localModelId) return error;
+    const key = this.key(localModelId, input);
+    if (call.aborted || !isDeadlineFailure(error)) {
+      this.timedOut.delete(key);
+      return error;
+    }
+    if (this.timedOut.delete(key))
+      return new LocalDeadlineError(
+        `Local model call exceeded its ${call.deadlineMs} ms deadline twice in a row on the same input.`,
+        { code: "deadline_repeated", deadlineMs: call.deadlineMs, transient: false }
+      );
+    this.timedOut.add(key);
+    if (this.timedOut.size > LocalDeadlineHistory.capacity)
+      this.timedOut.delete(this.timedOut.values().next().value!);
+    return error;
+  }
+
+  private key(localModelId: string, input: string): string {
+    return `${localModelId}\u0000${sha256(input)}`;
+  }
 }
 
 /** The parameter descriptor a local adapter carries: the catalog's, else the runtime's. */

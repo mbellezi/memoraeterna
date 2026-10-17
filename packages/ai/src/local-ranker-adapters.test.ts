@@ -260,7 +260,8 @@ describe("MlxRerankerAdapter", () => {
           maxTokens: 2_048,
           batchSize: 16
         },
-        timeoutMs: 600_000
+        // The `decide` class's local deadline (F3 D31), not one bound for every command.
+        timeoutMs: 10_000
       }
     ]);
     expect(result).toEqual({

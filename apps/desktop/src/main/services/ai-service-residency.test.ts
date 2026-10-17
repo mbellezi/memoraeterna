@@ -178,6 +178,22 @@ beforeEach(() => {
 });
 
 describe("residency", () => {
+  it("keeps a wedged local runtime resident and in use until its abandoned call ended (F3 D31)", async () => {
+    const { ai, built } = fakeService();
+    state.selections.set("text-generation", localSelection(generativeA));
+    await ai.runDefaultTask("text-generation", "first");
+    const [writer] = built;
+    // The runtime ignored a deadline: its own recovery disposes it once the native call ended.
+    Object.assign(writer!, { wedged: true });
+    await ai.releaseLocalRuntime();
+    expect(writer!.dispose).not.toHaveBeenCalled();
+    expect(ai.isLocalModelInUse(ids.generativeA)).toBe(true);
+    Object.assign(writer!, { wedged: false });
+    expect(ai.isLocalModelInUse(ids.generativeA)).toBe(false);
+    await ai.releaseLocalRuntime();
+    expect(writer!.dispose).toHaveBeenCalledOnce();
+  });
+
   it("never keeps two generative models resident, while the embedding model stays", async () => {
     const { ai, internals, built } = fakeService();
     state.selections.set("embedding", localSelection(embedding));

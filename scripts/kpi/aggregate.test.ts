@@ -174,6 +174,63 @@ describe("aggregateAi", () => {
       result.byRoute.map((group) => `${group.task}/${group.provider}/${group.runtime}`)
     ).toEqual(["reranking/openai-codex/remote", "embedding/local/gguf"]);
   });
+
+  it("groups by lane and class, counting deadline aborts, calls past their deadline and repairs", () => {
+    const lanes = aggregateAi([
+      aiRow({
+        lane: "remote:00000000-0000-4000-8000-000000000001",
+        workloadClass: "decide",
+        durationMs: 40_000,
+        deadlineMs: 45_000,
+        deadlineOutcome: "met",
+        requeueMs: 0,
+        queueMs: 100
+      }),
+      // 300 s of lane re-wait do not count against the 45 s deadline.
+      aiRow({
+        lane: "remote:00000000-0000-4000-8000-000000000001",
+        workloadClass: "decide",
+        durationMs: 310_000,
+        deadlineMs: 45_000,
+        deadlineOutcome: "met",
+        requeueMs: 300_000,
+        isRepair: true
+      }),
+      aiRow({
+        lane: "local",
+        provider: "local-gguf",
+        workloadClass: "write-fast",
+        status: "failed",
+        durationMs: 183_000,
+        deadlineMs: 180_000,
+        deadlineOutcome: "aborted",
+        requeueMs: 0
+      }),
+      aiRow({})
+    ]).byLane;
+    expect(lanes).toEqual([
+      expect.objectContaining({
+        lane: "remote: openai-codex",
+        workloadClass: "decide",
+        calls: 2,
+        withDeadline: 2,
+        deadlineAborted: 0,
+        pastDeadline: 0,
+        repairs: 1
+      }),
+      expect.objectContaining({
+        lane: "local",
+        workloadClass: "write-fast",
+        calls: 1,
+        failedOrCanceled: 1,
+        deadlineAborted: 1,
+        pastDeadline: 1
+      }),
+      // Rows written before the lane scheduler.
+      expect.objectContaining({ lane: "unknown", workloadClass: "unknown", withDeadline: 0 })
+    ]);
+    expect(lanes[0]!.requeueSeconds).toMatchObject({ n: 2, max: 300 });
+  });
 });
 
 describe("aggregateMatching", () => {

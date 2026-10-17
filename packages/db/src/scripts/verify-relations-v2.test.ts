@@ -130,7 +130,14 @@ describe.skipIf(!sidecarInstalled)(
       const migrated = await verifyExistingDatabase(urlOf("relations_v2_existing"), later);
       expect(migrated).toMatchObject({ migrated: true, report: { current_evidence_lost: 0 } });
       expect(migrated.history.after).toBe(migrated.history.total);
-      expect(migrated.history.before).toBe(migrated.history.total - 2);
+      // The restore stops at 0055: 0056 and every migration after it were pending.
+      const laterTags = (
+        JSON.parse(await readFile(join(later, "meta/_journal.json"), "utf8")) as {
+          entries: Array<{ tag: string }>;
+        }
+      ).entries.map((entry) => entry.tag);
+      expect(migrated.history.total).toBe(laterTags.length);
+      expect(migrated.history.before).toBe(laterTags.indexOf(relationsV2Tag));
       expect(migrated.counts?.relations).toBe(legacyRelationShapes.length);
       expect(migrated.invariants).toMatchObject({
         automaticEventsOnReviewed: 0,
