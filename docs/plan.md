@@ -571,27 +571,27 @@ of wave 2, tuning only), F freeze (wave 3), P pre-soak (end of wave 3), X exit (
 Wave 0:
 - [x] T42 Decision record: D1-D47 and Q1-Q20 (`docs/f3-decisions.md`), the gates, the measurement rules and seeds,
       the pre-registered selection and gate-0 rules, X7-REF, these task boxes.
-- [ ] T43 Measurement harness: the `--gate f3` evaluator with the freeze guard and the pre-freeze feasibility mode,
+- [x] T43 Measurement harness: the `--gate f3` evaluator with the freeze guard and the pre-freeze feasibility mode,
       offline re-scoring, reverse-only loss, calls per chapter and tuning candidate recall.
-- [ ] T43b v9 end-state backups mapped and the R_v9 capture (ENV-F's pre-F3 note relations).
+- [x] T43b v9 end-state backups mapped and the R_v9 capture (ENV-F's pre-F3 note relations).
 
 Wave 1 (gate 0 and gate M at the end):
-- [ ] T44 M0: offline re-score of the pinned matching runs, tuning candidate recall, the graph call split, B4 and
+- [x] T44 M0: offline re-score of the pinned matching runs, tuning candidate recall, the graph call split, B4 and
       the throughput forecast (`docs/spikes/f3-m0.md`).
 - [ ] T45 Label set and the blind three-judge panel (decision 21) replacing the owner-labeled pairs: about 300 note
       pairs from public and synthetic text, the source pairs, R_v6 and the R_v9 sample.
 - [ ] T46 Pair scoring harness: bake-off scores through the product adapters, verdict-only v9 note-pair scoring
       and B1.
-- [ ] T47 AiScheduler (migration `ai_task_run_lanes`): one local lane and adaptive remote lanes, priorities with
+- [x] T47 AiScheduler (migration `ai_task_run_lanes`): one local lane and adaptive remote lanes, priorities with
       aging, deadlines on every runtime, retries off the lane; remove `ai-execution-queue.ts`; `rules/ai.md`.
-- [ ] T48 Relations schema v2 (migration `relations_v2`): canonical note pairs with an explicit direction, bands
+- [x] T48 Relations schema v2 (migration `relations_v2`): canonical note pairs with an explicit direction, bands
       apart from review, the veto, the typing cache, the score scale and one visibility module; `rules/knowledge.md`.
-- [ ] T48b Append-only relation events and match runs with exact revert.
-- [ ] T48m Gate M (the orchestrator): verified DEV backup, cold copies, a rehearsal on a DEV clone and the
+- [x] T48b Append-only relation events and match runs with exact revert.
+- [x] T48m Gate M (the orchestrator): verified DEV backup, cold copies, a rehearsal on a DEV clone and the
       migration startup cost.
-- [ ] T49 Indexed retrieval SQL (migration `relation_retrieval_indexes`): `search_tsv`, raw-distance partial HNSW,
+- [x] T49 Indexed retrieval SQL (migration `relation_retrieval_indexes`): `search_tsv`, raw-distance partial HNSW,
       EXPLAIN gates.
-- [ ] T50 Ranker `pairs` input for both-direction scoring, product parity, and re-validation with a score-parity
+- [x] T50 Ranker `pairs` input for both-direction scoring, product parity, and re-validation with a score-parity
       check on every runtime-build change.
 
 Wave 2 (M1 and gate R at the end):
@@ -616,7 +616,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
 - [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
-- [ ] T58e (conditional) Uncertain-band escalation, only if T58's rule adopts it.
+- [ ] T58e Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
 - [ ] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
 - [ ] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
 - [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).

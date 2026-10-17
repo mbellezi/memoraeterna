@@ -191,8 +191,32 @@ pre-F3 note relations (R_v9) to `.cache/f3/labels/r-v9/`; the record goes to `.c
 
 ### Gate 0 outcome
 
-Recorded at gate 0: the verdict, B1 and B4, the chosen `rankPairsPerCall`, and any lever of the Gate-0 throughput
-rule applied, in its order. Not yet run.
+Recorded at gate 0 (2026-10-17; T43b, T44 `docs/spikes/f3-m0.md`, T46a scores in `.cache/f3/scores/`).
+
+| Check | Result | Bar | Verdict |
+| --- | --- | --- | --- |
+| Held-out reachable at k = 20 (`--pre-freeze-feasibility`) | 28/28 | ≥27/28 | pass |
+| Held-out at Spike A's rule, MLX max ≥3.3125 (GGUF max ≥3.16) | 25/28, 0/35 (GGUF 24/28, 0/35) | ≥27/28, 0/35 | short |
+| Tuning candidate recall | 26/26 | all but one | pass |
+| X7 projection with D36 (upper end) | 37.1 per chapter (X7-REF 33.9) | ≤40 | pass |
+| Throughput forecast, K = 20 / K = 10 (lever 4) | MLX 4.2-5.6 / 2.0-3.0 min; GGUF 7.9 / 4.5 min | ≤3.2 (MLX), ≤6.4 (GGUF) | short / pass |
+| Backup map (T43b) | V9-A and V9-B restored, counts equal | done | pass |
+
+- **B1:** MLX 27.4 ms per pair at 32 pairs per call with helper batch 16 (876 ms per call, inside the 1.0 s P0 cap);
+  GGUF 44.5 ms at 16 pairs per call (712 ms). `rankPairsPerCall` = **32 (MLX) / 16 (GGUF)**, helper batch 16 (T50's
+  `rankPairsLimits`).
+- **B4 (arrival vs batch):** arrival mode needs the D19 guard (5.4-11.5 completions per note); the refreshed-kth idea
+  is left to T51 as a design question.
+- **Throughput levers applied, in order:** lever 1 (B1 above), then lever 4 (K = 10 candidates per note, D17's
+  recall-lossless limits; tuning reach stays 26/26 down to K = 8). T51 implements K = 10 with the rules/knowledge.md
+  edit.
+- **Held-out short with tuning recall complete:** no design change (D3). The owner was asked about the bar against
+  this extraction (2026-10-17) and answered: **keep X1 at ≥27/28** and use the levers — T58's per-decider calibration
+  on the panel labels and, if still short, **T58e's uncertain-band escalation becomes planned** (no longer
+  conditional). If gate F's forecast is still short, the orchestrator returns to the owner with the measured value.
+- **Reverse-only, literal (X2 gates on the adjudicated loss):** R_v9 MLX 23/137, GGUF 27/137; R_v6 12/37.
+- **E6 non-regression:** the `e2e-plos` replay now misses 5 generative note-matching requests after T48/T49 (retrieval
+  changed); per R3 the F2 replays are held to 0 *extraction* misses and E6 is re-recorded under F3 by T55k.
 
 ## Measurement
 
