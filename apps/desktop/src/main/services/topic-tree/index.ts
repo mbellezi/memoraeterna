@@ -12,7 +12,12 @@ import type { AiService } from "../ai-service.js";
 import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { startCorpusRunner } from "./corpus-runner.js";
-import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
+import {
+  TopicAiBudget,
+  readTopicAiMode,
+  readTopicRenameKnobs,
+  settingsAiBudgetStore
+} from "./topic-ai.js";
 import { TopicAreasService } from "./topic-areas.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicStructureJobs } from "./topic-build.js";
@@ -124,6 +129,8 @@ export function engineStatusOf(status: TopicServiceStatus, noDecider = false): T
 export function createTopicTreeServices(options: TopicTreeServicesOptions): TopicTreeServices {
   const { getPool, logger } = options;
   const aiMode = readTopicAiMode(options.env, options.isPackaged, logger);
+  // DEV only: a one-time rename pass under a new naming prompt, and its call cap for today.
+  const renameKnobs = readTopicRenameKnobs(options.env, options.isPackaged, logger);
   const changes = new TopicChangeCoalescer({
     ...(options.changesDelayMs === undefined ? {} : { delayMs: options.changesDelayMs }),
     ...(logger ? { logger } : {})
@@ -161,7 +168,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   });
   const budget = new TopicAiBudget({
     store: options.budgetStore ?? settingsAiBudgetStore(getPool),
-    cap: () => service!.config().ai.maxBackgroundCallsPerDay,
+    cap: () => renameKnobs.dailyCap ?? service!.config().ai.maxBackgroundCallsPerDay,
     ...(options.now ? { now: options.now } : {})
   });
   const topicService = new TopicTreeService({
@@ -319,6 +326,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       triggers,
       changes,
       isRegistered,
+      renameRevisions: renameKnobs.renameRevisions,
       ...(logger ? { logger } : {}),
       ...(options.now ? { now: options.now } : {})
     });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TopicAiBudget, localDay, readTopicAiMode } from "./topic-ai.js";
+import { TopicAiBudget, localDay, readTopicAiMode, readTopicRenameKnobs } from "./topic-ai.js";
 import type { TopicAiBudgetStore } from "./topic-ai.js";
 
 describe("G1: the topic AI mode (D23)", () => {
@@ -36,6 +36,27 @@ describe("G1: the topic AI mode (D23)", () => {
       })
     ).toBe("deterministic");
     expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the DEV rename-pass knobs", () => {
+  it("reads the rename pass and today's cap, and nothing in a packaged build", () => {
+    const env = { MEMORA_TOPIC_RENAME_REVISION: "1", MEMORA_TOPIC_AI_DAILY_CAP: "600" };
+    expect(readTopicRenameKnobs(env, false)).toEqual({ renameRevisions: true, dailyCap: 600 });
+    expect(readTopicRenameKnobs(env, true)).toEqual({ renameRevisions: false, dailyCap: null });
+    expect(readTopicRenameKnobs({}, false)).toEqual({ renameRevisions: false, dailyCap: null });
+  });
+
+  it("reports and ignores a value it cannot read", () => {
+    const warn = vi.fn();
+    expect(
+      readTopicRenameKnobs(
+        { MEMORA_TOPIC_RENAME_REVISION: "yes", MEMORA_TOPIC_AI_DAILY_CAP: "1.5" },
+        false,
+        { warn }
+      )
+    ).toEqual({ renameRevisions: false, dailyCap: null });
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });
 

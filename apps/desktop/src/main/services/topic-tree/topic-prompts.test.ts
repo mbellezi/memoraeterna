@@ -11,7 +11,8 @@ import {
   buildTopicNamePrompt,
   buildTopicNameRepairPrompt,
   parseTopicAreasOutput,
-  topicGateInstruction
+  topicGateInstruction,
+  topicNamePromptVersion
 } from "./topic-prompts.js";
 import {
   buildTopicOverviewPrompt,
@@ -28,7 +29,7 @@ function member(title: string, idea: string | null = `${title}: ideia`): NamingM
   return { key: `note:${uuid(title.length)}`, kind: "note", title, idea, rootSource: null };
 }
 function topic(id: number, title: string, currentTitle: string | null = null): UnaliasedTopic {
-  return { topicId: uuid(id), members: [member(title)], currentTitle };
+  return { topicId: uuid(id), size: 9, members: [member(title)], currentTitle };
 }
 function call(base: number): NamingCall {
   return packNamingCalls(
@@ -42,11 +43,25 @@ function call(base: number): NamingCall {
       {
         parentId: uuid(base + 101),
         parentTitle: null,
+        parentHeldTitle: "Ciências da Terra",
         namedSiblings: [],
-        topics: [topic(base + 3, "Marés e correntes", "Oceanografia")]
+        topics: [
+          topic(base + 3, "Marés e correntes", "Oceanografia"),
+          {
+            topicId: uuid(base + 4),
+            size: 40,
+            members: [],
+            subtopics: [
+              { title: "Vulcões", size: 25, members: [member("Erupções explosivas")] },
+              { title: null, size: 15, members: [member("Placas tectônicas")] }
+            ],
+            childTitles: ["Vulcões"],
+            currentTitle: null
+          }
+        ]
       }
     ],
-    24
+    { maxTopics: config.maxTopicsPerCall, maxMembers: config.maxMembersPerCall }
   )[0]!;
 }
 
@@ -59,12 +74,19 @@ describe("the topic naming prompt", () => {
     expect(text).toContain(`up to ${config.maxAliases} other names`);
     expect(text).toContain('"parent":"Aprendizagem"');
     expect(text).toContain('"named_siblings":["Prática espaçada"]');
-    expect(text).toContain('"alias":"T1"');
-    expect(text).toContain('"alias":"T3","current_title":"Oceanografia"');
+    expect(text).toContain('"alias":"T1","size":9,"notes"');
+    expect(text).toContain('"alias":"T3","current_title":"Oceanografia","size":9');
     expect(text).toContain('"parent":null');
     expect(text).toContain(
       '"title":"Recuperação com feedback","idea":"Recuperação com feedback: ideia"'
     );
+    // An internal topic shows its subtopics, larger first, with their sizes and a few notes.
+    expect(text).toContain(
+      '{"alias":"T4","size":40,"subtopics":[{"title":"Vulcões","size":25,"notes":[{"title":"Erupções explosivas"'
+    );
+    expect(text).toContain('{"title":null,"size":15,"notes":[{"title":"Placas tectônicas"');
+    // The title of a parent named after its children is held back from the prompt.
+    expect(text).not.toContain("Ciências da Terra");
     // The output contract is part of the prompt and names every field.
     for (const field of ["alias", "title", "description", "aliases", "language"]) {
       expect(text).toContain(`"${field}"`);
@@ -75,6 +97,20 @@ describe("the topic naming prompt", () => {
   it("is a function of content: other IDs, same prompt", () => {
     expect(buildTopicNamePrompt(call(0), input)).toBe(buildTopicNamePrompt(call(5000), input));
     expect(buildTopicNamePrompt(call(0), input)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/u);
+  });
+
+  it("asks for a name that covers the whole topic (revision 2)", () => {
+    const text = buildTopicNamePrompt(call(0), input);
+    expect(text).toContain("a sample of its notes chosen to span all of it, not only its centre");
+    expect(text).toContain(
+      "the most specific subject that covers every note and every subtopic shown"
+    );
+    expect(text).toContain("after one of its subtopics or after its largest subtopic");
+    expect(text).toContain("differs from every subtopic's title");
+    expect(text).toContain("must differ from the title of its parent topic");
+    expect(text).toContain("sums up the whole range of the topic");
+    expect(topicNamePromptVersion).toBe("topic-name-v2");
+    expect(promptDefinition("topic.name").defaultVersion).toBe("2");
   });
 
   it("asks again only for the rejected topics and says what was wrong", () => {
@@ -90,8 +126,8 @@ describe("the topic naming prompt", () => {
       input,
       'T2: the title "Mente" repeats the parent title "Mente"'
     );
-    expect(text).toContain('{"alias":"T2","notes":');
-    expect(text).not.toContain('{"alias":"T1","notes":');
+    expect(text).toContain('{"alias":"T2","size":9,"notes":');
+    expect(text).not.toContain('{"alias":"T1","size"');
     expect(text).not.toContain("Recuperação com feedback");
     expect(text).toContain("was rejected");
     expect(text).toContain('T2: the title "Mente" repeats the parent title "Mente"');

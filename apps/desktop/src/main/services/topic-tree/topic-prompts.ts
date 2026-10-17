@@ -14,7 +14,7 @@ import { joinPrompts, renderPrompt } from "../prompt-runtime.js";
 
 export { topicNameOperation, topicOverviewOperation };
 
-export const topicNamePromptVersion = "topic-name-v1";
+export const topicNamePromptVersion = "topic-name-v2";
 export const topicAreasPromptVersion = "topic-areas-v1";
 
 // The naming operation (`op:topic_name` may route it; `class:write-fast` is the default) is declared

@@ -73,7 +73,13 @@ describe("topic tree configuration", () => {
     expect(config.knn).toEqual({ exactLimit: 3000, nprobe: 8 });
     expect(config.bootstrap).toMatchObject({ minItems: 12, singleTopicMaxItems: 30 });
     expect(config.rebuild).toMatchObject({ hungarianExactMaxTopics: 300 });
-    expect(config.naming).toMatchObject({ maxTopicsPerCall: 24, centralMembers: 5 });
+    expect(config.naming).toMatchObject({
+      maxTopicsPerCall: 24,
+      maxMembersPerCall: 120,
+      centralMembers: 5,
+      sampleMembers: 12,
+      childMembers: 3
+    });
     expect(config.areas).toMatchObject({ min: 7, max: 16 });
     expect(config.ai.areasRepairMaxMissingShare).toBe(0.1);
     expect(config.audit.misParentMargin).toBe(0.1);

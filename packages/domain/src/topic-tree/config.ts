@@ -333,7 +333,21 @@ const RebuildSchema = z
 const NamingSchema = z
   .object({
     maxTopicsPerCall: int(1, 100).default(24),
+    /**
+     * The prompt budget of one call, in members shown (a subtopic heading counts a quarter): 24
+     * topics of 5 central members, the budget of the first naming prompt, so a call of 12-member
+     * covering samples holds 10 leaves. Operational: it never changes the configuration hash.
+     */
+    maxMembersPerCall: int(1, 2000).default(120),
+    /** The most central members of a leaf's covering sample (the rest span the leaf). */
     centralMembers: int(1, 20).default(5),
+    /**
+     * Members a leaf shows: its `centralMembers` plus members picked to cover the rest of it
+     * (naming.ts coveringItems); an internal topic shows as many across its subtopics.
+     */
+    sampleMembers: int(1, 50).default(12),
+    /** The central members shown of one subtopic of an internal topic, larger ones first. */
+    childMembers: int(0, 20).default(3),
     ideaMaxChars: int(1, 2000).default(200),
     titleMaxChars: int(1, 120).default(80),
     descriptionMaxChars: int(1, 400).default(200),

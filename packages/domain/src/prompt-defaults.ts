@@ -594,7 +594,9 @@ export const shippedPromptBodies = [
     }
   },
   {
-    // The names of the topic tree (F2 D11): one call names up to 24 topics in the content language.
+    // The names of the topic tree (F2 D11), revision 2: a name covers the whole topic. A leaf shows
+    // a covering sample of its notes, an internal topic its subtopics with their sizes and a few
+    // notes each; one call names up to `naming.maxTopicsPerCall` topics within a member budget.
     id: "topic.name",
     caller: "apps/desktop/src/main/services/topic-tree/topic-prompts.ts:buildTopicNamePrompt",
     template:
@@ -603,17 +605,29 @@ export const shippedPromptBodies = [
       "Write every title, description and alias in %content_language%, the language of the library's notes, even when some " +
       "notes of a topic are written in another language. Never mix languages inside a name, and never translate proper names or " +
       "the titles of works.\n" +
-      "The title names what the topic's notes are about: a specific subject of at most %title_max_chars% characters (usually " +
-      "one to five words), in sentence case, with no quotation marks, numbering, Markdown or final punctuation. It must differ " +
-      "from the title of its parent topic and from the title of every sibling, whether the sibling already has a name or is " +
-      'named in your answer. Never use a generic word alone (such as "Miscellaneous", "Other", "General", "Notes" or "Topics"), ' +
-      "and never use a topic's alias (T1, T2), an identifier or a UUID as a name.\n" +
-      "When a topic lists a current title, keep exactly that title while it still describes the notes, and change it only when " +
-      "it no longer does.\n" +
-      "The description is one plain sentence of at most %description_max_chars% characters about what the topic covers. The " +
-      '"aliases" field holds up to %max_aliases% other names of the same subject, in the same language.\n' +
-      "Topics come in groups. A group lists the title of its parent topic (null at the top level), the titles of sibling topics " +
-      "that already have a name, and the topics to name, each with its alias (T1, T2, ...) and its most central notes.\n" +
+      'Each topic shows its "size" (how many notes it holds) and a sample of its notes chosen to span all of it, not only its ' +
+      'centre. A topic with "subtopics" shows each subtopic with its title (null while it has no name), its size and a few of ' +
+      "its notes, larger subtopics first, followed by the notes placed on the topic itself, if any.\n" +
+      "The title names the whole topic: the most specific subject that covers every note and every subtopic shown. Never name " +
+      "a topic after some of its notes, after one of its subtopics or after its largest subtopic. When the notes cover several " +
+      "aspects of one subject (what it is, its history, its parts, its uses, its problems), name the subject itself; when they " +
+      'join related subjects, name what they share, and join two subjects with "and" only when no single subject covers both. ' +
+      "Only a note that shares no more than a word with the others (a homonym or a stray note) may stay outside the name. A " +
+      "topic with subtopics is broader than each of them: its title covers all of them and differs from every subtopic's " +
+      "title.\n" +
+      "A title has at most %title_max_chars% characters (usually one to five words), in sentence case, with no quotation " +
+      "marks, numbering, Markdown or final punctuation. It must differ from the title of its parent topic and from the title " +
+      "of every sibling, whether the sibling already has a name or is named in your answer. Never use a generic word alone " +
+      '(such as "Miscellaneous", "Other", "General", "Notes" or "Topics"), and never use a topic\'s alias (T1, T2), an ' +
+      "identifier or a UUID as a name.\n" +
+      "When a topic lists a current title, keep exactly that title while it still describes the whole topic, and change it " +
+      "only when it no longer does.\n" +
+      "The description is one plain sentence of at most %description_max_chars% characters that sums up the whole range of " +
+      'the topic: its subject and the aspects or subtopics it spans. The "aliases" field holds up to %max_aliases% other ' +
+      "names of the same subject, in the same language.\n" +
+      "Topics come in groups. A group lists the title of its parent topic (null at the top level or while the parent has no " +
+      "name), the titles of sibling topics that already have a name, and the topics to name, each with its alias (T1, T2, " +
+      "...).\n" +
       "Return only JSON: %output_contract%.\n" +
       'Return exactly one item for every topic and nothing else, copying the topic\'s alias into the "alias" field of its item. ' +
       'Set "language" to the BCP 47 code of the language you wrote in (one of en, pt-BR, es, fr, it).\n' +

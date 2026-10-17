@@ -28,6 +28,45 @@ export function readTopicAiMode(
   return "deterministic";
 }
 
+/** DEV knobs of a one-time rename pass of a measurement profile (never in a packaged build). */
+export const topicRenameKnobs = {
+  /** `1`: LLM names an earlier prompt version wrote are named again, once each. */
+  renameRevision: "MEMORA_TOPIC_RENAME_REVISION",
+  /** A whole number: today's cap of background topic AI calls instead of the tree's (D34). */
+  dailyCap: "MEMORA_TOPIC_AI_DAILY_CAP"
+} as const;
+
+export interface TopicRenameKnobs {
+  renameRevisions: boolean;
+  /** Null: the tree's `ai.maxBackgroundCallsPerDay`. */
+  dailyCap: number | null;
+}
+
+/**
+ * The rename-pass knobs, read once at startup. A packaged build ignores them; a value that is not
+ * `1` (or a whole number for the cap) is reported and ignored.
+ */
+export function readTopicRenameKnobs(
+  env: Readonly<Record<string, string | undefined>>,
+  isPackaged: boolean,
+  logger?: Pick<Console, "warn">
+): TopicRenameKnobs {
+  const off: TopicRenameKnobs = { renameRevisions: false, dailyCap: null };
+  if (isPackaged) return off;
+  const rename = env[topicRenameKnobs.renameRevision]?.trim();
+  const cap = env[topicRenameKnobs.dailyCap]?.trim();
+  if (rename && rename !== "1") {
+    logger?.warn(`${topicRenameKnobs.renameRevision}=${rename} is not 1; ignored`);
+  }
+  const parsedCap = cap ? Number(cap) : null;
+  const validCap =
+    parsedCap !== null && Number.isSafeInteger(parsedCap) && parsedCap >= 0 ? parsedCap : null;
+  if (cap && validCap === null) {
+    logger?.warn(`${topicRenameKnobs.dailyCap}=${cap} is not a whole number; ignored`);
+  }
+  return { renameRevisions: rename === "1", dailyCap: validCap };
+}
+
 /** The settings key of today's background topic AI calls (D34); a library reset clears it. */
 export const topicAiBudgetSettingKey = "topics.ai.daily.v1";
 

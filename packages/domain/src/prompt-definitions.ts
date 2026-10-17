@@ -283,7 +283,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
               "graph.catalog_metadata",
               "graph.atomic_notes.repair",
               "graph.source_chunks.repair",
-              "graph.catalog_metadata.repair"
+              "graph.catalog_metadata.repair",
+              // Names that cover the whole topic: covering samples and subtopics (topic-name-v2).
+              "topic.name"
             ].includes(row.id)
           ? "2"
           : "1",

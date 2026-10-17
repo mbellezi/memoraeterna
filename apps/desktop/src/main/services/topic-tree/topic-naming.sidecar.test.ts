@@ -28,6 +28,7 @@ import {
   getTopic,
   itemKey,
   liveTopicIds,
+  membershipSketch,
   namingCandidates,
   placementRecord,
   recomputeSubtree,
@@ -50,8 +51,9 @@ import { immediateDebounce } from "./topic-triggers.js";
 
 /**
  * Topic naming and label vectors against the real schema on a throwaway PostgreSQL sidecar, with a
- * fake model that reads the prompt's notes the way a writer would: top-down levels, packed calls,
- * the language rules and their repair, the TF-IDF fallback, human names, drift renames, the daily
+ * fake model that reads the prompt's notes the way a writer would: bottom-up levels (an area from
+ * its subtopics), covering samples and packed calls, the language rules and their repair, the
+ * TF-IDF fallback, human names, drift renames, the rename pass of a new prompt revision, the daily
  * cap, a missing route, the deterministic golden mode and the label vectors.
  */
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
@@ -166,10 +168,25 @@ const names = {
   ]
 };
 
+interface PromptNote {
+  title: string;
+  idea?: string;
+}
 interface PromptTopic {
   alias: string;
   current_title?: string;
-  notes: Array<{ title: string; idea?: string }>;
+  size: number;
+  /** An internal topic's subtopics: title (null while unnamed), size and a few notes. */
+  subtopics?: Array<{ title: string | null; size: number; notes?: PromptNote[] }>;
+  notes?: PromptNote[];
+}
+
+/** Every note a prompt topic shows, its subtopics' included. */
+function notesOf(topic: PromptTopic): PromptNote[] {
+  return [
+    ...(topic.notes ?? []),
+    ...(topic.subtopics ?? []).flatMap((subtopic) => subtopic.notes ?? [])
+  ];
 }
 interface PromptGroup {
   parent: string | null;
@@ -190,9 +207,13 @@ function groupsOf(input: string): PromptGroup[] {
   return JSON.parse(end < 0 ? body : body.slice(0, end)) as PromptGroup[];
 }
 
-function item(topic: PromptTopic, group: PromptGroup, language = contentLanguage) {
-  const text = topic.notes.map((note) => `${note.title} ${note.idea ?? ""}`).join(" ");
-  const table = group.parent === null ? names.area : names.leaf;
+/** The answer a writer gives: an area from its subtopics' names and notes, a leaf from its notes. */
+function item(topic: PromptTopic, language = contentLanguage) {
+  const text = [
+    ...(topic.subtopics ?? []).map((subtopic) => subtopic.title ?? ""),
+    ...notesOf(topic).map((note) => `${note.title} ${note.idea ?? ""}`)
+  ].join(" ");
+  const table = topic.subtopics ? names.area : names.leaf;
   const found = table.find((entry) => entry.match.test(text));
   return {
     alias: topic.alias,
@@ -337,7 +358,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
           const output = responder
             ? await responder(call, attempt)
             : {
-                topics: groups.flatMap((group) => group.topics.map((topic) => item(topic, group)))
+                topics: groups.flatMap((group) => group.topics.map((topic) => item(topic)))
               };
           return { ...base, taskType: "structured-output" as const, output };
         }
@@ -669,7 +690,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
 
   // -------------------------------------------------------------------------
 
-  it("names every level top-down in the content language, one packed call per level", async () => {
+  it("names every level bottom-up in the content language, one packed call per level", async () => {
     const w = await world();
     try {
       const job = await runNaming(w);
@@ -700,15 +721,38 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(named.B2).toMatchObject({ title: "Marés e a lua", language: contentLanguage });
       expect(named.A2?.description).toContain("sono e memória");
 
-      // Level 1 is one call about the two areas, level 2 one call with both groups.
+      // Level 2 first: one call with both groups of leaves, whose parents have no name yet; each
+      // leaf shows its size and its notes (all of them: a leaf this small is its own sample).
       expect(w.calls).toHaveLength(2);
-      expect(w.calls[0]!.groups).toHaveLength(1);
-      expect(w.calls[0]!.groups[0]!.parent).toBeNull();
-      expect(w.calls[0]!.groups[0]!.topics).toHaveLength(2);
-      expect(w.calls[1]!.groups.map((g) => g.parent).sort()).toEqual([
-        "Mares e oceanos",
-        "Memória e aprendizagem"
+      const [leafCall, areaCall] = w.calls as [Call, Call];
+      expect(leafCall.groups.map((g) => g.parent)).toEqual([null, null]);
+      expect(leafCall.groups.map((g) => g.topics.length)).toEqual([2, 2]);
+      const leafTopics = leafCall.groups.flatMap((g) => g.topics);
+      expect(leafTopics.map((t) => [t.size, t.notes?.length]).sort()).toEqual([
+        [4, 4],
+        [4, 4],
+        [4, 4],
+        [5, 5]
       ]);
+      expect(leafTopics.every((t) => t.subtopics === undefined)).toBe(true);
+      // Then level 1: one call about the two areas, each shown by its subtopics' new names and
+      // sizes and a few notes of each.
+      expect(areaCall.groups).toHaveLength(1);
+      expect(areaCall.groups[0]!.parent).toBeNull();
+      const areas = areaCall.groups[0]!.topics;
+      expect(areas.map((t) => t.size).sort()).toEqual([8, 9]);
+      expect(areas.flatMap((t) => t.subtopics!.map((s) => s.title)).sort()).toEqual([
+        "Correntes oceânicas",
+        "Marés e a lua",
+        "Prática de recuperação",
+        "Sono e memória"
+      ]);
+      expect(
+        areas.every((t) =>
+          t.subtopics!.every((s) => (s.notes?.length ?? 0) > 0 && s.size >= s.notes!.length)
+        )
+      ).toBe(true);
+      expect(areas.every((t) => t.notes === undefined)).toBe(true);
       // Every call is audited: operation, class, queue class, language, participating sources.
       for (const call of w.calls) {
         expect(call.task).toBe("structured-output");
@@ -745,7 +789,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(changeSets.rows.every((row) => row.title_key === "topics.changeSets.naming")).toBe(
         true
       );
-      expect(changeSets.rows.map((row) => row.summary.llm)).toEqual([2, 4]);
+      expect(changeSets.rows.map((row) => row.summary.llm)).toEqual([4, 2]);
       // Each level records the audit of its own call and what it asked of the model.
       const [first, second] = changeSets.rows as [
         (typeof changeSets.rows)[number],
@@ -757,23 +801,25 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(first.summary).toMatchObject({
         calls: 1,
         repairCalls: 0,
-        asked: 2,
-        firstTryAccepted: 2,
+        asked: 4,
+        firstTryAccepted: 4,
         repairAccepted: 0,
         inputTokens: 100,
         outputTokens: 40,
-        language: contentLanguage
+        language: contentLanguage,
+        // The prompt version a later rename pass compares against.
+        promptVersion: "topic-name-v2"
       });
-      expect(second.summary).toMatchObject({ calls: 1, asked: 4, firstTryAccepted: 4 });
+      expect(second.summary).toMatchObject({ calls: 1, asked: 2, firstTryAccepted: 2 });
       expect(
         await count("select naming_calls as count from topic_daily_metrics where tree_id = $1", [
           w.treeId
         ])
       ).toBe(2);
-      expect(named.A?.namedBy).toBe(changeSets.rows[0]!.id);
-      expect(named.A1?.namedBy).toBe(changeSets.rows[1]!.id);
-      expect(changeSets.rows[0]!.summary.sketches[w.topics.A]?.n).toBe(8);
-      expect(changeSets.rows[1]!.summary.sketches[w.topics.B1]?.n).toBe(5);
+      expect(named.A1?.namedBy).toBe(changeSets.rows[0]!.id);
+      expect(named.A?.namedBy).toBe(changeSets.rows[1]!.id);
+      expect(changeSets.rows[0]!.summary.sketches[w.topics.B1]?.n).toBe(5);
+      expect(changeSets.rows[1]!.summary.sketches[w.topics.A]?.n).toBe(8);
 
       // The push reports both commits, and naming asked for label vectors.
       w.services.changes.flush();
@@ -818,8 +864,9 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder((call, attempt) => ({
         topics: call.groups.flatMap((group) =>
           group.topics.map((topic) => {
-            const answer = item(topic, group);
-            const isTides = topic.notes.some((note) => /tide|moon/iu.test(note.title));
+            const answer = item(topic);
+            const isTides =
+              !topic.subtopics && notesOf(topic).some((note) => /tide|moon/iu.test(note.title));
             if (attempt === 0 && isTides) {
               return { ...answer, title: "Tides and the moon", language: "en" };
             }
@@ -837,7 +884,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect((await rows(w)).B2?.title).toBe("Marés e a lua");
       // First-try validity and the repair rate are in the leaf level's change-set.
       const leafLevel = await pool.query<{ summary: Record<string, number> }>(
-        `select summary from topic_change_sets where origin = 'naming' order by created_at desc limit 1`
+        `select summary from topic_change_sets where origin = 'naming' order by created_at limit 1`
       );
       expect(leafLevel.rows[0]!.summary).toMatchObject({
         calls: 1,
@@ -865,9 +912,11 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder((call) => ({
         topics: call.groups.flatMap((group) =>
           group.topics.map((topic) => {
-            const answer = item(topic, group);
-            const ocean = topic.notes.some((note) => /tide|moon|ocean|corrente/iu.test(note.title));
-            return ocean && group.parent !== null ? { ...answer, language: "en" } : answer;
+            const answer = item(topic);
+            const ocean = notesOf(topic).some((note) =>
+              /tide|moon|ocean|corrente/iu.test(note.title)
+            );
+            return ocean && !topic.subtopics ? { ...answer, language: "en" } : answer;
           })
         )
       }));
@@ -885,7 +934,8 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
         source: "tfidf",
         language: contentLanguage
       });
-      expect(named.B1?.title?.startsWith("Mares e oceanos › ")).toBe(true);
+      // Leaves are named before their parents: the provisional title has no parent label yet.
+      expect(named.B1?.title).not.toContain(" › ");
       expect(named.B1?.title).toMatch(/corrente/u);
       expect(named.B1?.title).not.toMatch(/ocean currents|heat|climate|basins/iu);
       expect(named.B1?.description).toBeNull();
@@ -935,14 +985,26 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       });
       expect(named.B2).toMatchObject({ title: null, state: "unnamed", management: "pinned" });
       // The human name is a sibling title the model must not repeat, never a topic to name.
-      const leafCall = w.calls[1]!;
-      const memoryGroup = leafCall.groups.find(
-        (group) => group.parent === "Memória e aprendizagem"
+      const leafCall = w.calls[0]!;
+      const memoryGroup = leafCall.groups.find((group) =>
+        group.named_siblings.includes("Minha prática")
       )!;
       expect(memoryGroup.named_siblings).toEqual(["Minha prática"]);
       expect(memoryGroup.topics).toHaveLength(1);
-      // The pinned topic is in no prompt.
-      expect(w.calls.some((call) => /tide|moon/iu.test(call.input))).toBe(false);
+      // The pinned topic is never a topic to name, only a part its parent's name covers.
+      const asked = w.calls.flatMap((call) => call.groups.flatMap((group) => group.topics));
+      expect(
+        asked.some((topic) => (topic.notes ?? []).some((note) => /tide|moon/iu.test(note.title)))
+      ).toBe(false);
+      const ocean = asked.find((topic) =>
+        topic.subtopics?.some((subtopic) => subtopic.title === "Correntes oceânicas")
+      )!;
+      expect(ocean.subtopics!.map((subtopic) => subtopic.title)).toContain(null);
+      // A human name is a subtopic title its parent's name must not repeat either.
+      const memory = asked.find((topic) =>
+        topic.subtopics?.some((subtopic) => subtopic.title === "Minha prática")
+      );
+      expect(memory).toBeDefined();
     } finally {
       await w.dispose();
     }
@@ -967,7 +1029,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder((call) => ({
         topics: call.groups.flatMap((group) =>
           group.topics.map((topic) => ({
-            ...item(topic, group),
+            ...item(topic),
             title: "Testes e recuperação"
           }))
         )
@@ -1030,7 +1092,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       ).toBe(1);
       w.setResponder((call) => ({
         topics: call.groups.flatMap((group) =>
-          group.topics.map((topic) => ({ ...item(topic, group), title: "Recuperação e sono" }))
+          group.topics.map((topic) => ({ ...item(topic), title: "Recuperação e sono" }))
         )
       }));
       const callsBefore = w.calls.length;
@@ -1088,7 +1150,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder((call) => ({
         topics: call.groups.flatMap((group) =>
           group.topics.map((topic, index) => ({
-            ...item(topic, group),
+            ...item(topic),
             title: titles[index] ?? "Assunto geral"
           }))
         )
@@ -1120,16 +1182,190 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
         status: "named",
         calls: 1,
         capReached: true,
-        llmNamed: 2
+        llmNamed: 4,
+        provisional: 2
       });
       const named = await rows(w);
-      expect(named.A?.state).toBe("named");
-      // The leaves got provisional names from their Portuguese notes, B2 none.
-      expect(named.A1).toMatchObject({ state: "provisional", source: "tfidf" });
-      expect(named.A1?.title?.startsWith("Memória e aprendizagem › ")).toBe(true);
-      expect(named.B2?.state).toBe("unnamed");
+      // The one call named the leaves (bottom-up); the areas got provisional names from their
+      // Portuguese notes.
+      expect(named.A1?.state).toBe("named");
+      expect(named.B2?.state).toBe("named");
+      expect(named.A).toMatchObject({ state: "provisional", source: "tfidf" });
+      expect(named.B).toMatchObject({ state: "provisional", source: "tfidf" });
+      expect(named.A?.title).not.toContain(" › ");
       await expect(w.services.service.status()).resolves.toMatchObject({ dailyCapReached: true });
       expect(w.calls).toHaveLength(1);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("names an internal topic broader than its subtopics, never with one of their titles", async () => {
+    const w = await world();
+    try {
+      // At first the model names each area after its largest subtopic.
+      w.setResponder((call, attempt) => ({
+        topics: call.groups.flatMap((group) =>
+          group.topics.map((topic) => {
+            const answer = item(topic);
+            const largest = topic.subtopics?.[0]?.title;
+            return attempt === 0 && largest ? { ...answer, title: largest } : answer;
+          })
+        )
+      }));
+      const job = await runNaming(w);
+      expect(job.result).toMatchObject({
+        llmNamed: 6,
+        calls: 2,
+        repairCalls: 1,
+        firstTryAccepted: 4,
+        repairAccepted: 2
+      });
+      const repair = w.calls.find((call) => call.context.attempt === 1)!;
+      expect(repair.groups.flatMap((group) => group.topics)).toHaveLength(2);
+      expect(repair.input).toContain("repeats the title of one of its subtopics");
+      const named = await rows(w);
+      expect(named.A?.title).toBe("Memória e aprendizagem");
+      expect(named.B?.title).toBe("Mares e oceanos");
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("shows each leaf a covering sample and keeps every call within the member budget", async () => {
+    const w = await world({
+      config: configWith({
+        naming: { sampleMembers: 3, centralMembers: 1, childMembers: 1, maxMembersPerCall: 6 }
+      })
+    });
+    try {
+      const job = await runNaming(w);
+      expect(job.result).toMatchObject({ llmNamed: 6, calls: 3, repairCalls: 0 });
+      // Two leaves of three members fill a call: one call per group of leaves, then the areas.
+      const leafCalls = w.calls.slice(0, 2);
+      for (const call of leafCalls) {
+        const topics = call.groups.flatMap((group) => group.topics);
+        expect(topics).toHaveLength(2);
+        for (const topic of topics) {
+          expect(topic.notes).toHaveLength(3);
+          expect(topic.size).toBeGreaterThan(3);
+        }
+      }
+      const areas = w.calls[2]!.groups.flatMap((group) => group.topics);
+      expect(areas).toHaveLength(2);
+      for (const area of areas) {
+        expect(area.subtopics!.map((subtopic) => subtopic.notes?.length)).toEqual([1, 1]);
+      }
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  /**
+   * Names topics the way the first naming prompt did: an LLM naming change-set with the members'
+   * sketches and no prompt version.
+   */
+  async function nameAsFirstRevision(
+    w: World,
+    titles: Partial<Record<keyof World["topics"], string>>
+  ): Promise<void> {
+    const cache = (await loadTopicTreeCache(pool, w.treeId))!;
+    const changeSetId = randomUUID();
+    const sketches: Record<string, ReturnType<typeof membershipSketch>> = {};
+    const events: StructureEvent[] = Object.entries(titles).map(([key, title]) => {
+      const id = w.topics[key as keyof World["topics"]];
+      const node = getTopic(cache.state, id);
+      sketches[id] = membershipSketch(cache.state, id);
+      return {
+        op: "topic.rename",
+        topicId: id,
+        before: {
+          title: node.title,
+          nameState: node.nameState,
+          nameSource: node.nameSource,
+          nameLanguage: node.nameLanguage,
+          namedChangeSetId: node.namedChangeSetId,
+          aliases: [...node.aliases]
+        },
+        after: {
+          title: title as string,
+          nameState: "named",
+          nameSource: "llm",
+          nameLanguage: contentLanguage,
+          namedChangeSetId: changeSetId,
+          aliases: []
+        }
+      };
+    });
+    const result = await createTopicTreeRepository(pool).applyChangeSet({
+      id: changeSetId,
+      treeId: w.treeId,
+      expectedGeneration: cache.tree.generation,
+      origin: "naming",
+      titleKey: "topics.changeSets.naming",
+      summary: { llm: events.length, language: contentLanguage, sketches },
+      events
+    });
+    if (result.kind !== "applied") throw new Error(`the names were not applied: ${result.kind}`);
+    w.services.service.invalidate();
+  }
+
+  it("renames each LLM-named topic once under a new prompt revision when the DEV knob asks", async () => {
+    // Names the first prompt wrote: each describes only part of its topic.
+    const firstNames = {
+      A: "Behaviorismo e aprendizagem",
+      B: "Oceanografia física",
+      A1: "Testes frequentes",
+      A2: "Privação de sono",
+      B1: "Clima costeiro",
+      B2: "Tábuas de marés"
+    };
+    // Without the knob, names keep their prompt revision: no call.
+    const plain = await world();
+    try {
+      await nameAsFirstRevision(plain, firstNames);
+      const job = await runNaming(plain);
+      expect(job.result).toMatchObject({ status: "nothing_to_name" });
+      expect(plain.calls).toHaveLength(0);
+    } finally {
+      await plain.dispose();
+    }
+
+    const w = await world({
+      env: { MEMORA_TOPIC_RENAME_REVISION: "1", MEMORA_TOPIC_AI_DAILY_CAP: "40" }
+    });
+    try {
+      await nameAsFirstRevision(w, firstNames);
+      await byHand(w, "A1", { title: "Minha prática" });
+      // The pass runs within the day's cap, which the DEV knob may raise for it.
+      await expect(w.services.budget.usage()).resolves.toMatchObject({ cap: 40 });
+      const job = await runNaming(w);
+      expect(job.result).toMatchObject({
+        status: "named",
+        candidates: 5,
+        revisionCandidates: 5,
+        llmNamed: 5,
+        calls: 2,
+        capReached: false
+      });
+      // Named from scratch, bottom-up: no title to keep, and the leaves never see their parents'
+      // old titles (the parents are named after them).
+      const asked = w.calls.flatMap((call) => call.groups.flatMap((group) => group.topics));
+      expect(asked.every((topic) => topic.current_title === undefined)).toBe(true);
+      expect(w.calls[0]!.input).not.toContain("Behaviorismo e aprendizagem");
+      expect(w.calls[0]!.groups.map((group) => group.parent)).toEqual([null, null]);
+      const named = await rows(w);
+      expect(named.A1).toMatchObject({ title: "Minha prática", source: "human" });
+      expect(named.A2?.title).toBe("Sono e memória");
+      expect(named.B1?.title).toBe("Correntes oceânicas");
+      expect(named.B2?.title).toBe("Marés e a lua");
+      expect(named.A?.title).toBe("Memória e aprendizagem");
+      expect(named.B?.title).toBe("Mares e oceanos");
+      // Once: the names carry this revision now, and the next check renames nothing.
+      w.clock.now += topicNamingLimits.driftRecheckMs;
+      const again = await runNaming(w);
+      expect(again.result).toMatchObject({ status: "nothing_to_name" });
+      expect(w.calls).toHaveLength(2);
     } finally {
       await w.dispose();
     }
@@ -1210,12 +1446,13 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       let renamed = false;
       w.setResponder(async (call) => {
         // A person renames A2 between the snapshot and the write of the leaf level.
-        if (!renamed && call.groups.some((group) => group.parent !== null)) {
+        const leafLevel = call.groups.some((group) => group.topics.some((t) => !t.subtopics));
+        if (!renamed && leafLevel) {
           renamed = true;
           await byHand(w, "A2", { title: "Sono e descanso" });
         }
         return {
-          topics: call.groups.flatMap((group) => group.topics.map((topic) => item(topic, group)))
+          topics: call.groups.flatMap((group) => group.topics.map((topic) => item(topic)))
         };
       });
       const job = await runNaming(w);
@@ -1400,7 +1637,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
           ]);
         }
         return {
-          topics: call.groups.flatMap((group) => group.topics.map((topic) => item(topic, group)))
+          topics: call.groups.flatMap((group) => group.topics.map((topic) => item(topic)))
         };
       });
       await pool.query("delete from jobs where type = 'topic-name'");
@@ -1593,13 +1830,9 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(await count("select count(*) from topics where role = 'topic'")).toBeGreaterThan(1);
       await expectExact();
 
-      // Naming renames the built topics (leaf names, distinct among siblings): a name, a
-      // description and aliases change no member, so the statistics stay exact and clean.
-      w.setResponder((call) => ({
-        topics: call.groups.flatMap((group) =>
-          group.topics.map((topic) => item(topic, { ...group, parent: group.parent ?? "root" }))
-        )
-      }));
+      // Naming renames the built topics (distinct among siblings): a name, a description and
+      // aliases change no member, so the statistics stay exact and clean.
+      w.setResponder(null);
       const named = await runNaming(w);
       expect(named.result).toMatchObject({ status: "named" });
       expect(Number(named.result?.llmNamed)).toBeGreaterThan(1);

@@ -1,14 +1,20 @@
 // Topic naming (F2 T18, D11): the `topic-name` job on the light lane's `model` worker. It names the
 // topics that have no name or only a provisional one, and the LLM-named topics whose members
-// drifted by `naming.renameDrift` or more, in the content language. The work is top-down: one
-// level of the tree at a time, so a child is named knowing its parent's name. Per level, topics
-// are packed into calls of at most `naming.maxTopicsPerCall` (groups of siblings stay together),
-// each call is one `write-fast` request, an invalid answer is asked again once for the rejected
-// topics only, and a topic that still has no valid name gets the TF-IDF provisional name built from
-// content-language notes (naming-fallback.ts) or stays unnamed with no title stored. A level is
-// written as one `naming` change-set with the topics' membership sketches, which is how drift is
-// measured later. A model call never runs inside the engine lock or a transaction (D10): the tree
-// is read first, the calls follow, and the write re-checks every topic against the stored rows.
+// drifted by `naming.renameDrift` or more, in the content language. A name covers the whole topic:
+// a leaf shows a covering sample of its members (its most central ones and the ones that span the
+// rest), an internal topic its subtopics with their titles, sizes and a few members each. So the
+// work is bottom-up: one level of the tree at a time, deepest first, and an internal topic is named
+// from its children's names; a name never repeats its parent's or a subtopic's title. Per level,
+// topics are packed into calls of at most `naming.maxTopicsPerCall` topics and
+// `naming.maxMembersPerCall` members shown (groups of siblings stay together), each call is one
+// `write-fast` request, an invalid answer is asked again once for the rejected topics only, and a
+// topic that still has no valid name gets the TF-IDF provisional name built from content-language
+// notes (naming-fallback.ts) or stays unnamed with no title stored. A level is written as one
+// `naming` change-set with the topics' membership sketches and the prompt version, which is how
+// drift is measured later and how a rename pass (`renameRevisions`, the DEV knob
+// `MEMORA_TOPIC_RENAME_REVISION`) finds the names an earlier prompt version wrote. A model call
+// never runs inside the engine lock or a transaction (D10): the tree is read first, the calls
+// follow, and the write re-checks every topic against the stored rows.
 // The repository writes events one by one under the sibling-title index, so a level's renames are
 // ordered for every intermediate state to keep sibling titles unique. A name the write still drops
 // is never lost silently: the job says why, re-queues the topic and reports repeated drops.
@@ -23,31 +29,39 @@ import type { JobRecord, JsonObject, PgPool, TopicNamingRows } from "@app/db";
 import { topicLimits } from "@app/domain";
 import {
   MembershipSketchSchema,
-  centralItems,
   clipIdea,
   compareStrings,
+  coveringItems,
   describeRejections,
   fallbackScope,
+  getTopic,
+  internalNamingSample,
+  isLive,
   membershipDrift,
   membershipSketch,
   namingCallTopics,
   namingCandidates,
+  namingTopicMembers,
   normalizeTopicTitle,
   packNamingCalls,
   parseItemKey,
   provisionalNames,
   retryCall,
+  subtreeItems,
   validateNamingOutput
 } from "@app/domain/topic-tree";
 import type {
   AcceptedName,
+  CentralItem,
   FallbackText,
+  InternalNamingSample,
   ItemKey,
   MembershipSketch,
   NamingCall,
   NamingCandidate,
   NamingGroup,
   NamingMember,
+  NamingSubtopic,
   NamingValidation,
   RejectedName,
   StructureEvent,
@@ -107,7 +121,11 @@ export const topicNamingLimits = {
 } as const;
 
 const NamingSummarySchema = z
-  .object({ sketches: z.record(z.string(), MembershipSketchSchema).optional() })
+  .object({
+    sketches: z.record(z.string(), MembershipSketchSchema).optional(),
+    /** The naming prompt's version (`topicNamePromptVersion`); absent before topic-name-v2. */
+    promptVersion: z.string().optional()
+  })
   .passthrough();
 
 export interface TopicNamingOptions {
@@ -121,6 +139,11 @@ export interface TopicNamingOptions {
   changes: TopicChangeCoalescer;
   /** Job types with an executor; naming is requested only when its executor exists. */
   isRegistered: (type: string) => boolean;
+  /**
+   * A rename pass: the LLM names a naming change-set wrote under another prompt version are named
+   * again, once each, at the job's drift checks (the DEV knob `MEMORA_TOPIC_RENAME_REVISION`).
+   */
+  renameRevisions?: boolean;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
   newId?: () => string;
@@ -206,6 +229,39 @@ const emptyCounters = (): RunCounters => ({
   changeSets: 0
 });
 
+/** What the naming change-set of an LLM-named topic recorded about it. */
+export interface NamingRecord {
+  /** The members it had when it was named. */
+  sketch: MembershipSketch;
+  /** The naming prompt's version, null before topic-name-v2 recorded it. */
+  promptVersion: string | null;
+}
+
+/**
+ * What the naming change-sets recorded of every LLM-named topic: its sketch and the prompt
+ * version. Topics no naming change-set named (an Area named by its grouping) are left out.
+ */
+export async function namingRecords(
+  repository: Pick<ReturnType<typeof createTopicNamingRepository>, "changeSetSummaries">,
+  state: TopicTreeState
+): Promise<Map<string, NamingRecord>> {
+  const named = [...state.topics.values()].filter(
+    (node) => node.nameState === "named" && node.nameSource === "llm" && node.namedChangeSetId
+  );
+  const summaries = await repository.changeSetSummaries(
+    named.map((node) => node.namedChangeSetId as string)
+  );
+  const records = new Map<string, NamingRecord>();
+  for (const node of named) {
+    const parsed = NamingSummarySchema.safeParse(summaries.get(node.namedChangeSetId as string));
+    if (!parsed.success) continue;
+    const then = parsed.data.sketches?.[node.id];
+    if (then)
+      records.set(node.id, { sketch: then, promptVersion: parsed.data.promptVersion ?? null });
+  }
+  return records;
+}
+
 /**
  * The members each LLM-named topic had when it was named: the sketch its naming change-set
  * recorded (topics without one are left out). Drift and a rebuild's re-naming are measured from it.
@@ -214,19 +270,24 @@ export async function namedMembershipSketches(
   repository: Pick<ReturnType<typeof createTopicNamingRepository>, "changeSetSummaries">,
   state: TopicTreeState
 ): Promise<Map<string, MembershipSketch>> {
-  const named = [...state.topics.values()].filter(
-    (node) => node.nameState === "named" && node.nameSource === "llm" && node.namedChangeSetId
-  );
-  const summaries = await repository.changeSetSummaries(
-    named.map((node) => node.namedChangeSetId as string)
-  );
   const sketches = new Map<string, MembershipSketch>();
-  for (const node of named) {
-    const parsed = NamingSummarySchema.safeParse(summaries.get(node.namedChangeSetId as string));
-    const then = parsed.success ? parsed.data.sketches?.[node.id] : undefined;
-    if (then) sketches.set(node.id, then);
+  for (const [topicId, record] of await namingRecords(repository, state)) {
+    sketches.set(topicId, record.sketch);
   }
   return sketches;
+}
+
+/** What a topic of a level shows: a leaf's covering sample, or an internal topic's subtopics. */
+type TopicSample =
+  { kind: "leaf"; items: CentralItem[] } | { kind: "internal"; sample: InternalNamingSample };
+
+function sampleKeys(sample: TopicSample): ItemKey[] {
+  return sample.kind === "leaf"
+    ? sample.items.map((item) => item.key)
+    : [
+        ...sample.sample.direct.map((item) => item.key),
+        ...sample.sample.subtopics.flatMap((subtopic) => subtopic.items.map((item) => item.key))
+      ];
 }
 
 /** The name fields of a topic without a name (a cycle of renames passes through it). */
@@ -358,7 +419,7 @@ export class TopicNamingService {
     // Members drift when items arrive, leave or are replaced (REBALANCE, rebuilds, PLACE). A
     // re-queued drift rename is a candidate again only through a drift check.
     const drifting = requeued || this.driftDue(treeId, cache.tree.generation);
-    const drift = drifting ? await this.driftOf(cache, repository) : null;
+    const history = drifting ? await this.namingHistory(cache, repository) : null;
     if (drifting) {
       this.driftChecked.set(treeId, {
         at: this.now().getTime(),
@@ -367,7 +428,12 @@ export class TopicNamingService {
     }
     const candidates = namingCandidates(cache.state, cache.config, {
       skip: new Set([...cache.state.topics.keys()].filter((id) => this.cooling(id))),
-      ...(drift ? { drift: (id: string) => drift.get(id) ?? null } : {})
+      ...(history
+        ? {
+            drift: (id: string) => history.drift.get(id) ?? null,
+            staleRevision: (id: string) => history.stale.has(id)
+          }
+        : {})
     });
     if (candidates.length === 0) return { status: "nothing_to_name", treeId };
 
@@ -383,9 +449,11 @@ export class TopicNamingService {
       job,
       signal,
       contentLanguage,
-      counters
+      counters,
+      new Set(candidates.map((candidate) => candidate.topicId))
     );
-    for (const depth of [...levels.keys()].sort((a, b) => a - b)) {
+    // Bottom-up: an internal topic is named after its children, from their names.
+    for (const depth of [...levels.keys()].sort((a, b) => b - a)) {
       if (signal.aborted) throw new Error("topics.errors.canceled");
       const outcome = await run.nameLevel(levels.get(depth) as NamingCandidate[]);
       if (outcome === "tree_inactive") return { status: "tree_inactive", treeId };
@@ -416,6 +484,7 @@ export class TopicNamingService {
       status: "named",
       treeId,
       candidates: candidates.length,
+      revisionCandidates: candidates.filter((candidate) => candidate.reason === "revision").length,
       llmNamed: counters.llmNamed,
       provisional: counters.provisional,
       stillUnnamed: counters.stillUnnamed,
@@ -461,16 +530,23 @@ export class TopicNamingService {
     }
   }
 
-  /** The drift of every LLM-named topic with a sketch from the change-set that named it. */
-  private async driftOf(
+  /**
+   * The drift of every LLM-named topic with a sketch from the change-set that named it and, in a
+   * rename pass, the topics a naming change-set of another prompt version named.
+   */
+  private async namingHistory(
     cache: TopicTreeCache,
     repository: ReturnType<typeof createTopicNamingRepository>
-  ): Promise<Map<string, number>> {
+  ): Promise<{ drift: Map<string, number>; stale: Set<string> }> {
     const drift = new Map<string, number>();
-    for (const [topicId, then] of await namedMembershipSketches(repository, cache.state)) {
-      drift.set(topicId, membershipDrift(then, membershipSketch(cache.state, topicId)));
+    const stale = new Set<string>();
+    for (const [topicId, record] of await namingRecords(repository, cache.state)) {
+      drift.set(topicId, membershipDrift(record.sketch, membershipSketch(cache.state, topicId)));
+      if (this.options.renameRevisions && record.promptVersion !== topicNamePromptVersion) {
+        stale.add(topicId);
+      }
     }
-    return drift;
+    return { drift, stale };
   }
 
   // -------------------------------------------------------------------------
@@ -555,7 +631,9 @@ class NamingRun {
     private readonly job: JobRecord,
     private readonly signal: AbortSignal,
     private readonly contentLanguage: string,
-    private readonly counters: RunCounters
+    private readonly counters: RunCounters,
+    /** Every topic this job names; a parent among them is named after its children. */
+    private readonly candidateIds: ReadonlySet<string>
   ) {
     this.config = cache.config;
     this.state = cache.state;
@@ -578,49 +656,65 @@ class NamingRun {
       runIds: this.counters.aiTaskRunIds.length
     };
     const runIds = new Set(level.map((candidate) => candidate.topicId));
-    const central = new Map(
-      level.map((candidate) => [
-        candidate.topicId,
-        centralItems(this.state, this.cache.vectors, candidate.topicId, naming.centralMembers)
-      ])
+    const samples = new Map(
+      level.map((candidate) => [candidate.topicId, this.sampleOf(candidate.topicId)])
     );
     const texts = await this.repository.memberTexts(
-      [...new Set([...central.values()].flatMap((items) => items.map((item) => item.key)))].flatMap(
-        (key) => {
-          const parsed = parseItemKey(key);
-          return parsed ? [parsed] : [];
-        }
-      )
+      [...new Set([...samples.values()].flatMap(sampleKeys))].flatMap((key) => {
+        const parsed = parseItemKey(key);
+        return parsed ? [parsed] : [];
+      })
     );
+    const memberOf = (item: CentralItem): NamingMember[] => {
+      const text = texts.get(item.key);
+      if (!text) return [];
+      return [
+        {
+          key: item.key,
+          kind: item.kind,
+          title: clipIdea(text.title, topicNamingLimits.memberTitleMaxChars),
+          idea: text.idea === null ? null : clipIdea(text.idea, naming.ideaMaxChars),
+          rootSource: this.state.items.get(item.key)?.rootSource ?? null
+        }
+      ];
+    };
 
-    // Groups of siblings, parents' names known (the levels above are done).
+    // Groups of siblings; the levels below are done, so subtopics show their new names.
     const groups: Array<Omit<NamingGroup, "topics"> & { topics: UnaliasedTopic[] }> = [];
     const byParent = new Map<string, (typeof groups)[number]>();
     for (const candidate of level) {
-      const members = (central.get(candidate.topicId) ?? []).flatMap((item): NamingMember[] => {
-        const text = texts.get(item.key);
-        if (!text) return [];
-        return [
-          {
-            key: item.key,
-            kind: item.kind,
-            title: clipIdea(text.title, topicNamingLimits.memberTitleMaxChars),
-            idea: text.idea === null ? null : clipIdea(text.idea, naming.ideaMaxChars),
-            rootSource: this.state.items.get(item.key)?.rootSource ?? null
-          }
-        ];
-      });
-      // A topic with no readable member is left to the fallback, which reads none either.
-      if (members.length === 0) continue;
+      const sample = samples.get(candidate.topicId) as TopicSample;
+      const members = (sample.kind === "leaf" ? sample.items : sample.sample.direct).flatMap(
+        memberOf
+      );
+      const subtopics: NamingSubtopic[] =
+        sample.kind === "leaf"
+          ? []
+          : sample.sample.subtopics.map((subtopic) => ({
+              title: subtopic.title,
+              size: subtopic.size,
+              members: subtopic.items.flatMap(memberOf)
+            }));
+      // A topic with nothing readable to show is left to the fallback, which reads none either.
+      if (
+        members.length === 0 &&
+        subtopics.every((subtopic) => subtopic.title === null && subtopic.members.length === 0)
+      ) {
+        continue;
+      }
       let group = byParent.get(candidate.parentId);
       if (!group) {
         const parent = this.state.topics.get(candidate.parentId);
+        // A provisional title (a TF-IDF draft, or a merged topic's old name waiting to be
+        // replaced) is not a name worth showing the model, nor the title of a parent this job
+        // names later; a name never repeats the parent's title either way.
+        const parentName =
+          parent && parent.title !== null && parent.nameState === "named" ? parent.title : null;
+        const parentLater = this.candidateIds.has(candidate.parentId);
         group = {
           parentId: candidate.parentId,
-          // A provisional title (a TF-IDF draft, or a merged topic's old name waiting to be
-          // replaced) is not a name worth showing the model.
-          parentTitle:
-            parent && parent.title !== null && parent.nameState === "named" ? parent.title : null,
+          parentTitle: parentLater ? null : parentName,
+          ...(parentLater && parentName !== null ? { parentHeldTitle: parentName } : {}),
           namedSiblings: this.siblingTitles(candidate.parentId, runIds),
           topics: []
         };
@@ -630,13 +724,17 @@ class NamingRun {
       const node = this.state.topics.get(candidate.topicId);
       group.topics.push({
         topicId: candidate.topicId,
+        size: subtreeItems(this.state, candidate.topicId).length,
         members,
+        subtopics,
+        childTitles: this.childTitles(candidate.topicId),
         currentTitle: candidate.reason === "drift" && node?.title ? node.title : null
       });
     }
 
     const names = new Map<string, AcceptedName>();
-    for (const call of packNamingCalls(groups, naming.maxTopicsPerCall)) {
+    const limit = { maxTopics: naming.maxTopicsPerCall, maxMembers: naming.maxMembersPerCall };
+    for (const call of packNamingCalls(groups, limit)) {
       if (this.signal.aborted) throw new Error("topics.errors.canceled");
       const result = await this.nameCall(call);
       for (const name of result.accepted) names.set(name.topicId, name);
@@ -741,6 +839,41 @@ class NamingRun {
   }
 
   /**
+   * What a topic shows the model: a leaf its covering sample (`centralMembers` of
+   * `sampleMembers`), an internal topic its live subtopics with a few members each.
+   */
+  private sampleOf(topicId: string): TopicSample {
+    const naming = this.config.naming;
+    const node = getTopic(this.state, topicId);
+    const internal = node.children.some((childId) => isLive(getTopic(this.state, childId)));
+    return internal
+      ? {
+          kind: "internal",
+          sample: internalNamingSample(this.state, this.cache.vectors, topicId, {
+            total: naming.sampleMembers,
+            perChild: naming.childMembers
+          })
+        }
+      : {
+          kind: "leaf",
+          items: coveringItems(this.state, this.cache.vectors, topicId, {
+            central: naming.centralMembers,
+            total: naming.sampleMembers
+          })
+        };
+  }
+
+  /** The titles a topic's live children hold now, which its own name must not repeat (D11). */
+  private childTitles(topicId: string): string[] {
+    return getTopic(this.state, topicId)
+      .children.flatMap((childId) => {
+        const child = getTopic(this.state, childId);
+        return isLive(child) && child.title !== null ? [child.title] : [];
+      })
+      .sort(compareStrings);
+  }
+
+  /**
    * Titles of the live children of a parent that are not named in this level, in code-unit order:
    * the prompt is a function of content, not of sibling positions or IDs (D22).
    */
@@ -811,7 +944,9 @@ class NamingRun {
     }
     const topics = namingCallTopics(call);
     const sourceItemIds = [
-      ...new Set(topics.flatMap((topic) => topic.members.map(memberSourceId)).filter((id) => id))
+      ...new Set(
+        topics.flatMap((topic) => namingTopicMembers(topic).map(memberSourceId)).filter((id) => id)
+      )
     ].sort() as string[];
     const logContext: AiTaskLogContext = {
       jobId: this.job.id,
@@ -971,6 +1106,8 @@ class NamingRun {
           llm: llmCount,
           provisional: applied.length - llmCount,
           language: this.contentLanguage,
+          // The prompt the LLM names were asked with: a rename pass finds older ones by it.
+          promptVersion: topicNamePromptVersion,
           // What this level asked of the model, for the naming measurements (first-try validity,
           // repair rate, calls and tokens per topic).
           calls: level.calls,

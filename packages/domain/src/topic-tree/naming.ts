@@ -8,6 +8,12 @@
 // as well, because a model that writes "Spaced practice" for a Portuguese library would mix
 // languages (owner feedback on Spike B). Prompts are a function of content (D22): groups, topics
 // and members follow content-hash order, never IDs.
+//
+// A name covers the whole topic (gate C, E4: names that described only the central members were
+// the dominant failure). A leaf shows a covering sample, its most central members plus the members
+// that best cover the rest of it (greedy facility location over the member vectors); an internal
+// topic shows its subtopics with their titles and sizes and a few members of each, larger ones
+// first. A name never repeats its parent's title or a subtopic's.
 import { z } from "zod";
 
 import { clipCharacters, withinCharacters } from "../note-page.js";
@@ -25,7 +31,7 @@ import {
   tokenize,
   topicNamingLanguageOf
 } from "./stopwords/index.js";
-import { dotRowVec } from "./vectors.js";
+import { dotRows, dotRowVec } from "./vectors.js";
 import type { ItemVectorSource } from "./vectors.js";
 
 export type TopicNamingConfig = TopicTreeConfig["naming"];
@@ -33,8 +39,11 @@ export type TopicNamingConfig = TopicTreeConfig["naming"];
 // ---------------------------------------------------------------------------
 // Which topics need a name
 
-/** Why a topic is named: it has no name, a provisional one, or its members drifted. */
-export const namingReasons = ["unnamed", "provisional", "drift"] as const;
+/**
+ * Why a topic is named: it has no name, a provisional one, its members drifted, or its LLM name
+ * was written under another revision of the naming prompt (only when a rename pass asks for it).
+ */
+export const namingReasons = ["unnamed", "provisional", "drift", "revision"] as const;
 export type NamingReason = (typeof namingReasons)[number];
 
 export interface NamingCandidate {
@@ -54,6 +63,11 @@ export interface NamingCandidateOptions {
    * is not known; only a share at or above `naming.renameDrift` names the topic again.
    */
   drift?: (topicId: string) => number | null;
+  /**
+   * Whether an LLM-named topic was named under another revision of the naming prompt; such a
+   * topic is named again from scratch (a rename pass, never by default).
+   */
+  staleRevision?: (topicId: string) => boolean;
 }
 
 /** Whether automation may change the topic's name at all (human and protected topics never). */
@@ -66,7 +80,8 @@ export function mayAutoName(node: TopicNode): boolean {
 /**
  * The topics to name, shallow first. A topic with no name or a provisional one is always a
  * candidate; a topic the LLM named is one again only when its members drifted by `renameDrift` or
- * more. Human-named, human-created, pinned and retired topics never are.
+ * more, or when a rename pass finds it named under another prompt revision. Human-named,
+ * human-created, pinned and retired topics never are.
  */
 export function namingCandidates(
   state: TopicTreeState,
@@ -82,7 +97,8 @@ export function namingCandidates(
     else if (node.nameState === "provisional") reason = "provisional";
     else if (node.nameSource === "llm") {
       const drift = options.drift?.(node.id) ?? null;
-      if (drift !== null && drift >= config.naming.renameDrift) reason = "drift";
+      if (options.staleRevision?.(node.id)) reason = "revision";
+      else if (drift !== null && drift >= config.naming.renameDrift) reason = "drift";
     }
     if (reason === null) continue;
     found.push({
@@ -241,11 +257,239 @@ export function centralItems(
   return ranked.slice(0, count);
 }
 
+/** Members a covering sample weighs at most (content-key order); a leaf has far fewer. */
+export const coveringPoolMax = 256;
+
+/**
+ * The covering sample of a topic: its `central` most central notes plus the members that best
+ * cover the rest, `total` in all, in content-key order (D22) so the prompt does not single out the
+ * centre. The rest are chosen by greedy facility location over the member vectors: each pick is the
+ * member that raises the sum, over all members, of the cosine to the nearest picked member the
+ * most (ties in content-key order), so a group of members away from the centre gets a
+ * representative before a stray one does. Notes come first, as in centralItems: sources fill a
+ * topic with too few notes. Items without a current vector are left out.
+ */
+export function coveringItems(
+  state: TopicTreeState,
+  vectors: ItemVectorSource,
+  topicId: string,
+  options: { central: number; total: number }
+): CentralItem[] {
+  const total = Math.max(0, Math.floor(options.total));
+  const ranked = centralItems(state, vectors, topicId, Number.POSITIVE_INFINITY);
+  const notes = ranked.filter((item) => item.kind === "note");
+  if (notes.length <= total) return ranked.slice(0, total).sort(compareContentKeys);
+  const central = notes.slice(0, Math.min(Math.max(0, Math.floor(options.central)), total));
+  const chosen = new Set(central.map((item) => item.key));
+  // The members weighed: every note of a leaf (at most coveringPoolMax, in content-key order).
+  const weighed = [
+    ...central,
+    ...[...notes]
+      .sort(compareContentKeys)
+      .filter((item) => !chosen.has(item.key))
+      .slice(0, Math.max(0, coveringPoolMax - central.length))
+  ].sort(compareContentKeys);
+  const rows = weighed.map((item) => vectors.rowOf(item.key) as number);
+  const size = weighed.length;
+  const similarity = new Float64Array(size * size);
+  for (let a = 0; a < size; a += 1) {
+    similarity[a * size + a] = 1;
+    for (let b = a + 1; b < size; b += 1) {
+      const value = dotRows(vectors.matrix, rows[a] as number, rows[b] as number);
+      similarity[a * size + b] = value;
+      similarity[b * size + a] = value;
+    }
+  }
+  // cover[i]: the cosine of member i to its nearest chosen member (-1 while none is chosen).
+  const cover = new Float64Array(size).fill(-1);
+  const take = (index: number) => {
+    chosen.add((weighed[index] as CentralItem).key);
+    for (let i = 0; i < size; i += 1) {
+      cover[i] = Math.max(cover[i] as number, similarity[i * size + index] as number);
+    }
+  };
+  weighed.forEach((item, index) => {
+    if (chosen.has(item.key)) take(index);
+  });
+  const picked: CentralItem[] = [...central];
+  while (picked.length < total) {
+    let best = -1;
+    let bestGain = Number.NEGATIVE_INFINITY;
+    for (let j = 0; j < size; j += 1) {
+      if (chosen.has((weighed[j] as CentralItem).key)) continue;
+      let gain = 0;
+      for (let i = 0; i < size; i += 1) {
+        const lift = (similarity[i * size + j] as number) - (cover[i] as number);
+        if (lift > 0) gain += lift;
+      }
+      // `weighed` is in content-key order: the first of equal gains wins.
+      if (gain > bestGain) {
+        best = j;
+        bestGain = gain;
+      }
+    }
+    if (best < 0) break;
+    picked.push(weighed[best] as CentralItem);
+    take(best);
+  }
+  return picked.sort(compareContentKeys);
+}
+
+/** A subtopic of an internal topic in its naming sample: its name, its size, a few members. */
+export interface SubtopicSample {
+  topicId: string;
+  /** Its title when it is named (by the model or a person); null when unnamed or provisional. */
+  title: string | null;
+  /** Items in its subtree. */
+  size: number;
+  /** Its most central members, as many as the sample gives it. */
+  items: CentralItem[];
+}
+
+/** What an internal topic shows: its subtopics (larger first) and a few of its own items. */
+export interface InternalNamingSample {
+  subtopics: SubtopicSample[];
+  /** Items placed on the topic itself rather than in a subtopic. */
+  direct: CentralItem[];
+}
+
+/**
+ * The naming sample of an internal topic: every live subtopic with its title and size, larger
+ * first (ties in content-key order), and up to `total` members spread over them and over the
+ * items placed on the topic itself. A subtopic without a name gets one member first; then each
+ * next member goes to the part with the most items per member it already shows (the D'Hondt
+ * rule), at most `perChild` per part, so large subtopics show more and none speaks for the whole.
+ */
+export function internalNamingSample(
+  state: TopicTreeState,
+  vectors: ItemVectorSource,
+  topicId: string,
+  options: { total: number; perChild: number }
+): InternalNamingSample {
+  const node = getTopic(state, topicId);
+  const perChild = Math.max(0, Math.floor(options.perChild));
+  interface Part {
+    topicId: string | null;
+    title: string | null;
+    size: number;
+    key: string;
+    ranked: CentralItem[];
+    given: number;
+  }
+  const parts: Part[] = [];
+  for (const childId of node.children) {
+    const child = getTopic(state, childId);
+    if (!isLive(child)) continue;
+    parts.push({
+      topicId: childId,
+      title: child.nameState === "named" ? child.title : null,
+      size: subtreeItems(state, childId).length,
+      key: topicOrderKey(state, childId),
+      ranked: perChild > 0 ? centralItems(state, vectors, childId, perChild) : [],
+      given: 0
+    });
+  }
+  const own: Part | null =
+    node.items.length === 0
+      ? null
+      : {
+          topicId: null,
+          title: null,
+          size: node.items.length,
+          key: [...new Set(node.items.map((key) => state.items.get(key)?.contentHash ?? ""))]
+            .sort(compareStrings)
+            .slice(0, 3)
+            .join(":"),
+          ranked:
+            perChild > 0 ? rankByCentroid(state, vectors, node.items, node.stats.centroid) : [],
+          given: 0
+        };
+  if (own) parts.push(own);
+  parts.sort((a, b) => b.size - a.size || compareStrings(a.key, b.key));
+  const cap = (part: Part) => Math.min(perChild, part.ranked.length);
+  let slots = Math.max(0, Math.floor(options.total));
+  for (const part of parts) {
+    if (slots === 0) break;
+    if (part.topicId !== null && part.title === null && cap(part) > 0) {
+      part.given = 1;
+      slots -= 1;
+    }
+  }
+  while (slots > 0) {
+    let best: Part | null = null;
+    for (const part of parts) {
+      if (part.given >= cap(part)) continue;
+      // Parts are larger first: the first of equal quotients wins.
+      if (!best || part.size / (part.given + 1) > best.size / (best.given + 1)) best = part;
+    }
+    if (!best) break;
+    best.given += 1;
+    slots -= 1;
+  }
+  return {
+    subtopics: parts.flatMap((part) =>
+      part.topicId === null
+        ? []
+        : [
+            {
+              topicId: part.topicId,
+              title: part.title,
+              size: part.size,
+              items: part.ranked.slice(0, part.given)
+            }
+          ]
+    ),
+    direct: own ? own.ranked.slice(0, own.given) : []
+  };
+}
+
+/** Items ranked by cosine to a centroid, notes first, ties in content-key order. */
+function rankByCentroid(
+  state: TopicTreeState,
+  vectors: ItemVectorSource,
+  keys: readonly ItemKey[],
+  centroid: Float32Array
+): CentralItem[] {
+  const ranked: CentralItem[] = [];
+  for (const key of keys) {
+    const entry = state.items.get(key);
+    const row = vectors.rowOf(key);
+    if (!entry || row === undefined) continue;
+    ranked.push({
+      key,
+      kind: entry.kind,
+      contentHash: entry.contentHash,
+      cosine: dotRowVec(vectors.matrix, row, centroid)
+    });
+  }
+  return ranked.sort(
+    (a, b) =>
+      Number(a.kind === "source") - Number(b.kind === "source") ||
+      b.cosine - a.cosine ||
+      compareContentKeys(a, b)
+  );
+}
+
+/** A subtopic as a naming call shows it. */
+export interface NamingSubtopic {
+  /** Its title, null when it has no name yet. */
+  title: string | null;
+  size: number;
+  members: NamingMember[];
+}
+
 /** A topic of a call: its alias (`T1`..), what it holds and the title it has now. */
 export interface NamingTopic {
   topicId: string;
   alias: string;
+  /** Items in the topic's subtree. */
+  size: number;
+  /** A leaf's covering sample; an internal topic's own items, if it has any. */
   members: NamingMember[];
+  /** An internal topic's subtopics, larger first; empty for a leaf. */
+  subtopics: NamingSubtopic[];
+  /** The titles its subtopics hold now: the name must repeat none of them (D11). */
+  childTitles: string[];
   /** The title a drift rename starts from; the model keeps it while it still fits. */
   currentTitle: string | null;
 }
@@ -255,18 +499,30 @@ export interface NamingGroup {
   parentId: string;
   /** The parent's title, null under the root or under an unnamed parent. */
   parentTitle: string | null;
+  /**
+   * The title the parent holds now when the prompt does not show it (the parent is named again
+   * after its children in this job): a name never repeats it either.
+   */
+  parentHeldTitle?: string | null;
   /** Titles of siblings not named in this call. */
   namedSiblings: string[];
   topics: NamingTopic[];
 }
 
-/** One model call: groups in parent-first order, at most `naming.maxTopicsPerCall` topics. */
+/** One model call: groups of one level, within `naming.maxTopicsPerCall` and the member budget. */
 export interface NamingCall {
   groups: NamingGroup[];
 }
 
 export function namingCallTopics(call: NamingCall): NamingTopic[] {
   return call.groups.flatMap((group) => group.topics);
+}
+
+/** Every member a topic shows: its own and its subtopics'. */
+export function namingTopicMembers(
+  topic: Pick<NamingTopic, "members" | "subtopics">
+): NamingMember[] {
+  return [...topic.members, ...topic.subtopics.flatMap((subtopic) => subtopic.members)];
 }
 
 /** Cuts an idea to `max` characters with an ellipsis; a short text stays as it is. */
@@ -278,53 +534,115 @@ export function clipIdea(text: string, max: number): string {
 
 export interface UnaliasedTopic {
   topicId: string;
+  size: number;
   members: NamingMember[];
+  subtopics?: NamingSubtopic[];
+  childTitles?: string[];
   currentTitle: string | null;
 }
 
+/** What one call may hold: topics, and members shown (`naming.maxMembersPerCall`). */
+export interface NamingCallLimit {
+  maxTopics: number;
+  maxMembers?: number;
+}
+
 /**
- * Packs unaliased groups into calls of at most `maxTopics` topics. Groups keep their order and
- * stay whole unless one alone is larger than a call; aliases run T1.. across the call.
+ * The members a topic spends of a call's budget: every member it shows, and a quarter of a member
+ * per subtopic heading (a title and a size are about a quarter of a member's title and idea).
+ */
+export function namingTopicWeight(topic: Pick<UnaliasedTopic, "members" | "subtopics">): number {
+  const subtopics = topic.subtopics ?? [];
+  return (
+    topic.members.length +
+    subtopics.reduce((sum, subtopic) => sum + subtopic.members.length, 0) +
+    Math.ceil(subtopics.length / 4)
+  );
+}
+
+/**
+ * Packs unaliased groups into calls of at most `maxTopics` topics and `maxMembers` members shown
+ * (a bare number limits topics only). Groups keep their order and stay whole unless one alone is
+ * larger than a call; a topic larger than the member budget gets a call of its own. Aliases run
+ * T1.. across the call.
  */
 export function packNamingCalls(
   groups: ReadonlyArray<Omit<NamingGroup, "topics"> & { topics: UnaliasedTopic[] }>,
-  maxTopics: number
+  limit: number | NamingCallLimit
 ): NamingCall[] {
-  const pieces: Array<Omit<NamingGroup, "topics"> & { topics: UnaliasedTopic[] }> = [];
-  for (const group of groups) {
-    for (let start = 0; start < group.topics.length; start += maxTopics) {
-      pieces.push({ ...group, topics: group.topics.slice(start, start + maxTopics) });
-    }
+  const maxTopics = typeof limit === "number" ? limit : limit.maxTopics;
+  const maxMembers =
+    typeof limit === "number"
+      ? Number.POSITIVE_INFINITY
+      : (limit.maxMembers ?? Number.POSITIVE_INFINITY);
+  const fits = (topics: number, members: number) => topics <= maxTopics && members <= maxMembers;
+  interface Piece {
+    group: Omit<NamingGroup, "topics">;
+    topics: UnaliasedTopic[];
+    weight: number;
   }
-  const calls: Array<typeof pieces> = [];
-  let current: typeof pieces = [];
+  const pieces: Piece[] = [];
+  for (const { topics, ...group } of groups) {
+    let piece: Piece | null = null;
+    for (const topic of topics) {
+      const weight = namingTopicWeight(topic);
+      if (piece && !fits(piece.topics.length + 1, piece.weight + weight)) {
+        pieces.push(piece);
+        piece = null;
+      }
+      piece ??= { group, topics: [], weight: 0 };
+      piece.topics.push(topic);
+      piece.weight += weight;
+    }
+    if (piece) pieces.push(piece);
+  }
+  const calls: Piece[][] = [];
+  let current: Piece[] = [];
   let size = 0;
+  let weight = 0;
   for (const piece of pieces) {
-    if (current.length > 0 && size + piece.topics.length > maxTopics) {
+    if (current.length > 0 && !fits(size + piece.topics.length, weight + piece.weight)) {
       calls.push(current);
       current = [];
       size = 0;
+      weight = 0;
     }
     current.push(piece);
     size += piece.topics.length;
+    weight += piece.weight;
   }
   if (current.length > 0) calls.push(current);
   return calls.map((call) => {
     let next = 0;
     return {
-      groups: call.map((group) => ({
+      groups: call.map(({ group, topics }) => ({
         ...group,
         namedSiblings: [...group.namedSiblings],
-        topics: group.topics.map((topic) => ({
-          ...topic,
-          alias: `T${(next += 1)}`
+        topics: topics.map((topic) => ({
+          topicId: topic.topicId,
+          alias: `T${(next += 1)}`,
+          size: topic.size,
+          members: topic.members,
+          subtopics: topic.subtopics ?? [],
+          childTitles: topic.childTitles ?? [],
+          currentTitle: topic.currentTitle
         }))
       }))
     };
   });
 }
 
-/** What the prompt's `%topics%` shows: groups with their parent, named siblings and topics. */
+function promptNotes(members: readonly NamingMember[]) {
+  return members.map((member) =>
+    member.idea === null ? { title: member.title } : { title: member.title, idea: member.idea }
+  );
+}
+
+/**
+ * What the prompt's `%topics%` shows: groups with their parent, named siblings and topics. A topic
+ * shows its size and its notes; an internal topic its subtopics (title, size and a few notes) and
+ * the notes placed on it, if any.
+ */
 export function namingPromptGroups(call: NamingCall) {
   return call.groups.map((group) => ({
     parent: group.parentTitle,
@@ -332,9 +650,19 @@ export function namingPromptGroups(call: NamingCall) {
     topics: group.topics.map((topic) => ({
       alias: topic.alias,
       ...(topic.currentTitle === null ? {} : { current_title: topic.currentTitle }),
-      notes: topic.members.map((member) =>
-        member.idea === null ? { title: member.title } : { title: member.title, idea: member.idea }
-      )
+      size: topic.size,
+      ...(topic.subtopics.length === 0
+        ? {}
+        : {
+            subtopics: topic.subtopics.map((subtopic) => ({
+              title: subtopic.title,
+              size: subtopic.size,
+              ...(subtopic.members.length === 0 ? {} : { notes: promptNotes(subtopic.members) })
+            }))
+          }),
+      ...(topic.subtopics.length > 0 && topic.members.length === 0
+        ? {}
+        : { notes: promptNotes(topic.members) })
     }))
   }));
 }
@@ -363,6 +691,7 @@ export const namingRejections = [
   "title_generic",
   "title_identifier",
   "same_as_parent",
+  "same_as_child",
   "duplicate_sibling",
   "language_mismatch",
   "language_heuristic",
@@ -599,8 +928,16 @@ export function validateNamingOutput(
         reject("title_generic", title);
         continue;
       }
-      if (group.parentTitle !== null && sameTopicTitle(group.parentTitle, title)) {
+      if (
+        [group.parentTitle, group.parentHeldTitle ?? null].some(
+          (parent) => parent !== null && sameTopicTitle(parent, title)
+        )
+      ) {
         reject("same_as_parent", title);
+        continue;
+      }
+      if (topic.childTitles.some((child) => sameTopicTitle(child, title))) {
+        reject("same_as_child", title);
         continue;
       }
       if (!statesContentLanguage(item.language, context.contentLanguage)) {
@@ -720,6 +1057,8 @@ const rejectionLines: Record<NamingRejection, (title: string, parent: string | n
   title_identifier: (title) => `the title "${title}" looks like an identifier or a placeholder`,
   same_as_parent: (title, parent) =>
     `the title "${title}" repeats the parent title${parent ? ` "${parent}"` : ""}`,
+  same_as_child: (title) =>
+    `the title "${title}" repeats the title of one of its subtopics: name the whole topic, broader than each subtopic`,
   duplicate_sibling: (title) => `the title "${title}" is already used by a sibling topic`,
   language_mismatch: () => "the name is not in the content language",
   language_heuristic: (title) => `the name "${title}" or its description mixes languages`,
@@ -736,7 +1075,9 @@ export function describeRejections(
   const order = new Map(namingCallTopics(call).map((topic, index) => [topic.alias, index]));
   const parents = new Map<string, string | null>();
   for (const group of call.groups) {
-    for (const topic of group.topics) parents.set(topic.alias, group.parentTitle);
+    for (const topic of group.topics) {
+      parents.set(topic.alias, group.parentTitle ?? group.parentHeldTitle ?? null);
+    }
   }
   return [...rejected]
     .sort((a, b) => (order.get(a.alias) ?? 0) - (order.get(b.alias) ?? 0))

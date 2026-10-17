@@ -358,6 +358,7 @@ export function promptSampleCall(
             topics: [
               {
                 topicId: id(41),
+                size: 1,
                 members: [
                   {
                     key: `note:${id(1)}`,
@@ -371,6 +372,7 @@ export function promptSampleCall(
               },
               {
                 topicId: id(42),
+                size: 1,
                 members: [
                   {
                     key: `note:${id(2)}`,
@@ -385,7 +387,7 @@ export function promptSampleCall(
             ]
           }
         ],
-        naming.maxTopicsPerCall
+        { maxTopics: naming.maxTopicsPerCall, maxMembers: naming.maxMembersPerCall }
       )[0]!;
       const promptInput = { contentLanguage: "en", config: naming };
       return {

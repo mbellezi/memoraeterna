@@ -9,7 +9,9 @@ import {
   centralItems,
   cleanNameText,
   clipIdea,
+  coveringItems,
   describeRejections,
+  internalNamingSample,
   isIdentifierShaped,
   membershipChange,
   membershipDrift,
@@ -18,6 +20,7 @@ import {
   namingCallTopics,
   namingCandidates,
   namingPromptGroups,
+  namingTopicWeight,
   packNamingCalls,
   parseModelJson,
   retryCall,
@@ -25,7 +28,8 @@ import {
   validateNamingOutput
 } from "./naming.js";
 import type { NamingCall, NamingMember, UnaliasedTopic } from "./naming.js";
-import { itemKey } from "./ids.js";
+import { compareContentKeys, itemKey } from "./ids.js";
+import type { ItemKey } from "./ids.js";
 import { createTopicTreeState, getTopic, placementRecord, registerItem } from "./state.js";
 
 const config = defaultTopicTreeConfig;
@@ -100,6 +104,24 @@ describe("which topics are named", () => {
     expect(found.find((candidate) => candidate.topicId === named)?.reason).toBe("drift");
     // No known drift means no rename.
     expect(namingCandidates(world.state, config).map((c) => c.topicId)).not.toContain(named);
+  });
+
+  it("names an LLM-named topic again from scratch when a rename pass finds an older prompt's name", () => {
+    const world = tree();
+    const named = world.topic(3);
+    const stale = (id: string) => id === named;
+    const found = namingCandidates(world.state, config, { staleRevision: stale });
+    expect(found.find((candidate) => candidate.topicId === named)?.reason).toBe("revision");
+    // A drifted topic named by an older prompt is named from scratch, not kept by its drift rule.
+    const both = namingCandidates(world.state, config, {
+      staleRevision: stale,
+      drift: () => 1
+    });
+    expect(both.find((candidate) => candidate.topicId === named)?.reason).toBe("revision");
+    // A human name is never part of a rename pass.
+    expect(
+      namingCandidates(world.state, config, { staleRevision: () => true }).map((c) => c.topicId)
+    ).not.toContain(world.topic(4));
   });
 
   it("leaves out retired topics and the ones asked to skip", () => {
@@ -258,6 +280,208 @@ describe("central members", () => {
   });
 });
 
+/** `count` notes around `axis` (a 3-d direction), each tilted a little toward one other axis. */
+function cluster(name: string, count: number, axis: [number, number, number]): WorldNote[] {
+  return Array.from({ length: count }, (_, index) => {
+    const tilt = 0.04 * (index + 1);
+    const vector: [number, number, number] = [
+      axis[0] + (index % 3 === 0 ? tilt : 0),
+      axis[1] + (index % 3 === 1 ? tilt : 0),
+      axis[2] + (index % 3 === 2 ? tilt : 0)
+    ];
+    return note(`${name} ${index + 1}`, vector);
+  });
+}
+
+describe("the covering sample of a leaf", () => {
+  const leaf = (idBase = 0) =>
+    namingWorld(
+      [
+        {
+          id: 1,
+          parent: 0,
+          notes: [
+            ...cluster("turbina", 12, [1, 0, 0]),
+            ...cluster("reciclagem", 5, [0, 1, 0]),
+            ...cluster("recorde", 3, [0, 0, 1])
+          ]
+        }
+      ],
+      idBase
+    );
+  const textsOf = (world: ReturnType<typeof leaf>, items: Array<{ key: string }>) =>
+    items.map((item) => world.texts.get(item.key as ItemKey)?.text ?? "");
+
+  it("adds members of every part of the leaf to its most central ones", () => {
+    const world = leaf();
+    const options = { central: 5, total: 8 };
+    const sample = coveringItems(world.state, world.vectors, world.topic(1), options);
+    expect(sample).toHaveLength(8);
+    const texts = textsOf(world, sample);
+    // The centre alone shows one subject; the covering sample shows all three.
+    const central = textsOf(world, centralItems(world.state, world.vectors, world.topic(1), 8));
+    expect(central.every((text) => text.startsWith("turbina"))).toBe(true);
+    for (const part of ["turbina", "reciclagem", "recorde"]) {
+      expect(
+        texts.some((text) => text.startsWith(part)),
+        part
+      ).toBe(true);
+    }
+    // The five most central notes are in it, and the prompt order is content-key order.
+    for (const text of central.slice(0, 5)) expect(texts).toContain(text);
+    expect(sample).toEqual([...sample].sort(compareContentKeys));
+  });
+
+  it("gives a group of members a representative before a stray note", () => {
+    const world = namingWorld([
+      {
+        id: 1,
+        parent: 0,
+        notes: [
+          ...cluster("turbina", 10, [1, 0, 0]),
+          ...cluster("manutenção", 4, [0, 1, 0]),
+          note("Cache, uma instalação artística", [0, 0, 1])
+        ]
+      }
+    ]);
+    const sample = coveringItems(world.state, world.vectors, world.topic(1), {
+      central: 5,
+      total: 6
+    });
+    const texts = textsOf(world, sample);
+    expect(texts.filter((text) => text.startsWith("manutenção"))).toHaveLength(1);
+    expect(texts).not.toContain("Cache, uma instalação artística");
+  });
+
+  it("is a function of content: the same notes with other IDs give the same sample", () => {
+    const options = { central: 4, total: 9 };
+    const first = leaf(0);
+    const second = leaf(7000);
+    const a = coveringItems(first.state, first.vectors, first.topic(1), options);
+    const b = coveringItems(second.state, second.vectors, second.topic(1), options);
+    expect(textsOf(first, a)).toEqual(textsOf(second, b));
+    expect(a.map((item) => item.key)).not.toEqual(b.map((item) => item.key));
+    // And the same call twice gives the same sample.
+    expect(coveringItems(first.state, first.vectors, first.topic(1), options)).toEqual(a);
+  });
+
+  it("shows every member of a small leaf and never more than asked", () => {
+    const world = namingWorld([{ id: 1, parent: 0, notes: cluster("sono", 4, [1, 0, 0]) }]);
+    const all = coveringItems(world.state, world.vectors, world.topic(1), {
+      central: 5,
+      total: 12
+    });
+    expect(all).toHaveLength(4);
+    expect(
+      coveringItems(world.state, world.vectors, world.topic(1), { central: 1, total: 2 })
+    ).toHaveLength(2);
+    // A leaf with 12 members and a 12-member sample shows them all.
+    const big = leaf();
+    expect(
+      coveringItems(big.state, big.vectors, big.topic(1), { central: 5, total: 25 })
+    ).toHaveLength(20);
+  });
+});
+
+describe("the naming sample of an internal topic", () => {
+  function parent() {
+    return namingWorld([
+      { id: 1, parent: 0, notes: [note("nota solta", [1, 1, 0])] },
+      {
+        id: 2,
+        parent: 1,
+        fields: { title: "Condicionamento clássico", nameState: "named", nameSource: "llm" },
+        notes: cluster("clássico", 6, [1, 0, 0])
+      },
+      {
+        id: 3,
+        parent: 1,
+        fields: { nameState: "unnamed" },
+        notes: cluster("plantas", 2, [0, 0, 1])
+      },
+      {
+        id: 4,
+        parent: 1,
+        fields: { title: "Rascunho › operante", nameState: "provisional", nameSource: "tfidf" },
+        notes: cluster("operante", 3, [0, 1, 0])
+      }
+    ]);
+  }
+
+  it("lists every subtopic larger first with its name and size, and spreads the members", () => {
+    const world = parent();
+    const sample = internalNamingSample(world.state, world.vectors, world.topic(1), {
+      total: 5,
+      perChild: 3
+    });
+    expect(sample.subtopics.map((s) => [s.topicId, s.title, s.size])).toEqual([
+      [world.topic(2), "Condicionamento clássico", 6],
+      // A provisional title is not a name worth showing.
+      [world.topic(4), null, 3],
+      [world.topic(3), null, 2]
+    ]);
+    // Unnamed subtopics get a member first; then the largest part gets the most (D'Hondt).
+    expect(sample.subtopics.map((s) => s.items.length)).toEqual([3, 1, 1]);
+    expect(sample.direct).toHaveLength(0);
+    const texts = sample.subtopics.flatMap((s) =>
+      s.items.map((item) => world.texts.get(item.key)?.text ?? "")
+    );
+    expect(texts.filter((text) => text.startsWith("clássico"))).toHaveLength(3);
+    // A larger budget reaches the topic's own notes too, and no part passes perChild.
+    const wide = internalNamingSample(world.state, world.vectors, world.topic(1), {
+      total: 12,
+      perChild: 2
+    });
+    expect(wide.subtopics.map((s) => s.items.length)).toEqual([2, 2, 2]);
+    expect(wide.direct.map((item) => world.texts.get(item.key)?.text)).toEqual(["nota solta"]);
+    // Titles and sizes only.
+    const bare = internalNamingSample(world.state, world.vectors, world.topic(1), {
+      total: 12,
+      perChild: 0
+    });
+    expect(bare.subtopics.every((s) => s.items.length === 0)).toBe(true);
+    expect(bare.subtopics).toHaveLength(3);
+  });
+
+  it("is a function of content: other IDs, the same sample", () => {
+    const first = parent();
+    const options = { total: 5, perChild: 3 };
+    const a = internalNamingSample(first.state, first.vectors, first.topic(1), options);
+    const second = namingWorld(
+      [
+        { id: 1, parent: 0, notes: [note("nota solta", [1, 1, 0])] },
+        {
+          id: 2,
+          parent: 1,
+          fields: { title: "Condicionamento clássico", nameState: "named", nameSource: "llm" },
+          notes: cluster("clássico", 6, [1, 0, 0])
+        },
+        {
+          id: 3,
+          parent: 1,
+          fields: { nameState: "unnamed" },
+          notes: cluster("plantas", 2, [0, 0, 1])
+        },
+        {
+          id: 4,
+          parent: 1,
+          fields: { title: "Rascunho › operante", nameState: "provisional", nameSource: "tfidf" },
+          notes: cluster("operante", 3, [0, 1, 0])
+        }
+      ],
+      9000
+    );
+    const b = internalNamingSample(second.state, second.vectors, second.topic(1), options);
+    const view = (world: typeof first, sample: typeof a) =>
+      sample.subtopics.map((s) => ({
+        title: s.title,
+        size: s.size,
+        notes: s.items.map((item) => world.texts.get(item.key)?.text)
+      }));
+    expect(view(second, b)).toEqual(view(first, a));
+  });
+});
+
 function member(title: string): NamingMember {
   return {
     key: itemKey("note", uuidOf(Math.abs(hash(title)) % 100000)),
@@ -273,7 +497,7 @@ function hash(text: string): number {
   return value;
 }
 function unaliased(id: number, title: string, currentTitle: string | null = null): UnaliasedTopic {
-  return { topicId: uuidOf(id), members: [member(title)], currentTitle };
+  return { topicId: uuidOf(id), size: 1, members: [member(title)], currentTitle };
 }
 function group(
   parent: number,
@@ -340,11 +564,111 @@ describe("the batches of a naming call", () => {
         parent: "Mente",
         named_siblings: ["Mar"],
         topics: [
-          { alias: "T1", current_title: "Antigo", notes: [{ title: "a", idea: "a idea" }] },
-          { alias: "T2", notes: [{ title: "b", idea: "b idea" }] }
+          {
+            alias: "T1",
+            current_title: "Antigo",
+            size: 1,
+            notes: [{ title: "a", idea: "a idea" }]
+          },
+          { alias: "T2", size: 1, notes: [{ title: "b", idea: "b idea" }] }
         ]
       }
     ]);
+  });
+
+  it("keeps a call within the member budget: 10 covering samples of 12 where 24 topics of 5 were", () => {
+    const sampled = (id: number): UnaliasedTopic => ({
+      topicId: uuidOf(id),
+      size: 30,
+      members: Array.from({ length: 12 }, (_, index) => member(`n${id}-${index}`)),
+      currentTitle: null
+    });
+    const topics = Array.from({ length: 25 }, (_, index) => sampled(index + 1));
+    const limit = {
+      maxTopics: config.naming.maxTopicsPerCall,
+      maxMembers: config.naming.maxMembersPerCall
+    };
+    // The budget is the first prompt's: 24 topics of 5 central members.
+    expect(config.naming.maxMembersPerCall).toBe(
+      config.naming.maxTopicsPerCall * config.naming.centralMembers
+    );
+    const calls = packNamingCalls([group(100, "Energia", topics)], limit);
+    expect(calls.map((call) => namingCallTopics(call).length)).toEqual([10, 10, 5]);
+    for (const call of calls) {
+      const shown = namingCallTopics(call).reduce(
+        (sum, topic) => sum + namingTopicWeight(topic),
+        0
+      );
+      expect(shown).toBeLessThanOrEqual(config.naming.maxMembersPerCall);
+    }
+    // A subtopic heading weighs a quarter of a member; a topic larger than a call goes alone.
+    const internal: UnaliasedTopic = {
+      topicId: uuidOf(90),
+      size: 400,
+      members: [],
+      subtopics: Array.from({ length: 6 }, (_, index) => ({
+        title: `Parte ${index}`,
+        size: 60,
+        members: [member(`p${index}`), member(`q${index}`)]
+      })),
+      currentTitle: null
+    };
+    expect(namingTopicWeight(internal)).toBe(14);
+    const lone = packNamingCalls([group(100, "Energia", [internal, sampled(91)])], {
+      maxTopics: 24,
+      maxMembers: 13
+    });
+    expect(lone.map((call) => namingCallTopics(call).length)).toEqual([1, 1]);
+  });
+
+  it("shows an internal topic's subtopics with their sizes and a leaf's size and notes", () => {
+    const call = packNamingCalls(
+      [
+        {
+          ...group(100, null, []),
+          parentHeldTitle: "Antiga mente",
+          topics: [
+            {
+              topicId: uuidOf(1),
+              size: 11,
+              members: [],
+              subtopics: [
+                { title: "Condicionamento clássico", size: 8, members: [member("Pavlov")] },
+                { title: null, size: 3, members: [member("Ervilhas")] }
+              ],
+              childTitles: ["Condicionamento clássico"],
+              currentTitle: null
+            },
+            unaliased(2, "Sono")
+          ]
+        }
+      ],
+      24
+    )[0]!;
+    const shown = namingPromptGroups(call);
+    expect(JSON.parse(JSON.stringify(shown))).toEqual([
+      {
+        parent: null,
+        named_siblings: [],
+        topics: [
+          {
+            alias: "T1",
+            size: 11,
+            subtopics: [
+              {
+                title: "Condicionamento clássico",
+                size: 8,
+                notes: [{ title: "Pavlov", idea: "Pavlov idea" }]
+              },
+              { title: null, size: 3, notes: [{ title: "Ervilhas", idea: "Ervilhas idea" }] }
+            ]
+          },
+          { alias: "T2", size: 1, notes: [{ title: "Sono", idea: "Sono idea" }] }
+        ]
+      }
+    ]);
+    // The parent's held title is never shown.
+    expect(JSON.stringify(shown)).not.toContain("Antiga mente");
   });
 
   it("cuts an idea at the limit with an ellipsis and leaves a short one alone", () => {
@@ -466,6 +790,50 @@ describe("validating the model's answer", () => {
     expect(reasons.T2).toBe("duplicate_sibling");
     // T3 and T4 have different parents, so the same title is fine for both.
     expect(result.accepted.map((name) => name.alias)).toEqual(["T3", "T4"]);
+  });
+
+  it("rejects a name that repeats a subtopic's title or the title a parent named later holds", () => {
+    const named = packNamingCalls(
+      [
+        {
+          ...group(100, null, []),
+          parentHeldTitle: "Aprendizagem",
+          topics: [
+            {
+              ...unaliased(1, "a"),
+              subtopics: [{ title: "Condicionamento clássico", size: 4, members: [member("x")] }],
+              childTitles: ["Condicionamento clássico", "Condicionamento operante"]
+            },
+            unaliased(2, "b"),
+            unaliased(3, "c")
+          ]
+        }
+      ],
+      24
+    )[0]!;
+    const result = validateNamingOutput(
+      {
+        topics: [
+          item("T1", "condicionamento OPERANTE"),
+          item("T2", "aprendizagem"),
+          item("T3", "Condicionamento")
+        ]
+      },
+      named,
+      context
+    );
+    expect(result.rejected.map((r) => [r.alias, r.reason])).toEqual([
+      ["T1", "same_as_child"],
+      ["T2", "same_as_parent"]
+    ]);
+    expect(result.accepted.map((name) => name.title)).toEqual(["Condicionamento"]);
+    const lines = describeRejections(result.rejected, named, "Brazilian Portuguese").split("\n");
+    expect(lines[0]).toContain("repeats the title of one of its subtopics");
+    expect(lines[1]).toBe('T2: the title "aprendizagem" repeats the parent title "Aprendizagem"');
+    // The repair keeps both constraints.
+    const again = retryCall(named, result)!;
+    expect(again.groups[0]!.parentHeldTitle).toBe("Aprendizagem");
+    expect(namingCallTopics(again)[0]!.childTitles).toContain("Condicionamento operante");
   });
 
   it("lets the first of two siblings keep a title both proposed", () => {
