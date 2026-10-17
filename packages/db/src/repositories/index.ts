@@ -17,6 +17,7 @@ export * from "./monitoringRepository.js";
 export * from "./knowledgeGraphRepository.js";
 export * from "./knowledgeGraphDashboardRepository.js";
 export * from "./bibliographicRepository.js";
+export * from "./aiConfigGeneration.js";
 export * from "./aiConfigRepository.js";
 export * from "./sourceSummaryRepository.js";
 export * from "./atomicNoteRepository.js";

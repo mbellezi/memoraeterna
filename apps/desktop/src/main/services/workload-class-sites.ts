@@ -45,7 +45,8 @@ export const callMethods = {
   tryRunDefaultTask: { context: 3 },
   runOrganizationTask: { context: 2 },
   rank: { context: 0 },
-  rankPairs: { context: 0 }
+  rankPairs: { context: 0 },
+  embedMany: { context: 1 }
 } as const;
 export type CallMethod = keyof typeof callMethods;
 
@@ -270,9 +271,11 @@ export function callSites(
             : ts.isIdentifier(receiver)
               ? receiver.text
               : "";
-          // `rank` and `rankPairs` are common names: only the AI service's own receivers count.
+          // `rank`, `rankPairs` and `embedMany` are common names (an adapter has the last): only the
+          // AI service's own receivers count.
           const watched =
-            (method !== "rank" && method !== "rankPairs") || rankReceivers.has(receiverName);
+            (method !== "rank" && method !== "rankPairs" && method !== "embedMany") ||
+            rankReceivers.has(receiverName);
           if (watched) {
             const argument = node.arguments[callMethods[method as CallMethod].context];
             const first = node.arguments[0];

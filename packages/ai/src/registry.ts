@@ -24,16 +24,33 @@ export function setAiAdapterDecorator(decorator: AiAdapterDecorator | null): voi
 export class AiModelRegistry {
   private readonly adapters = new Map<string, AiModelAdapter>();
 
-  public register(adapter: AiModelAdapter): void {
+  /**
+   * Registers an adapter under `key` (default `providerId:modelId`) and returns the instance the
+   * registry holds, which the DEV decorator may have wrapped. A caller that serves several
+   * configurations of one provider and model keys by its configuration (`providerConfigId:modelId`),
+   * so that two configurations never resolve each other's adapter (F3 D38).
+   */
+  public register(adapter: AiModelAdapter, key?: string): AiModelAdapter {
     const descriptor = adapter.describe();
-    this.adapters.set(
-      `${descriptor.providerId}:${descriptor.modelId}`,
-      adapterDecorator ? adapterDecorator(adapter) : adapter
-    );
+    const held = adapterDecorator ? adapterDecorator(adapter) : adapter;
+    this.adapters.set(key ?? `${descriptor.providerId}:${descriptor.modelId}`, held);
+    return held;
   }
 
   public unregister(providerId: string, modelId: string): void {
     this.adapters.delete(`${providerId}:${modelId}`);
+  }
+
+  public unregisterKey(key: string): void {
+    this.adapters.delete(key);
+  }
+
+  /** The adapter registered under `key`, when it declares what the call needs. */
+  public get(key: string, required: readonly AiCapability[] = []): AiModelAdapter {
+    const adapter = this.adapters.get(key);
+    if (!adapter || !hasCapabilities(adapter.describe(), required))
+      throw new Error("errors.ai.noCompatibleModel");
+    return adapter;
   }
 
   public list(required: readonly AiCapability[] = []): AiModelAdapter[] {

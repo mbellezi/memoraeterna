@@ -66,6 +66,11 @@ import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
+import {
+  embedChunkVectors,
+  embedHeaderVectors,
+  type EmbeddingBatchGenerator
+} from "./embedding-stage.js";
 import { canManuallyRetryJob, isWaitingForDecider, stageRetryStages } from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
@@ -106,6 +111,34 @@ export interface JobSupervisorOptions {
     runtime: string;
     spaceKey?: string;
   } | null>;
+  /**
+   * Embeds several texts in one request, at most 32 (F3 D37); the embedding stage uses it instead of
+   * `generateEmbedding` when it is set.
+   */
+  generateEmbeddings?: (
+    texts: string[],
+    signal?: AbortSignal,
+    context?: {
+      jobId: string;
+      ingestionRunId: string;
+      sourceItemId: string;
+      documentId: string;
+      stage: string;
+      embeddingInputType: "document";
+      chunkIds?: string[];
+    }
+  ) => Promise<{
+    embeddings: number[][];
+    provider: string;
+    model: string;
+    runtime: string;
+    spaceKey?: string;
+  } | null>;
+  /**
+   * The embedding space the route writes to, known without a call. With it the embedding stage
+   * keeps the vector of a chunk whose text and space are unchanged instead of embedding it again.
+   */
+  embeddingSpaceKey?: () => Promise<string | null>;
   knowledgeService?: KnowledgeService;
   obsidianSyncService?: Pick<ObsidianSyncService, "projectSource"> & {
     wiki?: ObsidianSyncService["wiki"];
@@ -451,6 +484,33 @@ export class JobSupervisor {
       // A heavy lane held for relation jobs (drain mode) looks again as soon as one ends.
       if (worker === "relations" && this.heavyHeldForLinks) this.wakeLoops("heavy");
     }
+  }
+
+  /**
+   * How the embedding stage embeds a batch of texts: the supervisor's batch generator, else its
+   * single-text one called for each text in order; null without either.
+   */
+  private embeddingBatchGenerator(): EmbeddingBatchGenerator | null {
+    const many = this.options.generateEmbeddings;
+    if (many) return (texts, signal, context) => many(texts, signal, context);
+    const single = this.options.generateEmbedding;
+    if (!single) return null;
+    return async (texts, signal, context) => {
+      const { chunkIds, ...rest } = context;
+      const embeddings: number[][] = [];
+      let identity: { provider: string; model: string; runtime: string; spaceKey?: string } | null =
+        null;
+      for (const [index, text] of texts.entries()) {
+        const chunkId = chunkIds?.[index];
+        const generated = await single(text, signal, { ...rest, ...(chunkId ? { chunkId } : {}) });
+        if (!generated) return null;
+        if (identity?.spaceKey && generated.spaceKey !== identity.spaceKey)
+          throw new Error("errors.sourceRelations.configurationChanged");
+        embeddings.push(generated.embedding);
+        identity = generated;
+      }
+      return identity ? { ...identity, embeddings } : null;
+    };
   }
 
   /** Runs a pass at once: every loop, or only the loops of one lane. */
@@ -853,85 +913,45 @@ export class JobSupervisor {
       await runs.beginStage(ingestionRunId, "embedding");
       this.notify();
       let embeddedCount = 0;
+      let reusedCount = 0;
       let sourceEmbedded = false;
-      if (this.options.generateEmbedding) {
+      const generate = this.embeddingBatchGenerator();
+      if (generate) {
         const embeddings = createEmbeddingRepository(pool);
-        const chunkVectors: number[][] = [];
-        let embeddingIdentity: {
-          provider: string;
-          model: string;
-          runtime: string;
-          spaceKey?: string;
-        } | null = null;
-        for (const chunk of persistedChunks) {
-          if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
-          const generated = await this.options.generateEmbedding(
-            renderPrompt("embedding.content.chunk", { source_text: chunk.content }),
-            signal,
-            {
-              jobId: job.id,
-              ingestionRunId,
-              sourceItemId,
-              documentId,
-              stage: "embedding",
-              chunkId: chunk.id,
-              embeddingInputType: "document"
-            }
-          );
-          if (!generated) break;
-          if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey)
-            throw new Error("errors.sourceRelations.configurationChanged");
-          const validated = await this.workers.execute(
-            "embedding",
-            { embedding: generated.embedding },
-            { signal }
-          );
-          const embedding = Array.isArray(validated.embedding)
-            ? validated.embedding.map(Number)
-            : [];
-          await embeddings.upsert({
-            targetType: "chunk",
-            targetId: chunk.id,
-            chunkId: chunk.id,
-            provider: generated.provider,
-            model: generated.model,
-            runtime: generated.runtime,
-            strategy: generated.spaceKey ? `native-v2:${generated.spaceKey}` : "native",
-            contentHash: chunk.contentHash,
-            embedding
-          });
-          chunkVectors.push(embedding);
-          embeddingIdentity = generated;
-          embeddedCount += 1;
-        }
+        const stage = {
+          pool,
+          signal,
+          generate,
+          ...(this.options.embeddingSpaceKey
+            ? { routeSpaceKey: this.options.embeddingSpaceKey }
+            : {}),
+          validate: async (embedding: number[]) => {
+            const validated = await this.workers.execute("embedding", { embedding }, { signal });
+            return Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+          },
+          context: { jobId: job.id, ingestionRunId, sourceItemId, documentId }
+        };
+        const chunkSet = await embedChunkVectors({
+          ...stage,
+          chunks: persistedChunks,
+          render: (content) => renderPrompt("embedding.content.chunk", { source_text: content })
+        });
+        const chunkVectors = chunkSet.vectors;
+        let embeddingIdentity = chunkSet.identity;
+        // The count of chunks that have a vector; the ones kept from an earlier run are counted apart.
+        embeddedCount = chunkVectors.length;
+        reusedCount = chunkSet.reused;
 
         const source = await createSourceItemRepository(pool).findById(sourceItemId);
         if (source) {
           const header = buildCatalogMetadataMarkdown(source);
-          const headerVectors: number[][] = [];
-          for (const segment of chunkMarkdown(header).map((chunk) => chunk.content)) {
-            const generated = await this.options.generateEmbedding(segment, signal, {
-              jobId: job.id,
-              ingestionRunId,
-              sourceItemId,
-              documentId,
-              stage: "source_embedding",
-              embeddingInputType: "document"
-            });
-            if (!generated) break;
-            if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey)
-              throw new Error("errors.sourceRelations.configurationChanged");
-            const validated = await this.workers.execute(
-              "embedding",
-              { embedding: generated.embedding },
-              { signal }
-            );
-            const embedding = Array.isArray(validated.embedding)
-              ? validated.embedding.map(Number)
-              : [];
-            headerVectors.push(embedding);
-            embeddingIdentity = generated;
-          }
+          const headerEmbedded = await embedHeaderVectors({
+            ...stage,
+            segments: chunkMarkdown(header).map((chunk) => chunk.content),
+            identity: embeddingIdentity
+          });
+          const headerVectors = headerEmbedded.vectors;
+          embeddingIdentity = headerEmbedded.identity;
           const descendants =
             await createHierarchicalIngestionRepository(pool).listDescendants(sourceItemId);
           let contentVectors = chunkVectors;
@@ -977,8 +997,9 @@ export class JobSupervisor {
       }
       await runs.completeStage(ingestionRunId, "embedding", {
         embeddedCount,
+        reusedCount,
         sourceEmbedded,
-        configured: Boolean(this.options.generateEmbedding)
+        configured: Boolean(this.options.generateEmbedding ?? this.options.generateEmbeddings)
       });
       this.notify();
     }

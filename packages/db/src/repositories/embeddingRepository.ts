@@ -36,6 +36,9 @@ export interface StoredNoteVector extends StoredEmbedding {
   strategy: string;
 }
 
+/** A stored chunk vector with the embedding space (model, provider, runtime, strategy) it lives in. */
+export type StoredChunkVector = StoredNoteVector;
+
 /** The space a stored note vector lives in, read from its `native-v2:<space key>` strategy. */
 export interface NoteVectorSpace {
   spaceKey: string;
@@ -103,6 +106,57 @@ export function createEmbeddingRepository(db: Queryable) {
       }
       return false;
     },
+    /**
+     * The newest stored vector of each chunk that was built from exactly the given content in the
+     * embedding space `strategy` names (`native-v2:<space key>`, D26), in any dimension. The
+     * embedding stage embeds only the chunks missing from the result: a chunk whose text and space
+     * are unchanged keeps its vector (F3 D37).
+     */
+    async findCurrentChunkVectors(
+      chunks: ReadonlyArray<{ id: string; contentHash: string }>,
+      strategy: string
+    ): Promise<Map<string, StoredChunkVector>> {
+      const found = new Map<string, StoredChunkVector>();
+      const newest = new Map<string, number>();
+      if (chunks.length === 0) return found;
+      for (const dimensions of [256, 768, 1024]) {
+        const result = await db.query<
+          QueryResultRow & {
+            targetId: string;
+            embedding: string;
+            model: string;
+            provider: string;
+            runtime: string;
+            strategy: string;
+            createdAt: Date | string;
+          }
+        >(
+          `select distinct on (e.target_id) e.target_id as "targetId", e.embedding::text as embedding,
+                  e.model, e.provider, e.runtime, e.strategy, e.created_at as "createdAt"
+             from embeddings_${dimensions} e
+             join unnest($1::uuid[], $2::text[]) as wanted(id, content_hash)
+               on wanted.id = e.target_id and wanted.content_hash = e.content_hash
+            where e.target_type = 'chunk' and e.strategy = $3
+            order by e.target_id, e.created_at desc`,
+          [chunks.map((chunk) => chunk.id), chunks.map((chunk) => chunk.contentHash), strategy]
+        );
+        for (const row of result.rows) {
+          const createdAt = new Date(row.createdAt).getTime();
+          if ((newest.get(row.targetId) ?? -Infinity) >= createdAt) continue;
+          newest.set(row.targetId, createdAt);
+          found.set(row.targetId, {
+            targetId: row.targetId,
+            embedding: parseVector(row.embedding),
+            model: row.model,
+            provider: row.provider,
+            runtime: row.runtime,
+            strategy: row.strategy
+          });
+        }
+      }
+      return found;
+    },
+
     /**
      * The newest vector of each note that was built from exactly the given content, in any
      * dimension and embedding space. A note without one is missing from the result: it was never

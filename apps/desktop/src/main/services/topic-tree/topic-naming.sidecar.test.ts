@@ -276,6 +276,8 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     sources: Record<string, string>;
     calls: Call[];
     embeddings: Array<{ text: string; context: Record<string, unknown> }>;
+    /** The number of texts of each `embedMany` call, in order. */
+    embedBatches: number[];
     clock: { now: number };
     pushed: Array<{ topicIds: readonly string[] | null; changeSetId: string | null }>;
     setResponder(responder: Responder | null): void;
@@ -307,6 +309,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     const config = options.config ?? configWith();
     const calls: Call[] = [];
     const embeddings: World["embeddings"] = [];
+    const embedBatches: number[] = [];
     const clock = { now: Date.parse("2026-10-15T12:00:00.000Z") };
     const gate: World["gate"] = { current: null };
     const ai: World["ai"] = {
@@ -363,6 +366,26 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
           return { ...base, taskType: "structured-output" as const, output };
         }
       ),
+      // Label vectors go out in batches (F3 D37); each text still costs one embedding.
+      embedMany: vi.fn(async (texts: string[], context: Record<string, unknown> = {}) => {
+        if (!ai.route) return null;
+        embedBatches.push(texts.length);
+        return {
+          embeddings: texts.map((text) => {
+            embeddings.push({ text, context });
+            const rng = createRng(parseInt(sha(text).slice(0, 8), 16));
+            return Array.from({ length: dim }, () => rng.gaussian());
+          }),
+          profileId: randomUUID(),
+          providerId: "fixture",
+          modelId: "fixture-embedding",
+          runtime: "local" as const,
+          embeddingSpaceKey: ai.embeddingSpaceKey,
+          aiTaskRunIds: [randomUUID()],
+          calls: 1,
+          durationMs: 1
+        };
+      }),
       activeEmbeddingSpace: vi.fn(async () => ({
         spaceKey: ai.routeSpaceKey,
         profileId: randomUUID(),
@@ -520,6 +543,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       sources,
       calls,
       embeddings,
+      embedBatches,
       clock,
       pushed,
       gate,
@@ -1772,8 +1796,9 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
         expect(label!.vector).toHaveLength(dim);
         expect(Math.hypot(...label!.vector)).toBeCloseTo(1, 4);
       }
-      // A local embedding route costs nothing against the daily cap.
+      // A local embedding route costs nothing against the daily cap; the six labels are one batch.
       expect(w.embeddings).toHaveLength(6);
+      expect(w.embedBatches).toEqual([6]);
       expect(w.embeddings[0]!.context).toMatchObject({
         operation: "topic_label_embedding",
         embeddingInputType: "document",

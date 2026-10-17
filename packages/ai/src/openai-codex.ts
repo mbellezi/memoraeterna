@@ -43,21 +43,6 @@ export interface OpenAiCodexAdapterOptions {
 const defaultBaseUrl = "https://chatgpt.com/backend-api/codex";
 const encryptedReasoning = "reasoning.encrypted_content";
 
-/**
- * Backends (base URL and model) that refused a decide call without the reasoning summary and the
- * encrypted reasoning and then accepted the previous shape. Decide calls of this process send them
- * that shape. A refusal is remembered only once the fallback request is accepted, so a failure that
- * has nothing to do with the shape never costs the lean shape.
- */
-const refusedLeanDecideShapes = new Set<string>();
-
-/**
- * Backends (base URL and model) that refused a strict `text.format` schema and then accepted the same
- * request without it (F3 D35). Their later requests of this process go without it at once. As with the
- * lean shape, a refusal is remembered only once the request without the schema is accepted.
- */
-const refusedSchemaShapes = new Set<string>();
-
 /** The parameter a provider names when it refuses the structured-output format. */
 const schemaFormatParameter =
   /\btext\.format\b|\bjson_schema\b|\bresponse_format\b|\binvalid schema\b|(["'`])(?:format|schema)\1/i;
@@ -114,6 +99,20 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
   private readonly fetchImplementation: typeof fetch;
   private readonly baseUrl: string;
   private readonly runtime: AiRuntimeConfig;
+  /**
+   * Models this backend refused a decide call for without the reasoning summary and the encrypted
+   * reasoning, and then accepted the previous shape. This adapter's later decide calls send them that
+   * shape; the memory lives as long as the service keeps the instance (F3 D38), and a changed
+   * configuration asks again. A refusal is remembered only once the fallback request is accepted, so a
+   * failure that has nothing to do with the shape never costs the lean shape.
+   */
+  private readonly refusedLeanDecideShapes = new Set<string>();
+  /**
+   * Models this backend refused a strict `text.format` schema for and then accepted the same request
+   * without it (F3 D35). Their later requests go without it at once. As with the lean shape, a refusal
+   * is remembered only once the request without the schema is accepted.
+   */
+  private readonly refusedSchemaShapes = new Set<string>();
 
   public constructor(private readonly options: OpenAiCodexAdapterOptions) {
     this.fetchImplementation = options.fetch ?? fetch;
@@ -225,13 +224,13 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         // A decide call needs no reasoning prose: it is sent without the reasoning summary and,
         // being a single stateless turn (store false), without the encrypted reasoning, unless this
         // backend refused that shape before.
-        const refusedBefore = decide && refusedLeanDecideShapes.has(shapeKey);
+        const refusedBefore = decide && this.refusedLeanDecideShapes.has(shapeKey);
         const known = refusedInCall ? "refused" : refusedBefore ? "refused_earlier" : undefined;
         const schemaKnown = !request.outputSchema
           ? undefined
           : schemaRefusedInCall
             ? "refused"
-            : refusedSchemaShapes.has(shapeKey)
+            : this.refusedSchemaShapes.has(shapeKey)
               ? "refused_earlier"
               : undefined;
         let lean = decide && known === undefined;
@@ -272,8 +271,8 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         }
         if (!response.ok) throw await call.guard(providerHttpError(response));
         // The backend accepted the full shape after it refused the lean one: keep that from now on.
-        if (refusedInCall) refusedLeanDecideShapes.add(shapeKey);
-        if (schemaRefusedInCall) refusedSchemaShapes.add(shapeKey);
+        if (refusedInCall) this.refusedLeanDecideShapes.add(shapeKey);
+        if (schemaRefusedInCall) this.refusedSchemaShapes.add(shapeKey);
 
         let output = "";
         let tokenUsage: Record<string, number> = {};

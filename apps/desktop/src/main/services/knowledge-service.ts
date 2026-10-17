@@ -61,7 +61,13 @@ import {
   type SourceItemType
 } from "@app/db";
 
-import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "./ai-service.js";
+import { chunkTexts, embedManyLimits } from "@app/ai";
+import type {
+  AiEmbedManyExecution,
+  AiService,
+  AiTaskLogContext,
+  DefaultAiTaskResult
+} from "./ai-service.js";
 import { SourceDeletionService } from "./source-deletion-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
@@ -1480,10 +1486,11 @@ export class KnowledgeService {
 
   /**
    * The matching vector of each note, embedding the notes that have none for their current text.
-   * Embedding only, never a generative model. The runtime takes one text per call, so a missing
-   * vector costs one call per note, reused by every later match; this is the one place to switch to
-   * a batched call when a route offers one. A note whose call fails or has no model stays without a
-   * vector, which matching scores without vector weights.
+   * Embedding only, never a generative model. The notes without a vector are embedded in batches of
+   * at most 32 texts, one lane request each (F3 D37), and the vector is reused by every later match.
+   * A batch that fails is run again note by note, so one bad text costs only its own note; a note
+   * whose call fails or has no model stays without a vector, which matching scores without vector
+   * weights.
    */
   private async ensureAtomicNoteVectors(
     atomicNotes: AtomicNoteRecord[],
@@ -1514,16 +1521,71 @@ export class KnowledgeService {
             : ""
         }
       });
-    for (const note of atomicNotes) {
-      if (vectors.has(note.id)) continue;
-      const vector = await this.embedAtomicNoteVector(note, input);
-      if (!vector) continue;
-      vectors.set(note.id, vector);
-      embedded.push(note.id);
+    const missing = atomicNotes.filter((note) => !vectors.has(note.id));
+    for (const group of chunkTexts(missing, embedManyLimits.perExecution)) {
+      for (const [noteId, vector] of await this.embedAtomicNoteVectors(group, input)) {
+        vectors.set(noteId, vector);
+        embedded.push(noteId);
+      }
     }
     // One enqueue for the batch: a note that has its vector is ready for the topic tree.
     if (embedded.length > 0) await this.options.topicHooks?.notesChanged(embedded);
     return { vectors, embedded };
+  }
+
+  /**
+   * Embeds a group of notes (at most one batch) with the current embedding route and stores their
+   * vectors. A failed batch is embedded note by note; a route without a model embeds nothing.
+   */
+  private async embedAtomicNoteVectors(
+    notes: AtomicNoteRecord[],
+    input: { signal: AbortSignal | undefined; logContext: AiTaskLogContext; operation: string }
+  ): Promise<Map<string, NoteVector>> {
+    const found = new Map<string, NoteVector>();
+    if (notes.length === 1) {
+      const vector = await this.embedAtomicNoteVector(notes[0]!, input);
+      if (vector) found.set(notes[0]!.id, vector);
+      return found;
+    }
+    let execution: AiEmbedManyExecution | null;
+    try {
+      execution = await this.options.aiService.embedMany(
+        notes.map(atomicNoteEmbeddingText),
+        withAiSourceItems(
+          {
+            ...input.logContext,
+            operation: input.operation,
+            workloadClass: "embed",
+            priority: "P2"
+          },
+          notes.map((note) => note.createdFromSourceItemId)
+        ),
+        input.signal
+      );
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
+      for (const note of notes) {
+        const vector = await this.embedAtomicNoteVector(note, input);
+        if (vector) found.set(note.id, vector);
+      }
+      return found;
+    }
+    if (!execution) return found;
+    for (const [index, note] of notes.entries()) {
+      const embedding = execution.embeddings[index];
+      if (!embedding) continue;
+      await this.storeAtomicNoteEmbedding(note, execution, embedding);
+      found.set(note.id, {
+        embedding,
+        space: {
+          model: execution.modelId,
+          provider: execution.providerId,
+          runtime: execution.runtime,
+          spaceKey: execution.embeddingSpaceKey
+        }
+      });
+    }
+    return found;
   }
 
   /** Embeds one note with the current embedding route and stores the vector; null when it cannot. */
@@ -1562,7 +1624,9 @@ export class KnowledgeService {
 
   private async storeAtomicNoteEmbedding(
     note: AtomicNoteRecord,
-    execution: DefaultAiTaskResult,
+    execution: Pick<DefaultAiTaskResult, "providerId" | "modelId" | "runtime"> & {
+      embeddingSpaceKey?: string | undefined;
+    },
     embedding: number[]
   ): Promise<void> {
     await createEmbeddingRepository(this.requirePool()).upsert({

@@ -1,5 +1,6 @@
 import type { QueryResultRow } from "pg";
 
+import { bumpingGenerationAfter } from "./aiConfigGeneration.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { JsonObject, Queryable } from "./types.js";
 
@@ -110,7 +111,34 @@ const downloadReturning = `id, local_model_id as "localModelId", job_id as "jobI
   eta_seconds as "etaSeconds", checkpoint, error, started_at as "startedAt", completed_at as "completedAt",
   created_at as "createdAt", updated_at as "updatedAt"`;
 
+/**
+ * The methods that change a local model a route can resolve (its installation, status, parameters
+ * and metadata, which hold its validation, and its removal): each bumps the AI configuration
+ * generation once it settles (F3 D38). A test enumerates this repository and fails for a method in
+ * none of the three lists.
+ */
+export const localModelRepositoryWriters = ["upsertModel", "updateModel", "deleteModel"] as const;
+/** Writes of an installation's progress, which no route resolves. */
+export const localModelRepositoryBookkeeping = [
+  "replaceFiles",
+  "updateFileProgress",
+  "createDownload",
+  "updateDownload"
+] as const;
+export const localModelRepositoryReaders = [
+  "listModels",
+  "findById",
+  "findByCatalogId",
+  "listFiles",
+  "latestDownload",
+  "profilesUsing"
+] as const;
+
 export function createLocalModelRepository(db: Queryable) {
+  return bumpingGenerationAfter(localModelMethods(db), localModelRepositoryWriters);
+}
+
+function localModelMethods(db: Queryable) {
   return {
     async upsertModel(input: {
       catalogId: string;

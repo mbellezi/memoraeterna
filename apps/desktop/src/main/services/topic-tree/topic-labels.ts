@@ -7,6 +7,7 @@
 // embedding tables, never through a change-set.
 import { createHash } from "node:crypto";
 
+import { chunkTexts, embedManyLimits } from "@app/ai";
 import { createTopicNamingRepository, createTopicTreeRepository } from "@app/db";
 import type { JobRecord, JsonObject, PgPool, TopicLoadSpace } from "@app/db";
 import { isLive, setTopicLabel, topicLabelText } from "@app/domain/topic-tree";
@@ -21,7 +22,7 @@ import { treeSpace } from "./topic-space.js";
 import type { TopicTriggers } from "./topic-triggers.js";
 
 /** What label embedding needs of the AI service. */
-export type LabelAi = Pick<AiService, "runDefaultTask" | "activeEmbeddingSpace">;
+export type LabelAi = Pick<AiService, "embedMany" | "activeEmbeddingSpace">;
 
 export const topicLabelLimits = {
   /** Labels one job embeds; a job with more left asks for another. */
@@ -123,41 +124,62 @@ export class TopicLabelService {
 
     let embedded = 0;
     let capReached = false;
-    for (const entry of todo.slice(0, topicLabelLimits.perJob)) {
+    const context: AiTaskLogContext = {
+      jobId: job.id,
+      stage: "topic_labels",
+      operation: topicLabelOperation,
+      origin: "job",
+      workloadClass: "embed",
+      priority: "P3",
+      embeddingInputType: "document",
+      sourceItemIds: []
+    };
+    // The labels go out in batches of at most 32 texts, one lane request each (F3 D37).
+    batches: for (const group of chunkTexts(
+      todo.slice(0, topicLabelLimits.perJob),
+      embedManyLimits.perExecution
+    )) {
       if (signal.aborted) throw new Error("topics.errors.canceled");
-      // D34 bounds background AI that can cost money: a local embedding model costs none.
-      if (!route.local && !(await this.options.budget.reserve(1))) {
-        capReached = true;
-        break;
+      // D34 bounds background AI that can cost money: a local embedding model costs none. A batch
+      // reserves one call per label at once; at the cap, only as many labels as still fit go out.
+      let entries = group;
+      if (!route.local && !(await this.options.budget.reserve(group.length))) {
+        entries = [];
+        for (const entry of group) {
+          if (!(await this.options.budget.reserve(1))) {
+            capReached = true;
+            break;
+          }
+          entries.push(entry);
+        }
       }
-      const context: AiTaskLogContext = {
-        jobId: job.id,
-        stage: "topic_labels",
-        operation: topicLabelOperation,
-        origin: "job",
-        workloadClass: "embed",
-        priority: "P3",
-        embeddingInputType: "document",
-        sourceItemIds: []
-      };
+      if (entries.length === 0) break;
       let result;
       try {
-        result = await this.options.ai.runDefaultTask("embedding", entry.text, context, signal);
+        result = await this.options.ai.embedMany(
+          entries.map((entry) => entry.text),
+          context,
+          signal
+        );
       } catch (error) {
         if (signal.aborted) throw error;
-        this.options.logger?.warn("A topic label could not be embedded", error);
+        this.options.logger?.warn("Topic labels could not be embedded", error);
         break;
       }
-      const vector = result ? readVector(result.output, tree.dimensions) : null;
       // A vector from another space is never stored under this tree's strategy.
-      if (!result || !vector || result.embeddingSpaceKey !== tree.spaceKey) break;
-      await repository.upsertTopicLabel({
-        topicId: entry.id,
-        space,
-        contentHash: entry.hash,
-        embedding: vector
-      });
-      embedded += 1;
+      if (!result || result.embeddingSpaceKey !== tree.spaceKey) break;
+      for (const [index, entry] of entries.entries()) {
+        const vector = readVector(result.embeddings[index], tree.dimensions);
+        if (!vector) break batches;
+        await repository.upsertTopicLabel({
+          topicId: entry.id,
+          space,
+          contentHash: entry.hash,
+          embedding: vector
+        });
+        embedded += 1;
+      }
+      if (capReached) break;
     }
     const remaining = todo.length - embedded;
     if (remaining > 0 && !capReached && embedded > 0) {

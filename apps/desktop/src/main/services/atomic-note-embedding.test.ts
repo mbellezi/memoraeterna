@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({
   },
   notes: { upsertGenerated: vi.fn() },
   embedding: { findCurrentNoteVectors: vi.fn(), upsert: vi.fn() },
-  run: vi.fn()
+  run: vi.fn(),
+  embedMany: vi.fn()
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
@@ -59,10 +60,25 @@ const embedded = {
   aiTaskRunId: "embedding-run"
 };
 const embeddingCalls = () => mocks.run.mock.calls.filter(([task]) => task === "embedding");
+/** What the AI service returns for a batch: one vector per text, in the space of `embedded`. */
+const embeddedMany = (texts: readonly string[]) => ({
+  embeddings: texts.map(() => vector),
+  profileId: "profile",
+  providerId: "local",
+  modelId: "embedding-model",
+  runtime: "mlx",
+  embeddingSpaceKey: "space-1",
+  aiTaskRunIds: ["embedding-run"],
+  calls: 1,
+  durationMs: 1
+});
 const service = (logger?: Pick<Console, "error" | "warn">, topicHooks?: TopicChangeHooks) =>
   new KnowledgeService({
     getPool: () => ({}) as PgPool,
-    aiService: { runDefaultTask: mocks.run } as unknown as AiService,
+    aiService: {
+      runDefaultTask: mocks.run,
+      embedMany: mocks.embedMany
+    } as unknown as AiService,
     userDataPath: "/tmp/test",
     getStorageSettings: async () => ({}) as never,
     getUploadedFilesBasePath: async () => null,
@@ -108,10 +124,11 @@ beforeEach(() => {
   }));
   mocks.embedding.findCurrentNoteVectors.mockResolvedValue(new Map());
   mocks.run.mockImplementation(async (task) => (task === "embedding" ? embedded : generation));
+  mocks.embedMany.mockImplementation(async (texts: readonly string[]) => embeddedMany(texts));
 });
 
 describe("embedding notes when they are created", () => {
-  it("embeds each generated note right after it is persisted, with the embedding model only", async () => {
+  it("embeds the generated notes right after they are persisted, in one batch, with the embedding model only", async () => {
     const signal = new AbortController().signal;
     const result = await service().generateAtomicNotes(
       sourceId,
@@ -125,30 +142,24 @@ describe("embedding notes when they are created", () => {
       embeddedCount: 2,
       noteIds: ["note-1", "note-2"]
     });
-    // One generative call, then one embedding call per note: nothing else asks a model.
-    expect(mocks.run.mock.calls.map(([task]) => task)).toEqual([
-      "atomic-note-generation",
-      "embedding",
-      "embedding"
-    ]);
-    expect(embeddingCalls().map(([, input]) => input)).toEqual(generatedNotes.map(textOf));
-    expect(embeddingCalls()[0]![2]).toMatchObject({
+    // One generative call, then one embedding batch for the notes: nothing else asks a model.
+    expect(mocks.run.mock.calls.map(([task]) => task)).toEqual(["atomic-note-generation"]);
+    expect(mocks.embedMany).toHaveBeenCalledOnce();
+    const [texts, context, passedSignal] = mocks.embedMany.mock.calls[0]!;
+    expect(texts).toEqual(generatedNotes.map(textOf));
+    expect(context).toMatchObject({
       jobId: "job-1",
       ingestionRunId: "run-1",
       sourceItemId: sourceId,
-      atomicNoteId: "note-1",
       stage: "atomic_note_embedding",
-      operation: "note_creation_embedding"
+      operation: "note_creation_embedding",
+      workloadClass: "embed",
+      priority: "P2"
     });
-    expect(embeddingCalls()[0]![3]).toBe(signal);
+    expect(passedSignal).toBe(signal);
     // Persisted before embedded, and stored with the hash of the text it was built from.
     const lastPersist = Math.max(...mocks.notes.upsertGenerated.mock.invocationCallOrder);
-    const firstEmbedding = Math.min(
-      ...mocks.run.mock.calls.flatMap(([task], index) =>
-        task === "embedding" ? [mocks.run.mock.invocationCallOrder[index]!] : []
-      )
-    );
-    expect(lastPersist).toBeLessThan(firstEmbedding);
+    expect(lastPersist).toBeLessThan(mocks.embedMany.mock.invocationCallOrder[0]!);
     expect(mocks.embedding.upsert).toHaveBeenCalledTimes(2);
     expect(mocks.embedding.upsert.mock.calls[0]![0]).toMatchObject({
       targetType: "atomic_note",
@@ -160,6 +171,45 @@ describe("embedding notes when they are created", () => {
       strategy: "native-v2:space-1",
       contentHash: createHash("sha256").update(textOf(generatedNotes[0]!)).digest("hex")
     });
+  });
+
+  it("embeds notes in batches of at most 32", async () => {
+    const many = Array.from({ length: 50 }, (_, index) => ({
+      ...generatedNotes[0]!,
+      title: `Note ${index}`
+    }));
+    mocks.run.mockImplementation(async (task) =>
+      task === "embedding" ? embedded : { ...generation, output: { notes: many } }
+    );
+    const result = await service().generateAtomicNotes(sourceId, documentId);
+    expect(result).toMatchObject({ generatedCount: 50, embeddedCount: 50 });
+    expect(mocks.embedMany.mock.calls.map(([texts]) => (texts as string[]).length)).toEqual([
+      32, 18
+    ]);
+    expect(mocks.embedding.upsert).toHaveBeenCalledTimes(50);
+  });
+
+  it("embeds the notes one by one when their batch fails, so one bad text costs only its note", async () => {
+    mocks.embedMany.mockRejectedValue(new Error("context_overflow"));
+    mocks.run.mockImplementation(async (task, input) => {
+      if (task !== "embedding") return generation;
+      if (input === textOf(generatedNotes[1]!)) throw new Error("context_overflow");
+      return embedded;
+    });
+    const result = await service().generateAtomicNotes(sourceId, documentId);
+    expect(result).toMatchObject({ generatedCount: 2, embeddedCount: 1 });
+    expect(embeddingCalls().map(([, , context]) => context.atomicNoteId)).toEqual([
+      "note-1",
+      "note-2"
+    ]);
+    expect(mocks.embedding.upsert).toHaveBeenCalledOnce();
+  });
+
+  it("embeds nothing, and asks no one else, when no embedding model is routed", async () => {
+    mocks.embedMany.mockResolvedValue(null);
+    const result = await service().generateAtomicNotes(sourceId, documentId);
+    expect(result).toMatchObject({ generatedCount: 2, embeddedCount: 0 });
+    expect(embeddingCalls()).toEqual([]);
   });
 
   it("does not embed a note again when it already has a vector for its text", async () => {
@@ -184,6 +234,7 @@ describe("embedding notes when they are created", () => {
   });
 
   it("keeps the notes and does not fail the stage when a note cannot be embedded", async () => {
+    mocks.embedMany.mockRejectedValue(new Error("provider_unavailable"));
     mocks.run.mockImplementation(async (task) => {
       if (task === "embedding") throw new Error("provider_unavailable");
       return generation;
@@ -214,8 +265,7 @@ describe("embedding notes when they are created", () => {
 
   it("stops when the stage is canceled while embedding", async () => {
     const controller = new AbortController();
-    mocks.run.mockImplementation(async (task) => {
-      if (task !== "embedding") return generation;
+    mocks.embedMany.mockImplementation(async () => {
       controller.abort();
       throw new Error("canceled");
     });
@@ -277,6 +327,7 @@ describe("handing embedded notes to the topic tree", () => {
   });
 
   it("enqueues nothing while no note has a vector", async () => {
+    mocks.embedMany.mockRejectedValue(new Error("provider_unavailable"));
     mocks.run.mockImplementation(async (task) => {
       if (task === "embedding") throw new Error("provider_unavailable");
       return generation;

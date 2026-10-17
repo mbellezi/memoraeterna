@@ -1,5 +1,6 @@
 export * from "./contracts.js";
 export * from "./registry.js";
+export * from "./embed-many.js";
 export * from "./openai-compatible.js";
 export * from "./openai-codex.js";
 export * from "./provider-error.js";

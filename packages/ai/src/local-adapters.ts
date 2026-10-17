@@ -7,12 +7,15 @@ import type {
 
 import {
   aiTaskRequestSchema,
+  type AiEmbedManyOptions,
+  type AiEmbedManyResult,
   type AiProgressListener,
   type AiModelAdapter,
   type AiModelDescriptor,
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
+import { embedManyDimensions, embedManyRequest } from "./embed-many.js";
 import { localRuntimeWedgedError, runWithLocalDeadline } from "./local-deadline.js";
 import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
 import { MlxHelperHost } from "./mlx-helper-host.js";
@@ -128,6 +131,46 @@ export interface LocalExecutionResult {
   schemaMode?: AiSchemaMode;
 }
 
+/** The vectors of a local batch, in order, with the tokens of each text when the runtime counts them. */
+export interface LocalEmbeddingBatch {
+  embeddings: number[][];
+  itemInputTokens?: number[];
+  durationMs: number;
+}
+
+/** A batch as the single executor's calls one after another (an executor without a runtime of its own). */
+async function embedSequentially(
+  executeEmbedding: (input: {
+    modelPath: string;
+    text: string;
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }) => Promise<LocalExecutionResult>,
+  input: {
+    modelPath: string;
+    texts: readonly string[];
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }
+): Promise<LocalEmbeddingBatch> {
+  const embeddings: number[][] = [];
+  const itemInputTokens: number[] = [];
+  let durationMs = 0;
+  for (const text of input.texts) {
+    input.signal?.throwIfAborted();
+    const result = await executeEmbedding({
+      modelPath: input.modelPath,
+      text,
+      parameters: input.parameters,
+      ...(input.signal ? { signal: input.signal } : {})
+    });
+    embeddings.push(result.output as number[]);
+    itemInputTokens.push(result.inputTokens ?? 0);
+    durationMs += result.durationMs;
+  }
+  return { embeddings, itemInputTokens, durationMs };
+}
+
 export class NodeLlamaCppAdapter implements AiModelAdapter {
   private readonly runtime: NodeLlamaRuntime | null;
   private readonly guard: LocalRuntimeGuard;
@@ -145,6 +188,12 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     parameters: Record<string, unknown>;
     signal?: AbortSignal;
   }) => Promise<LocalExecutionResult>;
+  private readonly executeEmbeddingMany: (input: {
+    modelPath: string;
+    texts: readonly string[];
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }) => Promise<LocalEmbeddingBatch>;
 
   public constructor(
     private readonly options: LocalAdapterOptions,
@@ -161,11 +210,23 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
       text: string;
       parameters: Record<string, unknown>;
       signal?: AbortSignal;
-    }) => Promise<LocalExecutionResult>
+    }) => Promise<LocalExecutionResult>,
+    executeEmbeddingMany?: (input: {
+      modelPath: string;
+      texts: readonly string[];
+      parameters: Record<string, unknown>;
+      signal?: AbortSignal;
+    }) => Promise<LocalEmbeddingBatch>
   ) {
     this.runtime = execute || executeEmbedding ? null : new NodeLlamaRuntime(options.modelPath);
     this.execute = execute ?? ((input) => this.runtime!.generate(input));
     this.executeEmbedding = executeEmbedding ?? ((input) => this.runtime!.embed(input));
+    // Without a runtime of its own (an injected executor) the batch is the single calls in order.
+    this.executeEmbeddingMany =
+      executeEmbeddingMany ??
+      (this.runtime
+        ? (input) => this.runtime!.embedMany(input)
+        : (input) => embedSequentially(this.executeEmbedding, input));
     this.guard = new LocalRuntimeGuard(
       options.localDeadlines ?? defaultAiLaneRuntimeConfig.localDeadlines,
       () => this.dispose()
@@ -217,6 +278,39 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
           })
     );
     return taskResult(input, "local-gguf", this.options.modelId, result);
+  }
+
+  /**
+   * Embeds the texts one after another on one embedding context (F3 D37). Every vector is the one a
+   * single call of that text gives, bit for bit, so the embedding space key is the one of the single
+   * path; the whole batch runs under one embed-class deadline.
+   */
+  public async embedMany(
+    texts: readonly string[],
+    options: AiEmbedManyOptions = {}
+  ): Promise<AiEmbedManyResult> {
+    const request = aiTaskRequestSchema.parse(embedManyRequest("", options));
+    if (!this.canHandle(request)) throw new Error("errors.ai.unsupportedTask");
+    const parameters = { ...request.parameters, dimensions: embedManyDimensions(options) };
+    const batch = await this.guard.run(request, options.signal, (bounded) =>
+      this.executeEmbeddingMany({
+        modelPath: this.options.modelPath,
+        texts,
+        parameters,
+        signal: bounded
+      })
+    );
+    const inputTokens = batch.itemInputTokens?.reduce((total, count) => total + count, 0);
+    return {
+      embeddings: batch.embeddings,
+      ...(batch.itemInputTokens ? { itemInputTokens: batch.itemInputTokens } : {}),
+      providerId: "local-gguf",
+      modelId: this.options.modelId,
+      runtime: "local",
+      durationMs: batch.durationMs,
+      ...(inputTokens !== undefined ? { inputTokens } : {}),
+      costEstimate: 0
+    };
   }
 
   public async runStreaming(
@@ -479,23 +573,40 @@ class NodeLlamaRuntime {
     try {
       if (input.signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
       const embedding = await context.getEmbeddingFor(input.text);
-      const requestedDimensions = numberParameter(
-        input.parameters.dimensions,
-        embedding.vector.length
-      );
-      if (
-        (requestedDimensions !== 256 &&
-          requestedDimensions !== 768 &&
-          requestedDimensions !== 1_024) ||
-        requestedDimensions > embedding.vector.length
-      ) {
-        throw new Error(`Unsupported embedding dimension: ${requestedDimensions}`);
-      }
       return {
-        output: normalizeVector(embedding.vector.slice(0, requestedDimensions)),
+        output: embeddingVector(embedding.vector, input.parameters),
         inputTokens: model.tokenize(input.text).length,
         durationMs: Date.now() - startedAt
       };
+    } finally {
+      await context.dispose();
+    }
+  }
+
+  /** The texts on one embedding context, one after another (the vectors `embed` gives, bit for bit). */
+  public async embedMany(input: {
+    texts: readonly string[];
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }): Promise<LocalEmbeddingBatch> {
+    const startedAt = Date.now();
+    await this.load(input.signal);
+    const model = this.model!;
+    const context = await model.createEmbeddingContext({
+      contextSize: contextSizeParameter(input.parameters.contextWindow),
+      ...(input.signal ? { createSignal: input.signal } : {})
+    });
+    try {
+      const embeddings: number[][] = [];
+      const itemInputTokens: number[] = [];
+      for (const text of input.texts) {
+        if (input.signal?.aborted)
+          throw new DOMException("Local inference canceled.", "AbortError");
+        const embedding = await context.getEmbeddingFor(text);
+        embeddings.push(embeddingVector(embedding.vector, input.parameters));
+        itemInputTokens.push(model.tokenize(text).length);
+      }
+      return { embeddings, itemInputTokens, durationMs: Date.now() - startedAt };
     } finally {
       await context.dispose();
     }
@@ -605,6 +716,18 @@ function numberParameter(value: unknown, fallback: number): number {
 
 function contextSizeParameter(value: unknown): "auto" | number {
   return typeof value === "number" && Number.isInteger(value) && value >= 128 ? value : "auto";
+}
+
+/** The stored form of a model's vector: cut to the requested dimension and normalized (rules/ai.md). */
+function embeddingVector(vector: readonly number[], parameters: Record<string, unknown>): number[] {
+  const requestedDimensions = numberParameter(parameters.dimensions, vector.length);
+  if (
+    (requestedDimensions !== 256 && requestedDimensions !== 768 && requestedDimensions !== 1_024) ||
+    requestedDimensions > vector.length
+  ) {
+    throw new Error(`Unsupported embedding dimension: ${requestedDimensions}`);
+  }
+  return normalizeVector(vector.slice(0, requestedDimensions));
 }
 
 function normalizeVector(vector: readonly number[]): number[] {

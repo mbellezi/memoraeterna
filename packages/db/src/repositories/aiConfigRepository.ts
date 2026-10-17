@@ -1,5 +1,6 @@
 import type { QueryResultRow } from "pg";
 
+import { bumpingGenerationAfter } from "./aiConfigGeneration.js";
 import { asJsonObject, mapTimestamp } from "./sql.js";
 import type { JsonObject, Queryable } from "./types.js";
 
@@ -133,7 +134,39 @@ function mapProfile(row: ProfileRow): AiProfileRecord {
   };
 }
 
+/**
+ * The methods that change what a call resolves (a provider, a profile, a route, a profile task):
+ * each bumps the AI configuration generation once it settles (F3 D38), so the hot-path caches drop
+ * what they read. A test enumerates this repository and fails for a method in neither list.
+ */
+export const aiConfigRepositoryWriters = [
+  "upsertProvider",
+  "deleteProvider",
+  "createProfile",
+  "cloneProfile",
+  "deleteProfile",
+  "updateProfile",
+  "setTaskRoute",
+  "deleteTaskRoute",
+  "seedTaskRoute",
+  "cacheProviderModelContext",
+  "setProfileTask"
+] as const;
+/** The methods that only read the configuration, or write the audit of a call. */
+export const aiConfigRepositoryReaders = [
+  "listProviders",
+  "listProfiles",
+  "listProfileTasks",
+  "listTaskRoutes",
+  "getDefaultTask",
+  "recordTaskRun"
+] as const;
+
 export function createAiConfigRepository(db: Queryable) {
+  return bumpingGenerationAfter(aiConfigMethods(db), aiConfigRepositoryWriters);
+}
+
+function aiConfigMethods(db: Queryable) {
   return {
     async upsertProvider(input: {
       id?: string;

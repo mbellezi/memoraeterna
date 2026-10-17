@@ -2,12 +2,22 @@ import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiSchemaMode, AiTaskType } from "@app/domain";
 
 import type {
+  AiEmbedManyOptions,
+  AiEmbedManyResult,
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
+import { embedManyLimits } from "./contracts.js";
+import {
+  chunkTexts,
+  embedManyDimensions,
+  embedManyRequest,
+  remoteEmbedManyResult,
+  type RemoteEmbedPart
+} from "./embed-many.js";
 import {
   isDashScopeBaseUrl,
   isQwen35Model,
@@ -52,17 +62,11 @@ export interface OpenAiCompatibleAdapterOptions {
   random?: () => number;
 }
 
-/** Endpoints whose server refused `stream_options`: they stream without usage from then on. */
-const streamUsageRejected = new Set<string>();
-
-/**
- * Configurations (endpoint and model) whose server refused a `json_schema` response format and then
- * accepted `json_object` (F3 D35). Their later requests of this process send `json_object` at once.
- */
-const jsonSchemaRejected = new Set<string>();
-
 /** A 400 or 422 that names the structured response format as the parameter at fault. */
 const responseFormatParameter = /\bresponse_format\b|\bjson_schema\b/i;
+
+/** Endpoints whose server refused `stream_options`: they stream without usage from then on. */
+const streamUsageRejected = new Set<string>();
 
 /** Tasks whose answer is JSON: they ask for at least `json_object`. */
 const jsonObjectTasks: ReadonlySet<AiTaskType> = new Set([
@@ -88,6 +92,12 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   private readonly fetchImplementation: typeof fetch;
   private readonly runtime: AiRuntimeConfig;
   private readonly local: boolean;
+  /**
+   * Models whose server refused a `json_schema` response format and then accepted `json_object`
+   * (F3 D35). Their later requests send `json_object` at once. The memory lives as long as the
+   * service keeps this instance (F3 D38): a changed configuration is a new adapter and asks again.
+   */
+  private readonly jsonSchemaRejected = new Set<string>();
 
   public constructor(private readonly options: OpenAiCompatibleAdapterOptions) {
     this.fetchImplementation = options.fetch ?? fetch;
@@ -217,7 +227,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
           const rejection = await call.guard(providerHttpError(response));
           if (!responseFormatParameter.test(rejection.message)) throw rejection;
           // Fall back once to `json_object`; the next attempts of this call keep it.
-          jsonSchemaRejected.add(this.schemaKey(request));
+          this.jsonSchemaRejected.add(this.schemaKey(request));
           format.schema = false;
           format.fallback = "refused";
           response = await open();
@@ -251,6 +261,61 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       },
       report
     );
+  }
+
+  /**
+   * Embeds the texts with `input: string[]`, at most {@link embedManyLimits.perRequest} per request
+   * (D37). Each vector is the one a request with that text alone returns; the response is read by
+   * its `index` and must hold exactly one vector per text.
+   */
+  public async embedMany(
+    texts: readonly string[],
+    options: AiEmbedManyOptions = {}
+  ): Promise<AiEmbedManyResult> {
+    const startedAt = performance.now();
+    const modelId = options.modelId ?? this.options.modelId;
+    const dimensions = embedManyDimensions(options);
+    const parts: RemoteEmbedPart[] = [];
+    const reports: RemoteCallReport[] = [];
+    for (const group of chunkTexts(texts, embedManyLimits.perRequest)) {
+      const payload = await this.remoteCall(
+        {
+          request: embedManyRequest(group[0] ?? "", options),
+          streaming: false,
+          signal: options.signal,
+          report: (received) => reports.push(received)
+        },
+        async (call) =>
+          parseResponse<{
+            data?: Array<{ embedding?: number[]; index?: number }>;
+            usage?: Record<string, unknown> & { prompt_tokens?: number };
+          }>(
+            await this.request(call, "/embeddings", {
+              method: "POST",
+              body: JSON.stringify({ model: modelId, input: group, dimensions })
+            }),
+            call
+          )
+      );
+      const rows = (payload.data ?? []).toSorted(
+        (left, right) => (left.index ?? 0) - (right.index ?? 0)
+      );
+      const embeddings = rows.flatMap((row) => (row.embedding ? [row.embedding] : []));
+      if (rows.length !== group.length || embeddings.length !== group.length)
+        throw new Error("AI embedding response did not contain a vector for every text.");
+      parts.push({
+        embeddings,
+        inputTokens: payload.usage?.prompt_tokens,
+        tokenUsage: normalizeTokenUsage(payload.usage)
+      });
+    }
+    return remoteEmbedManyResult({
+      providerId: "openai-compatible",
+      modelId,
+      durationMs: Math.round(performance.now() - startedAt),
+      parts,
+      reports
+    });
   }
 
   public async runStreaming(
@@ -295,7 +360,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ) {
           const rejection = await call.guard(providerHttpError(response));
           if (format.schema && responseFormatParameter.test(rejection.message)) {
-            jsonSchemaRejected.add(this.schemaKey(request));
+            this.jsonSchemaRejected.add(this.schemaKey(request));
             format.schema = false;
             format.fallback = "refused";
           } else if (includeUsage && /stream_options|include_usage/i.test(rejection.message)) {
@@ -400,7 +465,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   /** Whether this request sends its strict schema: not when the configuration refused one before. */
   private responseFormat(request: AiTaskRequest): ResponseFormatState {
     if (!request.outputSchema) return { schema: false };
-    return jsonSchemaRejected.has(this.schemaKey(request))
+    return this.jsonSchemaRejected.has(this.schemaKey(request))
       ? { schema: false, fallback: "refused_earlier" }
       : { schema: true };
   }

@@ -25,7 +25,8 @@ const mocks = vi.hoisted(() => ({
   states: { read: vi.fn(), record: vi.fn() },
   runs: { start: vi.fn(), finish: vi.fn() },
   settings: { get: vi.fn() },
-  run: vi.fn()
+  run: vi.fn(),
+  embedMany: vi.fn()
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
@@ -78,6 +79,7 @@ function service(settings: unknown = {}) {
     getPool: () => ({}) as PgPool,
     aiService: {
       runDefaultTask: mocks.run,
+      embedMany: mocks.embedMany,
       rankPairs: vi.fn(),
       decideRouteStatus: vi.fn()
     } as unknown as AiService,
@@ -118,6 +120,17 @@ beforeEach(() => {
   mocks.decisions.findVerdicts.mockResolvedValue(new Map());
   mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map());
   mocks.embedding.findCurrentNoteVectors.mockResolvedValue(new Map());
+  mocks.embedMany.mockImplementation(async (texts: readonly string[]) => ({
+    embeddings: texts.map(() => Array.from({ length: 256 }, () => 0.1)),
+    profileId: "profile",
+    providerId: "provider",
+    modelId: "model",
+    runtime: "remote",
+    embeddingSpaceKey: "",
+    aiTaskRunIds: ["embedding-run"],
+    calls: 1,
+    durationMs: 1
+  }));
   mocks.states.read.mockResolvedValue(new Map());
   mocks.runs.start.mockResolvedValue({ id: "match-run" });
   mocks.settings.get.mockResolvedValue(null);
@@ -298,25 +311,22 @@ describe("note embeddings in matching", () => {
   const embeddedNoteIds = () =>
     embeddingCalls().map(([, , context]) => (context as { atomicNoteId: string }).atomicNoteId);
 
-  it("embeds every note of the batch that has no vector before the first retrieval, one call each", async () => {
+  it("embeds every note of the batch that has no vector before the first retrieval, in one batch", async () => {
     respond(defaultVerdicts, defaultVerdicts, defaultVerdicts);
     await service().matchAtomicNotes(["n1", "n2", "n3"]);
-    expect(embeddedNoteIds()).toEqual(["n1", "n2", "n3"]);
-    expect(
-      embeddingCalls().every(
-        ([, , context]) =>
-          (context as { operation: string }).operation === "note_matching_embedding"
-      )
-    ).toBe(true);
+    expect(embeddingCalls()).toHaveLength(0);
+    expect(mocks.embedMany).toHaveBeenCalledOnce();
+    const [texts, context] = mocks.embedMany.mock.calls[0]!;
+    expect(texts).toHaveLength(3);
+    expect(context).toMatchObject({
+      operation: "note_matching_embedding",
+      workloadClass: "embed",
+      priority: "P2"
+    });
     // One lookup for the whole batch, and all the embedding is done before any note is retrieved:
     // no note is matched while a later note of the batch is still without a vector.
     expect(mocks.embedding.findCurrentNoteVectors).toHaveBeenCalledOnce();
-    const lastEmbedding = Math.max(
-      ...mocks.run.mock.calls.flatMap(([task], index) =>
-        task === "embedding" ? [mocks.run.mock.invocationCallOrder[index]!] : []
-      )
-    );
-    expect(lastEmbedding).toBeLessThan(
+    expect(mocks.embedMany.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.notes.findTextMatchingCandidates.mock.invocationCallOrder[0]!
     );
     expect(mocks.embedding.upsert).toHaveBeenCalledTimes(3);

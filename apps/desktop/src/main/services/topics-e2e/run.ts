@@ -36,6 +36,7 @@ import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
 import { IngestionService } from "../ingestion-service.js";
+import { createJobEmbeddingGenerators } from "../job-embedding.js";
 import { JobSupervisor } from "../job-supervisor.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { LocalModelService } from "../local-model-service.js";
@@ -382,22 +383,7 @@ async function runPass(
       getPool: () => db,
       logger: quietLogger,
       knowledgeService: knowledge,
-      generateEmbedding: async (text, signal, context) => {
-        const result = await service.runDefaultTask(
-          "embedding",
-          text,
-          { ...context, workloadClass: "embed", priority: "P2" },
-          signal
-        );
-        if (!result || !Array.isArray(result.output)) return null;
-        return {
-          embedding: result.output.map(Number),
-          provider: result.providerId,
-          model: result.modelId,
-          runtime: result.runtime,
-          ...(result.embeddingSpaceKey ? { spaceKey: result.embeddingSpaceKey } : {})
-        };
-      },
+      ...createJobEmbeddingGenerators(service),
       releaseAiRuntime: async () =>
         service.releaseLocalRuntime(
           false,

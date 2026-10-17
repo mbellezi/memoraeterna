@@ -7,12 +7,15 @@ import { z } from "zod";
 import { AiOutputSchemaSchema } from "@app/domain";
 
 import type {
+  AiEmbedManyOptions,
+  AiEmbedManyResult,
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
+import { embedManyRequest, sumTokenUsage } from "./embed-many.js";
 
 /**
  * DEV-only AI cassettes. A cassette wraps `AiModelAdapter.run`/`runStreaming`, so it sees every AI
@@ -21,6 +24,10 @@ import type {
  * new ones; `replay` serves recorded calls and never reaches the provider: a miss fails the call.
  * Packaged builds refuse cassettes, and a cassette lives under `<repository>/.cache/` (it holds the
  * full prompts and outputs, which are library text).
+ *
+ * `embedMany` is served and recorded per text, under the key of the single `run` of that text (F3
+ * D37): a cassette recorded with single calls serves a batch, and a batch records entries a single
+ * call finds. A miss is the only thing the real `embedMany` is asked for.
  */
 export const aiCassetteModes = ["off", "record", "replay"] as const;
 export type AiCassetteMode = (typeof aiCassetteModes)[number];
@@ -346,6 +353,12 @@ export class AiCassette {
       canHandle: (request) => adapter.canHandle(request),
       run: (request, signal) =>
         this.execute(adapter, request, signal, () => adapter.run(request, signal)),
+      ...(adapter.embedMany
+        ? {
+            embedMany: (texts: readonly string[], options: AiEmbedManyOptions = {}) =>
+              this.executeMany(adapter, texts, options)
+          }
+        : {}),
       ...(adapter.runStreaming
         ? {
             runStreaming: (
@@ -476,6 +489,164 @@ export class AiCassette {
     });
   }
 
+  /**
+   * A batch of embeddings: every text is looked up under the key of its single request. The texts
+   * the cassette holds are served, and only the others reach the adapter's `embedMany` (record mode,
+   * or a local runtime under the `live` policy); each of those is recorded as a single entry. A text
+   * that repeats within the batch takes the next recorded response of its key, as a second single
+   * call would. A miss in replay fails the whole batch and consumes nothing.
+   */
+  private async executeMany(
+    adapter: AiModelAdapter,
+    texts: readonly string[],
+    options: AiEmbedManyOptions
+  ): Promise<AiEmbedManyResult> {
+    options.signal?.throwIfAborted();
+    const startedAt = performance.now();
+    const descriptor = adapter.describe();
+    if (texts.length === 0)
+      return {
+        embeddings: [],
+        providerId: descriptor.providerId,
+        modelId: options.modelId ?? descriptor.modelId,
+        runtime: descriptor.runtime,
+        durationMs: 0
+      };
+    const requests = texts.map((text) => embedManyRequest(text, options));
+    const requestKeys = requests.map((request) => aiCassetteRequestKey(descriptor, request));
+    const keys = [...new Set(requestKeys.map((requestKey) => requestKey.key))].sort();
+    return this.withLocks(keys, async () => {
+      const entries = new Map<string, CassetteEntry | null>();
+      for (const key of keys) entries.set(key, await this.readEntry(key));
+      const taken = new Map<string, number>();
+      const plan = requestKeys.map((requestKey) => {
+        const key = requestKey.key;
+        const occurrence = (this.occurrences.get(key) ?? 0) + (taken.get(key) ?? 0);
+        taken.set(key, (taken.get(key) ?? 0) + 1);
+        return { requestKey, occurrence, recorded: entries.get(key)?.responses[occurrence] };
+      });
+      const missing = plan.flatMap((item, index) => (item.recorded ? [] : [index]));
+      const liveLocalMiss =
+        this.mode === "replay" && this.localMisses === "live" && descriptor.runtime === "local";
+      if (missing.length > 0 && this.mode === "replay" && !liveLocalMiss) {
+        let first: AiCassetteMissError | undefined;
+        for (const index of missing) {
+          const { requestKey, occurrence } = plan[index]!;
+          const entry = entries.get(requestKey.key) ?? null;
+          const requestPath = await this.saveMiss(requestKey, "embedding", occurrence, entry);
+          this.count("embedding", "misses");
+          if (this.counters.missDetails.length < maxMissDetails)
+            this.counters.missDetails.push({
+              key: requestKey.key,
+              taskType: "embedding",
+              occurrence,
+              requestPath
+            });
+          first ??= new AiCassetteMissError({
+            key: requestKey.key,
+            taskType: "embedding",
+            occurrence,
+            recorded: entry?.responses.length ?? 0,
+            requestPath
+          });
+        }
+        throw first!;
+      }
+      if (missing.length > 0 && liveLocalMiss)
+        for (let miss = 0; miss < missing.length; miss += 1)
+          this.count("embedding", "liveLocalMisses");
+      let live: AiEmbedManyResult | undefined;
+      if (missing.length > 0) {
+        if (this.maxLiveTokens !== null && this.counters.liveTokens >= this.maxLiveTokens)
+          throw new AiCassetteError(
+            "token_limit",
+            `AI cassette live token cap reached (${this.counters.liveTokens} of ${this.maxLiveTokens}); the provider was not called`
+          );
+        live = await adapter.embedMany!(
+          missing.map((index) => texts[index]!),
+          options
+        );
+        if (live.embeddings.length !== missing.length)
+          throw new AiCassetteError(
+            "unsupported_value",
+            "An embedMany call returned a different number of vectors than texts"
+          );
+        if (live.runtime === "remote") this.counters.liveTokens += live.inputTokens ?? 0;
+      }
+      const now = this.now();
+      const written = new Map(entries);
+      for (const [position, index] of missing.entries()) {
+        const { requestKey } = plan[index]!;
+        const entry = written.get(requestKey.key) ?? null;
+        const itemTokens = live!.itemInputTokens?.[position];
+        const response = recordedResponse(
+          {
+            taskType: "embedding",
+            output: live!.embeddings[position],
+            providerId: live!.providerId,
+            modelId: live!.modelId,
+            runtime: live!.runtime,
+            durationMs: live!.durationMs / missing.length,
+            ...(itemTokens !== undefined ? { inputTokens: itemTokens } : {})
+          },
+          requestKey.ids,
+          now
+        );
+        const next: CassetteEntry = {
+          format: entryFormat,
+          version: 1,
+          key: requestKey.key,
+          taskType: "embedding",
+          request: JSON.parse(requestKey.canonical) as unknown,
+          responses: [...(entry?.responses ?? []), response]
+        };
+        await this.writeEntry(next);
+        written.set(requestKey.key, next);
+        if (!liveLocalMiss) this.count("embedding", "recorded");
+      }
+      for (const [key, count] of taken)
+        this.occurrences.set(key, (this.occurrences.get(key) ?? 0) + count);
+      const served = plan.flatMap((item) => (item.recorded ? [item.recorded] : []));
+      for (let index = 0; index < served.length; index += 1) this.count("embedding", "served");
+      const vectors = plan.map((item, index) => {
+        if (item.recorded) return item.recorded.output as number[];
+        return live!.embeddings[missing.indexOf(index)]!;
+      });
+      const first = served[0];
+      const identity = live ?? first!;
+      const itemTokens = plan.map((item, index) =>
+        item.recorded ? item.recorded.inputTokens : live!.itemInputTokens?.[missing.indexOf(index)]
+      );
+      const tokensKnown = itemTokens.every((count) => count !== undefined);
+      const usage = sumTokenUsage([
+        ...served.map((response) => response.tokenUsage),
+        live?.tokenUsage
+      ]);
+      const inputTokens = tokensKnown
+        ? itemTokens.reduce<number>((total, count) => total + count!, 0)
+        : live?.inputTokens !== undefined && served.every((r) => r.inputTokens !== undefined)
+          ? live.inputTokens + served.reduce((total, r) => total + r.inputTokens!, 0)
+          : undefined;
+      const replayedOnly = missing.length === 0;
+      return {
+        embeddings: vectors,
+        providerId: identity.providerId,
+        modelId: identity.modelId,
+        runtime: identity.runtime,
+        // The audit keeps the real duration of the batch; the recorded timings stay in the cassette.
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(tokensKnown ? { itemInputTokens: itemTokens as number[] } : {}),
+        // Nothing was spent for a replayed text, so the recorded cost is not replayed (as for a single call).
+        ...(live?.costEstimate !== undefined ? { costEstimate: live.costEstimate } : {}),
+        ...(live?.attempts !== undefined ? { attempts: live.attempts } : {}),
+        ...(live?.retriedUsage ? { retriedUsage: live.retriedUsage } : {}),
+        tokenUsage: { ...usage, ...(replayedOnly ? { [aiCassetteReplayedUsageKey]: 1 } : {}) },
+        replayedItems: served.length
+      };
+    });
+  }
+
   private count(taskType: string, field: "served" | "recorded" | "misses" | "liveLocalMisses") {
     this.counters[field] += 1;
     const task = (this.counters.byTask[taskType] ??= {
@@ -557,6 +728,12 @@ export class AiCassette {
       )}\n`
     );
     return path;
+  }
+
+  /** Holds the locks of several keys, always taken in ascending order, so two batches cannot deadlock. */
+  private async withLocks<T>(keys: readonly string[], run: () => Promise<T>): Promise<T> {
+    const [first, ...rest] = keys;
+    return first === undefined ? run() : this.withLock(first, () => this.withLocks(rest, run));
   }
 
   private async withLock<T>(key: string, run: () => Promise<T>): Promise<T> {

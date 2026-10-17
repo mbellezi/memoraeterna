@@ -71,6 +71,8 @@ import {
   aiCassetteReplayedUsageKey,
   bindLanePermit,
   createAiScheduler,
+  embedManyLimits,
+  embedManyTaskResult,
   executionLane,
   isDeadlineFailure,
   isRemoteExecution,
@@ -83,7 +85,8 @@ import {
   remoteTotalDeadlineMs,
   requestWorkloadClass,
   resolveAiLaneRuntimeConfig,
-  resolveAiRuntimeConfig
+  resolveAiRuntimeConfig,
+  sumTokenUsage
 } from "@app/ai";
 import {
   aiRouteKeys,
@@ -137,6 +140,7 @@ import type {
 import { aiConfigurableTaskSchema, aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { AiClassRouteService } from "./ai-class-routes.js";
+import { AiConfigCache } from "./ai-config-cache.js";
 import { createRouteMappingStore, mapLegacyRoutesV1 } from "./ai-route-mapping.js";
 import { CredentialService } from "./credential-service.js";
 import { aiTaskPriority, type AiPriorityInput } from "./ai-priority.js";
@@ -458,6 +462,13 @@ interface PromptAdmission {
   compositions: PromptCompositionSnapshot[];
   pin: PromptPin;
   language: string;
+  /**
+   * The composed texts of an `embedMany` batch; `input` is then their JSON, which the audit hashes.
+   * The batch is one lane request, so it is admitted, run and audited as one call (F3 D37).
+   */
+  inputs?: string[];
+  /** Whether a local embedding model stays loaded after the call; read at admission, off the lane. */
+  keepLocalEmbeddingLoaded?: boolean;
   /** Admission to execution start on the lane, set when execution starts. */
   queueMs?: number;
 }
@@ -487,6 +498,20 @@ function queueAndAttempt(
     ...(attempt === undefined ? {} : { attempt })
   };
 }
+/** A job's AI execution metadata is written again after this long even when it did not change. */
+const executionAttachmentTtlMs = 10 * 60_000;
+
+/** The access token of an OAuth adapter is replaced this long before it expires. */
+const oauthRefreshMarginMs = 60_000;
+
+/** A remote adapter as the cache keeps it: with what decides when it must be built again. */
+interface BuiltRemoteAdapter {
+  adapter: AiModelAdapter;
+  /** When the OAuth access token it carries expires (epoch ms); absent for an API key. */
+  expiresAt?: number;
+  credentialRef?: string;
+}
+
 const selectionIdentity = (s: TaskSelection) =>
   JSON.stringify([
     s.profileId,
@@ -518,7 +543,13 @@ export class AiService {
    */
   private readonly validatingRankers = new Map<string, number>();
   private readonly registry = new AiModelRegistry();
+  /** What the hot path reads of the configuration, valid for one generation of it (F3 D38). */
+  private readonly configCache: AiConfigCache;
   private readonly oauthRefreshes = new Map<string, Promise<OpenAiCodexCredential>>();
+  /** The execution metadata last attached to each job, so a job's many calls update it once (D38). */
+  private readonly attachedExecutions = new Map<string, { key: string; at: number }>();
+  /** The registry key of each provider configuration's adapter, to drop it with the configuration. */
+  private readonly remoteAdapterKeys = new Map<string, string>();
   private pendingOpenAiCodexCredential: OpenAiCodexCredential | null = null;
   /** Local models kept loaded, one per slot, so no two generative models are ever resident (D18). */
   private readonly resident: Partial<Record<ResidencySlot, ResidentLocalAdapter>> = {};
@@ -531,6 +562,7 @@ export class AiService {
 
   public constructor(private readonly options: AiServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
+    this.configCache = new AiConfigCache({ pool: () => options.getPool() });
     this.mlxHost = options.mlxHost ?? null;
     this.laneConfig = resolveAiLaneRuntimeConfig(options.lanes, { packaged: options.isPackaged });
     this.remoteRuntime = resolveAiRuntimeConfig(options.runtime);
@@ -546,6 +578,36 @@ export class AiService {
   /** The state of every lane the scheduler has seen: limits, waits, rate limits and breakers. */
   public laneSnapshots(): LaneSnapshot[] {
     return this.scheduler.snapshot();
+  }
+
+  /**
+   * The model a task runs on (`getDefaultTask`), cached for the generation of the configuration so a
+   * call reads its route from the database once, not at admission and again inside the lane (F3
+   * D38). A writer of the configuration drops it; the pinned selection of an admitted call stays
+   * the one it was admitted with, and the `modelChanged` recheck compares it with what is cached now.
+   */
+  private defaultTask(
+    ...args: Parameters<ReturnType<typeof createAiConfigRepository>["getDefaultTask"]>
+  ): Promise<TaskSelection | null> {
+    const [task, explicitProfileId, routeKeys] = args;
+    const keys = routeKeys && routeKeys.length > 0 ? [...routeKeys] : [task];
+    return this.configCache.route(JSON.stringify([task, explicitProfileId ?? null, keys]), () =>
+      createAiConfigRepository(this.requirePool()).getDefaultTask(...args)
+    );
+  }
+
+  /** The row of a local model, cached for the generation of the configuration. */
+  private localModelRow(id: string): Promise<LocalModelRecord | null> {
+    return this.configCache.localModel(id, () =>
+      createLocalModelRepository(this.requirePool()).findById(id)
+    );
+  }
+
+  /** The provider rows, cached for the generation of the configuration. */
+  private providerRows(): Promise<AiProviderConfigRecord[]> {
+    return this.configCache.providers(() =>
+      createAiConfigRepository(this.requirePool()).listProviders()
+    );
   }
 
   public async listProviders(): Promise<AiProviderConfig[]> {
@@ -568,7 +630,9 @@ export class AiService {
   public async deleteProvider(providerId: string): Promise<boolean> {
     const repository = createAiConfigRepository(this.requirePool());
     const deleted = await repository.deleteProvider(providerId);
+    this.configCache.invalidate();
     if (!deleted) return false;
+    this.forgetRemoteAdapter(providerId);
     if (
       deleted.credentialRef &&
       !(await repository.listProviders()).some(
@@ -644,6 +708,7 @@ export class AiService {
         ...(known ? { modelLimits: modelLimits as JsonObject } : {})
       }
     });
+    this.configCache.invalidate();
     if (input.provider === "openai-codex") this.pendingOpenAiCodexCredential = null;
     return mapProvider(record);
   }
@@ -671,7 +736,7 @@ export class AiService {
       const known = this.discoveredContexts.get(
         this.contextKey(config.provider, config.baseUrl, String(config.metadata.modelId))
       );
-      if (known)
+      if (known) {
         await repository.cacheProviderModelContext(
           config.id,
           config.provider,
@@ -679,6 +744,8 @@ export class AiService {
           config.baseUrl,
           known
         );
+        this.configCache.invalidate();
+      }
     }
     return models.map((model) => model.modelId);
   }
@@ -765,15 +832,15 @@ export class AiService {
   }
 
   public async createProfile(input: AiProfileCreate): Promise<AiProfile> {
-    return mapProfile(
-      await createAiConfigRepository(this.requirePool()).createProfile({
-        name: input.name,
-        isDefault: input.isDefault,
-        privacyMode: input.privacyMode,
-        outputLanguage: input.outputLanguage,
-        ...(input.description !== undefined ? { description: input.description } : {})
-      })
-    );
+    const created = await createAiConfigRepository(this.requirePool()).createProfile({
+      name: input.name,
+      isDefault: input.isDefault,
+      privacyMode: input.privacyMode,
+      outputLanguage: input.outputLanguage,
+      ...(input.description !== undefined ? { description: input.description } : {})
+    });
+    this.configCache.invalidate();
+    return mapProfile(created);
   }
 
   public async updateProfile(input: AiProfileUpdate): Promise<AiProfile> {
@@ -834,6 +901,7 @@ export class AiService {
         ...(modelCapabilities !== undefined ? { capabilities: modelCapabilities } : {})
       })
     );
+    this.configCache.invalidate();
     if (input.modelId) await this.seedTaskRoutes(repository);
     return updated;
   }
@@ -903,6 +971,7 @@ export class AiService {
         seeded.push(decideRouteKey);
     }
     if (seeded.length > 0) {
+      this.configCache.invalidate();
       // A task that was just routed maps to its class route like any other (D34).
       this.legacyRouteMapping = null;
       await this.ensureLegacyRouteMapping();
@@ -940,13 +1009,15 @@ export class AiService {
   }
 
   public async cloneProfile(profileId: string, name: string): Promise<AiProfile> {
-    return mapProfile(
-      await createAiConfigRepository(this.requirePool()).cloneProfile(profileId, name)
-    );
+    const cloned = await createAiConfigRepository(this.requirePool()).cloneProfile(profileId, name);
+    this.configCache.invalidate();
+    return mapProfile(cloned);
   }
 
   public async deleteProfile(profileId: string): Promise<boolean> {
-    return createAiConfigRepository(this.requirePool()).deleteProfile(profileId);
+    const deleted = await createAiConfigRepository(this.requirePool()).deleteProfile(profileId);
+    this.configCache.invalidate();
+    return deleted;
   }
 
   /** Profile tasks of the configurable tasks; class and operation routes are not settings yet. */
@@ -994,6 +1065,7 @@ export class AiService {
       });
     }
     await repository.setTaskRoute(input.task, input.profileId);
+    this.configCache.invalidate();
   }
 
   /** The five workload classes and the generative judge as Settings shows them (D34). */
@@ -1064,10 +1136,11 @@ export class AiService {
       fallbackPolicy: "block",
       parameters: normalizeAiModelParameters(input.parameters, parameterCapabilities)
     });
+    this.configCache.invalidate();
   }
 
   public async describePromptRoute(task: string) {
-    const selection = await createAiConfigRepository(this.requirePool()).getDefaultTask(task);
+    const selection = await this.defaultTask(task);
     return selection
       ? {
           provider: selection.provider,
@@ -1088,11 +1161,7 @@ export class AiService {
   ): Promise<"local" | "remote" | null> {
     // The class routes exist before a route is read, as for a real call (D34).
     await this.ensureLegacyRouteMapping();
-    const selection = await createAiConfigRepository(this.requirePool()).getDefaultTask(
-      task,
-      undefined,
-      taskRouteKeys(task, context)
-    );
+    const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
     if (!selection) return null;
     return isRemoteExecution(selection) ? "remote" : "local";
   }
@@ -1102,15 +1171,14 @@ export class AiService {
     _legacyPrivacy: "offline_only" | "allow_remote",
     route?: { workloadClass?: AiWorkloadClass; operation?: string }
   ): Promise<OrganizationProfile> {
-    const repository = createAiConfigRepository(this.requirePool());
     // The route keys of the stated class and operation apply when no profile is chosen (D18).
     const selection = route
-      ? await repository.getDefaultTask(
+      ? await this.defaultTask(
           "structured-output",
           profileId,
           aiRouteKeys("structured-output", route)
         )
-      : await repository.getDefaultTask("structured-output", profileId);
+      : await this.defaultTask("structured-output", profileId);
     if (!selection || !selection.requiredCapabilities.includes("structured-output"))
       throw new Error("organization.errors.model");
     const effectivePrivacy = selection.localModelId ? "offline_only" : "allow_remote";
@@ -1209,24 +1277,76 @@ export class AiService {
     return this.admitTask(taskType, input, logContext, signal, limits);
   }
 
+  /**
+   * Embeds several texts with the routed embedding model (F3 D37). The texts are split into batches
+   * of at most {@link embedManyLimits.perExecution}; each batch is one lane request, so a P0 call
+   * waits for at most one bounded batch, and one audit row with the number of texts. A route whose
+   * adapter has no `embedMany` runs the texts one by one inside the same lane request. The vectors
+   * are those of single `runDefaultTask` calls and live in the same embedding space, so the space key
+   * is the route's, whichever way a text was embedded. Returns null when no embedding model is routed
+   * (or there is nothing to embed). Callers that store each batch as it arrives pass at most one
+   * batch, so a failure keeps what the earlier batches stored.
+   */
+  public async embedMany(
+    texts: readonly string[],
+    logContext: AiTaskLogContext = {},
+    signal?: AbortSignal
+  ): Promise<AiEmbedManyExecution | null> {
+    if (texts.length === 0) return null;
+    const parts: DefaultAiTaskResult[] = [];
+    const embeddings: number[][] = [];
+    for (const batch of chunked(texts, embedManyLimits.perExecution)) {
+      signal?.throwIfAborted();
+      const part = await this.admitTask(
+        "embedding",
+        batch,
+        { embeddingInputType: "document", workloadClass: "embed", ...logContext },
+        signal
+      );
+      if (!part) {
+        if (parts.length === 0) return null;
+        throw new Error("organization.errors.modelChanged");
+      }
+      // The configuration changed between two batches: their vectors would mix spaces.
+      if (parts[0] && parts[0].embeddingSpaceKey !== part.embeddingSpaceKey)
+        throw new Error("organization.errors.modelChanged");
+      embeddings.push(...readEmbeddingBatch(part.output, batch.length));
+      parts.push(part);
+    }
+    const first = parts[0]!;
+    return {
+      embeddings,
+      profileId: first.profileId,
+      providerId: first.providerId,
+      modelId: first.modelId,
+      runtime: first.runtime,
+      embeddingSpaceKey: first.embeddingSpaceKey ?? "",
+      aiTaskRunIds: parts.map((part) => part.aiTaskRunId),
+      calls: parts.length,
+      durationMs: parts.reduce((total, part) => total + part.durationMs, 0)
+    };
+  }
+
   private async preparePromptAdmission(
     task: RoutedTask,
-    input: string,
+    input: string | readonly string[],
     context: AiTaskLogContext,
     pin: PromptPin,
     baseAudit: PromptCompositionSnapshot[],
-    pinned?: OrganizationProfile
+    pinned?: OrganizationProfile,
+    /** The audit of each text of a batch, read where the caller rendered it (not under the pin). */
+    batchAudits: PromptCompositionSnapshot[][] = []
   ): Promise<PromptAdmission | null> {
     const repository = createAiConfigRepository(this.requirePool());
     const routeKeys = taskRouteKeys(task, context);
     // The class routes exist before the first call resolves one (D34).
     await this.ensureLegacyRouteMapping();
-    let found = await repository.getDefaultTask(task, pinned?.profileId, routeKeys);
+    let found = await this.defaultTask(task, pinned?.profileId, routeKeys);
     // A task without a route is routed to the first configured profile that can serve it. A concurrent
     // call may have created the route first, so the task is looked up again whatever this call seeded.
     if (!found && !pinned) {
       await this.seedTaskRoutes(repository);
-      found = await repository.getDefaultTask(task, undefined, routeKeys);
+      found = await this.defaultTask(task, undefined, routeKeys);
     }
     const selection = found ? structuredClone(found) : null;
     if (!selection) {
@@ -1234,45 +1354,71 @@ export class AiService {
       return null;
     }
     const language = context.contentLanguage ?? (await this.options.getContentLanguage?.()) ?? "en";
+    // Read here, off the lane: a local embedding call used to read the setting inside its slot.
+    const keepLocalEmbeddingLoaded =
+      task === "embedding" && selection.localModelId
+        ? await (async () => (await this.options.getKeepLocalEmbeddingModelsLoaded?.()) ?? true)()
+            // A setting that cannot be read leaves the model loaded, as an unset one does.
+            .catch(() => true)
+        : undefined;
     return withPromptPin(pin, () => {
-      const prepared =
+      const compose = (text: string, audit: PromptCompositionSnapshot[]) =>
         task === "embedding"
           ? withEmbeddingInputInstruction(
-              baseAudit.length
-                ? input
+              audit.length
+                ? text
                 : renderPrompt(
                     context.embeddingInputType === "query"
                       ? "embedding.query"
                       : "embedding.content.chunk",
-                    context.embeddingInputType === "query"
-                      ? { query: input }
-                      : { source_text: input }
+                    context.embeddingInputType === "query" ? { query: text } : { source_text: text }
                   ),
               selection.modelId,
               selection.repository,
               context.embeddingInputType
             )
-          : baseAudit.some((s) => s.promptId.startsWith("diagnostics."))
-            ? input
-            : withOutputLanguageInstruction(input, language);
+          : audit.some((s) => s.promptId.startsWith("diagnostics."))
+            ? text
+            : withOutputLanguageInstruction(text, language);
       const instruction =
         selection.provider === "openai-codex"
           ? renderPrompt("shared.codex_adapter_instruction")
           : "";
+      const keep = keepLocalEmbeddingLoaded === undefined ? {} : { keepLocalEmbeddingLoaded };
+      if (typeof input !== "string") {
+        // A batch: every text composes on its own, and the audit lists each composition once.
+        const inputs = input.map((text, index) => compose(text, batchAudits[index] ?? []));
+        return {
+          selection,
+          input: JSON.stringify(inputs),
+          inputs,
+          instruction,
+          compositions: uniqueCompositions([
+            ...batchAudits.flat(),
+            ...inputs.flatMap(promptAudit),
+            ...promptAudit(instruction)
+          ]),
+          pin,
+          language,
+          ...keep
+        };
+      }
+      const prepared = compose(input, baseAudit);
       return {
         selection,
         input: prepared,
         instruction,
         compositions: [...baseAudit, ...promptAudit(prepared), ...promptAudit(instruction)],
         pin,
-        language
+        language,
+        ...keep
       };
     });
   }
 
   private async admitTask(
     task: RoutedTask,
-    input: string,
+    input: string | readonly string[],
     context: AiTaskLogContext,
     signal?: AbortSignal,
     limits?: { maxOutputTokens: number },
@@ -1280,7 +1426,9 @@ export class AiService {
     beforeProvider?: () => Promise<void>
   ): Promise<DefaultAiTaskResult | null> {
     const pin = capturePromptPin(),
-      baseAudit = context.promptCompositions ?? promptAudit(input);
+      baseAudit =
+        typeof input === "string" ? (context.promptCompositions ?? promptAudit(input)) : [];
+    const batchAudits = typeof input === "string" ? [] : input.map((text) => promptAudit(text));
     // The admission is reserved now, so FIFO order and aging count from here while the source-free
     // routing preparation reads the route that decides the lane, without model loading or telemetry.
     const reservation = this.scheduler.reserve();
@@ -1296,7 +1444,7 @@ export class AiService {
     };
     try {
       const admission = await untilAborted(
-        this.preparePromptAdmission(task, input, context, pin, baseAudit, pinned),
+        this.preparePromptAdmission(task, input, context, pin, baseAudit, pinned, batchAudits),
         signal
       );
       if (!admission) return null;
@@ -1386,7 +1534,8 @@ export class AiService {
     const lane = (failure?: { error: unknown }) =>
       laneAudit(permit, deadlineMs, logContext, signal, failure);
     let parameters: ReturnType<typeof aiModelParametersSchema.parse>;
-    let keepLocalEmbeddingModelLoaded = true;
+    const keepLocalEmbeddingModelLoaded = admission.keepLocalEmbeddingLoaded ?? true;
+    const batch = admission.inputs;
     try {
       if (pinned) {
         const current = await this.pinOrganizationProfile(pinned.profileId, pinned.privacy);
@@ -1421,9 +1570,6 @@ export class AiService {
         });
         parameters = normalizeAiModelParameters(parameters, caps);
       }
-      if (taskType === "embedding" && selection.localModelId)
-        keepLocalEmbeddingModelLoaded =
-          (await this.options.getKeepLocalEmbeddingModelsLoaded?.()) ?? true;
     } catch (error) {
       // Nothing was sent to a model: the audit row records the failed admission.
       return () =>
@@ -1432,6 +1578,9 @@ export class AiService {
     const plannedOutputTokens = parameters.maxTokens ?? 16384;
     const outputLanguage = admission.language;
     const taskInput = admission.input;
+    // One audit row per execution: a batch says how many texts it embedded.
+    const audited = (options: AiTaskResult["requestOptions"] | undefined) =>
+      auditedParameters(batch ? { ...parameters, items: batch.length } : parameters, options);
     const releaseEmbeddingModel = async () => {
       if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded)
         await this.releaseLocalModel(selection.localModelId).catch((error) => {
@@ -1480,7 +1629,7 @@ export class AiService {
           throw new Error("errors.ai.contextWindowLimit");
       }
       // The route key that chose the profile names the profile task to compare with.
-      const currentSelection = await repository.getDefaultTask(
+      const currentSelection = await this.defaultTask(
         selection.routeKey ?? taskType,
         selection.profileId
       );
@@ -1492,7 +1641,14 @@ export class AiService {
       const descriptor = configuredAdapter.describe();
       const requiredCapabilities = requiredCapabilitiesForRun(taskType, descriptor.capabilities);
       parameters = normalizeAiModelParameters(parameters, descriptor.parameterCapabilities);
-      if (structuredLogContext.jobId) {
+      if (
+        structuredLogContext.jobId &&
+        this.executionAttachmentDue(structuredLogContext.jobId, {
+          provider: selection.provider,
+          modelId: selection.modelId,
+          reasoningLevel: parameters.reasoningLevel ?? null
+        })
+      ) {
         try {
           await createJobRepository(this.requirePool()).setAiExecution(structuredLogContext.jobId, {
             provider: selection.provider,
@@ -1500,6 +1656,7 @@ export class AiService {
             reasoningLevel: parameters.reasoningLevel ?? null
           });
         } catch (error) {
+          this.attachedExecutions.delete(structuredLogContext.jobId);
           this.options.logger?.error("Failed to attach AI execution metadata to job", error);
         }
       }
@@ -1515,7 +1672,8 @@ export class AiService {
         : withCapabilities(configuredAdapter, requiredCapabilities);
       const request: AiTaskRequest = {
         taskType,
-        input: taskInput,
+        // A batch's texts travel as `embedMany`'s own argument; the request is the template of each.
+        input: batch ? "" : taskInput,
         profileId: selection.profileId,
         modelId: selection.modelId,
         requiredCapabilities,
@@ -1539,6 +1697,8 @@ export class AiService {
         )
           throw new Error("organization.errors.modelChanged");
         await onProviderStart?.();
+        // A batch is one execution: the adapter's `embedMany`, else its single calls in order.
+        if (batch) return runEmbeddingBatch(adapter, request, batch, logContext, execution);
         // Remote generation always streams, so its connect, first-byte and stall deadlines apply.
         return adapter.runStreaming && runsStreaming(adapter, taskType)
           ? adapter.runStreaming(request, execution, progress)
@@ -1591,7 +1751,7 @@ export class AiService {
           repository: selection.repository,
           revision: selection.revision,
           quantization: selection.quantization,
-          parameters: auditedParameters(parameters, result.requestOptions),
+          parameters: audited(result.requestOptions),
           promptCompositions: admission.compositions,
           inputHash: sha256(taskInput),
           outputHash: sha256(JSON.stringify(result.output)),
@@ -1610,8 +1770,8 @@ export class AiService {
           aiTaskRunId,
           durationMs: Date.now() - started,
           tokenUsage: monitoringUsage(result),
-          parameters: auditedParameters(parameters, result.requestOptions),
-          output: result.output,
+          parameters: audited(result.requestOptions),
+          output: batch ? embeddingBatchSummary(result.output) : result.output,
           ...(result.attempts !== undefined
             ? { details: callDetails(result.attempts, result.retriedUsage) }
             : {}),
@@ -1652,7 +1812,7 @@ export class AiService {
           repository: selection.repository,
           revision: selection.revision,
           quantization: selection.quantization,
-          parameters: auditedParameters(parameters, failedReport?.requestOptions),
+          parameters: audited(failedReport?.requestOptions),
           promptCompositions: admission.compositions,
           inputHash: sha256(taskInput),
           durationMs,
@@ -1669,7 +1829,7 @@ export class AiService {
           aiTaskRunId,
           durationMs: Date.now() - started,
           error: redactSensitiveText(error),
-          parameters: auditedParameters(parameters, failedReport?.requestOptions),
+          parameters: audited(failedReport?.requestOptions),
           ...(failedReport
             ? {
                 tokenUsage: failedMonitoringUsage(failedReport.failedUsage),
@@ -1718,9 +1878,12 @@ export class AiService {
       provider: selection.provider,
       modelId: selection.modelId,
       runtime: selection.runtime,
-      parameters: pinned?.parameters ?? {
-        ...selection.modelDefaultParameters,
-        ...selection.parameters
+      parameters: {
+        ...(pinned?.parameters ?? {
+          ...selection.modelDefaultParameters,
+          ...selection.parameters
+        }),
+        ...(admission.inputs ? { items: admission.inputs.length } : {})
       },
       promptCompositions: admission.compositions,
       inputHash: sha256(admission.input),
@@ -1748,6 +1911,24 @@ export class AiService {
     const servedLocally =
       selection.provider === "openai-compatible" && !isRemoteExecution(selection);
     return remoteTotalDeadlineMs(this.remoteRuntime, workloadClass, servedLocally);
+  }
+
+  /**
+   * Whether the job's AI execution metadata must be written for this call: not when the same model
+   * and reasoning level were attached to the job a moment ago. A job makes many calls with one model;
+   * each used to update its row inside the lane.
+   */
+  private executionAttachmentDue(jobId: string, execution: JsonObject): boolean {
+    const key = JSON.stringify(execution);
+    const attached = this.attachedExecutions.get(jobId);
+    const now = Date.now();
+    if (attached?.key === key && now - attached.at < executionAttachmentTtlMs) return false;
+    this.attachedExecutions.delete(jobId);
+    this.attachedExecutions.set(jobId, { key, at: now });
+    // Oldest first out: a long session makes many jobs.
+    if (this.attachedExecutions.size > 512)
+      this.attachedExecutions.delete(this.attachedExecutions.keys().next().value!);
+    return true;
   }
 
   /** Starts a monitoring entry without waiting for it; a failed start is no entry. */
@@ -2019,10 +2200,10 @@ export class AiService {
     const repository = createAiConfigRepository(this.requirePool());
     // The keys every embedding caller resolves: its class route first, then the task route (D34).
     const keys = aiRouteKeys("embedding", { workloadClass: "embed" });
-    let selection = await repository.getDefaultTask("embedding", undefined, keys);
+    let selection = await this.defaultTask("embedding", undefined, keys);
     if (!selection) {
       await this.seedTaskRoutes(repository);
-      selection = await repository.getDefaultTask("embedding", undefined, keys);
+      selection = await this.defaultTask("embedding", undefined, keys);
     }
     if (!selection) return null;
     const parameters = await this.embeddingCallParameters(selection);
@@ -2049,9 +2230,7 @@ export class AiService {
       )
     );
     if (selection.localModelId) {
-      const model = await createLocalModelRepository(this.requirePool()).findById(
-        selection.localModelId
-      );
+      const model = await this.localModelRow(selection.localModelId);
       if (!model) throw new Error("errors.localModels.notReady");
       return normalizeAiModelParameters(
         parameters,
@@ -2098,15 +2277,15 @@ export class AiService {
     purpose: RankPurpose
   ): Promise<{ selection: TaskSelection; model: LocalModelRecord; entry: LocalModelCatalogEntry }> {
     const keys = [...(operation ? [operationRouteKey(operation)] : []), decideRouteKey];
-    let found = await repository.getDefaultTask(decideRouteKey, undefined, keys);
+    let found = await this.defaultTask(decideRouteKey, undefined, keys);
     if (!found) {
       await this.seedTaskRoutes(repository);
-      found = await repository.getDefaultTask(decideRouteKey, undefined, keys);
+      found = await this.defaultTask(decideRouteKey, undefined, keys);
     }
     if (!found) throw new Error("errors.ai.noCompatibleModel");
     // A remote or generative model never ranks: there is no generative fallback (D10, D17).
     if (!found.localModelId) throw new Error("errors.ai.unsupportedTask");
-    const model = await createLocalModelRepository(this.requirePool()).findById(found.localModelId);
+    const model = await this.localModelRow(found.localModelId);
     if (!model || model.status !== "ready" || !model.managedPath)
       throw new Error("errors.localModels.notReady");
     const entry = findLocalModelCatalogEntry(model.catalogId);
@@ -2631,6 +2810,8 @@ export class AiService {
       });
       throw error;
     } finally {
+      // The validation is stored with the model, which routes resolve (F3 D38).
+      this.configCache.invalidate();
       // The ranker is not kept resident by the test; routed use manages its own residency.
       const ranker = this.resident.rank;
       if (ranker?.localModelId === model.id && !this.occupied(ranker))
@@ -2848,10 +3029,25 @@ export class AiService {
     return capabilities;
   }
 
+  /**
+   * The adapter of a provider configuration. One instance serves every call until the configuration
+   * changes (F3 D38), so a call neither reads the provider rows nor decrypts the credential again,
+   * and what the server refused stays remembered by the instance. An OAuth adapter is built again
+   * once its access token is about to expire.
+   */
   private async createAdapter(providerId: string): Promise<AiModelAdapter> {
-    const config = (await createAiConfigRepository(this.requirePool()).listProviders()).find(
-      (provider) => provider.id === providerId
-    );
+    const build = () =>
+      this.configCache.adapter(providerId, () => this.buildRemoteAdapter(providerId));
+    const built = await build();
+    if (built.expiresAt === undefined || built.expiresAt > Date.now() + oauthRefreshMarginMs)
+      return built.adapter;
+    // Refreshing saves the credential, which moves the generation and drops the cached adapter.
+    await this.getOpenAiCodexCredential(built.credentialRef!);
+    return (await build()).adapter;
+  }
+
+  private async buildRemoteAdapter(providerId: string): Promise<BuiltRemoteAdapter> {
+    const config = (await this.providerRows()).find((provider) => provider.id === providerId);
     if (!config) throw new Error("errors.common.notFound");
     if (!config.credentialRef) throw new Error("errors.ai.missingCredential");
     const modelId = typeof config.metadata.modelId === "string" ? config.metadata.modelId : "";
@@ -2861,40 +3057,67 @@ export class AiService {
           return parsed.success ? [parsed.data] : [];
         })
       : [];
+    const key = `${config.id}:${modelId}`;
+    const previous = this.remoteAdapterKeys.get(config.id);
+    if (previous && previous !== key) this.registry.unregisterKey(previous);
+    this.remoteAdapterKeys.set(config.id, key);
     if (config.provider === "openai-codex") {
       const credential = await this.getOpenAiCodexCredential(config.credentialRef);
-      return this.registerAdapter(
-        new OpenAiCodexAdapter({
-          accessToken: credential.access,
-          accountId: credential.accountId,
-          modelId,
-          capabilities,
-          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-          ...this.runtimeOption()
-        })
-      );
+      return {
+        adapter: this.registerAdapter(
+          new OpenAiCodexAdapter({
+            accessToken: credential.access,
+            accountId: credential.accountId,
+            modelId,
+            capabilities,
+            ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+            ...this.runtimeOption()
+          }),
+          key
+        ),
+        expiresAt: credential.expires,
+        credentialRef: config.credentialRef
+      };
     }
-    const apiKey = await this.credentials.get(config.credentialRef);
+    const apiKey = await this.credentialSecret(config.credentialRef);
     if (config.provider === "google") {
-      return this.registerAdapter(
-        new GoogleGeminiAdapter({
+      return {
+        adapter: this.registerAdapter(
+          new GoogleGeminiAdapter({
+            apiKey,
+            modelId,
+            capabilities,
+            ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+            ...this.runtimeOption()
+          }),
+          key
+        )
+      };
+    }
+    return {
+      adapter: this.registerAdapter(
+        new OpenAiCompatibleAdapter({
           apiKey,
           modelId,
           capabilities,
-          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+          baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1",
           ...this.runtimeOption()
-        })
-      );
-    }
-    return this.registerAdapter(
-      new OpenAiCompatibleAdapter({
-        apiKey,
-        modelId,
-        capabilities,
-        baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1",
-        ...this.runtimeOption()
-      })
-    );
+        }),
+        key
+      )
+    };
+  }
+
+  /** A decrypted credential, kept until the configuration or a credential changes (F3 D38). */
+  private credentialSecret(reference: string): Promise<string> {
+    return this.configCache.credential(reference, () => this.credentials.get(reference));
+  }
+
+  /** Removes the registration of a provider configuration's adapter once it is gone or replaced. */
+  private forgetRemoteAdapter(providerConfigId: string): void {
+    const key = this.remoteAdapterKeys.get(providerConfigId);
+    if (key) this.registry.unregisterKey(key);
+    this.remoteAdapterKeys.delete(providerConfigId);
   }
 
   private createPendingOpenAiCodexAdapter(): OpenAiCodexAdapter {
@@ -2915,8 +3138,8 @@ export class AiService {
   }
 
   private async getOpenAiCodexCredential(credentialRef: string): Promise<OpenAiCodexCredential> {
-    const credential = parseOpenAiCodexCredential(await this.credentials.get(credentialRef));
-    if (credential.expires > Date.now() + 60_000) return credential;
+    const credential = parseOpenAiCodexCredential(await this.credentialSecret(credentialRef));
+    if (credential.expires > Date.now() + oauthRefreshMarginMs) return credential;
     const activeRefresh = this.oauthRefreshes.get(credentialRef);
     if (activeRefresh) return activeRefresh;
     const refresh = (async () => {
@@ -2954,13 +3177,13 @@ export class AiService {
 
   /**
    * Registers an adapter and returns the instance the registry holds for it (wrapped by the DEV
-   * cassette when one is installed). It is read back synchronously, so a concurrent call on another
-   * lane that registers an adapter under the same provider and model ids cannot swap it.
+   * cassette when one is installed). A remote adapter is keyed by its provider configuration and model
+   * (`providerConfigId:modelId`), so two configurations that name one model never resolve each
+   * other's adapter (F3 D38); a local model's adapter by its provider and model ids, which its
+   * installation makes unique.
    */
-  private registerAdapter(adapter: AiModelAdapter): AiModelAdapter {
-    this.registry.register(adapter);
-    const { providerId, modelId } = adapter.describe();
-    return this.registry.resolve({ providerId, modelId, requiredCapabilities: [] });
+  private registerAdapter(adapter: AiModelAdapter, key?: string): AiModelAdapter {
+    return this.registry.register(adapter, key);
   }
 
   private resolveMlxHelperPath(): string {
@@ -2993,6 +3216,20 @@ export class AiService {
   }
 }
 
+/** What {@link AiService.embedMany} returns: one vector per text, in order, and the audit rows. */
+export interface AiEmbedManyExecution {
+  embeddings: number[][];
+  profileId: string;
+  providerId: string;
+  modelId: string;
+  runtime: AiTaskResult["runtime"];
+  embeddingSpaceKey: string;
+  /** One audit row per execution (batch of at most {@link embedManyLimits.perExecution} texts). */
+  aiTaskRunIds: string[];
+  calls: number;
+  durationMs: number;
+}
+
 export interface DefaultAiTaskResult extends AiTaskResult {
   profileId: string;
   aiTaskRunId: string;
@@ -3012,6 +3249,93 @@ function requiredCapabilitiesForRun(
       ? generativeDeciderCapabilities.find((capability) => available.includes(capability))
       : undefined;
   return decider ? [decider] : required;
+}
+
+/** The vectors of a batch result, checked to be one finite list of numbers per text. */
+function readEmbeddingBatch(output: unknown, count: number): number[][] {
+  if (
+    !Array.isArray(output) ||
+    output.length !== count ||
+    !output.every(
+      (vector) =>
+        Array.isArray(vector) &&
+        vector.length > 0 &&
+        vector.every((value) => typeof value === "number" && Number.isFinite(value))
+    )
+  )
+    throw new Error("AI embedding response did not contain a vector for every text.");
+  return output as number[][];
+}
+
+/** What the monitoring entry keeps of a batch: its size, not its vectors. */
+function embeddingBatchSummary(output: unknown): JsonObject {
+  const vectors = Array.isArray(output) ? output : [];
+  const first = vectors[0];
+  return { items: vectors.length, dimensions: Array.isArray(first) ? first.length : 0 };
+}
+
+/** The distinct compositions of a batch, in order of appearance. */
+function uniqueCompositions(
+  compositions: readonly PromptCompositionSnapshot[]
+): PromptCompositionSnapshot[] {
+  return [
+    ...new Map(
+      compositions.map((snapshot) => [`${snapshot.promptId}:${snapshot.compositionHash}`, snapshot])
+    ).values()
+  ];
+}
+
+/**
+ * Runs a batch of embeddings as one execution: the adapter's `embedMany` when it has one, else its
+ * single calls in order. The result is the task result the single calls would add up to.
+ */
+async function runEmbeddingBatch(
+  adapter: AiModelAdapter,
+  request: AiTaskRequest,
+  texts: readonly string[],
+  context: Pick<AiTaskLogContext, "embeddingInputType" | "operation" | "workloadClass">,
+  signal: AbortSignal | undefined
+): Promise<AiTaskResult> {
+  if (adapter.embedMany)
+    return embedManyTaskResult(
+      await adapter.embedMany(texts, {
+        inputType: context.embeddingInputType ?? "document",
+        parameters: request.parameters,
+        ...(typeof request.parameters.dimensions === "number"
+          ? { dimensions: request.parameters.dimensions }
+          : {}),
+        ...(request.modelId ? { modelId: request.modelId } : {}),
+        ...(context.workloadClass ? { workloadClass: context.workloadClass } : {}),
+        ...(context.operation ? { operation: context.operation } : {}),
+        ...(signal ? { signal } : {})
+      })
+    );
+  const results: AiTaskResult[] = [];
+  for (const text of texts) {
+    signal?.throwIfAborted();
+    results.push(await adapter.run({ ...request, input: text }, signal));
+  }
+  const sum = (field: "inputTokens" | "durationMs") =>
+    results.every((result) => result[field] !== undefined)
+      ? results.reduce((total, result) => total + (result[field] ?? 0), 0)
+      : undefined;
+  const first = results[0]!;
+  const tokens = sum("inputTokens");
+  const usage = sumTokenUsage(results.map((result) => result.tokenUsage)) ?? {};
+  delete usage[aiCassetteReplayedUsageKey];
+  return {
+    ...first,
+    output: results.map((result) => result.output),
+    durationMs: sum("durationMs") ?? 0,
+    ...(tokens !== undefined ? { inputTokens: tokens } : {}),
+    // A cassette marks a result served without a model; the batch is that only when every text was.
+    tokenUsage: {
+      ...usage,
+      ...(results.every((result) => result.tokenUsage?.[aiCassetteReplayedUsageKey])
+        ? { [aiCassetteReplayedUsageKey]: 1 }
+        : {})
+    }
+  };
 }
 
 function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {

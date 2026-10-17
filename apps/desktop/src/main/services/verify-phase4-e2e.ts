@@ -1335,6 +1335,25 @@ try {
   await pool.query("update atomic_notes set status = 'rejected'");
   const pairCalls = { embedding: [] as string[], generation: 0, rerankAliases: [] as number[] };
   const pairAiService = {
+    // The notes of a source are embedded in one batch (F3 D37): one embedding per text.
+    embedMany: async (texts: string[], context: { operation?: string } = {}) => {
+      for (let index = 0; index < texts.length; index += 1)
+        pairCalls.embedding.push(context.operation ?? "");
+      return {
+        // Every note is about the same topic, so they all sit close together in vector space.
+        embeddings: texts.map(() =>
+          Array.from({ length: 256 }, (_, index) => (index < 8 ? 1 : 0.01))
+        ),
+        profileId: pairProfile.id,
+        providerId: "fake",
+        modelId: "fake-embedding",
+        runtime: "local" as const,
+        embeddingSpaceKey: "pair-space",
+        aiTaskRunIds: ["x"],
+        calls: 1,
+        durationMs: 1
+      };
+    },
     runDefaultTask: async (
       task: string,
       input: string,

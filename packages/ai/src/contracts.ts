@@ -114,12 +114,66 @@ export interface AiTaskHandle {
   onProgress: (listener: (event: AiProgressEvent) => void) => () => void;
 }
 
+/**
+ * Texts per `embedMany` execution and per remote request (F3 D37). The service admits one lane
+ * request per `perExecution` texts, so a P0 call waits for at most one bounded batch; a remote
+ * adapter sends at most `perRequest` texts in one HTTP request.
+ */
+export const embedManyLimits = { perExecution: 32, perRequest: 64 } as const;
+
+/**
+ * What an `embedMany` call needs besides its texts. `parameters` and `modelId` are those of the
+ * equivalent single `run` request: a cassette keys each text by that request, so the vectors of a
+ * batch and of single calls stay interchangeable (D37).
+ */
+export interface AiEmbedManyOptions {
+  inputType?: "query" | "document";
+  /** The vector dimension; defaults to the effective `parameters.dimensions`, else 768. */
+  dimensions?: number;
+  parameters?: Record<string, unknown>;
+  modelId?: string;
+  workloadClass?: AiWorkloadClass;
+  operation?: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * The vectors of one `embedMany` call, in the order of its texts, with the audit fields a single
+ * embedding result has (tokens of the whole batch, requests, retried usage).
+ */
+export type AiEmbedManyResult = Omit<AiTaskResult, "taskType" | "output"> & {
+  embeddings: number[][];
+  /** Tokens of each text, when the runtime reports them per text (a cassette records them so). */
+  itemInputTokens?: number[];
+  /** How many texts came from a cassette (replay) rather than from the runtime. */
+  replayedItems?: number;
+};
+
+/** The result of a batch as the task result its single calls would add up to. */
+export function embedManyTaskResult(result: AiEmbedManyResult): AiTaskResult {
+  const task: AiTaskResult & Partial<AiEmbedManyResult> = {
+    ...result,
+    taskType: "embedding",
+    output: result.embeddings
+  };
+  delete task.embeddings;
+  delete task.itemInputTokens;
+  delete task.replayedItems;
+  return task;
+}
+
 export interface AiModelAdapter {
   describe(): AiModelDescriptor;
   canHandle(request: AiTaskRequest): boolean;
   isLoaded?(): boolean;
   ensureLoaded?(signal?: AbortSignal): Promise<void>;
   run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult>;
+  /**
+   * Embeds several texts in one execution; the vectors are those the single `run` of each text would
+   * give (a runtime that cannot promise that does not offer this). Absent, the service runs the texts
+   * one by one.
+   */
+  embedMany?(texts: readonly string[], options?: AiEmbedManyOptions): Promise<AiEmbedManyResult>;
   runStreaming?(
     request: AiTaskRequest,
     signal: AbortSignal | undefined,

@@ -94,7 +94,14 @@ describe("the readers find the calls", () => {
   it("reads the AI calls of the product code", () => {
     const methods = new Set(sites.map((site) => site.method));
     expect(methods).toEqual(
-      new Set(["runDefaultTask", "tryRunDefaultTask", "runOrganizationTask", "rank", "rankPairs"])
+      new Set([
+        "runDefaultTask",
+        "tryRunDefaultTask",
+        "runOrganizationTask",
+        "rank",
+        "rankPairs",
+        "embedMany"
+      ])
     );
     expect(sites.length).toBeGreaterThanOrEqual(25);
     // Calls that must be found, whatever else changes.
@@ -103,7 +110,9 @@ describe("the readers find the calls", () => {
       "relation-explanation-service.ts",
       "consultation-service.ts",
       "topic-tree/topic-gate.ts",
-      "topic-tree/topic-naming.ts"
+      "topic-tree/topic-naming.ts",
+      "topic-tree/topic-labels.ts",
+      "job-embedding.ts"
     ])
       expect(
         sites.some((site) => site.file.endsWith(needle)),

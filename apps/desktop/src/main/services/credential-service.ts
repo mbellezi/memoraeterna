@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { bumpAiConfigGeneration } from "@app/db";
 import { safeStorage } from "electron";
 
 interface CredentialFile {
@@ -22,7 +23,12 @@ export class CredentialService {
     const reference = existingRef ?? `ai:${randomUUID()}`;
     file.secrets[reference] = safeStorage.encryptString(secret).toString("base64");
     await mkdir(dirname(this.path), { recursive: true });
-    await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    try {
+      await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    } finally {
+      // The service caches what it decrypted and the adapters built from it (F3 D38).
+      bumpAiConfigGeneration();
+    }
     return reference;
   }
 
@@ -38,7 +44,11 @@ export class CredentialService {
     if (!Object.prototype.hasOwnProperty.call(file.secrets, reference)) return false;
     delete file.secrets[reference];
     await mkdir(dirname(this.path), { recursive: true });
-    await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    try {
+      await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    } finally {
+      bumpAiConfigGeneration();
+    }
     return true;
   }
 

@@ -71,7 +71,10 @@ export interface TopicTreeServicesOptions {
    * are needed to register those jobs; scripts and tests that drive placement alone leave them out.
    * The gate (T23) needs only the AI service: its validated ranker.
    */
-  ai?: Pick<AiService, "runDefaultTask" | "activeEmbeddingSpace" | "rank" | "decideRouteStatus">;
+  ai?: Pick<
+    AiService,
+    "runDefaultTask" | "embedMany" | "activeEmbeddingSpace" | "rank" | "decideRouteStatus"
+  >;
   getContentLanguage?: () => Promise<string>;
 }
 

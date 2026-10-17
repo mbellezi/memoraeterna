@@ -41,6 +41,7 @@ import { SettingsService } from "./services/settings-service";
 import { AiService } from "./services/ai-service.js";
 import { IngestionService } from "./services/ingestion-service.js";
 import { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
+import { createJobEmbeddingGenerators } from "./services/job-embedding.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
 import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
@@ -437,22 +438,7 @@ void app.whenReady().then(() => {
     logger: console,
     knowledgeService,
     obsidianSyncService,
-    generateEmbedding: async (text, signal, context) => {
-      const result = await aiService?.runDefaultTask(
-        "embedding",
-        text,
-        { ...context, workloadClass: "embed", priority: "P2" },
-        signal
-      );
-      if (!result || !Array.isArray(result.output)) return null;
-      return {
-        embedding: result.output.map(Number),
-        provider: result.providerId,
-        model: result.modelId,
-        runtime: result.runtime,
-        ...(result.embeddingSpaceKey ? { spaceKey: result.embeddingSpaceKey } : {})
-      };
-    },
+    ...createJobEmbeddingGenerators(aiService!),
     releaseAiRuntime: async () =>
       aiService!.releaseLocalRuntime(
         false,

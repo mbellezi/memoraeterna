@@ -2,12 +2,22 @@ import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiSchemaMode, AiTaskType } from "@app/domain";
 
 import type {
+  AiEmbedManyOptions,
+  AiEmbedManyResult,
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
+import { embedManyLimits } from "./contracts.js";
+import {
+  chunkTexts,
+  embedManyDimensions,
+  embedManyRequest,
+  remoteEmbedManyResult,
+  type RemoteEmbedPart
+} from "./embed-many.js";
 import { googleParameterCapabilities } from "./parameter-capabilities.js";
 import {
   parseResponse,
@@ -220,6 +230,58 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
       },
       report
     );
+  }
+
+  /**
+   * Embeds the texts with `batchEmbedContents`, at most {@link embedManyLimits.perRequest} per
+   * request (D37). The response holds one vector per request, in order.
+   */
+  public async embedMany(
+    texts: readonly string[],
+    options: AiEmbedManyOptions = {}
+  ): Promise<AiEmbedManyResult> {
+    const startedAt = performance.now();
+    const modelId = options.modelId ?? this.options.modelId;
+    const outputDimensionality = embedManyDimensions(options);
+    const parts: RemoteEmbedPart[] = [];
+    const reports: RemoteCallReport[] = [];
+    for (const group of chunkTexts(texts, embedManyLimits.perRequest)) {
+      const payload = await this.remoteCall(
+        {
+          request: embedManyRequest(group[0] ?? "", options),
+          streaming: false,
+          signal: options.signal,
+          report: (received) => reports.push(received)
+        },
+        async (call) =>
+          parseResponse<{
+            embeddings?: Array<{ values?: number[] }>;
+            usageMetadata?: Record<string, unknown>;
+          }>(
+            await this.post(call, `/models/${encodeURIComponent(modelId)}:batchEmbedContents`, {
+              requests: group.map((text) => ({
+                model: `models/${modelId}`,
+                content: { parts: [{ text }] },
+                outputDimensionality
+              }))
+            }),
+            call
+          )
+      );
+      const embeddings = (payload.embeddings ?? []).flatMap((item) =>
+        item.values ? [item.values] : []
+      );
+      if ((payload.embeddings ?? []).length !== group.length || embeddings.length !== group.length)
+        throw new Error("AI embedding response did not contain a vector for every text.");
+      parts.push({ embeddings, tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google") });
+    }
+    return remoteEmbedManyResult({
+      providerId: "google",
+      modelId,
+      durationMs: Math.round(performance.now() - startedAt),
+      parts,
+      reports
+    });
   }
 
   public async runStreaming(
