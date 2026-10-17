@@ -101,6 +101,12 @@ concurrency and automatic correction.
     every setting the F3-F5 redesign adds. F4 inventories every setting (where code reads it, its default, and
     its fate: keep, merge, move to Advanced or drop) beside its automation cut (37+ to ≤6); F5 builds Settings v2
     on the design system from mockups the owner approves first, and the old screens go.
+25. **Hardware detection and recommended setups** (2026-10-18): the app detects the platform (CPU and
+    architecture, memory, Apple unified memory and its GPU working-set limit, GPU and VRAM, NPU, free disk) on
+    macOS and Windows (the app will be ported) and suggests one predefined setup per hardware tier — local
+    models where they work well (MLX on Apple Silicon, GGUF on Windows), cloud models where they do not — with
+    alternatives, never blocking. Research and an on-device benchmark on the owner's 64 GB Mac come first (any
+    model download is approved by the owner); the first run uses it in F4 and Settings v2 shows it in F5.
 
 ## 3. The five swaps
 
@@ -657,6 +663,8 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
 - [ ] Event bus with push; Activity pill and drawer with the status sentence.
 - [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
       controls and tree shape.
+- [ ] Hardware detection and recommended setups (decision 25): platform probe on macOS and Windows, tier
+      table and preset suggestion in the first run, from the research and the owner-approved benchmark.
 - [ ] Settings inventory (decision 24): every setting with its reader, default and fate (keep, merge, move to
       Advanced, drop), the dead ones removed, and the F3/F4 additions (workload classes and presets, Knowledge,
       automation) placed; it feeds F5's Settings v2.
