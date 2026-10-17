@@ -1059,7 +1059,10 @@
         "depends_on": "Depend de",
         "clarifies": "Clarifie",
         "mentions": "Mentionne",
-        "related": "Associee"
+        "related": "Associee",
+        "contradicts": "Contredit",
+        "example_of": "Exemple de",
+        "same_as": "Identique à"
       }
     }
   },
@@ -1246,7 +1249,6 @@
         "evidenceChunksPerSource": "Passages de preuve par source de la paire",
         "evidenceMaxCharacters": "Caractères par passage de preuve",
         "summaryMaxCharacters": "Caractères du résumé par source",
-        "noteRelationsPerPair": "Relations de notes réutilisées par paire de sources",
         "maxOutputTokens": "Limite de tokens de sortie IA par paire de sources",
         "hint": "Les changements s’appliquent aux traitements suivants. Moins de candidats réduit le coût, mais peut manquer des liens utiles. Les relations existantes sont conservées.",
         "weightsHint": "Les poids sont normalisés par groupe de signaux disponibles. Au moins un poids doit rester positif. La part restante du score final utilise ces signaux.",
@@ -1845,9 +1847,6 @@
     "view": "Vue du graphe des sources",
     "processingHint": "Réutilise les relations des notes existantes et découvre des connexions conceptuelles à partir des résumés et passages originaux. Ne génère pas de nouvelles notes atomiques.",
     "budgetHint": "Limites partagées par la racine et ses chapitres par exécution. Le budget d’entrée compte les tokens déclarés par le fournisseur, réparations incluses. Un appel peut le dépasser ; les suivants s’arrêtent. Ce n’est pas un budget total : sortie, résumés, notes, graphe et embeddings ont une consommation distincte. Les relations existantes sont conservées. Les scores sont provisoires, pas des probabilités.",
-    "maxCandidates": "Sources candidates récupérées",
-    "maxPairs": "Paires de sources évaluées",
-    "maxRelations": "Relations générées et classées",
     "maxRelationsPerPair": "Relations par paire de sources",
     "maxInputTokens": "Budget de tokens en entrée",
     "minImportance": "Importance conceptuelle minimale",
@@ -1864,6 +1863,7 @@
     "atomicNotes": "Relations des notes atomiques",
     "sourceAnalysis": "Analyse des sources",
     "stale": "Preuve modifiée ; nouvelle validation nécessaire",
+    "linkedThrough": "Reliées par {count} connexions entre notes",
     "evidence": "Preuves et explication",
     "writing": "Rédaction d’une explication…",
     "explainedBy": "Expliquée par {model}",
@@ -1876,9 +1876,8 @@
     "previous": "Précédente",
     "next": "Suivante",
     "coverage": {
-      "analysed": "{judged} sources candidates analysées sur {candidates}",
-      "relationLimit": "{judged} sources candidates analysées sur {candidates} ; limite de relations atteinte",
-      "incomplete": "Analyse interrompue après {judged} sources candidates sur {candidates} : le budget de jetons d'entrée est épuisé"
+      "linked": "{promoted} relations issues des liens entre notes · {judged} sources les plus proches évaluées sur {candidates}",
+      "incomplete": "Analyse interrompue après {judged} sources les plus proches sur {candidates} : le budget de jetons d'entrée est épuisé"
     }
   },
   "topics": {

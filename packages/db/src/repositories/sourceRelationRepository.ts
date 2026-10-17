@@ -1,8 +1,21 @@
 import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
-import { symmetricSourceRelationTypes } from "@app/domain";
-import type { PgPool } from "../client.js";
+import {
+  equivalentSourceRelationTypes,
+  planPromotedSourceRelations,
+  relationsConfig,
+  selectDiscoveryPairs,
+  symmetricSourceRelationTypes,
+  type DiscoveryCandidate,
+  type DiscoverySelection,
+  type PromotedSourceRelationPlan,
+  type RelationsConfig
+} from "@app/domain";
+import { withTransaction, type PgPool } from "../client.js";
 import { noteRelationStateSql } from "./note-relation-sql.js";
+import { createRelationEventRepository } from "./relationEventRepository.js";
+import { createRelationMatchRunRepository } from "./relationMatchRunRepository.js";
+import type { RetrievalFence } from "./noteRetrievalSql.js";
 import type { JsonObject, Queryable } from "./types.js";
 
 export interface SourceRelationChunk {
@@ -33,15 +46,6 @@ export interface SourceRelationNote {
   targetSourceItemId: string;
   fingerprint: string;
 }
-export interface SourceRelationCandidate {
-  id: string;
-  /** Title of the candidate work: ties between equal scores break on content, never on the ID. */
-  title: string;
-  textScore: number;
-  vectorScore: number;
-  graphScore: number;
-  noteScore: number;
-}
 /**
  * A relation to persist. A verdict decided without prose (source-relations-v5) has null ideas and
  * explanation: its identity is (source, target, type), its evidence merges into an existing relation
@@ -65,6 +69,43 @@ export interface SourceRelationWrite {
   }>;
 }
 
+/** What one promotion pass changed (design E, F3 D27). */
+export interface SourceRelationPromotion {
+  /** Promoted relations created. */
+  promoted: number;
+  /** Relations whose support count changed (a judged one keeps its origin and scores). */
+  refreshed: number;
+  /** Promoted relations removed (or a judged one's support cleared) when their support was lost. */
+  retired: number;
+  /** Relations not promoted because the owner rejected an equivalent one. */
+  ownerRejected: number;
+  /** The other roots whose pairs with the root were looked at. */
+  otherRootIds: string[];
+  /** The `promote` run of the events, when anything changed. */
+  runId: string | null;
+}
+
+/** A root's composite vector (`source-composite-centroid-v2`) and its embedding space. */
+export interface SourceDiscoveryVector {
+  dimensions: 256 | 768 | 1024;
+  strategy: string;
+  /** The space part of the strategy: roots are compared only within one space. */
+  spaceKey: string;
+  model: string;
+  provider: string;
+  runtime: string;
+  /** The vector literal as PostgreSQL prints it. */
+  embedding: string;
+}
+
+/** The pairs discovery planned for a root and the state it stored (D27). */
+export interface SourceDiscoveryPlan extends DiscoverySelection {
+  matchSeq: number;
+  spaceKey: string;
+  /** Earlier roots of the space that were candidates (current notes, a composite vector). */
+  candidates: number;
+}
+
 // The hierarchy maps evidence owners to roots; the relation itself always keeps the actual owners.
 export const sourceRelationTreeSql = `with recursive tree as (
   select id, id as root_id from source_items where parent_source_item_id is null
@@ -75,13 +116,18 @@ const processableChunk = (
   alias: string
 ) => `not exists (select 1 from source_items child join chunks cc on cc.source_item_id = child.id
   join documents cd on cd.id = cc.document_id where child.parent_source_item_id = ${alias}.source_item_id and cd.metadata->>'supersededByDocumentId' is null)`;
+/**
+ * After `sourceRelationTreeSql`: the sources of roots $1 and $2 whose own chunks are evidence (no
+ * child source has current chunks), read once per source rather than once per chunk.
+ */
+const processableSourcesSql = `processable as materialized (
+  select t.id, t.root_id from tree t where t.root_id in ($1, $2) and not exists (
+    select 1 from source_items child join chunks cc on cc.source_item_id = child.id join documents cd on cd.id = cc.document_id
+     where child.parent_source_item_id = t.id and cd.metadata->>'supersededByDocumentId' is null))`;
 const chunkColumns = `c.id, c.source_item_id as "sourceItemId", c.document_id as "documentId",
   c.source_span_id as "sourceSpanId", c.content, c.content_hash as "contentHash", s.title,
   c.chunk_index as "chunkIndex", (select root.title from source_items root where root.id = t.root_id) as "rootTitle",
   case when s.metadata->>'summaryStale' = 'true' then null else s.summary end as summary`;
-// Ranked roots break score ties on the work title: IDs are random on every import.
-const byTitleThenId = (id: string) =>
-  `(select ranked_source.title from source_items ranked_source where ranked_source.id = ${id}), ${id}`;
 // A note's review status is not a fact of the evidence: approving a note keeps what it supports current.
 // Discarded and archived notes stay non-current through the explicit status checks below.
 const noteFacts = (alias: string) =>
@@ -104,25 +150,30 @@ export function noteRelationFingerprintSql(relation: string, a: string, b: strin
 const noteFingerprint = noteRelationFingerprintSql("n", "a", "b");
 
 /**
- * The note relations between two roots that source matching may use: applied (F3 D9, D23), between
+ * The note relations between roots that source matching may use: applied (F3 D9, D23), between
  * current, source-owned notes whose evidence chunks are current. `a` reads to `b` in the stored
- * direction (a symmetric relation reads from its lower endpoint; the prompt orients symmetric types
- * by content); a relation whose direction is unknown is left out, as it was before relations v2.
- * The endpoints join on the relation's own columns. $1 and $2 are the two roots, in either order.
+ * direction (a symmetric relation reads from its lower endpoint); a relation whose direction is
+ * unknown is left out, as it was before relations v2. The endpoints join on the relation's own
+ * columns. `roots` is the condition on the two notes' roots (`ta.root_id`, `tb.root_id`).
  */
-const pairNoteRelationsSql = `from atomic_note_relations n
+const noteRelationsBetweenRootsSql = (roots: string) => `from atomic_note_relations n
         join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end
         join atomic_notes b on b.id = case when n.direction = 'hi_to_lo' then n.source_atomic_note_id else n.target_atomic_note_id end
         join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
         join chunks ca on ca.id = a.evidence_chunk_id join documents da on da.id = ca.document_id
         join chunks cb on cb.id = b.evidence_chunk_id join documents db on db.id = cb.document_id
-        where ((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))
+        where ${roots}
           and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
           and n.direction <> 'unknown'
           and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
           and ${noteRelationStateSql.applied("n")} and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
-          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
+          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source'
+          and a.supersession_status = 'current' and b.supersession_status = 'current'
           and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null`;
+/** $1 and $2 are the two roots, in either order. */
+const pairNoteRelationsSql = noteRelationsBetweenRootsSql(
+  "((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))"
+);
 
 // Currentness is derived at read time, so edits and review changes never leave live stale edges.
 // Note-origin evidence is current only while its note relation is applied (F3 C3): an automatic
@@ -142,6 +193,16 @@ export const currentSourceRelationEvidenceSql = `(sc.id is not null and tc.id is
     and ${noteFingerprint} = e.snapshot->>'noteFingerprint')))`;
 export const currentSourceRelationSql = `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
   where e.relation_id = r.id and ${currentSourceRelationEvidenceSql})`;
+/**
+ * Every importance-ordered read of source relations (F3 R4, I-R11): a promoted relation has no
+ * score, so it lists after the scored ones, the better supported first. `r` is the relation alias.
+ */
+export const sourceRelationImportanceOrderSql = (r = "r") =>
+  `${r}.importance desc nulls last, ${r}.support_count desc nulls last`;
+
+/** Evidence rows promotion wrote carry this writer; only those are removed when support is lost. */
+const promotionEvidenceWriter = "promotion";
+const compositeStrategyPrefix = "source-composite-centroid-v2:";
 
 export function createSourceRelationRepository(pool: PgPool) {
   return {
@@ -183,107 +244,6 @@ export function createSourceRelationRepository(pool: PgPool) {
       return hash(JSON.stringify([result.rows[0]?.fingerprint, ...vectors]));
     },
 
-    async candidates(rootId: string, limit: number): Promise<SourceRelationCandidate[]> {
-      const text = await pool.query(
-        `${sourceRelationTreeSql}, units as (
-        select t.root_id, s.id, s.title || ' ' || case when s.metadata->>'summaryStale' = 'true' then ''
-          else coalesce(concept->>'idea',s.summary,'') end as content
-        from tree t join source_items s on s.id = t.id
-        left join source_summaries summary on summary.source_item_id = s.id and summary.is_current
-        left join lateral jsonb_array_elements(coalesce(summary.metadata->'concepts','[]'::jsonb)) concept on true
-        union all select t.root_id,c.source_item_id,c.content from chunks c join tree t on t.id = c.source_item_id
-          join documents d on d.id = c.document_id where ${currentDocument} and ${processableChunk("c")}
-      ) select b.root_id as id, max(similarity(a.content, b.content)) as score
-        from units a join units b on b.root_id <> a.root_id where a.root_id = $1
-        group by b.root_id having max(similarity(a.content, b.content)) >= 0.08
-        order by score desc, ${byTitleThenId("b.root_id")} limit $2`,
-        [rootId, limit]
-      );
-      const notes = await pool.query(
-        `${sourceRelationTreeSql}, scored as (
-        select case when ta.root_id = $1 then tb.root_id else ta.root_id end as id, max(n.final_score) as score
-        from atomic_note_relations n join atomic_notes a on a.id = n.source_atomic_note_id
-        join atomic_notes b on b.id = n.target_atomic_note_id join tree ta on ta.id = a.created_from_source_item_id
-        join tree tb on tb.id = b.created_from_source_item_id
-        where ta.root_id <> tb.root_id and $1 in (ta.root_id, tb.root_id) and ${noteRelationStateSql.applied("n")}
-          and not exists (select 1 from source_relation_evidence existing_evidence where existing_evidence.note_relation_id = n.id)
-          and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
-          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
-        group by 1
-        ) select scored.id, scored.score from scored order by scored.score desc, ${byTitleThenId("scored.id")} limit $2`,
-        [rootId, limit]
-      );
-      const graph = await pool.query(
-        `${sourceRelationTreeSql}
-        select tb.root_id as id, count(distinct a.entity_id)::float / (1 + count(*)) as score
-        from entity_mentions a join tree ta on ta.id = a.source_item_id
-        join entities entity on entity.id = a.entity_id and entity.type = 'Concept'
-        join entity_mentions b on b.entity_id = a.entity_id join tree tb on tb.id = b.source_item_id
-        where ta.root_id = $1 and tb.root_id <> $1 group by tb.root_id
-        order by score desc, ${byTitleThenId("tb.root_id")} limit $2`,
-        [rootId, limit]
-      );
-      const vectors: QueryResultRow[] = [];
-      for (const dimensions of [256, 768, 1024]) {
-        const result = await pool.query(
-          `${sourceRelationTreeSql}
-          select neighbor.root_id as id, max(neighbor.score) as score
-          from embeddings_${dimensions} a
-          left join chunks ac on a.target_type = 'chunk' and ac.id = a.target_id
-          left join documents ad on ad.id = ac.document_id
-          join tree ta on ta.id = case when a.target_type = 'source_item' then a.target_id else ac.source_item_id end
-          cross join lateral (
-            select tb.root_id, 1 - (a.embedding <=> b.embedding) as score
-            from embeddings_${dimensions} b
-            left join chunks bc on b.target_type = 'chunk' and bc.id = b.target_id
-            left join documents bd on bd.id = bc.document_id
-            join tree tb on tb.id = case when b.target_type = 'source_item' then b.target_id else bc.source_item_id end
-            where b.target_type = a.target_type and tb.root_id <> $1
-              and (b.target_type = 'source_item' or (bc.content_hash = b.content_hash and bd.metadata->>'supersededByDocumentId' is null))
-              and b.model = a.model and b.provider = a.provider and b.runtime = a.runtime and b.strategy = a.strategy
-            order by b.embedding <=> a.embedding limit $2
-          ) neighbor where ta.root_id = $1 and neighbor.score >= 0.4
-            and ((a.target_type = 'source_item' and a.strategy like 'source-composite-centroid-v2:%')
-              or (a.target_type = 'chunk' and a.strategy like 'native-v2:%' and ac.content_hash = a.content_hash and ad.metadata->>'supersededByDocumentId' is null))
-          group by neighbor.root_id order by score desc, ${byTitleThenId("neighbor.root_id")} limit $2`,
-          [rootId, limit]
-        );
-        vectors.push(...result.rows);
-      }
-      const candidates = new Map<string, SourceRelationCandidate>();
-      for (const [rows, kind] of [
-        [text.rows, "textScore"],
-        [vectors, "vectorScore"],
-        [graph.rows, "graphScore"],
-        [notes.rows, "noteScore"]
-      ] as const) {
-        for (const row of rows) {
-          const id = String(row.id),
-            candidate = candidates.get(id) ?? {
-              id,
-              title: "",
-              textScore: 0,
-              vectorScore: 0,
-              graphScore: 0,
-              noteScore: 0
-            };
-          candidate[kind] = Math.max(candidate[kind], Number(row.score));
-          candidates.set(id, candidate);
-        }
-      }
-      if (candidates.size) {
-        const titles = await pool.query<{ id: string; title: string } & QueryResultRow>(
-          "select id, title from source_items where id = any($1::uuid[])",
-          [[...candidates.keys()]]
-        );
-        for (const row of titles.rows) {
-          const candidate = candidates.get(row.id);
-          if (candidate) candidate.title = row.title;
-        }
-      }
-      return [...candidates.values()];
-    },
-
     /**
      * The note relations a pair's prompt lists: those no source relation cites yet, best first.
      * The direction of symmetric types is decided by the prompt's content order, not by an ID order.
@@ -322,11 +282,22 @@ export function createSourceRelationRepository(pool: PgPool) {
       ).rows.map((row) => row.fingerprint);
     },
 
+    /**
+     * The evidence passages of a pair: the note-cited passages first, then lexical, vector and
+     * concept pairs across the two roots, at most `limit` per root. Roots whose passage pairs exceed
+     * `bounds.exactEvidencePairs` (a book pair) take D27's fallback instead of the |A| x |B| cross
+     * joins: the note-cited passages and exact vector pairs among each root's
+     * `bounds.boundedEvidenceChunks` passages nearest to the other root's centroid (F3 R19).
+     */
     async pairChunks(
       left: string,
       right: string,
       noteChunkIds: string[],
-      limit = 8
+      limit = 8,
+      bounds: Pick<
+        RelationsConfig["sourceJudge"],
+        "exactEvidencePairs" | "boundedEvidenceChunks"
+      > = relationsConfig.sourceJudge
     ): Promise<SourceRelationChunk[]> {
       // The query is asymmetric (left chunks pair with right chunks): visit the works in a content
       // order, so the evidence never depends on which of the two roots started the match.
@@ -342,6 +313,24 @@ export function createSourceRelationRepository(pool: PgPool) {
             )
           ).rows
         : [];
+      const sizes = (
+        await pool.query<{ left: number; right: number } & QueryResultRow>(
+          `${sourceRelationTreeSql}, ${processableSourcesSql}
+          select count(*) filter (where t.root_id = $1)::int as left, count(*) filter (where t.root_id = $2)::int as right
+            from chunks c join processable t on t.id = c.source_item_id join documents d on d.id = c.document_id
+           where ${currentDocument}`,
+          [left, right]
+        )
+      ).rows[0];
+      if ((sizes?.left ?? 0) * (sizes?.right ?? 0) > bounds.exactEvidencePairs)
+        return capPerRoot(
+          [
+            ...notes,
+            ...(await boundedVectorEvidence(pool, left, right, limit, bounds.boundedEvidenceChunks))
+          ],
+          [left, right],
+          limit
+        );
       const result = await pool.query(
         `${sourceRelationTreeSql}, pairs as (
         select a.id as a, b.id as b, similarity(a.content, b.content) as score,
@@ -415,28 +404,25 @@ export function createSourceRelationRepository(pool: PgPool) {
         if (semantic[index]) direct.push(semantic[index]!);
         if (result.rows[index]) direct.push(result.rows[index] as SourceRelationChunk);
       }
-      const perRoot = new Map<string, number>();
-      return [...new Map([...notes, ...direct].map((chunk) => [chunk.id, chunk])).values()].filter(
-        (chunk) => {
-          if (![left, right].includes(chunk.rootId)) return false;
-          const count = perRoot.get(chunk.rootId) ?? 0;
-          if (count >= limit) return false;
-          perRoot.set(chunk.rootId, count + 1);
-          return true;
-        }
-      );
+      return capPerRoot([...notes, ...direct], [left, right], limit);
     },
 
+    /**
+     * The saved relations between two roots (any endpoints within them), with the roots of their
+     * endpoints and how they came to be: a judged verdict merges into them and never brings back
+     * one the owner rejected.
+     */
     async existing(left: string, right: string) {
       return (
         await pool.query(
           `${sourceRelationTreeSql}
         select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId", r.relation_type as "relationType",
-          r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.status
+          r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.status, r.origin,
+          a.root_id as "sourceRootId", b.root_id as "targetRootId"
         from source_relations r join tree a on a.id = r.source_item_id join tree b on b.id = r.target_source_item_id
         join source_items rs on rs.id = r.source_item_id join source_items rt on rt.id = r.target_source_item_id
         where (a.root_id = $1 and b.root_id = $2) or (a.root_id = $2 and b.root_id = $1)
-        order by r.importance desc, rs.title, rt.title, r.relation_type, r.source_idea, r.target_idea, r.id limit 100`,
+        order by ${sourceRelationImportanceOrderSql()}, rs.title, rt.title, r.relation_type, r.source_idea, r.target_idea, r.id limit 100`,
           [left, right]
         )
       ).rows;
@@ -470,9 +456,7 @@ export function createSourceRelationRepository(pool: PgPool) {
       const client = await pool.connect();
       try {
         await client.query("begin");
-        await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
-          [left, right].sort().join(":")
-        ]);
+        await lockRootPair(client, left, right);
         if (
           (await client.query("select 1 from source_matching_decisions where key = $1", [key])).rows
             .length
@@ -508,12 +492,163 @@ export function createSourceRelationRepository(pool: PgPool) {
           )
         ).rows.length > 0
       );
+    },
+
+    /**
+     * Promotes a root's typed applied cross-root note relations into source relations with no call
+     * (design E, F3 D27): per other root, the relations `planPromotedSourceRelations` plans, with
+     * no scores, the supporting note relations as evidence and their count; a judged relation of
+     * the same root pair and type keeps its origin and scores and only has its support refreshed;
+     * an owner rejection of an equivalent relation is final; a promoted relation whose support is
+     * gone is retired (one the owner accepted is kept). Recomputed from the current set, so a
+     * second pass changes nothing. Every change is an event of one `promote` run (D14). Limit the
+     * pass to some other roots with `otherRootIds`.
+     */
+    async promoteFromNotes(
+      rootId: string,
+      options: { otherRootIds?: readonly string[] } = {}
+    ): Promise<SourceRelationPromotion> {
+      return promoteFromNotes(pool, rootId, options.otherRootIds ?? null);
+    },
+
+    /** The root's newest composite vector, or null when it has none (a book whose chapters wait). */
+    async discoveryVector(rootId: string): Promise<SourceDiscoveryVector | null> {
+      return readDiscoveryVector(pool, rootId);
+    },
+
+    /**
+     * Plans the discovery pairs of a root (D27) in one transaction serialized per embedding space:
+     * the root takes its arrival position (`match_seq`, kept on a later match), the earlier roots of
+     * the space with current notes are compared on their composite vectors (an exact scan), the
+     * root's nearest and its reverse neighbours are selected, and the state of the root and of the
+     * reverse neighbours is stored, so a later root sees it.
+     */
+    async planDiscovery(input: {
+      rootId: string;
+      vector: SourceDiscoveryVector;
+      fingerprint: string;
+      neighbours: number;
+      /** A re-match run's visibility fence (3.17): only released roots are candidates. */
+      fence?: RetrievalFence | undefined;
+    }): Promise<SourceDiscoveryPlan> {
+      return planDiscovery(pool, input);
+    },
+
+    /** The stored discovery state of some roots (the order replay and the tests read it). */
+    async matchStates(rootIds: readonly string[]) {
+      return (
+        await pool.query<
+          {
+            rootId: string;
+            matchSeq: string;
+            nearestRootId: string | null;
+            nearestCosine: number | null;
+            spaceKey: string;
+            fingerprint: string;
+          } & QueryResultRow
+        >(
+          `select root_id as "rootId", match_seq as "matchSeq", nearest_root_id as "nearestRootId",
+             nearest_cosine as "nearestCosine", space_key as "spaceKey", fingerprint
+           from source_match_state where root_id = any($1::uuid[]) order by match_seq`,
+          [rootIds]
+        )
+      ).rows.map((row) => ({ ...row, matchSeq: Number(row.matchSeq) }));
     }
   };
 }
 
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** Distinct passages in order, at most `limit` per root, of the two roots only. */
+function capPerRoot(
+  chunks: readonly SourceRelationChunk[],
+  roots: readonly string[],
+  limit: number
+): SourceRelationChunk[] {
+  const perRoot = new Map<string, number>();
+  return [...new Map(chunks.map((chunk) => [chunk.id, chunk])).values()].filter((chunk) => {
+    if (!roots.includes(chunk.rootId)) return false;
+    const count = perRoot.get(chunk.rootId) ?? 0;
+    if (count >= limit) return false;
+    perRoot.set(chunk.rootId, count + 1);
+    return true;
+  });
+}
+
+/**
+ * D27's evidence fallback for large roots (F3 R19): in the embedding space the two roots share
+ * most, each root's `bounded` passages nearest to the other root's centroid, then the exact pairs
+ * among them by distance (content, then IDs, break ties). Linear in the roots' passages, where the
+ * cross joins are quadratic. $1 and $2 are the roots in content order.
+ */
+async function boundedVectorEvidence(
+  pool: PgPool,
+  left: string,
+  right: string,
+  limit: number,
+  bounded: number
+): Promise<SourceRelationChunk[]> {
+  const pairs: Array<{ a: string; b: string; score: number }> = [];
+  for (const dimensions of [256, 768, 1024]) {
+    const side = (
+      root: string
+    ) => `select c.id, c.content_hash, c.chunk_index, e.embedding, e.provider, e.model, e.runtime, e.strategy
+        from chunks c join processable t on t.id = c.source_item_id join documents d on d.id = c.document_id
+        join embeddings_${dimensions} e on e.target_id = c.id and e.target_type = 'chunk' and e.content_hash = c.content_hash
+       where t.root_id = ${root} and e.strategy like 'native-v2:%' and ${currentDocument}`;
+    const spaces = (alias: string) =>
+      `(select provider, model, runtime, strategy, count(*) as n from ${alias} group by 1, 2, 3, 4)`;
+    const rows = await pool.query<{ a: string; b: string; score: number } & QueryResultRow>(
+      `${sourceRelationTreeSql}, ${processableSourcesSql}, a_side as materialized (${side("$1")}),
+      b_side as materialized (${side("$2")}),
+      space as (
+        select provider, model, runtime, strategy from ${spaces("a_side")} a join ${spaces("b_side")} b
+          using (provider, model, runtime, strategy)
+         order by a.n + b.n desc, strategy limit 1
+      ), a_space as (select a.* from a_side a join space using (provider, model, runtime, strategy)),
+      b_space as (select b.* from b_side b join space using (provider, model, runtime, strategy)),
+      centers as materialized (
+        select (select avg(embedding) from a_space) as a_center, (select avg(embedding) from b_space) as b_center
+      ), a_top as (
+        select a.* from a_space a cross join centers
+         order by a.embedding <=> centers.b_center, a.content_hash, a.chunk_index, a.id limit $4
+      ), b_top as (
+        select b.* from b_space b cross join centers
+         order by b.embedding <=> centers.a_center, b.content_hash, b.chunk_index, b.id limit $4
+      )
+      select a.id as a, b.id as b, 1 - (a.embedding <=> b.embedding) as score from a_top a cross join b_top b
+       order by a.embedding <=> b.embedding, a.content_hash, b.content_hash, a.chunk_index, b.chunk_index, a.id, b.id
+       limit $3`,
+      [left, right, limit, bounded]
+    );
+    pairs.push(...rows.rows);
+  }
+  const ids = [
+    ...new Set(
+      pairs
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .flatMap((pair) => [pair.a, pair.b])
+    )
+  ];
+  if (!ids.length) return [];
+  return (
+    await pool.query<SourceRelationChunk & QueryResultRow>(
+      `${sourceRelationTreeSql} select ${chunkColumns},t.root_id as "rootId"
+        from chunks c join tree t on t.id = c.source_item_id join source_items s on s.id = c.source_item_id
+       where c.id = any($1::uuid[]) order by array_position($1::uuid[],c.id)`,
+      [ids]
+    )
+  ).rows;
+}
+
+/** Serializes the writers of one pair of roots: judged decisions and promotion. */
+async function lockRootPair(db: Queryable, left: string, right: string): Promise<void> {
+  await db.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+    [left, right].sort().join(":")
+  ]);
 }
 
 /** Two roots in a content order (title, then ID only when the titles are equal). */
@@ -550,10 +685,17 @@ export function sourceRelationIdentityKey(
   return hash(JSON.stringify(["source-relation", ...endpoints, relationType]));
 }
 
+/** $1 one source: its root. */
+const rootOfSql = `${sourceRelationTreeSql} select root_id from tree where id = $1`;
+
 /**
- * Where a verdict without prose goes: the existing relation with the same endpoints and type (its
- * own identity first, then an accepted one, then the strongest), a new relation, or nowhere when
- * the owner rejected one. Runs inside the decision's transaction and pair lock.
+ * Where a verdict without prose goes (F3 D27 merge rules): the relation of the same type (or its
+ * equivalent, `contrasts` for `contradicts`) between the same endpoints, or one between the two
+ * roots themselves read the same way (the one row of a root pair and type that promotion keeps,
+ * which a book's chapters' verdicts join); its own identity first, then an accepted one, then a
+ * judged one, then the strongest. A promoted relation it lands on is upgraded to `judged` with the
+ * verdict's scores and keeps its support count; a judged one is never downgraded. Nowhere when the
+ * owner rejected an equivalent relation. Runs inside the decision's transaction and pair lock.
  */
 async function resolveDecidedRelation(
   db: Queryable,
@@ -565,23 +707,47 @@ async function resolveDecidedRelation(
     relation.targetSourceItemId,
     relation.relationType
   );
+  const symmetric = symmetricSourceRelationTypes.includes(relation.relationType);
+  const sourceRoot = String((await db.query(rootOfSql, [relation.sourceItemId])).rows[0]?.root_id);
+  const targetRoot = String(
+    (await db.query(rootOfSql, [relation.targetSourceItemId])).rows[0]?.root_id
+  );
   const equivalent = (
-    await db.query<{ id: string; status: string; reversed: boolean } & QueryResultRow>(
-      `select id, status::text as status, source_item_id <> $1 as reversed from source_relations
-      where relation_type = $3 and ((source_item_id = $1 and target_source_item_id = $2)
-        or ($4 and source_item_id = $2 and target_source_item_id = $1))
-      order by (identity_key = $5) desc, (status = 'accepted') desc, importance desc, created_at, id`,
+    await db.query<
+      { id: string; status: string; origin: string; reversed: boolean } & QueryResultRow
+    >(
+      `${sourceRelationTreeSql}
+      select r.id, r.status::text as status, r.origin, ta.root_id <> $6::uuid as reversed
+        from source_relations r join tree ta on ta.id = r.source_item_id join tree tb on tb.id = r.target_source_item_id
+       where r.relation_type = any($3::text[])
+         and ((r.source_item_id = $1 and r.target_source_item_id = $2)
+           or ($4 and r.source_item_id = $2 and r.target_source_item_id = $1)
+           or (r.source_item_id = ta.root_id and r.target_source_item_id = tb.root_id
+             and ((ta.root_id = $6 and tb.root_id = $7) or ($4 and ta.root_id = $7 and tb.root_id = $6))))
+       order by (r.identity_key = $5) desc, (r.status = 'accepted') desc, (r.origin = 'judged') desc,
+         ${sourceRelationImportanceOrderSql()}, r.created_at, r.id`,
       [
         relation.sourceItemId,
         relation.targetSourceItemId,
-        relation.relationType,
-        symmetricSourceRelationTypes.includes(relation.relationType),
-        identity
+        equivalentSourceRelationTypes(relation.relationType),
+        symmetric,
+        identity,
+        sourceRoot,
+        targetRoot
       ]
     )
   ).rows;
   if (equivalent.some((row) => row.status === "rejected")) return null;
-  if (equivalent[0]) return { id: equivalent[0].id, reversed: equivalent[0].reversed };
+  const chosen = equivalent[0];
+  if (chosen) {
+    if (chosen.origin === "promoted")
+      await db.query(
+        `update source_relations set origin = 'judged', importance = $2, confidence = $3,
+           metadata = metadata || $4::jsonb, updated_at = now() where id = $1`,
+        [chosen.id, relation.importance, relation.confidence, JSON.stringify(metadata)]
+      );
+    return { id: chosen.id, reversed: chosen.reversed };
+  }
   const result = await db.query(
     `insert into source_relations (identity_key,source_item_id,target_source_item_id,relation_type,importance,confidence,metadata)
     values ($1,$2,$3,$4,$5,$6,$7) on conflict (identity_key) do update set identity_key = excluded.identity_key returning id`,
@@ -620,6 +786,26 @@ function reverseEvidence(
         }
       : null
   };
+}
+
+/** The key of one evidence row: its origin, both passages at their revisions and the note relation. */
+function evidenceKey(
+  origin: "atomic_notes" | "source_analysis",
+  source: Pick<SourceRelationChunk, "id" | "contentHash">,
+  target: Pick<SourceRelationChunk, "id" | "contentHash">,
+  note: Pick<SourceRelationNote, "id" | "fingerprint"> | null
+): string {
+  return hash(
+    JSON.stringify([
+      origin,
+      source.id,
+      source.contentHash,
+      target.id,
+      target.contentHash,
+      note?.id,
+      note?.fingerprint
+    ])
+  );
 }
 
 /** Persists one relation and its evidence; false when it was not written (owner-rejected). */
@@ -707,17 +893,7 @@ async function persistRelation(
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (relation_id,evidence_key) do nothing`,
       [
         id,
-        hash(
-          JSON.stringify([
-            origin,
-            source.id,
-            source.contentHash,
-            target.id,
-            target.contentHash,
-            note?.id,
-            note?.fingerprint
-          ])
-        ),
+        evidenceKey(origin, source, target, note),
         origin,
         source.id,
         target.id,
@@ -730,6 +906,543 @@ async function persistRelation(
     );
   }
   return true;
+}
+
+// --- promotion (design E, F3 D27) ------------------------------------------------------------------
+
+interface PromotionRow extends QueryResultRow {
+  id: string;
+  type: string;
+  probability: number | null;
+  subjectNoteId: string;
+  objectNoteId: string;
+  subjectRootId: string;
+  objectRootId: string;
+  subjectIdea: string;
+  objectIdea: string;
+  subjectChunkId: string;
+  objectChunkId: string;
+  fingerprint: string;
+}
+
+interface PromotionChunk extends QueryResultRow {
+  id: string;
+  contentHash: string;
+  content: string;
+  sourceSpanId: string | null;
+  rootId: string;
+  sourceItemId: string;
+}
+
+interface HeldRelation extends QueryResultRow {
+  id: string;
+  sourceItemId: string;
+  targetSourceItemId: string;
+  sourceRootId: string;
+  targetRootId: string;
+  relationType: string;
+  status: string;
+  origin: "judged" | "promoted";
+  supportCount: number | null;
+  identityKey: string;
+  importance: number | null;
+}
+
+/**
+ * $1 the root, $2 the other roots (null: all): the typed applied note relations between the root
+ * and other roots, each read from its subject (a symmetric one from its lower endpoint).
+ */
+const promotionRelationsSql = `${sourceRelationTreeSql}
+  select n.id, n.relation_type as type, coalesce(n.probability, n.final_score)::float8 as probability,
+    a.id as "subjectNoteId", b.id as "objectNoteId", ta.root_id as "subjectRootId", tb.root_id as "objectRootId",
+    a.idea_statement as "subjectIdea", b.idea_statement as "objectIdea",
+    a.evidence_chunk_id as "subjectChunkId", b.evidence_chunk_id as "objectChunkId", ${noteFingerprint} as fingerprint
+  ${noteRelationsBetweenRootsSql(`$1 in (ta.root_id, tb.root_id) and ta.root_id <> tb.root_id
+    and ($2::uuid[] is null or (case when ta.root_id = $1 then tb.root_id else ta.root_id end) = any($2::uuid[]))`)}
+    and n.relation_type is not null
+  order by n.id`;
+
+/** $1 the root, $2 the other roots (null: all): the source relations promotion may hold with them. */
+const heldOtherRootsSql = `${sourceRelationTreeSql}
+  select distinct case when ta.root_id = $1 then tb.root_id else ta.root_id end as id
+    from source_relations r join tree ta on ta.id = r.source_item_id join tree tb on tb.id = r.target_source_item_id
+   where $1 in (ta.root_id, tb.root_id) and ta.root_id <> tb.root_id
+     and (r.origin = 'promoted' or r.support_count is not null)
+     and ($2::uuid[] is null or (case when ta.root_id = $1 then tb.root_id else ta.root_id end) = any($2::uuid[]))`;
+
+/** $1, $2 two roots: every source relation between them, any endpoints within them. */
+const heldRelationsSql = `${sourceRelationTreeSql}
+  select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId",
+    ta.root_id as "sourceRootId", tb.root_id as "targetRootId", r.relation_type as "relationType",
+    r.status::text as status, r.origin, r.support_count as "supportCount", r.identity_key as "identityKey", r.importance
+    from source_relations r join tree ta on ta.id = r.source_item_id join tree tb on tb.id = r.target_source_item_id
+   where (ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1)
+   order by r.created_at, r.id
+   for update of r`;
+
+/** $1 chunk IDs: the passages of promoted evidence, current documents only, with their roots. */
+const promotionChunksSql = `${sourceRelationTreeSql}
+  select c.id, c.content_hash as "contentHash", c.content, c.source_span_id as "sourceSpanId",
+    t.root_id as "rootId", c.source_item_id as "sourceItemId"
+    from chunks c join documents d on d.id = c.document_id join tree t on t.id = c.source_item_id
+   where c.id = any($1::uuid[]) and ${currentDocument}`;
+
+/** $1 a relation's endpoint: the sources within it (itself and its descendants). */
+const subtreeSql = `with recursive sub as (
+    select id from source_items where id = $1 union all
+    select child.id from source_items child join sub on child.parent_source_item_id = sub.id
+  ) select id from sub`;
+
+const imageSql = "select to_jsonb(r) as image from source_relations r where r.id = $1";
+
+async function promoteFromNotes(
+  pool: PgPool,
+  rootId: string,
+  otherRootIds: readonly string[] | null
+): Promise<SourceRelationPromotion> {
+  const filter = otherRootIds ? [...otherRootIds] : null;
+  const relations = (await pool.query<PromotionRow>(promotionRelationsSql, [rootId, filter])).rows;
+  const held = (
+    await pool.query<{ id: string } & QueryResultRow>(heldOtherRootsSql, [rootId, filter])
+  ).rows;
+  const others = [
+    ...new Set([
+      ...relations.map((row) =>
+        row.subjectRootId === rootId ? row.objectRootId : row.subjectRootId
+      ),
+      ...held.map((row) => row.id)
+    ])
+  ].filter((id) => id !== rootId);
+  const result: SourceRelationPromotion = {
+    promoted: 0,
+    refreshed: 0,
+    retired: 0,
+    ownerRejected: 0,
+    otherRootIds: [],
+    runId: null
+  };
+  if (!others.length) return result;
+  const titles = new Map(
+    (
+      await pool.query<{ id: string; title: string } & QueryResultRow>(
+        "select id, title from source_items where id = any($1::uuid[])",
+        [[rootId, ...others]]
+      )
+    ).rows.map((row) => [row.id, row.title])
+  );
+  const compareRoots = (a: string, b: string) => {
+    const [ta, tb] = [titles.get(a) ?? "", titles.get(b) ?? ""];
+    return ta < tb ? -1 : ta > tb ? 1 : a < b ? -1 : a > b ? 1 : 0;
+  };
+  const plans = planPromotedSourceRelations({
+    rootId,
+    relations: relations.map((row) => ({
+      id: row.id,
+      type: row.type,
+      subjectRootId: row.subjectRootId,
+      objectRootId: row.objectRootId,
+      probability: row.probability === null ? null : Number(row.probability),
+      contentKey: `${row.subjectIdea}\u0000${row.objectIdea}`
+    })),
+    compareRoots
+  });
+  const byId = new Map(relations.map((row) => [row.id, row]));
+  const chunks = new Map(
+    (
+      await pool.query<PromotionChunk>(promotionChunksSql, [
+        [...new Set(relations.flatMap((row) => [row.subjectChunkId, row.objectChunkId]))]
+      ])
+    ).rows.map((row) => [row.id, row])
+  );
+  const runs = createRelationMatchRunRepository(pool);
+  const events = createRelationEventRepository(pool);
+  let runId: string | null = null;
+  const openRun = async () => (runId ??= (await runs.start({ kind: "promote", rootId })).id);
+  result.otherRootIds = others.toSorted(compareRoots);
+  let outcome: "succeeded" | "failed" = "failed";
+  try {
+    for (const other of result.otherRootIds) {
+      const pairKey = [rootId, other].sort().join(":");
+      const pairPlans = plans.filter((plan) =>
+        [plan.sourceRootId, plan.targetRootId].includes(other)
+      );
+      await withTransaction(pool, async (client) => {
+        await lockRootPair(client, rootId, other);
+        const rows = (await client.query<HeldRelation>(heldRelationsSql, [rootId, other])).rows;
+        const handled = new Set<string>();
+        const record = async (
+          kind: "promoted" | "retired",
+          relationId: string,
+          before: JsonObject | null,
+          after: JsonObject | null
+        ) =>
+          events.append(
+            {
+              runId: await openRun(),
+              relationKind: "source",
+              relationId,
+              pairKey,
+              kind,
+              before,
+              after
+            },
+            client
+          );
+        const image = async (id: string) =>
+          ((await client.query<{ image: JsonObject } & QueryResultRow>(imageSql, [id])).rows[0]
+            ?.image ?? null) as JsonObject | null;
+        for (const plan of pairPlans) {
+          const equivalents = rows.filter((row) => matchesPlan(row, plan));
+          equivalents.forEach((row) => handled.add(row.id));
+          if (equivalents.some((row) => row.status === "rejected")) {
+            result.ownerRejected += 1;
+            continue;
+          }
+          const target = pickPromotionTarget(equivalents, plan);
+          const support = plan.noteRelationIds.length;
+          let relationId: string;
+          if (!target) {
+            const inserted = await client.query<{ id: string } & QueryResultRow>(
+              `insert into source_relations (identity_key, source_item_id, target_source_item_id, relation_type,
+                 importance, confidence, origin, support_count, metadata)
+               values ($1, $2, $3, $4, null, null, 'promoted', $5, $6) on conflict (identity_key) do nothing returning id`,
+              [
+                sourceRelationIdentityKey(plan.sourceRootId, plan.targetRootId, plan.type),
+                plan.sourceRootId,
+                plan.targetRootId,
+                plan.type,
+                support,
+                { promotedBy: await openRun() }
+              ]
+            );
+            if (!inserted.rows[0]) continue;
+            relationId = inserted.rows[0].id;
+            await record("promoted", relationId, null, await image(relationId));
+            result.promoted += 1;
+          } else {
+            relationId = target.id;
+            if (target.supportCount !== support) {
+              const before = await image(relationId);
+              await client.query(
+                "update source_relations set support_count = $2, updated_at = now() where id = $1",
+                [relationId, support]
+              );
+              await record("promoted", relationId, before, await image(relationId));
+              result.refreshed += 1;
+            }
+          }
+          const relation = target ?? {
+            sourceItemId: plan.sourceRootId,
+            targetSourceItemId: plan.targetRootId
+          };
+          await syncPromotionEvidence(client, relationId, relation, plan, byId, chunks, openRun);
+        }
+        for (const row of rows) {
+          if (handled.has(row.id) || row.status === "rejected") continue;
+          if (row.origin === "promoted" && row.status === "pending_review") {
+            const before = await image(row.id);
+            await client.query("delete from source_relations where id = $1", [row.id]);
+            await record("retired", row.id, before, null);
+            result.retired += 1;
+          } else if (row.supportCount !== null && row.origin === "judged") {
+            const before = await image(row.id);
+            await client.query(
+              "update source_relations set support_count = null, updated_at = now() where id = $1",
+              [row.id]
+            );
+            await removeStalePromotionEvidence(client, row.id, []);
+            await record("retired", row.id, before, await image(row.id));
+            result.retired += 1;
+          } else if (row.origin === "promoted") {
+            // The owner kept it: the relation stays, with nothing promotion no longer supports.
+            await removeStalePromotionEvidence(client, row.id, []);
+          }
+        }
+      });
+    }
+    outcome = "succeeded";
+  } finally {
+    if (runId)
+      await runs.finish(runId, {
+        outcome,
+        counts: {
+          promoted: result.promoted,
+          refreshed: result.refreshed,
+          retired: result.retired,
+          ownerRejected: result.ownerRejected
+        }
+      });
+  }
+  result.runId = runId;
+  return result;
+}
+
+/** Whether a held relation is the plan's relation: the same root pair read the same way and type. */
+function matchesPlan(row: HeldRelation, plan: PromotedSourceRelationPlan): boolean {
+  if (!equivalentSourceRelationTypes(plan.type).includes(row.relationType)) return false;
+  if (row.sourceRootId === plan.sourceRootId && row.targetRootId === plan.targetRootId) return true;
+  return (
+    plan.symmetric &&
+    row.sourceRootId === plan.targetRootId &&
+    row.targetRootId === plan.sourceRootId
+  );
+}
+
+/**
+ * The relation a plan lands on: one between the roots themselves first, then an accepted one, then
+ * a judged one (never downgraded), then the strongest.
+ */
+function pickPromotionTarget(
+  rows: readonly HeldRelation[],
+  plan: PromotedSourceRelationPlan
+): HeldRelation | null {
+  const atRoots = (row: HeldRelation) =>
+    [plan.sourceRootId, plan.targetRootId].includes(row.sourceItemId) &&
+    [plan.sourceRootId, plan.targetRootId].includes(row.targetSourceItemId);
+  return (
+    rows.toSorted(
+      (a, b) =>
+        Number(atRoots(b)) - Number(atRoots(a)) ||
+        Number(b.status === "accepted") - Number(a.status === "accepted") ||
+        Number(b.origin === "judged") - Number(a.origin === "judged") ||
+        (b.importance ?? -1) - (a.importance ?? -1) ||
+        (a.id < b.id ? -1 : 1)
+    )[0] ?? null
+  );
+}
+
+/**
+ * Writes the evidence of a promoted (or support-refreshed) relation: each supporting note relation
+ * with its two passages, turned to the relation's endpoints, where both passages lie within them
+ * and are current; promotion evidence of note relations that no longer support it is removed.
+ */
+async function syncPromotionEvidence(
+  db: Queryable,
+  relationId: string,
+  relation: { sourceItemId: string; targetSourceItemId: string },
+  plan: PromotedSourceRelationPlan,
+  relations: ReadonlyMap<string, PromotionRow>,
+  chunks: ReadonlyMap<string, PromotionChunk>,
+  /** Opens the pass's run on its first change: a pass that changes nothing records no run. */
+  runId: () => Promise<string>
+): Promise<void> {
+  const within = async (endpoint: string) =>
+    new Set(
+      (await db.query<{ id: string } & QueryResultRow>(subtreeSql, [endpoint])).rows.map(
+        (row) => row.id
+      )
+    );
+  const [sourceScope, targetScope] = [
+    await within(relation.sourceItemId),
+    await within(relation.targetSourceItemId)
+  ];
+  const held = new Set(
+    (
+      await db.query<{ key: string } & QueryResultRow>(
+        "select evidence_key as key from source_relation_evidence where relation_id = $1",
+        [relationId]
+      )
+    ).rows.map((row) => row.key)
+  );
+  const keys: string[] = [];
+  for (const id of plan.noteRelationIds) {
+    const note = relations.get(id);
+    if (!note) continue;
+    let [source, target] = [chunks.get(note.subjectChunkId), chunks.get(note.objectChunkId)];
+    let [sourceNote, targetNote] = [note.subjectNoteId, note.objectNoteId];
+    if (source && !sourceScope.has(source.sourceItemId)) {
+      [source, target] = [target, source];
+      [sourceNote, targetNote] = [targetNote, sourceNote];
+    }
+    if (!source || !target) continue;
+    if (!sourceScope.has(source.sourceItemId) || !targetScope.has(target.sourceItemId)) continue;
+    const key = evidenceKey("atomic_notes", source, target, note);
+    keys.push(key);
+    if (held.has(key)) continue;
+    await db.query(
+      `insert into source_relation_evidence (relation_id, evidence_key, origin, source_chunk_id, target_chunk_id,
+         note_relation_id, source_note_id, target_note_id, snapshot, metadata)
+       values ($1, $2, 'atomic_notes', $3, $4, $5, $6, $7, $8, $9) on conflict (relation_id, evidence_key) do nothing`,
+      [
+        relationId,
+        key,
+        source.id,
+        target.id,
+        note.id,
+        sourceNote,
+        targetNote,
+        {
+          sourceHash: source.contentHash,
+          targetHash: target.contentHash,
+          sourceId: source.id,
+          targetId: target.id,
+          sourceSpanId: source.sourceSpanId,
+          targetSpanId: target.sourceSpanId,
+          sourceExcerpt: source.content,
+          targetExcerpt: target.content,
+          noteFingerprint: note.fingerprint
+        },
+        { writer: promotionEvidenceWriter, runId: await runId() }
+      ]
+    );
+  }
+  await removeStalePromotionEvidence(db, relationId, keys);
+}
+
+async function removeStalePromotionEvidence(
+  db: Queryable,
+  relationId: string,
+  keep: readonly string[]
+): Promise<void> {
+  await db.query(
+    `delete from source_relation_evidence where relation_id = $1 and origin = 'atomic_notes'
+       and metadata->>'writer' = $2 and not (evidence_key = any($3::text[]))`,
+    [relationId, promotionEvidenceWriter, [...keep]]
+  );
+}
+
+// --- discovery (design E, F3 D27) ------------------------------------------------------------------
+
+async function readDiscoveryVector(
+  db: Queryable,
+  rootId: string
+): Promise<SourceDiscoveryVector | null> {
+  let newest: { vector: SourceDiscoveryVector; createdAt: number } | null = null;
+  for (const dimensions of [256, 768, 1024] as const) {
+    const row = (
+      await db.query<
+        {
+          embedding: string;
+          strategy: string;
+          model: string;
+          provider: string;
+          runtime: string;
+          createdAt: Date;
+        } & QueryResultRow
+      >(
+        `select embedding::text as embedding, strategy, model, provider, runtime, created_at as "createdAt"
+           from embeddings_${dimensions}
+          where target_type = 'source_item' and target_id = $1 and strategy like '${compositeStrategyPrefix}%'
+          order by created_at desc limit 1`,
+        [rootId]
+      )
+    ).rows[0];
+    if (!row) continue;
+    const createdAt = new Date(row.createdAt).getTime();
+    if (newest && newest.createdAt >= createdAt) continue;
+    const space = `${dimensions}:${row.strategy.slice(compositeStrategyPrefix.length)}`;
+    newest = {
+      vector: {
+        dimensions,
+        strategy: row.strategy,
+        spaceKey: space.length <= 200 ? space : `${dimensions}:${hash(space)}`,
+        model: row.model,
+        provider: row.provider,
+        runtime: row.runtime,
+        embedding: row.embedding
+      },
+      createdAt
+    };
+  }
+  return newest?.vector ?? null;
+}
+
+interface CandidateRow extends QueryResultRow {
+  rootId: string;
+  title: string;
+  cosine: number;
+  linked: boolean;
+  nearestRootId: string | null;
+  nearestCosine: number | null;
+  nearestRootCosine: number | null;
+}
+
+async function planDiscovery(
+  pool: PgPool,
+  input: {
+    rootId: string;
+    vector: SourceDiscoveryVector;
+    fingerprint: string;
+    neighbours: number;
+    fence?: RetrievalFence | undefined;
+  }
+): Promise<SourceDiscoveryPlan> {
+  const { rootId, vector } = input;
+  return withTransaction(pool, async (client) => {
+    await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      `source-discovery:${vector.spaceKey}`
+    ]);
+    const seq = Number(
+      (
+        await client.query<{ matchSeq: string } & QueryResultRow>(
+          `insert into source_match_state (root_id, space_key, fingerprint, matched_at) values ($1, $2, $3, now())
+           on conflict (root_id) do update set space_key = excluded.space_key, fingerprint = excluded.fingerprint, matched_at = now()
+           returning match_seq as "matchSeq"`,
+          [rootId, vector.spaceKey, input.fingerprint]
+        )
+      ).rows[0]!.matchSeq
+    );
+    // An exact scan: a library has at most thousands of roots, each with one composite vector.
+    const candidates = (
+      await client.query<CandidateRow>(
+        `${sourceRelationTreeSql}
+        select m.root_id as "rootId", root.title, (1 - (e.embedding <=> $2::vector))::float8 as cosine,
+          m.nearest_root_id as "nearestRootId", m.nearest_cosine::float8 as "nearestCosine",
+          (select (1 - (e.embedding <=> ne.embedding))::float8 from embeddings_${vector.dimensions} ne
+            where ne.target_type = 'source_item' and ne.target_id = m.nearest_root_id
+              and ne.strategy = $3 and ne.model = $4 limit 1) as "nearestRootCosine",
+          exists (select 1 from source_relations r join tree sa on sa.id = r.source_item_id join tree sb on sb.id = r.target_source_item_id
+            where r.status <> 'rejected' and ((sa.root_id = $1 and sb.root_id = m.root_id) or (sa.root_id = m.root_id and sb.root_id = $1))) as linked
+          from source_match_state m
+          join source_items root on root.id = m.root_id and root.parent_source_item_id is null
+          join embeddings_${vector.dimensions} e on e.target_type = 'source_item' and e.target_id = m.root_id
+            and e.strategy = $3 and e.model = $4 and e.provider = $5 and e.runtime = $6
+         where m.space_key = $7 and m.root_id <> $1 and m.match_seq < $8
+           and ($9::uuid[] is null or m.root_id = any($9::uuid[]))
+           and exists (select 1 from atomic_notes note join tree t on t.id = note.created_from_source_item_id
+             where t.root_id = m.root_id and note.status not in ('rejected','archived') and note.supersession_status = 'current')`,
+        [
+          rootId,
+          vector.embedding,
+          vector.strategy,
+          vector.model,
+          vector.provider,
+          vector.runtime,
+          vector.spaceKey,
+          seq,
+          input.fence ? [...input.fence.rootSourceItemIds] : null
+        ]
+      )
+    ).rows.map((row): DiscoveryCandidate => ({
+      rootId: row.rootId,
+      title: row.title,
+      cosine: Number(row.cosine),
+      linked: row.linked,
+      nearestRootId: row.nearestRootId,
+      nearestCosine: row.nearestCosine === null ? null : Number(row.nearestCosine),
+      nearestRootCosine: row.nearestRootCosine === null ? null : Number(row.nearestRootCosine)
+    }));
+    const selection = selectDiscoveryPairs({
+      rootId,
+      candidates,
+      neighbours: input.neighbours
+    });
+    await client.query(
+      "update source_match_state set nearest_root_id = $2, nearest_cosine = $3 where root_id = $1",
+      [rootId, selection.state.nearestRootId, selection.state.nearestCosine]
+    );
+    for (const update of selection.reverse)
+      await client.query(
+        "update source_match_state set nearest_root_id = $2, nearest_cosine = $3 where root_id = $1",
+        [update.rootId, update.nearestRootId, update.nearestCosine]
+      );
+    return {
+      ...selection,
+      matchSeq: seq,
+      spaceKey: vector.spaceKey,
+      candidates: candidates.length
+    };
+  });
 }
 
 export async function listSourceRelations(
@@ -749,12 +1462,13 @@ export async function listSourceRelations(
     select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId",
       a.title as "sourceTitle", b.title as "targetTitle", r.relation_type as "relationType",
       r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.explanation,r.importance,r.confidence,r.status,
+      r.origin, r.support_count as "supportCount",
       ${currentSourceRelationSql} as current,r.updated_at as "updatedAt",count(*) over()::int as total
     from source_relations r join source_items a on a.id = r.source_item_id join source_items b on b.id = r.target_source_item_id
     where ($5::uuid is null or r.id=$5) and (r.source_item_id in (select id from source_scope) or r.target_source_item_id in (select id from source_scope))
       and ($2::uuid is null or (r.source_item_id in (select id from source_scope) and r.target_source_item_id in (select id from target_scope))
         or (r.target_source_item_id in (select id from source_scope) and r.source_item_id in (select id from target_scope)))
-    order by (r.status = 'rejected'), r.importance desc,r.id limit $3 offset $4`,
+    order by (r.status = 'rejected'), ${sourceRelationImportanceOrderSql()}, r.id limit $3 offset $4`,
     [sourceId, targetId, limit + 1, offset, relationId ?? null]
   );
   const rows = result.rows.slice(0, limit);
@@ -772,6 +1486,9 @@ export async function listSourceRelations(
     const { total: _total, ...value } = row;
     relations.push({
       ...value,
+      importance: value.importance === null ? null : Number(value.importance),
+      confidence: value.confidence === null ? null : Number(value.confidence),
+      supportCount: value.supportCount === null ? null : Number(value.supportCount),
       updatedAt: new Date(row.updatedAt).toISOString(),
       evidence: evidence.rows
     });

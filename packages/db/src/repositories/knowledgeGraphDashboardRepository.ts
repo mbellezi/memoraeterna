@@ -2,7 +2,10 @@ import type { QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
 import { appliedNoteRelationSql } from "./note-relation-sql.js";
-import { currentSourceRelationSql } from "./sourceRelationRepository.js";
+import {
+  currentSourceRelationSql,
+  sourceRelationImportanceOrderSql
+} from "./sourceRelationRepository.js";
 import type { AtomicNoteStatus, SourceItemType } from "./types.js";
 
 export type KnowledgeGraphDashboardMode = "sources" | "atomic_notes";
@@ -230,7 +233,7 @@ async function listSourceGraph(
       r.relation_type as label,r.explanation as description,r.confidence,r.importance
       from source_relations r where r.status <> 'rejected' and ${currentSourceRelationSql}
       and r.source_item_id = any($1::uuid[]) and r.target_source_item_id = any($1::uuid[])
-      order by r.importance desc,r.id limit $2`,
+      order by ${sourceRelationImportanceOrderSql()},r.id limit $2`,
       [sourceIds, maxEdges + 1]
     );
     return {

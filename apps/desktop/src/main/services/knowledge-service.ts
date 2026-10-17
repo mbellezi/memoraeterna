@@ -6,7 +6,11 @@ import {
 } from "./prompt-runtime.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
-import { matchSources, sourceMatchingOperation } from "./source-relation-processing.js";
+import {
+  matchSources,
+  promoteSourceRelations,
+  sourceMatchingOperation
+} from "./source-relation-processing.js";
 import {
   RelationMatcher,
   type DecidedNote,
@@ -310,7 +314,10 @@ export class KnowledgeService {
       counts: { completed: number; total: number }
     ) => void | Promise<void>,
     context: AiTaskLogContext = {},
-    regenerate = false
+    regenerate = false,
+    // Design E (F3 D27): `defer` promotes only and records discovery as deferred (relation remote
+    // calls switched off, or a hierarchy root whose last record has not linked yet).
+    options: { discovery?: "run" | "defer"; fence?: RetrievalFence } = {}
   ) {
     return matchSources({
       pool: this.requirePool(),
@@ -324,8 +331,19 @@ export class KnowledgeService {
       regenerate,
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
+      ...(options.discovery ? { discovery: options.discovery } : {}),
+      ...(options.fence ? { fence: options.fence } : {}),
       context
     });
+  }
+
+  /**
+   * Re-promotes the source relations of these roots from their typed applied note relations, with
+   * no call (F3 D27, R14): what a typing, a change of type or direction, a review or a revert
+   * enqueues for both roots of the note relations it changed.
+   */
+  public async promoteSourceRelations(rootIds: readonly string[]) {
+    return promoteSourceRelations(this.requirePool(), rootIds);
   }
 
   public async getGraphSourceConnectionDetails(sourceItemId: string, targetSourceItemId: string) {
@@ -1742,10 +1760,11 @@ export class KnowledgeService {
   }
 
   /**
-   * The link job's discovery step for one root. Until T53's design E it is the v5 source matcher
-   * on the root, its calls at the link job's priority and each remote one asked of the daily cap
-   * first (D26): a refused call stops the pass with `errors.relations.dailyCapReached`, and the
-   * pass's saved state lets the next link job resume it.
+   * The link job's discovery step for one root: design E (D27) on the root, promotion and then the
+   * nearest-root discovery, each selected pair judged once under the link jobs' in-flight registry
+   * (D24, keyed by source-pair key). Its calls run at the link job's priority and each remote one
+   * is asked of the daily cap first (D26): a refused call stops the pass with
+   * `errors.relations.dailyCapReached`, and the pass's saved state lets the next link job resume it.
    */
   public async discoverSourceRelations(input: RelationDiscoveryInput, signal?: AbortSignal) {
     const pool = this.requirePool();
@@ -1761,6 +1780,10 @@ export class KnowledgeService {
     return matchSources({
       pool,
       ai: {
+        // The class routes exist before the judge's route is read (D34).
+        ensureLegacyRouteMapping: async () => {
+          await ai.ensureLegacyRouteMapping?.();
+        },
         runDefaultTask: async (task, prompt, context, callSignal, limits) => {
           // The v5 source judge only ever runs the reranking task.
           if (task !== "reranking") throw new Error("relation_discovery_task_invalid");
@@ -1787,6 +1810,7 @@ export class KnowledgeService {
       ),
       contentLanguage: (await this.options.getContentLanguage?.()) ?? "en",
       regenerate: input.regenerate,
+      registry: input.registry,
       ...(signal ? { signal } : {}),
       context: input.context
     });

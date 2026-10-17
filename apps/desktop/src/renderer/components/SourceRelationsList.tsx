@@ -20,6 +20,7 @@ import {
   sourceRelationExcerpt,
   sourceRelationExplanationView,
   sourceRelationOpenReducer,
+  sourceRelationSupport,
   type WrittenSourceExplanation
 } from "./source-relation-explanation-state";
 
@@ -224,6 +225,8 @@ export function SourceRelationsList({
           // A written or stored explanation reads in the row; otherwise the row reads its evidence.
           const shownInRow = view.kind === "stored" || view.kind === "written";
           const excerpt = shownInRow ? null : sourceRelationExcerpt(relation);
+          // A promoted relation has no judge's score: its note connections stand in for one.
+          const support = sourceRelationSupport(relation);
           return (
             <article
               key={relation.id}
@@ -271,6 +274,9 @@ export function SourceRelationsList({
                       ? "sourceRelations.atomicNotes"
                       : "sourceRelations.sourceAnalysis"
                 )}
+                {support
+                  ? ` · ${t("sourceRelations.linkedThrough", { values: { count: support.count } })}`
+                  : null}
               </p>
               {!relation.current ? (
                 <p className="text-xs text-amber-500">{t("sourceRelations.stale")}</p>

@@ -1,17 +1,31 @@
 import { z } from "zod";
-import { AtomicNoteRelationStatusSchema, AtomicNoteRelationTypeSchema } from "./knowledge.js";
+import {
+  AtomicNoteRelationStatusSchema,
+  AtomicNoteRelationTypeSchema,
+  NoteRelationReadTypeSchema,
+  type AtomicNoteRelationType,
+  type NoteRelationWriteType
+} from "./knowledge.js";
 
-export const SourceRelationSettingsSchema = z
+/**
+ * The settings of the shortlist that design E deleted (F3 D27): candidate retrieval, the 6-pair cap,
+ * the relation limit, rank fusion and the note relations listed per pair. Stored settings and
+ * presets that still hold them read without them; T53b's settings migration drops them for good.
+ */
+export const retiredSourceRelationSettingKeys = [
+  "reciprocalRankConstant",
+  "noteRelationsPerPair",
+  "maxCandidates",
+  "maxPairs",
+  "maxRelations"
+] as const;
+
+const SourceRelationSettingsObjectSchema = z
   .object({
-    reciprocalRankConstant: z.number().int().min(1).max(200).default(60),
     evidenceChunksPerSource: z.number().int().min(1).max(12).default(3),
     evidenceMaxCharacters: z.number().int().min(300).max(6000).default(1000),
     summaryMaxCharacters: z.number().int().min(300).max(6000).default(1200),
-    noteRelationsPerPair: z.number().int().min(0).max(30).default(6),
     maxOutputTokens: z.number().int().min(512).max(16384).default(4096),
-    maxCandidates: z.number().int().min(1).max(200).default(40),
-    maxPairs: z.number().int().min(1).max(50).default(8),
-    maxRelations: z.number().int().min(1).max(200).default(10),
     maxRelationsPerPair: z.number().int().min(1).max(20).default(4),
     maxInputTokens: z.number().int().min(2_000).max(200_000).default(20_000),
     minImportance: z.number().min(0).max(1).default(0.75),
@@ -19,27 +33,38 @@ export const SourceRelationSettingsSchema = z
     includeWeakTypes: z.boolean().default(false)
   })
   .strict();
-export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsSchema>;
-export const defaultSourceRelationSettings = SourceRelationSettingsSchema.parse({});
+
+const withoutRetiredSettings = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const kept: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  for (const key of retiredSourceRelationSettingKeys) delete kept[key];
+  return kept;
+};
+
+/** Source-relation settings: unknown fields are refused, the retired shortlist fields dropped. */
+export const SourceRelationSettingsSchema = z.preprocess(
+  withoutRetiredSettings,
+  SourceRelationSettingsObjectSchema
+);
+export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsObjectSchema>;
+export const defaultSourceRelationSettings: SourceRelationSettings =
+  SourceRelationSettingsObjectSchema.parse({});
 
 /**
- * How far source matching got for a work, stored in the stage checkpoint metadata: the candidate
- * works it considered, how many it judged, and why any was left unjudged. The per-run pair cap and
- * the relation limit are limits of the design, not failures; only `budgetExhausted` means a pair
- * could not be completed.
+ * How far source matching got for a work, stored in the stage checkpoint metadata (design E, F3
+ * D27): the relations its note connections promoted with no call, the nearest sources discovery
+ * selected and how many of them the judge decided. Only `budgetExhausted` means a pair could not be
+ * completed. Checkpoints written before design E also hold the shortlist's cap flags; they are read
+ * and ignored.
  */
-export const SourceRelationCoverageSchema = z
-  .object({
-    judgedPairs: z.number().int().nonnegative(),
-    candidatePairs: z.number().int().nonnegative(),
-    /** The per-run pair cap (`maxPairs`) left candidates unjudged. */
-    capReached: z.boolean(),
-    /** The relation limit (`maxRelations`) left candidates unjudged. */
-    relationLimitReached: z.boolean(),
-    /** A pair could not be completed because the input token budget was exhausted. */
-    budgetExhausted: z.boolean()
-  })
-  .strict();
+export const SourceRelationCoverageSchema = z.object({
+  judgedPairs: z.number().int().nonnegative(),
+  candidatePairs: z.number().int().nonnegative(),
+  /** A pair could not be completed because the input token budget was exhausted. */
+  budgetExhausted: z.boolean(),
+  /** Source relations promoted or refreshed from note relations; absent before design E. */
+  promoted: z.number().int().nonnegative().optional()
+});
 export type SourceRelationCoverage = z.infer<typeof SourceRelationCoverageSchema>;
 
 /**
@@ -53,10 +78,64 @@ export const sourceDecisionLimits = {
   maxScore: 100
 } as const;
 
-/** Types that read the same both ways: stored from the lower prompt alias to the higher one. */
-export const symmetricSourceRelationTypes: ReadonlyArray<string> = ["contrasts", "similar_to"];
+/**
+ * Types that read the same both ways: the judge's legacy `contrasts` and `similar_to` (stored from
+ * the lower prompt alias to the higher one) and the write vocabulary's `contradicts` and `same_as`.
+ */
+export const symmetricSourceRelationTypes: ReadonlyArray<string> = [
+  "contrasts",
+  "similar_to",
+  "contradicts",
+  "same_as"
+];
 /** Types kept only when the settings include weak types. */
 export const weakSourceRelationTypes: ReadonlyArray<string> = ["mentions", "related"];
+
+/**
+ * Stored types that name the same relation: the judge's `contrasts` is written as `contradicts`
+ * (F3 D27), so a relation saved as `contrasts` before is the same relation, for merging and for a
+ * rejection the owner made.
+ */
+export function equivalentSourceRelationTypes(type: string): string[] {
+  if (type === "contradicts" || type === "contrasts") return ["contradicts", "contrasts"];
+  return [type];
+}
+
+/**
+ * The type a v5 verdict is written with (F3 D27): `contrasts` becomes `contradicts`; `similar_to`
+ * is dropped as weak unless the typed configuration keeps it (Q14); every other type is written as
+ * answered (the weak `mentions` and `related` stay under the floors).
+ */
+export function sourceVerdictWriteType(
+  type: AtomicNoteRelationType,
+  options: { keepSimilarTo: boolean }
+): string | null {
+  if (type === "contrasts") return "contradicts";
+  if (type === "similar_to") return options.keepSimilarTo ? type : null;
+  return type;
+}
+
+/**
+ * The write type a note relation is promoted with (F3 D27): a write type as stored, the legacy
+ * `contrasts` as `contradicts`; the legacy `similar_to`, `mentions` and `related` are not promoted
+ * (`similar_to` never becomes `same_as`, D10). Null: the relation promotes nothing.
+ */
+export function promotableNoteRelationType(type: string | null): NoteRelationWriteType | null {
+  switch (type) {
+    case "supports":
+    case "contradicts":
+    case "extends":
+    case "depends_on":
+    case "example_of":
+    case "clarifies":
+    case "same_as":
+      return type;
+    case "contrasts":
+      return "contradicts";
+    default:
+      return null;
+  }
+}
 
 /**
  * One item of a source verdict as the decider answered it, endpoints and chunks resolved to IDs. It
@@ -110,6 +189,13 @@ export const SourceRelationEvidenceSchema = z
   })
   .strict();
 
+/**
+ * How a source relation came to be (F3 D27): `judged` by the source judge, with its scores, or
+ * `promoted` from typed applied note relations with no call, with no scores (unknown stays unknown).
+ */
+export const SourceRelationOriginSchema = z.enum(["judged", "promoted"]);
+export type SourceRelationOrigin = z.infer<typeof SourceRelationOriginSchema>;
+
 export const SourceRelationViewSchema = z
   .object({
     id: z.string().uuid(),
@@ -117,7 +203,8 @@ export const SourceRelationViewSchema = z
     targetSourceItemId: z.string().uuid(),
     sourceTitle: z.string(),
     targetTitle: z.string(),
-    relationType: AtomicNoteRelationTypeSchema,
+    /** The write vocabulary or a legacy type an older row keeps. */
+    relationType: NoteRelationReadTypeSchema,
     /** Prose stored by the earlier matcher; null for relations decided without prose. */
     sourceIdea: z.string().nullable(),
     targetIdea: z.string().nullable(),
@@ -130,8 +217,12 @@ export const SourceRelationViewSchema = z
       .object({ text: z.string().min(1), writtenBy: z.string().min(1) })
       .strict()
       .nullable(),
-    importance: z.number().min(0).max(1),
-    confidence: z.number().min(0).max(1),
+    /** The judge's scores; null on a promoted relation, which no judge scored. */
+    importance: z.number().min(0).max(1).nullable(),
+    confidence: z.number().min(0).max(1).nullable(),
+    origin: SourceRelationOriginSchema,
+    /** The note relations it is promoted from (a judged relation may carry them too); else null. */
+    supportCount: z.number().int().positive().nullable(),
     status: AtomicNoteRelationStatusSchema,
     current: z.boolean(),
     evidence: z.array(SourceRelationEvidenceSchema).max(100),

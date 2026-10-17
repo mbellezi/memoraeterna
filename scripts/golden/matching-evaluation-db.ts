@@ -538,6 +538,12 @@ export async function readEvaluationInput(
   const chunks = columns.has("chunks")
     ? (await db.query<{ n: number }>(`select count(*)::int as n from chunks`)).rows[0]!.n
     : null;
+  // The roots design E matched (F3 D27), with or without a judge call; none before F3.
+  const matchedRoots = has("source_match_state", "root_id")
+    ? (
+        await db.query<{ id: string }>(`select root_id::text as id from source_match_state`)
+      ).rows.map((row) => row.id)
+    : undefined;
 
   return {
     mapping,
@@ -549,7 +555,8 @@ export async function readEvaluationInput(
     ids: options.ids,
     gaps,
     operations,
-    chunks
+    chunks,
+    ...(matchedRoots ? { matchedRoots } : {})
   };
 }
 

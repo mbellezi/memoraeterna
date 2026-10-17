@@ -32,8 +32,8 @@ describe("larger matching benchmark", () => {
       benchmarkConfiguration(reference, "economy").atomicNoteMatchingSettings!.fusedCandidateLimit
     ).toBeLessThan(reference.atomicNoteMatchingSettings.fusedCandidateLimit);
     expect(
-      benchmarkConfiguration(reference, "coverage").sourceRelationSettings!.maxPairs
-    ).toBeGreaterThan(reference.sourceRelationSettings.maxPairs);
+      benchmarkConfiguration(reference, "coverage").sourceRelationSettings!.evidenceChunksPerSource
+    ).toBeGreaterThan(reference.sourceRelationSettings.evidenceChunksPerSource);
   });
   it("keeps 20 unseen roots separate and all assessment labels outside ordinary document fields", () => {
     const corpus = JSON.parse(readFileSync("scripts/fixtures/matching-benchmark.json", "utf8"));

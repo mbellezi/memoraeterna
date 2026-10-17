@@ -1055,7 +1055,10 @@
         "depends_on": "Dipende da",
         "clarifies": "Chiarisce",
         "mentions": "Menziona",
-        "related": "Correlata"
+        "related": "Correlata",
+        "contradicts": "Contraddice",
+        "example_of": "Esempio di",
+        "same_as": "Uguale a"
       }
     }
   },
@@ -1242,7 +1245,6 @@
         "evidenceChunksPerSource": "Passaggi di evidenza per fonte della coppia",
         "evidenceMaxCharacters": "Caratteri per passaggio di evidenza",
         "summaryMaxCharacters": "Caratteri del riassunto per fonte",
-        "noteRelationsPerPair": "Relazioni di note riutilizzate per coppia di fonti",
         "maxOutputTokens": "Limite di token di output IA per coppia di fonti",
         "hint": "Le modifiche valgono per le elaborazioni successive. Meno candidati riducono il costo, ma possono perdere collegamenti utili. Le relazioni esistenti sono preservate.",
         "weightsHint": "I pesi sono normalizzati per gruppo di segnali disponibili. Almeno un peso deve essere positivo. La quota restante del punteggio finale usa questi segnali.",
@@ -1838,9 +1840,6 @@
     "view": "Vista del grafo delle fonti",
     "processingHint": "Riutilizza le relazioni delle note esistenti e trova altre connessioni concettuali tramite riassunti e passaggi originali. Non genera nuove note atomiche.",
     "budgetHint": "Limiti condivisi da radice e capitoli per esecuzione. Il budget di input conta i token dichiarati dal provider, incluse le riparazioni. Una chiamata può superarlo; le successive si fermano. Non è un budget totale: output, riassunti, note, grafo ed embedding hanno consumi separati. Le relazioni esistenti sono preservate. I punteggi sono provvisori, non probabilità.",
-    "maxCandidates": "Fonti candidate recuperate",
-    "maxPairs": "Coppie di fonti valutate",
-    "maxRelations": "Relazioni generate e ordinate",
     "maxRelationsPerPair": "Relazioni per coppia di fonti",
     "maxInputTokens": "Budget dei token in ingresso",
     "minImportance": "Importanza concettuale minima",
@@ -1857,6 +1856,7 @@
     "atomicNotes": "Relazioni delle note atomiche",
     "sourceAnalysis": "Analisi delle fonti",
     "stale": "Evidenza modificata; rivalidazione necessaria",
+    "linkedThrough": "Collegate tramite {count} connessioni tra note",
     "evidence": "Evidenze e spiegazione",
     "writing": "Sto scrivendo una spiegazione…",
     "explainedBy": "Spiegata da {model}",
@@ -1869,9 +1869,8 @@
     "previous": "Precedente",
     "next": "Successiva",
     "coverage": {
-      "analysed": "{judged} di {candidates} fonti candidate analizzate",
-      "relationLimit": "{judged} di {candidates} fonti candidate analizzate; limite di relazioni raggiunto",
-      "incomplete": "Analisi interrotta dopo {judged} di {candidates} fonti candidate: il budget di token in ingresso è esaurito"
+      "linked": "{promoted} relazioni dalle connessioni tra note · {judged} di {candidates} fonti più vicine valutate",
+      "incomplete": "Analisi interrotta dopo {judged} di {candidates} fonti più vicine: il budget di token in ingresso è esaurito"
     }
   },
   "topics": {

@@ -45,7 +45,7 @@ describe("matching preset interface", () => {
     expect(html).toContain("Duplicate preset");
     expect(html).not.toContain("Delete preset");
     expect(html).toContain('<fieldset disabled=""');
-    expect(html.match(/aria-label="[^"]+: Restore recommended value"/g)).toHaveLength(45);
+    expect(html.match(/aria-label="[^"]+: Restore recommended value"/g)).toHaveLength(40);
     const slider = (id: string) => html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`))?.[0];
     expect(slider("sourceRelations-minImportance")).toContain('value="0.75"');
     expect(slider("sourceRelations-minConfidence")).toContain('value="0.85"');

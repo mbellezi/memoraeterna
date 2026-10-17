@@ -36,6 +36,14 @@ describe("relations config", () => {
     expect(relationsConfig.link).toEqual({ poolSize: 2, drainPoolSize: 1 });
     expect(relationsConfig.ai).toEqual({ maxBackgroundCallsPerDay: 500 });
     expect(relationsConfig.escalation).toEqual({ enabled: false });
+    expect(relationsConfig.discovery).toEqual({ neighbours: 1 });
+    expect(relationsConfig.sourceJudge).toEqual({
+      noteRelationsPerPair: 4,
+      keepSimilarTo: false,
+      exactEvidencePairs: 10_000,
+      boundedEvidenceChunks: 16
+    });
+    expect(RelationsConfigSchema.safeParse({ discovery: { neighbours: 3 } }).success).toBe(false);
     // Parsing nothing gives the same defaults, with no calibration (every decider uncalibrated).
     expect(RelationsConfigSchema.parse({})).toEqual({ ...relationsConfig, calibrations: [] });
   });

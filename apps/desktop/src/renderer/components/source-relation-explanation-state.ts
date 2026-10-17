@@ -113,3 +113,15 @@ export function sourceRelationExcerpt(
   const evidence = relation.evidence.find((item) => item.current) ?? relation.evidence[0];
   return evidence ? { source: evidence.sourceExcerpt, target: evidence.targetExcerpt } : null;
 }
+
+/**
+ * What a relation without the judge's scores rests on (F3 D27, R4): a promoted relation shows
+ * "linked through N note connections" in place of a score. Null for a judged relation.
+ */
+export function sourceRelationSupport(
+  relation: Pick<SourceRelationView, "importance" | "supportCount">
+): { count: number } | null {
+  return relation.importance === null && relation.supportCount !== null
+    ? { count: relation.supportCount }
+    : null;
+}

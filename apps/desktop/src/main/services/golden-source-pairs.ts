@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { z } from "zod";
 import { aiCassetteReplayedUsageKey, type AiCassetteStats } from "@app/ai";
-import { sourceDecisionPassesFloors, type SourceRelationSettings } from "@app/domain";
+import {
+  relationsConfig,
+  sourceDecisionPassesFloors,
+  type SourceRelationSettings
+} from "@app/domain";
 import { createSourceRelationRepository, type PgPool, type SourceRelationNote } from "@app/db";
 
 import type { AiService } from "./ai-service.js";
@@ -360,7 +364,7 @@ async function judgePair(
   const notes: SourceRelationNote[] = await reader.pairNotes(
     sides.left.root.id,
     sides.right.root.id,
-    settings.noteRelationsPerPair
+    relationsConfig.sourceJudge.noteRelationsPerPair
   );
   const context = await sourcePairContext(
     reader,
@@ -384,7 +388,7 @@ async function judgePair(
   const sideOf = (rootId: string): Side => (rootId === sides.left.root.id ? "left" : "right");
   const sideOfSource = (id: string) =>
     sideOf(chunks.find((chunk) => chunk.sourceItemId === id)?.rootId ?? "");
-  const allowance = sourceDecisionAllowance(settings, 0);
+  const allowance = sourceDecisionAllowance(settings);
   const maxOutputTokens = sourceDecisionMaxOutputTokens(settings, allowance);
   const prompt = sourceDecisionPrompt(
     context,

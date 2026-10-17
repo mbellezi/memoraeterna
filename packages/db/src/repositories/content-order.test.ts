@@ -87,31 +87,24 @@ describe("content-stable query order", () => {
     expect(labels).toContain("order by s.canonical_name, r.predicate, o.canonical_name, r.id");
   });
 
-  it("orders source matching roots, candidates, notes and existing relations by content", async () => {
+  it("orders source matching roots, notes and existing relations by content", async () => {
     const pool = new RecordingPool();
     const repository = createSourceRelationRepository(pool.pool);
     await repository.roots(["00000000-0000-4000-8000-000000000001"]);
-    await repository.candidates("00000000-0000-4000-8000-000000000001", 5);
     await repository.pairNotes("a", "b");
     await repository.existing("a", "b");
     const roots = pool.queries[0];
     expect(roots).toContain("order by root.title, id");
-    // Text, notes, graph and one query per vector space rank on score, then the work title.
-    const ranked = pool.queries.filter((query) =>
-      query.includes("from source_items ranked_source")
-    );
-    expect(ranked.length).toBe(6);
-    for (const query of ranked)
-      expect(query).toMatch(
-        /ranked_source\.id = [a-z_.]+root_id\),|ranked_source\.id = scored\.id\),/
-      );
+    // Design E (F3 D27) has no candidate shortlist: discovery orders by cosine, then title (pure).
+    expect(pool.queries.some((query) => query.includes("ranked_source"))).toBe(false);
     const notes = pool.queries.find((query) => query.includes("n.direction <> 'unknown'"));
     expect(notes).toContain(
       "order by n.final_score desc, a.idea_statement, b.idea_statement, n.id"
     );
+    // A promoted relation has no score: it lists after the scored ones (nulls last, R4).
     const existing = pool.queries.find((query) => query.includes("from source_relations r"));
     expect(existing).toContain(
-      "order by r.importance desc, rs.title, rt.title, r.relation_type, r.source_idea, r.target_idea, r.id"
+      "order by r.importance desc nulls last, r.support_count desc nulls last, rs.title, rt.title, r.relation_type, r.source_idea, r.target_idea, r.id"
     );
   });
 
@@ -134,6 +127,25 @@ describe("content-stable query order", () => {
     expect(semantic).toContain("a.content_hash, b.content_hash, a.chunk_index, b.chunk_index");
     const concepts = pool.queries.find((query) => query.includes("concepts as"));
     expect(concepts).toContain("order by score desc, a.idea, b.idea, a.chunk_index, b.chunk_index");
+  });
+
+  it("orders a large pair's bounded vector evidence by distance, then content (R19)", async () => {
+    const pool = new RecordingPool();
+    await createSourceRelationRepository(pool.pool).pairChunks("a", "b", [], 2, {
+      exactEvidencePairs: -1,
+      boundedEvidenceChunks: 16
+    });
+    expect(pool.queries.some((query) => query.includes("similarity("))).toBe(false);
+    const bounded = pool.queries.filter((query) => query.includes("a_top as"));
+    expect(bounded).toHaveLength(3);
+    for (const query of bounded) {
+      expect(query).toContain(
+        "order by a.embedding <=> centers.b_center, a.content_hash, a.chunk_index, a.id"
+      );
+      expect(query).toContain(
+        "order by a.embedding <=> b.embedding, a.content_hash, b.content_hash, a.chunk_index, b.chunk_index, a.id, b.id"
+      );
+    }
   });
 
   it("orders consultation candidates, vector hits, contexts and relations by content", async () => {

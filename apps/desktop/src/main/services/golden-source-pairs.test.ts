@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SourceRelationSettingsSchema } from "@app/domain";
+import { SourceRelationSettingsSchema, relationsConfig } from "@app/domain";
 import type { PgPool, SourceRelationChunk, SourceRelationNote } from "@app/db";
 import type { AiCassetteStats } from "@app/ai";
 
@@ -328,7 +328,7 @@ describe("source pair verdicts", () => {
     expect(reader.pairNotes).toHaveBeenCalledWith(
       "root-A",
       "root-B",
-      settings.noteRelationsPerPair
+      relationsConfig.sourceJudge.noteRelationsPerPair
     );
     expect(reader.pairChunks).toHaveBeenCalledWith(
       "root-A",

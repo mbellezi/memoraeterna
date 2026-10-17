@@ -142,13 +142,16 @@ describe("matching preset persistence", () => {
       activeMatchingPresetId: id
     });
     await settings.updateApp({
-      sourceRelationSettings: { ...initial.sourceRelationSettings, maxPairs: 9 },
+      sourceRelationSettings: { ...initial.sourceRelationSettings, maxRelationsPerPair: 3 },
       atomicNoteRelationThreshold: 0.67
     });
     const edited = await settings.getApp();
     expect(edited.matchingPresets[0]).toMatchObject({
       name: "My matching",
-      settings: { atomicNoteRelationThreshold: 0.67, sourceRelationSettings: { maxPairs: 9 } }
+      settings: {
+        atomicNoteRelationThreshold: 0.67,
+        sourceRelationSettings: { maxRelationsPerPair: 3 }
+      }
     });
     await settings.updateApp({ activeMatchingPresetId: recommendedMatchingPresetId });
     expect(MatchingConfigurationSchema.parse(await settings.getApp())).toEqual(
@@ -158,7 +161,7 @@ describe("matching preset persistence", () => {
     await restarted.updateApp({ activeMatchingPresetId: id });
     expect(await restarted.getApp()).toMatchObject({
       atomicNoteRelationThreshold: 0.67,
-      sourceRelationSettings: { maxPairs: 9 }
+      sourceRelationSettings: { maxRelationsPerPair: 3 }
     });
     await restarted.updateApp({
       matchingPresets: [{ ...edited.matchingPresets[0]!, name: "Renamed" }]

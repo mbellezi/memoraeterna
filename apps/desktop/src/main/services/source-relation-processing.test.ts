@@ -1,20 +1,26 @@
 import { changedPromptIdentity, defaultPromptPin, withPromptPin } from "./prompt-runtime.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createHash } from "node:crypto";
-import { defaultSourceRelationSettings, sourceDecisionPassesFloors } from "@app/domain";
+import {
+  defaultSourceRelationSettings,
+  relationsConfig,
+  sourceDecisionPassesFloors
+} from "@app/domain";
 import type { SourceRelationChunk, SourceRelationNote, PgPool } from "@app/db";
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import { runSourcePairVerdicts } from "./golden-source-pairs.js";
+import { InFlightRegistry } from "./relations/in-flight-registry.js";
 import {
-  combineSourceRelationCoverage,
   matchSources,
   orderSourceRelationChunks,
   orientSymmetricNotes,
   parseSourceDecision,
-  rankSourceCandidates,
+  promoteSourceRelations,
   sourceDecisionPrompt,
+  sourceJudgeRequestSettings,
   sourceRelationPromptVersion,
   sourceRelationWrites,
+  type MatchSourcesOptions,
   type SourceRelationContext
 } from "./source-relation-processing.js";
 
@@ -23,10 +29,14 @@ const mocks = vi.hoisted(() => ({
   selection: vi.fn(),
   taskDefaults: null as Record<string, unknown> | null
 }));
-vi.mock("@app/db", () => ({
-  createSourceRelationRepository: () => mocks.repository,
-  createAiConfigRepository: () => ({ getDefaultTask: mocks.selection })
-}));
+vi.mock("@app/db", async (original) => {
+  const actual = await original<typeof import("@app/db")>();
+  return {
+    aiRouteKeys: actual.aiRouteKeys,
+    createSourceRelationRepository: () => mocks.repository,
+    createAiConfigRepository: () => ({ getDefaultTask: mocks.selection })
+  };
+});
 // A test can stand in for a task that adds a default beneath the profile's parameters.
 vi.mock("./ai-task-parameters.js", async (original) => {
   const actual = await original<typeof import("./ai-task-parameters.js")>();
@@ -125,6 +135,21 @@ describe("source verdicts without prose", () => {
     ).toBe(true);
   });
 
+  it("writes the judge's contrasts as contradicts and drops similar_to as weak (D27, Q14)", () => {
+    const contrasts = writes([item({ 2: "contrasts" })]);
+    expect(contrasts.relations.map((relation) => relation.relationType)).toEqual(["contradicts"]);
+    expect(contrasts.records[0]).toMatchObject({ type: "contrasts", outcome: "persisted" });
+    const similar = writes([item({ 2: "similar_to" })]);
+    expect(similar.relations).toEqual([]);
+    // The raw verdict is stored as answered, so tuning can still count it at $0.
+    expect(similar.records[0]).toMatchObject({ type: "similar_to", outcome: "weak_type" });
+    expect(
+      sourceRelationWrites(parse([item({ 2: "similar_to" })]).items, context, floors, 2, {
+        keepSimilarTo: true
+      }).relations.map((relation) => relation.relationType)
+    ).toEqual(["similar_to"]);
+  });
+
   it("keeps valid items and drops malformed ones one by one", () => {
     const parsed = parse([
       item(),
@@ -157,7 +182,7 @@ describe("source verdicts without prose", () => {
   });
 
   it("turns a symmetric item answered from the higher alias instead of refusing it", () => {
-    const parsed = parse([item({ 0: "s2", 1: "s1", 2: "similar_to", 5: ["c2"], 6: ["c1"] })]);
+    const parsed = parse([item({ 0: "s2", 1: "s1", 2: "contrasts", 5: ["c2"], 6: ["c1"] })]);
     expect(parsed.invalid).toBe(0);
     expect(parsed.items[0]).toMatchObject({ sourceItemId: "A", targetSourceItemId: "B" });
     expect(parsed.items[0]!.sourceChunks).toEqual([a]);
@@ -221,11 +246,11 @@ describe("source verdicts without prose", () => {
     const rejected = writes([item()], { ...context, existing: [saved("rejected")] });
     expect(rejected).toMatchObject({ proposals: 0, relations: [] });
     expect(rejected.records[0]).toMatchObject({ outcome: "owner_rejected" });
-    // A symmetric relation rejected the other way round is the same relation.
+    // A symmetric relation rejected the other way round, under its earlier name, is the same one.
     expect(
-      writes([item({ 2: "similar_to" })], {
+      writes([item({ 2: "contrasts" })], {
         ...context,
-        existing: [saved("rejected", "B", "A", "similar_to")]
+        existing: [saved("rejected", "B", "A", "contrasts")]
       }).relations
     ).toEqual([]);
     // Saved and not rejected: the evidence merges into it on persistence; it is no new proposal.
@@ -238,6 +263,34 @@ describe("source verdicts without prose", () => {
     expect(
       writes([item({ 2: "extends" })], { ...context, existing: [saved("rejected")] }).proposals
     ).toBe(1);
+  });
+
+  it("treats a relation promoted between the two works as the same relation (D27)", () => {
+    const promoted = (status: string) => ({
+      id: `promoted-${status}`,
+      sourceItemId: "root-A",
+      targetSourceItemId: "root-B",
+      relationType: "supports",
+      sourceIdea: null,
+      targetIdea: null,
+      status,
+      origin: "promoted" as const,
+      sourceRootId: "root-A",
+      targetRootId: "root-B"
+    });
+    const upgraded = writes([item()], { ...context, existing: [promoted("pending_review")] });
+    expect(upgraded.proposals).toBe(0);
+    expect(upgraded.relations).toHaveLength(1);
+    expect(
+      writes([item()], { ...context, existing: [promoted("rejected")] }).records[0]
+    ).toMatchObject({ outcome: "owner_rejected" });
+    // Read the other way, a directed promoted relation is another relation.
+    expect(
+      writes([item({ 0: "s2", 1: "s1", 5: ["c2"], 6: ["c1"] })], {
+        ...context,
+        existing: [promoted("rejected")]
+      }).relations
+    ).toHaveLength(1);
   });
 
   it("backs a relation with the note connection whose passages it cites", () => {
@@ -309,45 +362,68 @@ describe("source verdicts without prose", () => {
     ])
       expect(prompt).not.toContain(absent);
   });
-
-  it("keeps note reuse and direct discovery in every shortlist prefix", () => {
-    const candidates = Array.from({ length: 40 }, (_, i) => ({
-      id: String(i),
-      title: `Work ${i}`,
-      textScore: 1 - i / 50,
-      vectorScore: 0.8,
-      graphScore: 0,
-      noteScore: i < 20 ? 1 : 0
-    }));
-    const selected = rankSourceCandidates(candidates, 40).slice(0, 8);
-    expect(selected.filter((candidate) => candidate.noteScore > 0)).toHaveLength(4);
-    expect(selected.filter((candidate) => candidate.noteScore === 0)).toHaveLength(4);
-  });
 });
 
-describe("source matching budget and recovery", () => {
+const judgeRoute = {
+  profileId: "profile",
+  providerConfigId: "provider",
+  modelId: "model",
+  runtime: "local",
+  localModelId: null,
+  revision: "r1",
+  parameters: {},
+  modelDefaultParameters: {},
+  requiredCapabilities: ["text-generation"]
+};
+const noPromotion = {
+  promoted: 0,
+  refreshed: 0,
+  retired: 0,
+  ownerRejected: 0,
+  otherRootIds: [],
+  runId: null
+};
+const plan = (roots: string[]) => ({
+  pairs: roots.map((rootId, index) => ({
+    rootId,
+    reason: index === 0 ? "nearest" : "reverse",
+    cosine: 0.8 - index / 10
+  })),
+  state: { nearestRootId: roots[0] ?? null, nearestCosine: roots.length ? 0.8 : null },
+  reverse: [],
+  matchSeq: 2,
+  spaceKey: "256:space",
+  candidates: roots.length
+});
+
+describe("source matching by design E (D27)", () => {
   let states: Map<string, unknown>, decisions: Map<string, Record<string, unknown>>;
+  let order: string[];
   beforeEach(() => {
     states = new Map();
     decisions = new Map();
-    mocks.selection.mockReset().mockResolvedValue({
-      profileId: "profile",
-      providerConfigId: "provider",
-      modelId: "model",
-      runtime: "local",
-      localModelId: null,
-      revision: "r1",
-      parameters: {},
-      modelDefaultParameters: {}
-    });
+    order = [];
+    mocks.selection.mockReset().mockResolvedValue(judgeRoute);
     mocks.repository = {
       roots: vi.fn().mockResolvedValue(["root-A"]),
       fingerprint: vi.fn(async (id: string) => id),
-      candidates: vi
-        .fn()
-        .mockResolvedValue([
-          { id: "root-B", textScore: 1, vectorScore: 0, graphScore: 0, noteScore: 1 }
-        ]),
+      promoteFromNotes: vi.fn(async () => {
+        order.push("promote");
+        return { ...noPromotion, promoted: 2, otherRootIds: ["root-B"] };
+      }),
+      discoveryVector: vi.fn().mockResolvedValue({
+        dimensions: 256,
+        strategy: "source-composite-centroid-v2:space",
+        spaceKey: "256:space",
+        model: "embedder",
+        provider: "local",
+        runtime: "local",
+        embedding: "[1,0]"
+      }),
+      planDiscovery: vi.fn(async () => {
+        order.push("discover");
+        return plan(["root-B"]);
+      }),
       pairNotes: vi.fn().mockResolvedValue([note]),
       pairNoteFingerprints: vi.fn().mockResolvedValue([note.fingerprint]),
       pairChunks: vi.fn().mockResolvedValue([a, b]),
@@ -374,7 +450,8 @@ describe("source matching budget and recovery", () => {
   const run = (
     ai: Mock<(...args: any[]) => any>,
     key = "run",
-    settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 }
+    settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 },
+    extra: Partial<MatchSourcesOptions> = {}
   ) =>
     matchSources({
       pool: {} as PgPool,
@@ -382,7 +459,8 @@ describe("source matching budget and recovery", () => {
       sourceIds: ["A"],
       runKey: key,
       settings,
-      contentLanguage: "en"
+      contentLanguage: "en",
+      ...extra
     });
   const execution = (output: unknown) => ({
     output,
@@ -394,131 +472,170 @@ describe("source matching budget and recovery", () => {
     inputTokens: 100,
     outputTokens: 20
   });
-  it("real same-root recovery composes the exact active validation suffix", async () => {
-    const pin = defaultPromptPin();
-    for (const id of ["sources.decide", "sources.decide.repair", "sources.validation.same_root"]) {
-      const entry = pin.entries.find((e) => e.id === id)!;
-      entry.fields.body = "CATALOG:" + id + "\n" + entry.fields.body;
+
+  it("promotes with no call before discovery, then judges the nearest root once", async () => {
+    const ai = vi.fn(async () => {
+      order.push("judge");
+      return execution({ relations: [item()] });
+    });
+    const result = await run(ai);
+    expect(order).toEqual(["promote", "discover", "judge"]);
+    expect(mocks.repository.promoteFromNotes).toHaveBeenCalledWith("root-A");
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ rootId: "root-A", fingerprint: "root-A", neighbours: 1 })
+    );
+    expect(result).toMatchObject({
+      promoted: 2,
+      persistedCount: 1,
+      completed: 1,
+      total: 1,
+      coverage: { judgedPairs: 1, candidatePairs: 1, budgetExhausted: false, promoted: 2 }
+    });
+    expect(ai).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves the judge through op:source_relation_matching with class decide", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    await run(ai);
+    expect(mocks.selection).toHaveBeenCalledWith("reranking", undefined, [
+      "op:source_relation_matching",
+      "class:decide",
+      "reranking"
+    ]);
+    expect(ai.mock.calls[0]![2]).toMatchObject({
+      operation: "source_relation_matching",
+      workloadClass: "decide",
+      priority: "P2"
+    });
+  });
+
+  it("keeps promotion and fails visibly before a pair when no generative judge is routed", async () => {
+    for (const route of [null, { ...judgeRoute, requiredCapabilities: ["reranking"] }]) {
+      mocks.selection.mockReset().mockResolvedValue(route);
+      const ai = vi.fn();
+      await expect(run(ai, `no-judge-${String(route)}`)).rejects.toThrow(
+        "errors.ai.noCompatibleModel"
+      );
+      expect(ai).not.toHaveBeenCalled();
     }
-    mocks.repository.pairChunks!.mockResolvedValue([a, { ...b, rootId: a.rootId }]);
+    expect(mocks.repository.promoteFromNotes).toHaveBeenCalledTimes(2);
+    // With nothing to judge, no judge is needed.
+    mocks.repository.planDiscovery!.mockResolvedValue(plan([]));
+    await expect(run(vi.fn(), "nothing")).resolves.toMatchObject({ total: 0, completed: 0 });
+  });
+
+  it("defers discovery on request and skips a root without a composite vector", async () => {
+    const ai = vi.fn();
+    expect(await run(ai, "deferred", undefined, { discovery: "defer" })).toMatchObject({
+      discoveryDeferred: 1,
+      total: 0,
+      promoted: 2
+    });
+    mocks.repository.discoveryVector!.mockResolvedValue(null);
+    expect(await run(ai, "no-vector")).toMatchObject({ discoveryWithoutVector: 1, total: 0 });
+    expect(mocks.repository.planDiscovery).not.toHaveBeenCalled();
+    expect(ai).not.toHaveBeenCalled();
+  });
+
+  it("judges exactly the planned pairs when a run resumes, and plans once", async () => {
+    mocks.repository.planDiscovery!.mockResolvedValue(plan(["root-B", "root-C"]));
     const ai = vi
       .fn()
-      .mockResolvedValueOnce(execution({ relations: [item()] }))
+      .mockResolvedValueOnce(execution({ relations: [] }))
+      .mockRejectedValueOnce(new Error("interrupted"))
       .mockResolvedValue(execution({ relations: [] }));
-    await withPromptPin(pin, () => run(ai));
-    expect(ai).toHaveBeenCalledTimes(2);
-    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.decide");
-    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.decide.repair");
-    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.validation.same_root");
-  });
-  it("reports planned and completed pair counts, counting a repair only once", async () => {
+    await expect(run(ai, "resume")).rejects.toThrow("interrupted");
     const onProgress = vi.fn();
-    const ai = vi
-      .fn()
-      .mockResolvedValueOnce(execution("invalid"))
-      .mockResolvedValue(execution({ relations: [] }));
-    const result = await matchSources({
-      pool: {} as PgPool,
-      ai: { runDefaultTask: ai },
-      sourceIds: ["A"],
-      runKey: "progress",
-      settings: { ...defaultSourceRelationSettings, maxInputTokens: 200000 },
-      contentLanguage: "en",
-      onProgress
+    expect(await run(ai, "resume", undefined, { onProgress })).toMatchObject({
+      completed: 2,
+      total: 2
     });
-    expect(onProgress.mock.calls[0]).toEqual([0, { completed: 0, total: 1 }]);
-    expect(onProgress.mock.calls.at(-1)).toEqual([1, { completed: 1, total: 1 }]);
-    expect(result).toMatchObject({ completed: 1, total: 1 });
-    expect(ai).toHaveBeenCalledTimes(2);
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
+    expect(ai).toHaveBeenCalledTimes(3);
+    expect(onProgress.mock.calls[0]).toEqual([0.5, { completed: 1, total: 2 }]);
+    expect(onProgress.mock.calls.at(-1)).toEqual([1, { completed: 2, total: 2 }]);
   });
-  it("keeps partial counts across resume instead of inventing completed analyses", async () => {
-    mocks.repository.candidates!.mockResolvedValue(
-      ["one", "two"].map((id) => ({
-        id,
-        textScore: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: 0
-      }))
-    );
-    const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2500 });
-    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 2000 };
-    expect(await run(ai, "partial", settings)).toMatchObject({
-      completed: 1,
-      total: 2,
-      partial: true
-    });
-    expect(await run(ai, "partial", settings)).toMatchObject({
-      completed: 1,
-      total: 2,
-      partial: true
-    });
-    expect(ai).toHaveBeenCalledTimes(1);
-  });
-  it("counts a reciprocal pair only once across a collective batch", async () => {
+
+  it("judges mutual neighbours once in a run and once across runs", async () => {
     mocks.repository.roots!.mockResolvedValue(["root-A", "root-B"]);
-    mocks.repository.candidates!.mockImplementation(async (root: string) => [
-      {
-        id: root === "root-A" ? "root-B" : "root-A",
-        textScore: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: 1
-      }
-    ]);
-    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-    expect(await run(ai)).toMatchObject({ completed: 1, total: 1, rootCount: 2 });
-    expect(ai).toHaveBeenCalledTimes(1);
-    expect(await run(ai)).toMatchObject({ completed: 1, total: 1 });
-  });
-  it("judges a pair once: a note-backed relation saved from one side keeps the other side's key", async () => {
-    // Saving a relation that cites a note relation removes it from both sides' prompts.
-    const cited = new Set<string>();
-    mocks.repository.pairNotes!.mockImplementation(async () => (cited.has(note.id) ? [] : [note]));
-    mocks.repository.commitDecision!.mockImplementation(
-      async (
-        key: string,
-        _a: string,
-        _b: string,
-        relations: Array<{ evidence: Array<{ note: { id: string } | null }> }>,
-        metadata: Record<string, unknown>
-      ) => {
-        for (const relation of relations)
-          for (const evidence of relation.evidence) if (evidence.note) cited.add(evidence.note.id);
-        decisions.set(key, { ...metadata, persistedCount: relations.length });
-        return relations.length;
-      }
+    mocks.repository.planDiscovery!.mockImplementation(async ({ rootId }: { rootId: string }) =>
+      plan([rootId === "root-A" ? "root-B" : "root-A"])
     );
-    mocks.repository.roots!.mockResolvedValueOnce(["root-A"]).mockResolvedValueOnce(["root-B"]);
-    mocks.repository.candidates!.mockImplementation(async (root: string) => [
-      {
-        id: root === "root-A" ? "root-B" : "root-A",
-        textScore: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: root === "root-A" ? 1 : 0
-      }
-    ]);
-    const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
-    expect((await run(ai, "first")).persistedCount).toBe(1);
-    expect(cited.has(note.id)).toBe(true);
-    expect(await run(ai, "second")).toMatchObject({ completed: 0, total: 0, persistedCount: 0 });
-    expect(ai).toHaveBeenCalledTimes(1);
-    expect(mocks.repository.pairNoteFingerprints).toHaveBeenCalledWith("root-B", "root-A");
-  });
-  it("judges a pair again when a new note relation appears between the two roots", async () => {
     const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-    await run(ai);
-    mocks.repository.pairNoteFingerprints!.mockResolvedValue([note.fingerprint, "new-note"]);
-    await run(ai, "second");
+    expect(await run(ai)).toMatchObject({ completed: 2, total: 2, rootCount: 2 });
+    expect(ai).toHaveBeenCalledTimes(1);
+    await run(ai, "again");
+    expect(ai).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes two jobs that select the same pair at once pay for one call", async () => {
+    let release!: () => void;
+    const answered = new Promise<void>((resolve) => (release = resolve));
+    const ai = vi.fn(async () => {
+      await answered;
+      return execution({ relations: [] });
+    });
+    const first = run(ai, "job-1");
+    const second = run(ai, "job-2");
+    await vi.waitFor(() => expect(ai).toHaveBeenCalledTimes(1));
+    release();
+    await Promise.all([first, second]);
+    expect(ai).toHaveBeenCalledTimes(1);
+  });
+
+  it("judges under the in-flight registry it is given, by source-pair key (the link jobs', D24)", async () => {
+    const registry = new InFlightRegistry();
+    const claim = registry.claim.bind(registry);
+    const claimed: string[] = [];
+    vi.spyOn(registry, "claim").mockImplementation((keys) => {
+      claimed.push(...keys);
+      return claim(keys);
+    });
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    await run(ai, "job-1", undefined, { registry });
+    expect(ai).toHaveBeenCalledTimes(1);
+    expect(claimed).toEqual([expect.stringMatching(/^source-pair:[0-9a-f]{64}$/)]);
+    expect(registry.size).toBe(0);
+  });
+
+  it("re-judges a pair for a new note relation or a new request shape, never for floors or budget", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
+    await run(ai, "one", settings);
+    await run(ai, "two", {
+      ...settings,
+      minImportance: 0.95,
+      minConfidence: 0.95,
+      maxInputTokens: 50000
+    });
+    expect(ai).toHaveBeenCalledTimes(1);
+    await run(ai, "three", { ...settings, evidenceChunksPerSource: 5 });
     expect(ai).toHaveBeenCalledTimes(2);
+    mocks.repository.pairNoteFingerprints!.mockResolvedValue([note.fingerprint, "typed-later"]);
+    await run(ai, "four", settings);
+    expect(ai).toHaveBeenCalledTimes(3);
   });
-  it("caches negative decisions across executions without more model calls", async () => {
-    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+
+  it("writes the judge's contrasts as contradicts", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [item({ 2: "contrasts" })] }));
     await run(ai);
-    expect(await run(ai, "second")).toMatchObject({ completed: 0, total: 0 });
-    expect(ai).toHaveBeenCalledTimes(1);
+    const [, , , relations, metadata] = mocks.repository.commitDecision!.mock.calls[0]!;
+    expect(relations).toEqual([expect.objectContaining({ relationType: "contradicts" })]);
+    expect(metadata.items).toEqual([expect.objectContaining({ type: "contrasts" })]);
   });
+
+  it("lists the spike's number of note relations as hypotheses", async () => {
+    await run(vi.fn().mockResolvedValue(execution({ relations: [] })));
+    expect(mocks.repository.pairNotes).toHaveBeenCalledWith("root-A", "root-B", 4);
+  });
+
+  it("drops a pair without evidence on both sides from the totals", async () => {
+    mocks.repository.pairChunks!.mockResolvedValue([a]);
+    const ai = vi.fn();
+    expect(await run(ai)).toMatchObject({ completed: 0, total: 0 });
+    expect(ai).not.toHaveBeenCalled();
+  });
+
   it("sends the decider the request a golden source pair verdict sends, and persists nothing", async () => {
     const matcherAi = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
     await run(matcherAi);
@@ -555,6 +672,25 @@ describe("source matching budget and recovery", () => {
       if (!["pairNotes", "pairChunks", "existing"].includes(name))
         expect(fn, name).not.toHaveBeenCalled();
   });
+
+  it("real same-root recovery composes the exact active validation suffix", async () => {
+    const pin = defaultPromptPin();
+    for (const id of ["sources.decide", "sources.decide.repair", "sources.validation.same_root"]) {
+      const entry = pin.entries.find((e) => e.id === id)!;
+      entry.fields.body = "CATALOG:" + id + "\n" + entry.fields.body;
+    }
+    mocks.repository.pairChunks!.mockResolvedValue([a, { ...b, rootId: a.rootId }]);
+    const ai = vi
+      .fn()
+      .mockResolvedValueOnce(execution({ relations: [item()] }))
+      .mockResolvedValue(execution({ relations: [] }));
+    await withPromptPin(pin, () => run(ai));
+    expect(ai).toHaveBeenCalledTimes(2);
+    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.decide");
+    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.decide.repair");
+    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.validation.same_root");
+  });
+
   it("counts actual usage from the original call and its repair", async () => {
     const ai = vi
       .fn()
@@ -586,36 +722,18 @@ describe("source matching budget and recovery", () => {
     await expect(run(ai)).rejects.toThrow("interrupted");
     expect((states.get("run:root-A") as { inputTokens: number }).inputTokens).toBe(0);
   });
-  it("finishes all six affordable analyses without estimating usage", async () => {
-    mocks.repository.candidates!.mockResolvedValue(
-      Array.from({ length: 6 }, (_, index) => ({
-        id: `candidate-${index}`,
-        textScore: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: 0
-      }))
-    );
-    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-    expect(
-      await run(ai, "six", { ...defaultSourceRelationSettings, maxInputTokens: 20000 })
-    ).toMatchObject({ completed: 6, total: 6, inputTokens: 600, partial: false });
-    expect(ai).toHaveBeenCalledTimes(6);
-  });
   it("allows a call at the exact limit and blocks the next after actual overrun", async () => {
-    mocks.repository.candidates!.mockResolvedValue(
-      ["one", "two", "three"].map((id) => ({
-        id,
-        textScore: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: 0
-      }))
-    );
+    mocks.repository.planDiscovery!.mockResolvedValue(plan(["one", "two", "three"]));
     const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2000 });
     expect(
       await run(ai, "limit", { ...defaultSourceRelationSettings, maxInputTokens: 2000 })
-    ).toMatchObject({ completed: 2, total: 3, inputTokens: 4000, partial: true });
+    ).toMatchObject({
+      completed: 2,
+      total: 3,
+      inputTokens: 4000,
+      partial: true,
+      coverage: { judgedPairs: 2, candidatePairs: 3, budgetExhausted: true }
+    });
     expect(ai).toHaveBeenCalledTimes(2);
   });
   it("blocks a repair after the original response exceeds the real budget", async () => {
@@ -625,180 +743,7 @@ describe("source matching budget and recovery", () => {
     ).toMatchObject({ completed: 0, total: 1, inputTokens: 2500, partial: true });
     expect(ai).toHaveBeenCalledTimes(1);
   });
-  describe("coverage in the stage checkpoint metadata", () => {
-    const candidatesNamed = (count: number) =>
-      Array.from({ length: count }, (_, index) => ({
-        id: `candidate-${index}`,
-        title: `Work ${String(index).padStart(2, "0")}`,
-        textScore: 1 - index / 100,
-        vectorScore: 0,
-        graphScore: 0,
-        noteScore: 0
-      }));
-    const settingsWith = (overrides: Partial<typeof defaultSourceRelationSettings>) => ({
-      ...defaultSourceRelationSettings,
-      maxInputTokens: 200000,
-      ...overrides
-    });
-
-    it("records the per-run pair cap as coverage, not as a partial run", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(8));
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const result = await run(ai, "cap", settingsWith({ maxPairs: 3 }));
-      expect(ai).toHaveBeenCalledTimes(3);
-      expect(result).toMatchObject({ partial: false, completed: 3, total: 3 });
-      expect(result.coverage).toEqual({
-        judgedPairs: 3,
-        candidatePairs: 8,
-        capReached: true,
-        relationLimitReached: false,
-        budgetExhausted: false
-      });
-      expect(states.get("cap:root-A")).toMatchObject({
-        partial: false,
-        finished: true,
-        coverage: result.coverage
-      });
-    });
-
-    it("reports a fully judged shortlist without any limit", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(2));
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const result = await run(ai, "full", settingsWith({ maxPairs: 3 }));
-      expect(result.coverage).toEqual({
-        judgedPairs: 2,
-        candidatePairs: 2,
-        capReached: false,
-        relationLimitReached: false,
-        budgetExhausted: false
-      });
-    });
-
-    it("records the relation limit apart from the cap", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(4));
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
-      const result = await run(ai, "limit", settingsWith({ maxRelations: 1, maxPairs: 4 }));
-      expect(ai).toHaveBeenCalledTimes(1);
-      expect(result).toMatchObject({ partial: false, persistedCount: 1 });
-      expect(result.coverage).toEqual({
-        judgedPairs: 1,
-        candidatePairs: 4,
-        capReached: false,
-        relationLimitReached: true,
-        budgetExhausted: false
-      });
-    });
-
-    it("records an exhausted input budget as the only partial reason", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(3));
-      const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2500 });
-      const result = await run(ai, "budget", settingsWith({ maxInputTokens: 2000 }));
-      expect(result.partial).toBe(true);
-      expect(result.coverage).toEqual({
-        judgedPairs: 1,
-        candidatePairs: 3,
-        capReached: false,
-        relationLimitReached: false,
-        budgetExhausted: true
-      });
-    });
-
-    it("counts the candidates an earlier run already judged and advances with each run", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(5));
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const settings = settingsWith({ maxPairs: 2 });
-      const judged = async (key: string) => (await run(ai, key, settings)).coverage;
-      expect(await judged("first")).toMatchObject({ judgedPairs: 2, capReached: true });
-      expect(await judged("second")).toMatchObject({ judgedPairs: 4, capReached: true });
-      expect(await judged("third")).toMatchObject({
-        judgedPairs: 5,
-        candidatePairs: 5,
-        capReached: false
-      });
-      expect(ai).toHaveBeenCalledTimes(5);
-    });
-
-    it("counts already judged candidates that rank after the cap without judging more", async () => {
-      const candidates = candidatesNamed(5);
-      mocks.repository.candidates!.mockResolvedValue(candidates);
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const settings = settingsWith({ maxPairs: 2 });
-      await run(ai, "before", settings);
-      expect(ai).toHaveBeenCalledTimes(2);
-      // The two judged works now rank last: the cap stops the plan before them, and they still count.
-      mocks.repository.candidates!.mockResolvedValue(
-        candidates.map((candidate, index) => ({ ...candidate, textScore: index / 10 + 0.1 }))
-      );
-      const after = await run(ai, "after", settings);
-      expect(ai).toHaveBeenCalledTimes(4);
-      expect(after.coverage).toEqual({
-        judgedPairs: 4,
-        candidatePairs: 5,
-        capReached: true,
-        relationLimitReached: false,
-        budgetExhausted: false
-      });
-    });
-
-    it("keeps the stored coverage when a finished run is resumed", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(8));
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const first = await run(ai, "again", settingsWith({ maxPairs: 3 }));
-      expect((await run(ai, "again", settingsWith({ maxPairs: 3 }))).coverage).toEqual(
-        first.coverage
-      );
-      expect(ai).toHaveBeenCalledTimes(3);
-    });
-
-    it("does not count a candidate without evidence on both sides", async () => {
-      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(2));
-      mocks.repository.pairChunks!.mockResolvedValueOnce([a]).mockResolvedValue([a, b]);
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const result = await run(ai, "thin", settingsWith({ maxPairs: 3 }));
-      expect(result.coverage).toMatchObject({ judgedPairs: 1, candidatePairs: 1 });
-    });
-
-    it("counts a reciprocal pair as judged for both roots of a collective run", async () => {
-      mocks.repository.roots!.mockResolvedValue(["root-A", "root-B"]);
-      mocks.repository.candidates!.mockImplementation(async (root: string) => [
-        {
-          id: root === "root-A" ? "root-B" : "root-A",
-          textScore: 1,
-          vectorScore: 0,
-          graphScore: 0,
-          noteScore: 1
-        }
-      ]);
-      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      const result = await run(ai, "collective");
-      expect(ai).toHaveBeenCalledTimes(1);
-      expect(result.coverage).toMatchObject({ judgedPairs: 2, candidatePairs: 2 });
-    });
-
-    it("adds up the roots of a run and leaves coverage unknown when any root predates it", () => {
-      const part = {
-        judgedPairs: 2,
-        candidatePairs: 5,
-        capReached: true,
-        relationLimitReached: false,
-        budgetExhausted: false
-      };
-      expect(
-        combineSourceRelationCoverage([
-          part,
-          { ...part, judgedPairs: 1, candidatePairs: 1, capReached: false, budgetExhausted: true }
-        ])
-      ).toEqual({
-        judgedPairs: 3,
-        candidatePairs: 6,
-        capReached: true,
-        relationLimitReached: false,
-        budgetExhausted: true
-      });
-      expect(combineSourceRelationCoverage([part, undefined])).toBeUndefined();
-    });
-  });
-  it("recovers a committed decision before a checkpoint write without exceeding the proposal cap", async () => {
+  it("recovers a committed decision before a checkpoint write", async () => {
     const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
     const original = mocks.repository.saveRun!;
     mocks.repository.saveRun = vi.fn(
@@ -811,9 +756,7 @@ describe("source matching budget and recovery", () => {
     mocks.repository.saveRun = original;
     const result = await run(ai);
     expect(ai).toHaveBeenCalledTimes(1);
-    expect(result.persistedCount).toBe(1);
-    expect(result).toMatchObject({ completed: 1, total: 1 });
-    expect((states.get("run:root-A") as { proposals: number }).proposals).toBe(1);
+    expect(result).toMatchObject({ persistedCount: 1, completed: 1, total: 1 });
   });
   it("does not silently degrade to generic links after invalid output", async () => {
     const ai = vi.fn().mockResolvedValue(execution("invalid"));
@@ -904,78 +847,35 @@ describe("source matching budget and recovery", () => {
     expect(result.persistedCount).toBe(0);
     expect(mocks.repository.commitDecision!.mock.calls[0]?.[3]).toEqual([]);
   });
-  it("excludes the current root before ranking, evidence retrieval and model execution", async () => {
-    mocks.repository.candidates!.mockResolvedValue([
-      { id: "root-A", textScore: 1, vectorScore: 1, graphScore: 1, noteScore: 1 }
-    ]);
-    const ai = vi.fn();
-    await run(ai);
-    expect(mocks.repository.pairNotes).not.toHaveBeenCalled();
-    expect(mocks.repository.pairChunks).not.toHaveBeenCalled();
-    expect(ai).not.toHaveBeenCalled();
-  });
-  it("preserves spent budgets and decisions when language serialization invalidates an old checkpoint", async () => {
-    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
-    const configuration = createHash("sha256")
-      .update(
-        JSON.stringify({
-          version: "source-relations-v1",
-          language: "en",
-          settings,
-          profile: "profile",
-          provider: "provider",
-          model: "model",
-          runtime: "local",
-          localModel: null,
-          revision: "r1",
-          parameters: {},
-          defaults: {}
-        })
-      )
-      .digest("hex");
-    states.set("run:root-A", {
-      settings,
-      configuration,
-      pairs: ["done", "failed"],
-      completed: ["done"],
-      attempts: { done: 1, failed: 2 },
-      inputTokens: 10000,
-      proposals: 1,
-      persistedCount: 1,
-      partial: false,
-      finished: false
-    });
+  it("stops visibly when the judge's route changes during a run, and starts over afterwards", async () => {
     const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    mocks.selection
+      .mockReset()
+      .mockResolvedValueOnce(judgeRoute)
+      .mockResolvedValue({ ...judgeRoute, modelId: "another-model" });
     await expect(run(ai)).rejects.toThrow("errors.sourceRelations.configurationChanged");
     expect(ai).not.toHaveBeenCalled();
-    expect(states.get("run:root-A")).toMatchObject({
-      completed: ["done"],
-      inputTokens: 10000,
-      persistedCount: 1,
-      proposals: 1,
-      attempts: { failed: 2 }
-    });
+    // The next run plans under the new judge: its pair keys carry it, so nothing is judged twice.
+    await expect(run(ai)).resolves.toMatchObject({ completed: 1 });
+    expect(ai).toHaveBeenCalledTimes(1);
   });
-  it("keeps its run fingerprint while the task adds nothing and notices a task default that changes the parameters", async () => {
+  it("keys the judge on its identity, which a task default beneath the parameters changes", async () => {
     const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
     const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
     await run(ai, "run", settings);
-    // The reasoning-off default belongs to the note decision call only: source matching hashes
-    // exactly the profile, model and parameters, as before the default existed.
     const prompts = changedPromptIdentity([
       "sources.decide",
       "sources.decide.repair",
       "sources.validation.default",
       "sources.validation.same_root"
     ]);
-    const unchanged = createHash("sha256")
+    const identity = createHash("sha256")
       .update(
         JSON.stringify({
           version: sourceRelationPromptVersion,
           ...(prompts ? { prompts } : {}),
           language: "en",
-          settings,
-          profile: "profile",
+          request: sourceJudgeRequestSettings(settings, relationsConfig.sourceJudge),
           provider: "provider",
           model: "model",
           runtime: "local",
@@ -986,16 +886,34 @@ describe("source matching budget and recovery", () => {
         })
       )
       .digest("hex");
-    expect((states.get("run:root-A") as { configuration: string }).configuration).toBe(unchanged);
-    // A resumed run whose task now adds a default no longer matches its saved fingerprint.
+    expect((states.get("run:root-A") as { configuration: string }).configuration).toBe(identity);
     mocks.taskDefaults = { reasoningLevel: "off" };
     try {
-      await expect(run(ai, "run", settings)).rejects.toThrow(
-        "errors.sourceRelations.configurationChanged"
-      );
+      await run(ai, "default", settings);
+      expect(ai).toHaveBeenCalledTimes(2);
     } finally {
       mocks.taskDefaults = null;
     }
+  });
+});
+
+describe("re-promotion (R14)", () => {
+  it("re-promotes every root of the sources it is given, with no call", async () => {
+    mocks.repository = {
+      roots: vi.fn().mockResolvedValue(["root-A", "root-B"]),
+      promoteFromNotes: vi.fn(async (root: string) => ({
+        ...noPromotion,
+        promoted: root === "root-A" ? 1 : 0,
+        retired: root === "root-A" ? 1 : 0
+      }))
+    };
+    expect(await promoteSourceRelations({} as PgPool, ["A", "B", "A"])).toEqual({
+      promoted: 1,
+      refreshed: 0,
+      retired: 1
+    });
+    expect(mocks.repository.roots).toHaveBeenCalledWith(["A", "B"]);
+    expect(mocks.repository.promoteFromNotes).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1046,7 +964,7 @@ const worksFor = (ids: string[], rotation = 0) => {
   const chunks = [...inContentOrder.slice(rotation), ...inContentOrder.slice(0, rotation)];
   const note: SourceRelationNote = {
     id: `note-relation-${ids[0]}`,
-    type: "similar_to",
+    type: "contrasts",
     sourceNoteId: `note-${c4}`,
     targetNoteId: `note-${c1}`,
     sourceChunkId: c4,
@@ -1098,7 +1016,7 @@ describe("source relation prompts do not depend on database IDs", () => {
       prompt.indexOf("Memory consolidates.")
     );
     // The stored pair runs from the paper to the retrieval chapter; the prompt reads lower alias first.
-    expect(prompt).toContain('"source":"s1","target":"s3","type":"similar_to"');
+    expect(prompt).toContain('"source":"s1","target":"s3","type":"contrasts"');
     expect(prompt).toContain('"evidence":["c1","c4"]');
   });
 
@@ -1106,8 +1024,8 @@ describe("source relation prompts do not depend on database IDs", () => {
     for (const [index, ids] of uuidAssignments(9).entries()) {
       const { context, ids: works } = worksFor(ids, index);
       for (const answer of [
-        ["s1", "s3", "similar_to", 90, 90, ["c1"], ["c4"]],
-        ["s3", "s1", "similar_to", 90, 90, ["c4"], ["c1"]]
+        ["s1", "s3", "contrasts", 90, 90, ["c1"], ["c4"]],
+        ["s3", "s1", "contrasts", 90, 90, ["c4"], ["c1"]]
       ]) {
         const parsed = parseSourceDecision({ relations: [answer] }, context, 0);
         const result = sourceRelationWrites(
@@ -1118,7 +1036,8 @@ describe("source relation prompts do not depend on database IDs", () => {
         );
         expect(result.relations[0]).toMatchObject({
           sourceItemId: works.retrieval,
-          targetSourceItemId: works.paper
+          targetSourceItemId: works.paper,
+          relationType: "contradicts"
         });
         expect(result.relations[0]?.evidence[0]?.note?.sourceChunkId).toBe(works.c1);
       }
@@ -1131,12 +1050,12 @@ describe("source relation prompts do not depend on database IDs", () => {
       id: "saved",
       sourceItemId: works.paper,
       targetSourceItemId: works.retrieval,
-      relationType: "similar_to",
-      sourceIdea: "Memory consolidates.",
-      targetIdea: "Retrieval strengthens.",
+      relationType: "contradicts",
+      sourceIdea: null,
+      targetIdea: null,
       status
     });
-    const answer = { relations: [["s1", "s3", "similar_to", 90, 90, ["c1"], ["c4"]]] };
+    const answer = { relations: [["s1", "s3", "contrasts", 90, 90, ["c1"], ["c4"]]] };
     const known = sourceRelationWrites(
       parseSourceDecision(answer, context, 0).items,
       { ...context, existing: [saved("accepted")] },
@@ -1155,49 +1074,19 @@ describe("source relation prompts do not depend on database IDs", () => {
     ).toMatchObject({ proposals: 0, relations: [] });
   });
 
-  it("breaks candidate ties on the work title, never on the candidate ID", () => {
-    for (const [first, second] of uuidAssignments(2).map((ids) => ids as [string, string])) {
-      const signals = { textScore: 0.5, vectorScore: 0.5, graphScore: 0, noteScore: 0 };
-      const candidates = [
-        { id: first, title: "Zeta work", ...signals },
-        { id: second, title: "Alpha work", ...signals }
-      ];
-      expect(rankSourceCandidates(candidates, 2).map((candidate) => candidate.title)).toEqual([
-        "Alpha work",
-        "Zeta work"
-      ]);
-    }
-  });
-
   it("sends the model the same prompt for the same works under any UUID assignment", async () => {
     const states = new Map<string, unknown>();
     const decisions = new Map<string, Record<string, unknown>>();
-    mocks.selection.mockReset().mockResolvedValue({
-      profileId: "profile",
-      providerConfigId: "provider",
-      modelId: "model",
-      runtime: "local",
-      localModelId: null,
-      revision: "r1",
-      parameters: {},
-      modelDefaultParameters: {}
-    });
+    mocks.selection.mockReset().mockResolvedValue(judgeRoute);
     const prompts: string[] = [];
     for (const [index, ids] of uuidAssignments(9).entries()) {
       const { context, ids: works } = worksFor(ids, index);
       mocks.repository = {
         roots: vi.fn().mockResolvedValue([works.learning]),
         fingerprint: vi.fn(async (id: string) => id),
-        candidates: vi.fn().mockResolvedValue([
-          {
-            id: works.memory,
-            title: "Memory paper",
-            textScore: 1,
-            vectorScore: 0,
-            graphScore: 0,
-            noteScore: 0
-          }
-        ]),
+        promoteFromNotes: vi.fn().mockResolvedValue(noPromotion),
+        discoveryVector: vi.fn().mockResolvedValue({ spaceKey: "256:space" }),
+        planDiscovery: vi.fn().mockResolvedValue(plan([works.memory])),
         pairNotes: vi.fn().mockResolvedValue([]),
         pairNoteFingerprints: vi.fn().mockResolvedValue([]),
         // The database returns the chunks in whatever order it likes.

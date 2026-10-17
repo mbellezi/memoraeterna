@@ -21,7 +21,11 @@ export const atomicRelationMessageKeys: Readonly<Record<string, MessageKey>> = {
   depends_on: "knowledge.relations.types.depends_on",
   clarifies: "knowledge.relations.types.clarifies",
   mentions: "knowledge.relations.types.mentions",
-  related: "knowledge.relations.types.related"
+  related: "knowledge.relations.types.related",
+  // The write vocabulary of relations v2 (F3 D10), which promoted source relations use.
+  contradicts: "knowledge.relations.types.contradicts",
+  example_of: "knowledge.relations.types.example_of",
+  same_as: "knowledge.relations.types.same_as"
 };
 
 export const atomicRelationLegend = [

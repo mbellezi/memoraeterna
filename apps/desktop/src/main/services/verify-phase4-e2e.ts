@@ -1083,7 +1083,9 @@ try {
         throw new Error("errors.sourceRelations.invalidOutput");
       x5.discovered.push(input.rootId);
       return { persistedCount: 0 };
-    }
+    },
+    // Design E's promotion (T53): no typed cross-root relation here is promoted.
+    promoteSourceRelations: async () => ({ promoted: 0, refreshed: 0, retired: 0 })
   };
   const matchingStages = [
     "chunking",

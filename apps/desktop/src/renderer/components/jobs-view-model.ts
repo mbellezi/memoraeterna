@@ -155,18 +155,16 @@ export function listActivityJobs(card: JobCardModel): JobRecord[] {
 export interface SourceRelationCoverageNotice {
   /** Neutral lines state how far matching went; only a warning reports work that could not finish. */
   tone: "neutral" | "warning";
-  messageKey:
-    | "sourceRelations.coverage.analysed"
-    | "sourceRelations.coverage.relationLimit"
-    | "sourceRelations.coverage.incomplete";
-  values: { judged: number; candidates: number };
+  messageKey: "sourceRelations.coverage.linked" | "sourceRelations.coverage.incomplete";
+  values: { promoted: number; judged: number; candidates: number };
 }
 
 /**
- * What the source-matching stage checkpoint says about coverage. The per-run pair cap and the
- * relation limit are normal limits and read neutrally; an exhausted input budget (a pair that could
- * not be completed) is the only warning. Checkpoints written before coverage was recorded, and
- * runs that judged every candidate, show nothing.
+ * What the source-matching stage checkpoint says (design E, F3 D27): the relations promoted from
+ * note connections and the 0-2 nearest sources judged, read neutrally; an exhausted input budget (a
+ * pair that could not be completed) is the only warning. A run its link job completed (F3 D24)
+ * keeps the coverage under its discovery summary. Checkpoints written before coverage was
+ * recorded, and a source that linked nothing and judged nothing, show nothing.
  */
 export function sourceRelationCoverageNotice(
   checkpoint: unknown
@@ -174,17 +172,23 @@ export function sourceRelationCoverageNotice(
   if (typeof checkpoint !== "object" || checkpoint === null || !("metadata" in checkpoint))
     return null;
   const metadata = checkpoint.metadata;
-  if (typeof metadata !== "object" || metadata === null || !("coverage" in metadata)) return null;
-  const parsed = SourceRelationCoverageSchema.safeParse(metadata.coverage);
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const discovery = "discovery" in metadata ? metadata.discovery : null;
+  const coverage =
+    "coverage" in metadata
+      ? metadata.coverage
+      : typeof discovery === "object" && discovery !== null && "coverage" in discovery
+        ? discovery.coverage
+        : undefined;
+  if (coverage === undefined) return null;
+  const parsed = SourceRelationCoverageSchema.safeParse(coverage);
   if (!parsed.success) return null;
-  const { judgedPairs: judged, candidatePairs: candidates } = parsed.data;
-  const values = { judged, candidates };
+  const { judgedPairs: judged, candidatePairs: candidates, promoted = 0 } = parsed.data;
+  const values = { promoted, judged, candidates };
   if (parsed.data.budgetExhausted)
     return { tone: "warning", messageKey: "sourceRelations.coverage.incomplete", values };
-  if (parsed.data.relationLimitReached)
-    return { tone: "neutral", messageKey: "sourceRelations.coverage.relationLimit", values };
-  if (parsed.data.capReached)
-    return { tone: "neutral", messageKey: "sourceRelations.coverage.analysed", values };
+  if (promoted > 0 || candidates > 0)
+    return { tone: "neutral", messageKey: "sourceRelations.coverage.linked", values };
   return null;
 }
 

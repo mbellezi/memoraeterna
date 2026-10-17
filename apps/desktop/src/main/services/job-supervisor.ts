@@ -62,6 +62,7 @@ import { chunkMarkdown } from "@app/conversion";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
+import { refreshAncestorComposites } from "./source-composite.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -265,7 +266,10 @@ export class JobSupervisor {
       steps: {
         typeRelationPairs: (pairs, options, signal) =>
           knowledge.typeRelationPairs(pairs, options, signal),
-        discoverSourceRelations: (input, signal) => knowledge.discoverSourceRelations(input, signal)
+        discoverSourceRelations: (input, signal) =>
+          knowledge.discoverSourceRelations(input, signal),
+        // Design E's promotion (T53, D27, R14), with no call.
+        promoteSourceRelations: (rootIds) => knowledge.promoteSourceRelations(rootIds)
       },
       registry: new InFlightRegistry(),
       budget:
@@ -995,6 +999,24 @@ export class JobSupervisor {
           }
         }
       }
+      // A chapter's composite completes its hierarchy roots' composites (F3 D27 discovery).
+      const recomposed = await refreshAncestorComposites({
+        pool,
+        sourceItemId,
+        aggregate: aggregateSourceEmbedding,
+        embed: this.options.generateEmbedding
+          ? (text) =>
+              this.options.generateEmbedding!(text, signal, {
+                jobId: job.id,
+                ingestionRunId,
+                sourceItemId,
+                documentId,
+                stage: "source_embedding",
+                embeddingInputType: "document"
+              })
+          : null
+      });
+      if (recomposed.length) await this.options.topicHooks?.sourcesChanged(recomposed);
       await runs.completeStage(ingestionRunId, "embedding", {
         embeddedCount,
         reusedCount,

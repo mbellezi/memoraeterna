@@ -165,6 +165,8 @@ export interface RelationDiscoveryInput {
   priority: AiPriorityInput;
   /** Asked before every remote call; false stops the pass (`relationDailyCapError`). */
   reserveCall: (lane: "local" | "remote") => Promise<boolean>;
+  /** The link jobs' in-flight registry: a pair another job is judging is judged once (D24). */
+  registry: InFlightRegistry;
   context: AiTaskLogContext;
 }
 
@@ -176,8 +178,8 @@ export interface RelationLinkSteps {
     signal?: AbortSignal
   ) => Promise<RelationTypingResult>;
   /**
-   * Discovers and judges the root's source relations. Until T53's design E, this is the v5
-   * source matcher on the root; T53 replaces it with nearest-root discovery.
+   * Discovers and judges the root's source relations by design E (T53, D27): promotion, then
+   * nearest-root discovery with each selected pair judged once.
    */
   discoverSourceRelations: (
     input: RelationDiscoveryInput,
@@ -1044,6 +1046,7 @@ export class RelationLinker {
           priority,
           reserveCall: (lane) =>
             this.deps.budget.reserve({ lane, priority, drain: input.runtime.drain }),
+          registry: this.deps.registry,
           context: {
             jobId: input.job.id,
             sourceItemId: input.rootId,

@@ -171,13 +171,7 @@ describe("jobs view model", () => {
   });
 
   describe("source relation coverage notice", () => {
-    const coverage = {
-      judgedPairs: 6,
-      candidatePairs: 18,
-      capReached: false,
-      relationLimitReached: false,
-      budgetExhausted: false
-    };
+    const coverage = { judgedPairs: 1, candidatePairs: 2, budgetExhausted: false, promoted: 3 };
     const checkpoint = (
       overrides: Record<string, unknown>,
       extra: Record<string, unknown> = {}
@@ -186,36 +180,66 @@ describe("jobs view model", () => {
       metadata: { coverage: { ...coverage, ...overrides }, ...extra }
     });
 
-    it("reads the pair cap as a neutral count of analysed candidates", () => {
-      expect(sourceRelationCoverageNotice(checkpoint({ capReached: true }))).toEqual({
+    it("reads promotion and the nearest sources judged as a neutral line (design E)", () => {
+      expect(sourceRelationCoverageNotice(checkpoint({}))).toEqual({
         tone: "neutral",
-        messageKey: "sourceRelations.coverage.analysed",
-        values: { judged: 6, candidates: 18 }
+        messageKey: "sourceRelations.coverage.linked",
+        values: { promoted: 3, judged: 1, candidates: 2 }
       });
     });
 
-    it("reads the relation limit as neutral", () => {
-      expect(sourceRelationCoverageNotice(checkpoint({ relationLimitReached: true }))).toEqual({
-        tone: "neutral",
-        messageKey: "sourceRelations.coverage.relationLimit",
-        values: { judged: 6, candidates: 18 }
-      });
-    });
-
-    it("warns only for an exhausted input budget, whatever else was reached", () => {
-      expect(
-        sourceRelationCoverageNotice(
-          checkpoint({ budgetExhausted: true, capReached: true, relationLimitReached: true })
-        )
-      ).toEqual({
+    it("warns only for an exhausted input budget", () => {
+      expect(sourceRelationCoverageNotice(checkpoint({ budgetExhausted: true }))).toEqual({
         tone: "warning",
         messageKey: "sourceRelations.coverage.incomplete",
-        values: { judged: 6, candidates: 18 }
+        values: { promoted: 3, judged: 1, candidates: 2 }
       });
     });
 
-    it("shows nothing when every candidate was judged", () => {
-      expect(sourceRelationCoverageNotice(checkpoint({ judgedPairs: 18 }))).toBeNull();
+    it("reads a checkpoint written by the shortlist, ignoring its cap flags", () => {
+      expect(
+        sourceRelationCoverageNotice({
+          status: "completed",
+          metadata: {
+            coverage: {
+              judgedPairs: 6,
+              candidatePairs: 18,
+              capReached: true,
+              relationLimitReached: false,
+              budgetExhausted: false
+            }
+          }
+        })
+      ).toEqual({
+        tone: "neutral",
+        messageKey: "sourceRelations.coverage.linked",
+        values: { promoted: 0, judged: 6, candidates: 18 }
+      });
+    });
+
+    it("reads the coverage of a run its link job completed, under the discovery summary", () => {
+      expect(
+        sourceRelationCoverageNotice({
+          status: "completed",
+          metadata: { linkJobId: "job", typed: 2, discovery: { status: "completed", coverage } }
+        })
+      ).toEqual({
+        tone: "neutral",
+        messageKey: "sourceRelations.coverage.linked",
+        values: { promoted: 3, judged: 1, candidates: 2 }
+      });
+      expect(
+        sourceRelationCoverageNotice({
+          status: "completed",
+          metadata: { discovery: { status: "deferred", reason: "daily_cap" } }
+        })
+      ).toBeNull();
+    });
+
+    it("shows nothing when the source linked and judged nothing", () => {
+      expect(
+        sourceRelationCoverageNotice(checkpoint({ promoted: 0, candidatePairs: 0, judgedPairs: 0 }))
+      ).toBeNull();
     });
 
     it.each([
@@ -228,27 +252,26 @@ describe("jobs view model", () => {
       { status: "completed", metadata: { partial: true } },
       { status: "completed", metadata: { coverage: { capReached: true } } },
       { status: "completed", metadata: { coverage: { ...coverage, judgedPairs: -1 } } },
-      { status: "completed", metadata: { coverage: { ...coverage, extra: true } } }
+      { status: "completed", metadata: { coverage: { ...coverage, promoted: -1 } } }
     ])("shows nothing for a checkpoint without valid coverage: %j", (value) => {
       expect(sourceRelationCoverageNotice(value)).toBeNull();
     });
 
-    it("has a message in every locale for each notice, with both counts filled in", () => {
-      const keys = [
-        "sourceRelations.coverage.analysed",
-        "sourceRelations.coverage.relationLimit",
-        "sourceRelations.coverage.incomplete"
-      ] as const;
-      for (const locale of supportedLanguageCodes)
-        for (const key of keys) {
-          const text = createTranslator(locale)(key, {
-            values: { judged: 6, candidates: 18 },
-            missingKeyBehavior: "throw"
-          });
-          expect(text).toContain("6");
-          expect(text).toContain("18");
-          expect(text).not.toContain("{");
-        }
+    it("has a message in every locale for each notice, with its counts filled in", () => {
+      for (const locale of supportedLanguageCodes) {
+        const translate = createTranslator(locale);
+        const linked = translate("sourceRelations.coverage.linked", {
+          values: { promoted: 7, judged: 1, candidates: 2 },
+          missingKeyBehavior: "throw"
+        });
+        for (const count of ["7", "1", "2"]) expect(linked).toContain(count);
+        const incomplete = translate("sourceRelations.coverage.incomplete", {
+          values: { promoted: 7, judged: 1, candidates: 2 },
+          missingKeyBehavior: "throw"
+        });
+        for (const count of ["1", "2"]) expect(incomplete).toContain(count);
+        for (const text of [linked, incomplete]) expect(text).not.toContain("{");
+      }
     });
   });
 

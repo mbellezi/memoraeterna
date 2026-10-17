@@ -17,6 +17,8 @@ export * from "./source-descriptor.js";
 export * from "./storage.js";
 export * from "./text-sanitization.js";
 export * from "./source-relations.js";
+export * from "./source-relation-promotion.js";
+export * from "./source-discovery.js";
 
 export * from "./matching-settings.js";
 export * from "./matching-presets.js";

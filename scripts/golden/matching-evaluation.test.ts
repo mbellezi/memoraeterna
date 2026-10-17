@@ -548,6 +548,21 @@ describe("evaluateMatching: source report and calls per chapter", () => {
     );
   });
 
+  it("counts every root design E matched as a source, with or without a judge call (S1)", () => {
+    const result = evaluateMatching(
+      library({
+        aiCalls: [sourceCall("s-c1", { durationMs: 4500 })],
+        // A chapter rolls up to its book; a root outside the library is ignored.
+        matchedRoots: ["s-c1", "s-a1b", "s-f1", "not-in-the-library"]
+      })
+    );
+    expect(result.cost.sourceMatching).toMatchObject({
+      roots: 3,
+      callsPerRoot: 1 / 3,
+      secondsPerRoot: 1.5
+    });
+  });
+
   it("leaves wall seconds unknown without call timestamps", () => {
     const result = evaluateMatching(
       library({

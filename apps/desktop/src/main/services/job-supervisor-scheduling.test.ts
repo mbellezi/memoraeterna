@@ -667,9 +667,10 @@ describe("ingestion queue scheduling", () => {
         const light = vi.spyOn(supervisor, "runLightOnce").mockResolvedValue(null);
         await supervisor.start();
         await vi.advanceTimersByTimeAsync(300);
-        // A link job is due or running: no heavy claim, and the lane is not idle.
+        // A link job is due or running: no heavy claim, and the lane is not idle. Promotion jobs
+        // (T53) count too: discovery reads the source relations they write.
         expect(query).toHaveBeenCalledWith(expect.stringContaining("from jobs"), [
-          ["relation-link", "relation-retype"]
+          ["relation-link", "relation-promote", "relation-retype"]
         ]);
         expect(mocks.jobs.claimNext).not.toHaveBeenCalledWith(
           expect.any(String),

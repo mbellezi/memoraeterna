@@ -85,14 +85,12 @@ export function benchmarkConfiguration(
         fusedCandidateLimit: 20,
         minimumGraphOnlyCandidates: 3
       },
+      // Design E (F3 D27) deleted the shortlist limits; the evidence limits remain.
       sourceRelationSettings: {
         ...base.sourceRelationSettings,
-        maxCandidates: 30,
-        maxPairs: 6,
         evidenceChunksPerSource: 2,
         evidenceMaxCharacters: 800,
-        summaryMaxCharacters: 1000,
-        noteRelationsPerPair: 4
+        summaryMaxCharacters: 1000
       }
     };
   if (variant === "coverage")
@@ -108,10 +106,7 @@ export function benchmarkConfiguration(
       },
       sourceRelationSettings: {
         ...base.sourceRelationSettings,
-        maxCandidates: 60,
-        maxPairs: 12,
-        evidenceChunksPerSource: 4,
-        noteRelationsPerPair: 8
+        evidenceChunksPerSource: 4
       }
     };
   return base;

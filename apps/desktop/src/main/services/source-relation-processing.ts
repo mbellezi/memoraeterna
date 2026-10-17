@@ -6,18 +6,24 @@ import {
   AtomicNoteRelationTypeSchema,
   SourceRelationCoverageSchema,
   SourceRelationSettingsSchema,
+  equivalentSourceRelationTypes,
+  generativeDeciderCapabilities,
+  relationsConfig as defaultRelationsConfig,
   sourceDecisionLimits,
   sourceDecisionPassesFloors,
+  sourceVerdictWriteType,
   symmetricSourceRelationTypes,
+  type RelationsConfig,
   type SourceDecisionItem,
   type SourceRelationCoverage,
   type SourceRelationSettings
 } from "@app/domain";
 import {
+  aiRouteKeys,
   createAiConfigRepository,
   createSourceRelationRepository,
   type PgPool,
-  type SourceRelationCandidate,
+  type RetrievalFence,
   type SourceRelationChunk,
   type SourceRelationNote,
   type SourceRelationWrite
@@ -25,15 +31,20 @@ import {
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
 import { aiTaskBehaviorDefaults } from "./ai-task-parameters.js";
 import { parseJsonOutput } from "./knowledge-processing.js";
+import { InFlightRegistry } from "./relations/in-flight-registry.js";
 
 /**
- * Compact, score-only source verdicts (docs/plan.md decision 17): the decider answers at most two
- * `[from, to, type, importance, confidence, [from chunks], [to chunks]]` items per pair of works and
- * writes no prose. Explanations are written when the owner opens a relation.
+ * Source relations by design E (F3 D27, decision 17). Per root, with no batch barrier: (1) every
+ * typed applied cross-root note relation is promoted into a source relation with no call; (2)
+ * discovery selects the root's nearest earlier root and its reverse neighbours on the stored
+ * composite vectors; (3) each selected unordered pair is judged once with the compact, score-only
+ * `source-relations-v5` verdict: at most two `[from, to, type, importance, confidence, [from
+ * chunks], [to chunks]]` items per pair and no prose. Explanations are written when the owner opens
+ * a relation.
  */
 export const sourceRelationPromptVersion = "source-relations-v5";
 export const sourceMatchingOperation = "source_relation_matching";
-/** Every catalog prompt the source decision is composed of: its identity is in the run fingerprint. */
+/** Every catalog prompt the source decision is composed of: its identity is in the pair key. */
 const sourceDecisionPromptIds = [
   "sources.decide",
   "sources.decide.repair",
@@ -55,22 +66,38 @@ const decisionItemSchema = z.tuple([
 // the allowance are dropped after ranking, so a surplus item can never discard the valid ones.
 const decisionEnvelopeSchema = z.object({ relations: z.array(z.unknown()) });
 
+/**
+ * One root's matching state in a run (`source_matching_runs`). States written before design E also
+ * hold the shortlist's counters; they are read and ignored.
+ */
 const stateSchema = z.object({
   settings: SourceRelationSettingsSchema,
   configuration: z.string(),
   pairs: z.array(z.string()),
   completed: z.array(z.string()),
   inputTokens: z.number().nonnegative(),
-  proposals: z.number().nonnegative(),
   persistedCount: z.number().nonnegative(),
   attempts: z.record(z.string(), z.number()),
-  /** True only when a pair could not be completed (`coverage.budgetExhausted`); older runs set it for any limit. */
+  /** True only when a pair could not be completed (`coverage.budgetExhausted`). */
   partial: z.boolean(),
-  /** Written when the root finishes; absent on runs that finished before coverage was recorded. */
+  /** Written when the root finishes. */
   coverage: SourceRelationCoverageSchema.optional(),
   finished: z.boolean(),
-  totalPairs: z.number().int().nonnegative().default(0)
+  totalPairs: z.number().int().nonnegative().default(0),
+  /**
+   * What discovery did for the root: the pairs it planned (stored with the plan, so a resumed run
+   * judges exactly them), or why it planned none.
+   */
+  discovery: z
+    .object({
+      status: z.enum(["planned", "deferred", "no_vector"]),
+      roots: z.array(z.string()),
+      candidates: z.number().int().nonnegative().default(0)
+    })
+    .optional()
 });
+type RootState = z.infer<typeof stateSchema>;
+
 type ExistingRelation = {
   id: string;
   sourceItemId: string;
@@ -79,6 +106,10 @@ type ExistingRelation = {
   sourceIdea: string | null;
   targetIdea: string | null;
   status: string;
+  /** Absent on fixtures of earlier rows: a judged relation. */
+  origin?: "judged" | "promoted";
+  sourceRootId?: string;
+  targetRootId?: string;
 };
 export interface SourceRelationContext {
   chunks: SourceRelationChunk[];
@@ -98,7 +129,8 @@ export async function sourcePairContext(
   rootId: string,
   candidateId: string,
   notes: SourceRelationNote[],
-  settings: Pick<SourceRelationSettings, "evidenceChunksPerSource" | "evidenceMaxCharacters">
+  settings: Pick<SourceRelationSettings, "evidenceChunksPerSource" | "evidenceMaxCharacters">,
+  bounds?: Pick<RelationsConfig["sourceJudge"], "exactEvidencePairs" | "boundedEvidenceChunks">
 ): Promise<SourceRelationContext | null> {
   const chunks = orderSourceRelationChunks(
     (
@@ -106,7 +138,8 @@ export async function sourcePairContext(
         rootId,
         candidateId,
         notes.flatMap((note) => [note.sourceChunkId, note.targetChunkId]),
-        settings.evidenceChunksPerSource
+        settings.evidenceChunksPerSource,
+        ...(bounds ? [bounds] : [])
       )
     ).map((chunk) => ({
       ...chunk,
@@ -125,68 +158,27 @@ export async function sourcePairContext(
       ),
       aliasOrder(chunks).sources
     ),
+    // A relation between the two roots themselves holds whichever passages the pair shows.
     existing: existing.filter(
       (relation) =>
-        chunks.some((chunk) => chunk.sourceItemId === relation.sourceItemId) &&
-        chunks.some((chunk) => chunk.sourceItemId === relation.targetSourceItemId)
+        (relation.sourceItemId === relation.sourceRootId &&
+          relation.targetSourceItemId === relation.targetRootId) ||
+        (chunks.some((chunk) => chunk.sourceItemId === relation.sourceItemId) &&
+          chunks.some((chunk) => chunk.sourceItemId === relation.targetSourceItemId))
     )
   };
 }
 
-/** A pair answers at most two items, within what is left of the root's proposal budget. */
+/** A pair answers at most two items (and no more than the settings allow per pair). */
 export const sourceDecisionAllowance = (
-  settings: Pick<SourceRelationSettings, "maxRelationsPerPair" | "maxRelations">,
-  proposals: number
-) =>
-  Math.min(
-    sourceDecisionLimits.maxItemsPerPair,
-    settings.maxRelationsPerPair,
-    settings.maxRelations - proposals
-  );
+  settings: Pick<SourceRelationSettings, "maxRelationsPerPair">
+) => Math.min(sourceDecisionLimits.maxItemsPerPair, settings.maxRelationsPerPair);
 
 /** The output budget of one decision call for the pair's allowance. */
 export const sourceDecisionMaxOutputTokens = (
   settings: Pick<SourceRelationSettings, "maxOutputTokens">,
   allowance: number
 ) => Math.min(settings.maxOutputTokens, 500 + allowance * 700);
-
-/** Equal scores break on the work title: candidate IDs are random on every import. */
-const compareCandidateIdentity = (a: SourceRelationCandidate, b: SourceRelationCandidate) =>
-  compareContent(a.title, b.title) || a.id.localeCompare(b.id);
-
-export function rankSourceCandidates(
-  candidates: SourceRelationCandidate[],
-  limit: number,
-  reciprocalRankConstant = 60
-): SourceRelationCandidate[] {
-  const ranks = new Map<string, number>();
-  for (const signal of ["textScore", "vectorScore", "graphScore", "noteScore"] as const) {
-    candidates
-      .filter((candidate) => candidate[signal] > 0)
-      .toSorted((a, b) => b[signal] - a[signal] || compareCandidateIdentity(a, b))
-      .forEach((candidate, index) =>
-        ranks.set(
-          candidate.id,
-          (ranks.get(candidate.id) ?? 0) + 1 / (reciprocalRankConstant + 1 + index)
-        )
-      );
-  }
-  const ranked = candidates.toSorted(
-    (a, b) => (ranks.get(b.id) ?? 0) - (ranks.get(a.id) ?? 0) || compareCandidateIdentity(a, b)
-  );
-  // Reserve discovery capacity for sources without note links; notes must not monopolize the shortlist.
-  const discovery = ranked.filter((candidate) => candidate.noteScore === 0),
-    notes = ranked.filter((candidate) => candidate.noteScore > 0);
-  const selected: SourceRelationCandidate[] = [];
-  while (selected.length < limit && (discovery.length || notes.length)) {
-    const next =
-      selected.length % 2 === 0
-        ? (notes.shift() ?? discovery.shift())
-        : (discovery.shift() ?? notes.shift());
-    if (next) selected.push(next);
-  }
-  return selected;
-}
 
 /**
  * Chunks in document order across the pair: work title, source title, then chunk position. The
@@ -392,23 +384,34 @@ export function distinctSourceVerdicts(items: ReadonlyArray<SourceDecisionVerdic
 }
 
 export type SourceDecisionOutcome =
-  "persisted" | "below_floors" | "owner_rejected" | "over_allowance";
+  | "persisted"
+  | "below_floors"
+  | "owner_rejected"
+  | "over_allowance"
+  /** A type the write vocabulary drops (Q14: `similar_to` unless the configuration keeps it). */
+  | "weak_type";
 
 /** A stored raw verdict: what the decider answered and what became of it under the floors. */
 export type SourceDecisionRecord = SourceDecisionItem & { outcome: SourceDecisionOutcome };
 
+/** How a verdict is written: the source judge's part of the typed relations configuration. */
+export type SourceJudgeWriteOptions = Pick<RelationsConfig["sourceJudge"], "keepSimilarTo">;
+
 /**
  * Turns verdict items into relation writes. Items with the same endpoints and type are one relation
  * (scores the highest answered, evidence the union); relations rank by importance, then confidence,
- * and only the allowance is kept. A relation the owner rejected is never brought back; one already
- * saved is not a new proposal, and its evidence merges on persistence. Floors apply to the raw
- * scores divided by 100. A note connection whose passages the item cites is note-backed evidence.
+ * and only the allowance is kept. The type is written in the write vocabulary (`contrasts` as
+ * `contradicts`; `similar_to` dropped as weak unless kept, Q14). A relation the owner rejected is
+ * never brought back; one already saved (or promoted for the same pair of works) is not a new
+ * proposal, and its evidence merges on persistence. Floors apply to the raw scores divided by 100.
+ * A note connection whose passages the item cites is note-backed evidence.
  */
 export function sourceRelationWrites(
   items: ReadonlyArray<SourceDecisionVerdict>,
   context: SourceRelationContext,
   settings: Pick<SourceRelationSettings, "minImportance" | "minConfidence" | "includeWeakTypes">,
-  allowance: number
+  allowance: number,
+  options: SourceJudgeWriteOptions = defaultRelationsConfig.sourceJudge
 ): { proposals: number; relations: SourceRelationWrite[]; records: SourceDecisionRecord[] } {
   const groups = new Map<string, SourceDecisionVerdict>();
   for (const item of items) {
@@ -442,15 +445,32 @@ export function sourceRelationWrites(
       outcomes.set(key, "over_allowance");
       continue;
     }
-    const symmetric = symmetricSourceRelationTypes.includes(verdict.type);
+    const type = sourceVerdictWriteType(verdict.type, options);
+    if (type === null) {
+      outcomes.set(key, "weak_type");
+      continue;
+    }
+    const types = equivalentSourceRelationTypes(type);
+    const symmetric = symmetricSourceRelationTypes.includes(type);
+    const [sourceRoot, targetRoot] = [
+      verdict.sourceChunks[0]?.rootId,
+      verdict.targetChunks[0]?.rootId
+    ];
     const equivalent = context.existing.filter(
       (relation) =>
-        relation.relationType === verdict.type &&
+        types.includes(relation.relationType) &&
         ((relation.sourceItemId === verdict.sourceItemId &&
           relation.targetSourceItemId === verdict.targetSourceItemId) ||
           (symmetric &&
             relation.sourceItemId === verdict.targetSourceItemId &&
-            relation.targetSourceItemId === verdict.sourceItemId))
+            relation.targetSourceItemId === verdict.sourceItemId) ||
+          // The one relation between the two roots themselves (as promotion keeps it).
+          (relation.sourceItemId === relation.sourceRootId &&
+            relation.targetSourceItemId === relation.targetRootId &&
+            ((relation.sourceRootId === sourceRoot && relation.targetRootId === targetRoot) ||
+              (symmetric &&
+                relation.sourceRootId === targetRoot &&
+                relation.targetRootId === sourceRoot))))
     );
     if (equivalent.some((relation) => relation.status === "rejected")) {
       outcomes.set(key, "owner_rejected");
@@ -464,7 +484,7 @@ export function sourceRelationWrites(
     outcomes.set(key, "persisted");
     const notes = context.notes.filter(
       (note) =>
-        note.type === verdict.type &&
+        types.includes(note.type) &&
         note.sourceItemId === verdict.sourceItemId &&
         note.targetSourceItemId === verdict.targetSourceItemId &&
         verdict.sourceChunks.some((chunk) => chunk.id === note.sourceChunkId) &&
@@ -488,7 +508,7 @@ export function sourceRelationWrites(
       existingId: null,
       sourceItemId: verdict.sourceItemId,
       targetSourceItemId: verdict.targetSourceItemId,
-      relationType: verdict.type,
+      relationType: type,
       sourceIdea: null,
       targetIdea: null,
       explanation: null,
@@ -511,11 +531,6 @@ export function sourceRelationWrites(
   return { proposals, relations, records };
 }
 
-/** What one root's planning and judging found out about its coverage, before it is stored. */
-interface CoverageTally extends SourceRelationCoverage {
-  /** Keys another root of the same run judges; they count as judged once that root has done so. */
-  sharedKeys: string[];
-}
 /** Adds up the roots of one run; unknown (a root finished before coverage was recorded) stays unknown. */
 export function combineSourceRelationCoverage(
   parts: ReadonlyArray<SourceRelationCoverage | undefined>
@@ -525,18 +540,53 @@ export function combineSourceRelationCoverage(
   return {
     judgedPairs: known.reduce((sum, part) => sum + part.judgedPairs, 0),
     candidatePairs: known.reduce((sum, part) => sum + part.candidatePairs, 0),
-    capReached: known.some((part) => part.capReached),
-    relationLimitReached: known.some((part) => part.relationLimitReached),
-    budgetExhausted: known.some((part) => part.budgetExhausted)
+    budgetExhausted: known.some((part) => part.budgetExhausted),
+    promoted: known.reduce((sum, part) => sum + (part.promoted ?? 0), 0)
   };
 }
 
 function hash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
-export async function matchSources(options: {
+
+/**
+ * The settings that shape the judge's request: they belong to the pair key. The floors and the input
+ * budget only decide what is kept of a verdict or whether a call is made, so changing them never
+ * re-judges a pair (D27; the raw items are stored with every decision).
+ */
+export function sourceJudgeRequestSettings(
+  settings: SourceRelationSettings,
+  judge: Pick<
+    RelationsConfig["sourceJudge"],
+    "noteRelationsPerPair" | "exactEvidencePairs" | "boundedEvidenceChunks"
+  >
+) {
+  return {
+    evidenceChunksPerSource: settings.evidenceChunksPerSource,
+    evidenceMaxCharacters: settings.evidenceMaxCharacters,
+    summaryMaxCharacters: settings.summaryMaxCharacters,
+    maxOutputTokens: settings.maxOutputTokens,
+    maxRelationsPerPair: settings.maxRelationsPerPair,
+    includeWeakTypes: settings.includeWeakTypes,
+    noteRelationsPerPair: judge.noteRelationsPerPair,
+    // The evidence fallback of large roots (R19) selects other passages.
+    exactEvidencePairs: judge.exactEvidencePairs,
+    boundedEvidenceChunks: judge.boundedEvidenceChunks
+  };
+}
+
+/**
+ * The in-flight registry of judged pairs (D24) for a caller that brings none: two runs that select
+ * the same unordered pair share one call; the second waits for the first and then finds its
+ * decision. The link jobs pass theirs, which also holds the note pairs they are typing.
+ */
+const judgingPairs = new InFlightRegistry();
+/** A source-pair key in the in-flight registry, apart from the note-pair keys of typing. */
+const judgingKey = (key: string) => `source-pair:${key}`;
+
+export interface MatchSourcesOptions {
   pool: PgPool;
-  ai: Pick<AiService, "runDefaultTask">;
+  ai: Pick<AiService, "runDefaultTask"> & Partial<Pick<AiService, "ensureLegacyRouteMapping">>;
   sourceIds: string[];
   runKey: string;
   settings: SourceRelationSettings;
@@ -548,14 +598,58 @@ export async function matchSources(options: {
     progress: number,
     counts: { completed: number; total: number }
   ) => void | Promise<void>;
-}) {
+  /**
+   * `defer`: promotion only; discovery is recorded as deferred (relation remote calls switched off,
+   * or a hierarchy root whose last record has not linked yet). Defaults to `run`.
+   */
+  discovery?: "run" | "defer";
+  /** A re-match run's visibility fence (3.17): discovery sees only the released roots. */
+  fence?: RetrievalFence | undefined;
+  /** The discovery and judge parts of the typed relations configuration. */
+  config?: Pick<RelationsConfig, "discovery" | "sourceJudge">;
+  /** The in-flight registry the pairs are judged under (D24); the link jobs pass theirs. */
+  registry?: InFlightRegistry;
+}
+
+/** A type, not an interface: the stage checkpoint stores it as a JSON record. */
+export type SourceMatchingResult = {
+  persistedCount: number;
+  partial: boolean;
+  coverage?: SourceRelationCoverage;
+  inputTokens: number;
+  rootCount: number;
+  completed: number;
+  total: number;
+  /** Source relations promoted or refreshed, and retired, by promotion. */
+  promoted: number;
+  retired: number;
+  /** Roots whose discovery was deferred, or that had no composite vector to discover with. */
+  discoveryDeferred: number;
+  discoveryWithoutVector: number;
+};
+
+/**
+ * Matches the roots of `sourceIds` by design E (D27): for each root, in content order, promotion,
+ * then discovery and the judging of each selected pair once. Promotion is committed before any
+ * call, so a judge that fails leaves it in place; a resumed run judges the pairs it planned.
+ */
+export async function matchSources(options: MatchSourcesOptions): Promise<SourceMatchingResult> {
   const { pool, ai, signal } = options,
-    repository = createSourceRelationRepository(pool);
-  const selection = await createAiConfigRepository(pool).getDefaultTask("reranking");
-  if (!selection) throw new Error("errors.ai.noCompatibleModel");
+    repository = createSourceRelationRepository(pool),
+    config = options.config ?? defaultRelationsConfig,
+    registry = options.registry ?? judgingPairs;
+  // The class routes exist before a route is read, as for a real call (D34).
+  await ai.ensureLegacyRouteMapping?.();
+  const routeKeys = aiRouteKeys("reranking", {
+    operation: sourceMatchingOperation,
+    workloadClass: "decide"
+  });
+  const judgeRoute = () =>
+    createAiConfigRepository(pool).getDefaultTask("reranking", undefined, routeKeys);
+  type Route = NonNullable<Awaited<ReturnType<typeof judgeRoute>>>;
   // What the task adds beneath the profile's parameters changes the effective parameters, so it is
-  // part of the fingerprint. It is empty, and absent, while source matching adds nothing.
-  const taskDefaultsIdentity = (model: typeof selection) => {
+  // part of the key. It is empty, and absent, while source matching adds nothing.
+  const taskDefaultsIdentity = (model: Route) => {
     const taskDefaults = aiTaskBehaviorDefaults(
       "reranking",
       Boolean(model.localModelId),
@@ -563,15 +657,16 @@ export async function matchSources(options: {
     );
     return Object.keys(taskDefaults).length ? { taskDefaults } : {};
   };
-  const fingerprintConfiguration = (model: typeof selection) => {
+  // The judge's identity (D27): contract, prompt identity, request-shaping settings, language, and
+  // the judge model with its parameters. Floors, budgets and selection limits stay out of it.
+  const judgeIdentity = (model: Route) => {
     const prompts = changedPromptIdentity(sourceDecisionPromptIds);
     return hash({
       version: sourceRelationPromptVersion,
       ...taskDefaultsIdentity(model),
       ...(prompts ? { prompts } : {}),
       language: options.contentLanguage,
-      settings: options.settings,
-      profile: model.profileId,
+      request: sourceJudgeRequestSettings(options.settings, config.sourceJudge),
       provider: model.providerConfigId,
       model: model.modelId,
       runtime: model.runtime,
@@ -585,306 +680,198 @@ export async function matchSources(options: {
       defaults: model.modelDefaultParameters
     });
   };
-  const configuration = fingerprintConfiguration(selection);
+  const initialRoute = await judgeRoute();
+  // A route that resolves to a dedicated ranker is no judge: the v5 contract is never sent to it.
+  const usableRoute = (route: Route | null) =>
+    route &&
+    generativeDeciderCapabilities.some((capability) =>
+      route.requiredCapabilities.includes(capability)
+    )
+      ? route
+      : null;
+  const configuration = usableRoute(initialRoute) ? judgeIdentity(initialRoute!) : null;
   const roots = await repository.roots(options.sourceIds);
   let persistedCount = 0,
     partial = false,
-    inputTokens = 0;
+    inputTokens = 0,
+    promoted = 0,
+    retired = 0,
+    discoveryDeferred = 0,
+    discoveryWithoutVector = 0;
   const coverages: Array<SourceRelationCoverage | undefined> = [];
   const plans: Array<{
     root: string;
-    state: z.infer<typeof stateSchema>;
+    state: RootState;
     save: () => Promise<void>;
-    pairs: Array<{ candidate: SourceRelationCandidate; notes: SourceRelationNote[]; key: string }>;
-    /** Null when the root had finished before this run: its saved coverage stands. */
-    tally: CoverageTally | null;
+    promoted: number;
   }> = [];
-  const plannedKeys = new Set<string>(),
-    completedKeys = new Set<string>();
+  const freshState = (): RootState => ({
+    settings: options.settings,
+    configuration: configuration ?? "no-judge",
+    pairs: [],
+    completed: [],
+    attempts: {},
+    inputTokens: 0,
+    persistedCount: 0,
+    partial: false,
+    finished: false,
+    totalPairs: 0
+  });
   for (const root of roots) {
     signal?.throwIfAborted();
     const runKey = `${options.runKey}:${root}`;
-    const saved = await repository.runState(runKey);
-    const state = stateSchema.parse(
-      saved ?? {
-        settings: options.settings,
-        configuration,
-        pairs: [],
-        completed: [],
-        attempts: {},
-        inputTokens: 0,
-        proposals: 0,
-        persistedCount: 0,
-        partial: false,
-        finished: false
-      }
-    );
-    // A run started under another contract, route or setting stops visibly: its budgets and
-    // completed pairs belong to that configuration.
-    if (state.configuration !== configuration)
-      throw new Error("errors.sourceRelations.configurationChanged");
+    const saved = stateSchema.safeParse((await repository.runState(runKey)) ?? undefined);
+    // A state of another judge configuration (or of the shortlist before design E) starts over: the
+    // pair keys carry the configuration, so nothing is judged twice.
+    const state =
+      saved.success && saved.data.configuration === (configuration ?? "no-judge")
+        ? saved.data
+        : freshState();
     const save = () => repository.saveRun(runKey, root, state);
-    const settings = state.settings;
-    // Recover the SQL-commit/checkpoint gap without regenerating or resetting the relation budget.
-    for (const key of state.pairs.filter((key) => !state.completed.includes(key))) {
-      const decision = await repository.decision(key);
-      if (decision) {
-        state.proposals += Number(decision.proposals ?? 0);
-        state.persistedCount += Number(decision.persistedCount ?? 0);
-        state.completed.push(key);
+    // (1) Promotion, with no call; idempotent, so a resumed run promotes again at no cost.
+    const promotion = await repository.promoteFromNotes(root);
+    promoted += promotion.promoted + promotion.refreshed;
+    retired += promotion.retired;
+    if (!state.finished && !state.discovery) {
+      if (options.discovery === "defer")
+        state.discovery = { status: "deferred", roots: [], candidates: 0 };
+      else {
+        const vector = await repository.discoveryVector(root);
+        if (!vector) state.discovery = { status: "no_vector", roots: [], candidates: 0 };
+        else {
+          // (2) Discovery: planned, and its state stored, in one transaction per space.
+          const plan = await repository.planDiscovery({
+            rootId: root,
+            vector,
+            fingerprint: await repository.fingerprint(root),
+            neighbours: config.discovery.neighbours,
+            ...(options.fence ? { fence: options.fence } : {})
+          });
+          state.discovery = {
+            status: "planned",
+            roots: plan.pairs.map((pair) => pair.rootId),
+            candidates: plan.candidates
+          };
+        }
       }
-    }
-    await save();
-    state.completed.forEach((key) => completedKeys.add(key));
-    const pairs: (typeof plans)[number]["pairs"] = [];
-    let tally: CoverageTally | null = null;
-    if (!state.finished) {
-      const candidates = rankSourceCandidates(
-        (await repository.candidates(root, settings.maxCandidates)).filter(
-          (candidate) => candidate.id !== root
-        ),
-        settings.maxCandidates,
-        settings.reciprocalRankConstant
-      );
-      tally = {
-        candidatePairs: candidates.length,
-        judgedPairs: 0,
-        sharedKeys: [],
-        capReached: false,
-        relationLimitReached: false,
-        budgetExhausted: false
-      };
-      let reservedPairs = state.pairs.length,
-        halted = false;
-      for (const candidate of candidates) {
-        signal?.throwIfAborted();
-        // The key holds every note relation between the two roots, cited or not: a relation saved
-        // from one side removes its note relations from the prompt, never the pair from the cache,
-        // so the other side does not judge the same pair again.
-        const key = hash({
-          roots: [root, candidate.id].sort(),
-          configuration,
-          inputs: await Promise.all(
-            [root, candidate.id].sort().map((id) => repository.fingerprint(id))
-          ),
-          notes: (await repository.pairNoteFingerprints(root, candidate.id)).toSorted(),
-          regeneration: options.regenerate ? options.runKey : null
-        });
-        if (state.completed.includes(key)) {
-          tally.judgedPairs++;
-          continue;
-        }
-        if (plannedKeys.has(key)) {
-          // Another root of this run judges it: counted once that root has done so.
-          tally.sharedKeys.push(key);
-          continue;
-        }
-        if (await repository.decision(key)) {
-          tally.judgedPairs++;
-          continue;
-        }
-        // Once a limit stops the plan nothing more is planned, but the candidates after it are still
-        // counted when an earlier run already judged them.
-        if (!halted) {
-          const capHit = !state.pairs.includes(key) && reservedPairs >= settings.maxPairs,
-            relationLimitHit = state.proposals >= settings.maxRelations;
-          if (capHit || relationLimitHit) {
-            halted = true;
-            tally.capReached = capHit;
-            tally.relationLimitReached = relationLimitHit;
-          }
-        }
-        if (halted) continue;
-        if (!state.pairs.includes(key)) reservedPairs++;
-        plannedKeys.add(key);
-        pairs.push({
-          candidate,
-          notes: await repository.pairNotes(root, candidate.id, settings.noteRelationsPerPair),
-          key
-        });
-      }
-    }
-    if (!state.finished) {
-      state.totalPairs = state.completed.length + pairs.length;
+      state.totalPairs = state.discovery.roots.length;
       await save();
     }
-    plans.push({ root, state, save, pairs, tally });
+    if (state.discovery?.status === "deferred") discoveryDeferred += 1;
+    if (state.discovery?.status === "no_vector") discoveryWithoutVector += 1;
+    plans.push({ root, state, save, promoted: promotion.promoted + promotion.refreshed });
   }
-  let total = plans.reduce(
-    (sum, plan) => sum + Math.max(plan.state.totalPairs, plan.state.completed.length),
+  let total = plans.reduce((sum, plan) => sum + plan.state.totalPairs, 0);
+  let done = plans.reduce(
+    (sum, plan) =>
+      sum + (plan.state.finished ? plan.state.totalPairs : plan.state.completed.length),
     0
   );
   const report = () =>
-    options.onProgress?.(total > 0 ? completedKeys.size / total : 1, {
-      completed: completedKeys.size,
-      total
-    });
+    options.onProgress?.(total > 0 ? done / total : 1, { completed: done, total });
   await report();
-  for (const { root, state, save, pairs, tally } of plans) {
+  for (const { root, state, save, promoted: rootPromoted } of plans) {
     signal?.throwIfAborted();
-    const settings = state.settings;
-    if (!state.finished && tally) {
-      for (const { candidate, notes, key } of pairs) {
+    if (!state.finished) {
+      const settings = state.settings;
+      const coverage: SourceRelationCoverage = {
+        judgedPairs: 0,
+        candidatePairs: state.discovery?.roots.length ?? 0,
+        budgetExhausted: false,
+        promoted: rootPromoted
+      };
+      for (const candidate of state.discovery?.roots ?? []) {
         signal?.throwIfAborted();
-        if (state.proposals >= settings.maxRelations) {
-          tally.relationLimitReached = true;
-          break;
+        if (!configuration) throw new Error("errors.ai.noCompatibleModel");
+        // (3) The pair key keeps only what changes the judge (D27).
+        const key = hash({
+          roots: [root, candidate].sort(),
+          configuration,
+          inputs: await Promise.all(
+            [root, candidate].sort().map((id) => repository.fingerprint(id))
+          ),
+          notes: (await repository.pairNoteFingerprints(root, candidate)).toSorted(),
+          regeneration: options.regenerate ? options.runKey : null
+        });
+        if (state.completed.includes(key)) {
+          // Judged before this run resumed: already counted as done.
+          coverage.judgedPairs++;
+          continue;
         }
-        const context = await sourcePairContext(repository, root, candidate.id, notes, settings);
-        if (!context) {
-          // Without evidence on both sides the pair cannot be judged, so it is no candidate.
-          tally.candidatePairs--;
-          total--;
-          state.totalPairs--;
+        const decided = await repository.decision(key);
+        if (decided) {
+          // Decided under the same key by an earlier run (or the other root): reused, no call. A
+          // pair this run asked about committed before its checkpoint was saved: recovered.
+          if (state.pairs.includes(key))
+            state.persistedCount += Number(decided.persistedCount ?? 0);
+          state.completed.push(key);
+          coverage.judgedPairs++;
+          done++;
           await save();
           await report();
           continue;
         }
-        const { chunks } = context;
-        const allowance = sourceDecisionAllowance(settings, state.proposals);
-        const prompt = sourceDecisionPrompt(
-          context,
-          allowance,
-          settings.includeWeakTypes,
-          settings.summaryMaxCharacters
+        // The pair is judged under the in-flight registry (D24): while another job judges it this
+        // one waits, then reads that job's decision; it judges only a pair nobody has decided.
+        const [outcome] = await registry.run(
+          [judgingKey(key)],
+          async () =>
+            (await repository.decision(key))
+              ? ("decided" as const)
+              : judgePair({
+                  pool,
+                  ai,
+                  repository,
+                  root,
+                  candidate,
+                  key,
+                  state,
+                  save,
+                  settings,
+                  configuration,
+                  currentConfiguration: async () => {
+                    const route = usableRoute(await judgeRoute());
+                    return route ? judgeIdentity(route) : null;
+                  },
+                  contentLanguage: options.contentLanguage,
+                  judge: config.sourceJudge,
+                  ...(signal ? { signal } : {}),
+                  ...(options.context ? { context: options.context } : {})
+                }),
+          signal
         );
-        let completed = false;
-        let validationFeedback = renderPrompt("sources.validation.default");
-        if ((state.attempts[key] ?? 0) >= 2)
-          throw new Error("errors.sourceRelations.invalidOutput");
-        const answers: SourceDecisionParse[] = [];
-        let finalExecution: Awaited<ReturnType<typeof ai.runDefaultTask>> = null;
-        const aiTaskRunIds: string[] = [];
-        let budgetStopped = false;
-        while ((state.attempts[key] ?? 0) < 2) {
-          const attempt = (state.attempts[key] ?? 0) as 0 | 1;
-          const input = joinPrompts(
-            prompt,
-            attempt
-              ? renderPrompt("sources.decide.repair", { validation_errors: validationFeedback })
-              : ""
-          );
-          // Allow the current call to exceed the budget; stop only subsequent calls.
-          if (state.inputTokens > settings.maxInputTokens) {
-            budgetStopped = true;
-            break;
-          }
-          const currentSelection = await createAiConfigRepository(pool).getDefaultTask("reranking");
-          if (!currentSelection || fingerprintConfiguration(currentSelection) !== configuration)
-            throw new Error("errors.sourceRelations.configurationChanged");
-          if (!state.pairs.includes(key)) state.pairs.push(key);
-          state.attempts[key] = attempt + 1;
-          await save();
-          const execution = await ai.runDefaultTask(
-            "reranking",
-            input,
-            {
-              ...options.context,
-              operation: sourceMatchingOperation,
-              stage: "sourceMatching",
-              workloadClass: "decide",
-              priority: "P2",
-              contentLanguage: options.contentLanguage,
-              promptVersion: sourceRelationPromptVersion,
-              sourceItemIds: [
-                ...new Set([root, candidate.id, ...chunks.map((chunk) => chunk.sourceItemId)])
-              ],
-              attempt
-            },
-            signal,
-            { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance) }
-          );
-          if (!execution) throw new Error("errors.ai.noCompatibleModel");
-          const reportedInputTokens = execution.inputTokens;
-          if (
-            typeof reportedInputTokens === "number" &&
-            Number.isSafeInteger(reportedInputTokens) &&
-            reportedInputTokens >= 0
-          ) {
-            state.inputTokens += reportedInputTokens;
-          }
-          // Persist reported usage even if validation, cancellation or persistence fails next.
-          await save();
-          const parsed = parseSourceDecision(execution.output, context, attempt);
-          answers.push(parsed);
-          finalExecution = execution;
-          if (execution.aiTaskRunId) aiTaskRunIds.push(execution.aiTaskRunId);
-          // A clean answer, or one already holding all the relations the pair may keep, is final.
-          // Otherwise one repair asks again; the valid items of the first answer are kept.
-          if (
-            (parsed.answered && parsed.invalid === 0) ||
-            distinctSourceVerdicts(answers.flatMap((answer) => answer.items)) >= allowance
-          )
-            break;
-          if (parsed.sameRoot) validationFeedback = renderPrompt("sources.validation.same_root");
-        }
-        const items = answers.flatMap((answer) => answer.items);
-        const last = answers.at(-1);
-        if (!budgetStopped && last && finalExecution) {
-          // Answers that keep nothing valid and never settle fail the pair visibly: committing them
-          // would cache "no relation" for a pair the decider did not decide.
-          if (!items.length && !(last.answered && last.invalid === 0))
-            throw new Error("errors.sourceRelations.invalidOutput");
-          signal?.throwIfAborted();
-          const output = sourceRelationWrites(items, context, settings, allowance);
-          const created = await repository.commitDecision(
-            key,
-            root,
-            candidate.id,
-            output.relations,
-            {
-              promptVersion: sourceRelationPromptVersion,
-              profileId: finalExecution.profileId,
-              model: finalExecution.modelId,
-              provider: finalExecution.providerId,
-              runtime: finalExecution.runtime,
-              aiTaskRunId: finalExecution.aiTaskRunId,
-              aiTaskRunIds,
-              configuration,
-              inputTokens: finalExecution.inputTokens ?? null,
-              outputTokens: finalExecution.outputTokens ?? null,
-              candidateSignals: {
-                id: candidate.id,
-                textScore: candidate.textScore,
-                vectorScore: candidate.vectorScore,
-                graphScore: candidate.graphScore,
-                noteScore: candidate.noteScore
-              },
-              contentLanguage: options.contentLanguage,
-              proposals: output.proposals,
-              // Raw verdicts apart from the floors: the floors can be tuned again without calls.
-              items: output.records,
-              floors: {
-                minImportance: settings.minImportance,
-                minConfidence: settings.minConfidence,
-                includeWeakTypes: settings.includeWeakTypes
-              },
-              invalidItems: answers.reduce((sum, answer) => sum + answer.invalid, 0)
-            }
-          );
-          state.proposals += output.proposals;
-          state.persistedCount += created;
+        if (outcome === "decided") {
           state.completed.push(key);
-          completed = true;
+          coverage.judgedPairs++;
+          done++;
           await save();
+          await report();
+          continue;
         }
-        if (!completed) {
-          // Only a pair the input budget left incomplete is a failure to cover; the caps are not.
+        if (outcome === "no_evidence") {
+          // Without evidence on both sides the pair cannot be judged, so it is no candidate (and a
+          // resumed run does not look at it again).
+          coverage.candidatePairs--;
+          total--;
+          state.totalPairs--;
+          if (state.discovery)
+            state.discovery.roots = state.discovery.roots.filter((id) => id !== candidate);
+          await save();
+          await report();
+          continue;
+        }
+        if (outcome === "budget") {
+          // Only a pair the input budget left incomplete is a failure to cover.
           state.partial = true;
-          tally.budgetExhausted = true;
+          coverage.budgetExhausted = true;
           break;
         }
-        completedKeys.add(key);
-        tally.judgedPairs++;
+        coverage.judgedPairs++;
+        done++;
         await report();
       }
       state.finished = true;
-      const { sharedKeys, ...coverage } = tally;
-      state.coverage = {
-        ...coverage,
-        judgedPairs:
-          coverage.judgedPairs + sharedKeys.filter((key) => completedKeys.has(key)).length
-      };
+      state.coverage = coverage;
       await save();
     }
     persistedCount += state.persistedCount;
@@ -900,7 +887,173 @@ export async function matchSources(options: {
     ...(coverage ? { coverage } : {}),
     inputTokens,
     rootCount: roots.length,
-    completed: completedKeys.size,
-    total
+    completed: done,
+    total,
+    promoted,
+    retired,
+    discoveryDeferred,
+    discoveryWithoutVector
   };
+}
+
+/**
+ * Re-promotes the roots of these sources (D27, R14): each root's pairs with every other root are
+ * recomputed from the current typed applied note relations, with no call. What typing, a change of
+ * type or direction, a review or a revert of note relations enqueues for both roots. A pair two of
+ * the roots share is recomputed twice; the second pass changes nothing.
+ */
+export async function promoteSourceRelations(
+  pool: PgPool,
+  sourceIds: readonly string[]
+): Promise<{ promoted: number; refreshed: number; retired: number }> {
+  const repository = createSourceRelationRepository(pool);
+  const totals = { promoted: 0, refreshed: 0, retired: 0 };
+  for (const root of await repository.roots([...new Set(sourceIds)])) {
+    const pass = await repository.promoteFromNotes(root);
+    totals.promoted += pass.promoted;
+    totals.refreshed += pass.refreshed;
+    totals.retired += pass.retired;
+  }
+  return totals;
+}
+
+/**
+ * Judges one pair of works once (D27): its uncited note relations as hypotheses, the evidence
+ * passages, the v5 prompt, at most one repair, then one decision committed with every raw item.
+ * `no_evidence`: fewer than two passages; `budget`: the input budget stopped it before an answer.
+ */
+async function judgePair(input: {
+  pool: PgPool;
+  ai: Pick<AiService, "runDefaultTask">;
+  repository: SourceRelationReader;
+  root: string;
+  candidate: string;
+  key: string;
+  state: RootState;
+  save: () => Promise<void>;
+  settings: SourceRelationSettings;
+  configuration: string;
+  currentConfiguration: () => Promise<string | null>;
+  contentLanguage: string;
+  judge: RelationsConfig["sourceJudge"];
+  signal?: AbortSignal;
+  context?: AiTaskLogContext;
+}): Promise<"judged" | "no_evidence" | "budget"> {
+  const { ai, repository, root, candidate, key, state, save, settings, signal } = input;
+  const notes = await repository.pairNotes(root, candidate, input.judge.noteRelationsPerPair);
+  const context = await sourcePairContext(
+    repository,
+    root,
+    candidate,
+    notes,
+    settings,
+    input.judge
+  );
+  if (!context) return "no_evidence";
+  const { chunks } = context;
+  const allowance = sourceDecisionAllowance(settings);
+  const prompt = sourceDecisionPrompt(
+    context,
+    allowance,
+    settings.includeWeakTypes,
+    settings.summaryMaxCharacters
+  );
+  let validationFeedback = renderPrompt("sources.validation.default");
+  if ((state.attempts[key] ?? 0) >= 2) throw new Error("errors.sourceRelations.invalidOutput");
+  const answers: SourceDecisionParse[] = [];
+  let finalExecution: Awaited<ReturnType<typeof ai.runDefaultTask>> = null;
+  const aiTaskRunIds: string[] = [];
+  while ((state.attempts[key] ?? 0) < 2) {
+    const attempt = (state.attempts[key] ?? 0) as 0 | 1;
+    const request = joinPrompts(
+      prompt,
+      attempt
+        ? renderPrompt("sources.decide.repair", { validation_errors: validationFeedback })
+        : ""
+    );
+    // Allow the current call to exceed the budget; stop only subsequent calls.
+    if (state.inputTokens > settings.maxInputTokens) return "budget";
+    if ((await input.currentConfiguration()) !== input.configuration)
+      throw new Error("errors.sourceRelations.configurationChanged");
+    if (!state.pairs.includes(key)) state.pairs.push(key);
+    state.attempts[key] = attempt + 1;
+    await save();
+    const execution = await ai.runDefaultTask(
+      "reranking",
+      request,
+      {
+        ...input.context,
+        operation: sourceMatchingOperation,
+        stage: "sourceMatching",
+        workloadClass: "decide",
+        priority: "P2",
+        contentLanguage: input.contentLanguage,
+        promptVersion: sourceRelationPromptVersion,
+        sourceItemIds: [
+          ...new Set([root, candidate, ...chunks.map((chunk) => chunk.sourceItemId)])
+        ],
+        attempt
+      },
+      signal,
+      { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance) }
+    );
+    if (!execution) throw new Error("errors.ai.noCompatibleModel");
+    const reportedInputTokens = execution.inputTokens;
+    if (
+      typeof reportedInputTokens === "number" &&
+      Number.isSafeInteger(reportedInputTokens) &&
+      reportedInputTokens >= 0
+    ) {
+      state.inputTokens += reportedInputTokens;
+    }
+    // Persist reported usage even if validation, cancellation or persistence fails next.
+    await save();
+    const parsed = parseSourceDecision(execution.output, context, attempt);
+    answers.push(parsed);
+    finalExecution = execution;
+    if (execution.aiTaskRunId) aiTaskRunIds.push(execution.aiTaskRunId);
+    // A clean answer, or one already holding all the relations the pair may keep, is final.
+    // Otherwise one repair asks again; the valid items of the first answer are kept.
+    if (
+      (parsed.answered && parsed.invalid === 0) ||
+      distinctSourceVerdicts(answers.flatMap((answer) => answer.items)) >= allowance
+    )
+      break;
+    if (parsed.sameRoot) validationFeedback = renderPrompt("sources.validation.same_root");
+  }
+  const items = answers.flatMap((answer) => answer.items);
+  const last = answers.at(-1);
+  if (!last || !finalExecution) throw new Error("errors.sourceRelations.invalidOutput");
+  // Answers that keep nothing valid and never settle fail the pair visibly: committing them would
+  // cache "no relation" for a pair the decider did not decide.
+  if (!items.length && !(last.answered && last.invalid === 0))
+    throw new Error("errors.sourceRelations.invalidOutput");
+  signal?.throwIfAborted();
+  const output = sourceRelationWrites(items, context, settings, allowance, input.judge);
+  const created = await repository.commitDecision(key, root, candidate, output.relations, {
+    promptVersion: sourceRelationPromptVersion,
+    profileId: finalExecution.profileId,
+    model: finalExecution.modelId,
+    provider: finalExecution.providerId,
+    runtime: finalExecution.runtime,
+    aiTaskRunId: finalExecution.aiTaskRunId,
+    aiTaskRunIds,
+    configuration: input.configuration,
+    inputTokens: finalExecution.inputTokens ?? null,
+    outputTokens: finalExecution.outputTokens ?? null,
+    contentLanguage: input.contentLanguage,
+    proposals: output.proposals,
+    // Raw verdicts apart from the floors: the floors can be tuned again without calls.
+    items: output.records,
+    floors: {
+      minImportance: settings.minImportance,
+      minConfidence: settings.minConfidence,
+      includeWeakTypes: settings.includeWeakTypes
+    },
+    invalidItems: answers.reduce((sum, answer) => sum + answer.invalid, 0)
+  });
+  state.persistedCount += created;
+  state.completed.push(key);
+  await save();
+  return "judged";
 }

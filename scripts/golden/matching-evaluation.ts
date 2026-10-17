@@ -101,6 +101,11 @@ export interface EvaluationInput {
   operations?: readonly OperationRow[] | undefined;
   /** The library's chunk count, for calls per chapter. */
   chunks?: number | null | undefined;
+  /**
+   * Roots design E matched (`source_match_state`, F3 D27), with or without a judge call: S1's "per
+   * source" counts them all. Absent before F3, when only roots with a source call count.
+   */
+  matchedRoots?: readonly string[] | undefined;
 }
 
 export interface EvaluationOptions {
@@ -547,6 +552,8 @@ function measureCost(
   const matchedRoots = new Set(
     sourceCalls.map((call) => (call.sourceItemId ? rootOfSource(call.sourceItemId) : null))
   );
+  // Design E judges 0-2 pairs per source: a root promoted or discovered with no call is matched too.
+  for (const root of input.matchedRoots ?? []) matchedRoots.add(rootOfSource(root));
   matchedRoots.delete(null);
   // Wall seconds per source: the span from the first call's start to the last call's end of each root.
   const spans = new Map<string, { start: number; end: number }>();

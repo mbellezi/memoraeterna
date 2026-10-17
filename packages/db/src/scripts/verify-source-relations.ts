@@ -170,12 +170,6 @@ try {
     fingerprint,
     "Rechunking invalidates cached pair decisions even when the document text is unchanged"
   );
-  const found = await repository.candidates(book.id, 40);
-  assert.ok(found.some((item) => item.id === b.id && item.textScore > 0));
-  assert.ok(
-    found.every((item) => item.id === b.id),
-    "Text retrieval excludes the querying root and all its subitems before reranking"
-  );
   const evidence = await repository.pairChunks(book.id, b.id, [], 4);
   assert.ok(evidence.some((item) => item.id === ac.id && item.rootId === book.id));
   assert.ok(
@@ -186,10 +180,6 @@ try {
     (await repository.pairChunks(b.id, book.id, [], 4)).map((item) => item.id).sort(),
     evidence.map((item) => item.id).sort(),
     "The evidence does not depend on which of the two roots starts the match"
-  );
-  assert.ok(
-    found.every((item) => item.title.length > 0),
-    "Candidates carry their work title"
   );
   for (const dimensions of [256, 768, 1024]) {
     const vector = Array.from({ length: dimensions }, (_, i) => (i === 0 ? 1 : 0));
@@ -205,23 +195,19 @@ try {
         embedding: vector
       });
   }
-  assert.ok(
-    (await repository.candidates(book.id, 40)).some(
-      (item) => item.id === b.id && item.vectorScore > 0.99
-    )
-  );
-  assert.ok(
-    (await repository.candidates(book.id, 40)).every((item) => item.id === b.id),
-    "Even identical sibling vectors cannot retrieve the querying root"
-  );
+  // Discovery (design E) compares roots on their own composite vectors: a book whose chapters have
+  // vectors but whose own composite is not written yet is not discovered until it is.
+  assert.equal(await repository.discoveryVector(book.id), null);
+  assert.match((await repository.discoveryVector(b.id))?.spaceKey ?? "", /^\d+:space-\d+$/u);
   for (const dimensions of [256, 768, 1024])
     await pool.query(
       `update embeddings_${dimensions} set strategy = 'source-composite-centroid-v2:different' where target_id = $1`,
       [b.id]
     );
-  assert.equal(
-    (await repository.candidates(book.id, 40)).find((item) => item.id === b.id)?.vectorScore,
-    0
+  assert.match(
+    (await repository.discoveryVector(b.id))?.spaceKey ?? "",
+    /:different$/u,
+    "A root is compared only within the space of its newest composite vector"
   );
   const beforeVectors = await repository.fingerprint(book.id);
   for (const dimensions of [256, 768, 1024])
@@ -245,12 +231,6 @@ try {
   assert.equal(
     await createEmbeddingRepository(pool).hasSourceMatchingCoverage(a.id, ac.documentId),
     true
-  );
-  assert.ok(
-    (await repository.candidates(book.id, 40)).some(
-      (item) => item.id === b.id && item.vectorScore > 0.99
-    ),
-    "Chunk vectors independently discover source candidates"
   );
   assert.ok((await repository.pairChunks(book.id, b.id, [], 1)).some((item) => item.id === ac.id));
   const noteIds = [randomUUID(), randomUUID()].sort().reverse();
@@ -337,11 +317,6 @@ try {
       pairKeyNotes,
       "A cited note relation stays in the pair key, so the other side does not judge the pair again"
     );
-  assert.equal(
-    (await repository.candidates(book.id, 40)).find((item) => item.id === b.id)?.noteScore,
-    0,
-    "Existing note links no longer promote a reranking candidate"
-  );
   assert.equal(
     await repository.commitDecision("first", book.id, b.id, [relation], { proposals: 1 }),
     0
@@ -820,19 +795,57 @@ try {
     0,
     "An explanation is deleted with its relation"
   );
-  // Equal scores order by content: the same eight works get random IDs, yet always rank by title.
+  // Equal cosines order by content: the same eight works get random IDs, yet discovery always
+  // judges the first by title against a later root (design E, F3 D27).
   const tieText = "Spacing practice distributes study sessions across time.";
-  const tieQuery = await sources.create({ type: "Book", title: "Tie query" });
-  await chunk(tieQuery, tieText);
+  const tieRoot = async (title: string) => {
+    const work = await sources.create({ type: "Book", title });
+    const passage = await chunk(work, tieText);
+    const noteId = randomUUID();
+    await pool!.query(
+      `insert into atomic_notes
+      (id,title,body_markdown,idea_statement,created_from_source_item_id,evidence_chunk_id,generation_provider,generation_model,generation_runtime,generation_prompt_version,generation_key)
+      values ($1::uuid,$2,$2,$2,$3,$4,'test','test','local','test',$1::uuid::text)`,
+      [noteId, `${title}: ${tieText}`, work.id, passage.id]
+    );
+    await createEmbeddingRepository(pool!).upsert({
+      targetType: "source_item",
+      targetId: work.id,
+      provider: "test",
+      model: "tie-256",
+      runtime: "local",
+      strategy: "source-composite-centroid-v2:tie-space",
+      contentHash: "tie",
+      embedding: Array.from({ length: 256 }, (_, i) => (i === 1 ? 1 : 0))
+    });
+    return work;
+  };
+  const discover = async (rootId: string) =>
+    repository.planDiscovery({
+      rootId,
+      vector: (await repository.discoveryVector(rootId))!,
+      fingerprint: await repository.fingerprint(rootId),
+      neighbours: 1
+    });
   const tieTitles = Array.from({ length: 8 }, (_, i) => `Tie work ${String.fromCharCode(65 + i)}`);
-  for (const title of [...tieTitles].reverse())
-    await chunk(await sources.create({ type: "Book", title }), tieText);
+  const tieWorks = new Map<string, string>();
+  for (const title of [...tieTitles].reverse()) {
+    const work = await tieRoot(title);
+    tieWorks.set(work.id, title);
+    await discover(work.id);
+  }
+  const tiePlan = await discover((await tieRoot("Tie query")).id);
+  assert.equal(tiePlan.candidates, 8, "Every earlier root of the space with notes is a candidate");
   assert.deepEqual(
-    (await repository.candidates(tieQuery.id, 40))
-      .filter((item) => item.title.startsWith("Tie work"))
-      .map((item) => item.title),
-    tieTitles,
-    "Equal scores rank by work title, never by ID"
+    tiePlan.pairs.map((pair) => [tieWorks.get(pair.rootId), pair.reason]),
+    [["Tie work A", "nearest"]],
+    "Equal cosines rank by work title, never by ID"
+  );
+  const tieStates = await repository.matchStates([...tieWorks.keys()]);
+  assert.deepEqual(
+    tieStates.map((state) => tieWorks.get(state.rootId)),
+    [...tieTitles].reverse(),
+    "Roots keep their arrival order"
   );
   await pool.query("create database relations_empty");
   const url = new URL(connection.connectionString);
@@ -849,7 +862,7 @@ try {
   ]);
   assert.equal((await pool.query("select count(*)::int as n from source_relations")).rows[0].n, 0);
   console.log(
-    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup, pair keys that keep cited note relations from both sides and per-root evidence caps; verdicts without prose identified by endpoints and type, evidence merged on upsert (symmetric turned), owner rejection never undone, older prose and acceptance kept, raw verdicts in the decision row, and explanations cached per inputs and language, refused when empty and deleted with their relation."
+    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup, pair keys that keep cited note relations from both sides and per-root evidence caps; verdicts without prose identified by endpoints and type, evidence merged on upsert (symmetric turned), owner rejection never undone, older prose and acceptance kept, raw verdicts in the decision row, and explanations cached per inputs and language, refused when empty and deleted with their relation; discovery (design E) within one space, in arrival order, with title ties."
   );
 } finally {
   if (emptyPool) await closePgPool(emptyPool);

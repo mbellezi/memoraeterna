@@ -3,11 +3,12 @@ import type { PgPool } from "@app/db";
 
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
+import { InFlightRegistry } from "./relations/in-flight-registry.js";
 import { relationDailyCapError } from "./relations/relation-call-budget.js";
 
 // The link job's steps that the knowledge service provides (F3 T52): typing on the writer route,
-// read after the legacy route mapping, and the interim discovery (the v5 source matcher) at the
-// link job's priority, every remote call asked of the daily cap first.
+// read after the legacy route mapping, and discovery by design E (T53) at the link job's priority
+// under the link jobs' in-flight registry, every remote call asked of the daily cap first.
 const mocks = vi.hoisted(() => ({
   aiConfig: { getDefaultTask: vi.fn() },
   typings: { find: vi.fn(), record: vi.fn() },
@@ -82,16 +83,21 @@ describe("the link job's typing step", () => {
   });
 });
 
-describe("the link job's discovery step until design E", () => {
-  it("judges at the link job's priority and stops at the daily cap", async () => {
+describe("the link job's discovery step", () => {
+  it("judges at the link job's priority under its registry and stops at the daily cap", async () => {
     mocks.aiConfig.getDefaultTask.mockResolvedValue(codexRoute);
+    const registry = new InFlightRegistry();
     mocks.matchSources.mockImplementation(
       async (input: {
-        ai: Pick<AiService, "runDefaultTask">;
+        ai: Pick<AiService, "runDefaultTask" | "ensureLegacyRouteMapping">;
         sourceIds: string[];
         runKey: string;
+        registry: InFlightRegistry;
       }) => {
         expect(input).toMatchObject({ sourceIds: ["root"], runKey: "relation-link:job" });
+        // The pairs are judged under the link jobs' registry (D24).
+        expect(input.registry).toBe(registry);
+        await input.ai.ensureLegacyRouteMapping();
         await input.ai.runDefaultTask("reranking", "first", { priority: "P2" });
         await input.ai.runDefaultTask("reranking", "second", { priority: "P2" });
         return { persistedCount: 1 };
@@ -105,9 +111,11 @@ describe("the link job's discovery step until design E", () => {
         regenerate: false,
         priority: "P1",
         reserveCall,
+        registry,
         context: { jobId: "job" }
       })
     ).rejects.toThrow(relationDailyCapError);
+    expect(ai.ensureLegacyRouteMapping).toHaveBeenCalledOnce();
     // The judge's route runs remotely: each call asked for a remote call first.
     expect(reserveCall.mock.calls).toEqual([["remote"], ["remote"]]);
     expect(ai.runDefaultTask).toHaveBeenCalledOnce();

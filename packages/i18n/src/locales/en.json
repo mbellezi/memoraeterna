@@ -1057,7 +1057,10 @@
         "depends_on": "Depends on",
         "clarifies": "Clarifies",
         "mentions": "Mentions",
-        "related": "Related"
+        "related": "Related",
+        "contradicts": "Contradicts",
+        "example_of": "Example of",
+        "same_as": "Same as"
       }
     }
   },
@@ -1244,7 +1247,6 @@
         "evidenceChunksPerSource": "Evidence passages per source in a pair",
         "evidenceMaxCharacters": "Characters per evidence passage",
         "summaryMaxCharacters": "Summary characters per source",
-        "noteRelationsPerPair": "Note relations reused per source pair",
         "maxOutputTokens": "AI output token limit per source pair",
         "hint": "Changes apply to subsequent processing. Lower candidate limits reduce cost but may miss useful connections. Existing relations are preserved.",
         "weightsHint": "Weights are normalized within each available-signal group. At least one weight must remain positive. The remaining final-score share uses these signals.",
@@ -1840,9 +1842,6 @@
     "view": "Source graph view",
     "processingHint": "Reuses existing note relationships and finds additional conceptual connections using summaries and original passages. Does not generate new atomic notes.",
     "budgetHint": "Limits are shared by a root and its chapters per execution. The input budget counts tokens reported by the provider, including repairs. A call may exceed it; subsequent calls then stop. This is not a total ingestion budget: output, summaries, notes, graph and embeddings have separate usage. Existing relations are preserved. Scores are provisional, not probabilities.",
-    "maxCandidates": "Retrieved source candidates",
-    "maxPairs": "Source pairs evaluated",
-    "maxRelations": "Relationships generated and ranked",
     "maxRelationsPerPair": "Relationships per source pair",
     "maxInputTokens": "Input token budget",
     "minImportance": "Minimum conceptual importance",
@@ -1859,6 +1858,7 @@
     "atomicNotes": "Atomic note relationships",
     "sourceAnalysis": "Source analysis",
     "stale": "Evidence changed; revalidation needed",
+    "linkedThrough": "Linked through {count} note connections",
     "evidence": "Evidence and explanation",
     "writing": "Writing an explanation…",
     "explainedBy": "Explained by {model}",
@@ -1871,9 +1871,8 @@
     "previous": "Previous",
     "next": "Next",
     "coverage": {
-      "analysed": "{judged} of {candidates} candidate sources analysed",
-      "relationLimit": "{judged} of {candidates} candidate sources analysed; relationship limit reached",
-      "incomplete": "Analysis stopped after {judged} of {candidates} candidate sources: the input token budget was exhausted"
+      "linked": "{promoted} relationships from note connections · {judged} of {candidates} nearest sources judged",
+      "incomplete": "Analysis stopped after {judged} of {candidates} nearest sources: the input token budget was exhausted"
     }
   },
   "topics": {

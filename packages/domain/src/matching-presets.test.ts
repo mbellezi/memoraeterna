@@ -52,11 +52,44 @@ describe("matching presets", () => {
           ...preset,
           settings: {
             ...preset.settings,
-            sourceRelationSettings: { ...preset.settings.sourceRelationSettings, maxPairs: 0 }
+            sourceRelationSettings: {
+              ...preset.settings.sourceRelationSettings,
+              maxRelationsPerPair: 0
+            }
           }
         }
       ]).success
     ).toBe(false);
     expect(MatchingPresetsSchema.safeParse([{ ...preset, name: " " }]).success).toBe(false);
+  });
+  it("reads a preset saved with the shortlist settings design E deleted, without them", () => {
+    const saved = {
+      id: "afbec711-07cd-43b1-8088-153df3dc5f73",
+      name: "Saved before F3",
+      settings: {
+        ...recommendedMatchingConfiguration,
+        sourceRelationSettings: {
+          ...recommendedMatchingConfiguration.sourceRelationSettings,
+          reciprocalRankConstant: 60,
+          noteRelationsPerPair: 4,
+          maxCandidates: 30,
+          maxPairs: 6,
+          maxRelations: 10
+        }
+      }
+    };
+    const [read] = MatchingPresetsSchema.parse([saved]);
+    expect(read!.settings).toEqual(recommendedMatchingConfiguration);
+    expect(
+      MatchingPresetsSchema.safeParse([
+        {
+          ...saved,
+          settings: {
+            ...saved.settings,
+            sourceRelationSettings: { ...saved.settings.sourceRelationSettings, typo: 1 }
+          }
+        }
+      ]).success
+    ).toBe(false);
   });
 });

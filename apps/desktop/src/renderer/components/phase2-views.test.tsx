@@ -747,47 +747,36 @@ describe("phase 2 renderer views", () => {
         />
       );
     };
-    const coverage = {
-      judgedPairs: 6,
-      candidatePairs: 18,
-      capReached: true,
-      relationLimitReached: false,
-      budgetExhausted: false
-    };
+    // Design E (F3 D27): promotion with no call, then 0-2 nearest sources judged.
+    const coverage = { judgedPairs: 1, candidatePairs: 2, budgetExhausted: false, promoted: 3 };
 
-    it("says how many candidates were analysed under the pair cap, muted and without a call to action", () => {
-      const html = render({ completed: 6, total: 6, partial: false, coverage });
-      expect(html).toContain("6 of 18 candidate sources analysed");
+    it("says what promotion linked and how many nearest sources were judged, muted", () => {
+      const html = render({ completed: 1, total: 2, partial: false, coverage });
+      expect(html).toContain(
+        "3 relationships from note connections · 1 of 2 nearest sources judged"
+      );
       expect(html).toContain("text-muted-foreground");
       expect(html).not.toContain("text-warning");
       expect(html).not.toContain("amber");
       expect(html).not.toMatch(/Process again|Partial coverage/);
     });
 
-    it("keeps the relation limit neutral too", () => {
-      const html = render({
-        coverage: { ...coverage, capReached: false, relationLimitReached: true }
-      });
-      expect(html).toContain("relationship limit reached");
-      expect(html).not.toContain("text-warning");
-    });
-
     it("warns, factually, only when the input budget left a pair incomplete", () => {
       const html = render({ partial: true, coverage: { ...coverage, budgetExhausted: true } });
       expect(html).toContain(
-        "Analysis stopped after 6 of 18 candidate sources: the input token budget was exhausted"
+        "Analysis stopped after 1 of 2 nearest sources: the input token budget was exhausted"
       );
       expect(html).toContain("text-warning");
       expect(html).not.toMatch(/Process again|again to continue/);
     });
 
-    it("shows nothing for a fully judged shortlist or a checkpoint from before coverage", () => {
+    it("shows nothing when nothing was linked or judged, or for a checkpoint from before coverage", () => {
       for (const metadata of [
-        { coverage: { ...coverage, judgedPairs: 18, capReached: false } },
+        { coverage: { ...coverage, judgedPairs: 0, candidatePairs: 0, promoted: 0 } },
         { completed: 6, total: 6, partial: true }
       ]) {
         const html = render(metadata);
-        expect(html).not.toContain("candidate sources");
+        expect(html).not.toContain("nearest sources");
         expect(html).not.toContain("text-warning");
       }
     });

@@ -189,6 +189,111 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
   ];
 };
 
+export interface BookPairSeedOptions {
+  /** Chunks of each of the two roots (S1's large-root case: 500). */
+  chunksPerRoot: number;
+  /** Chapters of each root; the chunks spread evenly over them. */
+  chapters: number;
+  /** One note per this many chunks. */
+  chunksPerNote: number;
+  /** Typed applied note relations between the two roots. */
+  noteRelations: number;
+  /** Concept entities each root mentions. */
+  entities: number;
+  dimensions: 256 | 768 | 1024;
+}
+
+/** The embedding space of the book pair's vectors (`native-v2:` and the composite prefix). */
+export const bookPairSpace = "synthetic-book-pair";
+
+/**
+ * Two book roots of `chunksPerRoot` chunks each, in `chapters` chapters (F3 R19, S1's SQL bar on
+ * large roots): chunk text over a shared vocabulary (so trigram similarity has pairs to rank),
+ * chunk vectors and chapter and root composites in one space, a current summary per chapter with
+ * concepts citing its chunks, notes with evidence chunks, typed applied note relations between the
+ * books and Concept entities mentioned in both. One session on a throwaway database migrated from
+ * scratch; the books' IDs are in the temporary table `t_pair_root` (`r` 1 and 2).
+ */
+export const bookPairSeedSteps = (options: BookPairSeedOptions): string[] => {
+  const perChapter = Math.ceil(options.chunksPerRoot / options.chapters);
+  const vocabulary =
+    "array['retrieval','memory','spacing','feedback','attention','sleep','interleaving','testing','encoding','consolidation','transfer','motivation']";
+  const word = (expression: string) => `(${vocabulary})[1 + ((${expression}) % 12)]`;
+  // Correlated to the row (so each row draws its own vector) and to the series (an aggregate over
+  // outer columns only would belong to the outer query).
+  const vector = (salt: string) =>
+    `(select array_agg(random() - 0.5 + 0 * length(${salt}) + 0 * i)::real[]::vector from generate_series(1, ${options.dimensions}) i)`;
+  return [
+    `alter table chunks disable trigger user`,
+    `alter table atomic_note_relations disable trigger user`,
+    `select setseed(0.20261019)`,
+    `create temp table t_pair_root as select r, gen_random_uuid() as id from generate_series(1, 2) r`,
+    `create temp table t_pair_chapter as select r.r, c, gen_random_uuid() as id, r.id as parent
+       from t_pair_root r, generate_series(1, ${options.chapters}) c`,
+    `insert into source_items (id, type, title, parent_source_item_id)
+     select id, 'Book'::source_item_type, 'Book pair ' || chr(64 + r), null::uuid from t_pair_root
+     union all select id, 'BookChapter', 'Book pair ' || chr(64 + r) || ' chapter ' || c, parent from t_pair_chapter`,
+    `create temp table t_pair_document as select gen_random_uuid() as id, ch.id as source_id, ch.r, ch.c
+       from t_pair_chapter ch`,
+    `insert into documents (id, source_item_id, title, canonical_markdown, content_hash)
+     select id, source_id, 'Chapter document', 'seed', md5(id::text) from t_pair_document`,
+    `create temp table t_pair_chunk as
+       select gen_random_uuid() as id, d.id as document_id, d.source_id, d.r, d.c, g as chunk_index,
+              'Passage on ' || ${word("d.r * 31 + d.c * 7 + g")} || ' and ' || ${word("d.r * 17 + g * 3")}
+                || ' with ' || ${word("d.c * 5 + g * 11")} || ', chapter ' || d.c || ', paragraph ' || g
+                || '. Learners revisit ' || ${word("g * 13 + d.r")} || ' before ' || ${word("g * 7 + d.c")} || '.' as content
+         from t_pair_document d, generate_series(0, ${perChapter - 1}) g`,
+    `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
+     select id, document_id, source_id, chunk_index, content, md5(id::text || content) from t_pair_chunk`,
+    `insert into embeddings_${options.dimensions} (target_type, target_id, chunk_id, provider, model, runtime, usage, strategy, content_hash, embedding)
+     select 'chunk', c.id, c.id, 'local', 'synthetic-book-pair', 'local', 'retrieval', 'native-v2:${bookPairSpace}',
+            ch.content_hash, ${vector("c.content")}
+       from t_pair_chunk c join chunks ch on ch.id = c.id`,
+    `insert into embeddings_${options.dimensions} (target_type, target_id, provider, model, runtime, usage, strategy, content_hash, embedding)
+     select 'source_item', c.source_id, 'local', 'synthetic-book-pair', 'local', 'retrieval',
+            'source-composite-centroid-v2:${bookPairSpace}', md5(c.source_id::text), avg(e.embedding)
+       from t_pair_chunk c join embeddings_${options.dimensions} e on e.target_type = 'chunk' and e.target_id = c.id
+      group by c.source_id`,
+    `insert into embeddings_${options.dimensions} (target_type, target_id, provider, model, runtime, usage, strategy, content_hash, embedding)
+     select 'source_item', ch.parent, 'local', 'synthetic-book-pair', 'local', 'retrieval',
+            'source-composite-centroid-v2:${bookPairSpace}', md5(ch.parent::text), avg(e.embedding)
+       from t_pair_chapter ch join embeddings_${options.dimensions} e on e.target_type = 'source_item' and e.target_id = ch.id
+      group by ch.parent`,
+    `insert into source_summaries (source_item_id, summary, provider, model, runtime, prompt_version, input_hash, output_hash, metadata)
+     select ch.id, 'Summary of ' || ch.id, 'seed', 'seed', 'local', 'summary-v3', md5(ch.id::text), md5(ch.id::text || 'summary'),
+            jsonb_build_object('concepts', (
+              select jsonb_agg(jsonb_build_object('idea', 'Concept on ' || ${word("pc.chunk_index + ch.r")} || ' and '
+                       || ${word("pc.chunk_index * 3 + ch.c")}, 'evidenceChunkIds', jsonb_build_array(pc.id::text)))
+                from t_pair_chunk pc where pc.source_id = ch.id and pc.chunk_index % 5 = 0))
+       from t_pair_chapter ch`,
+    `create temp table t_pair_note as
+       select gen_random_uuid() as id, c.r, c.source_id, c.id as chunk_id,
+              row_number() over (partition by c.r order by c.c, c.chunk_index) as k
+         from t_pair_chunk c where c.chunk_index % ${options.chunksPerNote} = 0`,
+    `insert into atomic_notes (id, title, body_markdown, idea_statement, status, supersession_status,
+        ownership, created_from_source_item_id, evidence_chunk_id, generation_provider, generation_model,
+        generation_runtime, generation_prompt_version, generation_key)
+     select id, 'Note ' || r || '-' || k, 'Body ' || k, 'Idea ' || r || '-' || k, 'active', 'current', 'source',
+            source_id, chunk_id, 'seed', 'seed', 'local', 'seed', id::text from t_pair_note`,
+    `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type, direction,
+        band, probability, final_score, explanation, matching_model)
+     select least(a.id, b.id), greatest(a.id, b.id), 'supports',
+            case when a.id < b.id then 'lo_to_hi' else 'hi_to_lo' end, 'apply', 0.9, 0.9,
+            'knowledge.relations.explanations.reranked', 'seed-decider'
+       from t_pair_note a join t_pair_note b on b.r = 2 and b.k = a.k
+      where a.r = 1 and a.k <= ${options.noteRelations}`,
+    `create temp table t_pair_entity as select gen_random_uuid() as id, g from generate_series(1, ${options.entities}) g`,
+    `insert into entities (id, type, canonical_name, normalized_name, confidence)
+     select id, 'Concept', 'Concept ' || g, 'concept ' || g, 0.9 from t_pair_entity`,
+    `insert into entity_mentions (entity_id, source_item_id, chunk_id, surface_text, confidence)
+     select e.id, c.source_id, c.id, 'Concept ' || e.g, 0.9
+       from t_pair_entity e join t_pair_chunk c on c.chunk_index = e.g % ${perChapter} and c.c = 1 + (e.g % ${options.chapters})`,
+    `alter table chunks enable trigger user`,
+    `alter table atomic_note_relations enable trigger user`,
+    `analyze`
+  ];
+};
+
 export interface TopicTreeSeedOptions {
   /** Topics to create, the root included (default 2,500). */
   topics?: number;

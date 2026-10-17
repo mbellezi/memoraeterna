@@ -51,16 +51,13 @@ export const retiredRecommendedMatchingConfiguration: MatchingConfiguration =
       confirmationBatchSize: 12,
       confirmationMaxCharacters: 12000
     },
+    // Design E (F3 D27) deleted the shortlist settings (candidates, pairs, relations, rank fusion and
+    // note relations per pair); the judge lists 4 note relations, the value v1 and v2 held.
     sourceRelationSettings: {
-      reciprocalRankConstant: 60,
       evidenceChunksPerSource: 2,
       evidenceMaxCharacters: 800,
       summaryMaxCharacters: 1000,
-      noteRelationsPerPair: 4,
       maxOutputTokens: 4096,
-      maxCandidates: 30,
-      maxPairs: 6,
-      maxRelations: 10,
       maxRelationsPerPair: 4,
       maxInputTokens: 60000,
       minImportance: 0.85,

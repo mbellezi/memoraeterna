@@ -187,11 +187,9 @@ export function AdvancedMatchingSettings({
           <div className="grid gap-3 sm:grid-cols-2">
             {(
               [
-                ["reciprocalRankConstant", 1, 200],
                 ["evidenceChunksPerSource", 1, 12],
                 ["evidenceMaxCharacters", 300, 6000],
                 ["summaryMaxCharacters", 300, 6000],
-                ["noteRelationsPerPair", 0, 30],
                 ["maxOutputTokens", 512, 16384]
               ] as const
             ).map(([key, min, max]) => (
@@ -215,21 +213,17 @@ export function AdvancedMatchingSettings({
             className="justify-self-start"
             onClick={() => {
               const {
-                reciprocalRankConstant,
                 evidenceChunksPerSource,
                 evidenceMaxCharacters,
                 summaryMaxCharacters,
-                noteRelationsPerPair,
                 maxOutputTokens
               } = defaultSourceRelationSettings;
               onChange({
                 sourceRelationSettings: {
                   ...settings.sourceRelationSettings,
-                  reciprocalRankConstant,
                   evidenceChunksPerSource,
                   evidenceMaxCharacters,
                   summaryMaxCharacters,
-                  noteRelationsPerPair,
                   maxOutputTokens
                 }
               });

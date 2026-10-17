@@ -840,9 +840,6 @@ function MatchingCard({
           <div className="grid gap-3 sm:grid-cols-2">
             {(
               [
-                ["maxCandidates", 1, 200],
-                ["maxPairs", 1, 50],
-                ["maxRelations", 1, 200],
                 ["maxRelationsPerPair", 1, 20],
                 ["maxInputTokens", 2000, 200000]
               ] as const

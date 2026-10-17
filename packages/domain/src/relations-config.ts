@@ -161,6 +161,29 @@ export const RelationsConfigSchema = z
     escalation: z
       .object({ enabled: z.boolean().default(false) })
       .strict()
+      .prefault({}),
+    /** Source discovery of design E (D27): 2 neighbours is S1's fallback. */
+    discovery: z
+      .object({ neighbours: int(1, 2).default(1) })
+      .strict()
+      .prefault({}),
+    /** The source judge (`sources.decide` v5, D27). */
+    sourceJudge: z
+      .object({
+        /** Uncited note relations a judged pair's prompt lists as hypotheses (the spike's 4). */
+        noteRelationsPerPair: int(0, 30).default(4),
+        /** Q14: stored v5 `similar_to` verdicts are dropped as weak unless tuning recall needs them. */
+        keepSimilarTo: z.boolean().default(false),
+        /**
+         * Evidence of a pair whose two roots hold more passage pairs than this (R19: a book pair of
+         * 500 chunks each is 250,000) is selected by D27's fallback: the note-relation passages and
+         * bounded exact vector pairs, not the lexical and concept cross joins (cal., S1's SQL bar).
+         */
+        exactEvidencePairs: int(0, 10_000_000).default(10_000),
+        /** The fallback's passages per root nearest to the other root's centroid. */
+        boundedEvidenceChunks: int(1, 64).default(16)
+      })
+      .strict()
       .prefault({})
   })
   .strict()

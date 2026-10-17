@@ -1057,7 +1057,10 @@
         "depends_on": "Depende de",
         "clarifies": "Esclarece",
         "mentions": "Menciona",
-        "related": "Relacionada"
+        "related": "Relacionada",
+        "contradicts": "Contradiz",
+        "example_of": "Exemplo de",
+        "same_as": "Igual a"
       }
     }
   },
@@ -1244,7 +1247,6 @@
         "evidenceChunksPerSource": "Trechos de evidência por fonte do par",
         "evidenceMaxCharacters": "Caracteres por trecho de evidência",
         "summaryMaxCharacters": "Caracteres de resumo por fonte",
-        "noteRelationsPerPair": "Relações de notas reutilizadas por par de fontes",
         "maxOutputTokens": "Limite de tokens de saída da IA por par de fontes",
         "hint": "As mudanças valem para os próximos processamentos. Menos candidatos reduzem o custo, mas podem deixar conexões úteis de fora. Relações existentes são preservadas.",
         "weightsHint": "Os pesos são normalizados em cada grupo de sinais disponíveis. Pelo menos um peso deve ser positivo. A parte restante do score final usa esses sinais.",
@@ -1843,9 +1845,6 @@
     "view": "Visão do grafo de fontes",
     "processingHint": "Aproveita relações de notas existentes e busca conexões conceituais adicionais por resumos e trechos originais. Não gera novas notas atômicas.",
     "budgetHint": "Limites compartilhados pela fonte raiz e seus capítulos por execução. O orçamento de entrada conta tokens informados pelo provedor, incluindo reparos. Uma chamada pode ultrapassá-lo; as seguintes então param. Este não é um orçamento total da ingestão: saída, resumos, notas, grafo e embeddings têm consumo separado. Relações existentes são preservadas. Os scores são provisórios, não probabilidades.",
-    "maxCandidates": "Fontes candidatas recuperadas",
-    "maxPairs": "Pares de fontes avaliados",
-    "maxRelations": "Relações geradas e ranqueadas",
     "maxRelationsPerPair": "Relações por par de fontes",
     "maxInputTokens": "Orçamento de tokens de entrada",
     "minImportance": "Importância conceitual mínima",
@@ -1862,6 +1861,7 @@
     "atomicNotes": "Relações de notas atômicas",
     "sourceAnalysis": "Análise das fontes",
     "stale": "Evidência alterada; precisa de revalidação",
+    "linkedThrough": "Ligadas por {count} conexões entre notas",
     "evidence": "Evidências e explicação",
     "writing": "Escrevendo uma explicação…",
     "explainedBy": "Explicada por {model}",
@@ -1874,9 +1874,8 @@
     "previous": "Anterior",
     "next": "Próxima",
     "coverage": {
-      "analysed": "{judged} de {candidates} fontes candidatas analisadas",
-      "relationLimit": "{judged} de {candidates} fontes candidatas analisadas; limite de relações atingido",
-      "incomplete": "Análise interrompida após {judged} de {candidates} fontes candidatas: o orçamento de tokens de entrada se esgotou"
+      "linked": "{promoted} relações a partir de conexões entre notas · {judged} de {candidates} fontes mais próximas avaliadas",
+      "incomplete": "Análise interrompida após {judged} de {candidates} fontes mais próximas: o orçamento de tokens de entrada se esgotou"
     }
   },
   "topics": {
