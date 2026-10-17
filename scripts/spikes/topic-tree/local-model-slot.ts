@@ -2,8 +2,9 @@
 // inference, wait until no other agent's local-model job is running.
 import { execFileSync } from "node:child_process";
 
-const localModelJob =
-  /memora-mlx-helper|scripts\/spikes\/(reranker|topic-tree)\/.*(score|embed)|node-llama-cpp/;
+// `scripts/relations/` scorers run GGUF in-process, so no `node-llama-cpp` shows on their command line.
+export const localModelJob =
+  /memora-mlx-helper|scripts\/spikes\/(reranker|topic-tree)\/.*(score|embed)|scripts\/relations\/.*(score|pairs|rematch)|node-llama-cpp/;
 
 interface ProcessRow {
   pid: number;
