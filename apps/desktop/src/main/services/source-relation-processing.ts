@@ -600,7 +600,9 @@ export interface MatchSourcesOptions {
   ) => void | Promise<void>;
   /**
    * `defer`: promotion only; discovery is recorded as deferred (relation remote calls switched off,
-   * or a hierarchy root whose last record has not linked yet). Defaults to `run`.
+   * or a hierarchy root whose last record has not linked yet). Defaults to `run`. A deferred
+   * discovery, or one that found no composite vector, is not final: a later `run` call, with the
+   * same run key or another, plans it. Only a planned discovery is kept.
    */
   discovery?: "run" | "defer";
   /** A re-match run's visibility fence (3.17): discovery sees only the released roots. */
@@ -741,7 +743,9 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
     const promotion = await repository.promoteFromNotes(root);
     promoted += promotion.promoted + promotion.refreshed;
     retired += promotion.retired;
-    if (!state.finished && !state.discovery) {
+    // A deferred discovery, or one without a composite vector, is no plan: a later call plans it
+    // (a hierarchy root once its last record has linked, a composite written since).
+    if (state.discovery?.status !== "planned") {
       let discovery: RootState["discovery"];
       if (options.discovery === "defer")
         discovery = { status: "deferred", roots: [], candidates: 0 };
@@ -771,6 +775,11 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
             candidates: plan.candidates
           };
         }
+      }
+      if (discovery.status === "planned") {
+        // A root finished without a plan has its pairs to judge now.
+        state.finished = false;
+        delete state.coverage;
       }
       state.discovery = discovery;
       state.totalPairs = discovery.roots.length;

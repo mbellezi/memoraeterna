@@ -531,6 +531,28 @@ describe("source matching by design E (D27)", () => {
     expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
   });
 
+  it("plans a deferred or vectorless discovery when the same run asks again", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    // A book root whose last record has not linked yet, then the call for that last record.
+    expect(await run(ai, "book", undefined, { discovery: "defer" })).toMatchObject({
+      discoveryDeferred: 1,
+      total: 0
+    });
+    expect(await run(ai, "book")).toMatchObject({ discoveryDeferred: 0, completed: 1, total: 1 });
+    // A root matched before its composite existed is discovered once it has one.
+    mocks.repository.discoveryVector!.mockResolvedValueOnce(null);
+    expect(await run(ai, "late")).toMatchObject({ discoveryWithoutVector: 1, total: 0 });
+    expect(await run(ai, "late")).toMatchObject({ discoveryWithoutVector: 0, total: 1 });
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(2);
+    // A planned discovery is kept: a deferring call on the same run changes nothing.
+    expect(await run(ai, "late", undefined, { discovery: "defer" })).toMatchObject({
+      discoveryDeferred: 0,
+      completed: 1,
+      total: 1
+    });
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(2);
+  });
+
   it("selects again the pairs earlier plans of the root left unjudged", async () => {
     mocks.repository.owedDiscoveryRoots!.mockResolvedValue(["root-X"]);
     await run(vi.fn().mockResolvedValue(execution({ relations: [] })), "later");
