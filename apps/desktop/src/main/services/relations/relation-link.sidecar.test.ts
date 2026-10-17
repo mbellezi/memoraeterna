@@ -23,7 +23,7 @@ import { relationsDailyCallsSettingKey } from "@app/domain";
 
 import { InFlightRegistry } from "./in-flight-registry.js";
 import type { RelationLinkRuntime } from "./link-runtime.js";
-import { createRelationCallBudget, localDay } from "./relation-call-budget.js";
+import { createRelationCallBudget, localDay, nextLocalDay } from "./relation-call-budget.js";
 import {
   enqueueRelationLink,
   RelationLinker,
@@ -469,7 +469,7 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       }
       if ("cap" in setup) {
         expect(first.ai).not.toHaveBeenCalled();
-        expect(result.discovery).toEqual({ status: "deferred", reason: "daily_cap" });
+        expect(result.discovery).toMatchObject({ status: "deferred", reason: "daily_cap" });
       }
       if (failing) expect(failing).toHaveBeenCalledTimes(2);
 
@@ -481,6 +481,62 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       expect((await events()).map((event) => event.kind)).toEqual(["untyped", "typed"]);
     }
   );
+
+  it("queues the discovery the daily cap deferred for the next local day, and runs it then", async () => {
+    const a = await seedSource("Chi");
+    const b = await seedSource("Psi");
+    const c1 = await seedNote(a, "Chi one");
+    const p1 = await seedNote(b, "Psi one");
+    await park(a.sourceId, a.sourceId, [decided(c1, [{ with: p1 }])]);
+    const capped = linker({ cap: 0 });
+    const result = await capped.instance.link(await claim(a.sourceId), signal());
+    const retryAfter = nextLocalDay(new Date());
+    expect(result.discovery).toEqual({
+      status: "deferred",
+      reason: "daily_cap",
+      retryAfter: retryAfter.toISOString()
+    });
+    expect(capped.discovered).toEqual([]);
+    // The root's link job waits in the queue until the day's count starts again.
+    const waiting = await pool!.query<{ payload: unknown; due: boolean; runAfter: Date }>(
+      `select payload, run_after <= now() as due, run_after as "runAfter" from jobs
+       where type = 'relation-link' and status = 'queued'`
+    );
+    expect(waiting.rows).toEqual([
+      {
+        payload: { rootId: a.sourceId, discover: true },
+        due: false,
+        runAfter: expect.any(Date)
+      }
+    ]);
+    expect(Math.abs(waiting.rows[0]!.runAfter.getTime() - retryAfter.getTime())).toBeLessThan(
+      5_000
+    );
+
+    // The next day: the job discovers with no parked run, under the new day's count.
+    await pool!.query(`update jobs set run_after = now() where type = 'relation-link'`);
+    const nextDay = linker();
+    const resumed = await nextDay.instance.link(await claim(a.sourceId), signal());
+    expect(nextDay.discovered).toEqual([
+      expect.objectContaining({ rootId: a.sourceId, regenerate: false, priority: "P2" })
+    ]);
+    expect(resumed).toMatchObject({ runs: 0, discovery: { status: "completed" } });
+
+    // A request that merges into a queued job tells it to discover too.
+    await park(b.sourceId, b.sourceId, []);
+    const merged = await enqueueRelationLink(pool!, {
+      rootId: b.sourceId,
+      discovery: { regenerate: true, notBefore: retryAfter }
+    });
+    expect(merged.payload).toEqual({ rootId: b.sourceId, discover: true, regenerate: true });
+    const queued = await pool!.query<{ due: boolean }>(
+      `select run_after <= now() as due from jobs
+       where type = 'relation-link' and status = 'queued' and payload->>'rootId' = $1`,
+      [b.sourceId]
+    );
+    // Still due now: the deferred discovery never postpones a due job.
+    expect(queued.rows).toEqual([{ due: true }]);
+  });
 
   it("calls at P1 for an interactive import and counts the call, never refusing it at the cap", async () => {
     const a = await seedSource("Zeta");

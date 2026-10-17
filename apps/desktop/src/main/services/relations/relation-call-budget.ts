@@ -34,6 +34,11 @@ export function localDay(at: Date): string {
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 }
 
+/** The start of the local day after `at`'s: when a capped day's count starts again. */
+export function nextLocalDay(at: Date): Date {
+  return new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1);
+}
+
 export interface RelationCallBudget {
   /**
    * Asks for one call on `lane`: true when it may run (and it is counted, if it counts), false at

@@ -8,7 +8,7 @@ import {
   resetRelationLinkRuntime,
   setRelationLinkRuntime
 } from "./link-runtime.js";
-import { localDay } from "./relation-call-budget.js";
+import { localDay, nextLocalDay } from "./relation-call-budget.js";
 import { decidedNotesOf, isInteractiveRun, StoredDecidedNoteSchema } from "./relation-link.js";
 import type { DecidedNote } from "./relation-matcher.js";
 import { RelationsChangedEmitter } from "./relations-changed.js";
@@ -181,5 +181,8 @@ describe("what a run hands its link job", () => {
   it("counts calls per local calendar day", () => {
     expect(localDay(new Date(2026, 9, 17, 23, 59))).toBe("2026-10-17");
     expect(localDay(new Date(2026, 9, 18, 0, 0))).toBe("2026-10-18");
+    // Discovery deferred at the cap waits for the next day's count (D26).
+    expect(nextLocalDay(new Date(2026, 9, 17, 23, 59))).toEqual(new Date(2026, 9, 18));
+    expect(nextLocalDay(new Date(2026, 11, 31, 8, 0))).toEqual(new Date(2027, 0, 1));
   });
 });

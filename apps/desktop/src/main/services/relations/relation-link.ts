@@ -8,7 +8,8 @@
 //      a small source with other due link jobs' pairs (product only);
 //   3. persists them in one transaction: one `link` run, one event per change (D14);
 //   4. pushes `relationsChanged` for the notes it changed;
-//   5. promotes (T53) and discovers the root's source relations;
+//   5. promotes (T53) and discovers the root's source relations (at the daily cap, the root's
+//      link job is queued again for the next local day to discover them, D26);
 //   6. completes the parked runs: a run completes when its link job does.
 // A failing link job never holds back another root's: each root has its own job, and a failure
 // ends only the runs it was linking, which stay retryable.
@@ -49,7 +50,11 @@ import type { AiTaskLogContext } from "../ai-service.js";
 import type { LightJobExecutor, LightJobRegistry } from "../job-lanes.js";
 import type { InFlightRegistry } from "./in-flight-registry.js";
 import { relationLinkRuntime, type RelationLinkRuntime } from "./link-runtime.js";
-import { relationDailyCapError, type RelationCallBudget } from "./relation-call-budget.js";
+import {
+  nextLocalDay,
+  relationDailyCapError,
+  type RelationCallBudget
+} from "./relation-call-budget.js";
 import { relationMatcherVersion } from "./relation-matcher.js";
 import type {
   PairTyping,
@@ -204,22 +209,53 @@ export interface RelationLinkDeps {
 /**
  * Queues the link job of a root, or makes the queued one due now (a running one never absorbs a
  * request: it may have read its runs already, so a new job is queued beside it). An interactive
- * import's link job is claimed before background ones (D30: `jobs.priority` 1).
+ * import's link job is claimed before background ones (D30: `jobs.priority` 1). `discovery` asks
+ * the job to discover the root's source relations even with no parked run, from `notBefore` on:
+ * discovery the daily cap deferred (D26).
  */
 export async function enqueueRelationLink(
   db: Queryable,
-  input: { rootId: string; batchId?: string | null; interactive?: boolean }
+  input: {
+    rootId: string;
+    batchId?: string | null;
+    interactive?: boolean;
+    discovery?: { regenerate: boolean; notBefore: Date };
+  }
 ): Promise<JobRecord> {
-  const { job } = await createJobRepository(db).enqueueDeduped({
+  const discovery = input.discovery
+    ? { discover: true, ...(input.discovery.regenerate ? { regenerate: true } : {}) }
+    : null;
+  const delayMs = input.discovery
+    ? Math.max(0, input.discovery.notBefore.getTime() - Date.now())
+    : 0;
+  const { job, created } = await createJobRepository(db).enqueueDeduped({
     type: relationLinkJobType,
     lane: "light",
     dedupeKey: relationLinkDedupeKey(input.rootId),
-    payload: { rootId: input.rootId, ...(input.batchId ? { batchId: input.batchId } : {}) },
+    payload: {
+      rootId: input.rootId,
+      ...(input.batchId ? { batchId: input.batchId } : {}),
+      ...discovery
+    },
     priority: input.interactive ? 1 : 0,
-    debounce: immediateJobDebounce,
+    debounce: delayMs > 0 ? { delayMs, maxDelayMs: delayMs } : immediateJobDebounce,
     maxAttempts: 3
   });
-  return job;
+  if (
+    !discovery ||
+    created ||
+    (job.payload.discover === true && (!discovery.regenerate || job.payload.regenerate === true))
+  )
+    return job;
+  // A queued job keeps its payload when a request merges into it: it is told to discover too.
+  const patched = await db.query<{ payload: JsonObject }>(
+    `update jobs set payload = payload || $2::jsonb, updated_at = now()
+     where id = $1 and status = 'queued' returning payload`,
+    [job.id, JSON.stringify(discovery)]
+  );
+  const payload = patched.rows[0]?.payload;
+  // Claimed meanwhile: it read its payload already, so the request is queued beside it.
+  return payload ? { ...job, payload } : enqueueRelationLink(db, input);
 }
 
 /** The root of a source item's tree (the item itself when it has no parent or is gone). */
@@ -966,9 +1002,11 @@ export class RelationLinker {
     signal: AbortSignal;
   }): Promise<{ summary: JsonObject }> {
     const deferred = (reason: DiscoveryDeferral) => ({ summary: { status: "deferred", reason } });
-    if (input.runs.length === 0) return deferred("nothing_new");
+    // Discovery the daily cap deferred is due again with no parked run (D26).
+    const queued = input.job.payload.discover === true;
+    if (input.runs.length === 0 && !queued) return deferred("nothing_new");
     // Runs whose plans stop at note matching parked only for their pairs (D21).
-    if (!input.runs.some(requestsSourceDiscovery))
+    if (!queued && !input.runs.some(requestsSourceDiscovery))
       return { summary: { status: "skipped", reason: "not_in_plan" } };
     if (input.runtime.remoteCallsOff) return deferred("remote_calls_off");
     const pool = this.deps.getPool();
@@ -981,16 +1019,28 @@ export class RelationLinker {
     )
       return deferred("records_pending");
     const priority: AiPriorityInput = input.interactive ? "P1" : "P2";
+    const regenerate =
+      input.job.payload.regenerate === true ||
+      input.runs.some((run) => run.previousArtifactPolicy === "regenerate_selected");
+    // At the cap discovery waits for the next local day, when the count starts again (D26).
+    const waitForNextDay = async () => {
+      const notBefore = nextLocalDay(new Date());
+      await enqueueRelationLink(pool, {
+        rootId: input.rootId,
+        discovery: { regenerate, notBefore }
+      });
+      return {
+        summary: { status: "deferred", reason: "daily_cap", retryAfter: notBefore.toISOString() }
+      };
+    };
     if (!input.interactive && !input.runtime.drain && (await this.deps.budget.capped()))
-      return deferred("daily_cap");
+      return waitForNextDay();
     try {
       const result = await this.deps.steps.discoverSourceRelations(
         {
           rootId: input.rootId,
           runKey: `${relationLinkJobType}:${input.job.id}`,
-          regenerate: input.runs.some(
-            (run) => run.previousArtifactPolicy === "regenerate_selected"
-          ),
+          regenerate,
           priority,
           reserveCall: (lane) =>
             this.deps.budget.reserve({ lane, priority, drain: input.runtime.drain }),
@@ -1006,7 +1056,7 @@ export class RelationLinker {
       return { summary: { status: "completed", ...(result as JsonObject) } };
     } catch (error) {
       if (error instanceof Error && error.message === relationDailyCapError)
-        return deferred("daily_cap");
+        return waitForNextDay();
       throw error;
     }
   }
