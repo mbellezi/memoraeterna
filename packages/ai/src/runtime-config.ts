@@ -247,8 +247,9 @@ export const defaultAiLaneProbeConfig: AiLaneProbeConfig = { levels: [1, 2, 3], 
 
 /**
  * Resolves the lane configuration. Precedence: explicit input, then `MEMORA_AI_LANES` in an
- * unpackaged build, then serial lanes for a golden run (`MEMORA_GOLDEN_RUN`, F3 D5), then the
- * defaults. An unknown value of the variable is ignored.
+ * unpackaged build, then serial lanes for a golden run (`MEMORA_GOLDEN_RUN`) or a relation re-match
+ * run (`MEMORA_RELATIONS_REMATCH`, F3 D5), then the defaults. An unknown value of the variable is
+ * ignored.
  */
 export function resolveAiLaneRuntimeConfig(
   input: AiLaneRuntimeConfigInput = {},
@@ -259,7 +260,8 @@ export function resolveAiLaneRuntimeConfig(
   const fromEnvironment =
     stated === "serial" || stated === "product"
       ? stated
-      : !context.packaged && environment.MEMORA_GOLDEN_RUN?.trim()
+      : !context.packaged &&
+          (environment.MEMORA_GOLDEN_RUN?.trim() || environment.MEMORA_RELATIONS_REMATCH?.trim())
         ? "serial"
         : undefined;
   const { totalMs, ...localDeadlines } = input.localDeadlines ?? {};

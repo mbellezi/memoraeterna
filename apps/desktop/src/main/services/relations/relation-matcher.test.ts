@@ -812,6 +812,33 @@ describe("decider modes", () => {
     expect(completed).toEqual([]);
   });
 
+  it("names the key it decides under before it decides, the one the hand-off carries", async () => {
+    // The re-match harness clears the decisions of this key (F3 T52b).
+    rankerScores.set("Source>Beta", 9);
+    const key = await matcher().currentDeciderKey();
+    expect(key).toMatch(/^[0-9a-f]{64}$/u);
+    // No call is made to find it.
+    expect(ai.rankPairs).not.toHaveBeenCalled();
+    const ranker = await run([source.id]);
+    expect(ranker.handed[0]!.decider.deciderKey).toBe(key);
+
+    mocks.settings.get.mockResolvedValue("generative");
+    routes["op:note_matching_reranking"] = writerRoute;
+    ai.runDefaultTask.mockResolvedValue(
+      verdicts([1, 90, "supports"], [2, 10, "related"], [3, 10, "related"])
+    );
+    const generativeKey = await matcher().currentDeciderKey();
+    expect(generativeKey).not.toBeNull();
+    expect(generativeKey).not.toBe(key);
+    expect((await run([source.id])).handed[0]!.decider.deciderKey).toBe(generativeKey);
+  });
+
+  it("names no key while mode ranker waits for a validated ranker", async () => {
+    mocks.settings.get.mockResolvedValue("ranker");
+    ai.decideRouteStatus.mockResolvedValue("not_validated");
+    await expect(matcher().currentDeciderKey()).resolves.toBeNull();
+  });
+
   it("matches a profile with only a generative reranking route (E6) with the generative decider", async () => {
     routes = { reranking: writerRoute };
     ai.runDefaultTask.mockResolvedValue(

@@ -134,6 +134,18 @@ export function decidedNotesOf(
     typeof metadata === "object" && metadata !== null && "decided" in metadata
       ? metadata.decided
       : null;
+  return parseDecidedNotes(decided);
+}
+
+/**
+ * The decided notes a re-match run's link job carries (F3 T52b, 3.17): the harness decides a root's
+ * records outside any ingestion run, so no run parks for them and the job's payload holds them.
+ */
+export function decidedNotesOfJob(job: Pick<JobRecord, "payload">): StoredDecidedNote[] {
+  return parseDecidedNotes(job.payload.decided);
+}
+
+function parseDecidedNotes(decided: unknown): StoredDecidedNote[] {
   if (!Array.isArray(decided)) return [];
   return decided.flatMap((entry) => {
     const parsed = StoredDecidedNoteSchema.safeParse(entry);
@@ -260,6 +272,41 @@ export async function enqueueRelationLink(
   return payload ? { ...job, payload } : enqueueRelationLink(db, input);
 }
 
+/**
+ * Queues the link job of a root a re-match run decided (F3 T52b, 3.17). The run decides the root's
+ * records outside any ingestion run, so the job carries their decided notes in its payload and is
+ * told to discover with no parked run; a queued job of the root takes the notes in beside its own.
+ */
+export async function enqueueRematchLink(
+  db: Queryable,
+  input: { rootId: string; decided: readonly StoredDecidedNote[] }
+): Promise<JobRecord> {
+  const decided = input.decided.map((note) => StoredDecidedNoteSchema.parse(note));
+  const { job, created } = await createJobRepository(db).enqueueDeduped({
+    type: relationLinkJobType,
+    lane: "light",
+    dedupeKey: relationLinkDedupeKey(input.rootId),
+    payload: {
+      rootId: input.rootId,
+      rematch: true,
+      discover: true,
+      decided: decided as unknown as JsonObject[]
+    },
+    debounce: immediateJobDebounce,
+    maxAttempts: 3
+  });
+  if (created) return job;
+  const patched = await db.query<{ payload: JsonObject }>(
+    `update jobs set payload = payload || jsonb_build_object('rematch', true, 'discover', true,
+       'decided', coalesce(payload -> 'decided', '[]'::jsonb) || $2::jsonb), updated_at = now()
+     where id = $1 and status = 'queued' returning payload`,
+    [job.id, JSON.stringify(decided)]
+  );
+  const payload = patched.rows[0]?.payload;
+  // Claimed meanwhile: it read its payload already, so the notes are queued beside it.
+  return payload ? { ...job, payload } : enqueueRematchLink(db, input);
+}
+
 /** The root of a source item's tree (the item itself when it has no parent or is gone). */
 export async function linkRootOf(db: Queryable, sourceItemId: string): Promise<string> {
   const result = await db.query<{ id: string }>(
@@ -326,26 +373,26 @@ const isCurrentNote = (note: AtomicNoteRecord | null): note is AtomicNoteRecord 
 /** The accepted pairs of these runs, in decide order, once each, with no relation row yet. */
 async function collectPending(
   db: Queryable,
-  runs: readonly IngestionRunRecord[]
+  runs: readonly IngestionRunRecord[],
+  carried: readonly StoredDecidedNote[] = []
 ): Promise<PendingPair[]> {
   const pending = new Map<string, PendingPair>();
-  for (const run of runs)
-    for (const note of decidedNotesOf(run))
-      for (const pair of note.pairs) {
-        const noteId = pair.noteId.toLowerCase(),
-          candidateId = pair.candidateId.toLowerCase();
-        if (noteId === candidateId) continue;
-        const { lo, hi, key } = relationDecisionPair(noteId, candidateId);
-        if (pending.has(key)) continue;
-        pending.set(key, {
-          key,
-          lo,
-          hi,
-          pair,
-          decider: note.decider,
-          sourceItemIds: [note.sourceItemId, pair.candidateSourceItemId]
-        });
-      }
+  for (const note of [...runs.flatMap((run) => decidedNotesOf(run)), ...carried])
+    for (const pair of note.pairs) {
+      const noteId = pair.noteId.toLowerCase(),
+        candidateId = pair.candidateId.toLowerCase();
+      if (noteId === candidateId) continue;
+      const { lo, hi, key } = relationDecisionPair(noteId, candidateId);
+      if (pending.has(key)) continue;
+      pending.set(key, {
+        key,
+        lo,
+        hi,
+        pair,
+        decider: note.decider,
+        sourceItemIds: [note.sourceItemId, pair.candidateSourceItemId]
+      });
+    }
   if (pending.size === 0) return [];
   const values = [...pending.values()];
   const related = await existingPairKeys(db, values);
@@ -584,6 +631,8 @@ export class RelationLinker {
     // Drain mode types each run's pairs by themselves, in decide order: a prompt never depends on
     // how many runs of the root had parked when the job was claimed (deterministic replays).
     const units = runtime.drain && runs.length > 1 ? runs.map((run) => [run]) : [runs];
+    // A re-match run's notes come with the job (T52b), after every parked run's.
+    const carried = decidedNotesOfJob(job);
     const counts = emptyCounts();
     const typing = { calls: 0, cacheHits: 0, untyped: {} as Record<string, number> };
     const promotedRoots = new Set<string>([rootId]);
@@ -593,6 +642,7 @@ export class RelationLinker {
         job,
         rootId,
         runs: unit,
+        carried: index === units.length - 1 ? carried : [],
         retypeRoot: index === units.length - 1,
         coalesce: !runtime.drain,
         priority,
@@ -611,7 +661,8 @@ export class RelationLinker {
     // Step 5: promotion of the typed applied relations (T53) for the root and every root its new
     // typed relations reach, then discovery.
     const promotion =
-      this.deps.steps.promoteSourceRelations && (runs.length > 0 || counts.typed > 0)
+      this.deps.steps.promoteSourceRelations &&
+      (runs.length > 0 || carried.length > 0 || counts.typed > 0)
         ? await this.deps.steps.promoteSourceRelations([...promotedRoots].sort(), signal)
         : null;
     const discovery = await this.discover({ job, rootId, runs, interactive, runtime, signal });
@@ -665,6 +716,8 @@ export class RelationLinker {
     job: JobRecord;
     rootId: string;
     runs: readonly IngestionRunRecord[];
+    /** Decided notes the job itself carries (a re-match run's, T52b). */
+    carried: readonly StoredDecidedNote[];
     retypeRoot: boolean;
     coalesce: boolean;
     priority: AiPriorityInput;
@@ -676,7 +729,7 @@ export class RelationLinker {
     const load = noteLoader(pool);
     const bodyCharacters = this.config.decide.bodyCharacters;
     // Step 1: collect.
-    const pending = await collectPending(pool, input.runs);
+    const pending = await collectPending(pool, input.runs, input.carried);
     const untyped = input.retypeRoot
       ? await listUntyped(pool, { rootId: input.rootId, limit: rootUntypedLimit })
       : [];

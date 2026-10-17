@@ -33,6 +33,14 @@ export function lightWorkerOf(executor: LightJobExecutor): LightWorker {
   return executor.worker ?? (executor.needsModel ? "model" : "compute");
 }
 
+/** A heavy job type of DEV tooling: the heavy loop claims it like ingestion, one job at a time. */
+export interface HeavyJobExecutor {
+  execute: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
+}
+
+/** DEV heavy job types and their executors (the relation re-match harness, F3 T52b). */
+export type HeavyJobRegistry = Readonly<Record<string, HeavyJobExecutor>>;
+
 /** Splits the registry into the workers' disjoint type sets, in name order. */
 export function lightWorkerTypes(
   registry: LightJobRegistry

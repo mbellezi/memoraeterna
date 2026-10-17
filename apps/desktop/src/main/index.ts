@@ -54,6 +54,7 @@ import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
+import { createRematchJobSlot } from "./services/dev/relations-rematch-slot.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
@@ -429,7 +430,12 @@ void app.whenReady().then(() => {
     wake: () => jobSupervisor?.wake()
   });
   registerConsultationIpc(ipcMain, consultationService);
+  // DEV relation re-match (MEMORA_RELATIONS_REMATCH, F3 T52b): its heavy job type is registered
+  // here; the harness binds its handler once its checks passed (below).
+  const rematchSlot =
+    !app.isPackaged && process.env.MEMORA_RELATIONS_REMATCH?.trim() ? createRematchJobSlot() : null;
   jobSupervisor = new JobSupervisor({
+    ...(rematchSlot ? { devHeavyJobs: rematchSlot.registry } : {}),
     traceOperation: (operation, context, run) =>
       monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) =>
@@ -543,6 +549,38 @@ void app.whenReady().then(() => {
           app.quit();
           return;
         }
+        // DEV-only relation re-match (MEMORA_RELATIONS_REMATCH, F3 T52b, relations-rematch.ts): its
+        // checks run here, before a wipe or a reset can, and a refusal quits with the library untouched.
+        // Every other DEV knob is refused beside it; the job it queues starts with the supervisor.
+        const rematch = process.env.MEMORA_RELATIONS_REMATCH?.trim()
+          ? await import("./services/dev/relations-rematch.js")
+              .then(({ prepareRelationsRematch }) =>
+                prepareRelationsRematch({
+                  env: process.env,
+                  isPackaged: app.isPackaged,
+                  userDataPath: app.getPath("userData"),
+                  workspaceRoot,
+                  pool: databaseService!.getPool()!,
+                  cassette: aiCassette,
+                  knowledge: knowledgeService!,
+                  jobs: jobSupervisor!,
+                  slot: rematchSlot ?? createRematchJobSlot(),
+                  quit: () => app.quit(),
+                  logger: console
+                })
+              )
+              .catch((error: unknown) => {
+                console.error(
+                  "RELATIONS_REMATCH refused:",
+                  error instanceof Error ? error.message : String(error)
+                );
+                return null;
+              })
+          : undefined;
+        if (rematch === null) {
+          app.quit();
+          return;
+        }
         // The LEGACY_RECREATED check, then the DEV-only one-shot legacy wipe
         // (MEMORA_LEGACY_WIPE=preview|<token>): a preview, a wipe or a refusal quits here, before
         // the local models, job supervisor, gateway and vault reconcile start.
@@ -645,8 +683,11 @@ void app.whenReady().then(() => {
           notePairs !== undefined ||
           laneProbe ||
           typerCheck;
+        // A re-match changes relations only: its job runs on the supervisor, but no topic sweep,
+        // capture or vault sync may change the clone meanwhile.
+        const libraryQuiet = verdictOnly || rematch !== undefined;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
-        if (!verdictOnly) await topicTreeServices?.start();
+        if (!libraryQuiet) await topicTreeServices?.start();
         await Promise.all([
           // DEV-only (MEMORA_LOCAL_MODEL_INSTALL, needs MEMORA_LOCAL_MODEL_SEED_DIR): once the local
           // models are started, installs the named catalog models from the seed folder and gives them
@@ -669,8 +710,8 @@ void app.whenReady().then(() => {
             // Decision 19: finishes a first-run ranker an earlier start left (never throws).
             .then(() => firstRunRanker?.ensure()),
           verdictOnly ? undefined : jobSupervisor?.start(),
-          verdictOnly ? undefined : integrationGateway?.start(),
-          verdictOnly ? undefined : obsidianSyncService?.reconcileVault()
+          libraryQuiet ? undefined : integrationGateway?.start(),
+          libraryQuiet ? undefined : obsidianSyncService?.reconcileVault()
         ]);
         if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
           void import("./services/matching-pilot.js")
@@ -769,6 +810,7 @@ void app.whenReady().then(() => {
         }
         void goldenRun?.start();
         void notePairs?.start();
+        void rematch?.start();
         const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
         if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
       }

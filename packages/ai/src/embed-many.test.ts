@@ -454,6 +454,41 @@ describe("cassette embedMany", () => {
     expect(replay.stats()).toMatchObject({ served: 1, misses: 0, liveLocalMisses: 1 });
   });
 
+  it("waits a batch served whole for its entries' recorded time (T52b), freeing them when canceled", async () => {
+    class RecordedSlowly extends FakeEmbedder {
+      public override async run(request: AiTaskRequest): Promise<AiTaskResult> {
+        return { ...(await super.run(request)), durationMs: 1000 };
+      }
+    }
+    const single = new AiCassette({ mode: "record", directory }).wrap(new RecordedSlowly());
+    await single.run(embeddingRequest("alpha"));
+    await single.run(embeddingRequest("beta"));
+    const waits: Array<{ ms: number; end: () => void; fail: (reason: unknown) => void }> = [];
+    const replay = new AiCassette(
+      { mode: "replay", directory, timing: "recorded" },
+      undefined,
+      (ms) => new Promise<void>((end, fail) => void waits.push({ ms, end, fail }))
+    );
+    const wrapped = replay.wrap(new FakeEmbedder(descriptor, false));
+    const canceled = wrapped.embedMany!(["alpha", "beta"], batchOptions());
+    await vi.waitFor(() => expect(waits).toHaveLength(1));
+    // Two single calls of 1 s each when they were recorded.
+    expect(waits[0]!.ms).toBeGreaterThan(1500);
+    expect(waits[0]!.ms).toBeLessThanOrEqual(2000);
+    waits[0]!.fail(new Error("canceled"));
+    await expect(canceled).rejects.toThrow("canceled");
+    expect(replay.stats()).toMatchObject({ served: 0, misses: 0 });
+    // The retry is served from the same entries.
+    const served = wrapped.embedMany!(["alpha", "beta"], batchOptions());
+    await vi.waitFor(() => expect(waits).toHaveLength(2));
+    waits[1]!.end();
+    await expect(served).resolves.toMatchObject({
+      embeddings: [vectorOf("alpha"), vectorOf("beta")],
+      replayedItems: 2
+    });
+    expect(replay.stats()).toMatchObject({ served: 2, timing: "recorded" });
+  });
+
   it("counts the tokens of a remote batch against the live cap", async () => {
     const remote: AiModelDescriptor = {
       ...descriptor,

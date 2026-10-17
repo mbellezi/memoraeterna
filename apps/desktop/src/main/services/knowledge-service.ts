@@ -1816,6 +1816,11 @@ export class KnowledgeService {
     });
   }
 
+  /** The key note matching decides under now; null while it waits for a validated ranker (T52b). */
+  public currentRelationDeciderKey(): Promise<string | null> {
+    return this.relationMatcher.currentDeciderKey();
+  }
+
   private async tryRunDefaultTask(
     task: "embedding",
     input: string,

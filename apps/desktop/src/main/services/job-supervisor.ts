@@ -79,6 +79,7 @@ import {
   JobLoop,
   lightWorkers,
   lightWorkerTypes,
+  type HeavyJobRegistry,
   type LightJobRegistry,
   type LightWorker
 } from "./job-lanes.js";
@@ -147,6 +148,8 @@ export interface JobSupervisorOptions {
   releaseAiRuntime?: () => Promise<void>;
   /** Light-lane job types; a worker runs only when it has a type (D33). */
   lightJobs?: LightJobRegistry;
+  /** DEV-only heavy job types (the relation re-match harness); never a built-in or a light type. */
+  devHeavyJobs?: HeavyJobRegistry;
   /**
    * The topic engine's hooks (T15b): a note whose vector was rebuilt, a source whose composite
    * vector was written and a document whose chunks were replaced all reach the topic tree.
@@ -193,6 +196,7 @@ export class JobSupervisor {
   private readonly heavyLoop: JobLoop;
   private readonly lightLoops: JobLoop[];
   private readonly lightJobs: LightJobRegistry;
+  private readonly devHeavyJobs: HeavyJobRegistry;
   private readonly lightTypes: Readonly<Record<LightWorker, readonly string[]>>;
   private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
   private readonly listeners = new Set<() => void>();
@@ -232,6 +236,10 @@ export class JobSupervisor {
     };
     for (const type of Object.keys(this.lightJobs))
       if (supportedJobTypes.has(type)) throw new Error(`job_lane_conflict:${type}`);
+    this.devHeavyJobs = options.devHeavyJobs ?? {};
+    for (const type of Object.keys(this.devHeavyJobs))
+      if (supportedJobTypes.has(type) || this.lightJobs[type])
+        throw new Error(`job_lane_conflict:${type}`);
     this.lightTypes = lightWorkerTypes(this.lightJobs);
     // Only the heavy loop polls the idle release, as often as before the lanes existed.
     this.heavyLoop = this.createLoop(
@@ -343,13 +351,18 @@ export class JobSupervisor {
       (await hasPendingRelationJobs(this.requirePool(), this.lightTypes.relations));
     if (this.heavyHeldForLinks) return null;
     const repository = createJobRepository(this.requirePool());
-    const job = await repository.claimNext(this.workerId, [...supportedJobTypes], "heavy");
+    const job = await repository.claimNext(
+      this.workerId,
+      [...supportedJobTypes, ...Object.keys(this.devHeavyJobs)],
+      "heavy"
+    );
     if (!job) return null;
     this.notify();
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
     try {
-      if (!supportedJobTypes.has(job.type as WorkerTask["type"]))
+      const devHeavy = this.devHeavyJobs[job.type];
+      if (!devHeavy && !supportedJobTypes.has(job.type as WorkerTask["type"]))
         throw new Error("unsupported_job_type");
       const taskJob = { ...job, payload: jobTaskPayload(job.payload) };
       const execute = async () =>
@@ -368,6 +381,8 @@ export class JobSupervisor {
                         this.trackProgress(repository.reportProgress(job.id, progress))
                     })
         );
+      // A DEV heavy job holds the heavy loop like ingestion does but is none of its work.
+      const run = devHeavy ? () => devHeavy.execute(taskJob, controller.signal) : execute;
       const result = await (this.options.traceOperation?.(
         job.type,
         {
@@ -378,8 +393,8 @@ export class JobSupervisor {
           origin: "job",
           attempt: job.attempts
         },
-        execute
-      ) ?? execute());
+        run
+      ) ?? run());
       const updated = await repository.update(job.id, finishedJob(job, result, controller.signal));
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
@@ -515,6 +530,11 @@ export class JobSupervisor {
       }
       return identity ? { ...identity, embeddings } : null;
     };
+  }
+
+  /** Whether a job type has an executor here: a built-in one, a light one or a DEV heavy one. */
+  public supportsJobType(type: string): boolean {
+    return supportedJobTypes.has(type) || type in this.lightJobs || type in this.devHeavyJobs;
   }
 
   /** Runs a pass at once: every loop, or only the loops of one lane. */

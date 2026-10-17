@@ -26,6 +26,7 @@ import type { RelationLinkRuntime } from "./link-runtime.js";
 import { createRelationCallBudget, localDay, nextLocalDay } from "./relation-call-budget.js";
 import {
   enqueueRelationLink,
+  enqueueRematchLink,
   hasPendingRelationJobs,
   RelationLinker,
   type RelationDiscoveryInput,
@@ -385,6 +386,27 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     expect(discovered).toEqual([]);
     expect(result.discovery).toEqual({ status: "skipped", reason: "not_in_plan" });
     expect((await createIngestionRunRepository(pool!).findById(run.id))!.status).toBe("succeeded");
+  });
+
+  it("types, persists and discovers the notes a re-match link job carries, with no parked run", async () => {
+    const a = await seedSource("Upsilon");
+    const b = await seedSource("Phi");
+    const u1 = await seedNote(a, "Upsilon one");
+    const u2 = await seedNote(a, "Upsilon two");
+    const p1 = await seedNote(b, "Phi one");
+    // Two records of a re-match release: the second request merges into the queued job.
+    await enqueueRematchLink(pool!, { rootId: a.sourceId, decided: [decided(u1, [{ with: p1 }])] });
+    await enqueueRematchLink(pool!, { rootId: a.sourceId, decided: [decided(u2, [{ with: p1 }])] });
+    const { instance, ai, discovered } = linker({
+      runtime: { drain: true, remoteCallsOff: false }
+    });
+    const result = await instance.link(await claim(a.sourceId), signal());
+    expect(ai).toHaveBeenCalledOnce();
+    expect(await relations()).toHaveLength(2);
+    expect(result).toMatchObject({ runs: 0, completedRuns: 0, applied: 2 });
+    // Discovery runs with no parked run: the job was told to discover.
+    expect(discovered.map((entry) => entry.rootId)).toEqual([a.sourceId]);
+    expect(result.discovery).toMatchObject({ status: "completed" });
   });
 
   it("keeps a typing row and a vetoed event for a pair the typer answers none, and no relation", async () => {

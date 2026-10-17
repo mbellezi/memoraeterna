@@ -40,6 +40,16 @@ describe("resolveAiLaneRuntimeConfig", () => {
         { environment: { MEMORA_GOLDEN_RUN: "m.json", MEMORA_AI_LANES: "product" } }
       ).mode
     ).toBe("product");
+    // A relation re-match run is serial too, unless a timing run says `product`.
+    const rematch = { MEMORA_RELATIONS_REMATCH: "arrival:20261031" };
+    expect(resolveAiLaneRuntimeConfig({}, { environment: rematch }).mode).toBe("serial");
+    expect(
+      resolveAiLaneRuntimeConfig({}, { environment: { ...rematch, MEMORA_AI_LANES: "product" } })
+        .mode
+    ).toBe("product");
+    expect(resolveAiLaneRuntimeConfig({}, { environment: rematch, packaged: true }).mode).toBe(
+      "product"
+    );
     expect(resolveAiLaneRuntimeConfig({}, { ...serial, packaged: true }).mode).toBe("product");
     expect(resolveAiLaneRuntimeConfig({}, { environment: { MEMORA_AI_LANES: "fast" } }).mode).toBe(
       "product"

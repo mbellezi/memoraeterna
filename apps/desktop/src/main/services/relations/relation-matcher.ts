@@ -488,6 +488,17 @@ export class RelationMatcher {
     }
   }
 
+  /**
+   * The key the next admission decides under (the decision cache and `relation_decisions` use it),
+   * or null while mode `ranker` has no validated ranker. The re-match harness clears the decisions
+   * of this key, so the decider scores every pair again.
+   */
+  public async currentDeciderKey(): Promise<string | null> {
+    const decider = await this.resolveDecider();
+    if (decider === waitingForDeciderSkipReason) return null;
+    return decider.kind === "ranker" ? decider.cacheKey : decider.key;
+  }
+
   // --- decider resolution -------------------------------------------------------------------------
 
   /** The decider of this admission, or the skip of mode `ranker` without a validated ranker. */

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { z } from "zod";
 import { AiOutputSchemaSchema } from "@app/domain";
@@ -41,16 +42,30 @@ export type AiCassetteMode = (typeof aiCassetteModes)[number];
 export const aiCassetteLocalMissPolicies = ["fail", "live"] as const;
 export type AiCassetteLocalMissPolicy = (typeof aiCassetteLocalMissPolicies)[number];
 
+/**
+ * How long a served entry takes (F3 D5, 3.17). `off` serves at once. `recorded`
+ * (`MEMORA_AI_CASSETTE_TIMING=recorded`) makes a served entry wait its recorded `durationMs` before it
+ * answers, inside the lane slot the call already holds, so a throughput rerun of remote work costs
+ * nothing and still queues, overlaps and pipelines like the recording did. In record mode a miss
+ * goes live and is recorded as usual.
+ */
+export const aiCassetteTimings = ["off", "recorded"] as const;
+export type AiCassetteTiming = (typeof aiCassetteTimings)[number];
+
 export interface AiCassetteConfig {
   mode: "record" | "replay";
   directory: string;
   /** The replay policy for a miss on a local runtime; `fail` when absent. */
   localMisses?: AiCassetteLocalMissPolicy;
+  /** How long a served entry takes; `off` when absent. */
+  timing?: AiCassetteTiming;
 }
 
 export type AiCassetteErrorCode =
   | "invalid_mode"
   | "invalid_local_misses"
+  | "invalid_timing"
+  | "timing_without_cassette"
   | "missing_directory"
   | "packaged_build"
   | "directory_outside_cache"
@@ -113,6 +128,10 @@ export interface AiCassetteStats {
     string,
     { served: number; recorded: number; misses: number; liveLocalMisses?: number }
   >;
+  /** Present with `MEMORA_AI_CASSETTE_TIMING=recorded`: how served entries were timed. */
+  timing?: "recorded";
+  /** With recorded timing: the milliseconds served entries waited for their recorded duration. */
+  waitedMs?: number;
   /** Input plus output tokens of the live remote calls made through this cassette (record mode). */
   liveTokens: number;
   /** The live-token cap enforced before every live call, or null when there is none. */
@@ -170,6 +189,19 @@ const entrySchema = z
   .strict();
 type CassetteEntry = z.infer<typeof entrySchema>;
 
+/** A call that found its recorded response, and the place of that response in the key's order. */
+interface ServedEntry {
+  served: RecordedResponse;
+  occurrence: number;
+}
+
+/** A batch of embeddings served whole: each key's place before it, what it took, its recorded time. */
+interface ServedBatch {
+  before: ReadonlyMap<string, number>;
+  taken: ReadonlyMap<string, number>;
+  durationMs: number;
+}
+
 /** Reads `MEMORA_AI_CASSETTE_LOCAL_MISSES`: `fail` unless it says `live`; anything else is an error. */
 export function readAiCassetteLocalMisses(
   env: Readonly<Record<string, string | undefined>>
@@ -182,6 +214,20 @@ export function readAiCassetteLocalMisses(
       `MEMORA_AI_CASSETTE_LOCAL_MISSES must be one of ${aiCassetteLocalMissPolicies.join(", ")}`
     );
   return policy;
+}
+
+/** Reads `MEMORA_AI_CASSETTE_TIMING`: `off` unless it says `recorded`; anything else is an error. */
+export function readAiCassetteTiming(
+  env: Readonly<Record<string, string | undefined>>
+): AiCassetteTiming {
+  const raw = env.MEMORA_AI_CASSETTE_TIMING?.trim() ?? "";
+  const timing = (raw === "" ? "off" : raw) as AiCassetteTiming;
+  if (!aiCassetteTimings.includes(timing))
+    throw new AiCassetteError(
+      "invalid_timing",
+      `MEMORA_AI_CASSETTE_TIMING must be one of ${aiCassetteTimings.join(", ")}`
+    );
+  return timing;
 }
 
 /**
@@ -199,7 +245,15 @@ export function resolveAiCassetteConfig(
       "invalid_mode",
       `MEMORA_AI_CASSETTE must be one of ${aiCassetteModes.join(", ")}`
     );
-  if (mode === "off") return null;
+  const timing = readAiCassetteTiming(env);
+  if (mode === "off") {
+    if (timing !== "off")
+      throw new AiCassetteError(
+        "timing_without_cassette",
+        "MEMORA_AI_CASSETTE_TIMING needs MEMORA_AI_CASSETTE=record or replay"
+      );
+    return null;
+  }
   if (options.isPackaged)
     throw new AiCassetteError("packaged_build", "AI cassettes are refused in packaged builds");
   const directory = env.MEMORA_AI_CASSETTE_DIR?.trim();
@@ -220,7 +274,8 @@ export function resolveAiCassetteConfig(
   return {
     mode: mode as AiCassetteConfig["mode"],
     directory: resolved,
-    ...(localMisses === "live" ? { localMisses } : {})
+    ...(localMisses === "live" ? { localMisses } : {}),
+    ...(timing === "recorded" ? { timing } : {})
   };
 }
 
@@ -315,9 +370,20 @@ export function canonicalJson(
   throw new AiCassetteError("unsupported_value", `Cassette keys cannot hold a ${typeof value}`);
 }
 
+/** Waits `ms`, or rejects with the signal's reason as soon as the signal aborts. */
+async function waitUnlessAborted(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  try {
+    await delay(ms, undefined, signal ? { signal } : undefined);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
+    throw error;
+  }
+}
+
 export class AiCassette {
   public readonly mode: AiCassetteConfig["mode"];
   public readonly directory: string;
+  public readonly timing: AiCassetteTiming;
   private readonly localMisses: AiCassetteLocalMissPolicy;
   private readonly entries = new Map<string, CassetteEntry | null>();
   private readonly occurrences = new Map<string, number>();
@@ -333,13 +399,17 @@ export class AiCassette {
     liveTokens: 0,
     missDetails: []
   };
+  private waitedMs = 0;
 
+  /** `wait` replaces the real delay of recorded timing (tests); it receives the abort signal. */
   public constructor(
     config: AiCassetteConfig,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly wait: (ms: number, signal?: AbortSignal) => Promise<void> = waitUnlessAborted
   ) {
     this.mode = config.mode;
     this.directory = config.directory;
+    this.timing = config.timing ?? "off";
     this.localMisses = config.localMisses ?? "fail";
     this.prepareDirectory();
   }
@@ -415,6 +485,9 @@ export class AiCassette {
       mode: this.mode,
       directory: this.directory,
       maxLiveTokens: this.maxLiveTokens,
+      ...(this.timing === "recorded"
+        ? { timing: "recorded" as const, waitedMs: this.waitedMs }
+        : {}),
       ...this.counters
     });
   }
@@ -430,15 +503,14 @@ export class AiCassette {
     const startedAt = performance.now();
     const requestKey = aiCassetteRequestKey(adapter.describe(), request);
     const { key } = requestKey;
-    return this.withLock(key, async () => {
+    const outcome = await this.withLock<AiTaskResult | ServedEntry>(key, async () => {
       const entry = await this.readEntry(key);
       const occurrence = this.occurrences.get(key) ?? 0;
       const recorded = entry?.responses[occurrence];
       if (recorded) {
         this.occurrences.set(key, occurrence + 1);
         this.count(request.taskType, "served");
-        onProgress?.({ progress: 1 });
-        return replayedResult(request, recorded, requestKey.ids, performance.now() - startedAt);
+        return { served: recorded, occurrence };
       }
       // A local miss may run live under the `live` policy; any other replay miss fails its call.
       const liveLocalMiss =
@@ -487,6 +559,25 @@ export class AiCassette {
       if (!liveLocalMiss) this.count(request.taskType, "recorded");
       return result;
     });
+    if (!("served" in outcome)) return outcome;
+    // A served entry takes the time it took when it was recorded, off the key's lock and inside the
+    // lane slot the caller holds. A call canceled while it waits did not use the entry.
+    if (this.timing === "recorded") {
+      const remaining = Math.round(outcome.served.durationMs - (performance.now() - startedAt));
+      if (remaining > 0) {
+        try {
+          await this.wait(remaining, signal);
+        } catch (error) {
+          if (this.occurrences.get(key) === outcome.occurrence + 1)
+            this.occurrences.set(key, outcome.occurrence);
+          this.count(request.taskType, "served", -1);
+          throw error;
+        }
+        this.waitedMs += remaining;
+      }
+    }
+    onProgress?.({ progress: 1 });
+    return replayedResult(request, outcome.served, requestKey.ids, performance.now() - startedAt);
   }
 
   /**
@@ -494,7 +585,9 @@ export class AiCassette {
    * the cassette holds are served, and only the others reach the adapter's `embedMany` (record mode,
    * or a local runtime under the `live` policy); each of those is recorded as a single entry. A text
    * that repeats within the batch takes the next recorded response of its key, as a second single
-   * call would. A miss in replay fails the whole batch and consumes nothing.
+   * call would. A miss in replay fails the whole batch and consumes nothing. Under recorded timing
+   * a batch served whole waits the sum of its entries' recorded durations, as their single calls
+   * would; a batch canceled while it waits did not use its entries.
    */
   private async executeMany(
     adapter: AiModelAdapter,
@@ -515,7 +608,9 @@ export class AiCassette {
     const requests = texts.map((text) => embedManyRequest(text, options));
     const requestKeys = requests.map((request) => aiCassetteRequestKey(descriptor, request));
     const keys = [...new Set(requestKeys.map((requestKey) => requestKey.key))].sort();
-    return this.withLocks(keys, async () => {
+    // A batch served whole, for recorded timing.
+    let servedWhole: ServedBatch | null = null;
+    const result = await this.withLocks(keys, async () => {
       const entries = new Map<string, CassetteEntry | null>();
       for (const key of keys) entries.set(key, await this.readEntry(key));
       const taken = new Map<string, number>();
@@ -604,10 +699,17 @@ export class AiCassette {
         written.set(requestKey.key, next);
         if (!liveLocalMiss) this.count("embedding", "recorded");
       }
+      const before = new Map(keys.map((key) => [key, this.occurrences.get(key) ?? 0]));
       for (const [key, count] of taken)
         this.occurrences.set(key, (this.occurrences.get(key) ?? 0) + count);
       const served = plan.flatMap((item) => (item.recorded ? [item.recorded] : []));
       for (let index = 0; index < served.length; index += 1) this.count("embedding", "served");
+      if (missing.length === 0)
+        servedWhole = {
+          before,
+          taken,
+          durationMs: served.reduce((total, response) => total + response.durationMs, 0)
+        };
       const vectors = plan.map((item, index) => {
         if (item.recorded) return item.recorded.output as number[];
         return live!.embeddings[missing.indexOf(index)]!;
@@ -645,17 +747,41 @@ export class AiCassette {
         replayedItems: served.length
       };
     });
+    // Recorded timing (T52b): a batch served whole takes the time its entries took when they were
+    // recorded, off the keys' locks and inside the lane slot the caller holds, as their single calls
+    // would. A batch canceled while it waits did not use its entries.
+    const timed = servedWhole as ServedBatch | null;
+    if (this.timing !== "recorded" || !timed) return result;
+    const remaining = Math.round(timed.durationMs - (performance.now() - startedAt));
+    if (remaining <= 0) return result;
+    try {
+      await this.wait(remaining, options.signal);
+    } catch (error) {
+      for (const [key, count] of timed.taken) {
+        const before = timed.before.get(key) ?? 0;
+        if (this.occurrences.get(key) === before + count) this.occurrences.set(key, before);
+        this.count("embedding", "served", -count);
+      }
+      throw error;
+    }
+    this.waitedMs += remaining;
+    // The audit keeps the real duration, which includes the wait of recorded timing.
+    return { ...result, durationMs: Math.max(0, Math.round(performance.now() - startedAt)) };
   }
 
-  private count(taskType: string, field: "served" | "recorded" | "misses" | "liveLocalMisses") {
-    this.counters[field] += 1;
+  private count(
+    taskType: string,
+    field: "served" | "recorded" | "misses" | "liveLocalMisses",
+    amount = 1
+  ) {
+    this.counters[field] += amount;
     const task = (this.counters.byTask[taskType] ??= {
       served: 0,
       recorded: 0,
       misses: 0,
       liveLocalMisses: 0
     });
-    task[field] += 1;
+    task[field] += amount;
   }
 
   private prepareDirectory() {
@@ -783,7 +909,8 @@ function replayedResult(
     providerId: recorded.providerId,
     modelId: recorded.modelId,
     runtime: recorded.runtime,
-    // The audit keeps the real (replay) duration; the recorded timing stays in the cassette.
+    // The audit keeps the real (replay) duration, which includes the wait of recorded timing; the
+    // recorded duration itself stays in the cassette.
     durationMs: Math.max(0, Math.round(elapsedMs)),
     // The recorded token counts describe the call, so runs stay comparable. The recorded cost is
     // deliberately not replayed: nothing was spent, so the audit must not report it as spent.
