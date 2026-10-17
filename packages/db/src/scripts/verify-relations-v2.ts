@@ -27,11 +27,11 @@ import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/
  *
  *   npm run db:relations:verify
  *       A temporary PostgreSQL sidecar (never an existing database): a library at 0055 with note
- *       relations of every metadata shape and current, stale and rejected source evidence gets 0056
- *       (and any later migration) as pending; the direction backfill, untouched metadata, the
- *       facts-only evidence fingerprint and equal current-evidence counts are checked, then the
- *       constraints, an empty database through the baseline seed (same shape), and a migration
- *       killed mid-transaction (nothing changes).
+ *       relations of every metadata shape and current, stale, rejected and discarded-note source
+ *       evidence gets 0056 (and any later migration) as pending; the direction backfill, untouched
+ *       metadata, the facts-only evidence fingerprint and equal current-evidence counts are
+ *       checked, then the constraints, an empty database through the baseline seed (same shape),
+ *       and a migration killed mid-transaction (nothing changes).
  *   npm run db:relations:verify -- --db <postgres URL | scratch connection .json>
  *       An existing scratch database (a restore or an APFS clone, never a live profile, gate M). At
  *       0055 every pending migration (0056 first, then 0057 and 0058) is applied here, timed, with
@@ -235,6 +235,30 @@ export const formerCurrentEvidenceSql = `select e.id from source_relation_eviden
 const currentEvidenceSql = `select e.id from source_relation_evidence e ${sourceRelationEvidenceJoins}
  where ${currentSourceRelationEvidenceSql}`;
 
+/**
+ * Note-origin evidence whose stored fingerprint is the pre-0056 formula's, current or not
+ * (`relations_v2_rekey` of the migration): 0056 re-keys exactly these rows.
+ */
+const formerFingerprintSql = `select e.id from source_relation_evidence e
+  join atomic_note_relations n on n.id = e.note_relation_id
+  join atomic_notes a on a.id = e.source_note_id join atomic_notes b on b.id = e.target_note_id
+ where e.origin = 'atomic_notes'
+   and md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
+       least(concat_ws('|',a.id::text,a.idea_statement,a.body_markdown,a.supersession_status),
+             concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status)),
+       greatest(concat_ws('|',a.id::text,a.idea_statement,a.body_markdown,a.supersession_status),
+                concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status))))
+       = e.snapshot->>'noteFingerprint'`;
+
+const storedFingerprints = async (db: PgPool) =>
+  new Map(
+    (
+      await db.query<{ id: string; fingerprint: string | null }>(
+        "select id, snapshot->>'noteFingerprint' as fingerprint from source_relation_evidence"
+      )
+    ).rows.map((row) => [row.id, row.fingerprint])
+  );
+
 /** The direction a row's metadata names for its pair (null when it names no exact pair). */
 const metadataDirectionSql = `case
   when lower(metadata->>'${semanticSource}') = source_atomic_note_id::text
@@ -314,7 +338,16 @@ export interface LegacyLibrary {
     hi: string;
     subject: string;
   }>;
-  evidence: { current: string[]; stale: string; rejected: string };
+  /**
+   * `discarded`: evidence of an applied relation whose fingerprint is the former formula's, stale
+   * only because its `note` is discarded; approving the note again revives it.
+   */
+  evidence: {
+    current: string[];
+    stale: string;
+    rejected: string;
+    discarded: { id: string; note: string };
+  };
 }
 
 /**
@@ -431,6 +464,14 @@ export async function seedLegacyLibrary(db: PgPool): Promise<LegacyLibrary> {
   ];
   const stale = await noteEvidence("stale", byName("directed, decided hi -> lo"));
   const rejected = await noteEvidence("rejected", byName("owner rejected"));
+  const mentions = relations[byName("legacy mentions")]!;
+  const discarded = {
+    id: await noteEvidence("discarded", byName("legacy mentions")),
+    note: mentions.hi
+  };
+  // The former fingerprint leaves the notes' review status out (0048): discarding a note makes the
+  // evidence stale through the status check only.
+  await db.query("update atomic_notes set status = 'rejected' where id = $1", [discarded.note]);
   // The fingerprints the pre-F3 code wrote (status and metadata included), except the stale one.
   await db.query(
     `update source_relation_evidence e set snapshot = jsonb_set(e.snapshot, '{noteFingerprint}',
@@ -467,7 +508,7 @@ export async function seedLegacyLibrary(db: PgPool): Promise<LegacyLibrary> {
       )
     ).rows[0]!.id
   );
-  return { relations, evidence: { current, stale, rejected } };
+  return { relations, evidence: { current, stale, rejected, discarded } };
 }
 
 interface RelationState {
@@ -499,6 +540,9 @@ interface MigrationEvidence {
   report: Record<string, number>;
   before: Map<string, RelationState>;
   formerCurrent: Set<string>;
+  /** Evidence whose stored fingerprint was the former formula's, and every stored fingerprint. */
+  formerFingerprint: Set<string>;
+  fingerprintsBefore: Map<string, string | null>;
   ms: number;
 }
 
@@ -513,11 +557,20 @@ async function migrateCapturing(
 ): Promise<MigrationEvidence> {
   const before = await relationStates(db);
   const formerCurrent = await ids(db, formerCurrentEvidenceSql);
+  const formerFingerprint = await ids(db, formerFingerprintSql);
+  const fingerprintsBefore = await storedFingerprints(db);
   notices.length = 0;
   const started = performance.now();
   await runMigrations(db, folder);
   const ms = Math.round(performance.now() - started);
-  return { report: parseReport(notices), before, formerCurrent, ms };
+  return {
+    report: parseReport(notices),
+    before,
+    formerCurrent,
+    formerFingerprint,
+    fingerprintsBefore,
+    ms
+  };
 }
 
 /**
@@ -526,7 +579,7 @@ async function migrateCapturing(
  * none was named, and the same current source evidence under the facts-only fingerprint (I-R7).
  */
 async function checkMigrated(db: PgPool, evidence: MigrationEvidence) {
-  const { report, before, formerCurrent } = evidence;
+  const { report, before, formerCurrent, formerFingerprint, fingerprintsBefore } = evidence;
   const after = (
     await db.query<{
       id: string;
@@ -600,23 +653,45 @@ async function checkMigrated(db: PgPool, evidence: MigrationEvidence) {
   assert.equal(report.current_source_relations_after, report.current_source_relations_before);
   assert.equal(report.metadata_direction_disagreements ?? 0, 0);
   assert.equal(report.swapped ?? 0, counts.swapped);
-  const recomputed = (
-    await db.query<{ id: string; stored: string; computed: string }>(
-      `select e.id, e.snapshot->>'noteFingerprint' as stored, ${noteRelationFingerprintSql("n", "a", "b")} as computed
-         from source_relation_evidence e
-         join atomic_note_relations n on n.id = e.note_relation_id
-         join atomic_notes a on a.id = e.source_note_id join atomic_notes b on b.id = e.target_note_id
-        where e.origin = 'atomic_notes' and e.id = any($1::uuid[])`,
-      [[...formerCurrent]]
-    )
-  ).rows;
+  // Every row of the former formula is re-keyed (all current note evidence among them), so a row
+  // stale only for a reversible reason still revives; any other stored fingerprint is untouched.
+  assert.equal(report.evidence_former_fingerprint, formerFingerprint.size);
   assert.equal(
     report.evidence_recomputed,
-    recomputed.length,
-    "every current note evidence is re-keyed"
+    formerFingerprint.size,
+    "every evidence row of the former formula is re-keyed"
   );
-  for (const row of recomputed)
-    assert.equal(row.stored, row.computed, "the stored fingerprint is the code's formula");
+  const computed = new Map(
+    (
+      await db.query<{ id: string; computed: string }>(
+        `select e.id, ${noteRelationFingerprintSql("n", "a", "b")} as computed
+           from source_relation_evidence e
+           join atomic_note_relations n on n.id = e.note_relation_id
+           join atomic_notes a on a.id = e.source_note_id join atomic_notes b on b.id = e.target_note_id
+          where e.id = any($1::uuid[])`,
+        [[...formerFingerprint]]
+      )
+    ).rows.map((row) => [row.id, row.computed])
+  );
+  const fingerprintsAfter = await storedFingerprints(db);
+  const notRekeyed = (
+    await db.query<{ origin: string }>(
+      "select distinct origin from source_relation_evidence where id = any($1::uuid[])",
+      [[...formerCurrent].filter((id) => !formerFingerprint.has(id))]
+    )
+  ).rows.map((row) => row.origin);
+  assert.ok(
+    notRekeyed.every((origin) => origin === "source_analysis"),
+    "every current note evidence had the former fingerprint"
+  );
+  for (const [id, stored] of fingerprintsBefore)
+    assert.equal(
+      fingerprintsAfter.get(id),
+      formerFingerprint.has(id) ? computed.get(id) : stored,
+      formerFingerprint.has(id)
+        ? "the re-keyed fingerprint is the code's formula"
+        : "a fingerprint of no known formula is left as it is"
+    );
   const sources = (
     await db.query<{ origins: string[]; scales: string[] }>(
       `select (select coalesce(array_agg(distinct origin), '{}') from source_relations) as origins,
@@ -924,8 +999,18 @@ export async function verifyPendingPath(db: PgPool, workDir: string, folder = mi
       )
     ).rows[0]!.fingerprint,
     "stale",
-    "evidence that was not current is not re-keyed"
+    "evidence of no known fingerprint is not re-keyed"
   );
+  // Stale only because a note is discarded, it was re-keyed and revives when the note is approved.
+  const { discarded } = library.evidence;
+  assert.equal(current.has(discarded.id), false, "evidence of a discarded note is not current");
+  await db.query("update atomic_notes set status = 'approved' where id = $1", [discarded.note]);
+  assert.equal(
+    (await ids(db, currentEvidenceSql)).has(discarded.id),
+    true,
+    "approving the discarded note again revives its evidence"
+  );
+  await db.query("update atomic_notes set status = 'rejected' where id = $1", [discarded.note]);
   return { library, evidence, counts };
 }
 
@@ -1040,6 +1125,7 @@ async function selfContained() {
             `direction backfill on ${legacyRelationShapes.length} metadata shapes; metadata, statuses and types untouched`,
             "the pair sorted (lo < hi) for rows stored high-to-low, with their decided direction",
             "current source evidence identical before and after under the facts-only fingerprint",
+            "every fingerprint of the former formula re-keyed, current or not: a discarded note's evidence revives on approval",
             "I-R7: status, band, probability, veto, keys and metadata keep the fingerprint; type and direction change it",
             "C3: a withdrawn or suggested note relation supports no source evidence",
             "constraints of note relations, source relations, typings, runs and events",

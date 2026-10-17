@@ -2905,6 +2905,23 @@ SELECT e.id, e.relation_id, e.origin
                 concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status))))
          = e.snapshot->>'noteFingerprint')));
 --> statement-breakpoint
+-- Note-origin evidence whose stored fingerprint is the former formula's, whatever its other
+-- currentness conditions: step 7 re-keys all of it, so evidence that is stale only for a reversible
+-- reason (an endpoint note discarded or archived, then approved again) still revives, as 0048 kept it.
+CREATE TEMP TABLE "relations_v2_rekey" ON COMMIT DROP AS
+SELECT e.id
+  FROM source_relation_evidence e
+  JOIN atomic_note_relations n ON n.id = e.note_relation_id
+  JOIN atomic_notes a ON a.id = e.source_note_id
+  JOIN atomic_notes b ON b.id = e.target_note_id
+ WHERE e.origin = 'atomic_notes'
+   AND md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
+       least(concat_ws('|',a.id::text,a.idea_statement,a.body_markdown,a.supersession_status),
+             concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status)),
+       greatest(concat_ws('|',a.id::text,a.idea_statement,a.body_markdown,a.supersession_status),
+                concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status))))
+       = e.snapshot->>'noteFingerprint';
+--> statement-breakpoint
 INSERT INTO "relations_v2_report" ("key", "value")
 SELECT 'note_relations_' || status::text, count(*) FROM atomic_note_relations GROUP BY status
 UNION ALL SELECT 'note_relations', count(*) FROM atomic_note_relations
@@ -2916,6 +2933,7 @@ UNION ALL SELECT 'swapped', count(*) FROM atomic_note_relations
  WHERE source_atomic_note_id > target_atomic_note_id
 UNION ALL SELECT 'source_relations', count(*) FROM source_relations
 UNION ALL SELECT 'source_evidence', count(*) FROM source_relation_evidence
+UNION ALL SELECT 'evidence_former_fingerprint', count(*) FROM relations_v2_rekey
 UNION ALL SELECT 'current_evidence_before', count(*) FROM relations_v2_current_evidence
 UNION ALL SELECT 'current_source_relations_before', count(DISTINCT relation_id) FROM relations_v2_current_evidence;
 --> statement-breakpoint
@@ -3093,10 +3111,11 @@ CREATE UNIQUE INDEX "source_match_state_match_seq_uidx" ON "source_match_state" 
 CREATE INDEX "source_match_state_space_nearest_idx" ON "source_match_state" USING btree ("space_key","nearest_root_id");--> statement-breakpoint
 -- 7. The facts-only note fingerprint (D11): md5 of the relation ID, both endpoints, the direction,
 -- the type and both notes' facts, never status, band, probability, veto or metadata. Every evidence
--- row current under the former formula is re-keyed; the counts of current evidence and current
--- source relations under the new formula and currentness (note-origin evidence counts only while
--- its note relation is applied) must equal the counts before, or the migration rolls back. Every
--- existing note relation is a legacy, unvetoed row, so applied is the former "not rejected".
+-- row whose stored fingerprint is the former formula's is re-keyed (`relations_v2_rekey`, which
+-- holds every current one); the counts of current evidence and current source relations under the
+-- new formula and currentness (note-origin evidence counts only while its note relation is applied)
+-- must equal the counts before, or the migration rolls back. Every existing note relation is a
+-- legacy, unvetoed row, so applied is the former "not rejected".
 -- `noteRelationFingerprintSql` and `currentSourceRelationEvidenceSql` of
 -- `packages/db/src/repositories/` hold the same expressions.
 DO $$
@@ -3118,7 +3137,7 @@ BEGIN
            case when a.id = n.source_atomic_note_id
                 then concat_ws('|',b.id::text,b.idea_statement,b.body_markdown,b.supersession_status)
                 else concat_ws('|',a.id::text,a.idea_statement,a.body_markdown,a.supersession_status) end))))
-    FROM relations_v2_current_evidence c, atomic_note_relations n, atomic_notes a, atomic_notes b
+    FROM relations_v2_rekey c, atomic_note_relations n, atomic_notes a, atomic_notes b
    WHERE c.id = e.id AND e.origin = 'atomic_notes' AND n.id = e.note_relation_id
      AND a.id = e.source_note_id AND b.id = e.target_note_id;
   GET DIAGNOSTICS recomputed = ROW_COUNT;
