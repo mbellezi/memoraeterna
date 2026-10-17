@@ -22,22 +22,27 @@ import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/
 
 /**
  * Real-PostgreSQL verification of migration 0056 `relations_v2` (F3 T48; docs/f3-decisions.md D8-D12,
- * invariants I-R1 and I-R7 of the F3 spec, section 4.1). This file and the migration are the only
- * code that reads the legacy direction keys of a relation's `metadata`
- * (`relation-direction-metadata.test.ts`).
+ * D14 and the F3 spec, section 4.1). This file and the migration are the only code that reads the
+ * legacy direction keys of a relation's `metadata` (`relation-direction-metadata.test.ts`).
  *
  *   npm run db:relations:verify
  *       A temporary PostgreSQL sidecar (never an existing database): a library at 0055 with note
  *       relations of every metadata shape and current, stale and rejected source evidence gets 0056
- *       as a pending migration; the direction backfill, untouched metadata, the facts-only evidence
- *       fingerprint and equal current-evidence counts are checked, then the constraints, an empty
- *       database through the baseline seed (same shape), and a migration killed mid-transaction
- *       (nothing changes).
+ *       (and any later migration) as pending; the direction backfill, untouched metadata, the
+ *       facts-only evidence fingerprint and equal current-evidence counts are checked, then the
+ *       constraints, an empty database through the baseline seed (same shape), and a migration
+ *       killed mid-transaction (nothing changes).
  *   npm run db:relations:verify -- --db <postgres URL | scratch connection .json>
- *       An existing scratch database (a restore or an APFS clone, never a live profile): when 0056
- *       is its only pending migration it is applied here, timed, with the report captured, and every
- *       relation is compared with its state before; when 0056 is already applied the invariants are
- *       checked. Prints one JSON summary.
+ *       An existing scratch database (a restore or an APFS clone, never a live profile, gate M). At
+ *       0055 every pending migration (0056 first, then 0057 and 0058) is applied here, timed, with
+ *       0056's report captured, and every relation is compared with its state before; with 0056
+ *       already applied the state is checked. Prints one JSON summary.
+ *
+ * Database invariants: I-R1 (canonical pair and direction), I-R7 (the same current evidence under
+ * the facts-only fingerprint, when this run migrates), and the stored halves of I-R2/I-R3 (no event
+ * of an automatic run on a pair with a human verdict) and I-R8 (every banded or vetoed note relation
+ * has its event). I-R4 to I-R6, I-R8's exact revert and I-R9 are properties of code, proven by their
+ * tests (`elsewhere` in the summary).
  */
 export const relationsV2Tag = "0056_relations_v2";
 
@@ -251,12 +256,31 @@ export function parseReport(notices: readonly string[]): Record<string, number> 
   return JSON.parse(line.slice("relations_v2 report ".length)) as Record<string, number>;
 }
 
-async function migrationsBefore(workDir: string, tag: string, name: string): Promise<string> {
-  const journal = JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8"));
-  const index = journal.entries.findIndex((entry: { tag: string }) => entry.tag === tag);
+async function journalTags(folder = migrationsFolder): Promise<string[]> {
+  const journal = JSON.parse(await readFile(join(folder, "meta/_journal.json"), "utf8")) as {
+    entries: Array<{ tag: string }>;
+  };
+  return journal.entries.map((entry) => entry.tag);
+}
+
+/** How many migrations come before `tag` in the journal of `folder`: the history right before it. */
+async function migrationsBeforeCount(tag: string, folder = migrationsFolder): Promise<number> {
+  const index = (await journalTags(folder)).indexOf(tag);
   assert.ok(index > 0, `${tag} is in the journal`);
+  return index;
+}
+
+/** A copy of the migrations of `from` that ends right before `tag`. */
+export async function migrationsBefore(
+  workDir: string,
+  tag: string,
+  name: string,
+  from = migrationsFolder
+): Promise<string> {
+  const journal = JSON.parse(await readFile(join(from, "meta/_journal.json"), "utf8"));
+  const index = await migrationsBeforeCount(tag, from);
   const folder = join(workDir, name);
-  await cp(migrationsFolder, folder, { recursive: true });
+  await cp(from, folder, { recursive: true });
   await writeFile(
     join(folder, "meta/_journal.json"),
     JSON.stringify({ ...journal, entries: journal.entries.slice(0, index) })
@@ -264,9 +288,8 @@ async function migrationsBefore(workDir: string, tag: string, name: string): Pro
   return folder;
 }
 
-async function journalLength(): Promise<number> {
-  return JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8")).entries
-    .length;
+async function journalLength(folder = migrationsFolder): Promise<number> {
+  return (await journalTags(folder)).length;
 }
 
 const historyCount = async (db: PgPool | pg.Client) =>
@@ -479,13 +502,20 @@ interface MigrationEvidence {
   ms: number;
 }
 
-/** Applies the pending migrations (0056 last) with its report captured and the state before kept. */
-async function migrateCapturing(db: PgPool, notices: string[]): Promise<MigrationEvidence> {
+/**
+ * Applies every pending migration (0056 first, then any later one) with 0056's report captured and
+ * the state before kept.
+ */
+async function migrateCapturing(
+  db: PgPool,
+  notices: string[],
+  folder = migrationsFolder
+): Promise<MigrationEvidence> {
   const before = await relationStates(db);
   const formerCurrent = await ids(db, formerCurrentEvidenceSql);
   notices.length = 0;
   const started = performance.now();
-  await runMigrations(db, migrationsFolder);
+  await runMigrations(db, folder);
   const ms = Math.round(performance.now() - started);
   return { report: parseReport(notices), before, formerCurrent, ms };
 }
@@ -850,16 +880,24 @@ async function checkKilledMigration(connectionString: string, workDir: string) {
 
 /**
  * The pending path on an empty database `db`: migrated to 0055, seeded with a legacy library of
- * every metadata shape, then migrated to 0056 with its report captured. Asserts the backfill of
- * every shape, untouched metadata, statuses and types, and the same current source evidence.
+ * every metadata shape, then migrated with 0056 (and any later migration of `folder`) pending and
+ * 0056's report captured. Asserts the backfill of every shape, untouched metadata, statuses and
+ * types, and the same current source evidence.
  */
-export async function verifyPendingPath(db: PgPool, workDir: string) {
+export async function verifyPendingPath(db: PgPool, workDir: string, folder = migrationsFolder) {
   const notices = captureNotices(db);
-  await runMigrations(db, await migrationsBefore(workDir, relationsV2Tag, "drizzle-before-0056"));
-  assert.equal(await historyCount(db), (await journalLength()) - 1, "history before 0056");
+  await runMigrations(
+    db,
+    await migrationsBefore(workDir, relationsV2Tag, "drizzle-before-0056", folder)
+  );
+  assert.equal(
+    await historyCount(db),
+    await migrationsBeforeCount(relationsV2Tag, folder),
+    "history before 0056"
+  );
   const library = await seedLegacyLibrary(db);
-  const evidence = await migrateCapturing(db, notices);
-  assert.equal(await historyCount(db), await journalLength(), "0056 applied as pending");
+  const evidence = await migrateCapturing(db, notices, folder);
+  assert.equal(await historyCount(db), await journalLength(folder), "0056 applied as pending");
   const counts = await checkMigrated(db, evidence);
   for (const relation of library.relations) {
     const { direction } = (
@@ -1031,75 +1069,118 @@ async function connectionStringOf(value: string): Promise<string> {
   return file.connectionString;
 }
 
+/**
+ * The stored state of automatic relation writes: no event of an automatic run on a pair with a human
+ * verdict (I-R2, I-R3), and an event behind every banded or vetoed note relation (I-R8).
+ */
+const automationStateSql = `select
+  (select count(*)::int from relation_events e join relation_match_runs run on run.id = e.run_id
+    where e.relation_kind = 'note' and run.kind <> 'review'
+      and e.before->>'status' in ('accepted', 'rejected')) as "automaticEventsOnReviewed",
+  (select count(*)::int from atomic_note_relations n where n.band is not null
+      and not exists (select 1 from relation_events e
+                       where e.relation_kind = 'note' and e.relation_id = n.id)) as "bandedWithoutEvent",
+  (select count(*)::int from atomic_note_relations n where n.vetoed_at is not null
+      and not exists (select 1 from relation_events e where e.relation_kind = 'note'
+                         and e.relation_id = n.id and e.kind = 'vetoed')) as "vetoedWithoutEvent"`;
+
+/** The invariants this script cannot read from a database, and what proves each. */
+const provenElsewhere = {
+  "I-R4": "reconcile and recalibration tests: 0 model calls (T51, T58)",
+  "I-R5": "relationDecisionRepository tests: reuse only with an equal decider key and hashes",
+  "I-R6": "the order-independence property test and replay (T51, T52)",
+  "I-R8 revert": "relationEventRepository revertRun tests (T48b)",
+  "I-R9": "note-relation-visibility.test.ts (static)"
+};
+
+/**
+ * Gate M on the existing database at `connectionString`, with the migrations of `folder`: at 0055
+ * every pending migration is applied (0056 first) and the migrated state is compared with the state
+ * before; with 0056 applied the state is checked. Throws on a database before 0055 or ahead of
+ * `folder`, and on any broken invariant.
+ */
+export async function verifyExistingDatabase(connectionString: string, folder = migrationsFolder) {
+  // A pool of its own: 0056's report arrives as a notice on the connections it opens.
+  const db = createPgPool({ connectionString, max: 3 });
+  try {
+    return await verifyExisting(db, folder);
+  } finally {
+    await closePgPool(db).catch(() => undefined);
+  }
+}
+
+async function verifyExisting(db: PgPool, folder: string) {
+  const notices = captureNotices(db);
+  const total = await journalLength(folder);
+  const atRelationsV2 = await migrationsBeforeCount(relationsV2Tag, folder);
+  const applied = await historyCount(db);
+  if (applied < atRelationsV2 || applied > total)
+    throw new Error(
+      `The database has ${applied} migrations; this code knows ${total} and needs at least the ${atRelationsV2} before ${relationsV2Tag}.`
+    );
+  const migration = applied === atRelationsV2 ? await migrateCapturing(db, notices, folder) : null;
+  if (migration) assert.equal(await historyCount(db), total, "every pending migration applied");
+  const invariants = (
+    await db.query<Record<string, number>>(
+      `select count(*)::int as relations,
+              count(*) filter (where source_atomic_note_id >= target_atomic_note_id)::int as "unsortedPairs",
+              count(*) filter (where direction = 'unknown' and band is not null)::int as "bandedUnknown",
+              count(*) filter (where band is not null and relation_type in
+                ('supports','extends','depends_on','example_of','clarifies')
+                and direction not in ('lo_to_hi','hi_to_lo'))::int as "undirectedDirected",
+              count(*) filter (where band is not null and (relation_type is null
+                or relation_type in ('contradicts','same_as')) and direction <> 'symmetric')::int as "directedSymmetric",
+              count(*) filter (where direction in ('lo_to_hi','hi_to_lo','unknown')
+                and relation_type not in ('contrasts','similar_to','contradicts','same_as')
+                and ${metadataDirectionSql} is not null
+                and direction is distinct from ${metadataDirectionSql})::int as "metadataDisagreements",
+              count(*) filter (where direction = 'unknown')::int as "unknown"
+         from atomic_note_relations`
+    )
+  ).rows[0]!;
+  for (const key of [
+    "unsortedPairs",
+    "bandedUnknown",
+    "undirectedDirected",
+    "directedSymmetric",
+    "metadataDisagreements"
+  ])
+    assert.equal(invariants[key], 0, `I-R1: ${key}`);
+  const automation = (await db.query<Record<string, number>>(automationStateSql)).rows[0]!;
+  assert.equal(automation.automaticEventsOnReviewed, 0, "I-R2, I-R3: automaticEventsOnReviewed");
+  assert.equal(automation.bandedWithoutEvent, 0, "I-R8: bandedWithoutEvent");
+  assert.equal(automation.vetoedWithoutEvent, 0, "I-R8: vetoedWithoutEvent");
+  const counts = migration ? await checkMigrated(db, migration) : null;
+  const tables = (
+    await db.query<Record<string, number>>(
+      `select (select count(*)::int from source_relations) as "sourceRelations",
+              (select count(*)::int from source_relation_evidence) as "sourceEvidence",
+              (select count(*)::int from (${currentEvidenceSql}) current) as "currentEvidence",
+              (select count(*)::int from relation_decisions) as "relationDecisions",
+              (select count(*)::int from relation_events) as "relationEvents"`
+    )
+  ).rows[0]!;
+  return {
+    migrated: migration !== null,
+    migrationMs: migration?.ms ?? null,
+    history: { before: applied, after: await historyCount(db), total },
+    report: migration?.report ?? null,
+    invariants: { ...invariants, ...automation },
+    counts,
+    tables,
+    elsewhere: provenElsewhere
+  };
+}
+
 async function existingDatabase(value: string) {
   const connectionString = await connectionStringOf(value);
   const host = new URL(connectionString).hostname;
   if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host))
     throw new Error("Only a loopback scratch database is verified.");
-  const db = createPgPool({ connectionString, max: 3 });
-  try {
-    const notices = captureNotices(db);
-    const total = await journalLength();
-    const applied = await historyCount(db);
-    let migration: MigrationEvidence | null = null;
-    if (applied === total - 1) migration = await migrateCapturing(db, notices);
-    else if (applied !== total)
-      throw new Error(
-        `The database has ${applied} of ${total} migrations: 0056 must be its only pending one.`
-      );
-    const invariants = (
-      await db.query<Record<string, number>>(
-        `select count(*)::int as relations,
-                count(*) filter (where source_atomic_note_id >= target_atomic_note_id)::int as "unsortedPairs",
-                count(*) filter (where direction = 'unknown' and band is not null)::int as "bandedUnknown",
-                count(*) filter (where band is not null and relation_type in
-                  ('supports','extends','depends_on','example_of','clarifies')
-                  and direction not in ('lo_to_hi','hi_to_lo'))::int as "undirectedDirected",
-                count(*) filter (where band is not null and (relation_type is null
-                  or relation_type in ('contradicts','same_as')) and direction <> 'symmetric')::int as "directedSymmetric",
-                count(*) filter (where direction in ('lo_to_hi','hi_to_lo','unknown')
-                  and relation_type not in ('contrasts','similar_to','contradicts','same_as')
-                  and ${metadataDirectionSql} is not null
-                  and direction is distinct from ${metadataDirectionSql})::int as "metadataDisagreements",
-                count(*) filter (where direction = 'unknown')::int as "unknown"
-           from atomic_note_relations`
-      )
-    ).rows[0]!;
-    for (const key of [
-      "unsortedPairs",
-      "bandedUnknown",
-      "undirectedDirected",
-      "directedSymmetric",
-      "metadataDisagreements"
-    ])
-      assert.equal(invariants[key], 0, `I-R1: ${key}`);
-    const counts = migration ? await checkMigrated(db, migration) : null;
-    const tables = (
-      await db.query<Record<string, number>>(
-        `select (select count(*)::int from source_relations) as "sourceRelations",
-                (select count(*)::int from source_relation_evidence) as "sourceEvidence",
-                (select count(*)::int from (${currentEvidenceSql}) current) as "currentEvidence",
-                (select count(*)::int from relation_decisions) as "relationDecisions"`
-      )
-    ).rows[0]!;
-    console.info(
-      JSON.stringify(
-        {
-          database: new URL(connectionString).pathname.slice(1),
-          migrated: migration !== null,
-          migrationMs: migration?.ms ?? null,
-          report: migration?.report ?? null,
-          invariants,
-          counts,
-          tables
-        },
-        null,
-        2
-      )
-    );
-  } finally {
-    await closePgPool(db).catch(() => undefined);
-  }
+  const summary = await verifyExistingDatabase(connectionString);
+  console.info(
+    JSON.stringify({ database: new URL(connectionString).pathname.slice(1), ...summary }, null, 2)
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
