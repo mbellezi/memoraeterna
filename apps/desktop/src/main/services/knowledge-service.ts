@@ -181,9 +181,7 @@ export class KnowledgeService {
       ...(options.getAtomicNoteMatchingSettings
         ? { getAtomicNoteMatchingSettings: options.getAtomicNoteMatchingSettings }
         : {}),
-      ...(options.isDebugEnabled ? { isDebugEnabled: options.isDebugEnabled } : {}),
-      listSourceTreeIds: (sourceItemId) =>
-        this.sourceDeletionService.listSourceTreeIds(sourceItemId)
+      ...(options.isDebugEnabled ? { isDebugEnabled: options.isDebugEnabled } : {})
     });
   }
 

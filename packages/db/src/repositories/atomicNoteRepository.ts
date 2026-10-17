@@ -6,11 +6,16 @@ import type { QueryResultRow } from "pg";
 import { createJobRepository } from "./jobRepository.js";
 import {
   noteCandidateColumns,
+  noteRetrievableIdsStatement,
   noteTextCandidatesStatement,
   noteVectorCandidatesStatement,
   withVectorScanSettings
 } from "./noteRetrievalSql.js";
-import type { NoteTextCandidatesInput, NoteVectorCandidatesInput } from "./noteRetrievalSql.js";
+import type {
+  NoteRetrievableIdsInput,
+  NoteTextCandidatesInput,
+  NoteVectorCandidatesInput
+} from "./noteRetrievalSql.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { AtomicNoteRecord, AtomicNoteStatus, JsonObject, Queryable } from "./types.js";
 
@@ -388,6 +393,13 @@ export function createAtomicNoteRepository(db: Queryable) {
         textScore: 0,
         vectorScore: Number(row.vectorScore)
       }));
+    },
+
+    async filterRetrievableCandidateIds(input: NoteRetrievableIdsInput): Promise<Set<string>> {
+      if (input.candidateIds.length === 0) return new Set();
+      const statement = noteRetrievableIdsStatement(input);
+      const result = await db.query<{ id: string }>(statement.text, statement.values);
+      return new Set(result.rows.map((row) => row.id));
     },
 
     async scoreMatchingCandidates(input: {

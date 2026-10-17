@@ -62,6 +62,12 @@ export interface NoteVectorCandidatesInput {
   fence?: RetrievalFence;
 }
 
+/** Candidates of a signal SQL cannot filter itself (the AGE graph paths). */
+export interface NoteRetrievableIdsInput {
+  candidateIds: readonly string[];
+  fence?: RetrievalFence;
+}
+
 export interface NoteRetrievalStatement {
   text: string;
   values: unknown[];
@@ -205,6 +211,26 @@ export function noteVectorCandidatesStatement(
              coalesce(greatest(0, 1 - nearest.distance), 0) as "vectorScore"
         from nearest join atomic_notes candidate on candidate.id = nearest.target_id
        order by "vectorScore" desc, candidate.title, candidate.idea_statement, candidate.id`,
+    values
+  };
+}
+
+/**
+ * The candidates retrieval may hand on, of those a signal found without the filters above: the
+ * eligible notes inside the fence. The graph list goes through it before fusion, so a note the
+ * text and vector queries exclude takes none of the fused slots.
+ */
+export function noteRetrievableIdsStatement(
+  input: NoteRetrievableIdsInput
+): NoteRetrievalStatement {
+  const values: unknown[] = [[...input.candidateIds]];
+  if (input.fence) values.push([...input.fence.rootSourceItemIds]);
+  const fence = fenceParts("$2", input.fence);
+  return {
+    text: `${fence.recursive} ${fence.cte}
+      wanted as (select unnest($1::uuid[]) as id)
+      select candidate.id from atomic_notes candidate join wanted on wanted.id = candidate.id
+       where ${eligible} ${fence.filter}`,
     values
   };
 }

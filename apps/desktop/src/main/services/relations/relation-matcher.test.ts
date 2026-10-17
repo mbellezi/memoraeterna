@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
     listBySourceItem: vi.fn(),
     findTextMatchingCandidates: vi.fn(),
     findVectorMatchingCandidates: vi.fn(),
+    filterRetrievableCandidateIds: vi.fn(),
     scoreMatchingCandidates: vi.fn()
   },
   relations: { pairStatuses: vi.fn(), upsertDecided: vi.fn() },
@@ -122,13 +123,14 @@ function lists(input: {
   mocks.notes.findVectorMatchingCandidates.mockResolvedValue(
     (input.vector ?? []).map(([n, s]) => listEntry(n, s, "vector"))
   );
-  mocks.graph.findAtomicNoteCandidates.mockResolvedValue(
-    (input.graph ?? []).map(([n, s]) => ({
-      noteId: n.id,
-      graphScore: s,
-      pathType: "shared_entity",
-      contentKey: `${n.title}\0${n.ideaStatement}`
-    }))
+  const graph = (input.graph ?? []).map(([n, s]) => ({
+    noteId: n.id,
+    graphScore: s,
+    pathType: "shared_entity",
+    contentKey: `${n.title}\0${n.ideaStatement}`
+  }));
+  mocks.graph.findAtomicNoteCandidates.mockImplementation(async (_id: string, limit: number) =>
+    graph.slice(0, limit)
   );
 }
 
@@ -259,6 +261,22 @@ beforeEach(() => {
   b = note("n-b", "Beta");
   c = note("n-c", "Gamma");
   mocks.notes.findById.mockImplementation(async (id: string) => registry.get(id) ?? null);
+  // The SQL of the graph list's exclusions: current notes, inside the fence (roots only here).
+  mocks.notes.filterRetrievableCandidateIds.mockImplementation(
+    async (input: { candidateIds: string[]; fence?: { rootSourceItemIds: string[] } }) =>
+      new Set(
+        input.candidateIds.filter((id) => {
+          const found = registry.get(id);
+          return (
+            found !== undefined &&
+            found.status !== "rejected" &&
+            found.status !== "archived" &&
+            found.supersessionStatus === "current" &&
+            (!input.fence || input.fence.rootSourceItemIds.includes(found.createdFromSourceItemId))
+          );
+        })
+      )
+  );
   mocks.notes.scoreMatchingCandidates.mockImplementation(
     async ({ candidateIds }: { candidateIds: string[] }) =>
       candidateIds.flatMap((id) => {
@@ -703,25 +721,82 @@ describe("the ranker decider", () => {
       source,
       note("n-old", "Old", { supersessionStatus: "superseded" })
     ]);
-    const fenced = new RelationMatcher({
-      getPool: () => ({}) as PgPool,
-      ai: ai as unknown as AiService,
-      listSourceTreeIds: async (root) => [root]
-    });
-    const result = await fenced.matchSource("source-n-source", {
+    const result = await matcher().matchSource("source-n-source", {
       vectors: new Map([[source.id, vectorOf()]]),
       fence: { rootSourceItemIds: ["source-n-b"] },
       handOff: async () => 0
     });
     expect(result.decided).toBe(1);
-    // The text and vector queries take the fence; the graph signal is fenced by its sources.
-    expect(mocks.notes.findVectorMatchingCandidates.mock.calls[0]![0].fence).toEqual({
-      rootSourceItemIds: ["source-n-b"]
-    });
+    // Every signal is fenced in SQL: the text and vector queries, and the graph list's notes.
+    for (const query of [
+      mocks.notes.findTextMatchingCandidates,
+      mocks.notes.findVectorMatchingCandidates,
+      mocks.notes.filterRetrievableCandidateIds
+    ])
+      expect(query.mock.calls[0]![0].fence).toEqual({ rootSourceItemIds: ["source-n-b"] });
     const documents = ai.rankPairs.mock.calls[0]![0].pairs.map((pair: { document: string }) =>
       titleOf(pair.document)
     );
     expect(documents).toEqual(["Beta", "Source"]);
+  });
+
+  /** The candidates the ranker saw for the source note, by title. */
+  const decidedTitles = () =>
+    ai.rankPairs.mock.calls
+      .flatMap(([input]) => input.pairs as Array<{ query: string; document: string }>)
+      .filter((pair) => titleOf(pair.query) === "Source")
+      .map((pair) => titleOf(pair.document))
+      .sort();
+  const tenVectorNotes = (sourceItemId: string) =>
+    Array.from({ length: 10 }, (_, index) => {
+      const title = `v${String(index + 1).padStart(2, "0")}`;
+      return note(`n-${title}`, title, { createdFromSourceItemId: sourceItemId });
+    });
+
+  it("fences the graph list before fusion, deep enough that hidden roots take none of the K slots", async () => {
+    const visible = tenVectorNotes("root-released");
+    // Eight graph-only notes of a root not yet released lead the graph list; a released one is 9th.
+    const hidden = Array.from({ length: 8 }, (_, index) =>
+      note(`n-h${index}`, `h${index}`, { createdFromSourceItemId: "root-hidden" })
+    );
+    const deep = note("n-g", "g", { createdFromSourceItemId: "root-released" });
+    lists({
+      vector: visible.map((n, index) => [n, 0.9 - index * 0.01] as [Note, number]),
+      graph: [...hidden, deep].map((n, index) => [n, 0.9 - index * 0.05] as [Note, number])
+    });
+    await matcher().matchNotes({
+      noteIds: [source.id],
+      vectors: new Map([[source.id, vectorOf()]]),
+      fence: { rootSourceItemIds: ["root-released"] },
+      handOff: async () => 0
+    });
+    // K = 10 visible candidates: the released graph note (kept by the graph-only reserve) and the
+    // nine closest vectors. Hidden notes took no slot.
+    expect(decidedTitles()).toEqual([...visible.slice(0, 9).map((n) => n.title), "g"].sort());
+    // Gate 0's arrival lists: the graph list is read 40 deep, fenced in SQL, then cut to graphK.
+    expect(mocks.graph.findAtomicNoteCandidates).toHaveBeenCalledWith(source.id, 40);
+    expect(mocks.notes.filterRetrievableCandidateIds).toHaveBeenCalledWith({
+      candidateIds: [...hidden, deep].map((n) => n.id),
+      fence: { rootSourceItemIds: ["root-released"] }
+    });
+  });
+
+  it("keeps archived and superseded graph notes out of the K slots without a fence", async () => {
+    const visible = tenVectorNotes("root-released");
+    const excluded = [
+      note("n-x1", "x1", { status: "archived" }),
+      note("n-x2", "x2", { supersessionStatus: "superseded" }),
+      note("n-x3", "x3", { status: "archived" })
+    ];
+    lists({
+      vector: visible.map((n, index) => [n, 0.9 - index * 0.01] as [Note, number]),
+      graph: excluded.map((n, index) => [n, 0.9 - index * 0.05] as [Note, number])
+    });
+    await run([source.id]);
+    expect(decidedTitles()).toEqual(visible.map((n) => n.title));
+    expect(mocks.notes.filterRetrievableCandidateIds).toHaveBeenCalledWith({
+      candidateIds: excluded.map((n) => n.id)
+    });
   });
 });
 

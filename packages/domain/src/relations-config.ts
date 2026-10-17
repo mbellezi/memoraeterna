@@ -44,6 +44,11 @@ const RetrievalSchema = z
     /** Graph candidates per note (the AGE entity paths); 0 turns the signal off. */
     graphK: int(0, 200).default(8),
     /**
+     * Graph paths are read this deep, then filtered in SQL (current notes, the fence) and cut to
+     * graphK before fusion, like gate 0's B4 arrival lists (40): an excluded note takes no slot.
+     */
+    graphPoolK: int(0, 1000).default(40),
+    /**
      * Fused candidates per note (K). Gate 0 (lever 4) set it to 10: D17's recall-lossless limit,
      * every expected tuning root pair reached in arrival mode down to K = 8.
      */
@@ -59,6 +64,9 @@ const RetrievalSchema = z
   .strict()
   .refine((retrieval) => retrieval.vectorK >= retrieval.guardFactor * retrieval.fusedK, {
     message: "The vector list must hold the reverse guard's window (guardFactor x fusedK)."
+  })
+  .refine((retrieval) => retrieval.graphPoolK >= retrieval.graphK, {
+    message: "The graph list is read at least graphK deep (graphPoolK)."
   });
 
 const DecideSchema = z

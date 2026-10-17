@@ -15,6 +15,7 @@ import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
 import {
   vectorScanSettingsSql,
   noteRetrievalDefaults,
+  noteRetrievableIdsStatement,
   noteTextCandidatesStatement,
   noteVectorCandidatesStatement,
   withVectorScanSettings
@@ -116,6 +117,23 @@ describe("note retrieval statements", () => {
     expect(fencedText.text).toContain("any($5::uuid[])");
     expect(fencedVector.values.at(-1)).toEqual(roots);
     expect(fencedVector.text).toContain("any($8::uuid[])");
+  });
+
+  it("applies the same exclusions and fence to the candidates of the graph list", () => {
+    const open = noteRetrievableIdsStatement({ candidateIds: ["a"] });
+    expect(open.text).not.toContain("fence_tree");
+    expect(open.values).toEqual([["a"]]);
+    const roots = ["00000000-0000-4000-8000-000000000001"];
+    const fenced = noteRetrievableIdsStatement({
+      candidateIds: ["a"],
+      fence: { rootSourceItemIds: roots }
+    });
+    const sql = fenced.text.replace(/\s+/g, " ");
+    expect(sql).toContain("candidate.status not in ('rejected', 'archived')");
+    expect(sql).toContain("candidate.supersession_status = 'current'");
+    expect(sql).toContain("with recursive fence_tree(id)");
+    expect(sql).toContain("any($2::uuid[])");
+    expect(fenced.values).toEqual([["a"], roots]);
   });
 
   it("refuses a vector of a dimension that has no table", () => {
@@ -689,6 +707,43 @@ describe.skipIf(!sidecarInstalled)("note retrieval on a real PostgreSQL database
         // An empty fence hides everything.
         expect(await query({ rootSourceItemIds: [] })).toEqual([]);
       }
+    });
+
+    it("filters the graph list's candidates to current notes inside the fence, chapters included", async () => {
+      const at = (source: string, status = "active", supersession = "current") =>
+        addNote({
+          title: `Graph pool ${source} ${status} ${supersession}`,
+          idea: "Pool",
+          source,
+          status,
+          supersession
+        });
+      const inRoot = await at(ids.rootA);
+      const inChapter = await at(ids.chapterA);
+      const elsewhere = await at(ids.rootB);
+      const archived = await at(ids.rootA, "archived");
+      const superseded = await at(ids.chapterA, "active", "superseded");
+      const rejected = await at(ids.rootA, "rejected");
+      const candidateIds = [
+        inRoot,
+        inChapter,
+        elsewhere,
+        archived,
+        superseded,
+        rejected,
+        u(888_888)
+      ];
+      const sorted = async (fence?: { rootSourceItemIds: string[] }) =>
+        [
+          ...(await notes.filterRetrievableCandidateIds({
+            candidateIds,
+            ...(fence ? { fence } : {})
+          }))
+        ].sort();
+      expect(await sorted()).toEqual([inRoot, inChapter, elsewhere].sort());
+      expect(await sorted({ rootSourceItemIds: [ids.rootA] })).toEqual([inRoot, inChapter].sort());
+      expect(await sorted({ rootSourceItemIds: [] })).toEqual([]);
+      expect(await notes.filterRetrievableCandidateIds({ candidateIds: [] })).toEqual(new Set());
     });
 
     it("keeps returning the limit behind a fence over the iterative scan", async () => {

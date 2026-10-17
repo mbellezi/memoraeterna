@@ -307,8 +307,6 @@ export interface RelationMatcherOptions {
   /** The generative decider's output budget; the rest of these settings no longer decide anything. */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   isDebugEnabled?: () => Promise<boolean>;
-  /** The notes of a source tree (a fence's roots), for the graph signal, which SQL cannot fence. */
-  listSourceTreeIds?: (sourceItemId: string) => Promise<string[]>;
 }
 
 // --- internal shapes ------------------------------------------------------------------------------
@@ -403,7 +401,6 @@ export class RelationMatcher {
       // re-runs when a ranker validates (D16, C7).
       return { ...result, skipped: waitingForDeciderSkipReason };
     }
-    const fencedSources = await this.fencedSources(input.fence);
     const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(
       (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
     );
@@ -420,7 +417,6 @@ export class RelationMatcher {
         signal: input.signal,
         logContext,
         fence: input.fence,
-        fencedSources,
         maxOutputTokens: matchingSettings.maxRerankOutputTokens
       });
       if (decided === waitingForDeciderSkipReason) {
@@ -598,7 +594,6 @@ export class RelationMatcher {
       signal: AbortSignal | undefined;
       logContext: AiTaskLogContext;
       fence: RetrievalFence | undefined;
-      fencedSources: ReadonlySet<string> | null;
       maxOutputTokens: number;
     }
   ): Promise<DecidedNote | typeof waitingForDeciderSkipReason> {
@@ -656,15 +651,15 @@ export class RelationMatcher {
   /**
    * The note's candidates (D17, D19, D28): the vector, text and graph lists fused by RRF into K,
    * plus every earlier decided note among the vector top guardFactor x K whose own k-th cosine
-   * this note reaches. Excluded: notes that are not current, the fence's hidden roots, and pairs
-   * a person decided or that already have a relation (any state, vetoed included).
+   * this note reaches. Excluded: notes that are not current and the fence's hidden roots, inside
+   * each signal before fusion so they take no slot; then pairs a person decided or that already
+   * have a relation (any state, vetoed included), after it, so a note's K is the same on a re-run.
    */
   private async retrieve(
     note: AtomicNoteRecord,
     context: {
       vector: MatcherNoteVector | undefined;
       fence: RetrievalFence | undefined;
-      fencedSources: ReadonlySet<string> | null;
     }
   ): Promise<{ candidates: Candidate[]; kthCosine: number | null; graphError: string | null }> {
     const pool = this.requirePool();
@@ -705,12 +700,23 @@ export class RelationMatcher {
       try {
         graphList = await createKnowledgeGraphRepository(pool).findAtomicNoteCandidates(
           note.id,
-          retrieval.graphK
+          retrieval.graphPoolK
         );
       } catch (error) {
         // The graph signal is absent, never a failure of matching.
         graphError = errorText(error);
       }
+    }
+    if (graphList.length > 0) {
+      // The AGE paths keep archived, superseded and hidden notes: the text and vector queries'
+      // exclusions are applied to the deeper list in SQL, then it is cut to graphK.
+      const retrievable = await notes.filterRetrievableCandidateIds({
+        candidateIds: graphList.map((candidate) => candidate.noteId),
+        ...fence
+      });
+      graphList = graphList
+        .filter((candidate) => retrievable.has(candidate.noteId))
+        .slice(0, retrieval.graphK);
     }
     const fused = fuseAtomicNoteCandidateRankings(
       textList.map((candidate) => ({
@@ -778,8 +784,6 @@ export class RelationMatcher {
       const record = records.get(id);
       // A pair a person decided, or one with a relation already, takes no part (lossless filters).
       if (!record || statuses.has(id) || !isCurrentNote(record.note)) continue;
-      if (context.fencedSources && !context.fencedSources.has(record.note.createdFromSourceItemId))
-        continue;
       const fusedCandidate = fusedById.get(id);
       const hasVector = vector !== undefined && record.hasVector !== false;
       candidates.push({
@@ -1158,19 +1162,6 @@ export class RelationMatcher {
   }
 
   // --- helpers ------------------------------------------------------------------------------------
-
-  /** The source items a fence lets through, or null without a fence. */
-  private async fencedSources(
-    fence: RetrievalFence | undefined
-  ): Promise<ReadonlySet<string> | null> {
-    if (!fence) return null;
-    const sources = new Set<string>();
-    for (const root of fence.rootSourceItemIds) {
-      sources.add(root);
-      for (const id of (await this.options.listSourceTreeIds?.(root)) ?? []) sources.add(id);
-    }
-    return sources;
-  }
 
   /** Per-candidate breakdowns in the similarity debug tables, only while debug mode is on. */
   private async recordDebug(

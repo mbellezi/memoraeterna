@@ -15,6 +15,7 @@ describe("relations config", () => {
       vectorK: 24,
       textK: 16,
       graphK: 8,
+      graphPoolK: 40,
       fusedK: 10,
       rrfK: 60,
       minimumGraphOnly: 3,
@@ -37,9 +38,10 @@ describe("relations config", () => {
     expect(RelationsConfigSchema.parse({})).toEqual({ ...relationsConfig, calibrations: [] });
   });
 
-  it("refuses a lossy cosine floor, a guard window larger than the vector list and twin identities", () => {
+  it("refuses a lossy cosine floor, a guard window or a graph list too short, and twin identities", () => {
     expect(() => RelationsConfigSchema.parse({ retrieval: { cosineFloor: 0.6 } })).toThrow();
     expect(() => RelationsConfigSchema.parse({ retrieval: { vectorK: 19 } })).toThrow();
+    expect(() => RelationsConfigSchema.parse({ retrieval: { graphPoolK: 7 } })).toThrow();
     expect(() =>
       RelationsConfigSchema.parse({
         calibrations: [provisionalRelationCalibrations[0], provisionalRelationCalibrations[0]]
