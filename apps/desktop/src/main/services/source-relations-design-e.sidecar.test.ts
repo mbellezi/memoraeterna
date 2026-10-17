@@ -358,6 +358,49 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     expect(await relationsBetween(spacing.id, sleep.id)).toEqual([]);
   });
 
+  it("plans a pair's promotion from what it reads under the pair's lock (R14, I-R10)", async () => {
+    const repository = createSourceRelationRepository(db());
+    const rhythm = await work("Circadian rhythm");
+    const timing = await work("Study timing");
+    const [c1] = await withNotes(rhythm, ["Alertness cycles"]);
+    const [t1] = await withNotes(timing, ["Morning study"]);
+    await relate(c1!, t1!, "depends_on");
+    // Another writer of the pair (a judged decision, a pass for the other root) holds its lock.
+    const holder = await db().connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        [rhythm.id, timing.id].sort().join(":")
+      ]);
+      const pass = repository.promoteFromNotes(rhythm.id);
+      // The pass has read the pair and waits for its lock; the typer re-types the relation.
+      await vi.waitFor(
+        async () =>
+          expect(
+            Number(
+              (
+                await db().query<{ n: number }>(
+                  "select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted"
+                )
+              ).rows[0]!.n
+            )
+          ).toBe(1),
+        { timeout: 5_000, interval: 10 }
+      );
+      await relate(c1!, t1!, "supports");
+      await holder.query("commit");
+      await pass;
+    } finally {
+      holder.release();
+    }
+    // The pass writes what holds once it has the lock, not what it read before waiting.
+    const rows = await relationsBetween(rhythm.id, timing.id);
+    expect(rows.map((row) => [row.relation_type, row.origin, row.support_count])).toEqual([
+      ["supports", "promoted", 1]
+    ]);
+    expect(await staleNoteEvidence(rows.map((row) => row.id))).toBe(0);
+  });
+
   it("keeps an owner rejection final and an owner-kept relation when support is lost", async () => {
     const repository = createSourceRelationRepository(db());
     const one = await work("Attention spans");

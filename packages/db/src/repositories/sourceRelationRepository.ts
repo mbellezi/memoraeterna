@@ -1028,18 +1028,21 @@ async function promoteFromNotes(
   otherRootIds: readonly string[] | null
 ): Promise<SourceRelationPromotion> {
   const filter = otherRootIds ? [...otherRootIds] : null;
-  const relations = (await pool.query<PromotionRow>(promotionRelationsSql, [rootId, filter])).rows;
+  // Only which pairs to visit is read here; each pair's note relations are read again under its
+  // lock, so a pass that read before a re-typing never writes over a later pass (R14, I-R10).
+  const relations = (
+    await pool.query<{ id: string } & QueryResultRow>(
+      `select distinct case when p."subjectRootId" = $1 then p."objectRootId" else p."subjectRootId" end as id
+         from (${promotionRelationsSql}) p`,
+      [rootId, filter]
+    )
+  ).rows;
   const held = (
     await pool.query<{ id: string } & QueryResultRow>(heldOtherRootsSql, [rootId, filter])
   ).rows;
-  const others = [
-    ...new Set([
-      ...relations.map((row) =>
-        row.subjectRootId === rootId ? row.objectRootId : row.subjectRootId
-      ),
-      ...held.map((row) => row.id)
-    ])
-  ].filter((id) => id !== rootId);
+  const others = [...new Set([...relations, ...held].map((row) => row.id))].filter(
+    (id) => id !== rootId
+  );
   const result: SourceRelationPromotion = {
     promoted: 0,
     refreshed: 0,
@@ -1061,26 +1064,6 @@ async function promoteFromNotes(
     const [ta, tb] = [titles.get(a) ?? "", titles.get(b) ?? ""];
     return ta < tb ? -1 : ta > tb ? 1 : a < b ? -1 : a > b ? 1 : 0;
   };
-  const plans = planPromotedSourceRelations({
-    rootId,
-    relations: relations.map((row) => ({
-      id: row.id,
-      type: row.type,
-      subjectRootId: row.subjectRootId,
-      objectRootId: row.objectRootId,
-      probability: row.probability === null ? null : Number(row.probability),
-      contentKey: `${row.subjectIdea}\u0000${row.objectIdea}`
-    })),
-    compareRoots
-  });
-  const byId = new Map(relations.map((row) => [row.id, row]));
-  const chunks = new Map(
-    (
-      await pool.query<PromotionChunk>(promotionChunksSql, [
-        [...new Set(relations.flatMap((row) => [row.subjectChunkId, row.objectChunkId]))]
-      ])
-    ).rows.map((row) => [row.id, row])
-  );
   const runs = createRelationMatchRunRepository(pool);
   const events = createRelationEventRepository(pool);
   let runId: string | null = null;
@@ -1090,11 +1073,31 @@ async function promoteFromNotes(
   try {
     for (const other of result.otherRootIds) {
       const pairKey = [rootId, other].sort().join(":");
-      const pairPlans = plans.filter((plan) =>
-        [plan.sourceRootId, plan.targetRootId].includes(other)
-      );
       await withTransaction(pool, async (client) => {
         await lockRootPair(client, rootId, other);
+        const relations = (
+          await client.query<PromotionRow>(promotionRelationsSql, [rootId, [other]])
+        ).rows;
+        const pairPlans = planPromotedSourceRelations({
+          rootId,
+          relations: relations.map((row) => ({
+            id: row.id,
+            type: row.type,
+            subjectRootId: row.subjectRootId,
+            objectRootId: row.objectRootId,
+            probability: row.probability === null ? null : Number(row.probability),
+            contentKey: `${row.subjectIdea}\u0000${row.objectIdea}`
+          })),
+          compareRoots
+        });
+        const byId = new Map(relations.map((row) => [row.id, row]));
+        const chunks = new Map(
+          (
+            await client.query<PromotionChunk>(promotionChunksSql, [
+              [...new Set(relations.flatMap((row) => [row.subjectChunkId, row.objectChunkId]))]
+            ])
+          ).rows.map((row) => [row.id, row])
+        );
         const rows = (await client.query<HeldRelation>(heldRelationsSql, [rootId, other])).rows;
         const handled = new Set<string>();
         const record = async (
