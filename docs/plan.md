@@ -1,6 +1,6 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F2 closed (2026-10-17); F3 starts only after the owner authorizes it.** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+**Current phase: F3 (authorized by the owner on 2026-10-17; F2 closed the same day).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
 target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
 starting points unless marked measured.
 
