@@ -97,6 +97,10 @@ concurrency and automatic correction.
     runs (F3's 24 h soak, F4's 7-day soak, F6's 7 nightly runs and 2 stable weeks), work continues on the next
     phase or on the parts of the same phase that do not depend on it. If the test fails, work stops, the fix lands
     and the test restarts before anything advances further. A phase is closed only when its test passes.
+24. **Settings v2** (2026-10-17): Settings is redesigned as one streamlined, consistent surface that carries
+    every setting the F3-F5 redesign adds. F4 inventories every setting (where code reads it, its default, and
+    its fate: keep, merge, move to Advanced or drop) beside its automation cut (37+ to ≤6); F5 builds Settings v2
+    on the design system from mockups the owner approves first, and the old screens go.
 
 ## 3. The five swaps
 
@@ -653,6 +657,9 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
 - [ ] Event bus with push; Activity pill and drawer with the status sentence.
 - [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
       controls and tree shape.
+- [ ] Settings inventory (decision 24): every setting with its reader, default and fate (keep, merge, move to
+      Advanced, drop), the dead ones removed, and the F3/F4 additions (workload classes and presets, Knowledge,
+      automation) placed; it feeds F5's Settings v2.
 - [ ] Drop the legacy tables the F2 legacy wipe emptied, with their insert fence, and the source-deletion and
       `jobRepository` guards on them (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
       are removed in F2 (Q12).
@@ -671,11 +678,16 @@ in ≤10 min (e2e); ≤6 visible automation settings (from 37+).
 - [ ] Remaining pollers replaced by events.
 - [ ] Playwright-Electron journeys: first run, import to tree, read topic, follow a relation, Inbox triage,
       ask and jump to citation.
+- [ ] Settings v2 (decision 24): mockups approved by the owner first; a few sections (General and appearance,
+      AI with the presets first, Knowledge, Library and storage, Integrations, Privacy and data, Advanced and
+      Diagnostics); search across settings; "changed from default" markers with a per-item reset; plain-language
+      help; design-system components; the old settings screens removed.
 - [ ] Remove the old top-level views and duplicate wiki browsers.
 
 Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
 clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in
-all 5 locales; 5 destinations.
+all 5 locales; 5 destinations; Settings v2 with ≤7 sections, every setting found by its search and reached in
+≤2 clicks from the rail, 0 settings that no code reads, AA in both themes.
 
 ### F6 Lenses, lean ingestion, consolidation (weeks 23-26)
 
