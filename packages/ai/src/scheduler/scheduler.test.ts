@@ -357,6 +357,51 @@ describe("lane scheduler: lanes, limits and adaptation", () => {
     await Promise.all([first, blocked, other, local].map((call) => call.result));
   });
 
+  it("resumes a paused lane when its timer fires before the reset on the scheduler clock", async () => {
+    const time = fakeSchedulerClock({ earlyTimersMs: 1 });
+    const scheduler = createAiScheduler(
+      resolveAiLaneRuntimeConfig({}, { environment: {} }),
+      time.clock
+    );
+    const lane = "remote:key";
+    const log: string[] = [];
+    const first = controlled(scheduler, ticket(lane), "first", log);
+    (await first.started).observeRateLimit(3_000);
+    first.finish();
+    await first.result;
+    const next = controlled(scheduler, ticket(lane, "P0"), "next", log);
+    // The pause timer fires at 2,999 ms, short of the reset: the lane stays paused until 3,000.
+    await time.advance(2_999);
+    expect(log).toEqual(["first"]);
+    await time.advance(1);
+    expect(log).toEqual(["first", "next"]);
+    expect(scheduler.snapshot()[0]).toMatchObject({ running: 1, pausedForMs: null });
+    next.finish();
+    await next.result;
+  });
+
+  it("lets a retried attempt back onto its lane when its backoff and the pause both end early", async () => {
+    const time = fakeSchedulerClock({ earlyTimersMs: 1 });
+    const scheduler = createAiScheduler(
+      resolveAiLaneRuntimeConfig({}, { environment: {} }),
+      time.clock
+    );
+    let settled = false;
+    // A 429 with Retry-After 600 ms whose backoff sleeps exactly the stated wait.
+    const retried = scheduler.run(ticket("remote:key", "P0"), async (permit) => {
+      permit.observeRateLimit(600);
+      await permit.releaseDuring(
+        () => new Promise<void>((resolve) => time.clock.setTimer(resolve, 600))
+      );
+      return "retried";
+    });
+    void retried.then(() => (settled = true));
+    await time.advance(5_000);
+    expect(settled).toBe(true);
+    await expect(retried).resolves.toBe("retried");
+    expect(scheduler.snapshot()[0]).toMatchObject({ running: 0, pausedForMs: null });
+  });
+
   it("keeps the local lane at one call whatever the rate-limit signals", async () => {
     const { scheduler } = setup();
     scheduler.observeRateLimit("local", null);

@@ -104,14 +104,11 @@ export class LaneScheduler implements AiScheduler {
     if (!lane?.adaptive) return;
     lane.aimd = aimdOnRateLimit(lane.aimd, this.config.lanes);
     if (retryAt !== null) {
-      const until = Math.min(retryAt, this.clock.now() + this.config.lanes.maxPauseMs);
-      if (until > this.clock.now() && (lane.pausedUntil === null || until > lane.pausedUntil)) {
+      const now = this.clock.now();
+      const until = Math.min(retryAt, now + this.config.lanes.maxPauseMs);
+      if (until > now && (lane.pausedUntil === null || until > lane.pausedUntil)) {
         lane.pausedUntil = until;
-        if (lane.pauseTimer !== undefined) this.clock.clearTimer(lane.pauseTimer);
-        lane.pauseTimer = this.clock.setTimer(() => {
-          lane.pauseTimer = undefined;
-          this.schedule();
-        }, until - this.clock.now());
+        this.armPauseTimer(lane, now);
       }
     }
   }
@@ -216,10 +213,24 @@ export class LaneScheduler implements AiScheduler {
     });
   }
 
+  /** (Re)arms the timer that ends the lane's pause. */
+  private armPauseTimer(lane: Lane, now: number): void {
+    if (lane.pauseTimer !== undefined) this.clock.clearTimer(lane.pauseTimer);
+    lane.pauseTimer = this.clock.setTimer(() => {
+      lane.pauseTimer = undefined;
+      this.schedule();
+    }, lane.pausedUntil! - now);
+  }
+
   private fill(lane: Lane): void {
     const now = this.clock.now();
     if (lane.pausedUntil !== null) {
-      if (now < lane.pausedUntil) return;
+      if (now < lane.pausedUntil) {
+        // Timers run on the event loop's cached time and may fire before the clock reaches the
+        // reset: the pause then needs a timer for what is left, or the lane would never resume.
+        if (lane.pauseTimer === undefined) this.armPauseTimer(lane, now);
+        return;
+      }
       lane.pausedUntil = null;
     }
     while (lane.running < lane.aimd.limit && lane.waiting.length > 0) {

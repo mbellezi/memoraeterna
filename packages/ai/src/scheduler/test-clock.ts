@@ -5,12 +5,17 @@ export function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-/** A manual clock for scheduler tests: time moves only through `advance`. */
-export function fakeSchedulerClock(): {
+/**
+ * A manual clock for scheduler tests: time moves only through `advance`. With `earlyTimersMs`, a
+ * timer may fire up to that much before its delay (but never sooner than 1 ms after it was set), as
+ * Node's timers do: they run on the event loop's cached millisecond time, while `now()` is precise.
+ */
+export function fakeSchedulerClock(options: { earlyTimersMs?: number } = {}): {
   clock: SchedulerClock;
   now: () => number;
   advance: (milliseconds: number) => Promise<void>;
 } {
+  const early = options.earlyTimersMs ?? 0;
   let now = 0;
   let nextId = 0;
   const timers = new Map<number, { at: number; callback: () => void }>();
@@ -18,7 +23,8 @@ export function fakeSchedulerClock(): {
     now: () => now,
     setTimer: (callback, delayMs) => {
       const id = ++nextId;
-      timers.set(id, { at: now + Math.max(0, delayMs), callback });
+      const delay = Math.max(0, delayMs);
+      timers.set(id, { at: now + Math.max(Math.min(delay, 1), delay - early), callback });
       return id;
     },
     clearTimer: (handle) => {
