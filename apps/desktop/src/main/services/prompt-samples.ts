@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   promptDefinition,
   PromptSampleProgressSchema,
+  validateRelationTypingAnswer,
   type PromptSampleProgress,
   type PromptPin
 } from "@app/domain";
@@ -26,6 +28,12 @@ import {
   buildRelationExplanationRepairPrompt,
   parseRelationExplanation
 } from "./relation-explanation.js";
+import {
+  arrangeTypingPairs,
+  buildRelationTypingPrompt,
+  buildRelationTypingRepairPrompt,
+  typingBatches
+} from "./relations/relation-typing.js";
 import { sourceDecisionPrompt, parseSourceDecision } from "./source-relation-processing.js";
 import {
   buildSourceRelationExplanationPrompt,
@@ -93,6 +101,11 @@ const rows = [
     ]
   }
 ];
+/** A synthetic note as the typer reads it: its rendered text and the hash of that text. */
+function sampleTypingNote(noteId: string, title: string, idea: string) {
+  const text = `${title}\n${idea}`;
+  return { id: noteId, text, hash: createHash("sha256").update(text).digest("hex") };
+}
 function instructions() {
   const values = { page_title: "Retrieval and feedback", content_language: "en" };
   return {
@@ -279,6 +292,32 @@ export function promptSampleCall(
         task: "text-generation",
         validate: (o) => {
           if (parseRelationExplanation(o) === null) throw new Error("prompts.errors.sample");
+        }
+      };
+    }
+    if (promptId === "relations.type" || promptId === "relations.type.repair") {
+      const batch = typingBatches(
+        arrangeTypingPairs([
+          {
+            first: sampleTypingNote(id(3), notes[0]!.title, notes[0]!.ideaStatement),
+            second: sampleTypingNote(
+              id(4),
+              "Beginners without feedback",
+              "Beginners gained nothing from retrieval without feedback."
+            ),
+            band: "apply"
+          }
+        ]),
+        1
+      )[0]!;
+      return {
+        input: promptId.endsWith(".repair")
+          ? buildRelationTypingRepairPrompt(batch, new Map([["p1", "missing"]]))
+          : buildRelationTypingPrompt(batch),
+        task: "structured-output",
+        validate: (o) => {
+          if (validateRelationTypingAnswer(o, ["p1"]).accepted.size !== 1)
+            throw new Error("prompts.errors.sample");
         }
       };
     }

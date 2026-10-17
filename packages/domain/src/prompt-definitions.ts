@@ -89,6 +89,13 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
       passage: "Practice that recalls studied material strengthened later recall."
     }
   ],
+  relation_pairs: [
+    {
+      p: "p1",
+      a: "Retrieval with feedback\nFeedback improved delayed recall in a fictional trial.",
+      b: "Retrieval practice\nPractice that recalls studied material strengthens long-term memory."
+    }
+  ],
   relation_sources: [
     {
       source: "s1",
@@ -247,7 +254,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
             : family === "relations"
               ? parts[1] === "decide"
                 ? "reranking"
-                : "text-generation"
+                : parts[1] === "type"
+                  ? "structured-output"
+                  : "text-generation"
               : family === "embedding"
                 ? "embedding"
                 : family === "diagnostics"

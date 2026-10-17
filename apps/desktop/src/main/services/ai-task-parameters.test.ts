@@ -5,6 +5,8 @@ import {
   noteMatchDecisionOperations,
   profileGenerationMaxTokens,
   relationExplanationOperation,
+  relationTypingOperation,
+  relationTypingRepairOperation,
   sourceRelationExplanationOperation,
   topicNameOperation,
   topicOverviewOperation,
@@ -79,6 +81,27 @@ describe("AI task parameter defaults", () => {
     expect(withAiTaskParameterDefaults("text-generation", {}, false, options)).not.toHaveProperty(
       "reasoningLevel"
     );
+  });
+
+  it("turns reasoning off for the relation typing calls (codes only) unless the profile asks for it", () => {
+    for (const operation of [relationTypingOperation, relationTypingRepairOperation]) {
+      const options = { operation };
+      for (const local of [false, true])
+        expect(withAiTaskParameterDefaults("structured-output", {}, local, options)).toMatchObject({
+          reasoningLevel: "off"
+        });
+      expect(
+        withAiTaskParameterDefaults("structured-output", { reasoningLevel: "low" }, false, options)
+      ).toMatchObject({ reasoningLevel: "low" });
+      expect(aiTaskBehaviorDefaults("structured-output", false, operation)).toEqual({
+        reasoningLevel: "off"
+      });
+      // Only that operation of the structured-output task: other tasks keep the profile's.
+      for (const task of ["text-generation", "reranking"])
+        expect(withAiTaskParameterDefaults(task, {}, false, options)).not.toHaveProperty(
+          "reasoningLevel"
+        );
+    }
   });
 
   it("turns reasoning off for the relation explanation unless the profile asks for it", () => {

@@ -32,6 +32,14 @@ export const topicNameOperation = "topic_name";
 export const topicOverviewOperation = "topic_overview";
 
 /**
+ * The calls that type the pairs a source's notes were accepted in (F3 D20), and their one re-ask:
+ * codes only (a type and a direction per pair) on the `write-fast` class, so reasoning is off by
+ * default. `op:` routes may override either.
+ */
+export const relationTypingOperation = "relation_typing";
+export const relationTypingRepairOperation = "relation_typing_repair";
+
+/**
  * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
  * Any default here changes the effective parameters, so a run fingerprint must include it.
  */
@@ -49,7 +57,10 @@ export function aiTaskBehaviorDefaults(
       operation === sourceRelationExplanationOperation);
   const naming =
     taskType === "structured-output" &&
-    (operation === topicNameOperation || operation === topicOverviewOperation);
+    (operation === topicNameOperation ||
+      operation === topicOverviewOperation ||
+      operation === relationTypingOperation ||
+      operation === relationTypingRepairOperation);
   return {
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
     // Adapters map "off" to the lowest reasoning level a model supports.
