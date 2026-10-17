@@ -27,20 +27,25 @@ import {
 } from "./golden-note-pairs.js";
 import { KnowledgeService } from "./knowledge-service.js";
 
-// The matcher is run with its repositories mocked, as atomic-note-matching.test.ts does, to capture
-// the request it builds for the decider.
+// The product's note matching (KnowledgeService -> RelationMatcher, F3 T51) is run with its
+// repositories mocked, as relations/relation-matcher.test.ts does, to capture the request its
+// generative decider builds.
 const mocks = vi.hoisted(() => ({
   notes: {
     findById: vi.fn(),
     findTextMatchingCandidates: vi.fn(),
     findVectorMatchingCandidates: vi.fn(),
+    filterRetrievableCandidateIds: vi.fn(),
     scoreMatchingCandidates: vi.fn()
   },
-  relations: { pairStatuses: vi.fn(), upsert: vi.fn() },
+  relations: { pairStatuses: vi.fn(), upsertDecided: vi.fn() },
   decisions: { findVerdicts: vi.fn(), findReverseVerdicts: vi.fn(), record: vi.fn() },
   aiConfig: { getDefaultTask: vi.fn() },
-  graph: { findAtomicNoteCandidates: vi.fn(), listAtomicNoteElements: vi.fn() },
+  graph: { findAtomicNoteCandidates: vi.fn() },
   embedding: { upsert: vi.fn(), findCurrentNoteVectors: vi.fn() },
+  states: { read: vi.fn(), record: vi.fn() },
+  runs: { start: vi.fn(), finish: vi.fn() },
+  settings: { get: vi.fn() },
   run: vi.fn()
 }));
 vi.mock("@app/db", async (original) => ({
@@ -50,7 +55,10 @@ vi.mock("@app/db", async (original) => ({
   createRelationDecisionRepository: () => mocks.decisions,
   createAiConfigRepository: () => mocks.aiConfig,
   createKnowledgeGraphRepository: () => mocks.graph,
-  createEmbeddingRepository: () => mocks.embedding
+  createEmbeddingRepository: () => mocks.embedding,
+  createNoteMatchStateRepository: () => mocks.states,
+  createRelationMatchRunRepository: () => mocks.runs,
+  createSettingsRepository: () => mocks.settings
 }));
 
 let directory: string;
@@ -461,8 +469,42 @@ describe("the verdicts", () => {
 });
 
 describe("the request", () => {
-  /** The matcher's reranking calls for a source note with three candidates (the matcher test's world). */
-  async function matcherCalls(outputs: unknown[]) {
+  const writerRoute = {
+    profileId: "profile",
+    provider: "openai-codex",
+    baseUrl: null,
+    modelId: "model",
+    runtime: "remote",
+    repository: null,
+    revision: null,
+    quantization: null,
+    localModelId: null,
+    requiredCapabilities: ["text-generation", "structured-output"],
+    parameters: {},
+    modelDefaultParameters: {}
+  };
+  /**
+   * The profiles whose note matching still runs the generative v9 decider (Q17, D16): a profile
+   * with no preset whose `reranking` route holds its pre-F3 writer (the derived mode), and the
+   * Cloud preset with no ranker, whose generative-decide `op:` routes hold the remote writer.
+   */
+  const profiles: Record<string, { mode: string | null; routes: Record<string, unknown> }> = {
+    "a profile with no preset": { mode: null, routes: { reranking: writerRoute } },
+    "the Cloud preset without a ranker": {
+      mode: "ranker-else-generative",
+      routes: {
+        "op:note_matching_reranking": writerRoute,
+        "op:note_matching_reranking_repair": writerRoute,
+        reranking: writerRoute
+      }
+    }
+  };
+
+  /** The decider calls the product's note matching makes for a source note with three candidates. */
+  async function matcherCalls(
+    profile: { mode: string | null; routes: Record<string, unknown> },
+    outputs: unknown[]
+  ) {
     vi.resetAllMocks();
     const note = (id: string) => ({
       id,
@@ -471,37 +513,34 @@ describe("the request", () => {
       bodyMarkdown: `Body ${id}`,
       metadata: {},
       createdFromSourceItemId: `source-${id}`,
-      status: "pending_review"
+      status: "pending_review",
+      supersessionStatus: "current"
     });
+    const notes = new Map(["source", "a", "b", "c"].map((id) => [id, note(id)]));
     const candidates = ["a", "b", "c"].map((id) => ({
-      note: note(id),
+      note: notes.get(id)!,
       textScore: 1,
-      vectorScore: 1
+      vectorScore: 1,
+      hasVector: true
     }));
-    mocks.notes.findById.mockResolvedValue(note("source"));
+    mocks.notes.findById.mockImplementation(async (id: string) => notes.get(id) ?? null);
     mocks.notes.findTextMatchingCandidates.mockResolvedValue(candidates);
     mocks.notes.findVectorMatchingCandidates.mockResolvedValue(candidates);
+    mocks.notes.filterRetrievableCandidateIds.mockResolvedValue(new Set());
     mocks.notes.scoreMatchingCandidates.mockResolvedValue(candidates);
     mocks.graph.findAtomicNoteCandidates.mockResolvedValue([]);
-    mocks.graph.listAtomicNoteElements.mockResolvedValue(new Map());
     mocks.relations.pairStatuses.mockResolvedValue(new Map());
+    mocks.relations.upsertDecided.mockResolvedValue({ change: "created" });
     mocks.decisions.findVerdicts.mockResolvedValue(new Map());
     mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map());
     mocks.embedding.findCurrentNoteVectors.mockResolvedValue(new Map());
-    mocks.aiConfig.getDefaultTask.mockResolvedValue({
-      profileId: "profile",
-      provider: "provider",
-      baseUrl: null,
-      modelId: "model",
-      runtime: "remote",
-      repository: null,
-      revision: null,
-      quantization: null,
-      localModelId: null,
-      requiredCapabilities: ["text-generation", "structured-output"],
-      parameters: {},
-      modelDefaultParameters: {}
-    });
+    mocks.states.read.mockResolvedValue(new Map());
+    mocks.runs.start.mockResolvedValue({ id: "match-run" });
+    mocks.settings.get.mockResolvedValue(profile.mode);
+    mocks.aiConfig.getDefaultTask.mockImplementation(
+      async (task: string, _profile: unknown, keys: string[] = [task]) =>
+        keys.map((key) => profile.routes[key]).find(Boolean) ?? null
+    );
     const queue = [...outputs];
     mocks.run.mockImplementation(async (task) =>
       task === "embedding"
@@ -522,7 +561,7 @@ describe("the request", () => {
             aiTaskRunId: "run"
           }
     );
-    await new KnowledgeService({
+    const result = await new KnowledgeService({
       getPool: () => ({}) as PgPool,
       aiService: { runDefaultTask: mocks.run } as unknown as AiService,
       userDataPath: "/tmp/test",
@@ -531,58 +570,76 @@ describe("the request", () => {
       getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse({}),
       relationThreshold: 0.6
     }).matchAtomicNotes(["source"]);
-    return mocks.run.mock.calls.filter(([task]) => task === "reranking");
+    // The generative decider answered, not a ranker, and nothing was skipped.
+    expect(result).toMatchObject({ decider: "generative", decided: 1 });
+    expect(result.skipped).toBeUndefined();
+    return mocks.run.mock.calls.filter(([task]) => task !== "embedding");
   }
 
-  /** What decides the answer: the task, the prompt, the operation, the contract, the retry index, the budget. */
+  /**
+   * What decides the answer and the route that gives it: the task, the prompt, the operation and
+   * the stated class (the route keys, the decide deadline and the lean decide shape, D16 and D34),
+   * the contract, the retry index and the budget; and the lane priority.
+   */
   const requestOf = (call: unknown[]) => {
     const context = call[2] as Record<string, unknown>;
     return {
       task: call[0],
       input: call[1],
       operation: context.operation,
+      workloadClass: context.workloadClass,
+      priority: context.priority,
       promptVersion: context.promptVersion,
       attempt: context.attempt,
       limits: call[4]
     };
   };
 
-  it("is the request the matcher builds, for the first answer and for the repair", async () => {
-    const matcher = await matcherCalls([
-      { results: [item(1, 10), item(2, 70)] },
-      { results: [item(3, 95, "extends")] }
-    ]);
-    expect(matcher).toHaveLength(2);
-    const { ai, calls } = fakeAi([
-      { results: [item(1, 10), item(2, 70)] },
-      { results: [item(3, 95, "extends")] }
-    ]);
-    await runNotePairVerdicts({
-      file: fileOf(
-        content([
-          ["source", "a"],
-          ["source", "b"],
-          ["source", "c"]
-        ])
-      ),
-      ai,
-      maxRerankOutputTokens: AtomicNoteMatchingSettingsSchema.parse({}).maxRerankOutputTokens,
-      contentLanguage: "en",
-      cassette: null
-    });
-    expect(calls).toHaveLength(2);
-    expect(calls.map(requestOf)).toEqual(matcher.map(requestOf));
-    expect(requestOf(calls[0]!)).toMatchObject({
-      task: "reranking",
-      operation: "note_matching_reranking",
-      promptVersion: "atomic-note-matching-v9",
-      attempt: 0
-    });
-    expect(requestOf(calls[1]!)).toMatchObject({
-      operation: "note_matching_reranking_repair",
-      attempt: 1
-    });
-  });
+  it.each(Object.entries(profiles))(
+    "is the request the matcher builds, for the first answer and for the repair, on %s",
+    async (_name, profile) => {
+      const matcher = await matcherCalls(profile, [
+        { results: [item(1, 10), item(2, 70)] },
+        { results: [item(3, 95, "extends")] }
+      ]);
+      expect(matcher).toHaveLength(2);
+      const { ai, calls } = fakeAi([
+        { results: [item(1, 10), item(2, 70)] },
+        { results: [item(3, 95, "extends")] }
+      ]);
+      await runNotePairVerdicts({
+        file: fileOf(
+          content([
+            ["source", "a"],
+            ["source", "b"],
+            ["source", "c"]
+          ])
+        ),
+        ai,
+        maxRerankOutputTokens: AtomicNoteMatchingSettingsSchema.parse({}).maxRerankOutputTokens,
+        contentLanguage: "en",
+        cassette: null
+      });
+      expect(calls).toHaveLength(2);
+      expect(calls.map(requestOf)).toEqual(matcher.map(requestOf));
+      expect(requestOf(calls[0]!)).toMatchObject({
+        task: "reranking",
+        operation: "note_matching_reranking",
+        workloadClass: "decide",
+        priority: "P2",
+        promptVersion: "atomic-note-matching-v9",
+        attempt: 0
+      });
+      expect(requestOf(calls[1]!)).toMatchObject({
+        operation: "note_matching_reranking_repair",
+        workloadClass: "decide",
+        attempt: 1
+      });
+      // The repair asks only for the number the first answer left out.
+      expect(calls[1]![1]).toContain("[3]\nTitle: c");
+      expect(calls[1]![1]).not.toContain("Title: a");
+    }
+  );
 });
 
 describe("the knob", () => {
