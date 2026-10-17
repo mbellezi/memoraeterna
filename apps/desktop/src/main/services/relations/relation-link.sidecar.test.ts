@@ -188,14 +188,15 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     sourceId: string,
     rootId: string,
     notes: StoredDecidedNote[],
-    trigger = "library_action"
+    trigger = "library_action",
+    effectiveStages = ["atomicNoteMatching", "sourceMatching"]
   ) => {
     const runs = createIngestionRunRepository(pool!);
     const run = await runs.create({
       sourceItemId: sourceId,
       status: "running",
       trigger,
-      effectiveStages: ["atomicNoteMatching", "sourceMatching"]
+      effectiveStages
     });
     await runs.completeStage(run.id, "atomicNoteMatching", { decided: notes });
     await runs.parkForLinking(run.id, { rootId });
@@ -361,6 +362,28 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     expect(after!.stagesCheckpoint.sourceMatching).toMatchObject({ status: "completed" });
     expect(discovered.map((entry) => entry.rootId)).toEqual([a.sourceId]);
     expect(changed).toEqual([[a1.id, a2.id, b1.id].sort()]);
+  });
+
+  it("persists the pairs of a run whose plan stops at note matching, and discovers nothing", async () => {
+    const a = await seedSource("Sigma");
+    const b = await seedSource("Tau");
+    const s1 = await seedNote(a, "Sigma one");
+    const t1 = await seedNote(b, "Tau one");
+    const { run } = await park(
+      a.sourceId,
+      a.sourceId,
+      [decided(s1, [{ with: t1 }])],
+      "library_action",
+      ["atomicNotes", "atomicNoteMatching"]
+    );
+    const { instance, discovered } = linker();
+    const result = await instance.link(await claim(a.sourceId), signal());
+    expect(await relations()).toEqual([expect.objectContaining({ type: "supports" })]);
+    expect((await events()).map((event) => event.kind)).toEqual(["applied"]);
+    // Source relations were not asked for: no discovery, and the run completes with its job.
+    expect(discovered).toEqual([]);
+    expect(result.discovery).toEqual({ status: "skipped", reason: "not_in_plan" });
+    expect((await createIngestionRunRepository(pool!).findById(run.id))!.status).toBe("succeeded");
   });
 
   it("keeps a typing row and a vetoed event for a pair the typer answers none, and no relation", async () => {

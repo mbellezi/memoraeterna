@@ -1127,7 +1127,10 @@ export class JobSupervisor {
     await createJobRepository(pool).reportProgress(job.id, 0.95);
     const sourceMatching = run.stagesCheckpoint.sourceMatching as JsonObject | undefined;
     let linkRoot: string | null = null;
-    if (shouldRun("sourceMatching") && !isSettledStage(sourceMatching)) {
+    // Only the link job persists what note matching decided (D21), so a plan with note matching
+    // and no source stage parks for it too; that link job skips discovery.
+    const linksNotes = shouldRun("atomicNoteMatching") && !waitingForDecider && !!this.linker;
+    if ((shouldRun("sourceMatching") || linksNotes) && !isSettledStage(sourceMatching)) {
       if (waitingForDecider) {
         await runs.skipStage(ingestionRunId, "sourceMatching", waitingForDeciderSkipReason);
       } else if (!this.linker) {

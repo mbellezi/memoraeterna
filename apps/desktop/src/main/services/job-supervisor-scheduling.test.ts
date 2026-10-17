@@ -448,6 +448,47 @@ describe("ingestion queue scheduling", () => {
       expect(mocks.runs.complete).not.toHaveBeenCalled();
     });
 
+    it("parks a run whose plan stops at note matching, so its link job persists the pairs (D21)", async () => {
+      const matchAtomicNotes = vi.fn(
+        async (
+          _ids: string[],
+          _signal: AbortSignal,
+          _progress: unknown,
+          _context: unknown,
+          options: { onNoteDecided: (note: unknown) => void }
+        ) => {
+          options.onNoteDecided(decided);
+          return { persistedCount: 0, decided: 1, accepted: 0, decider: "ranker" };
+        }
+      );
+      // A custom plan with note matching and no source stage (ProcessingPlanPicker allows it).
+      await ingest({ matchAtomicNotes }, matchingRun({ effectiveStages: ["atomicNoteMatching"] }));
+      expect(mocks.runs.parkForLinking).toHaveBeenCalledWith("run", { rootId: "root" });
+      expect(mocks.jobs.enqueueDeduped).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "relation-link", dedupeKey: "relation-link:root" })
+      );
+      // The source stage is outside the plan: nothing records it as skipped or completed here.
+      expect(mocks.runs.skipStage).not.toHaveBeenCalled();
+      expect(mocks.runs.completeStage).not.toHaveBeenCalledWith(
+        "run",
+        "sourceMatching",
+        expect.anything()
+      );
+      expect(mocks.runs.complete).not.toHaveBeenCalled();
+    });
+
+    it("completes a run whose plan stops at note matching while it waits for a decider", async () => {
+      const matchAtomicNotes = vi
+        .fn()
+        .mockResolvedValue({ persistedCount: 0, skipped: "waiting_for_decider", decider: null });
+      await ingest({ matchAtomicNotes }, matchingRun({ effectiveStages: ["atomicNoteMatching"] }));
+      expect(mocks.runs.skipStage.mock.calls).toEqual([
+        ["run", "atomicNoteMatching", "waiting_for_decider"]
+      ]);
+      expect(mocks.runs.parkForLinking).not.toHaveBeenCalled();
+      expect(mocks.runs.complete).toHaveBeenCalledWith("run");
+    });
+
     it("decides an interactive import at P1", async () => {
       const matchAtomicNotes = vi.fn().mockResolvedValue({ persistedCount: 0 });
       await ingest({ matchAtomicNotes }, matchingRun({ trigger: "interactive_import" }));

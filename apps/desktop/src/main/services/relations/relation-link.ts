@@ -141,6 +141,15 @@ export function isInteractiveRun(run: Pick<IngestionRunRecord, "trigger">): bool
   return run.trigger === "interactive_import";
 }
 
+/**
+ * Whether a parked run asked for source relations: its plan has the source stage (a legacy run,
+ * with no stored plan, runs every stage). A run whose plan stops at note matching parks only for
+ * its note pairs to be persisted (D21); its link job discovers nothing for it.
+ */
+export function requestsSourceDiscovery(run: Pick<IngestionRunRecord, "effectiveStages">): boolean {
+  return run.effectiveStages.length === 0 || run.effectiveStages.includes("sourceMatching");
+}
+
 // --- the steps the knowledge service provides -----------------------------------------------------
 
 export interface RelationDiscoveryInput {
@@ -932,6 +941,9 @@ export class RelationLinker {
   }): Promise<{ summary: JsonObject }> {
     const deferred = (reason: DiscoveryDeferral) => ({ summary: { status: "deferred", reason } });
     if (input.runs.length === 0) return deferred("nothing_new");
+    // Runs whose plans stop at note matching parked only for their pairs (D21).
+    if (!input.runs.some(requestsSourceDiscovery))
+      return { summary: { status: "skipped", reason: "not_in_plan" } };
     if (input.runtime.remoteCallsOff) return deferred("remote_calls_off");
     const pool = this.deps.getPool();
     // A book's discovery runs once its last record has linked (3.11 step 5).
