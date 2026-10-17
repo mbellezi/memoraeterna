@@ -642,13 +642,18 @@ void app.whenReady().then(() => {
         }
         // A verdict-only source pair run leaves the library alone: only the local models (the decider
         // may be one) start, so no job, capture or vault sync can change it meanwhile. So does the
-        // DEV lane probe (MEMORA_DEV_LANE_PROBE, F3 B5): nothing else may use the lane it measures.
+        // DEV lane probe (MEMORA_DEV_LANE_PROBE, F3 B5): nothing else may use the lane it measures. Nor
+        // does the typer's position-bias check (MEMORA_TYPER_CHECK).
         const laneProbe = laneProbeRequested(process.env, {
           isPackaged: app.isPackaged,
           workspaceRoot
         });
+        const typerCheck = !app.isPackaged && Boolean(process.env.MEMORA_TYPER_CHECK);
         const verdictOnly =
-          goldenRun?.sourcePairs?.mode === "verdict_only" || notePairs !== undefined || laneProbe;
+          goldenRun?.sourcePairs?.mode === "verdict_only" ||
+          notePairs !== undefined ||
+          laneProbe ||
+          typerCheck;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!verdictOnly) await topicTreeServices?.start();
         await Promise.all([
@@ -743,6 +748,32 @@ void app.whenReady().then(() => {
                 error instanceof Error ? error.message : String(error)
               );
               if (!app.isPackaged) app.quit();
+            });
+        }
+        if (typerCheck) {
+          // F3 G25: types the pairs of a file in both orders and writes the report; persists nothing.
+          void import("./services/relations/relation-typing-check.js")
+            .then(({ readTyperCheckEnvironment, runTyperCheckFromEnvironment }) => {
+              const environment = readTyperCheckEnvironment(process.env, {
+                isPackaged: app.isPackaged,
+                workspaceRoot
+              });
+              if (!environment) return undefined;
+              return runTyperCheckFromEnvironment({
+                environment,
+                workspaceRoot,
+                pool: databaseService!.getPool()!,
+                ai: aiService!,
+                readContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+                quit: () => app.quit()
+              });
+            })
+            .catch((error: unknown) => {
+              console.error(
+                "TYPER_CHECK failed:",
+                error instanceof Error ? error.message : String(error)
+              );
+              app.quit();
             });
         }
         void goldenRun?.start();
