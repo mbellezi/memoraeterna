@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 
 import { z } from "zod";
 
-import { noteText } from "../spikes/reranker/dataset.ts";
+import { bodyCharacters as spikeBodyCharacters } from "../spikes/reranker/dataset.ts";
 
 export const noteTextsFormat = "memora-relations-note-texts";
 
@@ -51,8 +51,21 @@ export function storedBody(body: string): string {
   return [...body.replace(/\s+/gu, " ").trim()].slice(0, storedBodyCharacters).join("");
 }
 
-export function renderNoteText(note: Pick<StoredNote, "title" | "idea" | "body">): string {
-  return noteText({ title: note.title, idea: note.idea, body: note.body });
+/** Body characters of the bake-off's two templates (D13): the product picks one. */
+export const templateBodyCharacters = [400, 600] as const;
+export type TemplateBodyCharacters = (typeof templateBodyCharacters)[number];
+
+/**
+ * Title, idea and the first `bodyCharacters` characters of the body, one labelled line each. With
+ * Spike A's 400 this is exactly `noteText` of the spike dataset (the product's `relation-pair-text-v1`);
+ * 600 is the other template of the bake-off.
+ */
+export function renderNoteText(
+  note: Pick<StoredNote, "title" | "idea" | "body">,
+  bodyCharacters: number = spikeBodyCharacters
+): string {
+  const body = [...note.body.replace(/\s+/gu, " ").trim()].slice(0, bodyCharacters).join("");
+  return `Title: ${note.title}\nIdea: ${note.idea}\nText: ${body}`;
 }
 
 export interface RenderedNote {
@@ -66,11 +79,14 @@ export interface RenderedNote {
 export type TextLookup = (noteId: string) => RenderedNote | undefined;
 
 /** Renders every note of a texts file once; refuses a duplicated id. */
-export function renderedNotes(file: NoteTextsFile): Map<string, RenderedNote> {
+export function renderedNotes(
+  file: NoteTextsFile,
+  bodyCharacters: number = spikeBodyCharacters
+): Map<string, RenderedNote> {
   const rendered = new Map<string, RenderedNote>();
   for (const note of file.notes) {
     if (rendered.has(note.id)) throw new Error(`The note texts hold note ${note.id} twice.`);
-    const text = renderNoteText(note);
+    const text = renderNoteText(note, bodyCharacters);
     rendered.set(note.id, { id: note.id, text, textSha256: sha256Hex(text) });
   }
   return rendered;
@@ -93,7 +109,10 @@ export interface ReadNoteTexts {
   rendered: Map<string, RenderedNote>;
 }
 
-export async function readNoteTexts(path: string): Promise<ReadNoteTexts> {
+export async function readNoteTexts(
+  path: string,
+  bodyCharacters: number = spikeBodyCharacters
+): Promise<ReadNoteTexts> {
   let bytes: Buffer;
   try {
     bytes = await readFile(path);
@@ -101,5 +120,5 @@ export async function readNoteTexts(path: string): Promise<ReadNoteTexts> {
     throw new Error(`Cannot read the note texts "${path}". Export them with export-note-texts.ts.`);
   }
   const file = noteTextsSchema.parse(JSON.parse(bytes.toString("utf8")));
-  return { file, sha256: sha256Hex(bytes), rendered: renderedNotes(file) };
+  return { file, sha256: sha256Hex(bytes), rendered: renderedNotes(file, bodyCharacters) };
 }

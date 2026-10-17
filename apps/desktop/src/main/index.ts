@@ -523,6 +523,34 @@ void app.whenReady().then(() => {
       if (status.state === "ready") {
         await initializeKnowledgeDefaults();
         await monitoringService.recover();
+        // DEV-only note pair verdicts (MEMORA_GOLDEN_NOTE_PAIRS, golden-note-pairs.ts): exclusive of
+        // every other golden knob and checked first, so a refusal quits before a wipe or a reset can run.
+        const notePairs =
+          !app.isPackaged && process.env.MEMORA_GOLDEN_NOTE_PAIRS
+            ? await import("./services/golden-note-pairs.js")
+                .then(({ prepareGoldenNotePairs }) =>
+                  prepareGoldenNotePairs({
+                    env: process.env,
+                    isPackaged: app.isPackaged,
+                    workspaceRoot,
+                    cassette: aiCassette,
+                    ai: aiService!,
+                    settings: settingsService!,
+                    quit: () => app.quit()
+                  })
+                )
+                .catch((error: unknown) => {
+                  console.error(
+                    "GOLDEN_NOTE_PAIRS refused:",
+                    error instanceof Error ? error.message : String(error)
+                  );
+                  return null;
+                })
+            : undefined;
+        if (notePairs === null) {
+          app.quit();
+          return;
+        }
         // The LEGACY_RECREATED check, then the DEV-only one-shot legacy wipe
         // (MEMORA_LEGACY_WIPE=preview|<token>): a preview, a wipe or a refusal quits here, before
         // the local models, job supervisor, gateway and vault reconcile start.
@@ -613,7 +641,8 @@ void app.whenReady().then(() => {
         }
         // A verdict-only source pair run leaves the library alone: only the local models (the decider
         // may be one) start, so no job, capture or vault sync can change it meanwhile.
-        const verdictOnly = goldenRun?.sourcePairs?.mode === "verdict_only";
+        const verdictOnly =
+          goldenRun?.sourcePairs?.mode === "verdict_only" || notePairs !== undefined;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!verdictOnly) await topicTreeServices?.start();
         await Promise.all([
@@ -689,6 +718,7 @@ void app.whenReady().then(() => {
             );
         }
         void goldenRun?.start();
+        void notePairs?.start();
         const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
         if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
       }

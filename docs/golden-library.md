@@ -382,6 +382,36 @@ MEMORA_GOLDEN_MAX_TOKENS=80000 MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 \
 npm run dev -w @app/desktop
 ```
 
+## 6b. Note pair verdicts (the F3 decider bake-off)
+
+`MEMORA_GOLDEN_NOTE_PAIRS=<file>` asks the live generative decider (v9, `atomic-note-matching-v9`, the
+decide-only contract) about a list of pairs of notes and writes every raw verdict. It is DEV only (a packaged
+build ignores it, and the module refuses it) and exclusive: it is refused together with `MEMORA_GOLDEN_RUN`,
+`MEMORA_GOLDEN_SOURCE_PAIRS`, the reset, only, allow-nonempty and topics knobs, `MEMORA_PROFILE_RESET`,
+`MEMORA_LEGACY_WIPE`, the pilots, the corpus runner and `MEMORA_LOCAL_MODEL_INSTALL`, and the app quits
+(`GOLDEN_NOTE_PAIRS refused`). Like the verdict-only source mode the app starts only the local-model service,
+and the run takes no backup: the module has no database handle, reads no library and persists nothing. The
+only rows written are the AI audit of the calls, by the AI service; the only file is the report.
+
+The file is `{"format": "memora-golden-note-pairs", "version": 1, "notes": {key: {title, idea}}, "pairs":
+[{source, candidate, label?}]}`. The notes travel in the file (title and idea statement, which is all the v9
+prompt shows), so one run can judge notes of several libraries. Pairs are grouped by `source`: one call per
+source note with at most 20 candidates, numbered from 1 in content order (title, then idea; never keys), as the
+matcher numbers them. The request is the matcher's: `buildBatchRerankPrompt`, operation
+`note_matching_reranking` (and `_repair` for the one repair of the numbers left out or malformed), the matching
+settings' `maxRerankOutputTokens`, read by the production parser; a test runs the matcher and compares the two.
+The profile's `reranking` route answers (Codex). Use a fresh cassette directory so the calls are live: a
+request identical to a recorded one is served from the cassette (`replayed: true`). Recording needs
+`MEMORA_GOLDEN_MAX_TOKENS`. The run stops calling at a replay miss, at the live token cap, or after three
+failed calls in a row; the pairs left are `skipped`.
+
+`.cache/golden/runs/<ts>/note-pair-verdicts.json` (rewritten after every call, `state: running` then
+`finished`) holds `status`, the settings, the cassette counters, `totals`, one entry per call (attempts with
+wall and provider time, tokens, run ID and the raw output) and one per pair: `status` (`decided`, `undecided`,
+`skipped`, `error`), `score` (the contract's integer 0 to 100), `relationType`, the call and the candidate
+number. `scripts/relations/bakeoff-v9.ts` builds the pair list of the bake-off (`inputs`: the label pairs no
+recorded v9 decision covers) and merges the report with the recorded verdicts (`merge --report <file>`).
+
 ## 7. The Topic Tree Engine under a golden run (F2: G1, the barrier, the profiles)
 
 `MEMORA_GOLDEN_TOPICS` is read only when `MEMORA_GOLDEN_RUN` is set (and never in a packaged build); every
