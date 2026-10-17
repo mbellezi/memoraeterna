@@ -578,9 +578,9 @@ Wave 0:
 Wave 1 (gate 0 and gate M at the end):
 - [x] T44 M0: offline re-score of the pinned matching runs, tuning candidate recall, the graph call split, B4 and
       the throughput forecast (`docs/spikes/f3-m0.md`).
-- [ ] T45 Label set and the blind three-judge panel (decision 21) replacing the owner-labeled pairs: about 300 note
+- [x] T45 Label set and the blind three-judge panel (decision 21) replacing the owner-labeled pairs: about 300 note
       pairs from public and synthetic text, the source pairs, R_v6 and the R_v9 sample.
-- [ ] T46 Pair scoring harness: bake-off scores through the product adapters, verdict-only v9 note-pair scoring
+- [x] T46 Pair scoring harness: bake-off scores through the product adapters, verdict-only v9 note-pair scoring
       and B1.
 - [x] T47 AiScheduler (migration `ai_task_run_lanes`): one local lane and adaptive remote lanes, priorities with
       aging, deadlines on every runtime, retries off the lane; remove `ai-execution-queue.ts`; `rules/ai.md`.
@@ -595,18 +595,18 @@ Wave 1 (gate 0 and gate M at the end):
       check on every runtime-build change.
 
 Wave 2 (M1 and gate R at the end):
-- [ ] T47b Circuit breaker per remote lane and the lane probe (B5).
-- [ ] T51 Relations v2 matcher: the local ranker decides both directions with calibrated bands; the note decider
+- [x] T47b Circuit breaker per remote lane and the lane probe (B5).
+- [x] T51 Relations v2 matcher: the local ranker decides both directions with calibrated bands; the note decider
       mode and the wait for a validated ranker.
-- [ ] T51t Typing batched per source, with `none` as a veto.
+- [x] T51t Typing batched per source, with `none` as a veto.
 - [ ] T52 Per-source matching with no batch barrier and the `relation-link` job on a light `relations` worker;
       the untyped fallback, the daily relation cap and the stage-level retry; `rules/architecture.md`.
 - [ ] T52b Re-match harness with an arrival fence and recorded-timing replay.
 - [ ] T53 Source relations by design E (decision 17): promotion of typed applied note relations, nearest-source
       discovery judged once with F1b's compact verdict; the shortlist and the Cartesian trigram join deleted.
-- [ ] T54 Workload classes on every caller, legacy route mapping, Local / Hybrid / Cloud presets and Settings › AI
+- [x] T54 Workload classes on every caller, legacy route mapping, Local / Hybrid / Cloud presets and Settings › AI
       by class with a "Generative judge" row.
-- [ ] T55 Schema output in every runtime, item-level repair, graph salvage, graph batches by writer locality and
+- [x] T55 Schema output in every runtime, item-level repair, graph salvage, graph batches by writer locality and
       the extraction pin; claims stay stopped.
 - [ ] T56 `embedMany` and hot-path caches.
 - [ ] T57 Campaign M1 (tuning partition only).
