@@ -347,6 +347,7 @@
     "ai": {
       "noCompatibleModel": "Nessun modello compatibile e configurato.",
       "unsupportedTask": "Il modello selezionato non puo eseguire questa attivita.",
+      "providerUnavailable": "Il provider di IA non risponde. L'attivita verra ritentata a breve.",
       "secureStorageUnavailable": "L'archiviazione sicura delle credenziali non e disponibile.",
       "missingCredential": "La credenziale del provider e mancante.",
       "connectionFailed": "Il test di connessione al modello non e riuscito.",

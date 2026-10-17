@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AiProviderError } from "@app/ai";
+import { AiProviderError, ProviderUnavailableError } from "@app/ai";
 import {
   workerErrorMessage,
   workerFailure,
@@ -26,6 +26,13 @@ describe("job failure classification", () => {
       )
     ).toBe(true);
     expect(isTransientJobFailure(new DOMException("timed out", "TimeoutError"))).toBe(true);
+  });
+
+  it("retries a call a remote lane's open circuit breaker failed fast", () => {
+    const unavailable = new ProviderUnavailableError("remote:codex", 30_000);
+    expect(unavailable.message).toBe("errors.ai.providerUnavailable");
+    expect(isTransientJobFailure(unavailable)).toBe(true);
+    expect(isTransientJobFailure(new Error("job failed", { cause: unavailable }))).toBe(true);
   });
 
   it("retries a crashed worker and database connection or contention errors", () => {

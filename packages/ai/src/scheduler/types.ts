@@ -1,4 +1,5 @@
 import type { AiWorkloadClass } from "../contracts.js";
+import type { BreakerSnapshot } from "./breaker.js";
 
 /** `local` (every local runtime, one call at a time) or one lane per remote provider configuration. */
 export type LaneKey = "local" | `remote:${string}`;
@@ -102,6 +103,10 @@ export interface LaneSnapshot {
   /** Milliseconds the lane stays paused by a rate limit; null when it is not paused. */
   readonly pausedForMs: number | null;
   readonly successStreak: number;
+  /** Rate limits (429s and stated resets) the lane observed since it was created. */
+  readonly rateLimits: number;
+  /** The circuit breaker of a remote lane (F3 D32); null for the local lane, which has none. */
+  readonly breaker: BreakerSnapshot | null;
 }
 
 export interface AiScheduler {
@@ -110,12 +115,16 @@ export interface AiScheduler {
   /**
    * Runs `execute` once the ticket's lane grants a slot: P0 first in admission order, then the
    * lowest effective priority (with aging), FIFO within it. Nothing preempts a running call; the
-   * slot is released when the execution settles, before the returned promise settles.
+   * slot is released when the execution settles, before the returned promise settles. An open
+   * circuit breaker rejects a remote lane's new entries at once with a `ProviderUnavailableError`.
    */
   run<T>(ticket: LaneTicket, execute: (permit: LanePermit) => Promise<T>): Promise<T>;
   /** AIMD decrease and pause of a remote lane until `retryAt` (scheduler clock), when known. */
   observeRateLimit(lane: LaneKey, retryAt: number | null): void;
-  /** AIMD increase after consecutive successes; a transient failure resets the streak. */
+  /**
+   * AIMD increase after consecutive successes (a transient failure resets the streak), and the
+   * circuit breaker's count of consecutive transient failures of a remote lane.
+   */
   observeOutcome(lane: LaneKey, outcome: LaneOutcome): void;
   snapshot(): LaneSnapshot[];
 }

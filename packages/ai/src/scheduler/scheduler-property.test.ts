@@ -37,6 +37,8 @@ interface ModelEntry {
   priority: AiPriority;
   admittedAt: number;
   sequence: number;
+  /** The execution started once: later starts are the re-wait after a retry backoff. */
+  started?: boolean;
 }
 
 describe("lane scheduler property test", () => {
@@ -56,6 +58,7 @@ describe("lane scheduler property test", () => {
     let admitted = 0;
     let sequence = 0;
     let maxP3Wait = 0;
+    let outages = 0;
 
     const limitOf = (lane: LaneKey) =>
       scheduler.snapshot().find((snapshot) => snapshot.lane === lane)?.limit ?? 1;
@@ -63,6 +66,13 @@ describe("lane scheduler property test", () => {
     /** Checks a start against the model: the lane limit and the selection order. */
     const started = (entry: ModelEntry) => {
       const now = time.now();
+      // An open breaker starts no new entry of its lane (D32); a call between two attempts may.
+      if (!entry.started && entry.lane !== "local") {
+        const lane = scheduler.snapshot().find((snapshot) => snapshot.lane === entry.lane);
+        if (lane?.breaker?.state === "open")
+          violations.push(`entry ${entry.id} started on open ${entry.lane}`);
+      }
+      entry.started = true;
       waiting.delete(entry.id);
       const running = active.get(entry.lane)! + 1;
       active.set(entry.lane, running);
@@ -125,6 +135,8 @@ describe("lane scheduler property test", () => {
           },
           async (permit: LanePermit) => {
             started(entry);
+            // The response that answers a half-open breaker's probe.
+            permit.observeOutcome("ok");
             if (backoff !== null) {
               await waitUntil(Math.floor(durationMs / 2));
               await permit.releaseDuring(async () => {
@@ -174,6 +186,11 @@ describe("lane scheduler property test", () => {
       } else if (roll < 0.88) {
         const { lane } = lanes[1 + Math.floor(next() * 2)]!;
         scheduler.observeRateLimit(lane, time.now() + Math.floor(next() * 2_000));
+      } else if (roll < 0.9) {
+        // An outage: five transient failures in a row open the lane's breaker.
+        const { lane } = lanes[1 + Math.floor(next() * 2)]!;
+        for (let failure = 0; failure < 5; failure++) scheduler.observeOutcome(lane, "transient");
+        outages += 1;
       } else {
         const { lane } = lanes[1 + Math.floor(next() * 2)]!;
         scheduler.observeOutcome(lane, next() < 0.9 ? "ok" : "transient");
@@ -189,6 +206,11 @@ describe("lane scheduler property test", () => {
     expect([...active.values()]).toEqual([0, 0, 0]);
     expect(scheduler.snapshot().every((lane) => lane.running === 0)).toBe(true);
     expect(admitted).toBeGreaterThan(4_000);
+    // The breakers opened and failed entries fast along the way, and closed again.
+    expect(outages).toBeGreaterThan(100);
+    const remote = scheduler.snapshot().filter((lane) => lane.breaker !== null);
+    expect(remote.reduce((sum, lane) => sum + lane.breaker!.refused, 0)).toBeGreaterThan(50);
+    expect(remote.every((lane) => lane.breaker!.opened > 0)).toBe(true);
     // Reported for the record: the longest wait of a P3 entry under this random load.
     expect(maxP3Wait).toBeGreaterThan(0);
   });

@@ -4,6 +4,7 @@ import {
   type AiLaneRuntimeConfig
 } from "../runtime-config.js";
 import { aimdOnOutcome, aimdOnRateLimit } from "./aimd.js";
+import { CircuitBreaker, ProviderUnavailableError, type BreakerTransition } from "./breaker.js";
 import { Lane, laneMaximum, type WaitingEntry } from "./lanes.js";
 import { selectNext } from "./priority.js";
 import type {
@@ -32,15 +33,22 @@ export const systemSchedulerClock: SchedulerClock = {
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
 };
 
+/** What the owner of a scheduler wants to hear about; a throwing hook never fails the scheduler. */
+export interface AiSchedulerHooks {
+  /** A remote lane's circuit breaker changed state (F3 D32). */
+  onBreakerTransition?: (lane: LaneKey, transition: BreakerTransition) => void;
+}
+
 /**
  * Creates the lane scheduler an `AiService` owns (F3 D29-D31). It has no module state: services
  * that must share lanes (tests that model one machine) share one instance explicitly.
  */
 export function createAiScheduler(
   config: AiLaneRuntimeConfig = defaultAiLaneRuntimeConfig,
-  clock: SchedulerClock = systemSchedulerClock
+  clock: SchedulerClock = systemSchedulerClock,
+  hooks: AiSchedulerHooks = {}
 ): AiScheduler {
-  return new LaneScheduler(aiLaneRuntimeConfigSchema.parse(config), clock);
+  return new LaneScheduler(aiLaneRuntimeConfigSchema.parse(config), clock, hooks);
 }
 
 /**
@@ -55,7 +63,8 @@ export class LaneScheduler implements AiScheduler {
 
   public constructor(
     private readonly config: AiLaneRuntimeConfig,
-    private readonly clock: SchedulerClock = systemSchedulerClock
+    private readonly clock: SchedulerClock = systemSchedulerClock,
+    private readonly hooks: AiSchedulerHooks = {}
   ) {}
 
   public reserve(): LaneReservation {
@@ -66,10 +75,20 @@ export class LaneScheduler implements AiScheduler {
     const signal = ticket.signal;
     if (signal?.aborted) return Promise.reject(signal.reason);
     const lane = this.lane(ticket);
+    // An open breaker fails the entry at once; a half-open one lets exactly one entry probe.
+    const admission = lane.breaker?.admit(this.clock.now());
+    if (admission?.kind === "refuse")
+      return Promise.reject(new ProviderUnavailableError(lane.key, admission.retryAfterMs));
     const reservation = ticket.reservation ?? this.reserve();
     return new Promise<T>((resolve, reject) => {
-      const permit = new Permit(this, lane, ticket, reservation);
-      const waited = this.wait(lane, ticket, reservation, ticket.pauses ?? []);
+      const permit = new Permit(
+        this,
+        lane,
+        ticket,
+        reservation,
+        admission?.kind === "probe" ? admission.token : undefined
+      );
+      const waited = this.wait(lane, ticket, reservation, ticket.pauses ?? [], true);
       waited.then(
         () => {
           permit.started(this.clock.now());
@@ -96,7 +115,10 @@ export class LaneScheduler implements AiScheduler {
             }
           );
         },
-        (error: unknown) => reject(error)
+        (error: unknown) => {
+          permit.finish();
+          reject(error);
+        }
       );
     });
   }
@@ -104,6 +126,7 @@ export class LaneScheduler implements AiScheduler {
   public observeRateLimit(key: LaneKey, retryAt: number | null): void {
     const lane = this.lanes.get(key);
     if (!lane?.adaptive) return;
+    lane.rateLimits += 1;
     lane.aimd = aimdOnRateLimit(lane.aimd, this.config.lanes);
     if (retryAt !== null) {
       const now = this.clock.now();
@@ -117,10 +140,7 @@ export class LaneScheduler implements AiScheduler {
 
   public observeOutcome(key: LaneKey, outcome: LaneOutcome): void {
     const lane = this.lanes.get(key);
-    if (!lane?.adaptive) return;
-    const before = lane.aimd.limit;
-    lane.aimd = aimdOnOutcome(lane.aimd, outcome, this.config.lanes);
-    if (lane.aimd.limit > before) this.schedule();
+    if (lane) this.record(lane, outcome);
   }
 
   public snapshot(): LaneSnapshot[] {
@@ -134,7 +154,9 @@ export class LaneScheduler implements AiScheduler {
       waiting: lane.waitingByPriority(),
       pausedForMs:
         lane.pausedUntil !== null && lane.pausedUntil > now ? lane.pausedUntil - now : null,
-      successStreak: lane.aimd.streak
+      successStreak: lane.aimd.streak,
+      rateLimits: lane.rateLimits,
+      breaker: lane.breaker?.snapshot(now) ?? null
     }));
   }
 
@@ -143,7 +165,8 @@ export class LaneScheduler implements AiScheduler {
     lane: Lane,
     ticket: Pick<LaneTicket, "signal" | "label" | "priority" | "workloadClass">,
     reservation: LaneReservation,
-    pauses: readonly PausableClock[]
+    pauses: readonly PausableClock[],
+    fresh = false
   ): Promise<void> {
     const signal = ticket.signal;
     if (signal?.aborted) return Promise.reject(signal.reason);
@@ -163,6 +186,7 @@ export class LaneScheduler implements AiScheduler {
         priority: ticket.priority,
         label: ticket.label,
         workloadClass: ticket.workloadClass,
+        fresh,
         start: () => {
           signal?.removeEventListener("abort", onAbort);
           resume();
@@ -205,8 +229,13 @@ export class LaneScheduler implements AiScheduler {
     return this.clock.now();
   }
 
-  public observe(lane: Lane, outcome: LaneOutcome): void {
-    this.observeOutcome(lane.key, outcome);
+  /** One response's outcome on a lane; `probe` is the token of a half-open breaker's probe. */
+  public record(lane: Lane, outcome: LaneOutcome, probe?: number): void {
+    if (!lane.adaptive) return;
+    const before = lane.aimd.limit;
+    lane.aimd = aimdOnOutcome(lane.aimd, outcome, this.config.lanes);
+    lane.breaker?.record(outcome, this.clock.now(), probe);
+    if (lane.aimd.limit > before) this.schedule();
   }
 
   public rateLimited(lane: Lane, retryAfterMs: number | null): void {
@@ -220,8 +249,33 @@ export class LaneScheduler implements AiScheduler {
     const existing = this.lanes.get(ticket.lane);
     if (existing) return existing;
     const lane = new Lane(ticket.lane, laneMaximum(ticket.lane, ticket.remoteKind, this.config));
+    if (lane.adaptive)
+      lane.breaker = new CircuitBreaker(this.config.breaker, (transition) =>
+        this.breakerMoved(lane, transition)
+      );
     this.lanes.set(ticket.lane, lane);
     return lane;
+  }
+
+  /**
+   * An opening breaker fails the entries already waiting for the lane, as it fails new ones: they
+   * would otherwise run into the outage one after the other. Calls that already started, and the
+   * re-wait of a call between two attempts, are left to finish.
+   */
+  private breakerMoved(lane: Lane, transition: BreakerTransition): void {
+    if (transition.to === "open") {
+      const failed = lane.waiting.filter((entry) => entry.fresh);
+      for (const entry of failed) {
+        lane.remove(entry);
+        entry.refuse(new ProviderUnavailableError(lane.key, this.config.breaker.openMs));
+      }
+      lane.breaker?.countRefused(failed.length);
+    }
+    try {
+      this.hooks.onBreakerTransition?.(lane.key, transition);
+    } catch {
+      // A listener never fails the scheduler.
+    }
   }
 
   private schedule(): void {
@@ -276,7 +330,9 @@ class Permit implements LanePermit {
     private readonly scheduler: LaneScheduler,
     private readonly laneState: Lane,
     private readonly ticket: LaneTicket,
-    private readonly reservation: LaneReservation
+    private readonly reservation: LaneReservation,
+    /** The token of the half-open breaker's probe this permit is, if it is. */
+    private readonly probe?: number
   ) {}
 
   public get lane(): LaneKey {
@@ -334,13 +390,16 @@ class Permit implements LanePermit {
   }
 
   public observeOutcome(outcome: LaneOutcome): void {
-    this.scheduler.observe(this.laneState, outcome);
+    this.scheduler.record(this.laneState, outcome, this.probe);
   }
 
   /** The execution settled: the slot goes back now, or once every hold settled. */
   public finish(): void {
     if (this.finished) return;
     this.finished = true;
+    // A probe that ended without an answer (cancelled, or it failed before any request) frees the
+    // breaker for the next entry.
+    if (this.probe !== undefined) this.laneState.breaker?.settleProbe(this.probe);
     if (!this.holding) return;
     this.holding = false;
     if (this.holds.length === 0) {

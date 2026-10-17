@@ -29,10 +29,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   happens. An unavailable or incompatible model fails visibly; never fall back silently to another model.
 - Missing routes are seeded only from profiles no less private than the default.
 - Profile, model identity and parameters are pinned at admission; later edits affect new work only.
-- Generated user-visible content uses the global content language, separate from
-  the interface language. Internal identifiers, predicates, keys and enums stay
-  English. Model-facing language names are full English names. Embeddings
-  receive no language instruction.
+- Generated user-visible content uses the global content language, separate from the interface
+  language. Internal identifiers, predicates, keys and enums stay English. Model-facing language
+  names are full English names. Embeddings receive no language instruction.
 
 ## Scheduling and execution
 
@@ -42,7 +41,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 - Calls run in lanes: one local lane for every local runtime and one per remote provider
   configuration, with bounded concurrency that adapts to rate-limit signals. Interactive work is
   admitted first, background classes age so none starves, no call preempts a running one, a retry
-  backoff never holds a lane, and a caller's timeout excludes its wait for a lane.
+  backoff never holds a lane, and a caller's timeout excludes its wait for a lane. A remote lane
+  whose provider keeps failing transiently fails its new calls fast, for a job to retry later, until
+  one probe succeeds; running calls and other lanes are untouched.
 - Remote generation streams, so remote calls have deadlines from execution start (connect, first
   byte, stalled stream, total). Only progress (answer text, or reasoning text before it) keeps a
   stream alive, not bytes or lifecycle events, and unless high-reasoning or local a request must
@@ -70,9 +71,8 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 - Catalog entries pin an immutable repository revision, explicit files, sizes,
   SHA-256 checksums, license, capabilities and memory/platform requirements.
   Imported GGUF files use their SHA-256 as the revision.
-- Downloads use the managed model directory, resumable `.partial` files,
-  preflight, progress, cancellation, checksum verification and atomic promotion;
-  repository tokens live in `safeStorage`.
+- Downloads use the managed model directory, resumable `.partial` files, preflight, progress,
+  cancellation, checksum verification and atomic promotion; repository tokens live in `safeStorage`.
 - A model cannot be removed while loaded, running or required by an active
   route without an explicit replacement flow.
 - Embedding models expose only embedding capabilities, validate dimensions and

@@ -162,6 +162,31 @@ describe("remote calls on scheduler lanes", () => {
     expect(lanes.snapshot()[0]).toMatchObject({ running: 0 });
   });
 
+  it("opens the lane's breaker on five transient attempts in a row, fails the next call fast, then recovers through one probe (D32)", async () => {
+    const lanes = scheduler();
+    const down = () =>
+      remoteCall(lanes, codexTicket(), async () => {
+        throw busy();
+      });
+    // Two calls of three attempts each: the fifth failed attempt opens the breaker.
+    const calls = [down(), down()].map((call) =>
+      expect(call).rejects.toMatchObject({ status: 503 })
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    await Promise.all(calls);
+    expect(lanes.snapshot()[0]!.breaker).toMatchObject({ state: "open", opened: 1 });
+    const attempt = vi.fn(async () => "never");
+    await expect(remoteCall(lanes, codexTicket(), attempt)).rejects.toMatchObject({
+      message: "errors.ai.providerUnavailable",
+      transient: true
+    });
+    expect(attempt).not.toHaveBeenCalled();
+    // Once the period is over a single call probes; its answer closes the breaker.
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(remoteCall(lanes, codexTicket(), async () => "back")).resolves.toBe("back");
+    expect(lanes.snapshot()[0]!.breaker).toMatchObject({ state: "closed", consecutiveFailures: 0 });
+  });
+
   it("reports successes to the lane, which grows back after 20 of them", async () => {
     const lanes = scheduler();
     const ticket = {

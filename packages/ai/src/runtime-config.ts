@@ -147,6 +147,14 @@ export const aiLaneRuntimeConfigSchema = z
         p2ToP1Ms: laneMilliseconds
       })
       .strict(),
+    breaker: z
+      .object({
+        /** Consecutive transient failures of a remote lane that open its breaker (F3 D32). */
+        failureThreshold: z.number().int().min(1).max(1_000),
+        /** How long an open breaker fails new entries fast before it lets one probe through. */
+        openMs: laneMilliseconds
+      })
+      .strict(),
     localDeadlines: z
       .object({
         /** Total deadline of one local call per workload class, from its execution start. */
@@ -177,6 +185,7 @@ export interface AiLaneRuntimeConfigInput {
   mode?: AiLaneRuntimeConfig["mode"];
   lanes?: Partial<AiLaneRuntimeConfig["lanes"]>;
   aging?: Partial<AiLaneRuntimeConfig["aging"]>;
+  breaker?: Partial<AiLaneRuntimeConfig["breaker"]>;
   localDeadlines?: Partial<Omit<AiLocalDeadlines, "totalMs">> & {
     totalMs?: Partial<AiLocalDeadlines["totalMs"]>;
   };
@@ -194,6 +203,7 @@ export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
     maxPauseMs: 60_000
   },
   aging: { p3ToP2Ms: 60_000, p2ToP1Ms: 120_000 },
+  breaker: { failureThreshold: 5, openMs: 30_000 },
   localDeadlines: {
     totalMs: {
       embed: 30_000,
@@ -206,6 +216,34 @@ export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
     graceMs: 2_000
   }
 };
+
+/**
+ * `MEMORA_DEV_LANE_PROBE=<report path>`: the DEV lane probe of F3 B5 (T47b), which measures the
+ * Codex lane at several concurrencies. Ignored, and refused by the probe, in packaged builds.
+ */
+export const aiLaneProbeEnvironmentVariable = "MEMORA_DEV_LANE_PROBE";
+
+/** What the DEV lane probe runs: the concurrencies it tries and how many calls it spends. */
+export const aiLaneProbeConfigSchema = z
+  .object({
+    /** Concurrencies, ascending: the probe stops at the first level that sees a failure. */
+    levels: z
+      .array(z.number().int().min(1).max(8))
+      .min(1)
+      .max(8)
+      .refine((levels) =>
+        levels.every((level, index) => index === 0 || level > levels[index - 1]!)
+      ),
+    /** Calls of the whole probe, shared between the levels in proportion to their concurrency. */
+    calls: z.number().int().min(1).max(500)
+  })
+  .strict()
+  .refine((config) => config.calls >= config.levels.reduce((sum, level) => sum + level, 0));
+
+export type AiLaneProbeConfig = z.infer<typeof aiLaneProbeConfigSchema>;
+
+/** B5: about 40 decide-sized calls (about 60k tokens) at concurrency 1, 2 and 3. */
+export const defaultAiLaneProbeConfig: AiLaneProbeConfig = { levels: [1, 2, 3], calls: 40 };
 
 /**
  * Resolves the lane configuration. Precedence: explicit input, then `MEMORA_AI_LANES` in an
@@ -225,10 +263,15 @@ export function resolveAiLaneRuntimeConfig(
         ? "serial"
         : undefined;
   const { totalMs, ...localDeadlines } = input.localDeadlines ?? {};
+  const lanes = { ...defaultAiLaneRuntimeConfig.lanes, ...definedEntries(input.lanes) };
+  // The DEV lane probe tries concurrencies up to its top level, which the Codex lane must allow.
+  if (!context.packaged && environment[aiLaneProbeEnvironmentVariable]?.trim())
+    lanes.codexMax = Math.max(lanes.codexMax, ...defaultAiLaneProbeConfig.levels);
   return aiLaneRuntimeConfigSchema.parse({
     mode: input.mode ?? fromEnvironment ?? defaultAiLaneRuntimeConfig.mode,
-    lanes: { ...defaultAiLaneRuntimeConfig.lanes, ...definedEntries(input.lanes) },
+    lanes,
     aging: { ...defaultAiLaneRuntimeConfig.aging, ...definedEntries(input.aging) },
+    breaker: { ...defaultAiLaneRuntimeConfig.breaker, ...definedEntries(input.breaker) },
     localDeadlines: {
       ...defaultAiLaneRuntimeConfig.localDeadlines,
       ...definedEntries(localDeadlines),

@@ -345,6 +345,7 @@
     "ai": {
       "noCompatibleModel": "No compatible model is configured.",
       "unsupportedTask": "The selected model cannot run this task.",
+      "providerUnavailable": "The AI provider is not responding. The task will be tried again shortly.",
       "secureStorageUnavailable": "Secure credential storage is unavailable.",
       "missingCredential": "The provider credential is missing.",
       "connectionFailed": "The model connection test failed.",

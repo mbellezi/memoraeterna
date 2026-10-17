@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aiLaneProbeConfigSchema,
+  defaultAiLaneProbeConfig,
   defaultAiLaneRuntimeConfig,
   defaultMlxRuntimeConfig,
   localDeadlineMs,
@@ -43,6 +45,33 @@ describe("resolveAiLaneRuntimeConfig", () => {
       "product"
     );
     expect(resolveAiLaneRuntimeConfig({ mode: "product" }, serial).mode).toBe("product");
+  });
+
+  it("opens a remote lane's breaker after 5 consecutive transient failures for 30 s (D32)", () => {
+    expect(resolveAiLaneRuntimeConfig({}, { environment: {} }).breaker).toEqual({
+      failureThreshold: 5,
+      openMs: 30_000
+    });
+    expect(
+      resolveAiLaneRuntimeConfig({ breaker: { openMs: 5_000 } }, { environment: {} }).breaker
+    ).toEqual({ failureThreshold: 5, openMs: 5_000 });
+    for (const breaker of [{ failureThreshold: 0 }, { openMs: 0 }, { openMs: 3_600_001 }])
+      expect(() => resolveAiLaneRuntimeConfig({ breaker }, { environment: {} })).toThrow();
+  });
+
+  it("lets the DEV lane probe raise the Codex maximum to its top level, never in a packaged build", () => {
+    const probe = { MEMORA_DEV_LANE_PROBE: ".cache/f3/b5/lane-probe.json" };
+    expect(resolveAiLaneRuntimeConfig({}, { environment: probe }).lanes.codexMax).toBe(3);
+    expect(
+      resolveAiLaneRuntimeConfig({ lanes: { codexMax: 5 } }, { environment: probe }).lanes.codexMax
+    ).toBe(5);
+    expect(
+      resolveAiLaneRuntimeConfig({}, { environment: probe, packaged: true }).lanes.codexMax
+    ).toBe(2);
+    expect(
+      resolveAiLaneRuntimeConfig({}, { environment: { MEMORA_DEV_LANE_PROBE: "  " } }).lanes
+        .codexMax
+    ).toBe(2);
   });
 
   it("merges partial input and refuses values outside the schema", () => {
@@ -157,5 +186,27 @@ describe("mlxHelperEnvironment", () => {
       LANG: "en_US.UTF-8",
       MEMORA_MLX_CACHE_LIMIT_MB: "1024"
     });
+  });
+});
+
+describe("lane probe configuration (B5)", () => {
+  it("tries concurrency 1, 2 and 3 with about 40 calls", () => {
+    expect(aiLaneProbeConfigSchema.parse(defaultAiLaneProbeConfig)).toEqual({
+      levels: [1, 2, 3],
+      calls: 40
+    });
+  });
+
+  it("needs ascending levels and at least one call per slot of every level", () => {
+    for (const config of [
+      { levels: [], calls: 40 },
+      { levels: [2, 1], calls: 40 },
+      { levels: [1, 1], calls: 40 },
+      { levels: [0, 1], calls: 40 },
+      { levels: [1, 2, 3], calls: 5 },
+      { levels: [1, 2, 3], calls: 40, extra: 1 }
+    ])
+      expect(aiLaneProbeConfigSchema.safeParse(config).success).toBe(false);
+    expect(aiLaneProbeConfigSchema.safeParse({ levels: [1, 2, 3], calls: 6 }).success).toBe(true);
   });
 });

@@ -347,6 +347,7 @@
     "ai": {
       "noCompatibleModel": "Aucun modele compatible n'est configure.",
       "unsupportedTask": "Le modele selectionne ne peut pas executer cette tache.",
+      "providerUnavailable": "Le fournisseur d'IA ne repond pas. La tache sera reessayee sous peu.",
       "secureStorageUnavailable": "Le stockage securise des identifiants est indisponible.",
       "missingCredential": "L'identifiant du fournisseur est manquant.",
       "connectionFailed": "Le test de connexion au modele a echoue.",

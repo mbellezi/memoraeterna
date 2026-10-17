@@ -66,6 +66,7 @@ import {
   type RankRequest,
   type RankResult,
   type LanePermit,
+  type LaneSnapshot,
   ActiveDeadline,
   aiCassetteReplayedUsageKey,
   bindLanePermit,
@@ -78,6 +79,7 @@ import {
   LocalRankerError,
   localRuntimeWedgedError,
   priorityNumber,
+  ProviderUnavailableError,
   remoteTotalDeadlineMs,
   requestWorkloadClass,
   resolveAiLaneRuntimeConfig,
@@ -521,7 +523,18 @@ export class AiService {
     this.mlxHost = options.mlxHost ?? null;
     this.laneConfig = resolveAiLaneRuntimeConfig(options.lanes, { packaged: options.isPackaged });
     this.remoteRuntime = resolveAiRuntimeConfig(options.runtime);
-    this.scheduler = options.scheduler ?? createAiScheduler(this.laneConfig);
+    this.scheduler =
+      options.scheduler ??
+      createAiScheduler(this.laneConfig, undefined, {
+        // A breaker moving is the one lane event worth a line: it explains the calls that fail fast.
+        onBreakerTransition: (lane, { from, to, reason }) =>
+          options.logger?.info(`AI lane ${lane}: circuit breaker ${from} -> ${to} (${reason})`)
+      });
+  }
+
+  /** The state of every lane the scheduler has seen: limits, waits, rate limits and breakers. */
+  public laneSnapshots(): LaneSnapshot[] {
+    return this.scheduler.snapshot();
   }
 
   public async listProviders(): Promise<AiProviderConfig[]> {
@@ -1192,6 +1205,7 @@ export class AiService {
     // The admission is reserved now, so FIFO order and aging count from here while the source-free
     // routing preparation reads the route that decides the lane, without model loading or telemetry.
     const reservation = this.scheduler.reserve();
+    const admittedAt = Date.now();
     // Preparing and waiting for the lane do not count against the caller's own timeout.
     const deadline = ActiveDeadline.of(signal);
     deadline?.pause();
@@ -1208,15 +1222,17 @@ export class AiService {
       );
       if (!admission) return null;
       const { lane, remoteKind } = executionLane(admission.selection);
+      const priority = aiTaskPriority(context);
+      const workloadClass = requestWorkloadClass({
+        taskType: task,
+        workloadClass: context.workloadClass
+      });
       const execution = this.scheduler.run(
         {
           lane,
           remoteKind,
-          priority: aiTaskPriority(context),
-          workloadClass: requestWorkloadClass({
-            taskType: task,
-            workloadClass: context.workloadClass
-          }),
+          priority,
+          workloadClass,
           signal,
           label: context.operation ?? context.stage ?? task,
           reservation,
@@ -1240,7 +1256,28 @@ export class AiService {
       );
       // The scheduler stops the caller's clock itself while the call waits for its lane.
       prepared();
-      const complete = await execution;
+      const complete = await execution.catch((error: unknown) => {
+        if (!(error instanceof ProviderUnavailableError)) throw error;
+        // An open circuit breaker failed the call fast (D32): nothing was sent, the audit says so.
+        const deadlineMs = this.callDeadlineMs(admission.selection, task, context.workloadClass);
+        return () =>
+          this.recordUnstartedTask(
+            task,
+            context,
+            signal,
+            pinned,
+            { ...admission, queueMs: Date.now() - admittedAt },
+            error,
+            (failure) =>
+              laneAudit(
+                { lane, workloadClass, priority, releasedMs: 0, requeueMs: 0 },
+                deadlineMs,
+                context,
+                signal,
+                failure
+              )
+          );
+      });
       // The lane is free again: the audit and the monitoring entry are written outside it.
       return await complete();
     } finally {
@@ -3011,7 +3048,7 @@ type LaneAuditFields = {
  * re-waits for it. `failure` is set when the call failed.
  */
 function laneAudit(
-  permit: LanePermit,
+  permit: Pick<LanePermit, "lane" | "workloadClass" | "priority" | "releasedMs" | "requeueMs">,
   deadlineMs: number,
   context: Pick<AiTaskLogContext, "isRepair" | "operation">,
   signal: AbortSignal | undefined,

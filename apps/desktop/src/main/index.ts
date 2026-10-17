@@ -52,6 +52,7 @@ import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
+import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
@@ -640,9 +641,14 @@ void app.whenReady().then(() => {
           return;
         }
         // A verdict-only source pair run leaves the library alone: only the local models (the decider
-        // may be one) start, so no job, capture or vault sync can change it meanwhile.
+        // may be one) start, so no job, capture or vault sync can change it meanwhile. So does the
+        // DEV lane probe (MEMORA_DEV_LANE_PROBE, F3 B5): nothing else may use the lane it measures.
+        const laneProbe = laneProbeRequested(process.env, {
+          isPackaged: app.isPackaged,
+          workspaceRoot
+        });
         const verdictOnly =
-          goldenRun?.sourcePairs?.mode === "verdict_only" || notePairs !== undefined;
+          goldenRun?.sourcePairs?.mode === "verdict_only" || notePairs !== undefined || laneProbe;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!verdictOnly) await topicTreeServices?.start();
         await Promise.all([
@@ -716,6 +722,28 @@ void app.whenReady().then(() => {
                 error instanceof Error ? error.message : String(error)
               )
             );
+        }
+        // DEV-only lane probe (MEMORA_DEV_LANE_PROBE=<report path>, F3 B5): decide-sized calls at
+        // concurrency 1, 2 and 3 through the AI service, a JSON report, then quit. Refused (logged,
+        // ignored) when packaged or together with another DEV measurement knob.
+        if (process.env.MEMORA_DEV_LANE_PROBE) {
+          void runLaneProbe({
+            env: process.env,
+            isPackaged: app.isPackaged,
+            workspaceRoot,
+            ai: aiService!,
+            logger: console
+          })
+            .then((outcome) => {
+              if (outcome === "done" || outcome === "failed") app.quit();
+            })
+            .catch((error: unknown) => {
+              console.error(
+                "LANE_PROBE failed:",
+                error instanceof Error ? error.message : String(error)
+              );
+              if (!app.isPackaged) app.quit();
+            });
         }
         void goldenRun?.start();
         void notePairs?.start();

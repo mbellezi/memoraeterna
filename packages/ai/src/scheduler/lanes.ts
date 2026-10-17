@@ -2,6 +2,7 @@ import type { AiWorkloadClass } from "../contracts.js";
 import { isLocalEndpoint } from "../remote-execution.js";
 import type { AiLaneRuntimeConfig } from "../runtime-config.js";
 import { initialAimd, type AimdState } from "./aimd.js";
+import type { CircuitBreaker } from "./breaker.js";
 import type { RankedEntry } from "./priority.js";
 import type { AiPriority, LaneKey, LaneRefusal, RemoteLaneKind } from "./types.js";
 
@@ -59,6 +60,11 @@ export function laneMaximum(
 export interface WaitingEntry extends RankedEntry {
   readonly label: string;
   readonly workloadClass: AiWorkloadClass;
+  /**
+   * A new entry, which an opening circuit breaker fails fast; false for the re-wait of a running
+   * call after a retry backoff, which the breaker leaves alone.
+   */
+  readonly fresh: boolean;
   /** Called once the lane counted the entry as running. */
   readonly start: () => void;
   /** Called once the lane removed the entry to fail it. */
@@ -73,6 +79,10 @@ export class Lane {
   public held = 0;
   public pausedUntil: number | null = null;
   public pauseTimer: unknown = undefined;
+  /** Rate limits observed since the lane was created. */
+  public rateLimits = 0;
+  /** The circuit breaker of a remote lane (F3 D32). */
+  public breaker: CircuitBreaker | null = null;
   public readonly waiting: WaitingEntry[] = [];
   /** Held slots that fail the lane's entries meanwhile; the latest one makes the error. */
   public readonly refusals: LaneRefusal[] = [];
