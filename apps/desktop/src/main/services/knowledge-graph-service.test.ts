@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import type { AiService } from "./ai-service.js";
+import { setExtractionPin } from "./extraction-pin.js";
 import { KnowledgeService } from "./knowledge-service.js";
 
 const mocks = vi.hoisted(() => ({
@@ -45,6 +46,8 @@ const entity = (key: string, alias: string) => ({
   confidence: 0.9,
   evidenceChunkIds: [alias]
 });
+
+afterEach(() => setExtractionPin(false));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -240,5 +243,157 @@ describe("knowledge graph generation for a stored source", () => {
     expect(new Set(atomic).size).toBe(1);
     expect(atomic[0]).toContain("[n1; evidence=c2]");
     expect(atomic[0]).toContain("[n2; evidence=c1]");
+  });
+});
+
+describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)", () => {
+  const longChunks = Array.from({ length: 6 }, (_unused, index) => ({
+    id: `chunk-${index}`,
+    chunkIndex: index,
+    content: `Excerpt ${index}: ${"The curve falls fast. ".repeat(65)}`,
+    sourceSpanId: null
+  }));
+  const answer = (output: unknown) => ({
+    taskType: "knowledge-graph-generation",
+    output: JSON.stringify(output),
+    providerId: "test",
+    modelId: "mock",
+    runtime: "remote",
+    durationMs: 1,
+    aiTaskRunId: "run-1",
+    profileId: "profile-1",
+    outputLanguage: "en"
+  });
+  const run = async (
+    locality: "local" | "remote" | null,
+    options: { knowledgeGraphMaxInputCharacters?: number } = {},
+    output: unknown = { entities: [], relations: [] }
+  ) => {
+    mocks.chunks.listByDocument.mockResolvedValue(longChunks);
+    const runDefaultTask = vi.fn<
+      (task: string, prompt: string) => Promise<ReturnType<typeof answer>>
+    >(async () => answer(output));
+    const taskRouteLocality = vi.fn(async () => locality);
+    const traces: Array<{ operation: string; details: Record<string, unknown> }> = [];
+    const traceOperation = vi.fn(
+      async (
+        operation: string,
+        _context: unknown,
+        task: () => Promise<unknown>,
+        details: Record<string, unknown> = {}
+      ) => {
+        traces.push({ operation, details });
+        return task();
+      }
+    );
+    const service = new KnowledgeService({
+      getPool: () => ({}) as PgPool,
+      aiService: { runDefaultTask, taskRouteLocality, traceOperation } as unknown as AiService,
+      userDataPath: "/tmp/memora-test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null,
+      ...options
+    });
+    await service.generateKnowledgeGraph(sourceItemId, documentId);
+    return {
+      prompts: runDefaultTask.mock.calls.map((call) => String(call[1])),
+      taskRouteLocality,
+      traces
+    };
+  };
+
+  it("asks which locality the graph writer has, with the operation a real call states", async () => {
+    const { taskRouteLocality } = await run("remote");
+    expect(taskRouteLocality).toHaveBeenCalledWith("knowledge-graph-generation", {
+      operation: "graph_source_chunks"
+    });
+  });
+
+  it("sends a remote writer larger batches with 24/24 caps", async () => {
+    const { prompts } = await run("remote");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("at most 24 entities and 24 relations");
+  });
+
+  it("keeps a local writer, or an unknown one, on 3,500 characters and 12/12 caps", async () => {
+    for (const locality of ["local", null] as const) {
+      const { prompts } = await run(locality);
+      expect(prompts).toHaveLength(3);
+      expect(prompts[0]).toContain("at most 12 entities and 12 relations");
+    }
+  });
+
+  it("pins a remote writer to the recorded batch", async () => {
+    setExtractionPin(true);
+    const { prompts } = await run("remote");
+    expect(prompts).toHaveLength(3);
+    expect(prompts[0]).toContain("at most 12 entities and 12 relations");
+  });
+
+  it("lets an explicit batch size override the writer's", async () => {
+    const { prompts } = await run("remote", { knowledgeGraphMaxInputCharacters: 3_500 });
+    expect(prompts).toHaveLength(3);
+  });
+
+  it("records the items it dropped with no call as salvaged_items", async () => {
+    const bad = {
+      entities: [entity("e1", "c1"), entity("e2", "c1")],
+      relations: [
+        {
+          subjectEntityKey: "e1",
+          predicate: "relates_to",
+          displayLabel: "Relates to",
+          definition: "The subject relates to the object.",
+          objectEntityKey: "nobody",
+          confidence: 0.9,
+          evidenceChunkIds: ["c1"]
+        }
+      ]
+    };
+    const { prompts, traces } = await run("remote", {}, bad);
+    // Two batches, one dropped relation each, no repair call.
+    expect(prompts).toHaveLength(2);
+    expect(traces.find((trace) => trace.operation === "graph_salvage")?.details).toEqual({
+      salvaged_items: 2,
+      normalized: 0,
+      dropped: { unknown_entity_key: 2 }
+    });
+  });
+
+  it("records nothing for a pinned run, which repairs instead of salvaging", async () => {
+    setExtractionPin(true);
+    const bad = {
+      entities: [entity("e1", "c1")],
+      relations: [
+        {
+          subjectEntityKey: "e1",
+          predicate: "relates_to",
+          displayLabel: "Relates to",
+          definition: "The subject relates to the object.",
+          objectEntityKey: "nobody",
+          confidence: 0.9,
+          evidenceChunkIds: ["c1"]
+        }
+      ]
+    };
+    mocks.chunks.listByDocument.mockResolvedValue(longChunks.slice(0, 1));
+    const good = { entities: [entity("e1", "c1")], relations: [] };
+    const runDefaultTask = vi
+      .fn()
+      .mockResolvedValueOnce(answer(bad))
+      .mockResolvedValueOnce(answer(good));
+    const traceOperation = vi.fn(
+      async (_op: string, _context: unknown, task: () => Promise<unknown>) => task()
+    );
+    const service = new KnowledgeService({
+      getPool: () => ({}) as PgPool,
+      aiService: { runDefaultTask, traceOperation } as unknown as AiService,
+      userDataPath: "/tmp/memora-test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null
+    });
+    await service.generateKnowledgeGraph(sourceItemId, documentId);
+    expect(runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(traceOperation.mock.calls.map((call) => call[0])).not.toContain("graph_salvage");
   });
 });

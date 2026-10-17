@@ -8,6 +8,7 @@ import {
 import { contentKey } from "./content-order.js";
 import { noteMatchDecisionOperations, withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
+import { isExtractionPinned } from "./extraction-pin.js";
 import { matchSources } from "./source-relation-processing.js";
 import {
   AtomicNoteMatchingSettingsSchema,
@@ -15,6 +16,7 @@ import {
   type AtomicNoteRelationType,
   CanonicalMatchingSettingsSchema,
   generativeDeciderCapabilities,
+  knowledgeGraphBatchFor,
   noteRelationPair,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
@@ -172,16 +174,17 @@ export interface KnowledgeGraphGenerationContext {
 export class KnowledgeService {
   private readonly relationThreshold: number;
   private readonly summaryMaxInputCharacters: number;
-  private readonly knowledgeGraphMaxInputCharacters: number;
+  /** An explicit batch size; absent, the batch follows the writer's locality (F3 D36). */
+  private readonly knowledgeGraphMaxInputCharacters: number | null;
   private readonly sourceDeletionService: SourceDeletionService;
 
   public constructor(private readonly options: KnowledgeServiceOptions) {
     this.relationThreshold = clamp(options.relationThreshold ?? 0.72);
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
-    this.knowledgeGraphMaxInputCharacters = Math.max(
-      2_000,
-      options.knowledgeGraphMaxInputCharacters ?? 3_500
-    );
+    this.knowledgeGraphMaxInputCharacters =
+      options.knowledgeGraphMaxInputCharacters === undefined
+        ? null
+        : Math.max(2_000, options.knowledgeGraphMaxInputCharacters);
     this.sourceDeletionService = new SourceDeletionService({
       getPool: options.getPool,
       getStorageSettings: options.getStorageSettings,
@@ -871,7 +874,8 @@ export class KnowledgeService {
           );
           stage = "output_validation";
           return execution;
-        }
+        },
+        { pinned: isExtractionPinned() }
       );
       if (!generatedResult)
         return { configured: false, generatedCount: 0, noteIds: [] as string[] };
@@ -1106,7 +1110,28 @@ export class KnowledgeService {
     const canonicalSettings = CanonicalMatchingSettingsSchema.parse(
       (await this.options.getCanonicalMatchingSettings?.()) ?? {}
     );
+    // The recording-era path under MEMORA_GOLDEN_PIN=extraction (D5); otherwise batches by writer (D36).
+    const pinned = isExtractionPinned();
+    const locality =
+      typeof this.options.aiService.taskRouteLocality === "function"
+        ? await this.options.aiService.taskRouteLocality("knowledge-graph-generation", {
+            operation: "graph_source_chunks"
+          })
+        : null;
+    const batch = knowledgeGraphBatchFor(locality, { pinned });
+    const batchLimits = { maxEntities: batch.maxEntities, maxRelations: batch.maxRelations };
+    const maxInputCharacters = this.knowledgeGraphMaxInputCharacters ?? batch.maxInputCharacters;
+    const salvaged = { items: 0, normalized: 0, dropped: {} as Record<string, number> };
+    const onSalvage: NonNullable<
+      Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[4]
+    >["onSalvage"] = ({ salvage }) => {
+      salvaged.items += salvage.salvagedItems;
+      salvaged.normalized += salvage.normalized;
+      for (const [reason, count] of Object.entries(salvage.dropped))
+        salvaged.dropped[reason] = (salvaged.dropped[reason] ?? 0) + (count ?? 0);
+    };
     const resolveTypes = createRelationTypeResolver({
+      pinned,
       settings: canonicalSettings,
       pool,
       ai: this.options.aiService,
@@ -1122,6 +1147,7 @@ export class KnowledgeService {
       ...(signal ? { signal } : {})
     });
     const resolveEntities = createEntityIdentityResolver({
+      pinned,
       settings: canonicalSettings,
       pool,
       ai: this.options.aiService,
@@ -1181,10 +1207,13 @@ export class KnowledgeService {
             signal
           )
         ),
-      this.knowledgeGraphMaxInputCharacters,
+      maxInputCharacters,
       {
         completedBatches,
         inputKind: processingMode ? "catalog_metadata" : "source_chunks",
+        pinned,
+        batchLimits,
+        onSalvage,
         resolveRelations,
         checkpointNamespace: "source",
         chunkPositions: positions,
@@ -1238,10 +1267,13 @@ export class KnowledgeService {
                   signal
                 )
               ),
-            this.knowledgeGraphMaxInputCharacters,
+            maxInputCharacters,
             {
               completedBatches,
               inputKind: "atomic_notes",
+              pinned,
+              batchLimits,
+              onSalvage,
               resolveRelations,
               checkpointNamespace: "atomic_notes",
               chunkPositions: positions,
@@ -1276,6 +1308,13 @@ export class KnowledgeService {
     };
     const finalExecution = generated.executions.at(-1);
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
+    // Items dropped with no call are counted apart from repairs (D35): `salvaged_items` in the monitoring.
+    if (salvaged.items > 0)
+      await trace("graph_salvage", async () => undefined, {
+        salvaged_items: salvaged.items,
+        normalized: salvaged.normalized,
+        dropped: salvaged.dropped
+      });
     const repository = createKnowledgeGraphRepository(pool);
     const hierarchy = createHierarchicalIngestionRepository(pool);
     const revisionId = await hierarchy.ensureCurrentDocumentRevision(

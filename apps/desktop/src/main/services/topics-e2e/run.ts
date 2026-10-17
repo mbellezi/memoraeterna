@@ -16,7 +16,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AiCassette, setAiAdapterDecorator } from "@app/ai";
+import { AiCassette, readAiCassetteLocalMisses, setAiAdapterDecorator } from "@app/ai";
 import {
   closePgPool,
   createPgPool,
@@ -31,6 +31,7 @@ import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import { registerIpcHandlers } from "../../ipc.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { AiService } from "../ai-service.js";
+import { readE2ePinConfig, setExtractionPin } from "../extraction-pin.js";
 import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker.js";
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
@@ -253,7 +254,17 @@ async function runPass(
     );
     if (Number(empty.rows[0]?.n) !== 0) throw new Error("The scratch database is not empty");
 
-    const cassette = new AiCassette({ mode, directory: cassetteDir });
+    // MEMORA_GOLDEN_PIN (F3 D5, default `extraction`: the cassette is F2-era) and the local-miss replay
+    // policy (D41) are DEV knobs of this runner, as they are of the golden runner.
+    const pin = readE2ePinConfig(deps.env);
+    setExtractionPin(pin);
+    log("pin", { mode: pin.mode });
+    const localMisses = readAiCassetteLocalMisses(deps.env);
+    const cassette = new AiCassette({
+      mode,
+      directory: cassetteDir,
+      ...(localMisses === "live" ? { localMisses } : {})
+    });
     if (mode === "record" && config.maxTokens !== null) cassette.limitLiveTokens(config.maxTokens);
     const syntheticLang = config.synthetic ? syntheticLanguage(locale) : null;
     setAiAdapterDecorator((adapter) =>
@@ -559,6 +570,7 @@ async function runPass(
     return { mode, report, store, markdown, workDir, kept: keep };
   } finally {
     setAiAdapterDecorator(null);
+    setExtractionPin(false);
     await jobs?.stop().catch(() => undefined);
     topicServices?.dispose();
     await ai?.dispose().catch(() => undefined);

@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { z } from "zod";
+import { AiOutputSchemaSchema } from "@app/domain";
 
 import type {
   AiModelAdapter,
@@ -24,13 +25,25 @@ import type {
 export const aiCassetteModes = ["off", "record", "replay"] as const;
 export type AiCassetteMode = (typeof aiCassetteModes)[number];
 
+/**
+ * What a replay does with a request the cassette does not hold (F3 D41). `fail` is the replay's
+ * contract. `live` (`MEMORA_AI_CASSETTE_LOCAL_MISSES=live`, DEV, golden and E6 runners) lets a miss on a
+ * local runtime (ranker, local writer, local embedder) run live, recorded into the cassette copy and
+ * counted by task; a miss on a remote runtime still fails.
+ */
+export const aiCassetteLocalMissPolicies = ["fail", "live"] as const;
+export type AiCassetteLocalMissPolicy = (typeof aiCassetteLocalMissPolicies)[number];
+
 export interface AiCassetteConfig {
   mode: "record" | "replay";
   directory: string;
+  /** The replay policy for a miss on a local runtime; `fail` when absent. */
+  localMisses?: AiCassetteLocalMissPolicy;
 }
 
 export type AiCassetteErrorCode =
   | "invalid_mode"
+  | "invalid_local_misses"
   | "missing_directory"
   | "packaged_build"
   | "directory_outside_cache"
@@ -87,7 +100,12 @@ export interface AiCassetteStats {
   served: number;
   recorded: number;
   misses: number;
-  byTask: Record<string, { served: number; recorded: number; misses: number }>;
+  /** Replay misses on a local runtime that ran live under the `live` policy (counted apart from misses). */
+  liveLocalMisses?: number;
+  byTask: Record<
+    string,
+    { served: number; recorded: number; misses: number; liveLocalMisses?: number }
+  >;
   /** Input plus output tokens of the live remote calls made through this cassette (record mode). */
   liveTokens: number;
   /** The live-token cap enforced before every live call, or null when there is none. */
@@ -138,10 +156,26 @@ const entrySchema = z
     key: z.string().regex(sha256Pattern),
     taskType: z.string().min(1),
     request: z.unknown(),
+    /** The strict schema the request carried, for audit only: it is never part of the key (D35). */
+    outputSchema: AiOutputSchemaSchema.optional(),
     responses: z.array(recordedResponseSchema).min(1)
   })
   .strict();
 type CassetteEntry = z.infer<typeof entrySchema>;
+
+/** Reads `MEMORA_AI_CASSETTE_LOCAL_MISSES`: `fail` unless it says `live`; anything else is an error. */
+export function readAiCassetteLocalMisses(
+  env: Readonly<Record<string, string | undefined>>
+): AiCassetteLocalMissPolicy {
+  const raw = env.MEMORA_AI_CASSETTE_LOCAL_MISSES?.trim() ?? "";
+  const policy = (raw === "" ? "fail" : raw) as AiCassetteLocalMissPolicy;
+  if (!aiCassetteLocalMissPolicies.includes(policy))
+    throw new AiCassetteError(
+      "invalid_local_misses",
+      `MEMORA_AI_CASSETTE_LOCAL_MISSES must be one of ${aiCassetteLocalMissPolicies.join(", ")}`
+    );
+  return policy;
+}
 
 /**
  * Reads the cassette configuration from the environment. Returns null when cassettes are off and
@@ -167,6 +201,7 @@ export function resolveAiCassetteConfig(
       "missing_directory",
       "MEMORA_AI_CASSETTE_DIR is required when MEMORA_AI_CASSETTE is record or replay"
     );
+  const localMisses = readAiCassetteLocalMisses(env);
   const cacheRoot = resolve(options.baseDirectory, ".cache");
   const resolved = resolve(options.baseDirectory, directory);
   const inside = relative(cacheRoot, resolved);
@@ -175,7 +210,11 @@ export function resolveAiCassetteConfig(
       "directory_outside_cache",
       `MEMORA_AI_CASSETTE_DIR must be a folder inside ${cacheRoot} (git-ignored): cassettes hold full prompts and outputs`
     );
-  return { mode: mode as AiCassetteConfig["mode"], directory: resolved };
+  return {
+    mode: mode as AiCassetteConfig["mode"],
+    directory: resolved,
+    ...(localMisses === "live" ? { localMisses } : {})
+  };
 }
 
 /** Builds the cassette from the environment, or returns null when cassettes are off. */
@@ -272,6 +311,7 @@ export function canonicalJson(
 export class AiCassette {
   public readonly mode: AiCassetteConfig["mode"];
   public readonly directory: string;
+  private readonly localMisses: AiCassetteLocalMissPolicy;
   private readonly entries = new Map<string, CassetteEntry | null>();
   private readonly occurrences = new Map<string, number>();
   private readonly locks = new Map<string, Promise<unknown>>();
@@ -281,6 +321,7 @@ export class AiCassette {
     served: 0,
     recorded: 0,
     misses: 0,
+    liveLocalMisses: 0,
     byTask: {},
     liveTokens: 0,
     missDetails: []
@@ -292,6 +333,7 @@ export class AiCassette {
   ) {
     this.mode = config.mode;
     this.directory = config.directory;
+    this.localMisses = config.localMisses ?? "fail";
     this.prepareDirectory();
   }
 
@@ -385,7 +427,13 @@ export class AiCassette {
         onProgress?.({ progress: 1 });
         return replayedResult(request, recorded, requestKey.ids, performance.now() - startedAt);
       }
-      if (this.mode === "replay") {
+      // A local miss may run live under the `live` policy; any other replay miss fails its call.
+      const liveLocalMiss =
+        this.mode === "replay" &&
+        this.localMisses === "live" &&
+        adapter.describe().runtime === "local";
+      if (liveLocalMiss) this.count(request.taskType, "liveLocalMisses");
+      if (this.mode === "replay" && !liveLocalMiss) {
         const requestPath = await this.saveMiss(requestKey, request.taskType, occurrence, entry);
         this.count(request.taskType, "misses");
         if (this.counters.missDetails.length < maxMissDetails)
@@ -412,23 +460,30 @@ export class AiCassette {
       if (result.runtime === "remote")
         this.counters.liveTokens += (result.inputTokens ?? 0) + (result.outputTokens ?? 0);
       const response = recordedResponse(result, requestKey.ids, this.now());
+      const outputSchema = entry?.outputSchema ?? request.outputSchema;
       await this.writeEntry({
         format: entryFormat,
         version: 1,
         key,
         taskType: request.taskType,
         request: JSON.parse(requestKey.canonical) as unknown,
+        ...(outputSchema ? { outputSchema } : {}),
         responses: [...(entry?.responses ?? []), response]
       });
       this.occurrences.set(key, occurrence + 1);
-      this.count(request.taskType, "recorded");
+      if (!liveLocalMiss) this.count(request.taskType, "recorded");
       return result;
     });
   }
 
-  private count(taskType: string, field: "served" | "recorded" | "misses") {
+  private count(taskType: string, field: "served" | "recorded" | "misses" | "liveLocalMisses") {
     this.counters[field] += 1;
-    const task = (this.counters.byTask[taskType] ??= { served: 0, recorded: 0, misses: 0 });
+    const task = (this.counters.byTask[taskType] ??= {
+      served: 0,
+      recorded: 0,
+      misses: 0,
+      liveLocalMisses: 0
+    });
     task[field] += 1;
   }
 

@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   AiCapabilitySchema,
   AiModelParameterCapabilitiesSchema,
+  AiOutputSchemaSchema,
+  AiSchemaModeSchema,
   AiTaskTypeSchema,
   type AiCapability
 } from "@app/domain";
@@ -52,7 +54,12 @@ export const aiTaskRequestSchema = z
     /** The class the caller stated; absent, the task type's class applies (deadlines only). */
     workloadClass: aiWorkloadClassSchema.optional(),
     /** The calling operation, which may have its own route (`op:<operation>`). */
-    operation: z.string().min(1).max(200).optional()
+    operation: z.string().min(1).max(200).optional(),
+    /**
+     * The JSON Schema of the answer (F3 D35), present only for a strict-compatible contract. Adapters
+     * map it to their wire format. It is kept out of the cassette key; the entry body stores it.
+     */
+    outputSchema: AiOutputSchemaSchema.optional()
   })
   .strict();
 export type AiTaskRequest = z.infer<typeof aiTaskRequestSchema>;
@@ -76,6 +83,8 @@ export const aiTaskResultSchema = z
      * sent without the reasoning summary), so the audit records what the provider received.
      */
     requestOptions: z.record(z.string(), z.json()).optional(),
+    /** How structured output was requested from the runtime that answered; absent when unknown. */
+    schemaMode: AiSchemaModeSchema.optional(),
     /**
      * Tokens the provider reported for attempts that failed before the answer. They are already part of
      * the totals above wherever the answer's own count is known.

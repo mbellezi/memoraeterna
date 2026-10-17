@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { processingPresetStages } from "@app/domain";
 import type { SourceRelationChunk } from "@app/db";
 import type { AiCassetteStats } from "@app/ai";
@@ -33,6 +33,7 @@ import {
   type GoldenManifest,
   type GoldenRunOptions
 } from "./golden-runner.js";
+import { isExtractionPinned, setExtractionPin } from "./extraction-pin.js";
 import { createTopicTreeServices } from "./topic-tree/index.js";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -330,7 +331,9 @@ describe("golden run environment", () => {
       maxLiveTokens: 500000,
       only: null,
       sourcePairsPath: null,
-      topics: { golden: true, mode: "deterministic", arrival: "per-source" }
+      topics: { golden: true, mode: "deterministic", arrival: "per-source" },
+      pin: { read: true, mode: "extraction" },
+      schemaProbeCalls: null
     });
     expect(
       readGoldenRunEnvironment(
@@ -1639,6 +1642,179 @@ describe("golden source pair verdicts", () => {
         })
       )
     ).rejects.toThrow("cannot read");
+    expect(services.calls).toEqual([]);
+  });
+});
+
+describe("golden pin: MEMORA_GOLDEN_PIN (F3 D5)", () => {
+  const options = { isPackaged: false, workspaceRoot: "/repo" };
+
+  afterEach(() => setExtractionPin(false));
+
+  it("pins extraction by default in a golden run, and `off` runs the product path", () => {
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json" }, options)?.pin).toEqual({
+      read: true,
+      mode: "extraction"
+    });
+    expect(
+      readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_PIN: "off" }, options)
+        ?.pin
+    ).toEqual({ read: true, mode: "off" });
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_PIN: "everything" },
+        options
+      )
+    ).toThrow("MEMORA_GOLDEN_PIN must be extraction or off");
+    // No golden run, no pin: the knob is not even parsed.
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_PIN: "everything" }, options)).toBeNull();
+  });
+
+  it("sets the pin once the run is prepared, and not when the preparation is refused", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const refused = fakeServices({ pendingJobs: [{ type: "ingestion", count: 1 }] });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, refused, {
+          env: {
+            MEMORA_GOLDEN_RUN: manifestPath,
+            MEMORA_GOLDEN_MAX_TOKENS: "1000000",
+            MEMORA_GOLDEN_TOPICS: "full"
+          },
+          topicBarrier: { hold: () => undefined, release: () => undefined }
+        })
+      )
+    ).rejects.toThrow("idle job queue");
+    expect(isExtractionPinned()).toBe(false);
+
+    const services = fakeServices();
+    await prepareGoldenRun(prepareInput(manifestPath, services));
+    expect(isExtractionPinned()).toBe(true);
+
+    const unpinned = fakeServices();
+    await prepareGoldenRun(
+      prepareInput(manifestPath, unpinned, {
+        env: {
+          MEMORA_GOLDEN_RUN: manifestPath,
+          MEMORA_GOLDEN_MAX_TOKENS: "1000000",
+          MEMORA_GOLDEN_PIN: "off"
+        }
+      })
+    );
+    expect(isExtractionPinned()).toBe(false);
+  });
+});
+
+describe("golden schema probe: MEMORA_GOLDEN_SCHEMA_PROBE (F3 T55)", () => {
+  const probeEnv = (manifestPath: string, extra: Record<string, string> = {}) => ({
+    MEMORA_GOLDEN_RUN: manifestPath,
+    MEMORA_GOLDEN_MAX_TOKENS: "50000",
+    MEMORA_GOLDEN_EXIT: "1",
+    MEMORA_GOLDEN_SCHEMA_PROBE: "3",
+    ...extra
+  });
+  const answer = {
+    output: '{"verdict":"same","reason":"They match."}',
+    schemaMode: "strict",
+    inputTokens: 90,
+    outputTokens: 9
+  };
+
+  it("reads the call count only inside a golden run and rejects a bad one", () => {
+    const options = { isPackaged: false, workspaceRoot: "/repo" };
+    expect(
+      readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json" }, options)?.schemaProbeCalls
+    ).toBeNull();
+    expect(
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_SCHEMA_PROBE: "3" },
+        options
+      )?.schemaProbeCalls
+    ).toBe(3);
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_SCHEMA_PROBE: "99" },
+        options
+      )
+    ).toThrow("must be an integer from 1 to 20");
+  });
+
+  it("runs the probe instead of the manifest, as a verdict-only run, and writes its summary", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices();
+    const runDefaultTask = vi.fn(async () => answer as never);
+    const quit = vi.fn();
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, {
+        env: probeEnv(manifestPath),
+        ai: { runDefaultTask },
+        quit
+      })
+    );
+    // The app reads this to start neither the job supervisor nor the topic engine.
+    expect(run.sourcePairs).toEqual({ mode: "verdict_only", pairs: 3 });
+    // The library was not read and no backup was taken: the probe only adds AI audit rows.
+    expect(services.calls).toEqual([["limitLiveTokens", 50_000]]);
+
+    const summary = await run.start();
+    expect(summary).toMatchObject({
+      format: "memora-golden-run",
+      mode: "schema_probe",
+      status: "completed",
+      probe: { calls: 3, answered: 3, valid: 3, invalid: 0, schemaModes: { strict: 3 } }
+    });
+    expect(runDefaultTask).toHaveBeenCalledTimes(3);
+    expect(quit).toHaveBeenCalledTimes(1);
+    const runs = join(workspace, ".cache", "golden", "runs");
+    const [name] = await readdir(runs);
+    const written = JSON.parse(await readFile(join(runs, name!, "summary.json"), "utf8"));
+    expect(written).toMatchObject({ mode: "schema_probe", probe: { valid: 3 } });
+    expect(JSON.stringify(written)).not.toContain("They match.");
+  });
+
+  it("reports a probe with an invalid or failed call as completed with failures", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const runDefaultTask = vi
+      .fn()
+      .mockResolvedValueOnce({ ...answer, output: "not json" })
+      .mockRejectedValueOnce(new Error("AI provider request failed (400)."))
+      .mockResolvedValueOnce(answer);
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, fakeServices(), {
+        env: probeEnv(manifestPath, { MEMORA_GOLDEN_EXIT: "0" }),
+        ai: { runDefaultTask }
+      })
+    );
+    await expect(run.start()).resolves.toMatchObject({
+      status: "completed_with_failures",
+      probe: { answered: 2, valid: 1, invalid: 1, failed: 1 }
+    });
+  });
+
+  it("runs alone: a reset or a pair list beside it is refused before anything changes", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices();
+    for (const extra of [
+      { MEMORA_GOLDEN_RESET: "1" },
+      { MEMORA_GOLDEN_SOURCE_PAIRS: "pairs.json" }
+    ])
+      await expect(
+        prepareGoldenRun(
+          prepareInput(manifestPath, services, {
+            env: probeEnv(manifestPath, extra),
+            ai: { runDefaultTask: vi.fn() }
+          })
+        )
+      ).rejects.toThrow("MEMORA_GOLDEN_SCHEMA_PROBE runs alone");
+    expect(services.calls).toEqual([]);
+  });
+
+  it("needs the AI service and is refused before anything changes without it", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices();
+    await expect(
+      prepareGoldenRun(prepareInput(manifestPath, services, { env: probeEnv(manifestPath) }))
+    ).rejects.toThrow("MEMORA_GOLDEN_SCHEMA_PROBE needs the AI service");
     expect(services.calls).toEqual([]);
   });
 });

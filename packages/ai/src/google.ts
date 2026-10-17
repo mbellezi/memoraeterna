@@ -1,5 +1,5 @@
 import { normalizeTokenUsage } from "./token-usage.js";
-import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
+import type { AiCapability, AiReasoningLevel, AiSchemaMode, AiTaskType } from "@app/domain";
 
 import type {
   AiModelAdapter,
@@ -53,6 +53,19 @@ const generationTasks = new Set<AiTaskType>([
   "reranking",
   "writing-assistance"
 ]);
+
+/** Tasks whose answer is JSON: they ask for the JSON mime type at least. */
+const jsonTasks: ReadonlySet<AiTaskType> = new Set([
+  "structured-output",
+  "knowledge-graph-generation",
+  "atomic-note-generation",
+  "reranking"
+]);
+
+/** How a request asks for structured output: a strict schema, the JSON mime type, or nothing. */
+function googleSchemaMode(request: AiTaskRequest): AiSchemaMode {
+  return request.outputSchema ? "strict" : jsonTasks.has(request.taskType) ? "json" : "none";
+}
 
 export class GoogleGeminiAdapter implements AiModelAdapter {
   private readonly fetchImplementation: typeof fetch;
@@ -196,6 +209,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        schemaMode: googleSchemaMode(request),
         tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google"),
         ...(payload.usageMetadata?.promptTokenCount !== undefined
           ? { inputTokens: payload.usageMetadata.promptTokenCount }
@@ -285,6 +299,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        schemaMode: googleSchemaMode(request),
         tokenUsage: streamed.tokenUsage,
         ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
         ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
@@ -297,14 +312,14 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     return {
       contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
       generationConfig: {
-        ...([
-          "structured-output",
-          "knowledge-graph-generation",
-          "atomic-note-generation",
-          "reranking"
-        ].includes(request.taskType)
-          ? { responseMimeType: "application/json" }
-          : {}),
+        ...(request.outputSchema
+          ? {
+              responseMimeType: "application/json",
+              responseJsonSchema: request.outputSchema.schema
+            }
+          : jsonTasks.has(request.taskType)
+            ? { responseMimeType: "application/json" }
+            : {}),
         ...googleGenerationParameters(request.parameters, modelId)
       }
     };

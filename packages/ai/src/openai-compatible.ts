@@ -1,5 +1,5 @@
 import { normalizeTokenUsage } from "./token-usage.js";
-import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
+import type { AiCapability, AiReasoningLevel, AiSchemaMode, AiTaskType } from "@app/domain";
 
 import type {
   AiModelAdapter,
@@ -25,13 +25,20 @@ import {
   type AiRuntimeConfigInput,
   type RemoteAttempt,
   type RemoteCallOptions,
-  type RemoteCallReport
+  type RemoteCallReport,
+  type RemoteRequestOptions
 } from "./remote-execution.js";
 import {
   effectiveReasoningLevel,
   isOpenAiReasoningModel,
   openAiReasoningEffort
 } from "./reasoning.js";
+
+/** Whether one request sends its strict schema, and why not when it does not. */
+interface ResponseFormatState {
+  schema: boolean;
+  fallback?: "refused" | "refused_earlier";
+}
 
 export interface OpenAiCompatibleAdapterOptions {
   baseUrl: string;
@@ -47,6 +54,23 @@ export interface OpenAiCompatibleAdapterOptions {
 
 /** Endpoints whose server refused `stream_options`: they stream without usage from then on. */
 const streamUsageRejected = new Set<string>();
+
+/**
+ * Configurations (endpoint and model) whose server refused a `json_schema` response format and then
+ * accepted `json_object` (F3 D35). Their later requests of this process send `json_object` at once.
+ */
+const jsonSchemaRejected = new Set<string>();
+
+/** A 400 or 422 that names the structured response format as the parameter at fault. */
+const responseFormatParameter = /\bresponse_format\b|\bjson_schema\b/i;
+
+/** Tasks whose answer is JSON: they ask for at least `json_object`. */
+const jsonObjectTasks: ReadonlySet<AiTaskType> = new Set([
+  "structured-output",
+  "knowledge-graph-generation",
+  "atomic-note-generation",
+  "reranking"
+]);
 
 const generationTasks = new Set<AiTaskType>([
   "text-generation",
@@ -173,19 +197,37 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         report
       );
     }
+    let schemaMode = this.requestedSchemaMode(request);
     const payload = await this.remoteCall(
       { request, streaming: false, signal, report: reportTo },
-      async (call) =>
-        parseResponse<{
+      async (call) => {
+        const format = this.responseFormat(request);
+        const open = () =>
+          this.request(
+            call,
+            "/chat/completions",
+            {
+              method: "POST",
+              body: JSON.stringify(this.generationBody(request, false, true, format))
+            },
+            this.schemaWireOptions(request, format)
+          );
+        let response = await open();
+        if (format.schema && (response.status === 400 || response.status === 422)) {
+          const rejection = await call.guard(providerHttpError(response));
+          if (!responseFormatParameter.test(rejection.message)) throw rejection;
+          // Fall back once to `json_object`; the next attempts of this call keep it.
+          jsonSchemaRejected.add(this.schemaKey(request));
+          format.schema = false;
+          format.fallback = "refused";
+          response = await open();
+        }
+        schemaMode = format.schema ? "strict" : this.requestedSchemaMode(request);
+        return parseResponse<{
           choices?: Array<{ message?: { content?: string } }>;
           usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
-        }>(
-          await this.request(call, "/chat/completions", {
-            method: "POST",
-            body: JSON.stringify(this.generationBody(request, false))
-          }),
-          call
-        )
+        }>(response, call);
+      }
     );
     const output = payload.choices?.[0]?.message?.content;
     if (output === undefined) throw new Error("AI generation response did not contain content.");
@@ -197,6 +239,8 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         modelId: request.modelId ?? this.options.modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        schemaMode,
+        ...(report?.requestOptions ? { requestOptions: report.requestOptions } : {}),
         tokenUsage: normalizeTokenUsage(payload.usage),
         ...(payload.usage?.prompt_tokens !== undefined
           ? { inputTokens: payload.usage.prompt_tokens }
@@ -218,6 +262,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     const startedAt = performance.now();
     const progress = monotonicProgress(onProgress);
     let report: RemoteCallReport | undefined;
+    let schemaMode = this.requestedSchemaMode(request);
     const streamed = await this.remoteCall(
       {
         request,
@@ -228,22 +273,38 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         }
       },
       async (call) => {
-        const open = (includeUsage: boolean) =>
-          this.request(call, "/chat/completions", {
-            method: "POST",
-            body: JSON.stringify(this.generationBody(request, true, includeUsage))
-          });
-        let response = await open(!streamUsageRejected.has(this.options.baseUrl));
-        // Some OpenAI-compatible servers reject `stream_options`; ask again without it and remember it.
-        if (
-          !streamUsageRejected.has(this.options.baseUrl) &&
-          (response.status === 400 || response.status === 422)
+        const format = this.responseFormat(request);
+        let includeUsage = !streamUsageRejected.has(this.options.baseUrl);
+        const open = () =>
+          this.request(
+            call,
+            "/chat/completions",
+            {
+              method: "POST",
+              body: JSON.stringify(this.generationBody(request, true, includeUsage, format))
+            },
+            this.schemaWireOptions(request, format)
+          );
+        let response = await open();
+        // Some OpenAI-compatible servers reject `stream_options` or the `json_schema` response format;
+        // ask again without the one that was named and remember it.
+        for (
+          let fallbacks = 0;
+          fallbacks < 2 && (response.status === 400 || response.status === 422);
+          fallbacks += 1
         ) {
           const rejection = await call.guard(providerHttpError(response));
-          if (!/stream_options|include_usage/i.test(rejection.message)) throw rejection;
-          streamUsageRejected.add(this.options.baseUrl);
-          response = await open(false);
+          if (format.schema && responseFormatParameter.test(rejection.message)) {
+            jsonSchemaRejected.add(this.schemaKey(request));
+            format.schema = false;
+            format.fallback = "refused";
+          } else if (includeUsage && /stream_options|include_usage/i.test(rejection.message)) {
+            streamUsageRejected.add(this.options.baseUrl);
+            includeUsage = false;
+          } else throw rejection;
+          response = await open();
         }
+        schemaMode = format.schema ? "strict" : this.requestedSchemaMode(request);
         let output = "";
         let tokenUsage: Record<string, number> = {};
         let inputTokens: number | undefined;
@@ -290,6 +351,8 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         modelId: request.modelId ?? this.options.modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        schemaMode,
+        ...(report?.requestOptions ? { requestOptions: report.requestOptions } : {}),
         tokenUsage: streamed.tokenUsage,
         ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
         ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
@@ -301,28 +364,63 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   private generationBody(
     request: AiTaskRequest,
     stream: boolean,
-    includeUsage = true
+    includeUsage = true,
+    format: ResponseFormatState = this.responseFormat(request)
   ): Record<string, unknown> {
+    const schema = request.outputSchema;
     return {
       model: request.modelId ?? this.options.modelId,
       messages: [{ role: "user", content: readText(request.input) }],
       ...(stream
         ? { stream: true, ...(includeUsage ? { stream_options: { include_usage: true } } : {}) }
         : {}),
-      ...([
-        "structured-output",
-        "knowledge-graph-generation",
-        "atomic-note-generation",
-        "reranking"
-      ].includes(request.taskType)
-        ? { response_format: { type: "json_object" } }
-        : {}),
+      ...(schema && format.schema
+        ? {
+            response_format: {
+              type: "json_schema",
+              json_schema: { name: schema.name, schema: schema.schema, strict: schema.strict }
+            }
+          }
+        : schema || jsonObjectTasks.has(request.taskType)
+          ? { response_format: { type: "json_object" } }
+          : {}),
       ...openAiGenerationParameters(
         request.parameters,
         request.modelId ?? this.options.modelId,
         this.options.baseUrl
       )
     };
+  }
+
+  /** The key a refused `json_schema` format is remembered under: the endpoint and the model. */
+  private schemaKey(request: AiTaskRequest): string {
+    return `${this.options.baseUrl}\u0000${request.modelId ?? this.options.modelId}`;
+  }
+
+  /** Whether this request sends its strict schema: not when the configuration refused one before. */
+  private responseFormat(request: AiTaskRequest): ResponseFormatState {
+    if (!request.outputSchema) return { schema: false };
+    return jsonSchemaRejected.has(this.schemaKey(request))
+      ? { schema: false, fallback: "refused_earlier" }
+      : { schema: true };
+  }
+
+  /** The mode of a request that sends no strict schema: JSON tasks ask for `json_object`, others for nothing. */
+  private requestedSchemaMode(request: AiTaskRequest): AiSchemaMode {
+    return request.outputSchema || jsonObjectTasks.has(request.taskType) ? "json" : "none";
+  }
+
+  /** The wire options of a request with a schema, for the audit; none for any other request. */
+  private schemaWireOptions(
+    request: AiTaskRequest,
+    format: ResponseFormatState
+  ): RemoteRequestOptions | undefined {
+    return request.outputSchema
+      ? {
+          schemaMode: format.schema ? "strict" : "json",
+          ...(format.fallback ? { schemaFallback: format.fallback } : {})
+        }
+      : undefined;
   }
 
   private remoteCall<T>(
@@ -339,7 +437,12 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     );
   }
 
-  private request(call: RemoteAttempt, path: string, init: RequestInit): Promise<Response> {
+  private request(
+    call: RemoteAttempt,
+    path: string,
+    init: RequestInit,
+    wireOptions?: RemoteRequestOptions
+  ): Promise<Response> {
     return call.fetch(
       this.fetchImplementation,
       `${this.options.baseUrl.replace(/\/$/, "")}${path}`,
@@ -349,7 +452,8 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
           "content-type": "application/json",
           authorization: `Bearer ${this.options.apiKey}`
         }
-      }
+      },
+      wireOptions
     );
   }
 }

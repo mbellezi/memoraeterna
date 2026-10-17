@@ -101,6 +101,7 @@ import {
   type PromptPin,
   type PromptCompositionSnapshot,
   AiCapabilitySchema,
+  AiSchemaModeSchema,
   OrganizationProfileSchema,
   type OrganizationProfile,
   normalizeAiModelParameters,
@@ -108,7 +109,9 @@ import {
   generativeDeciderCapabilities,
   supportsTask,
   type AiCapability,
-  type AiModelParameterCapabilities
+  type AiModelParameterCapabilities,
+  type AiOutputSchema,
+  type AiSchemaMode
 } from "@app/domain";
 import type {
   AiProfile,
@@ -418,6 +421,11 @@ export interface AiTaskLogContext {
   priority?: AiPriorityInput;
   /** A second call for the same items after a validation failure; operations named `*_repair` are. */
   isRepair?: boolean;
+  /**
+   * The strict JSON Schema of the answer (F3 D35), only for a contract that passed the strict
+   * compatibility check. The request carries it; the monitoring context does not.
+   */
+  outputSchema?: AiOutputSchema;
   onProgress?: (event: AiProgressEvent) => void;
   onProviderStart?: () => Promise<void>;
 }
@@ -990,6 +998,24 @@ export class AiService {
       : null;
   }
 
+  /**
+   * Where the model a task is routed to runs: `local` for a local runtime or an endpoint on this
+   * machine, `remote` for a provider, null when no route serves the task. Work that is sized by the
+   * writer (F3 D36) asks before it plans; the answer follows the route keys a real call resolves.
+   */
+  public async taskRouteLocality(
+    task: RoutedTask,
+    context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
+  ): Promise<"local" | "remote" | null> {
+    const selection = await createAiConfigRepository(this.requirePool()).getDefaultTask(
+      task,
+      undefined,
+      taskRouteKeys(task, context)
+    );
+    if (!selection) return null;
+    return isRemoteExecution(selection) ? "remote" : "local";
+  }
+
   public async pinOrganizationProfile(
     profileId: string | undefined,
     _legacyPrivacy: "offline_only" | "allow_remote"
@@ -1236,7 +1262,7 @@ export class AiService {
     admission: PromptAdmission,
     permit: LanePermit
   ): Promise<() => Promise<DefaultAiTaskResult>> {
-    const { onProgress, onProviderStart, ...structuredLogContext } = logContext;
+    const { onProgress, onProviderStart, outputSchema, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     const selection = admission.selection;
@@ -1381,7 +1407,8 @@ export class AiService {
         metadata: { applicationInstruction: admission.instruction },
         // A stated class sets the deadlines; the operation names the caller.
         ...(logContext.workloadClass ? { workloadClass: logContext.workloadClass } : {}),
-        ...requestOperation(logContext.operation)
+        ...requestOperation(logContext.operation),
+        ...(outputSchema ? { outputSchema } : {})
       };
       // The adapter's signal carries the lane permit, so retry backoffs sleep off the lane.
       const execution = laneSignal(signal, permit);
@@ -1458,6 +1485,7 @@ export class AiService {
           durationMs: result.durationMs,
           ...queueAndAttempt(admission, logContext),
           ...lane(),
+          ...(result.schemaMode ? { schemaMode: result.schemaMode } : {}),
           status: "succeeded",
           sourceItemIds
         });
@@ -1515,6 +1543,7 @@ export class AiService {
           ...queueAndAttempt(admission, logContext),
           ...failedCallUsage(caught),
           ...lane({ error }),
+          ...failedSchemaMode(failedReport?.requestOptions),
           status: signal?.aborted ? "canceled" : "failed",
           error: redactSensitiveText(error),
           sourceItemIds
@@ -2999,6 +3028,14 @@ function laneAudit(
     retryWaitMs: permit.releasedMs,
     requeueMs: permit.requeueMs
   };
+}
+
+/** The schema mode of the last request a failed call started, when its adapter stated one. */
+function failedSchemaMode(
+  options: Record<string, unknown> | undefined
+): { schemaMode: AiSchemaMode } | Record<string, never> {
+  const mode = AiSchemaModeSchema.safeParse(options?.schemaMode);
+  return mode.success ? { schemaMode: mode.data } : {};
 }
 
 /** Rejects as soon as `signal` aborts, so an admission is cancelled promptly while it prepares. */

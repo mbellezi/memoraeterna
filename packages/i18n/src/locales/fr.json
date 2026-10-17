@@ -298,6 +298,10 @@
       "invalidOutput": "L’IA a renvoyé une décision d’équivalence invalide.",
       "catalogChanged": "Le catalogue des relations a changé plusieurs fois. Réessayez."
     },
+    "entityIdentity": {
+      "invalidOutput": "L’IA a renvoyé une décision d’identité d’entité invalide.",
+      "catalogChanged": "Le catalogue des entités a changé plusieurs fois. Réessayez."
+    },
     "relationLabels": {
       "invalidOutput": "L’IA a renvoyé des descriptions de relations invalides."
     },

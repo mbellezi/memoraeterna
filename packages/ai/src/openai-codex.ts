@@ -1,5 +1,5 @@
 import { normalizeTokenUsage } from "./token-usage.js";
-import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
+import type { AiCapability, AiReasoningLevel, AiSchemaMode, AiTaskType } from "@app/domain";
 
 import type {
   AiModelAdapter,
@@ -50,6 +50,31 @@ const encryptedReasoning = "reasoning.encrypted_content";
  * has nothing to do with the shape never costs the lean shape.
  */
 const refusedLeanDecideShapes = new Set<string>();
+
+/**
+ * Backends (base URL and model) that refused a strict `text.format` schema and then accepted the same
+ * request without it (F3 D35). Their later requests of this process go without it at once. As with the
+ * lean shape, a refusal is remembered only once the request without the schema is accepted.
+ */
+const refusedSchemaShapes = new Set<string>();
+
+/** The parameter a provider names when it refuses the structured-output format. */
+const schemaFormatParameter =
+  /\btext\.format\b|\bjson_schema\b|\bresponse_format\b|\binvalid schema\b|(["'`])(?:format|schema)\1/i;
+
+/**
+ * Whether a refused request is an invalid-request answer (400 or 422) that names the strict
+ * schema format as the parameter at fault. Auth, WAF, transient failures and prompt problems never
+ * qualify.
+ */
+function refusesSchemaFormat(error: AiProviderError): boolean {
+  return (
+    !error.transient &&
+    error.kind === "http" &&
+    (error.status === 400 || error.status === 422) &&
+    schemaFormatParameter.test(error.message)
+  );
+}
 
 /**
  * A parameter name of the lean shape as a provider states it, not a word of prose: a path
@@ -183,6 +208,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     let report: RemoteCallReport | undefined;
     // This call met a refusal of the lean shape; its later attempts go straight to the full shape.
     let refusedInCall = false;
+    // The same for the strict schema format (F3 D35): a refusal is a schema fallback, not a repair.
+    let schemaRefusedInCall = false;
+    // How the request the backend accepted asked for structured output.
+    let schemaMode: AiSchemaMode = "none";
     const streamed = await this.remoteCall(
       {
         request,
@@ -198,27 +227,53 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         // backend refused that shape before.
         const refusedBefore = decide && refusedLeanDecideShapes.has(shapeKey);
         const known = refusedInCall ? "refused" : refusedBefore ? "refused_earlier" : undefined;
+        const schemaKnown = !request.outputSchema
+          ? undefined
+          : schemaRefusedInCall
+            ? "refused"
+            : refusedSchemaShapes.has(shapeKey)
+              ? "refused_earlier"
+              : undefined;
+        let lean = decide && known === undefined;
+        let leanDecideShape = known;
+        let withSchema = request.outputSchema !== undefined && schemaKnown === undefined;
+        let schemaFallback: "refused" | "refused_earlier" | undefined = schemaKnown;
         // The wire options go with each request, so the audit has them even when the call fails.
-        const send = (lean: boolean, leanDecideShape?: "refused" | "refused_earlier") => {
-          const body = codexRequestBody(request, modelId, lean);
+        const send = () => {
+          const body = codexRequestBody(request, modelId, lean, withSchema);
+          schemaMode = withSchema ? "strict" : "none";
           return this.request(
             call,
             `${this.baseUrl}/responses`,
             { method: "POST", body: JSON.stringify(body.payload) },
-            leanDecideShape ? { ...body.options, leanDecideShape } : body.options
+            {
+              ...body.options,
+              ...(leanDecideShape ? { leanDecideShape } : {}),
+              ...(schemaFallback ? { schemaFallback } : {})
+            }
           );
         };
-        let response = await send(decide && known === undefined, known);
-        if (!response.ok) {
+        let response = await send();
+        // A refusal names the parameter at fault, so each fallback drops only that one; the next
+        // attempt of this call keeps it dropped.
+        for (let fallbacks = 0; !response.ok && fallbacks < 2; fallbacks += 1) {
           const failure = await call.guard(providerHttpError(response));
-          if (!decide || known !== undefined || !refusesLeanDecideShape(failure)) throw failure;
-          // Fall back once to the previous shape; the next attempt of this call keeps it.
-          refusedInCall = true;
-          response = await send(false, "refused");
-          if (!response.ok) throw await call.guard(providerHttpError(response));
+          if (withSchema && refusesSchemaFormat(failure)) {
+            withSchema = false;
+            schemaRefusedInCall = true;
+            schemaFallback = "refused";
+          } else if (lean && refusesLeanDecideShape(failure)) {
+            // Fall back once to the previous shape.
+            lean = false;
+            refusedInCall = true;
+            leanDecideShape = "refused";
+          } else throw failure;
+          response = await send();
         }
+        if (!response.ok) throw await call.guard(providerHttpError(response));
         // The backend accepted the full shape after it refused the lean one: keep that from now on.
         if (refusedInCall) refusedLeanDecideShapes.add(shapeKey);
+        if (schemaRefusedInCall) refusedSchemaShapes.add(shapeKey);
 
         let output = "";
         let tokenUsage: Record<string, number> = {};
@@ -286,6 +341,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
         requestOptions: report?.requestOptions ?? {},
+        schemaMode,
         tokenUsage: streamed.tokenUsage,
         ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
         ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
@@ -342,7 +398,8 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
 function codexRequestBody(
   request: AiTaskRequest,
   modelId: string,
-  lean: boolean
+  lean: boolean,
+  withSchema = false
 ): { payload: Record<string, unknown>; options: RemoteRequestOptions } {
   const reasoningLevel =
     typeof request.parameters.reasoningLevel === "string"
@@ -365,7 +422,20 @@ function codexRequestBody(
           ? request.metadata.applicationInstruction
           : "",
       input: [{ role: "user", content: [{ type: "input_text", text: readText(request.input) }] }],
-      text: { verbosity: "low" },
+      text: {
+        // A strict schema the backend accepts; the answer is validated by its consumer all the same.
+        ...(withSchema && request.outputSchema
+          ? {
+              format: {
+                type: "json_schema",
+                name: request.outputSchema.name,
+                schema: request.outputSchema.schema,
+                strict: request.outputSchema.strict
+              }
+            }
+          : {}),
+        verbosity: "low"
+      },
       ...(include.length > 0 ? { include } : {}),
       ...(reasoningEffort
         ? {
@@ -376,7 +446,8 @@ function codexRequestBody(
     options: {
       reasoningEffort: reasoningEffort ?? null,
       reasoningSummary: summary ?? null,
-      include
+      include,
+      ...(request.outputSchema ? { schemaMode: withSchema ? "strict" : "none" } : {})
     }
   };
 }

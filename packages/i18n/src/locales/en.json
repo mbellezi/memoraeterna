@@ -298,6 +298,10 @@
       "invalidOutput": "The AI returned an invalid relation equivalence decision.",
       "catalogChanged": "The relation catalog changed repeatedly. Retry the operation."
     },
+    "entityIdentity": {
+      "invalidOutput": "The AI returned an invalid entity identity decision.",
+      "catalogChanged": "The entity catalog changed repeatedly. Retry the operation."
+    },
     "relationLabels": { "invalidOutput": "The AI returned invalid relation descriptions." },
     "common": {
       "unknown": "Something went wrong.",

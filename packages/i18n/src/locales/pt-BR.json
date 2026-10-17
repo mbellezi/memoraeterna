@@ -298,6 +298,10 @@
       "invalidOutput": "A IA retornou uma decisão inválida de equivalência entre relações.",
       "catalogChanged": "O catálogo de relações mudou repetidamente. Tente novamente."
     },
+    "entityIdentity": {
+      "invalidOutput": "A IA retornou uma decisão inválida de identidade de entidade.",
+      "catalogChanged": "O catálogo de entidades mudou repetidamente. Tente novamente."
+    },
     "relationLabels": { "invalidOutput": "A IA retornou descrições de relações inválidas." },
     "common": {
       "unknown": "Algo deu errado.",

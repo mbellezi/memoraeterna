@@ -30,3 +30,5 @@ export * from "./note-page.js";
 export * from "./relation-explanation.js";
 export * from "./topics.js";
 export * from "./topic-overview.js";
+export * from "./structured-output.js";
+export * from "./knowledge-graph-batching.js";

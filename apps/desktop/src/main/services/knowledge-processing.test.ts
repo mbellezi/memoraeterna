@@ -720,7 +720,10 @@ describe("knowledge processing", () => {
           evidenceChunkIds: ["chunk-1"]
         }
       ],
-      run
+      run,
+      undefined,
+      // The recording-era path (F3 D5): the whole answer is repaired, nothing is salvaged.
+      { pinned: true }
     );
 
     expect(result?.batches[0]?.relations).toEqual([]);

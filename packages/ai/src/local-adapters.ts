@@ -1,4 +1,9 @@
-import type { AiCapability, AiModelParameterCapabilities } from "@app/domain";
+import type {
+  AiCapability,
+  AiModelParameterCapabilities,
+  AiOutputSchema,
+  AiSchemaMode
+} from "@app/domain";
 
 import {
   aiTaskRequestSchema,
@@ -119,6 +124,8 @@ export interface LocalExecutionResult {
   inputTokens?: number;
   outputTokens?: number;
   durationMs: number;
+  /** How the runtime constrained the answer (`grammar` for a GGUF schema grammar); `none` when it did not. */
+  schemaMode?: AiSchemaMode;
 }
 
 export class NodeLlamaCppAdapter implements AiModelAdapter {
@@ -128,6 +135,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     modelPath: string;
     prompt: string;
     parameters: Record<string, unknown>;
+    outputSchema?: AiOutputSchema;
     signal?: AbortSignal;
     onProgress?: AiProgressListener;
   }) => Promise<LocalExecutionResult>;
@@ -144,6 +152,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
       modelPath: string;
       prompt: string;
       parameters: Record<string, unknown>;
+      outputSchema?: AiOutputSchema;
       signal?: AbortSignal;
       onProgress?: AiProgressListener;
     }) => Promise<LocalExecutionResult>,
@@ -203,6 +212,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
             modelPath: this.options.modelPath,
             prompt: promptFromInput(input.input),
             parameters: input.parameters,
+            ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
             signal: bounded
           })
     );
@@ -226,6 +236,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
           modelPath: this.options.modelPath,
           prompt: promptFromInput(input.input),
           parameters: input.parameters,
+          ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
           signal: bounded,
           onProgress: (event) => {
             touch();
@@ -399,12 +410,20 @@ class NodeLlamaRuntime {
   public async generate(input: {
     prompt: string;
     parameters: Record<string, unknown>;
+    outputSchema?: AiOutputSchema;
     signal?: AbortSignal;
     onProgress?: AiProgressListener;
   }): Promise<LocalExecutionResult> {
     const startedAt = Date.now();
     await this.load(input.signal);
     const model = this.model!;
+    // A schema becomes a grammar that only lets the model write answers of that shape (F3 D35). A
+    // schema the grammar compiler refuses leaves the call unconstrained, and the result says so.
+    const grammar = input.outputSchema
+      ? await this.llama!.createGrammarForJsonSchema(input.outputSchema.schema as never).catch(
+          () => null
+        )
+      : null;
     const context = await model.createContext({
       contextSize: contextSizeParameter(input.parameters.contextWindow),
       ...(input.signal ? { createSignal: input.signal } : {})
@@ -415,6 +434,7 @@ class NodeLlamaRuntime {
       let outputCharacters = 0;
       const maxTokens = numberParameter(input.parameters.maxTokens, 1_024);
       const output = await session.prompt(input.prompt, {
+        ...(grammar ? { grammar } : {}),
         maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
         temperature: numberParameter(input.parameters.temperature, 0.2),
         ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
@@ -436,7 +456,8 @@ class NodeLlamaRuntime {
         output,
         inputTokens,
         outputTokens: model.tokenize(output).length,
-        durationMs: Date.now() - startedAt
+        durationMs: Date.now() - startedAt,
+        schemaMode: grammar ? "grammar" : "none"
       };
     } finally {
       await context.dispose();
@@ -567,6 +588,7 @@ function taskResult(
     modelId,
     runtime: "local",
     durationMs: result.durationMs,
+    ...(request.taskType !== "embedding" ? { schemaMode: result.schemaMode ?? "none" } : {}),
     ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
     ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
     costEstimate: 0

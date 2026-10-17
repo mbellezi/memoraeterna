@@ -1,8 +1,10 @@
 import { compareContent } from "./content-order.js";
+import { StructuredItemsError, salvageKnowledgeGraph, type GraphSalvage } from "./graph-salvage.js";
 import { renderPrompt, changedPromptIdentity } from "./prompt-runtime.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  AtomicNoteGenerationCandidateSchema,
   AtomicNoteGenerationOutputSchema,
   defaultAtomicNoteMatchingSettings,
   type AtomicNoteMatchingSettings,
@@ -10,7 +12,8 @@ import {
   KnowledgeGraphGenerationOutputSchema,
   type AtomicNoteGenerationOutput,
   type AtomicNoteRelationType,
-  type KnowledgeGraphGenerationOutput
+  type KnowledgeGraphGenerationOutput,
+  validateItems
 } from "@app/domain";
 
 export const summaryPromptVersion = "summary-v3";
@@ -147,6 +150,15 @@ export interface KnowledgeGraphGenerationOptions {
     batch: KnowledgeGraphGenerationOutput
   ) => Promise<KnowledgeGraphGenerationOutput>;
   extractionLimits?: KnowledgeGraphExtractionLimits;
+  /**
+   * The recording-era parse path (F3 D5): the whole answer is validated strictly and repaired as a
+   * whole, with no salvage. Pinned runs set it so every recorded repair replays.
+   */
+  pinned?: boolean;
+  /** The hard caps one call states (D36: 24/24 on a remote writer, 12/12 otherwise); 12/12 when left out. */
+  batchLimits?: KnowledgeGraphExtractionLimits;
+  /** Called for every batch whose answer was salvaged, so the items dropped with no call are counted. */
+  onSalvage?: (input: { batchIndex: number; salvage: GraphSalvage; repaired: boolean }) => void;
   onBatchCompleted?: (input: {
     completed: number;
     total: number;
@@ -324,9 +336,13 @@ export async function generateKnowledgeGraphFromAtomicNotes(
     if (remaining && remaining.maxEntities <= 0) break;
     const group = groups[batchIndex] ?? [];
     const evidenceAliases = createEvidenceAliases(group, options.chunkPositions);
+    const callCaps = options.batchLimits ?? { maxEntities: 12, maxRelations: 12 };
     const batchLimits = {
-      maxEntities: Math.min(12, remaining?.maxEntities ?? 12),
-      maxRelations: Math.min(12, remaining?.maxRelations ?? 12)
+      maxEntities: Math.min(callCaps.maxEntities, remaining?.maxEntities ?? callCaps.maxEntities),
+      maxRelations: Math.min(
+        callCaps.maxRelations,
+        remaining?.maxRelations ?? callCaps.maxRelations
+      )
     };
     const execution = await run(
       buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits),
@@ -341,8 +357,23 @@ export async function generateKnowledgeGraphFromAtomicNotes(
     if (!execution) return null;
     let parsed: KnowledgeGraphGenerationOutput;
     let finalExecution = execution;
+    // A pinned run parses as the recording did: strict, repaired as a whole, nothing salvaged.
+    const parse = options.pinned
+      ? (output: unknown) => ({
+          output: parseKnowledgeGraphOutput(output, evidenceAliases),
+          salvage: null
+        })
+      : (output: unknown) => {
+          const salvage = salvageKnowledgeGraph(parseJsonOutput(output), evidenceAliases);
+          if (salvage.nothingValid)
+            throw new StructuredItemsError("knowledge_graph_nothing_valid", salvage.problems);
+          return { output: salvage.output, salvage };
+        };
     try {
-      parsed = parseKnowledgeGraphOutput(execution.output, evidenceAliases);
+      const first = parse(execution.output);
+      parsed = first.output;
+      if (first.salvage?.salvagedItems)
+        options.onSalvage?.({ batchIndex, salvage: first.salvage, repaired: false });
     } catch (initialError) {
       const repaired = await run(
         buildKnowledgeGraphRepairPrompt(
@@ -364,7 +395,10 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       );
       if (!repaired) throw initialError;
       try {
-        parsed = parseKnowledgeGraphOutput(repaired.output, evidenceAliases);
+        const second = parse(repaired.output);
+        parsed = second.output;
+        if (second.salvage?.salvagedItems)
+          options.onSalvage?.({ batchIndex, salvage: second.salvage, repaired: true });
       } catch (repairError) {
         throw new Error(
           `knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`
@@ -511,10 +545,55 @@ export function parseAtomicNoteGenerationOutput(
   return value;
 }
 
+export interface AtomicNoteGenerationOptions {
+  /** The recording-era path (F3 D5): the whole answer is validated and repaired as a whole. */
+  pinned?: boolean;
+}
+
+interface AtomicNoteItems {
+  valid: AtomicNoteGenerationOutput["notes"];
+  invalid: Array<{ raw: unknown; problems: string[] }>;
+}
+
+/**
+ * Reads a note answer item by item (F3 D35): a note that fails its schema, or cites a chunk the
+ * batch does not have, is set aside with what was wrong; the others are kept. A malformed answer as a
+ * whole (not JSON, no note list) throws.
+ */
+function atomicNoteItems(output: unknown, allowedChunkIds: ReadonlySet<string>): AtomicNoteItems {
+  const value = normalizeAtomicNoteGenerationOutput(parseJsonOutput(output));
+  const notes =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>).notes
+      : undefined;
+  if (!Array.isArray(notes))
+    throw new StructuredItemsError("atomic_note_output_shape", [
+      "root: the answer must be one JSON object with a notes list"
+    ]);
+  const checked = validateItems(notes, AtomicNoteGenerationCandidateSchema);
+  const items: AtomicNoteItems = {
+    valid: [],
+    invalid: checked.invalid.map(({ raw, problems }) => ({ raw, problems }))
+  };
+  for (const { index, value: note } of checked.valid) {
+    if (note.evidenceChunkIds.every((chunkId) => allowedChunkIds.has(chunkId)))
+      items.valid.push(note);
+    else
+      items.invalid.push({
+        raw: notes[index],
+        problems: ["evidenceChunkIds: one or more chunk ids are not allowed"]
+      });
+  }
+  // The contract holds at most 50 notes; the first ones in answer order are kept.
+  items.valid = items.valid.slice(0, 50);
+  return items;
+}
+
 export async function generateAtomicNoteCandidates(
   source: { title: string; language: string },
   chunks: ReadonlyArray<{ id: string; content: string }>,
-  run: KnowledgeAiRunner
+  run: KnowledgeAiRunner,
+  options: AtomicNoteGenerationOptions = {}
 ): Promise<{ output: AtomicNoteGenerationOutput; execution: KnowledgeAiExecution } | null> {
   const allowedChunkIds = new Set(chunks.map((chunk) => chunk.id));
   const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), {
@@ -525,28 +604,76 @@ export async function generateAtomicNoteCandidates(
     chunkIds: [...allowedChunkIds]
   });
   if (!execution) return null;
+  const repair = (previousOutput: unknown, error: unknown) =>
+    run(buildAtomicNoteRepairPrompt(previousOutput, [...allowedChunkIds], error), {
+      operation: "atomic_note_repair",
+      promptVersion: atomicNotePromptVersion,
+      batchIndex: 0,
+      attempt: 1,
+      chunkIds: [...allowedChunkIds]
+    });
+  if (options.pinned) {
+    try {
+      return {
+        output: parseAtomicNoteGenerationOutput(execution.output, allowedChunkIds),
+        execution
+      };
+    } catch (initialError) {
+      const repairedExecution = await repair(execution.output, initialError);
+      if (!repairedExecution) throw initialError;
+      return {
+        output: parseAtomicNoteGenerationOutput(repairedExecution.output, allowedChunkIds),
+        execution: repairedExecution
+      };
+    }
+  }
+  let first: AtomicNoteItems | undefined;
+  let initialError: unknown;
   try {
-    return {
-      output: parseAtomicNoteGenerationOutput(execution.output, allowedChunkIds),
-      execution
-    };
-  } catch (initialError) {
-    const repairedExecution = await run(
-      buildAtomicNoteRepairPrompt(execution.output, [...allowedChunkIds], initialError),
-      {
-        operation: "atomic_note_repair",
-        promptVersion: atomicNotePromptVersion,
-        batchIndex: 0,
-        attempt: 1,
-        chunkIds: [...allowedChunkIds]
-      }
+    first = atomicNoteItems(execution.output, allowedChunkIds);
+  } catch (error) {
+    initialError = error;
+  }
+  if (first && first.invalid.length === 0) return { output: { notes: first.valid }, execution };
+  if (first && first.valid.length > 0) {
+    // Valid notes are kept; one repair asks only for the invalid ones. Whatever it cannot fix is
+    // left out, and the notes that were valid stay.
+    const repaired = await repair(
+      { notes: first.invalid.map((item) => item.raw) },
+      new StructuredItemsError(
+        "atomic_note_items_invalid",
+        first.invalid.flatMap((item) => item.problems).slice(0, 8)
+      )
     );
-    if (!repairedExecution) throw initialError;
+    if (!repaired) return { output: { notes: first.valid }, execution };
+    let second: AtomicNoteItems | undefined;
+    try {
+      second = atomicNoteItems(repaired.output, allowedChunkIds);
+    } catch {
+      second = undefined;
+    }
+    const mended = second?.valid ?? [];
     return {
-      output: parseAtomicNoteGenerationOutput(repairedExecution.output, allowedChunkIds),
-      execution: repairedExecution
+      output: { notes: [...first.valid, ...mended].slice(0, 50) },
+      execution: mended.length > 0 ? repaired : execution
     };
   }
+  // Nothing valid is left: the whole answer is asked again, as before.
+  const failure =
+    initialError ??
+    new StructuredItemsError(
+      "atomic_note_nothing_valid",
+      (first?.invalid ?? []).flatMap((item) => item.problems).slice(0, 8)
+    );
+  const repairedExecution = await repair(execution.output, failure);
+  if (!repairedExecution) throw failure;
+  const second = atomicNoteItems(repairedExecution.output, allowedChunkIds);
+  if (second.valid.length === 0 && second.invalid.length > 0)
+    throw new StructuredItemsError(
+      "atomic_note_nothing_valid",
+      second.invalid.flatMap((item) => item.problems).slice(0, 8)
+    );
+  return { output: { notes: second.valid }, execution: repairedExecution };
 }
 
 export function scoreMetadataOverlap(
@@ -1260,6 +1387,10 @@ function normalizeSummaryValue(value: string): string {
 }
 
 function structuredOutputRepairFeedback(error: unknown): string {
+  if (error instanceof StructuredItemsError)
+    return error.problems.length > 0
+      ? error.problems.map((problem) => `- ${problem}`).join("\n")
+      : "- No item of the response was valid. Match the schema and all consistency rules exactly.";
   if (error instanceof SyntaxError)
     return "- The response is not valid JSON. Fix its JSON syntax and close every string, array, and object.";
   if (error instanceof z.ZodError) {
@@ -1300,6 +1431,7 @@ function normalizeAtomicNoteGenerationOutput(value: unknown): unknown {
 }
 
 function knowledgeGraphValidationCode(error: unknown): string {
+  if (error instanceof StructuredItemsError) return "nothing_valid";
   if (error instanceof SyntaxError) return "invalid_json";
   if (error instanceof z.ZodError) return "schema_validation";
   if (error instanceof Error && /^[a-zA-Z0-9_.:-]{1,100}$/.test(error.message))

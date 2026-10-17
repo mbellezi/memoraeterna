@@ -34,6 +34,8 @@ import {
   type GoldenTopicBarrier,
   type GoldenTopicsConfig
 } from "./golden-topics.js";
+import { readGoldenPinConfig, setExtractionPin, type GoldenPinConfig } from "./extraction-pin.js";
+import { readSchemaProbeCalls, runSchemaProbe } from "./schema-probe.js";
 import type { LibraryResetService } from "./library-reset-service.js";
 
 /**
@@ -320,6 +322,13 @@ export interface GoldenRunEnvironment {
   sourcePairsPath: string | null;
   /** G1 (MEMORA_GOLDEN_TOPICS and MEMORA_GOLDEN_TOPICS_ARRIVAL): the engine's AI work and its barrier. */
   topics: GoldenTopicsConfig;
+  /** MEMORA_GOLDEN_PIN (F3 D5): `extraction` (the default of a golden run) keeps the recording-era parse path. */
+  pin: GoldenPinConfig;
+  /**
+   * MEMORA_GOLDEN_SCHEMA_PROBE=<calls> (F3 T55): instead of the manifest, a few structured calls carry a
+   * strict output schema through the AI service and the cassette. Null when not requested.
+   */
+  schemaProbeCalls: number | null;
 }
 
 /** Reads MEMORA_GOLDEN_*; null when no golden run is requested. Packaged builds refuse it. */
@@ -374,7 +383,9 @@ export function readGoldenRunEnvironment(
     maxLiveTokens: limit,
     only: only.length ? only : null,
     sourcePairsPath: rawSourcePairs ? resolve(options.workspaceRoot, rawSourcePairs) : null,
-    topics: readGoldenTopicsConfig(env, { isPackaged: false })
+    topics: readGoldenTopicsConfig(env, { isPackaged: false }),
+    pin: readGoldenPinConfig(env, { isPackaged: false }),
+    schemaProbeCalls: readSchemaProbeCalls(env)
   };
 }
 
@@ -491,6 +502,8 @@ export async function prepareGoldenRun(
     );
   if (!descriptor.success)
     throw new Error("The golden runner needs the DEV PostgreSQL sidecar (dev-connection.json)");
+  if (environment.schemaProbeCalls !== null)
+    return prepareSchemaProbeRun(options, environment.schemaProbeCalls);
   const fullManifest = goldenManifestSchema.parse(
     JSON.parse(await readFile(options.environment.manifestPath, "utf8"))
   );
@@ -591,6 +604,9 @@ export async function prepareGoldenRun(
     pairsFile && sourcePairsMode
       ? { file: pairsFile, mode: sourcePairsMode, manifest: fullManifest }
       : null;
+  // Everything that can stop the run has passed: extraction now runs the path the pin names (D5).
+  setExtractionPin(environment.pin);
+  log(options, "pin", { mode: environment.pin.mode });
   return {
     manifest,
     backup: preparedBackup,
@@ -607,6 +623,7 @@ export async function prepareGoldenRun(
           backup: preparedBackup,
           pendingJobs,
           only: environment.only,
+          pin: environment.pin.mode,
           topics: {
             mode: environment.topics.mode,
             arrival: environment.topics.mode === "full" ? environment.topics.arrival : null
@@ -615,6 +632,83 @@ export async function prepareGoldenRun(
         },
         sourcePairs
       )
+  };
+}
+
+/**
+ * The strict-schema probe (MEMORA_GOLDEN_SCHEMA_PROBE, F3 T55): no source is imported, no job runs and
+ * the library is not read. It reports itself as a verdict-only run, so the app starts neither the job
+ * supervisor nor the topic engine; the calls only add AI audit rows. Recording needs the token cap
+ * like any golden recording, and the cassette records the answers it makes live.
+ */
+async function prepareSchemaProbeRun(options: GoldenRunOptions, calls: number): Promise<GoldenRun> {
+  const { environment } = options;
+  if (environment.resetLibrary || environment.sourcePairsPath)
+    throw new Error(
+      "MEMORA_GOLDEN_SCHEMA_PROBE runs alone: drop MEMORA_GOLDEN_RESET and MEMORA_GOLDEN_SOURCE_PAIRS; " +
+        "nothing was changed"
+    );
+  if (!options.ai)
+    throw new Error("MEMORA_GOLDEN_SCHEMA_PROBE needs the AI service; nothing was changed");
+  const manifest = goldenManifestSchema.parse(
+    JSON.parse(await readFile(environment.manifestPath, "utf8"))
+  );
+  const cassette = options.cassette!;
+  if (cassette.stats().mode === "record") cassette.limitLiveTokens(environment.maxLiveTokens);
+  const now = options.now ?? (() => new Date());
+  log(options, "schema_probe", { calls });
+  return {
+    manifest,
+    backup: { path: "", createdAt: now().toISOString(), bytes: 0 },
+    sourcePairs: { mode: "verdict_only", pairs: calls },
+    start: async () => {
+      const startedAt = now();
+      const base = {
+        format: "memora-golden-run" as const,
+        version: 1 as const,
+        mode: "schema_probe",
+        startedAt: startedAt.toISOString(),
+        manifest: { name: manifest.name, path: environment.manifestPath }
+      };
+      let summary: GoldenRunSummary;
+      try {
+        const probe = await runSchemaProbe({ ai: options.ai!, calls });
+        summary = {
+          ...base,
+          status:
+            probe.failed === 0 && probe.invalid === 0 ? "completed" : "completed_with_failures",
+          finishedAt: now().toISOString(),
+          cassette: cassette.stats(),
+          probe
+        };
+      } catch (error) {
+        summary = {
+          ...base,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+          finishedAt: now().toISOString(),
+          cassette: cassette.stats()
+        };
+      }
+      try {
+        const directory = join(
+          options.workspaceRoot,
+          ".cache",
+          "golden",
+          "runs",
+          startedAt.toISOString().replace(/[:.]/g, "-")
+        );
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+        log(options, "summary", { status: summary.status, path: join(directory, "summary.json") });
+      } catch (error) {
+        log(options, "summary_failed", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      if (environment.exitWhenDone) options.quit();
+      return summary;
+    }
   };
 }
 

@@ -298,6 +298,10 @@
       "invalidOutput": "L’IA ha restituito una decisione di equivalenza non valida.",
       "catalogChanged": "Il catalogo delle relazioni è cambiato ripetutamente. Riprova."
     },
+    "entityIdentity": {
+      "invalidOutput": "L’IA ha restituito una decisione di identità dell’entità non valida.",
+      "catalogChanged": "Il catalogo delle entità è cambiato ripetutamente. Riprova."
+    },
     "relationLabels": {
       "invalidOutput": "L’IA ha restituito descrizioni delle relazioni non valide."
     },

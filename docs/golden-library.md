@@ -472,6 +472,39 @@ names, placements, gate log, change-sets, daily metrics, shape audit) and the re
 `.cache/topics/vectors/<name>.{f32,index.jsonl,meta.json}` (the unit vectors of the current notes in the tree's
 embedding space, in import order), which `npm run topics:replay` loads by name.
 
+### The extraction pin and the local-miss policy (F3: D5, D41)
+
+`MEMORA_GOLDEN_PIN` is read only when `MEMORA_GOLDEN_RUN` is set (and never in a packaged build); the E6 runner
+(`npm run topics:e2e`) reads it too. `extraction` (the default in both) keeps the recording-era path for
+extraction, entity identity and relation-type resolution: strict parse, whole-output repair, no salvage, no
+item-level repair, no output schema, the 3,500-character graph batch with 12/12 caps, and the error codes the
+answers were recorded under. Every recorded repair of the F2-era cassettes then replays. `off` runs the
+product path (schema output, item-level repair, graph salvage, batches by writer locality), for a re-record
+under F3. `summary.json` records `pin`.
+
+`MEMORA_AI_CASSETTE_LOCAL_MISSES=live` (DEV, golden and E6 runners, with `MEMORA_AI_CASSETTE=replay`) lets a
+replay miss on a local runtime (ranker, local writer, local embedder) run live; the answer is recorded into
+the cassette copy and counted in `cassette.liveLocalMisses` by task. A miss on a remote runtime still fails.
+Non-regression replays after F3 matching merges use it on a copy with the matching entries stripped.
+
+`MEMORA_GOLDEN_SCHEMA_PROBE=<calls>` (1 to 20, with `MEMORA_GOLDEN_RUN`) runs that many structured calls with a
+strict `outputSchema` through the normal AI service and the cassette, instead of the manifest: nothing is
+imported, no job or topic work starts, the library is not read and no backup is taken (only AI audit rows are
+written). `summary.json` gets `probe`: calls, answered, valid and invalid answers, `schema_mode` counts, schema
+fallbacks (a backend that refused the strict format) and tokens, with no prompt or answer text. Recording needs
+`MEMORA_GOLDEN_MAX_TOKENS`; use a fresh cassette folder so every call is live:
+
+```sh
+MEMORA_AI_CASSETTE=record MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/schema-probe-f3 \
+MEMORA_GOLDEN_RUN=scripts/golden/manifest.json MEMORA_GOLDEN_SCHEMA_PROBE=12 \
+MEMORA_GOLDEN_MAX_TOKENS=30000 MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 \
+npm run dev -w @app/desktop
+```
+
+`npx tsx scripts/golden/graph-salvage-share.ts --cassette <folder>...` measures, offline and at no cost, how
+many recorded extraction answers the recording-era parse rejects and how many of those the graph salvage keeps
+with no further call (counts only, no text).
+
 ## After a run
 
 The runner pauses nothing and `summary.json` has no `automation` entry: the legacy wiki automation is
@@ -482,7 +515,9 @@ The pre-run backup is in `summary.json` (`backup.path`).
 
 Key = SHA-256 of a canonical JSON (sorted keys) of: task type, model identity (provider, model, runtime,
 adapter, repository, revision, quantization; never the local path), effective parameters, the composed
-input, the adapter instruction and the request schema when present. UUIDs become positional placeholders,
+input, the adapter instruction and the legacy `metadata.outputSchema` when present (the `outputSchema` of
+F3's schema output is never part of the key: the entry body stores it for audit, so recorded entries keep
+serving). UUIDs become positional placeholders,
 so a fresh library with new chunk IDs yields the same keys and recorded outputs map to the new IDs. The
 cassette wraps `AiModelAdapter.run`/`runStreaming` via the registry: remote and local generation, local
 embeddings and reranking alike (local calls are recorded: GPU embeddings are not bit-stable and replay

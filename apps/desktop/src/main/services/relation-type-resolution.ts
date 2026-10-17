@@ -1,6 +1,10 @@
 import { compareContent } from "./content-order.js";
 import { renderPrompt, joinPrompts } from "./prompt-runtime.js";
-import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
+import {
+  CanonicalMatchingSettingsSchema,
+  parseSingleJsonObject,
+  type CanonicalMatchingSettings
+} from "@app/domain";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { z } from "zod";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
@@ -15,9 +19,10 @@ import type { AiService, AiTaskLogContext } from "./ai-service.js";
 
 export const relationTypeResolutionVersion = "relation-type-resolution-v1";
 export const defaultRelationTypeSimilarityThreshold = 0.92;
-const matchSchema = z
-  .object({ matches: z.array(z.tuple([z.string(), z.string().nullable()])).max(12) })
-  .strict();
+const pairSchema = z.tuple([z.string(), z.string().nullable()]);
+const matchSchema = z.object({ matches: z.array(pairSchema).max(12) }).strict();
+/** The contract of a confirmation answer (relation types and entity identities), for the structured-output catalog. */
+export const relationMatchOutputSchema = matchSchema;
 type Candidate = {
   sourceItemIds?: string[];
   key: string;
@@ -91,6 +96,132 @@ export function parseRelationMatches(
   return result;
 }
 
+export interface TolerantRelationMatches {
+  /** The rows the answer decided validly: a known row and one of its candidates, or null. */
+  decided: Map<string, string | null>;
+  /** The rows still to decide: not in the answer, or in it with an unknown key or candidate. */
+  missing: RelationMatchRow[];
+}
+
+/**
+ * Reads a confirmation answer row by row (F3 D35). The answer may carry a stray character or repeat
+ * its object (`parseSingleJsonObject`); a pair that names an unknown row or a candidate the row does
+ * not have, or a row answered twice differently, leaves that row missing and the rest decided. An
+ * answer with no `matches` list decides nothing. The strict reader above stays for pinned runs.
+ */
+export function parseRelationMatchesTolerant(
+  output: unknown,
+  rows: RelationMatchRow[]
+): TolerantRelationMatches {
+  const allowed = new Map(
+    rows.map((row) => [row.key, new Set(row.candidates.map((candidate) => candidate.key))])
+  );
+  let pairs: unknown[] = [];
+  try {
+    const value = parseSingleJsonObject(output);
+    const list =
+      typeof value === "object" && value !== null
+        ? (value as { matches?: unknown }).matches
+        : undefined;
+    if (Array.isArray(list)) pairs = list;
+  } catch {
+    pairs = [];
+  }
+  const answered = new Map<string, string | null>();
+  const conflicting = new Set<string>();
+  for (const pair of pairs) {
+    const parsed = pairSchema.safeParse(pair);
+    if (!parsed.success) continue;
+    const [key, candidate] = parsed.data;
+    const candidates = allowed.get(key);
+    if (!candidates || (candidate !== null && !candidates.has(candidate))) continue;
+    if (answered.has(key) && answered.get(key) !== candidate) conflicting.add(key);
+    else answered.set(key, candidate);
+  }
+  for (const key of conflicting) answered.delete(key);
+  return {
+    decided: answered,
+    missing: rows.filter((row) => !answered.has(row.key))
+  };
+}
+
+export interface ConfirmedMatch {
+  candidate: string | null;
+  aiTaskRunId: string;
+}
+
+/**
+ * Asks the model which candidate of each row is the same thing, for one group of rows (relation types
+ * and entity identities share it). Unpinned, a first answer that decides only some rows keeps them and
+ * the one repair asks about the others only; the group fails when a row is still undecided after it,
+ * with the error code the caller names. Pinned, the recording-era path runs: strict reading, and the
+ * whole group asked again, so each recorded repair replays.
+ */
+export async function confirmMatchGroup(input: {
+  ai: Pick<AiService, "runDefaultTask">;
+  group: RelationMatchRow[];
+  entityIdentity: boolean;
+  context: AiTaskLogContext;
+  promptVersion: string;
+  stage: string;
+  pinned: boolean;
+  invalidOutputError: string;
+  signal?: AbortSignal | undefined;
+}): Promise<Map<string, ConfirmedMatch>> {
+  const { group, entityIdentity } = input;
+  const repairPrompt = () =>
+    renderPrompt(
+      entityIdentity ? "graph.entity_identity.repair" : "graph.relation_identity.repair"
+    );
+  const sourceItemIds = [
+    ...new Set([
+      ...(input.context.sourceItemIds ?? []),
+      ...(input.context.sourceItemId ? [input.context.sourceItemId] : []),
+      ...group.flatMap((row) =>
+        row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? [])
+      )
+    ])
+  ];
+  const decisions = new Map<string, ConfirmedMatch>();
+  let pending = group;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    input.signal?.throwIfAborted();
+    // The first attempt asks the whole group; an unpinned repair asks about the rows still missing.
+    const asked = input.pinned || attempt === 0 ? group : pending;
+    const execution = await input.ai.runDefaultTask(
+      "knowledge-graph-generation",
+      joinPrompts(buildRelationMatchPrompt(asked, entityIdentity), attempt ? repairPrompt() : ""),
+      {
+        ...input.context,
+        sourceItemIds,
+        attempt,
+        isRepair: attempt > 0,
+        promptVersion: input.promptVersion,
+        contentLanguage: "en",
+        stage: input.stage
+      },
+      input.signal
+    );
+    if (!execution) throw new Error("errors.ai.noCompatibleModel");
+    if (input.pinned) {
+      try {
+        for (const [key, candidate] of parseRelationMatches(execution.output, group))
+          decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
+        return decisions;
+      } catch {
+        // Invalid aliases are rejected and the group is repaired once.
+        continue;
+      }
+    }
+    const answer = parseRelationMatchesTolerant(execution.output, asked);
+    for (const [key, candidate] of answer.decided)
+      decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
+    pending = pending.filter((row) => !decisions.has(row.key));
+    if (pending.length === 0) return decisions;
+  }
+  throw new Error(input.invalidOutputError);
+}
+
 export function relationTypeCosine(left: number[], right: number[]): number {
   if (left.length !== right.length) return -1;
   const dot = left.reduce((sum, value, index) => sum + value * right[index]!, 0);
@@ -112,6 +243,8 @@ export function createRelationTypeResolver(options: {
   threshold: number;
   context: AiTaskLogContext;
   signal?: AbortSignal;
+  /** The recording-era path (F3 D5): strict reading of the answer, whole-group repair. */
+  pinned?: boolean;
 }) {
   const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createRelationTypeRepository(options.pool);
@@ -130,7 +263,7 @@ export function createRelationTypeResolver(options: {
     }
   }
   async function confirm(rows: RelationMatchRow[]) {
-    const decisions = new Map<string, { candidate: string | null; aiTaskRunId: string }>();
+    const decisions = new Map<string, ConfirmedMatch>();
     // Split by serialized prompt size too, so long definitions cannot create unbounded requests.
     let pending = [...rows];
     while (pending.length) {
@@ -144,43 +277,18 @@ export function createRelationTypeResolver(options: {
           break;
         group.push(pending.shift()!);
       }
-      const prompt = buildRelationMatchPrompt(group);
-      let valid = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        options.signal?.throwIfAborted();
-        const execution = await options.ai.runDefaultTask(
-          "knowledge-graph-generation",
-          joinPrompts(prompt, attempt ? renderPrompt("graph.relation_identity.repair") : ""),
-          {
-            ...options.context,
-            sourceItemIds: [
-              ...new Set([
-                ...(options.context.sourceItemIds ?? []),
-                ...(options.context.sourceItemId ? [options.context.sourceItemId] : []),
-                ...group.flatMap((row) =>
-                  row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? [])
-                )
-              ])
-            ],
-            attempt,
-            promptVersion: relationTypeResolutionVersion,
-            contentLanguage: "en",
-            stage: "relation_type_resolution"
-          },
-          options.signal
-        );
-        if (!execution) throw new Error("errors.ai.noCompatibleModel");
-        try {
-          const matches = parseRelationMatches(execution.output, group);
-          for (const [key, candidate] of matches)
-            decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
-          valid = true;
-          break;
-        } catch {
-          /* One bounded repair attempt; invalid output never creates an alias. */
-        }
-      }
-      if (!valid) throw new Error("errors.relationTypes.invalidOutput");
+      const confirmed = await confirmMatchGroup({
+        ai: options.ai,
+        group,
+        entityIdentity: false,
+        context: options.context,
+        promptVersion: relationTypeResolutionVersion,
+        stage: "relation_type_resolution",
+        pinned: options.pinned === true,
+        invalidOutputError: "errors.relationTypes.invalidOutput",
+        signal: options.signal
+      });
+      for (const [key, decision] of confirmed) decisions.set(key, decision);
     }
     return decisions;
   }

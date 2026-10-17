@@ -1,4 +1,4 @@
-import { renderPrompt, joinPrompts, changedPromptIdentity } from "./prompt-runtime.js";
+import { renderPrompt, changedPromptIdentity } from "./prompt-runtime.js";
 import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
 import { createHash } from "node:crypto";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
@@ -14,8 +14,9 @@ import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import {
   buildRelationMatchPrompt,
   compareConfirmationCandidates,
-  parseRelationMatches,
+  confirmMatchGroup,
   relationTypeCosine,
+  type ConfirmedMatch,
   type RelationMatchRow
 } from "./relation-type-resolution.js";
 
@@ -48,6 +49,8 @@ export function createEntityIdentityResolver(options: {
   language: string;
   context: AiTaskLogContext;
   signal?: AbortSignal;
+  /** The recording-era path (F3 D5): strict reading, whole-group repair, the shared error code. */
+  pinned?: boolean;
 }) {
   const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createEntityIdentityRepository(options.pool);
@@ -75,7 +78,7 @@ export function createEntityIdentityResolver(options: {
       .digest("hex");
   const embed = createCanonicalEmbedder({ ...options, strategy: entityIdentityResolutionVersion });
   async function confirm(rows: RelationMatchRow[]) {
-    const result = new Map<string, { candidate: string | null; aiTaskRunId: string }>();
+    const result = new Map<string, ConfirmedMatch>();
     const pending = [...rows];
     while (pending.length) {
       const group: RelationMatchRow[] = [];
@@ -88,44 +91,21 @@ export function createEntityIdentityResolver(options: {
           break;
         group.push(pending.shift()!);
       }
-      let valid = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        options.signal?.throwIfAborted();
-        const execution = await options.ai.runDefaultTask(
-          "knowledge-graph-generation",
-          joinPrompts(
-            buildRelationMatchPrompt(group, true),
-            attempt ? renderPrompt("graph.entity_identity.repair") : ""
-          ),
-          {
-            ...options.context,
-            sourceItemIds: [
-              ...new Set([
-                ...(options.context.sourceItemIds ?? []),
-                ...(options.context.sourceItemId ? [options.context.sourceItemId] : []),
-                ...group.flatMap((row) =>
-                  row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? [])
-                )
-              ])
-            ],
-            attempt,
-            promptVersion: entityIdentityResolutionVersion,
-            contentLanguage: "en",
-            stage: "entity_identity_resolution"
-          },
-          options.signal
-        );
-        if (!execution) throw new Error("errors.ai.noCompatibleModel");
-        try {
-          for (const [key, candidate] of parseRelationMatches(execution.output, group))
-            result.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
-          valid = true;
-          break;
-        } catch {
-          /* Reject invalid aliases and repair once. */
-        }
-      }
-      if (!valid) throw new Error("errors.relationTypes.invalidOutput");
+      const confirmed = await confirmMatchGroup({
+        ai: options.ai,
+        group,
+        entityIdentity: true,
+        context: options.context,
+        promptVersion: entityIdentityResolutionVersion,
+        stage: "entity_identity_resolution",
+        pinned: options.pinned === true,
+        // An entity decision has its own code now; a pinned run keeps the one it was recorded with.
+        invalidOutputError: options.pinned
+          ? "errors.relationTypes.invalidOutput"
+          : "errors.entityIdentity.invalidOutput",
+        signal: options.signal
+      });
+      for (const [key, decision] of confirmed) result.set(key, decision);
     }
     return result;
   }
@@ -241,7 +221,12 @@ export function createEntityIdentityResolver(options: {
         options.signal?.throwIfAborted();
         committed = await repository.commit(decisions, revision);
       }
-      if (!committed) throw new Error("errors.relationTypes.catalogChanged");
+      if (!committed)
+        throw new Error(
+          options.pinned
+            ? "errors.relationTypes.catalogChanged"
+            : "errors.entityIdentity.catalogChanged"
+        );
       for (const [key, id] of committed) resolved.set(key, id);
     }
     return {
