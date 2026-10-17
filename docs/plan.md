@@ -84,6 +84,14 @@ concurrency and automatic correction.
     topic rating are done by three independent, blind Claude Opus 5.5 judges (each sees only what the rating page
     shows), with the majority per question; the pass rule is unchanged (D20, at least 24/30 rated both coherent
     and well named). The owner may still rate; the panel replaces the owner's 45 minutes as the gate.
+22. **F3 decisions** (2026-10-17): the Relations v2 and AI runtime decisions D1-D47, the owner-question defaults
+    Q1-Q20 (all approved by the owner with the F3 budget on 2026-10-17), the gates, the measurement rules and seeds
+    are recorded in `docs/f3-decisions.md` and bind F3; where section 4 differs, they win. Three readings narrow
+    earlier decisions: bge-reranker-v2-m3 leaves decision 3's fallbacks (Spike A NO-GO; a bake-off control only,
+    Q18); source relations are promoted from applied note relations only, which narrows decision 17's "accepted"
+    (D23); and the MLX embedding adapter leaves F3 for the phase that re-calibrates topic placement in an MLX space,
+    so no MLX embedder ships beside a GGUF default and decision 12 holds (D40, Q5). Relation labels come from the
+    decision-21 panel instead of owner-labeled pairs (Q10), and a P0 call never spills to a remote lane in F3 (Q9).
 
 ## 3. The five swaps
 
@@ -173,9 +181,11 @@ its siblings. No prose is generated for rejected candidates.
 1. **Retrieve (SQL only):** ANN on a partial HNSW index of current notes (ordered by raw distance), FTS on
    an indexed generated `search_tsv`, shared entities; RRF into ~20 candidates, excluding superseded,
    rejected and already-related pairs.
-2. **Filter (0 calls):** arithmetic feasibility while the legacy weighted score exists (lossless by
-   construction); a calibrated cosine floor (bypassed by strong FTS or shared entities); a decision cache
-   keyed by both note hashes and the decider; keep the top ~8.
+2. **Filter (0 calls, lossless only):** pairs a human already decided, pairs already related, and a decision
+   cache keyed by the exact decider input of both notes and the decider. Acceptance is the calibrated
+   probability alone (the legacy weighted score and its feasibility gate leave it), and all ~20 fused candidates
+   reach the decider with no lossy cosine floor, unless gate 0 needs recall-lossless retrieval limits
+   (`docs/f3-decisions.md` D17).
 3. **Decide P(related):** local reranker by default, MLX first (Qwen3-Reranker on MLXLLM), then GGUF
    Qwen3-Reranker, then bge-reranker-v2-m3; generative decision-only route as the universal fallback; OpenAI
    Decisions as an optional measured accelerator (use `predicate` for acceptance; shuffle options if `choice`
@@ -188,10 +198,14 @@ its siblings. No prose is generated for rejected candidates.
    after a hover delay), cached per pair, hashes, type, prompt and model; low-priority backfill for recently
    viewed pages. The writer may answer NOT_RELATED, which sends the relation to the Inbox.
 
-**Source relations by aggregation:** promote a source relation when ≥2 accepted note pairs connect the two
-roots, or one high-probability pair is confirmed by the decider. Discovery pairs without note links come
-from source-centroid ANN plus a decider call. This replaces per-pair proposal calls and the Cartesian
-trigram join. **Reranker caveats (GGUF fallback):** verify the GGUF header (classification head, rank
+**Source relations by design E** (decision 17, `docs/f3-decisions.md` D27): every typed applied cross-root
+note relation is promoted with no call (one source relation per root pair and type; importance and confidence
+unknown). Discovery judges, once per unordered pair, each new source's nearest already-matched root plus the
+earlier roots whose nearest it becomes, on the stored composite vector, with F1b's compact score-only verdict;
+per source, with no batch barrier (two neighbours only if the labelled check asks for it). This replaces
+per-pair proposal calls, the four-signal shortlist and the Cartesian trigram join.
+
+**Reranker caveats (GGUF fallback):** verify the GGUF header (classification head, rank
 pooling; for MLX, the config and architecture) and a relevant-vs-irrelevant smoke test before exposing
 `decide`; do not use the custom `template` option for bge; do not quantize the KV cache for ranking;
 `rankAll` is serial and llama.cpp issue #30422 is present, so latency is budgeted only after measurement.
@@ -243,8 +257,8 @@ and a `model` worker, so placement never waits for a model), with per-source exc
   OpenAI-compatible localhost/Ollama counts as local.
 - **Priorities:** P0 interactive (Ask, query embedding, explanation on open, user action), P1 focused
   source, P2 ingestion and linking, P3 maintenance; strict with aging; never preempts a running call.
-  Background local work is split into bounded calls so P0 waits at most one of them. A P0 may use an allowed
-  remote lane when the local lane is busy.
+  Background local work is split into bounded calls so P0 waits at most one of them. *(F4/F5)* A P0 may use an
+  allowed remote lane when the local lane is busy; in F3 a P0 call never spills (`docs/f3-decisions.md` D33).
 - **Deadlines** count from execution start (connect, first byte, stalled stream, total per workload class).
   **Retries** in adapters: backoff with jitter for 408, 425, 429, 5xx, network and stalls, honoring
   `Retry-After`; never for 400/401/403/404/413, context overflow or schema failure after repair.
@@ -259,8 +273,8 @@ and a `model` worker, so placement never waits for a model), with per-source exc
   space are unchanged, cached config/credentials/adapters, telemetry written outside the slot, residency of
   a small group (embedding + reranker) plus one generative model unloaded after idle (minimal residency
   lands in F2, Q11).
-- **Lean ingestion:** graph extraction once (on notes with chunk evidence), no claims extraction, duplicate
-  notes on write become Inbox suggestions; windowed ingestion only after an A/B in F6.
+- **Lean ingestion:** graph extraction runs once per source over its chunks, for entities and relations; no
+  claims extraction; duplicate notes on write become Inbox suggestions; windowed ingestion only after an A/B in F6.
 
 ### 4.5 Objects and events layer
 
@@ -544,30 +558,86 @@ the default local embedding model, Q4). Reported, not gating: the ambiguity bar,
 
 ### F3 Relations v2 and AI runtime lanes (weeks 12-15)
 
-- [ ] AiScheduler (lanes, priorities with aging, deadlines, classified retries, schema output in all
-      runtimes, `embedMany`, hot-path caches, idle unload of the generative model and residency group sizing;
-      minimal residency lands in F2, Q11); remove `ai-execution-queue.ts`; update `rules/ai.md`.
-- [ ] Full workload classes with Local / Hybrid / Cloud presets; map legacy routes.
-- [ ] Directed note relations: today `atomicNoteRelationRepository.upsert` sorts the two endpoints by UUID, so
-      the direction of directed types (extends, supports, depends_on) is arbitrary (found by the golden replay);
-      store canonical pair + explicit direction.
-- [ ] Decide → type (batched per source) → explain later; isotonic calibration and bands; streaming
-      `relation.explain` with cache; NOT_RELATED veto.
-- [ ] Incremental per-source matching; source aggregation and discovery pairs; SQL fixes (search_tsv,
-      raw-distance HNSW, no Cartesian join). Design E of `docs/spikes/source-relations-plan.md` (decision 17):
-      promote every accepted note relation, discovery on each source's nearest source (2 as fallback), per source
-      with no barrier, F1b's compact verdict as the generative judge; exit ≤5 s per source.
-- [ ] Note-layer coverage on pinned notes (decision 15): measure with several decider samples; missing
-      metadata (always-empty entities/tags/concepts) counts as an absent signal, not 0, re-frozen on tuning.
-- [ ] Bake-off on the held-out fixture plus ~300 owner-labeled pairs (1.5-2.5 h): decision-only generative,
-      Qwen3-Reranker-0.6B, bge-reranker-v2-m3, and OpenAI Decisions if the owner provides a key and budget.
-- [ ] Evidence card and ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours
-      from tokens); graph extraction once; claims stopped.
+Decisions D1-D47, the owner-question defaults Q1-Q20, the gates, the measurement rules and seeds:
+`docs/f3-decisions.md` (decision 22). Tasks run in waves as in F2: the tasks of a wave run in parallel in separate
+worktrees, a shared file has one owner at a time in a fixed order, and a proof that starts the DEV app or a local
+model takes that slot (a DEV-app proof that loads a local model takes both). Measurement comes first and the
+configuration freezes late: M0 offline at $0 (wave 1), M1 with provisional settings on the tuning partition (wave
+2), M2 on the frozen configuration (wave 4). Gates stop the line: 0 measure first (end of wave 1), M migration
+safety (wave 1, run by the orchestrator before any real profile starts with the F3 migrations), R slice works (end
+of wave 2, tuning only), F freeze (wave 3), P pre-soak (end of wave 3), X exit (wave 4; closes F3).
 
-Exit: fixture ≥27/28 expected on the note layer over pinned notes (mean of several samples), 0/35 forbidden, ≤5% loss of today's reverse-only acceptances; 200 notes end
-to end in ≤4-8 min local depending on Spike A (today ~40 min); 0 prose tokens for rejected candidates; a
-failing source does not delay siblings; 24 h soak with 0 calls past deadline and repairs ≤2%; ≤40 generative
-calls per reference chapter *(cal.)*.
+Wave 0:
+- [x] T42 Decision record: D1-D47 and Q1-Q20 (`docs/f3-decisions.md`), the gates, the measurement rules and seeds,
+      the pre-registered selection and gate-0 rules, X7-REF, these task boxes.
+- [ ] T43 Measurement harness: the `--gate f3` evaluator with the freeze guard and the pre-freeze feasibility mode,
+      offline re-scoring, reverse-only loss, calls per chapter and tuning candidate recall.
+- [ ] T43b v9 end-state backups mapped and the R_v9 capture (ENV-F's pre-F3 note relations).
+
+Wave 1 (gate 0 and gate M at the end):
+- [ ] T44 M0: offline re-score of the pinned matching runs, tuning candidate recall, the graph call split, B4 and
+      the throughput forecast (`docs/spikes/f3-m0.md`).
+- [ ] T45 Label set and the blind three-judge panel (decision 21) replacing the owner-labeled pairs: about 300 note
+      pairs from public and synthetic text, the source pairs, R_v6 and the R_v9 sample.
+- [ ] T46 Pair scoring harness: bake-off scores through the product adapters, verdict-only v9 note-pair scoring
+      and B1.
+- [ ] T47 AiScheduler (migration `ai_task_run_lanes`): one local lane and adaptive remote lanes, priorities with
+      aging, deadlines on every runtime, retries off the lane; remove `ai-execution-queue.ts`; `rules/ai.md`.
+- [ ] T48 Relations schema v2 (migration `relations_v2`): canonical note pairs with an explicit direction, bands
+      apart from review, the veto, the typing cache, the score scale and one visibility module; `rules/knowledge.md`.
+- [ ] T48b Append-only relation events and match runs with exact revert.
+- [ ] T48m Gate M (the orchestrator): verified DEV backup, cold copies, a rehearsal on a DEV clone and the
+      migration startup cost.
+- [ ] T49 Indexed retrieval SQL (migration `relation_retrieval_indexes`): `search_tsv`, raw-distance partial HNSW,
+      EXPLAIN gates.
+- [ ] T50 Ranker `pairs` input for both-direction scoring, product parity, and re-validation with a score-parity
+      check on every runtime-build change.
+
+Wave 2 (M1 and gate R at the end):
+- [ ] T47b Circuit breaker per remote lane and the lane probe (B5).
+- [ ] T51 Relations v2 matcher: the local ranker decides both directions with calibrated bands; the note decider
+      mode and the wait for a validated ranker.
+- [ ] T51t Typing batched per source, with `none` as a veto.
+- [ ] T52 Per-source matching with no batch barrier and the `relation-link` job on a light `relations` worker;
+      the untyped fallback, the daily relation cap and the stage-level retry; `rules/architecture.md`.
+- [ ] T52b Re-match harness with an arrival fence and recorded-timing replay.
+- [ ] T53 Source relations by design E (decision 17): promotion of typed applied note relations, nearest-source
+      discovery judged once with F1b's compact verdict; the shortlist and the Cartesian trigram join deleted.
+- [ ] T54 Workload classes on every caller, legacy route mapping, Local / Hybrid / Cloud presets and Settings › AI
+      by class with a "Generative judge" row.
+- [ ] T55 Schema output in every runtime, item-level repair, graph salvage, graph batches by writer locality and
+      the extraction pin; claims stay stopped.
+- [ ] T56 `embedMany` and hot-path caches.
+- [ ] T57 Campaign M1 (tuning partition only).
+
+Wave 3 (gate F after T58; gate P at the end):
+- [ ] T53b Note-matching settings cleanup (settings migration).
+- [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
+- [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
+      and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
+- [ ] T58e (conditional) Uncertain-band escalation, only if T58's rule adopts it.
+- [ ] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
+- [ ] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
+- [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
+- [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
+      local deadlines from measured p99.
+- [ ] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
+
+Wave 4 (gate X at the end):
+- [ ] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
+- [ ] T64 24 h soak (X6), run by the orchestrator.
+- [ ] T64r Soak report and failure audit.
+- [ ] T65 Rule, stack and runbook sync (`rules/`, `STACK.md`, `docs/golden-library.md`).
+
+Wave 5 (exit):
+- [ ] T66 Exit measurement (`docs/kpi-f3.md`) and phase close.
+
+Exit (X1-X7 and S1 as defined in `docs/f3-decisions.md`, on the frozen configuration): fixture ≥27/28 expected on
+the note layer over pinned notes (mean of four samples), 0/35 forbidden; ≤5% loss of today's reverse-only
+acceptances (R_v6 and R_v9); 200 notes end to end in ≤4 min with the MLX ranker and ≤8 min with GGUF (Hybrid;
+today ~40 min); 0 prose tokens for rejected candidates; a failing source does not delay siblings; 24 h soak with 0
+calls past deadline and repairs ≤2%; ≤40 generative calls per reference chapter *(cal.)*, measured on X7-REF;
+source matching ≤5 AI-call seconds per source with design E's quality bar (S1).
 
 ### F4 Gardener, Inbox, Activity and first run (weeks 16-18)
 
