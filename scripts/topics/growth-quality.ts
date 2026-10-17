@@ -233,6 +233,8 @@ export interface SourceGrowthOptions {
   renameDrifts?: readonly number[];
   pairs?: FixturePairs;
   engine?: Omit<RealEngineOptions, "gate" | "areasActive">;
+  /** Sees the grown tree and the fresh build before the readings are taken. */
+  inspect?: (grown: TopicTreeState, fresh: TopicTreeState) => void;
 }
 
 function shapeOf(state: TopicTreeState, config: TopicTreeConfig, rows: readonly number[]) {
@@ -300,6 +302,7 @@ export function sourceGrowthRun(
   const week = naming.takeWeek(engine.state);
   const fresh = new RealEngine(input, { gate, areasActive: "dynamic" });
   fresh.coldStart(rows, 1);
+  options.inspect?.(engine.state, fresh.state);
   const keys = rowKeys(rows);
   const peakDayCalls: Record<string, number> = {};
   for (const threshold of thresholds) {

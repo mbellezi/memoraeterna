@@ -214,15 +214,24 @@ const SplitSignalSchema = z
   .strict();
 
 /**
- * Louvain over the cosine kNN graph (the Spike B builder). Known limit, measured 2026-10-16 on
- * ENV-G (160 notes, calibration seeds 7-9) and left unchanged: at 10-NN a source of at most k notes
- * cannot be a community of its own, so two short stories that share vocabulary (9-11 notes each)
- * share a 20-note leaf, which the leaf band (max 30) keeps; 5-NN separates them but worsens the
- * ENV-F fixture on one seed. A smaller kNN for small libraries needs its own calibration.
+ * Louvain over the cosine kNN graph (the Spike B builder). At 10-NN a source of at most k notes
+ * cannot be a community of its own, so in a small library two short stories that share vocabulary
+ * (7-11 notes each) share one leaf; a build of at most `smallLibraryMaxItems` rows therefore uses
+ * `smallLibraryKnn` neighbours (the small-library partition of bootstrap.ts keeps `knn`).
+ * Coherence calibration after the first E4 panel (2026-10-17, `scripts/topics/calibrate-coherence.ts`,
+ * rules K1/K2 registered before the runs, calibration seeds 7-12): over ENV-G's fresh builds and
+ * source-by-source growth (18 runs) 5-NN leaves 7 sources absorbed into another source's leaf
+ * against 28 at 10-NN (family purity 0.975 against 0.878), and ENV-F's fixture passes in every run
+ * with forbidden pairs no closer (medians 0.09 / 0.06 / 0.03 against 0.09 / 0.17 / 0.17); DS-C
+ * article subsets of 200-2,000 rows lose at most 0.01 of leaf purity at 5-NN, but DS-C grown article
+ * by article to 1,000 rows stays within 2 points of a fresh build only with the threshold at 200
+ * (1.4 points; 3.1 at 1,000 and 3.8 at 500), so 200 (ENV-G 160 and ENV-F 138 notes are below it).
  */
 const LouvainSchema = z
   .object({
     knn: int(2, 100).default(10),
+    smallLibraryKnn: int(2, 100).default(5),
+    smallLibraryMaxItems: int(0, 1_000_000).default(200),
     resolution: z.number().positive().max(100).default(1),
     resolutionTries: int(1, 64).default(8),
     /** The resolution is multiplied or divided by this between tries. */
@@ -373,7 +382,12 @@ const NamingSchema = z
   })
   .strict();
 
-/** Areas (D12): an LLM grouping of the level-2 topics, validated by code. */
+/**
+ * Areas (D12): an LLM grouping of the level-2 topics, validated by code. Coherence calibration
+ * (2026-10-17, rule A1): on all three recorded ENV-C groupings the model's Areas had a lower depth-1
+ * NMI against the corpus domains than Louvain's (0.57-0.60 against 0.66), so the silhouette
+ * acceptance, which rejected them, stays as it is.
+ */
 const AreasSchema = z
   .object({
     min: int(2, 64).default(7),

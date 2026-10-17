@@ -693,7 +693,16 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
         [tree.id]
       );
     const before = await pending();
-    const dump = topicTreeRecordsDump(await repository.readTreeRecords(tree.id));
+    // The tree without root-source placements: the burst moved its root's D8 vector, so the PLACE
+    // job the drain runs may decide that root again; that is not REBALANCE's doing.
+    const notesDump = async (): Promise<string> => {
+      const records = JSON.parse(
+        topicTreeRecordsDump(await repository.readTreeRecords(tree.id))
+      ) as { placements: [string, ...unknown[]][] };
+      records.placements = records.placements.filter(([item]) => !item.startsWith("source:"));
+      return JSON.stringify(records);
+    };
+    const dump = await notesDump();
     // The audit finds the pinned leaf past its hard limit and asks REBALANCE to check it.
     const rebalance = async () => {
       await services.triggers.request(topicJobTypes.audit, tree.id, null, {
@@ -718,7 +727,7 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
       topicId: leaf
     });
     // Nothing was applied to the pinned leaf, and the proposal is not recorded twice.
-    expect(topicTreeRecordsDump(await repository.readTreeRecords(tree.id))).toBe(dump);
+    expect(await notesDump()).toBe(dump);
     expect(await rebalance()).toMatchObject({ proposed: 0 });
     expect(await pending()).toBe(before + 1);
   });

@@ -53,6 +53,7 @@ import {
   hardViolationTopics,
   hasTopics,
   isLive,
+  isProtected,
   isTriggerRebuild,
   isYoungLibrary,
   itemKey,
@@ -1320,7 +1321,8 @@ export class TopicStructureJobs {
       freshItems,
       namedSketch: (topicId) => named.get(topicId) ?? null
     });
-    // Root sources follow their notes: each is decided again on the rebuilt tree (D8).
+    // Root sources follow their notes: each is decided again on the rebuilt tree (D8), except one
+    // inside a protected subtree, which the rebuild keeps whole with its items.
     const editor = createTopicTreeEditor(state);
     const context: PlacementContext = { state, vectors, config: plan.config, editor, now };
     const gated: TopicScope[] = [];
@@ -1332,6 +1334,7 @@ export class TopicStructureJobs {
       if (!primary || primary.management === "human" || vectors.rowOf(root.key) === undefined) {
         continue;
       }
+      if (pathOf(state, primary.topicId).some((id) => isProtected(getTopic(state, id)))) continue;
       const outcome = placeItem(context, root.key, {
         fingerprint: plan.space?.rootFingerprints.get(root.key) ?? primary.itemFingerprint,
         force: true

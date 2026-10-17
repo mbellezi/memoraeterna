@@ -246,7 +246,7 @@ async function e2Part(
 }
 
 /** The ENV-F fixture's expected and forbidden root pairs, by the store's root source IDs. */
-async function fixturePairs(): Promise<FixturePairs | null> {
+export async function fixturePairs(): Promise<FixturePairs | null> {
   try {
     const mapping = JSON.parse(
       await readFile(join(cacheRoot(), "golden", "matching-fixture", "mapping.json"), "utf8")

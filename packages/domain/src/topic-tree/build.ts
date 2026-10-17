@@ -1010,6 +1010,11 @@ export interface LouvainBuildOptions extends BuildOptions {
   rootGrouping?: "fixed" | "legacy";
   /** Reuse a precomputed kNN graph over (a superset of) the rows. */
   graph?: KnnGraph;
+  /**
+   * Items of the library this build is part of (default: its rows), which decides the small-library
+   * neighbour count: a chapter-seeded cold start builds its parts separately with one count.
+   */
+  libraryItems?: number;
 }
 
 /** The kNN graph restricted to `subset` (matrix rows), as a community graph. */
@@ -1088,6 +1093,15 @@ function mergeSmallGroups(
   return large;
 }
 
+/**
+ * Neighbours of the kNN graph a Louvain build uses in a library of `items` items:
+ * `louvain.smallLibraryKnn` up to `louvain.smallLibraryMaxItems` items, `louvain.knn` above.
+ */
+export function louvainNeighbours(items: number, config: TopicTreeConfig): number {
+  const { knn, smallLibraryKnn, smallLibraryMaxItems } = config.louvain;
+  return items <= smallLibraryMaxItems ? smallLibraryKnn : knn;
+}
+
 export function buildLouvain(
   matrix: EmbeddingMatrix,
   rows: readonly number[],
@@ -1098,7 +1112,7 @@ export function buildLouvain(
   let started = performance.now();
   const graph =
     options.graph ??
-    knnGraph(matrix, rows, config.louvain.knn, {
+    knnGraph(matrix, rows, louvainNeighbours(options.libraryItems ?? rows.length, config), {
       seed: options.seed,
       exactLimit: config.knn.exactLimit,
       nprobe: config.knn.nprobe

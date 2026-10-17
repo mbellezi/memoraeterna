@@ -138,6 +138,16 @@ describe("topic tree configuration", () => {
     expect(config.ai.maxBackgroundCallsPerDay).toBe(270);
   });
 
+  it("holds the small-library graph the coherence calibration chose (calibration seeds 7-12)", () => {
+    const config = defaultTopicTreeConfig;
+    // Rules K1 and K2: Louvain builds of at most 200 rows use 5 neighbours; larger builds 10.
+    expect(config.louvain).toMatchObject({
+      knn: 10,
+      smallLibraryKnn: 5,
+      smallLibraryMaxItems: 200
+    });
+  });
+
   it("holds the placement and gate values T29a calibrated (calibration seeds 7-12)", () => {
     const config = defaultTopicTreeConfig;
     // T29a's adopted configOverrides: only the ambiguity margin moved from its start value

@@ -6,13 +6,14 @@ import {
   canonicalPartition,
   communityGraphOf,
   contentAnchor,
+  louvainNeighbours,
   partitionOf,
   planSplit,
   repairAll,
   repairDirty
 } from "./build.js";
 import type { DetectCommunities, ShapeContext } from "./build.js";
-import { defaultTopicTreeConfig } from "./config.js";
+import { defaultTopicTreeConfig, topicTreeConfigWith } from "./config.js";
 import type { TopicTreeConfig } from "./config.js";
 import {
   StructureEventSchema,
@@ -240,6 +241,37 @@ describe("Louvain builder", () => {
     expect(report.reachability).toBe(1);
     expect(report.violations.hard).toEqual([]);
     expect(result.timings.knnMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("uses the small-library neighbour count up to its threshold, louvain.knn above", () => {
+    const small = topicTreeConfigWith({
+      louvain: { smallLibraryKnn: 3, smallLibraryMaxItems: rows.length }
+    });
+    expect(louvainNeighbours(rows.length, small)).toBe(3);
+    expect(louvainNeighbours(rows.length + 1, small)).toBe(config.louvain.knn);
+    const rootEdges = (buildConfig: TopicTreeConfig, libraryItems?: number): number => {
+      const edges: number[] = [];
+      const recording: DetectCommunities = (graph) => {
+        edges.push(graph.sources.length);
+        return Int32Array.from({ length: graph.nodeCount }, (_, node) => node % 4);
+      };
+      buildLouvain(data.matrix, rows, {
+        seed: 4,
+        config: buildConfig,
+        detectCommunities: recording,
+        ...(libraryItems === undefined ? {} : { libraryItems })
+      });
+      return edges[0] as number;
+    };
+    const above = topicTreeConfigWith({
+      louvain: { smallLibraryKnn: 3, smallLibraryMaxItems: rows.length - 1 }
+    });
+    const tenNn = topicTreeConfigWith({ louvain: { smallLibraryMaxItems: 0 } });
+    expect(rootEdges(small)).toBeLessThanOrEqual(rows.length * 3);
+    expect(rootEdges(above)).toBe(rootEdges(tenNn));
+    expect(rootEdges(tenNn)).toBeGreaterThan(rows.length * 3);
+    // A part of a larger library (a chapter-seeded cold start) uses the library's count.
+    expect(rootEdges(small, rows.length + 1)).toBe(rootEdges(tenNn));
   });
 
   it("draws randomness only from the injected rng", () => {

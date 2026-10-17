@@ -241,7 +241,9 @@ function buildTree(request: TopicClusteringRequest): TopicClusteringResult {
     const built = buildLouvain(matrix, rows, {
       seed,
       config: partConfig,
-      detectCommunities: detectCommunitiesLouvain
+      detectCommunities: detectCommunitiesLouvain,
+      // Seeded parts and the loose rows are one library: one small-library neighbour count.
+      libraryItems: request.rows
     });
     timings.knnMs += built.timings.knnMs;
     timings.communitiesMs += built.timings.communitiesMs;
