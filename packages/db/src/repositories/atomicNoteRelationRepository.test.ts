@@ -24,7 +24,8 @@ import { createRelationTypingRepository } from "./relationTypingRepository.js";
 import { createSourceMatchStateRepository } from "./sourceMatchStateRepository.js";
 
 // Relations v2 (F3 D8, D9) against a real PostgreSQL database: the canonical upsert (sorted pair,
-// direction, band, probability, keys; idempotent; a human verdict is final), the veto, the five
+// direction, band, probability, keys; idempotent; a human verdict is final; one event per change,
+// D14), the veto, the five
 // visibility predicates over a fixture holding every state, the readers that derive the direction
 // from the column, the typing cache and the matching state. The migration itself is verified by
 // `npm run db:relations:verify`.
@@ -42,6 +43,15 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     x: { id: "", chunk: "", document: "" },
     y: { id: "", chunk: "", document: "" }
   };
+  /** A link run: every banded write and veto records its event in a run (D14). */
+  let runId = "";
+  const run = async (kind: string) =>
+    (
+      await db().query<{ id: string }>(
+        "insert into relation_match_runs (kind) values ($1) returning id",
+        [kind]
+      )
+    ).rows[0]!.id;
 
   /** A current note of work `home` (its own primary chunk unless given). */
   async function note(
@@ -84,6 +94,7 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       deciderKey: "ranker-v2",
       finalScore: 0.91,
       explanation: "knowledge.relations.explanations.reranked",
+      runId,
       ...input
     });
 
@@ -131,6 +142,7 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       );
       works[key] = { id: source, chunk, document };
     }
+    runId = await run("link");
   }, 120_000);
 
   afterAll(async () => {
@@ -172,7 +184,8 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       relationType: "supports",
       band: "apply" as const,
       finalScore: 1,
-      explanation: "x"
+      explanation: "x",
+      runId
     };
     await expect(
       relations().upsert({ ...base, loAtomicNoteId: hi, hiAtomicNoteId: lo, direction: "lo_to_hi" })
@@ -235,18 +248,133 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       status: "accepted"
     });
     expect(touched.after).toEqual(kept.after);
-    expect(await relations().veto(kept.relation.id, "explainer")).toBeNull();
+    expect(await relations().veto(kept.relation.id, "explainer", runId)).toBeNull();
   });
 
   it("withdraws a relation once by an automatic veto", async () => {
     const [a, b] = [await note("K", "x"), await note("L", "y")];
     const { relation } = await decided(a, b);
-    const vetoed = await relations().veto(relation.id, "explainer");
+    const vetoed = await relations().veto(relation.id, "explainer", runId);
     expect(vetoed?.change).toBe("updated");
     expect(vetoed?.before).toMatchObject({ vetoed_at: null });
     expect(vetoed?.relation).toMatchObject({ vetoSource: "explainer", vetoedAt: expect.any(Date) });
-    expect(await relations().veto(relation.id, "typer")).toBeNull();
-    expect(await relations().veto(randomUUID(), "typer")).toBeNull();
+    expect(await relations().veto(relation.id, "typer", runId)).toBeNull();
+    expect(await relations().veto(randomUUID(), "typer", runId)).toBeNull();
+  });
+
+  it("records exactly one event per automatic change in the write's own statement (D14, I-R8)", async () => {
+    const events = async (relationId: string) =>
+      (
+        await db().query<{
+          id: string;
+          runId: string;
+          relationKind: string;
+          pairKey: string;
+          kind: string;
+          before: string | null;
+          after: string;
+        }>(
+          `select id, run_id as "runId", relation_kind as "relationKind", pair_key as "pairKey", kind,
+                  before::text as before, after::text as after
+             from relation_events where relation_id = $1 order by seq`,
+          [relationId]
+        )
+      ).rows;
+    const image = async (relationId: string) =>
+      (
+        await db().query<{ image: string }>(
+          "select to_jsonb(r)::text as image from atomic_note_relations r where r.id = $1",
+          [relationId]
+        )
+      ).rows[0]!.image;
+    const [a, b] = [await note("S", "x"), await note("T", "y")];
+    const [lo, hi] = [a, b].sort() as [string, string];
+
+    // Persisted untyped (D20), then typed, then moved to the suggest band, each one event whose
+    // images are the rows before and after, byte for byte.
+    const untyped = await decided(a, b, { relationType: null });
+    const typed = await decided(a, b, { relationType: "extends" });
+    const imageTyped = await image(untyped.relation.id);
+    const unchanged = await decided(a, b, { relationType: "extends" });
+    const suggested = await decided(a, b, { relationType: "extends", band: "suggest" });
+    expect([untyped.change, typed.change, unchanged.change, suggested.change]).toEqual([
+      "created",
+      "updated",
+      "unchanged",
+      "updated"
+    ]);
+    expect(unchanged.eventId).toBeNull();
+    const recorded = await events(untyped.relation.id);
+    expect(recorded.map((event) => event.kind)).toEqual(["untyped", "typed", "suggested"]);
+    expect(recorded.map((event) => event.id)).toEqual([
+      untyped.eventId,
+      typed.eventId,
+      suggested.eventId
+    ]);
+    expect(recorded[0]).toMatchObject({
+      runId,
+      relationKind: "note",
+      pairKey: `${lo}:${hi}`,
+      before: null
+    });
+    expect(recorded[1]!.before).toBe(recorded[0]!.after);
+    expect(recorded[1]!.after).toBe(imageTyped);
+    expect(recorded[2]!.before).toBe(imageTyped);
+    expect(recorded[2]!.after).toBe(await image(untyped.relation.id));
+    // A reconcile run's band change is `reconciled`; a reversed direction is a new type fact.
+    const reconcile = await run("reconcile");
+    const reconciled = await decided(a, b, { relationType: "extends", runId: reconcile });
+    const reversed = await decided(b, a, { relationType: "extends" });
+    expect([reconciled.change, reversed.change]).toEqual(["updated", "updated"]);
+    expect((await events(untyped.relation.id)).slice(3).map((event) => event.kind)).toEqual([
+      "reconciled",
+      "typed"
+    ]);
+    // A veto is `vetoed`; a created typed row is `applied` or `suggested` by band.
+    const vetoed = await relations().veto(untyped.relation.id, "typer", runId);
+    expect((await events(untyped.relation.id)).at(-1)).toMatchObject({
+      id: vetoed?.eventId,
+      kind: "vetoed",
+      after: await image(untyped.relation.id)
+    });
+    const [c, d] = [await note("U", "x"), await note("V", "y")];
+    const applied = await decided(c, d);
+    const [e, f] = [await note("W", "x"), await note("X", "y")];
+    const suggestion = await decided(e, f, { band: "suggest" });
+    expect((await events(applied.relation.id)).map((event) => event.kind)).toEqual(["applied"]);
+    expect((await events(suggestion.relation.id)).map((event) => event.kind)).toEqual([
+      "suggested"
+    ]);
+
+    // A human verdict is never changed, so it records nothing.
+    const [g, h] = [await note("Y", "x"), await note("Z", "y")];
+    const kept = await decided(g, h, { status: "accepted" });
+    const reviewed = await decided(h, g, { relationType: "contradicts" });
+    expect([reviewed.change, reviewed.eventId]).toEqual(["reviewed", null]);
+    expect(await events(kept.relation.id)).toHaveLength(1);
+
+    // A banded write or a veto without its run is refused; a run that does not exist fails the
+    // whole statement, so no relation is written without its event.
+    const [i, j] = [await note("AA", "x"), await note("AB", "y")];
+    const pairRows = async () =>
+      (
+        await db().query(
+          `select 1 from atomic_note_relations
+            where least($1::uuid, $2::uuid) = source_atomic_note_id
+              and greatest($1::uuid, $2::uuid) = target_atomic_note_id`,
+          [i, j]
+        )
+      ).rowCount;
+    await expect(decided(i, j, { runId: null })).rejects.toThrow("needs its run");
+    await expect(decided(i, j, { runId: randomUUID() })).rejects.toThrow(/relation_events_run_id/);
+    expect(await pairRows()).toBe(0);
+    await expect(
+      relations().veto(applied.relation.id, "typer", undefined as unknown as string)
+    ).rejects.toThrow("needs its run");
+    // The interim generative matcher's band-null rows are written without a run and record none.
+    const interim = await decided(i, j, { band: null, probability: null, runId: null });
+    expect([interim.change, interim.eventId]).toEqual(["created", null]);
+    expect(await events(interim.relation.id)).toHaveLength(0);
   });
 
   it("classifies every state with the five predicates, endpoints included (D9)", async () => {
@@ -299,7 +427,7 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
         name: "withdrawn",
         other: await other("p5"),
         input: {},
-        after: (id) => relations().veto(id, "explainer"),
+        after: (id) => relations().veto(id, "explainer", runId),
         expected: ["withdrawn"]
       },
       { name: "removed", other: await other("p6"), input: { status: "rejected" }, expected: [] },

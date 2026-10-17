@@ -113,31 +113,49 @@ export interface NoteRelationUpsert {
    * Human verdicts are written by the review writer.
    */
   status?: AtomicNoteRelationStatus;
+  /**
+   * The `relation_match_runs` row this write belongs to (D14). A write that changes the row records
+   * its one `relation_events` row in the same statement. Required for every banded (relations v2)
+   * write; only the interim generative matcher's band-null rows and fixtures omit it, and record no
+   * event.
+   */
+  runId?: string | null;
 }
 
 /**
  * What an upsert did. `reviewed`: the pair has a human verdict, which automation never changes
- * (I-R3), so nothing was written. `before` and `after` are row images for the relation events of
- * D14 (`before` is null for a creation).
+ * (I-R3), so nothing was written. `before` and `after` are the row images (`to_jsonb` of the row)
+ * the relation event holds (`before` is null for a creation); `eventId` is that event, null when
+ * nothing was written or no run was given.
  */
 export interface NoteRelationWriteResult {
   relation: AtomicNoteRelationRecord;
   change: "created" | "updated" | "unchanged" | "reviewed";
   before: JsonObject | null;
   after: JsonObject;
+  eventId: string | null;
 }
 
 interface WriteRow extends AtomicNoteRelationRow {
   before: unknown;
   after: unknown;
   written: boolean;
+  eventId: string | null;
 }
+
+/** The pair key of a note relation's events: the canonical pair, as relation decisions key it. */
+const eventPairKey = (r: string) =>
+  `${r}.source_atomic_note_id::text || ':' || ${r}.target_atomic_note_id::text`;
 
 export const atomicNoteRelationSql = {
   /**
-   * $1 lo, $2 hi, then the written columns. On conflict a row without a human verdict takes the new
-   * type, direction, band, probability, keys and scores; a reviewed row is left as it is. Nothing is
-   * rewritten when every value is unchanged.
+   * $1 lo, $2 hi, then the written columns, $18 the run. On conflict a row without a human verdict
+   * takes the new type, direction, band, probability, keys and scores; a reviewed row is left as it
+   * is. Nothing is rewritten when every value is unchanged. A written row with a run records one
+   * event in the same statement (D14), its kind from the change: a reconcile run's `reconciled`;
+   * a creation `untyped` without a type, else `suggested` or `applied` by band; a change of type or
+   * direction `typed` (`untyped` when the type is cleared); any other change `suggested` or
+   * `applied` by band.
    */
   upsert: `
 with prior as (
@@ -170,6 +188,23 @@ written as (
          excluded.matching_profile_id, excluded.matching_model, excluded.metadata)
   returning r.*
 ),
+event as (
+  insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
+  select $18::uuid, 'note', w.id, ${eventPairKey("w")},
+         case when run.kind = 'reconcile' then 'reconciled'
+              when prior.image is null and w.relation_type is null then 'untyped'
+              when prior.image is not null
+                and (prior.image->>'relation_type' is distinct from w.relation_type
+                     or prior.image->>'direction' <> w.direction)
+                then case when w.relation_type is null then 'untyped' else 'typed' end
+              when w.band = 'suggest' then 'suggested' else 'applied' end,
+         prior.image, to_jsonb(w)
+    from written w
+    left join prior on true
+    left join relation_match_runs run on run.id = $18::uuid
+   where $18::uuid is not null
+  returning id
+),
 result as (
   select w.*, true as written, to_jsonb(w) as after from written w
   union all
@@ -177,18 +212,29 @@ result as (
    where p.source_atomic_note_id = $1::uuid and p.target_atomic_note_id = $2::uuid
      and not exists (select 1 from written)
 )
-select ${columns("result")}, result.written, result.after, (select image from prior) as before
+select ${columns("result")}, result.written, result.after, (select image from prior) as before,
+       (select id from event) as "eventId"
   from result`,
 
-  /** $1 relation ID, $2 veto source. Withdraws a relation that has no human verdict and no veto. */
+  /**
+   * $1 relation ID, $2 veto source, $3 the run. Withdraws a relation that has no human verdict and
+   * no veto, with its `vetoed` event in the same statement (D14).
+   */
   veto: `
 with prior as (select to_jsonb(p) as image from atomic_note_relations p where p.id = $1::uuid),
 written as (
   update atomic_note_relations r set vetoed_at = clock_timestamp(), veto_source = $2, updated_at = now()
    where r.id = $1::uuid and ${noteRelationStateSql.vetoable("r")}
   returning r.*
+),
+event as (
+  insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
+  select $3::uuid, 'note', w.id, ${eventPairKey("w")}, 'vetoed', (select image from prior), to_jsonb(w)
+    from written w
+  returning id
 )
-select ${columns("w")}, true as written, to_jsonb(w) as after, (select image from prior) as before
+select ${columns("w")}, true as written, to_jsonb(w) as after, (select image from prior) as before,
+       (select id from event) as "eventId"
   from written w`
 };
 
@@ -202,7 +248,7 @@ function writeResult(row: WriteRow, created: boolean): NoteRelationWriteResult {
     : relation.status === "pending_review"
       ? "unchanged"
       : "reviewed";
-  return { relation, change, before, after: asJsonObject(row.after) };
+  return { relation, change, before, after: asJsonObject(row.after), eventId: row.eventId };
 }
 
 export function createAtomicNoteRelationRepository(db: Queryable) {
@@ -225,9 +271,10 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
     },
 
     /**
-     * Stores a decided pair once (the canonical upsert of F3 D8). Refuses a self pair, an unsorted
-     * pair and an unknown direction (legacy rows only); a pair with a human verdict is never
-     * changed. Recording the matching relation event (D14) is the caller's, from `before`/`after`.
+     * Stores a decided pair once (the canonical upsert of F3 D8) and records the matching relation
+     * event of its run in the same statement (D14, I-R8). Refuses a self pair, an unsorted pair, an
+     * unknown direction (legacy rows only) and a banded write without its run; a pair with a human
+     * verdict is never changed.
      */
     async upsert(input: NoteRelationUpsert): Promise<NoteRelationWriteResult> {
       const lo = input.loAtomicNoteId.toLowerCase(),
@@ -236,6 +283,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
       if (lo > hi) throw new Error("Atomic note relation pair must be sorted (lo < hi).");
       if ((input.direction as string) === "unknown")
         throw new Error("A new note relation needs a known direction.");
+      if (input.band !== null && !input.runId)
+        throw new Error("A banded note relation write records its event: it needs its run (D14).");
       const result = await db.query<WriteRow>(atomicNoteRelationSql.upsert, [
         lo,
         hi,
@@ -253,7 +302,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
         input.status ?? "pending_review",
         input.matchingProfileId ?? null,
         input.matchingModel ?? null,
-        JSON.stringify(input.metadata ?? {})
+        JSON.stringify(input.metadata ?? {}),
+        input.runId ?? null
       ]);
       const row = result.rows[0];
       if (!row) throw new Error("Atomic note relation upsert returned no row.");
@@ -282,15 +332,19 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
     },
 
     /**
-     * Withdraws a relation automatically (D9: `vetoed_at`, `veto_source`). Resolves to null when the
-     * relation is gone, has a human verdict or is already withdrawn: nothing is written then.
+     * Withdraws a relation automatically (D9: `vetoed_at`, `veto_source`) with its `vetoed` event in
+     * run `runId` (D14). Resolves to null when the relation is gone, has a human verdict or is
+     * already withdrawn: nothing is written then.
      */
     async veto(
       relationId: string,
-      source: NoteRelationVetoSource
+      source: NoteRelationVetoSource,
+      runId: string
     ): Promise<NoteRelationWriteResult | null> {
-      const row = (await db.query<WriteRow>(atomicNoteRelationSql.veto, [relationId, source]))
-        .rows[0];
+      if (!runId) throw new Error("A veto records its event: it needs its run (D14).");
+      const row = (
+        await db.query<WriteRow>(atomicNoteRelationSql.veto, [relationId, source, runId])
+      ).rows[0];
       return row ? writeResult(row, false) : null;
     },
 
