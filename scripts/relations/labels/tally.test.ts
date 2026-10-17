@@ -208,6 +208,40 @@ describe("the tally of a pass", () => {
     const entry = fixture.items.find((candidate) => candidate.related === true)!;
     expect(entry).toMatchObject({ type: "supports", votes: { yes: 3, no: 0 }, unanimous: true });
     expect(["lo_to_hi", "hi_to_lo"]).toContain(entry.direction);
+    const pooled = sealed.items.find((item) => item.split !== null)!;
+    expect(fixture.items.find((item) => item.pairId === pooled.pairId)).toMatchObject({
+      group: pooled.group,
+      split: pooled.split
+    });
+  });
+
+  it("counts the split per pool and stratum and refuses held-out fit labels or a crossing group", () => {
+    const { sealed } = renderedWorld();
+    const result = tally(
+      sealed,
+      answersFor(sealed, () => false)
+    );
+    const pooled = sealed.items.filter((item) => item.split !== null);
+    expect(result.splits.reduce((sum, row) => sum + row.items, 0)).toBe(pooled.length);
+    expect(
+      result.splits.filter((row) => row.split === "fit").reduce((sum, row) => sum + row.items, 0)
+    ).toBe(pooled.filter((item) => item.split === "fit").length);
+    const fit = pooled.find((item) => item.split === "fit")!;
+    const heldOut: Sealed = {
+      ...sealed,
+      items: sealed.items.map((item) =>
+        item === fit
+          ? { ...item, library: "fixture", partitions: ["tuning", "holdout"] as [string, string] }
+          : item
+      )
+    };
+    expect(() => labelFixture(result, heldOut)).toThrow(/outside the tuning partition/u);
+    const other = pooled.find((item) => item.split === "eval")!;
+    const crossing: Sealed = {
+      ...sealed,
+      items: sealed.items.map((item) => (item === other ? { ...item, group: fit.group } : item))
+    };
+    expect(() => labelFixture(result, crossing)).toThrow(/crosses the splits/u);
   });
 
   it("checks a pass's consistency items against the panel's labels", () => {

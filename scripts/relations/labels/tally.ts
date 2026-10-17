@@ -215,6 +215,7 @@ export interface TallyResult {
       | "library"
       | "lo"
       | "hi"
+      | "group"
       | "sets"
       | "pool"
       | "stratum"
@@ -239,6 +240,16 @@ export interface TallyResult {
     labelled: number;
     related: number;
     positiveShare: number | null;
+  }>;
+  /** The fit/eval split of the pools (spec 5.2): items, root-pair groups and positives per cell. */
+  splits: Array<{
+    pool: string;
+    stratum: number;
+    name: string;
+    split: "fit" | "eval";
+    items: number;
+    groups: number;
+    related: number;
   }>;
   unresolved: { related: number; type: number; direction: number };
   problems: string[];
@@ -320,6 +331,7 @@ export function tally(
       library: item.library,
       lo: item.lo,
       hi: item.hi,
+      group: item.group,
       sets: item.sets,
       pool: item.pool,
       stratum: item.stratum,
@@ -359,6 +371,22 @@ export function tally(
       positiveShare: share(related, labelled.length)
     };
   });
+  const splits: TallyResult["splits"] = [];
+  for (const row of strata.filter((candidate) => candidate.items > 0))
+    for (const split of ["fit", "eval"] as const) {
+      const own = items.filter(
+        (item) => item.pool === row.pool && item.stratum === row.stratum && item.split === split
+      );
+      splits.push({
+        pool: row.pool,
+        stratum: row.stratum,
+        name: row.name,
+        split,
+        items: own.length,
+        groups: new Set(own.map((item) => item.group)).size,
+        related: own.filter((item) => item.related.majority === true).length
+      });
+    }
   let consistency: TallyResult["consistency"] = null;
   if (reference) {
     const checks = items.filter((item) =>
@@ -394,6 +422,7 @@ export function tally(
     items,
     strata,
     sets,
+    splits,
     unresolved: {
       related: items.filter((item) => item.related.majority === null).length,
       type: items.filter((item) => item.related.majority === true && item.type.majority === null)
@@ -428,6 +457,8 @@ export const labelFixtureSchema = z
           library: z.string(),
           lo: z.string(),
           hi: z.string(),
+          /** Unordered root pair: splits and cross-validation folds never cut a group. */
+          group: z.string(),
           sets: z.array(z.string()),
           pool: z.string().nullable(),
           stratum: z.number().int().nullable(),
@@ -445,8 +476,26 @@ export const labelFixtureSchema = z
   .strict();
 export type LabelFixture = z.infer<typeof labelFixtureSchema>;
 
+/** Refuses fit labels holding a fixture held-out root, and a root-pair group in both splits. */
+export function checkSplits(sealed: Sealed): void {
+  const splitOfGroup = new Map<string, string>();
+  for (const item of sealed.items) {
+    if (item.split === null) continue;
+    if (
+      item.split === "fit" &&
+      item.library === "fixture" &&
+      (!item.partitions || item.partitions.some((partition) => partition !== "tuning"))
+    )
+      throw new Error(`Fit item ${item.pairId} holds a fixture root outside the tuning partition.`);
+    const seen = splitOfGroup.get(item.group);
+    if (seen && seen !== item.split) throw new Error(`Group ${item.group} crosses the splits.`);
+    splitOfGroup.set(item.group, item.split);
+  }
+}
+
 /** The versioned labels: ids, content hashes and majority labels, no text (spec 4.5). */
 export function labelFixture(result: TallyResult, sealed: Sealed): LabelFixture {
+  checkSplits(sealed);
   return labelFixtureSchema.parse({
     format: fixtureFormat,
     version: 1,
@@ -462,6 +511,7 @@ export function labelFixture(result: TallyResult, sealed: Sealed): LabelFixture 
         library: item.library,
         lo: item.lo,
         hi: item.hi,
+        group: item.group,
         sets: [...new Set(item.sets.map((membership) => membership.set))].sort(),
         pool: item.pool,
         stratum: item.stratum,
@@ -518,6 +568,35 @@ export function renderTallyMarkdown(result: TallyResult): string {
         `| ${row.set} | ${row.items} | ${row.labelled} | ${row.related} | ${percent(row.positiveShare)} |`
     )
   ];
+  if (result.splits.length > 0) {
+    const cell = (pool: string, stratum: number, split: string): string => {
+      const row = result.splits.find(
+        (candidate) =>
+          candidate.pool === pool && candidate.stratum === stratum && candidate.split === split
+      );
+      return row ? `${row.items} (${row.related})` : "-";
+    };
+    const total = (split: string) => {
+      const own = result.splits.filter((row) => row.split === split);
+      const groups = new Set(
+        result.items.filter((item) => item.split === split).map((item) => item.group)
+      ).size;
+      const sum = (key: "items" | "related") => own.reduce((acc, row) => acc + row[key], 0);
+      return `${sum("items")} (${sum("related")}), ${groups} groups`;
+    };
+    lines.push(
+      "",
+      "| Pool | Stratum | Fit items (related) | Eval items (related) |",
+      "| --- | --- | ---: | ---: |",
+      ...result.strata
+        .filter((row) => row.items > 0)
+        .map(
+          (row) =>
+            `| ${row.pool} | ${row.name} | ${cell(row.pool, row.stratum, "fit")} | ${cell(row.pool, row.stratum, "eval")} |`
+        ),
+      `| all | | ${total("fit")} | ${total("eval")} |`
+    );
+  }
   if (result.consistency)
     lines.push(
       "",
