@@ -14,7 +14,8 @@ import {
   noteVectorCandidatesStatement,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
-  runMigrations
+  runMigrations,
+  shownNoteRelationSql
 } from "@app/db";
 import type { RetrievalFence } from "@app/db";
 
@@ -591,9 +592,7 @@ try {
       await pool.query<{ a: string; b: string }>(
         `select r.source_atomic_note_id as a, r.target_atomic_note_id as b
            from atomic_note_relations r
-           join atomic_notes na on na.id = r.source_atomic_note_id and na.status not in ('rejected', 'archived') and na.supersession_status = 'current'
-           join atomic_notes nb on nb.id = r.target_atomic_note_id and nb.status not in ('rejected', 'archived') and nb.supersession_status = 'current'
-          where r.status <> 'rejected'
+          where ${shownNoteRelationSql("r")}
           order by md5(r.id::text) limit $1`,
         [options.relationSample]
       )
