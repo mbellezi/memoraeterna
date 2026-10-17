@@ -104,7 +104,7 @@ concurrency and automatic correction.
 25. **Hardware detection and recommended setups** (2026-10-18): the app detects the platform (CPU and
     architecture, memory, Apple unified memory and its GPU working-set limit, GPU and VRAM, NPU, free disk) on
     macOS and Windows (the app will be ported) and suggests one predefined setup per hardware tier — local
-    models where they work well (MLX on Apple Silicon, GGUF on Windows), cloud models where they do not — with
+    models where they work well (MLX on Apple Silicon, GGUF on Windows), efficient, very cheap cloud models where they do not (with price and an estimated monthly cost) — with
     alternatives, never blocking. Research and an on-device benchmark on the owner's 64 GB Mac come first (any
     model download is approved by the owner); the first run uses it in F4 and Settings v2 shows it in F5.
 
