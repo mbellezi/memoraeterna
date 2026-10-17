@@ -1,8 +1,9 @@
+import type { AiWorkloadClass } from "../contracts.js";
 import { isLocalEndpoint } from "../remote-execution.js";
 import type { AiLaneRuntimeConfig } from "../runtime-config.js";
 import { initialAimd, type AimdState } from "./aimd.js";
 import type { RankedEntry } from "./priority.js";
-import type { AiPriority, LaneKey, RemoteLaneKind } from "./types.js";
+import type { AiPriority, LaneKey, LaneRefusal, RemoteLaneKind } from "./types.js";
 
 /** Where a routed model executes; the lane follows from it at admission. */
 export interface ExecutionTarget {
@@ -57,8 +58,11 @@ export function laneMaximum(
 
 export interface WaitingEntry extends RankedEntry {
   readonly label: string;
+  readonly workloadClass: AiWorkloadClass;
   /** Called once the lane counted the entry as running. */
   readonly start: () => void;
+  /** Called once the lane removed the entry to fail it. */
+  readonly refuse: (error: unknown) => void;
 }
 
 /** One lane's mutable state; the scheduler owns every instance. */
@@ -70,6 +74,8 @@ export class Lane {
   public pausedUntil: number | null = null;
   public pauseTimer: unknown = undefined;
   public readonly waiting: WaitingEntry[] = [];
+  /** Held slots that fail the lane's entries meanwhile; the latest one makes the error. */
+  public readonly refusals: LaneRefusal[] = [];
 
   public constructor(
     public readonly key: LaneKey,

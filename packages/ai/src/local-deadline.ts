@@ -41,6 +41,17 @@ export class LocalDeadlineError extends AiProviderError {
   }
 }
 
+/**
+ * The refusal of a local call while a call its runtime abandoned has not ended: from the runtime
+ * itself, or from the local lane it keeps held meanwhile (C11). Transient: a job retries it later.
+ */
+export function localRuntimeWedgedError(deadlineMs: number): LocalDeadlineError {
+  return new LocalDeadlineError("The local model runtime is still stopping an abandoned call.", {
+    code: "wedged",
+    deadlineMs
+  });
+}
+
 export interface LocalDeadlineRun<T> {
   /** Total deadline from now, the start of the execution. */
   deadlineMs: number;

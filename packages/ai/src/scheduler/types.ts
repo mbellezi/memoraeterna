@@ -50,6 +50,12 @@ export interface LaneTicket {
 
 export type LaneOutcome = "ok" | "transient" | "permanent";
 
+/** What a refusing lane knows of an entry it fails. */
+export type LaneRefusalTarget = Pick<LaneTicket, "priority" | "workloadClass" | "label">;
+
+/** The error a refusing lane fails an entry with. */
+export type LaneRefusal = (entry: LaneRefusalTarget) => unknown;
+
 /** A running execution's hold on a lane slot. */
 export interface LanePermit {
   readonly lane: LaneKey;
@@ -71,8 +77,13 @@ export interface LanePermit {
     wait: () => Promise<T>,
     options?: { pause?: readonly PausableClock[] }
   ): Promise<T>;
-  /** Keeps the slot after the execution settles until `until` settles (a wedged local runtime). */
-  holdUntil(until: Promise<unknown>): void;
+  /**
+   * Keeps the slot after the execution settles until `until` settles (a wedged local runtime). With
+   * `refuse`, the lane meanwhile fails the entries waiting for it and every new one with the error
+   * `refuse` makes, so no call waits silently, its deadline paused, behind a runtime that may never
+   * stop (C11).
+   */
+  holdUntil(until: Promise<unknown>, options?: { refuse?: LaneRefusal }): void;
   /** A rate limit: halves a remote lane's limit and pauses it for `retryAfterMs` when stated. */
   observeRateLimit(retryAfterMs: number | null): void;
   /** One response's outcome: successes raise a remote lane's limit, transient failures reset. */

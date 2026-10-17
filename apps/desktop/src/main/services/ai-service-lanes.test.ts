@@ -382,31 +382,56 @@ describe("the scheduler's audit of every execution (S9)", () => {
     expect(isTransientJobFailure(other)).toBe(true);
   });
 
-  it("keeps the local lane held while a wedged local runtime is still stopping", async () => {
+  it("keeps the local lane held while a wedged runtime stops and fails the calls that need it (C11)", async () => {
     const recovery = Promise.withResolvers<void>();
+    const wedging = gate();
     const order: string[] = [];
     const { ai } = service({
       local: async (request) => {
         if (request.input.includes("wedges")) {
+          await wedging.hold();
           throw new LocalDeadlineError("Local model call did not stop.", {
             code: "aborted_deadline",
             deadlineMs: 180_000,
             recovery: recovery.promise
           });
         }
-        order.push("next");
+        order.push(request.input.split("\n").at(-1)!);
         return "ok";
       }
     });
-    await expect(ai.runDefaultTask("summarization", "this wedges")).rejects.toMatchObject({
-      code: "aborted_deadline"
-    });
-    const next = ai.runDefaultTask("summarization", "afterwards", { priority: "P0" });
+    const wedged = ai.runDefaultTask("summarization", "this wedges");
+    await wedging.started;
+    // Waiting for the lane when the runtime wedges: it fails instead of queueing behind the hold.
+    const waiting = ai.runDefaultTask("summarization", "queued before", { priority: "P0" });
     await new Promise((resolve) => setTimeout(resolve, 5));
+    wedging.open();
+    await expect(wedged).rejects.toMatchObject({ code: "aborted_deadline" });
+    const queued = await waiting.catch((error: unknown) => error);
+    expect(queued).toMatchObject({ code: "wedged", deadlineMs: 180_000 });
+    // Admitted while the lane is held: refused at once, as a failure a job retries.
+    const refused = await ai
+      .runDefaultTask("atomic-note-generation", "meanwhile", { priority: "P0" })
+      .catch((error: unknown) => error);
+    expect(refused).toMatchObject({ code: "wedged", deadlineMs: 900_000 });
+    expect(isTransientJobFailure(refused)).toBe(true);
+    // Remote lanes are not held.
+    await expect(ai.runDefaultTask("text-generation", "question")).resolves.toMatchObject({
+      output: "ok"
+    });
     expect(order).toEqual([]);
     recovery.resolve();
-    await expect(next).resolves.toMatchObject({ output: "ok" });
-    expect(order).toEqual(["next"]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await expect(ai.runDefaultTask("summarization", "after recovery")).resolves.toMatchObject({
+      output: "ok"
+    });
+    expect(order).toEqual(["after recovery"]);
+    // The refused calls never executed, so only the three that did have audit rows.
+    expect(rows().map((row) => [row.lane, row.status])).toEqual([
+      ["local", "failed"],
+      [`remote:${ids.codexConfig}`, "succeeded"],
+      ["local", "succeeded"]
+    ]);
   });
 
   it("holds the local lane behind a real GGUF adapter whose native call ignores its deadline", async () => {
@@ -448,13 +473,18 @@ describe("the scheduler's audit of every execution (S9)", () => {
     // Settled at its deadline plus the grace period, not when the native call ends.
     expect(Date.now() - startedAt).toBeLessThan(2_000);
     expect(gguf.wedged).toBe(true);
-    const next = ai.runDefaultTask("summarization", "afterwards", { priority: "P0" });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A new GGUF call fails visibly instead of waiting, with its deadline paused, for the lane.
+    await expect(
+      ai.runDefaultTask("summarization", "meanwhile", { priority: "P0" })
+    ).rejects.toMatchObject({ code: "wedged" });
     expect(order).toEqual([]);
     native.resolve({ output: "late", durationMs: 1 });
-    await expect(next).resolves.toMatchObject({ output: "ok" });
+    await vi.waitFor(() => expect(gguf.wedged).toBe(false));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await expect(ai.runDefaultTask("summarization", "afterwards")).resolves.toMatchObject({
+      output: "ok"
+    });
     expect(order).toEqual(["next ran"]);
-    expect(gguf.wedged).toBe(false);
     expect(rows()[0]).toMatchObject({ deadlineOutcome: "aborted", deadlineMs: 100 });
   });
 

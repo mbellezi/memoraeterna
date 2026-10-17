@@ -8,7 +8,7 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
-import { LocalDeadlineError, runWithLocalDeadline } from "./local-deadline.js";
+import { localRuntimeWedgedError, runWithLocalDeadline } from "./local-deadline.js";
 import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
 import { MlxHelperHost } from "./mlx-helper-host.js";
 import { hasGeneration, localParameterCapabilities } from "./parameter-capabilities.js";
@@ -89,14 +89,7 @@ export class LocalRuntimeGuard {
     options: { streamed?: boolean } = {}
   ): Promise<T> {
     const deadlineMs = localRequestDeadlineMs(request, this.deadlines);
-    if (this.wedged) {
-      return Promise.reject(
-        new LocalDeadlineError("The local model runtime is still stopping an abandoned call.", {
-          code: "wedged",
-          deadlineMs
-        })
-      );
-    }
+    if (this.wedged) return Promise.reject(localRuntimeWedgedError(deadlineMs));
     return runWithLocalDeadline({
       deadlineMs,
       graceMs: this.deadlines.graceMs,

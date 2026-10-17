@@ -12,6 +12,8 @@ import type {
   LaneKey,
   LaneOutcome,
   LanePermit,
+  LaneRefusal,
+  LaneRefusalTarget,
   LaneReservation,
   LaneSnapshot,
   LaneTicket,
@@ -139,12 +141,14 @@ export class LaneScheduler implements AiScheduler {
   /** Waits for a slot of the lane; resolves once the slot is counted for the caller. */
   public wait(
     lane: Lane,
-    ticket: Pick<LaneTicket, "signal" | "label" | "priority">,
+    ticket: Pick<LaneTicket, "signal" | "label" | "priority" | "workloadClass">,
     reservation: LaneReservation,
     pauses: readonly PausableClock[]
   ): Promise<void> {
     const signal = ticket.signal;
     if (signal?.aborted) return Promise.reject(signal.reason);
+    const refusal = lane.refusals.at(-1);
+    if (refusal) return Promise.reject(refusalError(refusal, ticket));
     return new Promise<void>((resolve, reject) => {
       for (const clock of pauses) clock.pause();
       let resumed = false;
@@ -158,10 +162,16 @@ export class LaneScheduler implements AiScheduler {
         sequence: reservation.sequence,
         priority: ticket.priority,
         label: ticket.label,
+        workloadClass: ticket.workloadClass,
         start: () => {
           signal?.removeEventListener("abort", onAbort);
           resume();
           resolve();
+        },
+        refuse: (error) => {
+          signal?.removeEventListener("abort", onAbort);
+          resume();
+          reject(error);
         }
       };
       const onAbort = () => {
@@ -173,6 +183,16 @@ export class LaneScheduler implements AiScheduler {
       signal?.addEventListener("abort", onAbort, { once: true });
       this.schedule();
     });
+  }
+
+  /** Fails the lane's waiting entries, and its new ones until the returned function lifts it. */
+  public refuse(lane: Lane, refusal: LaneRefusal): () => void {
+    lane.refusals.push(refusal);
+    for (const entry of lane.waiting.splice(0)) entry.refuse(refusalError(refusal, entry));
+    return () => {
+      const index = lane.refusals.indexOf(refusal);
+      if (index >= 0) lane.refusals.splice(index, 1);
+    };
   }
 
   /** Gives one slot of the lane back. */
@@ -250,6 +270,7 @@ class Permit implements LanePermit {
   private holding = false;
   private finished = false;
   private readonly holds: Promise<unknown>[] = [];
+  private refusal: LaneRefusal | undefined;
 
   public constructor(
     private readonly scheduler: LaneScheduler,
@@ -303,8 +324,9 @@ class Permit implements LanePermit {
     return value;
   }
 
-  public holdUntil(until: Promise<unknown>): void {
+  public holdUntil(until: Promise<unknown>, options: { refuse?: LaneRefusal } = {}): void {
     this.holds.push(until.catch(() => undefined));
+    if (options.refuse) this.refusal = options.refuse;
   }
 
   public observeRateLimit(retryAfterMs: number | null): void {
@@ -326,9 +348,24 @@ class Permit implements LanePermit {
       return;
     }
     this.laneState.held += 1;
+    const lift = this.refusal ? this.scheduler.refuse(this.laneState, this.refusal) : undefined;
     void Promise.all(this.holds).then(() => {
+      lift?.();
       this.laneState.held -= 1;
       this.scheduler.release(this.laneState);
     });
+  }
+}
+
+/** The error a refusing lane fails an entry with; a throwing refusal fails it with what it threw. */
+function refusalError(refusal: LaneRefusal, entry: LaneRefusalTarget): unknown {
+  try {
+    return refusal({
+      priority: entry.priority,
+      workloadClass: entry.workloadClass,
+      label: entry.label
+    });
+  } catch (error) {
+    return error;
   }
 }

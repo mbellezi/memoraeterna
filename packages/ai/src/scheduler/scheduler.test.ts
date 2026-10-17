@@ -616,6 +616,46 @@ describe("lane scheduler: permits", () => {
     await expect(queued).resolves.toBe("next");
   });
 
+  it("fails the waiting and new entries of a lane while a refusing hold lasts, and no other lane's (C11)", async () => {
+    const { scheduler } = setup();
+    const recovery = Promise.withResolvers<void>();
+    const log: string[] = [];
+    const wedging = controlled(scheduler, ticket("local"), "wedging", log);
+    const permit = await wedging.started;
+    const clock = { pause: vi.fn(), resume: vi.fn() };
+    const waiting = scheduler
+      .run(ticket("local", "P0", { pauses: [clock] }), async () => "never")
+      .catch((error: unknown) => error);
+    permit.holdUntil(recovery.promise, {
+      refuse: (entry) => new Error(`refused ${entry.priority} ${entry.workloadClass}`)
+    });
+    // The execution still runs: the lane refuses once it settled and its slot is held.
+    await flush();
+    expect(scheduler.snapshot()[0]).toMatchObject({ waiting: { P0: 1 } });
+    expect(clock.pause).toHaveBeenCalledTimes(1);
+    wedging.finish();
+    await wedging.result;
+    expect(((await waiting) as Error).message).toBe("refused P0 write-fast");
+    expect(clock.resume).toHaveBeenCalledTimes(1);
+    const later = vi.fn(async () => "later");
+    await expect(
+      scheduler.run(ticket("local", "P3", { workloadClass: "decide" }), later)
+    ).rejects.toThrow("refused P3 decide");
+    await expect(scheduler.run(ticket("remote:key"), async () => "remote")).resolves.toBe("remote");
+    expect(scheduler.snapshot()[0]).toMatchObject({
+      lane: "local",
+      running: 1,
+      held: 1,
+      waiting: { P0: 0, P1: 0, P2: 0, P3: 0 }
+    });
+    expect(later).not.toHaveBeenCalled();
+    // The runtime recovered: the lane takes calls again.
+    recovery.resolve();
+    await flush();
+    await expect(scheduler.run(ticket("local"), later)).resolves.toBe("later");
+    expect(scheduler.snapshot()[0]).toMatchObject({ running: 0, held: 0 });
+  });
+
   it("frees the slot before the caller continues, so telemetry runs off the lane", async () => {
     const { scheduler } = setup();
     const result = await scheduler.run(ticket("local"), async () => "value");

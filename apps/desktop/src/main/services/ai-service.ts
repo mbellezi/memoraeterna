@@ -63,6 +63,7 @@ import {
   isRemoteExecution,
   localDeadlineMs,
   LocalDeadlineError,
+  localRuntimeWedgedError,
   priorityNumber,
   remoteTotalDeadlineMs,
   requestWorkloadClass,
@@ -1375,8 +1376,7 @@ export class AiService {
       };
     } catch (caught) {
       // An abandoned local call keeps the local lane until its runtime is disposed (F3 D31).
-      const recovery = caught instanceof LocalDeadlineError ? caught.recovery : undefined;
-      if (recovery) permit.holdUntil(recovery);
+      this.holdWedgedLocalLane(permit, caught);
       const error = this.localDeadlineHistory.verdict(selection.localModelId, taskInput, caught, {
         aborted: Boolean(signal?.aborted),
         deadlineMs
@@ -1535,6 +1535,21 @@ export class AiService {
    */
   private occupied(occupant: ResidentLocalAdapter): boolean {
     return this.activeLocalModels.has(occupant.localModelId) || isWedged(occupant.adapter);
+  }
+
+  /**
+   * After a call its runtime abandoned (F3 D31, C11) the local lane stays held until the runtime
+   * was disposed; meanwhile every call that needs the lane fails visibly with `wedged` instead of
+   * waiting, its deadline paused, behind a native call that may not end for minutes.
+   */
+  private holdWedgedLocalLane(permit: LanePermit, error: unknown): void {
+    if (!(error instanceof LocalDeadlineError) || !error.recovery) return;
+    permit.holdUntil(error.recovery, {
+      refuse: (entry) =>
+        localRuntimeWedgedError(
+          localDeadlineMs(this.laneConfig.localDeadlines, entry.workloadClass)
+        )
+    });
   }
 
   /**
@@ -1888,8 +1903,7 @@ export class AiService {
       };
     } catch (caught) {
       // An abandoned GGUF call keeps the local lane until its runtime is disposed (F3 D31).
-      if (caught instanceof LocalDeadlineError && caught.recovery)
-        permit.holdUntil(caught.recovery);
+      this.holdWedgedLocalLane(permit, caught);
       const error = this.localDeadlineHistory.verdict(model.id, taskInput, caught, {
         aborted: Boolean(signal?.aborted),
         deadlineMs
@@ -2051,7 +2065,7 @@ export class AiService {
         durationMs: Date.now() - started,
         error: redactSensitiveText(error)
       });
-      if (error instanceof LocalDeadlineError && error.recovery) permit.holdUntil(error.recovery);
+      this.holdWedgedLocalLane(permit, error);
       throw error;
     }
   }
@@ -2144,8 +2158,7 @@ export class AiService {
             status: "failed",
             error: redactSensitiveText(error)
           });
-          if (error instanceof LocalDeadlineError && error.recovery)
-            permit.holdUntil(error.recovery);
+          this.holdWedgedLocalLane(permit, error);
           throw error;
         }
       };

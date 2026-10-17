@@ -1,6 +1,7 @@
 import {
   createDecideValidation,
   findLocalModelCatalogEntry,
+  LocalDeadlineError,
   rankerCatalogArtifactSha256,
   type LocalModelCatalogEntry
 } from "@app/ai";
@@ -580,6 +581,27 @@ describe("rank on a validated dedicated ranker", () => {
 
     expect(runtimeBuild).toHaveBeenCalledTimes(2);
     expect(ranker.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails rank calls visibly while a GGUF ranker that ignored its deadline still holds the lane", async () => {
+    addRanker("gguf", { route: true });
+    const { ai, ggufRanker } = service({ machine: { platform: "linux", arch: "x64" } });
+    const recovery = Promise.withResolvers<void>();
+    ggufRanker.run.mockRejectedValueOnce(
+      new LocalDeadlineError("Local model call did not stop.", {
+        code: "aborted_deadline",
+        deadlineMs: 10_000,
+        recovery: recovery.promise
+      })
+    );
+
+    await expect(ai.rank(gateInput)).rejects.toMatchObject({ code: "aborted_deadline" });
+    await expect(ai.rank(gateInput)).rejects.toMatchObject({ code: "wedged", deadlineMs: 10_000 });
+    expect(ggufRanker.run).toHaveBeenCalledOnce();
+    recovery.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await expect(ai.rank(gateInput)).resolves.toMatchObject({ runtime: "gguf" });
+    expect(ggufRanker.run).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an invalid rank request before it waits for the AI queue", async () => {

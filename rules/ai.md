@@ -53,7 +53,7 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   job); never invalid requests, auth failures, exhausted billing quota, context overflow or schema
   failures after the allowed repair. Job retries classify alike. Every runtime, local included,
   enforces a per-class deadline from execution start; a local call that ignores cancellation
-  keeps its lane until the runtime is reloaded.
+  keeps its lane until the runtime is reloaded, and calls needing that lane fail meanwhile.
 - Structured output is requested with a schema where the runtime supports it and
   is always validated with Zod. Invalid output gets a bounded repair; valid items
   are kept and only missing ones are requested again (target F3).
