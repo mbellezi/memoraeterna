@@ -1,23 +1,20 @@
 import {
   renderPrompt,
   capturePromptPin,
-  promptFingerprint,
   stagePromptFingerprints,
   changedPromptIdentity
 } from "./prompt-runtime.js";
-import { contentKey } from "./content-order.js";
-import { noteMatchDecisionOperations, withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
 import { matchSources } from "./source-relation-processing.js";
 import {
-  AtomicNoteMatchingSettingsSchema,
-  AtomicNoteRelationTypeSchema,
-  type AtomicNoteRelationType,
+  persistDecidedPairs,
+  RelationMatcher,
+  type MatchNotesResult
+} from "./relations/relation-matcher.js";
+import {
   CanonicalMatchingSettingsSchema,
-  generativeDeciderCapabilities,
   knowledgeGraphBatchFor,
-  noteRelationPair,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
@@ -31,9 +28,7 @@ import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
-  createAiConfigRepository,
   createAtomicNoteRelationRepository,
-  createRelationDecisionRepository,
   createSourceRelationRepository,
   createSourceRelationExplanationRepository,
   listSourceRelations,
@@ -46,13 +41,11 @@ import {
   createLibraryRepository,
   createKnowledgeGraphRepository,
   createKnowledgeGraphDashboardRepository,
-  createSimilarityDebugRepository,
   createSourceItemRepository,
   createSourceSummaryRepository,
-  type AtomicNoteGraphElements,
   type AtomicNoteRecord,
   type PgPool,
-  type RelationDecisionInput,
+  type RetrievalFence,
   type SourceItemType
 } from "@app/db";
 
@@ -62,29 +55,17 @@ import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
 import type { LibraryBrowseInput, StorageSettings } from "../../shared/ipc.js";
 import {
-  atomicNoteDecisionContentHash,
-  atomicNoteDeciderKey,
-  atomicNoteMatchingVersion,
   atomicNotePromptVersion,
   buildAggregateSummaryPrompt,
-  buildBatchRerankPrompt,
-  calculateAtomicNoteMatchingProgress,
-  canQualifyAtomicNoteRelation,
   defaultSummaryMinimumWordCount,
-  fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hierarchyAggregateSummaryPromptVersion,
-  mergeBatchRerankRepair,
   normalizeSummaryText,
-  parseBatchRerankOutput,
-  scoreMetadataOverlap,
-  selectAtomicNoteRelations,
   knowledgeGraphPromptVersion,
   parseKnowledgeGraphBatchCheckpoints,
   summaryPromptVersion,
-  type BatchRerankDecision,
   type KnowledgeGraphBatchCheckpoint,
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
@@ -131,8 +112,11 @@ function updateGroupedChildSummary(
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
+  /** @deprecated Decides nothing since relations v2 (F3 D17); T53b removes the setting. */
   relationThreshold?: number;
+  /** @deprecated Decides nothing since relations v2 (F3 D17); T53b removes the setting. */
   getRelationThreshold?: () => Promise<number>;
+  /** Only the generative decider's output budget still applies (F3 D17, T53b). */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   getCanonicalMatchingSettings?: () => Promise<CanonicalMatchingSettings>;
   getSourceRelationSettings?: () => Promise<SourceRelationSettings>;
@@ -172,14 +156,13 @@ export interface KnowledgeGraphGenerationContext {
 }
 
 export class KnowledgeService {
-  private readonly relationThreshold: number;
   private readonly summaryMaxInputCharacters: number;
   /** An explicit batch size; absent, the batch follows the writer's locality (F3 D36). */
   private readonly knowledgeGraphMaxInputCharacters: number | null;
   private readonly sourceDeletionService: SourceDeletionService;
+  private readonly relationMatcher: RelationMatcher;
 
   public constructor(private readonly options: KnowledgeServiceOptions) {
-    this.relationThreshold = clamp(options.relationThreshold ?? 0.72);
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
     this.knowledgeGraphMaxInputCharacters =
       options.knowledgeGraphMaxInputCharacters === undefined
@@ -191,6 +174,16 @@ export class KnowledgeService {
       userDataPath: options.userDataPath,
       ...(options.logger ? { logger: options.logger } : {}),
       ...(options.topicHooks ? { topicHooks: options.topicHooks } : {})
+    });
+    this.relationMatcher = new RelationMatcher({
+      getPool: options.getPool,
+      ai: options.aiService,
+      ...(options.getAtomicNoteMatchingSettings
+        ? { getAtomicNoteMatchingSettings: options.getAtomicNoteMatchingSettings }
+        : {}),
+      ...(options.isDebugEnabled ? { isDebugEnabled: options.isDebugEnabled } : {}),
+      listSourceTreeIds: (sourceItemId) =>
+        this.sourceDeletionService.listSourceTreeIds(sourceItemId)
     });
   }
 
@@ -1551,621 +1544,63 @@ export class KnowledgeService {
     });
   }
 
+  /**
+   * Relations v2 for these notes (F3 T51): the relation matcher retrieves, decides, calibrates and
+   * bands each note in order (`relations/relation-matcher.ts`). Until the link job of T52 takes the
+   * hand-off over, a decided note's accepted pairs are persisted at once, in one `match` run whose
+   * events record every change (a ranker pair untyped, D20's fallback). Mode `ranker` without a
+   * validated ranker makes no call and returns `skipped: "waiting_for_decider"`.
+   */
   public async matchAtomicNotes(
     noteIds: string[],
     signal?: AbortSignal,
     onProgress?: (progress: number) => void | Promise<void>,
     logContext: AiTaskLogContext = {},
     options: {
-      /** Called once a note's relations and decisions are saved: a resumable checkpoint. */
+      /** Called once a note is decided and its pairs handed on: a resumable checkpoint. */
       onNoteCompleted?: (noteId: string, persistedCount: number) => void | Promise<void>;
+      /** The visibility fence of a re-match run (F3 3.17): retrieval sees only these roots. */
+      fence?: RetrievalFence;
     } = {}
-  ) {
+  ): Promise<MatchNotesResult> {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
-    const relations = createAtomicNoteRelationRepository(pool);
-    const decisions = createRelationDecisionRepository(pool);
-    const relationThreshold = clamp(
-      (await this.options.getRelationThreshold?.()) ?? this.relationThreshold
-    );
-    const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(
-      (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
-    );
-    let persistedCount = 0;
-    const batchNotes = new Map<string, AtomicNoteRecord | null>();
-    for (const noteId of noteIds) batchNotes.set(noteId, await notes.findById(noteId));
+    const current: AtomicNoteRecord[] = [];
+    for (const noteId of noteIds) {
+      const note = await notes.findById(noteId);
+      if (
+        note &&
+        note.status !== "rejected" &&
+        note.status !== "archived" &&
+        note.supersessionStatus === "current"
+      )
+        current.push(note);
+    }
     // Notes are embedded when they are created. Only a note that still has no vector for its
     // current text (an older library, a failed call) is embedded here, all of the batch before the
     // first retrieval, so no note is matched while another one of the batch is still invisible.
-    const { vectors } = await this.ensureAtomicNoteVectors(
-      [...batchNotes.values()].filter((candidate): candidate is AtomicNoteRecord => !!candidate),
-      { signal, logContext, operation: "note_matching_embedding" }
-    );
-    // A candidate is embedded at most once per run, whether or not that gave it a usable vector.
-    const embeddingAttempted = new Set<string>();
-    for (const [noteIndex, noteId] of noteIds.entries()) {
-      const note = batchNotes.get(noteId);
-      if (!note) {
-        await onProgress?.((noteIndex + 1) / noteIds.length);
-        await options.onNoteCompleted?.(noteId, 0);
-        continue;
-      }
-      const noteVector = vectors.get(note.id);
-      const embedding = noteVector?.embedding;
-      const embeddingSpace = noteVector
-        ? {
-            embeddingModel: noteVector.space.model,
-            embeddingSpaceKey: noteVector.space.spaceKey,
-            embeddingProvider: noteVector.space.provider,
-            embeddingRuntime: noteVector.space.runtime
-          }
-        : {};
-      const textCandidates = await notes.findTextMatchingCandidates({
-        noteId,
-        limit: matchingSettings.textCandidateLimit
-      });
-      const vectorCandidates = embedding
-        ? await notes.findVectorMatchingCandidates({
-            noteId,
-            embedding,
-            ...embeddingSpace,
-            limit: matchingSettings.vectorCandidateLimit
-          })
-        : [];
-      const graphRepository = createKnowledgeGraphRepository(pool);
-      let graphCandidates: Awaited<ReturnType<typeof graphRepository.findAtomicNoteCandidates>> =
-        [];
-      let graphError: string | null = null;
-      try {
-        graphCandidates =
-          matchingSettings.graphCandidateLimit > 0
-            ? await graphRepository.findAtomicNoteCandidates(
-                noteId,
-                matchingSettings.graphCandidateLimit
-              )
-            : [];
-      } catch (error) {
-        graphError =
-          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-      }
-      const fusedCandidates = fuseAtomicNoteCandidateRankings(
-        textCandidates.map((candidate) => ({
-          noteId: candidate.note.id,
-          contentKey: noteContentKey(candidate.note),
-          score: candidate.textScore
-        })),
-        vectorCandidates.map((candidate) => ({
-          noteId: candidate.note.id,
-          contentKey: noteContentKey(candidate.note),
-          score: candidate.vectorScore
-        })),
-        graphCandidates.map((candidate) => ({
-          noteId: candidate.noteId,
-          contentKey: candidate.contentKey,
-          score: candidate.graphScore
-        })),
-        matchingSettings.fusedCandidateLimit,
-        matchingSettings.minimumGraphOnlyCandidates,
-        matchingSettings.reciprocalRankConstant
-      );
-      const scoringInput = {
-        noteId,
-        candidateIds: fusedCandidates.map((candidate) => candidate.noteId),
-        ...(embedding ? { embedding } : {}),
-        ...embeddingSpace
-      };
-      let scoredCandidates = await notes.scoreMatchingCandidates(scoringInput);
-      if (embedding) {
-        // A candidate without a vector (found by text or graph only) has a vector score that means
-        // "unknown", not "dissimilar": embed it before it is scored. Whatever stays without one is
-        // scored without vector weights below, never as a vector score of 0.
-        const withoutVector = scoredCandidates.filter(
-          (candidate) => candidate.hasVector === false && !embeddingAttempted.has(candidate.note.id)
-        );
-        let embeddedAny = false;
-        for (const candidate of withoutVector) {
-          embeddingAttempted.add(candidate.note.id);
-          const vector = await this.embedAtomicNoteVector(candidate.note, {
-            signal,
-            logContext,
-            operation: "note_matching_embedding"
-          });
-          embeddedAny ||= vector !== null;
-        }
-        if (embeddedAny) scoredCandidates = await notes.scoreMatchingCandidates(scoringInput);
-      }
-      const scoresById = new Map(
-        scoredCandidates.map((candidate) => [candidate.note.id, candidate])
-      );
-      const graphPathsById = new Map(
-        graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType])
-      );
-      const pairStatuses = await relations.pairStatuses(
-        noteId,
-        fusedCandidates.map((candidate) => candidate.noteId)
-      );
-      const hasEmbedding = Boolean(embedding);
-      // A human accept or reject is final in both directions. An automatic relation is still
-      // decided in a direction that has no decision yet (the decision cache below skips the rest).
-      const candidates = fusedCandidates
-        .filter(
-          (candidate) =>
-            (pairStatuses.get(candidate.noteId) ?? "pending_review") === "pending_review"
-        )
-        .flatMap((candidate) => {
-          const scored = scoresById.get(candidate.noteId);
-          if (!scored) return [];
-          const scores = {
-            vectorScore: scored.vectorScore,
-            textScore: scored.textScore,
-            metadataScore: scoreMetadataOverlap(note.metadata, scored.note.metadata),
-            graphScore: candidate.graphScore
-          };
-          // A real vector score needs a vector on both notes.
-          const candidateHasEmbedding = hasEmbedding && scored.hasVector !== false;
-          return [
-            {
-              ...candidate,
-              note: scored.note,
-              textScore: scored.textScore,
-              vectorScore: scored.vectorScore,
-              scores,
-              hasEmbedding: candidateHasEmbedding,
-              contentHash: atomicNoteDecisionContentHash(scored.note),
-              feasible: canQualifyAtomicNoteRelation({
-                scores,
-                hasEmbedding: candidateHasEmbedding,
-                threshold: relationThreshold,
-                settings: matchingSettings
-              })
-            }
-          ];
-        });
-      let graphElementsByNote = new Map<string, AtomicNoteGraphElements>();
-      try {
-        graphElementsByNote = await graphRepository.listAtomicNoteElements([
-          noteId,
-          ...candidates.map((candidate) => candidate.note.id)
-        ]);
-      } catch {
-        // Debug enrichment must not make note matching fail.
-      }
-      const sourceContentHash = atomicNoteDecisionContentHash(note);
-      const feasible = candidates.filter((candidate) => candidate.feasible);
-      // The decider is resolved once per note, before the cache lookup: the cached verdicts, their
-      // provenance and the recorded decisions of this note all belong to this identity.
-      const decider = await this.atomicNoteDecider();
-      // A direction already decided on the same content by the same decider is never asked again.
-      const cachedVerdicts = new Map<
-        string,
-        { score: number; relationType: AtomicNoteRelationType }
-      >();
-      // A generative decider judges an unordered pair once: the verdict of the reverse direction
-      // (candidate -> this note) on the same content answers this direction too. Nothing is written
-      // for it, so a stored direction is always a real judgment.
-      const reusedVerdicts = new Map<
-        string,
-        { score: number; relationType: AtomicNoteRelationType }
-      >();
-      const collectVerdicts = (
-        verdicts: ReadonlyMap<string, { score: number; relationType: string }>,
-        into: typeof cachedVerdicts
-      ) => {
-        for (const [targetId, verdict] of verdicts) {
-          const relationType = AtomicNoteRelationTypeSchema.safeParse(verdict.relationType);
-          if (relationType.success)
-            into.set(targetId, { score: verdict.score, relationType: relationType.data });
-        }
-      };
-      const verdictTargets = (candidates: typeof feasible) =>
-        candidates.map((candidate) => ({
-          atomicNoteId: candidate.note.id,
-          contentHash: candidate.contentHash
-        }));
-      if (decider && feasible.length > 0) {
-        collectVerdicts(
-          await decisions.findVerdicts({
-            sourceAtomicNoteId: note.id,
-            sourceContentHash,
-            deciderKey: decider.key,
-            targets: verdictTargets(feasible)
-          }),
-          cachedVerdicts
-        );
-        const undecided = feasible.filter((candidate) => !cachedVerdicts.has(candidate.note.id));
-        if (decider.generative && undecided.length > 0)
-          collectVerdicts(
-            await decisions.findReverseVerdicts({
-              sourceAtomicNoteId: note.id,
-              sourceContentHash,
-              deciderKey: decider.key,
-              targets: verdictTargets(undecided)
-            }),
-            reusedVerdicts
-          );
-      }
-      // Candidate numbers follow the content order of the fused candidates, never their IDs.
-      const pending = feasible.filter(
-        (candidate) =>
-          !cachedVerdicts.has(candidate.note.id) && !reusedVerdicts.has(candidate.note.id)
-      );
-      const rerankAliases = new Map(
-        pending.map((candidate, index) => [candidate.note.id, index + 1])
-      );
-      const runRerank = (subset: typeof pending, attempt: number) =>
-        this.options.aiService.runDefaultTask(
-          "reranking",
-          buildBatchRerankPrompt(
-            note,
-            subset.map((candidate) => ({
-              alias: rerankAliases.get(candidate.note.id)!,
-              title: candidate.note.title,
-              ideaStatement: candidate.note.ideaStatement
-            }))
-          ),
-          withAiSourceItems(
-            {
-              ...logContext,
-              atomicNoteId: note.id,
-              operation: attempt
-                ? noteMatchDecisionOperations.repair
-                : noteMatchDecisionOperations.decide,
-              promptVersion: atomicNoteMatchingVersion,
-              attempt
-            },
-            [
-              note.createdFromSourceItemId,
-              ...subset.map((candidate) => candidate.note.createdFromSourceItemId)
-            ]
-          ),
-          signal,
-          { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
-        );
-      let rerankExecution: DefaultAiTaskResult | null = null;
-      let rerankError: string | null = null;
-      let rerankCause: unknown;
-      let repairedAliases: number[] = [];
-      let undecidedAliases: number[] = [];
-      const modelDecisions = new Map<string, BatchRerankDecision & { aiTaskRunId: string }>();
-      if (pending.length > 0) {
-        try {
-          rerankExecution = await runRerank(pending, 0);
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          rerankCause = error;
-          rerankError =
-            error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-        }
-        if (rerankExecution) {
-          const aliases = pending.map((candidate) => rerankAliases.get(candidate.note.id)!);
-          const initial = parseBatchRerankOutput(rerankExecution.output, aliases);
-          const firstRunId = rerankExecution.aiTaskRunId;
-          const runIds = new Map(aliases.map((alias) => [alias, firstRunId]));
-          let merged = initial.decisions;
-          let repairFailed = false;
-          let repairCause: unknown;
-          if (initial.retry.length > 0) {
-            // One repair call asks again only for the missing or malformed items.
-            repairedAliases = initial.retry;
-            const retry = new Set(initial.retry);
-            try {
-              const repairExecution = await runRerank(
-                pending.filter((candidate) => retry.has(rerankAliases.get(candidate.note.id)!)),
-                1
-              );
-              if (repairExecution) {
-                const repaired = parseBatchRerankOutput(repairExecution.output, initial.retry);
-                for (const alias of repaired.decisions.keys())
-                  runIds.set(alias, repairExecution.aiTaskRunId);
-                merged = mergeBatchRerankRepair(initial, repaired);
-              } else repairFailed = true;
-            } catch (error) {
-              if (signal?.aborted) throw error;
-              repairFailed = true;
-              repairCause = error;
-              rerankError =
-                error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-            }
-          }
-          for (const candidate of pending) {
-            const alias = rerankAliases.get(candidate.note.id)!;
-            const decision = merged.get(alias);
-            if (decision)
-              modelDecisions.set(candidate.note.id, {
-                ...decision,
-                aiTaskRunId: runIds.get(alias)!
-              });
-          }
-          // Items still invalid stay undecided: no relation and no recorded decision.
-          undecidedAliases = aliases.filter((alias) => !merged.has(alias));
-          // A required decider whose repair failed, or that decided nothing in two calls, fails the
-          // note before its checkpoint: the undecided items would otherwise be lost for good. The
-          // cause keeps a transient provider failure retryable by the job supervisor.
-          if (
-            matchingSettings.requireReranking &&
-            undecidedAliases.length > 0 &&
-            (repairFailed || modelDecisions.size === 0)
-          )
-            throw new Error("errors.matching.rerankingFailed", { cause: repairCause });
-        }
-        if (matchingSettings.requireReranking && !rerankExecution) {
-          // The cause keeps a transient provider failure retryable by the job supervisor.
-          throw new Error(
-            rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel",
-            { cause: rerankCause }
-          );
-        }
-      }
-      // Decisions are recorded only when the route did not change during the call. The cached
-      // verdicts and their provenance stay those of the decider they were looked up under.
-      let recordDecisions = false;
-      if (rerankExecution && decider) {
-        const current = await this.atomicNoteDecider();
-        recordDecisions =
-          current?.key === decider.key && rerankExecution.profileId === decider.profileId;
-      }
-      const rerankStatus = rerankExecution
-        ? undecidedAliases.length > 0
-          ? "partial"
-          : "succeeded"
-        : rerankError
-          ? "failed"
-          : pending.length > 0
-            ? "not_configured"
-            : "not_needed";
-      const selection = selectAtomicNoteRelations(
-        candidates.map((candidate) => {
-          const decision =
-            modelDecisions.get(candidate.note.id) ??
-            cachedVerdicts.get(candidate.note.id) ??
-            reusedVerdicts.get(candidate.note.id);
-          return {
-            ...candidate,
-            noteId: candidate.note.id,
-            contentKey: noteContentKey(candidate.note),
-            decision: decision
-              ? { score: decision.score, relationType: decision.relationType }
-              : null
-          };
-        }),
-        { hasEmbedding, threshold: relationThreshold, settings: matchingSettings }
-      );
-      let notePersistedCount = 0;
-      const decisionRecords: RelationDecisionInput[] = [];
-      const debugResults: Parameters<
-        ReturnType<typeof createSimilarityDebugRepository>["record"]
-      >[0]["results"] = [];
-      for (const [candidateIndex, selected] of selection.entries()) {
-        const candidate = selected.candidate;
-        const { finalScore, relationType } = selected;
-        const { metadataScore, graphScore } = candidate.scores;
-        const rerankScore = candidate.decision?.score ?? null;
-        const modelDecision = modelDecisions.get(candidate.note.id);
-        const decisionSource = modelDecision
-          ? "model"
-          : cachedVerdicts.has(candidate.note.id)
-            ? "cache"
-            : reusedVerdicts.has(candidate.note.id)
-              ? "reverse_cache"
-              : candidate.feasible
-                ? "undecided"
-                : "infeasible";
-        const fromCache = decisionSource === "cache" || decisionSource === "reverse_cache";
-        // The type belongs to the direction it was judged in: for a reused verdict that is
-        // candidate -> this note, which is the direction the relation keeps (stored as the canonical
-        // pair and its `direction`, F3 D8; never in metadata).
-        const pair =
-          decisionSource === "reverse_cache"
-            ? noteRelationPair(candidate.note.id, note.id, relationType)
-            : noteRelationPair(note.id, candidate.note.id, relationType);
-        const existingRelation = pairStatuses.has(candidate.note.id);
-        // The decider writes no prose: a decided relation keeps the localized fallback until its
-        // explanation is written on demand.
-        const explanation =
-          rerankScore === null
-            ? "knowledge.relations.explanations.hybrid"
-            : "knowledge.relations.explanations.reranked";
-        debugResults.push({
-          targetType: "atomic_note",
-          targetId: candidate.note.id,
-          targetLabel: candidate.note.title,
-          finalRank: candidateIndex + 1,
-          textRank: candidate.textRank,
-          vectorRank: candidate.vectorRank,
-          graphRank: candidate.graphRank,
-          textScore: candidate.textScore,
-          vectorScore: candidate.vectorScore,
-          metadataScore,
-          graphScore,
-          rerankScore,
-          fusionScore: candidate.fusionScore,
-          finalScore,
-          passedThreshold: selected.qualifies,
-          explanation: selected.qualifies ? explanation : null,
-          metadata: {
-            baseScore: selected.baseScore,
-            skippedByRelationLimit: selected.qualifies && !selected.accepted,
-            relationType,
-            contract: atomicNoteMatchingVersion,
-            feasible: candidate.feasible,
-            hasVector: candidate.hasEmbedding,
-            decisionSource,
-            existingRelation,
-            graphError,
-            graphStatus: graphError
-              ? "failed"
-              : graphCandidates.length > 0
-                ? "succeeded"
-                : "no_signal",
-            graphPathType: graphPathsById.get(candidate.note.id) ?? null,
-            graphElements: graphElementsByNote.get(candidate.note.id) ?? {
-              entities: [],
-              claims: [],
-              relations: []
-            },
-            rerankError,
-            rerankStatus,
-            rerankProfileId: rerankExecution?.profileId ?? null,
-            rerankModel: rerankExecution?.modelId ?? null,
-            candidateStatus: candidate.note.status
-          }
-        });
-        // An existing automatic relation is kept as it is; it still counts toward the limit.
-        if (selected.accepted && !existingRelation) {
-          const persistRelation = () =>
-            relations.upsert({
-              loAtomicNoteId: pair.lo,
-              hiAtomicNoteId: pair.hi,
-              direction: pair.direction,
-              relationType,
-              // The interim generative matcher has no calibrated band: its rows read as applied,
-              // like legacy rows, until the relations v2 matcher replaces it (T51).
-              band: null,
-              vectorScore: candidate.vectorScore,
-              graphScore,
-              rerankScore,
-              finalScore,
-              explanation,
-              // Provenance of the decision itself: the call that made it, or for a cached verdict
-              // the decider it was recorded under. A hybrid acceptance has no decider.
-              matchingProfileId: modelDecision
-                ? (rerankExecution?.profileId ?? null)
-                : fromCache
-                  ? (decider?.profileId ?? null)
-                  : null,
-              matchingModel: modelDecision
-                ? (rerankExecution?.modelId ?? null)
-                : fromCache
-                  ? (decider?.modelId ?? null)
-                  : null,
-              metadata: {
-                version: atomicNoteMatchingVersion,
-                decisionSource,
-                settings: matchingSettings,
-                threshold: relationThreshold,
-                textScore: candidate.textScore,
-                metadataScore,
-                graphScore,
-                graphPathType: graphPathsById.get(candidate.note.id) ?? null,
-                fusionScore: candidate.fusionScore,
-                textRank: candidate.textRank,
-                vectorRank: candidate.vectorRank,
-                graphRank: candidate.graphRank,
-                pendingReview:
-                  note.status === "pending_review" || candidate.note.status === "pending_review"
-              }
-            });
-          await (this.options.aiService.traceOperation?.(
-            "atomic_note_relation_creation",
-            withAiSourceItems({ ...logContext, atomicNoteId: note.id }, [
-              note.createdFromSourceItemId,
-              candidate.note.createdFromSourceItemId
-            ]),
-            persistRelation,
-            {
-              targetAtomicNoteId: candidate.note.id,
-              relationType,
-              finalScore,
-              threshold: relationThreshold
-            }
-          ) ?? persistRelation());
-          persistedCount += 1;
-          notePersistedCount += 1;
-        }
-        if (modelDecision && recordDecisions && decider)
-          decisionRecords.push({
-            sourceAtomicNoteId: note.id,
-            targetAtomicNoteId: candidate.note.id,
-            sourceContentHash,
-            targetContentHash: candidate.contentHash,
-            deciderKey: decider.key,
-            score: modelDecision.score,
-            relationType: modelDecision.relationType,
-            aiTaskRunId: modelDecision.aiTaskRunId
-          });
-        await onProgress?.(
-          calculateAtomicNoteMatchingProgress({
-            noteIndex,
-            noteCount: noteIds.length,
-            completedCandidates: candidateIndex + 1,
-            candidateCount: selection.length
-          })
-        );
-      }
-      // Relations are written before their decisions: a crash in between only repeats a decision.
-      for (const record of decisionRecords) await decisions.record(record);
-      await this.recordAtomicMatchingDebug({
-        noteId: note.id,
-        queryText: `${note.title}\n${note.ideaStatement}`,
-        embeddingModel: noteVector?.space.model ?? null,
-        dimensions: embedding?.length ?? null,
-        hasEmbedding,
-        relationThreshold,
-        matchingSettings,
-        sourceGraphElements: graphElementsByNote.get(note.id) ?? {
-          entities: [],
-          claims: [],
-          relations: []
-        },
-        decisions: {
-          contract: atomicNoteMatchingVersion,
-          candidates: candidates.length,
-          infeasible: candidates.length - feasible.length,
-          cached: cachedVerdicts.size,
-          reusedReverse: reusedVerdicts.size,
-          requested: pending.length,
-          repaired: repairedAliases.length,
-          undecided: undecidedAliases.length,
-          recorded: decisionRecords.length
-        },
-        results: debugResults
-      });
-      if (selection.length === 0) await onProgress?.((noteIndex + 1) / noteIds.length);
-      await options.onNoteCompleted?.(note.id, notePersistedCount);
-    }
-    return { persistedCount, threshold: relationThreshold };
-  }
-
-  /** The current reranking route as a decider identity, or null when it cannot be resolved. */
-  private async atomicNoteDecider(): Promise<{
-    key: string;
-    profileId: string;
-    modelId: string;
-    /** A generative decider judges an unordered pair once; a reranker scores each direction. */
-    generative: boolean;
-  } | null> {
+    const { vectors } = await this.ensureAtomicNoteVectors(current, {
+      signal,
+      logContext,
+      operation: "note_matching_embedding"
+    });
+    const handOff = persistDecidedPairs({ pool, ai: this.options.aiService, logContext });
     try {
-      const route = await createAiConfigRepository(this.requirePool()).getDefaultTask("reranking");
-      if (!route) return null;
-      return {
-        key: atomicNoteDeciderKey({
-          provider: route.provider,
-          baseUrl: route.baseUrl,
-          modelId: route.modelId,
-          runtime: route.runtime,
-          repository: route.repository,
-          revision: route.revision,
-          quantization: route.quantization,
-          parameters: withAiTaskParameterDefaults(
-            "reranking",
-            { ...route.modelDefaultParameters, ...route.parameters },
-            Boolean(route.localModelId),
-            { operation: noteMatchDecisionOperations.decide }
-          ),
-          promptFingerprint: promptFingerprint(["notes.match"], capturePromptPin(), route.provider)
-        }),
-        profileId: route.profileId,
-        modelId: route.modelId,
-        // A generative model is a decider whatever else it declares: old profiles still carry a
-        // `reranking` tag written for every generative model. Only a dedicated reranker (no
-        // generation) scores a pair in both directions.
-        generative: generativeDeciderCapabilities.some((capability) =>
-          (route.requiredCapabilities ?? []).includes(capability)
-        )
-      };
-    } catch {
-      // Without a decider identity nothing is cached or recorded; matching itself goes on.
-      return null;
+      const result = await this.relationMatcher.matchNotes({
+        noteIds,
+        vectors,
+        signal,
+        logContext,
+        onProgress,
+        onNoteCompleted: options.onNoteCompleted,
+        fence: options.fence,
+        handOff
+      });
+      await handOff.finish("succeeded");
+      return result;
+    } catch (error) {
+      await handOff.finish("failed").catch(() => undefined);
+      throw error;
     }
   }
 
@@ -2180,59 +1615,6 @@ export class KnowledgeService {
     } catch (error) {
       if (signal?.aborted) throw error;
       return null;
-    }
-  }
-
-  private async recordAtomicMatchingDebug(input: {
-    noteId: string;
-    queryText: string;
-    embeddingModel: string | null;
-    dimensions: number | null;
-    hasEmbedding: boolean;
-    relationThreshold: number;
-    matchingSettings: AtomicNoteMatchingSettings;
-    sourceGraphElements: AtomicNoteGraphElements;
-    /** How the candidates were decided: gate, cache, model call, repair. */
-    decisions: Record<string, string | number>;
-    results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
-  }): Promise<void> {
-    try {
-      if (!(await this.options.isDebugEnabled?.())) return;
-      const matchingSettings = input.matchingSettings;
-      await createSimilarityDebugRepository(this.requirePool()).record({
-        kind: "atomic_note_matching",
-        queryText: input.queryText,
-        queryTargetId: input.noteId,
-        mode: input.hasEmbedding ? "hybrid" : "text_metadata",
-        model: input.embeddingModel,
-        dimensions: input.dimensions,
-        requestedLimit: matchingSettings.fusedCandidateLimit,
-        strategy: "text_vector_graph_rrf_with_batch_reranking",
-        metadata: {
-          threshold: input.relationThreshold,
-          retrievalLimits: {
-            text: matchingSettings.textCandidateLimit,
-            vector: matchingSettings.vectorCandidateLimit,
-            graph: matchingSettings.graphCandidateLimit,
-            fused: matchingSettings.fusedCandidateLimit
-          },
-          fusion: {
-            strategy: "rrf",
-            reciprocalRankConstant: matchingSettings.reciprocalRankConstant
-          },
-          settings: matchingSettings,
-          rerankWeights: {
-            base: 1 - matchingSettings.rerankerWeight,
-            reranker: matchingSettings.rerankerWeight
-          },
-          rerankMode: "decision_only_batch",
-          decisions: input.decisions,
-          sourceGraphElements: input.sourceGraphElements
-        },
-        results: input.results
-      });
-    } catch {
-      // Debug persistence must never make atomic-note matching fail.
     }
   }
 
@@ -2330,13 +1712,4 @@ function chunkPositions(
   chunks: ReadonlyArray<{ id: string; chunkIndex: number }>
 ): ReadonlyMap<string, number> {
   return new Map(chunks.map((chunk) => [chunk.id, chunk.chunkIndex]));
-}
-
-/** Content-stable tie-break for note candidates; it matches AtomicNoteGraphCandidate.contentKey. */
-function noteContentKey(note: { title: string; ideaStatement: string }): string {
-  return contentKey(note.title, note.ideaStatement);
-}
-
-function clamp(value: number): number {
-  return Math.max(0, Math.min(1, value));
 }

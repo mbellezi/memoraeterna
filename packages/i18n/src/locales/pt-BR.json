@@ -976,6 +976,11 @@
       "backToSearch": "Voltar para a busca"
     }
   },
+  "relations": {
+    "status": {
+      "waitingForDecider": "As relações aguardam o reranker"
+    }
+  },
   "knowledge": {
     "review": {
       "title": "Revisao de notas atomicas",
@@ -2447,7 +2452,7 @@
       "notes": "Extrai ideias das fontes ou avalia suas conexões significativas.",
       "graph": "Extrai ou valida entidades fundamentadas e relações direcionadas.",
       "sources": "Verifica trechos originais antes de decidir conexões entre obras.",
-      "relations": "Explica, quando uma relação é aberta, por que duas notas ou duas fontes estão relacionadas.",
+      "relations": "Decide com um reranker se duas notas estão relacionadas e explica, quando uma relação é aberta, por que duas notas ou duas fontes estão relacionadas.",
       "embedding": "Formata entradas vetoriais. Alterações exigem reprocessamento explícito dos vetores incompatíveis.",
       "consultation": "Responde à pergunta usando apenas o escopo admitido e citações originais.",
       "diagnostics": "Executa somente quando um diagnóstico de modelo é solicitado explicitamente.",

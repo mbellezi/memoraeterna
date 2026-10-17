@@ -976,6 +976,11 @@
       "backToSearch": "Back to search"
     }
   },
+  "relations": {
+    "status": {
+      "waitingForDecider": "Relations wait for the reranker"
+    }
+  },
   "knowledge": {
     "review": {
       "title": "Atomic note review",
@@ -2444,7 +2449,7 @@
       "notes": "Extracts source ideas or evaluates their meaningful connections.",
       "graph": "Extracts or validates grounded entities and directed relations.",
       "sources": "Checks original passages before deciding connections between works.",
-      "relations": "Explains, when a relation is opened, why two notes or two sources are related.",
+      "relations": "Decides with a reranker whether two notes are related, and explains, when a relation is opened, why two notes or two sources are related.",
       "embedding": "Formats vector inputs. Changes require explicit re-embedding of incompatible content.",
       "consultation": "Answers a question using only the admitted scope and original citations.",
       "diagnostics": "Runs only when an explicit model diagnostic is requested.",

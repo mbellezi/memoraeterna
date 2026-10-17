@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultAtomicNoteMatchingSettings } from "@app/domain";
 
 import {
   knowledgeGraphPromptVersion,
@@ -10,23 +9,19 @@ import {
   buildBatchRerankPrompt,
   buildKnowledgeGraphPrompt,
   calculateAtomicNoteMatchingProgress,
-  calculateRelationScore,
   fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hasMinimumSummaryContent,
   limitKnowledgeGraphBatches,
-  meetsRelationThreshold,
   normalizeSummaryText,
   parseKnowledgeGraphBatchCheckpoints,
   parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
   mergeBatchRerankRepair,
   parseBatchRerankOutput,
-  qualifiesAtomicNoteRelation,
-  resolveAtomicNoteReferences,
-  scoreMetadataOverlap
+  resolveAtomicNoteReferences
 } from "./knowledge-processing.js";
 
 describe("knowledge processing", () => {
@@ -94,7 +89,7 @@ describe("knowledge processing", () => {
     expect(parsed.retry).toEqual([3]);
   });
 
-  it("stores the integer score as hundredths, exactly at the calibration thresholds", () => {
+  it("stores the integer score as hundredths, exactly at the uncalibrated pass", () => {
     // Every integer score 0-100 maps to the same number as its two-decimal spelling.
     for (const score of Array.from({ length: 101 }, (_, index) => index)) {
       const single = parseBatchRerankOutput({ results: [[1, score, "supports"]] }, [1]);
@@ -106,18 +101,10 @@ describe("knowledge processing", () => {
       aliases
     );
     expect(parsed.retry).toEqual([]);
-    // 65 meets a 0.65 decider minimum exactly; 64 does not.
+    // 65 meets the generative decider's 0.65 pass exactly (relations config); 64 does not.
     expect(parsed.decisions.get(66)?.score).toBe(0.65);
-    const accepts = (score: number) =>
-      qualifiesAtomicNoteRelation({
-        finalScore: 0.9,
-        threshold: 0.6,
-        rerankScore: score,
-        relationType: "supports",
-        settings: { ...defaultAtomicNoteMatchingSettings, minRerankScore: 0.65 }
-      });
-    expect(accepts(parsed.decisions.get(66)!.score)).toBe(true);
-    expect(accepts(parsed.decisions.get(65)!.score)).toBe(false);
+    expect(parsed.decisions.get(66)!.score >= 0.65).toBe(true);
+    expect(parsed.decisions.get(65)!.score >= 0.65).toBe(false);
   });
 
   it("asks again only for missing, malformed, duplicated or unknown-shaped items", () => {
@@ -1136,36 +1123,6 @@ describe("knowledge processing", () => {
     ).rejects.toBeInstanceOf(SyntaxError);
     expect(run).toHaveBeenCalledTimes(2);
   });
-
-  it("scores simple entity and metadata overlap", () => {
-    expect(
-      scoreMetadataOverlap(
-        { entities: ["PostgreSQL", "pgvector"] },
-        { entities: ["PostgreSQL"], tags: ["local-first"] }
-      )
-    ).toBeCloseTo(1 / 3);
-    expect(meetsRelationThreshold(0.71, 0.72)).toBe(false);
-    expect(meetsRelationThreshold(0.72, 0.72)).toBe(true);
-    expect(
-      calculateRelationScore({
-        vectorScore: 0.9,
-        textScore: 0.6,
-        metadataScore: 0.3,
-        hasEmbedding: true,
-        rerankScore: 0.8
-      })
-    ).toBeCloseTo(0.752);
-    expect(
-      calculateRelationScore({
-        vectorScore: 0.9,
-        textScore: 0.6,
-        metadataScore: 0.3,
-        graphScore: 0.8,
-        hasEmbedding: true,
-        rerankScore: 0.8
-      })
-    ).toBeCloseTo(0.767);
-  });
 });
 
 it("requires a display phrase and English identifier syntax for new relations", () => {
@@ -1250,52 +1207,7 @@ it("regenerates cached graph batches when the content language changes", async (
   expect(run).toHaveBeenCalledOnce();
 });
 
-describe("advanced note matching calibration", () => {
-  it("normalizes custom weights and applies the configured AI share", async () => {
-    const { AtomicNoteMatchingSettingsSchema } = await import("@app/domain");
-    const settings = AtomicNoteMatchingSettingsSchema.parse({
-      textAndMetadata: { text: 0.2, metadata: 0.2 },
-      rerankerWeight: 0.8
-    });
-    expect(
-      calculateRelationScore({
-        textScore: 1,
-        metadataScore: 0,
-        vectorScore: 0,
-        hasEmbedding: false,
-        settings
-      })
-    ).toBeCloseTo(0.5);
-    expect(
-      calculateRelationScore({
-        textScore: 1,
-        metadataScore: 0,
-        vectorScore: 0,
-        hasEmbedding: false,
-        rerankScore: 1,
-        settings
-      })
-    ).toBeCloseTo(0.9);
-  });
-  it("never compensates an AI rejection with a high base score", async () => {
-    const { AtomicNoteMatchingSettingsSchema } = await import("@app/domain");
-    const { qualifiesAtomicNoteRelation } = await import("./knowledge-processing.js");
-    const settings = AtomicNoteMatchingSettingsSchema.parse({});
-    const input = { finalScore: 0.99, threshold: 0.6, relationType: "supports", settings };
-    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.3 })).toBe(false);
-    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: null })).toBe(false);
-    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.9 })).toBe(true);
-    expect(
-      qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.9, relationType: "related" })
-    ).toBe(false);
-    expect(
-      qualifiesAtomicNoteRelation({
-        ...input,
-        rerankScore: 0,
-        settings: { ...settings, minRerankScore: 0 }
-      })
-    ).toBe(false);
-  });
+describe("advanced note matching limits", () => {
   it("supports increased candidate batches and configurable graph reservation", () => {
     const results = Array.from({ length: 45 }, (_, i) => [i + 1, 80, "supports"]);
     expect(

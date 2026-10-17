@@ -6,8 +6,6 @@ import { z } from "zod";
 import {
   AtomicNoteGenerationCandidateSchema,
   AtomicNoteGenerationOutputSchema,
-  defaultAtomicNoteMatchingSettings,
-  type AtomicNoteMatchingSettings,
   AtomicNoteRelationTypeSchema,
   KnowledgeGraphGenerationOutputSchema,
   type AtomicNoteGenerationOutput,
@@ -676,178 +674,6 @@ export async function generateAtomicNoteCandidates(
   return { output: { notes: second.valid }, execution: repairedExecution };
 }
 
-export function scoreMetadataOverlap(
-  left: Record<string, unknown>,
-  right: Record<string, unknown>
-): number {
-  const leftSignals = collectMetadataSignals(left);
-  const rightSignals = collectMetadataSignals(right);
-  if (leftSignals.size === 0 || rightSignals.size === 0) return 0;
-  let shared = 0;
-  for (const signal of leftSignals) if (rightSignals.has(signal)) shared += 1;
-  return shared / new Set([...leftSignals, ...rightSignals]).size;
-}
-
-export function meetsRelationThreshold(score: number, threshold: number): boolean {
-  return Number.isFinite(score) && Number.isFinite(threshold) && score >= threshold;
-}
-
-export function qualifiesAtomicNoteRelation(input: {
-  finalScore: number;
-  threshold: number;
-  rerankScore: number | null;
-  relationType: string;
-  settings: AtomicNoteMatchingSettings;
-}): boolean {
-  const validated =
-    input.rerankScore === null
-      ? !input.settings.requireReranking
-      : input.rerankScore > 0 && input.rerankScore >= input.settings.minRerankScore;
-  return (
-    meetsRelationThreshold(input.finalScore, input.threshold) &&
-    validated &&
-    (input.settings.includeWeakTypes || !["mentions", "related"].includes(input.relationType))
-  );
-}
-
-export function calculateRelationScore(input: {
-  vectorScore: number;
-  textScore: number;
-  metadataScore: number;
-  graphScore?: number | null;
-  hasEmbedding: boolean;
-  rerankScore?: number | null;
-  settings?: AtomicNoteMatchingSettings;
-}): number {
-  const hasGraph = input.graphScore !== null && input.graphScore !== undefined;
-  const settings = input.settings ?? defaultAtomicNoteMatchingSettings;
-  const selected = input.hasEmbedding
-    ? hasGraph
-      ? settings.withEmbeddingAndGraph
-      : settings.withEmbedding
-    : hasGraph
-      ? settings.withGraph
-      : settings.textAndMetadata;
-  const scores = {
-    vector: input.vectorScore,
-    text: input.textScore,
-    metadata: input.metadataScore,
-    graph: input.graphScore ?? 0
-  };
-  const entries = Object.entries(selected) as Array<[keyof typeof scores, number]>;
-  const totalWeight = entries.reduce((total, [, value]) => total + value, 0);
-  const baseScore =
-    entries.reduce((total, [key, value]) => total + scores[key] * value, 0) / totalWeight;
-  return Math.max(
-    0,
-    Math.min(
-      1,
-      input.rerankScore === null || input.rerankScore === undefined
-        ? baseScore
-        : baseScore * (1 - settings.rerankerWeight) + input.rerankScore * settings.rerankerWeight
-    )
-  );
-}
-
-export interface AtomicNoteRelationScoreInputs {
-  vectorScore: number;
-  textScore: number;
-  metadataScore: number;
-  graphScore: number | null;
-}
-
-/**
- * Lossless feasibility gate: the final score grows monotonically with the decider score, so a
- * candidate whose final score stays below the threshold even with a perfect decider score (1) can
- * never qualify, whatever the decider would say. Only such candidates are dropped before a call.
- */
-export function canQualifyAtomicNoteRelation(input: {
-  scores: AtomicNoteRelationScoreInputs;
-  hasEmbedding: boolean;
-  threshold: number;
-  settings: AtomicNoteMatchingSettings;
-}): boolean {
-  return meetsRelationThreshold(
-    calculateRelationScore({
-      ...input.scores,
-      hasEmbedding: input.hasEmbedding,
-      rerankScore: 1,
-      settings: input.settings
-    }),
-    input.threshold
-  );
-}
-
-export interface AtomicNoteRelationSelectionCandidate {
-  noteId: string;
-  contentKey: string;
-  scores: AtomicNoteRelationScoreInputs;
-  /**
-   * Whether this candidate's vector score is real. A candidate that still has no vector is scored
-   * with the weights that do not assume one, never as a vector score of 0. Defaults to the note's.
-   */
-  hasEmbedding?: boolean;
-  /** The decider's verdict for this direction, or null when no decision exists. */
-  decision: { score: number; relationType: AtomicNoteRelationType } | null;
-}
-
-export interface AtomicNoteRelationSelection<
-  T extends AtomicNoteRelationSelectionCandidate = AtomicNoteRelationSelectionCandidate
-> {
-  candidate: T;
-  baseScore: number;
-  finalScore: number;
-  relationType: string;
-  qualifies: boolean;
-  /** Qualifies and fits in the per-note relation limit, in final-score order. */
-  accepted: boolean;
-}
-
-/** Orders candidates by final score and applies the acceptance rules and the per-note limit. */
-export function selectAtomicNoteRelations<T extends AtomicNoteRelationSelectionCandidate>(
-  candidates: ReadonlyArray<T>,
-  options: { hasEmbedding: boolean; threshold: number; settings: AtomicNoteMatchingSettings }
-): AtomicNoteRelationSelection<T>[] {
-  let accepted = 0;
-  return candidates
-    .map((candidate) => {
-      const score = (rerankScore: number | null) =>
-        calculateRelationScore({
-          ...candidate.scores,
-          hasEmbedding: candidate.hasEmbedding ?? options.hasEmbedding,
-          rerankScore,
-          settings: options.settings
-        });
-      const finalScore = score(candidate.decision?.score ?? null);
-      const relationType = candidate.decision?.relationType ?? "related";
-      return {
-        candidate,
-        baseScore: score(null),
-        finalScore,
-        relationType,
-        qualifies: qualifiesAtomicNoteRelation({
-          finalScore,
-          threshold: options.threshold,
-          rerankScore: candidate.decision?.score ?? null,
-          relationType,
-          settings: options.settings
-        }),
-        accepted: false
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.finalScore - left.finalScore ||
-        compareContent(left.candidate.contentKey, right.candidate.contentKey) ||
-        left.candidate.noteId.localeCompare(right.candidate.noteId)
-    )
-    .map((selection) => {
-      const fits = selection.qualifies && accepted < options.settings.maxRelationsPerNote;
-      if (fits) accepted += 1;
-      return { ...selection, accepted: fits };
-    });
-}
-
 /**
  * Identifies who decided a relation: the model, the matching contract and prompt, and the
  * parameters that can change a verdict. Output budgets and thresholds are not part of it, so
@@ -913,7 +739,7 @@ export function calculateAtomicNoteMatchingProgress(input: {
  * One decision of the decide-only contract (`atomic-note-matching-v9`): the candidate's number, an
  * integer score from 0 to 100 and a relation type, and nothing else. The decider writes no prose.
  */
-const batchRerankItemSchema = z.tuple([
+export const batchRerankItemSchema = z.tuple([
   z.number().int().positive(),
   z.number().int().min(0).max(100),
   AtomicNoteRelationTypeSchema
@@ -1485,13 +1311,4 @@ function serializeOutputForRepair(output: unknown): string {
   } catch {
     return String(output);
   }
-}
-
-function collectMetadataSignals(metadata: Record<string, unknown>): Set<string> {
-  const values = [metadata.entities, metadata.tags, metadata.concepts]
-    .flatMap((value) => (Array.isArray(value) ? value : []))
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.trim().toLocaleLowerCase())
-    .filter(Boolean);
-  return new Set(values);
 }

@@ -64,16 +64,16 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Relations
 
-- Deciders of note and source relations write no prose; explanations are written
-  on demand for a relation the owner opens, and cached. Filters before a decider are
-  lossless (they drop only candidates no decider score could accept). A required
-  decider that fails or decides nothing fails visibly, before its checkpoint.
-- Decisions keep each direction's raw score, AI run and time apart from
-  calibration, keyed by both notes' content hashes and the decider; a decided
-  direction is reused with the decider that decided it. A generative decider
-  judges each unordered pair once: its verdict answers the reverse direction
-  (the type stays with the judged direction) and no row is written for the
-  reuse; a reranker scores both directions (target F3).
+- Deciders of note and source relations write no prose; explanations are written on demand for a
+  relation the owner opens, and cached. Filters after retrieval are lossless (they drop only
+  candidates no decider score could accept); retrieval limits are calibrated to lose no tuning
+  recall. A required decider that fails or decides nothing fails visibly, before its checkpoint.
+- Decisions keep each direction's raw score, AI run and time apart from calibration, keyed by the
+  exact decider input of both notes and the decider; calibration maps raw scores to bands without
+  deciding again. A decided direction is reused only by the decider that decided it. A ranker
+  scores both directions; a generative decider judges each unordered pair once, and its verdict
+  answers the reverse direction (the type stays with the judged direction) with no row written
+  for the reuse.
 - Relation types use one fixed vocabulary shared by notes and sources; type, direction and
   explanation are assigned only to accepted pairs. Shared topics, names, dates or homonyms alone
   never create a relation; it must be supported by evidence from both endpoints and is shown only

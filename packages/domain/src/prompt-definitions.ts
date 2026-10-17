@@ -245,7 +245,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
           : family === "sources"
             ? "reranking"
             : family === "relations"
-              ? "text-generation"
+              ? parts[1] === "decide"
+                ? "reranking"
+                : "text-generation"
               : family === "embedding"
                 ? "embedding"
                 : family === "diagnostics"
@@ -402,6 +404,7 @@ for (const definition of promptDefinitions) {
     // A ranker instruction is plain English text: rankers get no language instruction.
     id !== "topic.gate.instruction" &&
     id !== "topic.overview.support" &&
+    id !== "relations.decide.instruction" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
     !id.includes(".validation.")

@@ -496,9 +496,13 @@ interface SampleCase {
   root: string;
   variant?: string;
 }
-/** Prompts only a dedicated ranker can run: the decide validation, the gate and the support check. */
+/**
+ * Prompts only a dedicated ranker can run: the decide validation, the relation decider, the gate
+ * and the support check.
+ */
 const rankerInstructionIds: ReadonlySet<string> = new Set([
   "diagnostics.local_ranking",
+  "relations.decide.instruction",
   "topic.gate.instruction",
   "topic.overview.support"
 ]);

@@ -120,6 +120,18 @@ export const shippedPromptBodies = [
     contract: '{"results":[[1,0,"related"],[2,85,"extends"]]}'
   },
   {
+    // The ranker instruction of the relations v2 decider (F3 D16): a dedicated ranker scores both directions of a note
+    // pair, each note as the query of one and the document of the other. Initial text: Spike A's `mechanism`.
+    id: "relations.decide.instruction",
+    caller:
+      "apps/desktop/src/main/services/relations/relation-matcher.ts:relationDecideInstruction",
+    template:
+      "Given a note (Query), decide whether the Document note makes a claim about the same underlying mechanism, rule " +
+      "or phenomenon, so that a careful reader would link the two notes. Shared names, titles, vocabulary, catalogs or " +
+      "credits do not count.",
+    keys: []
+  },
+  {
     id: "relations.explain",
     template:
       "Explain why two atomic notes are related, using only their idea statements and evidence passages below. " +
