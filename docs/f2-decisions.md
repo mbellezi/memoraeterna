@@ -137,3 +137,17 @@ edited to match. Every other question stays inside F2's scope.
   `objects.locate`, `topics.tree` and `topics.page` p95 ≤50 ms and `topics.shape` ≤100 ms; light-lane
   enqueue-to-done p95; the fixture sanity check (expected root pairs share a topic or are siblings more often
   than forbidden pairs); the undo rate of automatic change-sets (≤5%); the days D34's cap was reached.
+
+## Changes after gate C's first E4 panel (2026-10-17)
+
+- **D11 naming:** names cover the whole topic. A leaf is named from a covering sample of 12 notes (5 central plus 7
+  that span the rest); an internal topic from all its subtopics' titles and sizes plus up to 12 notes. Levels are
+  named deepest first, so a parent is named from its children's names; a title must differ from each child's and
+  from the parent's. Prompt `topic.name` revision 2; `MEMORA_TOPIC_RENAME_REVISION=1` renames older LLM names once
+  (DEV). A call holds about 10 leaves (member budget 120).
+- **Builder:** libraries of at most 200 items use a 5-NN Louvain graph (10-NN above), so small sources keep their
+  own leaves; the LLM Areas grouping keeps its silhouette acceptance (the recorded groupings matched the corpus
+  domains worse than Louvain's).
+- **D20 rater:** the rating is done by three blind Opus 5.5 judges with the majority per question (plan decision
+  21); the pass rule is unchanged.
+
