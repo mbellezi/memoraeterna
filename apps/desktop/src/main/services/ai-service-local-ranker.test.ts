@@ -1,4 +1,13 @@
-import { findLocalModelCatalogEntry, rankerCatalogArtifactSha256 } from "@app/ai";
+import { createHash } from "node:crypto";
+
+import {
+  findLocalModelCatalogEntry,
+  rankerCatalogArtifactSha256,
+  rankerParityPlan,
+  rankerParityReference,
+  rankerParityReferenceHash,
+  type RankerParityBaseline
+} from "@app/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AiService } from "./ai-service.js";
@@ -56,13 +65,54 @@ function rankerModel(overrides: Record<string, unknown> = {}) {
 }
 
 type RankInput = { instruction: string; query: string; documents: string[] };
+type PairsInput = { instruction: string; pairs: Array<{ query: string; document: string }> };
 
-/** A ranker that scores the first document of every request above the others. */
-function fakeRanker(options: { sameScore?: boolean; failOnCall?: number } = {}) {
+/** The log-odds a pair gets: fixed by its text, spread over -10..10, like a stable bf16 model. */
+function pairLogOdds(pair: { query: string; document: string }): number {
+  const digest = createHash("sha256").update(`${pair.query}\u0000${pair.document}`).digest();
+  return ((digest[0]! * 256 + digest[1]!) % 2000) / 100 - 10;
+}
+
+/**
+ * A ranker that scores the first document of every request above the others. A pairs request
+ * gets a score fixed by the pair's text plus `pairOffset`, as a rebuilt runtime would shift it.
+ */
+function fakeRanker(
+  options: {
+    sameScore?: boolean;
+    failOnCall?: number;
+    failPairs?: boolean;
+    pairOffset?: number;
+    build?: string;
+  } = {}
+) {
   const requests: RankInput[] = [];
+  const pairRequests: Array<PairsInput & { parameters: unknown }> = [];
   const dispose = vi.fn(async () => undefined);
-  const run = vi.fn(async (request: { input: string; taskType: string }) => {
-    const rank = JSON.parse(request.input) as RankInput;
+  const run = vi.fn(async (request: { input: string; taskType: string; parameters?: unknown }) => {
+    const input = JSON.parse(request.input) as RankInput | PairsInput;
+    if ("pairs" in input) {
+      pairRequests.push({ ...input, parameters: request.parameters });
+      if (options.failPairs) throw new Error("errors.localModels.runtimeFailed");
+      const logOdds = input.pairs.map((pair) => pairLogOdds(pair) + (options.pairOffset ?? 0));
+      return {
+        taskType: request.taskType,
+        output: {
+          logOdds,
+          scores: logOdds.map((value) => 1 / (1 + Math.exp(-value))),
+          tokenCounts: logOdds.map(() => 120),
+          truncated: logOdds.map(() => false)
+        },
+        providerId: "local-mlx",
+        modelId: entry.repository,
+        runtime: "local",
+        durationMs: 30,
+        inputTokens: 120 * logOdds.length,
+        outputTokens: 0,
+        costEstimate: 0
+      };
+    }
+    const rank = input;
     requests.push(rank);
     if (options.failOnCall === requests.length) throw new Error("errors.localModels.runtimeFailed");
     const card = rank.query.startsWith("What is the capital of China");
@@ -98,13 +148,16 @@ function fakeRanker(options: { sameScore?: boolean; failOnCall?: number } = {}) 
     }),
     canHandle: () => true,
     run,
-    runtimeBuild: async () => runtimeBuild,
+    runtimeBuild: async () => options.build ?? runtimeBuild,
     dispose
   };
-  return { adapter, requests, run, dispose };
+  return { adapter, requests, pairRequests, run, dispose };
 }
 
-function service(adapter: ReturnType<typeof fakeRanker>["adapter"] | Error) {
+function service(
+  adapter: ReturnType<typeof fakeRanker>["adapter"] | Error,
+  extra: Partial<ConstructorParameters<typeof AiService>[0]> = {}
+) {
   const monitoring = {
     start: vi.fn(async () => ({ id: "capture", full: false })),
     finish: vi.fn(async () => undefined)
@@ -115,12 +168,14 @@ function service(adapter: ReturnType<typeof fakeRanker>["adapter"] | Error) {
     workspaceRoot: "/tmp",
     resourcesPath: "/tmp",
     isPackaged: false,
-    monitoring: monitoring as never
+    monitoring: monitoring as never,
+    ...extra
   });
   const internals = ai as unknown as {
     buildRankerAdapter: () => unknown;
     resident: Record<string, unknown>;
     activeLocalModels: Set<string>;
+    validatingRankers: Map<string, number>;
   };
   const create = vi.spyOn(internals, "buildRankerAdapter").mockImplementation(() => {
     if (adapter instanceof Error) throw adapter;
@@ -189,11 +244,24 @@ describe("testing a dedicated ranker", () => {
           revision: entry.revision,
           artifactSha256: rankerCatalogArtifactSha256(entry),
           runtimeBuild,
-          smoke: { passed: true, failures: [] }
+          smoke: { passed: true, failures: [] },
+          // The first validation of an install: its own parity scores are the baseline.
+          parity: {
+            passed: true,
+            maxDelta: 0,
+            baseline: { source: "validation", runtimeBuild }
+          }
         }
       }
     });
     expect(update.metadata.decideValidation.validatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+    // The 64 reference pairs follow the smoke test in the MLX plan: 2 calls of 32 at helper batch 16.
+    expect(ranker.pairRequests.map((request) => request.pairs.length)).toEqual([32, 32]);
+    expect(ranker.pairRequests.map((request) => request.parameters)).toEqual([
+      { batchSize: 16 },
+      { batchSize: 16 }
+    ]);
+    expect(ranker.pairRequests[0]!.instruction).toBe(rankerParityReference().instruction);
     expect(summary).toMatch(/^Reranker validated for decide\nModel card pair: 7\.625, -11\.375/u);
     expect(summary).toContain("en: relevant 8.000, irrelevant -8.000 (margin 16.000)");
     expect(summary).toContain("pt-BR:");
@@ -214,7 +282,8 @@ describe("testing a dedicated ranker", () => {
       expect.objectContaining({
         status: "succeeded",
         costEstimate: 0,
-        tokenUsage: { inputTokens: 720, outputTokens: 0, totalTokens: 720 }
+        // Three smoke calls of two documents and the 64 parity pairs, 120 tokens each.
+        tokenUsage: { inputTokens: 8_400, outputTokens: 0, totalTokens: 8_400 }
       })
     );
   });
@@ -224,8 +293,10 @@ describe("testing a dedicated ranker", () => {
 
     await ai.testLocalModel(modelId);
 
-    expect(state.recordTaskRun).toHaveBeenCalledTimes(3);
-    for (const [run] of state.recordTaskRun.mock.calls) {
+    // Three smoke calls, then one row per parity call.
+    expect(state.recordTaskRun).toHaveBeenCalledTimes(5);
+    state.recordTaskRun.mock.calls.forEach(([run], index) => {
+      const parity = index >= 3;
       expect(run).toMatchObject({
         taskType: "reranking",
         provider: "local-mlx",
@@ -236,21 +307,25 @@ describe("testing a dedicated ranker", () => {
         revision: entry.revision,
         quantization: "bf16",
         capabilitiesUsed: ["reranking", "offline"],
-        parameters: {},
-        inputTokens: 240,
+        parameters: parity ? { batchSize: 16 } : {},
+        inputTokens: parity ? 3_840 : 240,
         outputTokens: 0,
         costEstimate: 0,
         status: "succeeded"
       });
       expect(run.inputHash).toMatch(/^[a-f0-9]{64}$/u);
       expect(run.outputHash).toMatch(/^[a-f0-9]{64}$/u);
-    }
-    const compositions = state.recordTaskRun.mock.calls.map(
-      ([run]) => run.promptCompositions as Array<{ promptId: string }>
-    );
-    // The shipped prompt is the model card's own instruction, so every call sent that text.
+    });
+    const compositions = state.recordTaskRun.mock.calls
+      .slice(0, 3)
+      .map(([run]) => run.promptCompositions as Array<{ promptId: string }>);
+    // The shipped prompt is the model card's own instruction, so every smoke call sent that text.
     for (const composition of compositions) {
       expect(composition.map((entry) => entry.promptId)).toContain("diagnostics.local_ranking");
+    }
+    // The parity pairs carry the reference's own instruction, not a catalog prompt.
+    for (const [run] of state.recordTaskRun.mock.calls.slice(3)) {
+      expect(run.promptCompositions).toEqual([]);
     }
   });
 
@@ -297,6 +372,48 @@ describe("testing a dedicated ranker", () => {
       { id: "capture", full: false },
       expect.objectContaining({ status: "failed" })
     );
+  });
+
+  it("keeps the ranker out of decide from the request of its validation until it ended", async () => {
+    const ranker = fakeRanker();
+    const gate = Promise.withResolvers<void>();
+    const base = ranker.run.getMockImplementation()!;
+    ranker.run.mockImplementationOnce(async (request) => {
+      await gate.promise;
+      return base(request);
+    });
+    const { ai, internals } = service(ranker.adapter);
+    const validating = () => internals.validatingRankers.has(modelId);
+
+    const testing = ai.testLocalModel(modelId);
+    await vi.waitFor(() => expect(ranker.run).toHaveBeenCalledOnce());
+    expect(validating()).toBe(true);
+    gate.resolve();
+    await testing;
+    expect(validating()).toBe(false);
+
+    // Also when it fails.
+    const failing = service(fakeRanker({ sameScore: true }).adapter);
+    await expect(failing.ai.testLocalModel(modelId)).rejects.toThrow();
+    expect(failing.internals.validatingRankers.has(modelId)).toBe(false);
+  });
+
+  it("lifts the hold only when the last of two validations at once ended", async () => {
+    const ranker = fakeRanker();
+    const gate = Promise.withResolvers<void>();
+    const base = ranker.run.getMockImplementation()!;
+    ranker.run.mockImplementationOnce(async (request) => {
+      await gate.promise;
+      return base(request);
+    });
+    const { ai, internals } = service(ranker.adapter);
+
+    const both = Promise.all([ai.testLocalModel(modelId), ai.testLocalModel(modelId)]);
+    await vi.waitFor(() => expect(internals.validatingRankers.get(modelId)).toBe(2));
+    gate.resolve();
+    await both;
+
+    expect(internals.validatingRankers.has(modelId)).toBe(false);
   });
 
   it("rejects an install whose weights changed, before any model is loaded", async () => {
@@ -360,6 +477,149 @@ describe("testing a dedicated ranker", () => {
     await expect(ai.testLocalModel(modelId)).rejects.toThrow("errors.localModels.notReady");
 
     expect(state.updateModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("the score-parity check of a validation (D13)", () => {
+  const reference = rankerParityReference();
+  const referenceScores = reference.pairs.map(pairLogOdds);
+
+  /** The calibration's baseline for the reference: the stable scores, shifted by `shift`. */
+  const calibration = (shift: number): RankerParityBaseline => ({
+    source: "calibration",
+    referenceHash: rankerParityReferenceHash(),
+    plan: rankerParityPlan("mlx"),
+    runtimeBuild: null,
+    scores: referenceScores.map((score) => score + shift)
+  });
+
+  const storedValidation = () =>
+    state.updateModel.mock.calls.at(-1)![1].metadata.decideValidation as {
+      parity: { passed: boolean; maxDelta: number; baseline: { runtimeBuild: string } };
+    };
+
+  /** A first validation, then the model row as it stands after it. */
+  async function validateOnce(build = runtimeBuild) {
+    const first = fakeRanker({ build });
+    await service(first.adapter).ai.testLocalModel(modelId);
+    state.model = rankerModel({
+      metadata: { catalogVersion: "test", decideValidation: storedValidation() }
+    });
+    state.updateModel.mockClear();
+    state.recordTaskRun.mockClear();
+  }
+
+  it("reuses the calibration when a rebuilt runtime scores within 0.125 log-odds", async () => {
+    await validateOnce();
+    const rebuilt = fakeRanker({
+      build: "memora-mlx-helper@sha256:" + "b".repeat(64),
+      pairOffset: 0.125
+    });
+
+    await service(rebuilt.adapter).ai.testLocalModel(modelId);
+
+    const parity = storedValidation().parity;
+    expect(parity.passed).toBe(true);
+    expect(parity.maxDelta).toBeCloseTo(0.125, 9);
+    // The baseline stays the first build's, not the last one's.
+    expect(parity.baseline.runtimeBuild).toBe(runtimeBuild);
+    expect(state.updateModel.mock.calls[0]![1].lastError).toBeNull();
+  });
+
+  it("leaves the ranker validated but uncalibrated, visibly, beyond 0.125 log-odds", async () => {
+    await validateOnce();
+    const rebuilt = fakeRanker({
+      build: "memora-mlx-helper@sha256:" + "b".repeat(64),
+      pairOffset: 0.2
+    });
+    const { ai } = service(rebuilt.adapter);
+
+    const summary = await ai.testLocalModel(modelId);
+
+    const stored = storedValidation();
+    expect(stored.parity.passed).toBe(false);
+    expect(stored.parity.maxDelta).toBeCloseTo(0.2, 9);
+    expect(state.updateModel.mock.calls[0]![1].lastError).toBe(
+      "errors.localModels.rankerUncalibrated"
+    );
+    expect(state.updateModel.mock.calls[0]![1].metadata.decideValidation).toMatchObject({
+      runtimeBuild: "memora-mlx-helper@sha256:" + "b".repeat(64),
+      smoke: { passed: true }
+    });
+    expect(summary).toContain("beyond the limit: uncalibrated");
+  });
+
+  it("measures against the scores stored with a calibration before the install's own baseline", async () => {
+    const lookup = vi.fn((): RankerParityBaseline | null => calibration(0.5));
+    const { ai } = service(fakeRanker().adapter, { rankerParityBaseline: lookup });
+
+    await ai.testLocalModel(modelId);
+
+    expect(lookup).toHaveBeenCalledWith({
+      runtime: "mlx",
+      repository: entry.repository,
+      revision: entry.revision,
+      quantization: entry.quantization,
+      artifactSha256: rankerCatalogArtifactSha256(entry)
+    });
+    const parity = storedValidation().parity;
+    expect(parity).toMatchObject({ passed: false });
+    expect(parity.maxDelta).toBeCloseTo(0.5, 9);
+    expect(state.updateModel.mock.calls[0]![1].lastError).toBe(
+      "errors.localModels.rankerUncalibrated"
+    );
+
+    // The same build against a matching calibration passes.
+    state.updateModel.mockClear();
+    const matching = service(fakeRanker().adapter, {
+      rankerParityBaseline: () => calibration(0)
+    });
+    await matching.ai.testLocalModel(modelId);
+    expect(storedValidation().parity).toMatchObject({ passed: true, maxDelta: 0 });
+  });
+
+  it("starts the install's own baseline when the calibration's does not apply", async () => {
+    const otherReference = { ...calibration(5), referenceHash: "c".repeat(64) };
+    const { ai } = service(fakeRanker().adapter, { rankerParityBaseline: () => otherReference });
+
+    await ai.testLocalModel(modelId);
+
+    expect(storedValidation().parity).toMatchObject({
+      passed: true,
+      maxDelta: 0,
+      baseline: { source: "validation" }
+    });
+  });
+
+  it("runs no parity pairs when the smoke test fails", async () => {
+    const ranker = fakeRanker({ sameScore: true });
+    const { ai } = service(ranker.adapter);
+
+    await expect(ai.testLocalModel(modelId)).rejects.toThrow(
+      "errors.localModels.rankerSmokeFailed"
+    );
+
+    expect(ranker.pairRequests).toHaveLength(0);
+  });
+
+  it("records the failed parity call and closes the gate when the runtime fails there", async () => {
+    state.model = rankerModel({
+      metadata: { catalogVersion: "test", decideValidation: { version: 1 } }
+    });
+    const { ai } = service(fakeRanker({ failPairs: true }).adapter);
+
+    await expect(ai.testLocalModel(modelId)).rejects.toThrow("errors.localModels.runtimeFailed");
+
+    expect(state.recordTaskRun.mock.calls.map(([run]) => run.status)).toEqual([
+      "succeeded",
+      "succeeded",
+      "succeeded",
+      "failed"
+    ]);
+    expect(state.updateModel).toHaveBeenCalledWith(modelId, {
+      lastError: "errors.localModels.runtimeFailed",
+      metadata: { catalogVersion: "test" }
+    });
   });
 });
 

@@ -377,7 +377,8 @@
       "invalidGguf": "Choisissez un fichier de modele GGUF valide.",
       "rankerInvalid": "Ce modèle n’est pas un reranker pris en charge.",
       "rankerSmokeFailed": "Le reranker a échoué au test de validation.",
-      "rankerNotValidated": "Lancez le test de validation de ce reranker avant de l’utiliser."
+      "rankerNotValidated": "Lancez le test de validation de ce reranker avant de l’utiliser.",
+      "rankerUncalibrated": "Une mise à jour du runtime a déplacé les scores de ce reranker au-delà de sa calibration. Il est suspendu pour les décisions automatiques jusqu’à ce qu’il soit recalibré."
     }
   },
   "jobs": {

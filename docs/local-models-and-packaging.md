@@ -78,6 +78,25 @@ A ranker is *validated for decide* on install, and only then does it expose `rer
    compares it (`isDecideValidationCurrent`) and asks for a new test when the build changed. A test
    that cannot run (another ranker in the ranker slot is running a call) reaches no verdict and
    changes nothing.
+5. **Score parity (F3 D13).** A passing smoke test is followed by a score-parity run: the 64
+   directed pairs of `packages/ai/src/ranker-parity-reference.json` (synthetic note text) are scored
+   in a fixed plan (MLX 2 calls of 32 pairs at helper batch 16, GGUF 4 calls of 16) and stored in
+   `decideValidation.parity`. The scores are compared with a baseline: the ones a calibration stored
+   when it was fitted (`AiServiceOptions.rankerParityBaseline`, by model identity), else the first
+   run of this install, which is kept as the baseline so a series of small drifts cannot each pass
+   against the one before. The largest difference over the 64 pairs must stay within 0.125
+   log-odds. Beyond it the ranker keeps its validation but is **uncalibrated**: its row shows
+   `errors.localModels.rankerUncalibrated`, `AiService.rank` (the topic gate's calibrated scores)
+   refuses it so the gate takes its no-decider path, and `AiService.rankPairs` still scores with
+   `uncalibrated: true`, which the relation decider reads as suggest-only.
+6. **Re-validation after a runtime-build change.** `LocalModelService.start` compares the runtime
+   build every validated ranker would run on with the build its validation names and, for each one
+   that changed (a rebuilt or packaged helper, a node-llama-cpp upgrade), runs the model test in
+   the background: the smoke test and the parity run. The ranker is unavailable to decide callers
+   from the moment a validation is requested until it ends; they take their no-decider path instead
+   of waiting for the local lane. Golden runs and AI cassettes never re-validate (no live model).
+   A ranker validated before the parity check existed has no baseline until a calibration supplies
+   one or its next validation records one.
 
 Every rank call of the test is audited as a `reranking` task run with the evaluated tokens and no
 cost. The models screen filters by purpose (text generation, embedding, reranking).
@@ -92,6 +111,13 @@ validated ranker seeds `class:decide` (the MLX ranker first on macOS arm64, else
 output. No route, a model that is not a dedicated ranker, or a validation that does not hold for the
 artifact and runtime build fails visibly, never with a generative fallback. `decideRouteStatus`
 answers the same question without loading the ranker.
+
+`AiService.rankPairs` (F3 D16) scores independent directed pairs under one instruction for the
+relation decider. It splits a list at the routed runtime's `rankPairsLimits.perCall` (MLX 32, GGUF
+16), each call taking the local lane on its own so an interactive call waits for at most one, audits
+every call on its own row, and carries the MLX helper batch size (default 16) in the request's
+`parameters`, which the cassette key and the decider cache key include. The `{query, documents}`
+request of the topic gate is unchanged byte for byte, so recorded gate entries keep their keys.
 
 `AiService` keeps one generative, one embedding and one ranker model resident, so a gate call
 between two embedding calls reloads neither; loading another generative model releases the first.

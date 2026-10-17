@@ -7,6 +7,7 @@ import { z } from "zod";
 import { localModelManifestHash, type LocalModelCatalogEntry } from "./local-model-catalog.js";
 import { resolveManagedModelPath, sha256File } from "./local-model-downloader.js";
 import { isDedicatedRanker } from "./parameter-capabilities.js";
+import { rankerParityRecordSchema, type RankerParityRecord } from "./ranker-parity.js";
 import {
   LocalRankerError,
   qwen3RerankerPrompt,
@@ -409,24 +410,44 @@ export const decideValidationSchema = z
     smoke: rankerSmokeReportSchema.refine((report) => report.passed, {
       message: "A decide validation needs a passing smoke test."
     }),
+    /**
+     * The score-parity check of the build this validation ran on (D13, R1). Absent on a validation
+     * made before the check existed, which counts as `unchecked`.
+     */
+    parity: rankerParityRecordSchema.optional(),
     validatedAt: z.iso.datetime()
   })
   .strict();
 export type DecideValidation = z.infer<typeof decideValidationSchema>;
 
-/** The record of a passed validation; a failed smoke test throws `rankerSmokeFailed` instead. */
+/**
+ * The record of a passed validation; a failed smoke test throws `rankerSmokeFailed` instead. A
+ * parity check that did not pass is still recorded: the ranker works on this build but its
+ * scores no longer match what a calibration was fitted on.
+ */
 export function createDecideValidation(
   subject: DecideValidationSubject,
   smoke: RankerSmokeReport,
-  validatedAt: Date = new Date()
+  validatedAt: Date = new Date(),
+  parity?: RankerParityRecord
 ): DecideValidation {
   assertRankerSmokePassed(smoke);
   return decideValidationSchema.parse({
     version: 1,
     ...subject,
     smoke,
+    ...(parity ? { parity } : {}),
     validatedAt: validatedAt.toISOString()
   });
+}
+
+/**
+ * Whether a stored validation's last parity check failed, so the decider is uncalibrated (D13). A
+ * missing or malformed record, or a validation with no parity check, is not a failure.
+ */
+export function decideValidationParityFailed(value: unknown): boolean {
+  const parsed = decideValidationSchema.safeParse(value);
+  return parsed.success && parsed.data.parity !== undefined && !parsed.data.parity.passed;
 }
 
 /**

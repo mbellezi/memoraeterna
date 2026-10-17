@@ -17,6 +17,7 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 - A dedicated reranker serves the `decide` class only after this install validated its artifact (GGUF
   header, or MLX config and architecture) and a smoke test scored a relevant pair clearly above an
   irrelevant one; the result is stored with the model and re-checked when the artifact or runtime changes.
+  A runtime-build change re-validates it and checks score parity; drifted scores leave it uncalibrated.
 - Canonical parameter names are owned by the domain; adapters translate them and
   never forward unknown keys. The model's parameter descriptor drives both the
   settings UI and runtime normalization.
@@ -27,8 +28,7 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   workload-class route the caller states, then the task route; that model decides where execution
   happens. An unavailable or incompatible model fails visibly; never fall back silently to another model.
 - Missing routes are seeded only from profiles no less private than the default.
-- Profile, model identity and parameters are pinned when work is admitted;
-  later settings edits affect new work only.
+- Profile, model identity and parameters are pinned at admission; later edits affect new work only.
 - Generated user-visible content uses the global content language, separate from
   the interface language. Internal identifiers, predicates, keys and enums stay
   English. Model-facing language names are full English names. Embeddings

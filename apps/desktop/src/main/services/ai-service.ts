@@ -13,7 +13,9 @@ import { createTranslator } from "@app/i18n";
 import {
   AiModelRegistry,
   createDecideValidation,
+  createRankerParityRecord,
   decideValidationForCatalogEntry,
+  decideValidationParityFailed,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
   hasCapabilities,
@@ -29,15 +31,21 @@ import {
   NodeLlamaRankerAdapter,
   OpenAiCompatibleAdapter,
   OpenAiCodexAdapter,
+  parseRankPairsRequest,
   parseRankRequest,
   providerParameterCapabilities,
   rankerCatalogArtifactSha256,
+  rankerParityBaselineApplies,
+  rankerParityReferenceHash,
+  rankPairsLimits,
+  rankPairsTaskRequest,
   rankTaskRequest,
   readRankResult,
   redactSensitiveText,
   remoteCallReport,
   runRankerSmoke,
   runsStreaming,
+  scoreRankerParityReference,
   validateCatalogRankerArtifact,
   type AiModelAdapter,
   type AiProgressEvent,
@@ -50,7 +58,11 @@ import {
   type AiTaskResult,
   type AiWorkloadClass,
   type LocalModelCatalogEntry,
+  type RankerParityBaseline,
+  type RankerParityPlan,
+  type RankerParityRecord,
   type RankerSmokeReport,
+  type RankPairsRequest,
   type RankRequest,
   type RankResult,
   type LanePermit,
@@ -63,6 +75,7 @@ import {
   isRemoteExecution,
   localDeadlineMs,
   LocalDeadlineError,
+  LocalRankerError,
   localRuntimeWedgedError,
   priorityNumber,
   remoteTotalDeadlineMs,
@@ -167,6 +180,13 @@ export interface AiServiceOptions {
    * first-run ranker install follows the first embedding route (owner decision 19).
    */
   onRoutesSeeded?: (tasks: readonly string[]) => void;
+  /**
+   * The parity baseline a calibration stored for a ranker model (D13): the scores of the 64
+   * reference pairs when the calibration was fitted. A validation on a rebuilt runtime is compared
+   * with it. Left out, or null for a model, the first validation's own scores become the baseline of
+   * that install.
+   */
+  rankerParityBaseline?: (identity: RankerParityModelIdentity) => RankerParityBaseline | null;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -201,6 +221,90 @@ export interface AiRankResult extends RankResult {
   runtime: string;
   durationMs: number;
   queueMs: number;
+}
+
+/**
+ * Independent directed pairs (query, document) under one instruction, scored in order (F3 D16): the
+ * relation decider's two directions of every candidate. The service splits a longer list at the
+ * routed runtime's `rankPairsLimits.perCall` (32 MLX, 16 GGUF), so a P0 call waits for at most one
+ * bounded call, and each call takes the local lane on its own.
+ */
+export interface AiRankPairsInput {
+  /** The calling operation, which may have its own route (`op:<operation>`) before `class:decide`. */
+  operation: string;
+  /** The ranker instruction, rendered from the prompt catalog by the caller. */
+  instruction: string;
+  pairs: Array<{ query: string; document: string }>;
+  /**
+   * Sequences per MLX forward pass (default `rankPairsLimits.helperBatchSize`). It is an effective
+   * parameter of the call, so the cassette and the decider cache key it (D13); a GGUF ranker scores
+   * pairs one by one and has none.
+   */
+  helperBatchSize?: number;
+  /** Lane priority; background (P2) unless the user waits for the answer (D30). */
+  priority?: AiPriorityInput;
+  /** Sources whose content takes part in the call, for the audit. */
+  sourceIds?: string[];
+  jobId?: string;
+  stage?: string;
+  /** The audit of the instruction; read from the prompt runtime when left out. */
+  promptCompositions?: PromptCompositionSnapshot[];
+}
+
+export interface AiRankPairsResult extends RankResult {
+  /** One audit row per call, in call order. */
+  aiTaskRunIds: string[];
+  calls: number;
+  profileId: string;
+  localModelId: string;
+  provider: string;
+  modelId: string;
+  runtime: string;
+  /** The runtime build that scored, part of the decider cache key (D13). */
+  runtimeBuild: string;
+  /** The effective parameters of every call: the MLX helper batch, none for GGUF. */
+  parameters: { batchSize?: number };
+  /**
+   * The ranker's last parity check failed (D13): its scores no longer match what a calibration was
+   * fitted on, so the caller treats the decider as uncalibrated (suggest only).
+   */
+  uncalibrated: boolean;
+  /** Summed over the calls. */
+  durationMs: number;
+  queueMs: number;
+}
+
+/** What a rank caller uses a ranker for: `documents` is the topic gate's, `pairs` the relation decider's. */
+type RankPurpose = "documents" | "pairs";
+
+/** The wire request of one rank call, whichever shape it has. */
+interface RankWire {
+  request: AiTaskRequest;
+  /** Scores the call must return. */
+  count: number;
+}
+
+/** What a rank call returns before `rank` and `rankPairs` shape it. */
+type ExecutedRank = RankResult & {
+  aiTaskRunId: string;
+  profileId: string;
+  localModelId: string;
+  provider: string;
+  modelId: string;
+  runtime: string;
+  durationMs: number;
+  queueMs: number;
+  runtimeBuild: string;
+  uncalibrated: boolean;
+};
+
+/** The model identity a calibration's parity baseline is looked up by (D13). */
+export interface RankerParityModelIdentity {
+  runtime: "mlx" | "gguf";
+  repository: string;
+  revision: string;
+  quantization: string;
+  artifactSha256: string;
 }
 
 /**
@@ -386,6 +490,12 @@ export class AiService {
   private readonly remoteRuntime: AiRuntimeConfig;
   private readonly localDeadlineHistory = new LocalDeadlineHistory();
   private readonly activeLocalModels = new Set<string>();
+  /**
+   * Rankers whose validation is queued or running. Decide is unavailable on them: callers take the
+   * no-decider path instead of waiting for the lane, and a runtime-build change is validated, with
+   * its parity check, before the ranker serves again (D13).
+   */
+  private readonly validatingRankers = new Map<string, number>();
   private readonly registry = new AiModelRegistry();
   private readonly oauthRefreshes = new Map<string, Promise<OpenAiCodexCredential>>();
   private pendingOpenAiCodexCredential: OpenAiCodexCredential | null = null;
@@ -1595,6 +1705,93 @@ export class AiService {
     });
     const pin = capturePromptPin();
     const compositions = input.promptCompositions ?? promptAudit(input.instruction);
+    return this.runRankCall(
+      input,
+      { request: rankTaskRequest(request), count: request.documents.length },
+      { pin, compositions, purpose: "documents" },
+      signal
+    );
+  }
+
+  /**
+   * Scores independent directed pairs on the validated dedicated ranker of the operation's route,
+   * the way {@link rank} scores documents, for the relation decider (F3 D16, T50). A list longer
+   * than the routed runtime's `rankPairsLimits.perCall` is split into calls of at most that many
+   * pairs (32 on MLX, 16 on GGUF), each taking the local lane on its own, so a P0 call waits for
+   * at most one bounded call. Each call is audited on its own row and carries the helper batch size
+   * in its parameters. The whole list is validated before any call waits for the lane.
+   *
+   * Unlike {@link rank}, a ranker whose parity check failed still scores (the relation decider
+   * suggests only when `uncalibrated` is set); it is unavailable only while it validates or when
+   * it is not validated.
+   */
+  public async rankPairs(
+    input: AiRankPairsInput,
+    signal?: AbortSignal
+  ): Promise<AiRankPairsResult> {
+    const { model } = await this.resolveDecideRoute(
+      createAiConfigRepository(this.requirePool()),
+      input.operation,
+      "pairs"
+    );
+    const runtime = model.runtime === "mlx" ? "mlx" : "gguf";
+    const perCall = rankPairsLimits.perCall[runtime];
+    // MLX alone has a helper batch; the effective parameters say so (D13).
+    const batchSize =
+      runtime === "mlx" ? (input.helperBatchSize ?? rankPairsLimits.helperBatchSize) : undefined;
+    // Validated before the first call waits for the lane.
+    const wires = chunked(input.pairs, perCall).map((pairs): RankWire => {
+      const request = parseRankPairsRequest({ instruction: input.instruction, pairs });
+      return {
+        request: rankPairsTaskRequest(request, batchSize === undefined ? {} : { batchSize }),
+        count: request.pairs.length
+      };
+    });
+    if (wires.length === 0) {
+      throw new LocalRankerError("errors.ai.unsupportedTask", "A pairs request needs a pair.");
+    }
+    const pin = capturePromptPin();
+    const compositions = input.promptCompositions ?? promptAudit(input.instruction);
+    const parts: ExecutedRank[] = [];
+    for (const wire of wires) {
+      signal?.throwIfAborted();
+      parts.push(
+        await this.runRankCall(input, wire, { pin, compositions, purpose: "pairs" }, signal)
+      );
+    }
+    const last = parts.at(-1)!;
+    return {
+      logOdds: parts.flatMap((part) => part.logOdds),
+      scores: parts.flatMap((part) => part.scores),
+      tokenCounts: parts.flatMap((part) => part.tokenCounts),
+      truncated: parts.flatMap((part) => part.truncated),
+      aiTaskRunIds: parts.map((part) => part.aiTaskRunId),
+      calls: parts.length,
+      profileId: last.profileId,
+      localModelId: last.localModelId,
+      provider: last.provider,
+      modelId: last.modelId,
+      runtime: last.runtime,
+      runtimeBuild: last.runtimeBuild,
+      parameters: batchSize === undefined ? {} : { batchSize },
+      uncalibrated: parts.some((part) => part.uncalibrated),
+      durationMs: parts.reduce((total, part) => total + part.durationMs, 0),
+      queueMs: parts.reduce((total, part) => total + part.queueMs, 0)
+    };
+  }
+
+  /** One rank call on the local lane; its audit is written once the lane is free. */
+  private async runRankCall(
+    input: Pick<AiRankInput, "operation" | "priority" | "sourceIds" | "jobId" | "stage">,
+    wire: RankWire,
+    admission: {
+      pin: PromptPin;
+      compositions: PromptCompositionSnapshot[];
+      purpose: RankPurpose;
+    },
+    signal: AbortSignal | undefined
+  ): Promise<ExecutedRank> {
+    const { pin, compositions, purpose } = admission;
     // The wait for the local lane does not count against the caller's own timeout.
     const deadline = ActiveDeadline.of(signal);
     const complete = await this.scheduler.run(
@@ -1607,15 +1804,29 @@ export class AiService {
         pauses: deadline ? [deadline] : []
       },
       (permit) =>
-        withPromptPin(pin, () => this.executeRank(input, request, compositions, permit, signal))
+        withPromptPin(pin, () =>
+          this.executeRank(input, wire, compositions, purpose, permit, signal)
+        )
     );
     // The audit and the monitoring entry are written once the lane is free.
     return complete();
   }
-  /** Whether rank calls of an operation have a ranker to run on (see {@link DecideRouteStatus}). */
-  public async decideRouteStatus(operation?: string): Promise<DecideRouteStatus> {
+
+  /**
+   * Whether rank calls of an operation have a ranker to run on (see {@link DecideRouteStatus}).
+   * `purpose` is `documents` for the topic gate's calibrated scores (a failed parity check closes
+   * it, D13) and `pairs` for the relation decider.
+   */
+  public async decideRouteStatus(
+    operation?: string,
+    purpose: RankPurpose = "documents"
+  ): Promise<DecideRouteStatus> {
     try {
-      await this.resolveDecideRoute(createAiConfigRepository(this.requirePool()), operation);
+      await this.resolveDecideRoute(
+        createAiConfigRepository(this.requirePool()),
+        operation,
+        purpose
+      );
       return "ready";
     } catch (error) {
       const key = error instanceof Error ? error.message : "";
@@ -1730,10 +1941,14 @@ export class AiService {
   /**
    * The validated ranker that serves rank calls of an operation: the `op:<operation>` route, else
    * `class:decide`, seeded on first use like any route. Throws the localized reason otherwise.
+   * The ranker is unavailable while it validates (the caller takes its no-decider path instead of
+   * waiting), and, for the `documents` purpose, when its last parity check failed (D13): the topic
+   * gate's calibration was fitted on scores the rebuilt runtime no longer produces.
    */
   private async resolveDecideRoute(
     repository: ReturnType<typeof createAiConfigRepository>,
-    operation: string | undefined
+    operation: string | undefined,
+    purpose: RankPurpose
   ): Promise<{ selection: TaskSelection; model: LocalModelRecord; entry: LocalModelCatalogEntry }> {
     const keys = [...(operation ? [operationRouteKey(operation)] : []), decideRouteKey];
     let found = await repository.getDefaultTask(decideRouteKey, undefined, keys);
@@ -1749,30 +1964,39 @@ export class AiService {
       throw new Error("errors.localModels.notReady");
     const entry = findLocalModelCatalogEntry(model.catalogId);
     if (!entry || !isRankerCatalogEntry(entry)) throw new Error("errors.ai.unsupportedTask");
-    if (!rankerReadyForDecide(model, entry))
+    if (!rankerReadyForDecide(model, entry) || this.validatingRankers.has(model.id))
+      throw new Error("errors.localModels.rankerNotValidated");
+    if (purpose === "documents" && decideValidationParityFailed(model.metadata.decideValidation))
       throw new Error("errors.localModels.rankerNotValidated");
     return { selection: structuredClone(found), model, entry };
   }
 
   private async executeRank(
-    input: AiRankInput,
-    request: RankRequest,
+    input: Pick<AiRankInput, "operation" | "priority" | "sourceIds" | "jobId" | "stage">,
+    wire: RankWire,
     compositions: PromptCompositionSnapshot[],
+    purpose: RankPurpose,
     permit: LanePermit,
     signal: AbortSignal | undefined
-  ): Promise<() => Promise<AiRankResult>> {
+  ): Promise<() => Promise<ExecutedRank>> {
     signal?.throwIfAborted();
     const repository = createAiConfigRepository(this.requirePool());
-    const { selection, model, entry } = await this.resolveDecideRoute(repository, input.operation);
+    const { selection, model, entry } = await this.resolveDecideRoute(
+      repository,
+      input.operation,
+      purpose
+    );
     const sourceItemIds = [...new Set(input.sourceIds ?? [])];
     const queueMs = permit.queueMs;
     const taskRequest: AiTaskRequest = {
-      ...rankTaskRequest(request),
+      ...wire.request,
       profileId: selection.profileId,
       modelId: selection.modelId,
       workloadClass: "decide",
       ...requestOperation(input.operation)
     };
+    // The effective parameters: none for a documents call, the MLX helper batch for a pairs call.
+    const parameters = taskRequest.parameters as JsonObject;
     const taskInput = String(taskRequest.input);
     const adapterName = localAdapterName(model.runtime);
     const deadlineMs = localDeadlineMs(this.laneConfig.localDeadlines, "decide");
@@ -1789,7 +2013,7 @@ export class AiService {
       revision: model.revision,
       quantization: model.quantization,
       capabilitiesUsed: ["reranking", "offline"],
-      parameters: {},
+      parameters,
       promptCompositions: compositions,
       inputHash: sha256(taskInput),
       queueMs,
@@ -1834,39 +2058,37 @@ export class AiService {
       modelId: selection.modelId,
       runtime: model.runtime,
       profileId: selection.profileId,
-      parameters: {},
+      parameters,
       input: taskInput
     });
     try {
-      const { result, output } = await this.withLocalModelUsage(model.id, async () => {
-        const ranker = await this.residentRanker(model);
-        // The validation holds only for the runtime build it ran on (T11): checked before any call.
-        // The build is read once per resident ranker; a failed read is retried by the next call.
-        ranker.runtimeBuild ??= (ranker.adapter as RankerAdapter).runtimeBuild().catch((error) => {
-          ranker.runtimeBuild = undefined;
-          throw error;
-        });
-        const runtimeBuild = await ranker.runtimeBuild;
-        if (
-          !isDecideValidationCurrent(model.metadata.decideValidation, {
-            runtime: entry.runtime,
-            revision: entry.revision,
-            artifactSha256: rankerCatalogArtifactSha256(entry),
-            runtimeBuild
-          })
-        )
-          throw new Error("errors.localModels.rankerNotValidated");
-        const descriptor = ranker.adapter.describe();
-        const adapter = this.registry.resolve({
-          providerId: descriptor.providerId,
-          modelId: descriptor.modelId,
-          requiredCapabilities: ["reranking"],
-          offlineOnly: true
-        });
-        signal?.throwIfAborted();
-        const ran = await adapter.run(taskRequest, laneSignal(signal, permit));
-        return { result: ran, output: readRankResult(ran, request.documents.length) };
-      });
+      const { result, output, runtimeBuild } = await this.withLocalModelUsage(
+        model.id,
+        async () => {
+          const ranker = await this.residentRanker(model);
+          // The validation holds only for the runtime build it ran on (T11): checked before any call.
+          const runtimeBuild = await this.rankerBuild(ranker);
+          if (
+            !isDecideValidationCurrent(model.metadata.decideValidation, {
+              runtime: entry.runtime,
+              revision: entry.revision,
+              artifactSha256: rankerCatalogArtifactSha256(entry),
+              runtimeBuild
+            })
+          )
+            throw new Error("errors.localModels.rankerNotValidated");
+          const descriptor = ranker.adapter.describe();
+          const adapter = this.registry.resolve({
+            providerId: descriptor.providerId,
+            modelId: descriptor.modelId,
+            requiredCapabilities: ["reranking"],
+            offlineOnly: true
+          });
+          signal?.throwIfAborted();
+          const ran = await adapter.run(taskRequest, laneSignal(signal, permit));
+          return { result: ran, output: readRankResult(ran, wire.count), runtimeBuild };
+        }
+      );
       this.localDeadlineHistory.settled(model.id, taskInput);
       const inputTokens = output.tokenCounts.reduce((total, count) => total + count, 0);
       return async () => {
@@ -1886,7 +2108,7 @@ export class AiService {
           durationMs: Date.now() - started,
           tokenUsage: { inputTokens, outputTokens: 0, totalTokens: inputTokens },
           costEstimate: 0,
-          parameters: {},
+          parameters,
           output
         });
         return {
@@ -1898,7 +2120,9 @@ export class AiService {
           modelId: selection.modelId,
           runtime: model.runtime,
           durationMs: result.durationMs,
-          queueMs
+          queueMs,
+          runtimeBuild,
+          uncalibrated: decideValidationParityFailed(model.metadata.decideValidation)
         };
       };
     } catch (caught) {
@@ -1922,7 +2146,7 @@ export class AiService {
           aiTaskRunId,
           durationMs: Date.now() - started,
           error: redactSensitiveText(error),
-          parameters: {}
+          parameters
         });
         if (error instanceof Error) Object.assign(error, { aiTaskRunId });
         throw error;
@@ -1936,11 +2160,25 @@ export class AiService {
     if (!model) throw new Error("errors.common.notFound");
     // Settings tests are interactive: P0 on the local lane, in the class of what they test.
     const workloadClass = localModelTestClass(model);
-    return this.scheduler.run(
-      { lane: "local", priority: "P0", workloadClass, label: "local_model_test" },
-      (permit) =>
-        withPromptPin(pin, () => this.executeLocalModelTest(localModelId, permit, workloadClass))
-    );
+    // A ranker is unavailable from the moment its validation is requested until it ends, also while
+    // it waits for the lane: callers take the no-decider path instead of queueing behind it (D13).
+    const entry = findLocalModelCatalogEntry(model.catalogId);
+    const validating = Boolean(entry && isRankerCatalogEntry(entry));
+    if (validating)
+      this.validatingRankers.set(model.id, (this.validatingRankers.get(model.id) ?? 0) + 1);
+    try {
+      return await this.scheduler.run(
+        { lane: "local", priority: "P0", workloadClass, label: "local_model_test" },
+        (permit) =>
+          withPromptPin(pin, () => this.executeLocalModelTest(localModelId, permit, workloadClass))
+      );
+    } finally {
+      if (validating) {
+        const remaining = (this.validatingRankers.get(model.id) ?? 1) - 1;
+        if (remaining > 0) this.validatingRankers.set(model.id, remaining);
+        else this.validatingRankers.delete(model.id);
+      }
+    }
   }
 
   private async executeLocalModelTest(
@@ -2105,7 +2343,7 @@ export class AiService {
     });
     let lastAiTaskRunId: string | undefined;
     let inputTokens = 0;
-    const audit = (request: RankRequest, taskRequest: AiTaskRequest) => ({
+    const audit = (request: { instruction: string }, taskRequest: AiTaskRequest) => ({
       taskType: "reranking",
       provider,
       modelId: model.modelId,
@@ -2115,7 +2353,7 @@ export class AiService {
       revision: model.revision,
       quantization: model.quantization,
       capabilitiesUsed: ["reranking", "offline"],
-      parameters: {},
+      parameters: taskRequest.parameters as JsonObject,
       inputHash: sha256(String(taskRequest.input)),
       promptCompositions: request.instruction === instruction ? promptAudit(instruction) : []
     });
@@ -2132,12 +2370,16 @@ export class AiService {
         requiredCapabilities: ["reranking"],
         offlineOnly: true
       });
-      const rank = async (request: RankRequest): Promise<RankResult> => {
-        const taskRequest = rankTaskRequest(request);
+      // One audited call of the validation: the smoke test's documents, or a parity pairs call.
+      const call = async (
+        request: { instruction: string },
+        taskRequest: AiTaskRequest,
+        count: number
+      ): Promise<RankResult> => {
         const callStarted = Date.now();
         try {
           const result = await registered.run(taskRequest);
-          const output = readRankResult(result, request.documents.length);
+          const output = readRankResult(result, count);
           lastAiTaskRunId = await repository.recordTaskRun({
             ...audit(request, taskRequest),
             outputHash: sha256(JSON.stringify(result.output)),
@@ -2162,9 +2404,44 @@ export class AiService {
           throw error;
         }
       };
-      const smoke = await this.withLocalModelUsage(model.id, () =>
-        runRankerSmoke(rank, { instruction })
-      );
+      const rank = (request: RankRequest) =>
+        call(request, rankTaskRequest(request), request.documents.length);
+      const rankPairs = (request: RankPairsRequest, plan: RankerParityPlan) =>
+        call(
+          request,
+          rankPairsTaskRequest(
+            request,
+            plan.helperBatchSize === undefined ? {} : { batchSize: plan.helperBatchSize }
+          ),
+          request.pairs.length
+        );
+      // The smoke test, then the parity check of a build that passed it (D13): the reference pairs
+      // are scored in the fixed calls of the runtime's parity plan.
+      const { smoke, parityScores } = await this.withLocalModelUsage(model.id, async () => {
+        const report = await runRankerSmoke(rank, { instruction });
+        return {
+          smoke: report,
+          parityScores: report.passed
+            ? await scoreRankerParityReference(entry.runtime, rankPairs)
+            : null
+        };
+      });
+      const identity: RankerParityModelIdentity = {
+        runtime: entry.runtime,
+        repository: entry.repository,
+        revision: entry.revision,
+        quantization: entry.quantization,
+        artifactSha256: artifact.artifactSha256
+      };
+      // The scores stored with a calibration come first; then the baseline this install recorded.
+      const parity = parityScores
+        ? createRankerParityRecord({
+            runtime: entry.runtime,
+            scores: parityScores,
+            runtimeBuild,
+            baseline: this.parityBaseline(model, entry, identity)
+          })
+        : undefined;
       const validation = createDecideValidation(
         {
           runtime: entry.runtime,
@@ -2172,10 +2449,13 @@ export class AiService {
           artifactSha256: artifact.artifactSha256,
           runtimeBuild
         },
-        smoke
+        smoke,
+        new Date(),
+        parity
       );
+      // A failed parity check leaves the ranker validated but uncalibrated, visibly (D13).
       await models.updateModel(model.id, {
-        lastError: null,
+        lastError: parity && !parity.passed ? "errors.localModels.rankerUncalibrated" : null,
         metadata: { ...model.metadata, decideValidation: validation }
       });
       await this.options.monitoring?.finish(capture, {
@@ -2186,7 +2466,7 @@ export class AiService {
         costEstimate: 0,
         output: smoke
       });
-      return rankerValidationSummary(smoke);
+      return rankerValidationSummary(smoke, parity);
     } catch (error) {
       // No verdict is reached while the model is busy or not ready; anything else closes the gate.
       if (!rankerValidationInconclusive.has(redactSensitiveText(error))) {
@@ -2210,6 +2490,55 @@ export class AiService {
         await this.releaseSlot("rank").catch(() => undefined);
       await this.stopIdleMlxHelper(false).catch(() => undefined);
     }
+  }
+
+  /**
+   * The scores a parity check compares with (D13): the ones a calibration stored for this model,
+   * else the baseline this install recorded at an earlier validation of the same artifact. Null
+   * when neither applies (another reference or batching, or none yet): the run then starts the
+   * install's own baseline.
+   */
+  private parityBaseline(
+    model: LocalModelRecord,
+    entry: LocalModelCatalogEntry,
+    identity: RankerParityModelIdentity
+  ): RankerParityBaseline | null {
+    let calibrated: RankerParityBaseline | null = null;
+    try {
+      calibrated = this.options.rankerParityBaseline?.(identity) ?? null;
+    } catch (error) {
+      this.options.logger?.error("Ranker parity baseline", error);
+    }
+    const previous =
+      decideValidationForCatalogEntry(model.metadata.decideValidation, entry)?.parity?.baseline ??
+      null;
+    const hash = rankerParityReferenceHash();
+    return (
+      [calibrated, previous].find((baseline) =>
+        rankerParityBaselineApplies(baseline, entry.runtime, hash)
+      ) ?? null
+    );
+  }
+
+  /**
+   * The runtime build a ranker would run on now: the MLX helper executable's SHA-256, or the
+   * node-llama-cpp and llama.cpp build of a GGUF ranker (which loads the model to read it). The
+   * startup re-validation compares it with the build a stored validation names (D13).
+   */
+  public async rankerRuntimeBuild(localModelId: string): Promise<string> {
+    const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
+    if (!model) throw new Error("errors.common.notFound");
+    const ranker = await this.residentRanker(model);
+    return this.rankerBuild(ranker);
+  }
+
+  /** The resident ranker's build, read once while it stays resident; a failed read is retried. */
+  private rankerBuild(ranker: ResidentLocalAdapter): Promise<string> {
+    ranker.runtimeBuild ??= (ranker.adapter as RankerAdapter).runtimeBuild().catch((error) => {
+      ranker.runtimeBuild = undefined;
+      throw error;
+    });
+    return ranker.runtimeBuild;
   }
 
   /**
@@ -2763,7 +3092,7 @@ function errorKeyOf(error: unknown): string {
 }
 
 /** What the model test shows after a passing validation. */
-function rankerValidationSummary(smoke: RankerSmokeReport): string {
+function rankerValidationSummary(smoke: RankerSmokeReport, parity?: RankerParityRecord): string {
   const log = (value: number) => value.toFixed(3);
   return [
     "Reranker validated for decide",
@@ -2771,8 +3100,23 @@ function rankerValidationSummary(smoke: RankerSmokeReport): string {
     ...smoke.relevance.map(
       (entry) =>
         `${entry.language}: relevant ${log(entry.relevant)}, irrelevant ${log(entry.irrelevant)} (margin ${log(entry.margin)})`
-    )
+    ),
+    ...(parity
+      ? [
+          `Score parity with the ${parity.baseline.source} baseline: largest difference ${log(parity.maxDelta)} log-odds (limit ${log(parity.tolerance)}), ${
+            parity.passed ? "within the limit" : "beyond the limit: uncalibrated, it only suggests"
+          }`
+        ]
+      : [])
   ].join("\n");
+}
+
+/** Consecutive slices of at most `size` items, in order. */
+function chunked<T>(items: readonly T[], size: number): T[][] {
+  const slices: T[][] = [];
+  for (let start = 0; start < items.length; start += size)
+    slices.push(items.slice(start, start + size));
+  return slices;
 }
 
 function localAdapterName(runtime: string): string {

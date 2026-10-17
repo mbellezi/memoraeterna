@@ -1,0 +1,327 @@
+{
+  "version": 1,
+  "description": "Parity reference of the local dedicated rankers (F3 D13): 64 directed pairs of synthetic text, two directions of 32 note pairs from the Spike A reranker dataset (the fictional matching fixture notes, relation-pair-text-v1: title, idea and the first 400 body characters). The pairs were taken at evenly spaced values of the mean of the two directions' MLX log-odds (mechanism instruction), at most two per note, so the set spans the score range from clearly unrelated to clearly related. The file is a protocol constant: any change is a new reference and a new hash, and every stored baseline of the old one stops applying.",
+  "instruction": "Given a note (Query), decide whether the Document note makes a claim about the same underlying mechanism, rule or phenomenon, so that a careful reader would link the two notes. Shared names, titles, vocabulary, catalogs or credits do not count.",
+  "pairs": [
+    {
+      "id": "01-ab",
+      "query": "Title: Aquecimento gradual ajuda a liberar umidade retida\nIdea: O aquecimento gradual facilita a saída da umidade interna, mas não corrige fissuras preexistentes.\nText: Fissuras que surgem no início do aquecimento podem ser causadas por água retida, que se transforma em vapor mais rapidamente do que consegue escapar. Aquecer gradualmente favorece a saída da umidade, embora não elimine fissuras já formadas durante a secagem. A superfície aparentemente seca não garante que o interior esteja seco.",
+      "document": "Title: Citações específicas de versões preservam o texto consultado\nIdea: A identidade de versão preserva a fidelidade histórica das citações durante revisões de uma obra.\nText: Uma citação deve identificar a versão efetivamente consultada, mesmo quando uma versão posterior se torna o texto corrente. Separar a identidade da obra da identidade de cada versão permite corrigir o conteúdo atual sem fazer uma citação histórica apresentar palavras que a pesquisadora nunca leu."
+    },
+    {
+      "id": "01-ba",
+      "query": "Title: Citações específicas de versões preservam o texto consultado\nIdea: A identidade de versão preserva a fidelidade histórica das citações durante revisões de uma obra.\nText: Uma citação deve identificar a versão efetivamente consultada, mesmo quando uma versão posterior se torna o texto corrente. Separar a identidade da obra da identidade de cada versão permite corrigir o conteúdo atual sem fazer uma citação histórica apresentar palavras que a pesquisadora nunca leu.",
+      "document": "Title: Aquecimento gradual ajuda a liberar umidade retida\nIdea: O aquecimento gradual facilita a saída da umidade interna, mas não corrige fissuras preexistentes.\nText: Fissuras que surgem no início do aquecimento podem ser causadas por água retida, que se transforma em vapor mais rapidamente do que consegue escapar. Aquecer gradualmente favorece a saída da umidade, embora não elimine fissuras já formadas durante a secagem. A superfície aparentemente seca não garante que o interior esteja seco."
+    },
+    {
+      "id": "02-ab",
+      "query": "Title: A composição do lote altera a proporção de alertas verdadeiros\nIdea: A composição do lote pode alterar a proporção de alertas verdadeiros sem mudar o comportamento do detector.\nText: No simulador Íris, o detector manteve o mesmo comportamento em cada tipo de peça, mas a composição dos lotes mudou a mistura de alertas. Quando as marcas verdadeiras eram raras, uma parcela maior dos alertas vinha de peças sem marca; quando eram frequentes, aumentava a parcela de alertas verdadeiros.",
+      "document": "Title: Citações específicas de versões preservam o texto consultado\nIdea: A identidade de versão preserva a fidelidade histórica das citações durante revisões de uma obra.\nText: Uma citação deve identificar a versão efetivamente consultada, mesmo quando uma versão posterior se torna o texto corrente. Separar a identidade da obra da identidade de cada versão permite corrigir o conteúdo atual sem fazer uma citação histórica apresentar palavras que a pesquisadora nunca leu."
+    },
+    {
+      "id": "02-ba",
+      "query": "Title: Citações específicas de versões preservam o texto consultado\nIdea: A identidade de versão preserva a fidelidade histórica das citações durante revisões de uma obra.\nText: Uma citação deve identificar a versão efetivamente consultada, mesmo quando uma versão posterior se torna o texto corrente. Separar a identidade da obra da identidade de cada versão permite corrigir o conteúdo atual sem fazer uma citação histórica apresentar palavras que a pesquisadora nunca leu.",
+      "document": "Title: A composição do lote altera a proporção de alertas verdadeiros\nIdea: A composição do lote pode alterar a proporção de alertas verdadeiros sem mudar o comportamento do detector.\nText: No simulador Íris, o detector manteve o mesmo comportamento em cada tipo de peça, mas a composição dos lotes mudou a mistura de alertas. Quando as marcas verdadeiras eram raras, uma parcela maior dos alertas vinha de peças sem marca; quando eram frequentes, aumentava a parcela de alertas verdadeiros."
+    },
+    {
+      "id": "03-ab",
+      "query": "Title: Controle de variáveis no experimento de germinação\nIdea: Controlar substrato e irrigação ao variar a iluminação ajuda a avaliar especificamente a resposta das sementes à luz.\nText: No Projeto Aurora, lotes da mesma espécie são comparados sob diferentes condições de iluminação, enquanto o substrato e a irrigação permanecem iguais. Variar um único fator e controlar os demais facilita interpretar as diferenças entre os grupos.",
+      "document": "Title: Referências preservam a redação citada\nIdea: Distinguir referências ao trabalho e a estados específicos preserva a integridade histórica das citações.\nText: Uma referência a um estado específico continua exibindo a redação original desse estado. Já uma referência apenas ao trabalho pode conduzir ao estado atual, permitindo atualizar o material sem modificar silenciosamente o conteúdo associado a uma citação antiga."
+    },
+    {
+      "id": "03-ba",
+      "query": "Title: Referências preservam a redação citada\nIdea: Distinguir referências ao trabalho e a estados específicos preserva a integridade histórica das citações.\nText: Uma referência a um estado específico continua exibindo a redação original desse estado. Já uma referência apenas ao trabalho pode conduzir ao estado atual, permitindo atualizar o material sem modificar silenciosamente o conteúdo associado a uma citação antiga.",
+      "document": "Title: Controle de variáveis no experimento de germinação\nIdea: Controlar substrato e irrigação ao variar a iluminação ajuda a avaliar especificamente a resposta das sementes à luz.\nText: No Projeto Aurora, lotes da mesma espécie são comparados sob diferentes condições de iluminação, enquanto o substrato e a irrigação permanecem iguais. Variar um único fator e controlar os demais facilita interpretar as diferenças entre os grupos."
+    },
+    {
+      "id": "04-ab",
+      "query": "Title: Limites da releitura e da evocação\nIdea: A facilidade percebida na leitura não prova que o conteúdo possa ser recuperado ou explicado depois.\nText: Reler uma página pode criar familiaridade sem garantir a capacidade de recordar ou explicar o conteúdo posteriormente. A evocação favorece a retenção, mas seus resultados não são garantidos em qualquer ambiente, especialmente quando o aluno ainda não compreendeu o material.",
+      "document": "Title: Espessura e exposição equilibradas reduzem diferenças de secagem\nIdea: A uniformidade da peça e da exposição ao ar reduz fissuras causadas pela secagem desigual.\nText: Manter espessuras semelhantes e proporcionar exposição equilibrada ao ar ajuda a reduzir diferenças de secagem e, consequentemente, o risco de fissuras associadas à contração desigual."
+    },
+    {
+      "id": "04-ba",
+      "query": "Title: Espessura e exposição equilibradas reduzem diferenças de secagem\nIdea: A uniformidade da peça e da exposição ao ar reduz fissuras causadas pela secagem desigual.\nText: Manter espessuras semelhantes e proporcionar exposição equilibrada ao ar ajuda a reduzir diferenças de secagem e, consequentemente, o risco de fissuras associadas à contração desigual.",
+      "document": "Title: Limites da releitura e da evocação\nIdea: A facilidade percebida na leitura não prova que o conteúdo possa ser recuperado ou explicado depois.\nText: Reler uma página pode criar familiaridade sem garantir a capacidade de recordar ou explicar o conteúdo posteriormente. A evocação favorece a retenção, mas seus resultados não são garantidos em qualquer ambiente, especialmente quando o aluno ainda não compreendeu o material."
+    },
+    {
+      "id": "05-ab",
+      "query": "Title: As ilustrações têm créditos e descrições de cores\nIdea: Cada ilustração é acompanhada por autoria e descrição cromática.\nText: Cada ilustração recebe um crédito de autoria e uma descrição das cores utilizadas.",
+      "document": "Title: Feedback corretivo após uma resposta incorreta\nIdea: O feedback após uma resposta incorreta deve comparar a explicação correta com a alternativa equivocada para promover a revisão do erro.\nText: Quando uma tentativa de recordação produz uma resposta incorreta, o feedback deve mostrar qual explicação é compatível com o material e por que a alternativa falhou. Essa comparação ajuda a corrigir o erro, enquanto repetir a mesma resposta errada pode consolidá-lo."
+    },
+    {
+      "id": "05-ba",
+      "query": "Title: Feedback corretivo após uma resposta incorreta\nIdea: O feedback após uma resposta incorreta deve comparar a explicação correta com a alternativa equivocada para promover a revisão do erro.\nText: Quando uma tentativa de recordação produz uma resposta incorreta, o feedback deve mostrar qual explicação é compatível com o material e por que a alternativa falhou. Essa comparação ajuda a corrigir o erro, enquanto repetir a mesma resposta errada pode consolidá-lo.",
+      "document": "Title: As ilustrações têm créditos e descrições de cores\nIdea: Cada ilustração é acompanhada por autoria e descrição cromática.\nText: Cada ilustração recebe um crédito de autoria e uma descrição das cores utilizadas."
+    },
+    {
+      "id": "06-ab",
+      "query": "Title: Controle de variáveis no experimento de germinação\nIdea: Controlar substrato e irrigação ao variar a iluminação ajuda a avaliar especificamente a resposta das sementes à luz.\nText: No Projeto Aurora, lotes da mesma espécie são comparados sob diferentes condições de iluminação, enquanto o substrato e a irrigação permanecem iguais. Variar um único fator e controlar os demais facilita interpretar as diferenças entre os grupos.",
+      "document": "Title: Invalidação seletiva orientada por eventos\nIdea: Eventos de atualização podem invalidar seletivamente entradas de cache relacionadas a dados alterados.\nText: Quando a origem de uma resposta muda, um evento de atualização pode invalidar a entrada correspondente no cache antes do vencimento do TTL. Para isso, o evento precisa identificar quais entradas dependem do dado alterado. Invalidar todas as entradas evitaria a necessidade desse mapeamento, mas também eliminaria respostas ainda úteis e aumentaria consultas desnecessárias."
+    },
+    {
+      "id": "06-ba",
+      "query": "Title: Invalidação seletiva orientada por eventos\nIdea: Eventos de atualização podem invalidar seletivamente entradas de cache relacionadas a dados alterados.\nText: Quando a origem de uma resposta muda, um evento de atualização pode invalidar a entrada correspondente no cache antes do vencimento do TTL. Para isso, o evento precisa identificar quais entradas dependem do dado alterado. Invalidar todas as entradas evitaria a necessidade desse mapeamento, mas também eliminaria respostas ainda úteis e aumentaria consultas desnecessárias.",
+      "document": "Title: Controle de variáveis no experimento de germinação\nIdea: Controlar substrato e irrigação ao variar a iluminação ajuda a avaliar especificamente a resposta das sementes à luz.\nText: No Projeto Aurora, lotes da mesma espécie são comparados sob diferentes condições de iluminação, enquanto o substrato e a irrigação permanecem iguais. Variar um único fator e controlar os demais facilita interpretar as diferenças entre os grupos."
+    },
+    {
+      "id": "07-ab",
+      "query": "Title: A composição dos avisos depende de duas origens\nIdea: A quantidade e a composição dos avisos refletem tanto as detecções corretas quanto os falsos avisos, especialmente quando a condição procurada é rara.\nText: Uma triagem de objetos virtuais produz avisos ao combinar a detecção de itens especiais com falsos avisos sobre itens comuns. Quando os itens especiais são raros, os erros sobre itens comuns podem constituir a maior parte dos avisos.",
+      "document": "Title: O aquecimento rápido pode gerar ruptura por vapor\nIdea: Aquecer gradualmente no início da queima reduz rupturas causadas pela pressão do vapor interno.\nText: Uma ruptura no início da queima pode ocorrer quando a água interna se transforma rapidamente em vapor e não encontra saída suficiente. O aquecimento gradual permite que a umidade residual escape."
+    },
+    {
+      "id": "07-ba",
+      "query": "Title: O aquecimento rápido pode gerar ruptura por vapor\nIdea: Aquecer gradualmente no início da queima reduz rupturas causadas pela pressão do vapor interno.\nText: Uma ruptura no início da queima pode ocorrer quando a água interna se transforma rapidamente em vapor e não encontra saída suficiente. O aquecimento gradual permite que a umidade residual escape.",
+      "document": "Title: A composição dos avisos depende de duas origens\nIdea: A quantidade e a composição dos avisos refletem tanto as detecções corretas quanto os falsos avisos, especialmente quando a condição procurada é rara.\nText: Uma triagem de objetos virtuais produz avisos ao combinar a detecção de itens especiais com falsos avisos sobre itens comuns. Quando os itens especiais são raros, os erros sobre itens comuns podem constituir a maior parte dos avisos."
+    },
+    {
+      "id": "08-ab",
+      "query": "Title: Caminhos alternativos do escoamento\nIdea: A água pode contornar uma barreira física e evitar seus efeitos sobre o escoamento.\nText: Um sulco contínuo ao lado da faixa de hastes permitiu que parte da água chegasse ao reservatório sem atravessar a vegetação simulada. Por isso, essa parcela não sofreu a redução de velocidade observada no fluxo que cruzou a barreira.",
+      "document": "Title: Glossários precisam considerar o domínio\nIdea: A distinção por domínio e por acepção evita que uma única tradução seja aplicada indevidamente a sentidos diferentes.\nText: Um glossário que mantém apenas uma tradução por grafia pode aplicar a escolha errada quando a mesma palavra aparece em áreas distintas. Separar as entradas por domínio e associar uma definição curta a cada acepção permite preservar traduções diferentes quando os sentidos divergem."
+    },
+    {
+      "id": "08-ba",
+      "query": "Title: Glossários precisam considerar o domínio\nIdea: A distinção por domínio e por acepção evita que uma única tradução seja aplicada indevidamente a sentidos diferentes.\nText: Um glossário que mantém apenas uma tradução por grafia pode aplicar a escolha errada quando a mesma palavra aparece em áreas distintas. Separar as entradas por domínio e associar uma definição curta a cada acepção permite preservar traduções diferentes quando os sentidos divergem.",
+      "document": "Title: Caminhos alternativos do escoamento\nIdea: A água pode contornar uma barreira física e evitar seus efeitos sobre o escoamento.\nText: Um sulco contínuo ao lado da faixa de hastes permitiu que parte da água chegasse ao reservatório sem atravessar a vegetação simulada. Por isso, essa parcela não sofreu a redução de velocidade observada no fluxo que cruzou a barreira."
+    },
+    {
+      "id": "09-ab",
+      "query": "Title: A mesma grafia não determina o mesmo sentido\nIdea: A grafia idêntica não garante equivalência semântica entre ocorrências.\nText: Quando uma palavra aparece com a mesma grafia em documentos diferentes, a tradução deve considerar o objeto descrito pelo contexto. A coincidência formal pode ajudar a localizar opções, mas não prova que os sentidos sejam iguais.",
+      "document": "Title: A referência estável ajuda a identificar a deriva\nIdea: A comparação com uma referência estável é necessária para diferenciar deriva do sensor de mudança real na máquina.\nText: Para distinguir deterioração simulada de deriva da medição, a equipe compara a leitura do sensor com uma referência estável antes de interpretar seu crescimento como uma mudança na máquina."
+    },
+    {
+      "id": "09-ba",
+      "query": "Title: A referência estável ajuda a identificar a deriva\nIdea: A comparação com uma referência estável é necessária para diferenciar deriva do sensor de mudança real na máquina.\nText: Para distinguir deterioração simulada de deriva da medição, a equipe compara a leitura do sensor com uma referência estável antes de interpretar seu crescimento como uma mudança na máquina.",
+      "document": "Title: A mesma grafia não determina o mesmo sentido\nIdea: A grafia idêntica não garante equivalência semântica entre ocorrências.\nText: Quando uma palavra aparece com a mesma grafia em documentos diferentes, a tradução deve considerar o objeto descrito pelo contexto. A coincidência formal pode ajudar a localizar opções, mas não prova que os sentidos sejam iguais."
+    },
+    {
+      "id": "10-ab",
+      "query": "Title: Uso de referência estável na verificação\nIdea: Uma referência estável ajuda a identificar deslocamentos na leitura do sensor.\nText: No simulador Farol, a verificação usa uma referência mantida constante pelo programa. Se o sensor indicar mudança tanto na máquina estável quanto na referência, isso fornece evidência de deslocamento da leitura, evitando atribuí-lo automaticamente à máquina.",
+      "document": "Title: TTL não garante correção dos dados\nIdea: A validade temporal deve refletir a tolerância à desatualização específica de cada informação.\nText: Um TTL ainda não vencido não prova que o dado continua correto, pois a origem pode ser alterada antes do prazo. O contrato deve definir o atraso aceitável para cada tipo de informação, considerando seu ritmo de mudança e o impacto de servir uma resposta antiga."
+    },
+    {
+      "id": "10-ba",
+      "query": "Title: TTL não garante correção dos dados\nIdea: A validade temporal deve refletir a tolerância à desatualização específica de cada informação.\nText: Um TTL ainda não vencido não prova que o dado continua correto, pois a origem pode ser alterada antes do prazo. O contrato deve definir o atraso aceitável para cada tipo de informação, considerando seu ritmo de mudança e o impacto de servir uma resposta antiga.",
+      "document": "Title: Uso de referência estável na verificação\nIdea: Uma referência estável ajuda a identificar deslocamentos na leitura do sensor.\nText: No simulador Farol, a verificação usa uma referência mantida constante pelo programa. Se o sensor indicar mudança tanto na máquina estável quanto na referência, isso fornece evidência de deslocamento da leitura, evitando atribuí-lo automaticamente à máquina."
+    },
+    {
+      "id": "11-ab",
+      "query": "Title: Canções e intérpretes do catálogo\nIdea: O catálogo lista Fila, Travessia e Entrega com seus respectivos intérpretes.\nText: O catálogo relaciona as canções **Fila**, **Travessia** e **Entrega**, juntamente com os nomes de seus intérpretes.",
+      "document": "Title: O catálogo não apresenta análise algorítmica\nIdea: A menção a “detector” não corresponde à apresentação de um algoritmo ou de métricas de desempenho.\nText: Embora a palavra *detector* apareça no título de uma fotografia reproduzida na contracapa, o texto não apresenta algoritmo de inspeção nem medições de desempenho."
+    },
+    {
+      "id": "11-ba",
+      "query": "Title: O catálogo não apresenta análise algorítmica\nIdea: A menção a “detector” não corresponde à apresentação de um algoritmo ou de métricas de desempenho.\nText: Embora a palavra *detector* apareça no título de uma fotografia reproduzida na contracapa, o texto não apresenta algoritmo de inspeção nem medições de desempenho.",
+      "document": "Title: Canções e intérpretes do catálogo\nIdea: O catálogo lista Fila, Travessia e Entrega com seus respectivos intérpretes.\nText: O catálogo relaciona as canções **Fila**, **Travessia** e **Entrega**, juntamente com os nomes de seus intérpretes."
+    },
+    {
+      "id": "12-ab",
+      "query": "Title: As ilustrações têm créditos e descrições de cores\nIdea: Cada ilustração é acompanhada por autoria e descrição cromática.\nText: Cada ilustração recebe um crédito de autoria e uma descrição das cores utilizadas.",
+      "document": "Title: Códigos de inventário preservam a identidade dos vasos\nIdea: A identidade documental de cada vaso é preservada por seu código de inventário, mesmo quando sua aparência coincide com a de outro objeto.\nText: Cada vaso é identificado por um código de inventário. Dois vasos com a mesma descrição visual podem ter códigos diferentes e histórias distintas."
+    },
+    {
+      "id": "12-ba",
+      "query": "Title: Códigos de inventário preservam a identidade dos vasos\nIdea: A identidade documental de cada vaso é preservada por seu código de inventário, mesmo quando sua aparência coincide com a de outro objeto.\nText: Cada vaso é identificado por um código de inventário. Dois vasos com a mesma descrição visual podem ter códigos diferentes e histórias distintas.",
+      "document": "Title: As ilustrações têm créditos e descrições de cores\nIdea: Cada ilustração é acompanhada por autoria e descrição cromática.\nText: Cada ilustração recebe um crédito de autoria e uma descrição das cores utilizadas."
+    },
+    {
+      "id": "13-ab",
+      "query": "Title: O folheto é um programa de leitura literária\nIdea: O folheto organiza uma leitura literária, não um estudo científico.\nText: O documento apresenta poemas, autores, escolhas tipográficas e a ordem das leituras do Festival do Vale. Apesar dos termos “Encosta” e “Sedimento”, não contém resultados de maquete, medidas de escoamento nem hipóteses sobre retenção de partículas.",
+      "document": "Title: O catálogo apresenta formatos e créditos\nIdea: O catálogo documenta formatos de impressão, créditos de montagem, obras e participantes.\nText: O catálogo apresenta os formatos das impressões e os créditos da montagem, além de enumerar as obras e os participantes."
+    },
+    {
+      "id": "13-ba",
+      "query": "Title: O catálogo apresenta formatos e créditos\nIdea: O catálogo documenta formatos de impressão, créditos de montagem, obras e participantes.\nText: O catálogo apresenta os formatos das impressões e os créditos da montagem, além de enumerar as obras e os participantes.",
+      "document": "Title: O folheto é um programa de leitura literária\nIdea: O folheto organiza uma leitura literária, não um estudo científico.\nText: O documento apresenta poemas, autores, escolhas tipográficas e a ordem das leituras do Festival do Vale. Apesar dos termos “Encosta” e “Sedimento”, não contém resultados de maquete, medidas de escoamento nem hipóteses sobre retenção de partículas."
+    },
+    {
+      "id": "14-ab",
+      "query": "Title: Encerramento do programa\nIdea: O encerramento do programa chama-se Revisão, sem indicação de que o título descreva um processo documental.\nText: **Revisão** é o título do número de encerramento do programa. O título não é explicado como referência a um processo documental.",
+      "document": "Title: O folheto é um programa de leitura literária\nIdea: O folheto organiza uma leitura literária, não um estudo científico.\nText: O documento apresenta poemas, autores, escolhas tipográficas e a ordem das leituras do Festival do Vale. Apesar dos termos “Encosta” e “Sedimento”, não contém resultados de maquete, medidas de escoamento nem hipóteses sobre retenção de partículas."
+    },
+    {
+      "id": "14-ba",
+      "query": "Title: O folheto é um programa de leitura literária\nIdea: O folheto organiza uma leitura literária, não um estudo científico.\nText: O documento apresenta poemas, autores, escolhas tipográficas e a ordem das leituras do Festival do Vale. Apesar dos termos “Encosta” e “Sedimento”, não contém resultados de maquete, medidas de escoamento nem hipóteses sobre retenção de partículas.",
+      "document": "Title: Encerramento do programa\nIdea: O encerramento do programa chama-se Revisão, sem indicação de que o título descreva um processo documental.\nText: **Revisão** é o título do número de encerramento do programa. O título não é explicado como referência a um processo documental."
+    },
+    {
+      "id": "15-ab",
+      "query": "Title: Recuperação de uma região de memória\nIdea: A recuperação de uma região libera sua capacidade para reutilização pelo alocador.\nText: Quando um processo termina, sua região de memória pode ser devolvida ao alocador para reutilização. Recuperar a região significa disponibilizar capacidade para uma futura alocação.",
+      "document": "Title: Responsabilidade pelo tempo de vida do buffer\nIdea: O componente que recebe um buffer deve controlar sua duração para preservar a segurança da memória.\nText: Para evitar o acesso a dados inválidos, o componente que recebe uma região de memória também recebe a responsabilidade de controlar seu tempo de vida."
+    },
+    {
+      "id": "15-ba",
+      "query": "Title: Responsabilidade pelo tempo de vida do buffer\nIdea: O componente que recebe um buffer deve controlar sua duração para preservar a segurança da memória.\nText: Para evitar o acesso a dados inválidos, o componente que recebe uma região de memória também recebe a responsabilidade de controlar seu tempo de vida.",
+      "document": "Title: Recuperação de uma região de memória\nIdea: A recuperação de uma região libera sua capacidade para reutilização pelo alocador.\nText: Quando um processo termina, sua região de memória pode ser devolvida ao alocador para reutilização. Recuperar a região significa disponibilizar capacidade para uma futura alocação."
+    },
+    {
+      "id": "16-ab",
+      "query": "Title: TTL equilibra atualização e custo\nIdea: O TTL estabelece um compromisso entre manter respostas atualizadas e reduzir consultas à origem.\nText: O tempo de vida (TTL) define por quanto tempo uma resposta armazenada em cache pode ser reutilizada sem nova verificação. Reduzir o TTL diminui a janela de possível desatualização, mas aumenta a frequência de consultas ao serviço de origem.",
+      "document": "Title: Retenção deve cobrir a janela de repetição\nIdea: A retenção do histórico precisa abranger toda a janela de repetição permitida.\nText: O serviço Ponte deve conservar o histórico por um período pelo menos igual à janela em que um remetente ainda pode repetir uma mensagem."
+    },
+    {
+      "id": "16-ba",
+      "query": "Title: Retenção deve cobrir a janela de repetição\nIdea: A retenção do histórico precisa abranger toda a janela de repetição permitida.\nText: O serviço Ponte deve conservar o histórico por um período pelo menos igual à janela em que um remetente ainda pode repetir uma mensagem.",
+      "document": "Title: TTL equilibra atualização e custo\nIdea: O TTL estabelece um compromisso entre manter respostas atualizadas e reduzir consultas à origem.\nText: O tempo de vida (TTL) define por quanto tempo uma resposta armazenada em cache pode ser reutilizada sem nova verificação. Reduzir o TTL diminui a janela de possível desatualização, mas aumenta a frequência de consultas ao serviço de origem."
+    },
+    {
+      "id": "17-ab",
+      "query": "Title: A cobertura vegetal não reduz sedimentos quando o escoamento a contorna\nIdea: A eficácia da cobertura vegetal depende de sua interceptação dos caminhos do fluxo, não apenas de sua extensão.\nText: Aumentar a superfície coberta por hastes não reduziu significativamente o transporte de sedimentos porque o sulco lateral, responsável pela maior parte do escoamento, permaneceu aberto. A desaceleração só ocorre quando a água encontra a barreira; portanto, cobertura e interceptação não são medidas equivalentes.",
+      "document": "Title: A retenção refere-se a sedimentos suspensos\nIdea: A evidência apoia a retenção de sedimentos suspensos, mas não a remoção de substâncias dissolvidas.\nText: O resultado descreve a redução de sedimentos suspensos transportados pela água e não sustenta a conclusão de que a faixa remova substâncias dissolvidas."
+    },
+    {
+      "id": "17-ba",
+      "query": "Title: A retenção refere-se a sedimentos suspensos\nIdea: A evidência apoia a retenção de sedimentos suspensos, mas não a remoção de substâncias dissolvidas.\nText: O resultado descreve a redução de sedimentos suspensos transportados pela água e não sustenta a conclusão de que a faixa remova substâncias dissolvidas.",
+      "document": "Title: A cobertura vegetal não reduz sedimentos quando o escoamento a contorna\nIdea: A eficácia da cobertura vegetal depende de sua interceptação dos caminhos do fluxo, não apenas de sua extensão.\nText: Aumentar a superfície coberta por hastes não reduziu significativamente o transporte de sedimentos porque o sulco lateral, responsável pela maior parte do escoamento, permaneceu aberto. A desaceleração só ocorre quando a água encontra a barreira; portanto, cobertura e interceptação não são medidas equivalentes."
+    },
+    {
+      "id": "18-ab",
+      "query": "Title: A redundância só verifica medições com referências independentes\nIdea: A redundância é uma verificação confiável apenas quando as referências de medição são independentes.\nText: Para distinguir um deslocamento instrumental de uma deterioração real, é necessário comparar os resultados com uma referência de estabilidade independente. Repetir a leitura pelo mesmo caminho não basta; a quantidade de indicadores não equivale à independência das referências.",
+      "document": "Title: Deriva do sensor pode gerar alarme falso\nIdea: Uma deriva gradual do sensor pode fazer a leitura ultrapassar o limite de manutenção mesmo quando a máquina não se deteriorou.\nText: No simulador Farol, a máquina virtual permaneceu em estado constante enquanto um deslocamento gradual foi introduzido na leitura do sensor. Como o valor medido ultrapassou o limite de manutenção sem alteração no estado real, o alarme pode refletir a deriva da medição, e não uma deterioração da máquina."
+    },
+    {
+      "id": "18-ba",
+      "query": "Title: Deriva do sensor pode gerar alarme falso\nIdea: Uma deriva gradual do sensor pode fazer a leitura ultrapassar o limite de manutenção mesmo quando a máquina não se deteriorou.\nText: No simulador Farol, a máquina virtual permaneceu em estado constante enquanto um deslocamento gradual foi introduzido na leitura do sensor. Como o valor medido ultrapassou o limite de manutenção sem alteração no estado real, o alarme pode refletir a deriva da medição, e não uma deterioração da máquina.",
+      "document": "Title: A redundância só verifica medições com referências independentes\nIdea: A redundância é uma verificação confiável apenas quando as referências de medição são independentes.\nText: Para distinguir um deslocamento instrumental de uma deterioração real, é necessário comparar os resultados com uma referência de estabilidade independente. Repetir a leitura pelo mesmo caminho não basta; a quantidade de indicadores não equivale à independência das referências."
+    },
+    {
+      "id": "19-ab",
+      "query": "Title: A cobertura vegetal não reduz sedimentos quando o escoamento a contorna\nIdea: A eficácia da cobertura vegetal depende de sua interceptação dos caminhos do fluxo, não apenas de sua extensão.\nText: Aumentar a superfície coberta por hastes não reduziu significativamente o transporte de sedimentos porque o sulco lateral, responsável pela maior parte do escoamento, permaneceu aberto. A desaceleração só ocorre quando a água encontra a barreira; portanto, cobertura e interceptação não são medidas equivalentes.",
+      "document": "Title: Filamentos retardam o fluxo e retêm grãos\nIdea: Filamentos podem desacelerar o fluxo e promover a deposição de partículas.\nText: No tabuleiro experimental, um jato de água com grãos finos atravessa uma linha de filamentos. Os filamentos reduzem a velocidade do movimento e fazem parte dos grãos se depositar no tabuleiro."
+    },
+    {
+      "id": "19-ba",
+      "query": "Title: Filamentos retardam o fluxo e retêm grãos\nIdea: Filamentos podem desacelerar o fluxo e promover a deposição de partículas.\nText: No tabuleiro experimental, um jato de água com grãos finos atravessa uma linha de filamentos. Os filamentos reduzem a velocidade do movimento e fazem parte dos grãos se depositar no tabuleiro.",
+      "document": "Title: A cobertura vegetal não reduz sedimentos quando o escoamento a contorna\nIdea: A eficácia da cobertura vegetal depende de sua interceptação dos caminhos do fluxo, não apenas de sua extensão.\nText: Aumentar a superfície coberta por hastes não reduziu significativamente o transporte de sedimentos porque o sulco lateral, responsável pela maior parte do escoamento, permaneceu aberto. A desaceleração só ocorre quando a água encontra a barreira; portanto, cobertura e interceptação não são medidas equivalentes."
+    },
+    {
+      "id": "20-ab",
+      "query": "Title: A avaliação do detector deve considerar a composição do lote\nIdea: Métricas de desempenho devem ser interpretadas considerando a composição do lote e separando diferentes tipos de medida.\nText: Usar em uma instalação nova apenas a porcentagem de acertos publicada para outra composição de lote pode gerar expectativas inadequadas. Por isso, o relatório mantém separadas as medidas de sensibilidade, falso alarme e proporção de verdadeiros entre os alertas.",
+      "document": "Title: Sensibilidade do detector como fonte de erro\nIdea: Mudanças instrumentais podem imitar variações reais no brilho de um objeto celeste.\nText: Um aumento aparente no brilho pode ser causado pelo próprio objeto observado ou por alterações na sensibilidade do detector."
+    },
+    {
+      "id": "20-ba",
+      "query": "Title: Sensibilidade do detector como fonte de erro\nIdea: Mudanças instrumentais podem imitar variações reais no brilho de um objeto celeste.\nText: Um aumento aparente no brilho pode ser causado pelo próprio objeto observado ou por alterações na sensibilidade do detector.",
+      "document": "Title: A avaliação do detector deve considerar a composição do lote\nIdea: Métricas de desempenho devem ser interpretadas considerando a composição do lote e separando diferentes tipos de medida.\nText: Usar em uma instalação nova apenas a porcentagem de acertos publicada para outra composição de lote pode gerar expectativas inadequadas. Por isso, o relatório mantém separadas as medidas de sensibilidade, falso alarme e proporção de verdadeiros entre os alertas."
+    },
+    {
+      "id": "21-ab",
+      "query": "Title: A composição dos avisos depende de duas origens\nIdea: A quantidade e a composição dos avisos refletem tanto as detecções corretas quanto os falsos avisos, especialmente quando a condição procurada é rara.\nText: Uma triagem de objetos virtuais produz avisos ao combinar a detecção de itens especiais com falsos avisos sobre itens comuns. Quando os itens especiais são raros, os erros sobre itens comuns podem constituir a maior parte dos avisos.",
+      "document": "Title: Taxa de falsos alarmes e taxa de detecção\nIdea: As taxas de falsos alarmes e de detecção medem desempenhos diferentes do simulador em relação ao estado real das peças.\nText: No simulador Íris, a **taxa de falsos alarmes** indica a proporção de peças sem marca que recebem alerta, enquanto a **taxa de detecção** indica a proporção de peças marcadas que são apontadas. Ambas condicionam o resultado ao estado real da peça."
+    },
+    {
+      "id": "21-ba",
+      "query": "Title: Taxa de falsos alarmes e taxa de detecção\nIdea: As taxas de falsos alarmes e de detecção medem desempenhos diferentes do simulador em relação ao estado real das peças.\nText: No simulador Íris, a **taxa de falsos alarmes** indica a proporção de peças sem marca que recebem alerta, enquanto a **taxa de detecção** indica a proporção de peças marcadas que são apontadas. Ambas condicionam o resultado ao estado real da peça.",
+      "document": "Title: A composição dos avisos depende de duas origens\nIdea: A quantidade e a composição dos avisos refletem tanto as detecções corretas quanto os falsos avisos, especialmente quando a condição procurada é rara.\nText: Uma triagem de objetos virtuais produz avisos ao combinar a detecção de itens especiais com falsos avisos sobre itens comuns. Quando os itens especiais são raros, os erros sobre itens comuns podem constituir a maior parte dos avisos."
+    },
+    {
+      "id": "22-ab",
+      "query": "Title: Definições de domínio orientam a reutilização terminológica\nIdea: A reutilização terminológica deve basear-se em definições compartilhadas e contexto suficiente.\nText: Um registro terminológico pode associar definições aos respectivos domínios. A mesma escolha tradutória pode ser reutilizada quando diferentes trechos expressam a mesma definição; se o contexto for insuficiente, a revisão deve permanecer aberta.",
+      "document": "Title: Desambiguação contextual no glossário de tradução\nIdea: A tradução deve ser selecionada pelo sentido contextual e pelo domínio, não somente pela identidade lexical.\nText: A palavra **banco** pode ter sentidos diferentes conforme o domínio: pode indicar um assento em um manual de mobiliário ou uma instituição financeira em um contrato. Para escolher a tradução adequada, é necessário consultar as frases próximas e o domínio declarado, pois a consistência deve preservar o sentido no contexto, não apenas a grafia da palavra."
+    },
+    {
+      "id": "22-ba",
+      "query": "Title: Desambiguação contextual no glossário de tradução\nIdea: A tradução deve ser selecionada pelo sentido contextual e pelo domínio, não somente pela identidade lexical.\nText: A palavra **banco** pode ter sentidos diferentes conforme o domínio: pode indicar um assento em um manual de mobiliário ou uma instituição financeira em um contrato. Para escolher a tradução adequada, é necessário consultar as frases próximas e o domínio declarado, pois a consistência deve preservar o sentido no contexto, não apenas a grafia da palavra.",
+      "document": "Title: Definições de domínio orientam a reutilização terminológica\nIdea: A reutilização terminológica deve basear-se em definições compartilhadas e contexto suficiente.\nText: Um registro terminológico pode associar definições aos respectivos domínios. A mesma escolha tradutória pode ser reutilizada quando diferentes trechos expressam a mesma definição; se o contexto for insuficiente, a revisão deve permanecer aberta."
+    },
+    {
+      "id": "23-ab",
+      "query": "Title: O efeito depende do contato entre a água e a faixa\nIdea: O contato efetivo entre o escoamento e a faixa vegetada é necessário para reduzir o transporte de sedimentos.\nText: A redução do transporte de sedimentos ocorre apenas quando a água atravessa a faixa de hastes. Desviar o escoamento por um canal lateral elimina esse efeito, mesmo que a faixa ocupe uma área extensa.",
+      "document": "Title: O experimento controla as condições de comparação\nIdea: A comparação experimental controla a inclinação, o volume de água e a massa inicial de sedimentos.\nText: Para comparar a faixa de hastes com uma superfície livre, a equipe mantém constantes a inclinação da encosta, o volume de água aplicado e a massa inicial de partículas."
+    },
+    {
+      "id": "23-ba",
+      "query": "Title: O experimento controla as condições de comparação\nIdea: A comparação experimental controla a inclinação, o volume de água e a massa inicial de sedimentos.\nText: Para comparar a faixa de hastes com uma superfície livre, a equipe mantém constantes a inclinação da encosta, o volume de água aplicado e a massa inicial de partículas.",
+      "document": "Title: O efeito depende do contato entre a água e a faixa\nIdea: O contato efetivo entre o escoamento e a faixa vegetada é necessário para reduzir o transporte de sedimentos.\nText: A redução do transporte de sedimentos ocorre apenas quando a água atravessa a faixa de hastes. Desviar o escoamento por um canal lateral elimina esse efeito, mesmo que a faixa ocupe uma área extensa."
+    },
+    {
+      "id": "24-ab",
+      "query": "Title: Área de cobertura não basta para avaliar a barreira\nIdea: A avaliação da eficácia de uma barreira deve considerar os caminhos do fluxo, não apenas a área coberta.\nText: A área total de cobertura, sozinha, não indica qual fração da água encontrou a barreira. É necessário registrar os caminhos do fluxo, além de medir a área das faixas.",
+      "document": "Title: A posição da barreira determina a interceptação de partículas\nIdea: A eficiência de uma barreira na interceptação de partículas depende de sua posição em relação ao trajeto do fluxo.\nText: O posicionamento da linha de filamentos em relação aos trajetos é tão importante quanto sua extensão. Uma linha longa fora do caminho principal intercepta pouco material, enquanto uma passagem paralela lisa permite que os grãos contornem o obstáculo. Essa conclusão se aplica ao transporte e à deposição de partículas, não à remoção de componentes dissolvidos."
+    },
+    {
+      "id": "24-ba",
+      "query": "Title: A posição da barreira determina a interceptação de partículas\nIdea: A eficiência de uma barreira na interceptação de partículas depende de sua posição em relação ao trajeto do fluxo.\nText: O posicionamento da linha de filamentos em relação aos trajetos é tão importante quanto sua extensão. Uma linha longa fora do caminho principal intercepta pouco material, enquanto uma passagem paralela lisa permite que os grãos contornem o obstáculo. Essa conclusão se aplica ao transporte e à deposição de partículas, não à remoção de componentes dissolvidos.",
+      "document": "Title: Área de cobertura não basta para avaliar a barreira\nIdea: A avaliação da eficácia de uma barreira deve considerar os caminhos do fluxo, não apenas a área coberta.\nText: A área total de cobertura, sozinha, não indica qual fração da água encontrou a barreira. É necessário registrar os caminhos do fluxo, além de medir a área das faixas."
+    },
+    {
+      "id": "25-ab",
+      "query": "Title: Limite da comparação entre sinais\nIdea: A estabilidade conhecida da referência é necessária para separar variações da medição e do objeto observado.\nText: A referência só contribui para separar as fontes de variação enquanto sua estabilidade é conhecida. Comparar dois sinais que podem derivar juntos não permite distinguir adequadamente a variação da cadeia de medição daquela do objeto observado.",
+      "document": "Title: A concordância entre mostradores não garante exatidão\nIdea: A concordância entre instrumentos não prova exatidão quando eles compartilham o mesmo viés.\nText: A comparação só é útil quando o padrão tem estabilidade independente. Dois mostradores que compartilham o mesmo viés podem concordar entre si e, ainda assim, afastar-se do valor real."
+    },
+    {
+      "id": "25-ba",
+      "query": "Title: A concordância entre mostradores não garante exatidão\nIdea: A concordância entre instrumentos não prova exatidão quando eles compartilham o mesmo viés.\nText: A comparação só é útil quando o padrão tem estabilidade independente. Dois mostradores que compartilham o mesmo viés podem concordar entre si e, ainda assim, afastar-se do valor real.",
+      "document": "Title: Limite da comparação entre sinais\nIdea: A estabilidade conhecida da referência é necessária para separar variações da medição e do objeto observado.\nText: A referência só contribui para separar as fontes de variação enquanto sua estabilidade é conhecida. Comparar dois sinais que podem derivar juntos não permite distinguir adequadamente a variação da cadeia de medição daquela do objeto observado."
+    },
+    {
+      "id": "26-ab",
+      "query": "Title: Reduzir a reverberação não elimina a propagação pela abertura\nIdea: Materiais que reduzem a reverberação não garantem isolamento completo quando existe uma abertura entre os ambientes.\nText: A redução da reflexão nas paredes diminui a persistência do pulso na primeira câmara, mas não bloqueia o caminho de propagação através da abertura para outra câmara. O revestimento atua sobre as reflexões que o atingem; a passagem entre os ambientes precisa ser analisada separadamente quanto à energia transmitida.",
+      "document": "Title: Eco reduzido e comunicação preservada\nIdea: A redução do eco não prova a interrupção da passagem do sinal entre compartimentos.\nText: Um forro dissipativo pode reduzir as voltas internas de um sinal e encurtar o eco em um compartimento, enquanto uma fenda na separação ainda permite que parte do sinal alcance outro compartimento. Portanto, o término rápido do eco não demonstra que a comunicação pela fenda foi interrompida."
+    },
+    {
+      "id": "26-ba",
+      "query": "Title: Eco reduzido e comunicação preservada\nIdea: A redução do eco não prova a interrupção da passagem do sinal entre compartimentos.\nText: Um forro dissipativo pode reduzir as voltas internas de um sinal e encurtar o eco em um compartimento, enquanto uma fenda na separação ainda permite que parte do sinal alcance outro compartimento. Portanto, o término rápido do eco não demonstra que a comunicação pela fenda foi interrompida.",
+      "document": "Title: Reduzir a reverberação não elimina a propagação pela abertura\nIdea: Materiais que reduzem a reverberação não garantem isolamento completo quando existe uma abertura entre os ambientes.\nText: A redução da reflexão nas paredes diminui a persistência do pulso na primeira câmara, mas não bloqueia o caminho de propagação através da abertura para outra câmara. O revestimento atua sobre as reflexões que o atingem; a passagem entre os ambientes precisa ser analisada separadamente quanto à energia transmitida."
+    },
+    {
+      "id": "27-ab",
+      "query": "Title: Identidade do trabalho e de seus estados publicados\nIdea: O trabalho mantém uma identidade estável, enquanto cada estado publicado possui sua própria identidade.\nText: Um repositório pode manter um código estável para o trabalho intelectual e códigos distintos para cada estado publicado. Corrigir uma frase cria um novo estado e registra sua derivação, sem alterar o código do trabalho, mesmo quando o título muda.",
+      "document": "Title: Correções devem criar novas versões\nIdea: Uma correção deve gerar uma nova versão para que referências anteriores continuem identificando o conteúdo originalmente consultado.\nText: No arquivo Aurora, uma correção sobrescreveu uma versão textual, fazendo com que uma referência anterior abrisse um texto diferente, embora o código permanecesse igual. Para preservar a estabilidade das citações, correções devem criar novas versões, mantendo o identificador da obra, mas atribuindo um novo identificador à versão corrigida."
+    },
+    {
+      "id": "27-ba",
+      "query": "Title: Correções devem criar novas versões\nIdea: Uma correção deve gerar uma nova versão para que referências anteriores continuem identificando o conteúdo originalmente consultado.\nText: No arquivo Aurora, uma correção sobrescreveu uma versão textual, fazendo com que uma referência anterior abrisse um texto diferente, embora o código permanecesse igual. Para preservar a estabilidade das citações, correções devem criar novas versões, mantendo o identificador da obra, mas atribuindo um novo identificador à versão corrigida.",
+      "document": "Title: Identidade do trabalho e de seus estados publicados\nIdea: O trabalho mantém uma identidade estável, enquanto cada estado publicado possui sua própria identidade.\nText: Um repositório pode manter um código estável para o trabalho intelectual e códigos distintos para cada estado publicado. Corrigir uma frase cria um novo estado e registra sua derivação, sem alterar o código do trabalho, mesmo quando o título muda."
+    },
+    {
+      "id": "28-ab",
+      "query": "Title: Caminhos alternativos do escoamento\nIdea: A água pode contornar uma barreira física e evitar seus efeitos sobre o escoamento.\nText: Um sulco contínuo ao lado da faixa de hastes permitiu que parte da água chegasse ao reservatório sem atravessar a vegetação simulada. Por isso, essa parcela não sofreu a redução de velocidade observada no fluxo que cruzou a barreira.",
+      "document": "Title: Faixas vegetadas reduzem o transporte de sedimentos\nIdea: A passagem da água por uma faixa de hastes flexíveis reduz o transporte de sedimentos ao diminuir a velocidade do escoamento.\nText: Em uma maquete de encosta, uma faixa de hastes flexíveis diminui a velocidade do escoamento de água com partículas de argila. Como resultado, parte do sedimento se deposita antes de chegar ao reservatório inferior."
+    },
+    {
+      "id": "28-ba",
+      "query": "Title: Faixas vegetadas reduzem o transporte de sedimentos\nIdea: A passagem da água por uma faixa de hastes flexíveis reduz o transporte de sedimentos ao diminuir a velocidade do escoamento.\nText: Em uma maquete de encosta, uma faixa de hastes flexíveis diminui a velocidade do escoamento de água com partículas de argila. Como resultado, parte do sedimento se deposita antes de chegar ao reservatório inferior.",
+      "document": "Title: Caminhos alternativos do escoamento\nIdea: A água pode contornar uma barreira física e evitar seus efeitos sobre o escoamento.\nText: Um sulco contínuo ao lado da faixa de hastes permitiu que parte da água chegasse ao reservatório sem atravessar a vegetação simulada. Por isso, essa parcela não sofreu a redução de velocidade observada no fluxo que cruzou a barreira."
+    },
+    {
+      "id": "29-ab",
+      "query": "Title: Identidade do trabalho e de seus estados publicados\nIdea: O trabalho mantém uma identidade estável, enquanto cada estado publicado possui sua própria identidade.\nText: Um repositório pode manter um código estável para o trabalho intelectual e códigos distintos para cada estado publicado. Corrigir uma frase cria um novo estado e registra sua derivação, sem alterar o código do trabalho, mesmo quando o título muda.",
+      "document": "Title: Endereços distintos para trabalho e edição textual\nIdea: Trabalhos e edições textuais devem possuir endereços distintos para preservar tanto a atualização quanto a estabilidade das citações.\nText: Uma biblioteca digital pode atribuir um endereço ao trabalho e endereços próprios às suas edições textuais. Quando uma emenda cria uma edição sucessora, o endereço geral pode apresentar a nova edição, enquanto a edição citada em um estudo preserva a redação consultada pelo autor."
+    },
+    {
+      "id": "29-ba",
+      "query": "Title: Endereços distintos para trabalho e edição textual\nIdea: Trabalhos e edições textuais devem possuir endereços distintos para preservar tanto a atualização quanto a estabilidade das citações.\nText: Uma biblioteca digital pode atribuir um endereço ao trabalho e endereços próprios às suas edições textuais. Quando uma emenda cria uma edição sucessora, o endereço geral pode apresentar a nova edição, enquanto a edição citada em um estudo preserva a redação consultada pelo autor.",
+      "document": "Title: Identidade do trabalho e de seus estados publicados\nIdea: O trabalho mantém uma identidade estável, enquanto cada estado publicado possui sua própria identidade.\nText: Um repositório pode manter um código estável para o trabalho intelectual e códigos distintos para cada estado publicado. Corrigir uma frase cria um novo estado e registra sua derivação, sem alterar o código do trabalho, mesmo quando o título muda."
+    },
+    {
+      "id": "30-ab",
+      "query": "Title: A idempotência depende da retenção da chave\nIdea: A retenção do identificador deve cobrir toda a janela de reenvio para impedir duplicações.\nText: A garantia de idempotência exige manter o identificador da operação durante toda a janela em que uma repetição pode ocorrer. Se o registro for descartado antes de desativar as retransmissões, uma operação concluída poderá ser aplicada novamente.",
+      "document": "Title: Chaves persistentes evitam reaplicar uma operação\nIdea: Reutilizar a mesma chave permite reconhecer retransmissões e evitar a reaplicação da operação.\nText: Cada tentativa deve preservar a chave original da operação. O destinatário registra essa chave junto com o resultado antes de responder; quando a mesma chave reaparece, devolve o resultado registrado sem aplicar novamente a alteração. Assim, o mecanismo protege o efeito da operação, embora não torne a transmissão da rede única."
+    },
+    {
+      "id": "30-ba",
+      "query": "Title: Chaves persistentes evitam reaplicar uma operação\nIdea: Reutilizar a mesma chave permite reconhecer retransmissões e evitar a reaplicação da operação.\nText: Cada tentativa deve preservar a chave original da operação. O destinatário registra essa chave junto com o resultado antes de responder; quando a mesma chave reaparece, devolve o resultado registrado sem aplicar novamente a alteração. Assim, o mecanismo protege o efeito da operação, embora não torne a transmissão da rede única.",
+      "document": "Title: A idempotência depende da retenção da chave\nIdea: A retenção do identificador deve cobrir toda a janela de reenvio para impedir duplicações.\nText: A garantia de idempotência exige manter o identificador da operação durante toda a janela em que uma repetição pode ocorrer. Se o registro for descartado antes de desativar as retransmissões, uma operação concluída poderá ser aplicada novamente."
+    },
+    {
+      "id": "31-ab",
+      "query": "Title: Notificações e expiração oferecem proteção complementar\nIdea: A invalidação seletiva por notificações, combinada com expiração finita, reduz a obsolescência sem descartar todas as respostas.\nText: Cada notificação de mudança invalida apenas as respostas que dependem do registro alterado, desde que as dependências sejam conhecidas. Se uma resposta não estiver registrada no mapa de dependências, ela poderá permanecer antiga; nesse caso, a expiração finita estabelece um limite posterior para sua reutilização. Essa estratégia trata de consultas computacionais reutilizadas, não da liberação de r",
+      "document": "Title: Avisos de alteração e prazo finito são mecanismos complementares\nIdea: A invalidação por dependências e a expiração temporal devem ser usadas em conjunto para reduzir a permanência de cópias obsoletas.\nText: Avisos de alteração podem descartar apenas os resultados que dependem do registro modificado, mas isso exige identificar corretamente essas dependências. Um prazo finito continua útil para limitar a duração de cópias esquecidas no mapa de dependências; por isso, os dois mecanismos se complementam."
+    },
+    {
+      "id": "31-ba",
+      "query": "Title: Avisos de alteração e prazo finito são mecanismos complementares\nIdea: A invalidação por dependências e a expiração temporal devem ser usadas em conjunto para reduzir a permanência de cópias obsoletas.\nText: Avisos de alteração podem descartar apenas os resultados que dependem do registro modificado, mas isso exige identificar corretamente essas dependências. Um prazo finito continua útil para limitar a duração de cópias esquecidas no mapa de dependências; por isso, os dois mecanismos se complementam.",
+      "document": "Title: Notificações e expiração oferecem proteção complementar\nIdea: A invalidação seletiva por notificações, combinada com expiração finita, reduz a obsolescência sem descartar todas as respostas.\nText: Cada notificação de mudança invalida apenas as respostas que dependem do registro alterado, desde que as dependências sejam conhecidas. Se uma resposta não estiver registrada no mapa de dependências, ela poderá permanecer antiga; nesse caso, a expiração finita estabelece um limite posterior para sua reutilização. Essa estratégia trata de consultas computacionais reutilizadas, não da liberação de r"
+    },
+    {
+      "id": "32-ab",
+      "query": "Title: Deriva do sensor pode gerar alarme falso\nIdea: Uma deriva gradual do sensor pode fazer a leitura ultrapassar o limite de manutenção mesmo quando a máquina não se deteriorou.\nText: No simulador Farol, a máquina virtual permaneceu em estado constante enquanto um deslocamento gradual foi introduzido na leitura do sensor. Como o valor medido ultrapassou o limite de manutenção sem alteração no estado real, o alarme pode refletir a deriva da medição, e não uma deterioração da máquina.",
+      "document": "Title: Um aviso pode ser causado pela escala de medição\nIdea: Um alerta produzido por uma escala deslocada não comprova uma mudança real no estado do equipamento.\nText: Em uma simulação, o estado do equipamento permanece constante enquanto a origem da escala do indicador é alterada gradualmente. Mesmo assim, o painel mostra crescimento e emite um aviso ao ultrapassar o limite. Portanto, esse aviso não demonstra desgaste real do equipamento."
+    },
+    {
+      "id": "32-ba",
+      "query": "Title: Um aviso pode ser causado pela escala de medição\nIdea: Um alerta produzido por uma escala deslocada não comprova uma mudança real no estado do equipamento.\nText: Em uma simulação, o estado do equipamento permanece constante enquanto a origem da escala do indicador é alterada gradualmente. Mesmo assim, o painel mostra crescimento e emite um aviso ao ultrapassar o limite. Portanto, esse aviso não demonstra desgaste real do equipamento.",
+      "document": "Title: Deriva do sensor pode gerar alarme falso\nIdea: Uma deriva gradual do sensor pode fazer a leitura ultrapassar o limite de manutenção mesmo quando a máquina não se deteriorou.\nText: No simulador Farol, a máquina virtual permaneceu em estado constante enquanto um deslocamento gradual foi introduzido na leitura do sensor. Como o valor medido ultrapassou o limite de manutenção sem alteração no estado real, o alarme pode refletir a deriva da medição, e não uma deterioração da máquina."
+    }
+  ]
+}

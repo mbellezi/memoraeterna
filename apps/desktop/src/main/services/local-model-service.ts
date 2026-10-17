@@ -5,6 +5,7 @@ import { basename, extname, join, relative } from "node:path";
 import {
   assertLocalModelSeeded,
   decideValidationForCatalogEntry,
+  decideValidationParityFailed,
   detectLocalRuntimeCompatibility,
   downloadLocalModel,
   findLocalModelCatalogEntry,
@@ -61,6 +62,24 @@ export interface LocalModelServiceOptions {
    * validated, or failed) and after a ranker's test: the first-run ranker finishes on it.
    */
   onModelSettled?: (catalogId: string) => void;
+  /**
+   * The runtime build an installed ranker would run on now (the MLX helper's SHA-256, or the
+   * node-llama-cpp build). Given, `start` re-validates every ranker whose stored validation names
+   * another build, in the background: the smoke test and the score-parity check (F3 D13, R1).
+   * Left out for golden runs and AI cassettes, which run no live model.
+   */
+  rankerRuntimeBuild?: (localModelId: string) => Promise<string>;
+}
+
+/** What the re-validation of a ranker after a runtime-build change ended with. */
+export interface RankerRevalidation {
+  catalogId: string;
+  /**
+   * `current`: the build did not change. `revalidated`: the build changed and the parity check
+   * passed, so the calibration is reused. `uncalibrated`: the build changed and the parity check
+   * failed (the model shows why). `failed`: the validation did not pass or could not run.
+   */
+  state: "current" | "revalidated" | "uncalibrated" | "failed";
 }
 
 const repositoryTokenSettingKey = "local-models.repository-token-ref";
@@ -75,6 +94,8 @@ export class LocalModelService {
   private readonly queue: string[] = [];
   private activeCatalogId: string | null = null;
   private pumpPromise: Promise<void> | null = null;
+  /** The background re-validation a start began, if any. */
+  private revalidating: Promise<void> | undefined;
   private stopped = false;
 
   public constructor(private readonly options: LocalModelServiceOptions) {
@@ -100,6 +121,12 @@ export class LocalModelService {
       });
       this.schedule(model.catalogId);
     }
+    // Never awaited: a start does not wait for a model run, and a failure never stops it.
+    if (this.options.rankerRuntimeBuild) {
+      this.revalidating = this.revalidateRankers()
+        .then(() => undefined)
+        .catch((error: unknown) => this.options.logger?.error(redactSensitiveText(error)));
+    }
   }
 
   public async shutdown(): Promise<void> {
@@ -107,7 +134,56 @@ export class LocalModelService {
     this.queue.length = 0;
     for (const controller of this.controllers.values()) controller.abort();
     await this.pumpPromise;
+    await this.revalidating;
     this.controllers.clear();
+  }
+
+  /**
+   * Re-validates every installed ranker whose stored decide validation names another runtime build
+   * than the one it would run on now (a rebuilt or packaged MLX helper, a node-llama-cpp upgrade;
+   * F3 D13, R1). The ranker is unavailable to decide callers while its validation runs: placement
+   * takes the no-decider path and relation matching waits. The validation is the model test, so it
+   * re-runs the smoke test and scores the 64 parity pairs against the baseline of the calibration:
+   * within 0.125 log-odds the calibration is reused, beyond it the ranker is uncalibrated and its
+   * row says so. A ranker with no stored validation is left to the install and test flows.
+   */
+  public async revalidateRankers(): Promise<RankerRevalidation[]> {
+    const rankerRuntimeBuild = this.options.rankerRuntimeBuild;
+    if (!rankerRuntimeBuild) return [];
+    const outcomes: RankerRevalidation[] = [];
+    const repository = createLocalModelRepository(this.requirePool());
+    for (const model of await repository.listModels()) {
+      if (this.stopped) break;
+      const entry = findLocalModelCatalogEntry(model.catalogId);
+      if (!entry || !isRankerCatalogEntry(entry)) continue;
+      if (model.status !== "ready" || !model.managedPath) continue;
+      const validation = decideValidationForCatalogEntry(model.metadata.decideValidation, entry);
+      if (!validation) continue;
+      let build: string;
+      try {
+        build = await rankerRuntimeBuild(model.id);
+      } catch (error) {
+        this.options.logger?.warn(redactSensitiveText(error));
+        outcomes.push({ catalogId: model.catalogId, state: "failed" });
+        continue;
+      }
+      if (build === validation.runtimeBuild) {
+        outcomes.push({ catalogId: model.catalogId, state: "current" });
+        continue;
+      }
+      let state: RankerRevalidation["state"] = "failed";
+      try {
+        await this.test(model.catalogId);
+        const revalidated = await repository.findById(model.id);
+        state = decideValidationParityFailed(revalidated?.metadata.decideValidation)
+          ? "uncalibrated"
+          : "revalidated";
+      } catch (error) {
+        this.options.logger?.warn(redactSensitiveText(error));
+      }
+      outcomes.push({ catalogId: model.catalogId, state });
+    }
+    return outcomes;
   }
 
   /** Readiness only: unlike `list`, this never writes, so a screen can ask on every activation. */

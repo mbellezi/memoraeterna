@@ -20,6 +20,24 @@ export const rankRequestLimits = {
 } as const;
 
 /**
+ * Bounds of a pairs request (F3 D16, R23): independent directed pairs under one instruction, as the
+ * relation decider sends both directions of every candidate. One call stays short enough that a
+ * P0 call waits for at most one of them on the local lane (about 1 s), so `AiService.rankPairs`
+ * splits a longer list at the runtime's `perCall`. Gate 0 may revise `perCall` (B1); the request
+ * bound only keeps a caller from sending an unbounded list.
+ */
+export const rankPairsLimits = {
+  /** Pairs of one request on any runtime; a runtime's own `perCall` is lower. */
+  maxPairs: 64,
+  /** Pairs per local call, by runtime: MLX 32 (about 1.0 s), GGUF 16 (about 0.9 s). */
+  perCall: { mlx: 32, gguf: 16 },
+  /** Sequences per MLX forward pass for a pairs request (Spike A: 16 is fastest). */
+  helperBatchSize: 16,
+  /** The largest helper batch a caller may ask for. */
+  maxHelperBatchSize: 64
+} as const;
+
+/**
  * The Qwen3-Reranker prompt exactly as its model card prescribes. These strings are protocol
  * constants of the ranking runtimes, not catalog prompts: the MLX helper embeds the same text
  * (`native/mlx-helper`, `Scoring.swift`) and the GGUF adapter builds its ranking template from it.
@@ -61,6 +79,30 @@ export const rankRequestSchema = z
   })
   .strict();
 export type RankRequest = z.infer<typeof rankRequestSchema>;
+
+/**
+ * A pairs request: independent directed pairs (query, document) under one instruction. Scores come
+ * back in pair order. The helper batch size is not part of the input: it travels in the task
+ * request's `parameters`, so the cassette and the decider cache distinguish batch 1 from batch 16.
+ */
+export const rankPairsRequestSchema = z
+  .object({
+    instruction: rankRequestSchema.shape.instruction,
+    pairs: z
+      .array(z.object({ query: rankTextSchema, document: rankTextSchema }).strict())
+      .min(1)
+      .max(rankPairsLimits.maxPairs)
+  })
+  .strict();
+export type RankPairsRequest = z.infer<typeof rankPairsRequestSchema>;
+
+/** The parameters of a pairs task request: the MLX helper's batch size, the only one a ranker takes. */
+export const rankPairsParametersSchema = z
+  .object({
+    batchSize: z.number().int().min(1).max(rankPairsLimits.maxHelperBatchSize).optional()
+  })
+  .strict();
+export type RankPairsParameters = z.infer<typeof rankPairsParametersSchema>;
 
 export const rankResultSchema = z
   .object({
@@ -112,15 +154,7 @@ export class LocalRankerError extends Error {
  * Anything else, a generative prompt included, is a task this model cannot run.
  */
 export function parseRankRequest(input: unknown): RankRequest {
-  let value = input;
-  if (typeof input === "string") {
-    try {
-      value = JSON.parse(input);
-    } catch {
-      throw new LocalRankerError("errors.ai.unsupportedTask", "The input is not a rank request.");
-    }
-  }
-  const parsed = rankRequestSchema.safeParse(value);
+  const parsed = rankRequestSchema.safeParse(readJsonInput(input));
   if (!parsed.success) {
     throw new LocalRankerError("errors.ai.unsupportedTask", parsed.error.issues[0]!.message);
   }
@@ -141,6 +175,82 @@ export function rankTaskRequest(request: RankRequest): AiTaskRequest {
     parameters: {},
     metadata: {}
   };
+}
+
+/**
+ * Reads a pairs request from a task input (the JSON string the routed call carries, or an object).
+ * A `{query, documents}` input is not a pairs request: the two shapes never mix.
+ */
+export function parseRankPairsRequest(input: unknown): RankPairsRequest {
+  const value = readJsonInput(input);
+  const parsed = rankPairsRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new LocalRankerError("errors.ai.unsupportedTask", parsed.error.issues[0]!.message);
+  }
+  return parsed.data;
+}
+
+/** The wire shape of a rank task input. */
+export type RankInput =
+  { kind: "documents"; request: RankRequest } | { kind: "pairs"; request: RankPairsRequest };
+
+/** Reads either wire shape of a rank task input; the presence of `pairs` selects the pairs shape. */
+export function parseRankInput(input: unknown): RankInput {
+  const value = readJsonInput(input);
+  return value !== null && typeof value === "object" && "pairs" in value
+    ? { kind: "pairs", request: parseRankPairsRequest(value) }
+    : { kind: "documents", request: parseRankRequest(value) };
+}
+
+/** How many scores a rank input asks for: one per document, or one per pair. */
+export function rankInputCount(input: RankInput): number {
+  return input.kind === "documents" ? input.request.documents.length : input.request.pairs.length;
+}
+
+/** The canonical JSON form of a validated pairs request (the task input string). */
+export function serializeRankPairsRequest(request: RankPairsRequest): string {
+  return JSON.stringify(rankPairsRequestSchema.parse(request));
+}
+
+/**
+ * A `reranking` task request for a dedicated ranker over independent pairs. `batchSize` is the MLX
+ * helper's sequences per forward pass; it belongs to the effective parameters because bf16 batch
+ * makeup moves scores by up to a few tenths of a log-odds unit, so a batch-1 request has another
+ * cassette and decider cache key than a batch-16 one (D13, R17). A GGUF ranker scores pairs one by
+ * one and takes none.
+ */
+export function rankPairsTaskRequest(
+  request: RankPairsRequest,
+  options: { batchSize?: number } = {}
+): AiTaskRequest {
+  const parameters = readRankPairsParameters(
+    options.batchSize === undefined ? {} : { batchSize: options.batchSize }
+  );
+  return {
+    taskType: "reranking",
+    input: serializeRankPairsRequest(request),
+    requiredCapabilities: ["reranking"],
+    parameters,
+    metadata: {}
+  };
+}
+
+/** The helper batch size a pairs task request carries; none when it carries no parameter. */
+export function readRankPairsParameters(parameters: Record<string, unknown>): RankPairsParameters {
+  const parsed = rankPairsParametersSchema.safeParse(parameters);
+  if (!parsed.success) {
+    throw new LocalRankerError("errors.ai.unsupportedTask", parsed.error.issues[0]!.message);
+  }
+  return parsed.data;
+}
+
+function readJsonInput(input: unknown): unknown {
+  if (typeof input !== "string") return input;
+  try {
+    return JSON.parse(input);
+  } catch {
+    throw new LocalRankerError("errors.ai.unsupportedTask", "The input is not a rank request.");
+  }
 }
 
 /** The rank result of a ranker's task result; a malformed one is an invalid runtime response. */

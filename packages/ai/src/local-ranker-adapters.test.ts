@@ -12,6 +12,7 @@ import {
   MlxRerankerAdapter,
   NodeLlamaRankerAdapter,
   qwen3RankingTemplate,
+  rankPairsWithAdapter,
   rankWithAdapter,
   resolveRankerRuntimeConfig,
   type GgufRankingRuntime
@@ -20,7 +21,12 @@ import type { MlxHelperScoreResult } from "./local-runtime-protocol.js";
 import { MlxHelperHost } from "./mlx-helper-host.js";
 import { isDedicatedRanker, localParameterCapabilities } from "./parameter-capabilities.js";
 import { isTransientAiError } from "./provider-error.js";
-import { rankTaskRequest, type RankRequest } from "./ranker-input.js";
+import {
+  rankPairsTaskRequest,
+  rankTaskRequest,
+  type RankPairsRequest,
+  type RankRequest
+} from "./ranker-input.js";
 import { runRankerSmoke } from "./ranker-validation.js";
 
 const rankerCapabilities: AiCapability[] = ["reranking", "offline", "local-files"];
@@ -38,6 +44,15 @@ const rank: RankRequest = {
   instruction: "Decide whether the Document is about the Query's topic.",
   query: "Title: Photosynthesis",
   documents: ["Topic: Plant biology", "Topic: Football leagues"]
+};
+
+const pairs: RankPairsRequest = {
+  instruction: "Decide whether the two notes link.",
+  pairs: [
+    { query: "Title: A", document: "alpha note" },
+    { query: "Title: B", document: "charlie note" },
+    { query: "Title: C", document: "alpha note again" }
+  ]
 };
 
 const roots: string[] = [];
@@ -85,7 +100,7 @@ function mlxRanker(
       helperPath: "/managed/helper",
       capabilities
     },
-    score ?? (async (input) => scoreResult(input.documents?.length ?? 0))
+    score ?? (async (input) => scoreResult(input.documents?.length ?? input.pairs?.length ?? 0))
   );
 }
 
@@ -283,6 +298,51 @@ describe("MlxRerankerAdapter", () => {
     await expect(rankWithAdapter(adapter, rank)).resolves.toMatchObject({ logOdds: [4.5, -3.875] });
   });
 
+  it("scores independent pairs in one helper request with the batch size of the parameters", async () => {
+    const calls: Array<{ input: unknown; timeoutMs: number | undefined }> = [];
+    const adapter = mlxRanker(rankerCapabilities, async (input, options) => {
+      calls.push({ input, timeoutMs: options.timeoutMs });
+      return scoreResult(input.pairs!.length);
+    });
+
+    const result = await adapter.run(rankPairsTaskRequest(pairs));
+    await adapter.run(rankPairsTaskRequest(pairs, { batchSize: 1 }));
+    await adapter.run(rankPairsTaskRequest(pairs, { batchSize: 48 }));
+
+    expect(calls.map((call) => call.input)).toEqual(
+      [16, 1, 48].map((batchSize) => ({
+        modelPath: "/managed/qwen3-reranker",
+        instruction: pairs.instruction,
+        pairs: pairs.pairs,
+        maxTokens: 2_048,
+        batchSize
+      }))
+    );
+    expect(calls[0]!.timeoutMs).toBe(10_000);
+    expect(result).toMatchObject({
+      taskType: "reranking",
+      output: { logOdds: [4.5, -3.875, -3.875], tokenCounts: [100, 101, 102] },
+      providerId: "local-mlx",
+      inputTokens: 303,
+      outputTokens: 0,
+      costEstimate: 0
+    });
+    await expect(rankPairsWithAdapter(adapter, pairs)).resolves.toMatchObject({
+      logOdds: [4.5, -3.875, -3.875]
+    });
+  });
+
+  it("refuses parameters of a generative model and a pairs result that misses a pair", async () => {
+    const adapter = mlxRanker();
+    await expect(
+      adapter.run({ ...rankPairsTaskRequest(pairs), parameters: { temperature: 0.2 } })
+    ).rejects.toThrow("errors.ai.unsupportedTask");
+    const short = mlxRanker(rankerCapabilities, async () => scoreResult(2));
+    await expect(short.run(rankPairsTaskRequest(pairs))).rejects.toThrow(
+      "errors.localModels.invalidRuntimeResponse"
+    );
+  });
+
   it("refuses a generative prompt and a result that does not score every document", async () => {
     await expect(
       mlxRanker().run(request("reranking", ["reranking"], "Rank these"))
@@ -405,6 +465,48 @@ describe("NodeLlamaRankerAdapter", () => {
       costEstimate: 0
     });
     await expect(adapter.runtimeBuild()).resolves.toMatch(/^node-llama-cpp@/u);
+  });
+
+  it("loops over independent pairs, one runtime call per pair, in pair order", async () => {
+    const { runtime, calls } = fakeGgufRuntime((documents) => [
+      documents[0]!.startsWith("c") ? 0.9 : 0.1
+    ]);
+    const adapter = ggufRanker(runtime);
+
+    const result = await adapter.run(rankPairsTaskRequest(pairs));
+
+    expect(calls).toEqual(
+      pairs.pairs.map((pair) => ({ instruction: pairs.instruction, documents: [pair.document] }))
+    );
+    const output = result.output as { logOdds: number[]; tokenCounts: number[] };
+    expect(output.logOdds[0]).toBeCloseTo(Math.log(0.1 / 0.9), 9);
+    expect(output.logOdds[1]).toBeCloseTo(Math.log(0.9 / 0.1), 9);
+    expect(output.logOdds).toHaveLength(3);
+    expect(output.tokenCounts).toEqual([64, 64, 64]);
+    expect(result).toMatchObject({ providerId: "local-gguf", inputTokens: 192, outputTokens: 0 });
+    // A GGUF ranker takes the batch parameter and ignores it: it has no helper batch.
+    await expect(adapter.run(rankPairsTaskRequest(pairs, { batchSize: 1 }))).resolves.toBeDefined();
+    await expect(
+      adapter.run({ ...rankPairsTaskRequest(pairs), parameters: { temperature: 1 } })
+    ).rejects.toThrow("errors.ai.unsupportedTask");
+  });
+
+  it("stops looping over pairs once the call is canceled", async () => {
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const runtime: GgufRankingRuntime = {
+      ...fakeGgufRuntime(() => [0.5]).runtime,
+      rank: async (input) => {
+        calls.push(input.documents[0]!);
+        controller.abort();
+        return { probabilities: [0.5], tokenCounts: [64], truncated: [false] };
+      }
+    };
+
+    await expect(
+      ggufRanker(runtime).run(rankPairsTaskRequest(pairs), controller.signal)
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(1);
   });
 
   it("runs one rank call at a time and refuses a non-finite score", async () => {

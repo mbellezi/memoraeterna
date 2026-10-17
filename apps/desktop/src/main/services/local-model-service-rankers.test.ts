@@ -1,5 +1,6 @@
 import {
   createDecideValidation,
+  createRankerParityRecord,
   findLocalModelCatalogEntry,
   localModelCatalog,
   LocalModelSeedError,
@@ -338,6 +339,170 @@ describe("testing an installed ranker", () => {
 
     await expect(service.test(ggufId)).rejects.toThrow("errors.localModels.notReady");
     expect(testModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("re-validating a ranker after a runtime-build change (D13, R1)", () => {
+  const storedBuild = "memora-mlx-helper@sha256:test";
+  const rebuilt = "memora-mlx-helper@sha256:rebuilt";
+  const scores = Array.from({ length: 64 }, (_, index) => index * 0.3 - 9);
+  const baseline = createRankerParityRecord({
+    runtime: "mlx",
+    scores,
+    runtimeBuild: storedBuild
+  }).baseline;
+
+  /** What a model test leaves behind on the rebuilt runtime, with scores `shift` away. */
+  const testing = (shift: number) =>
+    vi.fn(async (localModelId: string) => {
+      const record = [...store.models.values()].find((candidate) => candidate.id === localModelId)!;
+      const parity = createRankerParityRecord({
+        runtime: "mlx",
+        scores: scores.map((score) => score + shift),
+        runtimeBuild: rebuilt,
+        baseline
+      });
+      record.metadata = {
+        ...(record.metadata as object),
+        decideValidation: {
+          ...(await validationFor(entryOf(String(record.catalogId)), { runtimeBuild: rebuilt })),
+          parity
+        }
+      };
+      record.lastError = parity.passed ? null : "errors.localModels.rankerUncalibrated";
+      return "validated";
+    });
+
+  async function installed(options: Partial<ConstructorParameters<typeof LocalModelService>[0]>) {
+    const service = newService(options);
+    await service.list();
+    install(mlxId, {
+      decideValidation: await validationFor(entryOf(mlxId), {
+        parity: createRankerParityRecord({ runtime: "mlx", scores, runtimeBuild: storedBuild })
+      })
+    });
+    return service;
+  }
+
+  it("reuses the calibration when the rebuilt runtime stays within the parity limit", async () => {
+    const testModel = testing(0.0625);
+    const onModelSettled = vi.fn();
+    const service = await installed({
+      rankerRuntimeBuild: async () => rebuilt,
+      testModel,
+      onModelSettled
+    });
+
+    await expect(service.revalidateRankers()).resolves.toEqual([
+      { catalogId: mlxId, state: "revalidated" }
+    ]);
+
+    expect(testModel).toHaveBeenCalledOnce();
+    expect(onModelSettled).toHaveBeenCalledWith(mlxId);
+    expect((await service.list()).find((view) => view.catalogId === mlxId)!.capabilities).toContain(
+      "reranking"
+    );
+    expect(storedRanker(mlxId).lastError).toBeNull();
+  });
+
+  it("leaves the ranker uncalibrated, visibly, when the parity check fails", async () => {
+    const service = await installed({
+      rankerRuntimeBuild: async () => rebuilt,
+      testModel: testing(1)
+    });
+
+    await expect(service.revalidateRankers()).resolves.toEqual([
+      { catalogId: mlxId, state: "uncalibrated" }
+    ]);
+
+    const view = (await service.list()).find((candidate) => candidate.catalogId === mlxId)!;
+    expect(view.lastError).toBe("errors.localModels.rankerUncalibrated");
+    // The smoke test passed on the new build: the ranker keeps its capability.
+    expect(view.capabilities).toContain("reranking");
+  });
+
+  it("leaves a ranker alone whose build did not change", async () => {
+    const testModel = testing(0);
+    const service = await installed({ rankerRuntimeBuild: async () => storedBuild, testModel });
+
+    await expect(service.revalidateRankers()).resolves.toEqual([
+      { catalogId: mlxId, state: "current" }
+    ]);
+    expect(testModel).not.toHaveBeenCalled();
+  });
+
+  it("leaves rankers that were never validated or are not installed to the install flow", async () => {
+    const testModel = testing(0);
+    const rankerRuntimeBuild = vi.fn(async () => rebuilt);
+    const service = newService({ rankerRuntimeBuild, testModel });
+    await service.list();
+    install(ggufId);
+
+    await expect(service.revalidateRankers()).resolves.toEqual([]);
+
+    expect(rankerRuntimeBuild).not.toHaveBeenCalled();
+    expect(testModel).not.toHaveBeenCalled();
+  });
+
+  it("reports a ranker whose build cannot be read or whose validation fails, and goes on", async () => {
+    const warn = vi.fn();
+    const unreadable = await installed({
+      rankerRuntimeBuild: async () => {
+        throw new Error("errors.localModels.runtimeUnavailable");
+      },
+      testModel: testing(0),
+      logger: { warn, error: vi.fn() }
+    });
+    await expect(unreadable.revalidateRankers()).resolves.toEqual([
+      { catalogId: mlxId, state: "failed" }
+    ]);
+    expect(warn).toHaveBeenCalled();
+
+    const failing = await installed({
+      rankerRuntimeBuild: async () => rebuilt,
+      testModel: vi.fn(async () => {
+        throw new Error("errors.localModels.rankerSmokeFailed");
+      }),
+      logger: { warn, error: vi.fn() }
+    });
+    await expect(failing.revalidateRankers()).resolves.toEqual([
+      { catalogId: mlxId, state: "failed" }
+    ]);
+  });
+
+  it("does nothing without a runtime-build reader, as in golden runs and cassette runs", async () => {
+    const testModel = testing(0);
+    const service = await installed({ testModel });
+
+    await expect(service.revalidateRankers()).resolves.toEqual([]);
+    await service.start();
+    await service.shutdown();
+
+    expect(testModel).not.toHaveBeenCalled();
+  });
+
+  it("starts in the background: a start does not wait for the model run, a shutdown does", async () => {
+    const gate = Promise.withResolvers<void>();
+    const inner = testing(0);
+    const testModel = vi.fn(async (localModelId: string) => {
+      await gate.promise;
+      return inner(localModelId);
+    });
+    const service = await installed({ rankerRuntimeBuild: async () => rebuilt, testModel });
+
+    await service.start();
+    await vi.waitFor(() => expect(testModel).toHaveBeenCalledOnce());
+    let stopped = false;
+    const shutdown = service.shutdown().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(stopped).toBe(false);
+    gate.resolve();
+    await shutdown;
+
+    expect(stopped).toBe(true);
+    expect(inner).toHaveBeenCalledOnce();
   });
 });
 

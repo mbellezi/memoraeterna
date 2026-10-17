@@ -19,12 +19,18 @@ import { MlxHelperError, MlxHelperHost, type MlxHelperCallOptions } from "./mlx-
 import { isDedicatedRanker } from "./parameter-capabilities.js";
 import {
   LocalRankerError,
-  parseRankRequest,
+  parseRankInput,
   probabilityLogOdds,
   qwen3RerankerPrompt,
+  rankPairsLimits,
   rankRequestLimits,
   rankTaskRequest,
+  readRankPairsParameters,
+  rankInputCount,
+  rankPairsTaskRequest,
   readRankResult,
+  type RankInput,
+  type RankPairsRequest,
   type RankRequest,
   type RankResult
 } from "./ranker-input.js";
@@ -126,22 +132,33 @@ export class MlxRerankerAdapter implements AiModelAdapter {
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (!this.canHandle(input)) throw unsupported();
-    const rank = parseRankRequest(input.input);
+    const rank = parseRankInput(input.input);
     const timeoutMs =
       this.options.timeoutMs ?? localRequestDeadlineMs(input, this.options.localDeadlines);
+    const common = {
+      modelPath: this.options.modelPath,
+      instruction: rank.request.instruction,
+      maxTokens: this.config.maxSequenceTokens
+    };
+    // A pairs request carries its helper batch size in `parameters` (the cassette and decider cache
+    // key it); a documents request keeps the runtime configuration's.
+    const scoreInput: MlxScoreInput =
+      rank.kind === "documents"
+        ? {
+            ...common,
+            query: rank.request.query,
+            documents: rank.request.documents,
+            batchSize: this.config.mlxBatchSize
+          }
+        : {
+            ...common,
+            pairs: rank.request.pairs,
+            batchSize:
+              readRankPairsParameters(input.parameters).batchSize ?? this.config.mlxBatchSize
+          };
     let result: MlxHelperScoreResult;
     try {
-      result = await this.score(
-        {
-          modelPath: this.options.modelPath,
-          instruction: rank.instruction,
-          query: rank.query,
-          documents: rank.documents,
-          maxTokens: this.config.maxSequenceTokens,
-          batchSize: this.config.mlxBatchSize
-        },
-        { timeoutMs, ...(signal ? { signal } : {}) }
-      );
+      result = await this.score(scoreInput, { timeoutMs, ...(signal ? { signal } : {}) });
     } catch (error) {
       throw mlxRankerFailure(error);
     }
@@ -154,7 +171,7 @@ export class MlxRerankerAdapter implements AiModelAdapter {
           truncated: result.truncated
         }
       },
-      rank.documents.length
+      rankInputCount(rank)
     );
     return rankTaskResult(input, "local-mlx", this.options.modelId, output, result.durationMs);
   }
@@ -267,7 +284,9 @@ export class NodeLlamaRankerAdapter implements AiModelAdapter {
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (!this.canHandle(input)) throw unsupported();
-    const rank = parseRankRequest(input.input);
+    const rank = parseRankInput(input.input);
+    // A pairs request takes no helper batch here: the GGUF runtime scores one pair at a time.
+    if (rank.kind === "pairs") readRankPairsParameters(input.parameters);
     // One rank call at a time: the ranking contexts are shared and evicted between instructions.
     // The deadline counts from the call's own start, not from its turn behind an earlier one.
     const bounded = () =>
@@ -288,16 +307,19 @@ export class NodeLlamaRankerAdapter implements AiModelAdapter {
 
   private async rankOnce(
     input: AiTaskRequest,
-    rank: RankRequest,
+    rank: RankInput,
     signal: AbortSignal | undefined
   ): Promise<AiTaskResult> {
     const started = Date.now();
-    const ranked = await this.runtime.rank({
-      instruction: rank.instruction,
-      query: rank.query,
-      documents: rank.documents,
-      ...(signal ? { signal } : {})
-    });
+    const ranked =
+      rank.kind === "documents"
+        ? await this.runtime.rank({
+            instruction: rank.request.instruction,
+            query: rank.request.query,
+            documents: rank.request.documents,
+            ...(signal ? { signal } : {})
+          })
+        : await this.rankPairs(rank.request.instruction, rank.request.pairs, signal);
     if (!ranked.probabilities.every((probability) => Number.isFinite(probability))) {
       throw new LocalRankerError(
         "errors.localModels.rankerInvalid",
@@ -313,9 +335,39 @@ export class NodeLlamaRankerAdapter implements AiModelAdapter {
           truncated: ranked.truncated
         }
       },
-      rank.documents.length
+      rankInputCount(rank)
     );
     return rankTaskResult(input, "local-gguf", this.options.modelId, output, Date.now() - started);
+  }
+
+  /** Independent pairs have no shared query, so the runtime ranks them one after another. */
+  private async rankPairs(
+    instruction: string,
+    pairs: ReadonlyArray<{ query: string; document: string }>,
+    signal: AbortSignal | undefined
+  ): Promise<{ probabilities: number[]; tokenCounts: number[]; truncated: boolean[] }> {
+    const probabilities: number[] = [];
+    const tokenCounts: number[] = [];
+    const truncated: boolean[] = [];
+    for (const pair of pairs) {
+      throwIfAborted(signal);
+      const ranked = await this.runtime.rank({
+        instruction,
+        query: pair.query,
+        documents: [pair.document],
+        ...(signal ? { signal } : {})
+      });
+      if (ranked.probabilities.length !== 1) {
+        throw new LocalRankerError(
+          "errors.localModels.invalidRuntimeResponse",
+          "The runtime did not score exactly one pair."
+        );
+      }
+      probabilities.push(ranked.probabilities[0]!);
+      tokenCounts.push(ranked.tokenCounts[0]!);
+      truncated.push(ranked.truncated[0] === true);
+    }
+    return { probabilities, tokenCounts, truncated };
   }
 }
 
@@ -532,6 +584,25 @@ export async function rankWithAdapter(
   return readRankResult(result, request.documents.length);
 }
 
+/**
+ * Runs a pairs request through a ranker adapter and returns its checked result. `batchSize` is the
+ * MLX helper's sequences per forward pass; a GGUF ranker takes none.
+ */
+export async function rankPairsWithAdapter(
+  adapter: AiModelAdapter,
+  request: RankPairsRequest,
+  options: { batchSize?: number; signal?: AbortSignal } = {}
+): Promise<RankResult> {
+  const result = await adapter.run(
+    rankPairsTaskRequest(
+      request,
+      options.batchSize === undefined ? {} : { batchSize: options.batchSize }
+    ),
+    options.signal
+  );
+  return readRankResult(result, request.pairs.length);
+}
+
 function rankerCanHandle(
   request: AiTaskRequest,
   capabilities: AiTaskRequest["requiredCapabilities"]
@@ -558,6 +629,7 @@ function rankerDescriptor(
     parameterCapabilities: {},
     limits: {
       maxDocuments: rankRequestLimits.maxDocuments,
+      maxPairs: rankPairsLimits.maxPairs,
       maxSequenceTokens: config.maxSequenceTokens
     },
     requirements: {

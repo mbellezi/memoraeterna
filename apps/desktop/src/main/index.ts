@@ -257,7 +257,14 @@ void app.whenReady().then(() => {
     workspaceRoot,
     isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
     testModel: (localModelId) => aiService!.testLocalModel(localModelId),
-    onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId)
+    onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId),
+    // F3 D13: a rebuilt runtime re-validates the ranker with its score-parity check. Golden runs
+    // and AI cassettes run no live model, so they never re-validate.
+    ...(!process.env.MEMORA_GOLDEN_RUN && aiCassette === null
+      ? {
+          rankerRuntimeBuild: (localModelId: string) => aiService!.rankerRuntimeBuild(localModelId)
+        }
+      : {})
   });
   // Owner decision 19: the first run installs the local ranker next to the embedding model, so the
   // topic gate has a decider from the start. Golden runs and DEV AI cassettes pin their own routes
