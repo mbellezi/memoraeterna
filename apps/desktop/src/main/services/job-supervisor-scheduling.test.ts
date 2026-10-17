@@ -641,6 +641,57 @@ describe("ingestion queue scheduling", () => {
       }
     });
 
+    it("holds the heavy lane in drain mode while relation jobs are pending, models kept loaded", async () => {
+      const pending = { rows: [{ pending: 1 }] };
+      const query = vi.fn().mockResolvedValue(pending);
+      const release = vi.fn().mockResolvedValue(undefined);
+      supervisor = new JobSupervisor({
+        getPool: () => ({ query }) as unknown as PgPool,
+        pollIntervalMs: 100,
+        knowledgeService: {} as KnowledgeService,
+        releaseAiRuntime: release
+      });
+      mocks.runs.listLinkingSourceItems.mockResolvedValue([]);
+      mocks.jobs.claimNext.mockResolvedValue(null);
+      // The product never holds it: the heavy lane claims beside running link jobs.
+      expect(await supervisor.runOnce()).toBeNull();
+      expect(query).not.toHaveBeenCalled();
+      expect(mocks.jobs.claimNext).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        "heavy"
+      );
+      setRelationLinkRuntime({ drain: true });
+      try {
+        mocks.jobs.claimNext.mockClear();
+        const light = vi.spyOn(supervisor, "runLightOnce").mockResolvedValue(null);
+        await supervisor.start();
+        await vi.advanceTimersByTimeAsync(300);
+        // A link job is due or running: no heavy claim, and the lane is not idle.
+        expect(query).toHaveBeenCalledWith(expect.stringContaining("from jobs"), [
+          ["relation-link", "relation-retype"]
+        ]);
+        expect(mocks.jobs.claimNext).not.toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Array),
+          "heavy"
+        );
+        expect(release).not.toHaveBeenCalled();
+        // The link jobs have run: the next heavy job is claimed, and an idle lane releases.
+        query.mockResolvedValue({ rows: [] });
+        await vi.advanceTimersByTimeAsync(100);
+        expect(mocks.jobs.claimNext).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Array),
+          "heavy"
+        );
+        expect(release).toHaveBeenCalled();
+        light.mockRestore();
+      } finally {
+        resetRelationLinkRuntime();
+      }
+    });
+
     it("claims relation jobs on the relations worker only", async () => {
       supervisor = new JobSupervisor({
         getPool: () => ({}) as PgPool,

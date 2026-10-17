@@ -30,6 +30,7 @@ import {
 import {
   enqueueRelationLink,
   enqueueRelationRetypeSweep,
+  hasPendingRelationJobs,
   hasUntypedRelations,
   isInteractiveRun,
   linkRootOf,
@@ -168,6 +169,8 @@ export class JobSupervisor {
   private readonly relationsChanged: RelationsChangedEmitter;
   private lastRelationMaintenance = Number.NEGATIVE_INFINITY;
   private retypeSweepDay: string | null = null;
+  /** The last heavy pass waited for relation jobs (drain mode): the lane is held, not idle. */
+  private heavyHeldForLinks = false;
 
   public constructor(private readonly options: JobSupervisorOptions) {
     const wiki = options.obsidianSyncService?.wiki;
@@ -295,6 +298,13 @@ export class JobSupervisor {
 
   /** One heavy pass: at most one heavy job. */
   public async runOnce(): Promise<JobRecord | null> {
+    // Drain mode (golden and re-match runs): the next heavy job waits for the link jobs queued so
+    // far, so each one runs between its source and the next and every prompt is a function of
+    // the arrival order (3.11), not of how far the next source's ingestion has got.
+    this.heavyHeldForLinks =
+      relationLinkRuntime().drain &&
+      (await hasPendingRelationJobs(this.requirePool(), this.lightTypes.relations));
+    if (this.heavyHeldForLinks) return null;
     const repository = createJobRepository(this.requirePool());
     const job = await repository.claimNext(this.workerId, [...supportedJobTypes], "heavy");
     if (!job) return null;
@@ -438,6 +448,8 @@ export class JobSupervisor {
       return updated;
     } finally {
       this.controllers.delete(job.id);
+      // A heavy lane held for relation jobs (drain mode) looks again as soon as one ends.
+      if (worker === "relations" && this.heavyHeldForLinks) this.wakeLoops("heavy");
     }
   }
 
@@ -612,6 +624,8 @@ export class JobSupervisor {
 
   /** What an idle heavy loop does: relation maintenance, then the idle runtime release. */
   private async idle(): Promise<void> {
+    // Held for link jobs, the lane is not idle: its next job follows them, models stay loaded.
+    if (this.heavyHeldForLinks) return;
     try {
       await this.relationMaintenance();
     } catch (error) {

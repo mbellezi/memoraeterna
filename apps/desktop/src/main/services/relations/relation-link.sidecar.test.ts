@@ -26,6 +26,7 @@ import type { RelationLinkRuntime } from "./link-runtime.js";
 import { createRelationCallBudget, localDay, nextLocalDay } from "./relation-call-budget.js";
 import {
   enqueueRelationLink,
+  hasPendingRelationJobs,
   RelationLinker,
   type RelationDiscoveryInput,
   type StoredDecidedNote
@@ -536,6 +537,35 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     );
     // Still due now: the deferred discovery never postpones a due job.
     expect(queued.rows).toEqual([{ due: true }]);
+  });
+
+  it("tells drain mode when relation work is still to run, but not work queued for a later day", async () => {
+    const types = ["relation-link", "relation-retype"];
+    const a = await seedSource("Omega");
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(false);
+    await park(a.sourceId, a.sourceId, []);
+    // Due, then running.
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(true);
+    const job = await claim(a.sourceId);
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(true);
+    // Waiting for its retry (a claim counted its attempt).
+    await pool!.query(
+      `update jobs set status = 'queued', attempts = 1, run_after = now() + interval '30 seconds'
+       where id = $1`,
+      [job.id]
+    );
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(true);
+    await pool!.query(`update jobs set status = 'succeeded', finished_at = now() where id = $1`, [
+      job.id
+    ]);
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(false);
+    // The daily cap's discovery, queued for the next local day, holds nothing.
+    await enqueueRelationLink(pool!, {
+      rootId: a.sourceId,
+      discovery: { regenerate: false, notBefore: nextLocalDay(new Date()) }
+    });
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(false);
+    expect(await hasPendingRelationJobs(pool!, [])).toBe(false);
   });
 
   it("calls at P1 for an interactive import and counts the call, never refusing it at the cap", async () => {

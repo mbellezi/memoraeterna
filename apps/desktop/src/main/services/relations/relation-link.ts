@@ -1131,6 +1131,26 @@ export async function hasUntypedRelations(db: Queryable): Promise<boolean> {
   return (await listUntyped(db, { rootId: null, limit: 1 })).length > 0;
 }
 
+/**
+ * Whether a job of `types` (the `relations` worker's) is running, due, or waiting for its retry.
+ * Drain mode holds the heavy lane while one is (3.11), so a link job's discovery never sees the
+ * next source half ingested; a job queued for a later day (the daily cap's discovery) holds nothing.
+ */
+export async function hasPendingRelationJobs(
+  db: Queryable,
+  types: readonly string[]
+): Promise<boolean> {
+  if (types.length === 0) return false;
+  const result = await db.query(
+    `select 1 from jobs
+     where type = any($1::text[])
+       and (status = 'running' or (status = 'queued' and (run_after <= now() or attempts > 0)))
+     limit 1`,
+    [[...types]]
+  );
+  return result.rows.length > 0;
+}
+
 function readRootId(job: JobRecord): string {
   const rootId = job.payload.rootId;
   if (typeof rootId !== "string" || !rootId) throw new Error("missing_rootId");

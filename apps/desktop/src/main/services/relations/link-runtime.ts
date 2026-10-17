@@ -1,10 +1,11 @@
 // How this process runs the link jobs of relations v2 (F3 D24, D26, 5.6). The product runs them
 // with the `relations` worker's full pool, small-source coalescing and the daily cap. DEV tooling
 // that replays or measures (a golden run, T52b's re-match harness) switches to drain mode: one link
-// job at a time, first in, first out, no coalescing and no daily counting, so every prompt is a
-// function of the arrival order and two replays give the same relations. `MEMORA_GOLDEN_RELATIONS
-// =local` also switches relation remote calls off for a non-regression replay (R3): pairs with no
-// cached typing are persisted untyped and discovery is deferred.
+// job at a time, first in, first out, no coalescing and no daily counting, and the heavy lane claims
+// its next job only once the relation jobs queued so far have run (job-supervisor.ts), so every
+// prompt is a function of the arrival order and two replays give the same relations.
+// `MEMORA_GOLDEN_RELATIONS=local` also switches relation remote calls off for a non-regression
+// replay (R3): pairs with no cached typing are persisted untyped and discovery is deferred.
 
 export const goldenRelationsKnob = "MEMORA_GOLDEN_RELATIONS";
 
@@ -12,7 +13,10 @@ export const goldenRelationsModes = ["live", "local"] as const;
 export type GoldenRelationsMode = (typeof goldenRelationsModes)[number];
 
 export interface RelationLinkRuntime {
-  /** One link job at a time in admission order, no coalescing, no daily counting. */
+  /**
+   * One link job at a time in admission order, no coalescing, no daily counting, and the heavy lane
+   * held while relation jobs are pending.
+   */
   drain: boolean;
   /** No remote relation call: untyped persistence, discovery deferred. */
   remoteCallsOff: boolean;
