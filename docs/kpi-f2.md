@@ -215,3 +215,52 @@ unanimous on 25/30.
 Failure modes: names cover only part of the topic (naming sees 5 central members; Areas named after one child);
 Louvain Areas over a 25-domain corpus are broad mixes; small libraries merge distinct sources (10-NN) and mix
 homonyms (ENV-F's "Aurora", "Cache", "Memória"). Iteration: names that cover the whole topic first, then coherence.
+
+## E4 second panel (2026-10-17) — passed
+
+After two changes — names that cover the whole topic (prompt `topic.name` v2, covering sample of 12 notes, bottom-up
+naming, 1,539 ENV-C topics renamed in 195 calls, 1.17M live tokens) and a 5-NN graph for libraries of at most 200
+items (structural `config_hash` 776d2947) — the three profiles were rebuilt (ENV-C) and regrown source by source
+(ENV-G, ENV-F), and a new sample (seed 20261017) was rated blind by three independent Opus 5.5 judges (decision 21),
+unanimous on 30/30.
+
+| Profile | Coherent | Well named | Both |
+| --- | --- | --- | --- |
+| ENV-C (6 Areas, 6 level-2, 8 level 3+) | 19/20 | 18/20 | 18/20 |
+| ENV-G leaves | 4/5 | 4/5 | 4/5 |
+| ENV-F leaves | 4/5 | 4/5 | 4/5 |
+| **Total** | **27/30** | **26/30** | **26/30 — passes (bar 24/30)** |
+
+The four failures: The Gift of the Magi still shares a leaf with O Alienista (growth absorption); an ENV-F leaf
+groups two "Aurora" homonyms; one broad ENV-C Area mixes psychology, ethics, logic and literature; one name covers
+only part of its topic ("STF" for constitutional notes). Also seen after regrowth, not in the sample: ENV-G's
+FAIR notes were absorbed into a forgetting-curve leaf by PLACE (growth absorption; F3/F4 follow-up).
+
+## F2 exit (T41, 2026-10-17)
+
+Final defaults: structural `config_hash` 776d2947 (replay config 803266f3), prompt `topic.name` v2, the local ranker
+at first run with the no-decider fallback (decision 19). Every exit criterion is met:
+
+| Exit | Data | Result | Bar |
+| --- | --- | --- | --- |
+| E1 reachability, orphans, hard violations | 24 replay runs (evaluation seeds, both orders); ENV-C, ENV-G, ENV-F; the owner's DEV profile | 100%, 0, 0 everywhere | 100%, 0, 0 |
+| E2 shape | replays: median depth 3.71, median fan-out 4-9 85.2-86.5% (lowest 83.3%); ENV-C after Areas: depth 3.70, 88% | met | ≤4.5; ≥80%, none <75% |
+| E3 primary-path churn | weekly replays at the median seed: 2.55% chronological, 2.38% shuffled | met | ≤3% per week |
+| E4 blind rating | seed 20261017, three Opus 5.5 judges (decision 21): 26/30 both (coherent 27, well named 26) | met | ≥24/30 |
+| E5 undo | `db:topics:verify` (snapshot hash and bit-equal `ls` after undoing 5 change-sets), T26 handler tests; DEV undo rate 0% | met | exact |
+| E6 zero-config | PLOS paper, empty profile, local writer and embedding: replay 538 served, 0 misses, 76/76 notes placed, 13 named topics in pt-BR, 0 Settings calls | met | as specified |
+
+The owner's DEV profile after the final engine (160 notes, 10 sources): 14 leaves under the root, every short
+story in its own topic ("A Cartomante", "O alienista", "O coração delator", "Amor e sacrifício em The Gift of the
+Magi"), "Princípios FAIR para dados" apart, Unsorted 0%, undo rate 0%.
+
+**Reported, not gating:** rename drift 7.4% of topics per week in the accelerated corpus replay (target 2%,
+decision 20); the LLM Areas grouping is rejected by its silhouette rule, so Louvain level-1 topics are the Areas;
+the gate's accepted precision stays under 90% for both rankers (it mainly detects new subjects); small local
+writers fail some knowledge-graph JSON (E6 reports 10 failed KG jobs with Qwen3.5-9B).
+
+**Follow-ups for later phases:** growth absorption (PLACE can still put a small unrelated source into an existing
+leaf: The Gift of the Magi and FAIR on ENV-G's source-by-source growth); theme-drift renaming (F4, decision 20);
+`topic_calibrations` rows are not read by the gate yet (they equal the defaults); KG JSON repair for local writers;
+a coverage check for names with label vectors; T19b's live space switch, T31's live overview and the DEV
+screenshots of the new screens were not run (unit and sidecar tests cover them).

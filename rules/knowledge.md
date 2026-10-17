@@ -85,7 +85,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
   background, and cached for its inputs (ideas or titles, passages, type, direction, language).
 
-## Topic tree (target F2)
+## Topic tree
 
 - The Topic Tree Engine owns AI-managed structure and is the single writer of AI
   topic parents. Placement is deterministic on embeddings; a decider is consulted
@@ -97,6 +97,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   cooldown, churn budget) prevent thrashing. Human-created, pinned and protected nodes never move automatically.
 - A topic and its index are one node. Its page is a deterministic map of content;
   prose overviews are written on demand with citations and a support check.
+- A name covers the whole topic, differs from its parent's and children's, and is in the content language.
+  Without a decider, an ambiguous note becomes a new-topic candidate; it never waits at the root.
 
 ## Search and Ask
 

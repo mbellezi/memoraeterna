@@ -1,6 +1,6 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F2 (weeks 7-11).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+**Current phase: F2 closed (2026-10-17); F3 starts only after the owner authorizes it.** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
 target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
 starting points unless marked measured.
 
@@ -521,8 +521,8 @@ Wave 7 (gate C at the end):
 - [x] T28 Ask about a topic.
 - [x] T29a Calibrate placement and the gate per decider: admission, margin, gate temperature and threshold.
 - [x] T29b Calibrate stability, growth and structure; adopt the config defaults.
-- [ ] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
-- [ ] T30 Owner blind rating (D20).
+- [x] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
+- [x] T30 Owner blind rating (D20).
 - [x] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
 - [x] T32 Zero-config end-to-end test (`topics:e2e`).
 - [x] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
@@ -530,7 +530,7 @@ Wave 7 (gate C at the end):
 - [x] T40r Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
 
 Wave 8 (exit):
-- [ ] T41 Exit measurement (`docs/kpi-f2.md`) and phase close.
+- [x] T41 Exit measurement (`docs/kpi-f2.md`) and phase close.
 
 Exit (E1-E6, on the pre-registered evaluation seeds with the calibrated configuration): reachability 100%, 0
 orphans and 0 hard violations after REBALANCE; mean depth ≤4.5 and ≥80% of internal nodes with 4-9 children
