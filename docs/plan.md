@@ -187,7 +187,8 @@ its siblings. No prose is generated for rejected candidates.
    reach the decider with no lossy cosine floor, unless gate 0 needs recall-lossless retrieval limits
    (`docs/f3-decisions.md` D17).
 3. **Decide P(related):** local reranker by default, MLX first (Qwen3-Reranker on MLXLLM), then GGUF
-   Qwen3-Reranker, then bge-reranker-v2-m3; generative decision-only route as the universal fallback; OpenAI
+   Qwen3-Reranker (bge-reranker-v2-m3 retired as a fallback, a bake-off control only: F3 Q18); generative
+   decision-only route as the universal fallback; OpenAI
    Decisions as an optional measured accelerator (use `predicate` for acceptance; shuffle options if `choice`
    is used for type). Raw scores for both directions are stored separately from calibration, so recalibration
    never re-decides. Isotonic calibration gives accept / uncertain / reject bands; in Auto mode high-precision
@@ -693,7 +694,7 @@ import to notes and path ≤2 clicks; raw palette classes ≤200, pollers 0.
 
 Risks and mitigations:
 - Tree quality on short bilingual notes is unproven → Spike B, owner rating, pinning.
-- Local reranker latency is unknown (serial `rankAll`, #30422) → Spike A gate, bge, generative decide.
+- Local reranker latency is unknown (serial `rankAll`, #30422) → Spike A gate, GGUF Qwen3, generative decide (bge retired, F3 Q18).
 - Automatic restructuring can break spatial memory → hysteresis, freeze, churn budget, undo, Suggest.
 - Lazy prose can make topics look unfinished → complete MOC, Ask falls back to notes and chunks.
 - The wiki wipe discards existing prose → verified backup first; accepted by the owner (decision 4); done
