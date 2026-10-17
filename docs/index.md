@@ -60,3 +60,5 @@ dated measurements, not rules.
 and benchmark/pilot reports unchanged for historical reference. They are not
 normative and may describe behavior that the plan replaces. Links inside
 archived files may point to rules that no longer exist.
+- [spikes/hardware-tiers-and-models.md](spikes/hardware-tiers-and-models.md) — hardware tiers (Apple Silicon and Windows), recommended local
+  and cheap cloud models per tier, the detection design and the benchmark plan (decision 25; research of 2026-10-18).
