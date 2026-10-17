@@ -2,8 +2,9 @@ import { isAiPriority, type AiPriority } from "@app/ai";
 
 /**
  * What a caller may state as its priority: a lane priority (F3 D30), or one of the two classes of
- * the single queue the lanes replaced, read as P0 (`interactive`) and P2 (`background`) until every
- * caller states its priority (T54).
+ * the single queue the lanes replaced, read as P0 (`interactive`) and P2 (`background`). Product
+ * callers state a lane priority and `workload-class-callers.test.ts` requires it; the two old
+ * words stay readable for code and tests that predate the lanes.
  */
 export type AiPriorityInput = AiPriority | "interactive" | "background";
 

@@ -747,7 +747,7 @@ export class TopicGateService {
             instruction,
             query,
             documents: scoring.map((candidate) => candidate.descriptor as string),
-            priority: "background",
+            priority: "P2",
             sourceIds: item.rootSourceId ? [item.rootSourceId] : [],
             jobId: job.id,
             stage: "topic_gate"

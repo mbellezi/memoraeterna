@@ -113,6 +113,7 @@ export async function runSchemaProbe(input: {
           operation: "schema_probe",
           stage: "schema_probe",
           origin: "interactive",
+          priority: "P2",
           outputSchema: schemaProbeOutputSchema
         },
         input.signal

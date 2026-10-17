@@ -198,7 +198,10 @@ export async function confirmMatchGroup(input: {
         isRepair: attempt > 0,
         promptVersion: input.promptVersion,
         contentLanguage: "en",
-        stage: input.stage
+        stage: input.stage,
+        operation: entityIdentity ? "entity_identity_resolution" : "relation_type_resolution",
+        workloadClass: "write-quality",
+        priority: "P2"
       },
       input.signal
     );

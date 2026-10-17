@@ -447,6 +447,8 @@ async function judgePair(
         {
           operation: sourceMatchingOperation,
           stage: "sourceMatching",
+          workloadClass: "decide",
+          priority: "P2",
           origin: "golden_source_pairs",
           contentLanguage,
           promptVersion: sourceRelationPromptVersion,

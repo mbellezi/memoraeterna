@@ -196,7 +196,9 @@ export class KnowledgeService {
       try {
         const generated = await this.options.aiService.runDefaultTask("embedding", query, {
           stage: "library_search",
-          embeddingInputType: "query"
+          embeddingInputType: "query",
+          workloadClass: "embed",
+          priority: "P0"
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
@@ -535,6 +537,8 @@ export class KnowledgeService {
               ...withAiSourceItems(logContext, [sourceItemId]),
               ...callContext,
               documentId,
+              workloadClass: "write-fast",
+              priority: "P2",
               onProgress: (event) => onProgress?.(event.progress)
             },
             signal
@@ -741,6 +745,8 @@ export class KnowledgeService {
             ...children.map((child) => child.childId)
           ]),
           operation: "hierarchy_summary",
+          workloadClass: "write-fast",
+          priority: "P2",
           promptVersion: hierarchyAggregateSummaryPromptVersion,
           sourceItemId: root.rootId,
           documentId: root.documentId
@@ -858,6 +864,8 @@ export class KnowledgeService {
                 sourceItemId,
                 documentId,
                 stage: "atomic_note_generation",
+                workloadClass: "write-quality",
+                priority: "P2",
                 onProgress: (event) => onProgress?.(event.progress)
               },
               signal
@@ -1106,7 +1114,8 @@ export class KnowledgeService {
     const locality =
       typeof this.options.aiService.taskRouteLocality === "function"
         ? await this.options.aiService.taskRouteLocality("knowledge-graph-generation", {
-            operation: "graph_source_chunks"
+            operation: "graph_source_chunks",
+            workloadClass: "write-quality"
           })
         : null;
     const batch = knowledgeGraphBatchFor(locality, { pinned });
@@ -1193,6 +1202,8 @@ export class KnowledgeService {
               contentLanguage,
               ...callContext,
               stage: "knowledge_graph_generation",
+              workloadClass: "write-quality",
+              priority: "P2",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
             signal
@@ -1253,6 +1264,8 @@ export class KnowledgeService {
                     contentLanguage,
                     ...callContext,
                     stage: "atomic_note_knowledge_graph_generation",
+                    workloadClass: "write-quality",
+                    priority: "P2",
                     onProgress: (event) => context.onProgress?.(event.progress)
                   },
                   signal
@@ -1435,9 +1448,16 @@ export class KnowledgeService {
     const execution = await this.options.aiService.runDefaultTask(
       "embedding",
       text,
-      withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_embedding" }, [
-        note.createdFromSourceItemId
-      ]),
+      withAiSourceItems(
+        {
+          ...logContext,
+          atomicNoteId: note.id,
+          operation: "note_embedding",
+          workloadClass: "embed",
+          priority: "P2"
+        },
+        [note.createdFromSourceItemId]
+      ),
       signal
     );
     const embedding = readEmbedding(execution?.output);
@@ -1504,7 +1524,13 @@ export class KnowledgeService {
       atomicNoteEmbeddingText(note),
       input.signal,
       withAiSourceItems(
-        { ...input.logContext, atomicNoteId: note.id, operation: input.operation },
+        {
+          ...input.logContext,
+          atomicNoteId: note.id,
+          operation: input.operation,
+          workloadClass: "embed",
+          priority: "P2"
+        },
         [note.createdFromSourceItemId]
       )
     );

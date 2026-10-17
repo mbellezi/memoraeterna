@@ -38,6 +38,10 @@ import {
   aiProfileUpdateSchema,
   aiProfileTaskInputSchema,
   aiTaskRouteSchema,
+  aiApplyPresetInputSchema,
+  aiSetClassRouteInputSchema,
+  aiSetDeciderModeInputSchema,
+  aiTestClassRouteInputSchema,
   aiProviderConfigInputSchema,
   aiModelDiscoveryInputSchema,
   aiParameterCapabilitiesInputSchema,
@@ -509,6 +513,19 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.aiTaskRoutesList, () => aiService.listTaskRoutes());
   ipcMain.handle(ipcChannels.aiTaskRouteSet, (_event, payload: unknown) =>
     aiService.setTaskRoute(aiTaskRouteSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiClassRoutes, () => aiService.classRoutes());
+  ipcMain.handle(ipcChannels.aiApplyPreset, (_event, payload: unknown) =>
+    aiService.applyPreset(aiApplyPresetInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiTestClassRoute, (_event, payload: unknown) =>
+    aiService.testClassRoute(aiTestClassRouteInputSchema.parse(payload).route)
+  );
+  ipcMain.handle(ipcChannels.aiSetClassRoute, (_event, payload: unknown) =>
+    aiService.setClassRoute(aiSetClassRouteInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiSetDeciderMode, (_event, payload: unknown) =>
+    aiService.setDeciderMode(aiSetDeciderModeInputSchema.parse(payload).mode)
   );
 
   ipcMain.handle(ipcChannels.localModelsList, () => localModelService.list());

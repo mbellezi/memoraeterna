@@ -633,6 +633,7 @@ export async function runPromptSamples(
         {
           operation: "prompt_catalog_sample",
           origin: "settings",
+          priority: "P0",
           sourceItemIds: [],
           contentLanguage: "en"
         },

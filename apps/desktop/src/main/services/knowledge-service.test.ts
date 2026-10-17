@@ -37,7 +37,9 @@ describe("hierarchical aggregate summaries", () => {
     expect(queries[0]?.values?.[8]).toBe("source-model");
     expect(runDefaultTask).toHaveBeenCalledWith("embedding", "semantic memory", {
       stage: "library_search",
-      embeddingInputType: "query"
+      embeddingInputType: "query",
+      workloadClass: "embed",
+      priority: "P0"
     });
   });
 

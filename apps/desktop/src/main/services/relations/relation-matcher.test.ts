@@ -860,6 +860,29 @@ describe("decider modes", () => {
     expect(ai.rankPairs).not.toHaveBeenCalled();
   });
 
+  it("reads the routes after the legacy mapping wrote the generative-decide op: routes", async () => {
+    // No preset, a ranker route whose model is missing, and the pre-F3 writer on `reranking`: the
+    // derived mode keeps that writer (Q17), found through the op: route the mapping writes first.
+    ai.decideRouteStatus.mockResolvedValue("missing");
+    const ensureLegacyRouteMapping = vi.fn(async () => {
+      routes["op:note_matching_reranking"] = writerRoute;
+    });
+    ai.runDefaultTask.mockResolvedValue(
+      verdicts([1, 10, "related"], [2, 10, "related"], [3, 10, "related"])
+    );
+    const result = await new RelationMatcher({
+      getPool: () => ({}) as PgPool,
+      ai: { ...ai, ensureLegacyRouteMapping } as unknown as AiService
+    }).matchNotes({
+      noteIds: [source.id],
+      vectors: new Map([[source.id, vectorOf()]]),
+      handOff: async (decided) => decided.pairs.length
+    });
+    expect(ensureLegacyRouteMapping).toHaveBeenCalledOnce();
+    expect(result.decider).toBe("generative");
+    expect(ai.rankPairs).not.toHaveBeenCalled();
+  });
+
   it("never sends the generative contract to a ranker: a decide route that resolves to one fails visibly", async () => {
     mocks.settings.get.mockResolvedValue("generative");
     routes = { "class:decide": rankerRoute };

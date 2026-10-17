@@ -1297,8 +1297,8 @@
         "providersDescription": "Identifiants distants et valeurs par defaut",
         "profiles": "Profils",
         "profilesDescription": "Confidentialite, modele et parametres",
-        "routing": "Routage des taches",
-        "routingDescription": "Choisissez le profil de chaque tache"
+        "routing": "Charges de travail",
+        "routingDescription": "Choisissez le modèle de chaque charge"
       },
       "openAiCompatible": "Compatible OpenAI",
       "openAiCodex": "Abonnement ChatGPT (OAuth)",
@@ -1335,8 +1335,113 @@
       "noProfiles": "Creez un profil pour configurer les taches.",
       "outputLanguage": "Langue des reponses",
       "selectProfile": "Selectionner un profil",
-      "taskRouting": "Profil utilise par tache",
-      "taskRoutingDescription": "Choisissez independamment le profil configure utilise par chaque tache IA.",
+      "classes": {
+        "title": "Modèles par charge de travail",
+        "description": "Memora regroupe son travail d'IA en cinq charges. Choisissez une configuration pour définir les modèles de toutes, ou choisissez chacun vous-même.",
+        "setup": {
+          "label": "Configuration",
+          "unset": "Pas encore choisie",
+          "unsetHint": "Choisissez Local, Hybride ou Cloud pour tout définir d'un coup, ou Personnalisée pour choisir chaque modèle.",
+          "local": "Local",
+          "hybrid": "Hybride",
+          "cloud": "Cloud",
+          "custom": "Personnalisée",
+          "localHint": "Tout s'exécute sur ce Mac : embeddings, classement et rédaction.",
+          "hybridHint": "Les embeddings et le classement s'exécutent sur ce Mac ; la rédaction et les réponses utilisent votre modèle distant.",
+          "cloudHint": "La rédaction et les réponses utilisent votre modèle distant. Les relations utilisent le classeur local s'il est installé, sinon le juge génératif.",
+          "customHint": "Vous choisissez le modèle de chaque charge ci-dessous.",
+          "localUnavailable": "La configuration Local nécessite un Mac avec puce Apple."
+        },
+        "confirm": {
+          "title": "Appliquer la configuration {setup} ?",
+          "body": "Cela remplace les modèles des cinq charges et du juge génératif, puis teste un appel pour chacun. Rien n'est téléchargé.",
+          "apply": "Appliquer et tester",
+          "cancel": "Annuler"
+        },
+        "blocked": {
+          "title": "La configuration {setup} n'a pas pu être appliquée.",
+          "modelMissing": "{name} a besoin de {model}, qui n'est pas installé. Installez-le dans Modèles locaux, puis réessayez.",
+          "noRemoteProfile": "{name} a besoin d'un modèle distant. Ajoutez-en un dans Fournisseurs et modèles, puis réessayez.",
+          "localRequiresAppleSilicon": "La configuration Local nécessite un Mac avec puce Apple."
+        },
+        "status": {
+          "applying": "Application de la configuration {setup}…",
+          "testing": "Test de {name}…",
+          "applied": "La configuration {setup} est appliquée. Chaque charge affiche son résultat de test."
+        },
+        "classes": {
+          "embed": {
+            "name": "Embeddings",
+            "description": "Transforme le texte en vecteurs pour la recherche, le rapprochement et les thèmes."
+          },
+          "decide": {
+            "name": "Classement",
+            "description": "Évalue la proximité des notes et des thèmes. Seuls des classeurs dédiés peuvent être choisis ici."
+          },
+          "writeFast": {
+            "name": "Rédaction rapide",
+            "description": "Résumés, noms de thèmes et courtes explications."
+          },
+          "writeQuality": {
+            "name": "Rédaction soignée",
+            "description": "Notes et graphe de connaissances, rédigés à partir de vos sources."
+          },
+          "answer": {
+            "name": "Réponses",
+            "description": "Réponses à vos questions, rédigées à partir de votre bibliothèque."
+          }
+        },
+        "model": {
+          "label": "Modèle",
+          "choose": "Choisir un profil",
+          "none": "Aucun modèle choisi",
+          "noRanker": "Aucun classeur installé. Les relations attendent qu'il y en ait un, sauf si le juge génératif décide.",
+          "local": "Sur ce Mac",
+          "remote": "Distant"
+        },
+        "test": {
+          "button": "Tester",
+          "running": "Test en cours…",
+          "untested": "Non testé",
+          "passed": "Test réussi",
+          "passedIn": "Test réussi en {ms} ms",
+          "failed": "Test échoué",
+          "failedWith": "Test échoué : {reason}",
+          "none": "Aucun classeur"
+        },
+        "judge": {
+          "title": "Juge génératif",
+          "description": "Un modèle de rédaction qui décide des relations entre notes quand aucun classeur ne le fait, et juge comment les sources sont liées. Il n'est jamais utilisé comme classeur.",
+          "model": "Modèle du juge",
+          "none": "Aucun modèle choisi. Les appels qui ont besoin du juge échouent tant que vous n'en choisissez pas un.",
+          "partial": "Certaines routes du juge manquent. Choisissez un modèle pour toutes les définir."
+        },
+        "decider": {
+          "label": "Qui décide des relations entre notes",
+          "automatic": "Automatique",
+          "automaticHelp": "suit vos modèles : le classeur s'il y en a un de validé, sinon le juge s'il est défini.",
+          "ranker": "Classeur seul",
+          "rankerHelp": "seul un classeur validé décide ; sans lui, le rapprochement attend.",
+          "rankerElse": "Classeur, sinon juge",
+          "rankerElseHelp": "le classeur décide et le juge prend le relais si aucun classeur n'est validé.",
+          "generative": "Juge seul",
+          "generativeHelp": "le juge décide toutes les relations, plus lentement, et envoie le texte des notes à un modèle distant si le juge est distant."
+        },
+        "disclosure": {
+          "title": "{provider} reçoit votre texte",
+          "body": "Quand ce modèle décide ou juge, les titres et les idées des notes comparées, ainsi que des extraits des sources, sont envoyés à {provider}. Il les conserve selon ses propres conditions de conservation des données, que Memora ne contrôle pas.",
+          "confirm": "Utiliser ce modèle"
+        },
+        "states": {
+          "loading": "Chargement des modèles…",
+          "error": "Impossible de charger les modèles.",
+          "retry": "Réessayer",
+          "empty": "Aucun profil pour l'instant. Ajoutez un modèle dans Fournisseurs et modèles, ou installez les modèles locaux et appliquez une configuration."
+        },
+        "errors": {
+          "invalidOutput": "Le modèle a répondu, mais pas sous la forme attendue par le test."
+        }
+      },
       "purposes": {
         "generation": "Generation de texte",
         "embedding": "Embedding",

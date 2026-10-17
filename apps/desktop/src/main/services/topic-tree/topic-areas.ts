@@ -566,7 +566,7 @@ export class TopicAreasService {
       operation: topicAreasOperation,
       origin: "job",
       workloadClass: "write-fast",
-      priority: "background",
+      priority: "P3",
       contentLanguage: prepared.contentLanguage,
       promptVersion: topicAreasPromptVersion,
       attempt,

@@ -61,7 +61,9 @@ export class SearchService {
       try {
         const generated = await this.aiService.runDefaultTask("embedding", input.text, {
           stage: "knowledge_search",
-          embeddingInputType: "query"
+          embeddingInputType: "query",
+          workloadClass: "embed",
+          priority: "P0"
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);

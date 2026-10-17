@@ -105,7 +105,8 @@ describe("RelationExplanationService", () => {
     expect(prompt).toContain("its direction is n1_to_n2");
     expect(prompt).not.toContain(ids.a);
     expect(logContext).toMatchObject({
-      priority: "interactive",
+      priority: "P0",
+      workloadClass: "write-fast",
       contentLanguage: "pt-BR",
       promptVersion: relationExplanationPromptVersion,
       stage: "relation_explanation",

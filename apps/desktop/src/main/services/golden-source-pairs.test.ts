@@ -317,6 +317,8 @@ describe("source pair verdicts", () => {
     expect(callContext).toEqual({
       operation: "source_relation_matching",
       stage: "sourceMatching",
+      workloadClass: "decide",
+      priority: "P2",
       origin: "golden_source_pairs",
       contentLanguage: "en",
       promptVersion: sourceRelationPromptVersion,

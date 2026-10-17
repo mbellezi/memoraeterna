@@ -759,7 +759,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
         expect(call.context).toMatchObject({
           operation: "topic_name",
           workloadClass: "write-fast",
-          priority: "background",
+          priority: "P3",
           contentLanguage,
           stage: "topic_naming"
         });
@@ -1777,7 +1777,8 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(w.embeddings[0]!.context).toMatchObject({
         operation: "topic_label_embedding",
         embeddingInputType: "document",
-        priority: "background"
+        workloadClass: "embed",
+        priority: "P3"
       });
       // Nothing is stale, so another run embeds nothing.
       const again = await runLabels(w);

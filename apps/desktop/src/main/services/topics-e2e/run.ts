@@ -383,7 +383,12 @@ async function runPass(
       logger: quietLogger,
       knowledgeService: knowledge,
       generateEmbedding: async (text, signal, context) => {
-        const result = await service.runDefaultTask("embedding", text, context, signal);
+        const result = await service.runDefaultTask(
+          "embedding",
+          text,
+          { ...context, workloadClass: "embed", priority: "P2" },
+          signal
+        );
         if (!result || !Array.isArray(result.output)) return null;
         return {
           embedding: result.output.map(Number),

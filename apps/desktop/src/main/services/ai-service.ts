@@ -113,9 +113,15 @@ import {
   type AiCapability,
   type AiModelParameterCapabilities,
   type AiOutputSchema,
-  type AiSchemaMode
+  type AiSchemaMode,
+  type NoteDeciderMode
 } from "@app/domain";
 import type {
+  AiApplyPresetInput,
+  AiApplyPresetResult,
+  AiClassRouteTarget,
+  AiClassRoutes,
+  AiSetClassRouteInput,
   AiProfile,
   AiProfileCreate,
   AiProfileUpdate,
@@ -130,6 +136,8 @@ import type {
 } from "../../shared/ipc.js";
 import { aiConfigurableTaskSchema, aiModelParametersSchema } from "../../shared/ipc.js";
 
+import { AiClassRouteService } from "./ai-class-routes.js";
+import { createRouteMappingStore, mapLegacyRoutesV1 } from "./ai-route-mapping.js";
 import { CredentialService } from "./credential-service.js";
 import { aiTaskPriority, type AiPriorityInput } from "./ai-priority.js";
 import {
@@ -179,7 +187,7 @@ export interface AiServiceOptions {
    */
   mlxHost?: MlxHelperHost;
   /** The machine; it decides whether an MLX ranker can be seeded (D18). Defaults to this one. */
-  machine?: { platform: string; arch: string };
+  machine?: { platform: string; arch: string; totalMemoryBytes?: number };
   /**
    * Called with the task and class routes a seeding just created (never throws into it): the
    * first-run ranker install follows the first embedding route (owner decision 19).
@@ -500,6 +508,9 @@ export class AiService {
   private readonly remoteRuntime: AiRuntimeConfig;
   private readonly localDeadlineHistory = new LocalDeadlineHistory();
   private readonly activeLocalModels = new Set<string>();
+  /** The legacy route mapping of this process (D34); reset after a seeding so new routes map too. */
+  private legacyRouteMapping: Promise<void> | null = null;
+  private classRoutesHelper: AiClassRouteService | null = null;
   /**
    * Rankers whose validation is queued or running. Decide is unavailable on them: callers take the
    * no-decider path instead of waiting for the lane, and a runtime-build change is validated, with
@@ -892,6 +903,9 @@ export class AiService {
         seeded.push(decideRouteKey);
     }
     if (seeded.length > 0) {
+      // A task that was just routed maps to its class route like any other (D34).
+      this.legacyRouteMapping = null;
+      await this.ensureLegacyRouteMapping();
       try {
         this.options.onRoutesSeeded?.(seeded);
       } catch (error) {
@@ -982,6 +996,58 @@ export class AiService {
     await repository.setTaskRoute(input.task, input.profileId);
   }
 
+  /** The five workload classes and the generative judge as Settings shows them (D34). */
+  public classRoutes(): Promise<AiClassRoutes> {
+    return this.classRouteService().view();
+  }
+
+  public applyPreset(input: AiApplyPresetInput): Promise<AiApplyPresetResult> {
+    return this.classRouteService().applyPreset(input);
+  }
+
+  public testClassRoute(route: AiClassRouteTarget): Promise<AiClassRoutes> {
+    return this.classRouteService().testClassRoute(route);
+  }
+
+  public setClassRoute(input: AiSetClassRouteInput): Promise<AiClassRoutes> {
+    return this.classRouteService().setClassRoute(input);
+  }
+
+  public setDeciderMode(mode: NoteDeciderMode | null): Promise<AiClassRoutes> {
+    return this.classRouteService().setDeciderMode(mode);
+  }
+
+  private classRouteService(): AiClassRouteService {
+    this.classRoutesHelper ??= new AiClassRouteService({
+      getPool: () => this.options.getPool(),
+      ai: this,
+      ...(this.options.machine ? { machine: this.options.machine } : {}),
+      ensureLegacyMapping: () => this.ensureLegacyRouteMapping(),
+      ...(this.options.logger ? { logger: this.options.logger } : {})
+    });
+    return this.classRoutesHelper;
+  }
+
+  /**
+   * Maps the legacy task routes to the class routes (`mapLegacyRoutesV1`, D34) before the first
+   * call that resolves a route, and again after a seeding. It never fails a call: a failure is
+   * logged and the task routes keep choosing, as they did before. Code that reads the routes
+   * itself before it calls (the relation matcher's decider resolution) awaits it first.
+   */
+  public ensureLegacyRouteMapping(): Promise<void> {
+    if (this.legacyRouteMapping) return this.legacyRouteMapping;
+    const pool = this.options.getPool();
+    // Without a database there is nothing to map yet; the next call tries again.
+    if (!pool) return Promise.resolve();
+    this.legacyRouteMapping = mapLegacyRoutesV1(createRouteMappingStore(pool)).then(
+      () => undefined,
+      (error: unknown) => {
+        this.options.logger?.error("Mapping the legacy AI routes failed", error);
+      }
+    );
+    return this.legacyRouteMapping;
+  }
+
   public async setProfileTask(input: AiProfileTaskInput): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
     const profile = (await repository.listProfiles()).find(
@@ -1020,6 +1086,8 @@ export class AiService {
     task: RoutedTask,
     context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
   ): Promise<"local" | "remote" | null> {
+    // The class routes exist before a route is read, as for a real call (D34).
+    await this.ensureLegacyRouteMapping();
     const selection = await createAiConfigRepository(this.requirePool()).getDefaultTask(
       task,
       undefined,
@@ -1031,10 +1099,18 @@ export class AiService {
 
   public async pinOrganizationProfile(
     profileId: string | undefined,
-    _legacyPrivacy: "offline_only" | "allow_remote"
+    _legacyPrivacy: "offline_only" | "allow_remote",
+    route?: { workloadClass?: AiWorkloadClass; operation?: string }
   ): Promise<OrganizationProfile> {
     const repository = createAiConfigRepository(this.requirePool());
-    const selection = await repository.getDefaultTask("structured-output", profileId);
+    // The route keys of the stated class and operation apply when no profile is chosen (D18).
+    const selection = route
+      ? await repository.getDefaultTask(
+          "structured-output",
+          profileId,
+          aiRouteKeys("structured-output", route)
+        )
+      : await repository.getDefaultTask("structured-output", profileId);
     if (!selection || !selection.requiredCapabilities.includes("structured-output"))
       throw new Error("organization.errors.model");
     const effectivePrivacy = selection.localModelId ? "offline_only" : "allow_remote";
@@ -1086,8 +1162,9 @@ export class AiService {
       {
         stage: "wiki_consultation",
         embeddingInputType: "query",
-        sourceItemIds,
-        ...(priority ? { priority } : {})
+        workloadClass: "embed",
+        priority: priority ?? "P0",
+        sourceItemIds
       },
       signal
     );
@@ -1142,6 +1219,8 @@ export class AiService {
   ): Promise<PromptAdmission | null> {
     const repository = createAiConfigRepository(this.requirePool());
     const routeKeys = taskRouteKeys(task, context);
+    // The class routes exist before the first call resolves one (D34).
+    await this.ensureLegacyRouteMapping();
     let found = await repository.getDefaultTask(task, pinned?.profileId, routeKeys);
     // A task without a route is routed to the first configured profile that can serve it. A concurrent
     // call may have created the route first, so the task is looked up again whatever this call seeded.
@@ -1938,10 +2017,12 @@ export class AiService {
     spaceKey: string;
   } | null> {
     const repository = createAiConfigRepository(this.requirePool());
-    let selection = await repository.getDefaultTask("embedding");
+    // The keys every embedding caller resolves: its class route first, then the task route (D34).
+    const keys = aiRouteKeys("embedding", { workloadClass: "embed" });
+    let selection = await repository.getDefaultTask("embedding", undefined, keys);
     if (!selection) {
       await this.seedTaskRoutes(repository);
-      selection = await repository.getDefaultTask("embedding");
+      selection = await repository.getDefaultTask("embedding", undefined, keys);
     }
     if (!selection) return null;
     const parameters = await this.embeddingCallParameters(selection);

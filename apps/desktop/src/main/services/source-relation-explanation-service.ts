@@ -101,7 +101,8 @@ export class SourceRelationExplanationService {
     const logContext = {
       stage: "source_relation_explanation",
       operation: sourceRelationExplanationOperation,
-      priority: "interactive" as const,
+      workloadClass: "write-fast" as const,
+      priority: "P0" as const,
       contentLanguage,
       promptVersion: sourceRelationExplanationPromptVersion,
       sourceItemIds: [plan.first.id, plan.second.id],

@@ -324,7 +324,7 @@ export class TopicOverviewService {
         stage: "topic_overview",
         operation: topicOverviewOperation,
         workloadClass: "write-fast",
-        priority: "interactive",
+        priority: "P0",
         contentLanguage: identity.language,
         promptVersion: topicOverviewPromptVersion,
         attempt: 0,
@@ -522,7 +522,7 @@ export class TopicOverviewService {
           instruction,
           query: sentence.text,
           documents,
-          priority: "interactive",
+          priority: "P0",
           sourceIds,
           stage: "topic_overview_support"
         },

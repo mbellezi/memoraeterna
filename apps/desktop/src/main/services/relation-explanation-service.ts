@@ -103,7 +103,8 @@ export class RelationExplanationService {
     const logContext = {
       stage: "relation_explanation",
       operation: relationExplanationOperation,
-      priority: "interactive" as const,
+      workloadClass: "write-fast" as const,
+      priority: "P0" as const,
       contentLanguage,
       promptVersion: relationExplanationPromptVersion,
       // Only sources that still exist: a knowledge note outlives its home source, and the audit of

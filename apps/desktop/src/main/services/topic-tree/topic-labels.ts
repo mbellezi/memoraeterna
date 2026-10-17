@@ -135,7 +135,8 @@ export class TopicLabelService {
         stage: "topic_labels",
         operation: topicLabelOperation,
         origin: "job",
-        priority: "background",
+        workloadClass: "embed",
+        priority: "P3",
         embeddingInputType: "document",
         sourceItemIds: []
       };

@@ -670,7 +670,7 @@ describe.skipIf(!sidecarAvailable)("the placement gate on the PostgreSQL sidecar
       expect(sourceCall.sourceIds).toEqual([note.source]);
       expect(call).toMatchObject({
         operation: topicGateOperation,
-        priority: "background",
+        priority: "P2",
         sourceIds: [note.source],
         jobId: job.id,
         stage: "topic_gate"

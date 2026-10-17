@@ -438,7 +438,12 @@ void app.whenReady().then(() => {
     knowledgeService,
     obsidianSyncService,
     generateEmbedding: async (text, signal, context) => {
-      const result = await aiService?.runDefaultTask("embedding", text, context, signal);
+      const result = await aiService?.runDefaultTask(
+        "embedding",
+        text,
+        { ...context, workloadClass: "embed", priority: "P2" },
+        signal
+      );
       if (!result || !Array.isArray(result.output)) return null;
       return {
         embedding: result.output.map(Number),

@@ -457,7 +457,7 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
       expect(w.calls[0]?.context).toMatchObject({
         operation: "topic_areas",
         workloadClass: "write-fast",
-        priority: "background",
+        priority: "P3",
         stage: "topic_areas"
       });
       // The prompt carries content, not IDs: aliases and note titles only.
@@ -759,7 +759,7 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
       const recorded = {
         operation: "topic_areas",
         workloadClass: "write-fast",
-        priority: "background",
+        priority: "P3",
         stage: "topic_areas",
         promptVersion: "topic-areas-v1",
         contentLanguage

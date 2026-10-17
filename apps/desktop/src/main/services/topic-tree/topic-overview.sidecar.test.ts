@@ -422,7 +422,7 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       expect(call!.context).toMatchObject({
         operation: "topic_overview",
         workloadClass: "write-fast",
-        priority: "interactive",
+        priority: "P0",
         stage: "topic_overview",
         contentLanguage: "en",
         attempt: 0,
@@ -478,7 +478,7 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       // The support check ran on the ranker without holding the overview back.
       await w.overview.settled(w.topics.A1);
       expect(w.ranks.length).toBe(4);
-      expect(w.ranks.every((rank) => rank.input.priority === "interactive")).toBe(true);
+      expect(w.ranks.every((rank) => rank.input.priority === "P0")).toBe(true);
       expect(w.ranks.every((rank) => rank.input.operation === topicOverviewSupportOperation)).toBe(
         true
       );

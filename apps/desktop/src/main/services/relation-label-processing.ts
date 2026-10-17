@@ -79,6 +79,9 @@ export async function processRelationLabels(
     const context = {
       jobId: job.id,
       stage: "relation_labels",
+      operation: "relation_labels",
+      workloadClass: "write-quality" as const,
+      priority: "P3" as const,
       contentLanguage: input.contentLanguage,
       promptVersion: relationLabelPromptVersion,
       attempt: 0,

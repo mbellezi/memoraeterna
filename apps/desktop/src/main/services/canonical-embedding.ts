@@ -33,7 +33,9 @@ export function createCanonicalEmbedder(options: {
           ])
         ],
         stage: options.strategy,
-        embeddingInputType: "document"
+        embeddingInputType: "document",
+        workloadClass: "embed",
+        priority: "P2"
       },
       options.signal
     );

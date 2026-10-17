@@ -63,7 +63,8 @@ for (const [owner, methods] of Object.entries({
     "cancelOverview",
     "subscribeChanged"
   ],
-  system: ["subscribeNavigation"]
+  system: ["subscribeNavigation"],
+  ai: ["classRoutes", "applyPreset", "testClassRoute", "setClassRoute", "setDeciderMode"]
 })) {
   for (const method of methods)
     assert.equal(typeof exposed.get("app")?.[owner]?.[method], "function", `${owner}.${method}`);

@@ -142,7 +142,7 @@ describe("organization profile pinning and shared inference queue", () => {
     await expect(
       s.runConsultationEmbedding("private query", "offline_only", [], new AbortController().signal)
     ).rejects.toThrow("routed adapter reached");
-    expect(state.select).toHaveBeenCalledWith("embedding", undefined, ["embedding"]);
+    expect(state.select).toHaveBeenCalledWith("embedding", undefined, ["class:embed", "embedding"]);
     expect(state.select).toHaveBeenLastCalledWith("embedding", state.selection.profileId);
     expect(adapter).toHaveBeenCalledOnce();
   });

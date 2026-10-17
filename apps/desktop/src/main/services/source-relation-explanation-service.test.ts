@@ -133,7 +133,8 @@ describe("SourceRelationExplanationService", () => {
     expect(prompt).toContain("its direction is s1_to_s2");
     expect(prompt).not.toContain(ids.source);
     expect(logContext).toMatchObject({
-      priority: "interactive",
+      priority: "P0",
+      workloadClass: "write-fast",
       contentLanguage: "pt-BR",
       promptVersion: sourceRelationExplanationPromptVersion,
       stage: "source_relation_explanation",

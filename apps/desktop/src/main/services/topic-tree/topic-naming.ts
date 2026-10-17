@@ -954,7 +954,7 @@ class NamingRun {
       operation: topicNameOperation,
       origin: "job",
       workloadClass: "write-fast",
-      priority: "background",
+      priority: "P3",
       contentLanguage: this.contentLanguage,
       promptVersion: topicNamePromptVersion,
       attempt,

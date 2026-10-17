@@ -267,7 +267,8 @@ describe("seeding task routes from the first configured profile", () => {
     repository.getDefaultTask.mockResolvedValue(selection(generative.capabilities));
     const { ai } = routedService(generative.capabilities);
     await ai.runDefaultTask("summarization", "text");
-    expect(repository.listTaskRoutes).not.toHaveBeenCalled();
+    // The legacy mapping reads the routes once (D34); a resolving task seeds and writes none.
+    expect(repository.setTaskRoute).not.toHaveBeenCalled();
     expect(repository.seedTaskRoute).not.toHaveBeenCalled();
   });
 

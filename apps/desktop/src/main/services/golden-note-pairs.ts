@@ -310,7 +310,10 @@ export function noteCallRequest(
       operation: attempt ? noteMatchDecisionOperations.repair : noteMatchDecisionOperations.decide,
       promptVersion: atomicNoteMatchingVersion,
       contentLanguage,
-      attempt
+      attempt,
+      // The class and priority the matcher's generative decider states (D16, R5).
+      workloadClass: "decide",
+      priority: "P2"
     },
     limits: { maxOutputTokens: maxRerankOutputTokens }
   };

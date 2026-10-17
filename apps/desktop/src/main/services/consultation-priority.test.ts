@@ -26,7 +26,7 @@ const contexts = (runOrganizationTask: ReturnType<typeof consultation>["runOrgan
   ).map((call) => call[2]);
 
 describe("the priority of a consultation answer", () => {
-  it("leaves an Ask interactive: its context states no priority and keeps the consultation origin", async () => {
+  it("keeps an Ask interactive: its context states P0 and the answer class, and keeps the consultation origin", async () => {
     const { service, runOrganizationTask } = consultation();
     await expect(
       service.generate(consultationSnapshot(), "question", new AbortController().signal)
@@ -34,8 +34,12 @@ describe("the priority of a consultation answer", () => {
     const calls = contexts(runOrganizationTask);
     expect(calls).toHaveLength(2);
     for (const context of calls) {
-      expect(context).toMatchObject({ origin: "consultation", operation: "wiki-consultation" });
-      expect(context).not.toHaveProperty("priority");
+      expect(context).toMatchObject({
+        origin: "consultation",
+        operation: "wiki-consultation",
+        workloadClass: "answer",
+        priority: "P0"
+      });
     }
   });
 });

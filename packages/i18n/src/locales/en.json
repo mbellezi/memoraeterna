@@ -1295,8 +1295,8 @@
         "providersDescription": "Remote credentials and defaults",
         "profiles": "Profiles",
         "profilesDescription": "Privacy, model and task parameters",
-        "routing": "Task routing",
-        "routingDescription": "Choose the profile for each task"
+        "routing": "Workloads",
+        "routingDescription": "Choose the model for each workload"
       },
       "openAiCompatible": "OpenAI-compatible",
       "openAiCodex": "ChatGPT subscription (OAuth)",
@@ -1333,8 +1333,113 @@
       "noProfiles": "Create a profile to configure tasks.",
       "outputLanguage": "Response language",
       "selectProfile": "Select a profile",
-      "taskRouting": "Profile used by task",
-      "taskRoutingDescription": "Choose independently which configured profile each AI task uses.",
+      "classes": {
+        "title": "Models by workload",
+        "description": "Memora groups its AI work into five workloads. Choose a setup to pick the models for all of them, or choose each one yourself.",
+        "setup": {
+          "label": "Setup",
+          "unset": "Not chosen yet",
+          "unsetHint": "Choose Local, Hybrid or Cloud to set every workload at once, or Custom to choose each model.",
+          "local": "Local",
+          "hybrid": "Hybrid",
+          "cloud": "Cloud",
+          "custom": "Custom",
+          "localHint": "Everything runs on this Mac: embeddings, ranking and writing.",
+          "hybridHint": "Embeddings and ranking run on this Mac; writing and answers use your remote model.",
+          "cloudHint": "Writing and answers use your remote model. Relations use the local ranker when one is installed, and the generative judge otherwise.",
+          "customHint": "You choose the model of each workload below.",
+          "localUnavailable": "The Local setup needs a Mac with Apple silicon."
+        },
+        "confirm": {
+          "title": "Apply the {setup} setup?",
+          "body": "This replaces the models of all five workloads and of the generative judge, then tests one call for each. Nothing is downloaded.",
+          "apply": "Apply and test",
+          "cancel": "Cancel"
+        },
+        "blocked": {
+          "title": "The {setup} setup could not be applied.",
+          "modelMissing": "{name} needs {model}, which is not installed. Install it under Local models, then try again.",
+          "noRemoteProfile": "{name} needs a remote model. Add one under Providers & models, then try again.",
+          "localRequiresAppleSilicon": "The Local setup needs a Mac with Apple silicon."
+        },
+        "status": {
+          "applying": "Applying the {setup} setup…",
+          "testing": "Testing {name}…",
+          "applied": "The {setup} setup is applied. Each workload shows its test result."
+        },
+        "classes": {
+          "embed": {
+            "name": "Embeddings",
+            "description": "Turns text into vectors for search, matching and topics."
+          },
+          "decide": {
+            "name": "Ranking",
+            "description": "Scores how related notes and topics are. Only dedicated rankers can be chosen here."
+          },
+          "writeFast": {
+            "name": "Quick writing",
+            "description": "Summaries, topic names and short explanations."
+          },
+          "writeQuality": {
+            "name": "Careful writing",
+            "description": "Notes and the knowledge graph, written from your sources."
+          },
+          "answer": {
+            "name": "Answers",
+            "description": "Answers to your questions, written from your library."
+          }
+        },
+        "model": {
+          "label": "Model",
+          "choose": "Choose a profile",
+          "none": "No model chosen",
+          "noRanker": "No ranker installed. Relations wait for one unless the generative judge decides.",
+          "local": "On this Mac",
+          "remote": "Remote"
+        },
+        "test": {
+          "button": "Test",
+          "running": "Testing…",
+          "untested": "Not tested",
+          "passed": "Test passed",
+          "passedIn": "Test passed in {ms} ms",
+          "failed": "Test failed",
+          "failedWith": "Test failed: {reason}",
+          "none": "No ranker"
+        },
+        "judge": {
+          "title": "Generative judge",
+          "description": "A writing model that decides note relations when no ranker does, and judges how sources relate. It is never used as a ranker.",
+          "model": "Judge model",
+          "none": "No model chosen. Calls that need the judge fail until you choose one.",
+          "partial": "Some judge routes are missing. Choose a model to set them all."
+        },
+        "decider": {
+          "label": "Who decides note relations",
+          "automatic": "Automatic",
+          "automaticHelp": "follows your models: the ranker when one is validated, otherwise the judge when one is set.",
+          "ranker": "Ranker only",
+          "rankerHelp": "only a validated ranker decides; without one, matching waits.",
+          "rankerElse": "Ranker, else judge",
+          "rankerElseHelp": "the ranker decides, and the judge steps in when no ranker is validated.",
+          "generative": "Judge only",
+          "generativeHelp": "the judge decides every relation, which is slower and sends note text to a remote model if the judge is remote."
+        },
+        "disclosure": {
+          "title": "{provider} receives your text",
+          "body": "When this model decides or judges, the titles and idea statements of the notes being compared, and excerpts of the sources, are sent to {provider}. It keeps them under its own data-retention terms, which Memora does not control.",
+          "confirm": "Use this model"
+        },
+        "states": {
+          "loading": "Loading models…",
+          "error": "The models could not be loaded.",
+          "retry": "Retry",
+          "empty": "No profiles yet. Add a model under Providers & models, or install the local models and apply a setup."
+        },
+        "errors": {
+          "invalidOutput": "The model answered, but not in the form the test expects."
+        }
+      },
       "purposes": {
         "generation": "Text generation",
         "embedding": "Embedding",

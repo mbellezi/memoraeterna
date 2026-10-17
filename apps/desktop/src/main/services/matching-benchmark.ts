@@ -513,6 +513,8 @@ export async function runMatchingBenchmark(
         {
           operation: "benchmark_note_warmup",
           stage: "embedding",
+          workloadClass: "embed",
+          priority: "P2",
           atomicNoteId: note.id,
           sourceItemId: note.created_from_source_item_id,
           sourceItemIds: [note.created_from_source_item_id]

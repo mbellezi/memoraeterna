@@ -337,7 +337,10 @@ export class ConsultationService {
           ? "consultation.errors.noTopicEvidence"
           : "consultation.errors.noRelevantEvidence"
       );
-    const profile = await this.options.ai.pinOrganizationProfile(input.profileId, input.privacy);
+    const profile = await this.options.ai.pinOrganizationProfile(input.profileId, input.privacy, {
+      workloadClass: "answer",
+      operation: "wiki-consultation"
+    });
     let vectorState: "disabled" | "available" | "unavailable" =
       input.mode === "text" ? "disabled" : "unavailable";
     let vectors: Array<{ id: string; score: number }> = [];
@@ -521,6 +524,8 @@ export class ConsultationService {
           operation: "wiki-consultation",
           stage: "answer",
           origin: "consultation",
+          workloadClass: "answer",
+          priority: "P0",
           promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
           contentLanguage: language,
           attempt: attempt + 1

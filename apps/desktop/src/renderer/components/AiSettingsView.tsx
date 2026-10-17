@@ -28,6 +28,7 @@ import {
   type LocalModelView
 } from "../../shared/ipc";
 import { Tabs } from "./ui/tabs";
+import { AiClassRoutesPanel } from "./AiClassRoutes";
 import { AiParameterFields } from "./AiParameterFields";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -91,7 +92,6 @@ export function AiSettingsView({
   const [providers, setProviders] = useState<AiProviderConfig[]>([]);
   const [profiles, setProfiles] = useState<AiProfile[]>([]);
   const [profileTasks, setProfileTasks] = useState<AiProfileTask[]>([]);
-  const [routes, setRoutes] = useState<Record<string, string>>({});
   const [localModels, setLocalModels] = useState<LocalModelView[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [provider, setProvider] = useState<"google" | "openai-compatible" | "openai-codex">(
@@ -114,19 +114,15 @@ export function AiSettingsView({
   const [activeScope, setActiveScope] = useState<AiSettingsScope>("providers");
 
   async function load() {
-    const [nextProviders, nextProfiles, nextTasks, nextRoutes, nextLocalModels] = await Promise.all(
-      [
-        window.app.ai.listProviders(),
-        window.app.ai.listProfiles(),
-        window.app.ai.listProfileTasks(),
-        window.app.ai.listTaskRoutes(),
-        window.app.localModels.list()
-      ]
-    );
+    const [nextProviders, nextProfiles, nextTasks, nextLocalModels] = await Promise.all([
+      window.app.ai.listProviders(),
+      window.app.ai.listProfiles(),
+      window.app.ai.listProfileTasks(),
+      window.app.localModels.list()
+    ]);
     setProviders(nextProviders);
     setProfiles(nextProfiles);
     setProfileTasks(nextTasks);
-    setRoutes(Object.fromEntries(nextRoutes.map((route) => [route.task, route.profileId])));
     setLocalModels(nextLocalModels.filter((model) => model.status === "ready"));
     setSelectedProfileId((current) =>
       nextProfiles.some((profile) => profile.id === current) ? current : (nextProfiles[0]?.id ?? "")
@@ -645,42 +641,7 @@ export function AiSettingsView({
           </div>
         ) : null}
 
-        {activeScope === "routing" ? (
-          <div className="grid gap-3">
-            <h3 className="font-medium">{t("settings.ai.taskRouting")}</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {t("settings.ai.taskRoutingDescription")}
-            </p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {taskDefinitions.map(({ task }) => {
-                const eligibleProfiles = profiles.filter((profile) =>
-                  profileSupportsTask(profile, task)
-                );
-                return (
-                  <Field key={task} label={t(`settings.ai.tasks.${task}` as MessageKey)}>
-                    <select
-                      value={routes[task] ?? ""}
-                      disabled={eligibleProfiles.length === 0}
-                      onChange={(event) =>
-                        void run(() =>
-                          window.app.ai.setTaskRoute({ task, profileId: event.target.value })
-                        )
-                      }
-                      className={selectClass}
-                    >
-                      <option value="">{t("settings.ai.selectProfile")}</option>
-                      {eligibleProfiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
+        {activeScope === "routing" ? <AiClassRoutesPanel t={t} onToast={onToast} /> : null}
       </Tabs>
     </section>
   );
@@ -1263,10 +1224,6 @@ function ProfileTaskEditor({
       </div>
     </details>
   );
-}
-
-function profileSupportsTask(profile: AiProfile, task: AiConfigurableTask): boolean {
-  return Boolean(profile.modelId) && supportsTask(task, profile.capabilities);
 }
 
 function profileTaskParameters(

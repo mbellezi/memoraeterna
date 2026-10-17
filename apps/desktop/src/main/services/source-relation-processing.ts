@@ -782,6 +782,8 @@ export async function matchSources(options: {
               ...options.context,
               operation: sourceMatchingOperation,
               stage: "sourceMatching",
+              workloadClass: "decide",
+              priority: "P2",
               contentLanguage: options.contentLanguage,
               promptVersion: sourceRelationPromptVersion,
               sourceItemIds: [

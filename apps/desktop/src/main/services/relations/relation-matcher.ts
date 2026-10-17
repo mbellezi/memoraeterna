@@ -302,7 +302,8 @@ export type MatchNotesResult = {
 
 export interface RelationMatcherOptions {
   getPool: () => PgPool | null;
-  ai: Pick<AiService, "rankPairs" | "runDefaultTask" | "decideRouteStatus" | "traceOperation">;
+  ai: Pick<AiService, "rankPairs" | "runDefaultTask" | "decideRouteStatus" | "traceOperation"> &
+    Partial<Pick<AiService, "ensureLegacyRouteMapping">>;
   config?: RelationsConfig;
   /** The generative decider's output budget; the rest of these settings no longer decide anything. */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
@@ -452,6 +453,9 @@ export class RelationMatcher {
   /** The decider of this admission, or the skip of mode `ranker` without a validated ranker. */
   private async resolveDecider(): Promise<Decider | typeof waitingForDeciderSkipReason> {
     const pool = this.requirePool();
+    // The routes are read here before any call: the generative-decide `op:` routes that the
+    // legacy mapping writes must exist first, as they do for a call (D16, D34).
+    await this.options.ai.ensureLegacyRouteMapping?.();
     const stored = NoteDeciderModeSchema.safeParse(
       await createSettingsRepository(pool).get(relationsDeciderModeSettingKey)
     );
@@ -896,7 +900,8 @@ export class RelationMatcher {
               document: request.document
             })),
             ...(decider.batchSize === undefined ? {} : { helperBatchSize: decider.batchSize }),
-            ...(context.logContext.priority ? { priority: context.logContext.priority } : {}),
+            // Note decide is background work (P2) unless its caller states a priority (D30).
+            priority: context.logContext.priority ?? "P2",
             sourceIds: [
               ...new Set([
                 note.createdFromSourceItemId,
@@ -1055,7 +1060,8 @@ export class RelationMatcher {
             promptVersion: atomicNoteMatchingVersion,
             attempt,
             // The decide class: its deadline and the lean shape, on its `op:` route (D16, R5).
-            workloadClass: "decide"
+            workloadClass: "decide",
+            priority: context.logContext.priority ?? "P2"
           },
           [
             note.createdFromSourceItemId,

@@ -78,6 +78,9 @@ import type {
   AiProfileUpdate,
   AiProfileTaskInput,
   AiTaskRoute,
+  AiApplyPresetInput,
+  AiClassRouteTarget,
+  AiSetClassRouteInput,
   AiModelParameters,
   AiModelDiscoveryInput,
   AiParameterCapabilitiesInput,
@@ -100,7 +103,7 @@ import type {
   LocalModelDownloadInput,
   WindowNavigationDirection
 } from "../shared/ipc";
-import type { SourceItemType } from "@app/domain";
+import type { NoteDeciderMode, SourceItemType } from "@app/domain";
 import {
   sourceDocumentInputSchema,
   sourceDocumentSchema,
@@ -118,6 +121,12 @@ import {
   aiProfileTaskInputSchema,
   aiProfileTaskSchema,
   aiTaskRouteSchema,
+  aiApplyPresetInputSchema,
+  aiApplyPresetResultSchema,
+  aiClassRoutesSchema,
+  aiSetClassRouteInputSchema,
+  aiSetDeciderModeInputSchema,
+  aiTestClassRouteInputSchema,
   aiProfileSchema,
   aiProviderConfigInputSchema,
   aiProviderConfigSchema,
@@ -943,6 +952,38 @@ const api: DesktopApi = {
     },
     async setTaskRoute(input: AiTaskRoute) {
       await ipcRenderer.invoke(ipcChannels.aiTaskRouteSet, aiTaskRouteSchema.parse(input));
+    },
+    async classRoutes() {
+      return aiClassRoutesSchema.parse(await ipcRenderer.invoke(ipcChannels.aiClassRoutes));
+    },
+    async applyPreset(input: AiApplyPresetInput) {
+      return aiApplyPresetResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiApplyPreset, aiApplyPresetInputSchema.parse(input))
+      );
+    },
+    async testClassRoute(route: AiClassRouteTarget) {
+      return aiClassRoutesSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiTestClassRoute,
+          aiTestClassRouteInputSchema.parse({ route })
+        )
+      );
+    },
+    async setClassRoute(input: AiSetClassRouteInput) {
+      return aiClassRoutesSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiSetClassRoute,
+          aiSetClassRouteInputSchema.parse(input)
+        )
+      );
+    },
+    async setDeciderMode(mode: NoteDeciderMode | null) {
+      return aiClassRoutesSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiSetDeciderMode,
+          aiSetDeciderModeInputSchema.parse({ mode })
+        )
+      );
     }
   },
   localModels: {

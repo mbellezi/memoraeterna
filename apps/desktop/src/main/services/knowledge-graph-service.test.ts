@@ -302,10 +302,11 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
     };
   };
 
-  it("asks which locality the graph writer has, with the operation a real call states", async () => {
+  it("asks which locality the graph writer has, with the operation and class a real call states", async () => {
     const { taskRouteLocality } = await run("remote");
     expect(taskRouteLocality).toHaveBeenCalledWith("knowledge-graph-generation", {
-      operation: "graph_source_chunks"
+      operation: "graph_source_chunks",
+      workloadClass: "write-quality"
     });
   });
 

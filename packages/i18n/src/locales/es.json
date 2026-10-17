@@ -1299,8 +1299,8 @@
         "providersDescription": "Credenciales remotas y valores predeterminados",
         "profiles": "Perfiles",
         "profilesDescription": "Privacidad, modelo y parametros",
-        "routing": "Enrutamiento de tareas",
-        "routingDescription": "Elige el perfil para cada tarea"
+        "routing": "Cargas de trabajo",
+        "routingDescription": "Elige el modelo de cada carga"
       },
       "openAiCompatible": "Compatible con OpenAI",
       "openAiCodex": "Suscripcion ChatGPT (OAuth)",
@@ -1337,8 +1337,113 @@
       "noProfiles": "Crea un perfil para configurar tareas.",
       "outputLanguage": "Idioma de las respuestas",
       "selectProfile": "Seleccionar un perfil",
-      "taskRouting": "Perfil usado por tarea",
-      "taskRoutingDescription": "Elige de forma independiente que perfil configurado usa cada tarea de IA.",
+      "classes": {
+        "title": "Modelos por carga de trabajo",
+        "description": "Memora agrupa su trabajo de IA en cinco cargas. Elige una configuración para definir los modelos de todas, o elige cada una tú mismo.",
+        "setup": {
+          "label": "Configuración",
+          "unset": "Aún sin elegir",
+          "unsetHint": "Elige Local, Híbrida o Nube para definir todas las cargas a la vez, o Personalizada para elegir cada modelo.",
+          "local": "Local",
+          "hybrid": "Híbrida",
+          "cloud": "Nube",
+          "custom": "Personalizada",
+          "localHint": "Todo se ejecuta en este Mac: embeddings, clasificación y redacción.",
+          "hybridHint": "Los embeddings y la clasificación se ejecutan en este Mac; la redacción y las respuestas usan tu modelo remoto.",
+          "cloudHint": "La redacción y las respuestas usan tu modelo remoto. Las relaciones usan el clasificador local si está instalado y, si no, el juez generativo.",
+          "customHint": "Tú eliges el modelo de cada carga a continuación.",
+          "localUnavailable": "La configuración Local requiere un Mac con Apple silicon."
+        },
+        "confirm": {
+          "title": "¿Aplicar la configuración {setup}?",
+          "body": "Esto sustituye los modelos de las cinco cargas y del juez generativo, y luego prueba una llamada de cada una. No se descarga nada.",
+          "apply": "Aplicar y probar",
+          "cancel": "Cancelar"
+        },
+        "blocked": {
+          "title": "No se pudo aplicar la configuración {setup}.",
+          "modelMissing": "{name} necesita {model}, que no está instalado. Instálalo en Modelos locales e inténtalo de nuevo.",
+          "noRemoteProfile": "{name} necesita un modelo remoto. Añade uno en Proveedores y modelos e inténtalo de nuevo.",
+          "localRequiresAppleSilicon": "La configuración Local requiere un Mac con Apple silicon."
+        },
+        "status": {
+          "applying": "Aplicando la configuración {setup}…",
+          "testing": "Probando {name}…",
+          "applied": "La configuración {setup} está aplicada. Cada carga muestra el resultado de su prueba."
+        },
+        "classes": {
+          "embed": {
+            "name": "Embeddings",
+            "description": "Convierte texto en vectores para la búsqueda, el emparejamiento y los temas."
+          },
+          "decide": {
+            "name": "Clasificación",
+            "description": "Puntúa cuán relacionados están las notas y los temas. Aquí solo pueden elegirse clasificadores dedicados."
+          },
+          "writeFast": {
+            "name": "Redacción rápida",
+            "description": "Resúmenes, nombres de temas y explicaciones breves."
+          },
+          "writeQuality": {
+            "name": "Redacción cuidadosa",
+            "description": "Notas y grafo de conocimiento, redactados a partir de tus fuentes."
+          },
+          "answer": {
+            "name": "Respuestas",
+            "description": "Respuestas a tus preguntas, redactadas a partir de tu biblioteca."
+          }
+        },
+        "model": {
+          "label": "Modelo",
+          "choose": "Elige un perfil",
+          "none": "Ningún modelo elegido",
+          "noRanker": "No hay clasificador instalado. Las relaciones esperan a que haya uno, salvo que decida el juez generativo.",
+          "local": "En este Mac",
+          "remote": "Remoto"
+        },
+        "test": {
+          "button": "Probar",
+          "running": "Probando…",
+          "untested": "Sin probar",
+          "passed": "Prueba superada",
+          "passedIn": "Prueba superada en {ms} ms",
+          "failed": "La prueba falló",
+          "failedWith": "La prueba falló: {reason}",
+          "none": "Sin clasificador"
+        },
+        "judge": {
+          "title": "Juez generativo",
+          "description": "Un modelo de redacción que decide las relaciones entre notas cuando ningún clasificador lo hace y juzga cómo se relacionan las fuentes. Nunca se usa como clasificador.",
+          "model": "Modelo del juez",
+          "none": "Ningún modelo elegido. Las llamadas que necesitan al juez fallan hasta que elijas uno.",
+          "partial": "Faltan algunas rutas del juez. Elige un modelo para definirlas todas."
+        },
+        "decider": {
+          "label": "Quién decide las relaciones entre notas",
+          "automatic": "Automático",
+          "automaticHelp": "sigue tus modelos: el clasificador si hay uno validado y, si no, el juez cuando está definido.",
+          "ranker": "Solo clasificador",
+          "rankerHelp": "solo decide un clasificador validado; sin él, el emparejamiento espera.",
+          "rankerElse": "Clasificador, si no juez",
+          "rankerElseHelp": "decide el clasificador y el juez interviene cuando ningún clasificador está validado.",
+          "generative": "Solo juez",
+          "generativeHelp": "el juez decide todas las relaciones, más despacio, y envía el texto de las notas a un modelo remoto si el juez es remoto."
+        },
+        "disclosure": {
+          "title": "{provider} recibe tu texto",
+          "body": "Cuando este modelo decide o juzga, los títulos y las ideas de las notas comparadas y fragmentos de las fuentes se envían a {provider}. Los conserva según sus propias condiciones de retención de datos, que Memora no controla.",
+          "confirm": "Usar este modelo"
+        },
+        "states": {
+          "loading": "Cargando modelos…",
+          "error": "No se pudieron cargar los modelos.",
+          "retry": "Reintentar",
+          "empty": "Aún no hay perfiles. Añade un modelo en Proveedores y modelos, o instala los modelos locales y aplica una configuración."
+        },
+        "errors": {
+          "invalidOutput": "El modelo respondió, pero no en la forma que espera la prueba."
+        }
+      },
       "purposes": {
         "generation": "Generacion de texto",
         "embedding": "Embedding",

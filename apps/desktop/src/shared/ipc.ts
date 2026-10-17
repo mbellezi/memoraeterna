@@ -4,7 +4,13 @@ import {
   obsidianLayoutApplyInputSchema
 } from "@app/integration-contracts";
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
-import type { PromptCommand } from "@app/domain";
+import type { NoteDeciderMode, PromptCommand } from "@app/domain";
+import {
+  AiClassIdSchema,
+  AiPresetIdSchema,
+  AiPresetModeSchema,
+  NoteDeciderModeSchema
+} from "@app/domain";
 import {
   obsidianEditorialConflictsSchema,
   obsidianResolveInputSchema,
@@ -213,6 +219,11 @@ export const ipcChannels = {
   aiProfileTaskSet: "app:ai:profiles:task:set",
   aiTaskRoutesList: "app:ai:task-routes:list",
   aiTaskRouteSet: "app:ai:task-routes:set",
+  aiClassRoutes: "app:ai:class-routes",
+  aiApplyPreset: "app:ai:class-routes:apply-preset",
+  aiTestClassRoute: "app:ai:class-routes:test",
+  aiSetClassRoute: "app:ai:class-routes:set",
+  aiSetDeciderMode: "app:ai:class-routes:decider-mode",
   aiLocalEmbeddingLoadStatus: "app:ai:local-embedding-load-status",
   localModelsList: "app:local-models:list",
   localModelsStatuses: "app:local-models:statuses",
@@ -1433,6 +1444,96 @@ export const aiTaskRouteSchema = z
   })
   .strict();
 
+/** What can be routed from Settings: the five workload classes, or the generative judge row. */
+export const aiClassRouteTargetSchema = z.union([AiClassIdSchema, z.literal("judge")]);
+export const aiClassTestSchema = z
+  .object({
+    /** `none`: the class intentionally has no model (Cloud without a ranker). */
+    state: z.enum(["untested", "passed", "failed", "none"]),
+    model: z.string().nullable(),
+    ms: z.number().int().nonnegative().nullable(),
+    at: z.string().nullable(),
+    /** A localized error key, or a short redacted reason. */
+    error: z.string().nullable()
+  })
+  .strict();
+export const aiClassRouteSchema = z
+  .object({
+    id: AiClassIdSchema,
+    profileId: z.string().uuid().nullable(),
+    profileName: z.string().nullable(),
+    modelId: z.string().nullable(),
+    runtime: z.enum(["remote", "gguf", "mlx"]).nullable(),
+    remote: z.boolean(),
+    test: aiClassTestSchema
+  })
+  .strict();
+export const aiJudgeRouteSchema = z
+  .object({
+    profileId: z.string().uuid().nullable(),
+    profileName: z.string().nullable(),
+    modelId: z.string().nullable(),
+    runtime: z.enum(["remote", "gguf", "mlx"]).nullable(),
+    remote: z.boolean(),
+    /** The remote provider's display name, for the disclosure of what is sent. */
+    providerName: z.string().nullable(),
+    /** The four generative-decide routes all exist and name the same profile. */
+    routed: z.boolean(),
+    /** Null while the library has no preset or choice: the derived mode applies. */
+    deciderMode: NoteDeciderModeSchema.nullable(),
+    test: aiClassTestSchema
+  })
+  .strict();
+export const aiClassRoutesSchema = z
+  .object({
+    preset: AiPresetModeSchema.nullable(),
+    presets: z.array(
+      z
+        .object({
+          id: AiPresetIdSchema,
+          available: z.boolean(),
+          reason: z.literal("local_requires_apple_silicon").nullable()
+        })
+        .strict()
+    ),
+    classes: z.array(aiClassRouteSchema),
+    judge: aiJudgeRouteSchema
+  })
+  .strict();
+export const aiApplyPresetInputSchema = z
+  .object({
+    preset: z.union([AiPresetIdSchema, z.literal("custom")]),
+    /** Test one call per class after seeding (the default); the settings view tests them one by one. */
+    test: z.boolean().default(true)
+  })
+  .strict();
+export const aiApplyPresetResultSchema = z
+  .object({
+    applied: z.boolean(),
+    /** Why nothing was written: a model the preset needs is not installed or configured. */
+    blocked: z.array(
+      z
+        .object({
+          /** The class or judge that lacks a model; null when the whole preset is unavailable. */
+          route: aiClassRouteTargetSchema.nullable(),
+          reason: z.enum(["model_missing", "no_remote_profile", "local_requires_apple_silicon"]),
+          catalogId: z.string().nullable(),
+          /** The model's display name, for the message that asks to install it. */
+          modelName: z.string().nullable()
+        })
+        .strict()
+    ),
+    view: aiClassRoutesSchema
+  })
+  .strict();
+export const aiTestClassRouteInputSchema = z.object({ route: aiClassRouteTargetSchema }).strict();
+export const aiSetClassRouteInputSchema = z
+  .object({ route: aiClassRouteTargetSchema, profileId: z.string().uuid() })
+  .strict();
+export const aiSetDeciderModeInputSchema = z
+  .object({ mode: NoteDeciderModeSchema.nullable() })
+  .strict();
+
 export const localModelStatusSchema = z.enum([
   "not_downloaded",
   "downloading",
@@ -1624,6 +1725,14 @@ export type AiProfileUpdate = z.infer<typeof aiProfileUpdateSchema>;
 export type AiProfileTaskInput = z.infer<typeof aiProfileTaskInputSchema>;
 export type AiProfileTask = z.infer<typeof aiProfileTaskSchema>;
 export type AiTaskRoute = z.infer<typeof aiTaskRouteSchema>;
+export type AiClassRouteTarget = z.infer<typeof aiClassRouteTargetSchema>;
+export type AiClassTest = z.infer<typeof aiClassTestSchema>;
+export type AiClassRoute = z.infer<typeof aiClassRouteSchema>;
+export type AiJudgeRoute = z.infer<typeof aiJudgeRouteSchema>;
+export type AiClassRoutes = z.infer<typeof aiClassRoutesSchema>;
+export type AiApplyPresetInput = z.input<typeof aiApplyPresetInputSchema>;
+export type AiApplyPresetResult = z.infer<typeof aiApplyPresetResultSchema>;
+export type AiSetClassRouteInput = z.infer<typeof aiSetClassRouteInputSchema>;
 export type AiConfigurableTask = z.infer<typeof aiConfigurableTaskSchema>;
 export type AiModelParameters = z.infer<typeof aiModelParametersSchema>;
 export type AiModelParameterCapabilities = z.infer<typeof aiModelParameterCapabilitiesSchema>;
@@ -1891,6 +2000,11 @@ export interface DesktopApi {
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
     listTaskRoutes: () => Promise<AiTaskRoute[]>;
     setTaskRoute: (input: AiTaskRoute) => Promise<void>;
+    classRoutes: () => Promise<AiClassRoutes>;
+    applyPreset: (input: AiApplyPresetInput) => Promise<AiApplyPresetResult>;
+    testClassRoute: (route: AiClassRouteTarget) => Promise<AiClassRoutes>;
+    setClassRoute: (input: AiSetClassRouteInput) => Promise<AiClassRoutes>;
+    setDeciderMode: (mode: NoteDeciderMode | null) => Promise<AiClassRoutes>;
     subscribeLocalEmbeddingLoadStatus: (
       listener: (status: LocalEmbeddingLoadStatus) => void
     ) => () => void;

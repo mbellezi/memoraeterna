@@ -358,6 +358,12 @@ export function createAiConfigRepository(db: Queryable) {
       );
     },
 
+    /** Removes a route (a class or operation override); its profile tasks stay. */
+    async deleteTaskRoute(task: string): Promise<boolean> {
+      const result = await db.query("delete from ai_task_profile_routes where task = $1", [task]);
+      return (result.rowCount ?? 0) > 0;
+    },
+
     /**
      * Routes a task that has no route to the profile, creating the profile task the route needs. An existing
      * route or profile task is left as it is. Returns whether a route was created.
