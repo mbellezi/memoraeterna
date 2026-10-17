@@ -108,6 +108,72 @@ describe("discovery pairs of design E (D27)", () => {
     ).toEqual([{ rootId: "A", nearestRootId: "B", nearestCosine: 0.6 }]);
   });
 
+  it("plans a root again with the same pairs: the reverse neighbours it joined stay, states kept", () => {
+    const first = selectDiscoveryPairs({
+      rootId: "R",
+      candidates: [
+        candidate("N", 0.9, { nearestRootId: "X", nearestCosine: 0.5, nearestRootCosine: 0.5 }),
+        candidate("X", 0.83, { nearestRootId: "N", nearestCosine: 0.5, nearestRootCosine: 0.5 })
+      ],
+      neighbours: 1
+    });
+    expect(first.pairs.map((pair) => [pair.rootId, pair.reason])).toEqual([
+      ["N", "nearest"],
+      ["X", "reverse"]
+    ]);
+    // The stored states after the first plan: both bars are now the cosine to R itself.
+    const replanned = selectDiscoveryPairs({
+      rootId: "R",
+      candidates: [
+        candidate("N", 0.9, { nearestRootId: "R", nearestCosine: 0.9, nearestRootCosine: 0.9 }),
+        candidate("X", 0.83, { nearestRootId: "R", nearestCosine: 0.83, nearestRootCosine: 0.83 })
+      ],
+      neighbours: 1
+    });
+    expect(replanned.pairs).toEqual(first.pairs);
+    expect(replanned.state).toEqual(first.state);
+    expect(replanned.reverse).toEqual([]);
+  });
+
+  it("with two neighbours recognizes the root it joined as the second nearest by the bar", () => {
+    // X's two nearest are A and R: its bar is R's own cosine, its nearest stays A.
+    const replanned = selectDiscoveryPairs({
+      rootId: "R",
+      candidates: [
+        candidate("B", 0.98),
+        candidate("A", 0.95),
+        candidate("X", 0.9, { nearestRootId: "A", nearestCosine: 0.9, nearestRootCosine: 0.95 })
+      ],
+      neighbours: 2
+    });
+    expect(replanned.pairs.map((pair) => [pair.rootId, pair.reason])).toEqual([
+      ["B", "nearest"],
+      ["A", "nearest"],
+      ["X", "reverse"]
+    ]);
+    expect(replanned.reverse.map((update) => update.rootId)).not.toContain("X");
+  });
+
+  it("selects the owed roots an earlier plan left unjudged, keeping their state, unless linked", () => {
+    const selection = selectDiscoveryPairs({
+      rootId: "R",
+      candidates: [
+        candidate("N", 0.9),
+        // A later root beat R at X: R is no longer X's nearest, but the pair was never judged.
+        candidate("X", 0.83, { nearestRootId: "S", nearestCosine: 0.99 }),
+        candidate("Y", 0.8, { linked: true, nearestRootId: "S", nearestCosine: 0.99 }),
+        candidate("Z", 0.7)
+      ],
+      neighbours: 1,
+      owed: ["X", "Y"]
+    });
+    expect(selection.pairs.map((pair) => [pair.rootId, pair.reason])).toEqual([
+      ["N", "nearest"],
+      ["X", "owed"]
+    ]);
+    expect(selection.reverse).toEqual([]);
+  });
+
   it("breaks cosine ties on the title, never on the ID first", () => {
     const selection = selectDiscoveryPairs({
       rootId: "R",

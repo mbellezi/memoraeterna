@@ -100,7 +100,8 @@ export interface SourceDiscoveryVector {
 
 /** The pairs discovery planned for a root and the state it stored (D27). */
 export interface SourceDiscoveryPlan extends DiscoverySelection {
-  matchSeq: number;
+  /** The root's arrival position; null in a preview of a root never matched. */
+  matchSeq: number | null;
   spaceKey: string;
   /** Earlier roots of the space that were candidates (current notes, a composite vector). */
   candidates: number;
@@ -523,15 +524,41 @@ export function createSourceRelationRepository(pool: PgPool) {
      * root's nearest and its reverse neighbours are selected, and the state of the root and of the
      * reverse neighbours is stored, so a later root sees it.
      */
-    async planDiscovery(input: {
-      rootId: string;
-      vector: SourceDiscoveryVector;
-      fingerprint: string;
-      neighbours: number;
-      /** A re-match run's visibility fence (3.17): only released roots are candidates. */
-      fence?: RetrievalFence | undefined;
-    }): Promise<SourceDiscoveryPlan> {
-      return planDiscovery(pool, input);
+    async planDiscovery(input: SourceDiscoveryInput): Promise<SourceDiscoveryPlan> {
+      return planDiscovery(pool, input, false);
+    },
+
+    /**
+     * What `planDiscovery` would select now, read-only: nothing is stored, so a run that cannot
+     * judge (no judge routed) moves no bar. A root never matched is compared with every root of
+     * the space, as it would arrive last.
+     */
+    async previewDiscovery(input: SourceDiscoveryInput): Promise<SourceDiscoveryPlan> {
+      return planDiscovery(pool, input, true);
+    },
+
+    /**
+     * The roots earlier plans of a root selected (in the run states other than `exceptKey`) whose
+     * pair was never judged under any key: a re-plan selects them again (`owed`), since their bars
+     * moved with the plan that selected them.
+     */
+    async owedDiscoveryRoots(rootId: string, exceptKey: string): Promise<string[]> {
+      return (
+        await pool.query<{ id: string } & QueryResultRow>(
+          `select distinct candidate.id
+             from source_matching_runs run
+             cross join lateral jsonb_array_elements_text(
+               case when jsonb_typeof(run.state->'discovery'->'roots') = 'array'
+                 then run.state->'discovery'->'roots' else '[]'::jsonb end) as candidate(id)
+            where run.source_root_id = $1 and run.key <> $2
+              and run.state->'discovery'->>'status' = 'planned'
+              and not exists (select 1 from source_matching_decisions d
+                where (d.source_root_id = $1 and d.target_root_id::text = candidate.id)
+                   or (d.target_root_id = $1 and d.source_root_id::text = candidate.id))
+            order by candidate.id`,
+          [rootId, exceptKey]
+        )
+      ).rows.map((row) => row.id);
     },
 
     /** The stored discovery state of some roots (the order replay and the tests read it). */
@@ -1357,38 +1384,48 @@ interface CandidateRow extends QueryResultRow {
   nearestRootCosine: number | null;
 }
 
+export interface SourceDiscoveryInput {
+  rootId: string;
+  vector: SourceDiscoveryVector;
+  fingerprint: string;
+  neighbours: number;
+  /** A re-match run's visibility fence (3.17): only released roots are candidates. */
+  fence?: RetrievalFence | undefined;
+  /** Roots earlier plans of the root selected and nobody judged (`owedDiscoveryRoots`). */
+  owed?: readonly string[] | undefined;
+}
+
 async function planDiscovery(
   pool: PgPool,
-  input: {
-    rootId: string;
-    vector: SourceDiscoveryVector;
-    fingerprint: string;
-    neighbours: number;
-    fence?: RetrievalFence | undefined;
-  }
+  input: SourceDiscoveryInput,
+  preview: boolean
 ): Promise<SourceDiscoveryPlan> {
   const { rootId, vector } = input;
   return withTransaction(pool, async (client) => {
-    await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
-      `source-discovery:${vector.spaceKey}`
-    ]);
-    const seq = Number(
-      (
-        await client.query<{ matchSeq: string } & QueryResultRow>(
-          `insert into source_match_state (root_id, space_key, fingerprint, matched_at) values ($1, $2, $3, now())
+    if (!preview)
+      await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `source-discovery:${vector.spaceKey}`
+      ]);
+    const seqRow = (
+      await client.query<{ matchSeq: string } & QueryResultRow>(
+        preview
+          ? `select match_seq as "matchSeq" from source_match_state where root_id = $1`
+          : `insert into source_match_state (root_id, space_key, fingerprint, matched_at) values ($1, $2, $3, now())
            on conflict (root_id) do update set space_key = excluded.space_key, fingerprint = excluded.fingerprint, matched_at = now()
            returning match_seq as "matchSeq"`,
-          [rootId, vector.spaceKey, input.fingerprint]
-        )
-      ).rows[0]!.matchSeq
-    );
+        preview ? [rootId] : [rootId, vector.spaceKey, input.fingerprint]
+      )
+    ).rows[0];
+    const seq = seqRow ? Number(seqRow.matchSeq) : null;
     // An exact scan: a library has at most thousands of roots, each with one composite vector.
+    // Cosines are read at the precision `nearest_cosine` stores (`real`): a bar an earlier plan
+    // stored then equals the cosine it came from, and a re-plan compares the same numbers.
     const candidates = (
       await client.query<CandidateRow>(
         `${sourceRelationTreeSql}
-        select m.root_id as "rootId", root.title, (1 - (e.embedding <=> $2::vector))::float8 as cosine,
+        select m.root_id as "rootId", root.title, (1 - (e.embedding <=> $2::vector))::real::float8 as cosine,
           m.nearest_root_id as "nearestRootId", m.nearest_cosine::float8 as "nearestCosine",
-          (select (1 - (e.embedding <=> ne.embedding))::float8 from embeddings_${vector.dimensions} ne
+          (select (1 - (e.embedding <=> ne.embedding))::real::float8 from embeddings_${vector.dimensions} ne
             where ne.target_type = 'source_item' and ne.target_id = m.nearest_root_id
               and ne.strategy = $3 and ne.model = $4 limit 1) as "nearestRootCosine",
           exists (select 1 from source_relations r join tree sa on sa.id = r.source_item_id join tree sb on sb.id = r.target_source_item_id
@@ -1397,7 +1434,7 @@ async function planDiscovery(
           join source_items root on root.id = m.root_id and root.parent_source_item_id is null
           join embeddings_${vector.dimensions} e on e.target_type = 'source_item' and e.target_id = m.root_id
             and e.strategy = $3 and e.model = $4 and e.provider = $5 and e.runtime = $6
-         where m.space_key = $7 and m.root_id <> $1 and m.match_seq < $8
+         where m.space_key = $7 and m.root_id <> $1 and ($8::bigint is null or m.match_seq < $8)
            and ($9::uuid[] is null or m.root_id = any($9::uuid[]))
            and exists (select 1 from atomic_notes note join tree t on t.id = note.created_from_source_item_id
              where t.root_id = m.root_id and note.status not in ('rejected','archived') and note.supersession_status = 'current')`,
@@ -1425,17 +1462,20 @@ async function planDiscovery(
     const selection = selectDiscoveryPairs({
       rootId,
       candidates,
-      neighbours: input.neighbours
+      neighbours: input.neighbours,
+      ...(input.owed ? { owed: input.owed } : {})
     });
-    await client.query(
-      "update source_match_state set nearest_root_id = $2, nearest_cosine = $3 where root_id = $1",
-      [rootId, selection.state.nearestRootId, selection.state.nearestCosine]
-    );
-    for (const update of selection.reverse)
+    if (!preview) {
       await client.query(
         "update source_match_state set nearest_root_id = $2, nearest_cosine = $3 where root_id = $1",
-        [update.rootId, update.nearestRootId, update.nearestCosine]
+        [rootId, selection.state.nearestRootId, selection.state.nearestCosine]
       );
+      for (const update of selection.reverse)
+        await client.query(
+          "update source_match_state set nearest_root_id = $2, nearest_cosine = $3 where root_id = $1",
+          [update.rootId, update.nearestRootId, update.nearestCosine]
+        );
+    }
     return {
       ...selection,
       matchSeq: seq,

@@ -631,7 +631,8 @@ export type SourceMatchingResult = {
 /**
  * Matches the roots of `sourceIds` by design E (D27): for each root, in content order, promotion,
  * then discovery and the judging of each selected pair once. Promotion is committed before any
- * call, so a judge that fails leaves it in place; a resumed run judges the pairs it planned.
+ * call, so a judge that fails leaves it in place; a resumed run judges the pairs it planned, also
+ * under another judge. With no judge routed nothing that needs one is planned and the run fails.
  */
 export async function matchSources(options: MatchSourcesOptions): Promise<SourceMatchingResult> {
   const { pool, ai, signal } = options,
@@ -717,50 +718,69 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
     finished: false,
     totalPairs: 0
   });
+  // A root whose discovery would need a judge that is not routed: nothing of it is planned.
+  let judgeMissing = false;
   for (const root of roots) {
     signal?.throwIfAborted();
     const runKey = `${options.runKey}:${root}`;
     const saved = stateSchema.safeParse((await repository.runState(runKey)) ?? undefined);
     // A state of another judge configuration (or of the shortlist before design E) starts over: the
-    // pair keys carry the configuration, so nothing is judged twice.
+    // pair keys carry the configuration, so nothing is judged twice. Its discovery plan is kept: the
+    // plan does not depend on the judge, and planning again would not select the reverse neighbours
+    // whose bars the plan moved.
     const state =
       saved.success && saved.data.configuration === (configuration ?? "no-judge")
         ? saved.data
         : freshState();
+    if (saved.success && state !== saved.data && saved.data.discovery?.status === "planned") {
+      state.discovery = saved.data.discovery;
+      state.totalPairs = saved.data.discovery.roots.length;
+    }
     const save = () => repository.saveRun(runKey, root, state);
     // (1) Promotion, with no call; idempotent, so a resumed run promotes again at no cost.
     const promotion = await repository.promoteFromNotes(root);
     promoted += promotion.promoted + promotion.refreshed;
     retired += promotion.retired;
     if (!state.finished && !state.discovery) {
+      let discovery: RootState["discovery"];
       if (options.discovery === "defer")
-        state.discovery = { status: "deferred", roots: [], candidates: 0 };
+        discovery = { status: "deferred", roots: [], candidates: 0 };
       else {
         const vector = await repository.discoveryVector(root);
-        if (!vector) state.discovery = { status: "no_vector", roots: [], candidates: 0 };
+        if (!vector) discovery = { status: "no_vector", roots: [], candidates: 0 };
         else {
-          // (2) Discovery: planned, and its state stored, in one transaction per space.
-          const plan = await repository.planDiscovery({
+          const input = {
             rootId: root,
             vector,
             fingerprint: await repository.fingerprint(root),
             neighbours: config.discovery.neighbours,
+            owed: await repository.owedDiscoveryRoots(root, runKey),
             ...(options.fence ? { fence: options.fence } : {})
-          });
-          state.discovery = {
+          };
+          // Without a judge a plan would move the bars of its reverse neighbours and never judge
+          // them: a root with pairs to judge plans nothing, and the run fails visibly below.
+          if (!configuration && (await repository.previewDiscovery(input)).pairs.length) {
+            judgeMissing = true;
+            continue;
+          }
+          // (2) Discovery: planned, and its state stored, in one transaction per space.
+          const plan = await repository.planDiscovery(input);
+          discovery = {
             status: "planned",
             roots: plan.pairs.map((pair) => pair.rootId),
             candidates: plan.candidates
           };
         }
       }
-      state.totalPairs = state.discovery.roots.length;
+      state.discovery = discovery;
+      state.totalPairs = discovery.roots.length;
       await save();
     }
     if (state.discovery?.status === "deferred") discoveryDeferred += 1;
     if (state.discovery?.status === "no_vector") discoveryWithoutVector += 1;
     plans.push({ root, state, save, promoted: promotion.promoted + promotion.refreshed });
   }
+  if (judgeMissing) throw new Error("errors.ai.noCompatibleModel");
   let total = plans.reduce((sum, plan) => sum + plan.state.totalPairs, 0);
   let done = plans.reduce(
     (sum, plan) =>

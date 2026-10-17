@@ -629,6 +629,142 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     expect(plan2.pairs.map((pair) => pair.rootId)).toEqual([second.id]);
   });
 
+  it("plans a root again with the same pairs and states, at the stored cosine precision", async () => {
+    const repository = createSourceRelationRepository(db());
+    const space = `space-${randomUUID()}`;
+    const root = async (title: string, vector: number[]) => {
+      const source = await work(title);
+      await withNotes(source, [`${title} idea`]);
+      await composite(source.id, vector, space);
+      return source;
+    };
+    const input = async (rootId: string, neighbours: number) => ({
+      rootId,
+      vector: (await repository.discoveryVector(rootId))!,
+      fingerprint: await repository.fingerprint(rootId),
+      neighbours
+    });
+    const pairsOf = (plan: { pairs: Array<{ rootId: string; reason: string }> }) =>
+      plan.pairs.map((pair) => [pair.rootId, pair.reason]);
+    // One neighbour: R's nearest is N, and R beats X's bar (its cosine to N), so X is a reverse
+    // neighbour whose bar becomes its cosine to R.
+    const n = await root("Nu root", unit(0));
+    const x = await root("Xi root", at(0.5, 1));
+    await repository.planDiscovery(await input(n.id, 1));
+    await repository.planDiscovery(await input(x.id, 1));
+    const r = await root("Rho root", at(0.9, 1));
+    const first = await repository.planDiscovery(await input(r.id, 1));
+    expect(pairsOf(first)).toEqual([
+      [n.id, "nearest"],
+      [x.id, "reverse"]
+    ]);
+    const states = await repository.matchStates([n.id, x.id, r.id]);
+    // A re-plan (another run or judge) selects the same pairs and stores the same states.
+    expect(await repository.previewDiscovery(await input(r.id, 1))).toMatchObject({
+      pairs: first.pairs
+    });
+    const again = await repository.planDiscovery(await input(r.id, 1));
+    expect(pairsOf(again)).toEqual(pairsOf(first));
+    expect(await repository.matchStates([n.id, x.id, r.id])).toEqual(
+      states.map((state) => ({ ...state }))
+    );
+    // Two neighbours: X2's two nearest become A and R, so its bar is R's own cosine, stored as
+    // `real` (here rounded up from the double PostgreSQL computes); R's own two nearest are B and
+    // A. A re-plan recognizes R in X2's set by that bar, compared at the stored precision.
+    const space2 = `space-${randomUUID()}`;
+    const root2 = async (title: string, vector: number[]) => {
+      const source = await work(title);
+      await withNotes(source, [`${title} idea`]);
+      await composite(source.id, vector, space2);
+      return source;
+    };
+    const padded = (values: number[]) => Array.from({ length: 256 }, (_, i) => values[i] ?? 0);
+    const a = await root2("Alpha two", padded([1, 0, 0]));
+    const x2 = await root2("Xi two", padded([2.7, 0, 1.3]));
+    const b = await root2("Beta two", padded([0.9, 0.436, 0]));
+    for (const id of [a.id, x2.id, b.id]) await repository.planDiscovery(await input(id, 2));
+    const r2 = await root2("Rho two", padded([0.95, 0.3, 0.05]));
+    const plan2 = await repository.planDiscovery(await input(r2.id, 2));
+    expect(pairsOf(plan2)).toEqual([
+      [b.id, "nearest"],
+      [a.id, "nearest"],
+      [x2.id, "reverse"]
+    ]);
+    const states2 = await repository.matchStates([a.id, x2.id, b.id, r2.id]);
+    expect(pairsOf(await repository.planDiscovery(await input(r2.id, 2)))).toEqual(pairsOf(plan2));
+    expect(await repository.matchStates([a.id, x2.id, b.id, r2.id])).toEqual(states2);
+  });
+
+  it("previews without storing anything, and judges what an earlier plan left owed", async () => {
+    const repository = createSourceRelationRepository(db());
+    const space = `space-${randomUUID()}`;
+    const root = async (title: string, vector: number[]) => {
+      const source = await work(title);
+      await withNotes(source, [`${title} idea`]);
+      await composite(source.id, vector, space);
+      return source;
+    };
+    const plan = async (rootId: string) =>
+      repository.planDiscovery({
+        rootId,
+        vector: (await repository.discoveryVector(rootId))!,
+        fingerprint: await repository.fingerprint(rootId),
+        neighbours: 1
+      });
+    const n = await root("Owed nu", unit(0));
+    const x = await root("Owed xi", at(0.5, 1));
+    await plan(n.id);
+    await plan(x.id);
+    const r = await root("Owed rho", at(0.9, 1));
+    // A preview of a root never matched stores no state, neither its own nor its neighbours'.
+    const before = await repository.matchStates([n.id, x.id]);
+    const preview = await repository.previewDiscovery({
+      rootId: r.id,
+      vector: (await repository.discoveryVector(r.id))!,
+      fingerprint: await repository.fingerprint(r.id),
+      neighbours: 1
+    });
+    expect(preview.pairs.map((pair) => pair.rootId)).toEqual([n.id, x.id]);
+    expect(await repository.matchStates([n.id, x.id, r.id])).toEqual(before);
+    // The input budget stops the run after the first pair: X stays planned and unjudged.
+    const runDefaultTask = vi.fn(async () => ({
+      output: { relations: [] },
+      profileId: judgeRoute.profileId,
+      modelId: judgeRoute.modelId,
+      providerId: "openai-codex",
+      runtime: "remote",
+      aiTaskRunId: null,
+      inputTokens: 100,
+      outputTokens: 10
+    }));
+    const options = {
+      pool: db(),
+      ai: { runDefaultTask } as never,
+      sourceIds: [r.id],
+      contentLanguage: "en"
+    };
+    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200_000 };
+    expect(
+      await matchSources({
+        ...options,
+        runKey: "budget",
+        settings: { ...settings, maxInputTokens: 50 }
+      })
+    ).toMatchObject({ completed: 1, total: 2, partial: true });
+    // A later root beats R at X: a fresh plan of R would not select X any more.
+    const s2 = await root("Owed sigma", at(0.45, 1));
+    await plan(s2.id);
+    expect((await repository.matchStates([x.id]))[0]).toMatchObject({ nearestRootId: s2.id });
+    expect(await repository.owedDiscoveryRoots(r.id, `next:${r.id}`)).toEqual([x.id]);
+    // The next run of R judges the owed pair; the judged one is reused with no call.
+    expect(await matchSources({ ...options, runKey: "next", settings })).toMatchObject({
+      completed: 2,
+      total: 2
+    });
+    expect(runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(await repository.owedDiscoveryRoots(r.id, "any")).toEqual([]);
+  });
+
   it("matches a source end to end: promotion, one judged pair, nothing again on a rerun", async () => {
     const space = `space-${randomUUID()}`;
     const memory = await work("Working memory limits");

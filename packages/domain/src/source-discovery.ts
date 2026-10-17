@@ -25,8 +25,12 @@ export interface DiscoveryCandidate {
 
 export interface DiscoveryPair {
   rootId: string;
-  /** `nearest`: one of the new root's nearest; `reverse`: the new root beat the candidate's bar. */
-  reason: "nearest" | "reverse";
+  /**
+   * `nearest`: one of the new root's nearest; `reverse`: the new root beat the candidate's bar (or
+   * an earlier plan of the same root already joined its nearest); `owed`: an earlier plan of the
+   * same root selected it and the pair was never judged.
+   */
+  reason: "nearest" | "reverse" | "owed";
   cosine: number;
 }
 
@@ -51,13 +55,20 @@ export function compareDiscoveryCandidates(a: DiscoveryCandidate, b: DiscoveryCa
  * plus every unlinked earlier root whose bar it beats (strictly), which then counts the new root
  * among its nearest. With one neighbour the bar is the nearest root's cosine; with two it is the
  * second nearest's. Same-root candidates cannot occur (candidates are other roots).
+ *
+ * Planning a root again is idempotent: a candidate whose stored nearest already counts the root
+ * (an earlier plan of it moved the bar to the root's own cosine) is a reverse neighbour again and
+ * keeps its state, and an `owed` candidate (selected by an earlier plan, never judged) is selected
+ * with its state kept. Otherwise a re-plan (another run, another judge) would lose them for good.
  */
 export function selectDiscoveryPairs(input: {
   rootId: string;
   candidates: readonly DiscoveryCandidate[];
   neighbours: number;
+  owed?: readonly string[];
 }): DiscoverySelection {
   const neighbours = Math.max(1, Math.min(2, Math.trunc(input.neighbours)));
+  const owed = new Set(input.owed ?? []);
   const unlinked = input.candidates
     .filter((candidate) => !candidate.linked && candidate.rootId !== input.rootId)
     .toSorted(compareDiscoveryCandidates);
@@ -67,12 +78,20 @@ export function selectDiscoveryPairs(input: {
     reason: "nearest",
     cosine: candidate.cosine
   }));
+  const add = (candidate: DiscoveryCandidate, reason: DiscoveryPair["reason"]) => {
+    if (!pairs.some((pair) => pair.rootId === candidate.rootId))
+      pairs.push({ rootId: candidate.rootId, reason, cosine: candidate.cosine });
+  };
   const reverse: DiscoverySelection["reverse"] = [];
   for (const candidate of unlinked) {
-    if (candidate.nearestCosine !== null && !(candidate.cosine > candidate.nearestCosine)) continue;
-    reverse.push({ rootId: candidate.rootId, ...joinNearest(candidate, input.rootId, neighbours) });
-    if (!pairs.some((pair) => pair.rootId === candidate.rootId))
-      pairs.push({ rootId: candidate.rootId, reason: "reverse", cosine: candidate.cosine });
+    if (countsRoot(candidate, input.rootId, neighbours)) add(candidate, "reverse");
+    else if (candidate.nearestCosine === null || candidate.cosine > candidate.nearestCosine) {
+      reverse.push({
+        rootId: candidate.rootId,
+        ...joinNearest(candidate, input.rootId, neighbours)
+      });
+      add(candidate, "reverse");
+    } else if (owed.has(candidate.rootId)) add(candidate, "owed");
   }
   return {
     pairs,
@@ -82,6 +101,16 @@ export function selectDiscoveryPairs(input: {
     },
     reverse
   };
+}
+
+/**
+ * Whether the candidate's stored nearest set already holds the root: its nearest is the root, or,
+ * with two neighbours, its bar is the root's own cosine (the root joined as the second nearest).
+ * The cosines compared are at the stored precision, so an earlier plan's bar equals them exactly.
+ */
+function countsRoot(candidate: DiscoveryCandidate, rootId: string, neighbours: number): boolean {
+  if (candidate.nearestRootId === rootId) return true;
+  return neighbours === 2 && candidate.nearestCosine === candidate.cosine;
 }
 
 /** A candidate's state once the new root joins its nearest set. */

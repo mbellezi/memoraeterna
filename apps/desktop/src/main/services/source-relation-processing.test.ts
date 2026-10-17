@@ -424,6 +424,8 @@ describe("source matching by design E (D27)", () => {
         order.push("discover");
         return plan(["root-B"]);
       }),
+      previewDiscovery: vi.fn(async () => plan(["root-B"])),
+      owedDiscoveryRoots: vi.fn().mockResolvedValue([]),
       pairNotes: vi.fn().mockResolvedValue([note]),
       pairNoteFingerprints: vi.fn().mockResolvedValue([note.fingerprint]),
       pairChunks: vi.fn().mockResolvedValue([a, b]),
@@ -509,7 +511,7 @@ describe("source matching by design E (D27)", () => {
     });
   });
 
-  it("keeps promotion and fails visibly before a pair when no generative judge is routed", async () => {
+  it("keeps promotion and fails visibly before planning when no generative judge is routed", async () => {
     for (const route of [null, { ...judgeRoute, requiredCapabilities: ["reranking"] }]) {
       mocks.selection.mockReset().mockResolvedValue(route);
       const ai = vi.fn();
@@ -519,9 +521,23 @@ describe("source matching by design E (D27)", () => {
       expect(ai).not.toHaveBeenCalled();
     }
     expect(mocks.repository.promoteFromNotes).toHaveBeenCalledTimes(2);
+    // A plan would move its reverse neighbours' bars and leave them unjudged: none is stored.
+    expect(mocks.repository.planDiscovery).not.toHaveBeenCalled();
+    expect(mocks.repository.saveRun).not.toHaveBeenCalled();
     // With nothing to judge, no judge is needed.
+    mocks.repository.previewDiscovery!.mockResolvedValue(plan([]));
     mocks.repository.planDiscovery!.mockResolvedValue(plan([]));
     await expect(run(vi.fn(), "nothing")).resolves.toMatchObject({ total: 0, completed: 0 });
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects again the pairs earlier plans of the root left unjudged", async () => {
+    mocks.repository.owedDiscoveryRoots!.mockResolvedValue(["root-X"]);
+    await run(vi.fn().mockResolvedValue(execution({ relations: [] })), "later");
+    expect(mocks.repository.owedDiscoveryRoots).toHaveBeenCalledWith("root-A", "later:root-A");
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ owed: ["root-X"] })
+    );
   });
 
   it("defers discovery on request and skips a root without a composite vector", async () => {
@@ -855,9 +871,11 @@ describe("source matching by design E (D27)", () => {
       .mockResolvedValue({ ...judgeRoute, modelId: "another-model" });
     await expect(run(ai)).rejects.toThrow("errors.sourceRelations.configurationChanged");
     expect(ai).not.toHaveBeenCalled();
-    // The next run plans under the new judge: its pair keys carry it, so nothing is judged twice.
+    // The next run judges under the new judge (its pair keys carry it, so nothing is judged twice)
+    // the pairs the first plan selected: planning again would lose the reverse neighbours.
     await expect(run(ai)).resolves.toMatchObject({ completed: 1 });
     expect(ai).toHaveBeenCalledTimes(1);
+    expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
   });
   it("keys the judge on its identity, which a task default beneath the parameters changes", async () => {
     const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
@@ -1087,6 +1105,7 @@ describe("source relation prompts do not depend on database IDs", () => {
         promoteFromNotes: vi.fn().mockResolvedValue(noPromotion),
         discoveryVector: vi.fn().mockResolvedValue({ spaceKey: "256:space" }),
         planDiscovery: vi.fn().mockResolvedValue(plan([works.memory])),
+        owedDiscoveryRoots: vi.fn().mockResolvedValue([]),
         pairNotes: vi.fn().mockResolvedValue([]),
         pairNoteFingerprints: vi.fn().mockResolvedValue([]),
         // The database returns the chunks in whatever order it likes.
