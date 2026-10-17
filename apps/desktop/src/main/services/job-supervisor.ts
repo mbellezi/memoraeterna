@@ -62,7 +62,7 @@ import { chunkMarkdown } from "@app/conversion";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
-import { refreshAncestorComposites } from "./source-composite.js";
+import { hierarchyRootComposite, refreshAncestorComposites } from "./source-composite.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -949,9 +949,28 @@ export class JobSupervisor {
         const source = await createSourceItemRepository(pool).findById(sourceItemId);
         if (source) {
           const header = buildCatalogMetadataMarkdown(source);
+          // A hierarchy root embeds its header only to build its composite (F3 D27): while a
+          // descendant has none the last one to embed builds it, and one that did left it current.
+          const chunkDimensions = chunkVectors[0]?.length;
+          const hierarchyComposite =
+            embeddingIdentity?.spaceKey &&
+            (chunkDimensions === 256 || chunkDimensions === 768 || chunkDimensions === 1_024)
+              ? await hierarchyRootComposite({
+                  pool,
+                  sourceItemId,
+                  header,
+                  space: {
+                    model: embeddingIdentity.model,
+                    dimensions: chunkDimensions,
+                    strategy: `source-composite-centroid-v2:${embeddingIdentity.spaceKey}`
+                  }
+                })
+              : "none";
+          const embedsHeader = hierarchyComposite === "none" || hierarchyComposite === "stale";
+          if (hierarchyComposite === "current") sourceEmbedded = true;
           const headerEmbedded = await embedHeaderVectors({
             ...stage,
-            segments: chunkMarkdown(header).map((chunk) => chunk.content),
+            segments: embedsHeader ? chunkMarkdown(header).map((chunk) => chunk.content) : [],
             identity: embeddingIdentity
           });
           const headerVectors = headerEmbedded.vectors;
@@ -975,9 +994,10 @@ export class JobSupervisor {
               contentVectors = childVectors.map((item) => item.embedding);
             }
           }
-          const sourceEmbedding = hierarchyContentComplete
-            ? aggregateSourceEmbedding(headerVectors, contentVectors)
-            : null;
+          const sourceEmbedding =
+            hierarchyContentComplete && embedsHeader
+              ? aggregateSourceEmbedding(headerVectors, contentVectors)
+              : null;
           if (sourceEmbedding && embeddingIdentity) {
             const sourceFingerprint = createHash("sha256").update(header);
             for (const vector of contentVectors) sourceFingerprint.update(vector.join(","));
@@ -999,22 +1019,37 @@ export class JobSupervisor {
           }
         }
       }
-      // A chapter's composite completes its hierarchy roots' composites (F3 D27 discovery).
+      // A chapter's composite completes its hierarchy roots' composites (F3 D27 discovery); a failed
+      // refresh is reported and never fails this stage, whose own vectors are written.
       const recomposed = await refreshAncestorComposites({
         pool,
         sourceItemId,
         aggregate: aggregateSourceEmbedding,
-        embed: this.options.generateEmbedding
-          ? (text) =>
-              this.options.generateEmbedding!(text, signal, {
+        // Through the stage's own generator (batched when wired, F3 D37), so an ancestor's header is
+        // the same request whichever job builds its composite.
+        embed: generate
+          ? async (text) => {
+              const generated = await generate([text], signal, {
                 jobId: job.id,
                 ingestionRunId,
                 sourceItemId,
                 documentId,
                 stage: "source_embedding",
                 embeddingInputType: "document"
-              })
-          : null
+              });
+              const embedding = generated?.embeddings[0];
+              if (!generated || !embedding) return null;
+              return {
+                embedding,
+                provider: generated.provider,
+                model: generated.model,
+                runtime: generated.runtime,
+                ...(generated.spaceKey ? { spaceKey: generated.spaceKey } : {})
+              };
+            }
+          : null,
+        signal,
+        warn: (error) => this.options.logger?.warn(normalizeWorkerError(error))
       });
       if (recomposed.length) await this.options.topicHooks?.sourcesChanged(recomposed);
       await runs.completeStage(ingestionRunId, "embedding", {

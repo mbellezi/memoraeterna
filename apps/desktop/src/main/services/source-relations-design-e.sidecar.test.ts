@@ -33,7 +33,8 @@ import {
 } from "@app/db";
 
 import { aggregateSourceEmbedding } from "./job-supervisor.js";
-import { refreshAncestorComposites } from "./source-composite.js";
+import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
+import { hierarchyRootComposite, refreshAncestorComposites } from "./source-composite.js";
 import { matchSources } from "./source-relation-processing.js";
 
 // Design E (F3 D27) against a real database: promotion of typed applied note relations (majority
@@ -942,5 +943,87 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       })
     ).toEqual([]);
     expect(embed).toHaveBeenCalledTimes(calls);
+  });
+
+  it("builds a book's composite once its last chapter embeds, embedding its header once", async () => {
+    const space = `space-${randomUUID()}`;
+    const book = await work("Two chapter book", undefined, "Book");
+    const one = await work("First chapter", book.id, "BookChapter");
+    const two = await work("Second chapter", book.id, "BookChapter");
+    const plain = await work("A plain paper");
+    const embed = vi.fn(async () => ({
+      embedding: unit(7),
+      provider: "test",
+      model: "test-256",
+      runtime: "local",
+      spaceKey: space
+    }));
+    const refresh = (sourceItemId: string) =>
+      refreshAncestorComposites({
+        pool: db(),
+        sourceItemId,
+        embed,
+        aggregate: aggregateSourceEmbedding
+      });
+    const compositeSpace = {
+      model: "test-256",
+      dimensions: 256 as const,
+      strategy: `source-composite-centroid-v2:${space}`
+    };
+    // What the root's own embedding stage does: it embeds a header only to build the composite.
+    const stage = async (id: string) =>
+      hierarchyRootComposite({
+        pool: db(),
+        sourceItemId: id,
+        header: buildCatalogMetadataMarkdown(
+          (await createSourceItemRepository(db()).findById(id))!
+        ),
+        space: compositeSpace
+      });
+    expect(await stage(plain.id)).toBe("none");
+    expect(await stage(book.id)).toBe("incomplete");
+    await composite(one.id, unit(4), space);
+    // The first chapter: the book still waits for the second, so nothing is embedded.
+    expect(await refresh(one.id)).toEqual([]);
+    expect(embed).not.toHaveBeenCalled();
+    expect(await stage(book.id)).toBe("incomplete");
+    await composite(two.id, unit(5), space);
+    expect(await refresh(two.id)).toEqual([book.id]);
+    const headerSegments = embed.mock.calls.length;
+    expect(headerSegments).toBeGreaterThan(0);
+    // The root's stage then finds it current; a refresh again changes nothing.
+    expect(await stage(book.id)).toBe("current");
+    expect(await refresh(one.id)).toEqual([]);
+    expect(embed).toHaveBeenCalledTimes(headerSegments);
+    // A chapter embedded again with other content makes the book's composite stale.
+    await composite(one.id, unit(6), space);
+    expect(await stage(book.id)).toBe("stale");
+    // A failure on the book is reported and never thrown with `warn`; a cancellation is.
+    const warn = vi.fn();
+    const failing = vi.fn(async () => {
+      throw new Error("cassette miss");
+    });
+    expect(
+      await refreshAncestorComposites({
+        pool: db(),
+        sourceItemId: one.id,
+        embed: failing,
+        aggregate: aggregateSourceEmbedding,
+        warn
+      })
+    ).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ message: "cassette miss" }));
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      refreshAncestorComposites({
+        pool: db(),
+        sourceItemId: one.id,
+        embed: failing,
+        aggregate: aggregateSourceEmbedding,
+        signal: controller.signal,
+        warn
+      })
+    ).rejects.toThrow("cassette miss");
   });
 });
