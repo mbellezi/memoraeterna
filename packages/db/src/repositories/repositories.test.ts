@@ -1209,7 +1209,8 @@ describe("repositories", () => {
   });
 
   it("retrieves atomic-note text and vector rankings independently", async () => {
-    const db = new FakeQueryable([[], [], []]);
+    // The vector query first sets the HNSW scan settings for its transaction.
+    const db = new FakeQueryable([[], [], [], []]);
     const notes = createAtomicNoteRepository(db);
 
     await notes.findTextMatchingCandidates({ noteId: "note-1", limit: 30 });
@@ -1225,9 +1226,10 @@ describe("repositories", () => {
     });
 
     expect(db.queries[0]?.text).toContain('order by "textScore" desc');
-    expect(db.queries[1]?.text).toContain('order by "vectorScore" desc');
-    expect(db.queries[1]?.text).toContain("join embeddings_256");
-    expect(db.queries[2]?.text).toContain("candidate.id = any($2::uuid[])");
+    expect(db.queries[1]?.text).toContain("hnsw.iterative_scan");
+    expect(db.queries[2]?.text).toContain('order by "vectorScore" desc');
+    expect(db.queries[2]?.text).toContain("from embeddings_256 e");
+    expect(db.queries[3]?.text).toContain("candidate.id = any($2::uuid[])");
   });
 
   it("persists per-batch ingestion progress without replacing the stage checkpoint", async () => {

@@ -4,8 +4,17 @@ import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 import { createJobRepository } from "./jobRepository.js";
+import {
+  noteCandidateColumns,
+  noteTextCandidatesStatement,
+  noteVectorCandidatesStatement,
+  withVectorScanSettings
+} from "./noteRetrievalSql.js";
+import type { NoteTextCandidatesInput, NoteVectorCandidatesInput } from "./noteRetrievalSql.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { AtomicNoteRecord, AtomicNoteStatus, JsonObject, Queryable } from "./types.js";
+
+export * from "./noteRetrievalSql.js";
 
 interface AtomicNoteRow extends QueryResultRow {
   id: string;
@@ -73,7 +82,7 @@ export interface CreateGeneratedAtomicNoteInput {
   metadata?: JsonObject;
 }
 
-const returning = `coalesce(to_jsonb(atomic_notes)->>'ownership','source') as ownership, id, generation_id as "generationId", supersession_status as "supersessionStatus",
+const returning = `ownership, id, generation_id as "generationId", supersession_status as "supersessionStatus",
   title, body_markdown as "bodyMarkdown", idea_statement as "ideaStatement",
   language, status, created_from_source_item_id as "createdFromSourceItemId",
   source_span_id as "sourceSpanId", evidence_chunk_id as "evidenceChunkId",
@@ -82,22 +91,6 @@ const returning = `coalesce(to_jsonb(atomic_notes)->>'ownership','source') as ow
   generation_runtime as "generationRuntime", generation_prompt_version as "generationPromptVersion",
   generation_key as "generationKey", metadata, reviewed_at as "reviewedAt",
   created_at as "createdAt", updated_at as "updatedAt"`;
-
-const candidateReturning = `coalesce(to_jsonb(candidate)->>'ownership','source') as ownership, candidate.id, candidate.generation_id as "generationId",
-  candidate.supersession_status as "supersessionStatus", candidate.title,
-  candidate.body_markdown as "bodyMarkdown", candidate.idea_statement as "ideaStatement",
-  candidate.language, candidate.status,
-  candidate.created_from_source_item_id as "createdFromSourceItemId",
-  candidate.source_span_id as "sourceSpanId", candidate.evidence_chunk_id as "evidenceChunkId",
-  candidate.generation_profile_id as "generationProfileId",
-  candidate.ai_task_run_id as "aiTaskRunId",
-  candidate.generation_provider as "generationProvider",
-  candidate.generation_model as "generationModel",
-  candidate.generation_runtime as "generationRuntime",
-  candidate.generation_prompt_version as "generationPromptVersion",
-  candidate.generation_key as "generationKey", candidate.metadata,
-  candidate.reviewed_at as "reviewedAt", candidate.created_at as "createdAt",
-  candidate.updated_at as "updatedAt"`;
 
 function mapNote(row: AtomicNoteRow): AtomicNoteRecord {
   return {
@@ -142,7 +135,7 @@ export function createAtomicNoteRepository(db: Queryable) {
              generation_runtime = excluded.generation_runtime,
              metadata = excluded.metadata,
              updated_at = now()
-           where coalesce(to_jsonb(atomic_notes)->>'ownership','source')='source'
+           where atomic_notes.ownership = 'source'
              and atomic_notes.status::text in ('active', 'pending_review')
              and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
            returning ${returning}`,
@@ -365,27 +358,13 @@ export function createAtomicNoteRepository(db: Queryable) {
       return row ? mapNote(row) : null;
     },
 
-    async findTextMatchingCandidates(input: {
-      noteId: string;
-      limit?: number;
-    }): Promise<AtomicNoteCandidateRecord[]> {
+    async findTextMatchingCandidates(
+      input: NoteTextCandidatesInput
+    ): Promise<AtomicNoteCandidateRecord[]> {
+      const statement = noteTextCandidatesStatement(input);
       const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
-        `select ${candidateReturning},
-                least(1, greatest(
-                  similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
-                  similarity(unaccent(candidate.title), unaccent(source.title)),
-                  ts_rank_cd(
-                    to_tsvector('simple', unaccent(candidate.title || ' ' || candidate.idea_statement || ' ' || candidate.body_markdown)),
-                    plainto_tsquery('simple', unaccent(source.idea_statement))
-                  )
-                )) as "textScore",
-                0::double precision as "vectorScore"
-         from atomic_notes source
-         join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
-         where source.id = $1
-         order by "textScore" desc, candidate.title, candidate.idea_statement, candidate.id
-         limit $2`,
-        [input.noteId, input.limit ?? 30]
+        statement.text,
+        statement.values
       );
       return result.rows.map((row) => ({
         note: mapNote(row),
@@ -394,40 +373,15 @@ export function createAtomicNoteRepository(db: Queryable) {
       }));
     },
 
-    async findVectorMatchingCandidates(input: {
-      noteId: string;
-      embedding: number[];
-      embeddingModel?: string;
-      embeddingSpaceKey?: string | undefined;
-      embeddingProvider?: string | undefined;
-      embeddingRuntime?: string | undefined;
-      limit?: number;
-    }): Promise<AtomicNoteCandidateRecord[]> {
-      const dimensions = input.embedding.length;
-      if (dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
-        throw new Error(`Unsupported embedding dimension: ${dimensions}`);
-      }
-      const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
-        `select ${candidateReturning},
-                0::double precision as "textScore",
-                coalesce(greatest(0, 1 - (e.embedding <=> $2::vector)), 0) as "vectorScore"
-         from atomic_notes source
-         join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
-         join embeddings_${dimensions} e
-           on e.target_type = 'atomic_note' and e.target_id = candidate.id
-          and ($3::text is null or e.model = $3) and e.strategy='native-v2:' || $5::text and e.provider=$6 and e.runtime=$7
-         where source.id = $1
-         order by "vectorScore" desc, candidate.title, candidate.idea_statement, candidate.id
-         limit $4`,
-        [
-          input.noteId,
-          `[${input.embedding.join(",")}]`,
-          input.embeddingModel ?? null,
-          input.limit ?? 30,
-          input.embeddingSpaceKey ?? null,
-          input.embeddingProvider ?? null,
-          input.embeddingRuntime ?? null
-        ]
+    async findVectorMatchingCandidates(
+      input: NoteVectorCandidatesInput
+    ): Promise<AtomicNoteCandidateRecord[]> {
+      const statement = noteVectorCandidatesStatement(input);
+      const result = await withVectorScanSettings(db, (connection) =>
+        connection.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
+          statement.text,
+          statement.values
+        )
       );
       return result.rows.map((row) => ({
         note: mapNote(row),
@@ -467,7 +421,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       const result = await db.query<
         AtomicNoteRow & { textScore: number; vectorScore: number; hasVector: boolean }
       >(
-        `select ${candidateReturning},
+        `select ${noteCandidateColumns},
                 least(1, greatest(
                   similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
                   similarity(unaccent(candidate.title), unaccent(source.title)),
@@ -529,7 +483,7 @@ export function createAtomicNoteRepository(db: Queryable) {
         ? "coalesce(greatest(0, 1 - (e.embedding <=> $2::vector)), 0)"
         : "0::double precision";
       const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
-        `select ${candidateReturning},
+        `select ${noteCandidateColumns},
                 least(1, greatest(
                   similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
                   similarity(unaccent(candidate.title), unaccent(source.title)),

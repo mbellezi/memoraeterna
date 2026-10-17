@@ -11,6 +11,7 @@ export default defineConfig({
       "scripts/kpi/**/*.test.ts",
       "scripts/db/**/*.test.ts",
       "scripts/golden/**/*.test.ts",
+      "scripts/relations/**/*.test.ts",
       "scripts/topics/**/*.test.ts"
     ],
     coverage: {

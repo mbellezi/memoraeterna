@@ -104,7 +104,8 @@ describe("baseline seed", () => {
       "0054_topic_overviews",
       "0055_placement_fallback_none",
       "0056_relations_v2",
-      "0057_ai_task_run_lanes"
+      "0057_ai_task_run_lanes",
+      "0058_relation_retrieval_indexes"
     ]);
   });
 
@@ -180,7 +181,8 @@ describe("baseline seed", () => {
         "0054_topic_overviews",
         "0055_placement_fallback_none",
         "0056_relations_v2",
-        "0057_ai_task_run_lanes"
+        "0057_ai_task_run_lanes",
+        "0058_relation_retrieval_indexes"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

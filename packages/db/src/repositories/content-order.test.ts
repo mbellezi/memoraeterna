@@ -45,7 +45,8 @@ describe("content-stable query order", () => {
       limit: 5
     });
     await notes.findMatchingCandidates({ noteId: "note", limit: 5 });
-    const [inputs, text, vector, general] = pool.queries;
+    // The vector query sets the HNSW scan settings for its transaction first.
+    const [inputs, text, , vector, general] = pool.queries;
     expect(inputs).toContain("array_agg(l.chunk_id::text order by c.chunk_index nulls last");
     expect(inputs).toContain("order by n.created_at, n.title, n.idea_statement, n.id");
     expect(text).toContain(

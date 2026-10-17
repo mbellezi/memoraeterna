@@ -365,9 +365,11 @@ try {
   );
 
   // Active notes take part in matching next to the legacy and reviewed ones; discarded ones do not.
+  // Text candidates share a selective term with the note (their titles are the state names), so
+  // this one names the states it must be matched with.
   const stillActive = await notes.upsertGenerated({
     title: "Another active note",
-    bodyMarkdown: "Retrieval practice improves retention.",
+    bodyMarkdown: "Retrieval practice improves retention. approved protectedEdit auditedEdit",
     ideaStatement: "Retrieval practice improves retention.",
     sourceItemId: source.id,
     evidenceChunkId: chunkId,

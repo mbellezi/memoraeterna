@@ -1,4 +1,5 @@
 import { relations, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import {
   bigint,
   bigserial,
@@ -37,6 +38,10 @@ const vector1024 = customType<{ data: string }>({
 
 const bytea = customType<{ data: Buffer }>({
   dataType: () => "bytea"
+});
+
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector"
 });
 
 export const sourceItemType = pgEnum("source_item_type", [
@@ -1586,6 +1591,14 @@ export const atomicNotes = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    // Full-text document of a note for relation retrieval (F3 D28): title and idea weigh A, the
+    // first 4,000 body characters B. The 'simple' configuration keeps every language alike and
+    // f_unaccent (migration 0053) makes the expression immutable, so the column can be generated.
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      (): SQL => sql`setweight(to_tsvector('simple', f_unaccent(coalesce(${atomicNotes.title}, ''))), 'A') ||
+        setweight(to_tsvector('simple', f_unaccent(coalesce(${atomicNotes.ideaStatement}, ''))), 'A') ||
+        setweight(to_tsvector('simple', f_unaccent(left(coalesce(${atomicNotes.bodyMarkdown}, ''), 4000))), 'B')`
+    ),
     ...timestamps
   },
   (table) => ({
@@ -1595,6 +1608,11 @@ export const atomicNotes = pgTable(
       table.createdFromSourceItemId,
       table.generationId,
       table.generationKey
+    ),
+    searchTsvIdx: index("atomic_notes_search_tsv_idx").using("gin", table.searchTsv),
+    titleTrgmIdx: index("atomic_notes_title_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(${table.title}) gin_trgm_ops`
     )
   })
 );
@@ -2167,7 +2185,12 @@ export const embeddings256 = pgTable(
       table.targetId,
       table.model
     ),
-    chunkIdx: index("embeddings_256_chunk_id_idx").on(table.chunkId)
+    chunkIdx: index("embeddings_256_chunk_id_idx").on(table.chunkId),
+    // Note retrieval (F3 D28): the ANN query orders by the raw distance, so the partial index
+    // serves it. The global HNSW index of migration 0001 stays for the other targets.
+    noteHnswIdx: index("embeddings_256_note_hnsw_idx")
+      .using("hnsw", table.embedding.op("vector_cosine_ops"))
+      .where(sql`${table.targetType} = 'atomic_note'`)
   })
 );
 
@@ -2180,7 +2203,12 @@ export const embeddings768 = pgTable(
       table.targetId,
       table.model
     ),
-    chunkIdx: index("embeddings_768_chunk_id_idx").on(table.chunkId)
+    chunkIdx: index("embeddings_768_chunk_id_idx").on(table.chunkId),
+    // Note retrieval (F3 D28): the ANN query orders by the raw distance, so the partial index
+    // serves it. The global HNSW index of migration 0001 stays for the other targets.
+    noteHnswIdx: index("embeddings_768_note_hnsw_idx")
+      .using("hnsw", table.embedding.op("vector_cosine_ops"))
+      .where(sql`${table.targetType} = 'atomic_note'`)
   })
 );
 
@@ -2193,7 +2221,12 @@ export const embeddings1024 = pgTable(
       table.targetId,
       table.model
     ),
-    chunkIdx: index("embeddings_1024_chunk_id_idx").on(table.chunkId)
+    chunkIdx: index("embeddings_1024_chunk_id_idx").on(table.chunkId),
+    // Note retrieval (F3 D28): the ANN query orders by the raw distance, so the partial index
+    // serves it. The global HNSW index of migration 0008 stays for the other targets.
+    noteHnswIdx: index("embeddings_1024_note_hnsw_idx")
+      .using("hnsw", table.embedding.op("vector_cosine_ops"))
+      .where(sql`${table.targetType} = 'atomic_note'`)
   })
 );
 
