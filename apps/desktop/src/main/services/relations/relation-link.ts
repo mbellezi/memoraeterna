@@ -330,6 +330,18 @@ async function existingPairKeys(
   return new Set(existing.rows.map((row) => row.key));
 }
 
+/** The keys of the pairs a typer `none` vetoed already (a `vetoed` event with no relation, D20). */
+async function vetoedPairKeys(db: Queryable, keys: readonly string[]): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const vetoed = await db.query<{ key: string }>(
+    `select distinct pair_key as key from relation_events
+     where relation_kind = 'note' and kind = 'vetoed' and relation_id is null
+       and pair_key = any($1::text[])`,
+    [[...keys]]
+  );
+  return new Set(vetoed.rows.map((row) => row.key));
+}
+
 interface UntypedRow {
   id: string;
   lo: string;
@@ -840,6 +852,19 @@ export class RelationLinker {
         [[...input.pending.map((item) => item.key), ...input.retypes.map((item) => item.key)]]
       );
       const taken = await existingPairKeys(client, input.pending);
+      // A `none` read from the typing cache vetoes too: a pair another job typed while coalescing
+      // it, or this job's retry after its commit failed. Each veto gets its event once (D14, D20).
+      const vetoed = await vetoedPairKeys(
+        client,
+        input.pending
+          .filter(
+            (item) =>
+              !taken.has(item.key) &&
+              !item.pair.relationType &&
+              input.typing.typings.get(item.key)?.outcome.kind === "none"
+          )
+          .map((item) => item.key)
+      );
       for (const item of input.pending) {
         if (taken.has(item.key)) continue;
         const typing = input.typing.typings.get(item.key);
@@ -869,7 +894,8 @@ export class RelationLinker {
           );
         } else if (typing?.outcome.kind === "none") {
           // The typer's veto: no relation; its typing row stays, so nobody asks again (D20).
-          if (typing.outcome.origin === "model") {
+          if (!vetoed.has(item.key)) {
+            vetoed.add(item.key);
             await events.append(
               {
                 runId: run.id,

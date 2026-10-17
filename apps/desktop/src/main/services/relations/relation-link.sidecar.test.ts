@@ -399,6 +399,43 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     expect(typings.rows).toEqual([{ relation_type: "none" }]);
   });
 
+  it("records the vetoed event of a none read from the typing cache, once per pair", async () => {
+    // Coalescing: Rho's small job types Upsilon's pending pair, which the typer vetoes.
+    const a = await seedSource("Rho");
+    const b = await seedSource("Upsilon");
+    const r1 = await seedNote(a, "Rho one");
+    const r2 = await seedNote(a, "Rho two");
+    const u1 = await seedNote(b, "Upsilon one");
+    const u2 = await seedNote(b, "Unrelated upsilon");
+    await park(a.sourceId, a.sourceId, [decided(r1, [{ with: r2 }])]);
+    await park(b.sourceId, b.sourceId, [decided(u1, [{ with: u2 }])]);
+    const product = linker({ ai: writer({ veto: "Unrelated" }) });
+    await product.instance.link(await claim(a.sourceId), signal());
+    expect(product.ai).toHaveBeenCalledOnce();
+    expect((await events()).map((event) => event.kind)).toEqual(["applied"]);
+    // Upsilon's own job reads the veto from the cache, with no call, and records it.
+    const upsilon = await product.instance.link(await claim(b.sourceId), signal());
+    expect(product.ai).toHaveBeenCalledOnce();
+    expect(upsilon).toMatchObject({ typingCalls: 0, typingCacheHits: 1, vetoed: 1 });
+    expect(await events()).toEqual([
+      { kind: "applied", relationId: expect.any(String), runKind: "link" },
+      { kind: "vetoed", relationId: null, runKind: "link" }
+    ]);
+
+    // A retry after a commit that failed: the typing row survived, the events did not.
+    await pool!.query(`delete from relation_events`);
+    await pool!.query(`delete from relation_match_runs`);
+    await park(b.sourceId, b.sourceId, [decided(u1, [{ with: u2 }])]);
+    const retry = await product.instance.link(await claim(b.sourceId), signal());
+    expect(retry).toMatchObject({ typingCalls: 0, typingCacheHits: 1, vetoed: 1 });
+    // The pair handed on again (by its other note's run) records no second veto.
+    await park(b.sourceId, b.sourceId, [decided(u2, [{ with: u1 }])]);
+    const again = await product.instance.link(await claim(b.sourceId), signal());
+    expect(again).toMatchObject({ vetoed: 0 });
+    expect(await events()).toEqual([{ kind: "vetoed", relationId: null, runKind: "link" }]);
+    expect(await relations()).toHaveLength(1);
+  });
+
   it.each([
     ["without a writer route", { noRoute: true }],
     ["at the daily cap", { cap: 0 }],
