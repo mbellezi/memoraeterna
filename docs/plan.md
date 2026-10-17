@@ -93,6 +93,11 @@ concurrency and automatic correction.
     so no MLX embedder ships beside a GGUF default and decision 12 holds (D40, Q5). Relation labels come from the
     decision-21 panel instead of owner-labeled pairs (Q10), and a P0 call never spills to a remote lane in F3 (Q9).
 
+23. **Long waits overlap the next work** (2026-10-17): while a soak, a run of nightly KPIs or a stability window
+    runs (F3's 24 h soak, F4's 7-day soak, F6's 7 nightly runs and 2 stable weeks), work continues on the next
+    phase or on the parts of the same phase that do not depend on it. If the test fails, work stops, the fix lands
+    and the test restarts before anything advances further. A phase is closed only when its test passes.
+
 ## 3. The five swaps
 
 | Today | Target |
