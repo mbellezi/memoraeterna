@@ -78,8 +78,8 @@ accessibility, visualizations or user-visible backend messages.
   canonical identity; layout physics runs in a renderer Web Worker.
 - Graph views show context around a focus and expand on demand instead of
   defaulting to a global hairball; global views stay bounded. A relation graph
-  draws a suggestion (an automatic relation nobody kept) dashed and softer than
-  a kept one, and an arrow only for a directed relation type.
+  draws a suggestion (suggest band, not kept) dashed and softer than an applied
+  or kept one, and an arrow only for a directed relation type.
 - Renderers, workers, listeners and animation frames are disposed when a view
   unmounts; teardown is idempotent. They are rebuilt only when their data or
   mode changes, never because a parent passed a new callback.

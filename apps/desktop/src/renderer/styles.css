@@ -88,6 +88,9 @@
   --color-stance-depends-on: var(--stance-depends-on);
   --color-stance-example-of: var(--stance-example-of);
   --color-stance-related: var(--stance-related);
+
+  /* The graph canvas is dark in both themes: its focus ring is its label colour (9.6:1 or more there). */
+  --color-graph-label: var(--graph-label);
 }
 
 @layer base {

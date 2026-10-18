@@ -299,4 +299,53 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
     expect(two.neighbourTotal).toBe(2);
     expect(two.truncated).toBe(false);
   });
+
+  it("never draws a note the focus is related to as a second-ring note, even one the bound left out", async () => {
+    const focus = await seedNote("Focus");
+    const near = await Promise.all(["N0", "N1", "N2", "N3"].map((title) => seedNote(title)));
+    // Past the first ring's page (limit 5 keeps four relations of the focus, three of them drawn).
+    const beyond = await seedNote("Beyond");
+    const further = await seedNote("Further");
+    for (const [n, note] of near.entries())
+      await relate(focus, note, "suggested", { probability: 0.9 - n / 20 });
+    await relate(focus, beyond, "suggested", { probability: 0.4 });
+    // Beyond is a direct relation of the focus AND the strongest relation of N0; Further is not.
+    await relate(near[0]!, beyond, "applied", { probability: 0.95 });
+    await relate(near[0]!, further, "applied", { probability: 0.3 });
+    const answer = ObjectNeighborhoodSchema.parse(
+      await service().neighborhood({ objectId: focus, depth: 2, limit: 5 })
+    );
+    expect(answer.nodes.map((node) => [node.title, node.depth])).toEqual([
+      ["Focus", 0],
+      ["N0", 1],
+      ["N1", 1],
+      ["N2", 1],
+      ["Further", 2]
+    ]);
+    // Every depth-2 note is two steps away: none has a relation of its own to the focus.
+    const ring = new Set(answer.nodes.filter((node) => node.depth === 2).map((node) => node.id));
+    for (const edge of answer.edges) expect(ring.has(edge.lo) && edge.hi === focus).toBe(false);
+    for (const edge of answer.edges) expect(ring.has(edge.hi) && edge.lo === focus).toBe(false);
+  });
+
+  it("does not let first-ring notes use up a seed's second-ring slots", async () => {
+    const focus = await seedNote("Focus");
+    const seed = await seedNote("Seed");
+    await relate(focus, seed, "kept", { probability: 0.99 });
+    // The seed's twelve strongest relations are other first-ring notes; its thirteenth is new.
+    for (let n = 0; n < 12; n += 1) {
+      const sibling = await seedNote(`S${n}`);
+      await relate(focus, sibling, "suggested", { probability: 0.8 - n / 100 });
+      await relate(seed, sibling, "applied", { probability: 0.9 - n / 100 });
+    }
+    const fresh = await seedNote("Fresh");
+    await relate(seed, fresh, "applied", { probability: 0.2 });
+    const answer = ObjectNeighborhoodSchema.parse(
+      await service().neighborhood({ objectId: focus, depth: 2 })
+    );
+    const byTitle = new Map(answer.nodes.map((node) => [node.title, node.depth]));
+    expect(byTitle.get("Fresh")).toBe(2);
+    expect(byTitle.get("S0")).toBe(1);
+    expect(answer.nodes.filter((node) => node.depth === 1)).toHaveLength(13);
+  });
 });

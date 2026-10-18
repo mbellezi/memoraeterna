@@ -1102,6 +1102,49 @@ describe("suggestions in the dashboard graphs (decision 29)", () => {
     expect(graph.getEdgeAttribute("item-edge:s2:s3", "type")).toBe("line");
   });
 
+  it("tells the legend about dashed connections only when the graph draws one", () => {
+    expect(buildGraph(noteData([true, false]), t).hasSuggestedEdges).toBe(true);
+    expect(buildGraph(noteData([false, undefined]), t).hasSuggestedEdges).toBe(false);
+    expect(buildGraph(noteData([]), t).hasSuggestedEdges).toBe(false);
+    // A suggested source relation that shares its pair with a kept one is drawn solid: no dashed entry.
+    const source = (id: string) => ({
+      id,
+      kind: "source" as const,
+      title: id,
+      subtitle: null,
+      content: null,
+      sourceItemId: id,
+      sourceType: "Book" as const,
+      noteStatus: null,
+      detailCount: 0,
+      parentSourceItemId: null,
+      childCount: 0
+    });
+    const relation = (id: string, suggested: boolean) => ({
+      id,
+      source: "s1",
+      target: "s2",
+      kind: "source_relation" as const,
+      label: "supports",
+      description: null,
+      weight: 1,
+      confidence: null,
+      details: [],
+      suggested
+    });
+    const pair = (flags: boolean[]): KnowledgeGraphDashboard => ({
+      mode: "sources",
+      sourceView: "relations",
+      truncated: false,
+      nodes: [source("s1"), source("s2")],
+      edges: flags.map((flag, index) => relation(`r${index}`, flag))
+    });
+    expect(buildGraph(pair([true, true]), t).hasSuggestedEdges).toBe(true);
+    // The raw edges hold a suggestion, but the pair is solid, so there is no dash to explain.
+    expect(pair([true, false]).edges.some((edge) => edge.suggested === true)).toBe(true);
+    expect(buildGraph(pair([true, false]), t).hasSuggestedEdges).toBe(false);
+  });
+
   it("keeps the type of an edge right when the live graph is reconciled with a new answer", () => {
     const { graph } = buildGraph(noteData([true, false]), t);
     const next = buildGraph(noteData([false, false]), t).graph;

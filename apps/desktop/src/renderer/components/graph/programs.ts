@@ -1,4 +1,5 @@
 import {
+  type EdgeProgramType,
   EdgeRectangleProgram,
   NodeCircleProgram,
   createEdgeArrowHeadProgram,
@@ -52,33 +53,44 @@ export class GraphEdgeProgram<
   }
 }
 
-export function createGraphArrowProgram(options: {
+interface ArrowOptions {
   lengthToThicknessRatio: number;
   widenessToThicknessRatio: number;
-}): ReturnType<typeof createEdgeCompoundProgram> {
+}
+
+/** An arrow head, whose colour is premultiplied like every other program of the graph. */
+export function graphArrowHead(options: ArrowOptions): EdgeProgramType {
+  const Head = createEdgeArrowHeadProgram(options) as typeof EdgeRectangleProgram;
+  return class extends Head {
+    override getDefinition() {
+      const definition = super.getDefinition();
+      return {
+        ...definition,
+        VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
+      };
+    }
+  };
+}
+
+/** The shaft of an arrow (Sigma's clamped line, stopping at the head), premultiplied. */
+export function graphArrowShaft(options: ArrowOptions): EdgeProgramType {
   // Sigma's factory type erases the concrete EdgeProgram methods.
   const Shaft = createEdgeClampedProgram(options) as typeof EdgeRectangleProgram;
-  const Head = createEdgeArrowHeadProgram(options) as typeof EdgeRectangleProgram;
-  return createEdgeCompoundProgram([
-    class extends Shaft {
-      override getDefinition() {
-        const definition = super.getDefinition();
-        return {
-          ...definition,
-          VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
-        };
-      }
-    },
-    class extends Head {
-      override getDefinition() {
-        const definition = super.getDefinition();
-        return {
-          ...definition,
-          VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
-        };
-      }
+  return class extends Shaft {
+    override getDefinition() {
+      const definition = super.getDefinition();
+      return {
+        ...definition,
+        VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
+      };
     }
-  ]);
+  };
+}
+
+export function createGraphArrowProgram(
+  options: ArrowOptions
+): ReturnType<typeof createEdgeCompoundProgram> {
+  return createEdgeCompoundProgram([graphArrowShaft(options), graphArrowHead(options)]);
 }
 
 /** The uniforms the dash needs, besides the ones of the program it extends. */
@@ -171,36 +183,24 @@ export class GraphDashedEdgeProgram<
   }
 }
 
-/** A dashed shaft with the solid arrow head: a suggested relation that reads in one direction. */
-export function createGraphDashedArrowProgram(options: {
-  lengthToThicknessRatio: number;
-  widenessToThicknessRatio: number;
-}): ReturnType<typeof createEdgeCompoundProgram> {
-  const Shaft = createEdgeClampedProgram(options) as typeof EdgeRectangleProgram;
-  const Head = createEdgeArrowHeadProgram(options) as typeof EdgeRectangleProgram;
-  return createEdgeCompoundProgram([
-    class extends Shaft {
-      override getDefinition() {
-        const definition = super.getDefinition();
-        return dashedShaderDefinition({
-          ...definition,
-          VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
-        });
-      }
-
-      override setUniforms(...args: Parameters<Uniforms>): void {
-        super.setUniforms(...args);
-        setDashUniforms(...args);
-      }
-    },
-    class extends Head {
-      override getDefinition() {
-        const definition = super.getDefinition();
-        return {
-          ...definition,
-          VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE)
-        };
-      }
+/** The shaft of an arrow cut into dashes: the clamped shaft with the dash of `dashedShaderDefinition`. */
+export function graphDashedArrowShaft(options: ArrowOptions): EdgeProgramType {
+  const Shaft = graphArrowShaft(options) as typeof EdgeRectangleProgram;
+  return class extends Shaft {
+    override getDefinition() {
+      return dashedShaderDefinition(super.getDefinition());
     }
-  ]);
+
+    override setUniforms(...args: Parameters<Uniforms>): void {
+      super.setUniforms(...args);
+      setDashUniforms(...args);
+    }
+  };
+}
+
+/** A dashed shaft with the solid arrow head: a suggested relation that reads in one direction. */
+export function createGraphDashedArrowProgram(
+  options: ArrowOptions
+): ReturnType<typeof createEdgeCompoundProgram> {
+  return createEdgeCompoundProgram([graphDashedArrowShaft(options), graphArrowHead(options)]);
 }

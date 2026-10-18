@@ -181,6 +181,8 @@ interface GraphBundle {
   graph: Graph<NodeAttributes, EdgeAttributes>;
   rawNodeKeys: string[];
   itemEdgeCount: number;
+  /** Whether any connection is drawn dashed (decision 29), which the legend explains. */
+  hasSuggestedEdges: boolean;
   stateKey: string;
   hierarchyGroups: Array<{ root: string; children: string[]; title: string }>;
 }
@@ -1709,9 +1711,9 @@ export function KnowledgeGraphDashboard({
                     </li>
                   ))}
                 </ul>
-                {data.edges.some((edge) => edge.suggested === true) ? (
+                {bundle?.hasSuggestedEdges ? (
                   <section aria-label={t("knowledgeGraph.relationLegend.lines")}>
-                    <h4 className="mb-1.5 mt-3 border-t border-white/10 pt-2 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
+                    <h4 className="mb-1.5 mt-3 border-t border-border-strong pt-2 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
                       {t("knowledgeGraph.relationLegend.lines")}
                     </h4>
                     <ul className="grid gap-1.5 text-xs">
@@ -3145,8 +3147,16 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
         Math.min(5, Math.log2(graph.getNodeAttribute(node, "childCount") + 1) * 1.5)
     );
   }
+  const hasSuggestedEdges = preparedEdges.some((edge) => edge.suggested);
   if (rawNodeKeys.length === 0) {
-    return { graph, rawNodeKeys, itemEdgeCount: preparedEdges.length, stateKey, hierarchyGroups };
+    return {
+      graph,
+      rawNodeKeys,
+      itemEdgeCount: preparedEdges.length,
+      hasSuggestedEdges,
+      stateKey,
+      hierarchyGroups
+    };
   }
 
   const interactionEdges = graph
@@ -3177,6 +3187,7 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
     graph,
     rawNodeKeys,
     itemEdgeCount: preparedEdges.length,
+    hasSuggestedEdges,
     stateKey,
     hierarchyGroups
   };

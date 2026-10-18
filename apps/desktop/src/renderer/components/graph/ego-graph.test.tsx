@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { ObjectNeighborhood } from "@app/domain";
 import { createTranslator, supportedLanguageCodes, type Translator } from "@app/i18n";
 
-import { EgoGraphBody, type Load } from "./EgoGraph";
+import { EgoGraphBody } from "./EgoGraph";
+import type { Load, Reread } from "./ego-graph-reads";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const node = (n: number, depth: 0 | 1 | 2) => ({
@@ -43,14 +44,21 @@ const answer = (overrides: Partial<ObjectNeighborhood> = {}): ObjectNeighborhood
 });
 
 const noop = () => undefined;
-function render(load: Load, t: Translator = createTranslator("en")): string {
+function render(
+  load: Load,
+  t: Translator = createTranslator("en"),
+  reread: Reread = "idle"
+): string {
   return renderToString(
     <EgoGraphBody
       t={t}
       load={load}
+      reread={reread}
       onDepth={noop}
       onRetry={noop}
+      onRetryReread={noop}
       onOpenNote={noop}
+      onUnavailable={noop}
       onShowList={noop}
     />
   ).replaceAll("<!-- -->", "");
@@ -85,7 +93,7 @@ describe("the relation graph states", () => {
     expect(html).toContain('role="application"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain(
-      'aria-label="Relation graph: 3 notes and 2 relations. Drag the background to pan; the List has the same relations as text."'
+      'aria-label="Relation graph: 3 notes and 2 relations. Drag the background to pan; the List shows this note&#x27;s relations as text."'
     );
     expect(text(html)).toContain("3 notes · 2 relations");
     expect(text(html)).toContain("Keyboard: Tab to the graph");
@@ -102,6 +110,39 @@ describe("the relation graph states", () => {
     // The toggle says what is drawn: a graph of depth 2 is pressed.
     expect(render(ready(answer({ depth: 2 })))).toContain('aria-pressed="true"');
     expect(text(render(ready()))).toContain("Include the relations of related notes");
+  });
+});
+
+describe("a read made while the graph is shown", () => {
+  const toggle = (html: string) => /<button[^>]*aria-pressed[^>]*>/u.exec(html)?.[0] ?? "";
+
+  it("marks the toggle busy while the depth the person asked for is read, and never otherwise", () => {
+    expect(toggle(render(ready(), createTranslator("en"), "pending"))).toContain(
+      'aria-busy="true"'
+    );
+    for (const reread of ["idle", "failed"] as const)
+      expect(toggle(render(ready(), createTranslator("en"), reread))).not.toContain("aria-busy");
+  });
+
+  it("keeps the last graph, says the read failed and offers it again after a failed reread", () => {
+    const html = render(ready(), createTranslator("en"), "failed");
+    // The toggle still says what is drawn (depth 1) and can be pressed again.
+    expect(toggle(html)).toContain('aria-pressed="false"');
+    expect(toggle(html)).not.toMatch(/\sdisabled[=\s>]/u);
+    expect(html).toContain('role="application"');
+    const notice = /<div role="status"[^>]*>(?:(?!<\/div>).)*<\/div>/u.exec(html)?.[0] ?? "";
+    expect(text(notice)).toContain(
+      "The graph could not be updated, so it still shows the last relations it read."
+    );
+    expect(notice).toContain(">Retry<");
+    expect(text(render(ready()))).not.toContain("could not be updated");
+  });
+
+  it("says when relations among the notes were left out of the drawing", () => {
+    const many = Array.from({ length: 130 }, (_, n) => edge(n + 10, 2, 3, { id: id(500 + n) }));
+    const html = render(ready(answer({ edges: [edge(1, 1, 2), ...many] })));
+    expect(text(html)).toContain("Relations between these notes that are not drawn: 11.");
+    expect(text(render(ready()))).not.toContain("not drawn");
   });
 });
 
@@ -163,9 +204,19 @@ describe("the relation graph in every interface language", () => {
         ready(answer({ neighbourTotal: 50, truncated: true })),
         ready(answer({ nodes: [node(1, 0)], edges: [] }))
       ]) {
-        const visible = text(render(load, t));
-        expect(visible, locale).not.toMatch(/notePage\.|knowledgeGraph\.|shell\.|\{[a-z]+\}/u);
+        for (const reread of ["idle", "failed"] as const) {
+          const visible = text(render(load, t, reread));
+          expect(visible, locale).not.toMatch(/notePage\.|knowledgeGraph\.|shell\.|\{[a-z]+\}/u);
+        }
       }
+      // The notice, the omitted-relations line and the lost-context message are written in each language.
+      const many = Array.from({ length: 130 }, (_, n) => edge(n + 10, 2, 3, { id: id(500 + n) }));
+      const wide = text(render(ready(answer({ edges: [edge(1, 1, 2), ...many] })), t, "failed"));
+      expect(wide, locale).not.toMatch(/notePage\.|knowledgeGraph\.|shell\.|\{[a-z]+\}/u);
+      for (const key of ["rereadError", "contextLost", "omitted", "label"] as const)
+        expect(
+          t(`notePage.graph.${key}`, { values: { count: 1, notes: 2, relations: 3 } })
+        ).not.toBe(`notePage.graph.${key}`);
     }
   });
 });

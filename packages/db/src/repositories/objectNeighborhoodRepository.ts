@@ -114,7 +114,8 @@ select (select jsonb_build_object('id', s.id, 'title', s.title, 'ideaStatement',
  * $1 the focus, $2 the seeds (depth-1 notes, strongest first), $3 relations of a seed read by their
  * stored rank (state only), $4 candidates kept per seed. The state pre-filter and the ranking use
  * the stored columns, so a hub neighbour costs one bounded read; the full predicate (both
- * endpoints current) then decides which of those are drawn.
+ * endpoints current) then decides which of those are drawn. Notes the focus is related to are not
+ * candidates: they are first-ring notes whatever page of the focus's relations they fall on.
  */
 const secondRingSql = `
 select seed.ord::int as "seedRank", c.probability, c.final_score as "finalScore",
@@ -137,6 +138,15 @@ select seed.ord::int as "seedRank", c.probability, c.final_score as "finalScore"
                            then x.target_atomic_note_id else x.source_atomic_note_id end
          limit 1) o
      where o.id <> $1::uuid and ${shownNoteRelationSql("x", ["sn", other])}
+       -- A note the focus itself has a shown relation with is a depth-1 note, or one the bound left
+       -- out of the first ring; never a second-ring one. Excluded here (one lookup by the unique
+       -- pair index), before the per-seed limit, so those notes do not use up a seed's slots.
+       and not exists (
+         select 1 from atomic_note_relations f
+           join atomic_notes fn on fn.id = $1::uuid
+          where f.source_atomic_note_id = least($1::uuid, o.id)
+            and f.target_atomic_note_id = greatest($1::uuid, o.id)
+            and ${shownNoteRelationSql("f", ["fn", other])})
      order by x.probability desc nulls last, x.final_score desc, x.id
      limit $4::int) c
  order by seed.ord, c.probability desc nulls last, c.final_score desc, c.id`;

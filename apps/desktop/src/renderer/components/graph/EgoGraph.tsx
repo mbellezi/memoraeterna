@@ -3,6 +3,7 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode
@@ -16,7 +17,15 @@ import { cn } from "../../lib/cn";
 import { useStableCallback } from "../../lib/stable-callback";
 import { RelationStanceLabel } from "../RelationStanceLabel";
 import { Button } from "../ui/button";
-import { createDisposer, disposeConnectionGraphRenderer } from "./disposal";
+import { buildRenderer, createDisposer } from "./disposal";
+import {
+  initialReadState,
+  readKey,
+  readReducer,
+  shouldRead,
+  type Load,
+  type Reread
+} from "./ego-graph-reads";
 import {
   egoCursorItems,
   buildEgoGraphModel,
@@ -50,9 +59,6 @@ import { isWebGLAvailable } from "./webgl";
 /** The graph's own forces: a small neighbourhood wants shorter links than a whole library. */
 const egoForces = { ...defaultGraphForceSettings, linkDistance: 42, repulsion: 70 };
 
-export type Load =
-  { status: "loading" } | { status: "error" } | { status: "ready"; answer: ObjectNeighborhood };
-
 export interface EgoGraphProps {
   t: Translator;
   noteId: string;
@@ -61,7 +67,7 @@ export interface EgoGraphProps {
   /** False while the page is hidden: nothing loads. */
   active: boolean;
   onOpenNote: (noteId: string) => void;
-  /** This window cannot draw WebGL: the host shows the list instead, with a notice. */
+  /** This window cannot draw the graph (no WebGL, or the renderer would not start): the host shows the list, with a notice. */
   onUnavailable: () => void;
   onShowList: () => void;
 }
@@ -76,11 +82,8 @@ export interface EgoGraphProps {
 export function EgoGraph(props: EgoGraphProps) {
   const { t, noteId, revision, active } = props;
   const [webgl] = useState(() => isWebGLAvailable());
-  const [depth, setDepth] = useState<1 | 2>(1);
-  const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
+  const [state, dispatch] = useReducer(readReducer, initialReadState);
   const onUnavailable = useStableCallback(props.onUnavailable);
-  const answer = useRef<ObjectNeighborhood | null>(null);
 
   useEffect(() => {
     if (!webgl) onUnavailable();
@@ -88,45 +91,35 @@ export function EgoGraph(props: EgoGraphProps) {
 
   useEffect(() => {
     if (!webgl || !active) return;
+    const key = readKey(noteId, revision, state.request);
+    // A failed load stays visible and retryable: only a Retry, or another revision, reads again.
+    if (!shouldRead(state.failedKey, key)) return;
     let live = true;
-    // The graph that is shown stays until the next answer arrives: a reread never blanks it.
-    if (answer.current === null) setLoad({ status: "loading" });
+    dispatch({ type: "started" });
     window.app.objects
-      .neighborhood({ objectId: noteId, objectTypes: ["note"], depth })
-      .then((next) => {
-        if (!live) return;
-        if (!next) {
-          answer.current = null;
-          setLoad({ status: "error" });
-          return;
-        }
-        const same = answer.current && JSON.stringify(answer.current) === JSON.stringify(next);
-        answer.current = next;
-        setLoad((current) =>
-          same && current.status === "ready" ? current : { status: "ready", answer: next }
-        );
+      .neighborhood({ objectId: noteId, objectTypes: ["note"], depth: state.wanted })
+      .then((answer) => {
+        if (live) dispatch({ type: "answered", key, answer });
       })
       .catch(() => {
-        if (!live) return;
-        // A failed reread keeps the graph that is shown.
-        if (answer.current === null) setLoad({ status: "error" });
+        if (live) dispatch({ type: "failed", key });
       });
     return () => {
       live = false;
     };
-  }, [webgl, active, noteId, depth, revision, attempt]);
+  }, [webgl, active, noteId, revision, state.request, state.wanted, state.failedKey]);
 
   if (!webgl) return null;
   return (
     <EgoGraphBody
       t={t}
-      load={load}
-      onDepth={setDepth}
-      onRetry={() => {
-        answer.current = null;
-        setAttempt((value) => value + 1);
-      }}
+      load={state.load}
+      reread={state.reread}
+      onDepth={(depth) => dispatch({ type: "depth", depth })}
+      onRetry={() => dispatch({ type: "retry" })}
+      onRetryReread={() => dispatch({ type: "retryReread" })}
       onOpenNote={props.onOpenNote}
+      onUnavailable={onUnavailable}
       onShowList={props.onShowList}
     />
   );
@@ -139,16 +132,22 @@ export function EgoGraph(props: EgoGraphProps) {
 export function EgoGraphBody({
   t,
   load,
+  reread = "idle",
   onDepth,
   onRetry,
+  onRetryReread = onRetry,
   onOpenNote,
+  onUnavailable,
   onShowList
 }: {
   t: Translator;
   load: Load;
+  reread?: Reread;
   onDepth: (depth: 1 | 2) => void;
   onRetry: () => void;
+  onRetryReread?: () => void;
   onOpenNote: (noteId: string) => void;
+  onUnavailable: () => void;
   onShowList: () => void;
 }) {
   if (load.status === "loading")
@@ -173,8 +172,11 @@ export function EgoGraphBody({
       answer={load.answer}
       // The toggle says what is drawn, not what was asked for: a failed reread leaves both as they were.
       depth={load.answer.depth}
+      reread={reread}
       onDepth={onDepth}
+      onRetryReread={onRetryReread}
       onOpenNote={onOpenNote}
+      onUnavailable={onUnavailable}
       onShowList={onShowList}
     />
   );
@@ -184,20 +186,27 @@ export function EgoGraphView({
   t,
   answer,
   depth,
+  reread,
   onDepth,
+  onRetryReread,
   onOpenNote,
+  onUnavailable,
   onShowList
 }: {
   t: Translator;
   answer: ObjectNeighborhood;
   depth: 1 | 2;
+  reread: Reread;
   onDepth: (depth: 1 | 2) => void;
+  onRetryReread: () => void;
   onOpenNote: (noteId: string) => void;
+  onUnavailable: () => void;
   onShowList: () => void;
 }) {
   const model = useMemo(() => buildEgoGraphModel(answer), [answer]);
   const empty = model.nodes.length <= 1 || model.edges.length === 0;
   const hintId = useId();
+  const pending = reread === "pending";
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -205,7 +214,12 @@ export function EgoGraphView({
           type="button"
           variant="secondary"
           aria-pressed={depth === 2}
-          onClick={() => onDepth(depth === 2 ? 1 : 2)}
+          aria-busy={pending || undefined}
+          className={cn(pending && "cursor-progress")}
+          // A second press while the read is in flight would only ask for the same thing again.
+          onClick={() => {
+            if (!pending) onDepth(depth === 2 ? 1 : 2);
+          }}
         >
           {t("notePage.graph.depthTwo")}
         </Button>
@@ -218,13 +232,28 @@ export function EgoGraphView({
           {t("notePage.graph.showList")}
         </Button>
       </div>
+      {reread === "failed" ? (
+        <div role="status" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-foreground">{t("notePage.graph.rereadError")}</p>
+          <Button type="button" onClick={onRetryReread}>
+            <RefreshCw aria-hidden="true" />
+            {t("shell.actions.retry")}
+          </Button>
+        </div>
+      ) : null}
       {empty ? (
         <p role="status" className="text-sm text-muted-foreground">
           {t("notePage.graph.empty")}
         </p>
       ) : (
         <>
-          <EgoGraphCanvas t={t} model={model} hintId={hintId} onOpenNote={onOpenNote} />
+          <EgoGraphCanvas
+            t={t}
+            model={model}
+            hintId={hintId}
+            onOpenNote={onOpenNote}
+            onUnavailable={onUnavailable}
+          />
           <p id={hintId} className="text-xs text-muted-foreground">
             {t("notePage.graph.keyboardHint")}
           </p>
@@ -234,6 +263,11 @@ export function EgoGraphView({
               {t("notePage.graph.truncated", {
                 values: { shown: model.drawnNeighbours, total: model.neighbourTotal }
               })}
+            </p>
+          ) : null}
+          {model.omittedEdges > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("notePage.graph.omitted", { values: { count: model.omittedEdges } })}
             </p>
           ) : null}
         </>
@@ -292,16 +326,21 @@ function cardPlace(renderer: Sigma, x: number, y: number): { x: number; y: numbe
   return positionOverlayWithinViewport({ x, y }, cardSize, renderer.getDimensions());
 }
 
+/** Why a built graph stopped being drawn: its layout could not be calculated, or its WebGL context was lost. */
+type Failure = "layout" | "context";
+
 function EgoGraphCanvas({
   t,
   model,
   hintId,
-  onOpenNote
+  onOpenNote,
+  onUnavailable
 }: {
   t: Translator;
   model: EgoGraphModel;
   hintId: string;
   onOpenNote: (noteId: string) => void;
+  onUnavailable: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const api = useRef<{
@@ -309,12 +348,13 @@ function EgoGraphCanvas({
     zoom: (factor: number) => void;
     emphasise: (target: EgoTarget | null) => void;
   } | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
   const [retry, setRetry] = useState(0);
   const [card, setCard] = useState<CardTarget | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const openNote = useStableCallback(onOpenNote);
+  const unavailable = useStableCallback(onUnavailable);
   const items = useMemo(() => egoCursorItems(model), [model]);
   const nodesById = useMemo(() => new Map(model.nodes.map((node) => [node.id, node])), [model]);
   const edgesById = useMemo(() => new Map(model.edges.map((edge) => [edge.id, edge])), [model]);
@@ -329,19 +369,25 @@ function EgoGraphCanvas({
     return edge ? egoEdgeDescription(edge, titleOf, t) : "";
   };
 
-  // The renderer, the layout and every listener live exactly as long as the model they draw. They
-  // are released while the container is still attached, once, whatever order React cleans up in.
+  // The renderer, the layout and every listener live exactly as long as the model they draw. Each
+  // is handed to the disposer the moment it exists, so a step that throws later still releases the
+  // ones before it; they go while the container is still attached, once, whatever order React
+  // cleans up in. A renderer that cannot be built at all sends the page to its list.
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const disposer = createDisposer();
     let released = false;
-    setFailed(false);
+    let built = false;
+    setFailure(null);
     setCard(null);
     setCursor(null);
     void initialize().catch(() => {
       disposer.dispose();
-      if (!released) setFailed(true);
+      if (released) return;
+      // Before the renderer stands, there is nothing to retry into; after it, the layout is the fault.
+      if (built) setFailure("layout");
+      else unavailable();
     });
     return () => {
       released = true;
@@ -363,52 +409,72 @@ function EgoGraphCanvas({
       const reducedMotion =
         typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const renderer: Sigma = new SigmaConstructor(graph, container, {
-        allowInvalidContainer: true,
-        nodeProgramClasses: { circle: programs.GraphNodeProgram },
-        nodeHoverProgramClasses: { circle: programs.GraphNodeProgram },
-        edgeProgramClasses: {
-          line: programs.GraphEdgeProgram,
-          arrow: programs.createGraphArrowProgram(egoArrowOptions),
-          dashed: programs.GraphDashedEdgeProgram,
-          "dashed-arrow": programs.createGraphDashedArrowProgram(egoArrowOptions)
-        },
-        enableEdgeEvents: true,
-        zIndex: true,
-        labelColor: { attribute: "labelColor", color: palette.label },
-        // Sigma's hover background is white: its label is the canvas's darkest token.
-        defaultDrawNodeHover: (context, node, settings) =>
-          drawDiscNodeHover(context, node, {
-            ...settings,
-            labelColor: { color: palette.canvasEdge }
-          }),
-        ...graphTypography,
-        labelRenderedSizeThreshold: 0,
-        stagePadding: 36,
-        minCameraRatio: 0.05,
-        maxCameraRatio: 6,
-        minEdgeThickness: 1.2,
-        enableCameraRotation: false,
-        itemSizesReference: "screen",
-        hideEdgesOnMove: false,
-        hideLabelsOnMove: false,
-        nodeReducer: (node, attributes) => ({
-          ...attributes,
-          ...nodeDisplay(graph, node, target, palette)
-        }),
-        edgeReducer: (edge, attributes) => {
-          if (attributes.interactionTarget)
-            return {
+      // Sigma lays its canvases down before it builds its programs: a failure here leaves none behind.
+      const renderer: Sigma = buildRenderer(
+        container,
+        disposer,
+        () =>
+          new SigmaConstructor(graph, container, {
+            allowInvalidContainer: true,
+            nodeProgramClasses: { circle: programs.GraphNodeProgram },
+            nodeHoverProgramClasses: { circle: programs.GraphNodeProgram },
+            edgeProgramClasses: {
+              line: programs.GraphEdgeProgram,
+              arrow: programs.createGraphArrowProgram(egoArrowOptions),
+              dashed: programs.GraphDashedEdgeProgram,
+              "dashed-arrow": programs.createGraphDashedArrowProgram(egoArrowOptions)
+            },
+            enableEdgeEvents: true,
+            zIndex: true,
+            labelColor: { attribute: "labelColor", color: palette.label },
+            // Sigma's hover background is white: its label is the canvas's darkest token.
+            defaultDrawNodeHover: (context, node, settings) =>
+              drawDiscNodeHover(context, node, {
+                ...settings,
+                labelColor: { color: palette.canvasEdge }
+              }),
+            ...graphTypography,
+            labelRenderedSizeThreshold: 0,
+            stagePadding: 36,
+            minCameraRatio: 0.05,
+            maxCameraRatio: 6,
+            minEdgeThickness: 1.2,
+            enableCameraRotation: false,
+            itemSizesReference: "screen",
+            hideEdgesOnMove: false,
+            hideLabelsOnMove: false,
+            nodeReducer: (node, attributes) => ({
               ...attributes,
-              size: zoomCompensatedEdgeSize(cameraRatio, relationHitAreaScreenThickness)
-            };
-          const display = edgeDisplay(graph, edge, target, palette);
-          return {
-            ...attributes,
-            ...display,
-            size: zoomCompensatedEdgeSize(cameraRatio, display.size)
-          };
-        }
+              ...nodeDisplay(graph, node, target, palette)
+            }),
+            edgeReducer: (edge, attributes) => {
+              if (attributes.interactionTarget)
+                return {
+                  ...attributes,
+                  size: zoomCompensatedEdgeSize(cameraRatio, relationHitAreaScreenThickness)
+                };
+              const display = edgeDisplay(graph, edge, target, palette);
+              return {
+                ...attributes,
+                ...display,
+                size: zoomCompensatedEdgeSize(cameraRatio, display.size)
+              };
+            }
+          })
+      );
+      built = true;
+      // A lost context (a GPU reset, the browser's cap on contexts) leaves a canvas that draws
+      // nothing: say so, and let Retry build it again.
+      const contextLost = () => {
+        if (!disposer.disposed) setFailure("context");
+      };
+      const glLayers = ["edges", "nodes", "hoverNodes"].flatMap((id) => {
+        const layer = renderer.getCanvases()[id];
+        return layer ? [layer] : [];
+      });
+      for (const layer of glLayers) layer.addEventListener("webglcontextlost", contextLost);
+      disposer.add(() => {
+        for (const layer of glLayers) layer.removeEventListener("webglcontextlost", contextLost);
       });
       // The page scrolls under the pointer, so the wheel and a double click never reach Sigma's
       // zoom: the camera is zoomed by the buttons and fitted by the code. (Sigma's own switch for
@@ -430,6 +496,9 @@ function EgoGraphCanvas({
 
       let interacted = false;
       let fitFrame: number | null = null;
+      disposer.add(() => {
+        if (fitFrame !== null) cancelAnimationFrame(fitFrame);
+      });
       const fit = () => {
         renderer.refresh();
         const cameraState = camera.getState();
@@ -483,6 +552,7 @@ function EgoGraphCanvas({
               : null
           )
       );
+      disposer.add(() => hoverIntent.dispose());
       renderer.on("enterNode", ({ node, event }) =>
         hoverIntent.enter({ type: "node", key: node, x: event.x, y: event.y })
       );
@@ -514,12 +584,14 @@ function EgoGraphCanvas({
         renderer.resize();
         scheduleFit();
       });
+      disposer.add(() => resizeObserver.disconnect());
       resizeObserver.observe(container);
       const stopPalette = watchGraphPalette(container, (next) => {
         // A theme change repaints with the new colours; nothing is built again.
         palette = next;
         renderer.refresh();
       });
+      disposer.add(stopPalette);
 
       const layout = new KnowledgeGraphLayout(
         graph.nodes().map((id) => ({
@@ -549,9 +621,10 @@ function EgoGraphCanvas({
           scheduleFit();
         },
         () => {
-          if (!released) setFailed(true);
+          if (!released) setFailure("layout");
         }
       );
+      disposer.add(() => layout.kill());
 
       api.current = {
         fit: () => {
@@ -568,18 +641,9 @@ function EgoGraphCanvas({
           renderer.scheduleRefresh();
         }
       };
-      disposer.add(() => {
-        api.current = null;
-        hoverIntent.dispose();
-        resizeObserver.disconnect();
-        stopPalette();
-        if (fitFrame !== null) cancelAnimationFrame(fitFrame);
-        layout.kill();
-        disposeConnectionGraphRenderer(renderer);
-      });
       scheduleFit();
     }
-  }, [model, retry, openNote]);
+  }, [model, retry, openNote, unavailable]);
 
   // The keyboard cursor emphasises and describes the note or relation it stands on; none clears both.
   const stand = (next: number | null) => {
@@ -622,7 +686,7 @@ function EgoGraphCanvas({
     >
       <div
         ref={containerRef}
-        className="absolute inset-0 outline-offset-[-3px] focus-visible:outline-2 focus-visible:outline-accent"
+        className="absolute inset-0 outline-offset-[-3px] focus-visible:outline-2 focus-visible:outline-graph-label"
         role="application"
         aria-label={t("notePage.graph.label", {
           values: { notes: model.nodes.length, relations: model.edges.length }
@@ -683,9 +747,11 @@ function EgoGraphCanvas({
           ) : null}
         </div>
       ) : null}
-      {failed ? (
+      {failure ? (
         <div className="absolute inset-0 grid place-content-center gap-2 bg-surface/95 p-4 text-sm text-foreground">
-          <p>{t("knowledgeGraph.layoutError")}</p>
+          <p>
+            {t(failure === "context" ? "notePage.graph.contextLost" : "knowledgeGraph.layoutError")}
+          </p>
           <Button type="button" onClick={() => setRetry((value) => value + 1)}>
             <RefreshCw aria-hidden="true" />
             {t("shell.actions.retry")}

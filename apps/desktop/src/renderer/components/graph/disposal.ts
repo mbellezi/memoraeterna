@@ -34,6 +34,61 @@ export function disposeConnectionGraphRenderer(
   }
 }
 
+/** The part of a canvas that setup cleanup uses, so a test needs no DOM. */
+export interface RendererLayer {
+  getContext?(type: string): unknown;
+  remove(): void;
+}
+
+/** The part of the element a renderer draws into that setup cleanup uses. */
+export interface RendererContainer {
+  readonly children: ArrayLike<RendererLayer>;
+}
+
+/**
+ * Builds a renderer, or leaves the container as it found it. Sigma 3 puts its canvases, with their
+ * WebGL contexts, into the container before it builds its programs, so a constructor that throws (a
+ * shader it refuses, a context the GPU would not give) hands back no renderer to kill and leaves
+ * those layers behind, each holding a context until Chromium's cap starts dropping other graphs'.
+ * The layers added since the call are released (context lost first, then removed) and the error
+ * goes on to the caller. A renderer that was built is the caller's to dispose.
+ */
+export function constructRenderer<R>(container: RendererContainer, construct: () => R): R {
+  const before = new Set<RendererLayer>(Array.from(container.children));
+  try {
+    return construct();
+  } catch (error) {
+    for (const layer of Array.from(container.children)) {
+      if (before.has(layer)) continue;
+      try {
+        const gl = (layer.getContext?.("webgl2") ?? layer.getContext?.("webgl")) as {
+          getExtension?: (name: string) => { loseContext?: () => void } | null;
+        } | null;
+        gl?.getExtension?.("WEBGL_lose_context")?.loseContext?.();
+      } catch {
+        // A layer that cannot give its context back is still removed.
+      }
+      layer.remove();
+    }
+    throw error;
+  }
+}
+
+/**
+ * `constructRenderer`, and the renderer's disposal registered the moment it exists, so whatever a
+ * later setup step throws, the disposer still kills the renderer (and the window listener Sigma
+ * added). The disposer runs it last, after the listeners and workers added since.
+ */
+export function buildRenderer<R extends Pick<Sigma, "getCanvases" | "kill">>(
+  container: RendererContainer,
+  disposer: Pick<ReturnType<typeof createDisposer>, "add">,
+  construct: () => R
+): R {
+  const renderer = constructRenderer(container, construct);
+  disposer.add(() => disposeConnectionGraphRenderer(renderer));
+  return renderer;
+}
+
 function releaseAfterPaint(release: () => void): void {
   let frame: number | null = null;
   let finished = false;
