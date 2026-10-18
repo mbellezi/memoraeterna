@@ -6,7 +6,7 @@ import { createTranslator, supportedLanguageCodes, type Translator } from "@app/
 import { NoteLeaveDialog } from "./NoteLeaveDialog";
 import { NotePageView, type NotePageLoad, type NotePageViewProps } from "./NotePageView";
 import type { ExplanationState } from "./RelationEvidenceCard";
-import { evidenceItem, fixtureId, notePage, relationItem } from "./note-page-fixtures";
+import { evidenceItem, fixtureId, idleMore, notePage, relationItem } from "./note-page-fixtures";
 import { editBase } from "./note-page-model";
 
 const en = createTranslator("en");
@@ -30,7 +30,10 @@ function render(
         review={{ pending: false, failed: false }}
         openCard={null}
         explanations={{}}
-        more={{ status: "idle" }}
+        reviews={{}}
+        more={idleMore}
+        relationFocus={null}
+        withdrawnOpen={false}
         openFailed={false}
         announcement=""
         onBack={noop}
@@ -47,6 +50,9 @@ function render(
         onOpenPlacement={noop}
         onCardEvent={noop}
         onRetryExplanation={noop}
+        onReview={noop}
+        onRelationFocusHandled={noop}
+        onToggleWithdrawn={noop}
         onShowMore={noop}
         {...overrides}
       />
@@ -349,7 +355,8 @@ describe("Note page relations", () => {
                 explanation: {
                   text: `<note-ref id="${fixtureId(1)}" /> qualifies <note-ref id="${fixtureId(61)}" />.`,
                   writtenBy: "writer-x"
-                }
+                },
+                explainedBy: { model: "writer-x", kind: "remote" }
               })
             ],
             total: 1
@@ -360,7 +367,10 @@ describe("Note page relations", () => {
     );
     // A reference that starts the explanation starts the sentence.
     expect(explained).toContain('<strong class="font-semibold">This note</strong><span> qualifies');
-    expect(explained).toContain("Explained by <strong");
+    // The writer is one of the card's provenance lines, beside the decider.
+    expect(explained).toMatch(
+      /<dt[^>]*>Explained<\/dt><dd[^>]*>writer-x<span[^>]*> · online<\/span><\/dd>/
+    );
     expect(explained).not.toContain("Writing an explanation");
   });
 
@@ -507,7 +517,7 @@ describe("Note page relations", () => {
   it("offers more relations and a retry when they failed", () => {
     const page = notePage({ relations: { items: [relationItem()], total: 30 } });
     expect(render(ready(page))).toContain("Show 20 more");
-    const failed = render(ready(page), { more: { status: "error" } });
+    const failed = render(ready(page), { more: { ...idleMore, shown: { status: "error" } } });
     expect(failed).toContain("More relations could not be loaded.");
   });
 });

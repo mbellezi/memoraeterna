@@ -9,6 +9,7 @@ import {
   currentNoteEndpointsSql,
   earlierVersionNoteRelationSql,
   legacyCountedNoteRelationSql,
+  noteRelationStateLabelSql,
   noteRelationStateSql,
   shownNoteRelationSql,
   suggestedNoteRelationSql,
@@ -168,8 +169,8 @@ describe("the visibility predicates (D9)", () => {
   }
 
   const expected: Record<keyof typeof state, string[]> = {
-    accepted: ["applied", "shown", "reviewed"],
-    acceptedVetoed: ["applied", "shown", "reviewed"],
+    accepted: ["applied", "kept", "shown", "reviewed"],
+    acceptedVetoed: ["applied", "kept", "shown", "reviewed"],
     legacy: ["applied", "shown", "undecidedByHuman", "vetoable"],
     applied: ["applied", "shown", "undecidedByHuman", "vetoable"],
     suggested: ["suggested", "shown", "undecidedByHuman", "vetoable"],
@@ -216,6 +217,18 @@ describe("the visibility predicates (D9)", () => {
       noteRelationStateSql.applied("r")
     );
     expect(earlierVersionNoteRelationSql("r", "s", "o")).toContain("not (");
+  });
+
+  it("labels a listed relation kept, withdrawn, suggested or applied from the same predicates", () => {
+    const label = noteRelationStateLabelSql("r");
+    expect(label).toContain(noteRelationStateSql.kept("r"));
+    expect(label).toContain(noteRelationStateSql.withdrawn("r"));
+    expect(label).toContain(noteRelationStateSql.suggested("r"));
+    // The owner's verdict wins over a veto that was recorded before it, and applied is the rest.
+    expect(label.indexOf("'kept'")).toBeLessThan(label.indexOf("'withdrawn'"));
+    expect(label.indexOf("'withdrawn'")).toBeLessThan(label.indexOf("'suggested'"));
+    expect(label).toContain("else 'applied'");
+    expect(() => noteRelationStateLabelSql("r; drop")).toThrow("Unsafe SQL alias");
   });
 
   it("keeps the legacy reading for libraries without the v2 columns", () => {

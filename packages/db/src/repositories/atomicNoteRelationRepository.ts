@@ -9,6 +9,7 @@ import {
 
 import {
   appliedNoteRelationSql,
+  noteRelationStateLabelSql,
   noteRelationStateSql,
   shownNoteRelationSql
 } from "./note-relation-sql.js";
@@ -235,7 +236,39 @@ event as (
 )
 select ${columns("w")}, true as written, to_jsonb(w) as after, (select image from prior) as before,
        (select id from event) as "eventId"
-  from written w`
+  from written w`,
+
+  /**
+   * $1 relation ID, $2 the new status (`accepted` or `rejected`), $3 the run, $4 whether the verdict
+   * clears the veto (keep), $5 the event kind (`kept` or `removed`). The owner's verdict on a
+   * relation that has none, with its event in the same statement (D14, D15). A relation that
+   * already has a human verdict is returned as it is (the first verdict stays final, I-R2, I-R3).
+   */
+  review: `
+with prior as (select to_jsonb(p) as image from atomic_note_relations p where p.id = $1::uuid),
+written as (
+  update atomic_note_relations r set status = $2::atomic_note_relation_status,
+         vetoed_at = case when $4::boolean then null else r.vetoed_at end,
+         veto_source = case when $4::boolean then null else r.veto_source end,
+         updated_at = now()
+   where r.id = $1::uuid and ${noteRelationStateSql.undecidedByHuman("r")}
+  returning r.*
+),
+event as (
+  insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
+  select $3::uuid, 'note', w.id, ${eventPairKey("w")}, $5, (select image from prior), to_jsonb(w)
+    from written w
+  returning id
+),
+result as (
+  select w.*, true as written, to_jsonb(w) as after from written w
+  union all
+  select p.*, false, to_jsonb(p) from atomic_note_relations p
+   where p.id = $1::uuid and not exists (select 1 from written)
+)
+select ${columns("result")}, result.written, result.after, (select image from prior) as before,
+       (select id from event) as "eventId"
+  from result`
 };
 
 function writeResult(row: WriteRow, created: boolean): NoteRelationWriteResult {
@@ -349,6 +382,32 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
     },
 
     /**
+     * The owner's verdict on a relation (D15): `keep` accepts it and clears any veto, `remove`
+     * rejects it. The verdict and its `kept` or `removed` event in run `runId` are one statement
+     * (D14). Final in both directions: a relation that already has a human verdict is returned
+     * unchanged (`change` is `reviewed`), and automation never changes either verdict. Resolves to
+     * null when the relation is gone.
+     */
+    async review(
+      relationId: string,
+      verdict: "keep" | "remove",
+      runId: string
+    ): Promise<NoteRelationWriteResult | null> {
+      if (!runId) throw new Error("A review records its event: it needs its run (D14).");
+      const keep = verdict === "keep";
+      const row = (
+        await db.query<WriteRow>(atomicNoteRelationSql.review, [
+          relationId,
+          keep ? "accepted" : "rejected",
+          runId,
+          keep,
+          keep ? "kept" : "removed"
+        ])
+      ).rows[0];
+      return row ? writeResult(row, false) : null;
+    },
+
+    /**
      * Every relation touching a source's notes, with whether it is shown and applied (D9). The
      * stored endpoints are sorted by ID; `direction` says how the relation reads.
      */
@@ -361,6 +420,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
           targetTitle: string;
           shown: boolean;
           applied: boolean;
+          /** What the relation is now, from the same predicates: applied, suggested or kept. */
+          state: "applied" | "suggested" | "withdrawn" | "kept";
         }
       >
     > {
@@ -372,13 +433,15 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
           targetTitle: string;
           shown: boolean;
           applied: boolean;
+          state: "applied" | "suggested" | "withdrawn" | "kept";
         }
       >(
         `select ${columns("relation")},
                 lo_note.status as "sourceStatus", hi_note.status as "targetStatus",
                 lo_note.title as "sourceTitle", hi_note.title as "targetTitle",
                 ${shownNoteRelationSql("relation", ["lo_note", "hi_note"])} as shown,
-                ${appliedNoteRelationSql("relation", ["lo_note", "hi_note"])} as applied
+                ${appliedNoteRelationSql("relation", ["lo_note", "hi_note"])} as applied,
+                ${noteRelationStateLabelSql("relation")} as state
          from atomic_note_relations relation
          join atomic_notes lo_note on lo_note.id = relation.source_atomic_note_id
          join atomic_notes hi_note on hi_note.id = relation.target_atomic_note_id
@@ -393,7 +456,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
         sourceTitle: row.sourceTitle,
         targetTitle: row.targetTitle,
         shown: row.shown,
-        applied: row.applied
+        applied: row.applied,
+        state: row.state
       }));
     }
   };

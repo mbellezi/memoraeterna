@@ -1,18 +1,27 @@
 import { z } from "zod";
 
-import { AtomicNoteStatusSchema } from "./knowledge.js";
+import {
+  AtomicNoteStatusSchema,
+  NoteRelationBandSchema,
+  NoteRelationVetoSourceSchema,
+  type NoteRelationBand
+} from "./knowledge.js";
 import { ObjectLocateResultSchema } from "./object-address.js";
 
 /**
  * `notes.page`: everything a Note page renders, in one read-only response without AI. The note,
  * its evidence with exact anchors, where it is (`objects.locate`) and the first page of its
- * relations to other notes; `notes.relations` pages more relations. Scores are never part of the
- * contract: a fused legacy score is not a confidence (calibration is docs/plan.md F3).
+ * relations to other notes, in three groups (shown, withdrawn, earlier versions);
+ * `notes.relations` pages more relations of one group. The legacy fused score is never part of the
+ * contract: it is not a confidence. The calibrated probability is (F4 Diagnostics read it), but no
+ * renderer shows it as a percentage: a relation says "Strong" or "Possible" (D42).
  */
 export const notePageLimits = {
   /** Relations in the first answer and in each further page. */
   relationPage: 20,
   relationPageMax: 50,
+  /** Relations of the withdrawn and earlier-version groups in the first answer and each page. */
+  groupPage: 20,
   /** Evidence passages listed; the total is always exact. */
   evidence: 100,
   /** The other note's passage shown in a relation card. */
@@ -37,9 +46,20 @@ export const NotePageInputSchema = z
   .strict();
 export type NotePageInput = z.infer<typeof NotePageInputSchema>;
 
+/**
+ * The groups of a note's relations: the shown ones (applied, suggested or kept), the ones an
+ * automatic veto withdrew (the owner keeps or removes them) and, apart, the applied ones to an
+ * earlier version of a note (D9's fifth predicate).
+ */
+export const noteRelationGroups = ["shown", "withdrawn", "earlier"] as const;
+export const NoteRelationGroupSchema = z.enum(noteRelationGroups);
+export type NoteRelationGroup = z.infer<typeof NoteRelationGroupSchema>;
+
 export const NoteRelationsInputSchema = z
   .object({
     noteId: z.string().uuid(),
+    /** Which group is paged; the main list by default. */
+    group: NoteRelationGroupSchema.default("shown"),
     offset: z.number().int().min(0).max(100_000),
     limit: z
       .number()
@@ -144,6 +164,30 @@ export const NotePageRelationExplanationSchema = z
   .strict();
 export type NotePageRelationExplanation = z.infer<typeof NotePageRelationExplanationSchema>;
 
+/**
+ * What a relation is now (D9, D42). F3 applies no relation automatically (plan decision 29): an
+ * automatic relation is suggested until the owner keeps or removes it, and the owner's Keep makes it
+ * kept. Applied remains for the rows an apply band or the legacy matcher wrote.
+ */
+export const NotePageRelationStateSchema = z.enum(["applied", "suggested", "withdrawn", "kept"]);
+export type NotePageRelationState = z.infer<typeof NotePageRelationStateSchema>;
+
+/** Whether the decider's band was calibrated when it decided (frozen or provisional) or not. */
+export const NoteRelationCalibrationSchema = z.enum(["frozen", "provisional", "uncalibrated"]);
+export type NoteRelationCalibration = z.infer<typeof NoteRelationCalibrationSchema>;
+
+/**
+ * Who did one step of a relation (decided it, typed it, wrote its explanation): the model and where
+ * it ran. `kind` is null when the run behind the step is no longer known: unknown stays unknown.
+ */
+export const NotePageActorSchema = z
+  .object({
+    model: z.string().min(1),
+    kind: z.enum(["local", "remote"]).nullable()
+  })
+  .strict();
+export type NotePageActor = z.infer<typeof NotePageActorSchema>;
+
 export const NotePageRelationSchema = z
   .object({
     id: z.string().uuid(),
@@ -151,8 +195,28 @@ export const NotePageRelationSchema = z
     type: z.string().min(1).max(40),
     /** Read from the decided direction, never from the stored column order. */
     direction: z.enum(["outgoing", "incoming", "unknown"]),
+    /**
+     * Suggested, withdrawn by an automatic veto, kept by the owner, or applied (a legacy row or one
+     * an apply band wrote). A relation the owner removed is listed nowhere.
+     */
+    state: NotePageRelationStateSchema,
+    /** Automation's band; null on a legacy row. Nothing assumes an apply band exists. */
+    band: NoteRelationBandSchema.nullable(),
+    /** The calibration the band was decided under; null when the row records none. */
+    calibration: NoteRelationCalibrationSchema.nullable(),
+    /**
+     * The calibrated probability; null on legacy rows and while the decider is not calibrated. It
+     * orders the list and is kept for diagnostics: it is never shown as a percentage.
+     */
+    probability: z.number().min(0).max(1).nullable(),
+    /** Who withdrew the relation, for a withdrawn one. */
+    vetoSource: NoteRelationVetoSourceSchema.nullable(),
     /** The decider model; null for an acceptance without a decider. */
-    decidedBy: z.string().min(1).nullable(),
+    decidedBy: NotePageActorSchema.nullable(),
+    /** The model that typed the pair (relations v2); null for an untyped or legacy relation. */
+    typedBy: NotePageActorSchema.nullable(),
+    /** The model that wrote the explanation, when the relation has one. */
+    explainedBy: NotePageActorSchema.nullable(),
     /** Null when no current explanation exists; one is written when the relation is opened. */
     explanation: NotePageRelationExplanationSchema.nullable(),
     other: z
@@ -210,7 +274,15 @@ export const NotePageSchema = z
       .strict(),
     /** Exactly what `objects.locate` answers for `memora://note/<id>`. */
     placement: ObjectLocateResultSchema,
-    relations: NotePageRelationsSchema
+    /** The shown relations: applied, suggested and kept ones (D9). */
+    relations: NotePageRelationsSchema,
+    /** The relations an automatic veto withdrew; the owner keeps or removes them (D15). */
+    withdrawn: NotePageRelationsSchema,
+    /**
+     * Applied relations to an earlier (superseded) version of a note, as F1b listed them (R29):
+     * never counted among the shown ones, drawn or promoted.
+     */
+    earlierVersions: NotePageRelationsSchema
   })
   .strict();
 export type NotePage = z.infer<typeof NotePageSchema>;
@@ -248,3 +320,69 @@ export function relationExplanation(input: {
     writtenBy: input.decisionSource === "model" ? knownModel(input.matchingModel) : null
   };
 }
+
+/** The word an automatic confidence is shown as (D42); never a percentage. */
+export type NoteRelationBandWord = "strong" | "possible" | "uncalibrated";
+
+/**
+ * The word of each band. F3 applies no relation automatically (plan decision 29): every automatic
+ * relation is a suggestion until the owner keeps or removes it, so a library holds "possible" and
+ * "uncalibrated" relations, the owner's kept ones and withdrawn ones, and "strong" only on rows an
+ * apply band wrote. A later tier (typed suggestions the strict typer confirms) adds its word here
+ * and its two lines of copy (`notePage.band.<word>`): a test fails for a band without a word.
+ */
+export const noteRelationBandWords: Readonly<Record<NoteRelationBand, NoteRelationBandWord>> = {
+  apply: "strong",
+  suggest: "possible"
+};
+
+/**
+ * The band word of a relation, for what automation said about it: the word of its band, or
+ * "uncalibrated" when the decider had no calibration (it only ever suggests, D18). A relation the
+ * owner decided (kept) or an automatic veto withdrew says its state instead, and a legacy row (no
+ * band) says nothing. Nothing assumes an apply band, or an automatic "applied" state, exists.
+ */
+export function relationBandWord(relation: {
+  band: NoteRelationBand | null;
+  calibration: NoteRelationCalibration | null;
+  state?: NotePageRelationState | undefined;
+}): NoteRelationBandWord | null {
+  if (relation.state === "kept" || relation.state === "withdrawn") return null;
+  if (relation.band === null) return null;
+  if (relation.calibration === "uncalibrated") return "uncalibrated";
+  return noteRelationBandWords[relation.band];
+}
+
+/** The calibration state a relation row records in its metadata; null on a legacy row. */
+export function noteRelationCalibration(metadata: unknown): NoteRelationCalibration | null {
+  const value =
+    typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>).calibration
+      : undefined;
+  const parsed = NoteRelationCalibrationSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * `relations.review` (F3 D15): the owner's verdict on a suggested or withdrawn relation. A verdict
+ * is final in both directions (I-R2, I-R3): automation never changes a kept relation or creates a
+ * removed pair again, and a second review changes nothing.
+ */
+export const RelationReviewInputSchema = z
+  .object({
+    relationId: z.string().uuid(),
+    verdict: z.enum(["keep", "remove"])
+  })
+  .strict();
+export type RelationReviewInput = z.infer<typeof RelationReviewInputSchema>;
+
+export const RelationReviewResultSchema = z
+  .object({
+    relationId: z.string().uuid(),
+    /** The relation's verdict now: the one just written, or the earlier one, which stays. */
+    outcome: z.enum(["kept", "removed"]),
+    /** False when the relation already had a human verdict: nothing was written. */
+    changed: z.boolean()
+  })
+  .strict();
+export type RelationReviewResult = z.infer<typeof RelationReviewResultSchema>;

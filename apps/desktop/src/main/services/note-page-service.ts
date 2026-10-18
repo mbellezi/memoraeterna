@@ -38,15 +38,16 @@ export class NotePageService {
     return NotePageSchema.nullable().parse(page);
   }
 
-  /** A further page of the note's relations, with the exact total. */
+  /** A further page of one group of the note's relations, with the exact total. */
   async relations(input: unknown): Promise<NotePageRelations> {
-    const { noteId, offset, limit } = NoteRelationsInputSchema.parse(input);
+    const { noteId, group, offset, limit } = NoteRelationsInputSchema.parse(input);
     const [contentLanguage, explanationWriter] = await Promise.all([
       this.getContentLanguage(),
       this.writer()
     ]);
     return NotePageRelationsSchema.parse(
       await this.repository().listRelations(noteId, {
+        group,
         offset,
         limit,
         contentLanguage,

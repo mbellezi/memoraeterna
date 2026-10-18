@@ -467,6 +467,14 @@ export class JobSupervisor {
     return this.relationsChanged.subscribe(listener);
   }
 
+  /**
+   * Notes whose relations changed outside a link job (a veto from an explanation, the owner's
+   * review): they join the same coalesced push, so open pages read their relations once per burst.
+   */
+  public announceRelationsChanged(noteIds: Iterable<string>): void {
+    this.relationsChanged.changed(noteIds);
+  }
+
   public async start(): Promise<void> {
     if (this.running) return;
     const pool = this.requirePool();

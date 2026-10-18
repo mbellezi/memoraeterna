@@ -10,9 +10,9 @@ import { WhereIsThisView } from "../WhereIsThis";
 import { NoteBodyText } from "./NoteBodyText";
 import { NoteEvidence } from "./NoteEvidence";
 import { NoteHeader, type NoteEditing } from "./NoteHeader";
-import { NoteRelations, type RelationsMore } from "./NoteRelations";
+import { NoteRelations, type RelationFocus, type RelationsMore } from "./NoteRelations";
 import type { ExplanationState } from "./RelationEvidenceCard";
-import type { NoteDraft } from "./note-page-model";
+import type { NoteDraft, RelationGroup, ReviewState } from "./note-page-model";
 import type { CardEvent } from "./relation-card-state";
 
 export type NotePageLoad =
@@ -31,7 +31,14 @@ export interface NotePageViewProps {
   review: { pending: boolean; failed: boolean };
   openCard: string | null;
   explanations: Readonly<Record<string, ExplanationState>>;
-  more: RelationsMore;
+  /** The owner's verdicts being saved, or that could not be saved, by relation. */
+  reviews: Readonly<Record<string, ReviewState>>;
+  /** "Show more" of each list of relations. */
+  more: Readonly<Record<RelationGroup, RelationsMore>>;
+  /** Where focus goes once a row left its list (a verdict, a withdrawn relation). */
+  relationFocus: RelationFocus | null;
+  /** Whether the withdrawn relations are listed. */
+  withdrawnOpen: boolean;
   openFailed: boolean;
   /** "Place in topic" (T26): whether the page shows, and what to do once the note was placed. */
   place?: { active: boolean; onPlaced: () => void } | undefined;
@@ -51,7 +58,10 @@ export interface NotePageViewProps {
   onOpenPlacement: (navigation: ObjectNavigation) => void;
   onCardEvent: (event: CardEvent) => void;
   onRetryExplanation: (relationId: string) => void;
-  onShowMore: () => void;
+  onReview: (relationId: string, verdict: "keep" | "remove") => void;
+  onRelationFocusHandled: () => void;
+  onToggleWithdrawn: () => void;
+  onShowMore: (group: RelationGroup) => void;
 }
 
 /**
@@ -149,12 +159,20 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         thisId={note.id}
         thisPrimary={primary}
         relations={page.relations}
+        withdrawn={page.withdrawn}
+        earlierVersions={page.earlierVersions}
         openCard={props.openCard}
         explanations={props.explanations}
+        reviews={props.reviews}
         more={props.more}
+        withdrawnOpen={props.withdrawnOpen}
+        focusRequest={props.relationFocus}
         onCardEvent={props.onCardEvent}
         onOpenNote={props.onOpenNote}
         onRetryExplanation={props.onRetryExplanation}
+        onReview={props.onReview}
+        onToggleWithdrawn={props.onToggleWithdrawn}
+        onFocusHandled={props.onRelationFocusHandled}
         onShowMore={props.onShowMore}
       />
     </article>

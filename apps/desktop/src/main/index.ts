@@ -1,3 +1,4 @@
+import { aiConfigGeneration } from "@app/db";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
@@ -11,8 +12,13 @@ import { ObjectsService } from "./services/objects-service.js";
 import { registerNotePageIpc } from "./services/note-page-ipc.js";
 import { NotePageService } from "./services/note-page-service.js";
 import { registerRelationExplanationIpc } from "./services/relation-explanation-ipc.js";
+import { registerRelationReviewIpc } from "./services/relation-review-ipc.js";
+import { RelationReviewService } from "./services/relation-review-service.js";
 import { RelationExplanationService } from "./services/relation-explanation-service.js";
-import { createRelationExplanationWriterResolver } from "./services/relation-explanation-writer.js";
+import {
+  createRelationExplanationWriterResolver,
+  memoizeRelationExplanationWriter
+} from "./services/relation-explanation-writer.js";
 import { registerSourceRelationExplanationIpc } from "./services/source-relation-explanation-ipc.js";
 import { SourceRelationExplanationService } from "./services/source-relation-explanation-service.js";
 import { ViewHistoryService } from "./services/view-history-service.js";
@@ -61,6 +67,7 @@ import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
+import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
 import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
 import {
@@ -69,11 +76,7 @@ import {
   navigationDirectionFromSwipe,
   type WindowNavigationDirection
 } from "./window-navigation.js";
-import {
-  ipcChannels,
-  localEmbeddingLoadStatusSchema,
-  RelationsChangedEventSchema
-} from "../shared/ipc.js";
+import { ipcChannels, localEmbeddingLoadStatusSchema } from "../shared/ipc.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -360,14 +363,25 @@ void app.whenReady().then(() => {
   const explanationWriter = createRelationExplanationWriterResolver(
     () => databaseService?.getPool() ?? null
   );
+  // The Note page asks for the writer on every read: it is resolved again only when the AI
+  // configuration, the prompts or the database change (the page's 5 ms budget).
+  const pageExplanationWriter = memoizeRelationExplanationWriter(explanationWriter, () => ({
+    pool: databaseService?.getPool() ?? null,
+    configuration: aiConfigGeneration(),
+    prompts: promptPinGeneration()
+  }));
   registerNotePageIpc(
     ipcMain,
     new NotePageService(
       () => databaseService?.getPool() ?? null,
       async () => (await settingsService!.getApp()).contentLanguage,
-      explanationWriter
+      pageExplanationWriter
     )
   );
+  // Notes whose relations changed outside a link job (a veto, a review) join the supervisor's
+  // coalesced push, so open Note pages read their relations once per burst (F3 3.11, 3.19).
+  const announceRelationsChanged = (noteIds: string[]) =>
+    jobSupervisor?.announceRelationsChanged(noteIds);
   registerRelationExplanationIpc(
     ipcMain,
     new RelationExplanationService({
@@ -376,12 +390,14 @@ void app.whenReady().then(() => {
       getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
       resolveWriter: explanationWriter,
       // An explanation that finds two notes unrelated withdraws the relation: open pages read it again.
-      relationsChanged: (noteIds) => {
-        const event = RelationsChangedEventSchema.safeParse({ noteIds });
-        if (!event.success) return;
-        for (const contents of webContents.getAllWebContents())
-          if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, event.data);
-      }
+      relationsChanged: announceRelationsChanged
+    })
+  );
+  registerRelationReviewIpc(
+    ipcMain,
+    new RelationReviewService({
+      getPool: () => databaseService?.getPool() ?? null,
+      relationsChanged: announceRelationsChanged
     })
   );
   registerSourceRelationExplanationIpc(

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createAiConfigRepository,
   createAtomicNoteRelationRepository,
   createAtomicNoteRepository,
   createChunkRepository,
@@ -14,7 +15,11 @@ import {
   createNotePageRepository,
   createObjectLocateRepository,
   createPgPool,
+  createRelationDecisionRepository,
+  createRelationEventRepository,
   createRelationExplanationRepository,
+  createRelationMatchRunRepository,
+  createRelationTypingRepository,
   createSourceItemRepository,
   relationExplanationPlan,
   PostgresSidecarManager,
@@ -352,12 +357,22 @@ try {
   await relate(dangling, 0.5);
   page = (await read(note))!;
   const byOther = new Map(page.relations.items.map((item) => [item.other.id, item]));
-  assert.equal(page.relations.total, 5, "rejected relations and notes are hidden");
+  assert.equal(page.relations.total, 3, "rejected relations and notes are hidden");
   assert.deepEqual(
     page.relations.items.map((item) => item.other.id),
-    [outgoing, incoming, unknown, superseded, dangling],
+    [outgoing, incoming, unknown],
     "the order follows the stored score"
   );
+  // R29: the relations to an earlier version of a note, and to a knowledge note whose primary
+  // evidence is gone, are listed apart (F1b listed them), with the F1b flag, never among the shown.
+  assert.equal(page.earlierVersions.total, 2);
+  assert.deepEqual(
+    page.earlierVersions.items.map((item) => item.other.id),
+    [superseded, dangling]
+  );
+  assert.equal(page.earlierVersions.items[0]?.other.superseded, true);
+  assert.equal(page.earlierVersions.items[0]?.decidedBy, null, "a blank model is unknown");
+  assert.equal(page.withdrawn.total, 0);
   assert.equal(byOther.get(outgoing)?.direction, "outgoing");
   assert.equal(byOther.get(incoming)?.direction, "incoming");
   assert.equal(byOther.get(unknown)?.direction, "unknown");
@@ -365,43 +380,65 @@ try {
     text: `Both describe recall in <note-ref id="${note}" />.`,
     writtenBy: "decider-a"
   });
-  assert.equal(byOther.get(outgoing)?.decidedBy, "decider-a");
+  assert.deepEqual(byOther.get(outgoing)?.decidedBy, { model: "decider-a", kind: null });
+  assert.equal(byOther.get(outgoing)?.state, "applied", "a legacy row applies");
+  assert.equal(byOther.get(outgoing)?.band, null);
   assert.deepEqual(byOther.get(incoming)?.explanation, {
     text: "A cached explanation.",
     writtenBy: null
   });
   assert.equal(byOther.get(unknown)?.explanation, null, "a message key is no explanation");
   assert.equal(byOther.get(unknown)?.decidedBy, null);
-  assert.equal(byOther.get(superseded)?.decidedBy, null, "a blank model is unknown");
-  assert.equal(byOther.get(superseded)?.other.superseded, true);
-  assert.equal(byOther.get(dangling)?.other.passage, null, "a gone primary chunk has no passage");
+  assert.equal(
+    page.earlierVersions.items.find((item) => item.other.id === dangling)?.other.passage,
+    null,
+    "a gone primary chunk has no passage"
+  );
   assert.equal(
     byOther.get(outgoing)?.other.passage?.excerpt.length,
     notePageLimits.excerptCharacters
   );
   assert.equal(byOther.get(outgoing)?.other.sourceTitle, "A Paper");
   const pages = [];
-  for (const offset of [0, 2, 4])
+  for (const offset of [0, 2])
     pages.push(
       NotePageRelationsSchema.parse(
-        await repository.listRelations(note, { offset, limit: 2, contentLanguage: "en" })
+        await repository.listRelations(note, {
+          group: "shown",
+          offset,
+          limit: 2,
+          contentLanguage: "en"
+        })
       )
     );
   assert.ok(
-    pages.every((relationPage) => relationPage.total === 5),
+    pages.every((relationPage) => relationPage.total === 3),
     "the total is stable"
   );
   assert.deepEqual(
     pages.flatMap((relationPage) => relationPage.items.map((item) => item.other.id)),
-    [outgoing, incoming, unknown, superseded, dangling],
+    [outgoing, incoming, unknown],
     "pages are disjoint and complete"
   );
   const past = await repository.listRelations(note, {
+    group: "shown",
     offset: 10,
     limit: 2,
     contentLanguage: "en"
   });
-  assert.deepEqual(past, { items: [], total: 5 }, "an offset past the end is empty");
+  assert.deepEqual(past, { items: [], total: 3 }, "an offset past the end is empty");
+  const earlierPage = await repository.listRelations(note, {
+    group: "earlier",
+    offset: 1,
+    limit: 2,
+    contentLanguage: "en"
+  });
+  assert.deepEqual(
+    earlierPage.items.map((item) => item.other.id),
+    [dangling],
+    "a group is paged on its own"
+  );
+  assert.equal(earlierPage.total, 2);
   assert.equal((await read(note, 2))!.relations.items.length, 2, "the first page is bounded");
   const fromOther = (await read(incoming))!.relations.items.find((item) => item.other.id === note);
   assert.equal(fromOther?.direction, "outgoing", "the direction is relative to the page's note");
@@ -553,22 +590,25 @@ try {
     (item) => item.sourceTitle === "A long preserved passage"
   )?.excerpt;
   assert.equal(Array.from(preservedExcerpt ?? "").length, notePageLimits.evidenceExcerptCharacters);
-  assert.equal(hubPage.relations.total, 2);
-  assert.equal(hubPage.relations.items.length, 2, "every counted relation is listed");
-  const orphanRelation = hubPage.relations.items.find((item) => item.other.id === orphan)!;
+  // The orphan's primary evidence went with its source, so the relation is not shown (D9); the page
+  // still lists it with the earlier versions, as F1b did (R29).
+  assert.equal(hubPage.relations.total, 1);
+  assert.equal(hubPage.relations.items.length, 1, "every counted relation is listed");
+  assert.equal(hubPage.earlierVersions.total, 1);
+  const orphanRelation = hubPage.earlierVersions.items.find((item) => item.other.id === orphan)!;
   assert.equal(orphanRelation.other.sourceItemId, null, "the note has no source any more");
   assert.equal(orphanRelation.other.sourceTitle, "");
   const orphanPages = [];
-  for (const offset of [0, 1])
+  for (const group of ["shown", "earlier"] as const)
     orphanPages.push(
       NotePageRelationsSchema.parse(
-        await repository.listRelations(hub, { offset, limit: 1, contentLanguage: "en" })
+        await repository.listRelations(hub, { group, offset: 0, limit: 1, contentLanguage: "en" })
       )
     );
   assert.deepEqual(
     orphanPages.flatMap((relationPage) => relationPage.items.map((item) => item.other.id)),
     [emojiNote, orphan],
-    "paging by what was listed reaches the relation to the orphaned note"
+    "paging each group reaches the relation to the orphaned note"
   );
   const orphanContext = (await explanations.readContext(orphanRelation.id))!;
   assert.equal(
@@ -581,6 +621,254 @@ try {
     book.id,
     "a source that exists is still linked"
   );
+
+  // 4d. Relations v2 (F3 D9, D15, D42, R29): states, groups, order, actors and the review writer.
+  const aiConfig = createAiConfigRepository(db);
+  const decisions = createRelationDecisionRepository(db);
+  const typings = createRelationTypingRepository(db);
+  const events = createRelationEventRepository(db);
+  const runs = createRelationMatchRunRepository(db);
+  const matchRun = await runs.start({ kind: "match" });
+  const reviewRun = await runs.start({ kind: "review" });
+  const vetoRun = await runs.start({ kind: "veto" });
+  const home = await addNote({
+    title: "V2 home",
+    createdFrom: book.id,
+    chunk: bookChunks.chunkIds[0]!
+  });
+  const relateV2 = (
+    otherId: string,
+    input: Partial<Parameters<typeof relations.upsertDecided>[0]> & { band: "apply" | "suggest" }
+  ) =>
+    relations.upsertDecided({
+      subjectAtomicNoteId: home,
+      objectAtomicNoteId: otherId,
+      relationType: "supports",
+      finalScore: 0.5,
+      explanation: "knowledge.relations.explanations.reranked",
+      runId: matchRun.id,
+      ...input
+    });
+  const [strong, middling, uncalibrated, vetoed, kept, removed, legacyV2, typedAway] =
+    await Promise.all(
+      ["Strong", "Middling", "Uncalibrated", "Vetoed", "Kept", "Removed", "Legacy", "Typed"].map(
+        (title) => other(`V2 ${title}`)
+      )
+    );
+  const strongRelation = await relateV2(strong!, {
+    band: "apply",
+    probability: 0.9,
+    finalScore: 0.9,
+    deciderKey: "decider-key-1",
+    typerKey: "typer-key-1",
+    matchingModel: "ranker-x",
+    metadata: { calibration: "frozen", decisionSource: "model" }
+  });
+  await relateV2(middling!, {
+    band: "suggest",
+    probability: 0.6,
+    finalScore: 0.6,
+    metadata: { calibration: "frozen" }
+  });
+  await relateV2(uncalibrated!, {
+    band: "suggest",
+    probability: null,
+    finalScore: 0.8,
+    metadata: { calibration: "uncalibrated" }
+  });
+  const vetoedRelation = await relateV2(vetoed!, { band: "apply", probability: 0.95 });
+  const keptRelation = await relateV2(kept!, { band: "suggest", probability: 0.7 });
+  const removedRelation = await relateV2(removed!, { band: "suggest", probability: 0.65 });
+  const typedAwayRelation = await relateV2(typedAway!, {
+    band: "suggest",
+    probability: 0.55,
+    relationType: null
+  });
+  await relations.upsertDecided({
+    subjectAtomicNoteId: home,
+    objectAtomicNoteId: legacyV2!,
+    relationType: "supports",
+    band: null,
+    finalScore: 0.99,
+    explanation: "knowledge.relations.explanations.reranked"
+  });
+  // The actors: a local ranker decided A, a remote model typed it and a remote model explained it.
+  const [rankerRun, typerRun] = await Promise.all(
+    [
+      ["reranking", "ranker-x", "local"],
+      ["structured-output", "typer-y", "remote"]
+    ].map(([taskType, modelId, runtime]) =>
+      aiConfig.recordTaskRun({
+        taskType: taskType!,
+        provider: "verify",
+        modelId: modelId!,
+        runtime: runtime!,
+        durationMs: 5,
+        status: "succeeded"
+      })
+    )
+  );
+  const [lo, hi] = [home, strong!].sort();
+  await decisions.recordRankerScores({
+    loAtomicNoteId: lo!,
+    hiAtomicNoteId: hi!,
+    loInputHash: "lo-input",
+    hiInputHash: "hi-input",
+    deciderKey: "decider-key-1",
+    loToHi: 1.5,
+    hiToLo: null,
+    aiTaskRunId: rankerRun!
+  });
+  await typings.record({
+    loAtomicNoteId: lo!,
+    hiAtomicNoteId: hi!,
+    typerKey: "typer-key-1",
+    loHash: "lo-input",
+    hiHash: "hi-input",
+    relationType: "supports",
+    direction: lo === home ? "lo_to_hi" : "hi_to_lo",
+    aiTaskRunId: typerRun!
+  });
+  const v2Context = (await explanations.readContext(strongRelation.relation.id))!;
+  await explanations.save({
+    relationId: strongRelation.relation.id,
+    text: `This note and the other agree on recall in <note-ref id="${home}" />.`,
+    inputHash: relationExplanationPlan({ ...v2Context, language: "en" }).inputHash,
+    promptVersion: "relation-explanation-v3",
+    provider: "verify",
+    model: "writer-z",
+    runtime: "remote",
+    aiTaskRunId: null,
+    language: "en"
+  });
+  // The writer found "Vetoed" unrelated, the typer found "Typed" so (an untyped relation).
+  assert.ok(await relations.veto(vetoedRelation.relation.id, "explainer", vetoRun.id));
+  assert.ok(await relations.veto(typedAwayRelation.relation.id, "typer", vetoRun.id));
+  assert.equal(
+    await relations.veto(vetoedRelation.relation.id, "explainer", vetoRun.id),
+    null,
+    "a relation is withdrawn once"
+  );
+  // The owner kept "Kept" and removed "Removed" (with the review writer).
+  const keptResult = await relations.review(keptRelation.relation.id, "keep", reviewRun.id);
+  assert.equal(keptResult?.change, "updated");
+  assert.equal(keptResult?.relation.status, "accepted");
+  const removedResult = await relations.review(removedRelation.relation.id, "remove", reviewRun.id);
+  assert.equal(removedResult?.change, "updated");
+  assert.equal(removedResult?.relation.status, "rejected");
+
+  let v2 = (await read(home))!;
+  assert.deepEqual(
+    v2.relations.items.map((item) => item.other.id),
+    [strong, kept, middling, legacyV2, uncalibrated],
+    "the shown ones: probability first (nulls last), then the stored score; withdrawn and removed ones are absent"
+  );
+  assert.equal(v2.relations.total, 5);
+  assert.deepEqual(
+    v2.withdrawn.items.map((item) => item.other.id),
+    [vetoed, typedAway],
+    "the withdrawn group lists the vetoed relations"
+  );
+  assert.equal(v2.withdrawn.total, 2);
+  const v2State = (id: string | undefined) =>
+    [...v2.relations.items, ...v2.withdrawn.items].find((item) => item.other.id === id)!;
+  assert.equal(v2State(strong).state, "applied");
+  assert.equal(v2State(strong).band, "apply");
+  assert.equal(v2State(strong).calibration, "frozen");
+  assert.equal(v2State(strong).probability, 0.9);
+  assert.equal(v2State(middling).state, "suggested");
+  assert.equal(v2State(uncalibrated).state, "suggested");
+  assert.equal(v2State(uncalibrated).calibration, "uncalibrated");
+  assert.equal(v2State(uncalibrated).probability, null);
+  assert.equal(v2State(kept).state, "kept", "a kept relation says so");
+  assert.equal(v2State(legacyV2).state, "applied");
+  assert.equal(v2State(legacyV2).band, null, "a legacy row has no band");
+  assert.equal(v2State(vetoed).state, "withdrawn");
+  assert.equal(v2State(vetoed).vetoSource, "explainer");
+  assert.equal(v2State(typedAway).vetoSource, "typer");
+  assert.equal(v2State(strong).vetoSource, null);
+  assert.deepEqual(v2State(strong).decidedBy, { model: "ranker-x", kind: "local" });
+  assert.deepEqual(v2State(strong).typedBy, { model: "typer-y", kind: "remote" });
+  assert.deepEqual(v2State(strong).explainedBy, { model: "writer-z", kind: "remote" });
+  assert.equal(v2State(middling).typedBy, null);
+  assert.equal(v2State(middling).explainedBy, null);
+  assert.equal(
+    (await read(typedAway!))!.relations.total,
+    0,
+    "a withdrawn relation is listed from neither side among the shown ones"
+  );
+  assert.equal((await read(typedAway!))!.withdrawn.total, 1, "and from both sides as withdrawn");
+  // A group is paged on its own, with an exact total.
+  const withdrawnPage = await repository.listRelations(home, {
+    group: "withdrawn",
+    offset: 1,
+    limit: 5,
+    contentLanguage: "en"
+  });
+  assert.deepEqual(
+    withdrawnPage.items.map((item) => item.other.id),
+    [typedAway]
+  );
+  assert.equal(withdrawnPage.total, 2);
+
+  // The review is final in both directions, and automation never changes either verdict.
+  assert.equal(
+    (await relations.review(keptRelation.relation.id, "remove", reviewRun.id))?.change,
+    "reviewed",
+    "a kept relation cannot be removed by a second review"
+  );
+  assert.equal(
+    (await relations.review(removedRelation.relation.id, "keep", reviewRun.id))?.relation.status,
+    "rejected",
+    "a removed relation cannot be kept by a second review"
+  );
+  assert.equal(await relations.review(randomUUID(), "keep", reviewRun.id), null);
+  assert.equal(
+    (await relateV2(kept!, { band: "apply", probability: 0.99 })).change,
+    "reviewed",
+    "automation never rewrites a kept relation (I-R3)"
+  );
+  assert.equal(
+    (await relateV2(removed!, { band: "apply", probability: 0.99 })).change,
+    "reviewed",
+    "automation never creates a removed pair again (I-R2)"
+  );
+  assert.equal(await relations.veto(keptRelation.relation.id, "explainer", vetoRun.id), null);
+  const keptAfter = (await read(home))!;
+  assert.equal(keptAfter.relations.items.find((item) => item.other.id === kept)?.band, "suggest");
+  assert.ok(
+    !keptAfter.relations.items.some((item) => item.other.id === removed),
+    "a removed relation is listed nowhere"
+  );
+  // Keep clears an automatic veto; the relation moves from the withdrawn to the shown group.
+  const vetoedKept = await relations.review(vetoedRelation.relation.id, "keep", reviewRun.id);
+  assert.equal(vetoedKept?.relation.vetoedAt, null);
+  assert.equal(vetoedKept?.relation.vetoSource, null);
+  v2 = (await read(home))!;
+  assert.equal(v2State(vetoed).state, "kept");
+  assert.equal(v2.withdrawn.total, 1);
+  assert.equal(v2.relations.total, 6);
+  // Remove on a withdrawn relation removes it for good.
+  await relations.review(typedAwayRelation.relation.id, "remove", reviewRun.id);
+  v2 = (await read(home))!;
+  assert.equal(v2.withdrawn.total, 0);
+  assert.equal((await read(typedAway!))!.withdrawn.total, 0);
+  const reviewEvents = await events.listByRun(reviewRun.id);
+  assert.deepEqual(
+    reviewEvents.map((event) => event.kind),
+    ["kept", "removed", "kept", "removed"],
+    "every verdict recorded one event, and a refused second review none"
+  );
+  const firstEvent = reviewEvents[0]!;
+  assert.equal(firstEvent.relationId, keptRelation.relation.id);
+  assert.equal(firstEvent.before?.status, "pending_review");
+  assert.equal(firstEvent.after?.status, "accepted");
+  assert.equal(
+    reviewEvents[2]!.before?.vetoed_at !== null,
+    true,
+    "the veto is in the image before"
+  );
+  assert.equal(reviewEvents[2]!.after?.vetoed_at, null);
 
   // 5. Successors.
   await db.query(
@@ -602,7 +890,9 @@ try {
       note,
       20,
       0,
-      notePageLimits.excerptCharacters
+      notePageLimits.excerptCharacters,
+      ["shown", "withdrawn", "earlier"],
+      notePageLimits.groupPage
     ]);
     await client.query("commit");
   } finally {
@@ -618,6 +908,9 @@ try {
         "relations: explanation writer, message keys, blank decider, dangling passage, clipped excerpt",
         "excerpts: cut and validated in characters (emoji at the bound), relations to a knowledge note whose home source was deleted listed and counted, no deleted source in an explanation's audit",
         "relations: score order, disjoint paging, stable totals",
+        "relations v2: shown, withdrawn and earlier-version groups paged apart with exact totals, probability order, states, bands",
+        "relations v2: decider, typer and writer actors with where they ran",
+        "review writer: keep clears the veto and remove rejects, one event each, final in both directions against a second review and against automation (I-R2, I-R3)",
         "explanations written on demand: shown with their writer, stale after an edit or in another content language, no relation write or legacy impact, removed with the relation",
         "successors, placement equal to objects.locate, every statement read-only"
       ]

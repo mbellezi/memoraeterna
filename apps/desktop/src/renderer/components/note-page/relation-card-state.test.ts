@@ -12,6 +12,30 @@ import {
 const run = (events: CardEvent[], state: CardState = initialCardState) =>
   events.reduce(cardReducer, state);
 
+describe("focus that lands on a row nobody chose", () => {
+  it("focuses the row with its card closed, so no explanation is asked for", () => {
+    const parked = run([
+      { type: "park", id: "b" },
+      { type: "focusIn", id: "b" }
+    ]);
+    expect(parked.open).toBeNull();
+    expect(parked.focusWithin).toBe("b");
+    expect(parked.dwell).toBeNull();
+    expect(parked.explain).toBeNull();
+    // The person's own Tab onto the row opens it once focus has left and come back.
+    const away = run([{ type: "focusOut", id: "b" }], parked);
+    expect(away.suppressed).toBeNull();
+    expect(run([{ type: "focusIn", id: "b" }], away).open).toBe("b");
+  });
+
+  it("changes nothing for the card that is open, and lets a hover on the row open it", () => {
+    const open = run([{ type: "focusIn", id: "a" }]);
+    expect(run([{ type: "park", id: "a" }], open)).toBe(open);
+    const parked = run([{ type: "park", id: "b" }]);
+    expect(run([{ type: "pointerEnter", id: "b" }, { type: "timer" }], parked).open).toBeNull();
+  });
+});
+
 describe("relation evidence card", () => {
   it("opens at once on keyboard focus and closes any other card", () => {
     const opened = run([{ type: "focusIn", id: "a" }]);

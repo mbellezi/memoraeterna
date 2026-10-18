@@ -64,7 +64,7 @@ for (const [owner, methods] of Object.entries({
     "subscribeChanged"
   ],
   system: ["subscribeNavigation"],
-  relations: ["subscribeChanged", "subscribeExplanationDelta"],
+  relations: ["review", "subscribeChanged", "subscribeExplanationDelta"],
   ai: ["classRoutes", "applyPreset", "testClassRoute", "setClassRoute", "setDeciderMode"]
 })) {
   for (const method of methods)

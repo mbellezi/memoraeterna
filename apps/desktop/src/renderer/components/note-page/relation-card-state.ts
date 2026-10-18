@@ -29,6 +29,12 @@ export type CardEvent =
   | { type: "dwell" }
   /** A deliberate request on the open card (Retry) asks at once, without the dwell. */
   | { type: "explainNow"; id: string }
+  /**
+   * Focus is about to land on a row without the person having chosen it (the row that took the
+   * place of one that left): the row is focused with its card closed, so no explanation is asked
+   * for a row nobody opened.
+   */
+  | { type: "park"; id: string }
   | { type: "reset" };
 
 export const initialCardState: CardState = {
@@ -142,6 +148,8 @@ function transition(
         ? { ...next, open: null }
         : next;
     }
+    case "park":
+      return state.open === event.id ? state : { ...state, suppressed: event.id, pending: null };
     case "reset":
       return initialCardState;
   }

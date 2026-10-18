@@ -35,6 +35,7 @@ import {
 import {
   AtomicNoteRelationTypeSchema,
   formatObjectAddress,
+  relationBandWord,
   SourceItemTypes,
   type ProcessingPlanRequest,
   type SourceItemType
@@ -313,6 +314,27 @@ const typeBadgeStyles: Record<SourceItemType, string> = {
   Video: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200",
   GenericDocument: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
 };
+
+/**
+ * What the relation list of a source says about how sure the matcher was (F3 D42): a relation the
+ * owner kept says so; a relations v2 row says its band as a word ("Strong", "Possible", "Not
+ * calibrated"), never a per-pair percentage; only a legacy row, whose score was a fused one, keeps
+ * showing the stored percentage.
+ */
+export function relationConfidenceLabel(
+  relation: {
+    band: "apply" | "suggest" | null;
+    calibration: "frozen" | "provisional" | "uncalibrated" | null;
+    state: "applied" | "suggested" | "withdrawn" | "kept";
+    finalScore: number;
+  },
+  t: Translator
+): string {
+  if (relation.state === "kept") return t("notePage.state.kept");
+  if (relation.band === null) return `${Math.round(relation.finalScore * 100)}%`;
+  const word = relationBandWord(relation);
+  return word === null ? "" : t(`notePage.band.${word}`);
+}
 
 function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translator }) {
   const Icon = typeIcons[type];
@@ -2210,7 +2232,7 @@ export function SourceDetailView({
                         {relation.targetTitle}
                       </p>
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold tabular-nums dark:bg-slate-800">
-                        {Math.round(relation.finalScore * 100)}%
+                        {relationConfidenceLabel(relation, t)}
                       </span>
                     </div>
                     <p className="text-sm">{t(relationTypeKey(relation.relationType))}</p>

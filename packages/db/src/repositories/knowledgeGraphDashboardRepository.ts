@@ -33,7 +33,12 @@ export interface KnowledgeGraphDashboardEdgeRecord {
   label: string;
   description: string | null;
   weight: number;
-  confidence: number;
+  /**
+   * A score in [0, 1] the tooltip shows as a percentage; null when the relation has none to show: a
+   * source relation promoted from note links has no judged confidence, and a relations v2 note
+   * relation (one with a band) has a calibrated band, not a per-pair percentage (F3 D42, R4).
+   */
+  confidence: number | null;
   details: string[];
   /** A source relation nobody kept (decision 29); absent on the other kinds of edge. */
   suggested?: boolean;
@@ -93,6 +98,8 @@ interface AtomicNoteEdgeRow extends QueryResultRow {
   relationType: string;
   explanation: string;
   finalScore: number;
+  /** Automation's band; null on a legacy row, whose stored score still reads as a percentage. */
+  band: string | null;
 }
 
 interface SourceConnectionDetailRow extends QueryResultRow {
@@ -264,7 +271,8 @@ async function listSourceGraph(
         label: row.label,
         // Relations decided without prose have no stored explanation (it is written on open).
         description: row.description ?? null,
-        confidence: Number(row.confidence),
+        // A promoted relation has no judged confidence: unknown stays unknown (R4).
+        confidence: row.confidence === null ? null : Number(row.confidence),
         weight: 1,
         details: row.description ? [row.description] : [],
         suggested: row.suggested === true
@@ -398,7 +406,7 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
             case when relation.direction = 'hi_to_lo' then relation.source_atomic_note_id
                  else relation.target_atomic_note_id end as target,
             coalesce(relation.relation_type, 'related') as "relationType",
-            relation.explanation, relation.final_score as "finalScore"
+            relation.explanation, relation.final_score as "finalScore", relation.band as band
      from atomic_note_relations relation
      where ${appliedNoteRelationSql("relation")}
        and relation.source_atomic_note_id = any($1::uuid[])
@@ -431,7 +439,8 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
       label: row.relationType,
       description: row.explanation,
       weight: 1,
-      confidence: score(Number(row.finalScore)),
+      // A banded (relations v2) row shows no per-pair percentage (F3 D42, R4).
+      confidence: row.band ? null : score(Number(row.finalScore)),
       details: []
     })),
     truncated: hasMoreNodes || edgeResult.rows.length > maxEdges

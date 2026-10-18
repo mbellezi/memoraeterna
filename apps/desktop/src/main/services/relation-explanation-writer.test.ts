@@ -9,8 +9,11 @@ vi.mock("@app/db", async (importOriginal) => ({
   createAiConfigRepository: () => config
 }));
 
-const { createRelationExplanationWriterResolver, relationExplanationPromptRevision } =
-  await import("./relation-explanation-writer.js");
+const {
+  createRelationExplanationWriterResolver,
+  memoizeRelationExplanationWriter,
+  relationExplanationPromptRevision
+} = await import("./relation-explanation-writer.js");
 
 const selection = {
   provider: "openai-codex",
@@ -119,5 +122,86 @@ describe("who writes an explanation now", () => {
     config.getDefaultTask.mockResolvedValue(null);
     expect(await createRelationExplanationWriterResolver(() => pool)()).toBeNull();
     expect(await createRelationExplanationWriterResolver(() => null)()).toBeNull();
+  });
+});
+
+describe("the writer a Note page asks for on every read", () => {
+  const writerA = { promptRevision: "prompt-3", model: "model-a" };
+  const writerB = { promptRevision: "prompt-3", model: "model-b" };
+  const pool = {};
+
+  function setup() {
+    const state = { pool: pool as object | null, configuration: 1, prompts: 1 };
+    let current: typeof writerA | null = writerA;
+    const resolve = vi.fn(async () => current);
+    const memoized = memoizeRelationExplanationWriter(resolve, () => ({ ...state }));
+    return {
+      state,
+      resolve,
+      memoized,
+      writes: (next: typeof writerA | null) => {
+        current = next;
+      }
+    };
+  }
+
+  it("is resolved once while the configuration, the prompts and the database stay as they are", async () => {
+    const { memoized, resolve } = setup();
+    for (let read = 0; read < 50; read += 1) expect(await memoized()).toEqual(writerA);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("is resolved again when the AI configuration changes, so another route is another writer", async () => {
+    const { memoized, resolve, state, writes } = setup();
+    expect(await memoized()).toEqual(writerA);
+    writes(writerB);
+    // Nothing changed yet: the page still judges by the writer it knows.
+    expect(await memoized()).toEqual(writerA);
+    state.configuration += 1;
+    expect(await memoized()).toEqual(writerB);
+    expect(resolve).toHaveBeenCalledTimes(2);
+    writes(null);
+    state.configuration += 1;
+    expect(await memoized()).toBeNull();
+  });
+
+  it("is resolved again when the owner edits a prompt or another database opens", async () => {
+    const { memoized, resolve, state } = setup();
+    await memoized();
+    state.prompts += 1;
+    await memoized();
+    expect(resolve).toHaveBeenCalledTimes(2);
+    state.pool = {};
+    await memoized();
+    expect(resolve).toHaveBeenCalledTimes(3);
+    // Back to a database it knew is still another resolution: nothing is kept per database.
+    state.pool = pool;
+    await memoized();
+    expect(resolve).toHaveBeenCalledTimes(4);
+    state.pool = null;
+    await memoized();
+    await memoized();
+    expect(resolve).toHaveBeenCalledTimes(5);
+  });
+
+  it("shares one resolution between reads that overlap, and keeps no failure", async () => {
+    const { memoized, resolve } = setup();
+    let release!: () => void;
+    const gate = new Promise<void>((done) => (release = done));
+    resolve.mockImplementationOnce(async () => {
+      await gate;
+      return writerA;
+    });
+    const reads = [memoized(), memoized(), memoized()];
+    release();
+    expect(await Promise.all(reads)).toEqual([writerA, writerA, writerA]);
+    expect(resolve).toHaveBeenCalledTimes(1);
+
+    const failing = setup();
+    failing.resolve.mockRejectedValueOnce(new Error("route unavailable"));
+    await expect(failing.memoized()).rejects.toThrow("route unavailable");
+    // The next read tries again.
+    expect(await failing.memoized()).toEqual(writerA);
+    expect(failing.resolve).toHaveBeenCalledTimes(2);
   });
 });

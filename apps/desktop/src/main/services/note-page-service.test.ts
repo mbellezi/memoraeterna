@@ -47,7 +47,9 @@ const page: NotePage = {
     citedBy: [],
     counts: { alsoIn: 0, citedBy: 0, notes: 0, passages: 0, children: 0 }
   },
-  relations
+  relations,
+  withdrawn: { items: [], total: 0 },
+  earlierVersions: { items: [], total: 0 }
 };
 const pool = {} as PgPool;
 const language = async () => "pt-BR";
@@ -114,11 +116,26 @@ describe("NotePageService", () => {
       total: 7
     });
     expect(repository.listRelations).toHaveBeenCalledWith(id(1), {
+      group: "shown",
       offset: 20,
       limit: 20,
       contentLanguage: "pt-BR",
       explanationWriter: null
     });
+  });
+
+  it("pages the withdrawn and the earlier-version groups on their own", async () => {
+    repository.listRelations.mockResolvedValue({ items: [], total: 41 });
+    const service = new NotePageService(() => pool, language);
+    for (const group of ["withdrawn", "earlier"] as const)
+      await service.relations({ noteId: id(1), group, offset: 20 });
+    expect(repository.listRelations.mock.calls.map((call) => call[1].group)).toEqual([
+      "withdrawn",
+      "earlier"
+    ]);
+    await expect(
+      service.relations({ noteId: id(1), group: "hidden", offset: 0 })
+    ).rejects.toThrow();
   });
 });
 
@@ -226,6 +243,11 @@ describe("note page IPC registration", () => {
     await pageHandler({}, { noteId: id(1) });
     expect(service.page).toHaveBeenCalledWith({ noteId: id(1), relationLimit: 20 });
     await relationsHandler({}, { noteId: id(1), offset: 20, limit: 10 });
-    expect(service.relations).toHaveBeenCalledWith({ noteId: id(1), offset: 20, limit: 10 });
+    expect(service.relations).toHaveBeenCalledWith({
+      noteId: id(1),
+      group: "shown",
+      offset: 20,
+      limit: 10
+    });
   });
 });

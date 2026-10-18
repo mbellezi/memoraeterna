@@ -110,6 +110,86 @@ describe("knowledge graph dashboard repository", () => {
     expect(pool.queries[1]).toContain("case when relation.direction = 'hi_to_lo'");
   });
 
+  it("shows no percentage for a relations v2 note relation, and keeps a legacy one's (F3 D42, R4)", async () => {
+    const note = (id: string) => ({
+      id,
+      title: id,
+      ideaStatement: id,
+      content: id,
+      status: "approved",
+      sourceItemId: "source-1",
+      sourceTitle: "Source",
+      entityCount: 0
+    });
+    const relation = (id: string, band: string | null) => ({
+      id,
+      source: "note-1",
+      target: "note-2",
+      relationType: "supports",
+      explanation: "Evidence overlaps",
+      finalScore: 0.88,
+      band
+    });
+    const pool = new FakeGraphPool([
+      [note("note-1"), note("note-2")],
+      [relation("legacy", null), relation("strong", "apply"), relation("possible", "suggest")]
+    ]);
+    const result = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool).get(
+      "atomic_notes"
+    );
+    expect(result.edges.map((edge) => [edge.id, edge.confidence])).toEqual([
+      ["legacy", 0.88],
+      ["strong", null],
+      ["possible", null]
+    ]);
+    // The band is only read as a value: the visibility predicates choose the rows.
+    expect(pool.queries[1]).toContain("relation.band as band");
+  });
+
+  it("gives a source relation promoted from note links no confidence to show", async () => {
+    const pool = new FakeGraphPool([
+      [
+        {
+          id: "source-1",
+          type: "Book",
+          title: "One",
+          subtitle: null,
+          entityCount: 0,
+          parentSourceItemId: null,
+          childCount: 0
+        }
+      ],
+      [
+        {
+          id: "judged",
+          source: "source-1",
+          target: "source-1",
+          label: "supports",
+          description: null,
+          confidence: 0.9,
+          importance: 0.7
+        },
+        {
+          id: "promoted",
+          source: "source-1",
+          target: "source-1",
+          label: "extends",
+          description: null,
+          confidence: null,
+          importance: null
+        }
+      ]
+    ]);
+    const result = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool).get(
+      "sources",
+      "relations"
+    );
+    expect(result.edges.map((edge) => [edge.id, edge.confidence])).toEqual([
+      ["judged", 0.9],
+      ["promoted", null]
+    ]);
+  });
+
   it("loads every source-connection detail only when its card is opened", async () => {
     const pool = new FakeGraphPool([
       [

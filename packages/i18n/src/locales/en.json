@@ -2777,7 +2777,10 @@
     },
     "announce": {
       "reviewed": "Note marked as reviewed.",
-      "saved": "Edit saved. The note is now yours."
+      "saved": "Edit saved. The note is now yours.",
+      "kept": "Relation kept.",
+      "removed": "Relation removed.",
+      "withdrawn": "A relation was withdrawn because the model that writes explanations found the notes unrelated. You can keep or remove it under withdrawn relations."
     },
     "provenance": {
       "onePassage": "Written by {model} from 1 passage of {source} · {date}.",
@@ -2811,14 +2814,21 @@
     },
     "relations": {
       "title": "Relations",
-      "hint": "hover or focus a relation to see its evidence",
+      "hint": "hover or focus a relation to see its evidence; keep or remove the suggested ones",
       "empty": "No relations to other notes were found.",
       "decided": "decided",
       "explained": "explained",
       "showMore": "Show {count} more",
       "moreFailed": "More relations could not be loaded.",
       "superseded": "Superseded",
-      "otherNote": "another note"
+      "otherNote": "another note",
+      "withdrawn": "{count} relations withdrawn",
+      "withdrawnOne": "1 relation withdrawn",
+      "withdrawnHint": "Automatic checks found these notes unrelated. Keep or remove each relation.",
+      "showWithdrawn": "Show",
+      "hideWithdrawn": "Hide",
+      "earlierTitle": "Earlier versions",
+      "earlierHint": "Relations to a note that a newer version replaced, or whose source is gone. They stay out of the graph and the counts."
     },
     "stance": {
       "supports": "supports",
@@ -2832,6 +2842,16 @@
       "mentions": "mentions",
       "related": "related",
       "same_as": "same as"
+    },
+    "band": {
+      "strong": "Strong",
+      "possible": "Possible",
+      "uncalibrated": "Not calibrated"
+    },
+    "state": {
+      "suggested": "Suggested",
+      "kept": "Kept",
+      "withdrawn": "Withdrawn"
     },
     "card": {
       "label": "Evidence for the relation: {type}",
@@ -2858,12 +2878,24 @@
       "passageLabel": "{source} · passage {number}",
       "decided": "Decided",
       "writing": "Writing an explanation…",
-      "explainedBy": "Explained by {model}",
       "explainFailed": "The explanation could not be written.",
       "explainNoModel": "No model is set up to write explanations.",
       "unrelated": "The model that writes explanations found these notes unrelated, so this relation is now hidden.",
       "unexplained": "No explanation is available. The model that writes explanations did not find a link between these notes, and the relation stays as it is.",
-      "explainUnavailable": "This relation is no longer available, so it cannot be explained."
+      "explainUnavailable": "This relation is no longer available, so it cannot be explained.",
+      "confidence": "Confidence: {word}",
+      "typed": "Typed",
+      "explained": "Explained",
+      "kindLocal": "on this computer",
+      "kindRemote": "online",
+      "suggestedHint": "This relation is a suggestion. Keep it to make it yours, or remove it.",
+      "keptNote": "You kept this relation. It stays as it is.",
+      "withdrawnExplainer": "The model that writes explanations found these notes unrelated, so this relation is hidden.",
+      "withdrawnTyper": "The typing step found no real link between these notes, so this relation is hidden.",
+      "keep": "Keep",
+      "remove": "Remove",
+      "reviewScope": "Keep confirms this relation. Remove is final: this pair is not suggested again.",
+      "reviewFailed": "Your choice could not be saved. Try again."
     }
   }
 }

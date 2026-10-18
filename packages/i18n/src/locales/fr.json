@@ -2782,7 +2782,10 @@
     },
     "announce": {
       "reviewed": "Note marquée comme relue.",
-      "saved": "Modification enregistrée. La note est désormais la vôtre."
+      "saved": "Modification enregistrée. La note est désormais la vôtre.",
+      "kept": "Relation conservée.",
+      "removed": "Relation supprimée.",
+      "withdrawn": "Une relation a été retirée, car le modèle qui rédige les explications a jugé que les notes ne sont pas liées. Vous pouvez la conserver ou la supprimer dans les relations retirées."
     },
     "provenance": {
       "onePassage": "Rédigée par {model} à partir d’un passage de {source} · {date}.",
@@ -2816,14 +2819,21 @@
     },
     "relations": {
       "title": "Relations",
-      "hint": "survolez ou sélectionnez une relation pour voir ses preuves",
+      "hint": "survolez ou sélectionnez une relation pour voir ses preuves ; conservez ou supprimez les suggestions",
       "empty": "Aucune relation avec d’autres notes n’a été trouvée.",
       "decided": "a décidé",
       "explained": "a expliqué",
       "showMore": "Afficher {count} de plus",
       "moreFailed": "Impossible de charger plus de relations.",
       "superseded": "Remplacée",
-      "otherNote": "une autre note"
+      "otherNote": "une autre note",
+      "withdrawn": "{count} relations retirées",
+      "withdrawnOne": "1 relation retirée",
+      "withdrawnHint": "Des vérifications automatiques ont jugé que ces notes ne sont pas liées. Conservez ou supprimez chaque relation.",
+      "showWithdrawn": "Afficher",
+      "hideWithdrawn": "Masquer",
+      "earlierTitle": "Versions antérieures",
+      "earlierHint": "Relations avec une note qu’une version plus récente a remplacée, ou dont la source n’existe plus. Elles restent hors du graphe et des totaux."
     },
     "stance": {
       "supports": "soutient",
@@ -2837,6 +2847,16 @@
       "mentions": "mentionne",
       "related": "liée",
       "same_as": "identique à"
+    },
+    "band": {
+      "strong": "Forte",
+      "possible": "Possible",
+      "uncalibrated": "Non calibrée"
+    },
+    "state": {
+      "suggested": "Suggérée",
+      "kept": "Conservée",
+      "withdrawn": "Retirée"
     },
     "card": {
       "label": "Preuves de la relation : {type}",
@@ -2863,12 +2883,24 @@
       "passageLabel": "{source} · passage {number}",
       "decided": "A décidé",
       "writing": "Rédaction d’une explication…",
-      "explainedBy": "Expliquée par {model}",
       "explainFailed": "L’explication n’a pas pu être rédigée.",
       "explainNoModel": "Aucun modèle n’est configuré pour rédiger des explications.",
       "unrelated": "Le modèle qui rédige les explications a jugé que ces notes ne sont pas liées, cette relation est donc masquée.",
       "unexplained": "Aucune explication n’est disponible. Le modèle qui rédige les explications n’a pas trouvé de lien entre ces notes, et la relation reste telle quelle.",
-      "explainUnavailable": "Cette relation n’est plus disponible, elle ne peut donc pas être expliquée."
+      "explainUnavailable": "Cette relation n’est plus disponible, elle ne peut donc pas être expliquée.",
+      "confidence": "Confiance : {word}",
+      "typed": "A typé",
+      "explained": "A expliqué",
+      "kindLocal": "sur cet ordinateur",
+      "kindRemote": "en ligne",
+      "suggestedHint": "Cette relation est une suggestion. Conservez-la pour en faire la vôtre, ou supprimez-la.",
+      "keptNote": "Vous avez conservé cette relation. Elle reste telle quelle.",
+      "withdrawnExplainer": "Le modèle qui rédige les explications a jugé que ces notes ne sont pas liées, cette relation est donc masquée.",
+      "withdrawnTyper": "L’étape de typage n’a trouvé aucun lien réel entre ces notes, cette relation est donc masquée.",
+      "keep": "Conserver",
+      "remove": "Supprimer",
+      "reviewScope": "Conserver confirme cette relation. Supprimer est définitif : cette paire ne sera plus suggérée.",
+      "reviewFailed": "Votre choix n’a pas pu être enregistré. Réessayez."
     }
   }
 }

@@ -5,6 +5,7 @@ import type { Translator } from "@app/i18n";
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import type { PassageAnchor } from "../../lib/object-navigation";
+import { useRelationsPulse } from "../../lib/relations-pulse";
 import { useTopicsPulse } from "../../lib/topics-pulse";
 import { recordView, viewsToRecord, type OpenedObject } from "../../lib/view-history";
 import { dispatchWindowNavigation, subscribeWindowNavigation } from "../../lib/window-navigation";
@@ -12,7 +13,7 @@ import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import type { NoteEditing } from "./NoteHeader";
 import { NoteLeaveDialog } from "./NoteLeaveDialog";
 import { NotePageView, type NotePageLoad } from "./NotePageView";
-import type { RelationsMore } from "./NoteRelations";
+import type { RelationFocus, RelationsMore } from "./NoteRelations";
 import {
   asksForExplanation,
   editBase,
@@ -21,18 +22,27 @@ import {
   explanationAfter,
   explanationErrorKind,
   explanationStreamed,
+  focusAfterRemoval,
+  groupOf,
   hasUnsavedEdit,
   isPristineDraft,
   keepShownRelations,
   keepsNotePageMounted,
+  listOf,
+  locateRelation,
   nextAnnouncement,
   refreshRelationLimit,
   reviewErrorKind,
   unsavedEditNavigationGuard,
   withPlacement,
+  withReviewed,
+  withWithdrawn,
+  withWrittenExplanation,
   type ExplanationState,
   type NoteDraft,
-  type NoteEditBase
+  type NoteEditBase,
+  type RelationGroup,
+  type ReviewState
 } from "./note-page-model";
 import { cardReducer, escapeClosesCard, initialCardState } from "./relation-card-state";
 
@@ -93,17 +103,16 @@ function withExplanation(
   explanation: { text: string; writtenBy: string }
 ): NotePageLoad {
   if (load.status !== "ready") return load;
-  const items = load.page.relations.items.map((item) =>
-    item.id === relationId ? { ...item, explanation } : item
-  );
-  return { status: "ready", page: { ...load.page, relations: { ...load.page.relations, items } } };
+  const page = withWrittenExplanation(load.page, relationId, explanation);
+  return page === load.page ? load : { status: "ready", page };
 }
 
 /**
- * The page without the relations the writer withdrew (F3 D22), except the one whose card is still
- * open: it keeps saying why it is hidden until the card closes. The total counts the rows that are
- * still listed, so the rows removed here leave it once. The caller applies this to the state when
- * a card closes and forgets the relation, so the page never holds a second, shadow list.
+ * The page with the relations the writer withdrew (F3 D22) moved out of the shown list into the
+ * withdrawn one, except the one whose card is still open: it keeps saying why it is hidden until
+ * the card closes. The total counts the rows that are still listed, so a row leaves it once. The
+ * caller applies this to the state when a card closes and forgets the relation, so the page never
+ * holds a second, shadow list.
  */
 export function withoutWithdrawn(
   load: NotePageLoad,
@@ -111,13 +120,20 @@ export function withoutWithdrawn(
   openCard: string | null
 ): NotePageLoad {
   if (load.status !== "ready" || withdrawn.size === 0) return load;
-  const items = load.page.relations.items.filter(
-    (item) => !withdrawn.has(item.id) || item.id === openCard
-  );
-  const removed = load.page.relations.items.length - items.length;
-  if (removed === 0) return load;
-  const total = Math.max(items.length, load.page.relations.total - removed);
-  return { status: "ready", page: { ...load.page, relations: { total, items } } };
+  const leaving = new Set([...withdrawn].filter((id) => id !== openCard));
+  const page = withWithdrawn(load.page, leaving);
+  return page === load.page ? load : { status: "ready", page };
+}
+
+const idleMore: Record<RelationGroup, RelationsMore> = {
+  shown: { status: "idle" },
+  withdrawn: { status: "idle" },
+  earlier: { status: "idle" }
+};
+
+/** The row of a relation in the document, for the focus that stays or leaves with it. */
+function relationRow(relationId: string): Element | null {
+  return document.querySelector(`[data-relation-id="${CSS.escape(relationId)}"]`);
 }
 
 function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
@@ -148,13 +164,17 @@ export function NotePage({
   const [editing, setEditing] = useState<NoteEditing | null>(null);
   const [leaving, setLeaving] = useState<{ go: () => void } | null>(null);
   const [review, setReview] = useState({ pending: false, failed: false });
-  const [more, setMore] = useState<RelationsMore>({ status: "idle" });
+  const [more, setMore] = useState<Record<RelationGroup, RelationsMore>>(idleMore);
   const [explanations, setExplanations] = useState<Record<string, ExplanationState>>({});
   const [explainRetry, setExplainRetry] = useState(0);
   const [withdrawn, setWithdrawn] = useState<ReadonlySet<string>>(new Set());
+  const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
+  const [relationFocus, setRelationFocus] = useState<RelationFocus | null>(null);
+  const [withdrawnOpen, setWithdrawnOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [placedByHand, setPlacedByHand] = useState(0);
   const topicsPulse = useTopicsPulse(active);
+  const relationsPulse = useRelationsPulse(active, noteId);
   const [card, dispatchCard] = useReducer(cardReducer, initialCardState);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const editRef = useRef<HTMLButtonElement>(null);
@@ -164,6 +184,8 @@ export function NotePage({
   const editingNow = useRef<NoteEditing | null>(null);
   const explanationsNow = useRef<Readonly<Record<string, ExplanationState>>>({});
   const withdrawnNow = useRef<ReadonlySet<string>>(new Set());
+  const reviewsNow = useRef<Readonly<Record<string, ReviewState>>>({});
+  const handledPulse = useRef(0);
   const recorded = useRef<ReadonlySet<string>>(new Set());
   const focusedHeading = useRef(false);
   const focusEdit = useRef(false);
@@ -195,23 +217,62 @@ export function NotePage({
     withdrawnNow.current = withdrawn;
   }, [withdrawn]);
 
+  useEffect(() => {
+    reviewsNow.current = reviews;
+  }, [reviews]);
+
   // A relation the writer withdrew leaves the list once its card closes, and the page forgets it:
-  // the server no longer lists it, so a later read, "Show more" or Keep (T60) owns what is shown.
+  // the server no longer lists it there, so a later read, "Show more" or a review owns what is
+  // shown. It is announced, and focus that was on the row goes to the row that takes its place.
+  const announceWithdrawn = useEffectEvent(() =>
+    setAnnouncement((previous) => nextAnnouncement(previous, t("notePage.announce.withdrawn")))
+  );
   useEffect(() => {
     const leaving = [...withdrawn].filter((id) => id !== card.open);
     if (leaving.length === 0) return;
-    setLoad((current) => withoutWithdrawn(current, new Set(leaving), null));
-    setExplanations((current) => {
-      let next = current;
+    const current = shown.current;
+    // Only a row of the shown list leaves it; one already listed as withdrawn stays where it is.
+    const fromShown = new Set(
+      leaving.filter((id) => current?.relations.items.some((item) => item.id === id))
+    );
+    if (current && fromShown.size > 0) {
+      const focused = [...fromShown].find((id) =>
+        relationRow(id)?.contains(document.activeElement)
+      );
+      if (focused !== undefined)
+        setRelationFocus({
+          relationId: focusAfterRemoval(
+            current.relations.items
+              .map((item) => item.id)
+              .filter((id) => !fromShown.has(id) || id === focused),
+            focused
+          ),
+          group: "shown"
+        });
+      setLoad((state) => withoutWithdrawn(state, fromShown, null));
+      announceWithdrawn();
+    }
+    setExplanations((state) => {
+      let next = state;
       for (const id of leaving) next = without(next, id);
       return next;
     });
-    setWithdrawn((current) => {
-      const next = new Set(current);
+    setWithdrawn((state) => {
+      const next = new Set(state);
       for (const id of leaving) next.delete(id);
       return next;
     });
   }, [withdrawn, card.open]);
+
+  // The relations of this note changed (a link job, a veto, a review): they are read again once the
+  // page no longer holds a row the writer just withdrew on screen, so that row's card is not
+  // pulled away while it explains why it is hidden.
+  const holdingWithdrawn = card.open !== null && withdrawn.has(card.open);
+  useEffect(() => {
+    if (relationsPulse === handledPulse.current || holdingWithdrawn) return;
+    handledPulse.current = relationsPulse;
+    setAttempt((value) => value + 1);
+  }, [relationsPulse, holdingWithdrawn]);
 
   useEffect(() => {
     const decision = notePageLoadDecision({
@@ -487,6 +548,80 @@ export function NotePage({
     }
   };
 
+  // The owner keeps or removes a suggested or withdrawn relation (F3 D15). The verdict is final, so
+  // it is shown at once and the page reads the relations again; the row that leaves takes its
+  // focus to the next one (or the one before it), and the outcome is announced.
+  const reviewRelation = (relationId: string, verdict: "keep" | "remove") => {
+    if (!page || reviewsNow.current[relationId]?.status === "pending") return;
+    const located = locateRelation(page, relationId);
+    setReviews((current) => ({ ...current, [relationId]: { status: "pending" } }));
+    window.app.relations
+      .review({ relationId, verdict })
+      .then((result) => {
+        // A relation that is gone reads as removed.
+        const outcome = result?.outcome ?? "removed";
+        setReviews((current) => without(current, relationId));
+        setWithdrawn((current) => {
+          if (!current.has(relationId)) return current;
+          const next = new Set(current);
+          next.delete(relationId);
+          return next;
+        });
+        setExplanations((current) => without(current, relationId));
+        setLoad((current) =>
+          current.status === "ready"
+            ? { status: "ready", page: withReviewed(current.page, relationId, outcome) }
+            : current
+        );
+        if (located) {
+          const stays = outcome === "kept" && located.list === "relations";
+          setRelationFocus({
+            relationId: stays ? relationId : focusAfterRemoval(located.ids, relationId),
+            group: stays ? "shown" : groupOf(located.list)
+          });
+        }
+        if (outcome === "removed") dispatchCard({ type: "reset" });
+        announce(t(outcome === "kept" ? "notePage.announce.kept" : "notePage.announce.removed"));
+        reload();
+        onChanged?.();
+      })
+      .catch(() => setReviews((current) => ({ ...current, [relationId]: { status: "failed" } })));
+  };
+
+  const showMore = (group: RelationGroup) => {
+    if (!page || more[group].status === "loading") return;
+    const list = listOf(group);
+    setMore((current) => ({ ...current, [group]: { status: "loading" } }));
+    window.app.notes
+      .relations({
+        noteId,
+        group,
+        // The rows the writer withdrew are no longer in the list the offset counts in.
+        offset: page[list].items.filter((item) => !withdrawn.has(item.id)).length,
+        limit: notePageLimits.relationPage
+      })
+      .then((next) => {
+        setLoad((current) => {
+          if (current.status !== "ready") return current;
+          const known = new Set(current.page[list].items.map((item) => item.id));
+          const items = [
+            ...current.page[list].items,
+            ...next.items.filter((item) => !known.has(item.id))
+          ];
+          // The total counts the withdrawn row a card still shows, until the card closes.
+          const held = current.page[list].items.filter((item) =>
+            withdrawnNow.current.has(item.id)
+          ).length;
+          return {
+            status: "ready",
+            page: { ...current.page, [list]: { total: next.total + held, items } }
+          };
+        });
+        setMore((current) => ({ ...current, [group]: { status: "idle" } }));
+      })
+      .catch(() => setMore((current) => ({ ...current, [group]: { status: "error" } })));
+  };
+
   const draftState = (base: NoteEditBase, draft: NoteDraft): NoteEditing => {
     const changes = editChanges(base, draft);
     return {
@@ -563,37 +698,13 @@ export function NotePage({
           dispatchCard({ type: "explainNow", id: relationId });
           setExplainRetry((current) => current + 1);
         }}
-        onShowMore={() => {
-          if (!page || more.status === "loading") return;
-          setMore({ status: "loading" });
-          window.app.notes
-            .relations({
-              noteId,
-              // The rows the writer withdrew are no longer in the list the offset counts in.
-              offset: page.relations.items.filter((item) => !withdrawn.has(item.id)).length,
-              limit: notePageLimits.relationPage
-            })
-            .then((next) => {
-              setLoad((current) => {
-                if (current.status !== "ready") return current;
-                const known = new Set(current.page.relations.items.map((item) => item.id));
-                const items = [
-                  ...current.page.relations.items,
-                  ...next.items.filter((item) => !known.has(item.id))
-                ];
-                // The total counts the withdrawn row a card still shows, until the card closes.
-                const held = current.page.relations.items.filter((item) =>
-                  withdrawnNow.current.has(item.id)
-                ).length;
-                return {
-                  status: "ready",
-                  page: { ...current.page, relations: { total: next.total + held, items } }
-                };
-              });
-              setMore({ status: "idle" });
-            })
-            .catch(() => setMore({ status: "error" }));
-        }}
+        reviews={reviews}
+        onReview={reviewRelation}
+        relationFocus={relationFocus}
+        withdrawnOpen={withdrawnOpen}
+        onToggleWithdrawn={() => setWithdrawnOpen((current) => !current)}
+        onRelationFocusHandled={() => setRelationFocus(null)}
+        onShowMore={showMore}
       />
       {leaving ? (
         <NoteLeaveDialog t={t} onKeepEditing={() => setLeaving(null)} onDiscard={discardAndLeave} />

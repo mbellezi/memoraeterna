@@ -31,9 +31,15 @@ export function defaultPromptPin(domainId: string | null = null): PromptPin {
     }))
   };
 }
+let pinGeneration = 0;
 export function installPromptPin(pin: PromptPin, scoped: Record<string, PromptPin> = {}) {
   active = PromptPinSchema.parse(pin);
   domains = structuredClone(scoped);
+  pinGeneration += 1;
+}
+/** Moves each time the installed prompts change: what is derived from them is valid for one value. */
+export function promptPinGeneration(): number {
+  return pinGeneration;
 }
 export function capturePromptPin(domainId?: string | null): PromptPin {
   return structuredClone(

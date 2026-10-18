@@ -4,15 +4,21 @@ import {
   clipCharacters,
   knownModel,
   noteAuthorship,
+  noteRelationCalibration,
+  noteRelationGroups,
   notePageLimits,
   objectLocatePathLimit,
   relationExplanation,
   relationExplanationSentinel,
   type AtomicNoteStatus,
+  type NotePageActor,
   type NotePageEvidence,
   type NotePageNote,
   type NotePageRelation,
   type NotePageRelations,
+  type NoteRelationBand,
+  type NoteRelationGroup,
+  type NoteRelationVetoSource,
   type ObjectLocateResult
 } from "@app/domain";
 
@@ -20,7 +26,9 @@ import type { PgPool } from "../client.js";
 import {
   currentNoteSql,
   earlierVersionNoteRelationSql,
-  shownNoteRelationSql
+  noteRelationStateLabelSql,
+  shownNoteRelationSql,
+  withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
 import { createObjectLocateRepository } from "./objectLocateRepository.js";
 import {
@@ -42,7 +50,12 @@ export interface NotePageRows {
   successors: Array<{ id: string; title: string }>;
   evidence: { items: NotePageEvidence[]; total: number };
   placement: ObjectLocateResult;
+  /** The shown relations (D9). */
   relations: NotePageRelations;
+  /** The relations an automatic veto withdrew, not yet reviewed. */
+  withdrawn: NotePageRelations;
+  /** Applied relations to an earlier version of a note (R29). */
+  earlierVersions: NotePageRelations;
 }
 
 interface NoteRow extends QueryResultRow {
@@ -72,14 +85,23 @@ interface EvidenceRow extends QueryResultRow {
 
 interface RelationItem {
   id: string;
+  group: NoteRelationGroup;
   type: string;
   direction: NotePageRelation["direction"];
+  state: NotePageRelation["state"];
+  band: NoteRelationBand | null;
+  calibration: string | null;
+  probability: number | null;
+  vetoSource: NoteRelationVetoSource | null;
   semanticSourceId: string | null;
   matchingModel: string | null;
+  /** The AI run behind the decider's verdict and the typer's, when they are still known. */
+  deciderRun: { model: string; runtime: string } | null;
+  typerRun: { model: string; runtime: string } | null;
   decisionSource: string | null;
   explanation: string | null;
   /** An explanation written on demand, with the hash of the inputs it was written from. */
-  written: { text: string; inputHash: string; model: string } | null;
+  written: { text: string; inputHash: string; model: string; runtime: string } | null;
   other: Omit<NotePageRelation["other"], "authorship"> & {
     edited: boolean;
     evolution: boolean;
@@ -96,7 +118,7 @@ interface SelfFacts {
 }
 
 interface RelationsRow extends QueryResultRow {
-  total: number | string;
+  totals: Record<NoteRelationGroup, number | string>;
   self: SelfFacts | null;
   items: RelationItem[];
 }
@@ -190,14 +212,23 @@ select (select count(*)::int from items) as total,
            limit $2::int) page), '[]'::jsonb) as items`;
 
 /**
- * $1 note ID, $2 limit, $3 offset, $4 excerpt characters. One row with the exact total and one page
- * of relations, ordered by the stored score (which never leaves this statement's ordering): the
- * shown relations (D9) and the applied relations to an earlier version of a note (flagged
- * `superseded` on the other note). The direction comes from the stored `direction` (F3 D8): the
- * endpoint columns are the canonical pair, sorted by ID. Every counted relation is listed: a
- * knowledge-owned note outlives its home source (it has no foreign key to it), so that source is a
- * left join. `left()` counts characters (code points) and the contract bounds the excerpt in the
- * same unit.
+ * $1 note ID, $2 limit of the shown group, $3 offset, $4 excerpt characters, $5 the groups to list
+ * (`shown`, `withdrawn`, `earlier`), $6 limit of the other groups. One row with the exact total of
+ * each group and a page of each group listed (F3 D9, D15, R29):
+ *
+ *   shown       applied, suggested or kept relations between current notes
+ *   withdrawn   relations an automatic veto withdrew, the owner has not reviewed yet
+ *   earlier     applied relations to an earlier (superseded) version of a note, as F1b listed
+ *               them (the other note carries its `superseded` flag), never counted as shown
+ *
+ * The groups come from the predicates of `note-relation-sql.ts` alone. Each is ordered by the
+ * calibrated probability (nulls last), then the stored legacy score, which never leaves this
+ * statement, then the other note's title and the ID. The direction comes from the stored
+ * `direction` (F3 D8): the endpoint columns are the canonical pair, sorted by ID. Every counted
+ * relation is listed: a knowledge-owned note outlives its home source (it has no foreign key to
+ * it), so that source is a left join. `left()` counts characters (code points) and the contract
+ * bounds the excerpt in the same unit. The runs behind the decider's verdict and the typer's are
+ * read by key for the listed rows only.
  */
 const self = { alias: "s", current: "s.current" };
 const other = { alias: "o", current: "o.current" };
@@ -206,8 +237,15 @@ with self as materialized (
   select n.id, n.status, ${currentNoteSql("n")} as current from atomic_notes n where n.id = $1::uuid
 ),
 rel as (
-  select r.id, coalesce(r.relation_type, 'related') as type, r.final_score, r.explanation, r.matching_model,
+  select r.id, coalesce(r.relation_type, 'related') as type, r.final_score, r.probability, r.band,
+         r.metadata->>'calibration' as calibration, r.veto_source, r.explanation, r.matching_model,
+         r.decider_key, r.typer_key,
+         r.source_atomic_note_id::text || ':' || r.target_atomic_note_id::text as pair_key,
          r.metadata->>'decisionSource' as decision_source,
+         ${noteRelationStateLabelSql("r")} as state,
+         case when ${shownNoteRelationSql("r", [self, other])} then 'shown'
+              when ${withdrawnNoteRelationSql("r", [self, other])} then 'withdrawn'
+              else 'earlier' end as grp,
          (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
                            when 'hi_to_lo' then r.target_atomic_note_id end)::text as semantic_source_id,
          case when r.direction not in ('lo_to_hi', 'hi_to_lo') then 'unknown'
@@ -226,27 +264,44 @@ rel as (
        limit 1) o
    where (r.source_atomic_note_id = $1::uuid or r.target_atomic_note_id = $1::uuid)
      and (${shownNoteRelationSql("r", [self, other])}
+          or ${withdrawnNoteRelationSql("r", [self, other])}
           or ${earlierVersionNoteRelationSql("r", self, other)})
 ),
-page as (
-  select rel.*, row_number() over (order by rel.final_score desc, rel.other_title, rel.id) as ord
+ranked as (
+  select rel.*, row_number() over (
+           partition by rel.grp
+           order by rel.probability desc nulls last, rel.final_score desc, rel.other_title, rel.id) as ord
     from rel
-   order by rel.final_score desc, rel.other_title, rel.id
-   limit $2::int offset $3::int
+   where rel.grp = any($5::text[])
+),
+page as (
+  select ranked.* from ranked
+   where ranked.ord > $3::int
+     and ranked.ord <= $3::int + case when ranked.grp = 'shown' then $2::int else $6::int end
 )
-select (select count(*)::int from rel) as total,
+select (select jsonb_build_object('shown', count(*) filter (where rel.grp = 'shown'),
+                                  'withdrawn', count(*) filter (where rel.grp = 'withdrawn'),
+                                  'earlier', count(*) filter (where rel.grp = 'earlier'))
+          from rel) as totals,
        (select jsonb_build_object('id', n.id, 'title', n.title, 'ideaStatement', n.idea_statement,
                                   'passageHash', c.content_hash)
           from atomic_notes n left join chunks c on c.id = n.evidence_chunk_id
          where n.id = $1::uuid) as self,
-       coalesce((select jsonb_agg(item.value order by item.ord) from (
-         select page.ord, jsonb_build_object(
-                  'id', page.id, 'type', page.type, 'direction', page.direction,
+       coalesce((select jsonb_agg(item.value order by item.grp, item.ord) from (
+         select page.grp, page.ord, jsonb_build_object(
+                  'id', page.id, 'group', page.grp, 'type', page.type, 'direction', page.direction,
+                  'state', page.state, 'band', page.band, 'calibration', page.calibration,
+                  'probability', page.probability, 'vetoSource', page.veto_source,
                   'semanticSourceId', page.semantic_source_id,
                   'matchingModel', page.matching_model, 'decisionSource', page.decision_source,
+                  'deciderRun', case when dr.id is null then null else jsonb_build_object(
+                    'model', dr.model_id, 'runtime', dr.runtime) end,
+                  'typerRun', case when tr.id is null then null else jsonb_build_object(
+                    'model', tr.model_id, 'runtime', tr.runtime) end,
                   'explanation', page.explanation,
                   'written', case when x.relation_id is null then null else jsonb_build_object(
-                    'text', x.text, 'inputHash', x.input_hash, 'model', x.model) end,
+                    'text', x.text, 'inputHash', x.input_hash, 'model', x.model,
+                    'runtime', x.runtime) end,
                   'other', jsonb_build_object(
                     'id', o.id, 'title', o.title, 'ideaStatement', o.idea_statement,
                     'language', nullif(o.language, 'und'), 'status', o.status,
@@ -262,7 +317,30 @@ select (select count(*)::int from rel) as total,
            join atomic_notes o on o.id = page.other_id
            left join source_items os on os.id = o.created_from_source_item_id
            left join chunks oc on oc.id = o.evidence_chunk_id
-           left join atomic_note_relation_explanations x on x.relation_id = page.id) item), '[]'::jsonb) as items`;
+           left join atomic_note_relation_explanations x on x.relation_id = page.id
+           left join relation_decisions d on d.pair_key = page.pair_key and d.decider_key = page.decider_key
+           left join ai_task_runs dr on dr.id = coalesce(d.lo_to_hi_ai_task_run_id, d.hi_to_lo_ai_task_run_id)
+           left join relation_typings t on t.pair_key = page.pair_key and t.typer_key = page.typer_key
+           left join ai_task_runs tr on tr.id = t.ai_task_run_id) item), '[]'::jsonb) as items`;
+
+/**
+ * The statements of a page are fixed text over primary keys and indexes, and planning them costs
+ * more than running them (about 3 ms of a 4 ms read on a library of 30,000 notes). A named
+ * statement is planned once per connection, so the Note page's budget holds (F3 T60). The name
+ * belongs to the text: one name, one statement.
+ */
+const preparedNames = {
+  note: "note-page-note",
+  evidence: "note-page-evidence",
+  relations: "note-page-relations"
+} as const;
+function prepared(
+  statement: keyof typeof preparedNames,
+  text: string,
+  values: unknown[]
+): { name: string; text: string; values: unknown[] } {
+  return { name: preparedNames[statement], text, values };
+}
 
 const iso = (value: Date | string) => mapTimestamp(value).toISOString();
 const isoOrNull = (value: Date | string | null) =>
@@ -337,6 +415,16 @@ function explanationOf(
   });
 }
 
+/** The model of one step and where it ran: `kind` is null when the run behind it is gone. */
+function actor(model: string | null | undefined, runtime: string | null): NotePageActor | null {
+  const known = knownModel(model);
+  if (known === null) return null;
+  return {
+    model: known,
+    kind: runtime === null ? null : runtime === "remote" ? "remote" : "local"
+  };
+}
+
 function mapRelation(
   item: RelationItem,
   self: SelfFacts | null,
@@ -344,12 +432,24 @@ function mapRelation(
   writer: RelationExplanationWriter | null | undefined
 ): NotePageRelation {
   const { other } = item;
+  const explanation = explanationOf(item, self, language, writer);
   return {
     id: item.id,
     type: item.type,
     direction: item.direction,
-    decidedBy: knownModel(item.matchingModel),
-    explanation: explanationOf(item, self, language, writer),
+    state: item.state,
+    band: item.band,
+    calibration: noteRelationCalibration({ calibration: item.calibration }),
+    probability: item.probability === null ? null : Number(item.probability),
+    vetoSource: item.state === "withdrawn" ? item.vetoSource : null,
+    decidedBy: actor(
+      knownModel(item.matchingModel) ?? item.deciderRun?.model,
+      item.deciderRun?.runtime ?? null
+    ),
+    typedBy: actor(item.typerRun?.model, item.typerRun?.runtime ?? null),
+    // A written explanation names where it ran; one the decider stored does not.
+    explainedBy: actor(explanation?.writtenBy, item.written?.runtime ?? null),
+    explanation,
     other: {
       id: other.id,
       title: other.title,
@@ -365,15 +465,19 @@ function mapRelation(
   };
 }
 
-function mapRelations(
+/** One group of the listed rows, in the order the statement ranked them, with its exact total. */
+function mapGroup(
   row: RelationsRow | undefined,
+  group: NoteRelationGroup,
   language: string,
   writer: RelationExplanationWriter | null | undefined
 ): NotePageRelations {
   const self = row?.self ?? null;
   return {
-    total: Number(row?.total ?? 0),
-    items: (row?.items ?? []).map((item) => mapRelation(item, self, language, writer))
+    total: Number(row?.totals?.[group] ?? 0),
+    items: (row?.items ?? [])
+      .filter((item) => item.group === group)
+      .map((item) => mapRelation(item, self, language, writer))
   };
 }
 
@@ -399,37 +503,50 @@ export function createNotePageRepository(pool: PgPool) {
       const client = await pool.connect();
       try {
         await client.query("begin transaction isolation level repeatable read, read only");
-        const note = (await client.query<NoteRow>(noteSql, [noteId, notePageLimits.successors]))
-          .rows[0];
+        const note = (
+          await client.query<NoteRow>(
+            prepared("note", noteSql, [noteId, notePageLimits.successors])
+          )
+        ).rows[0];
         if (!note) {
           await client.query("commit");
           return null;
         }
         const evidence = (
-          await client.query<EvidenceRow>(evidenceSql, [
-            noteId,
-            notePageLimits.evidence,
-            objectLocatePathLimit - 1
-          ])
+          await client.query<EvidenceRow>(
+            prepared("evidence", evidenceSql, [
+              noteId,
+              notePageLimits.evidence,
+              objectLocatePathLimit - 1
+            ])
+          )
         ).rows[0];
         const relations = (
-          await client.query<RelationsRow>(relationsSql, [
-            noteId,
-            options.relationLimit,
-            0,
-            notePageLimits.excerptCharacters
-          ])
+          await client.query<RelationsRow>(
+            prepared("relations", relationsSql, [
+              noteId,
+              options.relationLimit,
+              0,
+              notePageLimits.excerptCharacters,
+              [...noteRelationGroups],
+              notePageLimits.groupPage
+            ])
+          )
         ).rows[0];
         const placement = await createObjectLocateRepository(client).locateNote(noteId);
         await client.query("commit");
         // The note exists in this snapshot, so it is always located; a null answer means it is gone.
         if (!placement) return null;
+        const group = (name: NoteRelationGroup) =>
+          mapGroup(relations, name, options.contentLanguage, options.explanationWriter);
         return {
           note: mapNote(note),
           successors: note.successors,
           evidence: { total: Number(evidence?.total ?? 0), items: evidence?.items ?? [] },
           placement,
-          relations: mapRelations(relations, options.contentLanguage, options.explanationWriter)
+          relations: group("shown"),
+          withdrawn: group("withdrawn"),
+          earlierVersions: group("earlier")
         };
       } catch (error) {
         await client.query("rollback").catch(() => undefined);
@@ -439,18 +556,31 @@ export function createNotePageRepository(pool: PgPool) {
       }
     },
 
-    /** A further page of the note's relations; the total is exact on every page. */
+    /** A further page of one group of the note's relations; the total is exact on every page. */
     async listRelations(
       noteId: string,
-      options: { offset: number; limit: number } & NotePageExplanationOptions
+      options: {
+        group: NoteRelationGroup;
+        offset: number;
+        limit: number;
+      } & NotePageExplanationOptions
     ): Promise<NotePageRelations> {
-      const result = await pool.query<RelationsRow>(relationsSql, [
-        noteId,
-        options.limit,
-        options.offset,
-        notePageLimits.excerptCharacters
-      ]);
-      return mapRelations(result.rows[0], options.contentLanguage, options.explanationWriter);
+      const result = await pool.query<RelationsRow>(
+        prepared("relations", relationsSql, [
+          noteId,
+          options.limit,
+          options.offset,
+          notePageLimits.excerptCharacters,
+          [options.group],
+          options.limit
+        ])
+      );
+      return mapGroup(
+        result.rows[0],
+        options.group,
+        options.contentLanguage,
+        options.explanationWriter
+      );
     },
 
     /** The statements behind `readPage`, for EXPLAIN in verification and the benchmark. */

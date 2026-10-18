@@ -6,11 +6,15 @@ import {
   NotePageRelationSchema,
   NotePageSchema,
   NoteRelationsInputSchema,
+  RelationReviewInputSchema,
+  RelationReviewResultSchema,
   clipCharacters,
   isRealRelationExplanation,
   knownModel,
   noteAuthorship,
+  noteRelationCalibration,
   notePageLimits,
+  relationBandWord,
   relationExplanation,
   withinCharacters,
   type NotePage,
@@ -24,7 +28,14 @@ const relation = (overrides: Partial<NotePageRelation> = {}): NotePageRelation =
   id: id(20),
   type: "supports",
   direction: "outgoing",
-  decidedBy: "decider",
+  state: "applied",
+  band: null,
+  calibration: null,
+  probability: null,
+  vetoSource: null,
+  decidedBy: { model: "decider", kind: null },
+  typedBy: null,
+  explainedBy: null,
   explanation: null,
   other: {
     id: id(2),
@@ -76,6 +87,8 @@ const page = (overrides: Partial<NotePage> = {}): NotePage => ({
     counts: { alsoIn: 0, citedBy: 0, notes: 0, passages: 0, children: 0 }
   },
   relations: { items: [relation()], total: 1 },
+  withdrawn: { items: [], total: 0 },
+  earlierVersions: { items: [], total: 0 },
   ...overrides
 });
 
@@ -95,6 +108,59 @@ describe("notes.page contract", () => {
     expect(() => NotePageInputSchema.parse({ noteId: id(1), extra: true })).toThrow();
     expect(NoteRelationsInputSchema.parse({ noteId: id(1), offset: 40 }).limit).toBe(20);
     expect(() => NoteRelationsInputSchema.parse({ noteId: id(1), offset: -1 })).toThrow();
+    // The main list unless a group is named; an unknown group is refused.
+    expect(NoteRelationsInputSchema.parse({ noteId: id(1), offset: 0 }).group).toBe("shown");
+    expect(
+      NoteRelationsInputSchema.parse({ noteId: id(1), offset: 0, group: "withdrawn" }).group
+    ).toBe("withdrawn");
+    expect(() =>
+      NoteRelationsInputSchema.parse({ noteId: id(1), offset: 0, group: "hidden" })
+    ).toThrow();
+  });
+
+  it("keeps the calibrated probability in the contract, bounded, and refuses a legacy score", () => {
+    expect(NotePageRelationSchema.parse(relation({ probability: 0.8 })).probability).toBe(0.8);
+    expect(NotePageRelationSchema.safeParse(relation({ probability: 1.2 })).success).toBe(false);
+    expect(NotePageRelationSchema.safeParse({ ...relation(), finalScore: 0.4 }).success).toBe(
+      false
+    );
+  });
+
+  it("describes who decided, typed and explained a relation, and where each ran", () => {
+    const parsed = NotePageRelationSchema.parse(
+      relation({
+        decidedBy: { model: "ranker", kind: "local" },
+        typedBy: { model: "typer", kind: "remote" },
+        explainedBy: { model: "writer", kind: null }
+      })
+    );
+    expect(parsed.typedBy).toEqual({ model: "typer", kind: "remote" });
+    expect(parsed.explainedBy?.kind).toBeNull();
+    expect(
+      NotePageRelationSchema.safeParse(
+        relation({ decidedBy: { model: "m", kind: "cloud" } as never })
+      ).success
+    ).toBe(false);
+    expect(
+      NotePageRelationSchema.safeParse(relation({ decidedBy: { model: "", kind: null } })).success
+    ).toBe(false);
+  });
+
+  it("lists the withdrawn and the earlier-version relations beside the shown ones", () => {
+    const withdrawn = relation({ state: "withdrawn", vetoSource: "explainer" });
+    const full = page({
+      withdrawn: { items: [withdrawn], total: 21 },
+      earlierVersions: { items: [], total: 3 }
+    });
+    expect(NotePageSchema.parse(full).withdrawn.total).toBe(21);
+    const missing = { ...page() } as Record<string, unknown>;
+    delete missing.withdrawn;
+    expect(NotePageSchema.safeParse(missing).success).toBe(false);
+    expect(() =>
+      NotePageSchema.parse(
+        page({ earlierVersions: { items: Array(51).fill(relation()), total: 51 } })
+      )
+    ).toThrow();
   });
 
   it("parses a page and refuses unknown keys anywhere", () => {
@@ -265,5 +331,84 @@ describe("relation explanation", () => {
     expect(knownModel(" ")).toBeNull();
     expect(knownModel(null)).toBeNull();
     expect(knownModel("decider")).toBe("decider");
+  });
+});
+
+describe("band words (D42)", () => {
+  const word = (
+    band: "apply" | "suggest" | null,
+    calibration: "frozen" | "provisional" | "uncalibrated" | null,
+    state?: NotePageRelation["state"]
+  ) => relationBandWord({ band, calibration, state });
+
+  it("says strong for the apply band and possible for the suggest band", () => {
+    expect(word("apply", "frozen")).toBe("strong");
+    expect(word("apply", "provisional")).toBe("strong");
+    expect(word("suggest", "frozen")).toBe("possible");
+    expect(word("suggest", "provisional", "suggested")).toBe("possible");
+    expect(word("apply", null, "applied")).toBe("strong");
+  });
+
+  it("says not calibrated for a decider without a calibration, which only suggests", () => {
+    expect(word("suggest", "uncalibrated", "suggested")).toBe("uncalibrated");
+    expect(word("apply", "uncalibrated")).toBe("uncalibrated");
+  });
+
+  it("says nothing for a legacy row, a kept relation or a withdrawn one", () => {
+    expect(word(null, null)).toBeNull();
+    expect(word(null, null, "applied")).toBeNull();
+    expect(word("apply", "frozen", "kept")).toBeNull();
+    expect(word("suggest", "uncalibrated", "withdrawn")).toBeNull();
+  });
+
+  it("never assumes an apply band exists: a library of suggestions has only two words", () => {
+    const words = new Set(
+      (["frozen", "provisional", "uncalibrated", null] as const).map((calibration) =>
+        word("suggest", calibration, "suggested")
+      )
+    );
+    expect([...words].sort()).toEqual(["possible", "uncalibrated"]);
+  });
+
+  it("reads the calibration a row recorded, and none from anything else", () => {
+    expect(noteRelationCalibration({ calibration: "frozen" })).toBe("frozen");
+    expect(noteRelationCalibration({ calibration: "uncalibrated", score: 1 })).toBe("uncalibrated");
+    expect(noteRelationCalibration({ calibration: "other" })).toBeNull();
+    expect(noteRelationCalibration({})).toBeNull();
+    expect(noteRelationCalibration(null)).toBeNull();
+    expect(noteRelationCalibration([])).toBeNull();
+    expect(noteRelationCalibration("frozen")).toBeNull();
+  });
+});
+
+describe("relations.review contract (D15)", () => {
+  it("takes a relation and a verdict, nothing else", () => {
+    expect(RelationReviewInputSchema.parse({ relationId: id(20), verdict: "keep" })).toEqual({
+      relationId: id(20),
+      verdict: "keep"
+    });
+    expect(
+      RelationReviewInputSchema.safeParse({ relationId: id(20), verdict: "maybe" }).success
+    ).toBe(false);
+    expect(
+      RelationReviewInputSchema.safeParse({ relationId: "x", verdict: "remove" }).success
+    ).toBe(false);
+    expect(
+      RelationReviewInputSchema.safeParse({ relationId: id(20), verdict: "keep", note: "x" })
+        .success
+    ).toBe(false);
+  });
+
+  it("answers the verdict that stands and whether this call wrote it", () => {
+    expect(
+      RelationReviewResultSchema.parse({ relationId: id(20), outcome: "kept", changed: false })
+    ).toEqual({ relationId: id(20), outcome: "kept", changed: false });
+    expect(
+      RelationReviewResultSchema.safeParse({
+        relationId: id(20),
+        outcome: "rejected",
+        changed: true
+      }).success
+    ).toBe(false);
   });
 });

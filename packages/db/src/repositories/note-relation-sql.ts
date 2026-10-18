@@ -48,6 +48,10 @@ export const noteRelationStateSql = {
     const r = alias(relation);
     return `(${r}.status = 'pending_review' and ${r}.vetoed_at is not null)`;
   },
+  /** The owner kept it (the review writer, D15): automation never changes it again (I-R3). */
+  kept(relation: string): string {
+    return `(${alias(relation)}.status = 'accepted')`;
+  },
   /** A human verdict (kept or removed): automation never changes the relation again (I-R2, I-R3). */
   reviewed(relation: string): string {
     return `(${alias(relation)}.status <> 'pending_review')`;
@@ -149,6 +153,18 @@ export function earlierVersionNoteRelationSql(
   return `(${noteRelationStateSql.applied(relation)}
     and ${s}.status not in ('rejected','archived') and ${o}.status not in ('rejected','archived')
     and not (${endpointCurrentSql(self)} and ${endpointCurrentSql(other)}))`;
+}
+
+/**
+ * What a listed relation is now, as text: `kept` (the owner kept it), `withdrawn` (an automatic veto
+ * is not yet reviewed), `suggested` (the suggest band) or `applied` (the rest, legacy rows included).
+ * Meant for rows the shown, withdrawn or earlier-version predicate already selected.
+ */
+export function noteRelationStateLabelSql(relation: string): string {
+  return `(case when ${noteRelationStateSql.kept(relation)} then 'kept'
+               when ${noteRelationStateSql.withdrawn(relation)} then 'withdrawn'
+               when ${noteRelationStateSql.suggested(relation)} then 'suggested'
+               else 'applied' end)`;
 }
 
 export const noteRelationStatuses = ["accepted", "pending_review", "rejected"] as const;

@@ -85,7 +85,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
   background, and cached for its inputs (ideas or titles, passages, type, direction, language,
   prompt, model). An explanation that finds the notes unrelated withdraws a relation nobody
-  decided, which the owner keeps or removes (target F3); a human verdict stays final.
+  decided, which the owner keeps or removes on the Note page; a human verdict stays final.
 
 ## Topic tree
 

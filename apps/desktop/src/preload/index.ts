@@ -34,7 +34,9 @@ import {
   NoteRelationsInputSchema,
   RelationExplainInputSchema,
   RelationExplainOutcomeSchema,
-  RelationExplanationResultSchema
+  RelationExplanationResultSchema,
+  RelationReviewInputSchema,
+  RelationReviewResultSchema
 } from "@app/domain";
 import { WikiQuerySchema, WikiResultsSchema } from "@app/domain";
 import {
@@ -254,6 +256,13 @@ const api: DesktopApi = {
             RelationExplainInputSchema.parse(input)
           )
         ),
+    review: async (input) =>
+      RelationReviewResultSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.relationsReview,
+          RelationReviewInputSchema.parse(input)
+        )
+      ),
     explainSource: async (input) =>
       RelationExplanationResultSchema.nullable().parse(
         await ipcRenderer.invoke(

@@ -898,3 +898,74 @@ describe("knowledge graph level of detail", () => {
     expect(atomicRelationMarkerRadius).toBeCloseTo(8 * 1.1);
   });
 });
+
+describe("an edge with no confidence to show (F3 D42, R4)", () => {
+  const t = ((key: string) => key) as Translator;
+  const unknownEdge = (data: KnowledgeGraphDashboard) => ({
+    ...data,
+    edges: data.edges.map((edge) => ({
+      ...edge,
+      kind: "source_relation" as const,
+      label: "supports",
+      confidence: null
+    }))
+  });
+
+  it("stays unknown when source edges are grouped, and is known once any edge of the group is", () => {
+    const fixture = nestedHierarchyFixture();
+    const promoted = unknownEdge(fixture);
+    expect(prepareGraphEdges(promoted, t).every((edge) => edge.confidence === null)).toBe(true);
+    const mixed = {
+      ...promoted,
+      edges: promoted.edges.map((edge, index) =>
+        index === 0 ? { ...edge, confidence: 0.4 } : edge
+      )
+    };
+    const groups = prepareGraphEdges(mixed, t);
+    expect(groups.some((edge) => edge.confidence === 0.4)).toBe(true);
+    expect(groups.some((edge) => edge.confidence === null)).toBe(true);
+  });
+
+  it("keeps an atomic note relation of version 2 without a percentage, and lays it out as any other", () => {
+    const [first, second] = ["a", "b"];
+    const data: KnowledgeGraphDashboard = {
+      mode: "atomic_notes",
+      truncated: false,
+      nodes: [first!, second!].map((id) => ({
+        id,
+        kind: "atomic_note" as const,
+        title: id,
+        subtitle: null,
+        content: null,
+        sourceItemId: id,
+        sourceType: null,
+        noteStatus: "active" as const,
+        detailCount: 0,
+        parentSourceItemId: null,
+        childCount: 0
+      })),
+      edges: [
+        {
+          id: "e",
+          source: first!,
+          target: second!,
+          kind: "atomic_note_relation",
+          label: "supports",
+          description: null,
+          weight: 1,
+          confidence: null,
+          details: []
+        }
+      ]
+    };
+    expect(prepareGraphEdges(data, t)[0]?.confidence).toBeNull();
+    const { graph } = buildGraph(data, t);
+    const edge = graph.findEdge((_id, attributes) => attributes.kind === "atomic_note_relation")!;
+    const attributes = graph.getEdgeAttributes(edge);
+    expect(attributes.confidence).toBeNull();
+    // The layout still gives the edge a weight and a place to reveal its label.
+    expect(Number.isFinite(attributes.layoutWeight)).toBe(true);
+    expect(attributes.layoutWeight).toBeGreaterThan(0);
+    expect(Number.isFinite(attributes.labelRevealAt)).toBe(true);
+  });
+});

@@ -79,6 +79,40 @@ export function createRelationExplanationWriterResolver(
   };
 }
 
+/**
+ * A resolver that answers from memory while nothing it depends on has changed: the AI configuration
+ * (`aiConfigGeneration`, which every writer of a route, provider, profile, local model or credential
+ * moves), the installed prompts (`promptPinGeneration`) and the database (`pool`). A Note page asks
+ * for the writer on every read, and resolving it costs a statement and a hash of the prompts, which
+ * the page's 5 ms budget cannot afford (F3 D38 precedent). Concurrent callers share one resolution;
+ * a failed one is not kept.
+ */
+export function memoizeRelationExplanationWriter(
+  resolve: () => Promise<RelationExplanationWriter | null>,
+  dependencies: () => { pool: object | null; configuration: number; prompts: number }
+): () => Promise<RelationExplanationWriter | null> {
+  const pools = new WeakMap<object, number>();
+  let nextPool = 0;
+  let held: { stamp: string; pending: Promise<RelationExplanationWriter | null> } | null = null;
+  return () => {
+    const { pool, configuration, prompts } = dependencies();
+    let poolId = -1;
+    if (pool !== null) {
+      poolId = pools.get(pool) ?? nextPool++;
+      pools.set(pool, poolId);
+    }
+    const stamp = `${poolId}|${configuration}|${prompts}`;
+    if (held?.stamp === stamp) return held.pending;
+    const pending = resolve();
+    const entry = { stamp, pending };
+    held = entry;
+    pending.catch(() => {
+      if (held === entry) held = null;
+    });
+    return pending;
+  };
+}
+
 /** The relation could not be withdrawn: it is gone, reviewed by a human, or already withdrawn. */
 class NothingToWithdraw extends Error {}
 

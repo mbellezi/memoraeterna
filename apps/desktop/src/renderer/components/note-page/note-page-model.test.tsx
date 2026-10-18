@@ -209,7 +209,7 @@ describe("relation sentence", () => {
       thisPassage: null,
       otherPassage: null,
       explanation: null,
-      decidedBy: null
+      provenance: []
     });
     expect(cardContent(relationItem(), evidenceItem()).thisPassage?.chunkIndex).toBe(17);
   });

@@ -6,8 +6,15 @@ import { parseArgs } from "node:util";
 
 import pg from "pg";
 
-import { NotePageSchema, notePageLimits, objectLocateListLimit } from "@app/domain";
 import {
+  NotePageSchema,
+  noteRelationGroups,
+  notePageLimits,
+  objectLocateListLimit
+} from "@app/domain";
+import {
+  aiConfigGeneration,
+  createAiConfigRepository,
   createNotePageRepository,
   createObjectLocateRepository,
   PostgresSidecarManager,
@@ -15,13 +22,21 @@ import {
   runMigrations
 } from "@app/db";
 
+import { NotePageService } from "../../apps/desktop/src/main/services/note-page-service.ts";
+import { promptPinGeneration } from "../../apps/desktop/src/main/services/prompt-runtime.ts";
+import {
+  createRelationExplanationWriterResolver,
+  memoizeRelationExplanationWriter
+} from "../../apps/desktop/src/main/services/relation-explanation-writer.ts";
+import { SettingsService } from "../../apps/desktop/src/main/services/settings-service.ts";
 import { resolveConnection } from "../kpi/connection.js";
 import { librarySeedSteps, noteRelationSeedSteps } from "./synthetic-library.js";
 
 /**
- * Latency of `notes.page` (target: p95 <= 50 ms, the `objects.locate` budget). Measures the
- * read-only note page repository (the same transaction, statements and Zod validation the desktop
- * service runs) against
+ * Latency of `notes.page` (target: p95 <= 50 ms for the repository, the `objects.locate` budget;
+ * with `--service`, p95 <= 5 ms for the SERVICE call, F3 T60). Measures the read-only note page
+ * repository (the same transaction, statements and Zod validation the desktop service runs)
+ * against
  *
  *   --db <connection.json | postgres url>   an existing database, read-only: a restored golden
  *                                           backup (`scripts/db/restore-backup.ts`), or
@@ -42,6 +57,13 @@ const usage = `Usage: npx tsx scripts/objects/note-page-benchmark.ts (--db <conn
   --sample <n>         Random notes measured (default 300), plus hubs and the heaviest evidence.
   --rounds <n>         Passes over the sample after one warm-up pass (default 5).
   --target-ms <n>      p95 target; the exit code is 1 above it (default 50).
+  --service            Also measure the desktop SERVICE call (language from the stored settings,
+                       the writer of explanations, the repository and the Zod parse): the writer
+                       resolved on every read, and as the app wires it (once per AI configuration,
+                       prompt and database). With --seed an AI route is seeded so the writer
+                       resolves; the exit code is 1 when the wired service's p95 is above
+                       --service-target-ms.
+  --service-target-ms <n>  p95 target of the wired service call (default 5).
   --json <file>        Also write the measurements as JSON.
   --help               Show this text.`;
 
@@ -55,6 +77,8 @@ const { values } = parseArgs({
     sample: { type: "string" },
     rounds: { type: "string" },
     "target-ms": { type: "string" },
+    service: { type: "boolean" },
+    "service-target-ms": { type: "string" },
     json: { type: "string" },
     help: { type: "boolean", short: "h" }
   },
@@ -83,6 +107,7 @@ const pageTotal = integer(values.pages, 2_000, "pages");
 const sampleSize = integer(values.sample, 300, "sample");
 const rounds = integer(values.rounds, 5, "rounds");
 const targetMs = integer(values["target-ms"], 50, "target-ms");
+const serviceTargetMs = integer(values["service-target-ms"], 5, "service-target-ms");
 
 function log(message: string): void {
   console.error(`[note-page-benchmark] ${message}`);
@@ -168,6 +193,97 @@ const watchedTables = [
   "atomic_notes"
 ];
 const largeTableRows = 10_000;
+
+/** The distribution of a list of timings in milliseconds. */
+function summary(list: readonly number[]) {
+  const sorted = [...list].sort((a, b) => a - b);
+  return {
+    count: sorted.length,
+    p50: percentile(sorted, 0.5),
+    p95: percentile(sorted, 0.95),
+    p99: percentile(sorted, 0.99),
+    max: sorted.at(-1) ?? Number.NaN
+  };
+}
+
+/**
+ * Seeds an AI route for the writer of explanations, so the writer resolves to a model and its
+ * prompt identity is computed (a library with no route never reaches that hash).
+ */
+async function seedWriterRoute(client: pg.Pool): Promise<void> {
+  const config = createAiConfigRepository(client);
+  const provider = await config.upsertProvider({
+    provider: "openai-codex",
+    displayName: "Benchmark writer",
+    metadata: { modelId: "benchmark-writer" }
+  });
+  const profile = await config.createProfile({ name: "Benchmark", isDefault: true });
+  await config.updateProfile({
+    id: profile.id,
+    providerConfigId: provider.id,
+    modelId: "benchmark-writer",
+    runtime: "remote",
+    capabilities: ["text-generation"]
+  });
+  await config.setProfileTask({ profileId: profile.id, task: "text-generation" });
+}
+
+/**
+ * The service call as the desktop app runs it, in three shapes: without a writer, with the writer
+ * resolved on every read, and wired as the app does (resolved again only when the AI
+ * configuration, the prompts or the database change).
+ */
+async function measureService(
+  client: pg.Pool,
+  samples: readonly Sample[],
+  workDirectory: string,
+  canWrite: boolean
+) {
+  const settings = canWrite
+    ? new SettingsService(workDirectory, { getDatabasePool: () => client, requireDatabase: true })
+    : null;
+  // The language is read from the stored settings on every page, as the app does.
+  if (settings) await settings.getApp();
+  const language = async () => (settings ? (await settings.getApp()).contentLanguage : "en");
+  if (canWrite) await seedWriterRoute(client);
+  const getPool = () => client as never;
+  const resolver = createRelationExplanationWriterResolver(getPool);
+  const writer = await resolver();
+  const memoized = memoizeRelationExplanationWriter(resolver, () => ({
+    pool: client,
+    configuration: aiConfigGeneration(),
+    prompts: promptPinGeneration()
+  }));
+  const variants = {
+    noWriter: new NotePageService(getPool, language),
+    perRead: new NotePageService(getPool, language, resolver),
+    wired: new NotePageService(getPool, language, memoized)
+  };
+  const resolveCosts: number[] = [];
+  for (let round = 0; round < 200; round += 1) {
+    const start = performance.now();
+    await resolver();
+    resolveCosts.push(performance.now() - start);
+  }
+  const results: Record<string, number[]> = { noWriter: [], perRead: [], wired: [] };
+  for (const [name, service] of Object.entries(variants)) {
+    for (const sample of samples) await service.page({ noteId: sample.id }); // warm-up
+    for (let round = 0; round < rounds; round += 1)
+      for (const sample of samples) {
+        const start = performance.now();
+        await service.page({ noteId: sample.id });
+        results[name]!.push(performance.now() - start);
+      }
+  }
+  return {
+    writerResolved: writer !== null,
+    languageFromSettings: settings !== null,
+    resolveWriter: summary(resolveCosts),
+    noWriter: summary(results.noWriter!),
+    perRead: summary(results.perRead!),
+    wired: summary(results.wired!)
+  };
+}
 
 async function plan(client: pg.Pool, statement: string, parameters: unknown[]): Promise<string[]> {
   const result = await client.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
@@ -263,16 +379,7 @@ try {
       }
     }
   }
-  const summarize = (list: number[]) => {
-    const sorted = [...list].sort((a, b) => a - b);
-    return {
-      count: sorted.length,
-      p50: percentile(sorted, 0.5),
-      p95: percentile(sorted, 0.95),
-      p99: percentile(sorted, 0.99),
-      max: sorted.at(-1) ?? Number.NaN
-    };
-  };
+  const summarize = summary;
   const all = summarize([...byKind.values()].flat());
 
   // The heaviest note (the first hub, else the slowest sample) explains every statement it runs.
@@ -288,7 +395,9 @@ try {
       heaviest,
       notePageLimits.relationPage,
       0,
-      notePageLimits.excerptCharacters
+      notePageLimits.excerptCharacters,
+      [...noteRelationGroups],
+      notePageLimits.groupPage
     ]),
     placement: await plan(pool, createObjectLocateRepository(pool).statements.note, [
       heaviest,
@@ -307,6 +416,9 @@ try {
       .filter((line) => largeTables.some((table) => line.startsWith(`Seq Scan on ${table}`)))
       .map((line) => `${name}: ${line}`)
   );
+  const service = values.service
+    ? await measureService(pool, samples, workDir ?? tmpdir(), Boolean(values.seed))
+    : null;
   const report = {
     origin,
     library,
@@ -319,7 +431,12 @@ try {
     overall: all,
     largeTables,
     seqScans,
-    passed: all.p95 <= targetMs && seqScans.length === 0,
+    service,
+    serviceTargetMs: service ? serviceTargetMs : null,
+    passed:
+      all.p95 <= targetMs &&
+      seqScans.length === 0 &&
+      (service === null || (service.wired.p95 <= serviceTargetMs && service.writerResolved)),
     slowest: { kind: slowest.sample.kind, ms: slowest.ms },
     heaviestPlans: plans,
     wallSeconds: Math.round((Date.now() - startedAt) / 1000)
@@ -341,6 +458,19 @@ try {
       row("all", all),
       "",
       `Target p95 <= ${targetMs} ms: ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
+      ...(service
+        ? [
+            "",
+            `notes.page SERVICE call (language from ${service.languageFromSettings ? "the stored settings" : "a stub"}, writer ${service.writerResolved ? "resolved" : "NOT resolved: no AI route"})`,
+            "| Variant | Calls | p50 | p95 | p99 | max |",
+            "| --- | --- | --- | --- | --- | --- |",
+            row("no writer", service.noWriter),
+            row("writer resolved on every read", service.perRead),
+            row("wired (memoized per configuration)", service.wired),
+            `resolving the writer once: p50 ${fixed(service.resolveWriter.p50)} ms, p95 ${fixed(service.resolveWriter.p95)} ms`,
+            `Service target p95 <= ${serviceTargetMs} ms: ${service.wired.p95 <= serviceTargetMs && service.writerResolved ? "PASS" : "FAIL"} (${fixed(service.wired.p95)} ms)`
+          ]
+        : []),
       `Sequential scans of large tables (${largeTables.join(", ") || "none this large"}) in the heaviest note's plans: ${seqScans.length ? seqScans.join("; ") : "none"}`,
       `Slowest call: ${report.slowest.kind} note, ${fixed(report.slowest.ms)} ms; scans of the heaviest note:`,
       ...Object.entries(plans).flatMap(([name, lines]) =>

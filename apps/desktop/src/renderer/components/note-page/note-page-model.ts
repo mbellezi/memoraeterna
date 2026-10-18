@@ -1,11 +1,14 @@
 import { Fragment, createElement, type ReactNode } from "react";
 import {
   notePageLimits,
+  relationBandWord,
   type NotePage,
+  type NotePageActor,
   type NotePageEvidence,
   type NotePageNote,
   type NotePageRelation,
-  type NotePageRelationExplanation
+  type NotePageRelationExplanation,
+  type NotePageRelations
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
@@ -219,7 +222,25 @@ export interface CardContent {
   otherPassage:
     (NonNullable<NotePageRelation["other"]["passage"]> & { sourceTitle: string }) | null;
   explanation: NotePageRelationExplanation | null;
-  decidedBy: string | null;
+  /** Who decided, typed and explained the relation, for the steps that are known. */
+  provenance: ProvenanceLine[];
+}
+
+/** One step of a relation and the model that did it (D42: the decider, the typer and the writer). */
+export interface ProvenanceLine {
+  role: "decided" | "typed" | "explained";
+  actor: NotePageActor;
+}
+
+/** The known steps of a relation, in the order they happen; an unknown step has no line. */
+export function provenanceLines(
+  relation: Pick<NotePageRelation, "decidedBy" | "typedBy" | "explainedBy">
+): ProvenanceLine[] {
+  const lines: ProvenanceLine[] = [];
+  if (relation.decidedBy) lines.push({ role: "decided", actor: relation.decidedBy });
+  if (relation.typedBy) lines.push({ role: "typed", actor: relation.typedBy });
+  if (relation.explainedBy) lines.push({ role: "explained", actor: relation.explainedBy });
+  return lines;
 }
 
 /**
@@ -243,9 +264,45 @@ export function cardContent(
       ? { ...relation.other.passage, sourceTitle: relation.other.sourceTitle }
       : null,
     explanation: relation.explanation,
-    decidedBy: relation.decidedBy
+    provenance: provenanceLines(relation)
   };
 }
+
+/**
+ * The band word a relation shows (D42): "Strong", "Possible" or "Not calibrated", never a
+ * percentage. Nothing is shown for a legacy row, a kept relation or a withdrawn one, and a library
+ * whose automatic relations are all suggestions never shows "Strong".
+ */
+export function bandWordKey(
+  relation: Pick<NotePageRelation, "band" | "calibration" | "state">
+): MessageKey | null {
+  const word = relationBandWord(relation);
+  return word === null ? null : (`notePage.band.${word}` as const);
+}
+
+/** The state chip of a relation: the ones the owner has to know about; an applied one has none. */
+export function relationStateKey(state: NotePageRelation["state"]): MessageKey | null {
+  return state === "applied" ? null : (`notePage.state.${state}` as const);
+}
+
+/**
+ * Whether the card offers Keep and Remove (F3 D15): on a suggested relation and on a withdrawn one,
+ * including the relation the writer withdrew a moment ago, whose row still says why it is hidden. A
+ * kept relation is final, and an applied one has no review here.
+ */
+export function offersReview(
+  relation: Pick<NotePageRelation, "state">,
+  explanation: { status: string } | null | undefined
+): boolean {
+  return (
+    relation.state === "suggested" ||
+    relation.state === "withdrawn" ||
+    explanation?.status === "vetoed"
+  );
+}
+
+/** A verdict being saved, or one that could not be saved. */
+export type ReviewState = { status: "pending" } | { status: "failed" };
 
 /**
  * The explanation of an open card while it is being written (with the text streamed so far), why
@@ -432,21 +489,176 @@ export function withPlacement(page: NotePage, placement: NotePage["placement"]):
     : { ...page, placement };
 }
 
+/** The page's three lists of relations: the group each one holds and the field it is held in. */
+export const relationLists = [
+  { group: "shown", list: "relations" },
+  { group: "withdrawn", list: "withdrawn" },
+  { group: "earlier", list: "earlierVersions" }
+] as const;
+export type RelationList = (typeof relationLists)[number]["list"];
+export type RelationGroup = (typeof relationLists)[number]["group"];
+
+/** The field of the page a group of relations is held in. */
+export function listOf(group: RelationGroup): RelationList {
+  return relationLists.find((entry) => entry.group === group)!.list;
+}
+
+/** The group a field of the page holds. */
+export function groupOf(list: RelationList): RelationGroup {
+  return relationLists.find((entry) => entry.list === list)!.group;
+}
+
 /**
- * The page read again, keeping the rows that were shown past its first page ("Show more"), so a
- * refresh never shortens the list. The refreshed rows and total win; kept rows are not re-read,
- * except those in `dropped` (relations the writer withdrew, which the server no longer lists).
+ * The page with the explanation that was just written on the relation, wherever it is listed. The
+ * answer names the model, not where it ran: that is read with the page again.
+ */
+export function withWrittenExplanation(
+  page: NotePage,
+  relationId: string,
+  explanation: { text: string; writtenBy: string }
+): NotePage {
+  let next = page;
+  for (const { list } of relationLists) {
+    if (!page[list].items.some((item) => item.id === relationId)) continue;
+    next = {
+      ...next,
+      [list]: {
+        ...page[list],
+        items: page[list].items.map((item) =>
+          item.id === relationId
+            ? {
+                ...item,
+                explanation,
+                explainedBy: { model: explanation.writtenBy, kind: item.explainedBy?.kind ?? null }
+              }
+            : item
+        )
+      }
+    };
+  }
+  return next;
+}
+
+/**
+ * One list read again, keeping the rows that were shown past its first page ("Show more"), so a
+ * refresh never shortens it. The refreshed rows and total win; kept rows are not re-read, except
+ * those in `dropped` (relations the writer withdrew, which the server no longer lists there).
+ */
+function keepShownList(
+  shown: NotePageRelations,
+  fresh: NotePageRelations,
+  dropped: ReadonlySet<string>
+): NotePageRelations {
+  if (shown.items.length <= fresh.items.length) return fresh;
+  const known = new Set(fresh.items.map((item) => item.id));
+  const tail = shown.items
+    .slice(fresh.items.length)
+    .filter((item) => !known.has(item.id) && !dropped.has(item.id));
+  return { ...fresh, items: [...fresh.items, ...tail] };
+}
+
+/**
+ * The page read again, keeping the rows of each list that were shown past its first page, so a
+ * refresh never shortens a list. The refreshed rows and totals win.
  */
 export function keepShownRelations(
   shown: NotePage | null,
   refreshed: NotePage,
   dropped: ReadonlySet<string> = new Set()
 ): NotePage {
-  const fresh = refreshed.relations.items;
-  if (!shown || shown.relations.items.length <= fresh.length) return refreshed;
-  const known = new Set(fresh.map((item) => item.id));
-  const tail = shown.relations.items
-    .slice(fresh.length)
-    .filter((item) => !known.has(item.id) && !dropped.has(item.id));
-  return { ...refreshed, relations: { ...refreshed.relations, items: [...fresh, ...tail] } };
+  if (!shown) return refreshed;
+  let next = refreshed;
+  for (const { list } of relationLists) {
+    const kept = keepShownList(shown[list], refreshed[list], dropped);
+    if (kept !== refreshed[list]) next = { ...next, [list]: kept };
+  }
+  return next;
+}
+
+/** The list a relation is in on the page, and the ID order of that list; null when it is in none. */
+export function locateRelation(
+  page: NotePage,
+  relationId: string
+): { list: RelationList; ids: string[] } | null {
+  for (const { list } of relationLists) {
+    const ids = page[list].items.map((item) => item.id);
+    if (ids.includes(relationId)) return { list, ids };
+  }
+  return null;
+}
+
+/**
+ * Where focus goes when a row leaves its list: the row that takes its place, else the one before
+ * it; null when the list is empty then, and the caller falls back to the heading of the list.
+ */
+export function focusAfterRemoval(ids: readonly string[], removedId: string): string | null {
+  const index = ids.indexOf(removedId);
+  if (index === -1) return null;
+  return ids[index + 1] ?? ids[index - 1] ?? null;
+}
+
+/**
+ * The page after the owner's verdict on a relation, before it is read again: a removed relation
+ * leaves its list and the total; a kept one says so, and a kept withdrawn one moves to the shown
+ * list (last: the order is the server's, which the next read restores). The same page when the
+ * relation is not on it.
+ */
+export function withReviewed(
+  page: NotePage,
+  relationId: string,
+  outcome: "kept" | "removed"
+): NotePage {
+  const found = locateRelation(page, relationId);
+  if (!found) return page;
+  const from = page[found.list];
+  const item = from.items.find((candidate) => candidate.id === relationId)!;
+  const left: NotePageRelations = {
+    items: from.items.filter((candidate) => candidate.id !== relationId),
+    total: Math.max(0, from.total - 1)
+  };
+  if (outcome === "removed") return { ...page, [found.list]: left };
+  const kept: NotePageRelation = { ...item, state: "kept", vetoSource: null };
+  if (found.list === "relations")
+    return {
+      ...page,
+      relations: {
+        ...from,
+        items: from.items.map((candidate) => (candidate.id === relationId ? kept : candidate))
+      }
+    };
+  return {
+    ...page,
+    [found.list]: left,
+    relations: { items: [...page.relations.items, kept], total: page.relations.total + 1 }
+  };
+}
+
+/**
+ * The page with the relations an explanation withdrew moved out of the shown list into the
+ * withdrawn one (the row stays in the withdrawn list when that list is fully loaded), after their
+ * cards closed. The total of the shown list counts the rows that are still listed, so a row leaves
+ * it once, and the withdrawn total counts the new row once.
+ */
+export function withWithdrawn(page: NotePage, ids: ReadonlySet<string>): NotePage {
+  const leaving = page.relations.items.filter((item) => ids.has(item.id));
+  if (leaving.length === 0) return page;
+  const items = page.relations.items.filter((item) => !ids.has(item.id));
+  const total = Math.max(items.length, page.relations.total - leaving.length);
+  const loaded = page.withdrawn.items.length >= page.withdrawn.total;
+  const moved: NotePageRelation[] = leaving.map((item) => ({
+    ...item,
+    state: "withdrawn",
+    vetoSource: item.vetoSource ?? "explainer"
+  }));
+  const known = new Set(page.withdrawn.items.map((item) => item.id));
+  return {
+    ...page,
+    relations: { items, total },
+    withdrawn: {
+      items: loaded
+        ? [...page.withdrawn.items, ...moved.filter((item) => !known.has(item.id))]
+        : page.withdrawn.items,
+      total: page.withdrawn.total + moved.filter((item) => !known.has(item.id)).length
+    }
+  };
 }

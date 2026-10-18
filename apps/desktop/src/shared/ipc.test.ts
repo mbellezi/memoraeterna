@@ -20,6 +20,7 @@ import {
   atomicNoteViewSchema,
   knowledgeGraphDashboardNodeSchema,
   aiProfileTaskInputSchema,
+  knowledgeGraphDashboardEdgeSchema,
   aiProfileCreateSchema,
   aiTaskRouteSchema,
   localModelDownloadInputSchema,
@@ -612,6 +613,71 @@ describe("desktop IPC contracts", () => {
     expect(ipcChannels.relationsExplainSource).toBe("app:relations:explain-source");
     expect(ipcChannels.relationsCancelExplainSource).toBe("app:relations:cancel-explain-source");
     expect(ipcChannels.relationExplanationDelta).toBe("app:relations:explanation-delta");
+    expect(ipcChannels.relationsReview).toBe("app:relations:review");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
+  });
+
+  it("reads the band and state of a relation in a source, and none of the legacy ones", () => {
+    const base = {
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "PersonalNote",
+      title: "Source",
+      subtitle: null,
+      sourceUri: null,
+      language: "en",
+      summary: null,
+      metadata: {},
+      updatedAt: new Date(0).toISOString(),
+      assets: [],
+      documents: [],
+      summaries: [],
+      atomicNotes: []
+    };
+    const relation = {
+      id: "00000000-0000-4000-8000-000000000010",
+      sourceAtomicNoteId: "00000000-0000-4000-8000-000000000011",
+      targetAtomicNoteId: "00000000-0000-4000-8000-000000000012",
+      sourceTitle: "A",
+      targetTitle: "B",
+      sourceStatus: "active",
+      targetStatus: "active",
+      direction: "lo_to_hi",
+      relationType: "supports",
+      finalScore: 0.7,
+      explanation: "knowledge.relations.explanations.reranked"
+    };
+    const parse = (extra: Record<string, unknown>) =>
+      sourceDetailSchema.safeParse({ ...base, relations: [{ ...relation, ...extra }] });
+    expect(
+      parse({ band: "suggest", calibration: "uncalibrated", state: "suggested" }).success
+    ).toBe(true);
+    expect(parse({ band: null, calibration: null, state: "applied" }).success).toBe(true);
+    expect(parse({ band: "strong", calibration: null, state: "applied" }).success).toBe(false);
+    expect(parse({ band: null, calibration: null, state: "hidden" }).success).toBe(false);
+    // A view without the band is the old shape: refused, so a stale main process never shows a percentage.
+    expect(parse({}).success).toBe(false);
+  });
+
+  it("lets a graph edge have no confidence: a promoted source relation or a v2 note relation (R4)", () => {
+    const edge = {
+      id: "edge",
+      source: "00000000-0000-4000-8000-000000000001",
+      target: "00000000-0000-4000-8000-000000000002",
+      kind: "source_relation",
+      label: "supports",
+      description: null,
+      weight: 1,
+      details: []
+    };
+    expect(
+      knowledgeGraphDashboardEdgeSchema.parse({ ...edge, confidence: null }).confidence
+    ).toBeNull();
+    expect(knowledgeGraphDashboardEdgeSchema.parse({ ...edge, confidence: 0.4 }).confidence).toBe(
+      0.4
+    );
+    expect(knowledgeGraphDashboardEdgeSchema.safeParse({ ...edge, confidence: 1.2 }).success).toBe(
+      false
+    );
+    expect(knowledgeGraphDashboardEdgeSchema.safeParse(edge).success).toBe(false);
   });
 });

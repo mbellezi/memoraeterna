@@ -6,7 +6,9 @@ import type { PgPool } from "../client.js";
 import {
   currentNoteSql,
   earlierVersionNoteRelationSql,
-  shownNoteRelationSql
+  noteRelationStateLabelSql,
+  shownNoteRelationSql,
+  withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
 import { createNotePageRepository } from "./notePageRepository.js";
 import { relationExplanationPlan } from "./relationExplanationRepository.js";
@@ -61,10 +63,18 @@ const evidenceRow = {
 
 const relationItem = (overrides: Record<string, unknown> = {}) => ({
   id: id(20),
+  group: "shown",
   type: "supports",
   direction: "incoming",
+  state: "applied",
+  band: null,
+  calibration: null,
+  probability: null,
+  vetoSource: null,
   semanticSourceId: id(2),
   matchingModel: "decider",
+  deciderRun: null,
+  typerRun: null,
   decisionSource: "model",
   explanation: 'Both describe recall in <note-ref id="00000000-0000-4000-8000-000000000001" />.',
   written: null,
@@ -84,6 +94,8 @@ const relationItem = (overrides: Record<string, unknown> = {}) => ({
   },
   ...overrides
 });
+
+const shownTotals = (shown: number, withdrawn = 0, earlier = 0) => ({ shown, withdrawn, earlier });
 
 /** The page's own note as an explanation sees it. */
 const self = {
@@ -131,7 +143,11 @@ const located = {
 function setup(
   answers: { note?: QueryResultRow[]; fail?: "evidence"; relations?: QueryResultRow[] } = {}
 ) {
-  const statements: Array<{ text: string; values: readonly unknown[] | undefined }> = [];
+  const statements: Array<{
+    text: string;
+    values: readonly unknown[] | undefined;
+    name: string | undefined;
+  }> = [];
   const answer = (text: string): QueryResultRow[] => {
     if (/^\s*(begin|commit|rollback)/i.test(text)) return [];
     if (text.includes("atomic_note_evolution x")) return answers.note ?? [noteRow()];
@@ -140,13 +156,17 @@ function setup(
       return [evidenceRow];
     }
     if (/\brel as \(/u.test(text))
-      return answers.relations ?? [{ total: 1, self, items: [relationItem()] }];
+      return answers.relations ?? [{ totals: shownTotals(1), self, items: [relationItem()] }];
     return [located];
   };
   const query = vi.fn(
-    async <T extends QueryResultRow>(text: string, values?: readonly unknown[]) => {
-      statements.push({ text, values });
-      return { rows: answer(text) } as unknown as QueryResult<T>;
+    async <T extends QueryResultRow>(
+      config: string | { name?: string; text: string; values?: readonly unknown[] },
+      values?: readonly unknown[]
+    ) => {
+      const call = typeof config === "string" ? { text: config, values } : config;
+      statements.push({ text: call.text, values: call.values, name: call.name });
+      return { rows: answer(call.text) } as unknown as QueryResult<T>;
     }
   );
   const release = vi.fn();
@@ -171,10 +191,42 @@ describe("note page repository", () => {
       notePageLimits.evidence,
       objectLocatePathLimit - 1
     ]);
-    expect(statements[3]!.values).toEqual([id(1), 20, 0, notePageLimits.excerptCharacters]);
+    expect(statements[3]!.values).toEqual([
+      id(1),
+      20,
+      0,
+      notePageLimits.excerptCharacters,
+      ["shown", "withdrawn", "earlier"],
+      notePageLimits.groupPage
+    ]);
     expect(statements[4]!.text).toContain("with recursive note as");
     expect(statements.at(-1)!.text).toBe("commit");
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("prepares the three fixed statements once per connection, one name for one text", async () => {
+    const { repository, statements } = setup();
+    await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" });
+    await repository.listRelations(id(1), {
+      group: "shown",
+      offset: 0,
+      limit: 20,
+      contentLanguage: "en"
+    });
+    const named = statements.filter((statement) => statement.name !== undefined);
+    expect(named.map((statement) => statement.name)).toEqual([
+      "note-page-note",
+      "note-page-evidence",
+      "note-page-relations",
+      "note-page-relations"
+    ]);
+    // A name never stands for two texts, or the second would run the first.
+    const texts = new Map<string, string>();
+    for (const statement of named) {
+      expect(texts.get(statement.name!) ?? statement.text).toBe(statement.text);
+      texts.set(statement.name!, statement.text);
+    }
+    expect(new Set(texts.values()).size).toBe(texts.size);
   });
 
   it("returns null for a missing note without reading anything else", async () => {
@@ -220,7 +272,14 @@ describe("note page repository", () => {
       id: id(20),
       type: "supports",
       direction: "incoming",
-      decidedBy: "decider",
+      state: "applied",
+      band: null,
+      calibration: null,
+      probability: null,
+      vetoSource: null,
+      decidedBy: { model: "decider", kind: null },
+      typedBy: null,
+      explainedBy: { model: "decider", kind: null },
       explanation: {
         text: 'Both describe recall in <note-ref id="00000000-0000-4000-8000-000000000001" />.',
         writtenBy: "decider"
@@ -242,22 +301,34 @@ describe("note page repository", () => {
   });
 
   it("shows an explanation written on demand while its inputs are unchanged", async () => {
-    const written = { text: "Written on open.", inputHash: currentHash(), model: "writer" };
+    const written = {
+      text: "Written on open.",
+      inputHash: currentHash(),
+      model: "writer",
+      runtime: "remote"
+    };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written })] }]
     });
     const [relation] = (await repository.readPage(id(1), {
       relationLimit: 20,
       contentLanguage: "en"
     }))!.relations.items;
     expect(relation?.explanation).toEqual({ text: "Written on open.", writtenBy: "writer" });
+    // A written explanation names where it ran.
+    expect(relation?.explainedBy).toEqual({ model: "writer", kind: "remote" });
   });
 
   it("never shows the row that caches the writer's verdict as an explanation, whatever the key", async () => {
     // The row holds the sentinel under the current key: opening the relation answers it with no call.
-    const sentinel = { text: "NOT_RELATED", inputHash: currentHash(), model: "writer" };
+    const sentinel = {
+      text: "NOT_RELATED",
+      inputHash: currentHash(),
+      model: "writer",
+      runtime: "remote"
+    };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [relationItem({ written: sentinel })] }]
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written: sentinel })] }]
     });
     const explanationOf = async (explanationWriter?: { promptRevision: string; model: string }) =>
       (await repository.readPage(id(1), {
@@ -268,6 +339,7 @@ describe("note page repository", () => {
     expect(await explanationOf()).toBeNull();
     expect(await explanationOf({ promptRevision: "prompt-3", model: "model-a" })).toBeNull();
     const further = await repository.listRelations(id(1), {
+      group: "shown",
       offset: 0,
       limit: 20,
       contentLanguage: "en"
@@ -279,9 +351,14 @@ describe("note page repository", () => {
 
   it("reads a stale explanation as none, so it is written again when opened", async () => {
     // Written for another type: the idea, the passage or the direction changing works the same way.
-    const written = { text: "Old.", inputHash: currentHash("extends"), model: "writer" };
+    const written = {
+      text: "Old.",
+      inputHash: currentHash("extends"),
+      model: "writer",
+      runtime: "remote"
+    };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written })] }]
     });
     const [relation] = (await repository.readPage(id(1), {
       relationLimit: 20,
@@ -291,8 +368,15 @@ describe("note page repository", () => {
   });
 
   it("reads an explanation written in another content language as none, in the page and in a further page", async () => {
-    const written = { text: "Escrita em ingles.", inputHash: currentHash(), model: "writer" };
-    const answers = { relations: [{ total: 1, self, items: [relationItem({ written })] }] };
+    const written = {
+      text: "Escrita em ingles.",
+      inputHash: currentHash(),
+      model: "writer",
+      runtime: "local"
+    };
+    const answers = {
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written })] }]
+    };
     const { repository } = setup(answers);
     const portuguese = await repository.readPage(id(1), {
       relationLimit: 20,
@@ -302,6 +386,7 @@ describe("note page repository", () => {
     const english = await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" });
     expect(english!.relations.items[0]?.explanation?.text).toBe("Escrita em ingles.");
     const further = await repository.listRelations(id(1), {
+      group: "shown",
       offset: 0,
       limit: 20,
       contentLanguage: "pt-BR"
@@ -310,7 +395,7 @@ describe("note page repository", () => {
     // An explanation written in the current language counts again.
     const rewritten = { ...written, inputHash: currentHash("supports", "pt-BR") };
     const current = setup({
-      relations: [{ total: 1, self, items: [relationItem({ written: rewritten })] }]
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written: rewritten })] }]
     });
     const page = await current.repository.readPage(id(1), {
       relationLimit: 20,
@@ -324,10 +409,11 @@ describe("note page repository", () => {
     const written = {
       text: "Written by model A.",
       inputHash: currentHash("supports", "en", writer),
-      model: "model-a"
+      model: "model-a",
+      runtime: "remote"
     };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ written })] }]
     });
     const explanationOf = async (explanationWriter?: typeof writer | null) =>
       (await repository.readPage(id(1), {
@@ -343,6 +429,7 @@ describe("note page repository", () => {
     expect((await explanationOf(null))?.text).toBe("Written by model A.");
     expect((await explanationOf())?.text).toBe("Written by model A.");
     const further = await repository.listRelations(id(1), {
+      group: "shown",
       offset: 0,
       limit: 20,
       contentLanguage: "en",
@@ -360,7 +447,7 @@ describe("note page repository", () => {
       passage: { chunkId: id(4), sourceSpanId: null, chunkIndex: 0, excerpt, language: null }
     };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [{ ...item, other }] }]
+      relations: [{ totals: shownTotals(1), self, items: [{ ...item, other }] }]
     });
     const page = await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" });
     expect(page!.relations.items[0]?.other.passage?.excerpt).toBe(excerpt);
@@ -371,7 +458,7 @@ describe("note page repository", () => {
     const item = relationItem();
     const other = { ...item.other, sourceItemId: null, sourceTitle: "" };
     const { repository } = setup({
-      relations: [{ total: 1, self, items: [{ ...item, other }] }]
+      relations: [{ totals: shownTotals(1), self, items: [{ ...item, other }] }]
     });
     const page = await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" });
     expect(page!.relations.items[0]?.other).toMatchObject({ sourceItemId: null, sourceTitle: "" });
@@ -385,16 +472,175 @@ describe("note page repository", () => {
     expect(page.note.ownership).toBe("knowledge");
   });
 
+  it("splits the listed rows into the three groups, each with its own exact total", async () => {
+    const withdrawn = relationItem({
+      id: id(21),
+      group: "withdrawn",
+      state: "withdrawn",
+      vetoSource: "explainer",
+      band: "apply",
+      calibration: "frozen",
+      probability: 0.93
+    });
+    const earlier = relationItem({
+      id: id(22),
+      group: "earlier",
+      other: { ...relationItem().other, id: id(9), superseded: true }
+    });
+    const { repository } = setup({
+      relations: [
+        {
+          totals: shownTotals(31, 7, 2),
+          self,
+          items: [relationItem(), withdrawn, earlier]
+        }
+      ]
+    });
+    const page = (await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" }))!;
+    expect(page.relations.items.map((item) => item.id)).toEqual([id(20)]);
+    expect(page.relations.total).toBe(31);
+    expect(page.withdrawn.items.map((item) => item.id)).toEqual([id(21)]);
+    expect(page.withdrawn.total).toBe(7);
+    expect(page.earlierVersions.items.map((item) => item.id)).toEqual([id(22)]);
+    expect(page.earlierVersions.items[0]?.other.superseded).toBe(true);
+    expect(page.earlierVersions.total).toBe(2);
+    // The withdrawn row says who withdrew it; the probability stays in the contract.
+    expect(page.withdrawn.items[0]).toMatchObject({
+      state: "withdrawn",
+      vetoSource: "explainer",
+      band: "apply",
+      calibration: "frozen",
+      probability: 0.93
+    });
+    for (const group of [page.relations, page.withdrawn, page.earlierVersions])
+      expect(NotePageRelationsSchema.parse(group)).toEqual(group);
+  });
+
+  it("names a veto source only on a withdrawn relation, and no group on an empty answer", async () => {
+    // A kept relation had its veto cleared; a stale value never reads as withdrawn.
+    const kept = relationItem({ state: "kept", vetoSource: "typer" });
+    const { repository } = setup({
+      relations: [{ totals: shownTotals(1), self, items: [kept] }]
+    });
+    const page = (await repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" }))!;
+    expect(page.relations.items[0]?.vetoSource).toBeNull();
+    const empty = setup({ relations: [] });
+    const none = (await empty.repository.readPage(id(1), {
+      relationLimit: 20,
+      contentLanguage: "en"
+    }))!;
+    for (const group of [none.relations, none.withdrawn, none.earlierVersions])
+      expect(group).toEqual({ items: [], total: 0 });
+  });
+
+  it("separates the decider, the typer and the writer, and says where each ran", async () => {
+    const item = relationItem({
+      state: "suggested",
+      band: "suggest",
+      calibration: "uncalibrated",
+      probability: null,
+      matchingModel: "ranker-x",
+      deciderRun: { model: "ranker-run", runtime: "local" },
+      typerRun: { model: "typer-y", runtime: "remote" },
+      written: {
+        text: "Written on open.",
+        inputHash: currentHash(),
+        model: "writer-z",
+        runtime: "sidecar"
+      }
+    });
+    const { repository } = setup({
+      relations: [{ totals: shownTotals(1), self, items: [item] }]
+    });
+    const [relation] = (await repository.readPage(id(1), {
+      relationLimit: 20,
+      contentLanguage: "en"
+    }))!.relations.items;
+    expect(relation).toMatchObject({
+      state: "suggested",
+      band: "suggest",
+      calibration: "uncalibrated",
+      probability: null,
+      // The relation row names the decider; the run only says where it ran.
+      decidedBy: { model: "ranker-x", kind: "local" },
+      typedBy: { model: "typer-y", kind: "remote" },
+      explainedBy: { model: "writer-z", kind: "local" }
+    });
+    // A decider whose model name the row lost is named by its run; a run that is gone is unknown.
+    const lost = setup({
+      relations: [
+        {
+          totals: shownTotals(1),
+          self,
+          items: [
+            relationItem({
+              matchingModel: "",
+              deciderRun: { model: "ranker-run", runtime: "remote" }
+            })
+          ]
+        }
+      ]
+    });
+    const named = (await lost.repository.readPage(id(1), {
+      relationLimit: 20,
+      contentLanguage: "en"
+    }))!.relations.items[0];
+    expect(named?.decidedBy).toEqual({ model: "ranker-run", kind: "remote" });
+    const unknown = setup({
+      relations: [{ totals: shownTotals(1), self, items: [relationItem({ matchingModel: "  " })] }]
+    });
+    expect(
+      (await unknown.repository.readPage(id(1), { relationLimit: 20, contentLanguage: "en" }))!
+        .relations.items[0]?.decidedBy
+    ).toBeNull();
+  });
+
+  it("pages one group on its own", async () => {
+    const { repository, statements } = setup({
+      relations: [
+        {
+          totals: shownTotals(3, 25, 0),
+          self,
+          items: [relationItem({ id: id(31), group: "withdrawn", state: "withdrawn" })]
+        }
+      ]
+    });
+    const page = await repository.listRelations(id(1), {
+      group: "withdrawn",
+      offset: 20,
+      limit: 20,
+      contentLanguage: "en"
+    });
+    expect(page.total).toBe(25);
+    expect(page.items.map((item) => item.id)).toEqual([id(31)]);
+    expect(statements[0]!.values).toEqual([
+      id(1),
+      20,
+      20,
+      notePageLimits.excerptCharacters,
+      ["withdrawn"],
+      20
+    ]);
+  });
+
   it("pages relations on the pool, without a transaction", async () => {
     const { repository, statements, pool } = setup();
     const relations = await repository.listRelations(id(1), {
+      group: "shown",
       offset: 40,
       limit: 20,
       contentLanguage: "en"
     });
     expect(relations.total).toBe(1);
     expect(statements).toHaveLength(1);
-    expect(statements[0]!.values).toEqual([id(1), 20, 40, notePageLimits.excerptCharacters]);
+    expect(statements[0]!.values).toEqual([
+      id(1),
+      20,
+      40,
+      notePageLimits.excerptCharacters,
+      ["shown"],
+      20
+    ]);
     expect(
       (pool as unknown as { connect: ReturnType<typeof vi.fn> }).connect
     ).not.toHaveBeenCalled();
@@ -410,7 +656,10 @@ describe("note page repository", () => {
 
   it("never lets a score out: it only orders the relation rows", () => {
     const { relations } = setup().repository.statements;
-    expect(relations).toContain("order by rel.final_score desc");
+    // The calibrated probability orders first (nulls last), the legacy score second (D42).
+    expect(relations).toContain(
+      "order by rel.probability desc nulls last, rel.final_score desc, rel.other_title, rel.id"
+    );
     expect(relations).not.toMatch(/'finalScore'|'score'/);
   });
 
@@ -433,14 +682,18 @@ describe("note page repository", () => {
     expect(evidence).toContain(`left(page.excerpt, ${notePageLimits.evidenceExcerptCharacters})`);
   });
 
-  it("lists shown relations and applied ones to earlier versions, through the predicate module", () => {
+  it("lists the shown, withdrawn and earlier-version groups through the predicate module only", () => {
     const { relations } = setup().repository.statements;
-    // Relations v2 (D9): shown between current notes, or applied to an earlier version of a note;
-    // each note's currency is read once (`s.current`, `o.current`).
+    // Relations v2 (D9): shown between current notes, withdrawn by an automatic veto, or applied to
+    // an earlier version of a note; each note's currency is read once (`s.current`, `o.current`).
     const self = { alias: "s", current: "s.current" };
     const other = { alias: "o", current: "o.current" };
     expect(relations).toContain(shownNoteRelationSql("r", [self, other]));
+    expect(relations).toContain(withdrawnNoteRelationSql("r", [self, other]));
     expect(relations).toContain(earlierVersionNoteRelationSql("r", self, other));
+    expect(relations).toContain(noteRelationStateLabelSql("r"));
+    // The groups are ranked apart, so a page of one never depends on another.
+    expect(relations).toContain("partition by rel.grp");
     expect(relations).toContain(`${currentNoteSql("n")} as current`);
     expect(relations).toContain(`${currentNoteSql("o")} as current`);
     // The direction is the stored column, never the metadata.

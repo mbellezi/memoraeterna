@@ -27,6 +27,7 @@ import { relationDailyCapError } from "./relations/relation-call-budget.js";
 import {
   CanonicalMatchingSettingsSchema,
   knowledgeGraphBatchFor,
+  noteRelationCalibration,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
@@ -489,6 +490,9 @@ export class KnowledgeService {
           // relation reads neutral.
           direction: relation.direction,
           relationType: relation.relationType ?? "related",
+          band: relation.band,
+          calibration: noteRelationCalibration(relation.metadata),
+          state: relation.state,
           finalScore: relation.finalScore,
           explanation: relation.explanation
         }))

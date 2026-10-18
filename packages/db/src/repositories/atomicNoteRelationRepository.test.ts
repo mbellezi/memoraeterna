@@ -262,6 +262,87 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     expect(await relations().veto(randomUUID(), "typer", runId)).toBeNull();
   });
 
+  it("records the owner's verdict in the write's own statement, final in both directions (D15, I-R2, I-R3)", async () => {
+    const reviewRun = await run("review");
+    const eventKinds = async (relationId: string) =>
+      (
+        await db().query<{ kind: string; runId: string }>(
+          'select kind, run_id as "runId" from relation_events where relation_id = $1 order by seq',
+          [relationId]
+        )
+      ).rows;
+    const [a, b, c, d] = [
+      await note("V1", "x"),
+      await note("V2", "y"),
+      await note("V3", "x"),
+      await note("V4", "y")
+    ];
+    // Keep clears the veto of a withdrawn relation and accepts it.
+    const withdrawn = await decided(a, b, { band: "apply" });
+    await relations().veto(withdrawn.relation.id, "explainer", runId);
+    const kept = await relations().review(withdrawn.relation.id, "keep", reviewRun);
+    expect(kept?.change).toBe("updated");
+    expect(kept?.relation).toMatchObject({ status: "accepted", vetoedAt: null, vetoSource: null });
+    expect(kept?.before).toMatchObject({ vetoed_at: expect.any(String) });
+    expect(kept?.after).toMatchObject({ status: "accepted", vetoed_at: null });
+    expect((await eventKinds(withdrawn.relation.id)).slice(-1)).toEqual([
+      { kind: "kept", runId: reviewRun }
+    ]);
+    // Remove rejects; the veto fields of a removed relation are left as they were.
+    const suggested = await decided(c, d, { band: "suggest" });
+    const removed = await relations().review(suggested.relation.id, "remove", reviewRun);
+    expect(removed?.relation.status).toBe("rejected");
+    expect((await eventKinds(suggested.relation.id)).slice(-1)).toEqual([
+      { kind: "removed", runId: reviewRun }
+    ]);
+
+    // The first verdict stays: a second review writes nothing and records no event.
+    const eventsBefore = (await eventKinds(withdrawn.relation.id)).length;
+    const again = await relations().review(withdrawn.relation.id, "remove", reviewRun);
+    expect(again?.change).toBe("reviewed");
+    expect(again?.eventId).toBeNull();
+    expect(again?.relation.status).toBe("accepted");
+    expect(
+      (await relations().review(suggested.relation.id, "keep", reviewRun))?.relation.status
+    ).toBe("rejected");
+    expect((await eventKinds(withdrawn.relation.id)).length).toBe(eventsBefore);
+    // Automation changes neither verdict: not the kept relation's type, not the removed pair.
+    expect((await decided(a, b, { relationType: "contradicts", band: "suggest" })).change).toBe(
+      "reviewed"
+    );
+    expect((await decided(c, d, { band: "apply" })).change).toBe("reviewed");
+    expect(await relations().veto(withdrawn.relation.id, "typer", runId)).toBeNull();
+    expect(await relations().pairStatuses(c, [d])).toEqual(new Map([[d, "rejected"]]));
+    // A relation that is gone has nothing to review.
+    expect(await relations().review(randomUUID(), "keep", reviewRun)).toBeNull();
+    await expect(relations().review(withdrawn.relation.id, "keep", "")).rejects.toThrow(
+      "needs its run"
+    );
+  });
+
+  it("says what each relation of a source is now, from the same predicates", async () => {
+    const [a, b, c, d, e] = [
+      await note("W1", "x"),
+      await note("W2", "y"),
+      await note("W3", "y"),
+      await note("W4", "y"),
+      await note("W5", "y")
+    ];
+    const reviewRun = await run("review");
+    const applied = await decided(a, b, { band: "apply" });
+    const suggested = await decided(a, c, { band: "suggest" });
+    const kept = await decided(a, d, { band: "suggest" });
+    await relations().review(kept.relation.id, "keep", reviewRun);
+    const withdrawn = await decided(a, e, { band: "apply" });
+    await relations().veto(withdrawn.relation.id, "typer", runId);
+    const listed = await relations().listBySourceItem(works.x.id);
+    const byId = new Map(listed.map((row) => [row.id, row]));
+    expect(byId.get(applied.relation.id)).toMatchObject({ state: "applied", shown: true });
+    expect(byId.get(suggested.relation.id)).toMatchObject({ state: "suggested", shown: true });
+    expect(byId.get(kept.relation.id)).toMatchObject({ state: "kept", shown: true, applied: true });
+    expect(byId.get(withdrawn.relation.id)).toMatchObject({ state: "withdrawn", shown: false });
+  });
+
   it("records exactly one event per automatic change in the write's own statement (D14, I-R8)", async () => {
     const events = async (relationId: string) =>
       (
@@ -484,30 +565,57 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       expect(truths, entry.name).toEqual(entry.expected);
     }
 
-    // The Note page lists shown relations and applied ones to notes that are not current, with the
-    // direction relative to its note; withdrawn, removed and archived ones stay out.
-    const page = await createNotePageRepository(db()).listRelations(self, {
-      offset: 0,
-      limit: 50,
-      contentLanguage: "en"
-    });
-    const listed = new Map(page.items.map((item) => [item.other.id, item]));
-    const expectedListed = cases.filter(
-      (entry) => entry.expected.includes("shown") || entry.expected.includes("earlier")
-    );
-    expect(page.total).toBe(expectedListed.length);
-    expect([...listed.keys()].sort()).toEqual(expectedListed.map((entry) => entry.other).sort());
+    // The Note page lists each group through its predicate: the shown relations, the ones a veto
+    // withdrew and, apart, the applied ones to notes that are not current (R29, flagged superseded
+    // when the other note is), with the direction relative to its note; removed and archived ones
+    // stay out.
+    const notePages = createNotePageRepository(db());
+    const group = async (name: "shown" | "withdrawn" | "earlier") =>
+      notePages.listRelations(self, { group: name, offset: 0, limit: 50, contentLanguage: "en" });
+    const [shownPage, withdrawnPage, earlierPage] = await Promise.all([
+      group("shown"),
+      group("withdrawn"),
+      group("earlier")
+    ]);
+    const others = (key: string) =>
+      cases.filter((entry) => entry.expected.includes(key)).map((entry) => entry.other);
+    expect(shownPage.total).toBe(others("shown").length);
+    expect(shownPage.items.map((item) => item.other.id).sort()).toEqual(others("shown").sort());
+    expect(withdrawnPage.items.map((item) => item.other.id)).toEqual(others("withdrawn"));
+    expect(withdrawnPage.items[0]).toMatchObject({ state: "withdrawn", vetoSource: "explainer" });
+    expect(earlierPage.total).toBe(others("earlier").length);
+    expect(earlierPage.items.map((item) => item.other.id).sort()).toEqual(others("earlier").sort());
+    // A group is never listed in another: the same relation is in exactly one list.
+    const all = [...shownPage.items, ...withdrawnPage.items, ...earlierPage.items];
+    expect(new Set(all.map((item) => item.id)).size).toBe(all.length);
+    const listed = new Map(shownPage.items.map((item) => [item.other.id, item]));
     expect(listed.get(cases[0]!.other)?.direction).toBe("outgoing");
-    expect(listed.get(cases[1]!.other)).toMatchObject({ type: "similar_to", direction: "unknown" });
-    expect(listed.get(cases[7]!.other)?.other.superseded).toBe(true);
+    expect(listed.get(cases[0]!.other)).toMatchObject({ state: "applied", band: "apply" });
+    expect(listed.get(cases[1]!.other)).toMatchObject({
+      type: "similar_to",
+      direction: "unknown",
+      state: "applied",
+      band: null
+    });
+    expect(listed.get(cases[2]!.other)).toMatchObject({ state: "suggested", band: "suggest" });
+    expect(listed.get(cases[3]!.other)).toMatchObject({ state: "kept" });
+    const earlier = new Map(earlierPage.items.map((item) => [item.other.id, item]));
+    expect(earlier.get(cases[7]!.other)?.other.superseded).toBe(true);
   });
 
   it("reads the direction from the column in every reader", async () => {
     const [a, b] = [await note("M", "x"), await note("N", "y")];
     const { relation } = await decided(b, a, { relationType: "extends" });
     const notePages = createNotePageRepository(db());
-    const fromA = await notePages.listRelations(a, { offset: 0, limit: 5, contentLanguage: "en" });
-    const fromB = await notePages.listRelations(b, { offset: 0, limit: 5, contentLanguage: "en" });
+    const read = (note: string) =>
+      notePages.listRelations(note, {
+        group: "shown",
+        offset: 0,
+        limit: 5,
+        contentLanguage: "en"
+      });
+    const fromA = await read(a);
+    const fromB = await read(b);
     expect(fromA.items.find((item) => item.id === relation.id)?.direction).toBe("incoming");
     expect(fromB.items.find((item) => item.id === relation.id)?.direction).toBe("outgoing");
     const context = await createRelationExplanationRepository(db()).readContext(relation.id);
@@ -517,11 +625,9 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       "update atomic_note_relations set direction = 'unknown', band = null where id = $1",
       [relation.id]
     );
-    expect(
-      (await notePages.listRelations(a, { offset: 0, limit: 5, contentLanguage: "en" })).items.find(
-        (item) => item.id === relation.id
-      )?.direction
-    ).toBe("unknown");
+    expect((await read(a)).items.find((item) => item.id === relation.id)?.direction).toBe(
+      "unknown"
+    );
     expect(
       (await createRelationExplanationRepository(db()).readContext(relation.id))?.semanticSourceId
     ).toBeNull();

@@ -89,8 +89,22 @@ interface SourceRelationGroup {
   kind: SourceRelationKind;
   relationType?: string;
   weight: number;
-  confidence: number;
+  /** Null when the relation has no confidence to show (a promoted source relation, F3 R4). */
+  confidence: number | null;
   details: string[];
+}
+
+/**
+ * The confidence a layout uses for an edge that has none to show: a relation promoted from note
+ * links, or a relations v2 note relation, carries a calibrated band instead of a percentage (F3
+ * D42, R4). Unknown stays unknown on screen; the layout only needs a middle value.
+ */
+const unknownConfidence = 0.5;
+
+/** The larger of two confidences, unknown only when both are. */
+function mergeConfidence(left: number | null, right: number | null): number | null {
+  if (left === null) return right;
+  return right === null ? left : Math.max(left, right);
 }
 
 interface NodeAttributes {
@@ -125,7 +139,7 @@ interface EdgeAttributes {
   size: number;
   color: string;
   kind: "source_connection" | "atomic_note_relation" | "hierarchy_link" | "hit_area";
-  confidence: number;
+  confidence: number | null;
   weight: number;
   description: string | null;
   details: string[];
@@ -191,7 +205,7 @@ interface PreparedGraphEdge {
   label: string;
   description: string | null;
   weight: number;
-  confidence: number;
+  confidence: number | null;
   details: string[];
   sourceRelations: SourceRelationGroup[];
   relationType: string | null;
@@ -301,7 +315,7 @@ export function projectSourceHierarchy(
       continue;
     }
     current.weight += edge.weight;
-    current.confidence = Math.max(current.confidence, edge.confidence);
+    current.confidence = mergeConfidence(current.confidence, edge.confidence);
     current.details = [...new Set([...current.details, ...edge.details])].slice(0, 6);
   }
   return { ...data, nodes, edges: [...groupedEdges.values()] };
@@ -2690,11 +2704,13 @@ function GraphTooltip({
               aria-hidden="true"
             />
             <strong className="text-sm">{edge.label}</strong>
-            <span className="ml-auto text-[11px] tabular-nums text-slate-400">
-              {t("knowledgeGraph.confidence", {
-                values: { value: Math.round(edge.confidence * 100) }
-              })}
-            </span>
+            {edge.confidence === null ? null : (
+              <span className="ml-auto text-[11px] tabular-nums text-slate-400">
+                {t("knowledgeGraph.confidence", {
+                  values: { value: Math.round(edge.confidence * 100) }
+                })}
+              </span>
+            )}
           </div>
           <p className="flex min-w-0 items-center gap-1 text-xs text-slate-400">
             <span className="min-w-0 flex-1 truncate">
@@ -3021,12 +3037,19 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       weight: edge.weight,
       description: edge.description,
       details: edge.details,
-      layoutWeight: Math.max(0.2, Math.log2(edge.weight + 1) * edge.confidence),
+      layoutWeight: Math.max(
+        0.2,
+        Math.log2(edge.weight + 1) * (edge.confidence ?? unknownConfidence)
+      ),
       labelOpacity: 0.2,
       labelRevealAt:
         edge.kind === "atomic_note_relation" ||
         edge.sourceRelations.some((relation) => relation.kind === "source_relation")
-          ? relationLabelRevealAt(edge.id, edge.confidence, preparedEdges.length)
+          ? relationLabelRevealAt(
+              edge.id,
+              edge.confidence ?? unknownConfidence,
+              preparedEdges.length
+            )
           : 2,
       relationType: edge.relationType,
       sourceRelations: edge.sourceRelations,
@@ -3299,13 +3322,13 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       label: "",
       description: null,
       weight: 0,
-      confidence: 0,
+      confidence: null,
       details: [],
       sourceRelations: [],
       relationType: null
     };
     current.weight += edge.weight;
-    current.confidence = Math.max(current.confidence, edge.confidence);
+    current.confidence = mergeConfidence(current.confidence, edge.confidence);
     current.details.push(...edge.details);
     current.sourceRelations.push({
       kind: edge.kind as SourceRelationKind,

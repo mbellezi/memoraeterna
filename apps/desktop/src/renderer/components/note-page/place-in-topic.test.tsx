@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 
 import { NotePageView, type NotePageViewProps } from "./NotePageView";
-import { notePage } from "./note-page-fixtures";
+import { idleMore, notePage } from "./note-page-fixtures";
 import { PlaceInTopic } from "./PlaceInTopic";
 
 const noop = () => undefined;
@@ -22,7 +22,10 @@ function render(overrides: Partial<NotePageViewProps> = {}, status = "active"): 
       review={{ pending: false, failed: false }}
       openCard={null}
       explanations={{}}
-      more={{ status: "idle" }}
+      reviews={{}}
+      more={idleMore}
+      relationFocus={null}
+      withdrawnOpen={false}
       openFailed={false}
       announcement=""
       onBack={noop}
@@ -39,6 +42,9 @@ function render(overrides: Partial<NotePageViewProps> = {}, status = "active"): 
       onOpenPlacement={noop}
       onCardEvent={noop}
       onRetryExplanation={noop}
+      onReview={noop}
+      onRelationFocusHandled={noop}
+      onToggleWithdrawn={noop}
       onShowMore={noop}
       {...overrides}
     />

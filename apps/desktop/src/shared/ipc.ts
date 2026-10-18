@@ -10,6 +10,9 @@ import {
   AiPresetIdSchema,
   AiPresetModeSchema,
   NoteDeciderModeSchema,
+  NotePageRelationStateSchema,
+  NoteRelationBandSchema,
+  NoteRelationCalibrationSchema,
   relationExplanationLimits
 } from "@app/domain";
 import {
@@ -36,6 +39,8 @@ import type {
   RelationExplainInput,
   RelationExplainOutcome,
   RelationExplanationResult,
+  RelationReviewInput,
+  RelationReviewResult,
   ObjectLocateResult
 } from "@app/domain";
 import type { WikiResultsSchema } from "@app/domain";
@@ -107,6 +112,7 @@ export const ipcChannels = {
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
   relationsCancelExplain: "app:relations:cancel-explain",
+  relationsReview: "app:relations:review",
   relationsExplainSource: "app:relations:explain-source",
   relationsCancelExplainSource: "app:relations:cancel-explain-source",
   relationsChanged: "app:relations:changed",
@@ -995,7 +1001,9 @@ export const knowledgeGraphDashboardEdgeSchema = z
     label: z.string().min(1),
     description: z.string().nullable(),
     weight: z.number().positive(),
-    confidence: z.number().min(0).max(1),
+    // Null when there is no percentage to show: a source relation promoted from note links, or a
+    // relations v2 note relation (F3 D42, R4).
+    confidence: z.number().min(0).max(1).nullable(),
     details: z.array(z.string()),
     /** A source relation nobody kept (decision 29); only source relation edges say so. */
     suggested: z.boolean().optional()
@@ -1200,6 +1208,11 @@ export const sourceDetailSchema = z
           // The pair is sorted by ID; how it reads (F3 D8).
           direction: z.enum(["lo_to_hi", "hi_to_lo", "symmetric", "unknown"]),
           relationType: z.string().min(1),
+          // Automation's band and the calibration it was decided under (F3 D9, D42): null on a
+          // legacy row, which keeps showing its stored score. A v2 row shows a band word instead.
+          band: NoteRelationBandSchema.nullable(),
+          calibration: NoteRelationCalibrationSchema.nullable(),
+          state: NotePageRelationStateSchema,
           finalScore: z.number().min(0).max(1),
           explanation: z.string().min(1)
         })
@@ -1828,6 +1841,12 @@ export interface DesktopApi {
      * of the request, only that card stops waiting: the call goes on while another card waits for it.
      */
     cancelExplain: (input: RelationExplainInput) => Promise<boolean>;
+    /**
+     * The owner keeps or removes a suggested or withdrawn note relation (F3 D15). The verdict is
+     * final in both directions: it answers the verdict that stands, with `changed` false when the
+     * relation already had one. Null when the relation is gone.
+     */
+    review: (input: RelationReviewInput) => Promise<RelationReviewResult | null>;
     /**
      * The current explanation of a source relation, written now when there is none; null when
      * there is none to write (rejected, gone, without current evidence or with stored prose).
