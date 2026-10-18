@@ -3,6 +3,7 @@ import {
   readStoredStageCheckpoint,
   SourceRelationCoverageSchema
 } from "@app/domain";
+import type { MessageKey } from "@app/i18n";
 import type { JobRecord } from "../../shared/ipc";
 
 export type JobFilter = "all" | "active" | "completed" | "attention";
@@ -202,4 +203,43 @@ function deduplicateErrors(errors: JobRecord["errorHistory"]): JobRecord["errorH
       return true;
     })
     .toSorted((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+}
+
+/** The jobs-view label of a job type (an unknown type reads as an ingestion). */
+export function jobTypeMessageKey(type: string): MessageKey {
+  return (
+    (
+      {
+        ingestion: "jobs.types.ingestion",
+        "markdown-conversion": "jobs.types.conversion",
+        chunking: "jobs.types.chunking",
+        embedding: "jobs.types.embedding",
+        "note-embedding": "jobs.types.noteEmbedding",
+        summarization: "jobs.types.summarization",
+        "atomic-note-generation": "jobs.types.atomicNoteGeneration",
+        "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
+        organization: "organization.pageSynthesis",
+        "relation-labels": "relationLabel.title",
+        "atomic-note-matching": "jobs.types.atomicNoteMatching",
+        "source-matching": "jobs.types.sourceMatching",
+        "obsidian-sync": "jobs.types.obsidianSync",
+        "obsidian-wiki": "obsidianWiki.title",
+        "asset-storage": "jobs.types.assetStorage",
+        "local-model-download": "jobs.types.localModelDownload",
+        "topic-place": "jobs.types.topicPlace",
+        "topic-sweep": "jobs.types.topicSweep",
+        "topic-build": "jobs.types.topicBuild",
+        "topic-rebalance": "jobs.types.topicRebalance",
+        "topic-audit": "jobs.types.topicAudit",
+        "topic-name": "jobs.types.topicName",
+        "topic-areas": "jobs.types.topicAreas",
+        "topic-label-embed": "jobs.types.topicLabelEmbed",
+        "topic-gate": "jobs.types.topicGate",
+        "relation-link": "jobs.relations.link",
+        "relation-retype": "jobs.relations.retype",
+        "relation-promote": "jobs.relations.promote",
+        "relation-composite": "jobs.relations.composite"
+      } as Record<string, MessageKey>
+    )[type] ?? "jobs.types.ingestion"
+  );
 }

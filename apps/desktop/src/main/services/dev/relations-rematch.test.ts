@@ -325,6 +325,8 @@ describe("preparing a run", () => {
         statements.push(text.replace(/\s+/gu, " ").trim().slice(0, 40));
         if (text.includes("md5(")) return { rows: libraryLines.map((line) => ({ line })) };
         if (text.includes("with recursive tree(root_id")) return { rows: rootRows };
+        // The root placements the composite backfill is compared with (read before it can run).
+        if (text.includes("topic_placements")) return { rows: [] };
         throw new Error(`unexpected statement: ${text.slice(0, 60)}`);
       }
     } as unknown as PgPool;
@@ -463,6 +465,17 @@ describe("preparing a run", () => {
     });
     await expect(prepareRelationsRematch(prepared)).rejects.toThrow(RematchRefusal);
     expect(statements).toEqual([]);
+  });
+
+  it("reads the root placements before it returns: the baseline of the backfill's re-placements", async () => {
+    await pinFixture();
+    const { prepared, statements } = options();
+    await prepareRelationsRematch(prepared);
+    // Nothing has started yet (the job supervisor starts after the preparation, which queues the
+    // backfill), so no composite it writes can have moved a root by then.
+    expect(statements.filter((statement) => statement.includes("with recursive up"))).toHaveLength(
+      1
+    );
   });
 
   it("starts by queueing the DEV heavy job once, waits for it to end and quits", async () => {

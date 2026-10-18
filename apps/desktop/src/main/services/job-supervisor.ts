@@ -1123,10 +1123,6 @@ export class JobSupervisor {
         pool,
         sourceItemId,
         aggregate: aggregateSourceEmbedding,
-        // The batch's aggregate summaries are written by the job that passes the summarization
-        // barrier, and a summary written into a root deletes its composite: until then no ancestor
-        // header is embedded, so a root's header is embedded once, with its summary.
-        awaitingSummary: !batchSummariesComplete,
         // Through the stage's own generator (batched when wired, F3 D37), so an ancestor's header is
         // the same request whichever job builds its composite.
         embed: generate

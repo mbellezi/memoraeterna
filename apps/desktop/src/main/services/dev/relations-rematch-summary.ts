@@ -71,6 +71,11 @@ const clearedSchema = z
   })
   .strict();
 
+/**
+ * The cassette's counters for the whole app run: they include the local embeddings of the composite
+ * backfill, which runs at the app's start (`byTask.embedding`), although the run's clock and its AI
+ * call counts start after that step. A miss the backfill had shows here, with its key.
+ */
 const cassetteSchema = z
   .object({
     mode: z.enum(["record", "replay"]),
@@ -105,20 +110,27 @@ export type RootPlacement = z.infer<typeof rootPlacementSchema>;
 /**
  * The first step of a run (T53f): the composite vectors of hierarchy roots that had none, built by
  * the background job `relation-composite` before the first root is released, and the topic
- * re-placements they caused (3.20: a root with current notes must not move).
+ * re-placements they caused (3.20: a root with current placed notes must not move).
  */
 export const compositeBackfillSchema = z
   .object({
     /** Backfill jobs this app run ran (the start queues one when the library has a gap). */
     jobs: count,
-    /** Hierarchy nodes with a descendant composite in the route's space, as the jobs counted. */
+    /**
+     * Hierarchy nodes with a descendant composite in the route's space, as the last pass saw them
+     * (not a sum over the jobs: the start's job and the step's full round look at the same nodes).
+     */
     examined: count,
-    /** Composites written: built where there was none, rebuilt where it was stale. */
+    /** Composites written over all the jobs: built where there was none, rebuilt where stale. */
     written: count,
     rebuilt: count,
-    /** Nodes whose composite already held its inputs (untouched). */
+    /** Of the nodes the last pass examined, those whose composite already held its inputs. */
     current: count,
-    /** Nodes waiting for a descendant that has no composite (the last descendant to embed builds). */
+    /**
+     * Of the nodes the last pass examined, those that wait for the import that builds them: a
+     * descendant has no composite yet (the last descendant to embed builds it), or an ingestion run
+     * is still working in their tree.
+     */
     incomplete: count,
     failed: count,
     /** Why a job wrote nothing (no embedding space, no model routed, the space changed). */
@@ -130,11 +142,11 @@ export const compositeBackfillSchema = z
       .object({
         /** Root sources of the written nodes. */
         backfilledRoots: count,
-        /** Of those, roots with current notes: they keep their notes' vector. */
+        /** Of those, roots with current placed notes: they keep their notes' vector. */
         withCurrentNotes: count,
         /** Of those, roots whose primary placement changed once PLACE ran. */
         moved: count,
-        /** Moved roots that have current notes: must be 0 (3.20). */
+        /** Moved roots that have current placed notes: must be 0 (3.20). */
         movedWithCurrentNotes: count,
         /** Topic placement or gate jobs still open when the step gave up waiting: 0 normally. */
         topicJobsOpen: count,

@@ -29,6 +29,7 @@ import { cn } from "../lib/cn";
 import {
   collapsePreparationStages,
   groupJobs,
+  jobTypeMessageKey,
   listActivityJobs,
   matchesFilter,
   preparationStages,
@@ -1108,44 +1109,6 @@ function sourceIcon(type?: string) {
         GenericDocument: FileText
       } as Record<string, typeof FileText>
     )[type ?? ""] ?? FileText
-  );
-}
-
-function jobTypeMessageKey(type: string): MessageKey {
-  return (
-    (
-      {
-        ingestion: "jobs.types.ingestion",
-        "markdown-conversion": "jobs.types.conversion",
-        chunking: "jobs.types.chunking",
-        embedding: "jobs.types.embedding",
-        "note-embedding": "jobs.types.noteEmbedding",
-        summarization: "jobs.types.summarization",
-        "atomic-note-generation": "jobs.types.atomicNoteGeneration",
-        "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
-        organization: "organization.pageSynthesis",
-        "relation-labels": "relationLabel.title",
-        "atomic-note-matching": "jobs.types.atomicNoteMatching",
-        "source-matching": "jobs.types.sourceMatching",
-        "obsidian-sync": "jobs.types.obsidianSync",
-        "obsidian-wiki": "obsidianWiki.title",
-        "asset-storage": "jobs.types.assetStorage",
-        "local-model-download": "jobs.types.localModelDownload",
-        "topic-place": "jobs.types.topicPlace",
-        "topic-sweep": "jobs.types.topicSweep",
-        "topic-build": "jobs.types.topicBuild",
-        "topic-rebalance": "jobs.types.topicRebalance",
-        "topic-audit": "jobs.types.topicAudit",
-        "topic-name": "jobs.types.topicName",
-        "topic-areas": "jobs.types.topicAreas",
-        "topic-label-embed": "jobs.types.topicLabelEmbed",
-        "topic-gate": "jobs.types.topicGate",
-        "relation-link": "jobs.relations.link",
-        "relation-retype": "jobs.relations.retype",
-        "relation-promote": "jobs.relations.promote",
-        "relation-composite": "jobs.relations.composite"
-      } as Record<string, MessageKey>
-    )[type] ?? "jobs.types.ingestion"
   );
 }
 

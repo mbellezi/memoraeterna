@@ -479,7 +479,7 @@
       "link": "Liaison des relations",
       "retype": "Typage des relations",
       "promote": "Relations entre sources à partir des notes",
-      "composite": "Vecteurs des livres et articles pour la découverte entre sources"
+      "composite": "Préparation des livres et articles pour trouver des sources liées"
     },
     "progress": {
       "processingSource": "Traitement de {title}",

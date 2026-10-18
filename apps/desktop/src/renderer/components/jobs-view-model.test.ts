@@ -5,6 +5,7 @@ import type { JobRecord } from "../../shared/ipc";
 import {
   collapsePreparationStages,
   groupJobs,
+  jobTypeMessageKey,
   listActivityJobs,
   sourceRelationCoverageNotice,
   type JobCardModel
@@ -286,5 +287,27 @@ describe("jobs view model", () => {
         "summarization"
       ])
     ).toEqual(["preparation", "chunking", "summarization"]);
+  });
+});
+
+describe("the jobs view's label of a relation job", () => {
+  it.each(["relation-link", "relation-retype", "relation-promote", "relation-composite"])(
+    "names %s in every locale, apart from the ingestion default",
+    (type) => {
+      const key = jobTypeMessageKey(type);
+      expect(key).not.toBe(jobTypeMessageKey("ingestion"));
+      for (const locale of supportedLanguageCodes)
+        expect(
+          createTranslator(locale)(key, { missingKeyBehavior: "throw" }).trim().length,
+          `${type} in ${locale}`
+        ).toBeGreaterThan(0);
+    }
+  );
+
+  it("words the composite backfill by what it does for the user, not by its vectors", () => {
+    expect(jobTypeMessageKey("relation-composite")).toBe("jobs.relations.composite");
+    expect(
+      createTranslator("en")("jobs.relations.composite", { missingKeyBehavior: "throw" })
+    ).not.toMatch(/vector/i);
   });
 });

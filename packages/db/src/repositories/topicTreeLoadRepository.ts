@@ -325,6 +325,15 @@ const embeddingTable = (dimensions: number): string => {
   throw new TopicLoadError(`Unsupported embedding dimension: ${dimensions}`);
 };
 
+/**
+ * The test for the notes the topic tree counts, on the `atomic_notes` row aliased `note`: not
+ * rejected or archived, and the current version. A root source takes its vector from them; one
+ * without such a note falls back to its composite (F2 D8).
+ */
+export function currentTopicNoteSql(note: string): string {
+  return `${note}.status not in ('rejected', 'archived') and ${note}.supersession_status = 'current'`;
+}
+
 export type TopicPendingNoteScope = "library" | "root" | "ids";
 export type TopicPendingSourceScope = "library" | "root";
 
@@ -334,8 +343,7 @@ export type TopicPendingSourceScope = "library" | "root";
 // into a hash join that reads the whole table). $1 tree, $2 model, $3 strategy, $6 reasons, and $7
 // the root source or the note ids of a scoped read. A note's root is the root of its owning source;
 // knowledge-owned notes have none.
-const currentNote =
-  "a.status not in ('rejected', 'archived') and a.supersession_status = 'current'";
+const currentNote = currentTopicNoteSql("a");
 const noteWindows: Record<TopicPendingNoteScope, string> = {
   library: `with win as materialized (
       select a.id, a.owning_source_item_id as owner from atomic_notes a

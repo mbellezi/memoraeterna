@@ -53,7 +53,11 @@ import {
   type RematchPlan,
   type RematchRoot
 } from "./relations-rematch-plan.js";
-import { runCompositeBackfillStep } from "./relations-rematch-composites.js";
+import {
+  readRootPlacements,
+  runCompositeBackfillStep,
+  type RootPlacementRow
+} from "./relations-rematch-composites.js";
 import { runRematch, type CassetteFacts, type RematchPorts } from "./relations-rematch-run.js";
 import {
   clearRelationState,
@@ -325,6 +329,11 @@ export interface RematchPortsOptions {
   };
   /** When the app run started, for the backfill jobs it ran; by default from the process clock. */
   appStartedAt?: Date;
+  /**
+   * The root placements read before the job supervisor started (the 3.20 baseline of the composite
+   * backfill, which the start queues); read when the step runs when it is absent.
+   */
+  placementsBefore?: readonly RootPlacementRow[];
   logger: Pick<Console, "info">;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
@@ -367,6 +376,7 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
           now,
           sleep,
           since: options.appStartedAt ?? new Date(Date.now() - process.uptime() * 1000),
+          ...(options.placementsBefore ? { placementsBefore: options.placementsBefore } : {}),
           log: (event, data) => options.logger.info(`RELATIONS_REMATCH ${event}`, data ?? "")
         },
         input
@@ -525,6 +535,9 @@ export async function prepareRelationsRematch(
     throw error;
   }
   const now = options.now ?? (() => new Date());
+  // The baseline of the composite backfill's topic re-placements (3.20): read now, before the job
+  // supervisor starts and queues the backfill, so no composite it writes can have moved a root yet.
+  const placementsBefore = await readRootPlacements(options.pool);
   const lanesMode = resolveAiLaneRuntimeConfig(
     {},
     { environment: options.env, packaged: false }
@@ -538,6 +551,7 @@ export async function prepareRelationsRematch(
       ensure: ({ full }) => options.jobs.ensureCompositeBackfill({ always: full }),
       remaining: () => options.jobs.compositeBackfillRemaining()
     },
+    placementsBefore,
     logger: options.logger,
     now,
     ...(options.sleep ? { sleep: options.sleep } : {})

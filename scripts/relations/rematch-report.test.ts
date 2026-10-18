@@ -257,7 +257,7 @@ describe("the re-match report", () => {
     expect(markdown).toContain("## Composite backfill");
     expect(markdown).toContain("| 1 | 11 | 11 | 0 | 0 | 0 | 0 | 0 | 4.2 |");
     expect(markdown).toContain(
-      "11 roots had a composite written, 10 of them with current notes (their vector comes from their notes); 1 moved once PLACE ran, 0 of them with current notes."
+      "11 roots had a composite written, 10 of them with current placed notes (their vector comes from their notes); 1 moved once PLACE ran, 0 of them with current placed notes."
     );
     expect(markdown).toContain("| Livro \\| sem notas | no | 11111111 (needs vector) | 22222222 |");
     // A run that backfilled nothing says so with zeros, and is usable.
@@ -283,7 +283,7 @@ describe("the re-match report", () => {
         "2 hierarchy roots still have no composite vector: discovery skips them.",
         "1 composite backfill nodes or jobs failed.",
         "3 topic placement jobs caused by the composite backfill were still open when the run started.",
-        "1 roots with current notes moved in the topic tree after the composite backfill (3.20 expects none)."
+        "1 roots with current placed notes moved in the topic tree after the composite backfill (3.20 expects none)."
       ])
     );
   });

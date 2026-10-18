@@ -23,6 +23,7 @@ import { ProcessingStages } from "@app/domain";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
+  readCompositeJobFacts,
   readRootPlacements,
   runCompositeBackfillStep
 } from "./dev/relations-rematch-composites.js";
@@ -34,9 +35,12 @@ import {
 } from "./job-supervisor.js";
 import {
   compositeBackfillJobType,
+  compositeBackfillPage,
   enqueueCompositeBackfill,
-  placementOf
+  placementOf,
+  readBackfillRoots
 } from "./relations/composite-backfill.js";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import {
   backfillSourceComposites,
   compositeStrategy,
@@ -48,9 +52,10 @@ import {
 } from "./source-composite.js";
 
 // T53f on a real database: the backfill of hierarchy-root composites (a root with none gets one, a
-// current one is untouched, a second pass writes nothing, it is queued once and runs as a
-// low-priority job on the `relations` worker), and a root's header embedded once in a one-batch
-// import (no ancestor is built before the batch's aggregate summaries are written).
+// current one is untouched, a second pass writes nothing, it is queued once and runs as a paged,
+// low-priority job on the `relations` worker), and a one-batch import of books, where every book's
+// composite is there when its discovery runs (no batch barrier) and a root's header is embedded once
+// when its last chapter passes the summarization barrier.
 // The ingestion stages run in worker threads built for the packaged app. This proof runs them
 // in-process: the chunker splits paragraphs, the embedding check returns its input.
 vi.mock("./worker-supervisor.js", async () => {
@@ -97,6 +102,9 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
   let manager: PostgresSidecarManager | undefined;
   let pool: PgPool | undefined;
   const db = () => pool!;
+  /** An active topic tree with one root topic: the notes a test places are placed in it. */
+  let treeId = "";
+  let topicId = "";
 
   beforeAll(async () => {
     workDir = await mkdtemp(join(tmpdir(), "memora-composite-backfill-"));
@@ -122,6 +130,29 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
     await runMigrations(pool, join(workspace, "packages/db/drizzle"), {
       seedFolder: join(workspace, "packages/db/seed")
     });
+    treeId = (
+      await pool.query<{ id: string }>(
+        `insert into topic_trees (status, space_key, embedding_provider, embedding_model,
+           embedding_runtime, dimensions, config, config_hash, seed, activated_at)
+         values ('active', 'fixture-space', 'test', 'test-256', 'local', 256, '{}'::jsonb,
+           'fixture', 1, now()) returning id`
+      )
+    ).rows[0]!.id;
+    // The database refuses a topic written outside the engine: the fixture is the engine's writer.
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("select set_config('memora.topic_writer', 'engine', true)");
+      topicId = (
+        await client.query<{ id: string }>(
+          "insert into topics (tree_id, role) values ($1, 'root') returning id",
+          [treeId]
+        )
+      ).rows[0]!.id;
+      await client.query("commit");
+    } finally {
+      client.release();
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -200,6 +231,38 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
         )
       ).rows[0]!.n
     );
+
+  /** A current note of a source (a chunk of its own as evidence); `placed` puts it in the tree. */
+  const note = async (sourceId: string, options: { placed?: boolean; status?: string } = {}) => {
+    const documentId = randomUUID();
+    const chunkId = randomUUID();
+    const noteId = randomUUID();
+    await db().query(
+      `insert into documents (id, source_item_id, title, canonical_markdown, content_hash)
+       values ($1, $2, 'Document', 'text', $3)`,
+      [documentId, sourceId, `hash-${documentId}`]
+    );
+    await db().query(
+      `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
+       values ($1, $2, $3, 0, 'Passage', $4)`,
+      [chunkId, documentId, sourceId, `chunk-${chunkId}`]
+    );
+    await db().query(
+      `insert into atomic_notes (id, title, body_markdown, idea_statement, ownership, status,
+         created_from_source_item_id, evidence_chunk_id, generation_provider, generation_model,
+         generation_runtime, generation_prompt_version, generation_key)
+       values ($1::uuid, 'Note', 'Note', 'Note', 'source', $2, $3, $4, 'test', 'test', 'local', 'test',
+         $1::uuid::text)`,
+      [noteId, options.status ?? "active", sourceId, chunkId]
+    );
+    if (options.placed)
+      await db().query(
+        `insert into topic_placements (tree_id, item_kind, note_id, topic_id, role, rank, decided_by)
+         values ($1, 'note', $2, $3, 'primary', 0, 'build')`,
+        [treeId, noteId, topicId]
+      );
+    return noteId;
+  };
 
   // --- the backfill --------------------------------------------------------------------------------
 
@@ -395,30 +458,115 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
     expect(moved).toMatchObject({ written: [], stopped: "space_changed" });
   });
 
-  it("builds no ancestor while the batch's aggregate summaries are still to be written", async () => {
+  it("leaves a node to the import still working in its tree, and builds it once that ends", async () => {
     const spaceKey = newSpace();
-    const book = await work("Awaiting book", undefined, "Book");
-    const one = await work("Awaiting chapter one", book.id, "BookChapter");
-    const two = await work("Awaiting chapter two", book.id, "BookChapter");
+    const book = await work("Importing book", undefined, "Book");
+    const one = await work("Importing chapter one", book.id, "BookChapter");
+    const two = await work("Importing chapter two", book.id, "BookChapter");
     await composite(one.id, unit(4), spaceKey);
     await composite(two.id, unit(5), spaceKey);
+    // A resumed import: the chapter's run is still pending, and the book's own stages are to run
+    // (with the summary the import writes), so the backfill would only embed a header it must redo.
+    const runs = createIngestionRunRepository(db());
+    const run = await runs.create({
+      sourceItemId: two.id,
+      requestedStages: ["embedding"],
+      effectiveStages: ["embedding"],
+      trigger: "interactive_import"
+    });
     const calls: Array<{ text: string; sourceItemId: string }> = [];
-    const embed = embedder(spaceKey, calls);
-    const refresh = (awaitingSummary: boolean) =>
-      refreshAncestorComposites({
-        pool: db(),
-        sourceItemId: two.id,
-        embed,
-        aggregate: aggregateSourceEmbedding,
-        awaitingSummary
-      });
 
-    expect(await refresh(true)).toEqual([]);
+    expect(await countCompositeBackfillWork(db(), spaceKey)).toBe(0);
+    expect(await hasCompositeBackfillWork(db(), spaceKey)).toBe(false);
+    const waiting = await backfill(spaceKey, embedder(spaceKey, calls));
+    expect(waiting).toMatchObject({ examined: 1, written: [], incomplete: 1, current: 0 });
     expect(calls).toEqual([]);
     expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).toBeNull();
-    // Once the summaries are written it builds as before.
-    expect(await refresh(false)).toEqual([book.id]);
-    expect(calls.length).toBeGreaterThan(0);
+
+    await runs.complete(run.id);
+    expect(await countCompositeBackfillWork(db(), spaceKey)).toBe(1);
+    expect(await backfill(spaceKey, embedder(spaceKey, calls))).toMatchObject({
+      written: [book.id],
+      incomplete: 0
+    });
+    expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).not.toBeNull();
+  });
+
+  it("walks the nodes in pages that end at their limit and start after the last node done", async () => {
+    const spaceKey = newSpace();
+    const books: string[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      const book = await work(`Paged pass book ${index}`, undefined, "Book");
+      const chapter = await work(`Paged pass chapter ${index}`, book.id, "BookChapter");
+      await composite(chapter.id, unit(4), spaceKey);
+      books.push(book.id);
+    }
+    const calls: Array<{ text: string; sourceItemId: string }> = [];
+    const embed = embedder(spaceKey, calls);
+
+    // At most two composites per page: 2, 2 and 1.
+    const written: string[] = [];
+    const sizes: number[] = [];
+    let after: Awaited<ReturnType<typeof backfill>>["next"] = null;
+    do {
+      const page = await backfill(spaceKey, embed, { after, limits: { nodes: 50, writes: 2 } });
+      sizes.push(page.written.length);
+      written.push(...page.written);
+      after = page.next;
+    } while (after);
+    expect(sizes).toEqual([2, 2, 1]);
+    expect(written.toSorted()).toEqual(books.toSorted());
+    expect(new Set(written).size).toBe(5);
+
+    // Nodes that are current cost no write, so their page ends at the number of nodes looked at.
+    const looked: number[] = [];
+    after = null;
+    do {
+      const page = await backfill(spaceKey, embed, { after, limits: { nodes: 2, writes: 2 } });
+      looked.push(page.current);
+      expect(page.written).toEqual([]);
+      after = page.next;
+    } while (after);
+    expect(looked).toEqual([2, 2, 1]);
+  });
+
+  it("builds a book's composite as soon as its last chapter has one, before any summary exists", async () => {
+    const spaceKey = newSpace();
+    const book = await work("Early book", undefined, "Book");
+    const one = await work("Early chapter one", book.id, "BookChapter");
+    const two = await work("Early chapter two", book.id, "BookChapter");
+    const calls: Array<{ text: string; sourceItemId: string }> = [];
+    const refresh = (sourceItemId: string) =>
+      refreshAncestorComposites({
+        pool: db(),
+        sourceItemId,
+        embed: embedder(spaceKey, calls),
+        aggregate: aggregateSourceEmbedding
+      });
+
+    // The first chapter leaves the book waiting for the second one.
+    await composite(one.id, unit(4), spaceKey);
+    expect(await refresh(one.id)).toEqual([]);
+    expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).toBeNull();
+    // The last one builds it at once: the book's discovery runs when its last record has linked
+    // and needs the vector then, whether or not the batch's summaries are written (no batch barrier).
+    await composite(two.id, unit(5), spaceKey);
+    expect(await refresh(two.id)).toEqual([book.id]);
+    expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).not.toBeNull();
+
+    // A summary written afterwards deletes it (any update of the source does), and the header it
+    // embedded is no longer the book's: the next build, the root's own stage or the backfill, makes
+    // it with the summary. Until plan decision 27 follows a late summary, that is a second header.
+    await createSourceItemRepository(db()).update(book.id, { summary: "A late summary." });
+    expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).toBeNull();
+    expect(
+      await hierarchyRootComposite({
+        pool: db(),
+        sourceItemId: book.id,
+        header: await headerOf(book.id),
+        space: { model: "test-256", dimensions: 256, strategy: compositeStrategy(spaceKey) }
+      })
+    ).toBe("stale");
   });
 
   // --- the job -------------------------------------------------------------------------------------
@@ -426,7 +574,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
   describe("the relation-composite job", () => {
     const hooks = () => ({
       notesChanged: vi.fn(async () => undefined),
-      sourcesChanged: vi.fn(async () => undefined),
+      sourcesChanged: vi.fn<TopicChangeHooks["sourcesChanged"]>(async () => undefined),
       itemsRemoved: vi.fn(async () => undefined)
     });
     type Generate = NonNullable<JobSupervisorOptions["generateEmbedding"]>;
@@ -556,6 +704,95 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       );
     });
 
+    it("queues no second job beside the next page of a pass or a job waiting for its retry", async () => {
+      const spaceKey = newSpace();
+      const book = await work("Paging book", undefined, "Book");
+      const chapter = await work("Paging chapter", book.id, "BookChapter");
+      await composite(chapter.id, unit(4), spaceKey);
+      // A job past its claim holds no dedupe key: this one stands for a pass between two pages.
+      const between = await createJobRepository(db()).create({
+        type: compositeBackfillJobType,
+        lane: "light",
+        priority: -1
+      });
+
+      expect(await enqueueCompositeBackfill(db(), spaceKey)).toBe(true);
+
+      expect(await queuedBackfills()).toBe(1);
+      await db().query("update jobs set status = 'canceled' where id = $1", [between.id]);
+      expect(await enqueueCompositeBackfill(db(), spaceKey)).toBe(true);
+      expect(await queuedBackfills()).toBe(1);
+      await db().query(
+        "update jobs set status = 'canceled' where type = $1 and status = 'queued'",
+        [compositeBackfillJobType]
+      );
+    });
+
+    it("gives its slot back between pages: the same job is queued again and the totals add up", async () => {
+      const spaceKey = newSpace();
+      const total = compositeBackfillPage.writes + 2;
+      const books: string[] = [];
+      for (let index = 0; index < total; index += 1) {
+        const book = await work(`Paged job book ${index}`, undefined, "Book");
+        const chapter = await work(`Paged job chapter ${index}`, book.id, "BookChapter");
+        await composite(chapter.id, unit(4), spaceKey);
+        books.push(book.id);
+      }
+      const topicHooks = hooks();
+      const supervisor = supervisorFor(spaceKey, { topicHooks });
+      const open = async () =>
+        Number(
+          (
+            await db().query<{ n: number }>(
+              "select count(*)::int as n from jobs where type = $1 and status in ('queued', 'running')",
+              [compositeBackfillJobType]
+            )
+          ).rows[0]!.n
+        );
+      expect(await supervisor.ensureCompositeBackfill()).toBe(true);
+
+      // The first page writes its share and the same job waits for the rest, behind the link jobs.
+      const first = await supervisor.runLightOnce("relations");
+      expect(first).toMatchObject({
+        status: "queued",
+        priority: -1,
+        attempts: 0,
+        result: { examined: total, written: compositeBackfillPage.writes, failed: 0 }
+      });
+      expect(first?.result).not.toHaveProperty("continueWith");
+      expect(first?.payload).toMatchObject({ afterId: expect.any(String) });
+      // The pass is open: a request neither queues a second job nor claims the library is done.
+      expect(await supervisor.ensureCompositeBackfill()).toBe(true);
+      expect(await open()).toBe(1);
+      expect(await supervisor.compositeBackfillRemaining()).toBe(2);
+
+      // A payload the supervisor added its own keys to (a failed attempt's history, the prompt
+      // pin) still says where the pass is.
+      await db().query(
+        `update jobs set payload = payload || '{"errorHistory": [], "promptPin": null}'::jsonb where id = $1`,
+        [first!.id]
+      );
+
+      const second = await supervisor.runLightOnce("relations");
+      expect(second).toMatchObject({
+        id: first!.id,
+        status: "succeeded",
+        result: { examined: total, written: total, rebuilt: 0, failed: 0, roots: total }
+      });
+      expect(second?.result).not.toHaveProperty("continueWith");
+      expect((second?.result as { writtenIds: string[] }).writtenIds.toSorted()).toEqual(
+        books.toSorted()
+      );
+      // Each page handed its own roots to PLACE.
+      expect(topicHooks.sourcesChanged.mock.calls.map(([ids]) => ids.length)).toEqual([
+        compositeBackfillPage.writes,
+        2
+      ]);
+      expect(await supervisor.compositeBackfillRemaining()).toBe(0);
+      expect(await supervisor.ensureCompositeBackfill()).toBe(false);
+      expect(await open()).toBe(0);
+    });
+
     it("is not wired without an embedding model and the space the route writes to", async () => {
       const spaceKey = newSpace();
       const without = supervisorFor(spaceKey, { withSpace: false });
@@ -566,7 +803,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       expect(bare.supportsJobType(compositeBackfillJobType)).toBe(false);
     });
 
-    it("counts the roots with current notes among the ones it wrote: they keep their vector", async () => {
+    it("counts the roots with current placed notes among the ones it wrote: they keep their vector", async () => {
       const spaceKey = newSpace();
       const withNotes = await work("Noted book", undefined, "Book");
       const bare = await work("Bare book", undefined, "Book");
@@ -574,25 +811,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       const bareChapter = await work("Bare chapter", bare.id, "BookChapter");
       await composite(noteChapter.id, unit(4), spaceKey);
       await composite(bareChapter.id, unit(5), spaceKey);
-      const documentId = randomUUID();
-      const chunkId = randomUUID();
-      await db().query(
-        `insert into documents (id, source_item_id, title, canonical_markdown, content_hash)
-         values ($1, $2, 'Document', 'text', $3)`,
-        [documentId, noteChapter.id, `hash-${documentId}`]
-      );
-      await db().query(
-        `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
-         values ($1, $2, $3, 0, 'Passage', $4)`,
-        [chunkId, documentId, noteChapter.id, `chunk-${chunkId}`]
-      );
-      await db().query(
-        `insert into atomic_notes (id, title, body_markdown, idea_statement, created_from_source_item_id,
-           evidence_chunk_id, generation_provider, generation_model, generation_runtime,
-           generation_prompt_version, generation_key)
-         values ($1::uuid, 'Note', 'Note', 'Note', $2, $3, 'test', 'test', 'local', 'test', $1::uuid::text)`,
-        [randomUUID(), noteChapter.id, chunkId]
-      );
+      await note(noteChapter.id, { placed: true });
 
       expect(await placementOf(db(), [withNotes.id, bare.id, noteChapter.id])).toEqual({
         roots: 2,
@@ -600,39 +819,56 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       });
       expect(await placementOf(db(), [])).toEqual({ roots: 0, withCurrentNotes: 0 });
     });
+
+    it("holds a root's vector only by current notes the tree has placed", async () => {
+      const spaceKey = newSpace();
+      const roots: Record<string, string> = {};
+      for (const [name, options] of Object.entries({
+        placed: { placed: true },
+        // The topic tree places a new note later: until then the root may still move.
+        waiting: {},
+        // Archived and superseded notes are no source of a root's vector.
+        archived: { placed: true, status: "archived" },
+        superseded: { placed: true }
+      })) {
+        const book = await work(`Held ${name} book`, undefined, "Book");
+        const chapter = await work(`Held ${name} chapter`, book.id, "BookChapter");
+        await composite(chapter.id, unit(4), spaceKey);
+        const noteId = await note(chapter.id, options);
+        if (name === "superseded")
+          await db().query(
+            "update atomic_notes set supersession_status = 'superseded' where id = $1",
+            [noteId]
+          );
+        roots[name] = book.id;
+      }
+
+      const read = await readBackfillRoots(db(), Object.values(roots));
+
+      expect(Object.fromEntries(read.map((root) => [root.title, root.hasCurrentNotes]))).toEqual({
+        "Held placed book": true,
+        "Held waiting book": false,
+        "Held archived book": false,
+        "Held superseded book": false
+      });
+      expect(await placementOf(db(), Object.values(roots))).toEqual({
+        roots: 4,
+        withCurrentNotes: 1
+      });
+    });
   });
 
   // --- the re-match harness waits for it -----------------------------------------------------------
 
   describe("the first step of a re-match run", () => {
-    /** A book with two chapters that have composites; with `notes`, a current note on a chapter. */
+    /** A book with two chapters that have composites; with `notes`, a current placed note on a chapter. */
     async function library(spaceKey: string, title: string, notes: boolean) {
       const book = await work(title, undefined, "Book");
       const one = await work(`${title}, chapter one`, book.id, "BookChapter");
       const two = await work(`${title}, chapter two`, book.id, "BookChapter");
       await composite(one.id, unit(4), spaceKey);
       await composite(two.id, unit(5), spaceKey);
-      if (notes) {
-        const documentId = randomUUID();
-        const chunkId = randomUUID();
-        await db().query(
-          `insert into documents (id, source_item_id, title, canonical_markdown, content_hash)
-           values ($1, $2, 'Document', 'text', $3)`,
-          [documentId, one.id, `hash-${documentId}`]
-        );
-        await db().query(
-          `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
-           values ($1, $2, $3, 0, 'Passage', $4)`,
-          [chunkId, documentId, one.id, `chunk-${chunkId}`]
-        );
-        await db().query(
-          `insert into atomic_notes (id, title, body_markdown, idea_statement, created_from_source_item_id,
-             evidence_chunk_id, generation_provider, generation_model, generation_runtime,
-             generation_prompt_version, generation_key)
-           values ($1::uuid, 'Note', 'Note', 'Note', $2, $3, 'test', 'test', 'local', 'test', $1::uuid::text)`,
-          [randomUUID(), one.id, chunkId]
-        );
-      }
+      if (notes) await note(one.id, { placed: true });
       return book;
     }
     const supervisorFor = (spaceKey: string) =>
@@ -756,6 +992,109 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       expect(await queuedBackfills()).toBe(0);
     });
 
+    it("reports what the last pass saw, not the sum of the app start's job and its own", async () => {
+      const since = new Date();
+      const spaceKey = newSpace();
+      await library(spaceKey, "Passes bare book", false);
+      await library(spaceKey, "Passes noted book", true);
+      const supervisor = supervisorFor(spaceKey);
+      // Drain mode holds the heavy lane until the job the app's start queued has ended, so it
+      // finishes before the step runs; the step's first round is then a second, full pass.
+      expect(await supervisor.ensureCompositeBackfill()).toBe(true);
+      expect(await supervisor.runLightOnce("relations")).toMatchObject({ status: "succeeded" });
+
+      const facts = await runCompositeBackfillStep(
+        stepOf(supervisor, { runJobs: true, since }).deps,
+        run
+      );
+
+      // Two jobs saw the same two nodes: the library has two, and the first job wrote both.
+      expect(facts).toMatchObject({
+        jobs: 2,
+        examined: 2,
+        written: 2,
+        rebuilt: 0,
+        current: 2,
+        incomplete: 0,
+        failed: 0,
+        remaining: 0
+      });
+    });
+
+    it("compares the placements with the ones read before the app's start queued the job", async () => {
+      const since = new Date();
+      const spaceKey = newSpace();
+      const bare = await library(spaceKey, "Baseline book", false);
+      const supervisor = supervisorFor(spaceKey);
+      // The preparation of the run reads the placements before the job supervisor starts.
+      const placementsBefore = await readRootPlacements(db());
+      expect(placementsBefore.find((root) => root.rootId === bare.id)?.placement).toBeNull();
+      // The app's start queues the job, it writes the composite, and PLACE places the root
+      // before the step reads anything (a debounce shorter than the checks before the step).
+      expect(await supervisor.ensureCompositeBackfill()).toBe(true);
+      await supervisor.runLightOnce("relations");
+      await db().query(
+        `insert into topic_placements (tree_id, item_kind, source_item_id, topic_id, role, rank, decided_by)
+         values ($1, 'source', $2, $3, 'primary', 0, 'fallback')`,
+        [treeId, bare.id, topicId]
+      );
+      const { deps } = stepOf(supervisor, { runJobs: true, since });
+
+      const facts = await runCompositeBackfillStep({ ...deps, placementsBefore }, run);
+      const hidden = await runCompositeBackfillStep(deps, run);
+
+      expect(facts.placements).toMatchObject({ backfilledRoots: 1, moved: 1 });
+      expect(facts.placements.moves).toEqual([
+        expect.objectContaining({
+          rootId: bare.id,
+          before: null,
+          after: { topicId, needsVector: false }
+        })
+      ]);
+      // The baseline read inside the step comes after the move: it is true by default.
+      expect(hidden.placements).toMatchObject({ backfilledRoots: 1, moved: 0, moves: [] });
+    });
+
+    it("counts the jobs that ran in this app run, whenever they were queued", async () => {
+      const spaceKey = newSpace();
+      await library(spaceKey, "Earlier runs book", false);
+      const jobs = createJobRepository(db());
+      const ids: string[] = [];
+      const finished = async (result: Record<string, unknown>, finishedAt: Date, days: number) => {
+        const job = await jobs.create({ type: compositeBackfillJobType, lane: "light" });
+        await db().query(
+          "update jobs set created_at = now() - make_interval(days => $2) where id = $1",
+          [job.id, days]
+        );
+        await jobs.update(job.id, { status: "succeeded", result, finishedAt });
+        ids.push(job.id);
+      };
+      const since = new Date();
+      // A job an earlier app run finished, and one queued by an earlier run (a quit before it ran,
+      // a crash that requeued it) that this run's start merged into and ran: it keeps its old
+      // creation time.
+      await finished(
+        { examined: 9, written: 4, current: 5 },
+        new Date(since.getTime() - 3_600_000),
+        2
+      );
+      await finished(
+        { examined: 7, written: 3, rebuilt: 1, current: 3 },
+        new Date(since.getTime() + 1),
+        2
+      );
+
+      expect(await readCompositeJobFacts(db(), since)).toMatchObject({
+        jobs: 1,
+        examined: 7,
+        written: 3,
+        rebuilt: 1,
+        current: 3
+      });
+      // They are no job of the tests that follow.
+      await db().query("delete from jobs where id = any($1::uuid[])", [ids]);
+    });
+
     it("says how many topic jobs the backfill caused were still open when it stopped waiting", async () => {
       const since = new Date();
       const spaceKey = newSpace();
@@ -800,15 +1139,15 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
     });
   });
 
-  // --- a root's header embedded once in a one-batch import ----------------------------------------
+  // --- a one-batch import of books: the composite is there when the book's discovery runs ---------
 
   describe("a one-batch import of books", () => {
-    /** A book with two chapters, as an import queues it: a run per chapter, one for the book. */
+    /** A book with chapters, as an import queues it: a run per chapter, one for the book. */
     interface Book {
       root: { id: string; title: string };
       chapters: Array<{ id: string; title: string }>;
+      chapterJobs: string[];
       rootRun: string;
-      chapterRuns: string[];
     }
 
     async function stageBook(
@@ -817,14 +1156,21 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       volume: number,
       chapters: number,
       sources: Book[]
-    ): Promise<{ chapterJobs: string[]; rootJob: () => Promise<string> }> {
+    ): Promise<{ rootJob: () => Promise<string> }> {
       const sourceRepository = createSourceItemRepository(db());
       const runs = createIngestionRunRepository(db());
       const jobs = createJobRepository(db());
       const root = await sourceRepository.create({ type: "Book", title });
-      const book: Book = { root, chapters: [], rootRun: "", chapterRuns: [] };
-      const chapterJobs: string[] = [];
-      const contentStages = ["chunking", "summarization", "embedding"];
+      const book: Book = { root, chapters: [], chapterJobs: [], rootRun: "" };
+      // A chapter's plan, as an import's: its notes are matched and its source is discovered, so
+      // its run parks for the link job of the book, whose discovery waits for the last chapter.
+      const contentStages = [
+        "chunking",
+        "summarization",
+        "embedding",
+        "atomicNoteMatching",
+        "sourceMatching"
+      ];
       for (let index = 1; index <= chapters; index += 1) {
         const chapter = await sourceRepository.create({
           type: "BookChapter",
@@ -867,8 +1213,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
         });
         await runs.update(run.id, { jobId: job.id, currentStage: "chunking" });
         book.chapters.push(chapter);
-        book.chapterRuns.push(run.id);
-        chapterJobs.push(job.id);
+        book.chapterJobs.push(job.id);
       }
       sources.push(book);
       // The book's own run is queued after every content run of the batch, with its catalog header.
@@ -904,18 +1249,27 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
         book.rootRun = run.id;
         return job.id;
       };
-      return { chapterJobs, rootJob };
+      return { rootJob };
     }
 
-    // The second case is the one that embedded a header twice: the first book's last chapter
-    // embeds before the second book's chapters have been summarized, so the batch's aggregate
-    // summaries are not written yet. In the first, the last chapter passes the barrier itself.
+    // In the first batch the last chapter of the only book passes the summarization barrier itself,
+    // so the summary exists before the book's composite is built and its header is embedded once.
+    // In the second, the first book's last chapter embeds before the second book's chapters are
+    // summarized, so the batch's aggregate summaries are not written yet. Its composite is built
+    // at once all the same: the book's discovery runs when its last record has linked and needs the
+    // vector then, with no batch barrier (rules/knowledge.md). The summary the barrier writes
+    // afterwards deletes it and the book's own job builds it again, with the summary: plan decision
+    // 27 (T53h) follows a summary written late, and until then that book's header is embedded twice.
     it.each([
-      { name: "a book of two chapters", chapters: [2] },
-      { name: "a book of two chapters beside a book of one", chapters: [2, 1] }
+      { name: "a book of two chapters", chapters: [2], headerBuilds: [1] },
+      {
+        name: "a book of two chapters beside a book of one",
+        chapters: [2, 1],
+        headerBuilds: [2, 1]
+      }
     ])(
-      "embeds each header once in a one-batch import of $name",
-      async ({ chapters }) => {
+      "has each book's composite when its discovery runs in a one-batch import of $name",
+      async ({ chapters, headerBuilds }) => {
         const spaceKey = newSpace();
         const sources: Book[] = [];
         const batch = await createHierarchicalIngestionRepository(db()).createBatch({
@@ -964,11 +1318,22 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
           }
           return { generatedCount: sources.length, reusedCount: 0, blockedRoots: [] };
         });
+        // Source discovery, as the link job runs it: what a book's discovery finds to plan with is
+        // its composite (`matchSources` records `no_vector` without one, and a catalog run never
+        // parks or queues a link job, so nothing would plan that book's discovery again).
+        const discovered: Array<{ rootId: string; vectorSpace: string | null }> = [];
         const knowledgeService = {
           isHierarchicalRoot: async (id: string) =>
             sources.some((book) => book.root.id === id && book.chapters.length > 0),
           summarizeSource: async () => ({ configured: true, generated: true }),
-          summarizeHierarchiesForBatch: summaries
+          summarizeHierarchiesForBatch: summaries,
+          typeRelationPairs: async () => ({ calls: 0, cacheHits: 0, untyped: {}, results: [] }),
+          promoteSourceRelations: async () => ({}),
+          discoverSourceRelations: async (input: { rootId: string }) => {
+            const vector = await createSourceRelationRepository(db()).discoveryVector(input.rootId);
+            discovered.push({ rootId: input.rootId, vectorSpace: vector?.spaceKey ?? null });
+            return {};
+          }
         };
         const supervisor = new JobSupervisor({
           getPool: () => db(),
@@ -977,26 +1342,46 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
           embeddingSpaceKey: async () => spaceKey,
           knowledgeService: knowledgeService as never
         });
+        const lastChapterJobs = new Map(sources.map((book) => [book.chapterJobs.at(-1)!, book]));
 
         const jobs = chapters.reduce((total, count) => total + count, 0) + chapters.length;
         for (let ran = 0; ran < jobs; ran += 1) {
           const job = await supervisor.runOnce();
           expect(job?.status, `job ${ran + 1}: ${job?.error ?? ""}`).toBe("succeeded");
+          // The book whose last chapter this was is ready for discovery as the job ends.
+          const finished = lastChapterJobs.get(job!.id);
+          if (finished)
+            expect(
+              await createSourceRelationRepository(db()).discoveryVector(finished.root.id),
+              `${finished.root.title} when its last chapter is done`
+            ).not.toBeNull();
+          // The link job the chapter's run parked for runs on the relations worker at once.
+          while ((await supervisor.runLightOnce("relations")) !== null) continue;
         }
         expect(await supervisor.runOnce()).toBeNull();
+        expect(await supervisor.runLightOnce("relations")).toBeNull();
 
-        for (const book of sources) {
+        // Each book was discovered once, with its composite in place.
+        expect(discovered.map((entry) => entry.rootId).toSorted()).toEqual(
+          sources.map((book) => book.root.id).toSorted()
+        );
+        expect(discovered.map((entry) => entry.vectorSpace)).toEqual(
+          discovered.map(() => `256:${spaceKey}`)
+        );
+
+        for (const [index, book] of sources.entries()) {
           const source = (await createSourceItemRepository(db()).findById(book.root.id))!;
           expect(source.summary).toContain("aggregate summary");
           const segments = chunkMarkdown(buildCatalogMetadataMarkdown(source)).map(
             (chunk) => chunk.content
           );
-          // One embedding of the final header (with its summary) and none of an earlier one.
-          const embedded = headerCalls.filter((call) => call.text.includes(book.root.title));
-          expect(
-            embedded.map((call) => call.text),
-            book.root.title
-          ).toEqual(segments);
+          // The header of the final text (with its summary) was embedded last, and as many times
+          // as the book built its composite (see the comment above the cases).
+          const embedded = headerCalls
+            .filter((call) => call.text.includes(book.root.title))
+            .map((call) => call.text);
+          expect(embedded.length, book.root.title).toBe(segments.length * headerBuilds[index]!);
+          expect(embedded.slice(-segments.length), book.root.title).toEqual(segments);
           // The header chunk of the book (chunk 0 of its catalog document) is that same header, so
           // the composite and the chunk are built from one text.
           const chunk = await db().query<{ content: string }>(
@@ -1006,7 +1391,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
           expect(chunk.rows.map((row) => row.content)).toEqual([
             buildCatalogMetadataMarkdown(source)
           ]);
-          // The composite is there and holds exactly the final header and the chapters' composites.
+          // The composite holds exactly the final header and the chapters' composites.
           expect(
             await hierarchyRootComposite({
               pool: db(),

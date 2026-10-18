@@ -932,5 +932,18 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     // Nothing is left to build, and a second run changes nothing.
     expect(await supervisor.compositeBackfillRemaining()).toBe(0);
     expect(await supervisor.ensureCompositeBackfill()).toBe(false);
+
+    // A root whose current notes the tree has not placed yet holds no vector of its own: PLACE may
+    // still move it, so the report does not count it among the roots that must stay (3.20).
+    const waiting = await insertSource(2, "Waiting hierarchy book");
+    await insertNotes(waiting, groupRows(2, 0, 6));
+    const roots = new Map(
+      (await readRootPlacements(pool, [noted, waiting])).map((root) => [
+        root.rootId,
+        root.hasCurrentNotes
+      ])
+    );
+    expect(roots.get(noted)).toBe(true);
+    expect(roots.get(waiting)).toBe(false);
   });
 });

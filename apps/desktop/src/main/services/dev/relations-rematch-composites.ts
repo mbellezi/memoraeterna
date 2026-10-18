@@ -6,7 +6,8 @@
 // `relation-composite` (relations/composite-backfill.ts); this step makes sure it ran and has
 // drained before the first root is released, and says what it did: how many composites it wrote and
 // which topic re-placements they caused (3.20: composite recomputes may move a root's fallback
-// vector only for roots without current notes, so a root with current notes must not move).
+// vector only for roots without current placed notes, so a root with current placed notes must not
+// move).
 import type { Queryable } from "@app/db";
 
 import {
@@ -30,6 +31,13 @@ export interface CompositeBackfillStepDeps {
   sleep(ms: number): Promise<void>;
   /** When this app run started: the backfill jobs it ran (the start queued one) count. */
   since: Date;
+  /**
+   * The root placements as they were before the app's job supervisor started, which queues the
+   * backfill: the baseline of the 3.20 comparison. A baseline read in the step itself comes after
+   * the job the start queued has written composites and handed roots to PLACE, which a short
+   * debounce would let move before the snapshot, hiding the moves it is to report.
+   */
+  placementsBefore?: readonly RootPlacementRow[];
   log(event: string, data?: Record<string, unknown>): void;
 }
 
@@ -87,21 +95,33 @@ export const openTopicPlacementJobs = (db: Queryable) =>
 
 interface JobFacts {
   jobs: number;
+  /** What the last pass saw: every hierarchy node with a descendant composite (not a sum). */
   examined: number;
   written: number;
   rebuilt: number;
+  /** What the last pass saw: nodes that already held their inputs (not a sum). */
   current: number;
+  /** What the last pass saw: nodes waiting for an import (not a sum). */
   incomplete: number;
   failed: number;
   skipped: string[];
   writtenIds: string[];
 }
 
-/** What the backfill jobs of this app run reported, summed. */
+/**
+ * What the backfill jobs of this app run reported. The jobs that ran in this run are those that
+ * finished, or are running, or last changed since it started: a job queued by an earlier run and
+ * merged into by this one's start keeps its old creation time. What a pass wrote, rebuilt or failed
+ * adds up over the jobs; what it examined, found current or left waiting is a view of the library
+ * at the end of that pass, so the last pass that looked is the one reported (in drain mode the
+ * start's job and the step's full round are two passes over the same nodes, and summing them would
+ * double the library).
+ */
 export async function readCompositeJobFacts(db: Queryable, since: Date): Promise<JobFacts> {
   const rows = await db.query<{ status: string; result: Record<string, unknown> | null }>(
     `select status::text as status, result from jobs
-      where type = $1 and created_at >= $2 order by created_at, id`,
+      where type = $1 and coalesce(finished_at, locked_at, updated_at) > $2
+      order by coalesce(finished_at, locked_at, updated_at), id`,
     [compositeBackfillJobType, since]
   );
   const facts: JobFacts = {
@@ -119,11 +139,13 @@ export async function readCompositeJobFacts(db: Queryable, since: Date): Promise
   for (const row of rows.rows) {
     if (row.status === "failed" || row.status === "canceled") facts.failed += 1;
     const result = row.result ?? {};
-    facts.examined += num(result.examined);
+    if (typeof result.examined === "number") {
+      facts.examined = num(result.examined);
+      facts.current = num(result.current);
+      facts.incomplete = num(result.incomplete);
+    }
     facts.written += num(result.written);
     facts.rebuilt += num(result.rebuilt);
-    facts.current += num(result.current);
-    facts.incomplete += num(result.incomplete);
     facts.failed += num(result.failed);
     if (typeof result.skipped === "string") facts.skipped.push(result.skipped);
     if (typeof result.stopped === "string") facts.skipped.push(result.stopped);
@@ -133,7 +155,7 @@ export async function readCompositeJobFacts(db: Queryable, since: Date): Promise
   return facts;
 }
 
-/** A root source's primary placement in the active topic tree, and whether it has current notes. */
+/** A root source's primary placement in the active topic tree, and whether it has current placed notes. */
 export type RootPlacementRow = BackfillRoot;
 
 /** Every root source with its primary placement, or only the roots of the sources in `rootsOf`. */
@@ -144,7 +166,7 @@ const samePlacement = (a: RootPlacement | null, b: RootPlacement | null): boolea
 
 /**
  * The roots among `rootIds` whose primary placement differs from before the backfill, and how many
- * of them have current notes (which must not move: their vector comes from their notes).
+ * of them have current placed notes (which must not move: their vector comes from their notes).
  */
 export function diffRootPlacements(
   before: readonly RootPlacementRow[],
@@ -194,7 +216,7 @@ export async function runCompositeBackfillStep(
 ): Promise<CompositeBackfillFacts> {
   const startedAt = deps.now().getTime();
   const deadline = startedAt + options.timeoutMs;
-  const before = await readRootPlacements(deps.pool);
+  const before = deps.placementsBefore ?? (await readRootPlacements(deps.pool));
   let remaining = 0;
   for (let round = 0; round < maxRounds; round += 1) {
     const queued = await deps.ensure({ full: round === 0 });
@@ -204,9 +226,9 @@ export async function runCompositeBackfillStep(
     if (remaining === 0 || deps.now().getTime() >= deadline) break;
   }
   const facts = await readCompositeJobFacts(deps.pool, deps.since);
-  // The roots of the written nodes had their composite handed to PLACE (a root with current notes
-  // keeps its notes' vector and stays where it is): wait for those placements and the gate they may
-  // ask for, so none of it runs inside the measured span, then compare.
+  // The roots of the written nodes had their composite handed to PLACE (a root with current placed
+  // notes keeps its notes' vector and stays where it is): wait for those placements and the gate
+  // they may ask for, so none of it runs inside the measured span, then compare.
   const topicDeadline = Math.min(deadline, deps.now().getTime() + topicJobsWaitMs);
   const topicDrained = await waitQuiet(deps, options, topicDeadline, () =>
     openTopicPlacementJobs(deps.pool)

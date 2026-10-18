@@ -123,7 +123,7 @@ export function rematchFlags(summary: RematchSummary): string[] {
     );
   if (composites.placements.movedWithCurrentNotes > 0)
     flags.push(
-      `${composites.placements.movedWithCurrentNotes} roots with current notes moved in the topic tree after the composite backfill (3.20 expects none).`
+      `${composites.placements.movedWithCurrentNotes} roots with current placed notes moved in the topic tree after the composite backfill (3.20 expects none).`
     );
   return flags;
 }
@@ -168,7 +168,7 @@ function compositeBackfillLines(summary: RematchSummary): string[] {
   if (composites.skipped.length > 0)
     lines.push(`Skipped or stopped: ${composites.skipped.join(", ")}.`, "");
   lines.push(
-    `Topic tree (3.20): ${placements.backfilledRoots} roots had a composite written, ${placements.withCurrentNotes} of them with current notes (their vector comes from their notes); ${placements.moved} moved once PLACE ran, ${placements.movedWithCurrentNotes} of them with current notes.`,
+    `Topic tree (3.20): ${placements.backfilledRoots} roots had a composite written, ${placements.withCurrentNotes} of them with current placed notes (their vector comes from their notes); ${placements.moved} moved once PLACE ran, ${placements.movedWithCurrentNotes} of them with current placed notes.`,
     ""
   );
   if (placements.moves.length > 0)

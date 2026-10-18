@@ -7,6 +7,10 @@
 // on the `relations` worker (never the heavy ingestion lane, never a topic worker), its header
 // embeddings at P3 so ingestion's own (P2) go first, one job at a time, deduplicated by its key, and
 // safe to run again (a node that holds its inputs is left alone; a second pass writes nothing).
+// A pass is paged (`continueWith`, like the re-typing sweep): the job gives its worker slot back
+// after each page, so the link jobs and the ingestion runs parked on them are never kept waiting
+// behind a large library, and a crash resumes at the last page. A node with an ingestion run still
+// working in its tree is left to that import.
 //
 // Topic tree (3.20, F2 D8): a composite is the fallback vector of a root that has no current note
 // vectors. A backfilled composite hands its roots to PLACE (`sourcesChanged`), which re-places a
@@ -15,19 +19,21 @@
 // is known before PLACE runs.
 import {
   createJobRepository,
+  currentTopicNoteSql,
   immediateJobDebounce,
   type JobRecord,
   type JsonObject,
   type PgPool,
   type Queryable
 } from "@app/db";
+import { z } from "zod";
 
 import type { EmbeddingBatchGenerator } from "../embedding-stage.js";
 import {
   backfillSourceComposites,
   hasCompositeBackfillWork,
+  type BackfillCursor,
   type CompositeAggregate,
-  type CompositeBackfillResult,
   type CompositeHeaderEmbedder
 } from "../source-composite.js";
 import type { TopicChangeHooks } from "../topic-tree/topic-hooks.js";
@@ -38,15 +44,22 @@ export const compositeBackfillDedupeKey = "relation-composite";
 /** Behind the link jobs (0) and the interactive ones (1) on the `relations` worker. */
 const compositeBackfillPriority = -1;
 
-/** Written nodes whose ids the job result keeps, for the run that reads it. */
-const resultIdLimit = 200;
+/** Written nodes whose ids the job keeps, for the run that reads its result. */
+const resultIdLimit = 1_000;
+
+/**
+ * A page of the pass: it ends after this many nodes looked at, or composites written (each one a
+ * header embedded by the local model), and the job is queued again for the next page.
+ */
+export const compositeBackfillPage = { nodes: 60, writes: 8 } as const;
 
 /**
  * Queues the backfill once when a hierarchy node has no composite in the embedding space `spaceKey`
  * although all its descendants have one (`hasCompositeBackfillWork`), or makes the queued job due
- * now. While a backfill job runs no second one is queued beside it (the `relations` worker has two
- * slots, and two passes would embed the same headers twice): the running pass takes the nodes it
- * found, and the next request after it ends finds what it left. Resolves true when there is a gap
+ * now. While a backfill job is open past its claim (running, between two pages, or waiting for a
+ * retry) no second one is queued beside it (the `relations` worker has more than one slot, and two
+ * passes would embed the same headers twice): the open pass takes the nodes it finds, and the next
+ * request after it ends finds what it left. Resolves true when there is a gap
  * and a job queued, merged or running for it, false when there is nothing to build.
  *
  * The test for a gap finds the composites that are missing; one that went stale is found by the
@@ -59,11 +72,14 @@ export async function enqueueCompositeBackfill(
   options: { always?: boolean } = {}
 ): Promise<boolean> {
   if (!options.always && !(await hasCompositeBackfillWork(db, spaceKey))) return false;
-  const running = await db.query(
-    "select 1 from jobs where type = $1 and status = 'running' limit 1",
+  // A job past its claim holds no dedupe key: a running one, the next page of a paged pass, or one
+  // waiting for its retry. Each absorbs the request (the pass sees what a new one would).
+  const open = await db.query(
+    `select 1 from jobs where type = $1
+        and (status = 'running' or (status = 'queued' and dedupe_key is null)) limit 1`,
     [compositeBackfillJobType]
   );
-  if (running.rows.length > 0) return true;
+  if (open.rows.length > 0) return true;
   await createJobRepository(db).enqueueDeduped({
     type: compositeBackfillJobType,
     lane: "light",
@@ -82,6 +98,8 @@ export interface CompositeBackfillDeps {
   embeddingSpaceKey: () => Promise<string | null>;
   generate: EmbeddingBatchGenerator;
   aggregate: CompositeAggregate;
+  /** The limits of a page of the pass; by default `compositeBackfillPage`. */
+  page?: { nodes: number; writes: number };
   topicHooks?: TopicChangeHooks | undefined;
   reportProgress?: (job: JobRecord, progress: number) => void;
   logger?: Pick<Console, "warn">;
@@ -91,11 +109,62 @@ export interface CompositeBackfillDeps {
 export interface CompositeBackfillPlacement {
   /** Root sources of the written nodes. */
   roots: number;
-  /** Of those, roots with current notes: PLACE keeps their vector, so they stay where they are. */
+  /** Of those, roots with current placed notes: PLACE keeps their vector, so they stay where they are. */
   withCurrentNotes: number;
 }
 
-/** Runs one backfill pass for the space the route writes to now. */
+/**
+ * What the pages of a pass have done so far, carried in the payload of the job that continues it
+ * (the job's result reads as the totals of the pass). `examined` is the nodes listed by the first
+ * page, the whole pass; the other counts add up page by page.
+ */
+const progressSchema = z
+  .object({
+    examined: z.number().int().min(0),
+    written: z.number().int().min(0),
+    rebuilt: z.number().int().min(0),
+    current: z.number().int().min(0),
+    incomplete: z.number().int().min(0),
+    failed: z.number().int().min(0),
+    failures: z.array(z.object({ sourceItemId: z.string(), message: z.string() }).strict()),
+    writtenIds: z.array(z.string())
+  })
+  .strict();
+type BackfillProgress = z.infer<typeof progressSchema>;
+
+// Not strict: the supervisor adds its own keys to a payload (the prompt pin, the error history).
+const continuationSchema = z.object({
+  afterDepth: z.number().int().min(0),
+  afterId: z.string().uuid(),
+  progress: progressSchema
+});
+
+const noProgress: BackfillProgress = {
+  examined: 0,
+  written: 0,
+  rebuilt: 0,
+  current: 0,
+  incomplete: 0,
+  failed: 0,
+  failures: [],
+  writtenIds: []
+};
+
+/** Where this page starts and what the earlier pages did; a payload without them starts afresh. */
+function readContinuation(job: JobRecord): {
+  after: BackfillCursor | null;
+  before: BackfillProgress;
+} {
+  const parsed = continuationSchema.safeParse(job.payload);
+  return parsed.success
+    ? {
+        after: { depth: parsed.data.afterDepth, id: parsed.data.afterId },
+        before: parsed.data.progress
+      }
+    : { after: null, before: noProgress };
+}
+
+/** Runs one page of a backfill pass for the space the route writes to now. */
 export async function runCompositeBackfill(
   deps: CompositeBackfillDeps,
   job: JobRecord,
@@ -122,64 +191,77 @@ export async function runCompositeBackfill(
       ...(generated.spaceKey ? { spaceKey: generated.spaceKey } : {})
     };
   };
-  const result = await backfillSourceComposites({
+  const { after, before } = readContinuation(job);
+  const page = await backfillSourceComposites({
     pool,
     spaceKey,
     embed,
     aggregate: deps.aggregate,
     signal,
+    after,
+    limits: deps.page ?? compositeBackfillPage,
     onProgress: (done, total) => deps.reportProgress?.(job, total === 0 ? 1 : done / total),
     warn: (error) => deps.logger?.warn(error instanceof Error ? error.message : String(error))
   });
-  // A pass that built nothing because every attempt failed fails the job, so a transient error
-  // (a provider that timed out) is retried with backoff and a deterministic one shows in the jobs
-  // view with its real error. A pass that built some keeps them and reports the rest.
-  if (result.written.length === 0 && result.firstError !== undefined) throw result.firstError;
-  if (result.written.length > 0) {
+  // A page that built nothing because every attempt failed fails the job, so a transient error
+  // (a provider that timed out) is retried with backoff, from this page, and a deterministic one
+  // shows in the jobs view with its real error. A page that built some keeps them and reports the
+  // rest.
+  if (page.written.length === 0 && page.firstError !== undefined) throw page.firstError;
+  if (page.written.length > 0) {
     // The composite is the fallback vector of a root without notes: PLACE re-places only those.
     try {
-      await deps.topicHooks?.sourcesChanged(result.written);
+      await deps.topicHooks?.sourcesChanged(page.written);
     } catch (error) {
       deps.logger?.warn(error instanceof Error ? error.message : String(error));
     }
   }
-  return backfillJobResult(spaceKey, result, await placementOf(pool, result.written));
-}
-
-function backfillJobResult(
-  spaceKey: string,
-  result: CompositeBackfillResult,
-  placement: CompositeBackfillPlacement
-): JsonObject {
+  const progress: BackfillProgress = {
+    examined: after ? before.examined : page.examined,
+    written: before.written + page.written.length,
+    rebuilt: before.rebuilt + page.rebuilt,
+    current: before.current + page.current,
+    incomplete: before.incomplete + page.incomplete,
+    failed: before.failed + page.failed.length,
+    failures: [...before.failures, ...page.failed].slice(0, 10),
+    writtenIds: [...before.writtenIds, ...page.written].slice(0, resultIdLimit)
+  };
+  const { failures, ...counts } = progress;
   return {
     spaceKey,
-    examined: result.examined,
-    written: result.written.length,
-    rebuilt: result.rebuilt,
-    current: result.current,
-    incomplete: result.incomplete,
-    failed: result.failed.length,
-    ...(result.failed.length > 0 ? { failures: result.failed.slice(0, 10) } : {}),
-    ...(result.stopped ? { stopped: result.stopped } : {}),
-    roots: placement.roots,
-    rootsWithCurrentNotes: placement.withCurrentNotes,
-    writtenIds: result.written.slice(0, resultIdLimit)
+    ...counts,
+    ...(failures.length > 0 ? { failures } : {}),
+    ...(page.stopped ? { stopped: page.stopped } : {}),
+    ...(await placementResult(pool, progress.writtenIds)),
+    // The next page: the same job is queued again behind the work already waiting.
+    ...(page.next
+      ? { continueWith: { afterDepth: page.next.depth, afterId: page.next.id, progress } }
+      : {})
   };
+}
+
+async function placementResult(pool: PgPool, writtenIds: readonly string[]) {
+  const placement = await placementOf(pool, writtenIds);
+  return { roots: placement.roots, rootsWithCurrentNotes: placement.withCurrentNotes };
 }
 
 /** A root source with its primary placement in the active topic tree (null: it has none). */
 export interface BackfillRoot {
   rootId: string;
   title: string;
-  /** Current notes (not rejected, not archived, not superseded): the topic tree takes the root's vector from them. */
+  /**
+   * Current notes (`currentTopicNoteSql`) that the active tree has placed: the topic tree takes the
+   * root's vector from them and counts the root only while it has none (F2 D8). A current note
+   * the tree has not placed yet does not hold the root, which PLACE may still move.
+   */
   hasCurrentNotes: boolean;
   placement: { topicId: string; needsVector: boolean } | null;
 }
 
 /**
  * The root sources of the library, or only the roots of the sources in `rootsOf`, with whether they
- * have current notes and where the active topic tree placed them. A root with current notes keeps
- * its notes' vector whatever its composite becomes (F2 D8), so PLACE does not move it.
+ * have current placed notes and where the active topic tree placed them. A root with current placed
+ * notes keeps its notes' vector whatever its composite becomes (F2 D8), so PLACE does not move it.
  */
 export async function readBackfillRoots(
   db: Queryable,
@@ -207,9 +289,12 @@ export async function readBackfillRoots(
        select tree.root_id, c.id from tree join source_items c on c.parent_source_item_id = tree.id
      )
      select r.id as "rootId", s.title,
-            exists (select 1 from tree t join atomic_notes n on n.created_from_source_item_id = t.id
-                     where t.root_id = r.id and n.status not in ('rejected', 'archived')
-                       and n.supersession_status = 'current') as "hasNotes",
+            exists (select 1 from tree t
+                      join atomic_notes n on n.created_from_source_item_id = t.id
+                       and n.ownership = 'source' and ${currentTopicNoteSql("n")}
+                      join topic_placements np on np.tree_id = tt.id and np.item_kind = 'note'
+                       and np.note_id = n.id
+                     where t.root_id = r.id) as "hasNotes",
             p.topic_id as "topicId", p.needs_vector as "needsVector"
        from roots r
        join source_items s on s.id = r.id
@@ -227,7 +312,7 @@ export async function readBackfillRoots(
   }));
 }
 
-/** The root sources of the written nodes, and how many of them have current notes. */
+/** The root sources of the written nodes, and how many of them have current placed notes. */
 export async function placementOf(
   db: Queryable,
   writtenIds: readonly string[]

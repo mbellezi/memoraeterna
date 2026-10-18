@@ -52,13 +52,14 @@ export type CompositeAggregate = (
  * use, `hierarchyRootComposite`). An ancestor whose stored composite already holds exactly these
  * inputs is left alone (no call). Resolves to the ancestors written, nearest first.
  *
- * With `awaitingSummary`, nothing is built: the aggregate summaries of the source's batch are still
- * to be written, and a summary written into an ancestor changes the header its composite embeds
- * (and deletes the composite, `sourceItemRepository.update`). A composite built now would be built
- * from a header without the summary, which the header chunk of the same book (chunked after the
- * summary exists) does carry, and the next job would embed the header again. The job that passes
- * the batch's summarization barrier writes the summaries first and builds afterwards: either its
- * own refresh or the root's stage, whichever embeds last, builds with the final header, once.
+ * It builds as soon as the last descendant has its composite, even when the batch's aggregate
+ * summaries are still to be written: the root's discovery runs when its last record has linked and
+ * needs the root's vector then, and a catalog run never queues a link job to plan it again; waiting
+ * for the summaries would add a batch barrier to matching (rules/knowledge.md has none). A summary
+ * written into the root afterwards deletes this composite (`sourceItemRepository.update`) and the
+ * root's own stage builds it again with the summary. Making a late summary rebuild the header and
+ * its composite is plan decision 27 (T53h); until then a book that is not the one passing the
+ * summarization barrier embeds its header twice.
  *
  * With `warn`, a failure (an embedding error, a replay miss) is reported and resolves to what was
  * written: the source's own vectors are in place, so its stage does not fail for an ancestor, whose
@@ -69,13 +70,10 @@ export async function refreshAncestorComposites(input: {
   sourceItemId: string;
   embed: CompositeHeaderEmbedder | null;
   aggregate: CompositeAggregate;
-  /** The batch's aggregate summaries are not written yet: no ancestor is built now. */
-  awaitingSummary?: boolean;
   signal?: AbortSignal;
   warn?: (error: unknown) => void;
 }): Promise<string[]> {
   const written: string[] = [];
-  if (input.awaitingSummary) return written;
   try {
     await refreshAncestors(input, written);
   } catch (error) {
@@ -290,7 +288,9 @@ async function storesComposite(
 /**
  * SQL for the sources with descendants, with the composites of the strategy `$1` (any dimension):
  * `closure` pairs every source with each of its descendants and their distance, `composites` lists
- * the sources that have a composite. A guard of 64 levels stops a malformed cycle.
+ * the sources that have a composite, and `busy` the sources an ingestion run is still working on
+ * (pending or running, a parked run included): a node with one in its tree is an import in
+ * progress, whose own stages build the composite. A guard of 64 levels stops a malformed cycle.
  */
 const compositeClosureSql = `
   with recursive closure(ancestor_id, descendant_id, distance) as (
@@ -305,6 +305,9 @@ const compositeClosureSql = `
     select target_id from embeddings_768 where target_type = 'source_item' and strategy = $1
     union all
     select target_id from embeddings_1024 where target_type = 'source_item' and strategy = $1
+  ), busy as (
+    select distinct source_item_id as id from ingestion_runs
+     where status in ('pending', 'running') and source_item_id is not null
   )`;
 
 /**
@@ -313,7 +316,9 @@ const compositeClosureSql = `
  * built and did not (a library embedded before design E, a summary written after the build). It is
  * the cheap test that decides whether `backfillSourceComposites` has anything to do for certain; a
  * node whose composite is stale instead is found by the pass itself. A node with a descendant that
- * has no composite waits for that descendant and is not counted.
+ * has no composite waits for that descendant, and a node with an ingestion run still working in its
+ * tree waits for that import (its stages build the composite, with the summary the import writes):
+ * neither is counted.
  */
 export async function hasCompositeBackfillWork(
   pool: Queryable,
@@ -338,6 +343,10 @@ export async function countCompositeBackfillWork(
             select 1 from closure c
              where c.ancestor_id = node.ancestor_id
                and not exists (select 1 from composites k where k.target_id = c.descendant_id))
+          and not exists (select 1 from busy b where b.id = node.ancestor_id)
+          and not exists (
+            select 1 from closure c join busy b on b.id = c.descendant_id
+             where c.ancestor_id = node.ancestor_id)
         limit $2::int
      ) gaps`,
     [compositeStrategy(spaceKey), limit ?? null]
@@ -345,18 +354,42 @@ export async function countCompositeBackfillWork(
   return found.rows[0]?.count ?? 0;
 }
 
-/** The hierarchy nodes with a descendant composite in the strategy, the nearest to the leaves first. */
-async function listBackfillNodes(pool: PgPool, strategy: string): Promise<string[]> {
-  const nodes = await pool.query<{ id: string } & QueryResultRow>(
+/** Where a paged pass stopped: the last node done, in the order the pass walks them. */
+export interface BackfillCursor {
+  /** The longest distance from the node to a descendant: leaves first. */
+  depth: number;
+  id: string;
+}
+
+interface BackfillNode extends BackfillCursor {
+  /** An ingestion run is still working on the node or one of its descendants. */
+  busy: boolean;
+}
+
+/**
+ * The hierarchy nodes with a descendant composite in the strategy, the nearest to the leaves
+ * first, after the node `after` names when it is given.
+ */
+async function listBackfillNodes(
+  pool: PgPool,
+  strategy: string,
+  after: BackfillCursor | null
+): Promise<BackfillNode[]> {
+  const nodes = await pool.query<BackfillNode & QueryResultRow>(
     `${compositeClosureSql}
-     select c.ancestor_id as id
-       from closure c left join composites k on k.target_id = c.descendant_id
+     select c.ancestor_id as id, max(c.distance)::int as depth,
+            (bool_or(b.id is not null)
+              or exists (select 1 from busy x where x.id = c.ancestor_id)) as busy
+       from closure c
+       left join composites k on k.target_id = c.descendant_id
+       left join busy b on b.id = c.descendant_id
       group by c.ancestor_id
      having bool_or(k.target_id is not null)
+        and ($2::int is null or (max(c.distance), c.ancestor_id) > ($2::int, $3::uuid))
       order by max(c.distance), c.ancestor_id`,
-    [strategy]
+    [strategy, after?.depth ?? null, after?.id ?? null]
   );
-  return nodes.rows.map((row) => row.id);
+  return nodes.rows.map((row) => ({ id: row.id, depth: row.depth, busy: row.busy }));
 }
 
 /** The space of the newest composite among the descendants (the provider, model and runtime). */
@@ -394,7 +427,7 @@ async function descendantCompositeSpace(
 
 /** What a backfill pass found and did. */
 export interface CompositeBackfillResult {
-  /** The hierarchy nodes with a descendant composite in the space: the nodes the pass looked at. */
+  /** The hierarchy nodes with a descendant composite in the space, after the page's start. */
   examined: number;
   /** Nodes whose composite was built (it had none) or rebuilt (it was stale), leaves first. */
   written: string[];
@@ -402,7 +435,10 @@ export interface CompositeBackfillResult {
   rebuilt: number;
   /** Nodes whose stored composite already holds their header and every descendant's composite. */
   current: number;
-  /** Nodes with a descendant that has no composite yet: the last descendant to embed builds them. */
+  /**
+   * Nodes that wait for the import that builds them: a descendant has no composite yet (the last
+   * descendant to embed builds it), or an ingestion run is still working in their tree.
+   */
   incomplete: number;
   /** Nodes whose composite could not be built, with the reason; the pass went on with the rest. */
   failed: Array<{ sourceItemId: string; message: string }>;
@@ -410,6 +446,8 @@ export interface CompositeBackfillResult {
   stopped: "no_embedding" | "space_changed" | null;
   /** The first error that failed a node, as thrown: a pass that wrote nothing can throw it again. */
   firstError?: unknown;
+  /** Where the next page starts when this one ended at its limit with nodes left; null when done. */
+  next: BackfillCursor | null;
 }
 
 /**
@@ -420,8 +458,13 @@ export interface CompositeBackfillResult {
  * code the chapters' refresh and the root's own stage use (`rebuildComposite`), nearest to the
  * leaves first, so a part's composite exists before its book's. A node whose composite already
  * holds its header and descendants is not touched (no call), so a second pass writes nothing; a
- * node with a descendant that has no composite waits for it. A node that fails is reported and the
- * pass goes on; a cancellation is always thrown.
+ * node with a descendant that has no composite, or with an ingestion run still working in its tree,
+ * waits for that import. A node that fails is reported and the pass goes on; a cancellation is
+ * always thrown.
+ *
+ * With `limits` the pass is paged: it ends after that many nodes looked at or composites written
+ * and says where the next page starts (`next`), so the job that runs it gives its worker slot back
+ * between pages and the link jobs waiting behind it go first.
  */
 export async function backfillSourceComposites(input: {
   pool: PgPool;
@@ -429,53 +472,60 @@ export async function backfillSourceComposites(input: {
   embed: CompositeHeaderEmbedder;
   aggregate: CompositeAggregate;
   signal?: AbortSignal;
+  /** Start after this node: the `next` of the previous page. */
+  after?: BackfillCursor | null;
+  limits?: { nodes: number; writes: number };
   /** After each node: how many are done of how many. */
   onProgress?: (done: number, total: number) => void;
   warn?: (error: unknown, sourceItemId: string) => void;
 }): Promise<CompositeBackfillResult> {
   const { pool } = input;
   const strategy = compositeStrategy(input.spaceKey);
-  const nodeIds = await listBackfillNodes(pool, strategy);
+  const nodes = await listBackfillNodes(pool, strategy, input.after ?? null);
   const result: CompositeBackfillResult = {
-    examined: nodeIds.length,
+    examined: nodes.length,
     written: [],
     rebuilt: 0,
     current: 0,
     incomplete: 0,
     failed: [],
-    stopped: null
+    stopped: null,
+    next: null
   };
   const sources = createSourceItemRepository(pool);
   const hierarchy = createHierarchicalIngestionRepository(pool);
-  for (const [index, nodeId] of nodeIds.entries()) {
+  for (const [index, listed] of nodes.entries()) {
     input.signal?.throwIfAborted();
+    const nodeId = listed.id;
     try {
-      const node = await sources.findById(nodeId);
-      if (!node) continue;
-      const descendantIds = (await hierarchy.listDescendants(nodeId)).map((entry) => entry.id);
-      const space = await descendantCompositeSpace(pool, descendantIds, strategy);
-      if (!space) {
-        result.incomplete += 1;
-        continue;
-      }
-      const rebuilt = await rebuildComposite({
-        pool,
-        node,
-        space,
-        descendantIds,
-        embed: input.embed,
-        aggregate: input.aggregate
-      });
-      if (rebuilt.outcome === "written") {
-        result.written.push(nodeId);
-        if (rebuilt.replaced) result.rebuilt += 1;
-      } else if (rebuilt.outcome === "current") result.current += 1;
-      else if (rebuilt.outcome === "incomplete") result.incomplete += 1;
-      else if (rebuilt.outcome === "no_vector")
-        result.failed.push({ sourceItemId: nodeId, message: "no_vector" });
-      else {
-        result.stopped = rebuilt.outcome;
-        break;
+      // The import's own stages build a node it is still working on (with the summary it writes).
+      const node = listed.busy ? null : await sources.findById(nodeId);
+      if (listed.busy) result.incomplete += 1;
+      else if (node) {
+        const descendantIds = (await hierarchy.listDescendants(nodeId)).map((entry) => entry.id);
+        const space = await descendantCompositeSpace(pool, descendantIds, strategy);
+        if (!space) result.incomplete += 1;
+        else {
+          const rebuilt = await rebuildComposite({
+            pool,
+            node,
+            space,
+            descendantIds,
+            embed: input.embed,
+            aggregate: input.aggregate
+          });
+          if (rebuilt.outcome === "written") {
+            result.written.push(nodeId);
+            if (rebuilt.replaced) result.rebuilt += 1;
+          } else if (rebuilt.outcome === "current") result.current += 1;
+          else if (rebuilt.outcome === "incomplete") result.incomplete += 1;
+          else if (rebuilt.outcome === "no_vector")
+            result.failed.push({ sourceItemId: nodeId, message: "no_vector" });
+          else {
+            result.stopped = rebuilt.outcome;
+            break;
+          }
+        }
       }
     } catch (error) {
       if (input.signal?.aborted) throw error;
@@ -486,7 +536,14 @@ export async function backfillSourceComposites(input: {
       if (result.firstError === undefined) result.firstError = error;
       input.warn?.(error, nodeId);
     }
-    input.onProgress?.(index + 1, nodeIds.length);
+    input.onProgress?.(index + 1, nodes.length);
+    const pageFull =
+      input.limits !== undefined &&
+      (index + 1 >= input.limits.nodes || result.written.length >= input.limits.writes);
+    if (pageFull && index + 1 < nodes.length) {
+      result.next = { depth: listed.depth, id: nodeId };
+      break;
+    }
   }
   return result;
 }
