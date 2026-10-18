@@ -25,7 +25,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import {
   carriesSummary,
-  catalogHeaderRefreshEnabled,
   CatalogHeaderGate,
   catalogHeaderJobType,
   enqueueCatalogHeaderRefresh,
@@ -41,6 +40,8 @@ import {
 } from "./job-supervisor.js";
 import { compositeStrategy, hierarchyRootComposite } from "./source-composite.js";
 import { compositeBackfillJobType } from "./relations/composite-backfill.js";
+import { createRelationCallBudget } from "./relations/relation-call-budget.js";
+import { catalogHeaderConfig } from "./catalog-header-policy.js";
 
 // T53h on a real database (plan decision 27): a hierarchy root's catalog header chunk carries the
 // root's summary whatever order its jobs ran in. A summary written after the header was built
@@ -173,6 +174,9 @@ describe.skipIf(!sidecarInstalled)(
       await db().query(
         "update ingestion_runs set status = 'canceled' where status in ('pending', 'running')"
       );
+      await db().query("delete from settings where key = $1", [
+        catalogHeaderConfig.dailyRootsSettingKey
+      ]);
     });
 
     // --- fixtures -----------------------------------------------------------------------------------
@@ -302,7 +306,7 @@ describe.skipIf(!sidecarInstalled)(
         context: Record<string, unknown>;
       }> = [];
       const knowledge = {
-        catalogGraphAvailable: vi.fn(async () => true),
+        catalogGraphLocality: vi.fn<() => Promise<"local" | "remote" | null>>(async () => "local"),
         generateCatalogKnowledgeGraph: vi.fn(
           async (rootId: string, documentId: string, context: Record<string, unknown> = {}) => {
             graphs.push({ rootId, documentId, context });
@@ -330,6 +334,7 @@ describe.skipIf(!sidecarInstalled)(
       knowledge: m.knowledge as unknown as CatalogHeaderDeps["knowledge"],
       persistHeaderChunk: persistCatalogMetadataChunk,
       logger: quiet,
+      env: {},
       ...extra
     });
 
@@ -464,17 +469,47 @@ describe.skipIf(!sidecarInstalled)(
       expect(await enqueueCatalogHeaderRefresh(db(), { rootIds: [library.rootId] })).toBe(false);
     });
 
-    it("queues nothing under the DEV switch that keeps a measurement profile as it was built", async () => {
+    it("queues nothing in a measurement run, whatever the knob that makes it one", async () => {
       const spaceKey = newSpace();
       await book(spaceKey);
-      expect(catalogHeaderRefreshEnabled({})).toBe(true);
-      expect(catalogHeaderRefreshEnabled({ MEMORA_CATALOG_HEADERS: " OFF " })).toBe(false);
-      expect(await enqueueCatalogHeaderRefresh(db(), {}, { MEMORA_CATALOG_HEADERS: "off" })).toBe(
-        false
-      );
+      for (const env of [
+        { MEMORA_CATALOG_HEADERS: "off" },
+        { MEMORA_RELATIONS_REMATCH: "arrival:20261031" },
+        { MEMORA_GOLDEN_RUN: "manifest.json" },
+        { MEMORA_GOLDEN_PIN: "extraction" },
+        { MEMORA_AI_CASSETTE: "replay" }
+      ])
+        expect(await enqueueCatalogHeaderRefresh(db(), {}, env), JSON.stringify(env)).toBe(false);
       expect(await queuedHeaderJobs()).toBe(0);
+      // The product, and a live proof that forces it on over a knob, queue it.
       expect(await enqueueCatalogHeaderRefresh(db(), {}, {})).toBe(true);
       expect(await queuedHeaderJobs()).toBe(1);
+      await db().query("delete from jobs where type = $1", [catalogHeaderJobType]);
+      expect(
+        await enqueueCatalogHeaderRefresh(
+          db(),
+          {},
+          {
+            MEMORA_CATALOG_HEADERS: "on",
+            MEMORA_RELATIONS_REMATCH: "burst"
+          }
+        )
+      ).toBe(true);
+    });
+
+    it("does nothing in a measurement run with a job an earlier start of the profile queued", async () => {
+      const spaceKey = newSpace();
+      const library = await book(spaceKey);
+      const m = models(spaceKey);
+      const result = await runCatalogHeaderRefresh(
+        depsFor(spaceKey, m, { env: { MEMORA_AI_CASSETTE: "replay" } }),
+        jobOf(),
+        new AbortController().signal
+      );
+      expect(result).toEqual({ skipped: "refresh_off", reason: "cassette_replay" });
+      expect(m.generate).not.toHaveBeenCalled();
+      expect(m.knowledge.generateCatalogKnowledgeGraph).not.toHaveBeenCalled();
+      expect((await headerChunks(library.documentId))[0]!.id).toBe(library.chunkId);
     });
 
     it("follows a summary that changes again, and leaves a root whose header already carries it", async () => {
@@ -568,7 +603,7 @@ describe.skipIf(!sidecarInstalled)(
       );
 
       const noGraph = models(spaceKey);
-      noGraph.knowledge.catalogGraphAvailable.mockResolvedValue(false);
+      noGraph.knowledge.catalogGraphLocality.mockResolvedValue(null);
       const second = await runPass(depsFor(spaceKey, noGraph));
       expect((await headerChunks(embedded.documentId))[0]!.id).toBe(embedded.chunkId);
       expect(await mentionChunkIds(embedded.rootId)).toEqual([embedded.chunkId]);
@@ -709,6 +744,135 @@ describe.skipIf(!sidecarInstalled)(
 
     // --- the pass ---------------------------------------------------------------------------------------
 
+    // --- the daily cap of the remote graph calls ------------------------------------------------------
+
+    describe("the daily cap of the remote graph calls", () => {
+      /** The day's counter over the clock the test moves; its own setting, never the relations'. */
+      const capped = (cap: number, clock: { now: Date }) =>
+        createRelationCallBudget({
+          db: () => db(),
+          cap: () => cap,
+          now: () => clock.now,
+          settingKey: catalogHeaderConfig.dailyRootsSettingKey
+        });
+      const counter = async () =>
+        (
+          await db().query<{ value: { day: string; calls: number } }>(
+            "select value from settings where key = $1",
+            [catalogHeaderConfig.dailyRootsSettingKey]
+          )
+        ).rows[0]?.value ?? null;
+      const threeBooks = async (spaceKey: string): Promise<[Library, Library, Library]> => [
+        await book(spaceKey, { title: "Alpha book" }),
+        await book(spaceKey, { title: "Beta book" }),
+        await book(spaceKey, { title: "Gamma book" })
+      ];
+
+      it("refreshes the roots the cap allows, leaves the rest as they are and defers them to the next day", async () => {
+        const spaceKey = newSpace();
+        const [alpha, beta, gamma] = await threeBooks(spaceKey);
+        const clock = { now: new Date(2026, 9, 18, 9, 30) };
+        const m = models(spaceKey);
+        m.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        const deps = depsFor(spaceKey, m, { budget: capped(2, clock), now: () => clock.now });
+
+        const { result } = await runPass(deps);
+
+        expect(result).toMatchObject({ refreshed: 2, graphs: 2, cappedToday: 1 });
+        expect(result.refreshedIds).toEqual([alpha.rootId, beta.rootId]);
+        expect(result.skipped).toEqual([{ rootId: gamma.rootId, reason: "daily_cap" }]);
+        expect(result.retryAfter).toBe(new Date(2026, 9, 19).toISOString());
+        // The root the cap held back keeps its chunk, its vector and its graph.
+        expect((await headerChunks(gamma.documentId))[0]!.id).toBe(gamma.chunkId);
+        expect(await chunkVectors(gamma.chunkId)).toBe(1);
+        expect(await mentionChunkIds(gamma.rootId)).toEqual([gamma.chunkId]);
+        expect(m.knowledge.generateCatalogKnowledgeGraph).toHaveBeenCalledTimes(2);
+        expect(await counter()).toMatchObject({ day: "2026-10-18", calls: 2 });
+        // The deferred pass is a queued job due with the next local day, not before.
+        const [queued] = (
+          await db().query<{ runAfter: Date }>(
+            `select run_after as "runAfter" from jobs where type = $1 and status = 'queued'`,
+            [catalogHeaderJobType]
+          )
+        ).rows;
+        const dueIn = queued!.runAfter.getTime() - Date.now();
+        expect(dueIn).toBeGreaterThan(0);
+        expect(queued!.runAfter.getTime()).toBeLessThanOrEqual(new Date(2026, 9, 19).getTime());
+
+        // The day after, the count starts again and the root is refreshed.
+        clock.now = new Date(2026, 9, 19, 0, 5);
+        const next = models(spaceKey);
+        next.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        const later = await runPass(
+          depsFor(spaceKey, next, { budget: capped(2, clock), now: () => clock.now })
+        );
+        expect(later.result).toMatchObject({ refreshed: 1, graphs: 1 });
+        expect(later.result).not.toHaveProperty("cappedToday");
+        expect((await headerChunks(gamma.documentId))[0]!.content).toContain(
+          summaryOf(gamma.title)
+        );
+        expect(await counter()).toMatchObject({ day: "2026-10-19", calls: 1 });
+      });
+
+      it("counts nothing on a local route, and never touches the relation calls' counter", async () => {
+        const spaceKey = newSpace();
+        await threeBooks(spaceKey);
+        await db().query("delete from settings where key = 'relations.ai.dailyCalls'");
+        const clock = { now: new Date(2026, 9, 18, 9, 30) };
+        const m = models(spaceKey);
+        m.knowledge.catalogGraphLocality.mockResolvedValue("local");
+        // A cap of nothing refuses every remote call; a local route is not remote.
+        const { result } = await runPass(depsFor(spaceKey, m, { budget: capped(0, clock) }));
+        expect(result).toMatchObject({ refreshed: 3, graphs: 3 });
+        expect(result).not.toHaveProperty("cappedToday");
+        expect(await counter()).toBeNull();
+        const relations = await db().query(
+          "select 1 from settings where key = 'relations.ai.dailyCalls'"
+        );
+        expect(relations.rows).toHaveLength(0);
+      });
+
+      it("takes no place for a root that has no graph to extract again, or one that is left alone", async () => {
+        const spaceKey = newSpace();
+        const bare = await book(spaceKey, { title: "Bare book", graph: false });
+        const mixed = await book(spaceKey, { title: "Mixed book" });
+        await db().query(
+          `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
+           values ($1, $2, $3, 1, 'Real content of the document.', 'content-hash')`,
+          [randomUUID(), mixed.documentId, mixed.rootId]
+        );
+        const clock = { now: new Date(2026, 9, 18, 9, 30) };
+        const m = models(spaceKey);
+        m.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        const { result } = await runPass(depsFor(spaceKey, m, { budget: capped(5, clock) }));
+        expect(result.refreshedIds).toEqual([bare.rootId]);
+        expect(result.skipped).toEqual([{ rootId: mixed.rootId, reason: "document_changed" }]);
+        expect(await counter()).toBeNull();
+      });
+
+      it("holds a chunk that still owes its graph back too, and keeps the debt", async () => {
+        const spaceKey = newSpace();
+        const library = await book(spaceKey);
+        const clock = { now: new Date(2026, 9, 18, 9, 30) };
+        const failing = models(spaceKey);
+        failing.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        failing.knowledge.generateCatalogKnowledgeGraph.mockRejectedValueOnce(
+          new Error("errors.ai.invalidOutput")
+        );
+        await runPass(depsFor(spaceKey, failing, { budget: capped(1, clock) }));
+        expect(await counter()).toMatchObject({ calls: 1 });
+        // The next attempt the same day needs a second place: the cap holds it back, owing the graph.
+        const resumed = models(spaceKey);
+        resumed.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        const { result } = await runPass(depsFor(spaceKey, resumed, { budget: capped(1, clock) }));
+        expect(result.skipped).toEqual([{ rootId: library.rootId, reason: "daily_cap" }]);
+        expect(resumed.knowledge.generateCatalogKnowledgeGraph).not.toHaveBeenCalled();
+        expect((await headerChunks(library.documentId))[0]!.metadata).toMatchObject({
+          headerRefresh: { owes: ["graph"] }
+        });
+      });
+    });
+
     it("gives its slot back after each root: the totals add up over the pages", async () => {
       const spaceKey = newSpace();
       const libraries = [
@@ -832,6 +996,62 @@ describe.skipIf(!sidecarInstalled)(
         expect(await supervisor.ensureCatalogHeaderRefresh()).toBe(false);
         expect(await queuedHeaderJobs()).toBe(0);
         expect(await compositeState(library)).toBe("current");
+      });
+
+      it("queues nothing at the start of a measurement run, and a job queued before it does nothing in it", async () => {
+        const spaceKey = newSpace();
+        const library = await book(spaceKey);
+        const m = models(spaceKey);
+        const supervisor = supervisorFor(spaceKey, m);
+        // A job an earlier start of the profile queued.
+        expect(await supervisor.ensureCatalogHeaderRefresh()).toBe(true);
+        expect(await queuedHeaderJobs()).toBe(1);
+        vi.stubEnv("MEMORA_RELATIONS_REMATCH", "arrival:20261031");
+        try {
+          // The start queues no refresh under the knob, and asks for no other either.
+          expect(await supervisor.ensureCatalogHeaderRefresh()).toBe(false);
+          const job = await supervisor.runLightOnce("relations");
+          expect(job).toMatchObject({ type: catalogHeaderJobType, status: "succeeded" });
+          expect(job?.result).toEqual({ skipped: "refresh_off", reason: "relations_rematch" });
+        } finally {
+          vi.unstubAllEnvs();
+        }
+        expect(m.generate).not.toHaveBeenCalled();
+        expect(m.knowledge.generateCatalogKnowledgeGraph).not.toHaveBeenCalled();
+        expect((await headerChunks(library.documentId))[0]!.id).toBe(library.chunkId);
+
+        // A fresh start under the knob queues none at all.
+        await db().query("delete from jobs where type = $1", [catalogHeaderJobType]);
+        vi.stubEnv("MEMORA_GOLDEN_PIN", "extraction");
+        try {
+          const starting = supervisorFor(spaceKey, m);
+          await starting.start();
+          await starting.stop();
+        } finally {
+          vi.unstubAllEnvs();
+        }
+        expect(await queuedHeaderJobs()).toBe(0);
+        const seen = await db().query("select 1 from jobs where type = $1", [catalogHeaderJobType]);
+        expect(seen.rows).toHaveLength(0);
+      });
+
+      it("counts the root against the day's cap when the graph runs on a remote route", async () => {
+        const spaceKey = newSpace();
+        const library = await book(spaceKey);
+        const m = models(spaceKey);
+        m.knowledge.catalogGraphLocality.mockResolvedValue("remote");
+        const supervisor = supervisorFor(spaceKey, m);
+        expect(await supervisor.ensureCatalogHeaderRefresh()).toBe(true);
+        const job = await supervisor.runLightOnce("relations");
+        expect(job?.result).toMatchObject({ refreshed: 1, graphs: 1 });
+        const stored = await db().query<{ value: { calls: number; day: string } }>(
+          "select value from settings where key = $1",
+          [catalogHeaderConfig.dailyRootsSettingKey]
+        );
+        expect(stored.rows[0]?.value.calls).toBe(1);
+        expect((await headerChunks(library.documentId))[0]!.content).toContain(
+          summaryOf(library.title)
+        );
       });
 
       it("queues the pass at the app's start only when a library holds a header without its summary", async () => {

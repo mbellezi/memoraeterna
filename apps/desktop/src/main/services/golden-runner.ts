@@ -36,6 +36,11 @@ import {
 } from "./golden-topics.js";
 import { readGoldenPinConfig, setExtractionPin, type GoldenPinConfig } from "./extraction-pin.js";
 import {
+  catalogHeaderPolicy,
+  readCatalogHeaderFacts,
+  type CatalogHeaderFacts
+} from "./catalog-header-policy.js";
+import {
   goldenLinkRuntime,
   readGoldenRelationsMode,
   setRelationLinkRuntime,
@@ -405,6 +410,8 @@ type Query = Pick<PgPool, "query">;
 
 export interface GoldenRunOptions {
   environment: GoldenRunEnvironment;
+  /** The environment the run was read from; the summary records the policies it implies. */
+  env?: Readonly<Record<string, string | undefined>>;
   isPackaged: boolean;
   userDataPath: string;
   workspaceRoot: string;
@@ -487,7 +494,7 @@ export async function prepareGoldenRun(
   if (input.isPackaged) throw new Error("The golden runner never runs in packaged builds");
   const environment = readGoldenRunEnvironment(env, input);
   if (!environment) throw new Error("MEMORA_GOLDEN_RUN must name a golden manifest");
-  const options: GoldenRunOptions = { ...rest, environment };
+  const options: GoldenRunOptions = { ...rest, environment, env };
   // G1 `full` schedules the engine's AI work through the topic service; without it the run would
   // let topic jobs race the heavy lane, which is what the barrier exists to prevent.
   if (environment.topics.mode === "full" && !options.topicBarrier)
@@ -1154,6 +1161,11 @@ async function runGolden(
       ...context
     };
   }
+  // A golden run pins its extraction and replays a recording: the catalog-header refresh is off in
+  // it (T53h), and the summary says so and counts the refresh jobs the app run queued (none).
+  summary.catalogHeaders = await readCatalogHeaderFacts(options.pool, {
+    ...(options.env ? { env: options.env } : {})
+  }).catch((): CatalogHeaderFacts => ({ ...catalogHeaderPolicy(options.env), jobs: 0 }));
   try {
     await mkdir(runDirectory, { recursive: true });
     await writeFile(join(runDirectory, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);

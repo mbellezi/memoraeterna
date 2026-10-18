@@ -189,6 +189,26 @@ export const noCompositeBackfill: CompositeBackfillFacts = {
   }
 };
 
+/**
+ * What the run recorded about the catalog-header refresh (T53h): a measurement run switches it off
+ * (the refresh calls the embedding and graph models for headers a recording does not hold) and
+ * counts the `catalog-header` jobs the app run queued, which must be 0. `unknown` in a summary that
+ * predates it.
+ */
+export const catalogHeadersSchema = z
+  .object({
+    refresh: z.enum(["on", "off", "unknown"]),
+    reason: z.string().nullable(),
+    jobs: count
+  })
+  .strict();
+export type CatalogHeadersFacts = z.infer<typeof catalogHeadersSchema>;
+export const unknownCatalogHeaders: CatalogHeadersFacts = {
+  refresh: "unknown",
+  reason: null,
+  jobs: 0
+};
+
 export const RematchSummarySchema = z
   .object({
     format: z.literal(rematchSummaryFormat),
@@ -220,6 +240,8 @@ export const RematchSummarySchema = z
     backgroundNotesSeeded: count.default(0),
     /** The composite vectors the run built before its first release (none in older summaries). */
     compositeBackfill: compositeBackfillSchema.default(noCompositeBackfill),
+    /** The catalog-header refresh the run switched off, and the jobs it nevertheless saw (T53h). */
+    catalogHeaders: catalogHeadersSchema.default(unknownCatalogHeaders),
     plan: z
       .object({ released: count, background: count, withoutNotes: count, notes: count })
       .strict(),

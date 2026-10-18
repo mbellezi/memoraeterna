@@ -31,6 +31,11 @@ import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import { registerIpcHandlers } from "../../ipc.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { AiService } from "../ai-service.js";
+import {
+  holdCatalogHeaderRefresh,
+  readCatalogHeaderFacts,
+  type CatalogHeaderFacts
+} from "../catalog-header-policy.js";
 import { readE2ePinConfig, setExtractionPin } from "../extraction-pin.js";
 import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker.js";
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
@@ -108,6 +113,8 @@ export interface PassResult {
   markdown: string;
   workDir: string;
   kept: boolean;
+  /** The catalog-header refresh is off in an E6 run (T53h): the policy and the refresh jobs it saw. */
+  catalogHeaders: CatalogHeaderFacts;
 }
 
 const quietLogger = { info: () => undefined, warn: console.warn, error: console.error };
@@ -274,6 +281,9 @@ async function runPass(
     // policy (D41) are DEV knobs of this runner, as they are of the golden runner.
     const pin = readE2ePinConfig(deps.env);
     setExtractionPin(pin);
+    // The refresh calls the embedding and graph models for headers a replayed cassette does not
+    // hold: this run never queues it (T53h), whatever its pin.
+    holdCatalogHeaderRefresh("topics_e2e");
     log("pin", { mode: pin.mode });
     const localMisses = readAiCassetteLocalMisses(deps.env);
     const cassette = new AiCassette({
@@ -517,6 +527,10 @@ async function runPass(
     }
 
     const store = await collectStoreFacts(db);
+    const catalogHeaders = await readCatalogHeaderFacts(db, {
+      env: deps.env,
+      since: new Date(0)
+    });
     const stats = cassette.stats();
     const facts: RunFacts = {
       mode,
@@ -553,7 +567,7 @@ async function runPass(
     await mkdir(directory, { recursive: true });
     await writeFile(
       join(directory, "report.json"),
-      `${JSON.stringify({ report, store }, null, 2)}\n`
+      `${JSON.stringify({ report, store, catalogHeaders }, null, 2)}\n`
     );
     await writeFile(join(directory, "report.md"), markdown);
     if (mode === "record" && report.passed) {
@@ -572,10 +586,11 @@ async function runPass(
     }
     if (!report.passed) keep = true;
     log("report", { passed: report.passed, directory });
-    return { mode, report, store, markdown, workDir, kept: keep };
+    return { mode, report, store, markdown, workDir, kept: keep, catalogHeaders };
   } finally {
     setAiAdapterDecorator(null);
     setExtractionPin(false);
+    holdCatalogHeaderRefresh(null);
     await jobs?.stop().catch(() => undefined);
     topicServices?.dispose();
     await ai?.dispose().catch(() => undefined);

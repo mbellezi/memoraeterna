@@ -74,6 +74,7 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
   backgroundSeeded: 0,
   backgroundNotesSeeded: 0,
   compositeBackfill: noCompositeBackfill,
+  catalogHeaders: { refresh: "off", reason: "relations_rematch", jobs: 0 },
   plan: { released: 4, background: 0, withoutNotes: 1, notes: 12 },
   timeline: [
     entry(0, "Aprendizagem"),
@@ -262,6 +263,21 @@ describe("the re-match report", () => {
     expect(markdown).toContain("| Livro \\| sem notas | no | 11111111 (needs vector) | 22222222 |");
     // A run that backfilled nothing says so with zeros, and is usable.
     expect(renderRematchReport(summary())).toContain("| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 |");
+  });
+
+  it("flags a catalog-header refresh that was on or that queued a job in a measurement run", () => {
+    expect(rematchFlags(summary())).toEqual([]);
+    const bad = summary({ catalogHeaders: { refresh: "on", reason: null, jobs: 2 } });
+    expect(rematchFlags(bad)).toEqual(
+      expect.arrayContaining([
+        "The catalog-header refresh was on: it rebuilds headers and calls the models.",
+        "2 catalog-header jobs were queued in this run (expected none)."
+      ])
+    );
+    // A summary written before the refresh existed is not flagged.
+    expect(
+      rematchFlags(summary({ catalogHeaders: { refresh: "unknown", reason: null, jobs: 0 } }))
+    ).toEqual([]);
   });
 
   it("flags a hierarchy root left without a composite and a root with notes that moved", () => {

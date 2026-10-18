@@ -1530,6 +1530,8 @@ describe("golden source pair verdicts", () => {
     });
     // The summary no longer lists a paused legacy automation: the runner never pauses one.
     expect(written).not.toHaveProperty("automation");
+    // A golden run pins its extraction: the catalog-header refresh is off in it, and none was queued.
+    expect(written.catalogHeaders).toEqual({ refresh: "off", reason: "golden_run", jobs: 0 });
     // The library is only read: every statement the run issued is a select.
     for (const sql of services.queries) expect(sql.trim()).toMatch(/^(select|with)\b/i);
     expect(quit).toBe(1);

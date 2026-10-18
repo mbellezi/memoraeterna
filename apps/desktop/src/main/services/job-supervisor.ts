@@ -78,6 +78,7 @@ import {
   enqueueCatalogHeaderRefresh,
   runCatalogHeaderRefresh
 } from "./catalog-header-refresh.js";
+import { catalogHeaderConfig } from "./catalog-header-policy.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -370,6 +371,12 @@ export class JobSupervisor {
               },
               aggregate: aggregateSourceEmbedding,
               knowledge,
+              // The remote graph calls of the refresh are capped per local day (T53h).
+              budget: createRelationCallBudget({
+                db: () => this.requirePool(),
+                cap: () => catalogHeaderConfig.dailyRemoteRoots,
+                settingKey: catalogHeaderConfig.dailyRootsSettingKey
+              }),
               persistHeaderChunk: persistCatalogMetadataChunk,
               topicHooks: this.options.topicHooks,
               reportProgress: (running, progress) =>

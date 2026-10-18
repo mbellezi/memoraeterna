@@ -1143,18 +1143,17 @@ export class KnowledgeService {
   }
 
   /**
-   * Whether a model is routed to the knowledge-graph task. A catalog header's graph is replaced
-   * (its old chunk's mentions go with the chunk) only where it can be extracted again.
+   * Where the knowledge-graph task runs, `null` when no model is routed to it. A catalog header's
+   * graph is replaced (its old chunk's mentions go with the chunk) only where it can be extracted
+   * again, and a remote route counts against the daily cap of the headers' refresh.
    */
-  public async catalogGraphAvailable(): Promise<boolean> {
+  public async catalogGraphLocality(): Promise<"local" | "remote" | null> {
     const ai = this.options.aiService;
-    if (typeof ai.taskRouteLocality !== "function") return false;
-    return (
-      (await ai.taskRouteLocality("knowledge-graph-generation", {
-        operation: "graph_source_chunks",
-        workloadClass: "write-quality"
-      })) !== null
-    );
+    if (typeof ai.taskRouteLocality !== "function") return null;
+    return ai.taskRouteLocality("knowledge-graph-generation", {
+      operation: "graph_source_chunks",
+      workloadClass: "write-quality"
+    });
   }
 
   public async generateCatalogKnowledgeGraph(

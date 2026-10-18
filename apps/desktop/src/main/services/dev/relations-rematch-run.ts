@@ -16,6 +16,8 @@ import {
   noCompositeBackfill,
   normalizedSpanMs,
   rematchSummaryFormat,
+  unknownCatalogHeaders,
+  type CatalogHeadersFacts,
   type CompositeBackfillFacts,
   type RematchSummary,
   type RematchTimelineEntry
@@ -91,6 +93,11 @@ export interface RematchPorts {
   /** Link and source-relation jobs still queued or running. */
   openLinkJobs(): Promise<number>;
   facts(since: Date): Promise<RunFacts>;
+  /**
+   * The catalog-header refresh policy the app run ran under and the refresh jobs it queued (T53h):
+   * a measurement run switches the refresh off, so the count is 0.
+   */
+  catalogHeaders(): Promise<CatalogHeadersFacts>;
   cassette(): CassetteFacts | null;
   now(): Date;
   sleep(ms: number): Promise<void>;
@@ -225,6 +232,10 @@ export async function runRematch(
     ports.log("facts failed", { error: errorText(error) });
     return emptyFacts;
   });
+  const catalogHeaders = await ports.catalogHeaders().catch((error: unknown) => {
+    ports.log("catalog headers failed", { error: errorText(error) });
+    return unknownCatalogHeaders;
+  });
   return summarize({
     ports,
     input,
@@ -237,6 +248,7 @@ export async function runRematch(
     backgroundSeeded,
     backgroundNotesSeeded,
     compositeBackfill,
+    catalogHeaders,
     startedAt,
     finishedAt,
     drainedAt
@@ -333,6 +345,7 @@ function summarize(context: {
   backgroundSeeded: number;
   backgroundNotesSeeded: number;
   compositeBackfill: CompositeBackfillFacts;
+  catalogHeaders: CatalogHeadersFacts;
   startedAt: Date;
   finishedAt: Date;
   drainedAt: Date | null;
@@ -395,6 +408,7 @@ function summarize(context: {
     backgroundSeeded: context.backgroundSeeded,
     backgroundNotesSeeded: context.backgroundNotesSeeded,
     compositeBackfill: context.compositeBackfill,
+    catalogHeaders: context.catalogHeaders,
     plan: {
       released: input.plan.order.length,
       background: input.plan.others.length,

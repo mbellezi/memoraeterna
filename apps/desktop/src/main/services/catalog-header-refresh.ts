@@ -18,6 +18,11 @@
 // is paged, one root at a time (an embedding and a graph call each), and a chunk it replaced owes
 // its embedding and its graph in its own metadata until they are done, so a failure or a restart
 // resumes the root instead of leaving a header without them.
+//
+// Spending and measurement (`catalog-header-policy.ts`): the roots whose graph runs on a remote
+// route are capped per local day, the rest wait for the next day, so an upgraded library never
+// bursts remote calls at the app's start; and a measurement run (re-match, golden, E6, a replay, a
+// pinned extraction) never queues the job, whose calls a recording does not hold.
 import {
   createChunkRepository,
   createEmbeddingRepository,
@@ -37,11 +42,18 @@ import {
   type EmbeddingBatchGenerator,
   type EmbeddingIdentity
 } from "./embedding-stage.js";
+import {
+  catalogHeaderPolicy,
+  catalogHeaderRefreshEnabled,
+  type CatalogHeaderPolicy,
+  type EnvLike
+} from "./catalog-header-policy.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
 import { isTransientJobFailure } from "./job-failure.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import { renderPrompt } from "./prompt-runtime.js";
 import { compositeHeaderEmbedder } from "./relations/composite-backfill.js";
+import { nextLocalDay, type RelationCallBudget } from "./relations/relation-call-budget.js";
 import {
   refreshNodeComposite,
   type CompositeAggregate,
@@ -178,15 +190,6 @@ export async function listStaleCatalogHeaders(
 }
 
 /**
- * DEV: `MEMORA_CATALOG_HEADERS=off` queues no header refresh, so a measurement profile or a replayed
- * cassette run keeps the library as it was built (the refresh calls the embedding and graph models
- * for headers the recording does not hold). The product never sets it.
- */
-export function catalogHeaderRefreshEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.MEMORA_CATALOG_HEADERS?.trim().toLowerCase() !== "off";
-}
-
-/**
  * Queues the refresh when a root's header is out of date with its summary and no import is working
  * on it (`rootIds` limits the look to those roots): the job reads the work from the data, so it is
  * queued only when there is some. A running pass never absorbs the request (it may have read its
@@ -196,7 +199,7 @@ export function catalogHeaderRefreshEnabled(env: NodeJS.ProcessEnv = process.env
 export async function enqueueCatalogHeaderRefresh(
   db: Queryable,
   options: { rootIds?: readonly string[] } = {},
-  env: NodeJS.ProcessEnv = process.env
+  env: EnvLike = process.env
 ): Promise<boolean> {
   if (!catalogHeaderRefreshEnabled(env)) return false;
   const stale = await listStaleCatalogHeaders(db, options);
@@ -211,6 +214,28 @@ export async function enqueueCatalogHeaderRefresh(
     maxAttempts: 3
   });
   return true;
+}
+
+/**
+ * Queues the refresh for `notBefore` (the next local day, when the cap's count starts again). The
+ * job merges with any queued one: a request made before then makes it due at once, and the cap
+ * holds the roots back again if the day's count is not over.
+ */
+export async function enqueueCatalogHeaderRefreshAt(
+  db: Queryable,
+  notBefore: Date,
+  now: Date = new Date()
+): Promise<void> {
+  const delayMs = Math.max(0, notBefore.getTime() - now.getTime());
+  await createJobRepository(db).enqueueDeduped({
+    type: catalogHeaderJobType,
+    lane: "light",
+    dedupeKey: catalogHeaderDedupeKey,
+    payload: {},
+    priority: catalogHeaderPriority,
+    debounce: delayMs > 0 ? { delayMs, maxDelayMs: delayMs } : immediateJobDebounce,
+    maxAttempts: 3
+  });
 }
 
 /**
@@ -246,7 +271,15 @@ export interface CatalogHeaderDeps {
   validate: (embedding: number[]) => Promise<number[]>;
   aggregate: CompositeAggregate;
   knowledge?:
-    Pick<KnowledgeService, "generateCatalogKnowledgeGraph" | "catalogGraphAvailable"> | undefined;
+    Pick<KnowledgeService, "generateCatalogKnowledgeGraph" | "catalogGraphLocality"> | undefined;
+  /**
+   * The daily cap of the roots whose graph is extracted again on a remote route (a local route is
+   * not counted): at the cap a root waits for the next day. Absent, nothing is capped.
+   */
+  budget?: Pick<RelationCallBudget, "reserve"> | undefined;
+  /** The environment the policy reads; the process's by default. */
+  env?: EnvLike | undefined;
+  now?: (() => Date) | undefined;
   /** Replaces the header chunk of a document (`persistCatalogMetadataChunk`). */
   persistHeaderChunk: (
     repository: ReturnType<typeof createChunkRepository>,
@@ -281,7 +314,8 @@ export type RootRefresh =
     }
   | { outcome: "skipped"; reason: SkipReason };
 
-type SkipReason = "no_embedding" | "no_graph_route" | "document_changed" | "source_not_found";
+type SkipReason =
+  "no_embedding" | "no_graph_route" | "document_changed" | "source_not_found" | "daily_cap";
 
 /**
  * Brings one root's header up to date: replaces the chunk when it lacks the summary, then pays what
@@ -309,12 +343,15 @@ export async function refreshCatalogHeader(
     const hadVector = owes.has("embedding") || (await chunkHasVector(pool, stale.chunkId));
     const hadGraph = owes.has("graph") || (await sourceHadGraph(pool, stale.rootId));
     if (hadVector && !canEmbed) return { outcome: "skipped", reason: "no_embedding" };
-    if (hadGraph && !(await deps.knowledge?.catalogGraphAvailable()))
-      return { outcome: "skipped", reason: "no_graph_route" };
+    const graphLocality = hadGraph ? await graphRoute(deps) : null;
+    if (hadGraph && !graphLocality) return { outcome: "skipped", reason: "no_graph_route" };
     // The chunk is replaced only where it is the document's whole content.
     const existing = await chunks.listByDocument(stale.documentId);
     if (existing.length !== 1 || existing[0]!.id !== stale.chunkId)
       return { outcome: "skipped", reason: "document_changed" };
+    // A place in the day's cap for the graph call, taken last: a root left alone spends none.
+    if (graphLocality && !(await reserveGraphCall(deps, graphLocality)))
+      return { outcome: "skipped", reason: "daily_cap" };
     owes = new Set<Owed>([
       ...(hadVector ? (["embedding"] as const) : []),
       ...(hadGraph ? (["graph"] as const) : [])
@@ -361,10 +398,21 @@ export async function refreshCatalogHeader(
     }
   }
 
-  if (owes.has("graph")) {
+  if (owes.has("graph") && !replaced) {
+    // A chunk an earlier attempt replaced: its graph may have been extracted meanwhile (by the
+    // root's own run); otherwise the call it still owes takes a place in the day's cap.
     if (await graphIsCurrent(pool, stale.rootId, header.id)) {
       owes.delete("graph");
-    } else if (deps.knowledge) {
+      await writeOwed(pool, stale.documentId, owes);
+    } else {
+      const locality = await graphRoute(deps);
+      if (locality && !(await reserveGraphCall(deps, locality)))
+        return { outcome: "skipped", reason: "daily_cap" };
+    }
+  }
+
+  if (owes.has("graph")) {
+    if (deps.knowledge) {
       const knowledge = deps.knowledge;
       const extracted = await inModelStep("graph", signal, () =>
         knowledge.generateCatalogKnowledgeGraph(
@@ -432,6 +480,19 @@ export async function refreshCatalogHeader(
     }
   }
   return { outcome: "refreshed", replaced, embeddings, graph, owes: [...owes], composite };
+}
+
+/** Where the graph task runs, `null` when no model is routed to it (or no knowledge service). */
+async function graphRoute(deps: CatalogHeaderDeps): Promise<"local" | "remote" | null> {
+  return (await deps.knowledge?.catalogGraphLocality()) ?? null;
+}
+
+/** Takes a place in the day's cap for one root's graph call; a local route is never refused. */
+async function reserveGraphCall(
+  deps: CatalogHeaderDeps,
+  lane: "local" | "remote"
+): Promise<boolean> {
+  return (await deps.budget?.reserve({ lane, priority: "P3" })) ?? true;
 }
 
 /**
@@ -592,6 +653,10 @@ export async function runCatalogHeaderRefresh(
   job: JobRecord,
   signal: AbortSignal
 ): Promise<JsonObject> {
+  // A measurement run pins its extraction and replays a recording that holds none of this work: a
+  // job queued before the run (by an earlier start of the profile) does nothing in it.
+  const policy: CatalogHeaderPolicy = catalogHeaderPolicy(deps.env);
+  if (policy.refresh === "off") return { skipped: "refresh_off", reason: policy.reason };
   const before = readProgress(job);
   // A root the pass has dealt with once is not dealt with again by it, whatever the scan says.
   const left = new Set([...before.skipped.map((entry) => entry.rootId), ...before.refreshedIds]);
@@ -638,11 +703,21 @@ export async function runCatalogHeaderRefresh(
     } catch (error) {
       deps.logger?.warn(error instanceof Error ? error.message : String(error));
     }
+  // The roots the day's cap held back are due again with the next local day.
+  const capped = progress.skipped.filter((entry) => entry.reason === "daily_cap").length;
+  let retryAfter: string | null = null;
+  if (!more && capped > 0) {
+    const notBefore = nextLocalDay((deps.now ?? (() => new Date()))());
+    await enqueueCatalogHeaderRefreshAt(deps.getPool(), notBefore, deps.now?.() ?? new Date());
+    retryAfter = notBefore.toISOString();
+  }
   const { failures, skipped, refreshedIds, ...counts } = progress;
   return {
     ...counts,
     ...(failures.length > 0 ? { failures } : {}),
     ...(skipped.length > 0 ? { skipped } : {}),
+    ...(capped > 0 ? { cappedToday: capped } : {}),
+    ...(retryAfter ? { retryAfter } : {}),
     ...(stopped ? { stopped: `${stopped}_failed` } : {}),
     refreshedIds,
     // The next page: the same job is queued again behind the work already waiting.

@@ -110,6 +110,12 @@ export function rematchFlags(summary: RematchSummary): string[] {
     flags.push("The link jobs did not drain.");
   if (summary.digest.actual.sha256 !== summary.digest.expected.sha256)
     flags.push("The notes digest differs from the pinned one.");
+  // A measurement run keeps the library as it was built: the catalog-header refresh is off in it (T53h).
+  const headers = summary.catalogHeaders;
+  if (headers.refresh === "on")
+    flags.push("The catalog-header refresh was on: it rebuilds headers and calls the models.");
+  if (headers.jobs > 0)
+    flags.push(`${headers.jobs} catalog-header jobs were queued in this run (expected none).`);
   const composites = summary.compositeBackfill;
   if (composites.remaining > 0)
     flags.push(

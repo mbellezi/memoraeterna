@@ -13,6 +13,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { clusterTopics } from "../../workers/topic-clustering.worker.js";
+import { catalogHeaderRefreshEnabled } from "../catalog-header-policy.js";
 import type { ClusterTopics } from "../topic-tree/topic-build.js";
 import { parseE2eArgs } from "./config.js";
 import type { E2eConfig } from "./config.js";
@@ -104,6 +105,21 @@ describe.skipIf(!sidecarAvailable)(
         misses: 0,
         served: record!.recorded
       });
+    });
+
+    it("switches the catalog-header refresh off, says so, and a replay sees no refresh job (T53h)", async () => {
+      for (const pass of passes)
+        expect(pass.catalogHeaders, pass.mode).toEqual({
+          refresh: "off",
+          reason: "topics_e2e",
+          jobs: 0
+        });
+      const report = JSON.parse(
+        await readFile(join(workDir, "report", "record", "report.json"), "utf8")
+      ) as { catalogHeaders: unknown };
+      expect(report.catalogHeaders).toEqual({ refresh: "off", reason: "topics_e2e", jobs: 0 });
+      // The runner lets go of the refresh when it ends: the process is as it was.
+      expect(catalogHeaderRefreshEnabled({})).toBe(true);
     });
 
     it("runs on a fresh database with its own scratch workspace, removed afterwards", async () => {

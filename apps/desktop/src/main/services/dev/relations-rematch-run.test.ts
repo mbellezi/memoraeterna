@@ -120,6 +120,7 @@ function harness(
       linkJobs: [],
       ...options.facts
     }),
+    catalogHeaders: async () => ({ refresh: "off", reason: "relations_rematch", jobs: 0 }),
     cassette: () => null,
     now: () => new Date(clock.now),
     sleep: async (ms) => {
@@ -328,6 +329,46 @@ describe("a re-match run", () => {
       ) as Record<string, unknown>;
       void _written;
       expect(RematchSummarySchema.parse(older).compositeBackfill).toEqual(noCompositeBackfill);
+    });
+  });
+
+  describe("the catalog-header refresh (T53h)", () => {
+    it("is off in a re-match, and the summary says so and counts the refresh jobs it saw", async () => {
+      const h = harness();
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.catalogHeaders).toEqual({
+        refresh: "off",
+        reason: "relations_rematch",
+        jobs: 0
+      });
+      expect(
+        RematchSummarySchema.parse(JSON.parse(JSON.stringify(summary))).catalogHeaders
+      ).toEqual(summary.catalogHeaders);
+    });
+
+    it("reports a refresh job the run saw, so a replay that met one is visible", async () => {
+      const h = harness({
+        catalogHeaders: async () => ({ refresh: "off", reason: "relations_rematch", jobs: 1 })
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.catalogHeaders.jobs).toBe(1);
+    });
+
+    it("says unknown when the policy cannot be read, and for a summary written before it", async () => {
+      const h = harness({
+        catalogHeaders: async () => {
+          throw new Error("database closed");
+        }
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.outcome).toBe("completed");
+      expect(summary.catalogHeaders).toEqual({ refresh: "unknown", reason: null, jobs: 0 });
+      const { catalogHeaders: _written, ...older } = JSON.parse(JSON.stringify(summary)) as Record<
+        string,
+        unknown
+      >;
+      void _written;
+      expect(RematchSummarySchema.parse(older).catalogHeaders.refresh).toBe("unknown");
     });
   });
 

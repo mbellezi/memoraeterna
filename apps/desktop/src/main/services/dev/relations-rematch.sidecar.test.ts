@@ -33,6 +33,7 @@ import {
   seedBackgroundNoteState
 } from "./relations-rematch-state.js";
 import { noCompositeBackfill } from "./relations-rematch-summary.js";
+import { readCatalogHeaderFacts } from "../catalog-header-policy.js";
 
 // The state a re-match run reads and changes, and the fence that hides unreleased roots from
 // retrieval, on a real PostgreSQL database with the product's own retrieval SQL.
@@ -593,6 +594,7 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
         },
         openLinkJobs: () => countOpenLinkJobs(pool),
         facts: (since) => readRunFacts(pool, since),
+        catalogHeaders: () => readCatalogHeaderFacts(pool, { env: {} }),
         cassette: () => null,
         now: () => new Date((clock += 10)),
         // The link executor of the real app is not here: finishing the jobs is its stand-in.

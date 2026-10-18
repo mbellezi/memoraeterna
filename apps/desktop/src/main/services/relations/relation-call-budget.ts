@@ -63,15 +63,19 @@ export function createRelationCallBudget(options: {
   db: () => Queryable;
   cap: () => number;
   now?: () => Date;
+  /**
+   * The setting that holds the day's counter: the relation calls' by default. Another background
+   * job that spends remotely (the catalog headers' graph calls, T53h) counts in a counter of its own.
+   */
+  settingKey?: string;
 }): RelationCallBudget {
   const now = options.now ?? (() => new Date());
+  const settingKey = options.settingKey ?? relationsDailyCallsSettingKey;
   const read = async (): Promise<RelationDailyCalls> => {
     const day = localDay(now());
     const result = await options
       .db()
-      .query<{ value: unknown }>(`select value from settings where key = $1`, [
-        relationsDailyCallsSettingKey
-      ]);
+      .query<{ value: unknown }>(`select value from settings where key = $1`, [settingKey]);
     const parsed = RelationDailyCallsSchema.safeParse(result.rows[0]?.value);
     return parsed.success && parsed.data.day === day
       ? parsed.data
@@ -101,7 +105,7 @@ export function createRelationCallBudget(options: {
          where $3::boolean or s.value->>'day' is distinct from $2::text
            or coalesce((s.value->>'calls')::int, 0) < $4::int
          returning s.key`,
-        [relationsDailyCallsSettingKey, day, interactive, cap]
+        [settingKey, day, interactive, cap]
       );
       return (result.rowCount ?? result.rows.length) > 0;
     },

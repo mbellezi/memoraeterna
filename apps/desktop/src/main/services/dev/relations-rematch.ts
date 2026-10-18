@@ -58,6 +58,7 @@ import {
   runCompositeBackfillStep,
   type RootPlacementRow
 } from "./relations-rematch-composites.js";
+import { readCatalogHeaderFacts } from "../catalog-header-policy.js";
 import { runRematch, type CassetteFacts, type RematchPorts } from "./relations-rematch-run.js";
 import {
   clearRelationState,
@@ -329,6 +330,8 @@ export interface RematchPortsOptions {
   };
   /** When the app run started, for the backfill jobs it ran; by default from the process clock. */
   appStartedAt?: Date;
+  /** The environment the catalog-header policy reads; the process's by default. */
+  env?: Readonly<Record<string, string | undefined>>;
   /**
    * The root placements read before the job supervisor started (the 3.20 baseline of the composite
    * backfill, which the start queues); read when the step runs when it is absent.
@@ -411,6 +414,13 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
     },
     openLinkJobs: () => countOpenLinkJobs(pool),
     facts: (since) => readRunFacts(pool, since),
+    // The refresh is off in a re-match (the knob is a measurement knob): the summary says so and
+    // counts the refresh jobs this app run queued, which must be none (T53h).
+    catalogHeaders: () =>
+      readCatalogHeaderFacts(pool, {
+        ...(options.env ? { env: options.env } : {}),
+        since: options.appStartedAt ?? new Date(Date.now() - process.uptime() * 1000)
+      }),
     cassette: (): CassetteFacts | null => {
       const stats = options.cassette?.stats();
       return stats
@@ -552,6 +562,7 @@ export async function prepareRelationsRematch(
       remaining: () => options.jobs.compositeBackfillRemaining()
     },
     placementsBefore,
+    env: options.env,
     logger: options.logger,
     now,
     ...(options.sleep ? { sleep: options.sleep } : {})
