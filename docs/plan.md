@@ -663,7 +663,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [x] T53f Backfill of missing hierarchy-root composites for existing libraries (found by T53's proof).
 - [ ] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
 - [x] T53p Typed suggestions promote to suggested source relations (decision 29).
-- [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
+- [x] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
 - [x] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
 - [ ] T58e (superseded by decision 29: the rule rejected it; revisited only if a decider test changes decision 29) Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
@@ -672,7 +672,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
 - [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
       local deadlines from measured p99.
-- [ ] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
+- [x] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
 
 Wave 4 (gate X at the end):
 - [ ] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
