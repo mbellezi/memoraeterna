@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { RouteSpecSchema, UsageError, parseE2eArgs, recordedRoute } from "./config.js";
-import type { E2eConfig, RouteSpec } from "./config.js";
-import { expectRoutes, readApiKey, readRecordedRoute, replayRoute, resolveRoute } from "./route.js";
+import type { E2eConfig, RecordedRoute, RouteSpec } from "./config.js";
+import {
+  checkReplayModelPaths,
+  expectRoutes,
+  readApiKey,
+  readRecordedRoute,
+  replayRoute,
+  resolveRoute
+} from "./route.js";
 
 const root = "/repo";
 const config = (...args: string[]): E2eConfig => {
@@ -145,6 +152,70 @@ describe("the route of a replay", () => {
       kind: "local",
       catalogId: "mlx-x",
       path: "/scratch/models/mlx-x"
+    });
+  });
+
+  it("puts the installed models in place of the placeholders when the replay's local misses run live", () => {
+    const local: RecordedRoute = { ...recorded, writer: { kind: "local", catalogId: "mlx-x" } };
+    expect(
+      replayRoute(local, "/scratch/models", { writer: "/m/mlx-x", embedding: "/m/e.gguf" })
+    ).toMatchObject({
+      writer: { kind: "local", catalogId: "mlx-x", path: "/m/mlx-x" },
+      embedding: { path: "/m/e.gguf" }
+    });
+    // A path left out keeps its placeholder; a remote writer has no path to take.
+    expect(replayRoute(local, "/scratch/models", { embedding: "/m/e.gguf" })).toMatchObject({
+      writer: { path: "/scratch/models/mlx-x" },
+      embedding: { path: "/m/e.gguf" }
+    });
+    expect(
+      replayRoute(recorded, "/scratch/models", { writer: "/m/ignored" }).writer
+    ).not.toHaveProperty("path");
+  });
+
+  describe("the models a live local miss runs on (MEMORA_AI_CASSETTE_LOCAL_MISSES=live)", () => {
+    const local: RecordedRoute = { ...recorded, writer: { kind: "local", catalogId: "mlx-x" } };
+    const present = new Set(["/m/mlx-x", "/m/e.gguf"]);
+    const exists = (path: string) => present.has(path);
+    const none = { writer: null, embedding: null };
+
+    it("needs the embedding model and a local writer's directory, and both must exist", () => {
+      expect(() =>
+        checkReplayModelPaths(local, { writer: "/m/mlx-x", embedding: "/m/e.gguf" }, "live", exists)
+      ).not.toThrow();
+      expect(() => checkReplayModelPaths(local, none, "live", exists)).toThrow(
+        /pass --embedding-gguf/
+      );
+      expect(() =>
+        checkReplayModelPaths(local, { writer: null, embedding: "/m/e.gguf" }, "live", exists)
+      ).toThrow(/pass --writer-path <installed local writer>/);
+      expect(() =>
+        checkReplayModelPaths(local, { writer: "/m/typo", embedding: "/m/e.gguf" }, "live", exists)
+      ).toThrow(/--writer-path \/m\/typo does not exist/);
+      expect(() =>
+        checkReplayModelPaths(local, { writer: "/m/mlx-x", embedding: "/m/typo" }, "live", exists)
+      ).toThrow(/--embedding-gguf \/m\/typo does not exist/);
+    });
+
+    it("needs no writer path for a remote writer, and refuses one", () => {
+      expect(() =>
+        checkReplayModelPaths(recorded, { writer: null, embedding: "/m/e.gguf" }, "live", exists)
+      ).not.toThrow();
+      expect(() =>
+        checkReplayModelPaths(
+          recorded,
+          { writer: "/m/mlx-x", embedding: "/m/e.gguf" },
+          "live",
+          exists
+        )
+      ).toThrow(/recorded with a remote one/);
+    });
+
+    it("refuses paths for a replay that fails on a miss, where nothing would load them, and asks for none", () => {
+      expect(() => checkReplayModelPaths(local, none, "fail", exists)).not.toThrow();
+      expect(() =>
+        checkReplayModelPaths(local, { writer: "/m/mlx-x", embedding: null }, "fail", exists)
+      ).toThrow(/set MEMORA_AI_CASSETTE_LOCAL_MISSES=live/);
     });
   });
 

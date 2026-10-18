@@ -144,6 +144,12 @@ export interface E2eConfig {
   json: boolean;
   /** The ranker of the first run: none, so the gate's no-decider fallback is exercised (E6). */
   ranker: typeof e2eRanker;
+  /**
+   * Replay only: the installed models a miss on a local runtime runs on when
+   * `MEMORA_AI_CASSETTE_LOCAL_MISSES=live` (F3 D41, gate R). Without a path the replay installs placeholder files,
+   * which is right while nothing is ever loaded.
+   */
+  replayModelPaths: { writer: string | null; embedding: string | null };
 }
 
 export const usage = `Usage: npm run topics:e2e -- [options]
@@ -158,6 +164,12 @@ export const usage = `Usage: npm run topics:e2e -- [options]
     npm run topics:e2e -- --synthetic
 
   Every run is without a ranker, on purpose: E6 exercises the topic gate's no-decider fallback.
+
+  Non-regression replay after F3 matching merged (gate R): a copy of the cassette without its matching entries
+  (npm run golden:cassette-nonreg), the pin (the default here) and local misses run live on the real models:
+    MEMORA_AI_CASSETTE_LOCAL_MISSES=live MEMORA_GOLDEN_PIN=extraction npm run topics:e2e -- \
+      --cassette-dir .cache/topics/cassettes/e2e-plos-nonreg-R --lane-timeout 45 \
+      --writer-path <installed writer model dir> --embedding-gguf <installed embedding .gguf>
 
   --mode record|replay|both  both = record then replay (synthetic only)
   --synthetic                tiny library and synthetic model instead of the PDF and real models
@@ -179,10 +191,15 @@ export const usage = `Usage: npm run topics:e2e -- [options]
       [--writer-key-env <NAME>] [--writer-key-file <file>]   key from $${defaultApiKeyEnv} by default
     --writer-local <catalogId> --writer-path <dir>           a local (MLX) writer
     --embedding-gguf <file>  installed local embedding model     --embedding-catalog <id>
+                           (a replay takes --writer-path and --embedding-gguf too, only with
+                           MEMORA_AI_CASSETTE_LOCAL_MISSES=live: where its live local misses run)
     --max-tokens <n>         required with a remote writer: cap on live tokens
 `;
 
 const profileName = /^[a-z0-9][a-z0-9._-]*$/;
+
+/** The route flags a replay accepts: where the installed models are, never what the route is. */
+const replayModelPathFlags: readonly string[] = ["writer-path", "embedding-gguf"];
 
 function insideCache(root: string, directory: string): boolean {
   const inside = relative(resolve(root, ".cache"), directory);
@@ -260,11 +277,16 @@ export function parseE2eArgs(
     "embedding-catalog"
   ] as const;
   const givenRouteFlags = routeFlags.filter((flag) => v[flag] !== undefined);
+  // A replay keeps the recorded route, but its live local misses (D41) need to know where the models are.
+  const replayPaths = mode === "replay" && !synthetic;
+  const refusedRouteFlags = givenRouteFlags.filter(
+    (flag) => !replayPaths || !replayModelPathFlags.includes(flag)
+  );
   let route: E2eConfig["route"] = null;
   if (mode === "replay" || synthetic) {
-    if (givenRouteFlags.length > 0)
+    if (refusedRouteFlags.length > 0)
       throw new UsageError(
-        `${synthetic ? "--synthetic" : "Replay"} configures its own route; drop --${givenRouteFlags[0]}`
+        `${synthetic ? "--synthetic" : "Replay"} configures its own route; drop --${refusedRouteFlags[0]}`
       );
     if (maxTokens !== null && mode === "replay")
       throw new UsageError("--max-tokens only applies to a recording");
@@ -301,7 +323,11 @@ export function parseE2eArgs(
     keep: v.keep === true,
     reportDir: v.report ? resolve(v.report) : null,
     json: v.json === true,
-    ranker: e2eRanker
+    ranker: e2eRanker,
+    replayModelPaths: {
+      writer: replayPaths && v["writer-path"] ? resolve(v["writer-path"]) : null,
+      embedding: replayPaths && v["embedding-gguf"] ? resolve(v["embedding-gguf"]) : null
+    }
   };
 }
 

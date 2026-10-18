@@ -64,7 +64,14 @@ import { collectStoreFacts } from "./facts.js";
 import type { StoreFacts } from "./facts.js";
 import { importPaper, paperFromManifest } from "./import-flow.js";
 import { RecordingIpc } from "./ipc-counters.js";
-import { readApiKey, readRecordedRoute, replayRoute, resolveRoute, seedFirstRun } from "./route.js";
+import {
+  checkReplayModelPaths,
+  readApiKey,
+  readRecordedRoute,
+  replayRoute,
+  resolveRoute,
+  seedFirstRun
+} from "./route.js";
 import type { ElectronStub } from "./electron-stub.js";
 import { waitQuiet } from "./wait.js";
 import type { WaitStop } from "./wait.js";
@@ -180,6 +187,14 @@ async function runPass(
       throw new UsageError(
         `The cassette was recorded with source ${recorded.source}, not ${source}: replay it with --source ${recorded.source}`
       );
+    // A miss on a local runtime runs live (D41) only on a real model: the paths are checked first.
+    if (!config.synthetic)
+      checkReplayModelPaths(
+        recorded,
+        config.replayModelPaths,
+        readAiCassetteLocalMisses(deps.env),
+        existsSync
+      );
   }
   if (config.synthetic) {
     route = syntheticRoute(modelsDirectory);
@@ -188,7 +203,7 @@ async function runPass(
     route = await resolveRoute(config);
     apiKey = await readApiKey(route.writer, deps.env);
   } else {
-    route = replayRoute(recorded!, modelsDirectory);
+    route = replayRoute(recorded!, modelsDirectory, config.replayModelPaths);
     apiKey = "replay-placeholder-key";
   }
   // The paper, checked before anything is created.

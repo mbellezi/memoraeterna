@@ -86,22 +86,69 @@ export async function readRecordedRoute(
   return parsed.data;
 }
 
-/** The route of a replay: the recorded one, with placeholder paths (nothing is ever loaded). */
-export function replayRoute(recorded: RecordedRoute, modelsDirectory: string): RouteSpec {
+/**
+ * The route of a replay: the recorded one, with placeholder paths (nothing is ever loaded) unless the
+ * replay's local misses run live (D41), when the paths of the installed models stand in for them.
+ */
+export function replayRoute(
+  recorded: RecordedRoute,
+  modelsDirectory: string,
+  paths: { writer?: string | null; embedding?: string | null } = {}
+): RouteSpec {
   const writer: WriterSpec =
     recorded.writer.kind === "remote"
       ? {
           ...recorded.writer,
           apiKeyEnv: "MEMORA_E2E_API_KEY"
         }
-      : { ...recorded.writer, path: join(modelsDirectory, recorded.writer.catalogId) };
+      : {
+          ...recorded.writer,
+          path: paths.writer ?? join(modelsDirectory, recorded.writer.catalogId)
+        };
   return {
     writer,
     embedding: {
       catalogId: recorded.embedding.catalogId,
-      path: join(modelsDirectory, `${recorded.embedding.catalogId}.gguf`)
+      path: paths.embedding ?? join(modelsDirectory, `${recorded.embedding.catalogId}.gguf`)
     }
   };
+}
+
+/**
+ * What a replay needs to run a miss on a local runtime live (`MEMORA_AI_CASSETTE_LOCAL_MISSES=live`, F3
+ * D41): the real model of every local runtime the route holds, because the placeholder files of a replay
+ * load nothing. The paths mean nothing to a replay that fails on a miss, and a path that does not exist
+ * would only have been made an empty file, so both are refused before anything is created.
+ */
+export function checkReplayModelPaths(
+  recorded: RecordedRoute,
+  paths: { writer: string | null; embedding: string | null },
+  localMisses: "fail" | "live",
+  pathExists: (path: string) => boolean
+): void {
+  if (localMisses === "fail") {
+    if (paths.writer !== null || paths.embedding !== null)
+      throw new UsageError(
+        "--writer-path and --embedding-gguf only apply to a replay that runs its local misses live: " +
+          "set MEMORA_AI_CASSETTE_LOCAL_MISSES=live"
+      );
+    return;
+  }
+  if (recorded.writer.kind === "remote" && paths.writer !== null)
+    throw new UsageError(
+      "--writer-path names a local writer, but the cassette was recorded with a remote one"
+    );
+  const needs: Array<[flag: string, path: string | null, what: string]> = [
+    ["--embedding-gguf", paths.embedding, "embedding model"]
+  ];
+  if (recorded.writer.kind === "local") needs.push(["--writer-path", paths.writer, "local writer"]);
+  for (const [flag, path, what] of needs) {
+    if (path === null)
+      throw new UsageError(
+        `MEMORA_AI_CASSETTE_LOCAL_MISSES=live runs a miss on the real model: pass ${flag} <installed ${what}>`
+      );
+    if (!pathExists(path)) throw new UsageError(`${flag} ${path} does not exist`);
+  }
 }
 
 export interface SeedResult {

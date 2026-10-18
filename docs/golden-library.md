@@ -498,6 +498,10 @@ The rule (`scripts/golden/cassette-nonreg.ts`, tested against the prompt catalog
 decide, the ranker's note decide, the source judge and the relation typer by their prompts, whatever the
 runtime that recorded them; extraction, embeddings and the topic calls stay.
 
+An E6 replay with `MEMORA_AI_CASSETTE_LOCAL_MISSES=live` runs its misses on the real models, so it also takes
+`--writer-path <installed writer dir>` and `--embedding-gguf <installed .gguf>` (a plain replay installs
+placeholder files and refuses both); the run stops before it creates anything when one is missing.
+
 `MEMORA_GOLDEN_SCHEMA_PROBE=<calls>` (1 to 20, with `MEMORA_GOLDEN_RUN`) runs that many structured calls with a
 strict `outputSchema` through the normal AI service and the cassette, instead of the manifest: nothing is
 imported, no job or topic work starts, the library is not read and no backup is taken (only AI audit rows are

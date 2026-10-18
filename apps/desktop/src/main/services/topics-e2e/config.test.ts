@@ -49,7 +49,37 @@ describe("the options of the zero-config end-to-end test", () => {
 
   it("lets a replay take no route and no token cap", () => {
     expect(() => parse("--profile", "scratch")).toThrow(/Replay configures its own route/);
+    expect(() => parse("--writer-model", "x")).toThrow(/drop --writer-model/);
     expect(() => parse("--max-tokens", "1000")).toThrow(/only applies to a recording/);
+  });
+
+  it("lets a replay say where the installed models are, for its live local misses (D41), and nothing else", () => {
+    expect(parse().replayModelPaths).toEqual({ writer: null, embedding: null });
+    expect(
+      parse("--writer-path", "/m/mlx-writer", "--embedding-gguf", "/m/embed.gguf").replayModelPaths
+    ).toEqual({ writer: "/m/mlx-writer", embedding: "/m/embed.gguf" });
+    expect(parse("--embedding-gguf", "/m/embed.gguf").replayModelPaths).toEqual({
+      writer: null,
+      embedding: "/m/embed.gguf"
+    });
+    // Paths do not make a replay a route: the other route flags stay refused, the synthetic run refuses all.
+    expect(() => parse("--writer-path", "/m/w", "--embedding-catalog", "x")).toThrow(
+      /drop --embedding-catalog/
+    );
+    expect(() => parse("--synthetic", "--writer-path", "/m/w")).toThrow(/own route/);
+    // A recording takes them as its route, not as replay paths.
+    expect(
+      parse(
+        "--mode",
+        "record",
+        "--writer-local",
+        "mlx-x",
+        "--writer-path",
+        "/m/w",
+        "--embedding-gguf",
+        "/m/e.gguf"
+      ).replayModelPaths
+    ).toEqual({ writer: null, embedding: null });
   });
 
   it("keeps cassettes inside .cache, except the throwaway synthetic one", () => {
