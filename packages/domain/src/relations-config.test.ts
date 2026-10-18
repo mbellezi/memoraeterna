@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { bandScore } from "./relation-calibration.js";
 import { renderRelationPairText } from "./relation-pair-text.js";
 import {
+  decisionsDailyCapMaxUsd,
   findRelationCalibration,
   frozenRelationCalibrations,
   provisionalRelationCalibrations,
@@ -117,6 +118,18 @@ describe("the Decisions decider's config (plan decision 30)", () => {
     // Spike A2's p >= 0.79, as log-odds.
     expect(relationsConfig.decisions.uncalibratedPassLogOdds).toBeCloseTo(Math.log(0.79 / 0.21), 3);
     expect(RelationsConfigSchema.safeParse({ decisions: { dailyCapUsd: -1 } }).success).toBe(false);
+    // The cap has one ceiling, which a DEV proof run's override is held to as well.
+    expect(
+      RelationsConfigSchema.safeParse({ decisions: { dailyCapUsd: decisionsDailyCapMaxUsd } })
+        .success
+    ).toBe(true);
+    expect(
+      RelationsConfigSchema.safeParse({ decisions: { dailyCapUsd: decisionsDailyCapMaxUsd + 1 } })
+        .success
+    ).toBe(false);
+    expect(RelationsConfigSchema.safeParse({ decisions: { dailyCapUsd: Infinity } }).success).toBe(
+      false
+    );
     expect(RelationsConfigSchema.safeParse({ decisions: { unknown: 1 } }).success).toBe(false);
   });
 });

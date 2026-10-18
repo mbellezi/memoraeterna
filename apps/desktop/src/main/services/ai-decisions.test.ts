@@ -7,7 +7,11 @@ import {
   AiCassette,
   AiModelRegistry,
   createAiScheduler,
+  decisionsCostUsd,
+  DecisionsDisabledError,
   DecisionsUnavailableError,
+  estimatePlanInputTokens,
+  planDecisionRequests,
   resolveAiLaneRuntimeConfig,
   resolveDecisionsLimits,
   setAiAdapterDecorator,
@@ -596,41 +600,362 @@ describe("the OpenAI Platform key", () => {
   });
 });
 
+/** Twelve lists of one candidate: twelve requests, of which the lane runs a few at a time. */
+const manyLists = () =>
+  Array.from({ length: 12 }, (_, index) => ({
+    query: note(`Query ${index}`),
+    candidates: [note(`Candidate ${index}`)]
+  }));
+const decideMany = (h: Harness) =>
+  h.runtime.decide({
+    operation: "relation_decide_decisions",
+    instruction: relationDecisionsInstruction(),
+    lists: manyLists()
+  });
+/** A provider that takes a moment to answer and honors the abort of its request. */
+const slowAnswer =
+  (onStart: () => void): typeof globalThis.fetch =>
+  async (_url, init) => {
+    onStart();
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 40);
+      init!.signal!.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(init!.signal!.reason);
+      });
+    });
+    return answer(1, 0.5, 10);
+  };
+
+describe("nothing is sent once the person says so", () => {
+  it("turning it off stops the requests already admitted: queued, retrying and in flight", async () => {
+    let started = 0;
+    let off = false;
+    let sentAfterOff = 0;
+    const h = harness({
+      fetchImpl: slowAnswer(() => {
+        started += 1;
+        if (off) sentAfterOff += 1;
+      })
+    });
+    const plan = decideMany(h).catch((caught: unknown) => caught);
+    await vi.waitFor(() => expect(started).toBeGreaterThan(0), { interval: 1 });
+    await h.runtime.setEnabled(false);
+    off = true;
+    const failure = await plan;
+    expect(failure).toBeInstanceOf(DecisionsDisabledError);
+    expect(failure).not.toBeInstanceOf(DecisionsUnavailableError);
+    expect(sentAfterOff).toBe(0);
+    // Only what the lane had running when it was turned off was sent, never the queue behind it.
+    expect(started).toBeLessThan(12);
+    // It is a choice, not a failure: no fallback is recorded, and the lane and the cap are free.
+    expect(store.settings.get(relationsDecisionsStateSettingKey)).not.toMatchObject({
+      fallback: { reason: expect.any(String) }
+    });
+    expect(
+      h.scheduler.snapshot().find((lane) => lane.lane === "remote:openai-decisions")?.running
+    ).toBe(0);
+    // Turned on again, it works: the stop belonged to the plans admitted before it.
+    await h.runtime.setEnabled(true);
+    await expect(decide(h)).resolves.toMatchObject({ calls: expect.any(Number) });
+  });
+
+  it.each(["local", "custom"] as const)(
+    "switching the setup to %s stops them too, and withdraws the opt-in",
+    async (mode) => {
+      let started = 0;
+      let left = false;
+      let sentAfterLeaving = 0;
+      const h = harness({
+        fetchImpl: slowAnswer(() => {
+          started += 1;
+          if (left) sentAfterLeaving += 1;
+        })
+      });
+      const plan = decideMany(h).catch((caught: unknown) => caught);
+      await vi.waitFor(() => expect(started).toBeGreaterThan(0), { interval: 1 });
+      // The setup is written first, then the runtime is told (as the class-route service does).
+      store.settings.set("ai.preset.v1", { mode, at: "now" });
+      await h.runtime.presetChanged(mode);
+      left = true;
+      expect(await plan).toBeInstanceOf(DecisionsDisabledError);
+      expect(sentAfterLeaving).toBe(0);
+      expect(started).toBeLessThan(12);
+      expect(store.settings.get(relationsDecisionsSettingKey)).toEqual({ enabled: false });
+      // Back in Hybrid it asks again: the opt-in is not resumed silently.
+      store.settings.set("ai.preset.v1", { mode: "hybrid", at: "now" });
+      await h.runtime.presetChanged("hybrid");
+      expect(await h.runtime.status()).toMatchObject({ state: "off", enabled: false });
+      expect(await h.runtime.resolve()).toEqual({ use: "local", reason: null });
+    }
+  );
+
+  it("a Hybrid to Cloud change leaves a plan and the opt-in alone", async () => {
+    const h = harness();
+    store.settings.set("ai.preset.v1", { mode: "cloud", at: "now" });
+    await h.runtime.presetChanged("cloud");
+    expect(store.settings.get(relationsDecisionsSettingKey)).toEqual({ enabled: true });
+    await expect(decide(h)).resolves.toMatchObject({ calls: expect.any(Number) });
+  });
+
+  it("re-checks the opt-in and the setup when a request gets its permit, even if nobody told the runtime", async () => {
+    let started = 0;
+    const h = harness({
+      fetchImpl: slowAnswer(() => {
+        started += 1;
+        // The setting changes behind the runtime's back (another path wrote it).
+        store.settings.set(relationsDecisionsSettingKey, { enabled: false });
+      })
+    });
+    const failure = await decideMany(h).catch((caught: unknown) => caught);
+    expect(failure).toBeInstanceOf(DecisionsDisabledError);
+    // The lane's first requests were already out; none got its permit after the change.
+    expect(started).toBeLessThanOrEqual(4);
+    const sent = started;
+    await expect(decide(h)).rejects.toBeInstanceOf(DecisionsDisabledError);
+    expect(started).toBe(sent);
+  });
+
+  it("refuses a retry the person turned off while it waited, and audits the request as canceled", async () => {
+    let calls = 0;
+    const h = harness({
+      fetchImpl: async () => {
+        calls += 1;
+        // The provider fails once; during the backoff the opt-in is withdrawn.
+        store.settings.set(relationsDecisionsSettingKey, { enabled: false });
+        return new Response("bad gateway", { status: 502 });
+      }
+    });
+    const failure = await h.runtime
+      .decide({
+        operation: "relation_decide_decisions",
+        instruction: relationDecisionsInstruction(),
+        lists: [{ query: note("Q"), candidates: [note("C")] }]
+      })
+      .catch((caught: unknown) => caught);
+    expect(failure).toBeInstanceOf(DecisionsDisabledError);
+    expect(calls).toBe(1);
+    expect(store.runs).toHaveLength(1);
+    expect(store.runs[0]).toMatchObject({ status: "canceled" });
+    expect(store.settings.get(relationsDecisionsStateSettingKey)).not.toMatchObject({
+      fallback: { reason: expect.any(String) }
+    });
+  });
+
+  it("refuses the key test while it is off or in the Local setup, before it reads the key", async () => {
+    const off = harness({ enabled: false });
+    await expect(off.runtime.testKey()).rejects.toBeInstanceOf(DecisionsDisabledError);
+    await expect(off.runtime.testKey()).rejects.toThrow("errors.relations.decisions.turnedOff");
+    const local = harness({ preset: "local" });
+    await expect(local.runtime.testKey()).rejects.toBeInstanceOf(DecisionsDisabledError);
+    await expect(local.runtime.testKey()).rejects.toThrow(
+      "errors.relations.decisions.presetNotAllowed"
+    );
+    expect(off.fetch).not.toHaveBeenCalled();
+    expect(local.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("the day's cap is never passed", () => {
+  const one = [{ query: note("Q"), candidates: [note("C")] }];
+  const planCostUsd = () =>
+    decisionsCostUsd(
+      estimatePlanInputTokens(
+        planDecisionRequests(one, relationDecisionsInstruction(), limits),
+        limits
+      ),
+      limits
+    );
+  const planTokens = () =>
+    estimatePlanInputTokens(
+      planDecisionRequests(one, relationDecisionsInstruction(), limits),
+      limits
+    );
+
+  it("admits one of several plans that are admitted together when the cap leaves room for 1.2", async () => {
+    // Each plan bills what it was estimated at, and the cap leaves room for 1.2 plans.
+    const h = harness({
+      config: RelationsConfigSchema.parse({ decisions: { dailyCapUsd: 1.2 * planCostUsd() } }),
+      fetchImpl: async () => answer(1, 0.5, planTokens())
+    });
+    const ask = () =>
+      h.runtime.decide({
+        operation: "relation_decide_decisions",
+        instruction: relationDecisionsInstruction(),
+        lists: one
+      });
+    const outcomes = await Promise.allSettled([ask(), ask(), ask()]);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    for (const outcome of outcomes.filter((entry) => entry.status === "rejected"))
+      expect(outcome.reason).toMatchObject({ reason: "spend_cap" });
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    const status = await h.runtime.status();
+    expect(status.spentTodayUsd).toBeLessThanOrEqual(status.dailyCapUsd);
+    // The reservation went with the plan: the money not spent is free again.
+    expect(status.spentTodayUsd).toBeCloseTo(planCostUsd(), 10);
+  });
+
+  it("holds the reservation of a plan only while it runs", async () => {
+    const h = harness({
+      config: RelationsConfigSchema.parse({ decisions: { dailyCapUsd: 2.5 * planCostUsd() } }),
+      // A plan that bills a tenth of its estimate.
+      fetchImpl: async () => answer(1, 0.5, Math.round(planTokens() / 10))
+    });
+    const ask = () =>
+      h.runtime.decide({
+        operation: "relation_decide_decisions",
+        instruction: relationDecisionsInstruction(),
+        lists: one
+      });
+    for (let index = 0; index < 5; index += 1) await ask();
+    expect(h.fetch).toHaveBeenCalledTimes(5);
+    await Promise.all([ask(), ask()]);
+    expect(h.fetch).toHaveBeenCalledTimes(7);
+  });
+
+  it("stops queued requests of an admitted plan when the usage reported is far above the estimate", async () => {
+    const lists = manyLists();
+    const tokens = estimatePlanInputTokens(
+      planDecisionRequests(lists, relationDecisionsInstruction(), limits),
+      limits
+    );
+    const h = harness({
+      // Room for the plan's estimate, and each request bills ten times its share.
+      config: RelationsConfigSchema.parse({
+        decisions: { dailyCapUsd: 1.1 * decisionsCostUsd(tokens, limits) }
+      }),
+      fetchImpl: async () => answer(1, 0.5, Math.round((tokens / 12) * 10))
+    });
+    const failure = await decideMany(h).catch((caught: unknown) => caught);
+    expect(failure).toMatchObject({ reason: "spend_cap" });
+    expect(h.fetch.mock.calls.length).toBeLessThan(12);
+  });
+
+  it("charges the cap for a long key test as it does for a plan", async () => {
+    const h = harness({
+      config: RelationsConfigSchema.parse({ decisions: { dailyCapUsd: 0.0000001 } })
+    });
+    await expect(h.runtime.testKey()).rejects.toMatchObject({ reason: "spend_cap" });
+    expect(h.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("a lane that cannot serve soon, and an account with no credit", () => {
+  const exhausted = async () =>
+    new Response('{"error":{"code":"insufficient_quota"}}', { status: 429 });
+
+  it("sends nothing more today once the account has no credit, until a key is saved or tested", async () => {
+    let clock = new Date("2026-10-20T10:00:00.000Z");
+    let provider = exhausted;
+    const h = harness({ now: () => clock, fetchImpl: async () => provider() });
+    const works = async () => answer(1, 0.5, 10);
+    await expect(decide(h)).rejects.toMatchObject({ reason: "quota" });
+    const sent = h.fetch.mock.calls.length;
+    expect(await h.runtime.resolve()).toEqual({ use: "local", reason: "quota" });
+    expect(await h.runtime.status()).toMatchObject({ state: "fallback", fallbackReason: "quota" });
+    await expect(decide(h)).rejects.toMatchObject({ reason: "quota" });
+    expect(h.fetch).toHaveBeenCalledTimes(sent);
+
+    // A saved key clears it.
+    await h.runtime.saveKey("sk-proj-another-valid-key-0123456789");
+    provider = works;
+    expect(await h.runtime.resolve()).toEqual({ use: "decisions" });
+
+    // The next day clears it.
+    provider = exhausted;
+    await expect(decide(h)).rejects.toMatchObject({ reason: "quota" });
+    expect(await h.runtime.resolve()).toEqual({ use: "local", reason: "quota" });
+    clock = new Date("2026-10-22T10:00:00.000Z");
+    expect(await h.runtime.resolve()).toEqual({ use: "decisions" });
+
+    // So does a key test that works.
+    await expect(decide(h)).rejects.toMatchObject({ reason: "quota" });
+    expect(await h.runtime.resolve()).toEqual({ use: "local", reason: "quota" });
+    provider = works;
+    await h.runtime.testKey();
+    expect(await h.runtime.resolve()).toEqual({ use: "decisions" });
+  });
+
+  it("falls back at once while a rate limit pauses the lane for longer than a request waits", async () => {
+    const h = harness();
+    await decide(h);
+    const lane = "remote:openai-decisions";
+    // A short pause is waited out by the requests themselves ...
+    h.scheduler.observeRateLimit(lane, performance.now() + limits.retry.maxInlineRetryAfterMs / 2);
+    expect(await h.runtime.resolve()).toEqual({ use: "decisions" });
+    // ... a long one sends later notes to the local ranker instead of queueing behind it.
+    h.scheduler.observeRateLimit(lane, performance.now() + limits.retry.maxInlineRetryAfterMs * 3);
+    expect(await h.runtime.resolve()).toEqual({ use: "local", reason: "breaker_open" });
+    const sent = h.fetch.mock.calls.length;
+    await expect(decide(h)).rejects.toMatchObject({ reason: "breaker_open" });
+    expect(h.fetch).toHaveBeenCalledTimes(sent);
+  });
+});
+
 describe("the calibration of the status", () => {
   const frozen = frozenRelationCalibrations.find(
     (entry) => entry.identity.runtimeKind === "remote"
   )!;
 
-  it("is calibrated by T58's frozen entry, which the product's own request design reproduces", async () => {
+  it("is uncalibrated by the shipped entry: T58 froze the bake-off's request design, not the one it sends", async () => {
     const h = harness();
-    expect(await h.runtime.status()).toMatchObject({ calibrated: true });
-    // The identity the catalog's instruction and the typed limits compute is the frozen one, field
-    // for field: the instruction (Spike A's mechanism), the contract and the request design.
+    expect(await h.runtime.status()).toMatchObject({ calibrated: false });
+    // The identity the catalog's instruction and the typed limits compute is the frozen one in the
+    // instruction, the contract, the provider and the model, and not in the request design.
     const { identity, calibration } = decisionsDesign({
       instruction: relationDecisionsInstruction(),
       config: relationsConfig
     });
-    expect(identity).toEqual(frozen.identity);
-    expect(calibration).toEqual(frozen);
+    expect(identity).toMatchObject({
+      instructionSha256: (frozen.identity as { instructionSha256: string }).instructionSha256,
+      contract: frozen.identity.contract,
+      model: "gpt-6-luna"
+    });
+    expect(identity).not.toEqual(frozen.identity);
+    expect(calibration).toBeNull();
+  });
+
+  it("is calibrated once an entry names the identity of the requests it sends", async () => {
+    const { identity } = decisionsDesign({
+      instruction: relationDecisionsInstruction(),
+      config: relationsConfig
+    });
+    const config = RelationsConfigSchema.parse({
+      calibrations: [
+        ...frozenRelationCalibrations.filter((entry) => entry.identity.runtimeKind !== "remote"),
+        {
+          ...frozen,
+          identity,
+          parity: { requestDesignSha256: identity.requestDesignSha256 }
+        }
+      ]
+    });
+    expect(await harness({ config }).runtime.status()).toMatchObject({ calibrated: true });
   });
 
   it("is uncalibrated once the instruction, the model or the design is another identity", async () => {
-    const edited = (change: Partial<typeof frozen.identity>) => {
-      const identity = { ...frozen.identity, ...change } as typeof frozen.identity;
+    const { identity: product } = decisionsDesign({
+      instruction: relationDecisionsInstruction(),
+      config: relationsConfig
+    });
+    const edited = (change: Partial<typeof product>) => {
+      const identity = { ...product, ...change };
       return RelationsConfigSchema.parse({
         calibrations: [
           ...frozenRelationCalibrations.filter((entry) => entry.identity.runtimeKind !== "remote"),
           {
             ...frozen,
             identity,
-            parity: {
-              requestDesignSha256:
-                "requestDesignSha256" in identity ? identity.requestDesignSha256 : ""
-            }
+            parity: { requestDesignSha256: identity.requestDesignSha256 }
           }
         ]
       });
     };
+    // Each is calibrated by an entry of exactly the product's identity ...
+    expect(await harness({ config: edited({}) }).runtime.status()).toMatchObject({
+      calibrated: true
+    });
+    // ... and by no other.
     for (const change of [
       { instructionSha256: "c".repeat(64) },
       { requestDesignSha256: "d".repeat(64) },

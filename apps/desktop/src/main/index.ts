@@ -61,6 +61,7 @@ import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
+import { decisionsDevOptions } from "./services/dev/decisions-dev-options.js";
 import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
 import { prepareSoak, type SoakPreparation } from "./services/dev/soak-startup.js";
 import { readSoakSetupKnob, runSoakSetup } from "./services/dev/soak-setup.js";
@@ -300,13 +301,7 @@ void app.whenReady().then(() => {
     // Decision 30: a DEV cassette replay needs no Decisions key; `MEMORA_RELATIONS_DECISIONS=on`
     // (DEV only) turns the opt-in decider on for a proof run.
     ...(aiCassette ? { cassetteMode: aiCassette.mode } : {}),
-    devDecisions: !app.isPackaged && process.env.MEMORA_RELATIONS_DECISIONS === "on",
-    ...(!app.isPackaged && process.env.MEMORA_RELATIONS_DECISIONS_KEY_FILE
-      ? { devDecisionsKeyFile: process.env.MEMORA_RELATIONS_DECISIONS_KEY_FILE }
-      : {}),
-    ...(!app.isPackaged && Number(process.env.MEMORA_RELATIONS_DECISIONS_CAP_USD) > 0
-      ? { devDecisionsCapUsd: Number(process.env.MEMORA_RELATIONS_DECISIONS_CAP_USD) }
-      : {})
+    ...decisionsDevOptions(process.env, app.isPackaged)
   });
   soakPreparation?.attach(aiService);
   localModelService = new LocalModelService({

@@ -303,7 +303,8 @@
         "network": "Non è stato possibile raggiungere OpenAI.",
         "failed": "OpenAI Decisions non è riuscito.",
         "keyFormat": "Non sembra una chiave OpenAI Platform.",
-        "presetNotAllowed": "OpenAI Decisions è disponibile solo nelle configurazioni Ibrida e Cloud."
+        "presetNotAllowed": "OpenAI Decisions è disponibile solo nelle configurazioni Ibrida e Cloud.",
+        "turnedOff": "Attiva prima OpenAI Decisions."
       }
     },
     "sourceRelations": {

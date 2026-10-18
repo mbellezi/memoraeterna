@@ -11,9 +11,6 @@ import type { ToastTone } from "./ui/toast";
 
 type T = (key: MessageKey) => string;
 
-/** Characters of each note's text the request carries (`relations.decide.bodyCharacters`). */
-const bodyCharacters = 600;
-
 const reasonKeys: Record<DecisionsFallbackReason, MessageKey> = {
   no_key: "settings.ai.decisions.reasons.noKey",
   invalid_key: "settings.ai.decisions.reasons.invalidKey",
@@ -40,9 +37,12 @@ export function decisionsStatusLine(t: T, status: AiDecisionsStatus): string {
     : t("settings.ai.decisions.state.ready");
 }
 
-export function decisionsPrivacyBody(t: T, status: Pick<AiDecisionsStatus, "model">): string {
+export function decisionsPrivacyBody(
+  t: T,
+  status: Pick<AiDecisionsStatus, "model" | "bodyCharacters">
+): string {
   return t("settings.ai.decisions.privacy.body")
-    .replace("{characters}", String(bodyCharacters))
+    .replace("{characters}", String(status.bodyCharacters))
     .replace("{model}", status.model);
 }
 
@@ -206,9 +206,12 @@ export function DecisionsDeciderView(props: DecisionsDeciderViewProps) {
               )}
               {status.keyStored ? (
                 <>
-                  <Button type="button" disabled={busy} onClick={props.onTestKey}>
-                    {t("settings.ai.decisions.key.test")}
-                  </Button>
+                  {/* The test sends a request: like any other, only while the decider is on. */}
+                  {status.enabled ? (
+                    <Button type="button" disabled={busy} onClick={props.onTestKey}>
+                      {t("settings.ai.decisions.key.test")}
+                    </Button>
+                  ) : null}
                   <Button type="button" variant="ghost" disabled={busy} onClick={props.onRemoveKey}>
                     {t("settings.ai.decisions.key.remove")}
                   </Button>

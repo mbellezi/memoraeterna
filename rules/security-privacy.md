@@ -45,7 +45,8 @@ retention, licensing, or adding dependencies and model artifacts.
   moment of choice, what is sent and the provider's data retention (for instance OpenAI Decisions'
   abuse-monitoring retention). The Decisions decider is opt-in: off by default, offered only in the
   Hybrid and Cloud setups, with its own key in `safeStorage` and a daily spend cap; when it cannot
-  decide, the local ranker does and the status says why.
+  decide, the local ranker does and the status says why. Turning it off, or leaving those setups,
+  stops requests already admitted; the cap holds across plans admitted together.
 - Automatic background spending obeys the user's monthly remote cap. Spend is computed from recorded
   usage and a versioned price table; an unknown price is estimated conservatively, never counted as
   zero. Routes without per-token pricing (subscriptions) are bounded by concurrency and call caps

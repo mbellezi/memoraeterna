@@ -8,14 +8,21 @@ import {
   seededOrder
 } from "./design.js";
 import type { DecisionsLimits } from "./limits.js";
+import { decisionsNeighbourhoodRule } from "./neighbourhood.js";
 
 /**
- * The fingerprints a frozen calibration of the Decisions decider names (plan decision 30, T58's
- * re-freeze 8017633d): the identity's `requestDesignSha256` and the Spike A2 fingerprint inside it.
- * The product's requests must be the design that was frozen, so these are computed here, from the
- * product's own builder and limits, and a test holds them to the frozen values. A change of the
- * instruction, the wording, the model, the candidates per request, the orders or the scale changes
- * them, and the calibration then no longer applies (the decider is uncalibrated until a new freeze).
+ * The fingerprints a calibration of the Decisions decider names: the identity's
+ * `requestDesignSha256` and the Spike A2 fingerprint inside it. The identity must describe the
+ * requests the product sends, so these are computed here, from the product's own builder and
+ * limits. A change of the instruction, the wording, the model, the candidates per request, the
+ * neighbourhood (its limit or its makeup rule), the request shapes, the orders or the scale changes
+ * them, and a calibration frozen for another design then no longer applies (the decider is
+ * uncalibrated, and only suggests, until a new freeze).
+ *
+ * T58's freeze (8017633d) measured the bake-off's design, whose requests carry each note's whole
+ * batch neighbourhood. The product's requests are online and partial, which is another design and
+ * so another identity; the frozen entry applies to it only after the dense partitions are replayed
+ * through the product's request builder and the calibration is frozen again.
  */
 
 /** The relation types of Spike A2's typed configuration, which the product never sends. */
@@ -85,14 +92,21 @@ export function decisionsSpikeFingerprint(
 
 /**
  * Everything the request design is, beyond what Spike A2's fingerprint covers: the predicate
- * question, the neighbourhood, the two orders and how their answers are combined, and the scale. The
- * `candidates` and `orders` texts are the frozen design's own words.
+ * question, the neighbourhood and the shape of the forward and the reverse requests, the two
+ * orders and how their answers are combined, and the scale. The tags name the shapes; changing a
+ * shape changes its tag.
+ *
+ * The product asks online. A note's forward request holds its retrieval targets and, up to
+ * `maxNeighbourhood` notes, the notes it was decided against before; each reverse direction is a
+ * request of its own (the candidate as the query, the note and the candidate's own earlier
+ * partners as the documents). The bake-off instead sent each note's whole batch neighbourhood,
+ * uncapped, and read every direction from that note's own request.
  */
 export function decisionsRequestDesign(
   instruction: string,
   limits: Pick<
     DecisionsLimits,
-    "model" | "maxCandidatesPerRequest" | "orderSalts" | "probabilityEpsilon"
+    "model" | "maxCandidatesPerRequest" | "maxNeighbourhood" | "orderSalts" | "probabilityEpsilon"
   >,
   bodyCharacters: number
 ) {
@@ -100,8 +114,17 @@ export function decisionsRequestDesign(
     designFingerprint: decisionsSpikeFingerprint(instruction, limits),
     question: "predicate",
     model: limits.model,
-    candidates:
-      "the note's decided neighbourhood (its own list and the notes whose lists hold it), in id order, chunked at 20 (balanced)",
+    // How a request is made up (`neighbourhood.ts` holds the rule): online, partial, capped.
+    neighbourhood: {
+      kind: "online",
+      makeup: decisionsNeighbourhoodRule,
+      maxNeighbourhood: limits.maxNeighbourhood
+    },
+    // The shapes of the requests: a forward list per note, a request per reverse direction.
+    requests: {
+      forward: "note-targets-balanced-chunks-v1",
+      reverse: "candidate-query-note-target-v1"
+    },
     directions: "both",
     orderSalts: [...limits.orderSalts],
     orders: "the mean of the two orders' predicate probabilities",

@@ -18,7 +18,7 @@ import {
   type JsonObject,
   type PgPool
 } from "@app/db";
-import { generativeDecideOperations, presetCatalogIds } from "@app/domain";
+import { generativeDecideOperations, presetCatalogIds, type AiPresetMode } from "@app/domain";
 
 import {
   AiClassRouteService,
@@ -208,11 +208,16 @@ describe.skipIf(!sidecarInstalled)("workload class routes on a real PostgreSQL d
     return { ai: ai as unknown as ClassRoutesAi, runDefaultTask, rank };
   }
 
-  function service(ai: ClassRoutesAi, machine = mac) {
+  function service(
+    ai: ClassRoutesAi,
+    machine = mac,
+    onPresetChanged?: (mode: AiPresetMode) => void | Promise<void>
+  ) {
     return new AiClassRouteService({
       getPool: () => pool,
       ai,
       machine,
+      ...(onPresetChanged ? { onPresetChanged, logger: { error() {}, info() {} } } : {}),
       ensureLegacyMapping: async () => {
         await mapLegacyRoutesV1(createRouteMappingStore(pool));
       }
@@ -506,6 +511,38 @@ describe.skipIf(!sidecarInstalled)("workload class routes on a real PostgreSQL d
       const noRemote = await service(ai).applyPreset({ preset: "hybrid", test: false });
       expect(noRemote.applied).toBe(false);
       expect(noRemote.blocked.map((entry) => entry.reason)).toContain("no_remote_profile");
+    }, 60_000);
+
+    it("tells the opt-in remote decider about every new setup, and a failure there never fails the change", async () => {
+      const ids = await splitLibrary();
+      await route(
+        "class:decide",
+        await localProfile(presetCatalogIds.rankerMlx, "mlx", ["reranking"])
+      );
+      const { ai } = fakeAi();
+      const told: AiPresetMode[] = [];
+      const svc = service(ai, mac, (mode) => {
+        told.push(mode);
+        // The setup was written before it is told.
+        return settings.get<{ mode: string }>(presetSettingKey).then((stored) => {
+          expect(stored?.mode).toBe(mode);
+          if (mode === "custom") throw new Error("the decider could not be told");
+        });
+      });
+      await svc.applyPreset({ preset: "cloud", test: false });
+      await svc.setClassRoute({ route: "write-quality", profileId: ids.kg });
+      const custom = await svc.applyPreset({ preset: "custom" });
+      expect(told).toEqual(["cloud", "custom", "custom"]);
+      // The hook that threw was logged and ignored: the setup is recorded.
+      expect(custom.applied).toBe(true);
+      expect(custom.view.preset).toBe("custom");
+      // A refused setup (Local off Apple silicon) records nothing and tells nobody.
+      told.length = 0;
+      const refused = await service(ai, intel, (mode) => {
+        told.push(mode);
+      }).applyPreset({ preset: "local", test: false });
+      expect(refused.applied).toBe(false);
+      expect(told).toEqual([]);
     }, 60_000);
 
     it("records Custom without touching the routes", async () => {

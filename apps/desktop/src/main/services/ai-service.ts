@@ -1241,6 +1241,8 @@ export class AiService {
       ai: this,
       ...(this.options.machine ? { machine: this.options.machine } : {}),
       ensureLegacyMapping: () => this.ensureLegacyRouteMapping(),
+      // Leaving the Hybrid and Cloud setups stops the opt-in Decisions decider (plan decision 30).
+      onPresetChanged: (mode) => this.decisionsRuntime().presetChanged(mode),
       ...(this.options.logger ? { logger: this.options.logger } : {})
     });
     return this.classRoutesHelper;

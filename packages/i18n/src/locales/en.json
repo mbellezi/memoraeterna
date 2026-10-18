@@ -303,7 +303,8 @@
         "network": "OpenAI could not be reached.",
         "failed": "OpenAI Decisions failed.",
         "keyFormat": "That does not look like an OpenAI Platform key.",
-        "presetNotAllowed": "OpenAI Decisions is available only in the Hybrid and Cloud setups."
+        "presetNotAllowed": "OpenAI Decisions is available only in the Hybrid and Cloud setups.",
+        "turnedOff": "Turn OpenAI Decisions on first."
       }
     },
     "sourceRelations": {

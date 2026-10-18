@@ -8,8 +8,10 @@ import {
   AiCassette,
   AiModelRegistry,
   createAiScheduler,
+  DecisionsDisabledError,
   DecisionsUnavailableError,
   resolveAiLaneRuntimeConfig,
+  resolveDecisionsLimits,
   setAiAdapterDecorator
 } from "@app/ai";
 import {
@@ -18,6 +20,7 @@ import {
   RelationsConfigSchema,
   relationsConfig,
   renderRelationPairText,
+  waitingForDeciderSkipReason,
   type RelationsConfig
 } from "@app/domain";
 import type { PgPool } from "@app/db";
@@ -186,6 +189,28 @@ const frozenDecisions = frozenRelationCalibrations.find(
   (entry) => entry.identity.runtimeKind === "remote"
 )!;
 
+/**
+ * The frozen Decisions bands under the product's own identity: what a re-freeze on the online
+ * requests would add. The shipped entry names the bake-off's request design, not the one the product
+ * sends, so it does not apply (see "the shipped calibration").
+ */
+const refrozen = (() => {
+  const { identity } = decisionsDesign({
+    instruction: relationDecisionsInstruction(),
+    config: RelationsConfigSchema.parse({})
+  });
+  return RelationsConfigSchema.parse({
+    calibrations: [
+      ...frozenRelationCalibrations.filter((entry) => entry.identity.runtimeKind !== "remote"),
+      {
+        ...frozenDecisions,
+        identity,
+        parity: { requestDesignSha256: identity.requestDesignSha256 }
+      }
+    ]
+  });
+})();
+
 let source: Note, a: Note, b: Note, c: Note;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -338,9 +363,12 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
         record.aiTaskRunId
       ])
     ).toEqual([
-      [true, "n-a", 2, 3, "decisions-0-0"],
+      // The note's direction to each candidate is stored as soon as its list is scored ...
+      [true, "n-a", null, 3, "decisions-0-0"],
       [true, "n-b", null, unrelated, "decisions-0-1"],
-      [true, "n-c", null, unrelated, "decisions-0-2"]
+      [true, "n-c", null, unrelated, "decisions-0-2"],
+      // ... and Alpha's direction back to the note, with the run that scored it.
+      [true, "n-a", 2, null, "decisions-0-0"]
     ]);
     expect(result).toMatchObject({ decided: 1, accepted: 1, decider: "decisions" });
     expect(result.decisionsFallback).toBeUndefined();
@@ -374,7 +402,7 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     it("uses the lowest edge of the frozen calibration: 1.497 asks for a direction from -13.12", async () => {
       decisionTable.set("Source>Alpha", -13.2).set("Source>Beta", -13.1).set("Source>Gamma", 0);
       decisionTable.set("Beta>Source", 16.118).set("Gamma>Source", 16.118);
-      const { handed } = await run([source.id], relationsConfig);
+      const { handed } = await run([source.id], refrozen);
       const [, backward] = askedCalls();
       // Alpha (-13.2) cannot reach 1.497 (mean 1.459 at best); Beta (-13.1) and Gamma can.
       expect(queryTitles(backward!)).toEqual(["Beta", "Gamma"]);
@@ -433,7 +461,7 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
       // Only the three candidate pairs are stored, with the directions asked for.
       expect(
         mocks.decisions.recordRankerScores.mock.calls.map(([record]) => record.loAtomicNoteId)
-      ).toEqual(["n-a", "n-b", "n-c"]);
+      ).toEqual(["n-a", "n-b", "n-c", "n-a"]);
       expect(handed[0]!.pairs[0]).toMatchObject({ candidateId: "n-a", score: 2.5 });
       // The notes of the makeup took part in the call: they are among its sources.
       expect(backward!.sourceIds).toEqual(expect.arrayContaining(["source-n-x1", "source-n-x2"]));
@@ -487,8 +515,88 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
       expect(queryTitles(backward!)).toEqual(["Beta"]);
       expect(
         mocks.decisions.recordRankerScores.mock.calls.map(([record]) => record.loAtomicNoteId)
-      ).toEqual(["n-b", "n-c"]);
+      ).toEqual(["n-b", "n-c", "n-b"]);
     });
+  });
+
+  it("stores each direction with the run that scored it, as soon as it is scored", async () => {
+    let call = 0;
+    ai.decideWithDecisions.mockImplementation(async (input: DecisionsDecideInput) => {
+      call += 1;
+      return {
+        decisions: input.lists.map((list) =>
+          list.candidates.map(() => ({ probability: 0.95, logOdds: 3, aiTaskRunId: `run-${call}` }))
+        ),
+        calls: 1,
+        inputTokens: 1,
+        costUsd: 0,
+        replayed: 0
+      };
+    });
+    await run([source.id], uncalibrated);
+    // The note's list is call 1, the candidates' requests are call 2: a direction keeps its own run.
+    expect(
+      mocks.decisions.recordRankerScores.mock.calls.map(([record]) => [
+        record.loAtomicNoteId,
+        record.loToHi,
+        record.hiToLo,
+        record.aiTaskRunId
+      ])
+    ).toEqual([
+      ["n-a", null, 3, "run-1"],
+      ["n-b", null, 3, "run-1"],
+      ["n-c", null, 3, "run-1"],
+      ["n-a", 3, null, "run-2"],
+      ["n-b", 3, null, "run-2"],
+      ["n-c", 3, null, "run-2"]
+    ]);
+  });
+
+  it("keeps the directions already paid for when a later request fails", async () => {
+    decisionTable.set("Source>Alpha", 3);
+    const forward = ai.decideWithDecisions.getMockImplementation()!;
+    ai.decideWithDecisions
+      .mockImplementationOnce(forward)
+      .mockRejectedValue(new DecisionsUnavailableError("network"));
+    rankerTable.set("Source>Alpha", 9).set("Alpha>Source", 9);
+    const { result, handed } = await run([source.id], uncalibrated);
+    // The reverse request failed: the ranker decided the note, but the note's directions that had
+    // been scored were stored under the Decisions key first, so a retry does not pay for them again.
+    expect(handed[0]!.decider).toMatchObject({ kind: "ranker", fallback: "network" });
+    expect(result.decisionsFallback).toEqual({ notes: 1, reason: "network" });
+    const key = decisionsKey(uncalibrated);
+    expect(
+      mocks.decisions.recordRankerScores.mock.calls
+        .filter(([record]) => record.deciderKey === key)
+        .map(([record]) => [record.loAtomicNoteId, record.hiToLo])
+    ).toEqual([
+      ["n-a", 3],
+      ["n-b", unrelated],
+      ["n-c", unrelated]
+    ]);
+  });
+
+  it("sends no text of a note outside the re-match fence as the makeup of a request", async () => {
+    note("n-x1", "Chi");
+    note("n-x2", "Xi");
+    mocks.decisions.findDecidedPartners.mockResolvedValue(new Map([["n-a", ["n-x1", "n-x2"]]]));
+    mocks.notes.filterRetrievableCandidateIds.mockImplementation(
+      async (input: { candidateIds: string[]; fence?: unknown }) =>
+        new Set(
+          input.candidateIds.filter((id) => registry.has(id) && !(input.fence && id === "n-x2"))
+        )
+    );
+    decisionTable.set("Source>Alpha", 3).set("Alpha>Source", 2);
+    await matcher(uncalibrated).matchNotes({
+      noteIds: [source.id],
+      vectors: new Map([[source.id, vectorOf()]]),
+      fence: { rootSourceItemIds: ["root-1"] },
+      handOff: async (decided) => decided.pairs.length
+    });
+    const [, backward] = askedCalls();
+    // Chi is in view of the fence, Xi is not: only Chi's text goes to the provider.
+    expect(backward!.lists[0]!.candidates.map(titleOf)).toEqual(["Chi", "Source"]);
+    expect(JSON.stringify(askedCalls())).not.toContain("Xi");
   });
 
   it("only suggests while it has no frozen calibration: the mean of both directions from the pass", async () => {
@@ -511,7 +619,7 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
   });
 
   it("applies in its own frozen apply band and suggests below it, with the calibrated probability", async () => {
-    const config = relationsConfig;
+    const config = refrozen;
     decisionTable.set("Source>Alpha", 3).set("Alpha>Source", 2.6);
     decisionTable.set("Source>Beta", 2).set("Beta>Source", 1.4);
     decisionTable.set("Source>Gamma", 1).set("Gamma>Source", 1);
@@ -530,24 +638,67 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     ]);
   });
 
-  it("reproduces the frozen identity from the catalog's instruction and the typed limits", () => {
+  it("names the requests it sends: the frozen entry's identity in everything but the request design", async () => {
     const { identity, calibration } = decisionsDesign({
       instruction: relationDecisionsInstruction(),
       config: relationsConfig
     });
-    // Spike A's mechanism instruction, the frozen contract, the request design and the OpenAI provider.
-    expect(identity).toEqual(frozenDecisions.identity);
+    // Spike A's mechanism instruction, the frozen contract, the OpenAI provider and the model are
+    // the frozen ones. The request design is not: the bake-off's requests carried each note's whole
+    // batch neighbourhood, and the product's are partial and online (T58d).
     expect(identity).toMatchObject({
       contract: "relation-decide-decisions-v1",
       instructionSha256: "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164",
-      requestDesignSha256: "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c",
       provider: "openai",
       model: "gpt-6-luna",
       runtimeKind: "remote"
     });
-    expect(calibration).toEqual(frozenDecisions);
+    const frozenSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
+    expect(frozenDecisions.identity).toMatchObject({ requestDesignSha256: frozenSha });
+    expect(identity).toEqual({
+      ...frozenDecisions.identity,
+      requestDesignSha256: expect.any(String)
+    });
+    expect((identity as { requestDesignSha256: string }).requestDesignSha256).not.toBe(frozenSha);
+    // So the shipped calibration does not apply to it.
+    expect(calibration).toBeNull();
     // The local ranker's instruction is another one: the catalog keeps the two apart.
     expect(sha256(relationDecideInstruction())).not.toBe(identity.instructionSha256);
+  });
+
+  it("the shipped calibration is the bake-off's: the decider only suggests, whatever the score", async () => {
+    // Far above the frozen apply edge (2.372), under the shipped config: not applied.
+    decisionTable.set("Source>Alpha", 10).set("Alpha>Source", 10);
+    const { handed } = await run([source.id], relationsConfig);
+    expect(handed[0]!.decider).toMatchObject({ kind: "decisions", calibration: "uncalibrated" });
+    expect(handed[0]!.pairs).toHaveLength(1);
+    expect(handed[0]!.pairs[0]).toMatchObject({
+      candidateId: "n-a",
+      band: "suggest",
+      probability: null,
+      calibration: "uncalibrated"
+    });
+    // The same scores applied under the entry re-identified for the product's design.
+    const { handed: refrozenHanded } = await run([source.id], refrozen);
+    expect(refrozenHanded[0]!.pairs[0]).toMatchObject({ band: "apply", calibration: "frozen" });
+    // Changing what a request carries is another identity: nothing is reused or applied.
+    const narrower = new RelationMatcher({
+      getPool: () => ({}) as PgPool,
+      ai: ai as unknown as AiService,
+      config: refrozen,
+      decisionsLimits: resolveDecisionsLimits({ maxNeighbourhood: 6 })
+    });
+    const handedNarrow: DecidedNote[] = [];
+    await narrower.matchNotes({
+      noteIds: [source.id],
+      vectors: new Map([[source.id, vectorOf()]]),
+      handOff: async (decided) => {
+        handedNarrow.push(decided);
+        return decided.pairs.length;
+      }
+    });
+    expect(handedNarrow[0]!.decider).toMatchObject({ calibration: "uncalibrated" });
+    expect(handedNarrow[0]!.decider.deciderKey).not.toBe(handed[0]!.decider.deciderKey);
   });
 
   it("keeps the calibration to the identity it was frozen for: another design is uncalibrated", async () => {
@@ -589,8 +740,8 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
         record.hiToLo
       ])
     ).toEqual([
-      ["n-b", 2, null],
-      ["n-c", null, unrelated]
+      ["n-c", null, unrelated],
+      ["n-b", 2, null]
     ]);
     expect(
       handed[0]!.pairs.map((pair) => [pair.candidateId, pair.decisionSource, pair.score])
@@ -631,7 +782,7 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     // Alpha has no direction from the note, so the other one is not asked either: nothing is stored.
     expect(
       mocks.decisions.recordRankerScores.mock.calls.map(([record]) => record.loAtomicNoteId)
-    ).toEqual(["n-b", "n-c"]);
+    ).toEqual(["n-b", "n-c", "n-b", "n-c"]);
     expect(queryTitles(askedCalls()[1]!)).toEqual(["Beta", "Gamma"]);
   });
 
@@ -647,6 +798,46 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     expect(StoredDecidedNoteSchema.parse(fellBack[0])).toMatchObject({
       decider: { kind: "ranker", fallback: "network" }
     });
+  });
+
+  it("keeps the checkpoint strict: a local decider has a profile, the Decisions API has none", async () => {
+    decisionTable.set("Source>Beta", 3).set("Beta>Source", 3);
+    const { handed } = await run([source.id], uncalibrated);
+    const decisions = StoredDecidedNoteSchema.parse(handed[0]);
+    const withDecider = (decider: Record<string, unknown>) => ({ ...decisions, decider });
+    // The Decisions API with a profile row, or a ranker without one, is not a decided note.
+    expect(
+      StoredDecidedNoteSchema.safeParse(withDecider({ ...decisions.decider, profileId: "p-1" }))
+        .success
+    ).toBe(false);
+    expect(
+      StoredDecidedNoteSchema.safeParse(
+        withDecider({ ...decisions.decider, kind: "ranker", profileId: null })
+      ).success
+    ).toBe(false);
+    expect(
+      StoredDecidedNoteSchema.safeParse(
+        withDecider({ ...decisions.decider, kind: "generative", profileId: null })
+      ).success
+    ).toBe(false);
+    // A row written before the Decisions decider existed (a ranker, no fallback) still reads.
+    expect(
+      StoredDecidedNoteSchema.safeParse(
+        withDecider({
+          kind: "ranker",
+          mode: "ranker",
+          deciderKey: "key",
+          calibration: "frozen",
+          profileId: "profile",
+          modelId: "model"
+        })
+      ).success
+    ).toBe(true);
+    // A fallback reason belongs to a local decider only.
+    expect(
+      StoredDecidedNoteSchema.safeParse(withDecider({ ...decisions.decider, fallback: "network" }))
+        .success
+    ).toBe(false);
   });
 
   it("is the key the re-match harness clears, and is available with no ranker installed", async () => {
@@ -794,6 +985,90 @@ describe("falling back to the local ranker", () => {
   });
 });
 
+describe("when the person turns Decisions off, or leaves the setup, during an admission", () => {
+  const ranked = (title: string) => {
+    rankerTable.set(`Source>${title}`, 9).set(`${title}>Source`, 9);
+    rankerTable.set(`Second>${title}`, 9).set(`${title}>Second`, 9);
+  };
+  /** The first request of the admission is answered; every later one finds Decisions off. */
+  const offAfterTheForwardRequest = () => {
+    const answered = ai.decideWithDecisions.getMockImplementation()!;
+    ai.decideWithDecisions
+      .mockImplementationOnce(answered)
+      .mockRejectedValue(new DecisionsDisabledError("off"));
+  };
+  /** A second note whose only candidate is Beta; the first keeps the default candidates. */
+  const second = () => {
+    const next = note("n-second", "Second");
+    mocks.notes.findVectorMatchingCandidates.mockImplementation(async (input: { noteId: string }) =>
+      (input.noteId === next.id
+        ? [[b, 0.6]]
+        : [
+            [b, 0.6],
+            [c, 0.55],
+            [a, 0.99]
+          ]
+      ).map(([candidate, vectorScore]) => ({
+        note: candidate,
+        textScore: 0,
+        vectorScore
+      }))
+    );
+    mocks.notes.findTextMatchingCandidates.mockImplementation(async (input: { noteId: string }) =>
+      input.noteId === next.id ? [] : [{ note: a, textScore: 0.9, vectorScore: 0 }]
+    );
+    return next;
+  };
+
+  it("decides this note and the rest of the admission with the local ranker, and records no failure", async () => {
+    decisionTable.set("Source>Alpha", 3).set("Alpha>Source", 2);
+    offAfterTheForwardRequest();
+    ranked("Alpha");
+    ranked("Beta");
+    const next = second();
+    const { result, handed } = await run([source.id, next.id], relationsConfig);
+    // One request went out for the first note (its list); the reverse request was refused, and the
+    // second note did not ask Decisions at all.
+    expect(ai.decideWithDecisions).toHaveBeenCalledTimes(2);
+    expect(handed.map((decided) => decided.decider.kind)).toEqual(["ranker", "ranker"]);
+    // It was the person's choice, not a fallback: no reason in the summaries or the result.
+    for (const decided of handed) expect(decided.decider).not.toHaveProperty("fallback");
+    expect(result.decisionsFallback).toBeUndefined();
+    expect(result).toMatchObject({ decided: 2 });
+    expect(result.skipped).toBeUndefined();
+    // The ranker's decisions, under the ranker's key; what Decisions scored before stays stored.
+    expect(mocks.states.record.mock.calls.map(([record]) => record.deciderKey)).not.toContain(
+      decisionsKey(relationsConfig)
+    );
+    expect(
+      mocks.decisions.recordRankerScores.mock.calls.filter(
+        ([record]) => record.deciderKey === decisionsKey(relationsConfig)
+      ).length
+    ).toBeGreaterThan(0);
+  });
+
+  it("waits for a decider when there is no local one, instead of failing the import", async () => {
+    routes = {};
+    decisionTable.set("Source>Alpha", 3);
+    ai.decideWithDecisions.mockRejectedValue(new DecisionsDisabledError("preset"));
+    const { result, handed } = await run([source.id], relationsConfig);
+    expect(result.skipped).toBe(waitingForDeciderSkipReason);
+    expect(result.decided).toBe(0);
+    expect(handed).toEqual([]);
+    expect(mocks.states.record).not.toHaveBeenCalled();
+  });
+
+  it("still rethrows a cancellation", async () => {
+    const controller = new AbortController();
+    ai.decideWithDecisions.mockImplementation(async () => {
+      controller.abort(new Error("canceled"));
+      throw new DecisionsDisabledError("off");
+    });
+    await expect(run([source.id], relationsConfig, controller.signal)).rejects.toBeDefined();
+    expect(ai.rankPairs).not.toHaveBeenCalled();
+  });
+});
+
 describe("with a replayed Decisions cassette (the real runtime, adapter and lane; no network)", () => {
   // Recorded once, live, on the benchmark's synthetic notes (`decisions-scenario.ts`): four requests,
   // 2,934 input tokens, US$ 0.0003. The source's two candidate orders differ, so its list is sent twice.
@@ -900,8 +1175,8 @@ describe("with a replayed Decisions cassette (the real runtime, adapter and lane
     });
   });
 
-  it("applies the related note by the decider's own frozen apply band", async () => {
-    const { handed } = await run([scenario.source.id], relationsConfig);
+  it("applies the related note by the decider's own frozen apply band, once a freeze names the product's design", async () => {
+    const { handed } = await run([scenario.source.id], refrozen);
     expect(cassette.stats()).toMatchObject({ served: 3, misses: 0 });
     expect(handed[0]!.decider).toMatchObject({ kind: "decisions", calibration: "frozen" });
     // Mean 10.36 is past the frozen apply edge 2.372; the decoy (-16.1) is nowhere near suggest.

@@ -104,23 +104,26 @@ const DecidedPairSchema = z
  * A decided note with its accepted pairs, as the matching checkpoint keeps it until the link job
  * persists them (D21: no relation row before the link job commits). The matcher's `DecidedNote`.
  */
+const StoredDeciderBaseSchema = z.object({
+  mode: NoteDeciderModeSchema,
+  deciderKey: z.string().min(1),
+  calibration: z.enum(["frozen", "provisional", "uncalibrated"]),
+  modelId: z.string().min(1)
+});
 export const StoredDecidedNoteSchema = z
   .object({
     noteId: z.string().min(1),
     sourceItemId: z.string().min(1),
-    decider: z
-      .object({
-        kind: z.enum(["ranker", "generative", "decisions"]),
-        mode: NoteDeciderModeSchema,
-        deciderKey: z.string().min(1),
-        calibration: z.enum(["frozen", "provisional", "uncalibrated"]),
-        /** A remote decider (the Decisions API) has no profile row. */
-        profileId: z.string().min(1).nullable(),
-        modelId: z.string().min(1),
-        /** Why a local decider decided although the Decisions API was on (plan decision 30). */
+    decider: z.discriminatedUnion("kind", [
+      // A local decider has a profile; when it decided in place of the Decisions API, the reason.
+      StoredDeciderBaseSchema.extend({
+        kind: z.enum(["ranker", "generative"]),
+        profileId: z.string().min(1),
         fallback: DecisionsFallbackReasonSchema.optional()
-      })
-      .strict(),
+      }).strict(),
+      // The Decisions API is remote and opt-in (plan decision 30): it has no profile row.
+      StoredDeciderBaseSchema.extend({ kind: z.literal("decisions"), profileId: z.null() }).strict()
+    ]),
     pairs: z.array(DecidedPairSchema).max(100)
   })
   .strict();

@@ -49,6 +49,15 @@ export const DecisionsStoredStateSchema = z
   .object({
     /** The provider answered 401 or 403 to the stored key; cleared when a key is saved or tested. */
     keyInvalid: z.boolean().default(false),
+    /**
+     * The local day on which the provider answered that the account has no credit left. The decider
+     * sends nothing until the next day, or until a key is saved or tested again.
+     */
+    quotaDay: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u)
+      .nullable()
+      .default(null),
     lastUsedAt: z.iso.datetime().nullable().default(null),
     /** The last time the local ranker decided in its place, and why; null after a successful use. */
     fallback: z
@@ -87,6 +96,8 @@ export const DecisionsStatusSchema = z
     model: z.string().min(1),
     /** US$ per million input tokens, the typed price the spend is computed from. */
     priceInputPerMillionUsd: z.number().nonnegative(),
+    /** Characters of each note's text a request carries (`relations.decide.bodyCharacters`). */
+    bodyCharacters: z.number().int().positive(),
     spentTodayUsd: z.number().nonnegative(),
     dailyCapUsd: z.number().nonnegative(),
     requestsToday: z.number().int().nonnegative(),

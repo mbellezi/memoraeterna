@@ -19,6 +19,7 @@ import {
   combineDecisionAnswers,
   decisionsCostUsd,
   decisionsTaskRequest,
+  DecisionsDisabledError,
   DecisionsUnavailableError,
   estimatePlanInputTokens,
   executionLane,
@@ -66,6 +67,16 @@ import {
   type DecisionsSpendBudget
 } from "./relations/decisions-budget.js";
 import { decisionsDesign, relationDecisionsInstruction } from "./relations/decisions-identity.js";
+import { localDay } from "./relations/relation-call-budget.js";
+
+/**
+ * Money reserved for a request that was admitted and has not yet reported its usage: the
+ * estimate it was admitted with. Plans admitted at the same time all count the reservations of
+ * the others, so the day's cap is never passed by plans that each looked at the same spend.
+ */
+interface Reservation {
+  usd: number;
+}
 
 /** Whether the decider decides now; when it does not, why (`off` and `preset` are not fallbacks). */
 export type DecisionsResolution =
@@ -145,6 +156,13 @@ export class DecisionsRuntime {
   private readonly spend: DecisionsSpendBudget;
   private readonly now: () => Date;
   private lastFallbackWrite: { reason: string; at: number } | null = null;
+  /**
+   * The send epoch. Every plan joins the signal of the epoch it was admitted in; turning the
+   * decider off, or leaving the setups that offer it, aborts the epoch, which stops the requests
+   * waiting for a lane, the ones waiting out a retry and the ones in flight.
+   */
+  private epoch = new AbortController();
+  private readonly reservations = new Set<Reservation>();
 
   public constructor(private readonly options: DecisionsRuntimeOptions) {
     this.limits = resolveDecisionsLimits(options.limits);
@@ -166,6 +184,8 @@ export class DecisionsRuntime {
       new OpenAiDecisionsAdapter({
         apiKey: () => this.apiKey(),
         limits: this.limits,
+        // A retry is a new send: the person may have turned the decider off while it waited.
+        beforeRetry: () => this.assertMaySend(),
         ...(options.fetch ? { fetch: options.fetch } : {}),
         ...(options.random ? { random: options.random } : {})
       }),
@@ -208,13 +228,13 @@ export class DecisionsRuntime {
     const key = apiKey.trim();
     if (!passwordCharacters.test(key)) throw new Error("errors.relations.decisions.keyFormat");
     await this.options.credentials.save(key, relationsDecisionsCredentialRef);
-    await this.writeState({ keyInvalid: false });
+    await this.writeState({ keyInvalid: false, quotaDay: null });
     return this.status();
   }
 
   public async removeKey(): Promise<DecisionsStatus> {
     await this.options.credentials.remove(relationsDecisionsCredentialRef);
-    await this.writeState({ keyInvalid: false, lastUsedAt: null, fallback: null });
+    await this.writeState({ keyInvalid: false, quotaDay: null, lastUsedAt: null, fallback: null });
     return this.status();
   }
 
@@ -222,19 +242,70 @@ export class DecisionsRuntime {
 
   public async setEnabled(enabled: boolean): Promise<DecisionsStatus> {
     if (enabled && !decisionsAvailableInPreset(await this.preset()))
-      throw new Error("errors.relations.decisions.presetNotAllowed");
+      throw new DecisionsDisabledError("preset");
     await createSettingsRepository(this.requirePool()).set(relationsDecisionsSettingKey, {
       enabled
     });
+    // Nothing is sent after the person turns it off: requests already admitted stop too.
+    if (!enabled) this.stopSending("off");
     return this.status();
   }
 
-  private async enabled(): Promise<boolean> {
-    if (this.options.devEnabled) return true;
+  /**
+   * The setup changed (`ai.preset.v1`). Leaving the Hybrid and Cloud setups, which are the only
+   * ones that offer the decider, stops what was admitted and withdraws the opt-in: coming back to
+   * Hybrid or Cloud asks the person again, after the notice, before anything is sent.
+   */
+  public async presetChanged(preset: AiPresetMode | null): Promise<void> {
+    if (decisionsAvailableInPreset(preset)) return;
+    this.stopSending("preset");
+    if (await this.storedEnabled())
+      await createSettingsRepository(this.requirePool()).set(relationsDecisionsSettingKey, {
+        enabled: false
+      });
+  }
+
+  /** Aborts every plan admitted so far; the next one starts a new epoch. */
+  private stopSending(why: "off" | "preset"): void {
+    const stopped = this.epoch;
+    this.epoch = new AbortController();
+    stopped.abort(new DecisionsDisabledError(why));
+  }
+
+  private async storedEnabled(): Promise<boolean> {
     const stored = DecisionsSettingSchema.safeParse(
       await createSettingsRepository(this.requirePool()).get(relationsDecisionsSettingKey)
     );
     return stored.success && stored.data.enabled;
+  }
+
+  private async enabled(): Promise<boolean> {
+    return this.options.devEnabled ? true : this.storedEnabled();
+  }
+
+  /** Throws {@link DecisionsDisabledError} unless the person's opt-in and the setup allow a send. */
+  private async assertAllowed(): Promise<void> {
+    if (!(await this.enabled())) throw new DecisionsDisabledError("off");
+    if (!decisionsAvailableInPreset(await this.preset()))
+      throw new DecisionsDisabledError("preset");
+  }
+
+  /**
+   * The checks made right before a request is sent, once its lane permit is granted and again
+   * before each retry: the opt-in and the setup as they are now, and the day's cap against what was
+   * spent and what the admitted requests still hold.
+   */
+  private async assertMaySend(): Promise<void> {
+    await this.assertAllowed();
+    const spent = await this.spend.status();
+    if (spent.usd + this.reservedUsd() > this.capUsd())
+      throw new DecisionsUnavailableError("spend_cap");
+  }
+
+  private reservedUsd(): number {
+    let total = 0;
+    for (const reservation of this.reservations) total += reservation.usd;
+    return total;
   }
 
   /** The setup (`ai.preset.v1`); a DEV run with no setup chosen counts as Hybrid. */
@@ -265,10 +336,17 @@ export class DecisionsRuntime {
     return this.options.devCapUsd ?? this.config.decisions.dailyCapUsd;
   }
 
-  private breakerOpen(): boolean {
+  /**
+   * Whether the lane cannot serve a new plan soon: its breaker is open, or a rate limit paused it for
+   * longer than a request waits for inside its own retries. Later notes then fall back at once
+   * instead of queueing behind the pause.
+   */
+  private laneUnavailable(): boolean {
+    const lane = this.options.scheduler.snapshot().find((entry) => entry.lane === this.lane.lane);
+    if (!lane) return false;
     return (
-      this.options.scheduler.snapshot().find((entry) => entry.lane === this.lane.lane)?.breaker
-        ?.state === "open"
+      lane.breaker?.state === "open" ||
+      (lane.pausedForMs !== null && lane.pausedForMs > this.limits.retry.maxInlineRetryAfterMs)
     );
   }
 
@@ -293,9 +371,12 @@ export class DecisionsRuntime {
       if (!(await this.keyStored())) return { ok: false, reason: "no_key" };
       if (state.keyInvalid) return { ok: false, reason: "invalid_key" };
     }
+    // The account has no credit left today: sending would only be refused again, until a key is
+    // saved or tested, or the next day.
+    if (state.quotaDay === localDay(this.now())) return { ok: false, reason: "quota" };
     const spent = await this.spend.status();
     if (spent.usd >= this.capUsd()) return { ok: false, reason: "spend_cap" };
-    if (this.breakerOpen()) return { ok: false, reason: "breaker_open" };
+    if (this.laneUnavailable()) return { ok: false, reason: "breaker_open" };
     return { ok: true };
   }
 
@@ -329,6 +410,7 @@ export class DecisionsRuntime {
       fallbackReason: presetAllowed && enabled ? (reason ?? state.fallback?.reason ?? null) : null,
       model: this.limits.model,
       priceInputPerMillionUsd: this.limits.pricePerMillionInputTokensUsd,
+      bodyCharacters: this.config.decide.bodyCharacters,
       spentTodayUsd: spent.usd,
       dailyCapUsd: this.capUsd(),
       requestsToday: spent.requests,
@@ -371,8 +453,9 @@ export class DecisionsRuntime {
    * Scores directed lists: every list is cut into requests of at most 20 candidates, each sent in the
    * two candidate orders of the validated design on the Decisions lane, and a candidate's score is the
    * log-odds of the mean of the two orders' probabilities. Throws {@link DecisionsUnavailableError}
-   * when the decider cannot decide (it is off, the key is refused, the day's cap is reached, the
-   * lane's breaker is open, the network failed); a cancellation is rethrown as it is.
+   * when the decider cannot decide (the key is refused, the day's cap is reached, the lane's breaker
+   * is open, the network failed) and {@link DecisionsDisabledError} when the person turned it off or
+   * left the setups that offer it, before or while the plan ran; a cancellation is rethrown as it is.
    */
   public async decide(
     input: DecisionsDecideInput,
@@ -381,7 +464,7 @@ export class DecisionsRuntime {
     const availability = await this.availability();
     if (!availability.ok) {
       if (availability.reason === "off" || availability.reason === "preset")
-        throw new Error("errors.relations.decisions.presetNotAllowed");
+        throw new DecisionsDisabledError(availability.reason);
       throw new DecisionsUnavailableError(availability.reason);
     }
     return this.run(input, signal);
@@ -402,28 +485,46 @@ export class DecisionsRuntime {
         costUsd: 0,
         replayed: 0
       };
-    // The plan's expected cost against what is left of the day, before anything is sent.
+    // Joined before anything is awaited: a decider turned off from here on stops this plan.
+    const epoch = this.epoch.signal;
+    // The plan's expected cost against what is left of the day, before anything is sent. The check
+    // and the reservation follow the read of the spend without an await in between, so plans that
+    // are admitted together each count the others' reservations.
+    const shares: Reservation[] = plan.map((request) => ({
+      usd: decisionsCostUsd(estimatePlanInputTokens([request], this.limits), this.limits)
+    }));
+    const estimated = shares.reduce((sum, share) => sum + share.usd, 0);
     const spent = await this.spend.status();
-    const estimated = decisionsCostUsd(estimatePlanInputTokens(plan, this.limits), this.limits);
-    if (spent.usd + estimated > this.capUsd())
+    if (spent.usd + this.reservedUsd() + estimated > this.capUsd())
       throw await this.fail(new DecisionsUnavailableError("spend_cap"), signal);
+    for (const share of shares) this.reservations.add(share);
     const deadline = ActiveDeadline.of(signal);
     const controller = new AbortController();
     const stop = deadline
-      ? deadline.join(controller.signal)
-      : signal
-        ? AbortSignal.any([signal, controller.signal])
-        : controller.signal;
+      ? deadline.join(controller.signal, epoch)
+      : AbortSignal.any([...(signal ? [signal] : []), controller.signal, epoch]);
     const executed = new Map<number, ExecutedRequest>();
+    const failures: unknown[] = [];
     try {
+      // Every request settles before the plan does: the first failure aborts the others, and none
+      // is left sending (or holding its reservation) after this method has returned.
       await Promise.all(
-        plan.map(async (request) => {
-          executed.set(request.id, await this.runRequest(request, input, stop));
+        plan.map(async (request, index) => {
+          try {
+            executed.set(request.id, await this.runRequest(request, shares[index]!, input, stop));
+          } catch (error) {
+            failures.push(error);
+            controller.abort(error);
+          }
         })
       );
-    } catch (error) {
-      controller.abort(error);
-      throw await this.fail(error, signal);
+    } finally {
+      for (const share of shares) this.reservations.delete(share);
+    }
+    if (failures.length > 0) {
+      // Turned off or left the setup while the plan ran: the person's choice, not a failure.
+      const stopped = epoch.aborted && epoch.reason instanceof DecisionsDisabledError;
+      throw await this.fail(stopped ? epoch.reason : failures[0], signal);
     }
     const combined = combineDecisionAnswers(
       input.lists,
@@ -458,6 +559,7 @@ export class DecisionsRuntime {
   /** The error to throw for a failure: a cancellation as it is, anything else as a reason. */
   private async fail(error: unknown, signal: AbortSignal | undefined): Promise<unknown> {
     if (signal?.aborted) return error;
+    if (error instanceof DecisionsDisabledError) return error;
     if (error instanceof DecisionsUnavailableError) {
       await this.noteFallback(error.reason);
       return error;
@@ -469,31 +571,40 @@ export class DecisionsRuntime {
     // The provider refused the key: no request is sent until a key is saved or tested again.
     if (reason === "invalid_key")
       await this.writeState({ keyInvalid: true }).catch(() => undefined);
+    // The account has no credit: nothing more is sent today, until a key is saved or tested.
+    if (reason === "quota")
+      await this.writeState({ quotaDay: localDay(this.now()) }).catch(() => undefined);
     await this.noteFallback(reason);
     return new DecisionsUnavailableError(reason, { cause: cleanDecisionsError(error) });
   }
 
   private async runRequest(
     request: PlannedDecisionsRequest,
+    share: Reservation,
     input: DecisionsDecideInput,
     signal: AbortSignal
   ): Promise<ExecutedRequest> {
-    // The wait for the lane does not count against the caller's own timeout.
-    const deadline = ActiveDeadline.of(signal);
-    const complete = await this.options.scheduler.run(
-      {
-        lane: this.lane.lane,
-        ...(this.lane.remoteKind ? { remoteKind: this.lane.remoteKind } : {}),
-        priority: aiTaskPriority({ priority: input.priority }),
-        workloadClass: "decide",
-        signal,
-        label: input.operation,
-        pauses: deadline ? [deadline] : []
-      },
-      (permit) => this.execute(request, input, permit, signal)
-    );
-    // The audit and the monitoring entry are written once the lane is free.
-    return complete();
+    try {
+      // The wait for the lane does not count against the caller's own timeout.
+      const deadline = ActiveDeadline.of(signal);
+      const complete = await this.options.scheduler.run(
+        {
+          lane: this.lane.lane,
+          ...(this.lane.remoteKind ? { remoteKind: this.lane.remoteKind } : {}),
+          priority: aiTaskPriority({ priority: input.priority }),
+          workloadClass: "decide",
+          signal,
+          label: input.operation,
+          pauses: deadline ? [deadline] : []
+        },
+        (permit) => this.execute(request, input, permit, signal)
+      );
+      // The audit and the monitoring entry are written once the lane is free.
+      return await complete();
+    } finally {
+      // Its usage is counted by now (or it sent nothing): the money it held is free again.
+      this.reservations.delete(share);
+    }
   }
 
   private async execute(
@@ -502,6 +613,10 @@ export class DecisionsRuntime {
     permit: LanePermit,
     signal: AbortSignal
   ): Promise<() => Promise<ExecutedRequest>> {
+    signal.throwIfAborted();
+    // The permit was granted after any wait, so the opt-in, the setup and the cap are read now,
+    // before this request is sent: a request admitted earlier is not sent once any of them changed.
+    await this.assertMaySend();
     signal.throwIfAborted();
     const repository = createAiConfigRepository(this.requirePool());
     const taskRequest = decisionsTaskRequest(planned.input, this.limits);
@@ -598,18 +713,20 @@ export class DecisionsRuntime {
     } catch (caught) {
       const error = cleanDecisionsError(caught);
       const durationMs = Date.now() - started;
+      // Refused at a retry because the decider was turned off: canceled, not a provider failure.
+      const canceled = signal.aborted || error instanceof DecisionsDisabledError;
       return async () => {
         const aiTaskRunId = await repository.recordTaskRun({
           ...audit,
           durationMs,
           ...lane({ error }),
-          status: signal.aborted ? "canceled" : "failed",
+          status: canceled ? "canceled" : "failed",
           error: redactSensitiveText(
             redactDecisionsSecrets(String(error instanceof Error ? error.message : error))
           )
         });
         await this.options.monitoring?.finish(await capture, {
-          status: signal.aborted ? "canceled" : "failed",
+          status: canceled ? "canceled" : "failed",
           aiTaskRunId,
           durationMs,
           error: redactSensitiveText(
@@ -643,6 +760,9 @@ export class DecisionsRuntime {
    * works, or the provider refuses it. A refusal marks the key invalid until one is saved again.
    */
   public async testKey(signal?: AbortSignal): Promise<DecisionsStatus> {
+    // The notice says nothing is sent while the decider is off or in the Local setup: that holds
+    // for the key test too, which is refused before it reads the key.
+    await this.assertAllowed();
     if (this.options.cassetteMode !== "replay" && !(await this.keyStored()))
       throw new DecisionsUnavailableError("no_key");
     // A failure is classified and recorded by the run; a refused key marks itself invalid there.
@@ -656,7 +776,7 @@ export class DecisionsRuntime {
       },
       signal
     );
-    await this.writeState({ keyInvalid: false });
+    await this.writeState({ keyInvalid: false, quotaDay: null });
     return this.status();
   }
 

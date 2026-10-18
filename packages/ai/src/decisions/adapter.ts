@@ -37,6 +37,13 @@ export interface OpenAiDecisionsAdapterOptions {
   fetch?: typeof fetch;
   /** Source of the backoff jitter; tests inject a fixed one. */
   random?: () => number;
+  /**
+   * Awaited before every attempt of a request after the first (the first runs under the caller's
+   * own check): a retry is a new send, so the caller can refuse it, for instance because the person
+   * turned the decider off while the request waited out a backoff. Throwing ends the request with
+   * that error and sends nothing more; it is never retried.
+   */
+  beforeRetry?: (attempt: number) => void | Promise<void>;
 }
 
 /**
@@ -86,6 +93,7 @@ export class OpenAiDecisionsAdapter implements AiModelAdapter {
     let key = "";
     try {
       key = await this.options.apiKey();
+      let attempts = 0;
       const payload = await runRemoteCall(
         { config: this.runtime, random: this.options.random, local: false },
         {
@@ -96,7 +104,11 @@ export class OpenAiDecisionsAdapter implements AiModelAdapter {
             report = received;
           }
         },
-        (call) => this.attempt(call, body, key)
+        async (call) => {
+          attempts += 1;
+          if (attempts > 1) await this.options.beforeRetry?.(attempts);
+          return this.attempt(call, body, key);
+        }
       );
       const inputTokens = Math.round(payload.usage.input_tokens);
       return withCallReport(

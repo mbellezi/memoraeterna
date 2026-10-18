@@ -303,7 +303,8 @@
         "network": "No se pudo contactar con OpenAI.",
         "failed": "OpenAI Decisions falló.",
         "keyFormat": "Eso no parece una clave de OpenAI Platform.",
-        "presetNotAllowed": "OpenAI Decisions solo está disponible en las configuraciones Híbrida y Nube."
+        "presetNotAllowed": "OpenAI Decisions solo está disponible en las configuraciones Híbrida y Nube.",
+        "turnedOff": "Activa primero OpenAI Decisions."
       }
     },
     "sourceRelations": {

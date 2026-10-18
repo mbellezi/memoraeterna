@@ -25,3 +25,23 @@ export class DecisionsUnavailableError extends Error {
     this.reason = reason;
   }
 }
+
+/**
+ * The Decisions decider is off, or the setup no longer offers it (Local or Custom): nothing is
+ * sent. It is the person's choice and not a failure, so it records no fallback reason; the relation
+ * matcher decides with the local ranker instead, for the rest of its admission. The message is a
+ * localization key.
+ */
+export class DecisionsDisabledError extends Error {
+  public readonly why: "off" | "preset";
+
+  public constructor(why: "off" | "preset") {
+    super(
+      why === "off"
+        ? "errors.relations.decisions.turnedOff"
+        : "errors.relations.decisions.presetNotAllowed"
+    );
+    this.name = "DecisionsDisabledError";
+    this.why = why;
+  }
+}

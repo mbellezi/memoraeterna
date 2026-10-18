@@ -24,6 +24,7 @@ import {
   type AiCapability,
   type AiClassId,
   type AiPresetId,
+  type AiPresetMode,
   type AiPresetPlan,
   type NoteDeciderMode,
   type PresetMachine,
@@ -102,6 +103,12 @@ export interface AiClassRouteServiceOptions {
   now?: () => Date;
   /** Bound for one test call; the scheduler's class deadline applies inside it. */
   testTimeoutMs?: number;
+  /**
+   * Told after the setup (`ai.preset.v1`) was written, with its new mode. The opt-in remote decider
+   * stops sending when the setup stops offering it (plan decision 30); a failure here is logged and
+   * never fails the change of setup.
+   */
+  onPresetChanged?: (mode: AiPresetMode) => void | Promise<void>;
 }
 
 /** A fixed pair the ranker smoke scores: the relevant passage must outrank the other. */
@@ -148,6 +155,7 @@ export class AiClassRouteService {
     await this.options.ensureLegacyMapping?.();
     if (input.preset === "custom") {
       await this.writeSetting(presetSettingKey, { mode: "custom", at: this.nowIso() });
+      await this.presetChanged("custom");
       return { applied: true, blocked: [], view: await this.readView() };
     }
     const planned = planAiPreset(input.preset, this.machine());
@@ -163,6 +171,7 @@ export class AiClassRouteService {
       return { applied: false, blocked: resolution.blocked, view: await this.readView() };
     const profiles = await this.createMissingProfiles(resolution);
     await this.writePreset(input.preset, planned.plan, profiles);
+    await this.presetChanged(input.preset);
     if (input.test ?? true) for (const route of routeNames) await this.runTest(route);
     return { applied: true, blocked: [], view: await this.readView() };
   }
@@ -196,6 +205,7 @@ export class AiClassRouteService {
         at: this.nowIso()
       });
     });
+    await this.presetChanged("custom");
     return this.readView();
   }
 
@@ -503,6 +513,14 @@ export class AiClassRouteService {
 
   private async writeSetting(key: string, value: unknown): Promise<void> {
     await createSettingsRepository(this.requirePool()).set(key, value);
+  }
+
+  private async presetChanged(mode: AiPresetMode): Promise<void> {
+    try {
+      await this.options.onPresetChanged?.(mode);
+    } catch (error) {
+      this.options.logger?.error("Telling the opt-in deciders about the new setup failed", error);
+    }
   }
 
   // --- Tests ------------------------------------------------------------------------------

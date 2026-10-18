@@ -24,6 +24,7 @@ const status = (overrides: Partial<AiDecisionsStatus> = {}): AiDecisionsStatus =
   fallbackReason: null,
   model: "gpt-6-luna",
   priceInputPerMillionUsd: 0.1,
+  bodyCharacters: 600,
   spentTodayUsd: 0,
   dailyCapUsd: 0.5,
   requestsToday: 0,
@@ -93,12 +94,18 @@ describe("Settings > AI: the OpenAI Decisions decider", () => {
   });
 
   it("takes the key in a password field and never shows one back", () => {
-    const html = view("en", status({ keyStored: true }), { keyDraft: "" });
+    const html = view("en", status({ keyStored: true, enabled: true, state: "ready" }), {
+      keyDraft: ""
+    });
     expect(html).toContain('type="password"');
     expect(html).toContain('autoComplete="off"');
     expect(html).toContain("A key is saved.");
     expect(html).toContain("Test key");
     expect(html).toContain("Remove key");
+    // The test sends a request, so it is offered only while the decider is on.
+    const off = view("en", status({ keyStored: true }), { keyDraft: "" });
+    expect(off).toContain("Remove key");
+    expect(off).not.toContain("Test key");
     expect(html).not.toMatch(/sk-[A-Za-z0-9]{6}/u);
     // Saving needs a key of a sensible length and an idle card.
     const typed = view("en", status(), { keyDraft: "sk-proj-0123456789abcdef" });
@@ -175,6 +182,10 @@ describe("Settings > AI: the OpenAI Decisions decider", () => {
       expect(notice).toContain("30");
       expect(notice).toContain("gpt-6-luna");
       expect(notice).toContain("600");
+      // The length follows the setting the request is built with, not a number of the renderer.
+      expect(
+        view(locale, status({ keyStored: true, bodyCharacters: 450 }), { confirming: false })
+      ).toContain("450");
       expect(notice).not.toMatch(/\{[a-z]+\}/u);
       for (const state of ["off", "unavailable_preset", "ready", "fallback"] as const)
         for (const reason of [null, ...decisionsFallbackReasons])
@@ -302,4 +313,19 @@ describe("the key flow", () => {
       "errors.relations.decisions.presetNotAllowed"
     );
   });
+
+  it.each(supportedLanguageCodes)(
+    "has a message in %s for a decider that is off and for one the setup does not offer",
+    (locale) => {
+      const t = createTranslator(locale);
+      // The two messages of `DecisionsDisabledError`, which the main process raises.
+      const off = decisionsErrorKey(new Error("errors.relations.decisions.turnedOff"));
+      const preset = decisionsErrorKey(new Error("errors.relations.decisions.presetNotAllowed"));
+      for (const key of [off, preset]) {
+        expect(t(key)).not.toMatch(/\[\[missing/u);
+        expect(t(key)).not.toBe(key);
+      }
+      expect(t(off)).not.toBe(t(preset));
+    }
+  );
 });

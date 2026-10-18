@@ -140,6 +140,9 @@ const LinkSchema = z
   })
   .strict();
 
+/** The largest daily spend cap of the Decisions decider in US$, whoever sets it (a DEV proof run too). */
+export const decisionsDailyCapMaxUsd = 1_000;
+
 /**
  * The Decisions API decider (plan decision 30), opt-in in the Hybrid and Cloud presets. Its request
  * design, price and deadlines are typed limits in `packages/ai`; its frozen calibration is among
@@ -150,7 +153,7 @@ const LinkSchema = z
 const DecisionsDeciderSchema = z
   .object({
     /** Spend cap per local day in US$, from the provider's usage at the typed price (D26's sibling). */
-    dailyCapUsd: z.number().min(0).max(1_000).default(0.5),
+    dailyCapUsd: z.number().min(0).max(decisionsDailyCapMaxUsd).default(0.5),
     /**
      * Spike A2's frozen directed threshold p >= 0.79, as the log-odds of the mean of both
      * directions on the bake-off scale.
@@ -293,7 +296,12 @@ export const provisionalRelationCalibrations: readonly RelationCalibrationEntry[
  * reported probability, no apply band, and the suggest edge chosen on the fixture tuning partition.
  * The Decisions API decider (plan decision 30; added by the re-freeze 8017633d05452997 at
  * 2026-10-18T07:53:06.300Z): its own identity (model, instruction, request design), D18's apply and
- * suggest bands on dense two-order requests; its parity is the request design's fingerprint.
+ * suggest bands on dense two-order requests; its parity is the request design's fingerprint. That
+ * design is the bake-off's: each note's whole batch neighbourhood, uncapped. The product asks
+ * online, in arrival order, with a capped neighbourhood and one request per reverse direction
+ * (`decisionsRequestDesign` in `packages/ai`), which is another identity: this entry does not apply
+ * to it, so the decider only suggests until the dense partitions are replayed through the product's
+ * request builder and the calibration is frozen again for that identity.
  */
 export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
   {

@@ -1,5 +1,6 @@
 import type { AiTaskRequest } from "../contracts.js";
 import {
+  decisionsContextWording,
   decisionsContract,
   decisionsLogOdds,
   decisionsOrderSeed,
@@ -98,21 +99,26 @@ export function plannedTaskRequest(
 }
 
 /**
- * Input tokens a plan is expected to use, for the cap check before it is sent: the characters of
- * every request at the typed characters per token, and the hidden tokens of each question.
+ * Input tokens a plan is expected to use, for the cap check before it is sent: the UTF-8 bytes of
+ * every request's text (the instruction, the fixed wording, the query and the candidates) at the
+ * typed bytes per token, and the hidden tokens of each question. Bytes, not characters: Chinese or
+ * Japanese text costs about one token per character, and its three bytes per character count as 1.2
+ * tokens, where counting characters would give 0.4.
  */
 export function estimatePlanInputTokens(
   requests: readonly PlannedDecisionsRequest[],
   limits: Pick<DecisionsLimits, "estimate">
 ): number {
+  const bytes = (text: string) => Buffer.byteLength(text, "utf8");
   let total = 0;
   for (const request of requests) {
-    const characters =
-      request.input.instruction.length +
-      request.input.query.length +
-      request.input.candidates.reduce((sum, text) => sum + text.length, 0);
+    const sent =
+      bytes(request.input.instruction) +
+      bytes(decisionsContextWording) +
+      bytes(request.input.query) +
+      request.input.candidates.reduce((sum, text) => sum + bytes(text), 0);
     total +=
-      Math.ceil(characters / limits.estimate.charactersPerToken) +
+      Math.ceil(sent / limits.estimate.bytesPerToken) +
       request.input.candidates.length * limits.estimate.tokensPerQuestion;
   }
   return total;

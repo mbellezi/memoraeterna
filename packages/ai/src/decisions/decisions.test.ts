@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
-import { frozenRelationCalibrations } from "@app/domain";
+import {
+  findRelationCalibration,
+  frozenRelationCalibrations,
+  type RemoteRelationCalibrationIdentity
+} from "@app/domain";
 
 import {
   AiCassette,
@@ -24,8 +28,10 @@ import {
   OpenAiDecisionsAdapter,
   redactDecisionsSecrets
 } from "./adapter.js";
+import { DecisionsDisabledError } from "./errors.js";
 import {
   buildDecisionsWireRequest,
+  decisionsContextWording,
   decisionsContract,
   decisionsLogOdds,
   decisionsOrderSeed,
@@ -35,7 +41,12 @@ import {
   seededOrder,
   type DecisionsTaskInput
 } from "./design.js";
-import { decisionsRequestDesignSha256, decisionsSpikeFingerprint } from "./frozen-design.js";
+import {
+  decisionsRequestDesign,
+  decisionsRequestDesignSha256,
+  decisionsSpikeFingerprint
+} from "./frozen-design.js";
+import { decisionsNeighbourhood, decisionsNeighbourhoodRule } from "./neighbourhood.js";
 import {
   decisionsCostUsd,
   decisionsLaneKey,
@@ -139,7 +150,7 @@ describe("the request design", () => {
     expect(decisionsLogOdds(0.79, 1e-7)).toBeCloseTo(1.3249, 3);
   });
 
-  it("reproduces the frozen request design: Spike A2's fingerprint and the identity's requestDesignSha256", () => {
+  it("reproduces Spike A2's fingerprint, but the online requests are not the design that was frozen", () => {
     // Spike A's `mechanism` instruction, the Decisions decider's own (sha256 1fc9a2ee...).
     const mechanism =
       "Given a note (Query), decide whether the Document note makes a claim about the same underlying " +
@@ -148,44 +159,71 @@ describe("the request design", () => {
     expect(createHash("sha256").update(mechanism).digest("hex")).toBe(
       "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164"
     );
-    // The spike's `designFingerprint(mechanism)`, run once from scripts/spikes/decisions/design.ts.
-    expect(decisionsSpikeFingerprint(mechanism, limits)).toBe(
+    // The spike's `designFingerprint(mechanism)`, run once from scripts/spikes/decisions/design.ts:
+    // the wire request, the instruction and the wording are still the measured ones.
+    const design = decisionsRequestDesign(mechanism, limits, 600);
+    expect(design.designFingerprint).toBe(decisionsSpikeFingerprint(mechanism, limits));
+    expect(design.designFingerprint).toBe(
       "2824e0cdd2c68756206913454e8a083638442a2d048373de8650392e219e6531"
     );
+    // The request design is not: T58 froze 0e1ebd94, whose requests carried each note's whole batch
+    // neighbourhood. The product sends partial online neighbourhoods and a request per reverse
+    // direction, so it names its own design and the frozen entry does not match it.
     const frozen = frozenRelationCalibrations.find(
       (entry) => entry.identity.runtimeKind === "remote"
     )!;
-    expect(decisionsRequestDesignSha256(mechanism, limits, 600)).toBe(
-      "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
-    );
-    // The shipped calibration names exactly this design, and its parity is the same fingerprint.
-    expect(frozen.identity).toMatchObject({
-      requestDesignSha256: decisionsRequestDesignSha256(mechanism, limits, 600),
-      instructionSha256: "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164"
+    const frozenSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
+    const remote = frozen.identity as RemoteRelationCalibrationIdentity;
+    expect(remote.requestDesignSha256).toBe(frozenSha);
+    const product = decisionsRequestDesignSha256(mechanism, limits, 600);
+    expect(product).not.toBe(frozenSha);
+    expect(design).toMatchObject({
+      neighbourhood: {
+        kind: "online",
+        makeup: decisionsNeighbourhoodRule,
+        maxNeighbourhood: limits.maxNeighbourhood
+      }
     });
-    expect(frozen.kind === "isotonic" && frozen.parity).toEqual({
-      requestDesignSha256: decisionsRequestDesignSha256(mechanism, limits, 600)
-    });
+    const calibrations = [...frozenRelationCalibrations];
+    // The frozen identity is found by the design it was frozen for; the product's design is not it.
+    expect(findRelationCalibration({ calibrations }, remote)).toBe(frozen);
+    expect(
+      findRelationCalibration({ calibrations }, { ...remote, requestDesignSha256: product })
+    ).toBeNull();
   });
 
-  it("changes the request design with the instruction, the model, the chunking, the orders, the scale and the body", () => {
+  it("changes the request design with the instruction, the model, the chunking, the neighbourhood, the orders, the scale and the body", () => {
     const base = decisionsRequestDesignSha256(instruction, limits, 600);
     expect(base).toMatch(/^[0-9a-f]{64}$/u);
     expect(decisionsRequestDesignSha256(instruction, limits, 600)).toBe(base);
-    for (const changed of [
+    const changes = [
       decisionsRequestDesignSha256(`${instruction} `, limits, 600),
       decisionsRequestDesignSha256(instruction, { ...limits, model: "gpt-6-terra" }, 600),
       decisionsRequestDesignSha256(instruction, { ...limits, maxCandidatesPerRequest: 10 }, 600),
       decisionsRequestDesignSha256(instruction, { ...limits, orderSalts: ["a", "b"] }, 600),
       decisionsRequestDesignSha256(instruction, { ...limits, probabilityEpsilon: 1e-3 }, 600),
       decisionsRequestDesignSha256(instruction, limits, 400)
-    ])
-      expect(changed).not.toBe(base);
-    // Retries, deadlines and the price are not the design.
+    ];
+    for (const changed of changes) expect(changed).not.toBe(base);
+    // The neighbourhood is what a request carries: any other limit is another design, down to one
+    // note, and so is any other makeup rule.
+    const neighbourhoods = [1, 2, 11, 13, 20, 100].map((maxNeighbourhood) =>
+      decisionsRequestDesignSha256(instruction, { ...limits, maxNeighbourhood }, 600)
+    );
+    expect(limits.maxNeighbourhood).toBe(12);
+    for (const changed of neighbourhoods) expect(changed).not.toBe(base);
+    expect(new Set([base, ...neighbourhoods, ...changes]).size).toBe(
+      1 + neighbourhoods.length + changes.length
+    );
+    // Retries, deadlines, the price and the estimate are not the design.
     expect(
       decisionsRequestDesignSha256(
         instruction,
-        resolveDecisionsLimits({ totalDeadlineMs: 5_000, pricePerMillionInputTokensUsd: 9 }),
+        resolveDecisionsLimits({
+          totalDeadlineMs: 5_000,
+          pricePerMillionInputTokensUsd: 9,
+          estimate: { bytesPerToken: 1 }
+        }),
         600
       )
     ).toBe(base);
@@ -269,15 +307,40 @@ describe("the plan: two candidate orders, balanced chunks of at most twenty", ()
   it("estimates the input tokens a plan will bill, questions included", () => {
     const requests = planDecisionRequests([list(10)], instruction, limits);
     const estimate = estimatePlanInputTokens(requests, limits);
-    const characters = requests.reduce(
+    const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+    const sent = requests.reduce(
       (sum, request) =>
         sum +
-        request.input.instruction.length +
+        bytes(request.input.instruction) +
+        bytes(decisionsContextWording) +
+        bytes(request.input.query) +
+        request.input.candidates.reduce((total, text) => total + bytes(text), 0),
+      0
+    );
+    expect(estimate).toBe(Math.ceil(sent / 2.5) + 2 * 10 * limits.estimate.tokensPerQuestion);
+  });
+
+  it("does not under-count a script that packs a token into one character", () => {
+    const ideograms = "概念的な関係を判定する。".repeat(10);
+    const cjk = planDecisionRequests(
+      [{ query: ideograms, candidates: [ideograms, ideograms] }],
+      instruction,
+      limits
+    );
+    const characters = cjk.reduce(
+      (sum, request) =>
+        sum +
         request.input.query.length +
         request.input.candidates.reduce((total, text) => total + text.length, 0),
       0
     );
-    expect(estimate).toBe(Math.ceil(characters / 2.5) + 2 * 10 * limits.estimate.tokensPerQuestion);
+    const hidden = cjk.reduce(
+      (sum, request) => sum + request.input.candidates.length * limits.estimate.tokensPerQuestion,
+      0
+    );
+    // About one token per ideogram is the real cost; counting characters at 2.5 per token would
+    // have said 0.4 tokens per ideogram.
+    expect(estimatePlanInputTokens(cjk, limits) - hidden).toBeGreaterThan(characters);
   });
 
   it("scores the mean of the two orders' probabilities on the bake-off scale", () => {
@@ -346,6 +409,61 @@ const adapterWith = (fetch: typeof globalThis.fetch, extra: Partial<typeof limit
     fetch,
     random: () => 0.5
   });
+
+describe("the online neighbourhood of a request", () => {
+  const entry = (id: string, title: string) => ({ id, title });
+  const byTitle = (left: { title: string }, right: { title: string }) =>
+    left.title.localeCompare(right.title);
+  const titlesOf = (items: Array<{ title: string }>) => items.map((item) => item.title);
+
+  it("holds the targets and fills the room that is left with partners, all in content order", () => {
+    const targets = [entry("t2", "Delta"), entry("t1", "Alpha")];
+    const partners = ["Zulu", "Bravo", "Yankee", "Charlie"].map((title, index) =>
+      entry(`p${index}`, title)
+    );
+    const list = decisionsNeighbourhood({
+      targets,
+      partners,
+      maxNeighbourhood: 5,
+      compare: byTitle
+    });
+    expect(titlesOf(list)).toEqual(["Alpha", "Bravo", "Charlie", "Delta", "Yankee"]);
+    // A function of content: the order the partners arrive in changes nothing.
+    expect(
+      decisionsNeighbourhood({
+        targets: [...targets].reverse(),
+        partners: [...partners].reverse(),
+        maxNeighbourhood: 5,
+        compare: byTitle
+      })
+    ).toEqual(list);
+  });
+
+  it("never trims a target, repeats nothing, and adds no partner when there is no room", () => {
+    const targets = ["Echo", "Alpha", "Delta"].map((title, index) => entry(`t${index}`, title));
+    const crowded = decisionsNeighbourhood({
+      targets,
+      partners: [entry("p", "Bravo")],
+      maxNeighbourhood: 2,
+      compare: byTitle
+    });
+    expect(titlesOf(crowded)).toEqual(["Alpha", "Delta", "Echo"]);
+    const repeated = decisionsNeighbourhood({
+      targets,
+      partners: [entry("t1", "Alpha"), entry("p", "Bravo"), entry("p", "Bravo")],
+      maxNeighbourhood: 12,
+      compare: byTitle
+    });
+    expect(titlesOf(repeated)).toEqual(["Alpha", "Bravo", "Delta", "Echo"]);
+  });
+
+  it("is named in the request design, so another rule is another identity", () => {
+    expect(decisionsNeighbourhoodRule).toMatch(/^online-/u);
+    expect(JSON.stringify(decisionsRequestDesign(instruction, limits, 600))).toContain(
+      decisionsNeighbourhoodRule
+    );
+  });
+});
 
 describe("the Decisions adapter", () => {
   it("posts one request to the fixed endpoint with the key, and returns the probabilities, tokens and cost", async () => {
@@ -502,6 +620,42 @@ describe("the Decisions adapter", () => {
       await expect(adapterWith(fetch).run(task())).rejects.toBeDefined();
       expect(fetch).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("lets the caller refuse a retry, and sends nothing more", async () => {
+    const attempts: number[] = [];
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValue(answer([0.3, 0.6]));
+    const adapter = new OpenAiDecisionsAdapter({
+      apiKey: () => key,
+      limits,
+      fetch,
+      random: () => 0.5,
+      beforeRetry: (attempt) => {
+        attempts.push(attempt);
+        throw new DecisionsDisabledError("off");
+      }
+    });
+    const failure = await adapter.run(task()).catch((caught: unknown) => caught);
+    expect(failure).toBeInstanceOf(DecisionsDisabledError);
+    // The first attempt was sent; the retry was refused, and a refusal is never retried itself.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(attempts).toEqual([2]);
+  });
+
+  it("asks the caller before a retry only, never before the first attempt", async () => {
+    const beforeRetry = vi.fn();
+    const adapter = new OpenAiDecisionsAdapter({
+      apiKey: () => key,
+      limits,
+      fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(answer([0.3, 0.6])),
+      random: () => 0.5,
+      beforeRetry
+    });
+    await adapter.run(task());
+    expect(beforeRetry).not.toHaveBeenCalled();
   });
 
   it("stops at the caller's abort without a retry", async () => {

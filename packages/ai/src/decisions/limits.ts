@@ -51,11 +51,13 @@ export const decisionsLimitsSchema = z
       .strict(),
     /**
      * The estimate a request's cost is checked against the day's cap with before it is sent: input
-     * tokens from characters, and the hidden tokens each question adds (Spike A2: about 150).
+     * tokens from the UTF-8 bytes of the text sent (a script that packs fewer characters into a
+     * token, such as Chinese or Japanese, has more bytes per character, so it is not under-counted),
+     * and the hidden tokens each question adds (Spike A2: about 150).
      */
     estimate: z
       .object({
-        charactersPerToken: z.number().positive(),
+        bytesPerToken: z.number().positive(),
         tokensPerQuestion: z.number().int().nonnegative()
       })
       .strict()
@@ -75,7 +77,7 @@ export const defaultDecisionsLimits: DecisionsLimits = {
   maxResponseBytes: 4_000_000,
   totalDeadlineMs: 30_000,
   retry: { maxAttempts: 4, baseDelayMs: 500, maxDelayMs: 8_000, maxInlineRetryAfterMs: 10_000 },
-  estimate: { charactersPerToken: 2.5, tokensPerQuestion: 150 }
+  estimate: { bytesPerToken: 2.5, tokensPerQuestion: 150 }
 };
 
 export type DecisionsLimitsInput = Partial<Omit<DecisionsLimits, "retry" | "estimate">> & {

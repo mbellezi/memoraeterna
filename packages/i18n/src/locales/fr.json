@@ -303,7 +303,8 @@
         "network": "OpenAI est injoignable.",
         "failed": "OpenAI Decisions a échoué.",
         "keyFormat": "Cela ne ressemble pas à une clé OpenAI Platform.",
-        "presetNotAllowed": "OpenAI Decisions n'est disponible que dans les configurations Hybride et Cloud."
+        "presetNotAllowed": "OpenAI Decisions n'est disponible que dans les configurations Hybride et Cloud.",
+        "turnedOff": "Activez d'abord OpenAI Decisions."
       }
     },
     "sourceRelations": {
