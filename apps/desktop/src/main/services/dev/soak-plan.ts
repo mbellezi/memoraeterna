@@ -21,6 +21,7 @@ export const soakKnobName = "MEMORA_SOAK";
 export const soakProfileKnobName = "MEMORA_SOAK_PROFILE";
 export const soakRunKnobName = "MEMORA_SOAK_RUN";
 export const defaultSoakProfile = "soak24";
+export const soakSetupKnobName = "MEMORA_SOAK_SETUP";
 
 /** Other DEV knobs that change what a call does or own the library, which a soak would then measure. */
 export const soakConflictingKnobs = [
@@ -39,7 +40,8 @@ export const soakConflictingKnobs = [
   "MEMORA_DEV_LANE_PROBE",
   "MEMORA_DEV_EXPLAIN_PROBE",
   "MEMORA_TYPER_CHECK",
-  "MEMORA_RELATIONS_REMATCH"
+  "MEMORA_RELATIONS_REMATCH",
+  "MEMORA_SOAK_SETUP"
 ] as const;
 
 const minutes = z.number().positive();
@@ -171,7 +173,8 @@ export type SoakKnobRefusalCode =
   | "unknownProfile"
   | "conflictingKnob"
   | "needsFakeRemote"
-  | "catalogHeadersOff";
+  | "catalogHeadersOff"
+  | "invalidValue";
 
 export class SoakKnobRefusal extends Error {
   public constructor(
@@ -230,7 +233,7 @@ export function readSoakPlan(
   return { profile, profiles: Object.keys(parsed.data.profiles) };
 }
 
-function insideProfiles(options: SoakKnobEnvironment): boolean {
+export function insideProfiles(options: SoakKnobEnvironment): boolean {
   const profiles = resolve(options.workspaceRoot, ".cache", "profiles");
   const inside = relative(profiles, resolve(options.userDataPath));
   return !(inside === "" || inside.startsWith("..") || isAbsolute(inside));

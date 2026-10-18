@@ -531,10 +531,23 @@ content).
 
 | Knob | Meaning |
 | --- | --- |
+| `MEMORA_SOAK_SETUP=1` | Prepares the clone, then quits (below); refused beside any other DEV knob. |
 | `MEMORA_FAKE_REMOTE=scripts/soak/plan.json` | Starts the fake providers and routes `class:answer` and `op:relation_explanation` to them. |
 | `MEMORA_SOAK=scripts/soak/plan.json` | Starts the driver (needs `MEMORA_FAKE_REMOTE` and the same plan). |
 | `MEMORA_SOAK_PROFILE=soak24\|presoak4` | The plan profile (default `soak24`); `presoak4` is gate P's 4 h run. |
 | `MEMORA_SOAK_RUN=<name>` | The run folder `.cache/f3/soak/<name>/` (default `<profile>-<timestamp>`). |
+
+**Profile setup** (`MEMORA_SOAK_SETUP=1`, `dev/soak-setup.ts`). On the clone, with no job, gateway or vault sync started,
+it applies the Local preset through the AI service, as the Settings > AI preset button does, then runs the class
+tests one by one. It then checks that no call of the product resolves to a real remote provider (every operation,
+class and decide route, resolved through the product's own route chain; the soak's fake providers do not count) and
+that the default profile is not a real remote one. A remote default profile is the one thing it changes besides the
+preset: a task that no route names would use it, so the `write-fast` class's local writer becomes the default, and
+the file says so. Remote routes that no call resolves to (the legacy task routes a preset leaves behind) are listed,
+not changed. It prints the library (roots, sources, notes) and the model, runtime and test result of each class and
+of the judge, writes them to `.cache/f3/soak/setup.json` (`status` `ok`, `blocked` when a model the preset needs is
+not installed, `failed` with `problems`) and quits. It can be run again. The soak knobs run the same reach check
+when they start, and refuse a profile that still reaches a real provider.
 
 **Fake providers** (`apps/desktop/src/main/services/dev/fake-*.ts`). An OpenAI-compatible fake serves Ask
 (`class:answer`: a valid answer that cites the first passage it is given) and a Codex-wire fake serves

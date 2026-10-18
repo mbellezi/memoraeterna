@@ -18,7 +18,8 @@ import {
   type PgPool
 } from "@app/db";
 
-import { findRealRemoteRoutes, startFakeRemote, explanationRoute } from "./fake-remote-install.js";
+import { startFakeRemote, explanationRoute } from "./fake-remote-install.js";
+import { findRealRemoteReach } from "./soak-routes.js";
 import { readSoakPlan } from "./soak-plan.js";
 import {
   forgetExplanations,
@@ -237,10 +238,10 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     });
     await repository.setProfileTask({ profileId: realProfile.id, task: "class:write-quality" });
     await repository.setTaskRoute("class:write-quality", realProfile.id);
-    expect(await findRealRemoteRoutes(pool!, [])).toEqual([
-      "class:write-quality -> The owner's Codex (openai-codex)",
-      "default profile -> The owner's Codex (openai-codex)"
-    ]);
+    const reach = await findRealRemoteReach(pool!, []);
+    expect(reach.reachable).toHaveLength(1);
+    expect(reach.reachable[0]).toMatch(/^Hybrid writer \(openai-codex\): graph_atomic_notes/u);
+    expect(reach.defaultProfile).toMatchObject({ name: "Hybrid writer", provider: "openai-codex" });
 
     const options = {
       pool: pool!,
@@ -267,7 +268,7 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     };
     try {
       await expect(startFakeRemote(withoutFit, options)).rejects.toThrow(
-        /still routes to a real remote provider.*Local preset/su
+        /still reaches a real remote provider.*Hybrid writer.*Local preset/su
       );
     } finally {
       // Gone: the routes lead nowhere real, and the installation goes through.
@@ -278,7 +279,11 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     const fakes = (await repository.listProviders())
       .filter((provider) => provider.displayName.startsWith("DEV fake"))
       .map((provider) => provider.id);
-    expect(await findRealRemoteRoutes(pool!, fakes)).toEqual([]);
+    expect(await findRealRemoteReach(pool!, fakes)).toEqual({
+      reachable: [],
+      defaultProfile: null,
+      residual: []
+    });
   });
 
   it("installs the fake providers and their routes, again on the next start without duplicating them", async () => {

@@ -63,6 +63,7 @@ import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
 import { prepareSoak, type SoakPreparation } from "./services/dev/soak-startup.js";
+import { readSoakSetupKnob, runSoakSetup } from "./services/dev/soak-setup.js";
 import { createRematchJobSlot } from "./services/dev/relations-rematch-slot.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
@@ -237,6 +238,22 @@ void app.whenReady().then(() => {
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
   const aiCassette = installDevelopmentAiCassette(workspaceRoot);
   if (aiCassette === undefined) return;
+  // DEV soak profile setup (MEMORA_SOAK_SETUP=1, F3 T62): the Local preset on a clone, then quit. A
+  // refusal stops an unpackaged app; nothing else starts meanwhile (see `verdictOnly` below).
+  let soakSetup = false;
+  try {
+    soakSetup = readSoakSetupKnob(process.env, {
+      isPackaged: app.isPackaged,
+      workspaceRoot,
+      userDataPath: app.getPath("userData")
+    });
+  } catch (error) {
+    console.error(`SOAK_SETUP refused: ${error instanceof Error ? error.message : String(error)}`);
+    if (!app.isPackaged) {
+      app.exit(1);
+      return;
+    }
+  }
   // DEV fake remote providers and soak driver (MEMORA_FAKE_REMOTE, MEMORA_SOAK, F3 T62): a refusal
   // stops an unpackaged app, so a soak never runs half-armed; a packaged build ignores both.
   try {
@@ -739,6 +756,7 @@ void app.whenReady().then(() => {
           notePairs !== undefined ||
           laneProbe ||
           explainProbe ||
+          soakSetup ||
           typerCheck;
         // A re-match changes relations only: its job runs on the supervisor, but no topic sweep,
         // capture or vault sync may change the clone meanwhile.
@@ -788,6 +806,27 @@ void app.whenReady().then(() => {
           libraryQuiet ? undefined : integrationGateway?.start(),
           libraryQuiet ? undefined : obsidianSyncService?.reconcileVault()
         ]);
+        // DEV soak profile setup (MEMORA_SOAK_SETUP=1, F3 T62): the models are up, no job has started.
+        // The Local preset, the checks and `.cache/f3/soak/setup.json`, then quit.
+        if (soakSetup) {
+          const outcome = await runSoakSetup({
+            env: process.env,
+            isPackaged: app.isPackaged,
+            workspaceRoot,
+            userDataPath: app.getPath("userData"),
+            pool: databaseService!.getPool()!,
+            ai: aiService!,
+            logger: console
+          }).catch((error: unknown) => {
+            console.error(
+              `SOAK_SETUP failed: ${error instanceof Error ? error.message : String(error)}`
+            );
+            return "failed" as const;
+          });
+          if (outcome !== "ok") process.exitCode = 1;
+          app.quit();
+          return;
+        }
         // DEV soak driver (MEMORA_SOAK, F3 T62): the timeline of a day on the real services, until
         // its duration ends or a STOP file appears in its run directory, then the app quits.
         if (soakPreparation?.mode === "soak") {

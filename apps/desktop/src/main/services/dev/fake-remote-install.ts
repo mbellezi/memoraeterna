@@ -30,6 +30,7 @@ import {
   openAiCompatibleProvider
 } from "./fake-remote-provider.js";
 import { FaultSchedule, withFaults } from "./fault-decorator.js";
+import { findRealRemoteReach, realRemoteProblem } from "./soak-routes.js";
 import {
   SoakKnobRefusal,
   latencyFitSchema,
@@ -103,33 +104,6 @@ export function loadLatencyModel(spec: SoakLatencySpec, workspaceRoot: string): 
       `The latency fit has no task ${String(spec.task)} (it has ${Object.keys(fit.tasks).join(", ")}).`
     );
   return quantileLatency(task.quantilesMs, { minMs: spec.minMs, maxMs: spec.maxMs });
-}
-
-/**
- * The routes (and the default profile) that lead to a remote provider configuration other than the
- * given ones. A soak must reach no real provider: a profile cloned from the owner's DEV profile can
- * still hold a Hybrid preset whose class routes point at the real Codex or an API key, and the soak
- * would spend that quota. Names only; never a credential.
- */
-export async function findRealRemoteRoutes(
-  db: Queryable,
-  allowedConfigIds: readonly string[]
-): Promise<string[]> {
-  const result = await db.query<{ route: string; provider: string; name: string }>(
-    `select r.task as route, c.provider, c.display_name as name
-       from ai_task_profile_routes r
-       join ai_profile_sets p on p.id = r.profile_id and p.status = 'active'
-       join ai_provider_configs c on c.id = p.provider_config_id
-      where c.id <> all($1::uuid[])
-     union all
-     select 'default profile', c.provider, c.display_name
-       from ai_profile_sets p
-       join ai_provider_configs c on c.id = p.provider_config_id
-      where p.is_default and p.status = 'active' and c.id <> all($1::uuid[])
-      order by 1`,
-    [allowedConfigIds]
-  );
-  return result.rows.map((row) => `${row.route} -> ${row.name} (${row.provider})`);
 }
 
 interface ProviderInstall {
@@ -274,12 +248,11 @@ export async function startFakeRemote(
       explained?.providerConfigId !== explain.config.id
     )
       throw new Error("The fake remote routes do not lead to the fake providers.");
-    const real = await findRealRemoteRoutes(deps.pool, [answer.config.id, explain.config.id]);
-    if (real.length > 0)
-      throw new Error(
-        `This profile still routes to a real remote provider (${real.join("; ")}). ` +
-          "Apply the Local preset in Settings > AI first: a soak never calls a real provider."
-      );
+    // The soak must reach no real provider: a profile cloned from the owner's may still point at one.
+    const problem = realRemoteProblem(
+      await findRealRemoteReach(deps.pool, [answer.config.id, explain.config.id])
+    );
+    if (problem) throw new Error(problem);
     deps.logger?.info(
       `FAKE_REMOTE ready: ${compatible.origin} (answer) and ${codex.origin} (explanations)`
     );
