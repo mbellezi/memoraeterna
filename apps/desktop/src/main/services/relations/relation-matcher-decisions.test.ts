@@ -184,15 +184,14 @@ async function run(noteIds: string[], config: RelationsConfig, signal?: AbortSig
 
 const uncalibrated = RelationsConfigSchema.parse({});
 
-/** T58's frozen Decisions entry (plan decision 30): apply from 2.372, suggest from 1.497. */
+/** T58's frozen Decisions entry (plan decision 30): apply from 2.228, suggest from 1.593. */
 const frozenDecisions = frozenRelationCalibrations.find(
   (entry) => entry.identity.runtimeKind === "remote"
 )!;
 
 /**
- * The frozen Decisions bands under the product's own identity: what a re-freeze on the online
- * requests would add. The shipped entry names the bake-off's request design, not the one the product
- * sends, so it does not apply (see "the shipped calibration").
+ * The frozen Decisions bands under the identity the product derives: the shipped entry, which T58
+ * re-froze on the product's own online requests (see "the shipped calibration").
  */
 const refrozen = (() => {
   const { identity } = decisionsDesign({
@@ -399,12 +398,12 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
       ]);
     });
 
-    it("uses the lowest edge of the frozen calibration: 1.497 asks for a direction from -13.12", async () => {
-      decisionTable.set("Source>Alpha", -13.2).set("Source>Beta", -13.1).set("Source>Gamma", 0);
+    it("uses the lowest edge of the frozen calibration: 1.593 asks for a direction from -12.93", async () => {
+      decisionTable.set("Source>Alpha", -13).set("Source>Beta", -12.9).set("Source>Gamma", 0);
       decisionTable.set("Beta>Source", 16.118).set("Gamma>Source", 16.118);
       const { handed } = await run([source.id], refrozen);
       const [, backward] = askedCalls();
-      // Alpha (-13.2) cannot reach 1.497 (mean 1.459 at best); Beta (-13.1) and Gamma can.
+      // Alpha (-13) cannot reach 1.593 (mean 1.559 at best); Beta (-12.9) and Gamma can.
       expect(queryTitles(backward!)).toEqual(["Beta", "Gamma"]);
       expect(handed[0]!.decider.calibration).toBe("frozen");
     });
@@ -638,14 +637,14 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     ]);
   });
 
-  it("names the requests it sends: the frozen entry's identity in everything but the request design", async () => {
+  it("names the requests it sends: the frozen entry's identity, request design included", async () => {
     const { identity, calibration } = decisionsDesign({
       instruction: relationDecisionsInstruction(),
       config: relationsConfig
     });
     // Spike A's mechanism instruction, the frozen contract, the OpenAI provider and the model are
-    // the frozen ones. The request design is not: the bake-off's requests carried each note's whole
-    // batch neighbourhood, and the product's are partial and online (T58d).
+    // the frozen ones, and so is the request design: T58 re-froze on the product's partial, online
+    // requests (dd654932) after the bake-off's dense design (0e1ebd94) proved not to be the one sent.
     expect(identity).toMatchObject({
       contract: "relation-decide-decisions-v1",
       instructionSha256: "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164",
@@ -653,32 +652,27 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
       model: "gpt-6-luna",
       runtimeKind: "remote"
     });
-    const frozenSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
-    expect(frozenDecisions.identity).toMatchObject({ requestDesignSha256: frozenSha });
-    expect(identity).toEqual({
-      ...frozenDecisions.identity,
-      requestDesignSha256: expect.any(String)
-    });
-    expect((identity as { requestDesignSha256: string }).requestDesignSha256).not.toBe(frozenSha);
-    // So the shipped calibration does not apply to it.
-    expect(calibration).toBeNull();
+    const denseSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
+    expect(identity).toEqual(frozenDecisions.identity);
+    expect((identity as { requestDesignSha256: string }).requestDesignSha256).not.toBe(denseSha);
+    // So the shipped calibration applies to it.
+    expect(calibration).toEqual(frozenDecisions);
     // The local ranker's instruction is another one: the catalog keeps the two apart.
     expect(sha256(relationDecideInstruction())).not.toBe(identity.instructionSha256);
   });
 
-  it("the shipped calibration is the bake-off's: the decider only suggests, whatever the score", async () => {
-    // Far above the frozen apply edge (2.372), under the shipped config: not applied.
+  it("the shipped calibration is the product's: it applies in its band, another neighbourhood only suggests", async () => {
+    // Far above the frozen apply edge (2.228), under the shipped config: applied.
     decisionTable.set("Source>Alpha", 10).set("Alpha>Source", 10);
     const { handed } = await run([source.id], relationsConfig);
-    expect(handed[0]!.decider).toMatchObject({ kind: "decisions", calibration: "uncalibrated" });
+    expect(handed[0]!.decider).toMatchObject({ kind: "decisions", calibration: "frozen" });
     expect(handed[0]!.pairs).toHaveLength(1);
     expect(handed[0]!.pairs[0]).toMatchObject({
       candidateId: "n-a",
-      band: "suggest",
-      probability: null,
-      calibration: "uncalibrated"
+      band: "apply",
+      calibration: "frozen"
     });
-    // The same scores applied under the entry re-identified for the product's design.
+    // The derived identity finds the same entry.
     const { handed: refrozenHanded } = await run([source.id], refrozen);
     expect(refrozenHanded[0]!.pairs[0]).toMatchObject({ band: "apply", calibration: "frozen" });
     // Changing what a request carries is another identity: nothing is reused or applied.
@@ -1179,9 +1173,11 @@ describe("with a replayed Decisions cassette (the real runtime, adapter and lane
     const { handed } = await run([scenario.source.id], refrozen);
     expect(cassette.stats()).toMatchObject({ served: 3, misses: 0 });
     expect(handed[0]!.decider).toMatchObject({ kind: "decisions", calibration: "frozen" });
-    // Mean 10.36 is past the frozen apply edge 2.372; the decoy (-16.1) is nowhere near suggest.
+    // Mean 10.36 is past the frozen apply edge 2.228; the decoy (-16.1) is nowhere near suggest.
+    const top =
+      frozenDecisions.kind === "isotonic" ? frozenDecisions.blocks.at(-1)!.probability : null;
     expect(handed[0]!.pairs.map((pair) => [pair.candidateId, pair.band, pair.probability])).toEqual(
-      [["n-related", "apply", 0.9458604984516219]]
+      [["n-related", "apply", top]]
     );
   });
 

@@ -51,7 +51,7 @@ describe("the Decisions decider's identity (plan decision 30)", () => {
     );
   });
 
-  it("is the identity relations-config ships: Spike A's mechanism instruction, the spike's design", () => {
+  it("is the dense validation's design: Spike A's mechanism instruction, which the product no longer ships", () => {
     // The instruction the dense validation sent (Spike A's frozen `mechanism`, catalog revision 1).
     const mechanism =
       "Given a note (Query), decide whether the Document note makes a claim about the same underlying " +
@@ -60,15 +60,17 @@ describe("the Decisions decider's identity (plan decision 30)", () => {
     expect(designFingerprint(mechanism)).toBe(
       "2824e0cdd2c68756206913454e8a083638442a2d048373de8650392e219e6531"
     );
+    // The first Decisions freeze (8017633d) named this dense design; the product's requests are
+    // online (bakeoff-online.ts), so the shipped entry is the one re-frozen for them.
+    expect(decisionsIdentity(mechanism).requestDesignSha256).toBe(
+      "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
+    );
     const shipped = relationsConfig.calibrations.find(
       (entry) => entry.identity.runtimeKind === "remote"
     );
-    expect(shipped?.identity).toEqual(decisionsIdentity(mechanism));
-    expect(shipped).toMatchObject({
-      kind: "isotonic",
-      applyFrom: expect.closeTo(2.372, 3),
-      suggestFrom: expect.closeTo(1.497, 3),
-      parity: { requestDesignSha256: decisionsIdentity(mechanism).requestDesignSha256 }
+    expect(shipped?.identity).toEqual({
+      ...decisionsIdentity(mechanism),
+      requestDesignSha256: expect.not.stringMatching(/^0e1ebd94/u)
     });
   });
 });

@@ -294,14 +294,12 @@ export const provisionalRelationCalibrations: readonly RelationCalibrationEntry[
  * re-freeze replaces them). The two local rankers (plan decision 29; config 745469e5a7acce86, frozen
  * at 2026-10-18T07:10:50.254Z): relation / 600 / mean, the panel's weighted isotonic map for the
  * reported probability, no apply band, and the suggest edge chosen on the fixture tuning partition.
- * The Decisions API decider (plan decision 30; added by the re-freeze 8017633d05452997 at
- * 2026-10-18T07:53:06.300Z): its own identity (model, instruction, request design), D18's apply and
- * suggest bands on dense two-order requests; its parity is the request design's fingerprint. That
- * design is the bake-off's: each note's whole batch neighbourhood, uncapped. The product asks
- * online, in arrival order, with a capped neighbourhood and one request per reverse direction
- * (`decisionsRequestDesign` in `packages/ai`), which is another identity: this entry does not apply
- * to it, so the decider only suggests until the dense partitions are replayed through the product's
- * request builder and the calibration is frozen again for that identity.
+ * The Decisions API decider (plan decision 30; the re-freeze ae14630a9389761b at
+ * 2026-10-18T10:00:36.743Z): the identity of the requests the product sends (online, in arrival
+ * order, a capped neighbourhood, one request per reverse direction: `decisionsRequestDesign` in
+ * `packages/ai`), and D18's apply and suggest bands on those very requests, replayed through the
+ * product's builder over the fit labels' libraries; its parity is the request design's fingerprint.
+ * It replaces the entry of the bake-off's dense design (8017633d05452997), which the product never sends.
  */
 export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
   {
@@ -412,29 +410,27 @@ export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
       provider: "openai",
       model: "gpt-6-luna",
       runtimeKind: "remote",
-      requestDesignSha256: "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
+      requestDesignSha256: "dd6549321cda380a356b437d5958d9f11d59213823d978c6de231a8afc3bda66"
     },
     blocks: [
-      { fromScore: -16.118095550958316, probability: 0.013538958304543831 },
-      { fromScore: -10.705700187841405, probability: 0.029158550414730408 },
-      { fromScore: -2.3798644729023444, probability: 0.04706630461376537 },
-      { fromScore: -1.6918955246777925, probability: 0.05180954665532005 },
-      { fromScore: -1.1558174642569816, probability: 0.060311203111925255 },
-      { fromScore: -0.06474549154375886, probability: 0.3111784670606614 },
-      { fromScore: 0.7420854002313838, probability: 0.5590779918930682 },
-      { fromScore: 1.4970033237932603, probability: 0.7226752405029679 },
-      { fromScore: 2.036718938701393, probability: 0.7791987927777894 },
-      { fromScore: 2.3719827388660772, probability: 0.9458604984516219 }
+      { fromScore: -16.118095550958316, probability: 0.012632201365684884 },
+      { fromScore: -10.151343495514098, probability: 0.03662780099890757 },
+      { fromScore: -2.836661633585746, probability: 0.037020537894984155 },
+      { fromScore: -1.7004586151893153, probability: 0.041241018199690845 },
+      { fromScore: -0.30951960420311175, probability: 0.20142813035638402 },
+      { fromScore: 0.41856629430517645, probability: 0.5970570775252448 },
+      { fromScore: 1.5928005179916638, probability: 0.7679215620970076 },
+      { fromScore: 2.228249148648982, probability: 0.9516920593333591 }
     ],
-    applyFrom: 2.3719827388660772,
-    suggestFrom: 1.4970033237932603,
+    applyFrom: 2.228249148648982,
+    suggestFrom: 1.5928005179916638,
     basis:
-      "D18 on dense two-order requests (plan decision 30): p_apply 0.8706812712335298, p_suggest 0.6009455768505877, cross-validated, cell weights, 0 forbidden tuning root pairs",
+      "D18 on the product's online requests (plan decision 30): p_apply 0.8836988850059788, p_suggest 0.6162146876188039, cross-validated (seed 20261022), cell weights, 0 forbidden tuning root pairs",
     labelSetHash: "70ee96f7ed1925cef50557469f8207cfc74d5cebc54507309c955411d51b338d",
-    freezeHash: "8017633d054529975c25e2bbd2ae50f03d245e93e3c46c872215c9cb4be3e6e3",
-    fittedAt: "2026-10-18T07:51:57.188Z",
+    freezeHash: "ae14630a9389761b79b6dfb528d951ac7f5390fd2730549c1b6f74ceba23835a",
+    fittedAt: "2026-10-18T10:00:25.776Z",
     parity: {
-      requestDesignSha256: "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
+      requestDesignSha256: "dd6549321cda380a356b437d5958d9f11d59213823d978c6de231a8afc3bda66"
     }
   }
 ];

@@ -172,7 +172,8 @@ export interface RemoteProposal {
   computedAt: string;
   inputs: Record<string, string>;
   instruction: { sha256: string; designFingerprint: string };
-  requestDesign: ReturnType<typeof decisionsRequestDesign>;
+  /** The request design the scores were answered under (the identity's fingerprint covers it). */
+  requestDesign: Record<string, unknown>;
   identity: RemoteRelationCalibrationIdentity;
   folds: { seed: number; count: number };
   fitLabels: { labels: number; positives: number };
@@ -200,6 +201,8 @@ export function proposeRemoteDecider(input: {
   tuningExport: z.infer<typeof retrievalExportSchema>;
   lists: ReturnType<typeof tuningLists>;
   identity: RemoteRelationCalibrationIdentity;
+  /** The fold seed (D18's is `foldSeed`; others are a reported sensitivity). */
+  seed?: number;
 }): Omit<
   RemoteProposal,
   "format" | "version" | "decider" | "computedAt" | "inputs" | "instruction" | "requestDesign"
@@ -213,7 +216,8 @@ export function proposeRemoteDecider(input: {
     "fit"
   );
   const folds = assignFolds(
-    labels.map((label) => ({ group: label.group, cell: `${label.pool}:${label.stratum}` }))
+    labels.map((label) => ({ group: label.group, cell: `${label.pool}:${label.stratum}` })),
+    { seed: input.seed ?? foldSeed }
   );
   const scored = scoredLabels(
     labels,
@@ -282,7 +286,7 @@ export function proposeRemoteDecider(input: {
     aucByPool[pool] = areaUnderCurve(scored.filter((label) => label.pool === pool));
   return {
     identity: input.identity,
-    folds: { seed: foldSeed, count: foldCount },
+    folds: { seed: input.seed ?? foldSeed, count: foldCount },
     fitLabels: {
       labels: scored.length,
       positives: scored.filter((label) => label.positive).length
@@ -313,8 +317,10 @@ export interface RemoteFreezeRecord extends FreezeRecord {
     {
       proposal: { sha256: string; computedAt: string };
       inputHashes: Record<string, string>;
-      requestDesign: ReturnType<typeof decisionsRequestDesign>;
+      requestDesign: Record<string, unknown>;
       parity: string;
+      /** Earlier entries of the same model under another request design, which this one replaces. */
+      superseded?: Array<{ requestDesignSha256: string; freezeHash: string }>;
       frozenAt: string;
     }
   >;
@@ -331,15 +337,33 @@ export function addRemoteCalibration(input: {
   proposal: RemoteProposal;
   proposalSha256: string;
   frozenAt: Date;
+  /**
+   * Set when this entry replaces the same model's entry under another request design (the earlier
+   * one no longer describes the requests sent; it stays in the earlier record, kept beside).
+   */
+  supersedes?: string;
+  basis?: string;
 }): RemoteFreezeRecord {
-  const { previous, proposal } = input;
+  const { proposal } = input;
+  const sameModel = (entry: RelationCalibrationEntry) =>
+    entry.identity.runtimeKind === "remote" &&
+    entry.identity.provider === proposal.identity.provider &&
+    entry.identity.model === proposal.identity.model;
+  const replaced = input.previous.calibrations.filter(sameModel);
   if (
-    previous.calibrations.some(
+    replaced.some(
       (entry) =>
-        entry.identity.runtimeKind === "remote" && entry.identity.model === proposal.identity.model
+        entry.identity.runtimeKind === "remote" &&
+        entry.identity.requestDesignSha256 === proposal.identity.requestDesignSha256
     )
   )
+    throw new Error(`The freeze already holds this ${proposal.identity.model} identity.`);
+  if (replaced.length > 0 && !input.supersedes)
     throw new Error(`The freeze already holds a ${proposal.identity.model} calibration.`);
+  const previous = {
+    ...input.previous,
+    calibrations: input.previous.calibrations.filter((entry) => !sameModel(entry))
+  };
   if (proposal.bands.applyFromScore === null && proposal.bands.suggestFromScore === null)
     throw new Error("D18 gives the Decisions decider no band: nothing to freeze.");
   if (proposal.tuning.forbiddenBeforeTyping > 0)
@@ -350,7 +374,7 @@ export function addRemoteCalibration(input: {
     blocks: proposal.blocks,
     applyFrom: proposal.bands.applyFromScore,
     suggestFrom: proposal.bands.suggestFromScore,
-    basis: decisionsBasis(proposal),
+    basis: input.basis ?? decisionsBasis(proposal),
     labelSetHash: proposal.inputs.labelSetSha256!,
     fittedAt: proposal.computedAt,
     parity: { requestDesignSha256: proposal.identity.requestDesignSha256 }
@@ -397,12 +421,30 @@ export function addRemoteCalibration(input: {
         requestDesign: proposal.requestDesign,
         parity:
           "the request design fingerprint (no runtime build: the provider's model is named by the identity)",
-        frozenAt
+        frozenAt,
+        ...(replaced.length > 0
+          ? {
+              superseded: replaced.flatMap((entry) =>
+                entry.identity.runtimeKind === "remote" && entry.kind === "isotonic"
+                  ? [
+                      {
+                        requestDesignSha256: entry.identity.requestDesignSha256,
+                        freezeHash: entry.freezeHash
+                      }
+                    ]
+                  : []
+              )
+            }
+          : {})
       }
     },
     previous: [
-      ...(previous.previous ?? []),
-      { configHash: previous.configHash, frozenAt: previous.frozenAt, file: input.previousFile }
+      ...(input.previous.previous ?? []),
+      {
+        configHash: input.previous.configHash,
+        frozenAt: input.previous.frozenAt,
+        file: input.previousFile
+      }
     ]
   };
 }

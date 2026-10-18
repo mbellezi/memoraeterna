@@ -897,22 +897,17 @@ describe("the calibration of the status", () => {
     (entry) => entry.identity.runtimeKind === "remote"
   )!;
 
-  it("is uncalibrated by the shipped entry: T58 froze the bake-off's request design, not the one it sends", async () => {
+  it("is calibrated by the shipped entry: T58 froze the request design the product sends", async () => {
     const h = harness();
-    expect(await h.runtime.status()).toMatchObject({ calibrated: false });
-    // The identity the catalog's instruction and the typed limits compute is the frozen one in the
-    // instruction, the contract, the provider and the model, and not in the request design.
+    expect(await h.runtime.status()).toMatchObject({ calibrated: true });
+    // The identity the catalog's instruction and the typed limits compute is the frozen one, request
+    // design included (the online requests, replayed and re-frozen; not the bake-off's dense design).
     const { identity, calibration } = decisionsDesign({
       instruction: relationDecisionsInstruction(),
       config: relationsConfig
     });
-    expect(identity).toMatchObject({
-      instructionSha256: (frozen.identity as { instructionSha256: string }).instructionSha256,
-      contract: frozen.identity.contract,
-      model: "gpt-6-luna"
-    });
-    expect(identity).not.toEqual(frozen.identity);
-    expect(calibration).toBeNull();
+    expect(identity).toEqual(frozen.identity);
+    expect(calibration).toEqual(frozen);
   });
 
   it("is calibrated once an entry names the identity of the requests it sends", async () => {

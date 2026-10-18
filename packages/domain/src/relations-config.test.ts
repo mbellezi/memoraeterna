@@ -88,17 +88,25 @@ describe("relations config", () => {
     expect(bandScore(9, mlx!, 3.3125).band).toBe("suggest");
     expect(bandScore(0.62, gguf!, 3.16).band).toBe("suggest");
     expect(bandScore(0.6, gguf!, 3.16).band).toBeNull();
-    // Plan decision 30: the Decisions API decider has its own identity and D18's apply band.
+    // Plan decision 30: the Decisions API decider has its own identity (the product's online request
+    // design) and D18's apply band on those requests.
     const decisions = frozenRelationCalibrations[2]!;
     expect(decisions).toMatchObject({
       kind: "isotonic",
-      identity: { runtimeKind: "remote", provider: "openai", model: "gpt-6-luna", rule: "mean" },
-      freezeHash: "8017633d054529975c25e2bbd2ae50f03d245e93e3c46c872215c9cb4be3e6e3"
+      identity: {
+        runtimeKind: "remote",
+        provider: "openai",
+        model: "gpt-6-luna",
+        rule: "mean",
+        requestDesignSha256: "dd6549321cda380a356b437d5958d9f11d59213823d978c6de231a8afc3bda66"
+      },
+      freezeHash: "ae14630a9389761b79b6dfb528d951ac7f5390fd2730549c1b6f74ceba23835a"
     });
     expect(findRelationCalibration(relationsConfig, decisions.identity)).toEqual(decisions);
-    expect(bandScore(2.38, decisions, 3.3125).band).toBe("apply");
-    expect(bandScore(1.5, decisions, 3.3125).band).toBe("suggest");
-    expect(bandScore(1.49, decisions, 3.3125).band).toBeNull();
+    expect(bandScore(2.23, decisions, 3.3125).band).toBe("apply");
+    expect(bandScore(2.2, decisions, 3.3125).band).toBe("suggest");
+    expect(bandScore(1.6, decisions, 3.3125).band).toBe("suggest");
+    expect(bandScore(1.59, decisions, 3.3125).band).toBeNull();
     // Spike A's provisional identity (mechanism, 400, max) is another identity: no calibration.
     for (const provisional of provisionalRelationCalibrations)
       expect(findRelationCalibration(relationsConfig, provisional.identity)).toBeNull();

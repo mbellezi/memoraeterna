@@ -150,7 +150,7 @@ describe("the request design", () => {
     expect(decisionsLogOdds(0.79, 1e-7)).toBeCloseTo(1.3249, 3);
   });
 
-  it("reproduces Spike A2's fingerprint, but the online requests are not the design that was frozen", () => {
+  it("reproduces Spike A2's fingerprint, and the shipped calibration is frozen for the online requests", () => {
     // Spike A's `mechanism` instruction, the Decisions decider's own (sha256 1fc9a2ee...).
     const mechanism =
       "Given a note (Query), decide whether the Document note makes a claim about the same underlying " +
@@ -166,17 +166,18 @@ describe("the request design", () => {
     expect(design.designFingerprint).toBe(
       "2824e0cdd2c68756206913454e8a083638442a2d048373de8650392e219e6531"
     );
-    // The request design is not: T58 froze 0e1ebd94, whose requests carried each note's whole batch
-    // neighbourhood. The product sends partial online neighbourhoods and a request per reverse
-    // direction, so it names its own design and the frozen entry does not match it.
+    // The request design is the product's own: T58 first froze the bake-off's dense design (0e1ebd94,
+    // each note's whole batch neighbourhood), then replayed the fit labels' libraries through this
+    // builder, in arrival order, and re-froze for the online design (dd654932) the product sends.
     const frozen = frozenRelationCalibrations.find(
       (entry) => entry.identity.runtimeKind === "remote"
     )!;
-    const frozenSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
+    const denseSha = "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c";
     const remote = frozen.identity as RemoteRelationCalibrationIdentity;
-    expect(remote.requestDesignSha256).toBe(frozenSha);
     const product = decisionsRequestDesignSha256(mechanism, limits, 600);
-    expect(product).not.toBe(frozenSha);
+    expect(product).toBe("dd6549321cda380a356b437d5958d9f11d59213823d978c6de231a8afc3bda66");
+    expect(remote.requestDesignSha256).toBe(product);
+    expect(product).not.toBe(denseSha);
     expect(design).toMatchObject({
       neighbourhood: {
         kind: "online",
@@ -185,10 +186,10 @@ describe("the request design", () => {
       }
     });
     const calibrations = [...frozenRelationCalibrations];
-    // The frozen identity is found by the design it was frozen for; the product's design is not it.
+    // The frozen identity is found by the design it was frozen for; the dense design is not it.
     expect(findRelationCalibration({ calibrations }, remote)).toBe(frozen);
     expect(
-      findRelationCalibration({ calibrations }, { ...remote, requestDesignSha256: product })
+      findRelationCalibration({ calibrations }, { ...remote, requestDesignSha256: denseSha })
     ).toBeNull();
   });
 

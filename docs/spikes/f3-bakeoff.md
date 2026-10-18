@@ -8,22 +8,26 @@ files are under `.cache/f3/freeze/`: `RUN.md`, `proposal.{json,md}`, `proposal-d
 
 ## Bottom line
 
+The Decisions column is the shipped entry: the product's own online requests (the dense design it replaced is in
+brackets; see "The Decisions decider").
+
 | Gate F row | MLX (local, default) | Decisions API (remote, opt-in) | Bar |
 | --- | --- | --- | --- |
-| Parity (R1) | build sha256:44d081e0...: 64 reference pairs and 522 M1 pairs, max abs delta 0 | request design fingerprint 0e1ebd94... (no runtime build) | pass |
-| Frozen before its first held-out read | 2026-10-18T07:10:50Z, read 07:14:43Z | 07:53:06Z, read 07:56:29Z | yes |
-| X1, fixture held-out expected (optimistic typing) | 27/28 (F3/F5 missed): **met** | 28/28, of them 28/28 in the apply band: **met** | >= 27/28 |
+| Parity (R1) | build sha256:44d081e0...: 64 reference pairs and 522 M1 pairs, max abs delta 0 | request design fingerprint dd654932... (no runtime build) | pass |
+| Frozen before its first held-out read | 2026-10-18T07:10:50Z, read 07:14:43Z | 10:00:36Z, read 10:00:46Z (dense: 07:53:06Z, read 07:56:29Z) | yes |
+| X1, fixture held-out expected (optimistic typing) | 27/28 (F3/F5 missed): **met** | 28/28, all 28 in the apply band: **met** (dense 28/28) | >= 27/28 |
 | X1, fixture held-out forbidden | 0/35: **met** | 0/35: **met** | 0/35 |
-| X2, R_v6 loss over the panel-related pairs | 7/35 = 0.200: **not met** | 12/35 = 0.343: **not met** | <= 0.05 |
-| X2, R_v9 loss | 13/137 = 0.095 [0.095, 0.101]: **not met** | 4/137 lost (3 related, 1 unlabelled): 0.022-0.029, **met either way**; formally pending the one label | <= 0.05 |
+| X2, R_v6 loss over the panel-related pairs | 7/35 = 0.200: **not met** | 4/35 = 0.114: **not met** (dense 0.343) | <= 0.05 |
+| X2, R_v9 loss | 13/137 = 0.095 [0.095, 0.101]: **not met** | 4/137 lost (3 related, 1 unlabelled): 0.022-0.029, **met either way**; formally pending the one label (dense the same) | <= 0.05 |
 | Typer direction accuracy / swap consistency (G25) | 0.567 / 0.417 with revision 2 (0.550 / 0.433 with revision 1): **not met** | same typer | >= 0.85 / >= 0.90 *(cal.)* |
-| Clean check, eval split: precision at the edge(s) | 0.673 at suggest (106 labels) | 1.000 at apply, 0.927 at suggest (34 labels: A 33, B 1; B and C not sent, public text) | reported |
+| Clean check, eval split: precision at the edge(s) | 0.673 at suggest (106 labels) | 1.000 at apply and at suggest (28 pool A labels; pools B and C not replayed) (dense: 1.000 / 0.927, 34 labels) | reported |
 
 Also reported for X1, MLX:
 - Pessimistic bound 0/28 and applied-only 0/28: the offline export has no typing, and decision 29 sets no apply band.
 - Held-out candidate recall 28/28; tuning in the same export 25/26 at 0/25.
 
-Also reported for X1, Decisions: tuning 26/26 at 0/25, all 26 in the apply band.
+Also reported for X1, Decisions: tuning 25/26 at 0/25, all 25 in the apply band (P02/P03 missed, best mean 1.366, under
+the 1.593 suggest edge); the dense design read 26/26.
 
 GGUF is frozen beside MLX and read only on the eval split (0.705 at its suggest edge).
 
@@ -72,6 +76,48 @@ parity is that fingerprint's equality. D18 was applied as written, to the dense 
 | Cross-validated quality | ECE 0.035, Brier 0.050, AUC 0.953 |
 | The accept band by pool | A 0.962, B 1.000, C 0.740 |
 
+### On the product's own requests (the shipped entry)
+
+The T58d review found that the product does not send the dense design. It asks online, as a library grows: a note's
+turn sends one forward list and then one reverse list per candidate.
+- **The forward list** carries the note's retrieval targets and, room allowing, the notes it was decided against
+  before, in content order, capped at 12.
+- **Each reverse list** has the candidate as the query and the note as its one target, plus up to 11 of the
+  candidate's own earlier partners.
+- **The lossless filter:** a reverse direction whose forward probability is 0 in both orders is not asked.
+
+`scripts/relations/bakeoff-online.ts` replayed the fit labels' libraries through the product's builder
+(`decisionsNeighbourhood`, `planDecisionRequests`, `buildDecisionsWireRequest`) in arrival order, so "partners decided
+so far" built up as in a live library:
+- **The fixture:** S0's 138 turns. M1's 111 tuning turns are its first part, unchanged; the 27 held-out turns follow.
+- **ENV-G's golden library** (pool B), in its export's order.
+- **ENV-C's 200-note sample** (pool C). The library around the sample has no turns of its own, so a library note's
+  partners are the sample's earlier decisions only.
+- **Spike A's library** (R_v6, approximated): each note's 10 nearest earlier notes by Spike A's cosine.
+
+Labelled pairs the retrieval did not produce (fixture 9, golden 20, corpus 21) were added as extra targets to their
+later note's forward list. 2,650 requests on live Decisions cost US$ 0.84 (cap US$ 1.00): synthetic fixture and Spike A
+text, and the owner-approved public golden and corpus texts.
+
+The new identity is `requestDesignSha256` dd654932..., which is the desktop app's `decisionsDesign` identity. D18 as
+written, seed 20261022, same labels and cell weights:
+
+| Read | Product's online requests (shipped) | Dense design (replaced) |
+| --- | --- | --- |
+| p_apply, apply from | 0.884, mean >= 2.228 (CV precision 1.000, Wilson 0.890, n_eff 31.2, 54 labels) | 0.871, mean >= 2.372 (0.989, 0.863, 28.3, 49 labels) |
+| p_suggest, suggest from | 0.616, mean >= 1.593 (precision 0.810, 96 labels) | 0.601, mean >= 1.497 (0.808, 102 labels) |
+| An apply band at other fold seeds | 19 of 40 (1000-1039); none at 1000 and 1001, the same at 1002 | 39 of 40 |
+| Fixture tuning at the bands | 25/26 expected (all 25 applied; P02/P03 at 1.366 missed), 0/25 forbidden | 26/26, 0/25 |
+| Decision 29's tuning edge, reported beside | 1.366: 26/26 at 0 forbidden; panel at it 0.852 (Wilson 0.735, 91 labels) | 2.382: 26/26; panel 1.000 (48 labels) |
+| Cross-validated ECE / Brier / AUC | 0.050 / 0.049 / 0.953 | 0.035 / 0.050 / 0.953 |
+| The accept band by pool | A 1.000, B 1.000, C 0.730 | A 0.962, B 1.000, C 0.740 |
+| X1 held-out | 28/28 at 0/35, all applied | 28/28 at 0/35, all applied |
+| X2 R_v6 / R_v9 | 0.114 / 0.022-0.029 | 0.343 / 0.022-0.029 |
+
+The pre-registered rule reads seed 20261022, which gives an apply band, so the entry ships one. The band is fragile:
+at about half of the other fold seeds no level reaches 0.95 / 0.85. The owner should know before relying on automatic
+apply.
+
 ## The freezes
 
 - **First freeze (local):** `745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371`, 2026-10-18T07:10:50.254Z,
@@ -82,8 +128,14 @@ parity is that fingerprint's equality. D18 was applied as written, to the dense 
   - It adds the Decisions entry and keeps the local entries exactly as they were (their `freezeHash` names the first
     freeze).
   - The first record is kept beside it as `frozen-2026-10-18T07-10-50-254Z.json` and named in `previous` (D3).
-- **What ships:** `relations-config.ts` ships all three entries, with `decide.bodyCharacters` 600 and `decide.rule`
-  mean, and the catalog's `relations.decide.instruction` at revision 2 (`relation`).
+- **Second re-freeze (the product's requests):** `ae14630a9389761b79b6dfb528d951ac7f5390fd2730549c1b6f74ceba23835a`,
+  2026-10-18T10:00:36.743Z.
+  - It replaces the dense-design Decisions entry with the one frozen on the product's own requests (the replaced entry
+    is recorded under `remote.decisions.superseded`) and keeps the local entries as they were.
+  - Both earlier records are kept beside it and named in `previous`.
+- **What ships:** `relations-config.ts` ships the two local entries and the online Decisions entry, with
+  `decide.bodyCharacters` 600 and `decide.rule` mean, and the catalog's `relations.decide.instruction` at revision 2
+  (`relation`).
 
 ## Gate F reads
 
@@ -149,9 +201,9 @@ Neither reaches 0.80, so there is no "confirmed" tier. Revision 2 ships, and rev
 
 1. **Local (MLX):** X1 passes; X2 fails on both R_v6 (0.200) and R_v9 (0.095), and the typer's direction fails.
    Every automatic relation is a suggestion (decision 29).
-2. **Decisions:** X1 passes with every held-out expected pair in the apply band, and X2 R_v9 passes (0.022-0.029,
-   one label pending). X2 R_v6 fails (0.343), on reverse-only `extends` pairs that the mean of two directions puts
-   under the suggest edge.
+2. **Decisions, on the product's own requests:** X1 passes with every held-out expected pair in the apply band, and X2
+   R_v9 passes (0.022-0.029, one label pending). X2 R_v6 fails (0.114, against the dense design's 0.343). D18 gives an
+   apply band at the rule's seed, but only at 19 of 40 other fold seeds.
 3. **Direction:** neither typer prompt reaches the bars. Options with no extra call:
    - Show every automatic relation's direction as unknown (↔, "linked: supports") until the owner keeps it.
    - Show a direction only where Decisions' two directions differ clearly (0.78 at 37/60).
