@@ -1,5 +1,6 @@
 import {
   createAtomicNoteRelationRepository,
+  createAtomicNoteRepository,
   createJobRepository,
   createRelationMatchRunRepository,
   immediateJobDebounce,
@@ -42,28 +43,39 @@ export async function reviewNoteRelation(
 ): Promise<ReviewedRelation | null> {
   try {
     return await withTransaction(pool, async (client) => {
+      const relations = createAtomicNoteRelationRepository(client);
+      // The row first: the statement below then reads its newest committed version, so the before
+      // image of the event and the verdict answered when nothing is written are the stored ones
+      // even when another writer touched the row at the same moment (D14, I-R8).
+      if (!(await relations.lockForReview(input.relationId))) throw new NothingToReview(null);
       const runs = createRelationMatchRunRepository(client);
       const run = await runs.start({ kind: "review" });
-      const written = await createAtomicNoteRelationRepository(client).review(
-        input.relationId,
-        input.verdict,
-        run.id
-      );
+      const written = await relations.review(input.relationId, input.verdict, run.id);
       if (!written) throw new NothingToReview(null);
-      const outcome = written.relation.status === "accepted" ? "kept" : "removed";
       // The run and its event are kept only when the verdict was written.
-      if (written.change !== "updated")
-        throw new NothingToReview({ relationId: input.relationId, outcome, changed: false });
+      if (written.change !== "updated") {
+        // A row that is locked and has no human verdict is always written: anything else would
+        // answer a verdict that does not stand.
+        if (written.relation.status === "pending_review")
+          throw new Error("The relation changed while it was reviewed.");
+        throw new NothingToReview({
+          relationId: input.relationId,
+          outcome: written.relation.status === "accepted" ? "kept" : "removed",
+          changed: false
+        });
+      }
+      const outcome = written.relation.status === "accepted" ? "kept" : "removed";
       await runs.finish(run.id, { outcome: "succeeded", counts: { [outcome]: 1 } });
       const noteIds = [written.relation.sourceAtomicNoteId, written.relation.targetAtomicNoteId];
       if (written.relation.relationType !== null) {
-        const homes = await client.query<{ id: string }>(
-          `select distinct created_from_source_item_id as id from atomic_notes
-            where id = any($1::uuid[]) and created_from_source_item_id is not null`,
-          [noteIds]
-        );
+        const notes = createAtomicNoteRepository(client);
+        const homes = new Set<string>();
+        for (const noteId of noteIds) {
+          const home = (await notes.findById(noteId))?.createdFromSourceItemId;
+          if (home) homes.add(home);
+        }
         const roots = new Set<string>();
-        for (const home of homes.rows) roots.add(await linkRootOf(client, home.id));
+        for (const homeId of homes) roots.add(await linkRootOf(client, homeId));
         const jobs = createJobRepository(client);
         for (const rootId of [...roots].sort())
           await jobs.enqueueDeduped({

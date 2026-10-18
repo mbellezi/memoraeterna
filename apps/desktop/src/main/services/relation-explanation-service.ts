@@ -302,13 +302,14 @@ export class RelationExplanationService {
    * Applies the writer's verdict that the notes are unrelated. A relation nobody decided is withdrawn
    * (hidden everywhere until the owner keeps or removes it); one that is already withdrawn stays
    * so; one that cannot be withdrawn stays as it is: a human verdict is final, and nothing is
-   * explained.
+   * explained. `context` was read when the request started, so the answer for a relation that was
+   * withdrawn then is read again: the owner may have kept it while the explanation was written.
    */
   private async settle(
     pool: PgPool,
     context: RelationExplanationContext
   ): Promise<RelationVetoResult | RelationUnrelatedResult | null> {
-    if (context.withdrawn) return vetoed(context.relationId);
+    if (context.withdrawn) return this.standing(pool, context.relationId);
     if (!context.vetoable) return unrelatedOutcome(context.relationId);
     const homeSourceIds = [context.a.homeSourceId, context.b.homeSourceId].filter(
       (id): id is string => id !== null
@@ -322,10 +323,18 @@ export class RelationExplanationService {
       this.options.relationsChanged?.(written.noteIds);
       return vetoed(context.relationId);
     }
-    // Withdrawn or decided by someone else while the writer was answering: ask what it is now.
-    const now = await createRelationExplanationRepository(pool).readContext(context.relationId);
+    // Withdrawn or decided by someone else while the writer was answering.
+    return this.standing(pool, context.relationId);
+  }
+
+  /** The answer for a relation that the writer found unrelated, from what it is now. */
+  private async standing(
+    pool: PgPool,
+    relationId: string
+  ): Promise<RelationVetoResult | RelationUnrelatedResult | null> {
+    const now = await createRelationExplanationRepository(pool).readContext(relationId);
     if (!now || !explainable(now)) return null;
-    return now.withdrawn ? vetoed(context.relationId) : unrelatedOutcome(context.relationId);
+    return now.withdrawn ? vetoed(relationId) : unrelatedOutcome(relationId);
   }
 }
 

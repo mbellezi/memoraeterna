@@ -2894,7 +2894,7 @@
       "withdrawnTyper": "The typing step found no real link between these notes, so this relation is hidden.",
       "keep": "Keep",
       "remove": "Remove",
-      "reviewScope": "Keep confirms this relation. Remove is final: this pair is not suggested again.",
+      "reviewScope": "Keep confirms this relation. Remove is final for these two notes: they are not suggested to each other again.",
       "reviewFailed": "Your choice could not be saved. Try again."
     }
   }

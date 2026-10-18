@@ -991,6 +991,22 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
       expect(relationsChanged).not.toHaveBeenCalled();
     });
 
+    it("answers a relation the owner kept while the writer answered as it is now, not as it was withdrawn", async () => {
+      // Read withdrawn by the typer when the request started...
+      repository.readContext.mockResolvedValueOnce(
+        context({ vetoable: false, withdrawn: true, vetoSource: "typer" })
+      );
+      // ...kept by the owner by the time the writer says NOT_RELATED.
+      repository.readContext.mockResolvedValueOnce(
+        context({ vetoable: false, withdrawn: false, status: "accepted" })
+      );
+      const { explain, withdraw, relationsChanged } = build(() => "NOT_RELATED");
+      expect(await explain()).toEqual({ relationId: ids.relation, unrelated: true });
+      expect(withdraw).not.toHaveBeenCalled();
+      expect(relationsChanged).not.toHaveBeenCalled();
+      expect(repository.readContext).toHaveBeenCalledTimes(2);
+    });
+
     it("withdraws a relation nobody has decided since, with no call: a verdict cached but not applied", async () => {
       repository.readContext.mockResolvedValue(context({ stored: verdict() }));
       const { explain, runDefaultTask, withdraw, relationsChanged } = build(() => "NOT_RELATED");

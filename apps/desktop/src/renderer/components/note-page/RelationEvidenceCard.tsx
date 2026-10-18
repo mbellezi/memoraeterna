@@ -30,6 +30,12 @@ function scrollContainerBottom(element: HTMLElement): number {
   return window.innerHeight;
 }
 
+/**
+ * While a verdict is saved the choices stay focusable and only stop answering: a disabled button
+ * can lose the focus, and the card closes when focus leaves it.
+ */
+const savingStyle = "aria-disabled:cursor-not-allowed aria-disabled:opacity-45";
+
 const roleKeys: Record<ProvenanceLine["role"], MessageKey> = {
   decided: "notePage.card.decided",
   typed: "notePage.card.typed",
@@ -243,18 +249,24 @@ export function RelationEvidenceCard({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              disabled={reviewing}
+              aria-disabled={reviewing || undefined}
+              className={savingStyle}
               aria-describedby={scopeId}
-              onClick={() => onReview("keep")}
+              onClick={() => {
+                if (!reviewing) onReview("keep");
+              }}
             >
               <Check aria-hidden="true" />
               {t("notePage.card.keep")}
             </Button>
             <Button
               type="button"
-              disabled={reviewing}
+              aria-disabled={reviewing || undefined}
+              className={savingStyle}
               aria-describedby={scopeId}
-              onClick={() => onReview("remove")}
+              onClick={() => {
+                if (!reviewing) onReview("remove");
+              }}
             >
               <X aria-hidden="true" />
               {t("notePage.card.remove")}

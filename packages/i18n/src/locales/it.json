@@ -2892,7 +2892,7 @@
       "withdrawnTyper": "Il passaggio di classificazione non ha trovato un legame reale tra queste note, quindi questa relazione è nascosta.",
       "keep": "Mantieni",
       "remove": "Rimuovi",
-      "reviewScope": "Mantieni conferma questa relazione. Rimuovi è definitivo: questa coppia non verrà più suggerita.",
+      "reviewScope": "Mantieni conferma questa relazione. Rimuovi è definitivo per queste due note: non verranno più suggerite l'una all'altra.",
       "reviewFailed": "Non è stato possibile salvare la tua scelta. Riprova."
     }
   }

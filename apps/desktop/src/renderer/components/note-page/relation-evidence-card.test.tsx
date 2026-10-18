@@ -274,7 +274,9 @@ describe("Keep and Remove (D15)", () => {
     expect(idle).toContain(`id="${scope}"`);
     expect(idle).not.toContain('disabled=""');
     const saving = open(suggested, { reviews: { [suggested.id]: { status: "pending" } } });
-    expect(saving.match(/disabled=""/g)).toHaveLength(2);
+    // Not `disabled`: a disabled button can lose the focus, and the card closes with it.
+    expect(saving).not.toContain('disabled=""');
+    expect(saving.match(/aria-disabled="true"/g)).toHaveLength(2);
     expect(saving).toContain('aria-busy="true"');
   });
 
@@ -300,6 +302,8 @@ describe("withdrawn relations and earlier versions", () => {
     expect(collapsed).toContain("2 relations withdrawn");
     expect(collapsed).toMatch(/aria-expanded="false"[^>]*>(?:<svg.*?<\/svg>)?Show</);
     expect(collapsed).not.toContain("Idea 70.");
+    // The list the toggle controls is not in the page while it is collapsed.
+    expect(collapsed).not.toContain("aria-controls");
     // The main count is the shown relations only.
     expect(collapsed).toMatch(/Relations<\/h2><span[^>]*>1<\/span>/);
     const opened = render(page, { withdrawnOpen: true });

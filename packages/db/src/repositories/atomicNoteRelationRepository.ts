@@ -11,7 +11,8 @@ import {
   appliedNoteRelationSql,
   noteRelationStateLabelSql,
   noteRelationStateSql,
-  shownNoteRelationSql
+  shownNoteRelationSql,
+  type NoteRelationStateLabel
 } from "./note-relation-sql.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type {
@@ -382,11 +383,27 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
     },
 
     /**
+     * Locks a relation's row until the transaction ends (`select ... for update`) and says whether
+     * the relation exists. The review's first step: under READ COMMITTED the statement that follows
+     * takes its snapshot after the lock, so its before image and the verdict it answers when it
+     * writes nothing are the newest committed version of the row, not the one a writer replaced
+     * while this one waited (D14, I-R8). It means nothing outside a transaction.
+     */
+    async lockForReview(relationId: string): Promise<boolean> {
+      const result = await db.query(
+        "select 1 from atomic_note_relations where id = $1::uuid for update",
+        [relationId]
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    /**
      * The owner's verdict on a relation (D15): `keep` accepts it and clears any veto, `remove`
      * rejects it. The verdict and its `kept` or `removed` event in run `runId` are one statement
      * (D14). Final in both directions: a relation that already has a human verdict is returned
      * unchanged (`change` is `reviewed`), and automation never changes either verdict. Resolves to
-     * null when the relation is gone.
+     * null when the relation is gone. Call `lockForReview` first in the same transaction: without
+     * the lock a concurrent writer can leave a stale before image and a stale answer.
      */
     async review(
       relationId: string,
@@ -420,8 +437,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
           targetTitle: string;
           shown: boolean;
           applied: boolean;
-          /** What the relation is now, from the same predicates: applied, suggested or kept. */
-          state: "applied" | "suggested" | "withdrawn" | "kept";
+          /** What the relation is now, from the same predicates (a removed one included). */
+          state: NoteRelationStateLabel;
         }
       >
     > {
@@ -433,7 +450,7 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
           targetTitle: string;
           shown: boolean;
           applied: boolean;
-          state: "applied" | "suggested" | "withdrawn" | "kept";
+          state: NoteRelationStateLabel;
         }
       >(
         `select ${columns("relation")},

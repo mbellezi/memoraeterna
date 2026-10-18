@@ -320,13 +320,44 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     );
   });
 
+  it("locks a relation's row for a review and says whether the relation exists", async () => {
+    const [a, b] = [await note("LK1", "x"), await note("LK2", "y")];
+    const { relation } = await decided(a, b, { band: "suggest" });
+    expect(await relations().lockForReview(randomUUID())).toBe(false);
+
+    const holder = await db().connect();
+    const other = await db().connect();
+    try {
+      await holder.query("begin");
+      expect(await createAtomicNoteRelationRepository(holder).lockForReview(relation.id)).toBe(
+        true
+      );
+      // Another writer waits for the row until the lock is released.
+      await other.query("begin");
+      await other.query("set local lock_timeout = '150ms'");
+      await expect(
+        other.query("update atomic_note_relations set updated_at = now() where id = $1", [
+          relation.id
+        ])
+      ).rejects.toThrow(/lock timeout/u);
+    } finally {
+      await other.query("rollback").catch(() => undefined);
+      other.release();
+      await holder.query("rollback").catch(() => undefined);
+      holder.release();
+    }
+    // Released with the transaction.
+    expect(await relations().lockForReview(relation.id)).toBe(true);
+  });
+
   it("says what each relation of a source is now, from the same predicates", async () => {
-    const [a, b, c, d, e] = [
+    const [a, b, c, d, e, f] = [
       await note("W1", "x"),
       await note("W2", "y"),
       await note("W3", "y"),
       await note("W4", "y"),
-      await note("W5", "y")
+      await note("W5", "y"),
+      await note("W6", "y")
     ];
     const reviewRun = await run("review");
     const applied = await decided(a, b, { band: "apply" });
@@ -335,12 +366,20 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     await relations().review(kept.relation.id, "keep", reviewRun);
     const withdrawn = await decided(a, e, { band: "apply" });
     await relations().veto(withdrawn.relation.id, "typer", runId);
+    const removed = await decided(a, f, { band: "apply" });
+    await relations().review(removed.relation.id, "remove", reviewRun);
     const listed = await relations().listBySourceItem(works.x.id);
     const byId = new Map(listed.map((row) => [row.id, row]));
     expect(byId.get(applied.relation.id)).toMatchObject({ state: "applied", shown: true });
     expect(byId.get(suggested.relation.id)).toMatchObject({ state: "suggested", shown: true });
     expect(byId.get(kept.relation.id)).toMatchObject({ state: "kept", shown: true, applied: true });
     expect(byId.get(withdrawn.relation.id)).toMatchObject({ state: "withdrawn", shown: false });
+    // A removed relation is listed too, and never reads as applied.
+    expect(byId.get(removed.relation.id)).toMatchObject({
+      state: "removed",
+      shown: false,
+      applied: false
+    });
   });
 
   it("records exactly one event per automatic change in the write's own statement (D14, I-R8)", async () => {

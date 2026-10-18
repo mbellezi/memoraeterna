@@ -52,6 +52,10 @@ export const noteRelationStateSql = {
   kept(relation: string): string {
     return `(${alias(relation)}.status = 'accepted')`;
   },
+  /** The owner removed it (the review writer, D15): listed nowhere, never made again (I-R3). */
+  removed(relation: string): string {
+    return `(${alias(relation)}.status = 'rejected')`;
+  },
   /** A human verdict (kept or removed): automation never changes the relation again (I-R2, I-R3). */
   reviewed(relation: string): string {
     return `(${alias(relation)}.status <> 'pending_review')`;
@@ -155,15 +159,19 @@ export function earlierVersionNoteRelationSql(
     and not (${endpointCurrentSql(self)} and ${endpointCurrentSql(other)}))`;
 }
 
+export type NoteRelationStateLabel = "kept" | "withdrawn" | "suggested" | "removed" | "applied";
+
 /**
- * What a listed relation is now, as text: `kept` (the owner kept it), `withdrawn` (an automatic veto
- * is not yet reviewed), `suggested` (the suggest band) or `applied` (the rest, legacy rows included).
- * Meant for rows the shown, withdrawn or earlier-version predicate already selected.
+ * What a relation is now, as text: `kept` (the owner kept it), `withdrawn` (an automatic veto is not
+ * yet reviewed), `suggested` (the suggest band), `removed` (the owner removed it) or `applied` (the
+ * rest, legacy rows included). Total over the stored states, so a caller that does not filter on
+ * the visibility predicates first never reads a removed relation as applied.
  */
 export function noteRelationStateLabelSql(relation: string): string {
   return `(case when ${noteRelationStateSql.kept(relation)} then 'kept'
                when ${noteRelationStateSql.withdrawn(relation)} then 'withdrawn'
                when ${noteRelationStateSql.suggested(relation)} then 'suggested'
+               when ${noteRelationStateSql.removed(relation)} then 'removed'
                else 'applied' end)`;
 }
 

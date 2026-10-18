@@ -2899,7 +2899,7 @@
       "withdrawnTyper": "L’étape de typage n’a trouvé aucun lien réel entre ces notes, cette relation est donc masquée.",
       "keep": "Conserver",
       "remove": "Supprimer",
-      "reviewScope": "Conserver confirme cette relation. Supprimer est définitif : cette paire ne sera plus suggérée.",
+      "reviewScope": "Conserver confirme cette relation. Supprimer est définitif pour ces deux notes : elles ne seront plus suggérées l'une à l'autre.",
       "reviewFailed": "Votre choix n’a pas pu être enregistré. Réessayez."
     }
   }

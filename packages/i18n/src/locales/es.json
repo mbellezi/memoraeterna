@@ -2901,7 +2901,7 @@
       "withdrawnTyper": "El paso de tipificación no encontró un vínculo real entre estas notas, así que esta relación está oculta.",
       "keep": "Conservar",
       "remove": "Eliminar",
-      "reviewScope": "Conservar confirma esta relación. Eliminar es definitivo: este par no se volverá a sugerir.",
+      "reviewScope": "Conservar confirma esta relación. Eliminar es definitivo para estas dos notas: no se volverán a sugerir entre sí.",
       "reviewFailed": "No se pudo guardar tu elección. Inténtalo de nuevo."
     }
   }

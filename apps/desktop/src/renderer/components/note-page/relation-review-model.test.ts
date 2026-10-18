@@ -128,6 +128,24 @@ describe("lists of relations on the page", () => {
     const dropped = keepShownRelations(shown, refreshed, new Set([rows(0, 30)[25]!.id]));
     expect(dropped.relations.items).toHaveLength(29);
   });
+
+  it("drops a row kept past the first page that the refreshed rows list in another group", () => {
+    const rows = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, index) => row(1000 + from + index));
+    const withdrawnRows = rows(100, 130);
+    const movedId = withdrawnRows[25]!.id;
+    const shown = pageWith({ withdrawn: withdrawnRows, totals: [0, 30, 0] });
+    // Kept elsewhere: the server now lists it in the shown group, no longer in the withdrawn one.
+    const refreshed = pageWith({
+      shown: [{ ...withdrawnRows[25]!, state: "kept" }],
+      withdrawn: rows(100, 120),
+      totals: [1, 29, 0]
+    });
+    const kept = keepShownRelations(shown, refreshed);
+    expect(kept.withdrawn.items).toHaveLength(29);
+    expect(kept.withdrawn.items.some((item) => item.id === movedId)).toBe(false);
+    expect(kept.relations.items.map((item) => item.id)).toEqual([movedId]);
+  });
 });
 
 describe("where focus goes when a row leaves its list", () => {
@@ -179,6 +197,19 @@ describe("the owner's verdict on a relation (I-R2, I-R3)", () => {
       vetoSource: null
     });
     expect(moved.relations.total).toBe(3);
+  });
+
+  it("does not append a kept withdrawn relation to a shown list that was read in part", () => {
+    // Two of five shown rows are loaded: the kept row would shift the offset of "Show more".
+    const page = pageWith({
+      shown: [row(60), row(62)],
+      withdrawn: [row(64, { state: "withdrawn", vetoSource: "typer" })],
+      totals: [5, 1, 0]
+    });
+    const moved = withReviewed(page, fixtureId(64), "kept");
+    expect(moved.relations.items.map((item) => item.id)).toEqual([fixtureId(60), fixtureId(62)]);
+    expect(moved.relations.total).toBe(6);
+    expect(moved.withdrawn).toEqual({ items: [], total: 0 });
   });
 
   it("leaves a page without the relation as it is, and an earlier-version list too", () => {

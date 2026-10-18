@@ -18,6 +18,7 @@ import {
   runMigrations,
   shownNoteRelationSql,
   withdrawnNoteRelationSql,
+  type PgClient,
   type PgPool
 } from "@app/db";
 
@@ -317,6 +318,140 @@ describe.skipIf(!sidecarInstalled)("the relation review on a real PostgreSQL dat
     // The matcher skips a pair with a verdict.
     const statuses = await relations.pairStatuses(removed.pair.lo, [removed.pair.hi]);
     expect(statuses.get(removed.pair.hi)).toBe("rejected");
+  });
+
+  /**
+   * Another writer holds the relation's row in a transaction while the review starts: `hold`
+   * writes in it, the review is started and waits for the row, and the writer commits.
+   */
+  const reviewBehind = async (
+    id: string,
+    verdict: "keep" | "remove",
+    hold: (writer: PgClient, runId: string) => Promise<void>
+  ) => {
+    const writer = await pool!.connect();
+    try {
+      await writer.query("begin");
+      const runs = createRelationMatchRunRepository(writer);
+      const run = await runs.start({ kind: "veto" });
+      await hold(writer, run.id);
+      const review = build().service.review({ relationId: id, verdict });
+      // The review is parked on the row (a lock wait of another backend), not finished or failed.
+      for (let attempt = 0; ; attempt += 1) {
+        const waiting = await pool!.query(
+          `select 1 from pg_stat_activity
+            where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`
+        );
+        if (waiting.rowCount) break;
+        if (attempt >= 200) throw new Error("The review never waited for the relation.");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await runs.finish(run.id, { outcome: "succeeded", counts: {} });
+      await writer.query("commit");
+      return await review;
+    } finally {
+      await writer.query("rollback").catch(() => undefined);
+      writer.release();
+    }
+  };
+  const runIdOfKind = async (kind: string) =>
+    (
+      await pool!.query<{ id: string }>("select id from relation_match_runs where kind = $1", [
+        kind
+      ])
+    ).rows[0]!.id;
+
+  it("records the row a veto left when the veto commits while the review waits, and reverts exactly (D14, I-R8)", async () => {
+    const { id } = await seedRelation({ band: "suggest" });
+    const reviewed = await reviewBehind(id, "keep", async (writer, runId) => {
+      const vetoed = await createAtomicNoteRelationRepository(writer).veto(id, "explainer", runId);
+      expect(vetoed?.change).toBe("updated");
+    });
+    expect(reviewed).toEqual({ relationId: id, outcome: "kept", changed: true });
+    expect(await state(id)).toMatchObject({ status: "accepted", vetoSource: null, shown: true });
+
+    const events = createRelationEventRepository(pool!);
+    const [kept] = (await events.listByRelation("note", id)).filter((e) => e.kind === "kept");
+    expect(kept?.before).toMatchObject({ status: "pending_review", veto_source: "explainer" });
+    expect(kept?.before?.vetoed_at).not.toBeNull();
+    expect(kept?.after).toMatchObject({ status: "accepted", veto_source: null, vetoed_at: null });
+
+    // Reverting the review puts the vetoed row back, so the veto itself can be reverted after it.
+    expect(await events.revertRun(await runIdOfKind("review"))).toMatchObject({ kind: "reverted" });
+    expect(await state(id)).toMatchObject({
+      status: "pending_review",
+      vetoSource: "explainer",
+      withdrawn: true
+    });
+    expect(await events.revertRun(await runIdOfKind("veto"))).toMatchObject({ kind: "reverted" });
+    expect(await state(id)).toMatchObject({ status: "pending_review", vetoSource: null });
+  });
+
+  it("records the row a retype left when a link job commits while the review waits (D14, I-R8)", async () => {
+    const { id, pair } = await seedRelation({ band: "suggest" });
+    await reviewBehind(id, "keep", async (writer, runId) => {
+      const retyped = await createAtomicNoteRelationRepository(writer).upsert({
+        loAtomicNoteId: pair.lo,
+        hiAtomicNoteId: pair.hi,
+        direction: "hi_to_lo",
+        relationType: "extends",
+        band: "apply",
+        probability: 0.9,
+        finalScore: 0.9,
+        explanation: "knowledge.relations.explanations.reranked",
+        runId
+      });
+      expect(retyped.change).toBe("updated");
+    });
+    const events = createRelationEventRepository(pool!);
+    const [kept] = (await events.listByRelation("note", id)).filter((e) => e.kind === "kept");
+    expect(kept?.before).toMatchObject({ relation_type: "extends", direction: "hi_to_lo" });
+    expect(kept?.after).toMatchObject({ relation_type: "extends", status: "accepted" });
+    expect(await events.revertRun(await runIdOfKind("review"))).toMatchObject({ kind: "reverted" });
+    expect(await state(id)).toMatchObject({ status: "pending_review", shown: true });
+    const stored = await pool!.query<{ relationType: string }>(
+      'select relation_type as "relationType" from atomic_note_relations where id = $1',
+      [id]
+    );
+    expect(stored.rows[0]?.relationType).toBe("extends");
+  });
+
+  it("answers the verdict that stands to the review that loses a race, never a removal of a kept relation (I-R2)", async () => {
+    const { id } = await seedRelation({ band: "suggest" });
+    const losing = await reviewBehind(id, "remove", async (writer) => {
+      const relations = createAtomicNoteRelationRepository(writer);
+      expect(await relations.lockForReview(id)).toBe(true);
+      const run = await createRelationMatchRunRepository(writer).start({ kind: "review" });
+      expect((await relations.review(id, "keep", run.id))?.change).toBe("updated");
+    });
+    expect(losing).toEqual({ relationId: id, outcome: "kept", changed: false });
+    expect(await state(id)).toMatchObject({ status: "accepted", shown: true });
+    // One verdict, one run, one event: the review that lost recorded none.
+    expect(await reviewRuns()).toBe(1);
+    const verdicts = await pool!.query(
+      "select 1 from relation_events where kind in ('kept', 'removed')"
+    );
+    expect(verdicts.rowCount).toBe(1);
+  });
+
+  it("never answers a removal for a row without a verdict that the review could not write", async () => {
+    const { id } = await seedRelation({ band: "suggest" });
+    const db = pool!;
+    // A trigger that swallows the update: the statement then falls back to the row as stored.
+    await db.query(`create function swallow_relation_update() returns trigger language plpgsql
+                    as $$ begin return null; end $$`);
+    await db.query(`create trigger swallow_relation_update before update on atomic_note_relations
+                    for each row execute function swallow_relation_update()`);
+    try {
+      await expect(build().service.review({ relationId: id, verdict: "keep" })).rejects.toThrow(
+        "changed while it was reviewed"
+      );
+    } finally {
+      await db.query("drop trigger swallow_relation_update on atomic_note_relations");
+      await db.query("drop function swallow_relation_update()");
+    }
+    expect(await state(id)).toMatchObject({ status: "pending_review", shown: true });
+    expect(await reviewRuns()).toBe(0);
   });
 
   it("promotes the roots of a typed relation again and leaves an untyped one alone", async () => {

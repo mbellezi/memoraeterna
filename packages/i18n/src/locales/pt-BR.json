@@ -2897,7 +2897,7 @@
       "withdrawnTyper": "A etapa de tipificação não encontrou uma ligação real entre estas notas, então esta relação está oculta.",
       "keep": "Manter",
       "remove": "Remover",
-      "reviewScope": "Manter confirma esta relação. Remover é definitivo: este par não será sugerido de novo.",
+      "reviewScope": "Manter confirma esta relação. Remover é definitivo para estas duas notas: elas não serão sugeridas uma à outra de novo.",
       "reviewFailed": "Sua escolha não pôde ser salva. Tente de novo."
     }
   }

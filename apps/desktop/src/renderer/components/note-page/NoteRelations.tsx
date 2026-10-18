@@ -400,7 +400,7 @@ export function NoteRelations({
               type="button"
               variant="secondary"
               aria-expanded={withdrawnOpen}
-              aria-controls={withdrawnListId}
+              aria-controls={withdrawnOpen ? withdrawnListId : undefined}
               onClick={onToggleWithdrawn}
             >
               {withdrawnOpen ? (

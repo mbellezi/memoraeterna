@@ -175,7 +175,7 @@ describe("the visibility predicates (D9)", () => {
     applied: ["applied", "shown", "undecidedByHuman", "vetoable"],
     suggested: ["suggested", "shown", "undecidedByHuman", "vetoable"],
     withdrawn: ["withdrawn", "undecidedByHuman"],
-    removed: ["reviewed"]
+    removed: ["removed", "reviewed"]
   };
 
   it("classifies every state: a human verdict is final, a veto withdraws, the band applies or suggests", () => {
@@ -219,14 +219,16 @@ describe("the visibility predicates (D9)", () => {
     expect(earlierVersionNoteRelationSql("r", "s", "o")).toContain("not (");
   });
 
-  it("labels a listed relation kept, withdrawn, suggested or applied from the same predicates", () => {
+  it("labels a relation kept, withdrawn, suggested, removed or applied from the same predicates", () => {
     const label = noteRelationStateLabelSql("r");
     expect(label).toContain(noteRelationStateSql.kept("r"));
     expect(label).toContain(noteRelationStateSql.withdrawn("r"));
     expect(label).toContain(noteRelationStateSql.suggested("r"));
+    expect(label).toContain(noteRelationStateSql.removed("r"));
     // The owner's verdict wins over a veto that was recorded before it, and applied is the rest.
     expect(label.indexOf("'kept'")).toBeLessThan(label.indexOf("'withdrawn'"));
     expect(label.indexOf("'withdrawn'")).toBeLessThan(label.indexOf("'suggested'"));
+    expect(label.indexOf("'suggested'")).toBeLessThan(label.indexOf("'removed'"));
     expect(label).toContain("else 'applied'");
     expect(() => noteRelationStateLabelSql("r; drop")).toThrow("Unsafe SQL alias");
   });

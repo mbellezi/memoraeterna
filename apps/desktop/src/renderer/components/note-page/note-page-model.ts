@@ -569,7 +569,11 @@ export function keepShownRelations(
   if (!shown) return refreshed;
   let next = refreshed;
   for (const { list } of relationLists) {
-    const kept = keepShownList(shown[list], refreshed[list], dropped);
+    // A row is in one list: the refreshed rows of another list say a kept row has moved there.
+    const elsewhere = relationLists.flatMap((other) =>
+      other.list === list ? [] : refreshed[other.list].items.map((item) => item.id)
+    );
+    const kept = keepShownList(shown[list], refreshed[list], new Set([...dropped, ...elsewhere]));
     if (kept !== refreshed[list]) next = { ...next, [list]: kept };
   }
   return next;
@@ -600,7 +604,8 @@ export function focusAfterRemoval(ids: readonly string[], removedId: string): st
 /**
  * The page after the owner's verdict on a relation, before it is read again: a removed relation
  * leaves its list and the total; a kept one says so, and a kept withdrawn one moves to the shown
- * list (last: the order is the server's, which the next read restores). The same page when the
+ * list (last when that list is fully loaded: the order is the server's, which the next read
+ * restores). The same page when the
  * relation is not on it.
  */
 export function withReviewed(
@@ -626,10 +631,17 @@ export function withReviewed(
         items: from.items.map((candidate) => (candidate.id === relationId ? kept : candidate))
       }
     };
+  // The row joins the shown list only when that list is fully loaded. A list read in part gets it
+  // at the place the server sorts it, on the next read: appended here it would shift the offset
+  // "Show more" asks for, and one row of the server's list would be skipped.
+  const loaded = page.relations.items.length >= page.relations.total;
   return {
     ...page,
     [found.list]: left,
-    relations: { items: [...page.relations.items, kept], total: page.relations.total + 1 }
+    relations: {
+      items: loaded ? [...page.relations.items, kept] : page.relations.items,
+      total: page.relations.total + 1
+    }
   };
 }
 
