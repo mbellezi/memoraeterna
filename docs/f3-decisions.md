@@ -253,6 +253,13 @@ The owner decided (plan decision 29), amending D18 and D23:
   breaker, helper restarts and remote deadlines met; the repair bar sets aside the local writer's structured calls
   (8-19% invalid output; JSON-constrained decoding moves to F4).
 
+### M2 budget (owner, 2026-10-18)
+
+The Codex cap for F3 rises from 1.7M to 2.5M tokens (decision 29's wide suggest band multiplies typing: M2's gating
+runs alone need about 1.29M against 1.25M left); the Decisions API may spend up to US$ 2.00 in M2 on synthetic fixture
+text (F3 total about US$ 2.80). X1 has zero margin on the local decider (27/28 in all 200 simulated orders): one typer
+veto on a single-support pair fails it; reported as a known risk before M2.
+
 ## Measurement
 
 ### Exit criteria
