@@ -1453,7 +1453,7 @@
         "privacy": {
           "title": "Your note text is sent to OpenAI",
           "body": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
-          "cost": "It costs about US$ {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at US$ {cap}, and the local ranker takes over."
+          "cost": "It costs about {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at {cap}, and the local ranker takes over."
         },
         "state": {
           "loading": "Loading…",
@@ -1496,7 +1496,7 @@
           "invalid": "OpenAI refused the saved key. Save a valid one."
         },
         "spend": {
-          "today": "Spent today: US$ {spent} of US$ {cap} ({requests} requests)."
+          "today": "Spent today: {spent} of {cap} ({requests} requests)."
         },
         "calibration": {
           "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",

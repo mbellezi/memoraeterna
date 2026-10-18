@@ -1,6 +1,11 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { createTranslator, supportedLanguageCodes, type MessageKey } from "@app/i18n";
+import {
+  createTranslator,
+  supportedLanguageCodes,
+  type LanguageCode,
+  type MessageKey
+} from "@app/i18n";
 import { decisionsFallbackReasons } from "@app/domain";
 
 import type { AiDecisionsStatus } from "../../shared/ipc";
@@ -9,11 +14,14 @@ import {
   decisionsErrorKey,
   decisionsStatusLine,
   DecisionsDeciderView,
+  formatUsd,
   type DecisionsApi,
   type DecisionsDeciderViewProps
 } from "./DecisionsDecider";
 
 const visible = (html: string) => html.replaceAll("<!-- -->", "");
+/** Money keeps its number and symbol together with a no-break space; compare with plain spaces. */
+const plain = (text: string) => text.replace(/[\u00a0\u202f]/gu, " ");
 
 const status = (overrides: Partial<AiDecisionsStatus> = {}): AiDecisionsStatus => ({
   state: "off",
@@ -34,7 +42,7 @@ const status = (overrides: Partial<AiDecisionsStatus> = {}): AiDecisionsStatus =
 });
 
 function view(
-  locale: string,
+  locale: LanguageCode,
   current: AiDecisionsStatus,
   overrides: Partial<DecisionsDeciderViewProps> = {}
 ) {
@@ -42,6 +50,7 @@ function view(
     renderToString(
       <DecisionsDeciderView
         t={createTranslator(locale)}
+        interfaceLanguage={locale}
         status={current}
         busy={false}
         confirming={false}
@@ -70,8 +79,8 @@ describe("Settings > AI: the OpenAI Decisions decider", () => {
     expect(html).toContain("model gpt-6-luna");
     expect(html).toContain("up to 30 days");
     expect(html).toContain("Nothing is sent while this is off");
-    expect(html).toContain("about US$ 0.1 per million input tokens");
-    expect(html).toContain("US$ 0.50");
+    expect(plain(html)).toContain("about $0.10 per million input tokens");
+    expect(plain(html)).toContain("at $0.50, and the local ranker takes over");
     expect(html).toContain("Off. The local ranker decides note relations.");
     expect(html).toContain("Turn on…");
     expect(html).not.toContain("Turn off");
@@ -154,7 +163,7 @@ describe("Settings > AI: the OpenAI Decisions decider", () => {
       })
     );
     expect(ready).toContain("On. OpenAI Decisions decides note relations.");
-    expect(ready).toContain("Spent today: US$ 0.01 of US$ 0.50 (41 requests).");
+    expect(plain(ready)).toContain("Spent today: $0.01 of $0.50 (41 requests).");
     expect(ready).toContain("applied automatically");
     expect(
       view("en", status({ state: "ready", enabled: true })).includes("not calibrated yet")
@@ -168,6 +177,69 @@ describe("Settings > AI: the OpenAI Decisions decider", () => {
     ).toBe(
       "On. OpenAI Decisions decides note relations. The last time, the local ranker decided instead: OpenAI could not be reached."
     );
+  });
+
+  it("writes the price, the cap and the spend in the interface language", () => {
+    const spent = status({ spentTodayUsd: 0.0123, requestsToday: 41 });
+    const portuguese = plain(view("pt-BR", spent));
+    expect(portuguese).toContain("Custa cerca de US$ 0,10 por milhão de tokens");
+    expect(portuguese).toContain("ao chegar a US$ 0,50, e o ranqueador");
+    expect(portuguese).toContain("Gasto hoje: US$ 0,01 de US$ 0,50 (41 requisições).");
+    expect(portuguese).not.toMatch(/US\$ \d+\.\d/u);
+    // French puts the symbol after the number.
+    const french = plain(view("fr", spent));
+    expect(french).toContain("Il coûte environ 0,10 $US par million de jetons");
+    expect(french).toContain("à 0,50 $US, et le classeur local");
+    expect(french).toMatch(/aujourd(?:'|&#x27;)hui : 0,01 \$US sur 0,50 \$US \(41 requêtes\)\./u);
+    // Without the language the card writes English, as the rest of the Settings view does.
+    const unspecified = plain(
+      visible(
+        renderToString(
+          <DecisionsDeciderView
+            t={createTranslator("en")}
+            status={spent}
+            busy={false}
+            confirming={false}
+            keyDraft=""
+            onKeyDraft={() => {}}
+            onAskEnable={() => {}}
+            onConfirmEnable={() => {}}
+            onCancelEnable={() => {}}
+            onDisable={() => {}}
+            onSaveKey={() => {}}
+            onRemoveKey={() => {}}
+            onTestKey={() => {}}
+          />
+        )
+      )
+    );
+    expect(unspecified).toContain("about $0.10 per million");
+    expect(unspecified).toContain("Spent today: $0.01 of $0.50 (41 requests).");
+  });
+
+  it.each([
+    ["en", "$0.50", "$0.10", "$0.0012"],
+    ["pt-BR", "US$ 0,50", "US$ 0,10", "US$ 0,0012"],
+    ["it", "0,50 USD", "0,10 USD", "0,0012 USD"],
+    ["fr", "0,50 $US", "0,10 $US", "0,0012 $US"],
+    ["es", "0,50 US$", "0,10 US$", "0,0012 US$"]
+  ] as const)(
+    "formats US dollars in %s: cents, four decimals under a cent, the price with cents",
+    (locale, cap, price, tiny) => {
+      expect(plain(formatUsd(locale, 0.5))).toBe(cap);
+      expect(plain(formatUsd(locale, 0.1, "price"))).toBe(price);
+      expect(plain(formatUsd(locale, 0.0012))).toBe(tiny);
+    }
+  );
+
+  it("keeps the precision rules: cents from one cent, four decimals below it, a finer price intact", () => {
+    expect(plain(formatUsd("en", 0.01))).toBe("$0.01");
+    expect(plain(formatUsd("en", 0.0099))).toBe("$0.0099");
+    expect(plain(formatUsd("en", 0))).toBe("$0.0000");
+    expect(plain(formatUsd("en", 12.345))).toBe("$12.35");
+    expect(plain(formatUsd("pt-BR", 1234.5))).toBe("US$ 1.234,50");
+    expect(plain(formatUsd("en", 0.075, "price"))).toBe("$0.075");
+    expect(plain(formatUsd("en", 2, "price"))).toBe("$2.00");
   });
 
   it.each(supportedLanguageCodes)(

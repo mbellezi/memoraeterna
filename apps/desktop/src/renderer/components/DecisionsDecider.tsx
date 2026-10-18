@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Check, Cloud, KeyRound, LoaderCircle, ShieldAlert, TriangleAlert } from "lucide-react";
 import type { AiPresetMode, DecisionsFallbackReason } from "@app/domain";
-import type { MessageKey } from "@app/i18n";
+import type { LanguageCode, MessageKey } from "@app/i18n";
 
 import type { AiDecisionsStatus } from "../../shared/ipc";
 import { Button } from "./ui/button";
@@ -21,7 +21,25 @@ const reasonKeys: Record<DecisionsFallbackReason, MessageKey> = {
   error: "settings.ai.decisions.reasons.error"
 };
 
-const money = (value: number) => (value < 0.01 ? value.toFixed(4) : value.toFixed(2));
+/**
+ * A US dollar amount written the way the interface language writes money (decimal mark, symbol and
+ * its place). Spend shows cents, and four decimals below one cent so a small total is not read as
+ * nothing; the price keeps cents and never rounds a finer one away.
+ */
+export function formatUsd(
+  language: LanguageCode,
+  value: number,
+  kind: "amount" | "price" = "amount"
+): string {
+  const [minimumFractionDigits, maximumFractionDigits] =
+    kind === "price" ? [2, 4] : value < 0.01 ? [4, 4] : [2, 2];
+  return new Intl.NumberFormat(language, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits,
+    maximumFractionDigits
+  }).format(value);
+}
 
 /** The sentence under the title: what decides note relations now, and why when it is not OpenAI. */
 export function decisionsStatusLine(t: T, status: AiDecisionsStatus): string {
@@ -48,6 +66,8 @@ export function decisionsPrivacyBody(
 
 export interface DecisionsDeciderViewProps {
   t: T;
+  /** The interface language, for the money of the card; English when absent. */
+  interfaceLanguage?: LanguageCode;
   status: AiDecisionsStatus;
   /** An action is running: nothing else can start. */
   busy: boolean;
@@ -67,7 +87,8 @@ export interface DecisionsDeciderViewProps {
 
 /** The opt-in OpenAI Decisions decider of Settings > AI (plan decision 30): notice, switch, key, spend. */
 export function DecisionsDeciderView(props: DecisionsDeciderViewProps) {
-  const { t, status, busy, confirming, keyDraft } = props;
+  const { t, status, busy, confirming, keyDraft, interfaceLanguage = "en" } = props;
+  const money = (value: number) => formatUsd(interfaceLanguage, value);
   const keyId = useId();
   const keyHintId = useId();
   const headingId = useId();
@@ -98,7 +119,10 @@ export function DecisionsDeciderView(props: DecisionsDeciderViewProps) {
         <p className="text-secondary-foreground">{decisionsPrivacyBody(t, status)}</p>
         <p className="text-secondary-foreground">
           {t("settings.ai.decisions.privacy.cost")
-            .replace("{price}", String(status.priceInputPerMillionUsd))
+            .replace(
+              "{price}",
+              formatUsd(interfaceLanguage, status.priceInputPerMillionUsd, "price")
+            )
             .replace("{cap}", money(status.dailyCapUsd))}
         </p>
       </div>
@@ -305,6 +329,8 @@ type LoadState =
 
 export interface DecisionsDeciderPanelProps {
   t: T;
+  /** The interface language, for the money of the card. */
+  interfaceLanguage?: LanguageCode;
   /** The setup in force; the status is read again when it changes. */
   preset: AiPresetMode | null;
   onToast?: (message: MessageKey, tone: ToastTone) => void;
@@ -313,6 +339,7 @@ export interface DecisionsDeciderPanelProps {
 /** Loads the status, and runs the switch and the key flow of the view above. */
 export function DecisionsDeciderPanel({
   t,
+  interfaceLanguage = "en",
   preset,
   onToast = () => undefined
 }: DecisionsDeciderPanelProps) {
@@ -371,6 +398,7 @@ export function DecisionsDeciderPanel({
   return (
     <DecisionsDeciderView
       t={t}
+      interfaceLanguage={interfaceLanguage}
       status={state.status}
       busy={busy}
       confirming={confirming}

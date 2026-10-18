@@ -8,7 +8,7 @@ import {
   type AiPresetMode,
   type NoteDeciderMode
 } from "@app/domain";
-import type { MessageKey } from "@app/i18n";
+import type { LanguageCode, MessageKey } from "@app/i18n";
 
 import type {
   AiApplyPresetResult,
@@ -625,11 +625,17 @@ async function readState(): Promise<LoadState> {
 
 export interface AiClassRoutesPanelProps {
   t: T;
+  /** The interface language, passed to the cards that write money. */
+  interfaceLanguage?: LanguageCode;
   onToast?: (message: MessageKey, tone: ToastTone) => void;
 }
 
 /** Settings › AI: loads the routes and runs the setups, tests and choices of the view above. */
-export function AiClassRoutesPanel({ t, onToast = () => undefined }: AiClassRoutesPanelProps) {
+export function AiClassRoutesPanel({
+  t,
+  interfaceLanguage = "en",
+  onToast = () => undefined
+}: AiClassRoutesPanelProps) {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
   const [busy, setBusy] = useState<RouteName | "preset" | null>(null);
   const [pendingSetup, setPendingSetup] = useState<AiPresetId | null>(null);
@@ -770,7 +776,12 @@ export function AiClassRoutesPanel({ t, onToast = () => undefined }: AiClassRout
           )
         }
       />
-      <DecisionsDeciderPanel t={t} preset={routes.preset} onToast={onToast} />
+      <DecisionsDeciderPanel
+        t={t}
+        interfaceLanguage={interfaceLanguage}
+        preset={routes.preset}
+        onToast={onToast}
+      />
     </div>
   );
 }

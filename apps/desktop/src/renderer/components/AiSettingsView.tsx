@@ -641,7 +641,9 @@ export function AiSettingsView({
           </div>
         ) : null}
 
-        {activeScope === "routing" ? <AiClassRoutesPanel t={t} onToast={onToast} /> : null}
+        {activeScope === "routing" ? (
+          <AiClassRoutesPanel t={t} interfaceLanguage={interfaceLanguage} onToast={onToast} />
+        ) : null}
       </Tabs>
     </section>
   );

@@ -1453,7 +1453,7 @@
         "privacy": {
           "title": "O texto das suas notas é enviado à OpenAI",
           "body": "Enquanto estiver ligado, o título, a ideia e os primeiros {characters} caracteres do texto de cada nota comparada, e das notas com que ela é comparada (inclusive as comparadas antes), são enviados à OpenAI (a API Decisions, modelo {model}) com a sua própria chave da OpenAI Platform. Por padrão a OpenAI não treina com dados da API e pode guardar as requisições por até 30 dias para monitorar abusos. O Memora não controla essa retenção. Nada é enviado com ele desligado, na configuração Local ou sem uma chave.",
-          "cost": "Custa cerca de US$ {price} por milhão de tokens de entrada, tipicamente um centavo ou menos por nota. O Memora deixa de usá-lo no dia ao chegar a US$ {cap}, e o ranqueador local assume."
+          "cost": "Custa cerca de {price} por milhão de tokens de entrada, tipicamente um centavo ou menos por nota. O Memora deixa de usá-lo no dia ao chegar a {cap}, e o ranqueador local assume."
         },
         "state": {
           "loading": "Carregando…",
@@ -1496,7 +1496,7 @@
           "invalid": "A OpenAI recusou a chave salva. Salve uma válida."
         },
         "spend": {
-          "today": "Gasto hoje: US$ {spent} de US$ {cap} ({requests} requisições)."
+          "today": "Gasto hoje: {spent} de {cap} ({requests} requisições)."
         },
         "calibration": {
           "calibrated": "As relações acima do seu limiar calibrado são aplicadas automaticamente; as demais são sugestões que você pode manter ou remover.",
