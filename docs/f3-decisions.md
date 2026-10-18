@@ -288,6 +288,17 @@ At 3,500 with 12/12 caps X7-REF kept 105% of F1a's yield (2.712 per chunk) at 45
 already covers one extraction batch of at most 12 entities. By Q8 the owner re-based X7 for F3 to ≤45 per chapter,
 quality first, and moved the call reduction to F4 (identity grouped across a source's batches, bar back to ≤40).
 
+### S1 second library at M2 (owner, 2026-10-19)
+
+Over the 27 panel-positive pairs of the second library's labelled nearest and second-nearest pairs (GOLD and CORP
+roots, v5 verdicts from SPG and SPC), one-neighbour discovery accepts 6 (recall 0.222) and two-neighbour discovery 13
+(0.481): 6 is below 13 - 1, so by the pre-registered rule `discovery.neighbours` became 2 and S1 was measured again.
+At two neighbours (S0N2: S0's order, typing and ranking served, every judge call live) the source layer linked 28/28
+held-out at 0/35, but the judge took 5.09 AI-call seconds and 2.96 calls per source (bars 5.0 and 2), and TP-F's
+throughput, met by 0.08 s at one neighbour, would not hold. The rule did not cover that case: the owner kept one
+neighbour for F3 (S1 time, quality and X3 stand as measured; the second-library check is recorded as not met, like
+X2) and moved two neighbours to F4, behind a batched or cheaper source judge that fits S1's time bar.
+
 ## Measurement
 
 ### Exit criteria

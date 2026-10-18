@@ -720,6 +720,10 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
       library change; measured on the local writer's structured calls (identity, typing, notes, extraction, topic
       naming) against today's repair rate, then the soak's repair bar counts the local writer again.
 - [ ] Local-model benchmark and runtime-upgrade spike, record only (decision 26), then delete the test models.
+- [ ] Two-neighbour source discovery within S1's time bar (F3 S1, owner 2026-10-19): one neighbour accepts 6 of the
+      second library's 27 panel-positive pairs, two accept 13, but two cost 2.96 judge calls and 5.09 AI-call seconds
+      per source (bars 2 and 5.0). A batched or cheaper source judge first; then `discovery.neighbours = 2` with S1
+      and X3 measured again.
 - [ ] Entity identity grouped across a source's extraction batches (F3 X7, owner 2026-10-19): with 3,500-character
       batches each identity call covers one batch, so X7-REF needs 45 generative calls per chapter (F3 closed on
       ≤45); grouping up to 24 entities per call across a source's batches projects about 38. Adopted only if the
