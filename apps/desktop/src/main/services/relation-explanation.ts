@@ -1,9 +1,16 @@
-import { relationExplanationLimits, type RelationExplanationDirection } from "@app/domain";
+import {
+  relationExplanationLimits,
+  relationExplanationSentinel,
+  type RelationExplanationDirection
+} from "@app/domain";
 
 import { joinPrompts, renderPrompt } from "./prompt-runtime.js";
 
-/** Version of the explanation contract stored with every explanation. */
-export const relationExplanationPromptVersion = "relation-explanation-v1";
+/**
+ * Version of the explanation contract stored with every explanation. Revision 3 of the prompt lets
+ * the writer answer the sentinel when the notes are not related as stated (F3 D22).
+ */
+export const relationExplanationPromptVersion = "relation-explanation-v3";
 
 export interface RelationExplanationPromptNote {
   ideaStatement: string;
@@ -73,10 +80,31 @@ function unwrapQuotes(text: string): string {
   return probe.includes(open) || probe.includes(close) ? text : inner.trim();
 }
 
+/** The sentinel as a word of an answer: it is never part of an explanation. */
+const sentinelWord = new RegExp(
+  `(?<![\\p{L}\\p{N}_])${relationExplanationSentinel}(?![\\p{L}\\p{N}_])`,
+  "iu"
+);
+
+/**
+ * Whether the whole answer is the sentinel: the writer found the notes not related as stated. Only
+ * quotes, backticks, emphasis marks and a final full stop may surround it; an answer that has more
+ * to say is not the sentinel (and is no explanation either, see {@link parseRelationExplanation}).
+ */
+export function isNotRelatedAnswer(output: unknown): boolean {
+  if (typeof output !== "string") return false;
+  const bare = output
+    .trim()
+    .replace(/^[\s"'`*_“‘«„]+/u, "")
+    .replace(/[\s"'`*_”’».!]+$/u, "");
+  return bare.toUpperCase() === relationExplanationSentinel;
+}
+
 /**
  * A valid explanation is plain text of at most `modelCharacters` characters without tags. The notes
  * are named n1 and n2, but every other token is content: N400, N95 or "N2 sleep" are words of the
- * notes, never references. Model output never carries canonical references, so a tag is refused.
+ * notes, never references. Model output never carries canonical references, so a tag is refused,
+ * and so is an answer that mentions the sentinel without being only that.
  * Returns null when the output is not valid.
  */
 export function parseRelationExplanation(output: unknown): string | null {
@@ -84,6 +112,7 @@ export function parseRelationExplanation(output: unknown): string | null {
   const text = unwrapQuotes(output.trim()).replace(/\s+/g, " ");
   if (!text || text.length > relationExplanationLimits.modelCharacters) return null;
   if (/<\/?[a-z][a-z-]*\b/i.test(text)) return null;
+  if (sentinelWord.test(text)) return null;
   return text;
 }
 

@@ -28,8 +28,9 @@ function scrollContainerBottom(element: HTMLElement): number {
 
 /**
  * The evidence of a relation, shown beside its row on hover or focus: what the relation says, the
- * two passages, the explanation (written once the card stayed open, if none is stored) and who
- * decided.
+ * two passages, the explanation (written once the card stayed open, if none is stored, and shown as
+ * it is written) and who decided. When the writer finds the notes unrelated the card says so and
+ * that the relation is hidden.
  * It is non-modal (a group, never a dialog), holds no focus of its own and never answers Cmd-W.
  */
 export function RelationEvidenceCard({
@@ -81,6 +82,7 @@ export function RelationEvidenceCard({
       : null
   ].filter((passage) => passage !== null);
   const writing = !content.explanation && explanation?.status === "writing";
+  const streaming = !content.explanation && explanation?.status === "streaming";
   return (
     <div
       ref={ref}
@@ -163,6 +165,16 @@ export function RelationEvidenceCard({
       ) : writing ? (
         <p role="status" aria-busy="true" className="text-sm text-muted-foreground">
           {t("notePage.card.writing")}
+        </p>
+      ) : streaming ? (
+        // The text so far is a preview the validated text replaces: it is not announced piece by
+        // piece, only marked busy.
+        <p aria-busy="true" className="font-reading text-base text-secondary-foreground">
+          <NoteRefText text={explanation.text} thisId={thisId} other={relation.other} t={t} />
+        </p>
+      ) : explanation?.status === "vetoed" ? (
+        <p role="status" className="text-sm text-foreground">
+          {t("notePage.card.unrelated")}
         </p>
       ) : explanation?.status === "unavailable" ? (
         <p className="text-sm text-muted-foreground">{t("notePage.card.explainUnavailable")}</p>

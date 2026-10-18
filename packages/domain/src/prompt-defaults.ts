@@ -142,6 +142,7 @@ export const shippedPromptBodies = [
       "Write one or two short sentences, at most %max_characters% characters in total, that state the substantive connection. " +
       "Preserve scope, conditions, negation, attribution and uncertainty. Refer to the notes only as n1 and n2. " +
       "Never mention other notes, IDs, tags, scores, ranking or matching, and never describe this task.\n" +
+      "If the notes are not related as stated, answer exactly NOT_RELATED.\n" +
       "Return only the explanation text, without quotes, labels, lists or Markdown.\n\nNOTES:\n%relation_notes%",
     caller: "apps/desktop/src/main/services/relation-explanation.ts:buildRelationExplanationPrompt",
     keys: ["relation_type", "relation_direction", "max_characters", "relation_notes"],

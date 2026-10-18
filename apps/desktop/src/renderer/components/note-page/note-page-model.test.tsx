@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { createNavigationRouter } from "../../lib/window-navigation";
-import { notePageLoadDecision, notePageOpenedObject } from "./NotePage";
+import { notePageLoadDecision, notePageOpenedObject, withoutWithdrawn } from "./NotePage";
 import {
   asksForExplanation,
   cardContent,
@@ -15,6 +15,7 @@ import {
   evidenceSummary,
   explanationAfter,
   explanationErrorKind,
+  explanationStreamed,
   formatNoteDate,
   hasUnsavedEdit,
   interpolateNodes,
@@ -370,6 +371,55 @@ describe("explanations on demand", () => {
       asksForExplanation(relationItem({ explanation: { text: "x", writtenBy: "w" } }), undefined)
     ).toBe(false);
     expect(asksForExplanation(undefined, undefined)).toBe(false);
+  });
+});
+
+describe("streamed explanations and the veto (F3 D22)", () => {
+  it("shows the text as it arrives, and goes back to writing when the text shown is void", () => {
+    const writing = { status: "writing" as const };
+    const streaming = explanationStreamed(writing, "The first note");
+    expect(streaming).toEqual({ status: "streaming", text: "The first note" });
+    expect(explanationStreamed(streaming, "The first note supports")).toEqual({
+      status: "streaming",
+      text: "The first note supports"
+    });
+    expect(explanationStreamed(streaming, "")).toEqual({ status: "writing" });
+  });
+
+  it("ignores a piece that arrives once the request ended or the card was closed", () => {
+    expect(explanationStreamed(undefined, "late")).toBeUndefined();
+    for (const state of [
+      { status: "vetoed" as const },
+      { status: "unavailable" as const },
+      { status: "failed" as const, kind: "failed" as const }
+    ])
+      expect(explanationStreamed(state, "late")).toBe(state);
+  });
+
+  it("holds the veto as a terminal state that is never asked for again", () => {
+    const vetoed = explanationAfter({ vetoed: true });
+    expect(vetoed).toEqual({ status: "vetoed" });
+    expect(asksForExplanation(relationItem(), vetoed!)).toBe(false);
+    // A card that streamed is still asking: the request is not over.
+    expect(asksForExplanation(relationItem(), { status: "streaming", text: "x" })).toBe(true);
+  });
+
+  it("hides a withdrawn relation once its card closes, and keeps the rows and the total consistent", () => {
+    const one = relationItem({ id: fixtureId(60) });
+    const two = relationItem({ id: fixtureId(62) });
+    const load = {
+      status: "ready" as const,
+      page: notePage({ relations: { items: [one, two], total: 5 } })
+    };
+    const withdrawn = new Set([fixtureId(60)]);
+    // The card is open: the row stays and says why it is hidden.
+    expect(withoutWithdrawn(load, withdrawn, fixtureId(60))).toBe(load);
+    const hidden = withoutWithdrawn(load, withdrawn, null);
+    expect(hidden.status === "ready" && hidden.page.relations).toEqual({ items: [two], total: 4 });
+    expect(withoutWithdrawn(load, withdrawn, fixtureId(62))).not.toBe(load);
+    expect(withoutWithdrawn(load, new Set(), null)).toBe(load);
+    const loading = { status: "loading" as const };
+    expect(withoutWithdrawn(loading, withdrawn, null)).toBe(loading);
   });
 });
 

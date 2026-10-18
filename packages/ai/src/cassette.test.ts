@@ -423,7 +423,7 @@ describe("AI cassette record and replay", () => {
     await recorder.wrap(new FakeAdapter(() => "streamed")).runStreaming!(
       noteRequest([chunkA, chunkB]),
       undefined,
-      (event) => progress.push(event.progress)
+      (event) => event.kind !== "text" && progress.push(event.progress)
     );
     expect(progress).toEqual([0.5]);
 
@@ -433,8 +433,10 @@ describe("AI cassette record and replay", () => {
     await replay.ensureLoaded?.();
     expect(offline.loads).toBe(0);
     const replayedProgress: number[] = [];
-    const result = await replay.runStreaming!(noteRequest([chunkA, chunkB]), undefined, (event) =>
-      replayedProgress.push(event.progress)
+    const result = await replay.runStreaming!(
+      noteRequest([chunkA, chunkB]),
+      undefined,
+      (event) => event.kind !== "text" && replayedProgress.push(event.progress)
     );
     expect(result.output).toBe("streamed");
     expect(replayedProgress).toEqual([1]);

@@ -7,10 +7,11 @@ import type {
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
+  AiProgressStep,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
-import { embedManyLimits } from "./contracts.js";
+import { createTextDeltaStream, embedManyLimits } from "./contracts.js";
 import {
   chunkTexts,
   embedManyDimensions,
@@ -292,7 +293,8 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     if (request.taskType === "embedding") return this.run(request, signal);
     const startedAt = performance.now();
     const modelId = request.modelId ?? this.options.modelId;
-    const progress = monotonicProgress(onProgress);
+    const progress = monotonicProgress<AiProgressStep>(onProgress);
+    const textStream = createTextDeltaStream(onProgress);
     let report: RemoteCallReport | undefined;
     const streamed = await this.remoteCall(
       {
@@ -304,6 +306,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         }
       },
       async (call) => {
+        textStream.attempt();
         const response = await this.post(
           call,
           `/models/${encodeURIComponent(modelId)}:streamGenerateContent`,
@@ -339,6 +342,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
             if (text.length > 0) call.progressed("answer");
             else if (parts.some((part) => part.thought && part.text)) call.progressed("reasoning");
             output += text;
+            textStream.delta(text);
             tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
             call.reportUsage(tokenUsage);
             inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;

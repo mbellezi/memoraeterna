@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   RelationExplainInputSchema,
+  RelationExplainOutcomeSchema,
   RelationExplanationResultSchema,
+  RelationVetoResultSchema,
   isDirectedRelationType,
+  isRelationVeto,
   relationExplanationLimits,
-  relationExplanationOrder
+  relationExplanationOrder,
+  relationExplanationSentinel
 } from "./relation-explanation.js";
 
 const note = (id: string, ideaStatement: string, title = "Title") => ({ id, title, ideaStatement });
@@ -98,6 +102,38 @@ describe("relation explanation contract", () => {
     expect(at("\u{1F600}".repeat(bound)).success).toBe(true);
     expect(at("\u{1F600}".repeat(bound + 1)).success).toBe(false);
     expect(at("").success).toBe(false);
+  });
+
+  it("names the request on the delta channel with an optional request ID", () => {
+    const requestId = "00000000-0000-4000-8000-0000000000c1";
+    expect(RelationExplainInputSchema.parse({ relationId: low, requestId })).toEqual({
+      relationId: low,
+      requestId
+    });
+    expect(() => RelationExplainInputSchema.parse({ relationId: low, requestId: "x" })).toThrow();
+  });
+
+  it("answers an explanation or the veto, nothing in between", () => {
+    const explained = {
+      relationId: low,
+      text: "Both describe recall.",
+      writtenBy: "writer",
+      writtenAt: "2026-10-15T10:00:00.000Z"
+    };
+    const vetoed = { relationId: low, vetoed: true as const };
+    expect(RelationExplainOutcomeSchema.parse(explained)).toEqual(explained);
+    expect(RelationExplainOutcomeSchema.parse(vetoed)).toEqual(vetoed);
+    expect(isRelationVeto(RelationExplainOutcomeSchema.parse(vetoed))).toBe(true);
+    expect(isRelationVeto(RelationExplainOutcomeSchema.parse(explained))).toBe(false);
+    expect(() => RelationVetoResultSchema.parse({ relationId: low, vetoed: false })).toThrow();
+    expect(() => RelationExplainOutcomeSchema.parse({ ...explained, vetoed: true })).toThrow();
+    expect(() => RelationExplainOutcomeSchema.parse({ relationId: low })).toThrow();
+  });
+
+  it("fixes the sentinel and the stream bounds of D22", () => {
+    expect(relationExplanationSentinel).toBe("NOT_RELATED");
+    expect(relationExplanationLimits.sentinelHoldCharacters).toBe(16);
+    expect(relationExplanationLimits.streamCoalesceMs).toBe(50);
   });
 
   it("leaves room to think: the output cap is far above the answer it asks for", () => {

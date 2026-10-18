@@ -364,6 +364,75 @@ describe("Note page relations", () => {
     expect(explained).not.toContain("Writing an explanation");
   });
 
+  it("shows the explanation as it streams, with references as words, marked busy and never announced", () => {
+    const html = render(ready(), {
+      openCard: fixtureId(60),
+      explanations: {
+        [fixtureId(60)]: {
+          status: "streaming",
+          text: `<note-ref id="${fixtureId(1)}" /> qualifies the recall benefit that`
+        }
+      }
+    });
+    expect(html).toContain('<strong class="font-semibold">This note</strong><span> qualifies');
+    expect(html).toContain("the recall benefit that");
+    expect(html).toMatch(/<p aria-busy="true" class="font-reading[^"]*">/);
+    expect(html).not.toContain("note-ref");
+    // The preview is not a status region: a screen reader hears the card, not every piece.
+    expect(html).not.toContain("Writing an explanation");
+    expect(html).not.toMatch(/<p role="status"/);
+    expect(html).not.toContain(">Retry<");
+  });
+
+  it("prefers the stored explanation over a stale streaming state", () => {
+    const html = render(
+      ready(
+        notePage({
+          relations: {
+            items: [relationItem({ explanation: { text: "Stored text.", writtenBy: "writer-x" } })],
+            total: 1
+          }
+        })
+      ),
+      {
+        openCard: fixtureId(60),
+        explanations: { [fixtureId(60)]: { status: "streaming", text: "Stale preview" } }
+      }
+    );
+    expect(html).toContain("Stored text.");
+    expect(html).not.toContain("Stale preview");
+  });
+
+  it("says the writer found the notes unrelated and that the relation is hidden", () => {
+    const html = render(ready(), {
+      openCard: fixtureId(60),
+      explanations: { [fixtureId(60)]: { status: "vetoed" } }
+    });
+    expect(html).toContain(
+      "The writer found these notes unrelated, so this relation is now hidden."
+    );
+    expect(html).toMatch(/<p role="status" class="text-sm text-foreground">The writer found/);
+    expect(html).not.toContain("Writing an explanation");
+    expect(html).not.toContain(">Retry<");
+    expect(html).not.toContain('aria-busy="true"');
+  });
+
+  it("says it in every language", () => {
+    for (const code of supportedLanguageCodes) {
+      const t = createTranslator(code);
+      const html = render(
+        ready(),
+        {
+          openCard: fixtureId(60),
+          explanations: { [fixtureId(60)]: { status: "vetoed" } }
+        },
+        t
+      );
+      expect(html).toContain(t("notePage.card.unrelated"));
+      expect(t("notePage.card.unrelated")).not.toBe("notePage.card.unrelated");
+    }
+  });
+
   it("shows a failed explanation with Retry, and says when no model can write it", () => {
     const failed = (state: ExplanationState) =>
       render(ready(), { openCard: fixtureId(60), explanations: { [fixtureId(60)]: state } });

@@ -9,6 +9,7 @@ import {
 
 import {
   earlierVersionNoteRelationSql,
+  noteRelationStateSql,
   shownNoteRelationSql,
   withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
@@ -17,10 +18,30 @@ import type { Queryable } from "./types.js";
 
 /**
  * Explanations of note relations written on demand (docs/plan.md decision 16), cached beside the
- * relation with their provenance and the hash of the inputs they were written from. A cached
+ * relation with their provenance and the key of the inputs they were written from. A cached
  * explanation whose inputs changed is stale: it is rewritten the next time the relation is opened.
+ *
+ * The key (F3 D22) is the hash of the facts the text says (both ideas and evidence passages, type,
+ * direction, content language), a dot, and the hash of the writer (the effective prompt revision and
+ * the model identity). A reader that does not know the writer matches on the facts alone.
  */
-export const relationExplanationInputVersion = "relation-explanation-input-v2";
+export const relationExplanationInputVersion = "relation-explanation-input-v3";
+
+/** Who writes an explanation: the effective `relations.explain` prompt and the writer model. */
+export interface RelationExplanationWriter {
+  /** The identity of the effective prompt: its text, as shipped or edited by the owner. */
+  promptRevision: string;
+  /** The model identity: provider, model, runtime and, for a local model, its artifact. */
+  model: string;
+}
+
+/** The part of the key that says who wrote the explanation. */
+export function relationExplanationWriterHash(writer: RelationExplanationWriter): string {
+  return createHash("sha256")
+    .update(JSON.stringify([writer.promptRevision, writer.model]))
+    .digest("hex")
+    .slice(0, 16);
+}
 
 export interface RelationExplanationInputs {
   type: string;
@@ -32,8 +53,8 @@ export interface RelationExplanationInputs {
 }
 
 /**
- * What an explanation depends on: both ideas and evidence passages, the type, the direction and the
- * content language it is written in.
+ * What the text of an explanation says: both ideas and evidence passages, the type, the direction
+ * and the content language it is written in.
  */
 export function relationExplanationInputHash(input: RelationExplanationInputs): string {
   return createHash("sha256")
@@ -79,6 +100,12 @@ export interface RelationExplanationContext {
   semanticSourceId: string | null;
   /** The Note page lists the relation (D9): only a listed relation is explained. */
   listed: boolean;
+  /** No human verdict and no veto yet: an explanation that finds the notes unrelated may withdraw it. */
+  vetoable: boolean;
+  /** Withdrawn by a veto and not yet reviewed (D9). */
+  withdrawn: boolean;
+  /** What withdrew it (`explainer` or `typer`); null when not vetoed. */
+  vetoSource: string | null;
   a: RelationExplanationNote;
   b: RelationExplanationNote;
   stored: StoredRelationExplanation | null;
@@ -97,26 +124,49 @@ export function relationExplanationPlan<
   semanticSourceId: string | null | undefined;
   /** The content language the explanation is (to be) written in. */
   language: string;
+  /** Who writes it; absent when the caller does not know (a reader that matches on the facts). */
+  writer?: RelationExplanationWriter | null | undefined;
   a: T;
   b: T;
 }) {
   const order = relationExplanationOrder(context);
+  const factsHash = relationExplanationInputHash({
+    type: context.type,
+    direction: order.direction,
+    language: context.language,
+    first: {
+      ideaStatement: order.first.ideaStatement,
+      passageHash: order.first.passage?.contentHash ?? null
+    },
+    second: {
+      ideaStatement: order.second.ideaStatement,
+      passageHash: order.second.passage?.contentHash ?? null
+    }
+  });
+  const inputHash = context.writer
+    ? `${factsHash}.${relationExplanationWriterHash(context.writer)}`
+    : factsHash;
   return {
     ...order,
-    inputHash: relationExplanationInputHash({
-      type: context.type,
-      direction: order.direction,
-      language: context.language,
-      first: {
-        ideaStatement: order.first.ideaStatement,
-        passageHash: order.first.passage?.contentHash ?? null
-      },
-      second: {
-        ideaStatement: order.second.ideaStatement,
-        passageHash: order.second.passage?.contentHash ?? null
-      }
-    })
+    factsHash,
+    /** The key a written explanation is stored under (the facts alone without a writer). */
+    inputHash,
+    /** Whether the key names the writer: a reader without one matches on the facts alone. */
+    writerKnown: Boolean(context.writer)
   };
+}
+
+/**
+ * Whether a stored key is current for a plan: the same facts and, when the plan knows its writer,
+ * the same writer. Without a writer, an explanation of the same facts counts whoever wrote it.
+ */
+export function relationExplanationIsCurrent(
+  storedKey: string,
+  plan: { factsHash: string; inputHash: string; writerKnown: boolean }
+): boolean {
+  return plan.writerKnown
+    ? storedKey === plan.inputHash
+    : storedKey === plan.factsHash || storedKey.startsWith(`${plan.factsHash}.`);
 }
 
 interface ContextRow extends QueryResultRow {
@@ -125,6 +175,9 @@ interface ContextRow extends QueryResultRow {
   status: string;
   semanticSourceId: string | null;
   listed: boolean;
+  vetoable: boolean;
+  withdrawn: boolean;
+  vetoSource: string | null;
   a: RelationExplanationNote;
   b: RelationExplanationNote;
   stored: { text: string; inputHash: string; model: string; writtenAt: string } | null;
@@ -149,6 +202,8 @@ select r.id as "relationId", coalesce(r.relation_type, 'related') as type, r.sta
                          when 'hi_to_lo' then r.target_atomic_note_id end)::text as "semanticSourceId",
        (${shownNoteRelationSql("r", ["a", "b"])} or ${withdrawnNoteRelationSql("r", ["a", "b"])}
         or ${earlierVersionNoteRelationSql("r", "a", "b")}) as listed,
+       ${noteRelationStateSql.vetoable("r")} as vetoable,
+       ${withdrawnNoteRelationSql("r", ["a", "b"])} as withdrawn, r.veto_source as "vetoSource",
        ${noteJson("a", "ac")} as a, ${noteJson("b", "bc")} as b,
        case when x.relation_id is null then null else jsonb_build_object(
          'text', x.text, 'inputHash', x.input_hash, 'model', x.model, 'writtenAt', x.written_at) end as stored
@@ -195,6 +250,9 @@ export function createRelationExplanationRepository(db: Queryable) {
         status: row.status,
         semanticSourceId: row.semanticSourceId,
         listed: row.listed,
+        vetoable: row.vetoable,
+        withdrawn: row.withdrawn,
+        vetoSource: row.vetoSource,
         a: row.a,
         b: row.b,
         stored: row.stored

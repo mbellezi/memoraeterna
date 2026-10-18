@@ -12,6 +12,7 @@ import { registerNotePageIpc } from "./services/note-page-ipc.js";
 import { NotePageService } from "./services/note-page-service.js";
 import { registerRelationExplanationIpc } from "./services/relation-explanation-ipc.js";
 import { RelationExplanationService } from "./services/relation-explanation-service.js";
+import { createRelationExplanationWriterResolver } from "./services/relation-explanation-writer.js";
 import { registerSourceRelationExplanationIpc } from "./services/source-relation-explanation-ipc.js";
 import { SourceRelationExplanationService } from "./services/source-relation-explanation-service.js";
 import { ViewHistoryService } from "./services/view-history-service.js";
@@ -54,6 +55,7 @@ import { BackupService } from "./services/backup-service.js";
 import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
+import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
 import { createRematchJobSlot } from "./services/dev/relations-rematch-slot.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
@@ -349,11 +351,17 @@ void app.whenReady().then(() => {
   );
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
   registerObjectsIpc(ipcMain, new ObjectsService(() => databaseService?.getPool() ?? null));
+  // Who writes a relation's explanation now (the prompt and the writer model): the key of a cached
+  // explanation includes it, and the Note page judges explanations by it (F3 D22).
+  const explanationWriter = createRelationExplanationWriterResolver(
+    () => databaseService?.getPool() ?? null
+  );
   registerNotePageIpc(
     ipcMain,
     new NotePageService(
       () => databaseService?.getPool() ?? null,
-      async () => (await settingsService!.getApp()).contentLanguage
+      async () => (await settingsService!.getApp()).contentLanguage,
+      explanationWriter
     )
   );
   registerRelationExplanationIpc(
@@ -361,7 +369,13 @@ void app.whenReady().then(() => {
     new RelationExplanationService({
       getPool: () => databaseService?.getPool() ?? null,
       ai: aiService,
-      getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
+      getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+      resolveWriter: explanationWriter,
+      // An explanation that finds two notes unrelated withdraws the relation: open pages read it again.
+      relationsChanged: (noteIds) => {
+        for (const contents of webContents.getAllWebContents())
+          if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, { noteIds });
+      }
     })
   );
   registerSourceRelationExplanationIpc(
@@ -667,8 +681,13 @@ void app.whenReady().then(() => {
         // A verdict-only source pair run leaves the library alone: only the local models (the decider
         // may be one) start, so no job, capture or vault sync can change it meanwhile. So does the
         // DEV lane probe (MEMORA_DEV_LANE_PROBE, F3 B5): nothing else may use the lane it measures. Nor
-        // does the typer's position-bias check (MEMORA_TYPER_CHECK).
+        // does the typer's position-bias check (MEMORA_TYPER_CHECK), and the explanation probe
+        // (MEMORA_DEV_EXPLAIN_PROBE, F3 T59): nothing else may use the writer it measures.
         const laneProbe = laneProbeRequested(process.env, {
+          isPackaged: app.isPackaged,
+          workspaceRoot
+        });
+        const explainProbe = explainProbeRequested(process.env, {
           isPackaged: app.isPackaged,
           workspaceRoot
         });
@@ -677,6 +696,7 @@ void app.whenReady().then(() => {
           goldenRun?.sourcePairs?.mode === "verdict_only" ||
           notePairs !== undefined ||
           laneProbe ||
+          explainProbe ||
           typerCheck;
         // A re-match changes relations only: its job runs on the supervisor, but no topic sweep,
         // capture or vault sync may change the clone meanwhile.
@@ -775,6 +795,29 @@ void app.whenReady().then(() => {
                 error instanceof Error ? error.message : String(error)
               );
               if (!app.isPackaged) app.quit();
+            });
+        }
+        // DEV-only explanation probe (MEMORA_DEV_EXPLAIN_PROBE=<report path>, F3 T59): opens
+        // relations the way the Note page does, twice, a JSON report, then quit. Refused (logged,
+        // then quit) when packaged or together with another DEV measurement knob.
+        if (process.env.MEMORA_DEV_EXPLAIN_PROBE) {
+          void runExplainProbe({
+            env: process.env,
+            isPackaged: app.isPackaged,
+            workspaceRoot,
+            pool: databaseService!.getPool()!,
+            ai: aiService!,
+            getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+            resolveWriter: explanationWriter,
+            logger: console
+          })
+            .then(() => app.quit())
+            .catch((error: unknown) => {
+              console.error(
+                "EXPLAIN_PROBE failed:",
+                error instanceof Error ? error.message : String(error)
+              );
+              app.quit();
             });
         }
         if (typerCheck) {

@@ -249,7 +249,7 @@ describe("AI adapters", () => {
         metadata: {}
       },
       undefined,
-      (event) => progress.push(event.progress)
+      (event) => event.kind !== "text" && progress.push(event.progress)
     );
     expect(requestBody).toMatchObject({ stream: true, stream_options: { include_usage: true } });
     expect(result.output).toBe("hello world");

@@ -28,6 +28,13 @@ const ids = {
 };
 const writtenAt = new Date("2026-10-15T10:00:00.000Z");
 
+/** The text of an explanation; the test fails for a veto or nothing. */
+const textOf = (outcome: unknown): string => {
+  if (typeof outcome !== "object" || outcome === null || !("text" in outcome))
+    throw new Error("The relation was not explained.");
+  return String(outcome.text);
+};
+
 const context = (
   overrides: Partial<RelationExplanationContext> = {}
 ): RelationExplanationContext => ({
@@ -36,6 +43,9 @@ const context = (
   status: "pending_review",
   semanticSourceId: ids.b,
   listed: true,
+  vetoable: true,
+  withdrawn: false,
+  vetoSource: null,
   a: {
     id: ids.a,
     title: "Retrieval",
@@ -163,13 +173,13 @@ describe("RelationExplanationService", () => {
       context({ stored: { text: "Old.", inputHash: "stale", model: "m", writtenAt } })
     );
     const { service, runDefaultTask } = setup();
-    expect((await service.explain({ relationId: ids.relation }))?.text).toContain("qualifies");
+    expect(textOf(await service.explain({ relationId: ids.relation }))).toContain("qualifies");
     expect(runDefaultTask).toHaveBeenCalledTimes(1);
   });
 
   it("repairs invalid output once, then fails visibly", async () => {
     const repaired = setup(["n1 supports <b>n2</b>.", "n1 and n2 agree."]);
-    expect((await repaired.service.explain({ relationId: ids.relation }))?.text).toContain("agree");
+    expect(textOf(await repaired.service.explain({ relationId: ids.relation }))).toContain("agree");
     expect(repaired.runDefaultTask).toHaveBeenCalledTimes(2);
     expect(repaired.runDefaultTask.mock.calls[1]![1]).toContain(
       "The previous answer was not a valid"
@@ -243,7 +253,7 @@ describe("RelationExplanationService", () => {
     await expect(pending).rejects.toThrow("canceled");
     expect(received?.aborted).toBe(true);
     expect(service.cancel({ relationId: ids.relation })).toBe(false);
-    expect((await service.explain({ relationId: ids.relation }))?.text).toContain("qualifies");
+    expect(textOf(await service.explain({ relationId: ids.relation }))).toContain("qualifies");
   });
 
   it("rewrites an explanation cached in another content language, and stores the new one", async () => {
@@ -259,7 +269,7 @@ describe("RelationExplanationService", () => {
     );
     const { service, runDefaultTask } = setup();
     const result = await service.explain({ relationId: ids.relation });
-    expect(result?.text).toContain("qualifies");
+    expect(textOf(result)).toContain("qualifies");
     expect(runDefaultTask).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -269,7 +279,7 @@ describe("RelationExplanationService", () => {
     );
     // The same cached text counts again where it was written: English reads it without AI.
     const english = setup(undefined, async () => "en");
-    expect((await english.service.explain({ relationId: ids.relation }))?.text).toBe(
+    expect(textOf(await english.service.explain({ relationId: ids.relation }))).toBe(
       "Cached in English."
     );
     expect(english.runDefaultTask).not.toHaveBeenCalled();
@@ -296,12 +306,12 @@ describe("RelationExplanationService", () => {
     const content = setup(["n1 reports the N400 effect that n2 extends."]);
     const result = await content.service.explain({ relationId: ids.relation });
     expect(content.runDefaultTask).toHaveBeenCalledTimes(1);
-    expect(result?.text).toBe(
+    expect(textOf(result)).toBe(
       `<note-ref id="${ids.b}" /> reports the N400 effect that <note-ref id="${ids.a}" /> extends.`
     );
     // 299 characters of aliases pass the model's limit and expand past the 4000 of the column.
     const long = setup([Array(100).fill("n1").join(" "), "n1 and n2 agree."]);
-    expect((await long.service.explain({ relationId: ids.relation }))?.text).toContain("agree");
+    expect(textOf(await long.service.explain({ relationId: ids.relation }))).toContain("agree");
     expect(long.runDefaultTask).toHaveBeenCalledTimes(2);
     const text = repository.save.mock.calls.at(-1)![0].text as string;
     expect(text.length).toBeLessThanOrEqual(relationExplanationLimits.storedCharacters);
@@ -418,7 +428,7 @@ describe("RelationExplanationService", () => {
     await expect(service.explain({ relationId: ids.relation })).rejects.toThrow("canceled");
     expect(repository.save).not.toHaveBeenCalled();
     // The next open starts again and stores.
-    expect((await service.explain({ relationId: ids.relation }))?.text).toContain("qualifies");
+    expect(textOf(await service.explain({ relationId: ids.relation }))).toContain("qualifies");
     expect(repository.save).toHaveBeenCalledTimes(1);
   });
 
@@ -465,7 +475,423 @@ describe("relation explanation IPC registration", () => {
     expect(() => cancel({}, {})).toThrow();
     expect(service.explain).not.toHaveBeenCalled();
     await explain({}, { relationId: ids.relation });
-    expect(service.explain).toHaveBeenCalledWith({ relationId: ids.relation });
+    // Without a request ID there is nobody to stream to.
+    expect(service.explain).toHaveBeenCalledWith({ relationId: ids.relation }, undefined);
     expect(cancel({}, { relationId: ids.relation })).toBe(true);
+  });
+
+  it("streams the text to the window that asked, on the delta channel, for the request's ID", async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
+    const sent: Array<[string, unknown]> = [];
+    const sender = {
+      isDestroyed: () => false,
+      send: (...args: [string, unknown]) => sent.push(args)
+    };
+    const service = {
+      explain: vi.fn(async (_input: unknown, onText?: (text: string) => void) => {
+        onText?.("The first note");
+        return null;
+      })
+    };
+    registerRelationExplanationIpc(ipc as unknown as IpcMain, service as never);
+    const requestId = "00000000-0000-4000-8000-0000000000c1";
+    await handlers.get(ipcChannels.relationsExplain)!(
+      { sender },
+      { relationId: ids.relation, requestId }
+    );
+    expect(sent).toEqual([
+      [
+        ipcChannels.relationExplanationDelta,
+        { requestId, relationId: ids.relation, text: "The first note" }
+      ]
+    ]);
+    // A window that was destroyed meanwhile receives nothing, and nothing throws.
+    sent.length = 0;
+    sender.isDestroyed = () => true;
+    await handlers.get(ipcChannels.relationsExplain)!(
+      { sender },
+      { relationId: ids.relation, requestId }
+    );
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("streamed explanations and the NOT_RELATED veto", () => {
+  type Delta = { kind: "text"; delta: string; restart?: boolean };
+  type Streaming = (...args: unknown[]) => Promise<ReturnType<typeof execution> | null>;
+
+  /** A clock that moves 100 ms on every reading, so each piece of text leaves at once. */
+  const stepClock = () => {
+    let now = 0;
+    return {
+      now: () => (now += 100),
+      setTimeout: () => null,
+      clearTimeout: () => undefined
+    };
+  };
+
+  const build = (
+    run: (
+      deliver: (...pieces: string[]) => void,
+      call: number,
+      signal: AbortSignal
+    ) => Promise<unknown> | unknown,
+    extra: Partial<ConstructorParameters<typeof RelationExplanationService>[0]> = {}
+  ) => {
+    const texts: string[] = [];
+    let calls = 0;
+    const runDefaultTask = vi.fn<Streaming>(async (...args: unknown[]) => {
+      const logContext = args[2] as { onTextDelta?: (event: Delta) => void };
+      const call = calls++;
+      const output = await run(
+        (...pieces) => pieces.forEach((delta) => logContext.onTextDelta?.({ kind: "text", delta })),
+        call,
+        args[3] as AbortSignal
+      );
+      return output === null ? null : execution(output);
+    });
+    const withdraw = vi.fn(async () => ({ noteIds: [ids.a, ids.b] }));
+    const relationsChanged = vi.fn();
+    const service = new RelationExplanationService({
+      getPool: () => ({}) as PgPool,
+      ai: { runDefaultTask } as never,
+      getContentLanguage: async () => "pt-BR",
+      clock: stepClock(),
+      withdraw,
+      relationsChanged,
+      ...extra
+    });
+    return {
+      service,
+      runDefaultTask,
+      texts,
+      withdraw,
+      relationsChanged,
+      explain: () => service.explain({ relationId: ids.relation }, (text) => texts.push(text))
+    };
+  };
+  const ref = (id: string) => `<note-ref id="${id}" />`;
+
+  it("shows the text as it is written, with every alias a reference, then returns the validated text", async () => {
+    const answer = "Retrieval cues the n1 idea that n2 extends it, with feedback.";
+    const { explain, texts } = build((deliver) => {
+      deliver("Retrieval c", "ues the n", "1 idea that n", "2 extends", " it, with feedback.");
+      return answer;
+    });
+    const result = await explain();
+    // The decided subject (b) is n1.
+    const final = `Retrieval cues the ${ref(ids.b)} idea that ${ref(ids.a)} extends it, with feedback.`;
+    expect(textOf(result)).toBe(final);
+    expect(texts.length).toBeGreaterThan(2);
+    // Every piece extends the one before, and none shows an alias, half of one or a half tag.
+    texts.forEach((text, index) => {
+      if (index > 0) expect(text.startsWith(texts[index - 1]!)).toBe(true);
+      expect(text).not.toMatch(/(?<![\p{L}\p{N}_])n[12]?$/u);
+      expect(text.split("<note-ref").length).toBe(text.split("/>").length);
+    });
+    expect(texts.at(-1)).toBe(final);
+  });
+
+  it("holds an alias split across pieces until it resolves, and shows content that only looks like one", async () => {
+    const { explain, texts } = build((deliver) => {
+      deliver(
+        "Both notes agree that n",
+        "1 and n",
+        "2 describe it, while the N400 and n",
+        "12 differ."
+      );
+      return "Both notes agree that n1 and n2 describe it, while the N400 and n12 differ.";
+    });
+    await explain();
+    // The half-written alias waits: it is neither shown as "n" nor lost.
+    expect(texts.slice(0, 2)).toEqual([
+      "Both notes agree that ",
+      `Both notes agree that ${ref(ids.b)} and `
+    ]);
+    expect(texts.every((text) => !/\bn[12]?$/u.test(text))).toBe(true);
+    expect(texts.at(-1)).toContain("the N400 and n12 differ.");
+  });
+
+  it("buffers the first 16 characters and shows nothing before then", async () => {
+    const short = build((deliver) => {
+      deliver("Same ", "topic.");
+      return "Same topic.";
+    });
+    expect(textOf(await short.explain())).toBe("Same topic.");
+    expect(short.texts).toEqual([]);
+    const long = build((deliver) => {
+      deliver("Both notes", " say it", " twice.");
+      return "Both notes say it twice.";
+    });
+    await long.explain();
+    // 10 characters, then 17: the first piece to show is the second.
+    expect(long.texts[0]).toBe("Both notes say it");
+  });
+
+  it("answers the veto for a NOT_RELATED answer, shows none of it and writes an event", async () => {
+    const { explain, texts, withdraw, relationsChanged } = build((deliver) => {
+      deliver("NOT_", "RELATED");
+      return "NOT_RELATED";
+    });
+    expect(await explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    expect(texts).toEqual([]);
+    // The home sources of both notes, for the promotion of the source relations built from it.
+    expect(withdraw).toHaveBeenCalledWith(expect.anything(), ids.relation, [
+      ids.sourceA,
+      ids.sourceB
+    ]);
+    expect(relationsChanged).toHaveBeenCalledWith([ids.a, ids.b]);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("never shows an answer that begins with the sentinel, and repairs it", async () => {
+    const { explain, texts, runDefaultTask, withdraw } = build((deliver, call) => {
+      if (call > 0) return "n1 and n2 agree.";
+      deliver("NOT_RELATED because", " the two notes only share a word.");
+      return "NOT_RELATED because the two notes only share a word.";
+    });
+    expect(textOf(await explain())).toContain("agree");
+    expect(texts).toEqual([]);
+    expect(runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("recognizes the sentinel through quotes and a full stop, and takes it from the repair too", async () => {
+    const quoted = build(() => '"NOT_RELATED".');
+    expect(await quoted.explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    const repaired = build((_deliver, call) => (call === 0 ? "n1 <b>n2</b>" : " not_related "));
+    expect(await repaired.explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    expect(repaired.runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("replaces a streamed text that fails validation with the repair, which is not streamed", async () => {
+    const { explain, texts, runDefaultTask } = build((deliver, call) => {
+      if (call > 0) return "n1 and n2 agree.";
+      deliver("The first note supports ", "<b>the second</b>.");
+      return "The first note supports <b>the second</b>.";
+    });
+    const result = await explain();
+    expect(textOf(result)).toBe(`${ref(ids.b)} and ${ref(ids.a)} agree.`);
+    // The preview stops before the tag, goes back to writing when it is refused, and is replaced.
+    expect(texts).toEqual(["The first note supports ", ""]);
+    expect(runDefaultTask.mock.calls[0]![2]).toHaveProperty("onTextDelta");
+    expect(runDefaultTask.mock.calls[1]![2]).not.toHaveProperty("onTextDelta");
+    expect(repository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the preview again when a retried attempt restarts the answer", async () => {
+    const texts: string[] = [];
+    const runDefaultTask = vi.fn<Streaming>(async (...args: unknown[]) => {
+      const logContext = args[2] as { onTextDelta: (event: Delta) => void };
+      logContext.onTextDelta({ kind: "text", delta: "The first attempt wr" });
+      logContext.onTextDelta({
+        kind: "text",
+        delta: "The second attempt writes it ",
+        restart: true
+      });
+      logContext.onTextDelta({ kind: "text", delta: "again." });
+      return execution("The second attempt writes it again.");
+    });
+    const service = new RelationExplanationService({
+      getPool: () => ({}) as PgPool,
+      ai: { runDefaultTask } as never,
+      getContentLanguage: async () => "pt-BR",
+      clock: stepClock()
+    });
+    await service.explain({ relationId: ids.relation }, (text) => texts.push(text));
+    expect(texts).toEqual([
+      "The first attempt wr",
+      "The second attempt writes it ",
+      "The second attempt writes it again."
+    ]);
+  });
+
+  it("sends at most one message per 50 ms and the last text after the window", async () => {
+    vi.useFakeTimers();
+    try {
+      const texts: string[] = [];
+      let deliver!: (delta: string) => void;
+      let finish!: () => void;
+      const runDefaultTask = vi.fn<Streaming>(async (...args: unknown[]) => {
+        const logContext = args[2] as { onTextDelta: (event: Delta) => void };
+        deliver = (delta) => logContext.onTextDelta({ kind: "text", delta });
+        await new Promise<void>((resolve) => (finish = resolve));
+        return execution("A sentence that is being written");
+      });
+      const service = new RelationExplanationService({
+        getPool: () => ({}) as PgPool,
+        ai: { runDefaultTask } as never,
+        getContentLanguage: async () => "pt-BR"
+      });
+      const pending = service.explain({ relationId: ids.relation }, (text) => texts.push(text));
+      await vi.advanceTimersByTimeAsync(0);
+      // The first text leaves at once; the pieces inside the window wait for it to close.
+      deliver("A sentence that is");
+      expect(texts).toEqual(["A sentence that is"]);
+      await vi.advanceTimersByTimeAsync(10);
+      deliver(" being");
+      await vi.advanceTimersByTimeAsync(10);
+      deliver(" written");
+      expect(texts).toEqual(["A sentence that is"]);
+      await vi.advanceTimersByTimeAsync(40);
+      expect(texts).toEqual(["A sentence that is", "A sentence that is being written"]);
+      finish();
+      await pending;
+      // The timer is released with the request.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("makes no call and streams nothing for a cached explanation", async () => {
+    repository.readContext.mockResolvedValue(
+      context({
+        stored: {
+          text: "Cached.",
+          inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash,
+          model: "earlier-model",
+          writtenAt
+        }
+      })
+    );
+    const { explain, texts, runDefaultTask } = build(() => "n1 and n2 agree.");
+    expect(textOf(await explain())).toBe("Cached.");
+    expect(runDefaultTask).not.toHaveBeenCalled();
+    expect(texts).toEqual([]);
+  });
+
+  it("serves a second card of the same relation from the request in flight", async () => {
+    let finish!: () => void;
+    const first: string[] = [];
+    const second: string[] = [];
+    const { service, runDefaultTask } = build(async (deliver) => {
+      deliver("The first note ", "supports the second");
+      await new Promise<void>((resolve) => (finish = resolve));
+      return "n1 supports n2";
+    });
+    const one = service.explain({ relationId: ids.relation }, (text) => first.push(text));
+    await vi.waitFor(() => expect(first.length).toBeGreaterThan(0));
+    // The joining card sees the text so far at once, and the same final result.
+    const two = service.explain({ relationId: ids.relation }, (text) => second.push(text));
+    expect(second).toEqual([first.at(-1)]);
+    finish();
+    expect(await two).toEqual(await one);
+    expect(runDefaultTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches nothing and stops the preview when the card closes mid-stream", async () => {
+    const texts: string[] = [];
+    let late!: (...pieces: string[]) => void;
+    const { service } = build(
+      (deliver, _call, signal) =>
+        new Promise((_resolve, reject) => {
+          deliver("The first note supports ");
+          late = deliver;
+          signal.addEventListener("abort", () => reject(signal.reason));
+        })
+    );
+    const pending = service.explain({ relationId: ids.relation }, (text) => texts.push(text));
+    const outcome = expect(pending).rejects.toThrow("canceled");
+    await vi.waitFor(() => expect(texts).toEqual(["The first note supports "]));
+    expect(service.cancel({ relationId: ids.relation })).toBe(true);
+    late("and the rest of the sentence.");
+    await outcome;
+    expect(texts).toEqual(["The first note supports "]);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("leaves a relation with a human verdict alone: nothing is withdrawn or explained", async () => {
+    repository.readContext.mockResolvedValue(context({ vetoable: false, status: "accepted" }));
+    const { explain, withdraw, relationsChanged } = build(() => "NOT_RELATED");
+    expect(await explain()).toBeNull();
+    expect(withdraw).not.toHaveBeenCalled();
+    expect(relationsChanged).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("answers the veto again, with no call, for a relation the writer already withdrew", async () => {
+    repository.readContext.mockResolvedValue(
+      context({ vetoable: false, withdrawn: true, vetoSource: "explainer" })
+    );
+    const { explain, runDefaultTask, withdraw } = build(() => "n1 and n2 agree.");
+    expect(await explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    expect(runDefaultTask).not.toHaveBeenCalled();
+    expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("explains a relation the typer withdrew, and does not withdraw it twice", async () => {
+    repository.readContext.mockResolvedValue(
+      context({ vetoable: false, withdrawn: true, vetoSource: "typer" })
+    );
+    const explained = build(() => "n1 and n2 agree.");
+    expect(textOf(await explained.explain())).toContain("agree");
+    const unrelated = build(() => "NOT_RELATED");
+    expect(await unrelated.explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    expect(unrelated.withdraw).not.toHaveBeenCalled();
+  });
+
+  it("asks again what the relation is when someone else decided it while the writer answered", async () => {
+    const decided = build(() => "NOT_RELATED", { withdraw: async () => null });
+    repository.readContext
+      .mockResolvedValueOnce(context())
+      .mockResolvedValueOnce(context({ vetoable: false, status: "accepted" }));
+    expect(await decided.explain()).toBeNull();
+    const raced = build(() => "NOT_RELATED", { withdraw: async () => null });
+    repository.readContext
+      .mockResolvedValueOnce(context())
+      .mockResolvedValueOnce(context({ vetoable: false, withdrawn: true, vetoSource: "typer" }));
+    expect(await raced.explain()).toEqual({ relationId: ids.relation, vetoed: true });
+  });
+
+  describe("the writer in the cache key", () => {
+    const writer = { promptRevision: "prompt-3", model: "model-a" };
+    const keyOf = (who: typeof writer) =>
+      relationExplanationPlan({ ...context(), language: "pt-BR", writer: who }).inputHash;
+    const stored = (inputHash: string) =>
+      context({ stored: { text: "Cached.", inputHash, model: "model-a", writtenAt } });
+
+    it("stores the key with the writer, and reuses it with no call only for the same writer", async () => {
+      const first = build(() => "n1 and n2 agree.", { resolveWriter: async () => writer });
+      await first.explain();
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ inputHash: keyOf(writer) })
+      );
+      repository.readContext.mockResolvedValue(stored(keyOf(writer)));
+      const same = build(() => "n1 and n2 agree.", { resolveWriter: async () => writer });
+      expect(textOf(await same.explain())).toBe("Cached.");
+      expect(same.runDefaultTask).not.toHaveBeenCalled();
+      for (const other of [
+        { ...writer, model: "model-b" },
+        { ...writer, promptRevision: "prompt-4" }
+      ]) {
+        const changed = build(() => "n1 and n2 agree.", { resolveWriter: async () => other });
+        expect(textOf(await changed.explain())).toContain("agree");
+        expect(changed.runDefaultTask).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("rewrites an explanation of the previous key version, which had no writer", async () => {
+      repository.readContext.mockResolvedValue(stored("a".repeat(64)));
+      const { explain, runDefaultTask } = build(() => "n1 and n2 agree.", {
+        resolveWriter: async () => writer
+      });
+      await explain();
+      expect(runDefaultTask).toHaveBeenCalledTimes(1);
+    });
+
+    it("without a writer model returns an explanation of the same facts and otherwise fails visibly", async () => {
+      repository.readContext.mockResolvedValue(stored(keyOf(writer)));
+      const cached = build(() => "n1 and n2 agree.", { resolveWriter: async () => null });
+      // The facts of the stored key are those of a writer-less plan.
+      expect(textOf(await cached.explain())).toBe("Cached.");
+      expect(cached.runDefaultTask).not.toHaveBeenCalled();
+      repository.readContext.mockResolvedValue(context());
+      const none = build(() => "n1 and n2 agree.", { resolveWriter: async () => null });
+      await expect(none.explain()).rejects.toThrow("errors.ai.noCompatibleModel");
+      expect(none.runDefaultTask).not.toHaveBeenCalled();
+    });
   });
 });

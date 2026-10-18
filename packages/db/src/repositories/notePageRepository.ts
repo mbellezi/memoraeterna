@@ -22,7 +22,11 @@ import {
   shownNoteRelationSql
 } from "./note-relation-sql.js";
 import { createObjectLocateRepository } from "./objectLocateRepository.js";
-import { relationExplanationPlan } from "./relationExplanationRepository.js";
+import {
+  relationExplanationIsCurrent,
+  relationExplanationPlan,
+  type RelationExplanationWriter
+} from "./relationExplanationRepository.js";
 import { mapNullableTimestamp, mapTimestamp } from "./sql.js";
 
 /**
@@ -288,13 +292,15 @@ function mapNote(row: NoteRow): NotePageNote {
 
 /**
  * An explanation written on demand counts only while its inputs are unchanged, the content language
- * it was written in included: a stale one reads as none, so it is written again when the relation is
- * opened. Without one, the explanation the decider stored (when it is real text) still counts.
+ * it was written in included, and, when the writer is known, while the same prompt and model would
+ * write it (F3 D22): a stale one reads as none, so it is written again when the relation is opened.
+ * Without one, the explanation the decider stored (when it is real text) still counts.
  */
 function explanationOf(
   item: RelationItem,
   self: SelfFacts | null,
-  language: string
+  language: string,
+  writer: RelationExplanationWriter | null | undefined
 ): NotePageRelation["explanation"] {
   if (item.written) {
     if (!self) return null;
@@ -309,10 +315,11 @@ function explanationOf(
       type: item.type,
       semanticSourceId: item.semanticSourceId,
       language,
+      writer,
       a: fact(self, self.passageHash),
       b: fact(item.other, item.other.passageHash)
     });
-    return plan.inputHash === item.written.inputHash
+    return relationExplanationIsCurrent(item.written.inputHash, plan)
       ? {
           text: clipCharacters(item.written.text, notePageLimits.explanationCharacters),
           writtenBy: knownModel(item.written.model)
@@ -329,7 +336,8 @@ function explanationOf(
 function mapRelation(
   item: RelationItem,
   self: SelfFacts | null,
-  language: string
+  language: string,
+  writer: RelationExplanationWriter | null | undefined
 ): NotePageRelation {
   const { other } = item;
   return {
@@ -337,7 +345,7 @@ function mapRelation(
     type: item.type,
     direction: item.direction,
     decidedBy: knownModel(item.matchingModel),
-    explanation: explanationOf(item, self, language),
+    explanation: explanationOf(item, self, language, writer),
     other: {
       id: other.id,
       title: other.title,
@@ -353,23 +361,36 @@ function mapRelation(
   };
 }
 
-function mapRelations(row: RelationsRow | undefined, language: string): NotePageRelations {
+function mapRelations(
+  row: RelationsRow | undefined,
+  language: string,
+  writer: RelationExplanationWriter | null | undefined
+): NotePageRelations {
   const self = row?.self ?? null;
   return {
     total: Number(row?.total ?? 0),
-    items: (row?.items ?? []).map((item) => mapRelation(item, self, language))
+    items: (row?.items ?? []).map((item) => mapRelation(item, self, language, writer))
   };
+}
+
+/**
+ * How written explanations are judged current: the content language, and the writer when known (a
+ * reader that does not know it accepts an explanation of the same facts from any writer).
+ */
+export interface NotePageExplanationOptions {
+  contentLanguage: string;
+  explanationWriter?: RelationExplanationWriter | null;
 }
 
 export function createNotePageRepository(pool: PgPool) {
   return {
     /**
      * Null when the note does not exist. One consistent snapshot: repeatable read, read only. The
-     * content language decides which written explanations are current.
+     * content language and the writer decide which written explanations are current.
      */
     async readPage(
       noteId: string,
-      options: { relationLimit: number; contentLanguage: string }
+      options: { relationLimit: number } & NotePageExplanationOptions
     ): Promise<NotePageRows | null> {
       const client = await pool.connect();
       try {
@@ -404,7 +425,7 @@ export function createNotePageRepository(pool: PgPool) {
           successors: note.successors,
           evidence: { total: Number(evidence?.total ?? 0), items: evidence?.items ?? [] },
           placement,
-          relations: mapRelations(relations, options.contentLanguage)
+          relations: mapRelations(relations, options.contentLanguage, options.explanationWriter)
         };
       } catch (error) {
         await client.query("rollback").catch(() => undefined);
@@ -417,7 +438,7 @@ export function createNotePageRepository(pool: PgPool) {
     /** A further page of the note's relations; the total is exact on every page. */
     async listRelations(
       noteId: string,
-      options: { offset: number; limit: number; contentLanguage: string }
+      options: { offset: number; limit: number } & NotePageExplanationOptions
     ): Promise<NotePageRelations> {
       const result = await pool.query<RelationsRow>(relationsSql, [
         noteId,
@@ -425,7 +446,7 @@ export function createNotePageRepository(pool: PgPool) {
         options.offset,
         notePageLimits.excerptCharacters
       ]);
-      return mapRelations(result.rows[0], options.contentLanguage);
+      return mapRelations(result.rows[0], options.contentLanguage, options.explanationWriter);
     },
 
     /** The statements behind `readPage`, for EXPLAIN in verification and the benchmark. */

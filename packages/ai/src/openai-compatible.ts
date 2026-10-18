@@ -7,10 +7,11 @@ import type {
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
+  AiProgressStep,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
-import { embedManyLimits } from "./contracts.js";
+import { createTextDeltaStream, embedManyLimits } from "./contracts.js";
 import {
   chunkTexts,
   embedManyDimensions,
@@ -325,7 +326,8 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   ): Promise<AiTaskResult> {
     if (request.taskType === "embedding") return this.run(request, signal);
     const startedAt = performance.now();
-    const progress = monotonicProgress(onProgress);
+    const progress = monotonicProgress<AiProgressStep>(onProgress);
+    const textStream = createTextDeltaStream(onProgress);
     let report: RemoteCallReport | undefined;
     let schemaMode = this.requestedSchemaMode(request);
     const streamed = await this.remoteCall(
@@ -338,6 +340,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         }
       },
       async (call) => {
+        textStream.attempt();
         const format = this.responseFormat(request);
         let includeUsage = !streamUsageRejected.has(this.options.baseUrl);
         const open = () =>
@@ -394,6 +397,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
             if (delta.length > 0) call.progressed("answer");
             else if (choice?.reasoning_content || choice?.reasoning) call.progressed("reasoning");
             output += delta;
+            textStream.delta(delta);
             tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usage) };
             call.reportUsage(tokenUsage);
             inputTokens = event.usage?.prompt_tokens ?? inputTokens;

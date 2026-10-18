@@ -161,8 +161,10 @@ describe("the synthetic provider", () => {
   it("reports itself loaded and streams a single finished progress event", async () => {
     expect(provider.isLoaded?.()).toBe(true);
     const progress: number[] = [];
-    await provider.runStreaming!(request("embedding", "x"), undefined, (event) =>
-      progress.push(event.progress)
+    await provider.runStreaming!(
+      request("embedding", "x"),
+      undefined,
+      (event) => event.kind !== "text" && progress.push(event.progress)
     );
     expect(progress).toEqual([1]);
   });

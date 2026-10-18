@@ -93,11 +93,16 @@ const self = {
   passageHash: "own-passage"
 };
 /** The input hash of `relationItem()` with `self`, as the explanation service computes it. */
-const currentHash = (type = "supports", language = "en") =>
+const currentHash = (
+  type = "supports",
+  language = "en",
+  writer?: { promptRevision: string; model: string }
+) =>
   relationExplanationPlan({
     type,
     semanticSourceId: id(2),
     language,
+    writer,
     a: { ...self, passage: { contentHash: self.passageHash } },
     b: {
       id: id(2),
@@ -288,6 +293,38 @@ describe("note page repository", () => {
       contentLanguage: "pt-BR"
     });
     expect(page!.relations.items[0]?.explanation?.text).toBe("Escrita em ingles.");
+  });
+
+  it("judges an explanation by the writer that would write it now, when the page knows the writer (F3 D22)", async () => {
+    const writer = { promptRevision: "prompt-3", model: "model-a" };
+    const written = {
+      text: "Written by model A.",
+      inputHash: currentHash("supports", "en", writer),
+      model: "model-a"
+    };
+    const { repository } = setup({
+      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+    });
+    const explanationOf = async (explanationWriter?: typeof writer | null) =>
+      (await repository.readPage(id(1), {
+        relationLimit: 20,
+        contentLanguage: "en",
+        ...(explanationWriter === undefined ? {} : { explanationWriter })
+      }))!.relations.items[0]?.explanation;
+    // The same writer: current. Another model or another prompt revision: none, written again on open.
+    expect((await explanationOf(writer))?.text).toBe("Written by model A.");
+    expect(await explanationOf({ ...writer, model: "model-b" })).toBeNull();
+    expect(await explanationOf({ ...writer, promptRevision: "prompt-4" })).toBeNull();
+    // A page that does not know the writer (none is set up) keeps showing what was written.
+    expect((await explanationOf(null))?.text).toBe("Written by model A.");
+    expect((await explanationOf())?.text).toBe("Written by model A.");
+    const further = await repository.listRelations(id(1), {
+      offset: 0,
+      limit: 20,
+      contentLanguage: "en",
+      explanationWriter: { ...writer, model: "model-b" }
+    });
+    expect(further.items[0]?.explanation).toBeNull();
   });
 
   it("loads a relation whose excerpt of exactly the bound in characters has more UTF-16 units", async () => {

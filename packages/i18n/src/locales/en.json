@@ -2857,6 +2857,7 @@
       "explainedBy": "Explained by {model}",
       "explainFailed": "The explanation could not be written.",
       "explainNoModel": "No model is set up to write explanations.",
+      "unrelated": "The writer found these notes unrelated, so this relation is now hidden.",
       "explainUnavailable": "This relation is no longer available, so it cannot be explained."
     }
   }

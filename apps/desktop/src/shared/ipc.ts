@@ -9,7 +9,8 @@ import {
   AiClassIdSchema,
   AiPresetIdSchema,
   AiPresetModeSchema,
-  NoteDeciderModeSchema
+  NoteDeciderModeSchema,
+  relationExplanationLimits
 } from "@app/domain";
 import {
   obsidianEditorialConflictsSchema,
@@ -33,6 +34,7 @@ import type {
   NoteRelationsInputSchema,
   ObjectLocateInput,
   RelationExplainInput,
+  RelationExplainOutcome,
   RelationExplanationResult,
   ObjectLocateResult
 } from "@app/domain";
@@ -108,6 +110,7 @@ export const ipcChannels = {
   relationsExplainSource: "app:relations:explain-source",
   relationsCancelExplainSource: "app:relations:cancel-explain-source",
   relationsChanged: "app:relations:changed",
+  relationExplanationDelta: "app:relations:explanation-delta",
   topicsTree: "app:topics:tree",
   topicsPath: "app:topics:path",
   topicsPage: "app:topics:page",
@@ -302,6 +305,20 @@ export const RelationsChangedEventSchema = z
   .object({ noteIds: z.array(z.string().uuid()).min(1).max(200) })
   .strict();
 export type RelationsChangedEvent = z.infer<typeof RelationsChangedEventSchema>;
+
+/**
+ * The `relationExplanationDelta` push (F3 D22): an explanation as it is written, to the window that
+ * asked for it. `text` is the whole text so far, with canonical note references, coalesced to one
+ * message per 50 ms; empty text says what was shown is void (the answer is written again).
+ */
+export const RelationExplanationDeltaEventSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    relationId: z.string().uuid(),
+    text: z.string().max(relationExplanationLimits.storedCharacters * 2)
+  })
+  .strict();
+export type RelationExplanationDeltaEvent = z.infer<typeof RelationExplanationDeltaEventSchema>;
 
 export const relationLabelsInputSchema = z
   .object({ mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema })
@@ -1795,8 +1812,12 @@ export interface DesktopApi {
   };
   /** Relations between notes or sources: their explanation, written when the owner opens one. */
   relations: {
-    /** The current explanation, written now when there is none; null when the relation is gone. */
-    explain: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
+    /**
+     * The current explanation, written now when there is none; the veto when the writer found the
+     * notes unrelated (the relation is withdrawn); null when the relation is gone. A request with a
+     * `requestId` also receives the text as it is written, on `subscribeExplanationDelta`.
+     */
+    explain: (input: RelationExplainInput) => Promise<RelationExplainOutcome | null>;
     /** Stops the explanation being written; resolves true when one was stopped. */
     cancelExplain: (input: RelationExplainInput) => Promise<boolean>;
     /**
@@ -1808,6 +1829,10 @@ export interface DesktopApi {
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
     /** Pushed after a link job commits (F3 3.11), coalesced: the notes whose relations changed. */
     subscribeChanged: (listener: (event: RelationsChangedEvent) => void) => () => void;
+    /** Pushed while an explanation is written (F3 D22): the text so far, for a request's id. */
+    subscribeExplanationDelta: (
+      listener: (event: RelationExplanationDeltaEvent) => void
+    ) => () => void;
   };
   /**
    * The topic tree (docs/plan.md F2): reads without AI, human operations through the engine, and a

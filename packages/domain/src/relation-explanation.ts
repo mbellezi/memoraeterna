@@ -23,8 +23,21 @@ export const relationExplanationLimits = {
    * route that cannot turn reasoning off counts its reasoning inside the cap, so the rest is room
    * to think: a cap of the answer alone would come back empty.
    */
-  maxOutputTokens: 2_048
+  maxOutputTokens: 2_048,
+  /** Streamed text leaves for the window at most this often (F3 D22), the last piece included. */
+  streamCoalesceMs: 50,
+  /**
+   * Characters of the answer held back until they cannot be the start of the sentinel: nothing is
+   * shown before this many have arrived, and an answer that begins with the sentinel is never shown.
+   */
+  sentinelHoldCharacters: 16
 } as const;
+
+/**
+ * The whole answer of the writer when the notes are not related as stated (prompt revision 3). It
+ * withdraws the relation (F3 D22); it is never shown as an explanation.
+ */
+export const relationExplanationSentinel = "NOT_RELATED";
 
 /**
  * Relation types that read in one direction (the others read the same both ways): the directed
@@ -37,7 +50,16 @@ export function isDirectedRelationType(type: string): boolean {
   return (directedRelationTypes as readonly string[]).includes(type);
 }
 
-export const RelationExplainInputSchema = z.object({ relationId: z.string().uuid() }).strict();
+export const RelationExplainInputSchema = z
+  .object({
+    relationId: z.string().uuid(),
+    /**
+     * Names the request on the delta channel, so a card that was closed and opened again ignores
+     * the pieces of the request it canceled.
+     */
+    requestId: z.string().uuid().optional()
+  })
+  .strict();
 export type RelationExplainInput = z.infer<typeof RelationExplainInputSchema>;
 
 export const RelationExplanationResultSchema = z
@@ -54,6 +76,24 @@ export const RelationExplanationResultSchema = z
   })
   .strict();
 export type RelationExplanationResult = z.infer<typeof RelationExplanationResultSchema>;
+
+/** The writer found the notes unrelated: the relation is withdrawn until the owner reviews it. */
+export const RelationVetoResultSchema = z
+  .object({ relationId: z.string().uuid(), vetoed: z.literal(true) })
+  .strict();
+export type RelationVetoResult = z.infer<typeof RelationVetoResultSchema>;
+
+/** What opening a relation answers: its explanation, or the veto that withdrew the relation. */
+export const RelationExplainOutcomeSchema = z.union([
+  RelationExplanationResultSchema,
+  RelationVetoResultSchema
+]);
+export type RelationExplainOutcome = z.infer<typeof RelationExplainOutcomeSchema>;
+
+/** Whether an answer of `explain` is the veto. */
+export function isRelationVeto(outcome: RelationExplainOutcome): outcome is RelationVetoResult {
+  return "vetoed" in outcome;
+}
 
 /** How the relation reads between the two notes, as the prompt states it. */
 export type RelationExplanationDirection = "n1_to_n2" | "symmetric" | "unknown";

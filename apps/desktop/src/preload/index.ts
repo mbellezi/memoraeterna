@@ -24,7 +24,7 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
-import { RelationsChangedEventSchema } from "../shared/ipc.js";
+import { RelationExplanationDeltaEventSchema, RelationsChangedEventSchema } from "../shared/ipc.js";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 import { ObjectLocateInputSchema, ObjectLocateResultSchema } from "@app/domain";
 import {
@@ -33,6 +33,7 @@ import {
   NotePageSchema,
   NoteRelationsInputSchema,
   RelationExplainInputSchema,
+  RelationExplainOutcomeSchema,
   RelationExplanationResultSchema
 } from "@app/domain";
 import { WikiQuerySchema, WikiResultsSchema } from "@app/domain";
@@ -238,7 +239,7 @@ const api: DesktopApi = {
   },
   relations: {
     explain: async (input) =>
-      RelationExplanationResultSchema.nullable().parse(
+      RelationExplainOutcomeSchema.nullable().parse(
         await ipcRenderer.invoke(
           ipcChannels.relationsExplain,
           RelationExplainInputSchema.parse(input)
@@ -276,6 +277,14 @@ const api: DesktopApi = {
       };
       ipcRenderer.on(ipcChannels.relationsChanged, handler);
       return () => ipcRenderer.removeListener(ipcChannels.relationsChanged, handler);
+    },
+    subscribeExplanationDelta(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const event = RelationExplanationDeltaEventSchema.safeParse(payload);
+        if (event.success) listener(event.data);
+      };
+      ipcRenderer.on(ipcChannels.relationExplanationDelta, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.relationExplanationDelta, handler);
     }
   },
   topics: {

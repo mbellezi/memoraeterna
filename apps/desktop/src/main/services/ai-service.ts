@@ -49,6 +49,8 @@ import {
   validateCatalogRankerArtifact,
   type AiModelAdapter,
   type AiProgressEvent,
+  type AiProgressStep,
+  type AiTextDelta,
   type AiLaneRuntimeConfig,
   type AiLaneRuntimeConfigInput,
   type AiRuntimeConfig,
@@ -440,7 +442,12 @@ export interface AiTaskLogContext {
    * compatibility check. The request carries it; the monitoring context does not.
    */
   outputSchema?: AiOutputSchema;
-  onProgress?: (event: AiProgressEvent) => void;
+  onProgress?: (event: AiProgressStep) => void;
+  /**
+   * The answer text as the model writes it (F3 D22), for a runtime that streams it; a runtime that
+   * does not stream never calls it. It runs unthrottled and must not throw.
+   */
+  onTextDelta?: (event: AiTextDelta) => void;
   onProviderStart?: () => Promise<void>;
 }
 
@@ -1526,7 +1533,8 @@ export class AiService {
     admission: PromptAdmission,
     permit: LanePermit
   ): Promise<() => Promise<DefaultAiTaskResult>> {
-    const { onProgress, onProviderStart, outputSchema, ...structuredLogContext } = logContext;
+    const { onProgress, onTextDelta, onProviderStart, outputSchema, ...structuredLogContext } =
+      logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     const selection = admission.selection;
@@ -1686,7 +1694,7 @@ export class AiService {
       };
       // The adapter's signal carries the lane permit, so retry backoffs sleep off the lane.
       const execution = laneSignal(signal, permit);
-      const progress = createProgressReporter(onProgress);
+      const progress = createProgressReporter(onProgress, onTextDelta);
       const run = async () => {
         await beforeProvider?.();
         signal?.throwIfAborted();
@@ -1951,7 +1959,10 @@ export class AiService {
     run: () => Promise<T>,
     details: Record<string, unknown> = {}
   ): Promise<T> {
-    const { onProgress: _progress, onProviderStart: _providerStart, ...metadata } = context;
+    // The listeners are the caller's; the monitor records data.
+    const metadata: Record<string, unknown> = { ...context };
+    for (const listener of ["onProgress", "onTextDelta", "onProviderStart"])
+      delete metadata[listener];
     return this.options.monitoring
       ? this.options.monitoring.operation(operation, metadata, run, details)
       : run();
@@ -3680,11 +3691,17 @@ export function withEmbeddingInputInstruction(
 }
 
 function createProgressReporter(
-  listener?: (event: AiProgressEvent) => void
+  listener?: (event: AiProgressStep) => void,
+  onTextDelta?: (event: AiTextDelta) => void
 ): (event: AiProgressEvent) => void {
   let lastProgress = -1;
   let lastReportedAt = 0;
   return (event) => {
+    // Text is not progress: it is never throttled and never reaches a progress listener.
+    if (event.kind === "text") {
+      onTextDelta?.(event);
+      return;
+    }
     if (!listener) return;
     const now = Date.now();
     const progress = Math.max(0, Math.min(1, event.progress));

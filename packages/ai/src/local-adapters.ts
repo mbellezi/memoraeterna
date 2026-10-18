@@ -483,6 +483,21 @@ export function stripThinkingOutput(output: string): string {
   return (closingIndex >= 0 ? output.slice(closingIndex + closingTag.length) : output).trim();
 }
 
+/**
+ * What a streamed chunk of generated text reports: the text itself (F3 D22) and the estimated
+ * progress. node-llama-cpp keeps thought segments out of the text chunks, so a chunk is answer text.
+ */
+export function reportGeneratedChunk(
+  listener: AiProgressListener | undefined,
+  chunk: string,
+  outputCharacters: number,
+  maxTokens: number
+): void {
+  if (!listener) return;
+  if (chunk.length > 0) listener({ kind: "text", delta: chunk });
+  listener({ progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4))) });
+}
+
 class NodeLlamaRuntime {
   private module: typeof import("node-llama-cpp") | null = null;
   private llama: Awaited<ReturnType<(typeof import("node-llama-cpp"))["getLlama"]>> | null = null;
@@ -539,9 +554,7 @@ class NodeLlamaRuntime {
           ? {
               onTextChunk: (chunk: string) => {
                 outputCharacters += chunk.length;
-                input.onProgress?.({
-                  progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4)))
-                });
+                reportGeneratedChunk(input.onProgress, chunk, outputCharacters, maxTokens);
               }
             }
           : {})

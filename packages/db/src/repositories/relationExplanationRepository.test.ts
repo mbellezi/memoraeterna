@@ -4,7 +4,10 @@ import type { QueryResult, QueryResultRow } from "pg";
 import {
   createRelationExplanationRepository,
   relationExplanationInputHash,
-  relationExplanationPlan
+  relationExplanationInputVersion,
+  relationExplanationIsCurrent,
+  relationExplanationPlan,
+  relationExplanationWriterHash
 } from "./relationExplanationRepository.js";
 
 const low = "00000000-0000-4000-8000-000000000001";
@@ -89,6 +92,61 @@ describe("relation explanation inputs", () => {
   });
 });
 
+describe("the key of a written explanation (F3 D22)", () => {
+  const a = note(low, "Alpha", "pa"),
+    b = note(high, "Beta", "pb");
+  const writer = { promptRevision: "prompt-3", model: "model-a" };
+  const plan = (who?: typeof writer | null, language = "en") =>
+    relationExplanationPlan({
+      type: "supports",
+      semanticSourceId: low,
+      language,
+      writer: who,
+      a,
+      b
+    });
+
+  it("is the version 3 hash of the facts, then the hash of the writer", () => {
+    expect(relationExplanationInputVersion).toBe("relation-explanation-input-v3");
+    const facts = plan().factsHash;
+    expect(facts).toMatch(/^[a-f0-9]{64}$/);
+    expect(plan().inputHash).toBe(facts);
+    expect(plan(writer).inputHash).toBe(`${facts}.${relationExplanationWriterHash(writer)}`);
+    expect(relationExplanationWriterHash(writer)).toMatch(/^[a-f0-9]{16}$/);
+  });
+
+  it("changes with the prompt revision and with the model, never the facts part", () => {
+    const key = plan(writer).inputHash;
+    for (const other of [
+      { ...writer, promptRevision: "prompt-4" },
+      { ...writer, model: "model-b" }
+    ]) {
+      expect(plan(other).inputHash).not.toBe(key);
+      expect(plan(other).factsHash).toBe(plan(writer).factsHash);
+    }
+    expect(plan(writer, "pt-BR").inputHash).not.toBe(key);
+  });
+
+  it("is current for the same writer, and for any writer when the reader does not know it", () => {
+    const stored = plan(writer).inputHash;
+    expect(relationExplanationIsCurrent(stored, plan(writer))).toBe(true);
+    expect(relationExplanationIsCurrent(stored, plan({ ...writer, model: "model-b" }))).toBe(false);
+    expect(
+      relationExplanationIsCurrent(stored, plan({ ...writer, promptRevision: "prompt-4" }))
+    ).toBe(false);
+    // A reader without a writer matches on the facts: a key with a writer, or a bare facts hash.
+    for (const unknown of [undefined, null]) {
+      expect(relationExplanationIsCurrent(stored, plan(unknown))).toBe(true);
+      expect(relationExplanationIsCurrent(plan().factsHash, plan(unknown))).toBe(true);
+      expect(relationExplanationIsCurrent(stored, plan(unknown, "pt-BR"))).toBe(false);
+    }
+    // A key of the previous version (no dot, another facts hash) is never current.
+    expect(relationExplanationIsCurrent("a".repeat(64), plan(writer))).toBe(false);
+    expect(relationExplanationIsCurrent("a".repeat(64), plan(null))).toBe(false);
+    expect(relationExplanationIsCurrent(plan().factsHash, plan(writer))).toBe(false);
+  });
+});
+
 describe("relation explanation repository", () => {
   function setup(rows: QueryResultRow[]) {
     const query = vi.fn(
@@ -104,6 +162,9 @@ describe("relation explanation repository", () => {
         type: "supports",
         status: "pending_review",
         semanticSourceId: low,
+        vetoable: true,
+        withdrawn: false,
+        vetoSource: null,
         a: note(low, "A"),
         b: note(high, "B"),
         stored: {
@@ -116,6 +177,7 @@ describe("relation explanation repository", () => {
     ]);
     const context = await repository.readContext(low);
     expect(query).toHaveBeenCalledTimes(1);
+    expect(context).toMatchObject({ vetoable: true, withdrawn: false, vetoSource: null });
     expect(context?.stored).toEqual({
       text: "Cached",
       inputHash: "h",
@@ -146,6 +208,30 @@ describe("relation explanation repository", () => {
     expect(repository.statements.context).toContain(
       "(select s.id from source_items s where s.id = b.created_from_source_item_id)"
     );
+  });
+
+  it("reads whether the relation may be withdrawn, and whether it is, only through the predicates", async () => {
+    const { repository } = setup([]);
+    const { context } = repository.statements;
+    // The veto state is read through the visibility module, never filtered on its columns.
+    expect(context).toContain("r.status = 'pending_review' and r.vetoed_at is null) as vetoable");
+    expect(context).toContain("r.status = 'pending_review' and r.vetoed_at is not null");
+    expect(context).toContain('r.veto_source as "vetoSource"');
+    const withdrawn = await setup([
+      {
+        relationId: low,
+        type: "supports",
+        status: "pending_review",
+        semanticSourceId: null,
+        vetoable: false,
+        withdrawn: true,
+        vetoSource: "explainer",
+        a: note(low, "A"),
+        b: note(high, "B"),
+        stored: null
+      }
+    ]).repository.readContext(low);
+    expect(withdrawn).toMatchObject({ vetoable: false, withdrawn: true, vetoSource: "explainer" });
   });
 
   it("stores beside the relation and never updates the relation or a note", async () => {

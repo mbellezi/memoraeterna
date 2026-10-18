@@ -20,6 +20,7 @@ import {
   editRequest,
   explanationAfter,
   explanationErrorKind,
+  explanationStreamed,
   hasUnsavedEdit,
   isPristineDraft,
   keepShownRelations,
@@ -98,6 +99,25 @@ function withExplanation(
   return { status: "ready", page: { ...load.page, relations: { ...load.page.relations, items } } };
 }
 
+/**
+ * The page without the relations the writer withdrew (F3 D22), except the one whose card is still
+ * open: it keeps saying why it is hidden until the card closes. The total follows the rows.
+ */
+export function withoutWithdrawn(
+  load: NotePageLoad,
+  withdrawn: ReadonlySet<string>,
+  openCard: string | null
+): NotePageLoad {
+  if (load.status !== "ready" || withdrawn.size === 0) return load;
+  const items = load.page.relations.items.filter(
+    (item) => !withdrawn.has(item.id) || item.id === openCard
+  );
+  const removed = load.page.relations.items.length - items.length;
+  if (removed === 0) return load;
+  const relations = { total: Math.max(0, load.page.relations.total - removed), items };
+  return { status: "ready", page: { ...load.page, relations } };
+}
+
 function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
   if (!(key in record)) return record as Record<string, T>;
   const next = { ...record };
@@ -129,6 +149,7 @@ export function NotePage({
   const [more, setMore] = useState<RelationsMore>({ status: "idle" });
   const [explanations, setExplanations] = useState<Record<string, ExplanationState>>({});
   const [explainRetry, setExplainRetry] = useState(0);
+  const [withdrawn, setWithdrawn] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
   const [placedByHand, setPlacedByHand] = useState(0);
   const topicsPulse = useTopicsPulse(active);
@@ -278,12 +299,26 @@ export function NotePage({
     if (!asksForExplanation(relation, explanationsNow.current[relationId])) return;
     let settled = false;
     let canceled = false;
+    // The text arrives as it is written, for this request only (a canceled one is ignored).
+    const requestId = crypto.randomUUID();
+    const stopListening = window.app.relations.subscribeExplanationDelta((event) => {
+      if (event.requestId !== requestId || event.relationId !== relationId) return;
+      setExplanations((current) => {
+        const next = explanationStreamed(current[relationId], event.text);
+        return next === undefined || next === current[relationId]
+          ? current
+          : { ...current, [relationId]: next };
+      });
+    });
     setExplanations((current) => ({ ...current, [relationId]: { status: "writing" } }));
     window.app.relations
-      .explain({ relationId })
+      .explain({ relationId, requestId })
       .then((result) => {
         settled = true;
-        if (result)
+        stopListening();
+        if (result && "vetoed" in result)
+          setWithdrawn((current) => new Set(current).add(relationId));
+        else if (result)
           setLoad((current) =>
             withExplanation(current, relationId, { text: result.text, writtenBy: result.writtenBy })
           );
@@ -294,6 +329,7 @@ export function NotePage({
       })
       .catch((error: unknown) => {
         settled = true;
+        stopListening();
         if (canceled) return;
         setExplanations((current) => ({
           ...current,
@@ -301,6 +337,7 @@ export function NotePage({
         }));
       });
     return () => {
+      stopListening();
       if (settled) return;
       canceled = true;
       void window.app.relations.cancelExplain({ relationId }).catch(() => undefined);
@@ -450,7 +487,7 @@ export function NotePage({
       <NotePageView
         t={t}
         backLabel={backLabel}
-        load={load}
+        load={withoutWithdrawn(load, withdrawn, card.open)}
         headingRef={headingRef}
         editRef={editRef}
         editing={editing}
@@ -502,7 +539,8 @@ export function NotePage({
           window.app.notes
             .relations({
               noteId,
-              offset: page.relations.items.length,
+              // The rows the writer withdrew are no longer in the list the offset counts in.
+              offset: page.relations.items.filter((item) => !withdrawn.has(item.id)).length,
               limit: notePageLimits.relationPage
             })
             .then((next) => {

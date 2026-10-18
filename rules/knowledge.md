@@ -64,9 +64,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Relations
 
-- Deciders of note and source relations write no prose; explanations are written on demand for a
-  relation the owner opens, and cached. Filters after retrieval are lossless (they drop only
-  candidates no decider score could accept); retrieval limits are calibrated to lose no tuning
+- Deciders of note and source relations write no prose. Filters after retrieval are lossless (they
+  drop only candidates no decider could accept); retrieval limits are calibrated to lose no tuning
   recall. A required decider that fails or decides nothing fails visibly, before its checkpoint.
 - Decisions keep each direction's raw score, AI run and time apart from calibration, keyed by the
   exact decider input of both notes and the decider; calibration maps raw scores to bands without
@@ -83,7 +82,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   decider-confirmed discovery pairs, never same-root pairs. Matching runs per source as soon
   as its notes exist, with no batch barrier.
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
-  background, and cached for its inputs (ideas or titles, passages, type, direction, language).
+  background; it streams and is cached for its inputs, prompt and model. An explanation that finds
+  the notes unrelated withdraws the relation until the owner keeps or removes it.
 
 ## Topic tree
 

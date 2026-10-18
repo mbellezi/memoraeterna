@@ -29,7 +29,11 @@ const result = (request: { taskType: string }, extra: Record<string, unknown> = 
 function service(
   adapter: {
     run?: (request: { taskType: string; input: string }, signal?: AbortSignal) => Promise<unknown>;
-    runStreaming?: (request: { taskType: string }) => Promise<unknown>;
+    runStreaming?: (
+      request: { taskType: string },
+      signal: AbortSignal | undefined,
+      onProgress: (event: unknown) => void
+    ) => Promise<unknown>;
   },
   monitoring?: unknown
 ) {
@@ -106,6 +110,74 @@ describe("how a routed call reaches its adapter", () => {
     expect(runStreaming).not.toHaveBeenCalled();
     await service({ run }).runDefaultTask("summarization", "text");
     expect(run).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the answer text of a streamed call (F3 D22)", () => {
+  it("hands every piece to onTextDelta at once, and keeps text out of the progress listener", async () => {
+    const pieces = Array.from({ length: 120 }, (_, index) => `piece ${index} `);
+    const runStreaming = vi.fn(
+      async (
+        request: { taskType: string },
+        _signal: AbortSignal | undefined,
+        onProgress: (event: unknown) => void
+      ) => {
+        onProgress({ progress: 0.4 });
+        for (const delta of pieces) onProgress({ kind: "text", delta });
+        onProgress({ kind: "text", delta: "again ", restart: true });
+        return result(request);
+      }
+    );
+    const progress: unknown[] = [];
+    const text: Array<{ delta: string; restart?: boolean }> = [];
+    const watch = {
+      start: vi.fn<(input: { context: object }) => Promise<{ id: string; full: boolean }>>(
+        async () => ({ id: "capture", full: false })
+      ),
+      finish: vi.fn(async () => undefined)
+    };
+    await service({ runStreaming }, watch).runDefaultTask("text-generation", "write", {
+      onProgress: (event) => progress.push(event),
+      onTextDelta: (event) => text.push(event)
+    });
+    // Not throttled like progress: all 121 pieces arrive, in order, with the restart flag.
+    expect(text.map((event) => event.delta)).toEqual([...pieces, "again "]);
+    expect(text.at(-1)).toMatchObject({ restart: true });
+    // The progress listener of an ingestion job reads `progress` of every event: text never reaches it.
+    expect(progress.length).toBeGreaterThan(0);
+    expect(
+      progress.every((event) => typeof (event as { progress?: number }).progress === "number")
+    ).toBe(true);
+    // The listeners are the caller's: the monitoring context is data and holds none of them.
+    const context = watch.start.mock.calls[0]![0].context;
+    expect(context).not.toHaveProperty("onTextDelta");
+    expect(context).not.toHaveProperty("onProgress");
+  });
+
+  it("never calls it for a runtime that does not stream: the final text arrives at once", async () => {
+    const run = vi.fn(async (request: { taskType: string }) => result(request, { output: "all" }));
+    const text: string[] = [];
+    const execution = await service({ run }).runDefaultTask("text-generation", "write", {
+      onTextDelta: (event) => text.push(event.delta)
+    });
+    expect(text).toEqual([]);
+    expect(execution?.output).toBe("all");
+  });
+
+  it("serves a call without a text listener from a streaming runtime", async () => {
+    const runStreaming = vi.fn(
+      async (
+        request: { taskType: string },
+        _signal: AbortSignal | undefined,
+        onProgress: (event: unknown) => void
+      ) => {
+        onProgress({ kind: "text", delta: "ignored" });
+        return result(request);
+      }
+    );
+    await expect(
+      service({ runStreaming }).runDefaultTask("text-generation", "write")
+    ).resolves.toMatchObject({ output: "ok" });
   });
 });
 

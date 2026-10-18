@@ -65,7 +65,8 @@ describe("NotePageService", () => {
     // The content language decides which written explanations are current.
     expect(repository.readPage).toHaveBeenCalledWith(id(1), {
       relationLimit: 20,
-      contentLanguage: "pt-BR"
+      contentLanguage: "pt-BR",
+      explanationWriter: null
     });
   });
 
@@ -115,8 +116,45 @@ describe("NotePageService", () => {
     expect(repository.listRelations).toHaveBeenCalledWith(id(1), {
       offset: 20,
       limit: 20,
-      contentLanguage: "pt-BR"
+      contentLanguage: "pt-BR",
+      explanationWriter: null
     });
+  });
+});
+
+describe("NotePageService explanation writer", () => {
+  const writer = { promptRevision: "prompt-3", model: "model-a" };
+
+  it("tells the repository who would write an explanation now, on every read (F3 D22)", async () => {
+    repository.readPage.mockResolvedValue(page);
+    repository.listRelations.mockResolvedValue({ items: [], total: 0 });
+    let current: typeof writer | null = writer;
+    const service = new NotePageService(
+      () => pool,
+      language,
+      async () => current
+    );
+    await service.page({ noteId: id(1) });
+    current = { ...writer, model: "model-b" };
+    await service.relations({ noteId: id(1), offset: 0 });
+    expect(repository.readPage.mock.calls[0]![1].explanationWriter).toEqual(writer);
+    expect(repository.listRelations.mock.calls[0]![1].explanationWriter).toEqual({
+      ...writer,
+      model: "model-b"
+    });
+  });
+
+  it("reads a page whose writer cannot be resolved: explanations then match on their facts", async () => {
+    repository.readPage.mockResolvedValue(page);
+    const service = new NotePageService(
+      () => pool,
+      language,
+      async () => {
+        throw new Error("route unavailable");
+      }
+    );
+    expect(await service.page({ noteId: id(1) })).toEqual(page);
+    expect(repository.readPage.mock.calls.at(-1)![1].explanationWriter).toBeNull();
   });
 });
 

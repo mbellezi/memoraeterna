@@ -118,7 +118,7 @@ describe("remote adapter deadlines and retries", () => {
     const result = openAi(fetch, { retry: { maxAttempts: 1 } }).runStreaming(
       request(),
       undefined,
-      (event) => progress.push(event.progress)
+      (event) => event.kind !== "text" && progress.push(event.progress)
     );
     const settled = expect(result).rejects.toMatchObject({ kind: "stalled", transient: true });
     await vi.advanceTimersByTimeAsync(20_000);
@@ -132,8 +132,10 @@ describe("remote adapter deadlines and retries", () => {
       .mockResolvedValueOnce(silentAfter(events({ choices: [{ delta: { content: "par" } }] })))
       .mockResolvedValue(deltas("complete ", "answer"));
     const progress: number[] = [];
-    const result = openAi(fetch).runStreaming(request(), undefined, (event) =>
-      progress.push(event.progress)
+    const result = openAi(fetch).runStreaming(
+      request(),
+      undefined,
+      (event) => event.kind !== "text" && progress.push(event.progress)
     );
     await vi.advanceTimersByTimeAsync(20_050);
     await expect(result).resolves.toMatchObject({ output: "complete answer" });

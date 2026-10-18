@@ -33,6 +33,7 @@ import {
   obsidianWikiRetiredMoveSchema,
   obsidianWikiScopeSchema,
   obsidianWikiStatusSchema,
+  RelationExplanationDeltaEventSchema,
   storedObsidianWikiScopeSchema
 } from "./ipc";
 
@@ -587,6 +588,22 @@ describe("desktop IPC contracts", () => {
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 
+  it("validates the pushed text of an explanation as it is written", () => {
+    const event = {
+      requestId: "00000000-0000-4000-8000-0000000000c1",
+      relationId: "00000000-0000-4000-8000-000000000010",
+      text: "The first note supports the second."
+    };
+    expect(RelationExplanationDeltaEventSchema.parse(event)).toEqual(event);
+    // Empty text says what was shown is void.
+    expect(RelationExplanationDeltaEventSchema.parse({ ...event, text: "" }).text).toBe("");
+    expect(() => RelationExplanationDeltaEventSchema.parse({ ...event, requestId: "x" })).toThrow();
+    expect(() => RelationExplanationDeltaEventSchema.parse({ ...event, extra: 1 })).toThrow();
+    expect(() =>
+      RelationExplanationDeltaEventSchema.parse({ ...event, text: "a".repeat(8_001) })
+    ).toThrow();
+  });
+
   it("registers the note page and relation explanation channels", () => {
     expect(ipcChannels.notesPage).toBe("app:notes:page");
     expect(ipcChannels.notesRelations).toBe("app:notes:relations");
@@ -594,6 +611,7 @@ describe("desktop IPC contracts", () => {
     expect(ipcChannels.relationsCancelExplain).toBe("app:relations:cancel-explain");
     expect(ipcChannels.relationsExplainSource).toBe("app:relations:explain-source");
     expect(ipcChannels.relationsCancelExplainSource).toBe("app:relations:cancel-explain-source");
+    expect(ipcChannels.relationExplanationDelta).toBe("app:relations:explanation-delta");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 });

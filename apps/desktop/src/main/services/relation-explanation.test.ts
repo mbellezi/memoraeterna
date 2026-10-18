@@ -6,7 +6,9 @@ import {
   acceptRelationExplanation,
   buildRelationExplanationPrompt,
   buildRelationExplanationRepairPrompt,
+  isNotRelatedAnswer,
   parseRelationExplanation,
+  relationExplanationPromptVersion,
   resolveRelationExplanationReferences
 } from "./relation-explanation.js";
 
@@ -69,6 +71,18 @@ describe("relation explanation prompt", () => {
     expect(promptFor("similar_to", ids.a, ids.b, ids.a)).toContain("its direction is symmetric");
   });
 
+  it("is revision 3: it tells the writer to answer NOT_RELATED when the notes are not related", () => {
+    const prompt = promptFor("supports", ids.a, ids.b, ids.b);
+    expect(prompt).toContain("If the notes are not related as stated, answer exactly NOT_RELATED.");
+    // The sentinel line comes before the format line, so the format rule does not hide it.
+    expect(prompt.indexOf("NOT_RELATED")).toBeLessThan(
+      prompt.indexOf("Return only the explanation text")
+    );
+    expect(relationExplanationPromptVersion).toBe("relation-explanation-v3");
+    // The repair asks for an explanation again; it never offers the sentinel.
+    expect(buildRelationExplanationRepairPrompt("")).not.toContain("NOT_RELATED");
+  });
+
   it("omits a passage that is gone instead of inventing one", () => {
     const prompt = withPromptPin(defaultPromptPin(), () =>
       buildRelationExplanationPrompt({
@@ -97,6 +111,47 @@ describe("relation explanation prompt", () => {
         expect.arrayContaining(["relations.explain", "relations.explain.repair"])
       );
     });
+  });
+});
+
+describe("the NOT_RELATED answer", () => {
+  it("is the whole answer, whatever quotes, emphasis or full stop surround it", () => {
+    for (const output of [
+      "NOT_RELATED",
+      "  NOT_RELATED\n",
+      '"NOT_RELATED"',
+      "`NOT_RELATED`",
+      "**NOT_RELATED**",
+      "NOT_RELATED.",
+      "not_related",
+      "“NOT_RELATED”."
+    ])
+      expect(isNotRelatedAnswer(output)).toBe(true);
+  });
+
+  it("is not an answer that says more, nor anything that is not text", () => {
+    for (const output of [
+      "NOT_RELATED because the notes only share a word.",
+      "NOT RELATED",
+      "The notes are NOT_RELATED.",
+      "NOT_RELATED NOT_RELATED",
+      "",
+      null,
+      { text: "NOT_RELATED" }
+    ])
+      expect(isNotRelatedAnswer(output)).toBe(false);
+  });
+
+  it("is never a valid explanation, alone or inside one", () => {
+    for (const output of [
+      "NOT_RELATED",
+      "n1 and n2 are NOT_RELATED.",
+      "NOT_RELATED because the notes only share a word."
+    ])
+      expect(parseRelationExplanation(output)).toBeNull();
+    // A word that merely contains the letters is content.
+    expect(parseRelationExplanation("n1 is NOT_RELATEDLY phrased about n2.")).not.toBeNull();
+    expect(acceptRelationExplanation("NOT_RELATED", { first: ids.a, second: ids.b })).toBeNull();
   });
 });
 

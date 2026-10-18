@@ -284,22 +284,25 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
       // Decide-only compact matching contract (atomic-note-matching-v9).
       row.id === "notes.match"
         ? "3"
-        : [
-              "consultation.knowledge",
-              "consultation.investigation",
-              "consultation.gaps",
-              // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
-              "graph.atomic_notes",
-              "graph.source_chunks",
-              "graph.catalog_metadata",
-              "graph.atomic_notes.repair",
-              "graph.source_chunks.repair",
-              "graph.catalog_metadata.repair",
-              // Names that cover the whole topic: covering samples and subtopics (topic-name-v2).
-              "topic.name"
-            ].includes(row.id)
-          ? "2"
-          : "1",
+        : // Revision 3 lets the writer answer NOT_RELATED when the notes are not related (F3 D22).
+          row.id === "relations.explain"
+          ? "3"
+          : [
+                "consultation.knowledge",
+                "consultation.investigation",
+                "consultation.gaps",
+                // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
+                "graph.atomic_notes",
+                "graph.source_chunks",
+                "graph.catalog_metadata",
+                "graph.atomic_notes.repair",
+                "graph.source_chunks.repair",
+                "graph.catalog_metadata.repair",
+                // Names that cover the whole topic: covering samples and subtopics (topic-name-v2).
+                "topic.name"
+              ].includes(row.id)
+            ? "2"
+            : "1",
     fields: [
       {
         id: "body",

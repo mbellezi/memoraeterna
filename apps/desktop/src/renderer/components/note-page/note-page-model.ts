@@ -248,28 +248,55 @@ export function cardContent(
 }
 
 /**
- * The explanation of an open card while it is being written, why it could not be, or that the
- * relation can no longer be explained (it, or one of its notes, is no longer current).
+ * The explanation of an open card while it is being written (with the text streamed so far), why
+ * it could not be, that the writer found the notes unrelated and the relation is hidden (F3 D22),
+ * or that the relation can no longer be explained (it, or one of its notes, is no longer current).
  */
 export type ExplanationState =
   | { status: "writing" }
+  | { status: "streaming"; text: string }
+  | { status: "vetoed" }
   | { status: "unavailable" }
   | { status: "failed"; kind: "noModel" | "failed" };
 
-/** Whether a card asks for an explanation: none is stored and the relation was not found gone. */
+/**
+ * Whether a card asks for an explanation: none is stored and the relation was not found gone or
+ * withdrawn.
+ */
 export function asksForExplanation(
   relation: Pick<NotePageRelation, "explanation"> | undefined,
   state: ExplanationState | undefined
 ): boolean {
-  return relation !== undefined && relation.explanation === null && state?.status !== "unavailable";
+  return (
+    relation !== undefined &&
+    relation.explanation === null &&
+    state?.status !== "unavailable" &&
+    state?.status !== "vetoed"
+  );
 }
 
 /**
  * What the card holds once the request answered: nothing when the explanation was written (the
- * relation carries it), a terminal "unavailable" when there was nothing to explain.
+ * relation carries it), "vetoed" when the writer found the notes unrelated, a terminal
+ * "unavailable" when there was nothing to explain.
  */
-export function explanationAfter(result: { text: string } | null): ExplanationState | null {
-  return result ? null : { status: "unavailable" };
+export function explanationAfter(
+  result: { text: string } | { vetoed: true } | null
+): ExplanationState | null {
+  if (result === null) return { status: "unavailable" };
+  return "vetoed" in result ? { status: "vetoed" } : null;
+}
+
+/**
+ * The card after a piece of the streamed text: the text so far, or back to writing when the text
+ * shown is void (empty). A piece that arrives once the request ended changes nothing.
+ */
+export function explanationStreamed(
+  state: ExplanationState | undefined,
+  text: string
+): ExplanationState | undefined {
+  if (state?.status !== "writing" && state?.status !== "streaming") return state;
+  return text === "" ? { status: "writing" } : { status: "streaming", text };
 }
 
 /** A stale write token shows as a conflict; everything else is a plain failure. */

@@ -5,9 +5,11 @@ import type {
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressListener,
+  AiProgressStep,
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
+import { createTextDeltaStream } from "./contracts.js";
 import { readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { providerHttpError, providerStreamError, type AiProviderError } from "./provider-error.js";
@@ -200,7 +202,8 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
   ): Promise<AiTaskResult> {
     if (!this.canHandle(request)) throw new Error("errors.ai.unsupportedTask");
     const startedAt = performance.now();
-    const progress = onProgress ? monotonicProgress(onProgress) : undefined;
+    const progress = onProgress ? monotonicProgress<AiProgressStep>(onProgress) : undefined;
+    const textStream = createTextDeltaStream(onProgress);
     const modelId = request.modelId ?? this.options.modelId;
     const decide = requestWorkloadClass(request) === "decide";
     const shapeKey = `${this.baseUrl}\u0000${modelId}`;
@@ -221,6 +224,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         }
       },
       async (call) => {
+        textStream.attempt();
         // A decide call needs no reasoning prose: it is sent without the reasoning summary and,
         // being a single stateless turn (store false), without the encrypted reasoning, unless this
         // backend refused that shape before.
@@ -297,6 +301,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
             if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
               if (event.delta.length > 0) call.progressed("answer");
               output += event.delta;
+              textStream.delta(event.delta);
               progress?.({
                 progress: streamedProgress(output.length, request.parameters.maxTokens)
               });

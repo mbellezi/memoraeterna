@@ -100,12 +100,53 @@ export const aiTaskResultSchema = z
   .strict();
 export type AiTaskResult = z.infer<typeof aiTaskResultSchema>;
 
-export interface AiProgressEvent {
+/** How far a call has come, as a fraction from 0 to 1, with an optional message key. */
+export interface AiProgressStep {
+  kind?: "progress";
   progress: number;
   messageKey?: string;
 }
 
+/**
+ * A piece of the answer text as the model writes it (F3 D22): the answer only, never reasoning.
+ * `restart` marks the first piece of a retried attempt: what the call streamed before is void and
+ * the answer starts again.
+ */
+export interface AiTextDelta {
+  kind: "text";
+  delta: string;
+  restart?: boolean;
+}
+
+export type AiProgressEvent = AiProgressStep | AiTextDelta;
+
 export type AiProgressListener = (event: AiProgressEvent) => void;
+
+export interface TextDeltaStream {
+  /** An attempt starts: the text it streams replaces what an earlier attempt sent. */
+  attempt(): void;
+  /** Streams a piece of the answer text; an empty piece is not a delta. */
+  delta(text: string): void;
+}
+
+/** Streams the answer text of one call to `listener`, marking the pieces of a retried attempt. */
+export function createTextDeltaStream(listener: AiProgressListener | undefined): TextDeltaStream {
+  let streamed = false;
+  let restart = false;
+  return {
+    attempt() {
+      restart = streamed;
+    },
+    delta(text) {
+      if (!listener || text.length === 0) return;
+      listener(
+        restart ? { kind: "text", delta: text, restart: true } : { kind: "text", delta: text }
+      );
+      streamed = true;
+      restart = false;
+    }
+  };
+}
 
 export interface AiTaskHandle {
   id: string;
