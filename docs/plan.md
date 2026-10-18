@@ -669,7 +669,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [ ] T58e (superseded by decision 29: the rule rejected it; revisited only if a decider test changes decision 29) Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
 - [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
 - [x] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
-- [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
+- [x] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
 - [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
       local deadlines from measured p99.
 - [x] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
