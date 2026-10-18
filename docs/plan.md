@@ -670,7 +670,7 @@ Wave 2 (M1 and gate R at the end):
 Wave 3 (gate F after T58; gate P at the end):
 - [x] T53b Note-matching settings cleanup (settings migration).
 - [x] T53f Backfill of missing hierarchy-root composites for existing libraries (found by T53's proof).
-- [ ] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
+- [x] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
 - [x] T53p Typed suggestions promote to suggested source relations (decision 29).
 - [x] T53d Automatic relations carry no direction until the owner or a clear decider gives one (decision 31b).
 - [x] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
@@ -680,7 +680,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
 - [x] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
 - [x] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
-- [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
+- [x] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
       local deadlines from measured p99.
 - [x] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
 
