@@ -62,6 +62,7 @@ import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
+import { prepareSoak, type SoakPreparation } from "./services/dev/soak-startup.js";
 import { createRematchJobSlot } from "./services/dev/relations-rematch-slot.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
@@ -183,6 +184,7 @@ let backupService: BackupService | null = null;
 let libraryResetService: LibraryResetService | null = null;
 let similarityDebugService: SimilarityDebugService | null = null;
 let topicTreeServices: TopicTreeServices | null = null;
+let soakPreparation: SoakPreparation | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceStartupPromise: Promise<void> | null = null;
@@ -235,6 +237,23 @@ void app.whenReady().then(() => {
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
   const aiCassette = installDevelopmentAiCassette(workspaceRoot);
   if (aiCassette === undefined) return;
+  // DEV fake remote providers and soak driver (MEMORA_FAKE_REMOTE, MEMORA_SOAK, F3 T62): a refusal
+  // stops an unpackaged app, so a soak never runs half-armed; a packaged build ignores both.
+  try {
+    soakPreparation = prepareSoak({
+      env: process.env,
+      isPackaged: app.isPackaged,
+      workspaceRoot,
+      userDataPath: app.getPath("userData")
+    });
+  } catch (error) {
+    console.error(`SOAK refused: ${error instanceof Error ? error.message : String(error)}`);
+    if (!app.isPackaged) {
+      app.exit(1);
+      return;
+    }
+  }
+  soakPreparation?.installAdapterDecorator();
   const monitoringService = new MonitoringService(
     () => databaseService?.getPool() ?? null,
     () => settingsService!.getApp()
@@ -246,7 +265,8 @@ void app.whenReady().then(() => {
     workspaceRoot,
     resourcesPath: getResourcesPath(),
     isPackaged: app.isPackaged,
-    logger: console,
+    logger: soakPreparation?.logger ?? console,
+    ...(soakPreparation ? { honourTreatAsRemote: true } : {}),
     openExternal: (url) => shell.openExternal(url),
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
@@ -261,6 +281,7 @@ void app.whenReady().then(() => {
     // Owner decision 19: the library's first embedding route installs the local ranker.
     onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks)
   });
+  soakPreparation?.attach(aiService);
   localModelService = new LocalModelService({
     getPool: () => databaseService?.getPool() ?? null,
     userDataPath: app.getPath("userData"),
@@ -382,17 +403,15 @@ void app.whenReady().then(() => {
   // coalesced push, so open Note pages read their relations once per burst (F3 3.11, 3.19).
   const announceRelationsChanged = (noteIds: string[]) =>
     jobSupervisor?.announceRelationsChanged(noteIds);
-  registerRelationExplanationIpc(
-    ipcMain,
-    new RelationExplanationService({
-      getPool: () => databaseService?.getPool() ?? null,
-      ai: aiService,
-      getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
-      resolveWriter: explanationWriter,
-      // An explanation that finds two notes unrelated withdraws the relation: open pages read it again.
-      relationsChanged: announceRelationsChanged
-    })
-  );
+  const relationExplanationService = new RelationExplanationService({
+    getPool: () => databaseService?.getPool() ?? null,
+    ai: aiService,
+    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    resolveWriter: explanationWriter,
+    // An explanation that finds two notes unrelated withdraws the relation: open pages read it again.
+    relationsChanged: announceRelationsChanged
+  });
+  registerRelationExplanationIpc(ipcMain, relationExplanationService);
   registerRelationReviewIpc(
     ipcMain,
     new RelationReviewService({
@@ -726,6 +745,24 @@ void app.whenReady().then(() => {
         const libraryQuiet = verdictOnly || rematch !== undefined;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!libraryQuiet) await topicTreeServices?.start();
+        // DEV fake remote providers (MEMORA_FAKE_REMOTE, F3 T62): listening, and the routes that lead
+        // to them in place, before any job can make a call.
+        if (soakPreparation) {
+          try {
+            await soakPreparation.startFakes({
+              pool: databaseService!.getPool()!,
+              credentials: new CredentialService(app.getPath("userData")),
+              setAnswerRoute: (profileId) =>
+                aiService!.setClassRoute({ route: "answer", profileId })
+            });
+          } catch (error) {
+            console.error(
+              `SOAK fake providers failed: ${error instanceof Error ? error.message : String(error)}`
+            );
+            app.exit(1);
+            return;
+          }
+        }
         await Promise.all([
           // DEV-only (MEMORA_LOCAL_MODEL_INSTALL, needs MEMORA_LOCAL_MODEL_SEED_DIR): once the local
           // models are started, installs the named catalog models from the seed folder and gives them
@@ -751,6 +788,26 @@ void app.whenReady().then(() => {
           libraryQuiet ? undefined : integrationGateway?.start(),
           libraryQuiet ? undefined : obsidianSyncService?.reconcileVault()
         ]);
+        // DEV soak driver (MEMORA_SOAK, F3 T62): the timeline of a day on the real services, until
+        // its duration ends or a STOP file appears in its run directory, then the app quits.
+        if (soakPreparation?.mode === "soak") {
+          void soakPreparation
+            .startDriver({
+              pool: databaseService!.getPool()!,
+              ai: aiService!,
+              ingestion: ingestionService!,
+              knowledge: knowledgeService!,
+              consultation: consultationService,
+              explanations: relationExplanationService,
+              jobs: { wake: () => jobSupervisor?.wake() }
+            })
+            .catch((error: unknown) =>
+              console.error("SOAK failed:", error instanceof Error ? error.message : String(error))
+            )
+            .finally(() => {
+              if (!app.isPackaged) app.quit();
+            });
+        }
         if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
           void import("./services/matching-pilot.js")
             .then(({ runMatchingPilot }) =>
@@ -917,6 +974,8 @@ async function shutdownServices(): Promise<void> {
   tray = null;
   await serviceStartupPromise;
   serviceStartupPromise = null;
+  await soakPreparation?.stop();
+  soakPreparation = null;
   await integrationGateway?.stop();
   integrationGateway = null;
   await jobSupervisor?.stop();

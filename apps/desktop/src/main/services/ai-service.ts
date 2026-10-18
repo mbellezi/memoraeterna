@@ -78,6 +78,7 @@ import {
   executionLane,
   isDeadlineFailure,
   isRemoteExecution,
+  providerTreatedAsRemote,
   localDeadlineMs,
   LocalDeadlineError,
   LocalMemoryBlockedError,
@@ -223,6 +224,12 @@ export interface AiServiceOptions {
    * that install.
    */
   rankerParityBaseline?: (identity: RankerParityModelIdentity) => RankerParityBaseline | null;
+  /**
+   * Honour the DEV-only `treatAsRemote` flag of provider configurations (F3 R6, T62): a loopback
+   * fake provider then runs in a remote lane under the remote deadlines. Refused in a packaged
+   * build whatever is passed; the app sets it from `MEMORA_FAKE_REMOTE` (`treatAsRemoteHonoured`).
+   */
+  honourTreatAsRemote?: boolean;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -598,7 +605,11 @@ export class AiService {
   /** Unloads the generative model once it has been idle for its period (F3 D39). */
   private generativeIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The DEV flag `treatAsRemote` counts: unpackaged and asked for (F3 R6). */
+  private readonly treatAsRemoteHonoured: boolean;
+
   public constructor(private readonly options: AiServiceOptions) {
+    this.treatAsRemoteHonoured = !options.isPackaged && options.honourTreatAsRemote === true;
     this.credentials = new CredentialService(options.userDataPath);
     this.configCache = new AiConfigCache({ pool: () => options.getPool() });
     this.mlxHost = options.mlxHost ?? null;
@@ -616,6 +627,25 @@ export class AiService {
   /** The state of every lane the scheduler has seen: limits, waits, rate limits and breakers. */
   public laneSnapshots(): LaneSnapshot[] {
     return this.scheduler.snapshot();
+  }
+
+  /** The MLX helper's process and how often it was started; null before the first MLX call (soak). */
+  public mlxHelperStats(): { pid: number | undefined; spawnCount: number } | null {
+    return this.mlxHost ? { pid: this.mlxHost.pid, spawnCount: this.mlxHost.spawnCount } : null;
+  }
+
+  /**
+   * Where a routed model runs, for the lane and the deadline mode: the selection plus the DEV flag
+   * of its provider configuration when this process honours it (F3 R6). One place, so the lane, the
+   * route locality and the deadline can never disagree.
+   */
+  private executionTarget<T extends Pick<TaskSelection, "providerMetadata">>(
+    selection: T
+  ): T & { treatAsRemote: boolean } {
+    return {
+      ...selection,
+      treatAsRemote: providerTreatedAsRemote(selection.providerMetadata, this.treatAsRemoteHonoured)
+    };
   }
 
   /**
@@ -1201,7 +1231,7 @@ export class AiService {
     await this.ensureLegacyRouteMapping();
     const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
     if (!selection) return null;
-    return isRemoteExecution(selection) ? "remote" : "local";
+    return isRemoteExecution(this.executionTarget(selection)) ? "remote" : "local";
   }
 
   /**
@@ -1501,7 +1531,7 @@ export class AiService {
         signal
       );
       if (!admission) return null;
-      const { lane, remoteKind } = executionLane(admission.selection);
+      const { lane, remoteKind } = executionLane(this.executionTarget(admission.selection));
       const priority = aiTaskPriority(context);
       const workloadClass = requestWorkloadClass({
         taskType: task,
@@ -1956,16 +1986,21 @@ export class AiService {
 
   /** The total deadline of a call on a route (F3 D31): the local one, else the remote one. */
   private callDeadlineMs(
-    selection: Pick<TaskSelection, "localModelId" | "provider" | "baseUrl" | "providerConfigId">,
+    selection: Pick<
+      TaskSelection,
+      "localModelId" | "provider" | "baseUrl" | "providerConfigId" | "providerMetadata"
+    >,
     taskType: AiTaskRequest["taskType"],
     statedClass: AiWorkloadClass | undefined
   ): number {
     const workloadClass = requestWorkloadClass({ taskType, workloadClass: statedClass });
     if (selection.localModelId)
       return localDeadlineMs(this.laneConfig.localDeadlines, workloadClass);
-    // OpenAI-compatible servers on this machine get the longer local total (remote-execution.ts).
+    // OpenAI-compatible servers on this machine get the longer local total (remote-execution.ts);
+    // a fake the soak marks `treatAsRemote` keeps the remote one (F3 R6).
     const servedLocally =
-      selection.provider === "openai-compatible" && !isRemoteExecution(selection);
+      selection.provider === "openai-compatible" &&
+      !isRemoteExecution(this.executionTarget(selection));
     return remoteTotalDeadlineMs(this.remoteRuntime, workloadClass, servedLocally);
   }
 
@@ -3304,6 +3339,10 @@ export class AiService {
           modelId,
           capabilities,
           baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1",
+          // The DEV fakes of the soak answer from loopback but run under the remote deadlines (R6).
+          ...(providerTreatedAsRemote(config.metadata, this.treatAsRemoteHonoured)
+            ? { treatAsRemote: true }
+            : {}),
           ...this.runtimeOption()
         }),
         key

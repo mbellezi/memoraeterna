@@ -13,6 +13,39 @@ export interface ExecutionTarget {
   providerConfigId: string | null;
   provider: string;
   baseUrl: string | null;
+  /**
+   * The DEV-only `treatAsRemote` flag of the provider configuration, already filtered by
+   * {@link providerTreatedAsRemote}: a loopback fake that must run under remote deadlines and in a
+   * remote lane (F3 R6, T62). Absent or false for every real configuration.
+   */
+  treatAsRemote?: boolean;
+}
+
+/** The environment variable that arms the DEV fake remote providers (and so `treatAsRemote`). */
+export const fakeRemoteKnob = "MEMORA_FAKE_REMOTE";
+
+/** The provider-configuration metadata key of the DEV-only flag. */
+export const treatAsRemoteMetadataKey = "treatAsRemote";
+
+/**
+ * Whether a provider configuration is treated as remote although it answers from this machine: its
+ * metadata carries `treatAsRemote: true` and the caller honours the flag, which only an unpackaged
+ * build running under {@link fakeRemoteKnob} does (`treatAsRemoteHonoured`). Without that, the flag
+ * is ignored wherever it came from, so a packaged build can never be tricked into it.
+ */
+export function providerTreatedAsRemote(
+  metadata: Readonly<Record<string, unknown>> | null | undefined,
+  honoured: boolean
+): boolean {
+  return honoured && metadata?.[treatAsRemoteMetadataKey] === true;
+}
+
+/** Whether this process honours `treatAsRemote`: unpackaged and started with the fake-remote knob. */
+export function treatAsRemoteHonoured(
+  env: Readonly<Record<string, string | undefined>>,
+  options: { isPackaged: boolean }
+): boolean {
+  return !options.isPackaged && Boolean(env[fakeRemoteKnob]?.trim());
 }
 
 /** The base URL an OpenAI-compatible configuration without one is served from (Ollama). */
@@ -20,11 +53,13 @@ const defaultOpenAiCompatibleBaseUrl = "http://127.0.0.1:11434/v1";
 
 /**
  * Whether a routed model runs on a remote provider: not a local runtime and not an endpoint on this
- * machine or its private network (Ollama, LM Studio). One predicate for the lane and, from T62, the
- * adapters' deadline mode, so the two can never disagree.
+ * machine or its private network (Ollama, LM Studio). One predicate for the lane and the adapters'
+ * deadline mode, so the two can never disagree (T62: a configuration the DEV flag `treatAsRemote`
+ * marks is remote whatever its address).
  */
 export function isRemoteExecution(target: ExecutionTarget): boolean {
   if (target.localModelId) return false;
+  if (target.treatAsRemote) return true;
   const baseUrl =
     target.baseUrl ??
     (target.provider === "openai-compatible" ? defaultOpenAiCompatibleBaseUrl : null);

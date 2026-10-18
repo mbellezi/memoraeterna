@@ -61,6 +61,12 @@ export interface OpenAiCompatibleAdapterOptions {
   runtime?: AiRuntimeConfigInput;
   /** Source of the retry jitter. */
   random?: () => number;
+  /**
+   * The server answers from this machine but runs under the remote deadlines (connect, first byte,
+   * stall, answer start; the remote totals): the DEV fake providers of the soak (F3 R6, T62). The
+   * caller sets it only where {@link providerTreatedAsRemote} honours the provider flag.
+   */
+  treatAsRemote?: boolean;
 }
 
 /** A 400 or 422 that names the structured response format as the parameter at fault. */
@@ -103,7 +109,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   public constructor(private readonly options: OpenAiCompatibleAdapterOptions) {
     this.fetchImplementation = options.fetch ?? fetch;
     this.runtime = resolveAiRuntimeConfig(options.runtime);
-    this.local = isLocalEndpoint(options.baseUrl);
+    this.local = !options.treatAsRemote && isLocalEndpoint(options.baseUrl);
   }
 
   public describe(): AiModelDescriptor {

@@ -520,6 +520,64 @@ npm run dev -w @app/desktop
 many recorded extraction answers the recording-era parse rejects and how many of those the graph salvage keeps
 with no further call (counts only, no text).
 
+## 8. The soak and the pre-soak (F3 T62: X6, gate P)
+
+A soak runs a day of an owner's use on a clone of ENV-G (`env-soak`, the Local preset) and checks that no AI
+call outlives its deadline, that repairs stay rare, and that nothing wedges. It spends nothing: the remote side
+is two fake providers on loopback, so no real provider is called and no cassette is used. It is DEV-only
+(refused when packaged, with another DEV measurement knob, or on a profile outside `.cache/profiles/`: it
+writes fake provider routes into the AI configuration and the driver imports, edits and deletes library
+content).
+
+| Knob | Meaning |
+| --- | --- |
+| `MEMORA_FAKE_REMOTE=scripts/soak/plan.json` | Starts the fake providers and routes `class:answer` and `op:relation_explanation` to them. |
+| `MEMORA_SOAK=scripts/soak/plan.json` | Starts the driver (needs `MEMORA_FAKE_REMOTE` and the same plan). |
+| `MEMORA_SOAK_PROFILE=soak24\|presoak4` | The plan profile (default `soak24`); `presoak4` is gate P's 4 h run. |
+| `MEMORA_SOAK_RUN=<name>` | The run folder `.cache/f3/soak/<name>/` (default `<profile>-<timestamp>`). |
+
+**Fake providers** (`apps/desktop/src/main/services/dev/fake-*.ts`). An OpenAI-compatible fake serves Ask
+(`class:answer`: a valid answer that cites the first passage it is given) and a Codex-wire fake serves
+relation explanations (`op:relation_explanation`: the Responses protocol as server-sent events behind a DEV
+OAuth stub, a fixed dummy credential in a DEV-only credential entry, `NOT_RELATED` at a seeded 2 %). Their
+provider configurations carry `treatAsRemote: true`, which one predicate (`isRemoteExecution`) reads for the
+lane and for the adapter's deadline mode, so the fakes run under the remote connect, first-byte, stall and
+answer-start bounds and the remote totals; without the knob, or packaged, the flag is ignored. Latencies are
+drawn from the recorded Codex durations: `npm run soak:latency-fit` writes `.cache/f3/soak/latency-fit.json`
+from the golden and fixture cassettes once. Each fake wraps its protocol in the fault decorator
+(`fault-decorator.ts`): a third remote kind, such as the Decisions API (plan decision 30), is covered by
+wrapping it the same way.
+
+**Driver** (seed 20261021). Every 20 min a public corpus article (`.cache/corpus/wikipedia`) goes through the
+real ingestion path; every 10 min an Ask question (P0); every 5 min an explanation is opened through the
+service (P0) and every hour a burst of 10; every 2 h a human note edit (re-embed); every 6 h a source is
+versioned (an article imported again as a new version) and another is deleted; every 4 h a source whose typing
+fails deterministically; 35 s after each outage of the Codex-wire fake an explanation opens, which is the probe
+that closes the breaker. Faults (seeded, deterministic per seed and request number): 429 with `Retry-After` 1-10
+s (5 %), 503 (2 %), a 25 s stall after the first text (1 %), a first byte at 35 s (1 %), a malformed answer
+(0.5 %); a 15 min outage of the Codex-wire fake at hour 6; answers 10x slower on the OpenAI-compatible fake for
+5 min at hour 12; the MLX helper is SIGKILLed every 3 h +/- 30 min; a GGUF embedding batch is aborted every 6 h.
+The `presoak4` profile adds forced bursts of three consecutive faults of each kind (the retry budget), so every
+kind ends a whole call.
+
+**The catalog-header catch-up stays on.** A soak is product behaviour: `MEMORA_SOAK` and `MEMORA_FAKE_REMOTE` are
+not measurement knobs for `catalogHeaderPolicy`, the run's `meta.json` records the policy, and the knobs refuse
+`MEMORA_CATALOG_HEADERS=off`. The first minutes of an ENV-G clone therefore include the catch-up jobs of its roots.
+
+**Files** in `.cache/f3/soak/<run>/`: `meta.json`, `events.ndjson` (every fake exchange, window, local fault,
+driver action and breaker move), `samples.ndjson` (every minute: lanes, jobs, helper RSS, pageouts, event-loop
+lag, pool), `task-runs.ndjson` (the `ai_task_runs` rows with the 0057 columns), `articles.ndjson`. Creating a
+`STOP` file in the folder ends the run in an orderly way; the app then quits.
+
+**Report.** `npm run soak:report -- .cache/f3/soak/<run> --status` is the health check of a run in progress (nothing is
+written). `npm run soak:report -- .cache/f3/soak/<run> [--presoak]` writes `report.md` and `report.json`: the X6
+table (calls past deadline by audit row and by the lane watchdog, repairs per D35 without injected calls, stuck
+and blocked jobs, pageouts after warm-up, P0 wait, breaker, helper restarts, remote deadlines), the audited
+sample of 50 non-injected failures and every wedged slot. With `--presoak` it asserts, for each injected fault
+kind on each fake, the attempt (the fake's record: a 429 with `Retry-After`, a stall that the client left at
+the stall bound, a first byte that the client left at the first-byte bound) and the call (its audit row's
+`deadline_outcome` and error class). Exit code 0 passes, 2 needs a person (the report says which line), 1 fails.
+
 ## After a run
 
 The runner pauses nothing and `summary.json` has no `automation` entry: the legacy wiki automation is

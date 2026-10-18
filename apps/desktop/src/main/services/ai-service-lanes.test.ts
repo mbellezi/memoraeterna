@@ -104,16 +104,16 @@ function adapter(providerId: string, modelId: string, runtime: string, run: Run)
 
 function service(
   runs: { remote?: Run; local?: Run } = {},
-  options: { scheduler?: AiScheduler } = {}
+  options: { scheduler?: AiScheduler; honourTreatAsRemote?: boolean; isPackaged?: boolean } = {}
 ) {
   const ai = new AiService({
     userDataPath: "/tmp/ai-lane-tests",
     getPool: () => ({}) as never,
     workspaceRoot: "/tmp",
     resourcesPath: "/tmp",
-    isPackaged: false,
     lanes: {},
-    ...options
+    ...options,
+    isPackaged: options.isPackaged ?? false
   });
   const internals = ai as unknown as {
     createAdapter: () => Promise<unknown>;
@@ -163,6 +163,59 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+/** A Codex configuration that answers from loopback and carries the DEV flag (F3 R6, T62). */
+const fakeCodexSelection = {
+  ...remoteSelection,
+  baseUrl: "http://127.0.0.1:41001/backend-api/codex",
+  providerMetadata: { treatAsRemote: true }
+};
+
+describe("the DEV flag treatAsRemote on a provider configuration (R6)", () => {
+  const audited = async (options: { honourTreatAsRemote?: boolean; isPackaged?: boolean }) => {
+    state.selections.set("text-generation", fakeCodexSelection);
+    const { ai } = service({}, options);
+    await ai.runDefaultTask("text-generation", "explain");
+    return {
+      row: rows()[0]!,
+      locality: await ai.taskRouteLocality("text-generation")
+    };
+  };
+
+  it("puts a loopback fake in its own remote lane with the remote total when honoured", async () => {
+    const { row, locality } = await audited({ honourTreatAsRemote: true });
+    expect(row).toMatchObject({ lane: `remote:${ids.codexConfig}` });
+    expect(locality).toBe("remote");
+  });
+
+  it("ignores the flag without the knob, so the loopback endpoint is local", async () => {
+    const { row, locality } = await audited({});
+    expect(row).toMatchObject({ lane: "local" });
+    expect(locality).toBe("local");
+  });
+
+  it("ignores the flag in a packaged build whatever is passed", async () => {
+    const { row, locality } = await audited({ honourTreatAsRemote: true, isPackaged: true });
+    expect(row).toMatchObject({ lane: "local" });
+    expect(locality).toBe("local");
+  });
+
+  it("keeps the remote total deadline of an OpenAI-compatible fake that runs on loopback", async () => {
+    state.selections.set("text-generation", {
+      ...fakeCodexSelection,
+      provider: "openai-compatible",
+      baseUrl: "http://127.0.0.1:41002/v1"
+    });
+    const remoteTotal = async (honour: boolean) => {
+      state.record.mockClear();
+      const { ai } = service({}, { honourTreatAsRemote: honour });
+      await ai.runDefaultTask("text-generation", "explain", { workloadClass: "write-fast" });
+      return rows()[0]!.deadlineMs as number;
+    };
+    // The remote write-fast total; a loopback server without the flag gets the local factor (x3).
+    expect(await remoteTotal(false)).toBe(3 * (await remoteTotal(true)));
+  });
 });
 
 describe("AI calls on lanes", () => {

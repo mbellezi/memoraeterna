@@ -12,6 +12,7 @@ export default defineConfig({
       "scripts/db/**/*.test.ts",
       "scripts/golden/**/*.test.ts",
       "scripts/relations/**/*.test.ts",
+      "scripts/soak/**/*.test.ts",
       "scripts/topics/**/*.test.ts"
     ],
     coverage: {

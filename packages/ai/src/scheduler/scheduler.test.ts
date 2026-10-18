@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resolveAiLaneRuntimeConfig, type AiLaneRuntimeConfigInput } from "../runtime-config.js";
 import { aimdOnOutcome, aimdOnRateLimit, initialAimd } from "./aimd.js";
-import { executionLane, isRemoteExecution, laneMaximum } from "./lanes.js";
+import {
+  executionLane,
+  isRemoteExecution,
+  laneMaximum,
+  providerTreatedAsRemote,
+  treatAsRemoteHonoured
+} from "./lanes.js";
 import { effectiveRank, priorityNumber, selectNext } from "./priority.js";
 import { createAiScheduler } from "./scheduler.js";
 import { fakeSchedulerClock, flush } from "./test-clock.js";
@@ -442,6 +448,48 @@ describe("lane scheduler: lanes, limits and adaptation", () => {
     expect(laneMaximum("remote:p-1", "api-key", product)).toBe(4);
     expect(laneMaximum("local", "api-key", product)).toBe(1);
     expect(laneMaximum("remote:p-1", "api-key", { ...product, mode: "serial" })).toBe(1);
+  });
+
+  it("puts a loopback fake in a remote lane only when treatAsRemote is honoured (R6)", () => {
+    const loopback = {
+      localModelId: null,
+      providerConfigId: "fake-1",
+      baseUrl: "http://127.0.0.1:41000/v1"
+    };
+    const metadata = { treatAsRemote: true };
+    // Honoured: the fake leaves the local lane, whatever its address.
+    const honoured = providerTreatedAsRemote(metadata, true);
+    expect(
+      executionLane({ ...loopback, provider: "openai-compatible", treatAsRemote: honoured })
+    ).toEqual({ lane: "remote:fake-1", remoteKind: "api-key" });
+    expect(
+      executionLane({ ...loopback, provider: "openai-codex", treatAsRemote: honoured })
+    ).toEqual({ lane: "remote:fake-1", remoteKind: "codex" });
+    // Not honoured (no knob, or packaged): the flag is ignored and the loopback endpoint is local.
+    const ignored = providerTreatedAsRemote(metadata, false);
+    expect(ignored).toBe(false);
+    expect(
+      executionLane({ ...loopback, provider: "openai-compatible", treatAsRemote: ignored }).lane
+    ).toBe("local");
+    // Only a literal true counts, and a local runtime stays local either way.
+    expect(providerTreatedAsRemote({ treatAsRemote: "yes" }, true)).toBe(false);
+    expect(providerTreatedAsRemote(undefined, true)).toBe(false);
+    expect(
+      isRemoteExecution({
+        ...loopback,
+        localModelId: "m-1",
+        provider: "local",
+        treatAsRemote: true
+      })
+    ).toBe(false);
+  });
+
+  it("honours treatAsRemote only unpackaged and under MEMORA_FAKE_REMOTE (R6)", () => {
+    const env = { MEMORA_FAKE_REMOTE: "scripts/soak/plan.json" };
+    expect(treatAsRemoteHonoured(env, { isPackaged: false })).toBe(true);
+    expect(treatAsRemoteHonoured(env, { isPackaged: true })).toBe(false);
+    expect(treatAsRemoteHonoured({}, { isPackaged: false })).toBe(false);
+    expect(treatAsRemoteHonoured({ MEMORA_FAKE_REMOTE: "  " }, { isPackaged: false })).toBe(false);
   });
 
   it("adapts limits additively up and multiplicatively down, within the minimum and maximum", () => {

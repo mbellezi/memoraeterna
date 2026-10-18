@@ -1,0 +1,160 @@
+{
+  "format": "memora-soak-plan",
+  "version": 1,
+  "profiles": {
+    "soak24": {
+      "description": "The 24 h soak of F3 X6 (spec 5.9): a day of an owner's use on env-soak, the Local preset with the two fake remote providers, seeded faults on both sides.",
+      "seed": 20261021,
+      "durationHours": 24,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "driver": {
+        "article": { "everyMinutes": 20, "offsetMinutes": 1 },
+        "ask": { "everyMinutes": 10, "offsetMinutes": 2 },
+        "explain": { "everyMinutes": 5, "offsetMinutes": 3 },
+        "explainBurst": { "everyMinutes": 60, "offsetMinutes": 7, "count": 10 },
+        "noteEdit": { "everyMinutes": 120, "offsetMinutes": 11 },
+        "sourceReimport": { "everyMinutes": 360, "offsetMinutes": 37 },
+        "typingFault": { "everyMinutes": 240, "offsetMinutes": 53 },
+        "postOutageProbeSeconds": 35
+      },
+      "remote": {
+        "openAiCompatible": {
+          "latency": {
+            "fit": ".cache/f3/soak/latency-fit.json",
+            "task": "knowledge-graph-generation",
+            "minMs": 400,
+            "maxMs": 60000,
+            "firstByteFraction": 0.3
+          },
+          "faults": {
+            "rates": {
+              "rateLimit": 0.05,
+              "unavailable": 0.02,
+              "stall": 0.01,
+              "lateFirstByte": 0.01,
+              "malformed": 0.005
+            },
+            "retryAfterSeconds": [1, 10],
+            "stallMs": 25000,
+            "lateFirstByteMs": 35000,
+            "windows": [{ "kind": "slow", "startMinute": 720, "durationMinutes": 5, "factor": 10 }],
+            "forced": []
+          }
+        },
+        "codexWire": {
+          "notRelatedRate": 0.02,
+          "latency": {
+            "fit": ".cache/f3/soak/latency-fit.json",
+            "task": "summarization",
+            "minMs": 400,
+            "maxMs": 60000,
+            "firstByteFraction": 0.3
+          },
+          "faults": {
+            "rates": {
+              "rateLimit": 0.05,
+              "unavailable": 0.02,
+              "stall": 0.01,
+              "lateFirstByte": 0.01,
+              "malformed": 0.005
+            },
+            "retryAfterSeconds": [1, 10],
+            "stallMs": 25000,
+            "lateFirstByteMs": 35000,
+            "windows": [{ "kind": "outage", "startMinute": 362, "durationMinutes": 15 }],
+            "forced": []
+          }
+        }
+      },
+      "local": {
+        "mlxKill": { "everyMinutes": 180, "jitterMinutes": 30 },
+        "ggufAbort": { "everyMinutes": 360 }
+      },
+      "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 }
+    },
+    "presoak4": {
+      "description": "The 4 h pre-soak of gate P: the same day compressed to four hours, with forced bursts so that every injected fault kind ends a whole call (three consecutive requests, the retry budget) and the report can assert its deadline_outcome and error class.",
+      "seed": 20261021,
+      "durationHours": 4,
+      "warmupMinutes": 20,
+      "sampleEveryMinutes": 1,
+      "driver": {
+        "article": { "everyMinutes": 20, "offsetMinutes": 1 },
+        "ask": { "everyMinutes": 10, "offsetMinutes": 2 },
+        "explain": { "everyMinutes": 5, "offsetMinutes": 3 },
+        "explainBurst": { "everyMinutes": 60, "offsetMinutes": 7, "count": 10 },
+        "noteEdit": { "everyMinutes": 60, "offsetMinutes": 11 },
+        "sourceReimport": { "everyMinutes": 120, "offsetMinutes": 37 },
+        "typingFault": { "everyMinutes": 80, "offsetMinutes": 53 },
+        "postOutageProbeSeconds": 35
+      },
+      "remote": {
+        "openAiCompatible": {
+          "latency": {
+            "fit": ".cache/f3/soak/latency-fit.json",
+            "task": "knowledge-graph-generation",
+            "minMs": 400,
+            "maxMs": 60000,
+            "firstByteFraction": 0.3
+          },
+          "faults": {
+            "rates": {
+              "rateLimit": 0.05,
+              "unavailable": 0.02,
+              "stall": 0.01,
+              "lateFirstByte": 0.01,
+              "malformed": 0.005
+            },
+            "retryAfterSeconds": [1, 10],
+            "stallMs": 25000,
+            "lateFirstByteMs": 35000,
+            "windows": [{ "kind": "slow", "startMinute": 141, "durationMinutes": 5, "factor": 10 }],
+            "forced": [
+              { "kind": "unavailable", "afterMinute": 15, "count": 3 },
+              { "kind": "stall", "afterMinute": 25, "count": 3 },
+              { "kind": "late_first_byte", "afterMinute": 35, "count": 3 },
+              { "kind": "rate_limit", "afterMinute": 45, "count": 2 },
+              { "kind": "malformed", "afterMinute": 55, "count": 1 }
+            ]
+          }
+        },
+        "codexWire": {
+          "notRelatedRate": 0.02,
+          "latency": {
+            "fit": ".cache/f3/soak/latency-fit.json",
+            "task": "summarization",
+            "minMs": 400,
+            "maxMs": 60000,
+            "firstByteFraction": 0.3
+          },
+          "faults": {
+            "rates": {
+              "rateLimit": 0.05,
+              "unavailable": 0.02,
+              "stall": 0.01,
+              "lateFirstByte": 0.01,
+              "malformed": 0.005
+            },
+            "retryAfterSeconds": [1, 10],
+            "stallMs": 25000,
+            "lateFirstByteMs": 35000,
+            "windows": [{ "kind": "outage", "startMinute": 95, "durationMinutes": 15 }],
+            "forced": [
+              { "kind": "rate_limit", "afterMinute": 13, "count": 2 },
+              { "kind": "unavailable", "afterMinute": 23, "count": 3 },
+              { "kind": "stall", "afterMinute": 33, "count": 3 },
+              { "kind": "late_first_byte", "afterMinute": 43, "count": 3 },
+              { "kind": "malformed", "afterMinute": 53, "count": 1 }
+            ]
+          }
+        }
+      },
+      "local": {
+        "mlxKill": { "everyMinutes": 75, "jitterMinutes": 10 },
+        "ggufAbort": { "everyMinutes": 80 }
+      },
+      "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 }
+    }
+  }
+}
