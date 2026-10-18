@@ -20,6 +20,7 @@ const queries = vi.hoisted(() => ({
   forgetExplanations: vi.fn(),
   pickEditableNote: vi.fn(),
   pickQuestionTitle: vi.fn(),
+  readFailedJobs: vi.fn(),
   readJobs: vi.fn(),
   readTaskRuns: vi.fn()
 }));
@@ -365,6 +366,9 @@ describe("the ports", () => {
     queries.readTaskRuns.mockResolvedValue([]);
     await ports.taskRuns(1_000);
     expect(queries.readTaskRuns).toHaveBeenCalledWith(d.pool, 1_000);
+    queries.readFailedJobs.mockResolvedValue([]);
+    await ports.failedJobs(2_000);
+    expect(queries.readFailedJobs).toHaveBeenCalledWith(d.pool, 2_000);
   });
 
   it("refuses to start without the public corpus", async () => {

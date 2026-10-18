@@ -15,6 +15,7 @@ import {
   soakSampleSchema,
   taskRunRecordSchema,
   type ActionRecord,
+  type JobFailureRecord,
   type LocalFaultRecord,
   type SoakEvent,
   type TaskRunRecord
@@ -122,6 +123,7 @@ function ports(overrides: Partial<SoakPorts> = {}) {
   const calls: string[] = [];
   const record = (name: string) => calls.push(name);
   let rows: TaskRunRecord[] = [];
+  let failedJobs: JobFailureRecord[] = [];
   const base: SoakPorts = {
     importArticle: async (index) => (record(`article ${index}`), { title: `Article ${index}` }),
     ask: async (index) => (record(`ask ${index}`), { outcome: "answered" }),
@@ -153,10 +155,16 @@ function ports(overrides: Partial<SoakPorts> = {}) {
       dbPool: { total: 2, idle: 2, waiting: 0 }
     }),
     taskRuns: async () => rows,
+    failedJobs: async () => failedJobs,
     stopRequested: async () => false,
     ...overrides
   };
-  return { ports: base, calls, setRows: (next: TaskRunRecord[]) => (rows = next) };
+  return {
+    ports: base,
+    calls,
+    setRows: (next: TaskRunRecord[]) => (rows = next),
+    setFailedJobs: (next: JobFailureRecord[]) => (failedJobs = next)
+  };
 }
 
 const row = (id: string, finishedAt: string): TaskRunRecord => ({
@@ -301,6 +309,31 @@ describe("the soak driver", () => {
       taskRunRecordSchema
     );
     expect(runs.records.map((record) => record.id)).toEqual(["a", "b"]);
+  });
+
+  it("writes each failed job once, and none that failed before the run began", async () => {
+    const harness = ports();
+    const failed = (id: string, at: string): JobFailureRecord => ({
+      id,
+      jobType: "knowledge-graph-generation",
+      lane: "heavy",
+      at,
+      attempts: 1,
+      sourceItemId: null,
+      error: "errors.entityIdentity.invalidOutput"
+    });
+    harness.setFailedJobs([
+      failed("before", "2026-10-20T07:59:00.000Z"),
+      failed("during", "2026-10-20T08:03:00.000Z")
+    ]);
+    const { sink, clock, done } = await start(harness.ports);
+    await clock.advance(13 * minute);
+    const outcome = await done;
+    const failures = sink.events.filter((event) => event.type === "job_failure");
+    expect(failures).toEqual([
+      expect.objectContaining({ id: "during", error: "errors.entityIdentity.invalidOutput" })
+    ]);
+    expect(outcome.failedJobs).toBe(1);
   });
 
   it("stops early when the orchestrator leaves a STOP file", async () => {

@@ -1,6 +1,6 @@
 import { shownNoteRelationSql, type PgPool } from "@app/db";
 
-import type { SoakSample, TaskRunRecord } from "./soak-records.js";
+import type { JobFailureRecord, SoakSample, TaskRunRecord } from "./soak-records.js";
 
 /**
  * The SQL of the soak's ports (F3 T62): what the driver picks to explain, edit and ask about, and
@@ -128,4 +128,20 @@ export async function readTaskRuns(db: Db, sinceMs: number): Promise<TaskRunReco
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt.toISOString()
   }));
+}
+
+/**
+ * The jobs that ended `failed` after `sinceMs` (epoch milliseconds), oldest first, with the error
+ * they kept: the audit rows only show failed AI calls, and a job can fail with none.
+ */
+export async function readFailedJobs(db: Db, sinceMs: number): Promise<JobFailureRecord[]> {
+  const result = await db.query<Omit<JobFailureRecord, "at"> & { at: Date }>(
+    `select id::text as id, type as "jobType", lane, coalesce(finished_at, updated_at) as at,
+            attempts, payload ->> 'sourceItemId' as "sourceItemId", left(error, 200) as error
+       from jobs
+      where status = 'failed' and updated_at > $1
+      order by coalesce(finished_at, updated_at), id limit 1000`,
+    [new Date(sinceMs)]
+  );
+  return result.rows.map((row) => ({ ...row, at: row.at.toISOString() }));
 }

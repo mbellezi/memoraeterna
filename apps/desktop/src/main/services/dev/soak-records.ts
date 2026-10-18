@@ -133,12 +133,36 @@ const breakerRecord = z
   })
   .strict();
 
+/**
+ * A job that ended `failed`, read from the jobs table by the collector. The audit rows only cover
+ * AI calls: a job can fail with no failed call (an output refused after its repair, a worker that
+ * crashed), and the failure audit needs it as well.
+ */
+export const jobFailureSchema = z
+  .object({
+    id: z.string().min(1),
+    jobType: z.string().min(1),
+    lane: z.string().min(1),
+    /** When the job was marked failed. */
+    at: iso,
+    attempts: z.number().int().nonnegative(),
+    /** The source the job works on, when its payload names one. */
+    sourceItemId: z.string().nullable(),
+    /** The error code or message the job kept, cut to 200 characters. */
+    error: z.string().max(200).nullable()
+  })
+  .strict();
+export type JobFailureRecord = z.infer<typeof jobFailureSchema>;
+
+const jobFailureRecord = jobFailureSchema.extend({ type: z.literal("job_failure") }).strict();
+
 export const soakEventSchema = z.discriminatedUnion("type", [
   exchangeRecord,
   windowRecord,
   localFaultRecord,
   actionRecord,
-  breakerRecord
+  breakerRecord,
+  jobFailureRecord
 ]);
 export type SoakEvent = z.infer<typeof soakEventSchema>;
 export type ExchangeRecord = z.infer<typeof exchangeRecord>;
@@ -146,6 +170,7 @@ export type WindowRecord = z.infer<typeof windowRecord>;
 export type LocalFaultRecord = z.infer<typeof localFaultRecord>;
 export type ActionRecord = z.infer<typeof actionRecord>;
 export type BreakerRecord = z.infer<typeof breakerRecord>;
+export type JobFailureEvent = z.infer<typeof jobFailureRecord>;
 
 const laneSample = z
   .object({

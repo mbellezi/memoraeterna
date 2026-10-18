@@ -13,6 +13,7 @@ import {
   type SoakEvent,
   type SoakEventSink,
   type SoakMeta,
+  type JobFailureRecord,
   type SoakSample,
   type TaskRunRecord
 } from "./soak-records.js";
@@ -71,6 +72,8 @@ export interface SoakPorts {
   sample(): Promise<Omit<SoakSample, "at" | "elapsedMs">>;
   /** The audit rows of calls that ended since `sinceMs` (epoch), a little before it to be safe. */
   taskRuns(sinceMs: number): Promise<TaskRunRecord[]>;
+  /** The jobs that ended `failed` since `sinceMs` (epoch), a little before it to be safe. */
+  failedJobs(sinceMs: number): Promise<JobFailureRecord[]>;
   /** The orchestrator asked to stop (a STOP file in the run directory). */
   stopRequested(): Promise<boolean>;
 }
@@ -184,6 +187,7 @@ export interface SoakOutcome {
   skipped: number;
   samples: number;
   taskRuns: number;
+  failedJobs: number;
 }
 
 /** Runs the timeline of the profile, collecting every sample interval, until its duration, a STOP or an abort. */
@@ -221,9 +225,11 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   const taskRuns = new NdjsonFile<TaskRunRecord>(join(directory, soakFiles.taskRuns), (row) =>
     taskRunRecordSchema.parse(row)
   );
-  const counts = { actions: 0, failed: 0, skipped: 0, samples: 0, taskRuns: 0 };
+  const counts = { actions: 0, failed: 0, skipped: 0, samples: 0, taskRuns: 0, failedJobs: 0 };
   const seen = new Set<string>();
+  const seenJobs = new Set<string>();
   let cursor = startedAtMs;
+  let jobCursor = startedAtMs;
 
   const iso = (ms: number) => new Date(ms).toISOString();
   const emit = (event: SoakEvent) => options.sink.append(event);
@@ -251,6 +257,20 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       }
     } catch (error) {
       logger.error(`SOAK task-run dump failed: ${failureText(error)}`);
+    }
+    try {
+      for (const job of await ports.failedJobs(jobCursor - 2 * minute)) {
+        if (seenJobs.has(job.id)) continue;
+        seenJobs.add(job.id);
+        const failedAt = Date.parse(job.at);
+        jobCursor = Math.max(jobCursor, failedAt);
+        // Jobs that failed before the run began are the profile's, not the run's.
+        if (failedAt < startedAtMs) continue;
+        emit({ type: "job_failure", ...job });
+        counts.failedJobs += 1;
+      }
+    } catch (error) {
+      logger.error(`SOAK failed-job dump failed: ${failureText(error)}`);
     }
   };
 
@@ -397,7 +417,7 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   await writeFile(join(directory, soakFiles.meta), `${JSON.stringify(meta(endedAt), null, 2)}\n`);
   await Promise.all([samples.flush(), taskRuns.flush(), options.sink.flush?.()]);
   logger.info(
-    `SOAK end (${reason}): ${counts.actions} actions, ${counts.failed} failed, ${counts.skipped} skipped, ${counts.taskRuns} audited calls`
+    `SOAK end (${reason}): ${counts.actions} actions, ${counts.failed} failed, ${counts.skipped} skipped, ${counts.taskRuns} audited calls, ${counts.failedJobs} failed jobs`
   );
   return { reason, ...counts };
 }

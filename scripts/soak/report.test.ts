@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   soakFiles,
   type ExchangeRecord,
+  type JobFailureEvent,
   type SoakEvent,
   type SoakMeta,
   type SoakSample,
@@ -15,9 +16,11 @@ import {
 import {
   analyzeRun,
   classifyError,
+  injectedJobFailures,
   injectedRows,
   isStructuredGenerative,
   loadRun,
+  p0Waits,
   presoakAssertions,
   renderReport,
   runSoakReport,
@@ -339,7 +342,7 @@ describe("swap, P0 wait and helper restarts", () => {
     expect(statusOf(analyzeRun(goodRun({ samples: late })).checks, "swap")).toBe("fail");
   });
 
-  it("compares the longest P0 wait with the longest call on its lane", () => {
+  it("fails a P0 call that waited behind background work for longer than one bounded call", () => {
     expect(statusOf(analyzeRun(goodRun()).checks, "p0-wait")).toBe("pass");
     const slow = row(120 * minute, {
       taskType: "embedding",
@@ -351,9 +354,9 @@ describe("swap, P0 wait and helper restarts", () => {
     });
     const report = analyzeRun(goodRun({ rows: [slow] }));
     expect(statusOf(report.checks, "p0-wait")).toBe("fail");
-    expect(report.tables.p0.find((entry) => entry.class === "embed")?.["p100 wait (ms)"]).toBe(
-      80_000
-    );
+    const group = report.tables.p0.find((entry) => entry.class === "embed");
+    expect(group?.["p100 wait (ms)"]).toBe(80_000);
+    expect(group?.["raw queue p100 (ms)"]).toBe(80_000);
   });
 
   it("wants as many helper restarts as injected kills", () => {
@@ -389,6 +392,133 @@ describe("swap, P0 wait and helper restarts", () => {
         "helper-restarts"
       )
     ).toBe("pass");
+  });
+});
+
+describe("P0 wait as the spec defines it (3.1)", () => {
+  /** A Codex-lane P0 call that took 3 s, admitted `queueMs` before it started. */
+  const p0 = (offsetMs: number, queueMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+    row(offsetMs, {
+      taskType: "text-generation",
+      provider: "openai-codex",
+      runtime: "remote",
+      lane: "remote:ccc",
+      workloadClass: "write-fast",
+      priority: 0,
+      deadlineMs: 120_000,
+      durationMs: 3_000,
+      queueMs,
+      ...overrides
+    });
+  const groupOf = (report: ReturnType<typeof analyzeRun>) =>
+    report.tables.p0.find((entry) => entry.lane === "remote:ccc")!;
+  const admitted = 100 * minute;
+
+  it("counts a burst of ten P0 calls from the head of the queue, not from the burst", () => {
+    // Ten calls of 3 s admitted together and served one after the other: the tenth waits 27 s.
+    const burst = Array.from({ length: 10 }, (_, index) =>
+      p0(admitted + index * 3_000, index * 3_000)
+    );
+    const report = analyzeRun(goodRun({ rows: burst }));
+    expect(statusOf(report.checks, "p0-wait")).toBe("pass");
+    expect(groupOf(report)["raw queue p100 (ms)"]).toBe(27_000);
+    expect(groupOf(report)["p100 wait (ms)"]).toBe(3_000);
+    // A tenth call that stayed at the head for 20 s after the ninth started is a late one.
+    const late = [...burst.slice(0, 9), p0(admitted + 9 * 3_000 + 20_000, 9 * 3_000 + 20_000)];
+    expect(statusOf(analyzeRun(goodRun({ rows: late })).checks, "p0-wait")).toBe("fail");
+  });
+
+  describe("a lane's Retry-After pause", () => {
+    // The second call is answered 429 at once and the lane pauses 7 s: the third starts at its end.
+    const limited = p0(admitted + 3_000, 3_000, {
+      durationMs: 2,
+      status: "failed",
+      error: "AI provider returned 429",
+      deadlineOutcome: "met"
+    });
+    const rows = [p0(admitted, 0), limited, p0(admitted + 10_002, 10_002)];
+    const rateLimit = (retryAfterSeconds: number) =>
+      exchange(admitted + 3_000, {
+        kind: "rate_limit",
+        injected: true,
+        status: 429,
+        retryAfterSeconds,
+        endedAt: at(admitted + 3_002),
+        plannedMs: 0
+      });
+
+    it("is not a wait of the scheduler", () => {
+      const without = analyzeRun(goodRun({ rows }));
+      expect(statusOf(without.checks, "p0-wait")).toBe("fail");
+      expect(groupOf(without)["p100 wait (ms)"]).toBe(7_002);
+      const excluded = analyzeRun(goodRun({ rows, events: [rateLimit(7)] }));
+      expect(statusOf(excluded.checks, "p0-wait")).toBe("pass");
+      expect(groupOf(excluded)["p100 wait (ms)"]).toBe(3_000);
+      expect(groupOf(excluded)["raw queue p100 (ms)"]).toBe(10_002);
+    });
+
+    it("excludes only the part inside the wait, and at most the 60 s the scheduler pauses for", () => {
+      const partial = p0Waits(goodRun({ rows, events: [rateLimit(3)] }));
+      expect(partial.find((entry) => entry.row.queueMs === 10_002)?.waitMs).toBe(4_002);
+      const long = [p0(admitted, 0), p0(admitted + 90_000, 90_000, { durationMs: 2 })];
+      const capped = p0Waits(
+        goodRun({ rows: long, events: [{ ...rateLimit(120), endedAt: at(admitted) }] })
+      );
+      expect(capped.find((entry) => entry.row.queueMs === 90_000)?.waitMs).toBe(30_000);
+    });
+
+    it("pauses the lane of the provider that answered, and no other", () => {
+      const other = { ...rateLimit(7), provider: "openai-compatible" };
+      expect(statusOf(analyzeRun(goodRun({ rows, events: [other] })).checks, "p0-wait")).toBe(
+        "fail"
+      );
+    });
+  });
+
+  it("bounds a wait by the longest time a call held its lane, retry sleeps and re-waits left out", () => {
+    // One call lasted 70 s, of which 55 s was backoff sleeping off the lane and 6 s a re-wait.
+    const sleeper = p0(90 * minute, 0, {
+      priority: 2,
+      lane: "remote:aaa",
+      provider: "openai-compatible",
+      durationMs: 70_000,
+      retryWaitMs: 55_000,
+      requeueMs: 6_000
+    });
+    // A P0 call that waited 30 s from its admission: far above the 9 s the calls on the lane held it.
+    const waiting = p0(admitted, 30_000, { lane: "remote:aaa", provider: "openai-compatible" });
+    const report = analyzeRun(goodRun({ rows: [sleeper, waiting] }));
+    expect(statusOf(report.checks, "p0-wait")).toBe("fail");
+    expect(report.tables.p0.find((entry) => entry.lane === "remote:aaa")?.["bound (ms)"]).toBe(
+      11_000
+    );
+  });
+});
+
+describe("the run window", () => {
+  it("leaves out the audit rows that started before the run began", () => {
+    // Read from the two minutes before the run: a P0 call that waited 80 s and a failed call.
+    const waited = row(-30_000, { priority: 0, queueMs: 80_000, durationMs: 400 });
+    const failed = row(-20_000, { status: "failed", error: "something odd" });
+    const atStart = row(0, { priority: 0, queueMs: 50, durationMs: 400 });
+    const report = analyzeRun(goodRun({ rows: [waited, failed, atStart] }));
+    expect(report.counts.beforeStart).toBe(2);
+    expect(report.counts.taskRuns).toBe(goodRun().rows.length + 1);
+    expect(statusOf(report.checks, "p0-wait")).toBe("pass");
+    expect(statusOf(report.checks, "failure-handling")).toBe("pass");
+    expect(renderReport(report)).toContain("2 audit row(s) that started before the run");
+    // The same rows inside the run are counted.
+    const inside = analyzeRun(
+      goodRun({
+        rows: [
+          { ...waited, startedAt: at(60 * minute) },
+          { ...failed, startedAt: at(61 * minute) }
+        ]
+      })
+    );
+    expect(inside.counts.beforeStart).toBe(0);
+    expect(statusOf(inside.checks, "p0-wait")).toBe("fail");
+    expect(statusOf(inside.checks, "failure-handling")).toBe("review");
   });
 });
 
@@ -690,6 +820,101 @@ describe("the pre-soak assertion", () => {
     expect(
       assertions.filter((entry) => entry.kind === "stall").every((entry) => entry.status === "fail")
     ).toBe(true);
+  });
+});
+
+describe("failed jobs", () => {
+  const failedJob = (
+    offsetMs: number,
+    overrides: Partial<JobFailureEvent> = {}
+  ): JobFailureEvent => ({
+    type: "job_failure",
+    id: `job-${++counter}`,
+    jobType: "knowledge-graph-generation",
+    lane: "heavy",
+    at: at(offsetMs),
+    attempts: 1,
+    sourceItemId: null,
+    error: "errors.entityIdentity.invalidOutput",
+    ...overrides
+  });
+  const failureCheck = (report: ReturnType<typeof analyzeRun>) =>
+    report.checks.find((check) => check.id === "failure-handling")!;
+
+  it("audits a failed job although no AI call failed", () => {
+    expect(statusOf(analyzeRun(goodRun()).checks, "failure-handling")).toBe("pass");
+    const report = analyzeRun(goodRun({ events: [failedJob(100 * minute)] }));
+    expect(failureCheck(report).status).toBe("review");
+    expect(failureCheck(report).value).toContain("1 non-injected failed job(s)");
+    expect(failureCheck(report).details.join(" ")).toContain("errors.entityIdentity.invalidOutput");
+    expect(report.counts.failedJobs).toBe(1);
+    expect(report.failureAudit).toEqual([
+      expect.objectContaining({
+        class: "job",
+        task: "knowledge-graph-generation",
+        lane: "heavy",
+        status: "failed",
+        "classified as": "permanent: output",
+        error: "errors.entityIdentity.invalidOutput"
+      })
+    ]);
+  });
+
+  it("leaves out a job an injected fault explains, and one that failed before the run", () => {
+    const marked = failedJob(100 * minute, {
+      error: "soak-injected: typing fails for this source."
+    });
+    // A remote answer that was malformed on purpose, and a job that failed right after it.
+    const malformed = exchange(110 * minute, {
+      provider: "openai-compatible",
+      kind: "malformed",
+      injected: true
+    });
+    const call = row(110 * minute, {
+      lane: "remote:aaa",
+      runtime: "remote",
+      provider: "openai-compatible",
+      durationMs: 3_000,
+      status: "failed",
+      error: "organization.errors.invalidOutput"
+    });
+    const after = failedJob(110 * minute + 10_000);
+    const later = failedJob(110 * minute + 10 * minute);
+    const before = failedJob(-60_000);
+    const run = goodRun({ rows: [call], events: [marked, malformed, after, later, before] });
+    expect([...injectedJobFailures(run, injectedRows(run)).keys()].sort()).toEqual(
+      [marked.id, after.id].sort()
+    );
+    const report = analyzeRun(run);
+    // Only the job that failed ten minutes after the injected call is a real failure.
+    expect(report.counts.failedJobs).toBe(3);
+    expect(report.failureAudit).toHaveLength(1);
+    expect(report.failureAudit[0]).toMatchObject({ class: "job" });
+    expect(failureCheck(report).value).toContain("0 non-injected failed call(s), 1 non-injected");
+    expect(failureCheck(report).details.join(" ")).toContain("2 failed job(s) left out");
+  });
+
+  it("asks for the jobs the samples counted as failed that the run did not record", () => {
+    const counted = samples();
+    for (const point of counted.slice(100)) point.jobCounts = { failed: 2, succeeded: 40 };
+    // One of them was recorded (and is a real failure), one was not: the counts say two.
+    const report = analyzeRun(goodRun({ samples: counted, events: [failedJob(100 * minute)] }));
+    expect(failureCheck(report).status).toBe("review");
+    expect(failureCheck(report).value).toContain("1 more failed job(s) in the job counts");
+    // Jobs that were already failed when the run began are not the run's.
+    const baseline = samples();
+    for (const point of baseline) point.jobCounts = { failed: 3 };
+    expect(statusOf(analyzeRun(goodRun({ samples: baseline })).checks, "failure-handling")).toBe(
+      "pass"
+    );
+    // A run that recorded every failed job it counted asks for nothing more.
+    const recorded = analyzeRun(
+      goodRun({
+        samples: counted,
+        events: [failedJob(100 * minute), failedJob(101 * minute)]
+      })
+    );
+    expect(failureCheck(recorded).value).not.toContain("job counts");
   });
 });
 

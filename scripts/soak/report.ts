@@ -17,6 +17,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
+import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
 import {
   parseNdjson,
   soakEventSchema,
@@ -25,6 +26,7 @@ import {
   soakSampleSchema,
   taskRunRecordSchema,
   type ExchangeRecord,
+  type JobFailureEvent,
   type LocalFaultRecord,
   type SoakEvent,
   type SoakMeta,
@@ -72,6 +74,9 @@ export interface SoakReport {
   window: { startedAt: string; endedAt: string | null; endReason: string | null; hours: number };
   counts: {
     taskRuns: number;
+    /** Audit rows that started before the run began (the collector reads from a little before it): left out. */
+    beforeStart: number;
+    failedJobs: number;
     events: number;
     samples: number;
     actions: Record<string, Record<string, number>>;
@@ -139,6 +144,8 @@ const windowsOf = (events: readonly SoakEvent[]) =>
   events.filter((event): event is WindowRecord => event.type === "window");
 const localsOf = (events: readonly SoakEvent[]) =>
   events.filter((event): event is LocalFaultRecord => event.type === "local");
+const jobFailuresOf = (events: readonly SoakEvent[]) =>
+  events.filter((event): event is JobFailureEvent => event.type === "job_failure");
 
 /** The marker an injected error carries in the audit (soak-local-faults.ts). */
 const injectedMarker = "soak-injected";
@@ -481,43 +488,138 @@ function swapCheck(run: LoadedRun): {
   };
 }
 
+/**
+ * The windows in which a lane admitted nothing because a 429 asked it to wait, merged, per lane.
+ * The scheduler pauses a lane until the Retry-After, at most `maxPauseMs` (spec D29).
+ */
+function retryAfterPauses(run: LoadedRun): Map<string, Array<[number, number]>> {
+  const lanes = providerLanes(run.meta);
+  const found = new Map<string, Array<[number, number]>>();
+  for (const exchange of exchangesOf(run.events)) {
+    const lane = lanes.get(exchange.provider);
+    if (!lane || exchange.status !== 429 || exchange.retryAfterSeconds === null) continue;
+    const from = toMs(exchange.endedAt);
+    const window: [number, number] = [
+      from,
+      from +
+        Math.min(exchange.retryAfterSeconds * 1_000, defaultAiLaneRuntimeConfig.lanes.maxPauseMs)
+    ];
+    found.set(lane, [...(found.get(lane) ?? []), window]);
+  }
+  const merged = new Map<string, Array<[number, number]>>();
+  for (const [lane, windows] of found) {
+    const out: Array<[number, number]> = [];
+    for (const window of windows.toSorted((a, b) => a[0] - b[0])) {
+      const last = out.at(-1);
+      if (last && window[0] <= last[1]) last[1] = Math.max(last[1], window[1]);
+      else out.push([...window]);
+    }
+    merged.set(lane, out);
+  }
+  return merged;
+}
+
+const overlapMs = (from: number, to: number, windows: ReadonlyArray<[number, number]>) =>
+  windows.reduce(
+    (sum, [start, end]) => sum + Math.max(0, Math.min(to, end) - Math.max(from, start)),
+    0
+  );
+
+export interface P0Wait {
+  row: TaskRunRecord;
+  lane: string;
+  /** From the head of the lane's P0 queue to the start, without the lane's Retry-After pauses. */
+  waitMs: number;
+}
+
+/**
+ * How long each P0 call waited as the spec defines it (3.1): P0 is served first and FIFO, and
+ * nothing preempts a running call, so a P0 call waits behind the P0 calls admitted before it
+ * (their own wait counts for them) and then for a slot: at most one in-flight bounded call. Per
+ * lane, the call is admitted at `start - queueMs`; it is at the head once the last P0 admitted
+ * before it has started (or at its admission, if that was later); the lane's Retry-After pauses
+ * are no wait of the scheduler's. The raw `queueMs` includes both of those.
+ */
+export function p0Waits(run: LoadedRun): P0Wait[] {
+  const pauses = retryAfterPauses(run);
+  const byLane = new Map<string, Array<{ row: TaskRunRecord; admission: number; start: number }>>();
+  for (const row of run.rows) {
+    if (row.priority !== 0 || row.queueMs === null) continue;
+    const lane = row.lane ?? "local";
+    const start = rowStart(row);
+    const entries = byLane.get(lane) ?? [];
+    entries.push({ row, admission: start - row.queueMs, start });
+    byLane.set(lane, entries);
+  }
+  const waits: P0Wait[] = [];
+  for (const [lane, entries] of byLane) {
+    let startedBefore = Number.NEGATIVE_INFINITY;
+    for (const entry of entries.toSorted(
+      (a, b) => a.admission - b.admission || a.start - b.start
+    )) {
+      const head = Math.min(entry.start, Math.max(entry.admission, startedBefore));
+      waits.push({
+        row: entry.row,
+        lane,
+        waitMs: Math.max(
+          0,
+          entry.start - head - overlapMs(head, entry.start, pauses.get(lane) ?? [])
+        )
+      });
+      startedBefore = Math.max(startedBefore, entry.start);
+    }
+  }
+  return waits;
+}
+
 function p0Check(run: LoadedRun): { check: Check; table: Array<Record<string, string | number>> } {
+  // What one call can hold a lane for: its time on the lane, without the retry sleeps (they run
+  // off the lane) and the re-waits for it.
   const longest = new Map<string, number>();
   for (const row of run.rows)
     longest.set(
       row.lane ?? "local",
-      Math.max(longest.get(row.lane ?? "local") ?? 0, row.durationMs - (row.requeueMs ?? 0))
+      Math.max(
+        longest.get(row.lane ?? "local") ?? 0,
+        row.durationMs - (row.requeueMs ?? 0) - (row.retryWaitMs ?? 0)
+      )
     );
   const table: Array<Record<string, string | number>> = [];
   const exceeding: string[] = [];
-  const groups = new Map<string, TaskRunRecord[]>();
-  for (const row of run.rows.filter((entry) => entry.priority === 0 && entry.queueMs !== null))
-    groups.set(`${row.lane ?? "local"}|${row.workloadClass ?? "?"}`, [
-      ...(groups.get(`${row.lane ?? "local"}|${row.workloadClass ?? "?"}`) ?? []),
-      row
-    ]);
-  for (const [key, rows] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+  const groups = new Map<string, P0Wait[]>();
+  for (const wait of p0Waits(run)) {
+    const key = `${wait.lane}|${wait.row.workloadClass ?? "?"}`;
+    const group = groups.get(key) ?? [];
+    group.push(wait);
+    groups.set(key, group);
+  }
+  for (const [key, waited] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
     const [lane, workloadClass] = key.split("|") as [string, string];
-    const waits = rows.map((row) => row.queueMs!);
+    const waits = waited.map((entry) => entry.waitMs);
+    const raw = waited.map((entry) => entry.row.queueMs!);
     const bound = (longest.get(lane) ?? 0) + 2_000;
     const worst = Math.max(...waits);
     table.push({
       lane,
       class: workloadClass,
-      calls: rows.length,
+      calls: waited.length,
       "p50 wait (ms)": percentile(waits, 0.5)!,
       "p95 wait (ms)": percentile(waits, 0.95)!,
       "p100 wait (ms)": worst,
+      "raw queue p100 (ms)": Math.max(...raw),
       "bound (ms)": bound
     });
-    if (worst > bound) exceeding.push(`${lane} ${workloadClass}: p100 ${worst} ms > ${bound} ms`);
+    if (worst > bound)
+      exceeding.push(
+        `${lane} ${workloadClass}: p100 ${worst} ms > ${bound} ms (raw queue p100 ${Math.max(...raw)} ms)`
+      );
   }
   return {
     table,
     check: {
       id: "p0-wait",
       title: "P0 wait",
-      bar: "<= one in-flight bounded call (p100 by class; the bound is the longest call seen on the lane, of any priority, + 2 s)",
+      bar: "<= one in-flight bounded call (p100 by class, from the head of the lane's P0 queue without Retry-After pauses; the bound is the longest call on the lane, of any priority, without retry sleeps, + 2 s)",
       status: table.length === 0 ? "review" : exceeding.length === 0 ? "pass" : "fail",
       value:
         table.length === 0
@@ -628,7 +730,12 @@ function helperCheck(run: LoadedRun): Check {
 
 /** What a failed call's error text says about its class; `null` when nothing is recognised. */
 export function classifyError(row: TaskRunRecord): string | null {
-  const text = row.error ?? "";
+  return classifyErrorText(row.error, row.status);
+}
+
+/** The same reading for the error a failed job kept. */
+function classifyErrorText(error: string | null, status: string): string | null {
+  const text = error ?? "";
   if (/429|rate[ _]?limit|usage_limit/iu.test(text)) return "transient: rate limit";
   if (/\b5\d\d\b|overloaded|unavailable|server error/iu.test(text)) return "transient: server";
   if (/stalled|sent no data|did not respond|no answer text|deadline|timed? ?out/iu.test(text))
@@ -639,12 +746,85 @@ export function classifyError(row: TaskRunRecord): string | null {
   if (/context|exceed|too many tokens/iu.test(text)) return "permanent: context";
   if (/invalid|schema|json|parse|unparseable/iu.test(text)) return "permanent: output";
   if (/401|403|credential|unauthorized|forbidden/iu.test(text)) return "permanent: auth";
-  if (/abort|cancel/iu.test(text) || row.status === "canceled") return "cancelled";
+  if (/abort|cancel/iu.test(text) || status === "canceled") return "cancelled";
   return null;
 }
 
+/** A failed job is explained by an injected fault that ended this soon before it. */
+const jobFaultLinkMs = 30_000;
+
+/**
+ * The failed jobs an injected fault explains: those whose error names the marker, and those that
+ * failed while, or right after, an injected call (`injectedRows`) was running. A job holds no
+ * link to its calls, so the time is what ties them.
+ */
+export function injectedJobFailures(
+  run: LoadedRun,
+  injected: Map<string, string>
+): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const calls = run.rows.filter((row) => injected.has(row.id));
+  for (const job of jobFailuresOf(run.events)) {
+    if (job.error?.includes(injectedMarker)) {
+      reasons.set(job.id, "injected error");
+      continue;
+    }
+    const failedAt = toMs(job.at);
+    const hit = calls.find(
+      (row) => rowStart(row) - 1_000 <= failedAt && failedAt <= rowEnd(row) + jobFaultLinkMs
+    );
+    if (hit) reasons.set(job.id, injected.get(hit.id)!);
+  }
+  return reasons;
+}
+
+/** A failure to audit: a failed call or a failed job, read the same way. */
+interface Failure {
+  id: string;
+  at: string;
+  lane: string;
+  class: string;
+  task: string;
+  status: string;
+  deadline: string;
+  classified: string | null;
+  error: string;
+}
+
 function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: number) {
-  const failures = run.rows.filter((row) => row.status !== "succeeded" && !injected.has(row.id));
+  const calls = run.rows.filter((row) => row.status !== "succeeded" && !injected.has(row.id));
+  const explained = injectedJobFailures(run, injected);
+  const jobs = jobFailuresOf(run.events).filter((job) => !explained.has(job.id));
+  // Failed jobs the samples count that no record explains (a run that did not record them, or a
+  // collector that missed one): a person reads the jobs table for them.
+  const samples = run.samples.toSorted((a, b) => toMs(a.at) - toMs(b.at));
+  const failedAtStart = samples[0]?.jobCounts.failed ?? 0;
+  const failedAtEnd = samples.at(-1)?.jobCounts.failed ?? 0;
+  const unrecorded = Math.max(0, failedAtEnd - failedAtStart - jobFailuresOf(run.events).length);
+  const failures: Failure[] = [
+    ...calls.map((row) => ({
+      id: row.id,
+      at: row.startedAt,
+      lane: row.lane ?? "?",
+      class: row.workloadClass ?? "?",
+      task: row.taskType,
+      status: row.status,
+      deadline: row.deadlineOutcome ?? "-",
+      classified: classifyError(row),
+      error: (row.error ?? "").slice(0, 120)
+    })),
+    ...jobs.map((job) => ({
+      id: job.id,
+      at: job.at,
+      lane: job.lane,
+      class: "job",
+      task: job.jobType,
+      status: "failed",
+      deadline: "-",
+      classified: classifyErrorText(job.error, "failed"),
+      error: (job.error ?? "").slice(0, 120)
+    }))
+  ];
   const picked = failures
     .toSorted((a, b) =>
       createHash("sha256")
@@ -653,29 +833,44 @@ function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: numbe
         .localeCompare(createHash("sha256").update(`${seed}:${b.id}`).digest("hex"))
     )
     .slice(0, 50)
-    .toSorted((a, b) => rowStart(a) - rowStart(b));
-  const rows = picked.map((row) => ({
-    at: row.startedAt,
-    lane: row.lane ?? "?",
-    class: row.workloadClass ?? "?",
-    task: row.taskType,
-    status: row.status,
-    deadline: row.deadlineOutcome ?? "-",
-    "classified as": classifyError(row) ?? "unclassified",
-    error: (row.error ?? "").slice(0, 120)
+    .toSorted((a, b) => toMs(a.at) - toMs(b.at));
+  const rows = picked.map((failure) => ({
+    at: failure.at,
+    lane: failure.lane,
+    class: failure.class,
+    task: failure.task,
+    status: failure.status,
+    deadline: failure.deadline,
+    "classified as": failure.classified ?? "unclassified",
+    error: failure.error
   }));
   const unclassified = rows.filter((row) => row["classified as"] === "unclassified").length;
+  const total = failures.length + unrecorded;
   return {
     rows,
     total: failures.length,
     check: {
       id: "failure-handling",
       title: "Failure handling",
-      bar: "every non-injected failure classified correctly (audited sample of 50); every wedged event explained",
-      status: failures.length === 0 ? "pass" : "review",
-      value: `${failures.length} non-injected failure(s); ${rows.length} in the audited sample, ${unclassified} unclassified by the error text`,
+      bar: "every non-injected failure (call or job) classified correctly (audited sample of 50); every wedged event explained",
+      status: total === 0 ? "pass" : "review",
+      value: `${calls.length} non-injected failed call(s), ${jobs.length} non-injected failed job(s)${unrecorded > 0 ? `, ${unrecorded} more failed job(s) in the job counts with no record` : ""}; ${rows.length} in the audited sample, ${unclassified} unclassified by the error text`,
       details: [
-        "The classification column is a first reading of the error text; a person confirms each row (T64r) and explains every wedged event."
+        "The classification column is a first reading of the error text; a person confirms each row (T64r) and explains every wedged event.",
+        ...jobs
+          .slice(0, 12)
+          .map(
+            (job) =>
+              `failed job ${job.id.slice(0, 8)} ${job.jobType} (${job.lane}) at ${job.at} after ${job.attempts} attempt(s): ${job.error ?? "no error kept"}`
+          ),
+        ...(explained.size > 0
+          ? [`${explained.size} failed job(s) left out as explained by an injected fault.`]
+          : []),
+        ...(unrecorded > 0
+          ? [
+              `The job counts of the samples rose by ${unrecorded} more failed job(s) than the run recorded: read them from the jobs table.`
+            ]
+          : [])
       ]
     } satisfies Check
   };
@@ -975,9 +1170,19 @@ function callsTable(run: LoadedRun) {
 
 /** Analyses a loaded run into the report. */
 export function analyzeRun(
-  run: LoadedRun,
+  loaded: LoadedRun,
   options: { presoak?: boolean; explanations?: Record<string, string>; now?: Date } = {}
 ): SoakReport {
+  // The collector reads the audit from a little before the run began, and a call that was running
+  // when it began is no part of it: both belong to what happened before.
+  const runStart = toMs(loaded.meta.startedAt);
+  const run: LoadedRun = {
+    ...loaded,
+    rows: loaded.rows.filter((row) => rowStart(row) >= runStart),
+    events: loaded.events.filter(
+      (event) => event.type !== "job_failure" || toMs(event.at) >= runStart
+    )
+  };
   const injected = injectedRows(run);
   const { check: past, wedged } = pastDeadlineCheck(run);
   const swap = swapCheck(run);
@@ -1029,6 +1234,8 @@ export function analyzeRun(
     },
     counts: {
       taskRuns: run.rows.length,
+      beforeStart: loaded.rows.length - run.rows.length,
+      failedJobs: jobFailuresOf(run.events).length,
       events: header,
       samples: run.samples.length,
       actions,
@@ -1074,6 +1281,9 @@ export function renderReport(report: SoakReport): string {
     `**Verdict: ${mark[report.verdict] === "PASS" ? "PASS" : report.verdict === "fail" ? "FAIL" : "REVIEW"}**`,
     "",
     `Audited calls ${report.counts.taskRuns}, events ${report.counts.events}, samples ${report.counts.samples}.` +
+      (report.counts.beforeStart > 0
+        ? ` ${report.counts.beforeStart} audit row(s) that started before the run were left out.`
+        : "") +
       (Object.values(report.counts.invalid).some((count) => count > 0)
         ? ` Unreadable lines: ${JSON.stringify(report.counts.invalid)}.`
         : ""),

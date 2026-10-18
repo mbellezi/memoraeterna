@@ -26,10 +26,11 @@ import {
   pickEditableNote,
   pickQuestionTitle,
   pickRelationsToExplain,
+  readFailedJobs,
   readJobs,
   readTaskRuns
 } from "./soak-queries.js";
-import { MemoryEventSink, taskRunRecordSchema } from "./soak-records.js";
+import { MemoryEventSink, jobFailureSchema, taskRunRecordSchema } from "./soak-records.js";
 
 // The soak's SQL and the installation of its fake providers on a real PostgreSQL database with the
 // product's schema (F3 T62): what the driver picks and the collector reads must run as written.
@@ -211,6 +212,24 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     ]);
     expect(runs[0]!.error).toHaveLength(300);
     expect(await readTaskRuns(pool!, Date.now() + 60_000)).toEqual([]);
+
+    await pool!.query(
+      `insert into jobs (type, status, lane, payload, attempts, error, finished_at)
+       values ('knowledge-graph-generation', 'failed', 'heavy', jsonb_build_object('sourceItemId', $1::text), 2,
+                'errors.entityIdentity.invalidOutput', now() - interval '1 minute'),
+              ('note-embedding', 'failed', 'light', '{}'::jsonb, 3, repeat('y', 400), now())`,
+      [note.sourceId]
+    );
+    const failed = await readFailedJobs(pool!, Date.now() - 600_000);
+    expect(failed).toHaveLength(2);
+    for (const job of failed) jobFailureSchema.parse(job);
+    expect(failed.map((job) => [job.jobType, job.lane, job.attempts, job.sourceItemId])).toEqual([
+      ["knowledge-graph-generation", "heavy", 2, note.sourceId],
+      ["note-embedding", "light", 3, null]
+    ]);
+    expect(failed[0]!.error).toBe("errors.entityIdentity.invalidOutput");
+    expect(failed[1]!.error).toHaveLength(200);
+    expect(await readFailedJobs(pool!, Date.now() + 60_000)).toEqual([]);
   });
 
   it("refuses to install while a route or the default profile still leads to a real provider", async () => {

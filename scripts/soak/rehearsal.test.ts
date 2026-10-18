@@ -351,6 +351,7 @@ describe("a compressed pre-soak, from the driver to the report", () => {
           eventLoopLagP99Ms: null,
           dbPool: null
         }),
+        failedJobs: async () => [],
         taskRuns: async (sinceMs) =>
           state.rows
             .filter((row) => (row.finishedAt as number) > sinceMs)

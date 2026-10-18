@@ -29,6 +29,7 @@ import {
   pickEditableNote,
   pickQuestionTitle,
   pickRelationsToExplain,
+  readFailedJobs,
   readJobs,
   readTaskRuns
 } from "./soak-queries.js";
@@ -399,6 +400,8 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
     },
 
     taskRuns: (sinceMs) => readTaskRuns(deps.pool, sinceMs),
+
+    failedJobs: (sinceMs) => readFailedJobs(deps.pool, sinceMs),
 
     stopRequested: async () => existsSync(join(directory, soakFiles.stop))
   };
