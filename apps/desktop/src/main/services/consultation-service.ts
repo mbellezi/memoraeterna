@@ -528,7 +528,9 @@ export class ConsultationService {
           priority: "P0",
           promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
           contentLanguage: language,
-          attempt: attempt + 1
+          attempt: attempt + 1,
+          // The second call follows an answer that failed validation: a repair for the audit (D35).
+          isRepair: attempt > 0
         },
         signal,
         2048,

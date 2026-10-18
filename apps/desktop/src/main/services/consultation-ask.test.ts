@@ -175,6 +175,31 @@ describe("asking a question over notes and original passages", () => {
     expect(result.coverage.stale).toBe(true);
     expect(result.answer).toEqual(answer);
   });
+  it("asks again once after an answer that fails validation, and audits the second call as a repair (D35)", async () => {
+    // JSON cut off in the middle, as the soak's malformed fault delivers it.
+    const cutOff = { ...modelAnswer(), output: '{"paragraphs": [{"markdown": "The first passage' };
+    const second = modelAnswer();
+    const runOrganizationTask = vi.fn<ModelCall>().mockResolvedValueOnce(cutOff);
+    runOrganizationTask.mockResolvedValueOnce(second);
+    const { service: ask } = service(runOrganizationTask);
+    const result = await ask.ask(request());
+    expect(result.answer).toEqual(answer);
+    expect(runOrganizationTask).toHaveBeenCalledTimes(2);
+    const [first, repair] = runOrganizationTask.mock.calls.map(
+      ([, , context]) => context as Record<string, unknown>
+    );
+    // The first call is no repair; the second is, whatever the audit's retry index says of an Ask.
+    expect(first).toMatchObject({ attempt: 1, isRepair: false });
+    expect(repair).toMatchObject({ attempt: 2, isRepair: true, origin: "consultation" });
+    expect(runOrganizationTask.mock.calls[1]![1]).not.toBe(runOrganizationTask.mock.calls[0]![1]);
+  });
+  it("gives up with the invalid-answer error after one repair", async () => {
+    const cutOff = () => ({ ...modelAnswer(), output: "not json at all" });
+    const runOrganizationTask = vi.fn<ModelCall>(async () => cutOff());
+    const { service: ask } = service(runOrganizationTask);
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.invalid");
+    expect(runOrganizationTask).toHaveBeenCalledTimes(2);
+  });
   it("sends the optional context and the relation between two cited passages to the model", async () => {
     const a = row(1),
       b = row(2);
