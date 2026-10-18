@@ -7,7 +7,9 @@
 -- relation that reads the same both ways. Nothing is deleted or rewritten except this column;
 -- every banded directed relation already stored holds a typer or generative guess, so it becomes
 -- `typer`, in its row and in the images of its events. `packages/db/src/scripts/verify-relations-v2.ts`
--- checks the result.
+-- checks the result. Forward only: the constraint requires a direction source on a banded directed
+-- relation, which a version that predates this migration does not write, so going back to one means
+-- restoring the backup taken before this migration.
 ALTER TABLE "atomic_note_relations" DROP CONSTRAINT "atomic_note_relations_values";--> statement-breakpoint
 ALTER TABLE "atomic_note_relations" DROP CONSTRAINT "atomic_note_relations_v2";--> statement-breakpoint
 ALTER TABLE "atomic_note_relations" ADD COLUMN "direction_source" text;--> statement-breakpoint

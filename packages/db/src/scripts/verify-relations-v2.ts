@@ -1078,15 +1078,29 @@ async function seedBandedLibrary(db: PgPool): Promise<{ ids: string[]; runId: st
       )
     ).rows[0]!.id;
     ids.push(id);
-    // An automatic change is recorded with the row it left, as the link job's writes were (D14).
-    if (shape.band)
+    // An automatic change is recorded with the row it left, as the link job's writes were (D14). A
+    // directed one was typed after it was made: its first image holds another type, so the run's
+    // revert restores a before image of a directed relation too (the key 0059 patches into both).
+    if (shape.band) {
+      const directed = shape.direction === "lo_to_hi" || shape.direction === "hi_to_lo";
+      const made = directed
+        ? "to_jsonb(r) || jsonb_build_object('relation_type', 'clarifies')"
+        : "to_jsonb(r)";
+      const pair = "r.source_atomic_note_id::text || ':' || r.target_atomic_note_id::text";
       await db.query(
         `insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
-         select $1, 'note', r.id, r.source_atomic_note_id::text || ':' || r.target_atomic_note_id::text,
-                'applied', null, to_jsonb(r)
+         select $1, 'note', r.id, ${pair}, 'applied', null, ${made}
            from atomic_note_relations r where r.id = $2`,
         [runId, id]
       );
+      if (directed)
+        await db.query(
+          `insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
+           select $1, 'note', r.id, ${pair}, 'typed', ${made}, to_jsonb(r)
+             from atomic_note_relations r where r.id = $2`,
+          [runId, id]
+        );
+    }
   }
   return { ids, runId };
 }
@@ -1348,7 +1362,11 @@ async function selfContained() {
     const banded = await seedBandedLibrary(sourcePool);
     const directionSource = await migrateDirectionSource(sourcePool);
     assert.ok(directionSource && directionSource.typer === 4, "four banded directed relations");
-    assert.equal(directionSource.eventImagesPatched, 4, "four images name their source");
+    assert.equal(
+      directionSource.eventImagesPatched,
+      8,
+      "the events of four directed relations (made, then typed) name their source"
+    );
     assert.equal(await historyCount(sourcePool), await journalLength(), "0059 applied as pending");
     // A run recorded before the migration still reverts: its rows equal their images again.
     const reverted = await createRelationEventRepository(sourcePool).revertRun(banded.runId);

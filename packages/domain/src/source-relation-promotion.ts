@@ -98,9 +98,11 @@ const inContentOrder = (relations: readonly PromotionNoteRelation[]) =>
  * direction in which it is also the majority of that direction's directed relations, and, when no
  * direction has its own majority, the direction holding most of its relations. Only a direction the
  * owner or the decider gave counts (decision 31b): a directed type none of whose note relations has
- * one gives a single relation that reads both ways, and the notes without a direction add no
- * support to a directed one. `compareRoots` is a content order of roots (title, then ID): the
- * endpoint order of a relation that reads both ways.
+ * one gives a single relation that reads both ways. The notes without a direction give no direction
+ * and win no tally, yet they still support, and so confirm, every relation of their type, so a
+ * decider's direction added beside owner-kept linked notes does not unconfirm them.
+ * `compareRoots` is a content order of roots (title, then ID): the endpoint order of a relation
+ * that reads both ways.
  */
 export function planPromotedSourceRelations(input: {
   rootId: string;
@@ -138,6 +140,9 @@ export function planPromotedSourceRelations(input: {
       [input.rootId, other],
       [other, input.rootId]
     ] as const;
+    // The direction comes from the directed relations only; the linked ones of the winning type
+    // still support whichever direction is read (their evidence is turned to its endpoints).
+    const linked = winner.relations.filter((item) => !item.directed);
     const kept: PromotedSourceRelationPlan[] = [];
     const candidates: Array<{ plan: PromotedSourceRelationPlan; tally: Tally }> = [];
     for (const [subject, object] of directions) {
@@ -154,7 +159,7 @@ export function planPromotedSourceRelations(input: {
         targetRootId: object,
         type: winner.type,
         symmetric: false,
-        noteRelationIds: inContentOrder(own)
+        noteRelationIds: inContentOrder([...own, ...linked])
       };
       candidates.push({
         plan,

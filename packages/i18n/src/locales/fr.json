@@ -3004,10 +3004,10 @@
       },
       "direction": {
         "legend": "Sens",
-        "none": "Sans sens",
+        "none": "Sans direction",
         "otherSubject": "L’autre note",
         "otherObject": "l’autre note",
-        "hint": "Facultatif. Les relations automatiques n’ont pas de sens tant que vous n’en donnez pas un."
+        "hint": "Facultatif. Votre choix est enregistré quand vous conservez la relation ; sans direction, les notes restent liées."
       },
       "passageLabel": "{source} · passage {number}",
       "decided": "A décidé",

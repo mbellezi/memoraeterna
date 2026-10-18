@@ -512,7 +512,7 @@ describe("direction of an automatic relation (plan decision 31b)", () => {
     expect(hint).toBeTruthy();
     expect(html).toContain(`id="${hint}"`);
     expect(text(html)).toContain(
-      "Optional. Automatic relations have no direction until you give one."
+      "Optional. Your choice is saved when you keep the relation; with no direction, the notes stay linked."
     );
     // It comes before Keep and Remove, so Tab reaches the choice first.
     expect(html.indexOf("<fieldset")).toBeLessThan(html.indexOf(">Keep<"));
@@ -545,6 +545,27 @@ describe("direction of an automatic relation (plan decision 31b)", () => {
         openCard: withdrawn.id
       })
     ).toContain("<fieldset");
+  });
+
+  it("offers no direction on a legacy relation, which the server would not record, yet still offers Keep and Remove", () => {
+    // A legacy row (no band) the explainer withdrew a moment ago, and one withdrawn earlier.
+    const legacy = suggested(60, { state: "applied", band: null, direction: "outgoing" });
+    const vetoed = open(legacy, { explanations: { [legacy.id]: { status: "vetoed" } } });
+    expect(vetoed).not.toContain("<fieldset");
+    expect(vetoed).toContain(">Keep<");
+    expect(vetoed).toContain(">Remove<");
+    const withdrawn = suggested(62, {
+      state: "withdrawn",
+      band: null,
+      direction: "outgoing",
+      vetoSource: "explainer"
+    });
+    const html = render(pageOf([], { withdrawn: { items: [withdrawn], total: 1 } }), {
+      withdrawnOpen: true,
+      openCard: withdrawn.id
+    });
+    expect(html).not.toContain("<fieldset");
+    expect(html).toContain(">Keep<");
   });
 
   it("stops answering the choice while a verdict is saved, without disabling it", () => {

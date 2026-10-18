@@ -413,17 +413,21 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     await relate(a1!, z1!, "extends", "apply", "typer");
     for (const root of [zeta.id, alpha.id])
       expect(await repository.promoteFromNotes(root)).toMatchObject({ promoted: 0, retired: 0 });
-    // The owner gives one note relation a direction: the relation reads from its subject, resting
-    // on that note relation alone; the notes that are only linked add no support to it.
+    // The owner gives one note relation a direction against the order the relation is stored in.
+    // Until promotion turns it, the relation still reads both ways: never against the owner.
     await relate(z1!, a1!, "extends", "apply", "owner");
+    expect(await readers()).toMatchObject({ directed: false, explanation: "symmetric" });
+    // Promotion turns the same relation in place: it reads from the subject, and the notes that are
+    // only linked still support it.
     const given = await repository.promoteFromNotes(zeta.id);
-    expect(given).toMatchObject({ promoted: 1, retired: 1 });
+    expect(given).toMatchObject({ promoted: 0, refreshed: 1, retired: 0 });
     const directed = await readers();
     expect(directed.row).toMatchObject({
+      id: guessed.row.id,
       relation_type: "extends",
       source_item_id: zeta.id,
       target_source_item_id: alpha.id,
-      support_count: 1
+      support_count: 2
     });
     expect(directed).toMatchObject({ directed: true, explanation: "s1_to_s2" });
     expect(await relationsBetween(zeta.id, alpha.id)).toHaveLength(1);
@@ -437,6 +441,186 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     expect(same).toBeDefined();
     const page = await listSourceRelations(db(), zeta.id, alpha.id);
     expect(page.relations.find((item) => item.id === same!.id)?.directed).toBe(false);
+  });
+
+  it("turns a relation the owner kept in place when a direction arrives against its order, and the revert turns it back (decision 31b)", async () => {
+    const repository = createSourceRelationRepository(db());
+    const zeta = await work("Zeta massed practice");
+    const alpha = await work("Alpha spaced practice");
+    const [z1, z2] = await withNotes(zeta, ["Cramming works briefly", "Massing is quick"]);
+    const [a1, a2] = await withNotes(alpha, ["Spacing lasts longer", "Spacing is slow"]);
+    await relate(z1!, a1!, "extends", "apply", "typer");
+    await relate(a2!, z2!, "extends", "apply", "typer");
+    await repository.promoteFromNotes(zeta.id);
+    const [linked] = await viewsBetween(zeta.id, alpha.id);
+    expect(linked).toMatchObject({ directed: false, sourceItemId: alpha.id });
+    // The owner keeps the relation as it reads: Alpha and Zeta, extends, no direction.
+    expect(await repository.review(linked!.id, "accepted", linked!.updatedAt)).toBe(true);
+    const before = (await relationsBetween(zeta.id, alpha.id))[0]!;
+    const identity = String(
+      (await db().query("select identity_key from source_relations where id = $1", [before.id]))
+        .rows[0]!.identity_key
+    );
+    // Later the owner keeps a note relation of the pair with Zeta as subject.
+    const noteRelation = await relate(z1!, a1!, "extends", "apply", "typer");
+    const review = await createRelationMatchRunRepository(db()).start({ kind: "review" });
+    await createAtomicNoteRelationRepository(db()).review(noteRelation, "keep", review.id, {
+      subjectAtomicNoteId: z1!
+    });
+    await createRelationMatchRunRepository(db()).finish(review.id, { outcome: "succeeded" });
+    // Not yet promoted again: the kept relation still reads both ways, never against the owner.
+    expect((await viewsBetween(zeta.id, alpha.id))[0]).toMatchObject({
+      id: before.id,
+      directed: false,
+      status: "accepted"
+    });
+    // Promotion turns the kept row: no second relation, no retirement, the status stays.
+    const turned = await repository.promoteFromNotes(zeta.id);
+    expect(turned).toMatchObject({ promoted: 0, refreshed: 1, retired: 0, ownerRejected: 0 });
+    expect(await relationsBetween(zeta.id, alpha.id)).toEqual([
+      expect.objectContaining({
+        id: before.id,
+        status: "accepted",
+        origin: "promoted",
+        source_item_id: zeta.id,
+        target_source_item_id: alpha.id,
+        support_count: 2
+      })
+    ]);
+    expect((await viewsBetween(zeta.id, alpha.id))[0]).toMatchObject({
+      id: before.id,
+      directed: true,
+      suggested: false,
+      sourceItemId: zeta.id
+    });
+    expect(await staleNoteEvidence([before.id])).toBe(0);
+    expect(
+      (await db().query("select identity_key from source_relations where id = $1", [before.id]))
+        .rows[0]!.identity_key
+    ).not.toBe(identity);
+    expect(await repository.promoteFromNotes(alpha.id)).toMatchObject({
+      promoted: 0,
+      refreshed: 0,
+      retired: 0,
+      runId: null
+    });
+    // One event with both images; the revert puts the row back as it was, byte for byte.
+    const events = await createRelationEventRepository(db()).listByRun(turned.runId!);
+    expect(events.map((event) => [event.kind, event.before !== null])).toEqual([
+      ["promoted", true]
+    ]);
+    expect(await createRelationEventRepository(db()).revertRun(turned.runId!)).toMatchObject({
+      kind: "reverted"
+    });
+    expect(
+      (await db().query("select identity_key from source_relations where id = $1", [before.id]))
+        .rows[0]!.identity_key
+    ).toBe(identity);
+    expect(await relationsBetween(zeta.id, alpha.id)).toEqual([
+      expect.objectContaining({ id: before.id, source_item_id: alpha.id, status: "accepted" })
+    ]);
+  });
+
+  it("keeps an owner's removal final and a relation read as stored when directions arrive both ways (decision 31b)", async () => {
+    const repository = createSourceRelationRepository(db());
+    // Removed by the owner as it reads both ways: a direction against its order makes no new one.
+    const zeta = await work("Zeta lectures");
+    const alpha = await work("Alpha labs");
+    const [z1, z2] = await withNotes(zeta, ["Lectures explain", "Lectures scale"]);
+    const [a1, a2] = await withNotes(alpha, ["Labs apply", "Labs are costly"]);
+    await relate(z1!, a1!, "extends", "apply", "typer");
+    await relate(a2!, z2!, "extends", "apply", "typer");
+    await repository.promoteFromNotes(zeta.id);
+    const [removed] = await relationsBetween(zeta.id, alpha.id);
+    await db().query("update source_relations set status = 'rejected' where id = $1", [
+      removed!.id
+    ]);
+    await relate(z1!, a1!, "extends", "apply", "owner");
+    expect(await repository.promoteFromNotes(zeta.id)).toMatchObject({
+      promoted: 0,
+      refreshed: 0,
+      retired: 0,
+      ownerRejected: 1
+    });
+    expect(await relationsBetween(zeta.id, alpha.id)).toEqual([
+      expect.objectContaining({ id: removed!.id, status: "rejected", source_item_id: alpha.id })
+    ]);
+
+    // Directions both ways: the stored relation keeps the way it is stored, the other gets its own.
+    const left = await work("Zeta seminars");
+    const right = await work("Alpha workshops");
+    const [l1, l2] = await withNotes(left, ["Seminars discuss", "Seminars invite"]);
+    const [r1, r2] = await withNotes(right, ["Workshops build", "Workshops mix"]);
+    await relate(l1!, r1!, "extends", "apply", "typer");
+    await repository.promoteFromNotes(left.id);
+    const [stored] = await relationsBetween(left.id, right.id);
+    expect(stored).toMatchObject({ source_item_id: right.id });
+    await relate(l1!, r1!, "extends", "apply", "owner");
+    await relate(r2!, l2!, "extends", "apply", "owner");
+    expect(await repository.promoteFromNotes(left.id)).toMatchObject({
+      promoted: 1,
+      retired: 0,
+      ownerRejected: 0
+    });
+    const both = await relationsBetween(left.id, right.id);
+    expect(both.map((row) => [row.source_item_id, row.target_source_item_id])).toHaveLength(2);
+    expect(both.find((row) => row.id === stored!.id)).toMatchObject({
+      source_item_id: right.id,
+      target_source_item_id: left.id
+    });
+    expect(both.every((row) => row.support_count === 1)).toBe(true);
+    expect(await repository.promoteFromNotes(right.id)).toMatchObject({
+      promoted: 0,
+      refreshed: 0,
+      retired: 0,
+      runId: null
+    });
+  });
+
+  it("keeps the linked notes as support and the relation confirmed when one directed suggestion arrives (decision 31b)", async () => {
+    const repository = createSourceRelationRepository(db());
+    const zeta = await work("Zeta retrieval");
+    const alpha = await work("Alpha restudy");
+    const ideas = ["one", "two", "three", "four"];
+    const zs = await withNotes(
+      zeta,
+      ideas.map((idea) => `Retrieval ${idea}`)
+    );
+    const as = await withNotes(
+      alpha,
+      ideas.map((idea) => `Restudy ${idea}`)
+    );
+    // Three relations the owner kept with the default "no direction".
+    const review = await createRelationMatchRunRepository(db()).start({ kind: "review" });
+    for (const index of [0, 1, 2]) {
+      const id = await relate(zs[index]!, as[index]!, "extends", "apply", "typer");
+      await createAtomicNoteRelationRepository(db()).review(id, "keep", review.id, {
+        subjectAtomicNoteId: null
+      });
+    }
+    await createRelationMatchRunRepository(db()).finish(review.id, { outcome: "succeeded" });
+    expect(await repository.promoteFromNotes(zeta.id)).toMatchObject({ promoted: 1 });
+    const [confirmed] = await viewsBetween(zeta.id, alpha.id);
+    expect(confirmed).toMatchObject({ suggested: false, supportCount: 3, directed: false });
+    // The decider suggests a direction for a fourth pair: the same relation turns to read from its
+    // subject, with all four notes as support, and it stays confirmed and in the wiki.
+    await relate(zs[3]!, as[3]!, "extends", "suggest", "decider");
+    expect(await repository.promoteFromNotes(zeta.id)).toMatchObject({
+      promoted: 0,
+      refreshed: 1,
+      retired: 0
+    });
+    expect(await viewsBetween(zeta.id, alpha.id)).toEqual([
+      expect.objectContaining({
+        id: confirmed!.id,
+        suggested: false,
+        supportCount: 4,
+        directed: true,
+        sourceItemId: zeta.id
+      })
+    ]);
+    expect(await wikiRelations(zeta.id, alpha.id)).toEqual([confirmed!.id]);
+    expect(await staleNoteEvidence([confirmed!.id])).toBe(0);
   });
 
   it("plans a pair's promotion from what it reads under the pair's lock (R14, I-R10)", async () => {

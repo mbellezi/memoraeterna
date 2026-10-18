@@ -110,11 +110,16 @@ export function rawDirectionReads(text: string): string[] {
     /\batomic_note_relations\b(\s+(?:as\s+)?([a-z_][a-z0-9_]*))?/giu
   )) {
     const alias = binding[2]?.toLowerCase();
-    if (!alias || keywords.has(alias)) continue;
-    for (const match of statementAround(text, binding.index ?? 0).matchAll(
-      new RegExp(String.raw`\b${alias}\.direction\b`, "giu")
-    ))
-      found.push(match[0]);
+    const statement = statementAround(text, binding.index ?? 0);
+    // A write names the column without reading it (`insert into atomic_note_relations (direction)`).
+    if (/\b(?:insert\s+into|update)\s+$/iu.test(text.slice(0, binding.index ?? 0))) continue;
+    // Unaliased (`select direction from atomic_note_relations where ...`): a bare column, not a
+    // quoted key, a longer name or another table's column.
+    const pattern =
+      alias && !keywords.has(alias)
+        ? new RegExp(String.raw`\b${alias}\.direction\b`, "giu")
+        : /(?<![\w.'"])direction(?![\w'"])/giu;
+    for (const match of statement.matchAll(pattern)) found.push(match[0]);
   }
   for (const match of text.matchAll(/\batomicNoteRelations\.direction\b/gu)) found.push(match[0]);
   return [...new Set(found)];
@@ -163,6 +168,21 @@ describe("note relation visibility is read through one module (D9)", () => {
       )
     ).toEqual([]);
     expect(rawDirectionReads("`select s.direction from source_relations s`")).toEqual([]);
+    // A statement that binds no alias reads the bare column.
+    expect(
+      rawDirectionReads("`select direction from atomic_note_relations where id = $1`")
+    ).toEqual(["direction"]);
+    expect(
+      rawDirectionReads("`select id from atomic_note_relations where direction = 'lo_to_hi'`")
+    ).toEqual(["direction"]);
+    expect(
+      rawDirectionReads(
+        "`select id, metadata->>'direction', relation_direction from atomic_note_relations where id = $1`"
+      )
+    ).toEqual([]);
+    expect(
+      rawDirectionReads("`insert into atomic_note_relations (id, direction) values ($1, $2)`")
+    ).toEqual([]);
   });
 
   it("detects a filter, aliased or not, and ignores reads and the predicates", () => {

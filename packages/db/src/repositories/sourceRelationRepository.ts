@@ -13,7 +13,11 @@ import {
   type RelationsConfig
 } from "@app/domain";
 import { withTransaction, type PgPool } from "../client.js";
-import { noteRelationDirectionSql, noteRelationStateSql } from "./note-relation-sql.js";
+import {
+  noteRelationDirectionSql,
+  noteRelationStateSql,
+  noteRelationSubjectSql
+} from "./note-relation-sql.js";
 import { createRelationEventRepository } from "./relationEventRepository.js";
 import { createRelationMatchRunRepository } from "./relationMatchRunRepository.js";
 import type { RetrievalFence } from "./noteRetrievalSql.js";
@@ -245,15 +249,19 @@ export const sourceRelationImportanceOrderSql = (r = "r") =>
 /**
  * Whether a source relation reads from its source to its target (decision 31b), over the relation
  * alias: a directed type that the judge decided, or that rests on a note relation whose direction
- * the owner or the decider gave. A promoted relation resting on notes that are only linked reads
- * both ways. Derived at read time, so a Keep that gives a note relation a direction shows at once.
+ * the owner or the decider gave and that reads the way the relation does. Evidence is stored turned
+ * to the relation's endpoints, so a note relation reads that way when its subject is the evidence's
+ * source note; one pointing the other way (a Keep that gave the opposite direction, before
+ * promotion turns the relation) makes the relation read both ways, never against the owner. A
+ * promoted relation resting on notes that are only linked reads both ways. Derived at read time, so
+ * a Keep that gives a note relation a direction shows at once.
  */
 export const directedSourceRelationSql = (r = "r") =>
   `(${r}.relation_type in (${directedNoteRelationTypes.map((type) => `'${type}'`).join(",")})
   and (${r}.origin = 'judged' or exists (
     select 1 from source_relation_evidence de join atomic_note_relations dn on dn.id = de.note_relation_id
      where de.relation_id = ${r}.id and de.origin = 'atomic_notes'
-       and ${noteRelationDirectionSql("dn")} in ('lo_to_hi','hi_to_lo'))))`;
+       and ${noteRelationSubjectSql("dn")} = de.source_note_id)))`;
 
 /** Evidence rows promotion wrote carry this writer; only those are removed when support is lost. */
 const promotionEvidenceWriter = "promotion";
@@ -1045,6 +1053,8 @@ interface HeldRelation extends QueryResultRow {
   supportCount: number | null;
   identityKey: string;
   importance: number | null;
+  /** It reads from its source to its target (`directedSourceRelationSql`); false: it reads both ways. */
+  directed: boolean;
 }
 
 /**
@@ -1078,7 +1088,8 @@ const heldOtherRootsSql = `${sourceRelationTreeSql}
 const heldRelationsSql = `${sourceRelationTreeSql}
   select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId",
     ta.root_id as "sourceRootId", tb.root_id as "targetRootId", r.relation_type as "relationType",
-    r.status::text as status, r.origin, r.support_count as "supportCount", r.identity_key as "identityKey", r.importance
+    r.status::text as status, r.origin, r.support_count as "supportCount", r.identity_key as "identityKey", r.importance,
+    ${directedSourceRelationSql("r")} as directed
     from source_relations r join tree ta on ta.id = r.source_item_id join tree tb on tb.id = r.target_source_item_id
    where (ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1)
    order by r.created_at, r.id
@@ -1199,8 +1210,23 @@ async function promoteFromNotes(
         const image = async (id: string) =>
           ((await client.query<{ image: JsonObject } & QueryResultRow>(imageSql, [id])).rows[0]
             ?.image ?? null) as JsonObject | null;
+        // A relation that reads both ways belongs to the plan that reads it its own way first; only
+        // the rows no plan matches as they are may turn to a direction that arrived against them.
+        const asHeld = new Set(
+          pairPlans.flatMap((plan) =>
+            rows.filter((row) => matchesPlan(row, plan)).map((row) => row.id)
+          )
+        );
+        const turned = new Set<string>();
         for (const plan of pairPlans) {
-          const equivalents = rows.filter((row) => matchesPlan(row, plan));
+          const exact = rows.filter((row) => matchesPlan(row, plan));
+          const against = exact.length
+            ? []
+            : rows.filter(
+                (row) => !asHeld.has(row.id) && !turned.has(row.id) && matchesPlanAgainst(row, plan)
+              );
+          against.forEach((row) => turned.add(row.id));
+          const equivalents = exact.length ? exact : against;
           equivalents.forEach((row) => handled.add(row.id));
           if (equivalents.some((row) => row.status === "rejected")) {
             result.ownerRejected += 1;
@@ -1234,20 +1260,35 @@ async function promoteFromNotes(
             result.promoted += 1;
           } else {
             relationId = target.id;
-            if (target.supportCount !== support) {
+            const turns = against.includes(target);
+            if (turns || target.supportCount !== support) {
               const before = await image(relationId);
-              await client.query(
-                "update source_relations set support_count = $2, updated_at = now() where id = $1",
-                [relationId, support]
-              );
+              if (turns)
+                // The relation keeps its row, its status and its page: only the way it reads turns.
+                await client.query(
+                  `update source_relations set support_count = $2, updated_at = now(),
+                     source_item_id = $3, target_source_item_id = $4, identity_key = $5 where id = $1`,
+                  [
+                    relationId,
+                    support,
+                    plan.sourceRootId,
+                    plan.targetRootId,
+                    sourceRelationIdentityKey(plan.sourceRootId, plan.targetRootId, plan.type)
+                  ]
+                );
+              else
+                await client.query(
+                  "update source_relations set support_count = $2, updated_at = now() where id = $1",
+                  [relationId, support]
+                );
               await record("promoted", relationId, before, await image(relationId));
               result.refreshed += 1;
             }
           }
-          const relation = target ?? {
-            sourceItemId: plan.sourceRootId,
-            targetSourceItemId: plan.targetRootId
-          };
+          const relation =
+            !target || against.includes(target)
+              ? { sourceItemId: plan.sourceRootId, targetSourceItemId: plan.targetRootId }
+              : target;
           await syncPromotionEvidence(client, relationId, relation, plan, byId, chunks, openRun);
         }
         for (const row of rows) {
@@ -1296,6 +1337,27 @@ function matchesPlan(row: HeldRelation, plan: PromotedSourceRelationPlan): boole
   if (row.sourceRootId === plan.sourceRootId && row.targetRootId === plan.targetRootId) return true;
   return (
     plan.symmetric &&
+    row.sourceRootId === plan.targetRootId &&
+    row.targetRootId === plan.sourceRootId
+  );
+}
+
+/**
+ * Whether a held relation that reads both ways is the plan's relation although it was stored the
+ * other way round. A relation promoted from notes that were only linked is stored in content order,
+ * which says nothing about a direction; when the owner or the decider gives one against that order,
+ * the relation turns in place instead of a second one being made beside the kept one (decision
+ * 31b). A relation that reads from its source to its target never turns, and neither does one
+ * promotion does not hold at the two roots.
+ */
+function matchesPlanAgainst(row: HeldRelation, plan: PromotedSourceRelationPlan): boolean {
+  return (
+    !plan.symmetric &&
+    !row.directed &&
+    row.origin === "promoted" &&
+    equivalentSourceRelationTypes(plan.type).includes(row.relationType) &&
+    row.sourceItemId === row.sourceRootId &&
+    row.targetSourceItemId === row.targetRootId &&
     row.sourceRootId === plan.targetRootId &&
     row.targetRootId === plan.sourceRootId
   );

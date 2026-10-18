@@ -3009,7 +3009,7 @@
         "none": "Sin dirección",
         "otherSubject": "La otra nota",
         "otherObject": "la otra nota",
-        "hint": "Opcional. Las relaciones automáticas no tienen dirección hasta que tú les des una."
+        "hint": "Opcional. Tu elección se guarda al conservar la relación; sin dirección, las notas quedan relacionadas."
       },
       "passageLabel": "{source} · fragmento {number}",
       "decided": "Decidió",

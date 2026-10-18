@@ -116,7 +116,7 @@ describe("promotion of typed shown note relations (D27, decision 29)", () => {
     ]);
   });
 
-  it("takes a direction only from the notes that have one, and counts only them as its support", () => {
+  it("takes a direction only from the notes that have one, yet counts the linked ones of its type as support", () => {
     const given = relation("extends", "R", "X", { contentKey: "a" });
     const unread = [
       relation("extends", "X", "R", { directed: false, contentKey: "b" }),
@@ -128,7 +128,7 @@ describe("promotion of typed shown note relations (D27, decision 29)", () => {
         targetRootId: "X",
         type: "extends",
         symmetric: false,
-        noteRelationIds: [given.id]
+        noteRelationIds: [given.id, ...unread.map((item) => item.id)]
       }
     ]);
     // The type still wins by every relation: two undirected ones outvote one directed one of another type.
@@ -136,6 +136,37 @@ describe("promotion of typed shown note relations (D27, decision 29)", () => {
     expect(plan([...unread, other])[0]).toEqual(
       expect.objectContaining({ type: "extends", symmetric: true })
     );
+  });
+
+  it("keeps the linked notes' support when one directed note arrives, and the direction choice is the directed notes' alone", () => {
+    const linked = Array.from({ length: 3 }, (_, index) =>
+      relation("extends", index % 2 ? "R" : "X", index % 2 ? "X" : "R", {
+        directed: false,
+        contentKey: `l${index}`
+      })
+    );
+    const given = relation("extends", "X", "R", { contentKey: "z" });
+    // The three linked notes outvote nothing about the direction: Feedback (X) reads as the subject.
+    expect(plan([...linked, given])).toEqual([
+      {
+        sourceRootId: "X",
+        targetRootId: "R",
+        type: "extends",
+        symmetric: false,
+        noteRelationIds: [...linked.map((item) => item.id), given.id]
+      }
+    ]);
+    // Both directions given: each is supported by its own notes and by the linked ones.
+    const reverse = relation("extends", "R", "X", { contentKey: "y" });
+    const both = plan([...linked, given, reverse]);
+    expect(both.map((item) => [item.sourceRootId, item.targetRootId])).toEqual([
+      ["R", "X"],
+      ["X", "R"]
+    ]);
+    expect(both.every((item) => item.noteRelationIds.length === 4)).toBe(true);
+    // Linked notes of another type add nothing to the winner's support.
+    const stray = relation("supports", "R", "X", { directed: false });
+    expect(plan([...linked, given, stray])[0]!.noteRelationIds).not.toContain(stray.id);
   });
 
   it("promotes nothing from untyped, weak or same-root relations, or relations of other roots", () => {

@@ -140,7 +140,9 @@ export function RelationEvidenceCard({
   const reviewing = review?.status === "pending";
   const reviewable = offersReview(relation, explanation);
   // A directed type states a direction only when the owner or the decider gave one: Keep may add it.
-  const offersDirection = reviewable && view.directed;
+  // The server records it only on an automatic (banded) relation, so a legacy row, whose direction
+  // is the one it was decided with, offers none: a choice the server drops must not be offered.
+  const offersDirection = reviewable && view.directed && relation.band !== null;
   const directionLabel = (option: DirectionChoice): string =>
     option === "none"
       ? t("notePage.card.direction.none")

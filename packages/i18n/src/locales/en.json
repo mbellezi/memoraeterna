@@ -3002,7 +3002,7 @@
         "none": "No direction",
         "otherSubject": "The other note",
         "otherObject": "the other note",
-        "hint": "Optional. Automatic relations have no direction until you give one."
+        "hint": "Optional. Your choice is saved when you keep the relation; with no direction, the notes stay linked."
       },
       "passageLabel": "{source} · passage {number}",
       "decided": "Decided",

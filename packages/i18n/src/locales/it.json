@@ -3000,7 +3000,7 @@
         "none": "Nessuna direzione",
         "otherSubject": "L’altra nota",
         "otherObject": "l’altra nota",
-        "hint": "Facoltativo. Le relazioni automatiche non hanno direzione finché non ne dai una."
+        "hint": "Facoltativo. La tua scelta viene salvata quando mantieni la relazione; senza direzione, le note restano collegate."
       },
       "passageLabel": "{source} · passaggio {number}",
       "decided": "Ha deciso",
