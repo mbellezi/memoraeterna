@@ -273,7 +273,9 @@ veto on a single-support pair fails it; reported as a known risk before M2.
 
 On 2026-10-19 the owner raised the Codex cap to 2.9M tokens: DS0 ran while the OpenAI account had no credit (the
 decider fell back to the MLX ranker, so the sample measured MLX and its Codex tokens were spent), and DS0 and DS1 are
-run again once the account has credit.
+run again once the account has credit. Later the same night S1's fallback (two discovery neighbours) required S1 and X3
+to be measured again (about 600k tokens), so the owner dropped DS0, DS1 and TPCG to stay within 2.9M: the Decisions
+decider keeps gate F's validation and the GGUF throughput keeps its offline forecast (5.2 min for 200 notes, bar 8.0).
 
 ### X7 at M2 (owner, 2026-10-18)
 
