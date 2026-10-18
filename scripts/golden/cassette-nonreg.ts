@@ -28,10 +28,10 @@
  *
  * A generative prompt is recognised by its first paragraph after the output-language preamble
  * (`shared.output_language`), a ranker request by the `instruction` of its `{instruction, query, documents}`
- * JSON. A repair prompt starts with the prompt it repairs, so it is stripped with it. Everything else is kept and
- * named (`KEPT_RULES`, else its task type); an entry that fits no known kind is kept and reported as
- * unrecognised, and `--strict` refuses to write a copy that has any, so a prompt rewrite cannot silently move
- * an entry from one side to the other. `cassette-nonreg.test.ts` pins every rule to the shipped catalog.
+ * or `{instruction, pairs}` JSON. A repair prompt starts with the prompt it repairs, so it is stripped with
+ * it. Everything else is kept and named (`KEPT_RULES`, else its task type); an entry that fits no known kind
+ * is kept and reported as unrecognised, and `--strict` refuses to write a copy that has any, so a prompt
+ * rewrite cannot silently move an entry from one side to the other. `cassette-nonreg.test.ts` pins every rule to the shipped catalog.
  */
 import { constants } from "node:fs";
 import {
@@ -168,15 +168,20 @@ export function promptBody(input: string): string {
   return end < 0 ? "" : text.slice(end + 2).trimStart();
 }
 
-/** The instruction of a dedicated ranker's `{instruction, query, documents}` request, or null. */
+/**
+ * The instruction of a dedicated ranker's request, or null: the `{instruction, query, documents}` shape, or the
+ * pairs shape `{instruction, pairs}` that the F3 note decide sends (independent directed pairs, D16).
+ */
 export function rankInstruction(input: string): string | null {
   const text = input.trimStart();
   if (!text.startsWith("{")) return null;
   try {
     const parsed: unknown = JSON.parse(text);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const { instruction, documents } = parsed as Record<string, unknown>;
-    return typeof instruction === "string" && Array.isArray(documents) ? instruction : null;
+    const { instruction, documents, pairs } = parsed as Record<string, unknown>;
+    return typeof instruction === "string" && (Array.isArray(documents) || Array.isArray(pairs))
+      ? instruction
+      : null;
   } catch {
     return null;
   }

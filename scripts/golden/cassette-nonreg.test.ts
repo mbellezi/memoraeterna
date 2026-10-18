@@ -220,6 +220,14 @@ describe("the non-regression rule", () => {
     expect(promptBody("Decide whether x")).toBe("Decide whether x");
     expect(promptBody(`  ${preamble}`)).toBe("");
     expect(rankInstruction(rankRequest("Given a note"))).toBe("Given a note");
+    expect(
+      rankInstruction(
+        JSON.stringify({
+          instruction: "Judge whether",
+          pairs: [{ query: "Title: A", document: "Title: B" }]
+        })
+      )
+    ).toBe("Judge whether");
     expect(rankInstruction("Decide whether x")).toBeNull();
     expect(rankInstruction('{"instruction":"x"}')).toBeNull();
     expect(rankInstruction("{broken")).toBeNull();
