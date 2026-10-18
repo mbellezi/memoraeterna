@@ -485,7 +485,18 @@ under F3. `summary.json` records `pin`.
 `MEMORA_AI_CASSETTE_LOCAL_MISSES=live` (DEV, golden and E6 runners, with `MEMORA_AI_CASSETTE=replay`) lets a
 replay miss on a local runtime (ranker, local writer, local embedder) run live; the answer is recorded into
 the cassette copy and counted in `cassette.liveLocalMisses` by task. A miss on a remote runtime still fails.
-Non-regression replays after F3 matching merges use it on a copy with the matching entries stripped.
+Non-regression replays after F3 matching merges use it on a copy with the matching entries stripped:
+
+```sh
+npm run golden:cassette-nonreg -- --base .cache/golden/cassettes/golden-small-f2 \
+  --out .cache/golden/cassettes/golden-small-f2-nonreg-R --strict
+```
+
+The copy never overwrites an existing folder (a replay with live local misses records into it, so each sample
+needs a fresh copy), leaves the base untouched and writes `nonreg.json` (base, rule version, counts per kind).
+The rule (`scripts/golden/cassette-nonreg.ts`, tested against the prompt catalog) strips the generative note
+decide, the ranker's note decide, the source judge and the relation typer by their prompts, whatever the
+runtime that recorded them; extraction, embeddings and the topic calls stay.
 
 `MEMORA_GOLDEN_SCHEMA_PROBE=<calls>` (1 to 20, with `MEMORA_GOLDEN_RUN`) runs that many structured calls with a
 strict `outputSchema` through the normal AI service and the cassette, instead of the manifest: nothing is

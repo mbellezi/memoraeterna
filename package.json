@@ -57,6 +57,7 @@
     "golden:reverse-only": "tsx scripts/golden/reverse-only.ts",
     "golden:calls": "tsx scripts/golden/calls-per-chapter.ts",
     "golden:recall": "tsx scripts/golden/candidate-recall.ts",
+    "golden:cassette-nonreg": "tsx scripts/golden/cassette-nonreg.ts",
     "relations:rematch-report": "tsx scripts/relations/rematch-report.ts",
     "topics:replay": "tsx scripts/topics/replay.ts",
     "topics:audit": "tsx scripts/topics/audit.ts",
