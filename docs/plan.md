@@ -648,14 +648,17 @@ Wave 2 (M1 and gate R at the end):
 - [x] T55 Schema output in every runtime, item-level repair, graph salvage, graph batches by writer locality and
       the extraction pin; claims stay stopped.
 - [x] T56 `embedMany` and hot-path caches.
-- [ ] T57 Campaign M1 (tuning partition only).
+- [x] T57 Campaign M1 (tuning partition only).
 
 Wave 3 (gate F after T58; gate P at the end):
 - [x] T53b Note-matching settings cleanup (settings migration).
+- [x] T53f Backfill of missing hierarchy-root composites for existing libraries (found by T53's proof).
+- [ ] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
+- [x] T53p Typed suggestions promote to suggested source relations (decision 29).
 - [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
 - [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
-- [ ] T58e Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
+- [ ] T58e (superseded by decision 29: the rule rejected it; revisited only if a decider test changes decision 29) Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
 - [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
 - [ ] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
 - [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
