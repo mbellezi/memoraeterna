@@ -182,3 +182,61 @@ describe("where a task's route runs", () => {
     ]);
   });
 });
+
+describe("what a task's route can take in one call (plan decision 28)", () => {
+  it("reads the Codex route's window from the provider's metadata, as an admitted call plans it", async () => {
+    const { ai } = service();
+    state.selections.set("summarization", {
+      ...codexSelection,
+      providerMetadata: { modelLimits: { contextWindow: 272_000 } }
+    });
+    await expect(
+      ai.taskRouteCapacity("summarization", {
+        operation: "hierarchy_summary",
+        workloadClass: "write-fast"
+      })
+    ).resolves.toEqual({
+      contextWindow: 128_000,
+      source: "planning",
+      maxOutputTokens: 16_384,
+      local: false
+    });
+    // The keys of the call the capacity is for: its operation, its class, then the task route.
+    expect(state.getDefaultTask).toHaveBeenLastCalledWith("summarization", undefined, [
+      "op:hierarchy_summary",
+      "class:write-fast",
+      "summarization"
+    ]);
+  });
+
+  it("reads a smaller provider limit, a local model's catalog window, and none for a model that states none", async () => {
+    const { ai } = service();
+    state.selections.set("summarization", {
+      ...codexSelection,
+      provider: "openai-compatible",
+      providerMetadata: { modelLimits: { contextWindow: 32_000 } }
+    });
+    await expect(ai.taskRouteCapacity("summarization")).resolves.toMatchObject({
+      contextWindow: 32_000,
+      source: "provider"
+    });
+    state.selections.set("summarization", {
+      ...localSelection,
+      modelDefaultParameters: { contextWindow: 4_096, maxTokens: 1_024 }
+    });
+    await expect(ai.taskRouteCapacity("summarization")).resolves.toEqual({
+      contextWindow: 4_096,
+      source: "profile",
+      maxOutputTokens: 1_024,
+      local: true
+    });
+    state.selections.set("summarization", localSelection);
+    await expect(ai.taskRouteCapacity("summarization")).resolves.toMatchObject({
+      contextWindow: null,
+      source: "unknown",
+      local: true
+    });
+    state.selections.delete("summarization");
+    await expect(ai.taskRouteCapacity("summarization")).resolves.toBeNull();
+  });
+});

@@ -475,7 +475,8 @@
       "topicName": "Nombre de temas",
       "topicAreas": "Áreas de temas",
       "topicLabelEmbed": "Etiquetas de temas",
-      "topicGate": "Decisión de ubicación en temas"
+      "topicGate": "Decisión de ubicación en temas",
+      "catalogHeader": "Añadiendo resúmenes a las entradas de búsqueda de libros y artículos"
     },
     "relations": {
       "link": "Vinculando relaciones",

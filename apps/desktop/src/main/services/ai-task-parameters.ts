@@ -144,3 +144,69 @@ export function estimateAiPlanningTokens(
     1024
   );
 }
+
+/** The model a route serves, as far as its capacity is concerned (a slice of the route selection). */
+export interface RouteCapacitySelection {
+  localModelId: string | null;
+  parameters: JsonObject;
+  modelDefaultParameters: JsonObject;
+  providerMetadata: JsonObject | null | undefined;
+}
+
+/** What a task route's model can take in one call (plan decision 28), known without a call. */
+export interface TaskRouteCapacity {
+  /**
+   * The context window, in tokens, that the route's calls are planned and admitted against: the
+   * profile's own value, else the provider's discovered limit (Codex and OpenAI-compatible
+   * `context_window`), bounded by the planning budget of a remote call. Null when nothing states one.
+   */
+  contextWindow: number | null;
+  /** Where `contextWindow` comes from; `unknown` for a local model whose catalog states none. */
+  source: "profile" | "provider" | "planning" | "unknown";
+  /** The output tokens a call of the route reserves: its effective `maxTokens`. */
+  maxOutputTokens: number;
+  /** The model runs on this machine. */
+  local: boolean;
+}
+
+/**
+ * The capacity of a route's model, derived exactly as an admitted call derives its parameters
+ * (`withAiTaskParameterDefaults`), so a request sized to it is one the admission accepts. A local
+ * model whose profile and catalog state no window reports `unknown`: its native limit is not
+ * metadata the app holds.
+ */
+export function routeCapacity(
+  taskType: string,
+  selection: RouteCapacitySelection,
+  operation?: string | null
+): TaskRouteCapacity {
+  const local = Boolean(selection.localModelId);
+  const stated = { ...selection.modelDefaultParameters, ...selection.parameters };
+  const discovered = discoveredContextWindow(selection.providerMetadata);
+  const effective = withAiTaskParameterDefaults(taskType, stated, local, {
+    contextWindowLimit: discovered,
+    operation
+  });
+  const window =
+    typeof effective.contextWindow === "number" && effective.contextWindow > 0
+      ? effective.contextWindow
+      : null;
+  const maxOutputTokens =
+    typeof effective.maxTokens === "number" && effective.maxTokens > 0
+      ? effective.maxTokens
+      : profileGenerationMaxTokens;
+  if (window === null) return { contextWindow: null, source: "unknown", maxOutputTokens, local };
+  if (typeof stated.contextWindow !== "number")
+    return {
+      contextWindow: window,
+      source: discovered !== null && window === discovered ? "provider" : "planning",
+      maxOutputTokens,
+      local
+    };
+  return {
+    contextWindow: window,
+    source: discovered !== null && window === discovered ? "provider" : "profile",
+    maxOutputTokens,
+    local
+  };
+}

@@ -72,6 +72,12 @@ import {
   enqueueCompositeBackfill,
   runCompositeBackfill
 } from "./relations/composite-backfill.js";
+import {
+  CatalogHeaderGate,
+  catalogHeaderJobType,
+  enqueueCatalogHeaderRefresh,
+  runCatalogHeaderRefresh
+} from "./catalog-header-refresh.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -217,6 +223,8 @@ export class JobSupervisor {
   /** The link jobs of relations v2 (F3 D24); present with a knowledge service. */
   private readonly linker: RelationLinker | null;
   private readonly relationsChanged: RelationsChangedEmitter;
+  /** One catalog-header pass at a time (T53h): the next waits for the one running. */
+  private readonly catalogHeaderGate = new CatalogHeaderGate();
   private lastRelationMaintenance = Number.NEGATIVE_INFINITY;
   private retypeSweepDay: string | null = null;
   /** The last heavy pass waited for relation jobs (drain mode): the lane is held, not idle. */
@@ -236,11 +244,15 @@ export class JobSupervisor {
       if (options.lightJobs?.[type]) throw new Error(`job_lane_conflict:${type}`);
     if (options.lightJobs?.[compositeBackfillJobType])
       throw new Error(`job_lane_conflict:${compositeBackfillJobType}`);
+    if (options.lightJobs?.[catalogHeaderJobType])
+      throw new Error(`job_lane_conflict:${catalogHeaderJobType}`);
     const compositeBackfill = this.compositeBackfillExecutor();
+    const catalogHeader = this.catalogHeaderExecutor();
     this.lightJobs = {
       ...options.lightJobs,
       ...relationJobs,
       ...(compositeBackfill ? { [compositeBackfillJobType]: compositeBackfill } : {}),
+      ...(catalogHeader ? { [catalogHeaderJobType]: catalogHeader } : {}),
       ...(wiki
         ? {
             [projectionJobType]: {
@@ -329,6 +341,73 @@ export class JobSupervisor {
   }
 
   /**
+   * The header refresh of hierarchy roots (T53h, plan decision 27), on the `relations` worker behind
+   * the link jobs, its embeddings and graph call at P3: a book's catalog header chunk follows its
+   * summary. It needs the knowledge service (the graph) or an embedding model (the vectors).
+   */
+  private catalogHeaderExecutor(): LightJobExecutor | null {
+    const generate = this.embeddingBatchGenerator();
+    const knowledge = this.options.knowledgeService;
+    if (!knowledge && !(generate && this.options.embeddingSpaceKey)) return null;
+    return {
+      needsModel: true,
+      worker: "relations",
+      held: () => this.catalogHeaderGate.busy,
+      execute: (job, signal) =>
+        this.catalogHeaderGate.run(() =>
+          runCatalogHeaderRefresh(
+            {
+              getPool: () => this.requirePool(),
+              embeddingSpaceKey: this.options.embeddingSpaceKey,
+              generate,
+              validate: async (embedding) => {
+                const validated = await this.workers.execute(
+                  "embedding",
+                  { embedding },
+                  { signal }
+                );
+                return Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+              },
+              aggregate: aggregateSourceEmbedding,
+              knowledge,
+              persistHeaderChunk: persistCatalogMetadataChunk,
+              topicHooks: this.options.topicHooks,
+              reportProgress: (running, progress) =>
+                this.reportInlineProgress(running.id, progress),
+              // The composites left are the backfill's, after the headers (no header embedded twice).
+              afterPass: () => this.ensureCompositeBackfill(),
+              logger: this.options.logger
+            },
+            job,
+            signal
+          )
+        )
+    };
+  }
+
+  /**
+   * Queues the header refresh when a hierarchy root's catalog header lacks the summary the root has
+   * and no import is working on it (`rootIds` limits the look to those roots). Never fails its
+   * caller: a summary write or a finished import is not undone by a request that could not be made.
+   */
+  public async ensureCatalogHeaderRefresh(options: { rootIds?: readonly string[] } = {}) {
+    if (!this.lightJobs[catalogHeaderJobType]) return false;
+    try {
+      const queued = await enqueueCatalogHeaderRefresh(this.requirePool(), options);
+      if (queued) this.wakeLoops("light");
+      return queued;
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
+      return false;
+    }
+  }
+
+  /** A summary was written or cleared for these roots, or a catalog run ended: their headers follow. */
+  private async followSummaries(rootIds: readonly string[] | undefined): Promise<void> {
+    if (rootIds?.length) await this.ensureCatalogHeaderRefresh({ rootIds });
+  }
+
+  /**
    * How many hierarchy nodes still lack a composite although every descendant has one, in the space
    * the route writes to (0 without an embedding model). The re-match harness waits for 0.
    */
@@ -397,9 +476,11 @@ export class JobSupervisor {
         this.options.logger?.warn(normalizeWorkerError(error));
       }
     // Once per start, before the loops: the hierarchy roots a library holds without a composite
-    // (ingested before a chapter's embedding refreshed them) are built in the background (T53f).
+    // (ingested before a chapter's embedding refreshed them) are built in the background (T53f),
+    // after the headers built without a summary that exists are rebuilt with it (T53h), which build
+    // their roots' composites from the same header; the header pass asks for the backfill when done.
     try {
-      await this.ensureCompositeBackfill();
+      if (!(await this.ensureCatalogHeaderRefresh())) await this.ensureCompositeBackfill();
     } catch (error) {
       this.options.logger?.warn(normalizeWorkerError(error));
     }
@@ -983,7 +1064,7 @@ export class JobSupervisor {
       !shouldRun("summarization") ||
       (await runs.countIncompleteBatchStage(run.batchId, "summarization")) === 0;
     if (aggregateHierarchyRoot && this.options.knowledgeService && batchSummariesComplete) {
-      await this.options.knowledgeService.summarizeHierarchiesForBatch(
+      const summarized = await this.options.knowledgeService.summarizeHierarchiesForBatch(
         run.batchId,
         signal,
         {
@@ -996,19 +1077,26 @@ export class JobSupervisor {
         sourceItemId,
         run.runKind === "reingestion"
       );
+      await this.followSummaries(summarized?.changedRootIds);
     } else if (
       !aggregateHierarchyRoot &&
       shouldRun("summarization") &&
       run.batchId &&
       batchSummariesComplete
     ) {
-      await this.options.knowledgeService?.summarizeHierarchiesForBatch(run.batchId, signal, {
-        jobId: job.id,
-        ingestionRunId,
-        sourceItemId,
-        documentId,
-        stage: "aggregateSummarization"
-      });
+      const summarized = await this.options.knowledgeService?.summarizeHierarchiesForBatch(
+        run.batchId,
+        signal,
+        {
+          jobId: job.id,
+          ingestionRunId,
+          sourceItemId,
+          documentId,
+          stage: "aggregateSummarization"
+        }
+      );
+      // A root whose header was built before its summary: the header follows it (T53h).
+      await this.followSummaries(summarized?.changedRootIds);
     }
     const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
     if (shouldRun("embedding") && embeddingCheckpoint?.status !== "completed") {
@@ -1358,6 +1446,8 @@ export class JobSupervisor {
       });
       this.wakeLoops("light");
     } else await runs.complete(ingestionRunId);
+    // A summary written while this catalog run was working is followed once it has ended (T53h).
+    if (catalogMetadataOnly) await this.followSummaries([sourceItemId]);
     this.notify();
     return {
       ingestionRunId,

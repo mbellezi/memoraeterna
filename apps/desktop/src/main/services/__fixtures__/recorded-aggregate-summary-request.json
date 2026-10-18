@@ -1,0 +1,37 @@
+{
+  "note": "Requests the golden small library recorded (cassette golden-small-f2) for the summaries of public-domain texts: the input of each call as the writer received it, language header included. Only the requests are kept, none of the answers.",
+  "requests": [
+    {
+      "name": "aggregate",
+      "cassetteKey": "1baca122b77b7d242b439111d431abd7d7763ebd29d303e2b54ff9a33c85c95b",
+      "taskType": "summarization",
+      "input": "Produce all natural-language response text in Brazilian Portuguese. Preserve required JSON keys and schemas exactly. All internal identifiers, enum values and relation predicates must remain in English; translate only user-visible natural-language content.\n\nCreate a coherent aggregate summary of the book \"O Alienista\" using the substantive subpart summaries below.\nPreserve disagreements and progression across subparts. Do not introduce facts absent from the summaries.\nReturn only the summary body, without a title or Markdown heading. In particular, do not output \"# Aggregate summary\" or \"# Resumo agregado\".\nIf the supplied summaries contain no substantive content, return exactly <NO_SUMMARY> and nothing else.\n\n[Subpart 1: I. De como Itaguaí ganhou uma casa de Orates]\nO Dr. Simão Bacamarte, médico formado em Coimbra e Pádua, dedica-se inteiramente à ciência e escolhe D. Evarista por critérios fisiológicos, esperando que ela lhe dê filhos saudáveis, mas o casal não tem descendentes. Em seguida, ele passa a estudar a patologia cerebral, área praticamente inexplorada no Brasil e em Portugal, considerando a saúde da alma a tarefa mais digna da medicina. Como os dementes de Itaguaí eram abandonados ou mantidos isolados em casa, Bacamarte propõe construir um asilo para tratar e abrigar os loucos da região. Apesar da resistência inicial, a Câmara aprova o projeto e cria um imposto para financiá-lo. A Casa Verde é então construída e inaugurada com grande pompa, sob a promessa de tratamento caridoso aos internos, dando a Itaguaí uma casa de orates.\n\n[Subpart 2: II. Torrentes de loucos]\nO alienista afirma que a caridade é apenas um componente secundário de seu trabalho na Casa Verde, cujo objetivo principal é estudar profundamente a loucura, classificá-la, descobrir suas causas e encontrar um remédio universal. A instituição atrai numerosos enfermos e precisa ser ampliada, revelando casos variados e desconcertantes, como delírios amorosos, de grandeza e religiosos. Simão Bacamarte organiza a administração, classifica os internos em furiosos e mansos e, depois, em subclasses de monomanias, delírios e alucinações. Dedica-se intensamente à investigação dos hábitos, antecedentes e manifestações dos pacientes, além do estudo de tratamentos, trabalhando a ponto de quase não dormir nem comer.\n\n[Subpart 3: III. Deus sabe o que faz]\nD. Evarista definha em melancolia por sentir-se tão abandonada quanto antes do casamento, mas Simão Bacamarte interpreta seu sofrimento como falta de conforto e consente que ela viaje ao Rio de Janeiro. Ela se entusiasma, embora se entristeça ao perceber que o marido não a acompanhará; ele providencia sua ida com a tia e justifica a despesa mostrando a riqueza acumulada com seu trabalho. Após três meses, D. Evarista parte com uma numerosa comitiva, enquanto Bacamarte permanece impassível, preocupado apenas com a possibilidade de haver algum demente entre os que se despedem. A partida contrasta o olhar de Crispim Soares, preso às emoções do presente, com o de Bacamarte, voltado racionalmente para o futuro.",
+      "instruction": "You are a helpful assistant.",
+      "model": {
+        "modelId": "gpt-5.6-luna",
+        "providerId": "openai-codex",
+        "runtime": "remote"
+      },
+      "parameters": {
+        "contextWindow": 128000,
+        "reasoningLevel": "low"
+      }
+    },
+    {
+      "name": "reduce",
+      "cassetteKey": "50ddc3f3bbacaffa244d9196e06add6b85678fd08773c65e020b58707af5a11f",
+      "taskType": "summarization",
+      "input": "Produce all natural-language response text in Brazilian Portuguese. Preserve required JSON keys and schemas exactly. All internal identifiers, enum values and relation predicates must remain in English; translate only user-visible natural-language content.\n\nCreate one faithful, concise source summary from these substantive partial summaries. Preserve important claims and uncertainty.\nDo not introduce facts. Return only the summary body, without a title or Markdown heading.\nIf the partial summaries contain no substantive content, return exactly <NO_SUMMARY> and nothing else.\n\nCamilo e Rita mantêm um caso amoroso enquanto Vilela, marido dela e antigo amigo de Camilo, permanece aparentemente alheio. Rita recorre a uma cartomante, cuja previsão a tranquiliza, embora Camilo rejeite qualquer crença sobrenatural. Após receber cartas anônimas e temer uma denúncia, Camilo afasta-se da casa de Vilela; quando este o convoca urgentemente, Camilo imagina que o adultério foi descoberto e que poderá ser morto. A caminho, tomado pelo medo, encontra a casa da cartomante e, pela primeira vez, sente vontade de acreditar nas cartas.\n\n---\n\nCamilo, dominado pelo medo e por antigas superstições, decide consultar uma cartomante antes de ir à casa de Vilela. Ela afirma que nada acontecerá a ele ou a Rita, embora recomende cautela, e sua leitura devolve a Camilo uma confiança crescente. Convencido de que a carta de Vilela talvez tratasse apenas de um assunto grave, ele segue apressadamente, imaginando inclusive retomar a antiga proximidade com o amigo. Ao chegar, encontra Rita morta e ensanguentada; Vilela então o mata com dois tiros.",
+      "instruction": "You are a helpful assistant.",
+      "model": {
+        "modelId": "gpt-5.6-luna",
+        "providerId": "openai-codex",
+        "runtime": "remote"
+      },
+      "parameters": {
+        "contextWindow": 128000,
+        "reasoningLevel": "low"
+      }
+    }
+  ]
+}

@@ -670,7 +670,7 @@ describe("ingestion queue scheduling", () => {
         // A link job is due or running: no heavy claim, and the lane is not idle. Promotion jobs
         // (T53) count too: discovery reads the source relations they write.
         expect(query).toHaveBeenCalledWith(expect.stringContaining("from jobs"), [
-          ["relation-link", "relation-promote", "relation-retype"]
+          ["catalog-header", "relation-link", "relation-promote", "relation-retype"]
         ]);
         expect(mocks.jobs.claimNext).not.toHaveBeenCalledWith(
           expect.any(String),

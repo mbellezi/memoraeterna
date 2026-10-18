@@ -42,7 +42,17 @@ export interface EmbeddingStageInput {
   routeSpaceKey?: () => Promise<string | null>;
   /** Validates a vector the way the embedding worker does and returns it as numbers. */
   validate: (embedding: number[]) => Promise<number[]>;
-  context: { jobId: string; ingestionRunId: string; sourceItemId: string; documentId: string };
+  /**
+   * Whose call it is. Work that belongs to no ingestion run (a header chunk rebuilt after a late
+   * summary) states none, and `P3` when it always yields to ingestion.
+   */
+  context: {
+    jobId: string;
+    ingestionRunId?: string;
+    sourceItemId: string;
+    documentId: string;
+    priority?: "P2" | "P3";
+  };
 }
 
 /** The configuration changed while a document was being embedded: the vectors would mix spaces. */

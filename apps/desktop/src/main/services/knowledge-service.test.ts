@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
@@ -133,7 +136,9 @@ describe("hierarchical aggregate summaries", () => {
     ).resolves.toEqual({
       generatedCount: 0,
       reusedCount: 0,
-      blockedRoots: [{ sourceItemId: "paper-id", missingSummaryCount: 1, totalSubparts: 1 }]
+      blockedRoots: [{ sourceItemId: "paper-id", missingSummaryCount: 1, totalSubparts: 1 }],
+      // The summary it held was cleared: the header chunk built with it follows (T53h).
+      changedRootIds: ["paper-id"]
     });
   });
 
@@ -188,7 +193,8 @@ describe("hierarchical aggregate summaries", () => {
     await expect(service.summarizeHierarchiesForBatch("batch-id")).resolves.toEqual({
       generatedCount: 0,
       reusedCount: 0,
-      blockedRoots: []
+      blockedRoots: [],
+      changedRootIds: []
     });
     expect(runDefaultTask).toHaveBeenCalledTimes(1);
     const prompt = runDefaultTask.mock.calls[0]?.[1] as string;
@@ -196,6 +202,131 @@ describe("hierarchical aggregate summaries", () => {
     expect(prompt).not.toContain("[Subpart 2: Title]");
     expect(prompt).toContain('do not output "# Aggregate summary" or "# Resumo agregado"');
   });
+
+  describe("a book's summary sized by the active writer (plan decision 28)", () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "__fixtures__/recorded-aggregate-summary-request.json"),
+        "utf8"
+      )
+    ) as { requests: Array<{ name: string; input: string }> };
+    const recordedInput = fixture.requests.find((request) => request.name === "aggregate")!.input;
+    const subparts = [...recordedInput.matchAll(/\[Subpart \d+: ([^\]\n]*)\]\n([^\n]*)/gu)].map(
+      (match) => ({ title: match[1]!, summary: match[2]! })
+    );
+    const serviceOver = (
+      aiService: Record<string, unknown>,
+      children: Array<{ title: string; summary: string }> = subparts
+    ) =>
+      new KnowledgeService({
+        getPool: () =>
+          ({
+            query: async (text: string) =>
+              text.includes("with recursive hierarchy")
+                ? {
+                    rows: children.map((child, index) => ({
+                      rootId: "book-id",
+                      rootType: "Book",
+                      rootTitle: "O Alienista",
+                      rootLanguage: "pt-BR",
+                      documentId: "document-id",
+                      documentHash: "document-hash",
+                      childId: `chapter-${index}`,
+                      childTitle: child.title,
+                      summaryId: `summary-${index}`,
+                      summary: child.summary,
+                      summaryHash: `hash-${index}`
+                    }))
+                  }
+                : { rows: [] }
+          }) as unknown as PgPool,
+        aiService: aiService as unknown as AiService,
+        userDataPath: "/tmp/memora-test",
+        getStorageSettings: async () => ({}) as never,
+        getUploadedFilesBasePath: async () => null
+      });
+    const codex = {
+      contextWindow: 128_000,
+      source: "planning",
+      maxOutputTokens: 16_384,
+      local: false
+    };
+
+    it("sends the request the golden library recorded, byte for byte, on the Codex route", async () => {
+      const taskRouteCapacity = vi.fn(async () => codex);
+      const runDefaultTask = vi.fn<
+        (task: string, prompt: string, context?: object) => Promise<null>
+      >(async () => null);
+      await serviceOver({ taskRouteCapacity, runDefaultTask }).summarizeHierarchiesForBatch(
+        "batch-id"
+      );
+      expect(taskRouteCapacity).toHaveBeenCalledWith("summarization", {
+        operation: "hierarchy_summary",
+        workloadClass: "write-fast"
+      });
+      expect(runDefaultTask).toHaveBeenCalledTimes(1);
+      // The application's language header goes before the prompt; the prompt is the recorded one.
+      expect(recordedInput.endsWith(runDefaultTask.mock.calls[0]![1])).toBe(true);
+      expect(
+        recordedInput.slice(0, recordedInput.indexOf("\n\n") + 2) + runDefaultTask.mock.calls[0]![1]
+      ).toBe(recordedInput);
+      // Its call context is the one it always was: no batch is named for a single call.
+      expect(runDefaultTask.mock.calls[0]![2]).not.toHaveProperty("batchIndex");
+    });
+
+    it("sends the same request whether or not the AI service can state the writer's capacity", async () => {
+      const prompts: string[] = [];
+      for (const aiService of [
+        { runDefaultTask: async (_task: string, prompt: string) => (prompts.push(prompt), null) },
+        {
+          taskRouteCapacity: async () => {
+            throw new Error("database_not_ready");
+          },
+          runDefaultTask: async (_task: string, prompt: string) => (prompts.push(prompt), null)
+        }
+      ])
+        await serviceOver(aiService).summarizeHierarchiesForBatch("batch-id");
+      expect(prompts).toHaveLength(2);
+      expect(new Set(prompts).size).toBe(1);
+      expect(recordedInput.endsWith(prompts[0]!)).toBe(true);
+    });
+
+    it("combines the chapters in consecutive batches when the writer's window is small", async () => {
+      const taskRouteCapacity = vi.fn(async () => ({
+        contextWindow: 4_096,
+        source: "profile",
+        maxOutputTokens: 1_024,
+        local: true
+      }));
+      const prompts: string[] = [];
+      // The first call has no answer, so the book stays unsummarized and nothing is stored: the
+      // calls to look at are the ones asked for before it.
+      const runDefaultTask = vi.fn<
+        (task: string, prompt: string, context?: object) => Promise<null>
+      >(async (...call) => {
+        prompts.push(call[1]);
+        return null;
+      });
+      const chapters = Array.from({ length: 6 }, (_, index) => ({
+        title: `Chapter ${index + 1}`,
+        summary: `Chapter ${index + 1}. ${"It argues the point at length. ".repeat(40)}`
+      }));
+      await serviceOver(
+        { taskRouteCapacity, runDefaultTask },
+        chapters
+      ).summarizeHierarchiesForBatch("batch-id");
+      // The first batch is a pair of chapters, not the book: the window takes no more.
+      expect(prompts).toHaveLength(1);
+      expect([...prompts[0]!.matchAll(/\[Subpart \d+:/gu)]).toHaveLength(2);
+      expect(prompts[0]).toContain("[Subpart 1: Chapter 1]");
+      expect(prompts[0]).toContain("[Subpart 2: Chapter 2]");
+      expect(runDefaultTask.mock.calls[0]![2]).toMatchObject({
+        operation: "hierarchy_summary",
+        batchIndex: 0
+      });
+    });
+  });
+
   it("builds the same aggregate prompt for the same subparts under any UUID assignment", async () => {
     const prompts: string[] = [];
     for (const [rootId, firstId, secondId] of uuidAssignments(3).map(

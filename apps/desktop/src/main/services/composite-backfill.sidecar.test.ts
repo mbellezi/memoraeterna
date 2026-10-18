@@ -555,8 +555,8 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
     expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).not.toBeNull();
 
     // A summary written afterwards deletes it (any update of the source does), and the header it
-    // embedded is no longer the book's: the next build, the root's own stage or the backfill, makes
-    // it with the summary. Until plan decision 27 follows a late summary, that is a second header.
+    // embedded is no longer the book's: the next build, the root's own stage, the backfill or the
+    // catalog-header job (plan decision 27) that follows a late summary, makes it with the summary.
     await createSourceItemRepository(db()).update(book.id, { summary: "A late summary." });
     expect(await createSourceRelationRepository(db()).discoveryVector(book.id)).toBeNull();
     expect(
@@ -1258,8 +1258,11 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
     // summarized, so the batch's aggregate summaries are not written yet. Its composite is built
     // at once all the same: the book's discovery runs when its last record has linked and needs the
     // vector then, with no batch barrier (rules/knowledge.md). The summary the barrier writes
-    // afterwards deletes it and the book's own job builds it again, with the summary: plan decision
-    // 27 (T53h) follows a summary written late, and until then that book's header is embedded twice.
+    // afterwards deletes it and the book's own job builds it again, with the summary, so that book's
+    // header is embedded twice: the first time only so that its discovery has a vector. The book's
+    // header chunk is built after the summary here, so plan decision 27's follow (the header built
+    // before a late summary: catalog-header-refresh.sidecar.test.ts) has nothing to do and queues
+    // nothing, as the assertions below check.
     it.each([
       { name: "a book of two chapters", chapters: [2], headerBuilds: [1] },
       {
@@ -1308,6 +1311,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
         // The barrier: the job that passes it writes every root's aggregate summary (a summary
         // written into a root deletes its composite, as the repository does for any update).
         const summaries = vi.fn(async () => {
+          const changedRootIds: string[] = [];
           for (const { root } of sources) {
             const current = await createSourceItemRepository(db()).findById(root.id);
             if (current?.summary) continue;
@@ -1315,8 +1319,14 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
               summary: `An aggregate summary of ${root.title}.`,
               summaryGeneratedAt: new Date()
             });
+            changedRootIds.push(root.id);
           }
-          return { generatedCount: sources.length, reusedCount: 0, blockedRoots: [] };
+          return {
+            generatedCount: changedRootIds.length,
+            reusedCount: 0,
+            blockedRoots: [],
+            changedRootIds
+          };
         });
         // Source discovery, as the link job runs it: what a book's discovery finds to plan with is
         // its composite (`matchSources` records `no_vector` without one, and a catalog run never
@@ -1368,6 +1378,10 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
         expect(discovered.map((entry) => entry.vectorSpace)).toEqual(
           discovered.map(() => `256:${spaceKey}`)
         );
+        // Every book's header chunk was built after its summary (its run came last): the summary
+        // written at the barrier left no header to follow, and plan decision 27 queued nothing.
+        const followed = await db().query("select 1 from jobs where type = 'catalog-header'");
+        expect(followed.rows).toHaveLength(0);
 
         for (const [index, book] of sources.entries()) {
           const source = (await createSourceItemRepository(db()).findById(book.root.id))!;

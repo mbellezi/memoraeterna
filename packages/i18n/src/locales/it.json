@@ -473,7 +473,8 @@
       "topicName": "Denominazione degli argomenti",
       "topicAreas": "Aree degli argomenti",
       "topicLabelEmbed": "Etichette degli argomenti",
-      "topicGate": "Decisione di collocazione negli argomenti"
+      "topicGate": "Decisione di collocazione negli argomenti",
+      "catalogHeader": "Aggiunta dei riassunti alle voci di ricerca di libri e articoli"
     },
     "relations": {
       "link": "Collegamento delle relazioni",

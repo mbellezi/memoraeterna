@@ -473,7 +473,8 @@
       "topicName": "Nommage des sujets",
       "topicAreas": "Domaines des sujets",
       "topicLabelEmbed": "Étiquettes des sujets",
-      "topicGate": "Décision de classement dans les sujets"
+      "topicGate": "Décision de classement dans les sujets",
+      "catalogHeader": "Ajout des résumés aux fiches de recherche des livres et articles"
     },
     "relations": {
       "link": "Liaison des relations",

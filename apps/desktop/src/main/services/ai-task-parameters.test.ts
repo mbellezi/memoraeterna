@@ -1,3 +1,4 @@
+import { remoteGenerationContextWindow } from "@app/domain";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +8,7 @@ import {
   relationExplanationOperation,
   relationTypingOperation,
   relationTypingRepairOperation,
+  routeCapacity,
   sourceRelationExplanationOperation,
   topicNameOperation,
   topicOverviewOperation,
@@ -196,5 +198,88 @@ describe("AI task parameter defaults", () => {
     expect(withAiTaskParameterDefaults("structured-output", {}, true)).not.toHaveProperty(
       "contextWindow"
     );
+  });
+});
+
+describe("the capacity of a task route", () => {
+  const remote = (providerMetadata: Record<string, unknown>, parameters = {}) => ({
+    localModelId: null,
+    parameters,
+    modelDefaultParameters: {},
+    providerMetadata
+  });
+
+  it("is the planning window of a remote call when the provider's limit is larger", () => {
+    // The Codex route discovers a 272K window; a call is planned against the application's 128K.
+    expect(
+      routeCapacity("summarization", remote({ modelLimits: { contextWindow: 272_000 } }))
+    ).toEqual({
+      contextWindow: remoteGenerationContextWindow,
+      source: "planning",
+      maxOutputTokens: profileGenerationMaxTokens,
+      local: false
+    });
+  });
+
+  it("follows the provider's discovered limit when it is the smaller one (OpenAI-compatible)", () => {
+    expect(
+      routeCapacity("summarization", remote({ modelLimits: { contextWindow: 32_000 } }))
+    ).toMatchObject({ contextWindow: 32_000, source: "provider" });
+    // `inputTokens` is a limit too, and the smaller of the two bounds the window.
+    expect(
+      routeCapacity(
+        "summarization",
+        remote({ modelLimits: { contextWindow: 200_000, inputTokens: 64_000 } })
+      )
+    ).toMatchObject({ contextWindow: 64_000, source: "provider" });
+  });
+
+  it("follows the profile's own window, bounded by the provider's", () => {
+    expect(
+      routeCapacity(
+        "summarization",
+        remote({ modelLimits: { contextWindow: 272_000 } }, { contextWindow: 64_000 })
+      )
+    ).toMatchObject({ contextWindow: 64_000, source: "profile" });
+    expect(
+      routeCapacity(
+        "summarization",
+        remote({ modelLimits: { contextWindow: 32_000 } }, { contextWindow: 64_000 })
+      )
+    ).toMatchObject({ contextWindow: 32_000, source: "provider" });
+  });
+
+  it("reads a local model's window and output from its catalog defaults, else reports none", () => {
+    expect(
+      routeCapacity("summarization", {
+        localModelId: "imported",
+        parameters: {},
+        modelDefaultParameters: { contextWindow: 4_096, maxTokens: 1_024 },
+        providerMetadata: {}
+      })
+    ).toEqual({ contextWindow: 4_096, source: "profile", maxOutputTokens: 1_024, local: true });
+    // The profile's own parameters win over the model's defaults.
+    expect(
+      routeCapacity("summarization", {
+        localModelId: "imported",
+        parameters: { contextWindow: 16_384 },
+        modelDefaultParameters: { contextWindow: 4_096 },
+        providerMetadata: null
+      })
+    ).toMatchObject({ contextWindow: 16_384, source: "profile" });
+    // A catalog MLX model states no window: its native limit is not metadata the app holds.
+    expect(
+      routeCapacity("summarization", {
+        localModelId: "mlx",
+        parameters: {},
+        modelDefaultParameters: { temperature: 1 },
+        providerMetadata: {}
+      })
+    ).toEqual({
+      contextWindow: null,
+      source: "unknown",
+      maxOutputTokens: profileGenerationMaxTokens,
+      local: true
+    });
   });
 });

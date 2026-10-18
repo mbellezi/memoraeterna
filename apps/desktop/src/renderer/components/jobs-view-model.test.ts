@@ -291,23 +291,34 @@ describe("jobs view model", () => {
 });
 
 describe("the jobs view's label of a relation job", () => {
-  it.each(["relation-link", "relation-retype", "relation-promote", "relation-composite"])(
-    "names %s in every locale, apart from the ingestion default",
-    (type) => {
-      const key = jobTypeMessageKey(type);
-      expect(key).not.toBe(jobTypeMessageKey("ingestion"));
-      for (const locale of supportedLanguageCodes)
-        expect(
-          createTranslator(locale)(key, { missingKeyBehavior: "throw" }).trim().length,
-          `${type} in ${locale}`
-        ).toBeGreaterThan(0);
-    }
-  );
+  it.each([
+    "relation-link",
+    "relation-retype",
+    "relation-promote",
+    "relation-composite",
+    "catalog-header"
+  ])("names %s in every locale, apart from the ingestion default", (type) => {
+    const key = jobTypeMessageKey(type);
+    expect(key).not.toBe(jobTypeMessageKey("ingestion"));
+    for (const locale of supportedLanguageCodes)
+      expect(
+        createTranslator(locale)(key, { missingKeyBehavior: "throw" }).trim().length,
+        `${type} in ${locale}`
+      ).toBeGreaterThan(0);
+  });
 
   it("words the composite backfill by what it does for the user, not by its vectors", () => {
     expect(jobTypeMessageKey("relation-composite")).toBe("jobs.relations.composite");
     expect(
       createTranslator("en")("jobs.relations.composite", { missingKeyBehavior: "throw" })
     ).not.toMatch(/vector/i);
+  });
+
+  it("words the header refresh by what it does for the user, in every locale", () => {
+    expect(jobTypeMessageKey("catalog-header")).toBe("jobs.types.catalogHeader");
+    for (const locale of supportedLanguageCodes)
+      expect(
+        createTranslator(locale)("jobs.types.catalogHeader", { missingKeyBehavior: "throw" })
+      ).not.toMatch(/vector|embedding|chunk/i);
   });
 });

@@ -57,9 +57,10 @@ export type CompositeAggregate = (
  * needs the root's vector then, and a catalog run never queues a link job to plan it again; waiting
  * for the summaries would add a batch barrier to matching (rules/knowledge.md has none). A summary
  * written into the root afterwards deletes this composite (`sourceItemRepository.update`) and the
- * root's own stage builds it again with the summary. Making a late summary rebuild the header and
- * its composite is plan decision 27 (T53h); until then a book that is not the one passing the
- * summarization barrier embeds its header twice.
+ * root's own stage builds it again with the summary: the pre-summary composite is the price of
+ * discovery needing a vector before the barrier. A header chunk that was built before the summary
+ * is followed by the catalog-header job (plan decision 27, `catalog-header-refresh.ts`), which
+ * rebuilds the chunk and this composite from one embedding of the header.
  *
  * With `warn`, a failure (an embedding error, a replay miss) is reported and resolves to what was
  * written: the source's own vectors are in place, so its stage does not fail for an ancestor, whose
@@ -131,7 +132,7 @@ interface StoredCompositeSpace extends CompositeSpace {
 }
 
 /** What `rebuildComposite` did with one node. */
-type CompositeRebuild =
+export type CompositeRebuild =
   | { outcome: "written"; /** A composite was there (stale) and was replaced. */ replaced: boolean }
   | {
       outcome: "current" | "incomplete" | "no_embedding" | "space_changed" | "no_vector";
@@ -425,6 +426,39 @@ async function descendantCompositeSpace(
   return newest;
 }
 
+/**
+ * Builds or rebuilds the composite of one hierarchy node in the embedding space `spaceKey`, in the
+ * space its descendants' composites are in (the newest one's provider, model and runtime), through
+ * `rebuildComposite`: the backfill's step for a node, and the follow of a node whose header changed.
+ * A node none of whose descendants has a composite yet is `incomplete`; one that holds its inputs
+ * is `current` (no call).
+ */
+export async function refreshNodeComposite(input: {
+  pool: PgPool;
+  node: SourceItemRecord;
+  spaceKey: string;
+  embed: CompositeHeaderEmbedder;
+  aggregate: CompositeAggregate;
+}): Promise<CompositeRebuild> {
+  const descendantIds = (
+    await createHierarchicalIngestionRepository(input.pool).listDescendants(input.node.id)
+  ).map((entry) => entry.id);
+  const space = await descendantCompositeSpace(
+    input.pool,
+    descendantIds,
+    compositeStrategy(input.spaceKey)
+  );
+  if (!space) return { outcome: "incomplete" };
+  return rebuildComposite({
+    pool: input.pool,
+    node: input.node,
+    space,
+    descendantIds,
+    embed: input.embed,
+    aggregate: input.aggregate
+  });
+}
+
 /** What a backfill pass found and did. */
 export interface CompositeBackfillResult {
   /** The hierarchy nodes with a descendant composite in the space, after the page's start. */
@@ -493,7 +527,6 @@ export async function backfillSourceComposites(input: {
     next: null
   };
   const sources = createSourceItemRepository(pool);
-  const hierarchy = createHierarchicalIngestionRepository(pool);
   for (const [index, listed] of nodes.entries()) {
     input.signal?.throwIfAborted();
     const nodeId = listed.id;
@@ -502,29 +535,23 @@ export async function backfillSourceComposites(input: {
       const node = listed.busy ? null : await sources.findById(nodeId);
       if (listed.busy) result.incomplete += 1;
       else if (node) {
-        const descendantIds = (await hierarchy.listDescendants(nodeId)).map((entry) => entry.id);
-        const space = await descendantCompositeSpace(pool, descendantIds, strategy);
-        if (!space) result.incomplete += 1;
+        const rebuilt = await refreshNodeComposite({
+          pool,
+          node,
+          spaceKey: input.spaceKey,
+          embed: input.embed,
+          aggregate: input.aggregate
+        });
+        if (rebuilt.outcome === "written") {
+          result.written.push(nodeId);
+          if (rebuilt.replaced) result.rebuilt += 1;
+        } else if (rebuilt.outcome === "current") result.current += 1;
+        else if (rebuilt.outcome === "incomplete") result.incomplete += 1;
+        else if (rebuilt.outcome === "no_vector")
+          result.failed.push({ sourceItemId: nodeId, message: "no_vector" });
         else {
-          const rebuilt = await rebuildComposite({
-            pool,
-            node,
-            space,
-            descendantIds,
-            embed: input.embed,
-            aggregate: input.aggregate
-          });
-          if (rebuilt.outcome === "written") {
-            result.written.push(nodeId);
-            if (rebuilt.replaced) result.rebuilt += 1;
-          } else if (rebuilt.outcome === "current") result.current += 1;
-          else if (rebuilt.outcome === "incomplete") result.incomplete += 1;
-          else if (rebuilt.outcome === "no_vector")
-            result.failed.push({ sourceItemId: nodeId, message: "no_vector" });
-          else {
-            result.stopped = rebuilt.outcome;
-            break;
-          }
+          result.stopped = rebuilt.outcome;
+          break;
         }
       }
     } catch (error) {

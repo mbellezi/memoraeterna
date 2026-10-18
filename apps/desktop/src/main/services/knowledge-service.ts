@@ -78,7 +78,6 @@ import { logStructuredError } from "./structured-logging.js";
 import type { LibraryBrowseInput, StorageSettings } from "../../shared/ipc.js";
 import {
   atomicNotePromptVersion,
-  buildAggregateSummaryPrompt,
   defaultSummaryMinimumWordCount,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
@@ -87,10 +86,12 @@ import {
   normalizeSummaryText,
   knowledgeGraphPromptVersion,
   parseKnowledgeGraphBatchCheckpoints,
+  summarizeSubpartsWithinBudget,
   summaryPromptVersion,
   type KnowledgeGraphBatchCheckpoint,
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
+import { summaryBudget, type SummaryBudget } from "./summary-batching.js";
 
 const maxInlineAssetBytes = 5 * 1024 * 1024;
 
@@ -114,6 +115,28 @@ interface HierarchySummaryRow {
   summaryId: string | null;
   summary: string | null;
   summaryHash: string | null;
+}
+
+/**
+ * What an aggregate summary built in batches records beside the usual metadata (plan decision 28):
+ * every call's run (the audit of the whole combination) and the budget that made it batch. A
+ * summary written by one call records nothing more than it always did.
+ */
+function batchedSummaryMetadata(
+  outcome: { executions: ReadonlyArray<{ aiTaskRunId: string }>; levels: number; calls: number },
+  budget: SummaryBudget
+): Record<string, unknown> {
+  if (outcome.calls <= 1) return {};
+  return {
+    aiTaskRunIds: outcome.executions.map((execution) => execution.aiTaskRunId),
+    batched: {
+      levels: outcome.levels,
+      calls: outcome.calls,
+      budgetBytes: budget.bytes,
+      contextWindow: budget.contextWindow,
+      windowSource: budget.windowSource
+    }
+  };
 }
 
 function updateGroupedChildSummary(
@@ -163,6 +186,8 @@ export interface AtomicNoteGenerationLogContext {
 export interface KnowledgeGraphGenerationContext {
   jobId?: string;
   ingestionRunId?: string;
+  /** The lane priority of the calls; background work that yields to ingestion states `P3`. */
+  priority?: "P2" | "P3";
   includeAtomicNotesGraph?: boolean;
   completedBatches?: unknown;
   onProgress?: (progress: number) => void;
@@ -538,6 +563,26 @@ export class KnowledgeService {
     }
   }
 
+  /**
+   * The prompt budget of the writer a summary operation runs on (plan decision 28): what its model
+   * can take in one call, from the route's own metadata. A route that states nothing, or an AI
+   * service that cannot say, gets the conservative fallback.
+   */
+  private async summaryBudgetFor(operation: string): Promise<SummaryBudget> {
+    try {
+      const capacity =
+        typeof this.options.aiService.taskRouteCapacity === "function"
+          ? await this.options.aiService.taskRouteCapacity("summarization", {
+              operation,
+              workloadClass: "write-fast"
+            })
+          : null;
+      return summaryBudget(capacity);
+    } catch {
+      return summaryBudget(null);
+    }
+  }
+
   public async summarizeSource(
     sourceItemId: string,
     documentId: string,
@@ -582,7 +627,8 @@ export class KnowledgeService {
         Math.floor(
           (await this.options.getSummaryMinimumWordCount?.()) ?? defaultSummaryMinimumWordCount
         )
-      )
+      ),
+      async () => (await this.summaryBudgetFor("summary_reduce")).bytes
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
     if (summary.summary.length === 0) {
@@ -639,6 +685,7 @@ export class KnowledgeService {
       metadata: {
         mapReduce: summary.mapReduce,
         executionCount: summary.executions.length,
+        ...(summary.reductionLevels ? { reductionLevels: summary.reductionLevels } : {}),
         concepts: summary.concepts ?? [],
         aiTaskRunIds: summary.executions.map((execution) => execution.aiTaskRunId)
       }
@@ -723,6 +770,9 @@ export class KnowledgeService {
       missingSummaryCount: number;
       totalSubparts: number;
     }> = [];
+    // The roots whose summary was written or cleared: a header chunk built before follows it.
+    const changedRootIds: string[] = [];
+    let budget: SummaryBudget | null = null;
     for (const children of grouped.values()) {
       const root = children[0];
       if (!root) continue;
@@ -745,6 +795,7 @@ export class KnowledgeService {
           summaryGeneratedAt: null
         });
         updateGroupedChildSummary(grouped, root.rootId, null);
+        changedRootIds.push(root.rootId);
         blockedRoots.push({
           sourceItemId: root.rootId,
           missingSummaryCount,
@@ -764,29 +815,40 @@ export class KnowledgeService {
         reusedCount += 1;
         continue;
       }
-      const prompt = buildAggregateSummaryPrompt(
-        { kind: aggregateSourceLabel(root.rootType), title: root.rootTitle },
-        summarizedChildren.map((child) => ({ title: child.childTitle, summary: child.summary }))
-      );
-      const execution = await this.options.aiService.runDefaultTask(
-        "summarization",
-        prompt,
-        {
-          ...withAiSourceItems(logContext, [
-            root.rootId,
-            ...children.map((child) => child.childId)
-          ]),
-          operation: "hierarchy_summary",
-          workloadClass: "write-fast",
-          priority: "P2",
-          promptVersion: hierarchyAggregateSummaryPromptVersion,
-          sourceItemId: root.rootId,
-          documentId: root.documentId
-        },
+      // One call while the subparts' summaries fit the active writer's window; past it, consecutive
+      // batches combined by the same prompt until one call fits (plan decision 28).
+      budget ??= await this.summaryBudgetFor("hierarchy_summary");
+      const outcome = await summarizeSubpartsWithinBudget({
+        source: { kind: aggregateSourceLabel(root.rootType), title: root.rootTitle },
+        subparts: summarizedChildren.map((child) => ({
+          title: child.childTitle,
+          summary: child.summary
+        })),
+        budgetBytes: budget.bytes,
+        run: (prompt, step) =>
+          this.options.aiService.runDefaultTask(
+            "summarization",
+            prompt,
+            {
+              ...withAiSourceItems(logContext, [
+                root.rootId,
+                ...children.map((child) => child.childId)
+              ]),
+              operation: "hierarchy_summary",
+              workloadClass: "write-fast",
+              priority: "P2",
+              promptVersion: hierarchyAggregateSummaryPromptVersion,
+              sourceItemId: root.rootId,
+              documentId: root.documentId,
+              ...(step.batched ? { batchIndex: step.call } : {})
+            },
+            signal
+          ),
         signal
-      );
-      if (!execution) continue;
-      const summary = normalizeSummaryText(execution.output);
+      });
+      const execution = outcome?.executions.at(-1);
+      if (!outcome || !execution) continue;
+      const summary = outcome.summary;
       if (summary.length === 0) {
         await createSourceSummaryRepository(pool).clearCurrent(root.rootId);
         await createSourceItemRepository(pool).update(root.rootId, {
@@ -794,6 +856,7 @@ export class KnowledgeService {
           summaryGeneratedAt: null
         });
         updateGroupedChildSummary(grouped, root.rootId, null);
+        changedRootIds.push(root.rootId);
         continue;
       }
       const hierarchy = createHierarchicalIngestionRepository(pool);
@@ -814,7 +877,8 @@ export class KnowledgeService {
           promptVersion: hierarchyAggregateSummaryPromptVersion,
           batchId,
           childSummaryIds: summarizedChildren.map((child) => child.summaryId),
-          skippedSubpartCount: missingSummaryCount
+          skippedSubpartCount: missingSummaryCount,
+          ...batchedSummaryMetadata(outcome, budget)
         }
       });
       const persisted = await createSourceSummaryRepository(pool).create({
@@ -834,7 +898,8 @@ export class KnowledgeService {
           aggregate: true,
           batchId,
           childSummaryIds: summarizedChildren.map((child) => child.summaryId),
-          skippedSubpartCount: missingSummaryCount
+          skippedSubpartCount: missingSummaryCount,
+          ...batchedSummaryMetadata(outcome, budget)
         }
       });
       await createSourceItemRepository(pool).update(root.rootId, {
@@ -847,8 +912,9 @@ export class KnowledgeService {
         hash: persisted.outputHash
       });
       generatedCount += 1;
+      changedRootIds.push(root.rootId);
     }
-    return { generatedCount, reusedCount, blockedRoots };
+    return { generatedCount, reusedCount, blockedRoots, changedRootIds };
   }
 
   public async isHierarchicalRoot(sourceItemId: string): Promise<boolean> {
@@ -1076,6 +1142,21 @@ export class KnowledgeService {
     );
   }
 
+  /**
+   * Whether a model is routed to the knowledge-graph task. A catalog header's graph is replaced
+   * (its old chunk's mentions go with the chunk) only where it can be extracted again.
+   */
+  public async catalogGraphAvailable(): Promise<boolean> {
+    const ai = this.options.aiService;
+    if (typeof ai.taskRouteLocality !== "function") return false;
+    return (
+      (await ai.taskRouteLocality("knowledge-graph-generation", {
+        operation: "graph_source_chunks",
+        workloadClass: "write-quality"
+      })) !== null
+    );
+  }
+
   public async generateCatalogKnowledgeGraph(
     sourceItemId: string,
     documentId: string,
@@ -1235,7 +1316,7 @@ export class KnowledgeService {
               ...callContext,
               stage: "knowledge_graph_generation",
               workloadClass: "write-quality",
-              priority: "P2",
+              priority: context.priority ?? "P2",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
             signal
@@ -1297,7 +1378,7 @@ export class KnowledgeService {
                     ...callContext,
                     stage: "atomic_note_knowledge_graph_generation",
                     workloadClass: "write-quality",
-                    priority: "P2",
+                    priority: context.priority ?? "P2",
                     onProgress: (event) => context.onProgress?.(event.progress)
                   },
                   signal

@@ -471,7 +471,8 @@
       "topicName": "Topic naming",
       "topicAreas": "Topic Areas",
       "topicLabelEmbed": "Topic labels",
-      "topicGate": "Topic placement decision"
+      "topicGate": "Topic placement decision",
+      "catalogHeader": "Adding summaries to the search entries of books and papers"
     },
     "relations": {
       "link": "Linking relations",

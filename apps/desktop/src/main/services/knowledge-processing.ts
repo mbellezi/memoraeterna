@@ -1,6 +1,7 @@
 import { compareContent } from "./content-order.js";
 import { StructuredItemsError, salvageKnowledgeGraph, type GraphSalvage } from "./graph-salvage.js";
 import { renderPrompt, changedPromptIdentity } from "./prompt-runtime.js";
+import { combineWithinBudget } from "./summary-batching.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -170,6 +171,8 @@ export interface SummaryResult {
   mapReduce: boolean;
   executions: KnowledgeAiExecution[];
   skippedReason?: "too_short" | "non_content";
+  /** Levels of batches the partial summaries were combined in before the last call (0: one call). */
+  reductionLevels?: number;
 }
 
 export function normalizeSummaryText(output: unknown): string {
@@ -202,7 +205,12 @@ export async function generateSummaryFromChunks(
   chunks: ReadonlyArray<{ id: string; content: string }>,
   run: KnowledgeAiRunner,
   maxInputCharacters = 3_500,
-  minimumWordCount = defaultSummaryMinimumWordCount
+  minimumWordCount = defaultSummaryMinimumWordCount,
+  /**
+   * The most bytes one reduction call's prompt may have (plan decision 28), or how to find out when
+   * the partial summaries are there; null leaves the reduction as one call whatever its size.
+   */
+  promptBudgetBytes: number | (() => Promise<number>) | null = null
 ): Promise<SummaryResult | null> {
   const nonEmptyChunks = chunks.filter((chunk) => chunk.content.trim().length > 0);
   if (nonEmptyChunks.length === 0) return null;
@@ -236,7 +244,7 @@ export async function generateSummaryFromChunks(
     };
   }
 
-  const partials: string[] = [];
+  const partials: Array<{ text: string; chunkIds: string[] }> = [];
   const concepts: NonNullable<SummaryResult["concepts"]> = [];
   for (const [batchIndex, group] of groups.entries()) {
     const execution = await run(summaryPrompt(group, true), {
@@ -250,26 +258,47 @@ export async function generateSummaryFromChunks(
     executions.push(execution);
     const partial = normalizeSummaryText(execution.output);
     concepts.push(...summaryConcepts(execution.output, group));
-    if (partial.length > 0) partials.push(partial);
+    if (partial.length > 0)
+      partials.push({ text: partial, chunkIds: group.map((chunk) => chunk.id) });
   }
   if (partials.length === 0) {
     return { summary: "", mapReduce: true, executions, skippedReason: "non_content" };
   }
-  const reduction = await run(summaryReductionPrompt(partials), {
-    operation: "summary_reduce",
-    promptVersion: summaryPromptVersion,
-    batchIndex: groups.length,
-    attempt: 0,
-    chunkIds: nonEmptyChunks.map((chunk) => chunk.id)
+  // The partial summaries go to one call. Past the writer's budget (plan decision 28) they are
+  // combined in consecutive batches, recursively, until one call fits; within it, this is the one
+  // call it always was.
+  const budgetBytes =
+    typeof promptBudgetBytes === "function" ? await promptBudgetBytes() : promptBudgetBytes;
+  const reduced = await combineWithinBudget({
+    items: partials,
+    render: (batch) => summaryReductionPrompt(batch.map((partial) => partial.text)),
+    budgetBytes: budgetBytes ?? Number.POSITIVE_INFINITY,
+    run: async (step) => {
+      const reduction = await run(step.prompt, {
+        operation: "summary_reduce",
+        promptVersion: summaryPromptVersion,
+        batchIndex: groups.length + step.call,
+        attempt: 0,
+        chunkIds:
+          step.level === 0 && step.batches === 1
+            ? nonEmptyChunks.map((chunk) => chunk.id)
+            : step.items.flatMap((partial) => partial.chunkIds)
+      });
+      return reduction
+        ? { text: normalizeSummaryText(reduction.output), execution: reduction }
+        : null;
+    },
+    join: (batch, text) => ({ text, chunkIds: batch.flatMap((partial) => partial.chunkIds) })
   });
-  if (!reduction) return null;
-  executions.push(reduction);
-  const summary = normalizeSummaryText(reduction.output);
+  if (!reduced) return null;
+  executions.push(...reduced.executions);
+  const summary = reduced.item?.text ?? "";
   return {
     summary,
     concepts,
     mapReduce: true,
     executions,
+    ...(reduced.batched ? { reductionLevels: reduced.levels } : {}),
     ...(summary.length === 0 ? { skippedReason: "non_content" as const } : {})
   };
 }
@@ -285,6 +314,62 @@ export function buildAggregateSummaryPrompt(
       .map((subpart, index) => `[Subpart ${index + 1}: ${subpart.title}]\n${subpart.summary}`)
       .join("\n\n")
   });
+}
+
+export interface AggregateSummaryOutcome<E> {
+  summary: string;
+  executions: E[];
+  /** Levels of batches the subparts' summaries were combined in before the last call (0: one call). */
+  levels: number;
+  calls: number;
+}
+
+/**
+ * The aggregate summary of a source from its subparts' summaries. All of them go to one call, as
+ * they always did, while the prompt fits `budgetBytes` (derived from the writer's context window,
+ * `summaryBudget`); past it they are combined in consecutive batches by the same prompt, each batch
+ * standing in the next level for the span of titles it covers, until one call fits (plan decision
+ * 28). Resolves null when `run` resolves null (no model answered); the summary is empty when
+ * nothing substantive came back.
+ */
+export async function summarizeSubpartsWithinBudget<E extends { output: unknown }>(input: {
+  source: { kind: string; title: string };
+  subparts: ReadonlyArray<{ title: string; summary: string }>;
+  budgetBytes: number;
+  /** One call; `call` is its position among the calls of the combination. */
+  run: (prompt: string, info: { call: number; batched: boolean }) => Promise<E | null>;
+  signal?: AbortSignal | undefined;
+}): Promise<AggregateSummaryOutcome<E> | null> {
+  const combined = await combineWithinBudget({
+    items: input.subparts.map((subpart) => ({
+      ...subpart,
+      first: subpart.title,
+      last: subpart.title
+    })),
+    render: (batch) => buildAggregateSummaryPrompt(input.source, batch),
+    budgetBytes: input.budgetBytes,
+    run: async (step) => {
+      const execution = await input.run(step.prompt, {
+        call: step.call,
+        batched: step.level > 0 || step.items.length < input.subparts.length
+      });
+      return execution ? { text: normalizeSummaryText(execution.output), execution } : null;
+    },
+    // A batch stands for the span of subparts it covers, named by its first and last titles.
+    join: (batch, text) => {
+      const first = batch[0]!.first;
+      const last = batch.at(-1)!.last;
+      return { title: first === last ? first : `${first} – ${last}`, summary: text, first, last };
+    },
+    signal: input.signal
+  });
+  if (!combined) return null;
+  return {
+    summary: combined.item?.summary ?? "",
+    executions: combined.executions,
+    levels: combined.batched ? combined.levels : 0,
+    calls: combined.calls
+  };
 }
 
 export async function generateKnowledgeGraphFromAtomicNotes(

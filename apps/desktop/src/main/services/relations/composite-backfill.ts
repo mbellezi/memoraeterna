@@ -164,17 +164,17 @@ function readContinuation(job: JobRecord): {
     : { after: null, before: noProgress };
 }
 
-/** Runs one page of a backfill pass for the space the route writes to now. */
-export async function runCompositeBackfill(
-  deps: CompositeBackfillDeps,
-  job: JobRecord,
+/**
+ * The embedder of the header segments a composite is built from, for the work of a background job:
+ * at the priority `P3` that always yields to ingestion, for no ingestion run.
+ */
+export function compositeHeaderEmbedder(
+  generate: EmbeddingBatchGenerator,
+  job: Pick<JobRecord, "id">,
   signal: AbortSignal
-): Promise<JsonObject> {
-  const spaceKey = await deps.embeddingSpaceKey();
-  if (!spaceKey) return { skipped: "no_embedding_space" };
-  const pool = deps.getPool();
-  const embed: CompositeHeaderEmbedder = async (text, context) => {
-    const generated = await deps.generate([text], signal, {
+): CompositeHeaderEmbedder {
+  return async (text, context) => {
+    const generated = await generate([text], signal, {
       jobId: job.id,
       sourceItemId: context.sourceItemId,
       stage: "source_embedding",
@@ -191,6 +191,18 @@ export async function runCompositeBackfill(
       ...(generated.spaceKey ? { spaceKey: generated.spaceKey } : {})
     };
   };
+}
+
+/** Runs one page of a backfill pass for the space the route writes to now. */
+export async function runCompositeBackfill(
+  deps: CompositeBackfillDeps,
+  job: JobRecord,
+  signal: AbortSignal
+): Promise<JsonObject> {
+  const spaceKey = await deps.embeddingSpaceKey();
+  if (!spaceKey) return { skipped: "no_embedding_space" };
+  const pool = deps.getPool();
+  const embed = compositeHeaderEmbedder(deps.generate, job, signal);
   const { after, before } = readContinuation(job);
   const page = await backfillSourceComposites({
     pool,

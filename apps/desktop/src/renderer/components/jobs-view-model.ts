@@ -238,7 +238,8 @@ export function jobTypeMessageKey(type: string): MessageKey {
         "relation-link": "jobs.relations.link",
         "relation-retype": "jobs.relations.retype",
         "relation-promote": "jobs.relations.promote",
-        "relation-composite": "jobs.relations.composite"
+        "relation-composite": "jobs.relations.composite",
+        "catalog-header": "jobs.types.catalogHeader"
       } as Record<string, MessageKey>
     )[type] ?? "jobs.types.ingestion"
   );

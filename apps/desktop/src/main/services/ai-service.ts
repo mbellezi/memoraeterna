@@ -156,7 +156,9 @@ import {
   withAiTaskParameterDefaults,
   discoveredContextWindow,
   discoveredModelLimits,
-  estimateAiPlanningTokens
+  estimateAiPlanningTokens,
+  routeCapacity,
+  type TaskRouteCapacity
 } from "./ai-task-parameters.js";
 import type { MonitoringService } from "./monitoring-service.js";
 import { logStructuredError } from "./structured-logging.js";
@@ -1200,6 +1202,21 @@ export class AiService {
     const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
     if (!selection) return null;
     return isRemoteExecution(selection) ? "remote" : "local";
+  }
+
+  /**
+   * What the model a task is routed to can take in one call: the context window its calls are
+   * admitted against and the output they reserve, read without a call (plan decision 28). Work whose
+   * input grows with its source (a book's summary) sizes its calls by it before it plans. Null when
+   * no route serves the task.
+   */
+  public async taskRouteCapacity(
+    task: RoutedTask,
+    context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
+  ): Promise<TaskRouteCapacity | null> {
+    await this.ensureLegacyRouteMapping();
+    const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
+    return selection ? routeCapacity(task, selection, context.operation) : null;
   }
 
   public async pinOrganizationProfile(

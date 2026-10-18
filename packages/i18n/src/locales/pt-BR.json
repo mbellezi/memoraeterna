@@ -475,7 +475,8 @@
       "topicName": "Nomeação de tópicos",
       "topicAreas": "Áreas de tópicos",
       "topicLabelEmbed": "Rótulos de tópicos",
-      "topicGate": "Decisão de posicionamento em tópicos"
+      "topicGate": "Decisão de posicionamento em tópicos",
+      "catalogHeader": "Adicionando resumos às entradas de busca de livros e artigos"
     },
     "relations": {
       "link": "Vinculando relações",

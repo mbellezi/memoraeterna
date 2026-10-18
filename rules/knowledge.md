@@ -19,22 +19,20 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   navigation unit; a chunk is a search/AI unit; never substitute one for the other.
 - Importing stays useful without AI. The processing plan DAG has one owner in
   `@app/domain`; UI and integrations never keep a second copy.
-- Interactive imports and Library processing default to full knowledge when a
-  writer route is ready, otherwise to searchable processing (chunks and
-  embeddings, no generative AI); integrations use searchable processing.
-  Import-only stays an explicit choice. A finished import opens its source.
+- Interactive imports and Library processing default to full knowledge when a writer route is ready,
+  otherwise to searchable processing (chunks and embeddings, no generative AI); integrations use
+  searchable processing. Import-only stays an explicit choice. A finished import opens its source.
 - Saving source content or metadata creates revisions and never starts generative AI work.
   Reviewed or human-edited artifacts are never silently overwritten or deleted by reprocessing.
 
 ## Conversion
 
-- Web pages and HTML files (rendered fragments without `html`/`body` included)
-  use Defuddle, with the page text as the fallback; PDF, Office, EPUB,
-  OpenDocument and OCR images use the packaged Docling sidecar; other textual
-  formats use native converters; YouTube uses `youtubei.js`. Archives are
-  extracted with byte, entry, depth, compression and path-traversal limits.
-- Converters and structure detection never fetch remote resources a document
-  references; EPUB/HTML hrefs and fragments resolve safely inside the archive.
+- Web pages and HTML files (rendered fragments without `html`/`body` included) use Defuddle, with
+  the page text as the fallback; PDF, Office, EPUB, OpenDocument and OCR images use the packaged
+  Docling sidecar; other textual formats use native converters; YouTube uses `youtubei.js`.
+  Archives are extracted with byte, entry, depth, compression and path-traversal limits.
+- Converters and structure detection never fetch remote resources a document references; EPUB/HTML
+  hrefs and fragments resolve safely inside the archive.
 - Every textual source becomes normalized Markdown with engine, version, options,
   hashes and warnings recorded. Never report success for empty, corrupt or
   low-coverage output, and never circumvent passwords or DRM.
@@ -48,8 +46,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Derived knowledge
 
-- Summaries are versioned and traceable to source revision, model, prompt and
-  input hashes; long sources use map-reduce over chunks.
+- Summaries are versioned and traceable to source revision, model, prompt and input hashes; long
+  sources use map-reduce over chunks, combined in batches when past the active writer's window.
+- A hierarchy root's catalog header chunk carries the root's AI summary whatever order its jobs ran
+  in: a later summary rebuilds the chunk, vector and graph, and the root composite follows.
 - Atomic notes use validated structured output and link to their source, chunks and SourceSpans.
   They are active at birth with an AI-provenance badge (review is optional) and are embedded when
   created, so matching never meets a note without a vector. Human edits protect a note and
