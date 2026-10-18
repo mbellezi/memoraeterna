@@ -299,6 +299,27 @@ throughput, met by 0.08 s at one neighbour, would not hold. The rule did not cov
 neighbour for F3 (S1 time, quality and X3 stand as measured; the second-library check is recorded as not met, like
 X2) and moved two neighbours to F4, behind a batched or cheaper source judge that fits S1's time bar.
 
+### M2 outcome (T63, 2026-10-18/19)
+
+On the frozen configuration (helper 44d081e0, R1 passed in every run; runbook and outputs in `.cache/f3/m2/`):
+
+| Item | Result | Verdict |
+| --- | --- | --- |
+| X1 | S0, S1, S2, B1 held-out 27/28 each (mean 27.00, min 27), 0/35 forbidden in each; tuning 25, 24, 25, 25 of 26 | met |
+| X1 reported | GGUF (GS0) 26/28 at 0/35, as forecast; the Decisions samples were not measured (the account had no credit; dropped) | reported |
+| X2 | R_v9 loss 10.3% (10.3-11.0%) on S0's 137 pairs, m2 panel kappa 0.897 | not met (decision 31d) |
+| X3 | W for 200 notes: TP-G 2.72, TP-F 4.00 (239.9 s), TP-C200 2.86 and 2.87 (P0 queue p95 675 and 757 ms); TP-Local 7.68 (reported, 8.0); GGUF not run (forecast 5.2) | met |
+| X4 | contract 4/4; 0 explanation calls, no remote call outside typing and judging, 0 ranker output tokens, every typing in the band | met |
+| X5 | `phase4:e2e` sibling delays -4 to 280 ms; in S0 links commit while later roots decide | met |
+| X7 | 45.0 generative calls per chapter at 3,500-character batches, yield 105% of F1a (above) | met on the owner's re-based bar |
+| S1 time | 2.89 / 2.66 AI-call s and 1.60 / 1.44 calls per source (S0 / S1), 0 replayed; book pair SQL p95 47.2 ms | met |
+| S1 quality | source layer 27/28 and 28/28 held-out at 0/35, tuning 26/26 at 0/25, bridges 0 | met |
+| S1 pairs | golden pairs 3/3 source-linked; order replay over 2,000 orders 0 forbidden, 54/54 expected, with the 122-pair closure judged | met |
+| S1 second library | one neighbour 6, two neighbours 13 of 27 panel-positive pairs | not met; F4 (above) |
+| 5.6 | E6 replay 0 misses; `topics:e2e --synthetic`; `db:topics:verify`; golden-small-f2 G1 digests unchanged; topic tree untouched and 0 roots moved in every run | met |
+
+Spend: about 2.49M Codex tokens in F3 (cap 2.9M); the Decisions API US$ 0 in M2.
+
 ## Measurement
 
 ### Exit criteria

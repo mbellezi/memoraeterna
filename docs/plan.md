@@ -685,7 +685,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [x] T62 Soak harness with fault-injecting fake remote providers, and the 4 h pre-soak (gate P).
 
 Wave 4 (gate X at the end):
-- [ ] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
+- [x] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
 - [ ] T64 24 h soak (X6), run by the orchestrator.
 - [ ] T64r Soak report and failure audit.
 - [ ] T65 Rule, stack and runbook sync (`rules/`, `STACK.md`, `docs/golden-library.md`).
