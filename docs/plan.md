@@ -112,6 +112,11 @@ concurrency and automatic correction.
     The local-model benchmark of decision 25 and any runtime-upgrade spike are measured and recorded only (a
     document, no catalog, default or preset change, no merge); the owner decides on them after the program.
     Hardware detection may ship, but its model suggestions stay informative or off until then.
+27. **A book's catalog header always carries its summary** (2026-10-18): a hierarchy root's catalog header
+    chunk includes the root's AI summary whatever the order its jobs ran in. When the summary is written or
+    changes after the header was built, the header chunk is rebuilt, re-embedded and its knowledge graph
+    re-extracted (the old chunk's mentions replaced), and the root composite follows; existing libraries are
+    brought up to date once. Built in F3 after T53f (it moves no F3 baseline: a one-batch import already does it).
 
 ## 3. The five swaps
 
