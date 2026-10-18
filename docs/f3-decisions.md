@@ -218,6 +218,29 @@ Recorded at gate 0 (2026-10-17; T43b, T44 `docs/spikes/f3-m0.md`, T46a scores in
 - **E6 non-regression:** the `e2e-plos` replay now misses 5 generative note-matching requests after T48/T49 (retrieval
   changed); per R3 the F2 replays are held to 0 *extraction* misses and E6 is re-recorded under F3 by T55k.
 
+### Calibration outcome (owner, 2026-10-18; plan decision 29)
+
+T58 applied D18 to the panel fit labels and M1's tuning scores: no p_apply qualified (the top 18 fit labels were all
+positive but Kish n_eff was 11.3; independently verified). The owner chose a pre-registered label top-up (80 pool B/C
+pairs in the high strata, `.cache/f3/labels/topup-2026-10-18.md`; three blind Opus judges, kappa 0.895, consistency
+10/10) with the rule unchanged. With 241 fit labels (R_v9 pairs removed from every pool, as 5.2 requires) D18 finds
+neither an apply nor a suggest band: best cross-validated weighted precision 0.739 (pool A 0.94, B 0.83, C about 0.5).
+The v9 generative decide on Codex is no better (0.68), nor a ranker filter plus v9, nor cross-root pairs only, nor a
+suggest bar of 0.75 (0.70 keeps about 10% of the positives).
+
+The owner decided (plan decision 29), amending D18 and D23:
+- **No apply band in F3.** Every automatic relation is a suggestion; the owner's Keep and Remove make it final.
+- **The decide threshold is chosen on the fixture tuning partition**: the edge that finds the most expected tuning root
+  pairs at 0 forbidden (ties: the higher edge), on the rule, instruction, template and aggregation the panel selection
+  picked; frozen with T61's parity like any calibration (D3); X1 and X2 stay as written (they count the accept band).
+- **Panel precision, ECE and Brier are reported per decider, not gating.** F6 recalibrates from the owner's Keep and
+  Remove on real use.
+- **D23:** typed suggestions promote to *suggested* source relations (a promoted source relation is a suggestion until
+  the owner keeps it); the graph and the ego-graph draw suggestions distinctly.
+- **Typer experiment:** a `relations.type` revision carrying the panel's strict "related" criterion is measured on the
+  labelled pairs of the band (live Codex, about 60-100k tokens); if typed suggestions reach weighted precision 0.80
+  with 0 forbidden, they form a "confirmed" tier shown above plain suggestions.
+
 ## Measurement
 
 ### Exit criteria

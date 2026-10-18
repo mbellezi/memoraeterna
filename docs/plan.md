@@ -123,6 +123,14 @@ concurrency and automatic correction.
     summaries are combined in consecutive batches, recursively, until one call fits. The budget depends on the
     model in use (large for Codex, smaller for a local writer); no model changes (decision 26). Built with
     decision 27's task; sources that fit in one call keep today's requests.
+29. **Automatic relations are suggestions** (2026-10-18): with today's models no decider reaches F3's
+    panel precision bars on real-library text (best about 0.7; the fixture is matched well), so F3 applies no
+    relation automatically. The decide threshold is chosen on the fixture tuning partition (most expected root
+    pairs found at 0 forbidden), every automatic relation is shown as a suggestion, typed suggestions promote to
+    suggested source relations, the graph draws suggestions distinctly, and the owner's Keep and Remove make a
+    relation final. Panel precision and calibration are reported, not gating; F6 recalibrates from the owner's
+    real Keep and Remove. A typer prompt with the panel's strict criterion is tested on live Codex (about
+    60-100k tokens); if typed suggestions reach precision 0.80 they form a "confirmed" tier.
 
 ## 3. The five swaps
 
