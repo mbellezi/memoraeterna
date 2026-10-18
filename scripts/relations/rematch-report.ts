@@ -242,6 +242,7 @@ export function renderRematchReport(summary: RematchSummary): string {
         "Class",
         "Lane",
         "Calls",
+        "Replayed",
         "Failed",
         "Repairs",
         "In",
