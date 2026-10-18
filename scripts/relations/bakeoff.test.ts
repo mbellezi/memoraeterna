@@ -721,6 +721,14 @@ describe("the typer check pairs (G25)", () => {
       ["text a1", "a"],
       ["text a2", "b"]
     ]);
+    // R_v9 pairs are evaluation-only (spec 5.2): the check never draws one.
+    const withoutRv9 = typerCheckPairs({
+      items,
+      text: (id) => `text ${id}`,
+      count: 60,
+      excluded: new Set([notePairKey("a2", "b2")])
+    });
+    expect(withoutRv9.map((pair) => pair.a)).toEqual(["text a1"]);
   });
 });
 

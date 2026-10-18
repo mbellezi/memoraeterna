@@ -2666,19 +2666,22 @@ export const directedWriteTypes = [
 /**
  * The position-bias check of G25: panel-positive fit-split pairs of pools A-C with a directed majority
  * type and direction (the eval split stays untouched for the clean check), seeded, rendered as the
- * decider reads them (`a` the lower id).
+ * decider reads them (`a` the lower id). R_v9 pairs (`excluded`, note pair keys) are never drawn:
+ * they are evaluation-only (spec 5.2).
  */
 export function typerCheckPairs(input: {
   items: readonly LabelItem[];
   text: (id: string) => string | undefined;
   count?: number;
   seed?: number;
+  excluded?: ReadonlySet<string>;
 }): Array<{ id: string; a: string; b: string; type: string; subject: "a" | "b" }> {
   const eligible = input.items
     .filter(
       (item) =>
         item.kind === "note" &&
         (pools as readonly string[]).includes(item.pool ?? "") &&
+        !input.excluded?.has(notePairKey(item.lo, item.hi)) &&
         item.split === "fit" &&
         item.related === true &&
         (directedWriteTypes as readonly string[]).includes(item.type ?? "") &&
@@ -2812,7 +2815,7 @@ export const usage = `Usage: npx tsx scripts/relations/bakeoff.ts <tuning-pairs|
          [--population-c ...] [--frame-b ...] [--frame-c ...] [--coarse]
       population weights by cell (3.9): R_v9 pairs out of every pool, pools B and C by (T45 stratum, top-up band),
       pool A by stratum; --coarse: T57's (pool, stratum) cells everywhere (a sensitivity)
-  typer-pairs [--body <chars>] [--texts <note-texts.json>] [--labels ...] [--proposal ...] [--out <pairs.json>]
+  typer-pairs [--body <chars>] [--texts <note-texts.json>] [--labels ...] [--rv9-relations ...] [--proposal ...] [--out <pairs.json>]
   freeze --parity <parity.json> [--proposal <proposal.json>] [--runtimes mlx,gguf] [--baselines mlx=<file>] [--refreeze]
   gate-f [--x1-export <export.json> --x1-scores <scores.json>] [--rv9-pass <tally.json>[,<tally.json>]]
          [--typer-report <typer-check.json>] [--labels ...] [--proposal ...] [--mapping ...] [--label-scores <dir>]
@@ -2910,9 +2913,11 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
     const fixture = labelFixtureSchema.parse(
       JSON.parse(await readFile(resolve(values.labels ?? defaultPaths.labels), "utf8"))
     );
+    const rv9 = await readRv9Pairs(resolve(values["rv9-relations"] ?? defaultPaths.rv9Relations));
     const pairs = typerCheckPairs({
       items: fixture.items,
-      text: (id) => texts.rendered.get(id)?.text
+      text: (id) => texts.rendered.get(id)?.text,
+      excluded: rv9.pairs
     });
     const out = resolve(values.out ?? join(freezeDirectory, "typer-check-pairs.json"));
     await writeJsonFile(out, { pairs });
