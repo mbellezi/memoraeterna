@@ -149,6 +149,8 @@ export function renderRematchReport(summary: RematchSummary): string {
           `${summary.profile.name}${summary.profile.kind ? ` (${summary.profile.kind})` : ""}`
         ],
         ["Lanes", summary.lanes.mode],
+        ["Source discovery", summary.discovery],
+        ["Candidate lists", summary.candidates === "record" ? "kept (debug mode on)" : "not kept"],
         [
           "Background",
           summary.background === "matched" ? `matched (${summary.backgroundSeeded} roots)` : "none"

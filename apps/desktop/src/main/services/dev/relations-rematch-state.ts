@@ -274,6 +274,25 @@ export async function seedBackgroundMatchState(
   return nearest.rows.length;
 }
 
+// --- candidate recording ----------------------------------------------------------------------------
+
+/**
+ * Turns the profile's debug mode on, so the matcher keeps every note's candidate list (ranks, signals,
+ * the guard, the decision source and band) in `similarity_debug_*` beside the raw scores of
+ * `relation_decisions` (T57's M1 exports them for T58). Debug mode adds debug and monitoring rows and
+ * changes no request. Resolves to false when the profile has no saved app preferences to change: the
+ * app would write its defaults (debug off) on first read, so a run that needs the candidates stops.
+ */
+export async function enableCandidateRecording(db: Queryable): Promise<boolean> {
+  const result = await db.query<{ debugMode: string | null }>(
+    `update settings
+        set value = jsonb_set(value, '{debugMode}', 'true'::jsonb), updated_at = now()
+      where key = 'app.preferences'
+      returning value ->> 'debugMode' as "debugMode"`
+  );
+  return result.rows.length === 1 && result.rows[0]?.debugMode === "true";
+}
+
 // --- link jobs and the facts of a run ---------------------------------------------------------------
 
 /** The job types a run waits for: the link job of a root and the source relation jobs it queues. */

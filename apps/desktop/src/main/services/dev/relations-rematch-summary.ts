@@ -113,6 +113,9 @@ export const RematchSummarySchema = z
       .strict()
       .nullable(),
     background: z.enum(["none", "matched"]),
+    /** T57's M1 knobs: nearest-source discovery (off judges no source) and candidate recording. */
+    discovery: z.enum(["on", "off"]).default("on"),
+    candidates: z.enum(["off", "record"]).default("off"),
     lanes: z.object({ mode: z.enum(["serial", "product"]) }).strict(),
     profile: z.object({ name: z.string(), kind: z.string().nullable() }).strict(),
     startedAt: timestamp,

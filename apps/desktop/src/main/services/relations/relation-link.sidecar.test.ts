@@ -505,6 +505,22 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     }
   );
 
+  it("types the pairs and judges no source with discovery off (T57's M1)", async () => {
+    const a = await seedSource("Tau");
+    const b = await seedSource("Upsilon2");
+    const t1 = await seedNote(a, "Tau one");
+    const u1 = await seedNote(b, "Upsilon2 one");
+    await park(a.sourceId, a.sourceId, [decided(t1, [{ with: u1 }])]);
+    const off = linker({ runtime: { drain: true, remoteCallsOff: false, discoveryOff: true } });
+    const result = await off.instance.link(await claim(a.sourceId), signal());
+    // The typing call went to the writer and the relation is typed; no discovery step ran.
+    expect(off.ai).toHaveBeenCalledOnce();
+    expect(await relations()).toEqual([expect.objectContaining({ type: "supports" })]);
+    expect(result).toMatchObject({ typingCalls: 1, applied: 1, untyped: 0 });
+    expect(result.discovery).toEqual({ status: "deferred", reason: "discovery_off" });
+    expect(off.discovered).toEqual([]);
+  });
+
   it("queues the discovery the daily cap deferred for the next local day, and runs it then", async () => {
     const a = await seedSource("Chi");
     const b = await seedSource("Psi");

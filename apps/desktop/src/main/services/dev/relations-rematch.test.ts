@@ -114,6 +114,8 @@ describe("the re-match knobs", () => {
       mappingPath: "/repo/.cache/golden/matching-fixture/mapping.json",
       rootsPath: "/repo/.cache/f3/roots.json",
       background: "matched",
+      discovery: "on",
+      candidates: "off",
       digestOverride: { sha256: "b".repeat(64), notes: 138 },
       outDirectory: "/repo/.cache/f3/rematch/x",
       drainTimeoutMs: 60_000,
@@ -128,8 +130,27 @@ describe("the re-match knobs", () => {
     });
   });
 
+  it("read the discovery and candidate-list knobs of T57's M1", () => {
+    expect(readRematchEnvironment(knob, base)).toMatchObject({
+      discovery: "on",
+      candidates: "off"
+    });
+    expect(
+      readRematchEnvironment(
+        {
+          ...knob,
+          MEMORA_RELATIONS_REMATCH_DISCOVERY: "off",
+          MEMORA_RELATIONS_REMATCH_CANDIDATES: "record"
+        },
+        base
+      )
+    ).toMatchObject({ discovery: "off", candidates: "record" });
+  });
+
   it("refuse a value they cannot read", () => {
     for (const extra of [
+      { MEMORA_RELATIONS_REMATCH_DISCOVERY: "maybe" },
+      { MEMORA_RELATIONS_REMATCH_CANDIDATES: "all" },
       { MEMORA_RELATIONS_REMATCH: "arrival:soon" },
       { MEMORA_RELATIONS_REMATCH_BACKGROUND: "some" },
       { MEMORA_RELATIONS_REMATCH_DIGEST: "abc:12" },
@@ -337,8 +358,10 @@ describe("preparing a run", () => {
       ["Alpha", "tuning"],
       ["Beta", "holdout"]
     ]);
-    // Its link jobs drain one at a time in arrival order, as in a golden run (D24).
+    // Its link jobs drain one at a time in arrival order, as in a golden run (D24), discovering
+    // unless the run says otherwise.
     expect(relationLinkRuntime().drain).toBe(true);
+    expect(relationLinkRuntime().discoveryOff).toBe(false);
     expect(
       statements.every(
         (statement) => statement.startsWith("select") || statement.startsWith("with")

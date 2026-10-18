@@ -130,6 +130,17 @@ describe("the link runtime of golden and re-match runs", () => {
     resetRelationLinkRuntime();
     expect(relationLinkRuntime()).toEqual({ drain: false, remoteCallsOff: false });
   });
+
+  it("switches nearest-source discovery off alone, for T57's M1: typing stays on", () => {
+    setRelationLinkRuntime({ drain: true, discoveryOff: true });
+    expect(relationLinkRuntime()).toEqual({
+      drain: true,
+      remoteCallsOff: false,
+      discoveryOff: true
+    });
+    resetRelationLinkRuntime();
+    expect(relationLinkRuntime().discoveryOff).toBeUndefined();
+  });
 });
 
 describe("what a run hands its link job", () => {

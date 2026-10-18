@@ -63,6 +63,8 @@ export interface RematchPorts {
   }): Promise<ClearedCounts>;
   /** Records the background roots as matched; resolves to how many. */
   seedBackground(rootIds: readonly string[]): Promise<number>;
+  /** Keeps every note's candidate list from now on (debug mode); false when it cannot be turned on. */
+  recordCandidates(): Promise<boolean>;
   /** The notes of a record, in the order ingestion matches them. */
   noteIds(recordId: string): Promise<string[]>;
   /** The call the ingestion stage makes for a record's notes (`matchAtomicNotes`). */
@@ -85,6 +87,10 @@ export interface RematchRunInput {
   plan: RematchPlan;
   mode: RematchMode;
   background: "none" | "matched";
+  /** `off`: no nearest-source discovery (the link runtime says so); typing and promotion run. */
+  discovery: "on" | "off";
+  /** `record`: the candidate lists are kept for the export (T57). */
+  candidates: "off" | "record";
   digest: RematchSummary["digest"];
   lanesMode: "serial" | "product";
   /** How long the link jobs may take to drain after the last release. */
@@ -141,6 +147,11 @@ export async function runRematch(
         "Note matching has no validated decider yet (the ranker waits for validation)."
       );
     deciderKey = key;
+    // Before the clear: a run that cannot keep its candidates stops with the library untouched.
+    if (input.candidates === "record" && !(await ports.recordCandidates()))
+      throw new Error(
+        "The candidate lists cannot be kept: the profile has no saved app preferences to turn debug mode on in."
+      );
     const released = plan.order.map((root) => root.id);
     const background = input.background === "matched" ? plan.others.map((root) => root.id) : [];
     cleared = await ports.clear({
@@ -325,6 +336,8 @@ function summarize(context: {
           ? { kind: "manifest", seed: null }
           : { kind: "seeded", seed: input.mode.order.seed },
     background: input.background,
+    discovery: input.discovery,
+    candidates: input.candidates,
     lanes: { mode: input.lanesMode },
     profile: input.profile,
     startedAt: startedAt.toISOString(),

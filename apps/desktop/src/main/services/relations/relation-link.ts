@@ -578,7 +578,7 @@ const emptyCounts = (): RelationLinkCounts => ({
 
 /** Why discovery did not run in this link job. */
 export type DiscoveryDeferral =
-  "nothing_new" | "records_pending" | "remote_calls_off" | "daily_cap";
+  "nothing_new" | "records_pending" | "remote_calls_off" | "discovery_off" | "daily_cap";
 
 export class RelationLinker {
   private readonly config: RelationsConfig;
@@ -1063,6 +1063,7 @@ export class RelationLinker {
     // Runs whose plans stop at note matching parked only for their pairs (D21).
     if (!queued && !input.runs.some(requestsSourceDiscovery))
       return { summary: { status: "skipped", reason: "not_in_plan" } };
+    if (input.runtime.discoveryOff) return deferred("discovery_off");
     if (input.runtime.remoteCallsOff) return deferred("remote_calls_off");
     const pool = this.deps.getPool();
     // A book's discovery runs once its last record has linked (3.11 step 5).

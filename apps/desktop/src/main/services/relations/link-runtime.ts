@@ -6,6 +6,8 @@
 // prompt is a function of the arrival order and two replays give the same relations.
 // `MEMORA_GOLDEN_RELATIONS=local` also switches relation remote calls off for a non-regression
 // replay (R3): pairs with no cached typing are persisted untyped and discovery is deferred.
+// `MEMORA_RELATIONS_REMATCH_DISCOVERY=off` (T57's M1) switches nearest-source discovery off alone:
+// typing and promotion stay on, so a run measures the note layer and its typing with no source call.
 
 export const goldenRelationsKnob = "MEMORA_GOLDEN_RELATIONS";
 
@@ -20,6 +22,11 @@ export interface RelationLinkRuntime {
   drain: boolean;
   /** No remote relation call: untyped persistence, discovery deferred. */
   remoteCallsOff: boolean;
+  /**
+   * No nearest-source discovery (no source judge call); typing and promotion run as usual. Absent
+   * means on: only T57's M1 re-match sets it.
+   */
+  discoveryOff?: boolean;
 }
 
 export const productLinkRuntime: Readonly<RelationLinkRuntime> = Object.freeze({

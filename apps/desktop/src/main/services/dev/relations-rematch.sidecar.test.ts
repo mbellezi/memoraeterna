@@ -25,6 +25,7 @@ import {
   clearRelationState,
   contentDigest,
   countOpenLinkJobs,
+  enableCandidateRecording,
   listLibraryRoots,
   readNotesDigest,
   readRunFacts,
@@ -440,6 +441,25 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
     expect(await seedBackgroundMatchState(pool, [])).toBe(0);
   });
 
+  it("turns debug mode on in the saved app preferences, and only there", async () => {
+    // No saved preferences: the app would write its defaults, so nothing is invented here.
+    await pool.query("delete from settings where key = 'app.preferences'");
+    expect(await enableCandidateRecording(pool)).toBe(false);
+    expect((await pool.query("select 1 from settings where key = 'app.preferences'")).rows).toEqual(
+      []
+    );
+    await pool.query(
+      `insert into settings (key, value) values ('app.preferences', '{"debugMode": false, "language": "pt-BR"}')`
+    );
+    expect(await enableCandidateRecording(pool)).toBe(true);
+    expect(
+      (await pool.query("select value from settings where key = 'app.preferences'")).rows[0]?.value
+    ).toEqual({ debugMode: true, language: "pt-BR" });
+    // Again: still on, nothing else changes.
+    expect(await enableCandidateRecording(pool)).toBe(true);
+    await pool.query("delete from settings where key = 'app.preferences'");
+  });
+
   it("counts the link jobs a run waits for and reads the facts of a run", async () => {
     const since = new Date(Date.now() - 1_000);
     const jobs = createJobRepository(pool);
@@ -484,6 +504,7 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
         deciderKey: async () => "key-now",
         clear: (input) => clearRelationState(pool, input),
         seedBackground: (rootIds) => seedBackgroundMatchState(pool, rootIds),
+        recordCandidates: () => enableCandidateRecording(pool),
         noteIds: async (recordId) =>
           (await repository.listBySourceItem(recordId))
             .filter((entry) => entry.status !== "rejected")
@@ -542,6 +563,8 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
       plan,
       mode: { kind: "arrival", order: { kind: "manifest" } },
       background: "none",
+      discovery: "on",
+      candidates: "off",
       digest: {
         expected: { notes: 8, sha256: "a".repeat(64) },
         actual: { notes: 8, sha256: "a".repeat(64) }

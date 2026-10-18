@@ -47,6 +47,8 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
   mode: "arrival",
   order: { kind: "seeded", seed: 20261031 },
   background: "none",
+  discovery: "on",
+  candidates: "off",
   lanes: { mode: "serial" },
   profile: { name: "env-f-s1", kind: "env-f" },
   startedAt: "2026-10-17T10:00:00.000Z",
@@ -136,6 +138,8 @@ describe("the re-match report", () => {
     expect(markdown).toContain("arrival, seed 20261031");
     expect(markdown).toContain("env-f-s1 (env-f)");
     expect(markdown).toContain("| Lanes | serial |");
+    expect(markdown).toContain("| Source discovery | on |");
+    expect(markdown).toContain("| Candidate lists | not kept |");
     expect(markdown).toContain("4 of 4 (12 notes planned, 1 roots without notes)");
     expect(markdown).toContain("noteRelations 137, sourceRelations 1");
     // T0 1 s, T1 61 s, a 1-minute span, 12 notes, and 1,000 s for 200 notes (16.67 min).

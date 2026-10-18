@@ -87,6 +87,10 @@ function harness(
       events.push(`seed:${rootIds.join(",")}`);
       return rootIds.length;
     },
+    recordCandidates: async () => {
+      events.push("record-candidates");
+      return true;
+    },
     noteIds: async (recordId) => [`${recordId}-n1`],
     matchRecord: async (input): Promise<MatchRecordResult> => {
       matches.push(input);
@@ -134,6 +138,8 @@ function input(
     plan,
     mode: arrival,
     background: "none",
+    discovery: "on",
+    candidates: "off",
     digest: { expected: digest, actual: digest },
     lanesMode: "serial",
     drainTimeoutMs: 60_000,
@@ -163,6 +169,35 @@ describe("a re-match run", () => {
     expect(summary.cleared).toEqual(cleared);
     expect(summary.deciderKey).toBe("decider-key");
     expect(summary.matching).toEqual({ decided: 4, accepted: 4 });
+  });
+
+  it("keeps the candidate lists before it clears, and says which knobs it ran with", async () => {
+    const h = harness();
+    const summary = await runRematch(
+      h.ports,
+      input(h, buildRematchPlan(library(), arrival), { discovery: "off", candidates: "record" })
+    );
+    expect(h.events.slice(0, 3)).toEqual(["decider", "record-candidates", "clear:all"]);
+    expect(summary).toMatchObject({ outcome: "completed", discovery: "off", candidates: "record" });
+    // The default run keeps neither.
+    const plain = harness();
+    const defaults = await runRematch(
+      plain.ports,
+      input(plain, buildRematchPlan(library(), arrival))
+    );
+    expect(plain.events).not.toContain("record-candidates");
+    expect(defaults).toMatchObject({ discovery: "on", candidates: "off" });
+  });
+
+  it("stops before it clears when the candidate lists cannot be kept", async () => {
+    const h = harness({ recordCandidates: async () => false });
+    const summary = await runRematch(
+      h.ports,
+      input(h, buildRematchPlan(library(), arrival), { candidates: "record" })
+    );
+    expect(summary.outcome).toBe("failed");
+    expect(summary.error).toContain("candidate lists cannot be kept");
+    expect(h.events.some((event) => event.startsWith("clear"))).toBe(false);
   });
 
   it("shows retrieval only the roots released so far, a snapshot for each call", async () => {

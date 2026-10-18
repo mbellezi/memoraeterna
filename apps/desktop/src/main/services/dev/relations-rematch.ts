@@ -13,6 +13,10 @@
 //   MEMORA_RELATIONS_REMATCH_MAPPING=<file>     fixture mapping (partitions); default for an ENV-F profile
 //   MEMORA_RELATIONS_REMATCH_ROOTS=<file>       roots to release (titles or IDs, in manifest order)
 //   MEMORA_RELATIONS_REMATCH_BACKGROUND=matched the roots left out are already matched (TP-C200)
+//   MEMORA_RELATIONS_REMATCH_DISCOVERY=on|off   off: no nearest-source discovery (no source judge call);
+//                                              typing and promotion stay on (default on) (T57's M1)
+//   MEMORA_RELATIONS_REMATCH_CANDIDATES=off|record  record: turns the clone's debug mode on, so every
+//                                              note's candidate list is kept for the export (default off)
 //   MEMORA_RELATIONS_REMATCH_DIGEST=<sha256>:<notes>   the pinned notes digest, when the profile has none
 //   MEMORA_RELATIONS_REMATCH_OUT=<folder in .cache>    where the summary goes
 //   MEMORA_RELATIONS_REMATCH_DRAIN_MS=<n>       how long the link jobs may take to drain
@@ -47,6 +51,7 @@ import { runRematch, type CassetteFacts, type RematchPorts } from "./relations-r
 import {
   clearRelationState,
   countOpenLinkJobs,
+  enableCandidateRecording,
   listLibraryRoots,
   readNotesDigest,
   readRunFacts,
@@ -102,6 +107,8 @@ export interface RematchEnvironment {
   mappingPath: string | null;
   rootsPath: string | null;
   background: "none" | "matched";
+  discovery: "on" | "off";
+  candidates: "off" | "record";
   digestOverride: NotesDigest | null;
   outDirectory: string | null;
   drainTimeoutMs: number;
@@ -153,6 +160,12 @@ export function readRematchEnvironment(
   const background = env[`${rematchKnob}_BACKGROUND`]?.trim() || "none";
   if (background !== "none" && background !== "matched")
     throw new RematchRefusal("invalidValue", `${rematchKnob}_BACKGROUND must be none or matched`);
+  const discovery = env[`${rematchKnob}_DISCOVERY`]?.trim() || "on";
+  if (discovery !== "on" && discovery !== "off")
+    throw new RematchRefusal("invalidValue", `${rematchKnob}_DISCOVERY must be on or off`);
+  const candidates = env[`${rematchKnob}_CANDIDATES`]?.trim() || "off";
+  if (candidates !== "off" && candidates !== "record")
+    throw new RematchRefusal("invalidValue", `${rematchKnob}_CANDIDATES must be off or record`);
   const rawDigest = env[`${rematchKnob}_DIGEST`]?.trim();
   const digest = rawDigest ? /^([0-9a-f]{64}):(\d+)$/u.exec(rawDigest) : null;
   if (rawDigest && !digest)
@@ -168,6 +181,8 @@ export function readRematchEnvironment(
     mappingPath: path(`${rematchKnob}_MAPPING`),
     rootsPath: path(`${rematchKnob}_ROOTS`),
     background,
+    discovery,
+    candidates,
     digestOverride: digest ? { sha256: digest[1]!, notes: Number(digest[2]) } : null,
     outDirectory,
     drainTimeoutMs:
@@ -309,6 +324,7 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
     deciderKey: () => knowledge.currentRelationDeciderKey(),
     clear: (input) => clearRelationState(pool, input),
     seedBackground: (rootIds) => seedBackgroundMatchState(pool, rootIds),
+    recordCandidates: () => enableCandidateRecording(pool),
     // The same notes, in the same order, as the supervisor's matching stage.
     noteIds: async (recordId) =>
       (await createAtomicNoteRepository(pool).listBySourceItem(recordId))
@@ -478,6 +494,8 @@ export async function prepareRelationsRematch(
       plan,
       mode: environment.mode,
       background: environment.background,
+      discovery: environment.discovery,
+      candidates: environment.candidates,
       digest: { expected, actual },
       lanesMode,
       drainTimeoutMs: environment.drainTimeoutMs,
@@ -492,7 +510,8 @@ export async function prepareRelationsRematch(
   });
   // The link jobs drain one at a time in arrival order, as in a golden run (D24, link-runtime.ts):
   // every prompt is a function of the release order, and the run calls under no daily cap.
-  setRelationLinkRuntime({ drain: true });
+  // `discovery=off` (T57's M1) defers every root's discovery, so the run makes no source judge call.
+  setRelationLinkRuntime({ drain: true, discoveryOff: environment.discovery === "off" });
   return {
     plan,
     environment,
