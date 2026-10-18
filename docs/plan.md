@@ -107,6 +107,11 @@ concurrency and automatic correction.
     models where they work well (MLX on Apple Silicon, GGUF on Windows), efficient, very cheap cloud models where they do not (with price and an estimated monthly cost) — with
     alternatives, never blocking. Research and an on-device benchmark on the owner's 64 GB Mac come first (any
     model download is approved by the owner); the first run uses it in F4 and Settings v2 shows it in F5.
+26. **No new model variable until the program ends** (2026-10-18): every phase keeps today's models (writer
+    gpt-5.6-luna on the Codex route, Qwen3-Embedding-0.6B and Qwen3-Reranker-0.6B), quantizations and runtimes.
+    The local-model benchmark of decision 25 and any runtime-upgrade spike are measured and recorded only (a
+    document, no catalog, default or preset change, no merge); the owner decides on them after the program.
+    Hardware detection may ship, but its model suggestions stay informative or off until then.
 
 ## 3. The five swaps
 
