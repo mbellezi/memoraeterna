@@ -241,6 +241,17 @@ The owner decided (plan decision 29), amending D18 and D23:
   labelled pairs of the band (live Codex, about 60-100k tokens); if typed suggestions reach weighted precision 0.80
   with 0 forbidden, they form a "confirmed" tier shown above plain suggestions.
 
+### Gate outcomes decided by the owner (2026-10-18; plan decision 31)
+
+- Gate F, local deciders (freeze 745469e5): X1 27/28 at 0/35 met; X2 R_v6 0.200 and R_v9 0.095 not met (recorded,
+  revisited by F6); typer direction 0.567 / swap 0.417 not met: automatic relations carry no direction.
+- Gate F, Decisions decider (frozen from the product's own requests, ae14630a): X1 28/28 at 0/35; X2 R_v9 0.022-0.029
+  met, R_v6 0.114 not met (recorded); its apply band (CV precision 1.000, Wilson 0.890 at the pre-registered seed,
+  present at 19 of 40 other seeds) applies automatically by the owner's choice.
+- Gate P (pre-soak presoak4-20261018T0931, 2.7 h, every injected fault ran): deadlines, stuck jobs, swap, P0 wait,
+  breaker, helper restarts and remote deadlines met; the repair bar sets aside the local writer's structured calls
+  (8-19% invalid output; JSON-constrained decoding moves to F4).
+
 ## Measurement
 
 ### Exit criteria

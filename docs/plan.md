@@ -139,6 +139,15 @@ concurrency and automatic correction.
     opt-in decider in the Hybrid and Cloud presets: its own frozen calibration, automatic apply in its apply band,
     suggestions below, the local ranker as candidate filter and fallback, a Platform key and a privacy notice in
     Settings. The Local preset keeps decision 29. This is decision 26's owner-approved exception.
+31. **F3 gate outcomes decided** (2026-10-18): (a) the gate P repair bar sets aside every structured call of the
+    local writer (the MLX 9B writer returns invalid structured output in 8-19% of calls, schema mode none); F4
+    builds JSON-constrained decoding in the MLX helper (our code; no model or library change) with its own
+    measurement; (b) automatic relations carry no direction (no arrow; the typer reads direction from note
+    position, 0.57 against 0.85): direction comes from the owner when keeping a relation, or from the Decisions
+    decider when its two directional scores differ clearly (about 0.78); (c) the Decisions decider applies
+    automatically in its frozen apply band (frozen from the product's own requests, fragile across fold seeds:
+    the owner accepted it); (d) X2 (reverse-only losses, mostly `extends`) is recorded as not met in F3 and
+    revisited by F6's recalibration from real Keep and Remove.
 
 ## 3. The five swaps
 
@@ -706,6 +715,10 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
 - [ ] Drop the legacy tables the F2 legacy wipe emptied, with their insert fence, and the source-deletion and
       `jobRepository` guards on them (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
       are removed in F2 (Q12).
+- [ ] JSON-constrained decoding in the MLX helper for structured output (decision 31a): our helper code, no model or
+      library change; measured on the local writer's structured calls (identity, typing, notes, extraction, topic
+      naming) against today's repair rate, then the soak's repair bar counts the local writer again.
+- [ ] Local-model benchmark and runtime-upgrade spike, record only (decision 26), then delete the test models.
 
 Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
 blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
