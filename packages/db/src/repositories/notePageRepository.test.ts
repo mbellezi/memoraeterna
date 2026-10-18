@@ -253,6 +253,30 @@ describe("note page repository", () => {
     expect(relation?.explanation).toEqual({ text: "Written on open.", writtenBy: "writer" });
   });
 
+  it("never shows the row that caches the writer's verdict as an explanation, whatever the key", async () => {
+    // The row holds the sentinel under the current key: opening the relation answers it with no call.
+    const sentinel = { text: "NOT_RELATED", inputHash: currentHash(), model: "writer" };
+    const { repository } = setup({
+      relations: [{ total: 1, self, items: [relationItem({ written: sentinel })] }]
+    });
+    const explanationOf = async (explanationWriter?: { promptRevision: string; model: string }) =>
+      (await repository.readPage(id(1), {
+        relationLimit: 20,
+        contentLanguage: "en",
+        ...(explanationWriter === undefined ? {} : { explanationWriter })
+      }))!.relations.items[0]?.explanation;
+    expect(await explanationOf()).toBeNull();
+    expect(await explanationOf({ promptRevision: "prompt-3", model: "model-a" })).toBeNull();
+    const further = await repository.listRelations(id(1), {
+      offset: 0,
+      limit: 20,
+      contentLanguage: "en"
+    });
+    expect(further.items[0]?.explanation).toBeNull();
+    // Nor does the decider's own explanation take its place.
+    expect(JSON.stringify(further)).not.toContain("NOT_RELATED");
+  });
+
   it("reads a stale explanation as none, so it is written again when opened", async () => {
     // Written for another type: the idea, the passage or the direction changing works the same way.
     const written = { text: "Old.", inputHash: currentHash("extends"), model: "writer" };

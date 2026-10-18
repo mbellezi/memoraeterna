@@ -26,10 +26,14 @@ export class NotePageService {
   /** The note, its evidence, where it is and its first relations; null when it does not exist. */
   async page(input: unknown): Promise<NotePage | null> {
     const { noteId, relationLimit } = NotePageInputSchema.parse(input);
+    const [contentLanguage, explanationWriter] = await Promise.all([
+      this.getContentLanguage(),
+      this.writer()
+    ]);
     const page = await this.repository().readPage(noteId, {
       relationLimit,
-      contentLanguage: await this.getContentLanguage(),
-      explanationWriter: await this.writer()
+      contentLanguage,
+      explanationWriter
     });
     return NotePageSchema.nullable().parse(page);
   }
@@ -37,12 +41,16 @@ export class NotePageService {
   /** A further page of the note's relations, with the exact total. */
   async relations(input: unknown): Promise<NotePageRelations> {
     const { noteId, offset, limit } = NoteRelationsInputSchema.parse(input);
+    const [contentLanguage, explanationWriter] = await Promise.all([
+      this.getContentLanguage(),
+      this.writer()
+    ]);
     return NotePageRelationsSchema.parse(
       await this.repository().listRelations(noteId, {
         offset,
         limit,
-        contentLanguage: await this.getContentLanguage(),
-        explanationWriter: await this.writer()
+        contentLanguage,
+        explanationWriter
       })
     );
   }

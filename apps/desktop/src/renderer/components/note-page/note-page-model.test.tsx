@@ -390,6 +390,7 @@ describe("streamed explanations and the veto (F3 D22)", () => {
     expect(explanationStreamed(undefined, "late")).toBeUndefined();
     for (const state of [
       { status: "vetoed" as const },
+      { status: "unexplained" as const },
       { status: "unavailable" as const },
       { status: "failed" as const, kind: "failed" as const }
     ])
@@ -402,6 +403,16 @@ describe("streamed explanations and the veto (F3 D22)", () => {
     expect(asksForExplanation(relationItem(), vetoed!)).toBe(false);
     // A card that streamed is still asking: the request is not over.
     expect(asksForExplanation(relationItem(), { status: "streaming", text: "x" })).toBe(true);
+  });
+
+  it("holds a relation the writer called unrelated but that stays as its own terminal state", () => {
+    const unexplained = explanationAfter({ unrelated: true });
+    // Neither the veto nor "no longer available": the relation stays, and no explanation exists.
+    expect(unexplained).toEqual({ status: "unexplained" });
+    expect(unexplained).not.toEqual(explanationAfter({ vetoed: true }));
+    expect(unexplained).not.toEqual(explanationAfter(null));
+    expect(asksForExplanation(relationItem(), unexplained!)).toBe(false);
+    expect(explanationAfter({ text: "Written." })).toBeNull();
   });
 
   it("hides a withdrawn relation once its card closes, and keeps the rows and the total consistent", () => {
@@ -420,6 +431,35 @@ describe("streamed explanations and the veto (F3 D22)", () => {
     expect(withoutWithdrawn(load, new Set(), null)).toBe(load);
     const loading = { status: "loading" as const };
     expect(withoutWithdrawn(loading, withdrawn, null)).toBe(loading);
+  });
+
+  it("takes a withdrawn row out of the total once: the rows left still count, never fewer", () => {
+    const rows = [60, 62, 64].map((n) => relationItem({ id: fixtureId(n) }));
+    const load = {
+      status: "ready" as const,
+      page: notePage({ relations: { items: rows, total: 3 } })
+    };
+    const once = withoutWithdrawn(load, new Set([fixtureId(62)]), null);
+    expect(once.status === "ready" && once.page.relations).toMatchObject({ total: 2 });
+    // Applied again (the row is gone) it changes nothing, so the total is not taken down twice.
+    expect(withoutWithdrawn(once, new Set([fixtureId(62)]), null)).toBe(once);
+    // A total the server already reduced is never lower than the rows that remain.
+    const reduced = {
+      status: "ready" as const,
+      page: notePage({ relations: { items: rows, total: 2 } })
+    };
+    const floor = withoutWithdrawn(reduced, new Set([fixtureId(60), fixtureId(62)]), null);
+    expect(floor.status === "ready" && floor.page.relations).toMatchObject({ total: 1 });
+  });
+
+  it("does not bring back a withdrawn row from the rows kept past a refreshed page", () => {
+    const rows = [60, 62].map((n) => relationItem({ id: fixtureId(n) }));
+    const shown = notePage({ relations: { items: rows, total: 2 } });
+    // The server no longer lists the second row (the writer withdrew it) and says so in the total.
+    const refreshed = notePage({ relations: { items: [rows[0]!], total: 1 } });
+    expect(keepShownRelations(shown, refreshed).relations.items).toHaveLength(2);
+    const kept = keepShownRelations(shown, refreshed, new Set([fixtureId(62)]));
+    expect(kept.relations).toEqual({ items: [rows[0]], total: 1 });
   });
 });
 

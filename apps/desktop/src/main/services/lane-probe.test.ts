@@ -46,7 +46,12 @@ describe("MEMORA_DEV_LANE_PROBE knob", () => {
   });
 
   it("is refused with a cassette or another measurement run", () => {
-    for (const name of ["MEMORA_AI_CASSETTE", "MEMORA_GOLDEN_RUN", "MEMORA_MATCHING_BENCHMARK"])
+    for (const name of [
+      "MEMORA_AI_CASSETTE",
+      "MEMORA_GOLDEN_RUN",
+      "MEMORA_MATCHING_BENCHMARK",
+      "MEMORA_DEV_EXPLAIN_PROBE"
+    ])
       expect(() =>
         readLaneProbeKnob(knob(".cache/lane-probe.json", { [name]: "replay" }), dev)
       ).toThrow(`refused with ${name}`);

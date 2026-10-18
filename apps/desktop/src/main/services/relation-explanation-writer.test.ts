@@ -46,6 +46,37 @@ describe("the identity of the prompt an explanation is written with", () => {
   });
 });
 
+describe("the provider in the identity of the prompt", () => {
+  const revision = (
+    provider?: string,
+    edit?: (pin: ReturnType<typeof defaultPromptPin>) => void
+  ) => {
+    const pin = defaultPromptPin();
+    edit?.(pin);
+    return withPromptPin(pin, () => relationExplanationPromptRevision(provider));
+  };
+
+  it("includes the instruction the AI service adds to a Codex call, and only for Codex", () => {
+    const plain = revision();
+    const codex = revision("openai-codex");
+    expect(codex).toMatch(/^[a-f0-9]{64}$/);
+    expect(codex).not.toBe(plain);
+    // An owner edit to the Codex instruction changes what the Codex writer sees, so the key.
+    const edit = (pin: ReturnType<typeof defaultPromptPin>) => {
+      const entry = pin.entries.find(
+        (candidate) => candidate.id === "shared.codex_adapter_instruction"
+      )!;
+      entry.fields = Object.fromEntries(
+        Object.entries(entry.fields).map(([field, text]) => [field, `${text} Be brief.`])
+      );
+    };
+    expect(revision("openai-codex", edit)).not.toBe(codex);
+    // Another provider does not read it.
+    expect(revision("openai-compatible", edit)).toBe(revision("openai-compatible"));
+    expect(revision("local-mlx", edit)).toBe(revision("local-mlx"));
+  });
+});
+
 describe("who writes an explanation now", () => {
   const pool = {} as PgPool;
 

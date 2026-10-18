@@ -101,7 +101,9 @@ function withExplanation(
 
 /**
  * The page without the relations the writer withdrew (F3 D22), except the one whose card is still
- * open: it keeps saying why it is hidden until the card closes. The total follows the rows.
+ * open: it keeps saying why it is hidden until the card closes. The total counts the rows that are
+ * still listed, so the rows removed here leave it once. The caller applies this to the state when
+ * a card closes and forgets the relation, so the page never holds a second, shadow list.
  */
 export function withoutWithdrawn(
   load: NotePageLoad,
@@ -114,8 +116,8 @@ export function withoutWithdrawn(
   );
   const removed = load.page.relations.items.length - items.length;
   if (removed === 0) return load;
-  const relations = { total: Math.max(0, load.page.relations.total - removed), items };
-  return { status: "ready", page: { ...load.page, relations } };
+  const total = Math.max(items.length, load.page.relations.total - removed);
+  return { status: "ready", page: { ...load.page, relations: { total, items } } };
 }
 
 function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
@@ -161,6 +163,7 @@ export function NotePage({
   const shown = useRef<NotePageData | null>(null);
   const editingNow = useRef<NoteEditing | null>(null);
   const explanationsNow = useRef<Readonly<Record<string, ExplanationState>>>({});
+  const withdrawnNow = useRef<ReadonlySet<string>>(new Set());
   const recorded = useRef<ReadonlySet<string>>(new Set());
   const focusedHeading = useRef(false);
   const focusEdit = useRef(false);
@@ -187,6 +190,28 @@ export function NotePage({
   useEffect(() => {
     explanationsNow.current = explanations;
   }, [explanations]);
+
+  useEffect(() => {
+    withdrawnNow.current = withdrawn;
+  }, [withdrawn]);
+
+  // A relation the writer withdrew leaves the list once its card closes, and the page forgets it:
+  // the server no longer lists it, so a later read, "Show more" or Keep (T60) owns what is shown.
+  useEffect(() => {
+    const leaving = [...withdrawn].filter((id) => id !== card.open);
+    if (leaving.length === 0) return;
+    setLoad((current) => withoutWithdrawn(current, new Set(leaving), null));
+    setExplanations((current) => {
+      let next = current;
+      for (const id of leaving) next = without(next, id);
+      return next;
+    });
+    setWithdrawn((current) => {
+      const next = new Set(current);
+      for (const id of leaving) next.delete(id);
+      return next;
+    });
+  }, [withdrawn, card.open]);
 
   useEffect(() => {
     const decision = notePageLoadDecision({
@@ -219,7 +244,11 @@ export function NotePage({
           return;
         }
         setLoad((current) => {
-          const next = keepShownRelations(current.status === "ready" ? current.page : null, page);
+          const next = keepShownRelations(
+            current.status === "ready" ? current.page : null,
+            page,
+            withdrawnNow.current
+          );
           return current.status === "ready" && JSON.stringify(current.page) === JSON.stringify(next)
             ? current
             : { status: "ready", page: next };
@@ -318,7 +347,7 @@ export function NotePage({
         stopListening();
         if (result && "vetoed" in result)
           setWithdrawn((current) => new Set(current).add(relationId));
-        else if (result)
+        else if (result && "text" in result)
           setLoad((current) =>
             withExplanation(current, relationId, { text: result.text, writtenBy: result.writtenBy })
           );
@@ -340,7 +369,8 @@ export function NotePage({
       stopListening();
       if (settled) return;
       canceled = true;
-      void window.app.relations.cancelExplain({ relationId }).catch(() => undefined);
+      // Only this request stops waiting: another card on the same call goes on.
+      void window.app.relations.cancelExplain({ relationId, requestId }).catch(() => undefined);
       setExplanations((current) => without(current, relationId));
     };
   }, [active, card.explain, explainRetry]);
@@ -487,7 +517,7 @@ export function NotePage({
       <NotePageView
         t={t}
         backLabel={backLabel}
-        load={withoutWithdrawn(load, withdrawn, card.open)}
+        load={load}
         headingRef={headingRef}
         editRef={editRef}
         editing={editing}
@@ -551,9 +581,13 @@ export function NotePage({
                   ...current.page.relations.items,
                   ...next.items.filter((item) => !known.has(item.id))
                 ];
+                // The total counts the withdrawn row a card still shows, until the card closes.
+                const held = current.page.relations.items.filter((item) =>
+                  withdrawnNow.current.has(item.id)
+                ).length;
                 return {
                   status: "ready",
-                  page: { ...current.page, relations: { total: next.total, items } }
+                  page: { ...current.page, relations: { total: next.total + held, items } }
                 };
               });
               setMore({ status: "idle" });

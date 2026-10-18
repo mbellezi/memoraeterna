@@ -4,8 +4,10 @@ import {
   RelationExplainInputSchema,
   RelationExplainOutcomeSchema,
   RelationExplanationResultSchema,
+  RelationUnrelatedResultSchema,
   RelationVetoResultSchema,
   isDirectedRelationType,
+  isRelationUnrelated,
   isRelationVeto,
   relationExplanationLimits,
   relationExplanationOrder,
@@ -113,7 +115,7 @@ describe("relation explanation contract", () => {
     expect(() => RelationExplainInputSchema.parse({ relationId: low, requestId: "x" })).toThrow();
   });
 
-  it("answers an explanation or the veto, nothing in between", () => {
+  it("answers an explanation, the veto, or the writer's disagreement with a relation that stays", () => {
     const explained = {
       relationId: low,
       text: "Both describe recall.",
@@ -128,12 +130,27 @@ describe("relation explanation contract", () => {
     expect(() => RelationVetoResultSchema.parse({ relationId: low, vetoed: false })).toThrow();
     expect(() => RelationExplainOutcomeSchema.parse({ ...explained, vetoed: true })).toThrow();
     expect(() => RelationExplainOutcomeSchema.parse({ relationId: low })).toThrow();
+    // The writer found the notes unrelated, but a human verdict (or an earlier version) keeps the
+    // relation: neither an explanation nor a veto.
+    const unrelated = { relationId: low, unrelated: true as const };
+    expect(RelationExplainOutcomeSchema.parse(unrelated)).toEqual(unrelated);
+    expect(isRelationUnrelated(RelationExplainOutcomeSchema.parse(unrelated))).toBe(true);
+    expect(isRelationVeto(RelationExplainOutcomeSchema.parse(unrelated))).toBe(false);
+    expect(isRelationUnrelated(RelationExplainOutcomeSchema.parse(vetoed))).toBe(false);
+    expect(isRelationUnrelated(RelationExplainOutcomeSchema.parse(explained))).toBe(false);
+    expect(() =>
+      RelationUnrelatedResultSchema.parse({ relationId: low, unrelated: false })
+    ).toThrow();
+    expect(() => RelationExplainOutcomeSchema.parse({ ...unrelated, vetoed: true })).toThrow();
+    expect(() => RelationExplainOutcomeSchema.parse({ ...unrelated, text: "x" })).toThrow();
   });
 
   it("fixes the sentinel and the stream bounds of D22", () => {
     expect(relationExplanationSentinel).toBe("NOT_RELATED");
     expect(relationExplanationLimits.sentinelHoldCharacters).toBe(16);
     expect(relationExplanationLimits.streamCoalesceMs).toBe(50);
+    // Fewer words than this are no explanation: the sentinel in another spelling or language.
+    expect(relationExplanationLimits.minModelWords).toBe(3);
   });
 
   it("leaves room to think: the output cap is far above the answer it asks for", () => {

@@ -144,6 +144,38 @@ describe("NotePageService explanation writer", () => {
     });
   });
 
+  it("resolves the language and the writer together, so a read waits for the slower and not for both", async () => {
+    repository.readPage.mockResolvedValue(page);
+    repository.listRelations.mockResolvedValue({ items: [], total: 0 });
+    for (const read of [
+      (service: InstanceType<typeof NotePageService>) => service.page({ noteId: id(1) }),
+      (service: InstanceType<typeof NotePageService>) =>
+        service.relations({ noteId: id(1), offset: 0 })
+    ]) {
+      const started: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const service = new NotePageService(
+        () => pool,
+        async () => {
+          started.push("language");
+          await gate;
+          return "en";
+        },
+        async () => {
+          started.push("writer");
+          await gate;
+          return writer;
+        }
+      );
+      const pending = read(service);
+      // Both lookups are under way before either answered.
+      await vi.waitFor(() => expect(started).toEqual(["language", "writer"]));
+      release();
+      await pending;
+    }
+  });
+
   it("reads a page whose writer cannot be resolved: explanations then match on their facts", async () => {
     repository.readPage.mockResolvedValue(page);
     const service = new NotePageService(

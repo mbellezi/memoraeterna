@@ -1,6 +1,11 @@
-import { relationExplanationLimits, relationExplanationSentinel } from "@app/domain";
+import { relationExplanationLimits } from "@app/domain";
 
-import { resolveRelationExplanationReferences } from "./relation-explanation.js";
+import {
+  beginsWithSentinel,
+  resolveRelationExplanationReferences,
+  sentinelWordIndex,
+  withoutLeadingMarks
+} from "./relation-explanation.js";
 
 // What a streamed explanation shows while it is written (F3 D22, C10). The text on screen is a
 // preview of the answer that is validated at the end: the preview never shows the sentinel, a tag, a
@@ -15,7 +20,13 @@ const tagStart = /<(?:\/|[A-Za-z]|$)/u;
  */
 const partialAlias = /(?<![\p{L}\p{N}_])n(?:[12][-.]?)?$/u;
 
-const leadingMarks = /^[\s"'`*_“‘«„]+/u;
+/**
+ * The start of the sentinel that the end of the text may be: `n`, `no`, `not`, `not_`, `not_r` ...
+ * It is held until the next piece says whether the sentinel follows (a labelled answer such as
+ * "Answer: NOT_RELATED" must not show the start of the sentinel before the end of it arrives).
+ */
+const partialSentinel =
+  /(?<![\p{L}\p{N}_])n(?:o(?:t(?:[\s_-]+(?:r(?:e(?:l(?:a(?:t(?:e(?:d)?)?)?)?)?)?)?)?)?)?$/iu;
 
 /** The text as the validator reads it: no leading space, every run of space one space. */
 function normalized(raw: string): string {
@@ -48,20 +59,28 @@ export class RelationExplanationStream {
 
   /**
    * The text that may be shown now. Null while nothing may be and nothing was shown; the empty text
-   * when what was shown is void (the answer started again): the first characters of an answer are
-   * held until it is known whether the answer is the sentinel, and an answer that begins with the
-   * sentinel is never shown. The text only grows, except through a restart.
+   * when what was shown is void (the answer started again): the first characters of an answer (not
+   * counting the marks it may begin with) are held until it is known whether the answer is the
+   * sentinel, and an answer that begins with the sentinel is never shown; a sentinel further in
+   * (a labelled answer) ends the preview where it begins. The text only grows, except through a
+   * restart.
    */
   public visible(): string | null {
     const held = this.everShown ? "" : null;
     const text = normalized(this.raw);
-    if (text.length < relationExplanationLimits.sentinelHoldCharacters) return held;
-    if (text.replace(leadingMarks, "").toUpperCase().startsWith(relationExplanationSentinel))
+    if (withoutLeadingMarks(text).length < relationExplanationLimits.sentinelHoldCharacters)
       return held;
+    if (beginsWithSentinel(text)) return held;
     const tag = text.search(tagStart);
-    const ahead = tag === -1 ? text : text.slice(0, tag);
-    // A half-written alias waits for its next piece, unless a tag already ended the preview.
-    const settled = tag === -1 ? ahead.replace(partialAlias, "") : ahead;
+    const untagged = tag === -1 ? text : text.slice(0, tag);
+    const word = sentinelWordIndex(untagged);
+    const ahead = word === -1 ? untagged : untagged.slice(0, word);
+    // A half-written alias or sentinel waits for its next piece, unless a tag or the sentinel
+    // already ended the preview.
+    const settled =
+      tag === -1 && word === -1
+        ? ahead.replace(partialAlias, "").replace(partialSentinel, "")
+        : ahead;
     const limited = settled.slice(0, relationExplanationLimits.modelCharacters);
     const resolved = resolveRelationExplanationReferences(limited, this.ids);
     // References are longer than their aliases: past the stored bound the preview stops growing.

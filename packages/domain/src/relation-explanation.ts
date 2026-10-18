@@ -12,6 +12,12 @@ export const relationExplanationLimits = {
   /** The model writes at most this many characters (note references count as their alias). */
   modelCharacters: 300,
   /**
+   * An explanation has at least this many words. A shorter answer is no explanation: it is the
+   * sentinel in another spelling or language ("Not related.", "Não relacionado."), which must not
+   * be cached as text; it goes to the repair, which can answer the sentinel exactly.
+   */
+  minModelWords: 3,
+  /**
    * The longest stored text, note references expanded (the database check counts characters).
    * An answer that expands beyond it is invalid output, not a failure at the insert.
    */
@@ -35,7 +41,9 @@ export const relationExplanationLimits = {
 
 /**
  * The whole answer of the writer when the notes are not related as stated (prompt revision 3). It
- * withdraws the relation (F3 D22); it is never shown as an explanation.
+ * withdraws the relation (F3 D22); it is never shown as an explanation. It is also the text of the
+ * row that caches the writer's verdict under the key of the inputs it was given (a row with this
+ * text is never an explanation: readers show none).
  */
 export const relationExplanationSentinel = "NOT_RELATED";
 
@@ -83,16 +91,37 @@ export const RelationVetoResultSchema = z
   .strict();
 export type RelationVetoResult = z.infer<typeof RelationVetoResultSchema>;
 
-/** What opening a relation answers: its explanation, or the veto that withdrew the relation. */
+/**
+ * The writer found the notes unrelated, but the relation stays as it is: a human verdict is final
+ * (a kept relation), and a relation to an earlier version of a note cannot be withdrawn. Nothing is
+ * explained, and the verdict is cached with the relation, so opening it again asks nobody.
+ */
+export const RelationUnrelatedResultSchema = z
+  .object({ relationId: z.string().uuid(), unrelated: z.literal(true) })
+  .strict();
+export type RelationUnrelatedResult = z.infer<typeof RelationUnrelatedResultSchema>;
+
+/**
+ * What opening a relation answers: its explanation, the veto that withdrew the relation, or the
+ * writer's disagreement with a relation that stays.
+ */
 export const RelationExplainOutcomeSchema = z.union([
   RelationExplanationResultSchema,
-  RelationVetoResultSchema
+  RelationVetoResultSchema,
+  RelationUnrelatedResultSchema
 ]);
 export type RelationExplainOutcome = z.infer<typeof RelationExplainOutcomeSchema>;
 
 /** Whether an answer of `explain` is the veto. */
 export function isRelationVeto(outcome: RelationExplainOutcome): outcome is RelationVetoResult {
   return "vetoed" in outcome;
+}
+
+/** Whether an answer of `explain` is the writer's disagreement with a relation that stays. */
+export function isRelationUnrelated(
+  outcome: RelationExplainOutcome
+): outcome is RelationUnrelatedResult {
+  return "unrelated" in outcome;
 }
 
 /** How the relation reads between the two notes, as the prompt states it. */

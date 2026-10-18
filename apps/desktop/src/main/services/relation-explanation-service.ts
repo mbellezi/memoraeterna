@@ -10,7 +10,9 @@ import {
   RelationExplainInputSchema,
   RelationExplanationResultSchema,
   relationExplanationLimits,
+  relationExplanationSentinel,
   type RelationExplainOutcome,
+  type RelationUnrelatedResult,
   type RelationVetoResult
 } from "@app/domain";
 
@@ -59,8 +61,11 @@ export type RelationExplanationListener = (text: string) => void;
 interface Running {
   promise: Promise<RelationExplainOutcome | null>;
   controller: AbortController;
-  /** The cards waiting for this relation: each sees the text streamed so far, then the rest. */
-  listeners: Set<RelationExplanationListener>;
+  /**
+   * The cards waiting for this relation, by the ID of their request (a symbol when the caller gave
+   * none): each sees the text streamed so far, then the rest.
+   */
+  waiters: Map<string | symbol, RelationExplanationListener | null>;
   /** The last text the writer streamed, for a card that joins the request late. */
   text: string | null;
 }
@@ -78,8 +83,12 @@ const unavailableStatuses = new Set(["rejected", "archived"]);
  * explanation is a derived annotation: it changes neither note, so human-protected notes are
  * explained like any other.
  *
- * A writer that answers the sentinel found the notes unrelated: the relation is withdrawn (vetoed)
- * until the owner keeps or removes it, unless a human already decided it.
+ * A writer that answers the sentinel found the notes unrelated. The verdict is cached under the same
+ * key as an explanation (a row whose text is the sentinel), so opening the relation again asks
+ * nobody. A relation nobody decided is withdrawn (vetoed) until the owner keeps or removes it; one
+ * that is already withdrawn stays so; one that cannot be withdrawn (a human verdict is final, and a
+ * relation to an earlier version of a note would be listed nowhere) stays as it is, and the card
+ * says no explanation is available.
  */
 export class RelationExplanationService {
   private readonly running = new Map<string, Running>();
@@ -88,26 +97,26 @@ export class RelationExplanationService {
 
   /**
    * The current explanation of a relation, written now when there is none; the veto when the writer
-   * found the notes unrelated; null when the relation is gone. `onText` receives the text as it is
-   * written: it is a preview that the returned, validated text replaces.
+   * found the notes unrelated; the writer's disagreement when the relation stays; null when the
+   * relation is gone. `onText` receives the text as it is written: it is a preview that the
+   * returned, validated text replaces.
    */
   explain(
     input: unknown,
     onText?: RelationExplanationListener
   ): Promise<RelationExplainOutcome | null> {
-    const { relationId } = RelationExplainInputSchema.parse(input);
+    const { relationId, requestId } = RelationExplainInputSchema.parse(input);
+    const waiter = requestId ?? Symbol("explain");
     const current = this.running.get(relationId);
     if (current) {
-      if (onText) {
-        current.listeners.add(onText);
-        if (current.text !== null) onText(current.text);
-      }
+      current.waiters.set(waiter, onText ?? null);
+      if (onText && current.text !== null) onText(current.text);
       return current.promise;
     }
     const controller = new AbortController();
     const run: Running = {
       controller,
-      listeners: new Set(onText ? [onText] : []),
+      waiters: new Map([[waiter, onText ?? null]]),
       text: null,
       promise: Promise.resolve(null)
     };
@@ -118,13 +127,21 @@ export class RelationExplanationService {
     return run.promise;
   }
 
-  /** Stops the explanation being written for a relation, if any; true when one was stopped. */
+  /**
+   * Stops the explanation being written for a relation, if any; true when one was stopped. With the
+   * ID of a request, only that card stops waiting: the request goes on while another card waits for
+   * it, and a request that is not waiting changes nothing.
+   */
   cancel(input: unknown): boolean {
-    const { relationId } = RelationExplainInputSchema.parse(input);
+    const { relationId, requestId } = RelationExplainInputSchema.parse(input);
     const current = this.running.get(relationId);
     if (!current) return false;
+    if (requestId !== undefined) {
+      if (!current.waiters.delete(requestId)) return false;
+      if (current.waiters.size > 0) return true;
+    }
     this.running.delete(relationId);
-    current.listeners.clear();
+    current.waiters.clear();
     current.controller.abort(new DOMException("The explanation was canceled.", "AbortError"));
     return true;
   }
@@ -142,13 +159,16 @@ export class RelationExplanationService {
     const contentLanguage = await this.options.getContentLanguage();
     const writer = this.options.resolveWriter ? await this.options.resolveWriter() : undefined;
     const plan = relationExplanationPlan({ ...context, language: contentLanguage, writer });
-    if (context.stored && relationExplanationIsCurrent(context.stored.inputHash, plan))
+    if (context.stored && relationExplanationIsCurrent(context.stored.inputHash, plan)) {
+      // The writer's verdict for these inputs, cached: applied again with no call.
+      if (context.stored.text === relationExplanationSentinel) return this.settle(pool, context);
       return RelationExplanationResultSchema.parse({
         relationId,
         text: context.stored.text,
         writtenBy: context.stored.model,
         writtenAt: context.stored.writtenAt.toISOString()
       });
+    }
     // Without a writer model nothing can be written (an explanation of the same facts, whoever
     // wrote it, was returned above).
     if (writer === null) throw new Error("errors.ai.noCompatibleModel");
@@ -190,11 +210,11 @@ export class RelationExplanationService {
     // A preview that cannot be delivered (a closed window) never stops the explanation.
     const publish = (text: string) => {
       run.text = text;
-      for (const listener of run.listeners) {
+      for (const [waiter, listener] of [...run.waiters]) {
         try {
-          listener(text);
+          listener?.(text);
         } catch {
-          run.listeners.delete(listener);
+          run.waiters.delete(waiter);
         }
       }
     };
@@ -241,10 +261,7 @@ export class RelationExplanationService {
         if (!unrelated && resolved === null) throw new Error("notePage.explain.errors.invalid");
       }
       deadline.signal.throwIfAborted();
-      if (unrelated || resolved === null) return await this.withdraw(pool, context);
-      const saved = await repository.save({
-        relationId,
-        text: resolved,
+      const provenance = {
         inputHash: plan.inputHash,
         promptVersion: relationExplanationPromptVersion,
         provider: execution.providerId,
@@ -252,6 +269,21 @@ export class RelationExplanationService {
         runtime: execution.runtime,
         aiTaskRunId: execution.aiTaskRunId,
         language: contentLanguage
+      };
+      if (unrelated || resolved === null) {
+        // Cache the verdict under the key of these inputs, so the next open asks nobody, then apply
+        // it. Saved first: a verdict that was cached but not applied is applied by the next open.
+        const verdict = await repository.save({
+          relationId,
+          text: relationExplanationSentinel,
+          ...provenance
+        });
+        return verdict ? await this.settle(pool, context) : null;
+      }
+      const saved = await repository.save({
+        relationId,
+        text: resolved,
+        ...provenance
       });
       if (!saved) return null;
       return RelationExplanationResultSchema.parse({
@@ -267,16 +299,17 @@ export class RelationExplanationService {
   }
 
   /**
-   * The writer found the notes unrelated. A relation nobody decided is withdrawn (hidden everywhere
-   * until the owner keeps or removes it); one that is already withdrawn stays so; one with a human
-   * verdict is final, and nothing is explained.
+   * Applies the writer's verdict that the notes are unrelated. A relation nobody decided is withdrawn
+   * (hidden everywhere until the owner keeps or removes it); one that is already withdrawn stays
+   * so; one that cannot be withdrawn stays as it is: a human verdict is final, and nothing is
+   * explained.
    */
-  private async withdraw(
+  private async settle(
     pool: PgPool,
     context: RelationExplanationContext
-  ): Promise<RelationVetoResult | null> {
+  ): Promise<RelationVetoResult | RelationUnrelatedResult | null> {
     if (context.withdrawn) return vetoed(context.relationId);
-    if (!context.vetoable) return null;
+    if (!context.vetoable) return unrelatedOutcome(context.relationId);
     const homeSourceIds = [context.a.homeSourceId, context.b.homeSourceId].filter(
       (id): id is string => id !== null
     );
@@ -291,12 +324,17 @@ export class RelationExplanationService {
     }
     // Withdrawn or decided by someone else while the writer was answering: ask what it is now.
     const now = await createRelationExplanationRepository(pool).readContext(context.relationId);
-    return now?.withdrawn ? vetoed(context.relationId) : null;
+    if (!now || !explainable(now)) return null;
+    return now.withdrawn ? vetoed(context.relationId) : unrelatedOutcome(context.relationId);
   }
 }
 
 function vetoed(relationId: string): RelationVetoResult {
   return { relationId, vetoed: true };
+}
+
+function unrelatedOutcome(relationId: string): RelationUnrelatedResult {
+  return { relationId, unrelated: true };
 }
 
 /**

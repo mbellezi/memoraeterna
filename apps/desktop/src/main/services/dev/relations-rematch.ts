@@ -77,6 +77,7 @@ export const rematchConflictingKnobs = [
   "MEMORA_MATCHING_PILOT",
   "MEMORA_MATCHING_BENCHMARK",
   "MEMORA_DEV_LANE_PROBE",
+  "MEMORA_DEV_EXPLAIN_PROBE",
   "MEMORA_TYPER_CHECK"
 ] as const;
 

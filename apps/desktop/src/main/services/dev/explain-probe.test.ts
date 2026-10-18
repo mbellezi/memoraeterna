@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -19,7 +19,8 @@ import {
 } from "./explain-probe.js";
 
 const workspaceRoot = resolve("/workspace/memora");
-const dev = { isPackaged: false, workspaceRoot };
+const clone = join(workspaceRoot, ".cache/profiles/env-g");
+const dev = { isPackaged: false, workspaceRoot, userDataPath: clone };
 const knob = (value: string, extra: Record<string, string> = {}) => ({
   [explainProbeKnob]: value,
   ...extra
@@ -51,11 +52,46 @@ describe("the explanation probe knob", () => {
       "MEMORA_GOLDEN_RUN",
       "MEMORA_FAKE_REMOTE",
       "MEMORA_DEV_LANE_PROBE",
-      "MEMORA_TYPER_CHECK"
+      "MEMORA_TYPER_CHECK",
+      "MEMORA_RELATIONS_REMATCH",
+      "MEMORA_GOLDEN_NOTE_PAIRS",
+      "MEMORA_GOLDEN_TOPICS"
     ])
       expect(() => readExplainProbeKnob(knob(".cache/probe.json", { [name]: "x" }), dev)).toThrow(
         `refused with ${name}`
       );
+  });
+
+  it("is refused outside a clone in .cache/profiles/: it writes explanations and withdraws relations", () => {
+    for (const userDataPath of [
+      "/Users/someone/Library/Application Support/Memora Eterna",
+      workspaceRoot,
+      join(workspaceRoot, ".cache"),
+      join(workspaceRoot, ".cache/profiles"),
+      join(workspaceRoot, ".cache/profiles/../elsewhere"),
+      join(workspaceRoot, ".cache/f3/scratch/clone")
+    ]) {
+      const refused = () =>
+        readExplainProbeKnob(knob(".cache/probe.json"), { ...dev, userDataPath });
+      expect(refused, userDataPath).toThrow(
+        expect.objectContaining({
+          code: "outsideProfiles",
+          message: expect.stringContaining("only runs on a clone inside .cache/profiles/")
+        })
+      );
+      expect(
+        explainProbeRequested(knob(".cache/probe.json"), { ...dev, userDataPath }),
+        userDataPath
+      ).toBe(false);
+    }
+    expect(
+      readExplainProbeKnob(knob(".cache/probe.json"), {
+        ...dev,
+        userDataPath: join(workspaceRoot, ".cache/profiles/env-f/nested")
+      })
+    ).not.toBeNull();
+    // Without the knob there is nothing to refuse, wherever the app runs.
+    expect(readExplainProbeKnob({}, { ...dev, userDataPath: "/anywhere" })).toBeNull();
   });
 
   it("is refused for a report outside .cache or that is not a JSON file", () => {
@@ -150,7 +186,12 @@ describe("measuring the opens", () => {
     });
     expect(result.firstOpen.firstDeltaMs).toMatchObject({ p50: 400, p95: 400 });
     expect(result.firstOpen.totalMs).toMatchObject({ p50: 1000, p95: 1000 });
-    expect(result.firstOpen).toMatchObject({ explained: 2, vetoed: 0, streamed: 2 });
+    expect(result.firstOpen).toMatchObject({
+      explained: 2,
+      vetoed: 0,
+      unrelated: 0,
+      streamed: 2
+    });
     // The second open reads the cache: no call, no stream.
     expect(result.secondOpenMakesNoCall).toBe(true);
     expect(result.secondOpen.calls).toBe(0);
@@ -159,26 +200,28 @@ describe("measuring the opens", () => {
     ).toBe(true);
   });
 
-  it("counts a veto, a gone relation and a failure, and goes on", async () => {
+  it("counts a veto, a verdict on a relation that stays, a gone relation and a failure, and goes on", async () => {
     const counted = meter();
     const explain = vi.fn(async (relationId: string) => {
       counted.calls += 1;
       if (relationId === id(1)) return { relationId, vetoed: true as const };
       if (relationId === id(2)) return null;
+      if (relationId === id(4)) return { relationId, unrelated: true as const };
       throw new Error("errors.ai.noCompatibleModel");
     });
     const result = await measureExplanations({
-      relationIds: [id(1), id(2), id(3)],
+      relationIds: [id(1), id(2), id(3), id(4)],
       explain,
       meter: counted
     });
     expect(result.firstOpen.opens.map((open) => open.outcome)).toEqual([
       "vetoed",
       "none",
-      "failed"
+      "failed",
+      "unrelated"
     ]);
     expect(result.firstOpen.opens[2]).toMatchObject({ error: "errors.ai.noCompatibleModel" });
-    expect(result.firstOpen.vetoed).toBe(1);
+    expect(result.firstOpen).toMatchObject({ vetoed: 1, unrelated: 1 });
     // A second open that still asks the writer is not the bar.
     expect(result.secondOpenMakesNoCall).toBe(false);
   });
@@ -207,6 +250,8 @@ describe("running the probe from the app", () => {
 
   it("writes its report under .cache and returns done", async () => {
     directory = await mkdtemp(join(tmpdir(), "memora-explain-probe-"));
+    const userDataPath = join(directory, ".cache/profiles/env-g");
+    await mkdir(userDataPath, { recursive: true });
     // The relation is picked, then found gone by the service that reads it: nothing is asked of the
     // writer, and the second open makes no call either.
     const query = vi.fn(async (statement: string) => ({
@@ -218,6 +263,7 @@ describe("running the probe from the app", () => {
       env: knob(".cache/f3/t59/probe.json", { [explainProbeOpensKnob]: "1" }),
       isPackaged: false,
       workspaceRoot: directory,
+      userDataPath,
       pool,
       ai: { runDefaultTask } as never,
       getContentLanguage: async () => "en",
@@ -243,6 +289,7 @@ describe("running the probe from the app", () => {
     const runDefaultTask = vi.fn();
     const base = {
       workspaceRoot,
+      userDataPath: clone,
       pool: { query: vi.fn() } as unknown as PgPool,
       ai: { runDefaultTask } as never,
       getContentLanguage: async () => "en",
@@ -254,6 +301,34 @@ describe("running the probe from the app", () => {
       await runExplainProbe({ ...base, env: knob(".cache/probe.json"), isPackaged: true })
     ).toBe("refused");
     expect(quiet.error).toHaveBeenCalledWith(expect.stringContaining("refused in packaged builds"));
+    expect(runDefaultTask).not.toHaveBeenCalled();
+  });
+
+  it("refuses a profile that is not a clone, or a link out of the profiles, sending nothing", async () => {
+    directory = await mkdtemp(join(tmpdir(), "memora-explain-probe-"));
+    const query = vi.fn();
+    const runDefaultTask = vi.fn();
+    const base = {
+      env: knob(".cache/probe.json"),
+      isPackaged: false,
+      workspaceRoot: directory,
+      pool: { query } as unknown as PgPool,
+      ai: { runDefaultTask } as never,
+      getContentLanguage: async () => "en",
+      resolveWriter: async () => null,
+      logger: quiet
+    };
+    // Outside the profiles by its path, then inside it by its path but not on disk.
+    expect(await runExplainProbe({ ...base, userDataPath: join(directory, "owner") })).toBe(
+      "refused"
+    );
+    expect(
+      await runExplainProbe({ ...base, userDataPath: join(directory, ".cache/profiles/missing") })
+    ).toBe("refused");
+    expect(quiet.error).toHaveBeenCalledWith(
+      expect.stringContaining("only runs on a clone inside .cache/profiles/")
+    );
+    expect(query).not.toHaveBeenCalled();
     expect(runDefaultTask).not.toHaveBeenCalled();
   });
 });

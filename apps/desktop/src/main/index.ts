@@ -69,7 +69,11 @@ import {
   navigationDirectionFromSwipe,
   type WindowNavigationDirection
 } from "./window-navigation.js";
-import { ipcChannels, localEmbeddingLoadStatusSchema } from "../shared/ipc.js";
+import {
+  ipcChannels,
+  localEmbeddingLoadStatusSchema,
+  RelationsChangedEventSchema
+} from "../shared/ipc.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -373,8 +377,10 @@ void app.whenReady().then(() => {
       resolveWriter: explanationWriter,
       // An explanation that finds two notes unrelated withdraws the relation: open pages read it again.
       relationsChanged: (noteIds) => {
+        const event = RelationsChangedEventSchema.safeParse({ noteIds });
+        if (!event.success) return;
         for (const contents of webContents.getAllWebContents())
-          if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, { noteIds });
+          if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, event.data);
       }
     })
   );
@@ -689,7 +695,8 @@ void app.whenReady().then(() => {
         });
         const explainProbe = explainProbeRequested(process.env, {
           isPackaged: app.isPackaged,
-          workspaceRoot
+          workspaceRoot,
+          userDataPath: app.getPath("userData")
         });
         const typerCheck = !app.isPackaged && Boolean(process.env.MEMORA_TYPER_CHECK);
         const verdictOnly =
@@ -799,25 +806,29 @@ void app.whenReady().then(() => {
         }
         // DEV-only explanation probe (MEMORA_DEV_EXPLAIN_PROBE=<report path>, F3 T59): opens
         // relations the way the Note page does, twice, a JSON report, then quit. Refused (logged,
-        // then quit) when packaged or together with another DEV measurement knob.
+        // ignored, the app goes on) when packaged, on a profile that is not a clone inside
+        // .cache/profiles/, or together with another DEV measurement knob.
         if (process.env.MEMORA_DEV_EXPLAIN_PROBE) {
           void runExplainProbe({
             env: process.env,
             isPackaged: app.isPackaged,
             workspaceRoot,
+            userDataPath: app.getPath("userData"),
             pool: databaseService!.getPool()!,
             ai: aiService!,
             getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
             resolveWriter: explanationWriter,
             logger: console
           })
-            .then(() => app.quit())
+            .then((outcome) => {
+              if (outcome === "done" || outcome === "failed") app.quit();
+            })
             .catch((error: unknown) => {
               console.error(
                 "EXPLAIN_PROBE failed:",
                 error instanceof Error ? error.message : String(error)
               );
-              app.quit();
+              if (!app.isPackaged) app.quit();
             });
         }
         if (typerCheck) {

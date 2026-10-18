@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -204,10 +204,14 @@ describe.skipIf(!sidecarInstalled)(
       });
       expect((await state(id)).vetoedAt).toBeInstanceOf(Date);
       expect(relationsChanged).toHaveBeenCalledWith([...notes].sort());
-      // Nothing is cached as an explanation, and the veto is one `vetoed` event in a `veto` run.
-      expect((await pool!.query("select 1 from atomic_note_relation_explanations")).rowCount).toBe(
-        0
+      // The verdict is cached under the key as the sentinel (never as an explanation), and the veto
+      // is one `vetoed` event in a `veto` run.
+      const cached = await pool!.query<{ text: string; inputHash: string }>(
+        `select text, input_hash as "inputHash" from atomic_note_relation_explanations`
       );
+      expect(cached.rows).toEqual([
+        { text: "NOT_RELATED", inputHash: expect.stringMatching(/^[a-f0-9]{64}\.[a-f0-9]{16}$/u) }
+      ]);
       const events = await pool!.query<{ kind: string; runKind: string; outcome: string | null }>(
         `select event.kind, run.kind as "runKind", run.outcome
          from relation_events event join relation_match_runs run on run.id = event.run_id
@@ -231,21 +235,145 @@ describe.skipIf(!sidecarInstalled)(
       ).toBe(1);
     });
 
-    it("leaves a relation with a human verdict alone", async () => {
+    /** The writer's verdict rows and the veto traces of the library. */
+    const traces = async () => ({
+      cached: (
+        await pool!.query(
+          "select 1 from atomic_note_relation_explanations where text = 'NOT_RELATED'"
+        )
+      ).rowCount,
+      promotions: (await pool!.query("select 1 from jobs where type = 'relation-promote'"))
+        .rowCount,
+      vetoRuns: (await pool!.query("select 1 from relation_match_runs where kind = 'veto'"))
+        .rowCount,
+      vetoEvents: (await pool!.query("select 1 from relation_events where kind = 'vetoed'"))
+        .rowCount
+    });
+
+    const pageExplanation = async (relationId: string) => {
+      const [self] = (
+        await pool!.query<{ source: string }>(
+          "select source_atomic_note_id as source from atomic_note_relations where id = $1",
+          [relationId]
+        )
+      ).rows;
+      return (await createNotePageRepository(pool!).readPage(self!.source, {
+        relationLimit: 20,
+        contentLanguage: "en",
+        explanationWriter: writer
+      }))!.relations.items.find((item) => item.id === relationId)?.explanation;
+    };
+
+    it("leaves a relation with a human verdict alone, caches the verdict and asks once", async () => {
       const { id } = await seedRelation("accepted");
-      const { service, relationsChanged } = build("NOT_RELATED");
-      expect(await service.explain({ relationId: id })).toBeNull();
+      const { service, runDefaultTask, relationsChanged } = build("NOT_RELATED");
+      // Nothing is withdrawn or explained: the owner kept it, and the writer disagrees.
+      expect(await service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
       expect(await state(id)).toMatchObject({ status: "accepted", vetoSource: null, shown: true });
       expect(relationsChanged).not.toHaveBeenCalled();
-      expect(
-        (await pool!.query("select 1 from jobs where type = 'relation-promote'")).rowCount
-      ).toBe(0);
-      expect(
-        (await pool!.query("select 1 from relation_match_runs where kind = 'veto'")).rowCount
-      ).toBe(0);
-      expect(
-        (await pool!.query("select 1 from relation_events where kind = 'vetoed'")).rowCount
-      ).toBe(0);
+      expect(await traces()).toEqual({ cached: 1, promotions: 0, vetoRuns: 0, vetoEvents: 0 });
+
+      // Opened again, also by a new service as after a restart: no call, the same answer.
+      const restarted = build("NOT_RELATED");
+      expect(await service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
+      expect(await restarted.service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
+      expect(runDefaultTask).toHaveBeenCalledTimes(1);
+      expect(restarted.runDefaultTask).not.toHaveBeenCalled();
+      expect(await traces()).toEqual({ cached: 1, promotions: 0, vetoRuns: 0, vetoEvents: 0 });
+      expect(await state(id)).toMatchObject({ status: "accepted", shown: true });
+      // The page never shows the sentinel as an explanation.
+      expect(await pageExplanation(id)).toBeNull();
+
+      // Another model reads the same notes again, once.
+      const other = new RelationExplanationService({
+        getPool: () => pool!,
+        ai: { runDefaultTask: vi.fn(async () => execution("n1 gives n2 its evidence.")) } as never,
+        getContentLanguage: async () => "en",
+        resolveWriter: async () => ({ ...writer, model: "model-b" })
+      });
+      expect(await other.explain({ relationId: id })).toMatchObject({
+        text: expect.stringContaining("gives")
+      });
+    });
+
+    it("answers a kept relation the explainer had withdrawn with its cached verdict, and no call", async () => {
+      const { id } = await seedRelation();
+      const first = build("NOT_RELATED");
+      expect(await first.service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        vetoed: true
+      });
+      // The owner keeps it (the veto is cleared, the verdict is human).
+      await pool!.query(
+        `update atomic_note_relations set status = 'accepted', vetoed_at = null, veto_source = null
+          where id = $1`,
+        [id]
+      );
+      const kept = build("NOT_RELATED");
+      expect(await kept.service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
+      expect(kept.runDefaultTask).not.toHaveBeenCalled();
+      expect(await state(id)).toMatchObject({ status: "accepted", shown: true, withdrawn: false });
+    });
+
+    it("answers a relation the typer withdrew with the veto, caches the verdict and asks once", async () => {
+      const { id } = await seedRelation();
+      const run = await createRelationMatchRunRepository(pool!).start({ kind: "veto" });
+      await createAtomicNoteRelationRepository(pool!).veto(id, "typer", run.id);
+      const first = build("NOT_RELATED");
+      expect(await first.service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        vetoed: true
+      });
+      // The typer's veto stays its own: no second veto, event or promotion.
+      expect(await state(id)).toMatchObject({ vetoSource: "typer", withdrawn: true });
+      expect(first.relationsChanged).not.toHaveBeenCalled();
+      expect((await traces()).vetoEvents).toBe(1);
+
+      const second = build("NOT_RELATED");
+      expect(await second.service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        vetoed: true
+      });
+      expect(first.runDefaultTask).toHaveBeenCalledTimes(1);
+      expect(second.runDefaultTask).not.toHaveBeenCalled();
+      expect(await traces()).toMatchObject({ cached: 1, vetoEvents: 1 });
+    });
+
+    it("does not withdraw a relation to an earlier version of a note: no list would show it", async () => {
+      const { id, notes } = await seedRelation();
+      await pool!.query(
+        "update atomic_notes set supersession_status = 'superseded' where id = $1",
+        [notes[0]]
+      );
+      const context = await createRelationExplanationRepository(pool!).readContext(id);
+      expect(context).toMatchObject({ listed: true, vetoable: false, withdrawn: false });
+
+      const { service, runDefaultTask, relationsChanged } = build("NOT_RELATED");
+      expect(await service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
+      expect((await state(id)).vetoedAt).toBeNull();
+      expect(relationsChanged).not.toHaveBeenCalled();
+      expect(await traces()).toEqual({ cached: 1, promotions: 0, vetoRuns: 0, vetoEvents: 0 });
+
+      expect(await service.explain({ relationId: id })).toEqual({
+        relationId: id,
+        unrelated: true
+      });
+      expect(runDefaultTask).toHaveBeenCalledTimes(1);
     });
 
     it("stores an explanation under the key with its writer and reuses it with no call", async () => {
@@ -308,6 +436,8 @@ describe.skipIf(!sidecarInstalled)(
       expect(await pickRelationsToOpen(pool!, 10)).toEqual([open.id]);
 
       const { runDefaultTask } = build("n1 and n2 share the evidence.");
+      const userDataPath = join(workDir, ".cache/profiles/clone");
+      await mkdir(userDataPath, { recursive: true });
       const outcome = await runExplainProbe({
         env: {
           MEMORA_DEV_EXPLAIN_PROBE: ".cache/f3/t59/probe.json",
@@ -315,6 +445,7 @@ describe.skipIf(!sidecarInstalled)(
         },
         isPackaged: false,
         workspaceRoot: workDir,
+        userDataPath,
         pool: pool!,
         ai: { runDefaultTask } as never,
         getContentLanguage: async () => "en",
@@ -336,6 +467,35 @@ describe.skipIf(!sidecarInstalled)(
       // The second open reads the stored explanation: no call, no stream.
       expect(report.secondOpen).toMatchObject({ calls: 0, explained: 1, streamed: 0 });
       expect(report.secondOpenMakesNoCall).toBe(true);
+    });
+
+    it("keeps the second-open bar when a relation the owner kept is one the writer calls unrelated", async () => {
+      const kept = await seedRelation("accepted");
+      await seedRelation();
+      const runDefaultTask = vi.fn(async () => execution("NOT_RELATED"));
+      const userDataPath = join(workDir, ".cache/profiles/clone");
+      await mkdir(userDataPath, { recursive: true });
+      const outcome = await runExplainProbe({
+        env: {
+          MEMORA_DEV_EXPLAIN_PROBE: ".cache/f3/t59/kept.json",
+          MEMORA_DEV_EXPLAIN_PROBE_OPENS: "5"
+        },
+        isPackaged: false,
+        workspaceRoot: workDir,
+        userDataPath,
+        pool: pool!,
+        ai: { runDefaultTask } as never,
+        getContentLanguage: async () => "en",
+        resolveWriter: async () => writer,
+        logger: { info: vi.fn(), error: vi.fn() }
+      });
+      expect(outcome).toBe("done");
+      const report = JSON.parse(await readFile(join(workDir, ".cache/f3/t59/kept.json"), "utf8"));
+      expect(report.opens).toBe(2);
+      expect(report.firstOpen).toMatchObject({ calls: 2, vetoed: 1, unrelated: 1 });
+      expect(report.secondOpen).toMatchObject({ calls: 0, vetoed: 1, unrelated: 1 });
+      expect(report.secondOpenMakesNoCall).toBe(true);
+      expect(await state(kept.id)).toMatchObject({ status: "accepted", shown: true });
     });
 
     it("lists a withdrawn relation as explainable but never as shown", async () => {

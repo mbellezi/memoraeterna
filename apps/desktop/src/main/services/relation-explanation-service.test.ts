@@ -256,6 +256,84 @@ describe("RelationExplanationService", () => {
     expect(textOf(await service.explain({ relationId: ids.relation }))).toContain("qualifies");
   });
 
+  describe("cancelling by request", () => {
+    const requestA = "00000000-0000-4000-8000-0000000000a1";
+    const requestB = "00000000-0000-4000-8000-0000000000b1";
+
+    /** A model call that waits for its signal or for `finish`. */
+    const pending = () => {
+      const call: { finish?: (value: unknown) => void; signal?: AbortSignal } = {};
+      const hold = ((...args: unknown[]) =>
+        new Promise((resolve, reject) => {
+          call.finish = resolve;
+          call.signal = args[3] as AbortSignal;
+          call.signal.addEventListener("abort", () => reject(call.signal!.reason));
+        })) as never;
+      return { call, hold };
+    };
+
+    it("stops only the card that closed while another card waits for the same request", async () => {
+      const { service, runDefaultTask } = setup();
+      const { call, hold } = pending();
+      runDefaultTask.mockImplementationOnce(hold);
+      const texts: string[] = [];
+      const first = service.explain({ relationId: ids.relation, requestId: requestA }, (text) =>
+        texts.push(`a:${text}`)
+      );
+      const second = service.explain({ relationId: ids.relation, requestId: requestB }, (text) =>
+        texts.push(`b:${text}`)
+      );
+      expect(second).toBe(first);
+      await vi.waitFor(() => expect(call.signal).toBeDefined());
+      expect(service.cancel({ relationId: ids.relation, requestId: requestA })).toBe(true);
+      // The request goes on for the card that is still waiting, and A hears nothing more of it.
+      expect(call.signal!.aborted).toBe(false);
+      call.finish!(execution("n1 and n2 agree."));
+      expect(textOf(await second)).toContain("agree");
+      expect(runDefaultTask).toHaveBeenCalledTimes(1);
+      expect(texts.every((text) => !text.startsWith("a:"))).toBe(true);
+      expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it("aborts the request when the last card closes, and ignores a request that is not waiting", async () => {
+      const { service, runDefaultTask } = setup();
+      const { call, hold } = pending();
+      runDefaultTask.mockImplementationOnce(hold);
+      const first = service.explain({ relationId: ids.relation, requestId: requestA });
+      const outcome = expect(first).rejects.toThrow("canceled");
+      service.explain({ relationId: ids.relation, requestId: requestB }).catch(() => undefined);
+      await vi.waitFor(() => expect(call.signal).toBeDefined());
+      // A request the service does not know cancels nothing, not even a request that is running.
+      expect(
+        service.cancel({
+          relationId: ids.relation,
+          requestId: "00000000-0000-4000-8000-0000000000c1"
+        })
+      ).toBe(false);
+      expect(call.signal!.aborted).toBe(false);
+      expect(service.cancel({ relationId: ids.relation, requestId: requestA })).toBe(true);
+      expect(call.signal!.aborted).toBe(false);
+      expect(service.cancel({ relationId: ids.relation, requestId: requestB })).toBe(true);
+      await outcome;
+      expect(call.signal!.aborted).toBe(true);
+      expect(service.cancel({ relationId: ids.relation, requestId: requestB })).toBe(false);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it("lets a cancel without a request stop the request for every card", async () => {
+      const { service, runDefaultTask } = setup();
+      const { call, hold } = pending();
+      runDefaultTask.mockImplementationOnce(hold);
+      const first = service.explain({ relationId: ids.relation, requestId: requestA });
+      const outcome = expect(first).rejects.toThrow("canceled");
+      service.explain({ relationId: ids.relation }).catch(() => undefined);
+      await vi.waitFor(() => expect(call.signal).toBeDefined());
+      expect(service.cancel({ relationId: ids.relation })).toBe(true);
+      await outcome;
+      expect(call.signal!.aborted).toBe(true);
+    });
+  });
+
   it("rewrites an explanation cached in another content language, and stores the new one", async () => {
     repository.readContext.mockResolvedValue(
       context({
@@ -615,10 +693,10 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
 
   it("buffers the first 16 characters and shows nothing before then", async () => {
     const short = build((deliver) => {
-      deliver("Same ", "topic.");
-      return "Same topic.";
+      deliver("n1 ech", "oes n2.");
+      return "n1 echoes n2.";
     });
-    expect(textOf(await short.explain())).toBe("Same topic.");
+    expect(textOf(await short.explain())).toBe(`${ref(ids.b)} echoes ${ref(ids.a)}.`);
     expect(short.texts).toEqual([]);
     const long = build((deliver) => {
       deliver("Both notes", " say it", " twice.");
@@ -642,7 +720,23 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
       ids.sourceB
     ]);
     expect(relationsChanged).toHaveBeenCalledWith([ids.a, ids.b]);
-    expect(repository.save).not.toHaveBeenCalled();
+    // The verdict is cached under the key of the inputs, as the sentinel and never as text; the
+    // relation is withdrawn after it is cached.
+    expect(repository.save).toHaveBeenCalledTimes(1);
+    expect(repository.save).toHaveBeenCalledWith({
+      relationId: ids.relation,
+      text: "NOT_RELATED",
+      inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash,
+      promptVersion: relationExplanationPromptVersion,
+      provider: "openai-codex",
+      model: "writer-model",
+      runtime: "remote",
+      aiTaskRunId: ids.run,
+      language: "pt-BR"
+    });
+    expect(repository.save.mock.invocationCallOrder[0]!).toBeLessThan(
+      withdraw.mock.invocationCallOrder[0]!
+    );
   });
 
   it("never shows an answer that begins with the sentinel, and repairs it", async () => {
@@ -663,6 +757,36 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
     const repaired = build((_deliver, call) => (call === 0 ? "n1 <b>n2</b>" : " not_related "));
     expect(await repaired.explain()).toEqual({ relationId: ids.relation, vetoed: true });
     expect(repaired.runDefaultTask).toHaveBeenCalledTimes(2);
+    // Only the verdict is cached, never the sentinel as an explanation of anything else.
+    expect(repository.save.mock.calls.map(([saved]) => saved.text)).toEqual([
+      "NOT_RELATED",
+      "NOT_RELATED"
+    ]);
+  });
+
+  it("takes the sentinel in other spellings as the verdict, and sends a translated one to the repair", async () => {
+    for (const answer of ["NOT RELATED", "Not related.", "not-related"]) {
+      repository.save.mockClear();
+      const spelled = build(() => answer);
+      expect(await spelled.explain(), answer).toEqual({ relationId: ids.relation, vetoed: true });
+      expect(spelled.runDefaultTask).toHaveBeenCalledTimes(1);
+      expect(repository.save.mock.calls.map(([saved]) => saved.text)).toEqual(["NOT_RELATED"]);
+    }
+    // A translated answer is no explanation and no verdict: the repair asks again, and a writer
+    // that now answers the sentinel withdraws the relation; one that explains is cached as text.
+    for (const translated of ["Não relacionado.", "No relacionado", "Non lié."]) {
+      repository.save.mockClear();
+      const repaired = build((_deliver, call) => (call === 0 ? translated : "NOT_RELATED"));
+      expect(await repaired.explain(), translated).toEqual({
+        relationId: ids.relation,
+        vetoed: true
+      });
+      expect(repaired.runDefaultTask).toHaveBeenCalledTimes(2);
+      expect(repository.save.mock.calls.map(([saved]) => saved.text)).toEqual(["NOT_RELATED"]);
+    }
+    repository.save.mockClear();
+    const failing = build(() => "Não relacionado.");
+    await expect(failing.explain()).rejects.toThrow("notePage.explain.errors.invalid");
     expect(repository.save).not.toHaveBeenCalled();
   });
 
@@ -803,13 +927,137 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
     expect(repository.save).not.toHaveBeenCalled();
   });
 
-  it("leaves a relation with a human verdict alone: nothing is withdrawn or explained", async () => {
+  it("leaves a relation with a human verdict alone: nothing is withdrawn, the verdict is cached", async () => {
     repository.readContext.mockResolvedValue(context({ vetoable: false, status: "accepted" }));
     const { explain, withdraw, relationsChanged } = build(() => "NOT_RELATED");
-    expect(await explain()).toBeNull();
+    // Neither a veto nor an explanation: the card says no explanation is available.
+    expect(await explain()).toEqual({ relationId: ids.relation, unrelated: true });
     expect(withdraw).not.toHaveBeenCalled();
     expect(relationsChanged).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.save).toHaveBeenCalledTimes(1);
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relationId: ids.relation,
+        text: "NOT_RELATED",
+        inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash
+      })
+    );
+  });
+
+  describe("the writer's verdict cached under the key", () => {
+    const key = relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash;
+    const verdict = (inputHash = key) => ({
+      text: "NOT_RELATED",
+      inputHash,
+      model: "writer-model",
+      writtenAt
+    });
+
+    it("answers a kept relation again with no call, from a new service as after a restart", async () => {
+      // The first open: the writer answers, the verdict is saved...
+      repository.readContext.mockResolvedValue(context({ vetoable: false, status: "accepted" }));
+      const first = build(() => "NOT_RELATED");
+      expect(await first.explain()).toEqual({ relationId: ids.relation, unrelated: true });
+      const saved = repository.save.mock.calls[0]![0];
+      expect(first.runDefaultTask).toHaveBeenCalledTimes(1);
+      // ...and the second open, which reads what was saved, makes no call and writes nothing.
+      repository.save.mockClear();
+      repository.readContext.mockResolvedValue(
+        context({
+          vetoable: false,
+          status: "accepted",
+          stored: { text: saved.text, inputHash: saved.inputHash, model: saved.model, writtenAt }
+        })
+      );
+      for (let open = 0; open < 3; open += 1) {
+        const restarted = build(() => "NOT_RELATED");
+        expect(await restarted.explain()).toEqual({ relationId: ids.relation, unrelated: true });
+        expect(restarted.runDefaultTask).not.toHaveBeenCalled();
+        expect(restarted.withdraw).not.toHaveBeenCalled();
+        expect(restarted.relationsChanged).not.toHaveBeenCalled();
+        expect(restarted.texts).toEqual([]);
+      }
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it("answers a relation the typer withdrew with the veto again, with no call and no second veto", async () => {
+      repository.readContext.mockResolvedValue(
+        context({ vetoable: false, withdrawn: true, vetoSource: "typer", stored: verdict() })
+      );
+      const { explain, runDefaultTask, withdraw, relationsChanged } = build(() => "NOT_RELATED");
+      expect(await explain()).toEqual({ relationId: ids.relation, vetoed: true });
+      expect(runDefaultTask).not.toHaveBeenCalled();
+      expect(withdraw).not.toHaveBeenCalled();
+      expect(relationsChanged).not.toHaveBeenCalled();
+    });
+
+    it("withdraws a relation nobody has decided since, with no call: a verdict cached but not applied", async () => {
+      repository.readContext.mockResolvedValue(context({ stored: verdict() }));
+      const { explain, runDefaultTask, withdraw, relationsChanged } = build(() => "NOT_RELATED");
+      expect(await explain()).toEqual({ relationId: ids.relation, vetoed: true });
+      expect(runDefaultTask).not.toHaveBeenCalled();
+      expect(withdraw).toHaveBeenCalledTimes(1);
+      expect(relationsChanged).toHaveBeenCalledWith([ids.a, ids.b]);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it("asks the writer again once the facts, the language or the writer changed", async () => {
+      repository.readContext.mockResolvedValue(
+        context({ vetoable: false, status: "accepted", stored: verdict("stale") })
+      );
+      const facts = build(() => "n1 and n2 agree.");
+      expect(textOf(await facts.explain())).toContain("agree");
+      expect(facts.runDefaultTask).toHaveBeenCalledTimes(1);
+      // The verdict of another content language is not the verdict for this one.
+      const english = relationExplanationPlan({ ...context(), language: "en" }).inputHash;
+      repository.readContext.mockResolvedValue(
+        context({ vetoable: false, status: "accepted", stored: verdict(english) })
+      );
+      const language = build(() => "n1 and n2 agree.");
+      expect(textOf(await language.explain())).toContain("agree");
+      expect(language.runDefaultTask).toHaveBeenCalledTimes(1);
+      // Nor is the verdict of another model or prompt revision, when the writer is known.
+      const writer = { promptRevision: "prompt-3", model: "model-a" };
+      const keyOf = (who: typeof writer) =>
+        relationExplanationPlan({ ...context(), language: "pt-BR", writer: who }).inputHash;
+      repository.readContext.mockResolvedValue(
+        context({
+          vetoable: false,
+          status: "accepted",
+          stored: verdict(keyOf({ ...writer, model: "model-b" }))
+        })
+      );
+      const other = build(() => "n1 and n2 agree.", { resolveWriter: async () => writer });
+      expect(textOf(await other.explain())).toContain("agree");
+      expect(other.runDefaultTask).toHaveBeenCalledTimes(1);
+      // The verdict of this very writer is answered with no call.
+      repository.readContext.mockResolvedValue(
+        context({ vetoable: false, status: "accepted", stored: verdict(keyOf(writer)) })
+      );
+      const same = build(() => "n1 and n2 agree.", { resolveWriter: async () => writer });
+      expect(await same.explain()).toEqual({ relationId: ids.relation, unrelated: true });
+      expect(same.runDefaultTask).not.toHaveBeenCalled();
+    });
+
+    it("replaces a cached explanation with the verdict, and the verdict with a new explanation", async () => {
+      repository.readContext.mockResolvedValue(
+        context({
+          vetoable: false,
+          status: "accepted",
+          stored: { text: "Old text.", inputHash: "stale", model: "m", writtenAt }
+        })
+      );
+      const { explain } = build(() => "NOT_RELATED");
+      expect(await explain()).toEqual({ relationId: ids.relation, unrelated: true });
+      expect(repository.save.mock.calls.map(([saved]) => saved.text)).toEqual(["NOT_RELATED"]);
+    });
+
+    it("explains nothing when the relation is gone as the verdict is cached", async () => {
+      repository.save.mockResolvedValueOnce(null);
+      const { explain, withdraw } = build(() => "NOT_RELATED");
+      expect(await explain()).toBeNull();
+      expect(withdraw).not.toHaveBeenCalled();
+    });
   });
 
   it("answers the veto again, with no call, for a relation the writer already withdrew", async () => {
@@ -831,6 +1079,8 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
     const unrelated = build(() => "NOT_RELATED");
     expect(await unrelated.explain()).toEqual({ relationId: ids.relation, vetoed: true });
     expect(unrelated.withdraw).not.toHaveBeenCalled();
+    // The verdict is cached, so a withdrawn relation listed again asks nobody.
+    expect(repository.save.mock.calls.map(([saved]) => saved.text)).toContain("NOT_RELATED");
   });
 
   it("asks again what the relation is when someone else decided it while the writer answered", async () => {
@@ -838,12 +1088,18 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
     repository.readContext
       .mockResolvedValueOnce(context())
       .mockResolvedValueOnce(context({ vetoable: false, status: "accepted" }));
-    expect(await decided.explain()).toBeNull();
+    expect(await decided.explain()).toEqual({ relationId: ids.relation, unrelated: true });
     const raced = build(() => "NOT_RELATED", { withdraw: async () => null });
     repository.readContext
       .mockResolvedValueOnce(context())
       .mockResolvedValueOnce(context({ vetoable: false, withdrawn: true, vetoSource: "typer" }));
     expect(await raced.explain()).toEqual({ relationId: ids.relation, vetoed: true });
+    // Removed by the owner meanwhile: there is nothing left to say.
+    const removed = build(() => "NOT_RELATED", { withdraw: async () => null });
+    repository.readContext
+      .mockResolvedValueOnce(context())
+      .mockResolvedValueOnce(context({ vetoable: false, status: "rejected", listed: false }));
+    expect(await removed.explain()).toBeNull();
   });
 
   describe("the writer in the cache key", () => {

@@ -45,10 +45,63 @@ describe("the preview of a streamed explanation", () => {
       "**NOT_RELATED** because the notes only share a word."
     ])
       expect(previews([answer.slice(0, 5), answer.slice(5)])).toEqual([null, null]);
-    // An answer that merely resembles it is shown.
-    expect(previews(["Not related at first sight, but yes."])[0]).toBe(
+    // Nor in the other spellings of it ("NOT RELATED", "not-related"): the validated text replaces it.
+    for (const answer of [
+      "NOT RELATED because the notes only share a word.",
+      "not-related because the notes only share a word.",
       "Not related at first sight, but yes."
+    ])
+      expect(previews([answer.slice(0, 5), answer.slice(5)]), answer).toEqual([null, null]);
+    // An answer that merely resembles it is shown.
+    expect(previews(["Notes related at first sight, but yes."])[0]).toBe(
+      "Notes related at first sight, but yes."
     );
+  });
+
+  it("holds the 16 characters after the marks that surround the sentinel, not before", () => {
+    // The marks do not count: the leading quotes would otherwise let half the sentinel through.
+    for (const answer of [
+      `${'"'.repeat(7)}NOT_RELATED`,
+      `${"*".repeat(6)}NOT_RELATED`,
+      `${"`".repeat(5)}not_related${"`".repeat(5)}`,
+      "   **NOT_RELATED**"
+    ])
+      for (let cut = 1; cut < answer.length; cut += 1)
+        expect(previews([answer.slice(0, cut), answer.slice(cut)]), `${answer} at ${cut}`).toEqual([
+          null,
+          null
+        ]);
+    expect(previews(['""Both notes say it twice."'])[0]).toBe('""Both notes say it twice."');
+  });
+
+  it("never shows the sentinel or the start of it in a labelled answer or further in", () => {
+    for (const answer of [
+      "Answer given: NOT_RELATED",
+      "The first note, though NOT_RELATED to the second, continues.",
+      "Verdict: NOT-RELATED because they only share a word."
+    ]) {
+      for (let cut = 1; cut < answer.length; cut += 1) {
+        const shown = previews([answer.slice(0, cut), answer.slice(cut)]);
+        for (const text of shown) {
+          expect(text ?? "", `${answer} at ${cut}`).not.toMatch(/not[_-]?(?:r(?:e(?:l\w*)?)?)?$/iu);
+          expect(text ?? "", `${answer} at ${cut}`).not.toMatch(/not[_-]related/iu);
+        }
+      }
+    }
+    // The preview ends where the sentinel begins, and only grows.
+    expect(previews(["The first note, though NOT_REL", "ATED to the second, goes on."])).toEqual([
+      "The first note, though ",
+      "The first note, though "
+    ]);
+    // A word that begins like the sentinel is released with the next piece.
+    expect(previews(["Both notes agree that it is no", "t the case at all."])).toEqual([
+      "Both notes agree that it is ",
+      "Both notes agree that it is not the case at all."
+    ]);
+    expect(previews(["Both notes agree that it is not rela", "ted in method."])).toEqual([
+      "Both notes agree that it is ",
+      "Both notes agree that it is not related in method."
+    ]);
   });
 
   it("turns complete aliases into canonical references and only those", () => {
@@ -78,6 +131,41 @@ describe("the preview of a streamed explanation", () => {
       `Both notes agree that ${ref(ids.first)} and n2.5 differ, as `,
       `Both notes agree that ${ref(ids.first)} and n2.5 differ, as ${ref(ids.first)}-${ref(ids.second)} do.`
     ]);
+  });
+
+  it("only grows and never shows the sentinel or a tag, whichever way the answer is cut into pieces", () => {
+    // A small seeded generator keeps the cuts the same on every run.
+    let seed = 20261018;
+    const random = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const answers = [
+      "Retrieval cues the n1 idea that n2 extends it, with feedback and N400 effects.",
+      '"Both notes agree that it is not the case, as n1 and n2 show."',
+      "Answer given: NOT_RELATED because n1 and n2 only share a word.",
+      "**NOT RELATED** because n1 and n2 only share a word, nothing more.",
+      "The first note, though not-related in method, supports n2 in aim <b>here</b>.",
+      "n1.5 and n2-3 are values, while n1- and n2. end the note it is no longer so."
+    ];
+    for (const answer of answers)
+      for (let run = 0; run < 100; run += 1) {
+        const cuts = new Set<number>();
+        for (let count = Math.floor(random() * 8); count > 0; count -= 1)
+          cuts.add(Math.floor(random() * answer.length));
+        const ordered = [0, ...[...cuts].sort((a, b) => a - b), answer.length];
+        const pieces = ordered.slice(1).map((end, index) => answer.slice(ordered[index], end));
+        let before = "";
+        for (const text of previews(pieces)) {
+          if (text === null) continue;
+          expect(text.startsWith(before), `${answer} cut ${ordered}`).toBe(true);
+          // Only the canonical references the stream wrote are tags.
+          const bare = text.replace(/<note-ref id="[0-9a-f-]{36}" \/>/gu, "");
+          expect(bare).not.toMatch(/not[_-]related|<[a-z/]/iu);
+          expect(bare).not.toMatch(/(?<![\p{L}\p{N}_])n[12]?$/u);
+          before = text;
+        }
+      }
   });
 
   it("does not hold a word that merely ends in n", () => {

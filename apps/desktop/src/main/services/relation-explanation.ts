@@ -80,39 +80,78 @@ function unwrapQuotes(text: string): string {
   return probe.includes(open) || probe.includes(close) ? text : inner.trim();
 }
 
-/** The sentinel as a word of an answer: it is never part of an explanation. */
-const sentinelWord = new RegExp(
-  `(?<![\\p{L}\\p{N}_])${relationExplanationSentinel}(?![\\p{L}\\p{N}_])`,
-  "iu"
-);
+/** The sentinel with its two words joined by `join` (a regular expression source). */
+const spelled = (join: string) => relationExplanationSentinel.replace("_", join);
+
+/** The sentinel as a word of an answer, joined by `_` or `-`: never part of an explanation. */
+const sentinelWord = new RegExp(`(?<![\\p{L}\\p{N}_])${spelled("[_-]")}(?![\\p{L}\\p{N}_])`, "iu");
 
 /**
- * Whether the whole answer is the sentinel: the writer found the notes not related as stated. Only
- * quotes, backticks, emphasis marks and a final full stop may surround it; an answer that has more
- * to say is not the sentinel (and is no explanation either, see {@link parseRelationExplanation}).
+ * The sentinel as a small model may spell it when it is the whole answer: any case, its words
+ * joined by underscores, hyphens or spaces ("NOT RELATED", "Not-related").
  */
-export function isNotRelatedAnswer(output: unknown): boolean {
-  if (typeof output !== "string") return false;
-  const bare = output
-    .trim()
-    .replace(/^[\s"'`*_“‘«„]+/u, "")
-    .replace(/[\s"'`*_”’».!]+$/u, "");
-  return bare.toUpperCase() === relationExplanationSentinel;
+const sentinelSpelling = new RegExp(`^${spelled("[\\s_-]*")}$`, "iu");
+
+/** The start of an answer that is the sentinel, in any of those spellings. */
+const sentinelStart = new RegExp(`^${spelled("[\\s_-]*")}`, "iu");
+
+const leadingMarks = /^[\s"'`*_“‘«„]+/u;
+const trailingMarks = /[\s"'`*_”’».!]+$/u;
+
+/** The answer without the quotes, emphasis marks and final full stop that may surround it. */
+function withoutMarks(output: string): string {
+  return output.trim().replace(leadingMarks, "").replace(trailingMarks, "");
 }
 
 /**
- * A valid explanation is plain text of at most `modelCharacters` characters without tags. The notes
- * are named n1 and n2, but every other token is content: N400, N95 or "N2 sleep" are words of the
- * notes, never references. Model output never carries canonical references, so a tag is refused,
- * and so is an answer that mentions the sentinel without being only that.
+ * Whether the whole answer is the sentinel: the writer found the notes not related as stated. Only
+ * quotes, backticks, emphasis marks and a final full stop may surround it, and its two words may be
+ * joined by a space or a hyphen as well as an underscore; an answer that has more to say is not the
+ * sentinel (and is no explanation either, see {@link parseRelationExplanation}).
+ */
+export function isNotRelatedAnswer(output: unknown): boolean {
+  return typeof output === "string" && sentinelSpelling.test(withoutMarks(output));
+}
+
+/** The text without the quotes, emphasis marks and space an answer may begin with. */
+export function withoutLeadingMarks(text: string): string {
+  return text.replace(leadingMarks, "");
+}
+
+/**
+ * Whether a text begins with the sentinel (marks aside): a streamed answer that does is never shown.
+ * Not the same as the whole answer: more may follow.
+ */
+export function beginsWithSentinel(text: string): boolean {
+  return sentinelStart.test(withoutLeadingMarks(text));
+}
+
+/** Where the sentinel stands as a word of the text, or -1. */
+export function sentinelWordIndex(text: string): number {
+  return text.search(sentinelWord);
+}
+
+/** A UUID-shaped string: an ID never reaches the prompt, so it is never part of an explanation. */
+const idShaped = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu;
+
+/**
+ * A valid explanation is plain text of at most `modelCharacters` characters and at least
+ * `minModelWords` words, without tags or ID-shaped strings. The notes are named n1 and n2, but
+ * every other token is content: N400, N95 or "N2 sleep" are words of the notes, never references.
+ * Model output never carries canonical references, so a tag is refused, and so is an answer that
+ * mentions the sentinel without being only that, or that is the sentinel spelled another way ("Not
+ * related.") or translated ("Não relacionado."): too short to explain anything, it goes to the
+ * repair, which can answer the sentinel exactly.
  * Returns null when the output is not valid.
  */
 export function parseRelationExplanation(output: unknown): string | null {
   if (typeof output !== "string") return null;
   const text = unwrapQuotes(output.trim()).replace(/\s+/g, " ");
   if (!text || text.length > relationExplanationLimits.modelCharacters) return null;
+  if (text.split(" ").length < relationExplanationLimits.minModelWords) return null;
   if (/<\/?[a-z][a-z-]*\b/i.test(text)) return null;
-  if (sentinelWord.test(text)) return null;
+  if (sentinelWord.test(text) || sentinelSpelling.test(withoutMarks(text))) return null;
+  if (idShaped.test(text)) return null;
   return text;
 }
 

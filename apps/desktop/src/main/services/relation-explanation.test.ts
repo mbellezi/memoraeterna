@@ -4,12 +4,14 @@ import { relationExplanationLimits, relationExplanationOrder } from "@app/domain
 import { defaultPromptPin, promptAudit, withPromptPin } from "./prompt-runtime.js";
 import {
   acceptRelationExplanation,
+  beginsWithSentinel,
   buildRelationExplanationPrompt,
   buildRelationExplanationRepairPrompt,
   isNotRelatedAnswer,
   parseRelationExplanation,
   relationExplanationPromptVersion,
-  resolveRelationExplanationReferences
+  resolveRelationExplanationReferences,
+  sentinelWordIndex
 } from "./relation-explanation.js";
 
 const ids = {
@@ -124,15 +126,20 @@ describe("the NOT_RELATED answer", () => {
       "**NOT_RELATED**",
       "NOT_RELATED.",
       "not_related",
-      "“NOT_RELATED”."
+      "“NOT_RELATED”.",
+      // A small model spells the token its own way: the words joined by a space or a hyphen.
+      "NOT RELATED",
+      "Not related.",
+      "not-related",
+      "  **Not  Related**  "
     ])
-      expect(isNotRelatedAnswer(output)).toBe(true);
+      expect(isNotRelatedAnswer(output), output).toBe(true);
   });
 
   it("is not an answer that says more, nor anything that is not text", () => {
     for (const output of [
       "NOT_RELATED because the notes only share a word.",
-      "NOT RELATED",
+      "Not related to the second note in any way.",
       "The notes are NOT_RELATED.",
       "NOT_RELATED NOT_RELATED",
       "",
@@ -153,6 +160,44 @@ describe("the NOT_RELATED answer", () => {
     expect(parseRelationExplanation("n1 is NOT_RELATEDLY phrased about n2.")).not.toBeNull();
     expect(acceptRelationExplanation("NOT_RELATED", { first: ids.a, second: ids.b })).toBeNull();
   });
+
+  it("is never cached as text in another spelling, or in another language: it goes to the repair", () => {
+    for (const output of [
+      "NOT RELATED",
+      "Not related.",
+      "NOT-RELATED",
+      "**Not related**",
+      '"not related"',
+      "Answer: NOT-RELATED",
+      // Translated, as a writer in another content language may answer: too short to be an explanation.
+      "Não relacionado.",
+      "No relacionado.",
+      "Non lié.",
+      "Non correlato.",
+      "Sin relación"
+    ])
+      expect(parseRelationExplanation(output), output).toBeNull();
+    // But prose that says the notes are not related is an explanation like any other.
+    expect(
+      parseRelationExplanation("n1 is not related to n2 in method, only in aim.")
+    ).not.toBeNull();
+  });
+
+  it("sees the sentinel as a word anywhere, and where an answer begins with it", () => {
+    expect(sentinelWordIndex("Answer: NOT_RELATED")).toBe(8);
+    expect(sentinelWordIndex("see not-related.")).toBe(4);
+    expect(sentinelWordIndex("NOT_RELATEDLY phrased")).toBe(-1);
+    expect(sentinelWordIndex("not related to anything")).toBe(-1);
+    for (const text of [
+      '"NOT_RELATED because',
+      "**NOT RELATED**",
+      "_not-related_",
+      "\n NOT_RELATED"
+    ])
+      expect(beginsWithSentinel(text), text).toBe(true);
+    for (const text of ["Answer: NOT_RELATED", "Notes related by", "n1 not related"])
+      expect(beginsWithSentinel(text), text).toBe(false);
+  });
 });
 
 describe("relation explanation output", () => {
@@ -171,14 +216,23 @@ describe("relation explanation output", () => {
       { text: "n1" },
       "",
       "   ",
-      "x".repeat(relationExplanationLimits.modelCharacters + 1),
+      "x ".repeat(relationExplanationLimits.modelCharacters),
       `n1 supports <note-ref id="${ids.a}" />.`,
-      "n1 supports <b>n2</b>."
+      "n1 supports <b>n2</b>.",
+      // An ID never reaches the prompt: an answer that carries one is made up.
+      `n1 supports the note ${ids.a} in this study.`
     ])
       expect(parseRelationExplanation(output)).toBeNull();
     expect(
-      parseRelationExplanation("x".repeat(relationExplanationLimits.modelCharacters))
+      parseRelationExplanation("x ".repeat(relationExplanationLimits.modelCharacters / 2 - 1))
     ).not.toBeNull();
+  });
+
+  it("asks for a few words at least: one or two words explain nothing", () => {
+    expect(relationExplanationLimits.minModelWords).toBe(3);
+    for (const output of ["n1", "Related.", "Both agree", "  n1   supports  "])
+      expect(parseRelationExplanation(output), output).toBeNull();
+    expect(parseRelationExplanation("n1 echoes n2.")).toBe("n1 echoes n2.");
   });
 
   it("keeps content tokens such as N400, N95 and N2 sleep: only n1 and n2 name the notes", () => {

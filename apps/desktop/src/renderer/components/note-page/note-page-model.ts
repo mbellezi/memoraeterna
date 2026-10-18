@@ -250,18 +250,20 @@ export function cardContent(
 /**
  * The explanation of an open card while it is being written (with the text streamed so far), why
  * it could not be, that the writer found the notes unrelated and the relation is hidden (F3 D22),
- * or that the relation can no longer be explained (it, or one of its notes, is no longer current).
+ * that it found them unrelated but the relation stays (no explanation is available), or that the
+ * relation can no longer be explained (it, or one of its notes, is no longer current).
  */
 export type ExplanationState =
   | { status: "writing" }
   | { status: "streaming"; text: string }
   | { status: "vetoed" }
+  | { status: "unexplained" }
   | { status: "unavailable" }
   | { status: "failed"; kind: "noModel" | "failed" };
 
 /**
- * Whether a card asks for an explanation: none is stored and the relation was not found gone or
- * withdrawn.
+ * Whether a card asks for an explanation: none is stored and the relation was not found gone,
+ * withdrawn or left unexplained.
  */
 export function asksForExplanation(
   relation: Pick<NotePageRelation, "explanation"> | undefined,
@@ -271,20 +273,23 @@ export function asksForExplanation(
     relation !== undefined &&
     relation.explanation === null &&
     state?.status !== "unavailable" &&
-    state?.status !== "vetoed"
+    state?.status !== "vetoed" &&
+    state?.status !== "unexplained"
   );
 }
 
 /**
  * What the card holds once the request answered: nothing when the explanation was written (the
- * relation carries it), "vetoed" when the writer found the notes unrelated, a terminal
+ * relation carries it), "vetoed" when the writer found the notes unrelated and the relation was
+ * withdrawn, "unexplained" when it found them unrelated and the relation stays, a terminal
  * "unavailable" when there was nothing to explain.
  */
 export function explanationAfter(
-  result: { text: string } | { vetoed: true } | null
+  result: { text: string } | { vetoed: true } | { unrelated: true } | null
 ): ExplanationState | null {
   if (result === null) return { status: "unavailable" };
-  return "vetoed" in result ? { status: "vetoed" } : null;
+  if ("vetoed" in result) return { status: "vetoed" };
+  return "unrelated" in result ? { status: "unexplained" } : null;
 }
 
 /**
@@ -429,12 +434,19 @@ export function withPlacement(page: NotePage, placement: NotePage["placement"]):
 
 /**
  * The page read again, keeping the rows that were shown past its first page ("Show more"), so a
- * refresh never shortens the list. The refreshed rows and total win; kept rows are not re-read.
+ * refresh never shortens the list. The refreshed rows and total win; kept rows are not re-read,
+ * except those in `dropped` (relations the writer withdrew, which the server no longer lists).
  */
-export function keepShownRelations(shown: NotePage | null, refreshed: NotePage): NotePage {
+export function keepShownRelations(
+  shown: NotePage | null,
+  refreshed: NotePage,
+  dropped: ReadonlySet<string> = new Set()
+): NotePage {
   const fresh = refreshed.relations.items;
   if (!shown || shown.relations.items.length <= fresh.length) return refreshed;
   const known = new Set(fresh.map((item) => item.id));
-  const tail = shown.relations.items.slice(fresh.length).filter((item) => !known.has(item.id));
+  const tail = shown.relations.items
+    .slice(fresh.length)
+    .filter((item) => !known.has(item.id) && !dropped.has(item.id));
   return { ...refreshed, relations: { ...refreshed.relations, items: [...fresh, ...tail] } };
 }

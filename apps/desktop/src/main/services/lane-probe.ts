@@ -45,7 +45,8 @@ const conflictingKnobs = [
   "MEMORA_MATCHING_PILOT",
   "MEMORA_MATCHING_BENCHMARK",
   "MEMORA_FAKE_REMOTE",
-  "MEMORA_SOAK"
+  "MEMORA_SOAK",
+  "MEMORA_DEV_EXPLAIN_PROBE"
 ] as const;
 
 export type LaneProbeRefusalCode =

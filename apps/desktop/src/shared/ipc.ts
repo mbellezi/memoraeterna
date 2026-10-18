@@ -1814,11 +1814,17 @@ export interface DesktopApi {
   relations: {
     /**
      * The current explanation, written now when there is none; the veto when the writer found the
-     * notes unrelated (the relation is withdrawn); null when the relation is gone. A request with a
-     * `requestId` also receives the text as it is written, on `subscribeExplanationDelta`.
+     * notes unrelated (the relation is withdrawn); `unrelated` when it found them so but the
+     * relation stays (a human verdict, an earlier version): no explanation is available. Both
+     * verdicts are cached with the relation, so a later open asks nobody. Null when the relation is
+     * gone. A request with a `requestId` also receives the text as it is written, on
+     * `subscribeExplanationDelta`.
      */
     explain: (input: RelationExplainInput) => Promise<RelationExplainOutcome | null>;
-    /** Stops the explanation being written; resolves true when one was stopped. */
+    /**
+     * Stops the explanation being written; resolves true when one was stopped. With the `requestId`
+     * of the request, only that card stops waiting: the call goes on while another card waits for it.
+     */
     cancelExplain: (input: RelationExplainInput) => Promise<boolean>;
     /**
      * The current explanation of a source relation, written now when there is none; null when

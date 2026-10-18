@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { QueryResult, QueryResultRow } from "pg";
 
+import { currentNoteEndpointsSql, noteRelationStateSql } from "./note-relation-sql.js";
 import {
   createRelationExplanationRepository,
   relationExplanationInputHash,
@@ -214,7 +215,11 @@ describe("relation explanation repository", () => {
     const { repository } = setup([]);
     const { context } = repository.statements;
     // The veto state is read through the visibility module, never filtered on its columns.
-    expect(context).toContain("r.status = 'pending_review' and r.vetoed_at is null) as vetoable");
+    // A relation may be withdrawn only between current notes: withdrawn from an earlier version of a
+    // note, no list would show it for review.
+    expect(context).toContain(
+      `(${noteRelationStateSql.vetoable("r")} and ${currentNoteEndpointsSql("r", ["a", "b"])}) as vetoable`
+    );
     expect(context).toContain("r.status = 'pending_review' and r.vetoed_at is not null");
     expect(context).toContain('r.veto_source as "vetoSource"');
     const withdrawn = await setup([

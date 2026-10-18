@@ -8,6 +8,7 @@ import {
 } from "@app/domain";
 
 import {
+  currentNoteEndpointsSql,
   earlierVersionNoteRelationSql,
   noteRelationStateSql,
   shownNoteRelationSql,
@@ -100,7 +101,11 @@ export interface RelationExplanationContext {
   semanticSourceId: string | null;
   /** The Note page lists the relation (D9): only a listed relation is explained. */
   listed: boolean;
-  /** No human verdict and no veto yet: an explanation that finds the notes unrelated may withdraw it. */
+  /**
+   * No human verdict and no veto yet, between current notes: an explanation that finds the notes
+   * unrelated may withdraw it. A relation to an earlier version of a note is not vetoable: withdrawn,
+   * no list would show it for review (it is neither shown, earlier nor withdrawn).
+   */
   vetoable: boolean;
   /** Withdrawn by a veto and not yet reviewed (D9). */
   withdrawn: boolean;
@@ -194,7 +199,8 @@ const noteJson = (alias: string, chunk: string) => `jsonb_build_object(
  * $1 relation ID. One row by primary keys: the relation, both notes, their passages and the cache.
  * The subject of a directed relation comes from its stored direction (F3 D8); an untyped relation
  * reads as neutral. `listed`: the Note page lists the relation (shown, withdrawn, or to an earlier
- * version of a note), which is what may be explained.
+ * version of a note), which is what may be explained. `vetoable`: undecided and between current
+ * notes, which is what may be withdrawn.
  */
 const contextSql = `
 select r.id as "relationId", coalesce(r.relation_type, 'related') as type, r.status::text as status,
@@ -202,7 +208,7 @@ select r.id as "relationId", coalesce(r.relation_type, 'related') as type, r.sta
                          when 'hi_to_lo' then r.target_atomic_note_id end)::text as "semanticSourceId",
        (${shownNoteRelationSql("r", ["a", "b"])} or ${withdrawnNoteRelationSql("r", ["a", "b"])}
         or ${earlierVersionNoteRelationSql("r", "a", "b")}) as listed,
-       ${noteRelationStateSql.vetoable("r")} as vetoable,
+       (${noteRelationStateSql.vetoable("r")} and ${currentNoteEndpointsSql("r", ["a", "b"])}) as vetoable,
        ${withdrawnNoteRelationSql("r", ["a", "b"])} as withdrawn, r.veto_source as "vetoSource",
        ${noteJson("a", "ac")} as a, ${noteJson("b", "bc")} as b,
        case when x.relation_id is null then null else jsonb_build_object(
@@ -267,8 +273,10 @@ export function createRelationExplanationRepository(db: Queryable) {
     },
 
     /**
-     * Caches an explanation for the inputs it was written from, replacing an earlier one. Resolves
-     * to null when the relation was removed meanwhile (nothing is stored).
+     * Caches an explanation for the inputs it was written from, replacing an earlier one. The text
+     * may be the sentinel of the writer's verdict that the notes are unrelated: the verdict is
+     * cached under the same key, so a current one is answered with no call. Resolves to null when
+     * the relation was removed meanwhile (nothing is stored).
      */
     async save(input: SaveRelationExplanationInput): Promise<{ writtenAt: Date } | null> {
       const row = (

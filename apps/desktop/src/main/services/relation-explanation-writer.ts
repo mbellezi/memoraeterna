@@ -22,20 +22,23 @@ import {
 
 const explanationPrompts = ["relations.explain", "relations.explain.repair"] as const;
 
+/** The instruction the AI service adds to every call of an OpenAI Codex model. */
+const codexInstruction = "shared.codex_adapter_instruction";
+
 /**
  * The identity of the prompt an explanation is written with: its effective text (as shipped or as
  * the owner edited it) and the revisions behind it, so a new shipped revision or an edit writes the
- * explanations of relations that are opened afterwards again (F3 D22).
+ * explanations of relations that are opened afterwards again (F3 D22). For a provider, the
+ * fragments it adds are part of it (the Codex adapter instruction).
  */
-export function relationExplanationPromptRevision(): string {
+export function relationExplanationPromptRevision(provider?: string): string {
   const pin = capturePromptPin();
+  const ids = [...explanationPrompts, ...(provider === "openai-codex" ? [codexInstruction] : [])];
   return createHash("sha256")
     .update(
       JSON.stringify([
-        promptFingerprint(explanationPrompts, pin, false),
-        explanationPrompts.map(
-          (id) => pin.entries.find((entry) => entry.id === id)?.revisions ?? null
-        )
+        promptFingerprint(ids, pin, provider ?? false),
+        ids.map((id) => pin.entries.find((entry) => entry.id === id)?.revisions ?? null)
       ])
     )
     .digest("hex");
@@ -63,7 +66,7 @@ export function createRelationExplanationWriterResolver(
     );
     if (!selection) return null;
     return {
-      promptRevision: relationExplanationPromptRevision(),
+      promptRevision: relationExplanationPromptRevision(selection.provider),
       model: JSON.stringify([
         selection.provider,
         selection.modelId,

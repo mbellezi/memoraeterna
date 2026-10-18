@@ -2855,7 +2855,8 @@
       "explainedBy": "Spiegata da {model}",
       "explainFailed": "Impossibile scrivere la spiegazione.",
       "explainNoModel": "Nessun modello è configurato per scrivere spiegazioni.",
-      "unrelated": "Il redattore ha ritenuto che queste note non siano correlate, quindi questa relazione è ora nascosta.",
+      "unrelated": "Il modello che scrive le spiegazioni ha ritenuto che queste note non siano correlate, quindi questa relazione è ora nascosta.",
+      "unexplained": "Nessuna spiegazione disponibile. Il modello che scrive le spiegazioni non ha trovato un legame tra queste note, e la relazione resta com’è.",
       "explainUnavailable": "Questa relazione non è più disponibile, quindi non può essere spiegata."
     }
   }

@@ -1,10 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { shownNoteRelationSql, type PgPool, type RelationExplanationWriter } from "@app/db";
-import { isRelationVeto, type RelationExplainOutcome } from "@app/domain";
+import { isRelationUnrelated, isRelationVeto, type RelationExplainOutcome } from "@app/domain";
 
 import type { AiService } from "../ai-service.js";
+import { isMeasurementProfilePath, profilesDirectory } from "../profile-reset.js";
 import { RelationExplanationService } from "../relation-explanation-service.js";
 
 /**
@@ -15,10 +16,11 @@ import { RelationExplanationService } from "../relation-explanation-service.js";
  *
  * It spends the tokens of `MEMORA_DEV_EXPLAIN_PROBE_OPENS` explanations (10 by default, about 10k
  * tokens on a remote writer), writes the explanations it gets and withdraws the relations the writer
- * finds unrelated: run it on a clone of a profile, never on the owner's library. It is refused when
- * packaged, with a cassette or another measurement run, and for a report outside
- * `<workspace>/.cache`. The job supervisor stays stopped while it runs, so nothing else uses the
- * writer, and the app quits when it ends.
+ * finds unrelated, so it runs only on a clone inside `<workspace>/.cache/profiles/`, never on the
+ * owner's library. It is refused when packaged, outside such a clone, with a cassette or another
+ * measurement run, and for a report outside `<workspace>/.cache`; a refusal leaves the app as it
+ * was. The job supervisor stays stopped while it runs, so nothing else uses the writer, and the app
+ * quits when it ends.
  */
 
 export const explainProbeKnob = "MEMORA_DEV_EXPLAIN_PROBE";
@@ -39,10 +41,14 @@ const conflictingKnobs = [
   "MEMORA_FAKE_REMOTE",
   "MEMORA_SOAK",
   "MEMORA_DEV_LANE_PROBE",
-  "MEMORA_TYPER_CHECK"
+  "MEMORA_TYPER_CHECK",
+  "MEMORA_RELATIONS_REMATCH",
+  "MEMORA_GOLDEN_NOTE_PAIRS",
+  "MEMORA_GOLDEN_TOPICS"
 ] as const;
 
-export type ExplainProbeRefusalCode = "packaged" | "invalidReport" | "conflictingKnob" | "opens";
+export type ExplainProbeRefusalCode =
+  "packaged" | "outsideProfiles" | "invalidReport" | "conflictingKnob" | "opens";
 
 export class ExplainProbeRefusal extends Error {
   public constructor(
@@ -61,20 +67,35 @@ export interface ExplainProbeSettings {
 
 type Env = Readonly<Record<string, string | undefined>>;
 
+interface ExplainProbeEnvironment {
+  isPackaged: boolean;
+  workspaceRoot: string;
+  /** The profile folder the app runs on: only a clone inside `.cache/profiles/` may be probed. */
+  userDataPath: string;
+}
+
 /**
  * Reads the knobs: the absolute path of the JSON report and the number of relations to open, or
- * null when the probe is not asked for. Refused when packaged, together with another DEV
- * measurement knob, for a path that is not a `.json` file under `<workspaceRoot>/.cache` and for a
- * count that is not 1 to 50.
+ * null when the probe is not asked for. Refused when packaged, on a profile that is not inside
+ * `<workspaceRoot>/.cache/profiles/` (the probe writes explanations and withdraws relations),
+ * together with another DEV measurement knob, for a path that is not a `.json` file under
+ * `<workspaceRoot>/.cache` and for a count that is not 1 to 50.
  */
 export function readExplainProbeKnob(
   env: Env,
-  options: { isPackaged: boolean; workspaceRoot: string }
+  options: ExplainProbeEnvironment
 ): ExplainProbeSettings | null {
   const raw = env[explainProbeKnob]?.trim();
   if (!raw) return null;
   if (options.isPackaged)
     throw new ExplainProbeRefusal("packaged", `${explainProbeKnob} is refused in packaged builds`);
+  const profiles = resolve(options.workspaceRoot, ...profilesDirectory);
+  const inside = relative(profiles, resolve(options.userDataPath));
+  if (inside === "" || inside.startsWith("..") || isAbsolute(inside))
+    throw new ExplainProbeRefusal(
+      "outsideProfiles",
+      `${explainProbeKnob} only runs on a clone inside .cache/profiles/ (set MEMORA_USER_DATA_DIR)`
+    );
   const conflict = conflictingKnobs.find((name) => env[name]?.trim());
   if (conflict)
     throw new ExplainProbeRefusal(
@@ -102,10 +123,7 @@ export function readExplainProbeKnob(
  * Whether the knob asks for a probe that may run: set, and not refused. The app then keeps its job
  * supervisor stopped, as nothing else may use the writer the probe measures.
  */
-export function explainProbeRequested(
-  env: Env,
-  options: { isPackaged: boolean; workspaceRoot: string }
-): boolean {
+export function explainProbeRequested(env: Env, options: ExplainProbeEnvironment): boolean {
   try {
     return readExplainProbeKnob(env, options) !== null;
   } catch {
@@ -139,7 +157,7 @@ export function summarizeLatencies(values: readonly number[]): LatencySummary {
 
 export interface ExplainProbeOpen {
   relationId: string;
-  outcome: "explained" | "vetoed" | "none" | "failed";
+  outcome: "explained" | "vetoed" | "unrelated" | "none" | "failed";
   error?: string;
   /** Text left for the card before the validated explanation. */
   streamed: boolean;
@@ -163,6 +181,8 @@ export interface ExplainProbePass {
   callsWithUnknownTokens: number;
   explained: number;
   vetoed: number;
+  /** Relations the writer found unrelated that stay as they are (a human verdict). */
+  unrelated: number;
   streamed: number;
   firstDeltaMs: LatencySummary;
   totalMs: LatencySummary;
@@ -251,6 +271,7 @@ async function openOnce(
     });
     if (result === null) return open("none");
     if (isRelationVeto(result)) return open("vetoed");
+    if (isRelationUnrelated(result)) return open("unrelated");
     characters = result.text.length;
     return open("explained", { characters });
   } catch (error) {
@@ -271,6 +292,7 @@ function summarizePass(
     callsWithUnknownTokens: meter.callsWithUnknownTokens - before.callsWithUnknownTokens,
     explained: opens.filter((open) => open.outcome === "explained").length,
     vetoed: opens.filter((open) => open.outcome === "vetoed").length,
+    unrelated: opens.filter((open) => open.outcome === "unrelated").length,
     streamed: opens.filter((open) => open.streamed).length,
     firstDeltaMs: summarizeLatencies(
       opens.flatMap((open) => (open.firstDeltaMs === null ? [] : [open.firstDeltaMs]))
@@ -283,7 +305,7 @@ function summarizePass(
 /**
  * Opens every relation once, then every relation again, and reports both passes. A failed open is
  * recorded and the probe goes on; the second pass opens the same relations, so a relation the writer
- * withdrew answers its veto again and one that failed is tried again.
+ * found unrelated answers its verdict again with no call, and one that failed is tried again.
  */
 export async function measureExplanations(
   deps: ExplainProbeDeps
@@ -323,10 +345,8 @@ export async function pickRelationsToOpen(
   return result.rows.map((row) => row.id);
 }
 
-export interface ExplainProbeStartup {
+export interface ExplainProbeStartup extends ExplainProbeEnvironment {
   env: Env;
-  isPackaged: boolean;
-  workspaceRoot: string;
   pool: PgPool;
   ai: Pick<AiService, "runDefaultTask">;
   getContentLanguage: () => Promise<string>;
@@ -354,6 +374,13 @@ export async function runExplainProbe(
     return "refused";
   }
   if (settings === null) return "off";
+  // The folder may be a link out of the profiles (the read above only compares paths).
+  if (!(await isMeasurementProfilePath(options.userDataPath, options.workspaceRoot))) {
+    logger.error(
+      `EXPLAIN_PROBE refused: ${explainProbeKnob} only runs on a clone inside .cache/profiles/`
+    );
+    return "refused";
+  }
   const meter: ExplainProbeMeter = {
     calls: 0,
     inputTokens: 0,
@@ -426,6 +453,7 @@ function measureExplanationsOfNothing(): Pick<
     callsWithUnknownTokens: 0,
     explained: 0,
     vetoed: 0,
+    unrelated: 0,
     streamed: 0,
     firstDeltaMs: summarizeLatencies([]),
     totalMs: summarizeLatencies([])

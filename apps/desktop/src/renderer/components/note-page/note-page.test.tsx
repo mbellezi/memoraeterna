@@ -403,21 +403,54 @@ describe("Note page relations", () => {
     expect(html).not.toContain("Stale preview");
   });
 
-  it("says the writer found the notes unrelated and that the relation is hidden", () => {
+  it("says the model that writes explanations found the notes unrelated and that the relation is hidden", () => {
     const html = render(ready(), {
       openCard: fixtureId(60),
       explanations: { [fixtureId(60)]: { status: "vetoed" } }
     });
     expect(html).toContain(
-      "The writer found these notes unrelated, so this relation is now hidden."
+      "The model that writes explanations found these notes unrelated, so this relation is now hidden."
     );
-    expect(html).toMatch(/<p role="status" class="text-sm text-foreground">The writer found/);
+    expect(html).toMatch(/<p role="status" class="text-sm text-foreground">The model that writes/);
     expect(html).not.toContain("Writing an explanation");
     expect(html).not.toContain(">Retry<");
     expect(html).not.toContain('aria-busy="true"');
   });
 
+  it("says no explanation is available when the writer disagrees with a relation that stays, without blaming a veto", () => {
+    const html = render(ready(), {
+      openCard: fixtureId(60),
+      explanations: { [fixtureId(60)]: { status: "unexplained" } }
+    });
+    expect(html).toContain(
+      "No explanation is available. The model that writes explanations did not find a link between these notes, and the relation stays as it is."
+    );
+    // Neither the veto message nor the "no longer available" one: the relation is still there.
+    expect(html).not.toContain("now hidden");
+    expect(html).not.toContain("no longer available");
+    expect(html).not.toContain("Writing an explanation");
+    expect(html).not.toContain(">Retry<");
+    expect(html).not.toContain('aria-busy="true"');
+    expect(html).not.toContain("NOT_RELATED");
+  });
+
   it("says it in every language", () => {
+    for (const code of supportedLanguageCodes) {
+      const t = createTranslator(code);
+      const html = render(
+        ready(),
+        {
+          openCard: fixtureId(60),
+          explanations: { [fixtureId(60)]: { status: "unexplained" } }
+        },
+        t
+      );
+      expect(html).toContain(t("notePage.card.unexplained"));
+      expect(t("notePage.card.unexplained")).not.toBe("notePage.card.unexplained");
+      // Its own words: not the veto, not the unavailable one.
+      expect(t("notePage.card.unexplained")).not.toBe(t("notePage.card.unrelated"));
+      expect(t("notePage.card.unexplained")).not.toBe(t("notePage.card.explainUnavailable"));
+    }
     for (const code of supportedLanguageCodes) {
       const t = createTranslator(code);
       const html = render(

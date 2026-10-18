@@ -88,6 +88,9 @@ describe("the re-match knobs", () => {
 
   it("are refused beside MEMORA_GOLDEN_RUN and every other DEV measurement knob", () => {
     expect(rematchConflictingKnobs).toContain("MEMORA_GOLDEN_RUN");
+    // The measurement probes of the DEV app (the explanation probe withdraws relations and quits).
+    expect(rematchConflictingKnobs).toContain("MEMORA_DEV_EXPLAIN_PROBE");
+    expect(rematchConflictingKnobs).toContain("MEMORA_DEV_LANE_PROBE");
     for (const name of rematchConflictingKnobs)
       expect(() => readRematchEnvironment({ ...knob, [name]: "1" }, base), name).toThrow(
         expect.objectContaining({ code: "conflictingKnob", message: expect.stringContaining(name) })

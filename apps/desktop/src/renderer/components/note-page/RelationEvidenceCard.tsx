@@ -163,21 +163,35 @@ export function RelationEvidenceCard({
           ) : null}
         </div>
       ) : writing ? (
-        <p role="status" aria-busy="true" className="text-sm text-muted-foreground">
+        // Each state has a node of its own: a status region that is added with its text is
+        // announced, one whose role comes and goes on a reused node is not.
+        <p key="writing" role="status" aria-busy="true" className="text-sm text-muted-foreground">
           {t("notePage.card.writing")}
         </p>
       ) : streaming ? (
         // The text so far is a preview the validated text replaces: it is not announced piece by
         // piece, only marked busy.
-        <p aria-busy="true" className="font-reading text-base text-secondary-foreground">
+        <p
+          key="streaming"
+          aria-busy="true"
+          className="font-reading text-base text-secondary-foreground"
+        >
           <NoteRefText text={explanation.text} thisId={thisId} other={relation.other} t={t} />
         </p>
       ) : explanation?.status === "vetoed" ? (
-        <p role="status" className="text-sm text-foreground">
+        <p key="vetoed" role="status" className="text-sm text-foreground">
           {t("notePage.card.unrelated")}
         </p>
+      ) : explanation?.status === "unexplained" ? (
+        // Neutral: the owner decided this relation (or it cannot be withdrawn), so the writer's
+        // disagreement withdraws nothing.
+        <p key="unexplained" className="text-sm text-muted-foreground">
+          {t("notePage.card.unexplained")}
+        </p>
       ) : explanation?.status === "unavailable" ? (
-        <p className="text-sm text-muted-foreground">{t("notePage.card.explainUnavailable")}</p>
+        <p key="unavailable" className="text-sm text-muted-foreground">
+          {t("notePage.card.explainUnavailable")}
+        </p>
       ) : explanation?.status === "failed" ? (
         <div role="alert" className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-foreground">

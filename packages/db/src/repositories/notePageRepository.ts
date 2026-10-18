@@ -7,6 +7,7 @@ import {
   notePageLimits,
   objectLocatePathLimit,
   relationExplanation,
+  relationExplanationSentinel,
   type AtomicNoteStatus,
   type NotePageEvidence,
   type NotePageNote,
@@ -294,7 +295,9 @@ function mapNote(row: NoteRow): NotePageNote {
  * An explanation written on demand counts only while its inputs are unchanged, the content language
  * it was written in included, and, when the writer is known, while the same prompt and model would
  * write it (F3 D22): a stale one reads as none, so it is written again when the relation is opened.
- * Without one, the explanation the decider stored (when it is real text) still counts.
+ * The row that caches the writer's verdict that the notes are unrelated reads as none too, whatever
+ * its key: it is never shown as text, and opening the relation answers it without a call. Without a
+ * written row, the explanation the decider stored (when it is real text) still counts.
  */
 function explanationOf(
   item: RelationItem,
@@ -303,7 +306,8 @@ function explanationOf(
   writer: RelationExplanationWriter | null | undefined
 ): NotePageRelation["explanation"] {
   if (item.written) {
-    if (!self) return null;
+    // A row that caches the writer's verdict that the notes are unrelated is not an explanation.
+    if (!self || item.written.text === relationExplanationSentinel) return null;
     const fact = (
       note: { id: string; title: string; ideaStatement: string },
       hash: string | null

@@ -2862,7 +2862,8 @@
       "explainedBy": "Expliquée par {model}",
       "explainFailed": "L’explication n’a pas pu être rédigée.",
       "explainNoModel": "Aucun modèle n’est configuré pour rédiger des explications.",
-      "unrelated": "Le rédacteur a jugé que ces notes ne sont pas liées, cette relation est donc masquée.",
+      "unrelated": "Le modèle qui rédige les explications a jugé que ces notes ne sont pas liées, cette relation est donc masquée.",
+      "unexplained": "Aucune explication n’est disponible. Le modèle qui rédige les explications n’a pas trouvé de lien entre ces notes, et la relation reste telle quelle.",
       "explainUnavailable": "Cette relation n’est plus disponible, elle ne peut donc pas être expliquée."
     }
   }

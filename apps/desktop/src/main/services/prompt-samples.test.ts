@@ -17,7 +17,9 @@ function model() {
       calls.push({ id, input });
       let output: unknown;
       if (task === "embedding") output = [1, ...Array(255).fill(0)];
-      else if (task === "text-generation") output = "OK";
+      // An explanation has a few words at least; the diagnostics answer exactly OK.
+      else if (task === "text-generation")
+        output = id.startsWith("relations.") ? "n1 and n2 agree." : "OK";
       else if (id.startsWith("summary."))
         output = { summary: "A fictional study qualified the role of feedback.", concepts: [] };
       else if (id.startsWith("notes.") && id !== "notes.match") output = { notes: [] };
