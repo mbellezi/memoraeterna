@@ -672,6 +672,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [x] T53f Backfill of missing hierarchy-root composites for existing libraries (found by T53's proof).
 - [ ] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
 - [x] T53p Typed suggestions promote to suggested source relations (decision 29).
+- [x] T53d Automatic relations carry no direction until the owner or a clear decider gives one (decision 31b).
 - [x] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
 - [x] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
