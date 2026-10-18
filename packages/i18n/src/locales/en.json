@@ -476,7 +476,8 @@
     "relations": {
       "link": "Linking relations",
       "retype": "Typing relations",
-      "promote": "Source relations from note links"
+      "promote": "Source relations from note links",
+      "composite": "Book and paper vectors for source discovery"
     },
     "progress": {
       "processingSource": "Processing {title}",

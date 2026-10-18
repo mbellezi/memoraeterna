@@ -3,7 +3,8 @@ import type { JobSupervisorOptions } from "./job-supervisor.js";
 
 /**
  * How the job supervisor embeds the chunks of a document (F3 D37): in batches of at most 32 texts,
- * one lane request each, at the ingestion priority, and skipping the chunks whose vector in the
+ * one lane request each, at the ingestion priority (P2; background work such as the composite
+ * backfill states P3 and yields to it), and skipping the chunks whose vector in the
  * route's embedding space is current (`embeddingSpaceKey` says which space that is without a call).
  * The single-text form stays for a supervisor wired without batches.
  */
@@ -17,7 +18,7 @@ export function createJobEmbeddingGenerators(
       const result = await ai.runDefaultTask(
         "embedding",
         text,
-        { ...context, workloadClass: "embed", priority: "P2" },
+        { ...context, workloadClass: "embed", priority: context?.priority === "P3" ? "P3" : "P2" },
         signal
       );
       if (!result || !Array.isArray(result.output)) return null;
@@ -32,7 +33,7 @@ export function createJobEmbeddingGenerators(
     generateEmbeddings: async (texts, signal, context) => {
       const result = await ai.embedMany(
         texts,
-        { ...context, workloadClass: "embed", priority: "P2" },
+        { ...context, workloadClass: "embed", priority: context?.priority === "P3" ? "P3" : "P2" },
         signal
       );
       if (!result) return null;

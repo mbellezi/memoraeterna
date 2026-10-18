@@ -341,7 +341,11 @@ describe("preparing a run", () => {
       pool,
       cassette: { stats, limitLiveTokens } as never,
       knowledge: {} as never,
-      jobs: { wake },
+      jobs: {
+        wake,
+        ensureCompositeBackfill: async () => false,
+        compositeBackfillRemaining: async () => 0
+      },
       slot,
       quit,
       logger: { info: vi.fn(), error: vi.fn() },

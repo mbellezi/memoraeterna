@@ -13,8 +13,10 @@ import {
 } from "./relations-rematch-plan.js";
 import type { ClearedCounts, RunFacts } from "./relations-rematch-state.js";
 import {
+  noCompositeBackfill,
   normalizedSpanMs,
   rematchSummaryFormat,
+  type CompositeBackfillFacts,
   type RematchSummary,
   type RematchTimelineEntry
 } from "./relations-rematch-summary.js";
@@ -70,6 +72,16 @@ export interface RematchPorts {
   seedBackgroundNotes(rootIds: readonly string[], deciderKey: string): Promise<number>;
   /** Keeps every note's candidate list from now on (debug mode); false when it cannot be turned on. */
   recordCandidates(): Promise<boolean>;
+  /**
+   * The run's first step (T53f): makes sure the composite vectors of the library's hierarchy roots
+   * are built (the background job `relation-composite`; discovery skips a root with none), waits
+   * for it to drain, and reports what it wrote and the topic re-placements that caused.
+   */
+  backfillComposites(input: {
+    signal: AbortSignal;
+    timeoutMs: number;
+    pollMs: number;
+  }): Promise<CompositeBackfillFacts>;
   /** The notes of a record, in the order ingestion matches them. */
   noteIds(recordId: string): Promise<string[]>;
   /** The call the ingestion stage makes for a record's notes (`matchAtomicNotes`). */
@@ -134,7 +146,7 @@ export async function runRematch(
   ports: RematchPorts,
   input: RematchRunInput
 ): Promise<RematchSummary> {
-  const startedAt = ports.now();
+  let startedAt = ports.now();
   const elapsed = () => ports.now().getTime() - startedAt.getTime();
   const { plan } = input;
   const timeline: RematchTimelineEntry[] = [];
@@ -144,6 +156,7 @@ export async function runRematch(
   let cleared = emptyCleared;
   let backgroundSeeded = 0;
   let backgroundNotesSeeded = 0;
+  let compositeBackfill = noCompositeBackfill;
   let drainedAt: Date | null = null;
   try {
     const key = await ports.deciderKey();
@@ -158,6 +171,28 @@ export async function runRematch(
       throw new Error(
         "The candidate lists cannot be kept: the profile has no saved app preferences to turn debug mode on in."
       );
+    // Before the clear and before any release: discovery selects pairs over composite vectors, so a
+    // hierarchy root with none would never be judged. The backfill drains first (T53f).
+    compositeBackfill = await ports.backfillComposites({
+      signal: input.signal,
+      timeoutMs: input.drainTimeoutMs,
+      pollMs: input.drainPollMs
+    });
+    ports.log("composites", {
+      jobs: compositeBackfill.jobs,
+      written: compositeBackfill.written,
+      rebuilt: compositeBackfill.rebuilt,
+      remaining: compositeBackfill.remaining,
+      moved: compositeBackfill.placements.moved,
+      movedWithCurrentNotes: compositeBackfill.placements.movedWithCurrentNotes
+    });
+    if (compositeBackfill.remaining > 0)
+      throw new Error(
+        `${compositeBackfill.remaining} hierarchy roots still have no composite vector after the backfill (${compositeBackfill.skipped.join(", ") || "it did not drain"}): discovery would skip them.`
+      );
+    // The run's clock (X3's T0 and every offset of the timeline, and the AI calls it counts) starts
+    // here: the backfill's embedding calls and the topic jobs it caused are not part of the span.
+    startedAt = ports.now();
     const released = plan.order.map((root) => root.id);
     const background = input.background === "matched" ? plan.others.map((root) => root.id) : [];
     cleared = await ports.clear({
@@ -201,6 +236,7 @@ export async function runRematch(
     cleared,
     backgroundSeeded,
     backgroundNotesSeeded,
+    compositeBackfill,
     startedAt,
     finishedAt,
     drainedAt
@@ -296,6 +332,7 @@ function summarize(context: {
   cleared: ClearedCounts;
   backgroundSeeded: number;
   backgroundNotesSeeded: number;
+  compositeBackfill: CompositeBackfillFacts;
   startedAt: Date;
   finishedAt: Date;
   drainedAt: Date | null;
@@ -357,6 +394,7 @@ function summarize(context: {
     cleared: context.cleared,
     backgroundSeeded: context.backgroundSeeded,
     backgroundNotesSeeded: context.backgroundNotesSeeded,
+    compositeBackfill: context.compositeBackfill,
     plan: {
       released: input.plan.order.length,
       background: input.plan.others.length,

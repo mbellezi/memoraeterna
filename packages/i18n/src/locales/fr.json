@@ -478,7 +478,8 @@
     "relations": {
       "link": "Liaison des relations",
       "retype": "Typage des relations",
-      "promote": "Relations entre sources à partir des notes"
+      "promote": "Relations entre sources à partir des notes",
+      "composite": "Vecteurs des livres et articles pour la découverte entre sources"
     },
     "progress": {
       "processingSource": "Traitement de {title}",

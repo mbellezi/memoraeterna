@@ -480,7 +480,8 @@
     "relations": {
       "link": "Vinculando relaciones",
       "retype": "Tipificando relaciones",
-      "promote": "Relaciones entre fuentes a partir de las notas"
+      "promote": "Relaciones entre fuentes a partir de las notas",
+      "composite": "Vectores de libros y artículos para el descubrimiento entre fuentes"
     },
     "progress": {
       "processingSource": "Procesando {title}",

@@ -62,7 +62,16 @@ import { chunkMarkdown } from "@app/conversion";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
-import { hierarchyRootComposite, refreshAncestorComposites } from "./source-composite.js";
+import {
+  countCompositeBackfillWork,
+  hierarchyRootComposite,
+  refreshAncestorComposites
+} from "./source-composite.js";
+import {
+  compositeBackfillJobType,
+  enqueueCompositeBackfill,
+  runCompositeBackfill
+} from "./relations/composite-backfill.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -80,6 +89,7 @@ import {
   lightWorkers,
   lightWorkerTypes,
   type HeavyJobRegistry,
+  type LightJobExecutor,
   type LightJobRegistry,
   type LightWorker
 } from "./job-lanes.js";
@@ -99,12 +109,13 @@ export interface JobSupervisorOptions {
     signal?: AbortSignal,
     context?: {
       jobId: string;
-      ingestionRunId: string;
+      ingestionRunId?: string;
       sourceItemId: string;
-      documentId: string;
+      documentId?: string;
       stage: string;
       embeddingInputType: "document";
       chunkId?: string;
+      priority?: "P2" | "P3";
     }
   ) => Promise<{
     embedding: number[];
@@ -122,12 +133,13 @@ export interface JobSupervisorOptions {
     signal?: AbortSignal,
     context?: {
       jobId: string;
-      ingestionRunId: string;
+      ingestionRunId?: string;
       sourceItemId: string;
-      documentId: string;
+      documentId?: string;
       stage: string;
       embeddingInputType: "document";
       chunkIds?: string[];
+      priority?: "P2" | "P3";
     }
   ) => Promise<{
     embeddings: number[][];
@@ -222,9 +234,13 @@ export class JobSupervisor {
     const relationJobs = this.linker?.jobs() ?? {};
     for (const type of Object.keys(relationJobs))
       if (options.lightJobs?.[type]) throw new Error(`job_lane_conflict:${type}`);
+    if (options.lightJobs?.[compositeBackfillJobType])
+      throw new Error(`job_lane_conflict:${compositeBackfillJobType}`);
+    const compositeBackfill = this.compositeBackfillExecutor();
     this.lightJobs = {
       ...options.lightJobs,
       ...relationJobs,
+      ...(compositeBackfill ? { [compositeBackfillJobType]: compositeBackfill } : {}),
       ...(wiki
         ? {
             [projectionJobType]: {
@@ -265,6 +281,61 @@ export class JobSupervisor {
             )
           : [this.createLoop(async () => (await this.runLightOnce(worker)) !== null)]
       );
+  }
+
+  /**
+   * The backfill of hierarchy-root composites (T53f), on the `relations` worker: low priority, its
+   * header embeddings at P3, never on the heavy ingestion lane. It needs an embedding model and the
+   * space the route writes to; a supervisor without them has no such job.
+   */
+  private compositeBackfillExecutor(): LightJobExecutor | null {
+    const generate = this.embeddingBatchGenerator();
+    const spaceKey = this.options.embeddingSpaceKey;
+    if (!generate || !spaceKey) return null;
+    return {
+      needsModel: true,
+      worker: "relations",
+      execute: (job, signal) =>
+        runCompositeBackfill(
+          {
+            getPool: () => this.requirePool(),
+            embeddingSpaceKey: spaceKey,
+            generate,
+            aggregate: aggregateSourceEmbedding,
+            topicHooks: this.options.topicHooks,
+            reportProgress: (running, progress) => this.reportInlineProgress(running.id, progress),
+            ...(this.options.logger ? { logger: this.options.logger } : {})
+          },
+          job,
+          signal
+        )
+    };
+  }
+
+  /**
+   * Queues the composite backfill when a hierarchy node lacks the composite its descendants imply
+   * (deduplicated: a queued job absorbs the request; none when there is nothing to build), or
+   * whatever the library holds with `always` (the pass then also rebuilds stale composites). Resolves
+   * true when a job is queued; false without work, without an embedding model, or when the job
+   * type is not wired here.
+   */
+  public async ensureCompositeBackfill(options: { always?: boolean } = {}): Promise<boolean> {
+    if (!this.lightJobs[compositeBackfillJobType]) return false;
+    const spaceKey = await this.options.embeddingSpaceKey?.();
+    if (!spaceKey) return false;
+    const queued = await enqueueCompositeBackfill(this.requirePool(), spaceKey, options);
+    if (queued) this.wakeLoops("light");
+    return queued;
+  }
+
+  /**
+   * How many hierarchy nodes still lack a composite although every descendant has one, in the space
+   * the route writes to (0 without an embedding model). The re-match harness waits for 0.
+   */
+  public async compositeBackfillRemaining(): Promise<number> {
+    if (!this.lightJobs[compositeBackfillJobType]) return 0;
+    const spaceKey = await this.options.embeddingSpaceKey?.();
+    return spaceKey ? countCompositeBackfillWork(this.requirePool(), spaceKey) : 0;
   }
 
   /** The link jobs and their steps, which the knowledge service provides (T52). */
@@ -325,6 +396,13 @@ export class JobSupervisor {
       } catch (error) {
         this.options.logger?.warn(normalizeWorkerError(error));
       }
+    // Once per start, before the loops: the hierarchy roots a library holds without a composite
+    // (ingested before a chapter's embedding refreshed them) are built in the background (T53f).
+    try {
+      await this.ensureCompositeBackfill();
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
+    }
     this.running = true;
     for (const loop of this.loops()) loop.start();
   }
@@ -1045,6 +1123,10 @@ export class JobSupervisor {
         pool,
         sourceItemId,
         aggregate: aggregateSourceEmbedding,
+        // The batch's aggregate summaries are written by the job that passes the summarization
+        // barrier, and a summary written into a root deletes its composite: until then no ancestor
+        // header is embedded, so a root's header is embedded once, with its summary.
+        awaitingSummary: !batchSummariesComplete,
         // Through the stage's own generator (batched when wired, F3 D37), so an ancestor's header is
         // the same request whichever job builds its composite.
         embed: generate

@@ -1,5 +1,9 @@
-// The relation re-match harness (F3 T52b, spec 3.17). On a clone of a measurement profile it clears
-// the relation state, checks that the library holds the pinned notes, and releases the library's
+// The relation re-match harness (F3 T52b, spec 3.17). On a clone of a measurement profile it first
+// waits for the composite vectors of the hierarchy roots that have none to be built (T53f: the
+// product's background job; discovery skips a root without one, and the summary says how many were
+// backfilled and which topic re-placements they caused; the headers are embedded by the local model,
+// which a replay cassette serves or, for a miss, runs live under MEMORA_AI_CASSETTE_LOCAL_MISSES=live),
+// then clears the relation state, checks that the library holds the pinned notes, and releases the library's
 // roots one at a time behind a visibility fence, through the DEV heavy job `relation-rematch`. The
 // job decides each root's notes with the call ingestion makes (`matchAtomicNotes`), queues the same
 // link job, releases the next root as soon as the root's decide step committed, waits for the link
@@ -49,6 +53,7 @@ import {
   type RematchPlan,
   type RematchRoot
 } from "./relations-rematch-plan.js";
+import { runCompositeBackfillStep } from "./relations-rematch-composites.js";
 import { runRematch, type CassetteFacts, type RematchPorts } from "./relations-rematch-run.js";
 import {
   clearRelationState,
@@ -313,6 +318,13 @@ export interface RematchPortsOptions {
   knowledge: Pick<KnowledgeService, "currentRelationDeciderKey" | "matchAtomicNotes">;
   cassette: Pick<AiCassette, "stats"> | null;
   wake: (lane: "heavy" | "light") => void;
+  /** The composite backfill of hierarchy roots (T53f): the job supervisor's queue and its gap count. */
+  composites: {
+    ensure: (options: { full: boolean }) => Promise<boolean>;
+    remaining: () => Promise<number>;
+  };
+  /** When the app run started, for the backfill jobs it ran; by default from the process clock. */
+  appStartedAt?: Date;
   logger: Pick<Console, "info">;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
@@ -321,6 +333,9 @@ export interface RematchPortsOptions {
 /** The ports of a run on the app's own services and database. */
 export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
   const { pool, knowledge } = options;
+  const now = options.now ?? (() => new Date());
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   // The notes each root's records decided, until its link job is queued with them: no ingestion run
   // parks for a re-match, so the link job (T52) carries them in its payload.
   const decided = new Map<string, StoredDecidedNote[]>();
@@ -337,6 +352,25 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
         vectorK: relationsConfig.retrieval.vectorK
       }),
     recordCandidates: () => enableCandidateRecording(pool),
+    // The hierarchy roots' composite vectors, before the first release: the job is the product's
+    // (queued at the app's start when the library has a gap), so the run waits for it (T53f).
+    backfillComposites: (input) =>
+      runCompositeBackfillStep(
+        {
+          pool,
+          ensure: async (round) => {
+            const queued = await options.composites.ensure(round);
+            if (queued) options.wake("light");
+            return queued;
+          },
+          remaining: options.composites.remaining,
+          now,
+          sleep,
+          since: options.appStartedAt ?? new Date(Date.now() - process.uptime() * 1000),
+          log: (event, data) => options.logger.info(`RELATIONS_REMATCH ${event}`, data ?? "")
+        },
+        input
+      ),
     // The same notes, in the same order, as the supervisor's matching stage.
     noteIds: async (recordId) =>
       (await createAtomicNoteRepository(pool).listBySourceItem(recordId))
@@ -389,8 +423,8 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
           }
         : null;
     },
-    now: options.now ?? (() => new Date()),
-    sleep: options.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
+    now,
+    sleep,
     log: (event, data) => options.logger.info(`RELATIONS_REMATCH ${event}`, data ?? "")
   };
 }
@@ -405,8 +439,15 @@ export interface PrepareRematchOptions {
   pool: PgPool;
   cassette: Pick<AiCassette, "stats" | "limitLiveTokens"> | null;
   knowledge: RematchPortsOptions["knowledge"];
-  /** The job supervisor: wakes a lane's workers. */
-  jobs: { wake(lane?: "heavy" | "light"): void };
+  /**
+   * The job supervisor: wakes a lane's workers, and queues the composite backfill of hierarchy
+   * roots and counts the gap it leaves (T53f).
+   */
+  jobs: {
+    wake(lane?: "heavy" | "light"): void;
+    ensureCompositeBackfill(options?: { always?: boolean }): Promise<boolean>;
+    compositeBackfillRemaining(): Promise<number>;
+  };
   slot: Pick<RematchJobSlot, "bind">;
   quit: () => void;
   logger: Pick<Console, "info" | "error">;
@@ -493,6 +534,10 @@ export async function prepareRelationsRematch(
     knowledge: options.knowledge,
     cassette: options.cassette,
     wake: (lane) => options.jobs.wake(lane),
+    composites: {
+      ensure: ({ full }) => options.jobs.ensureCompositeBackfill({ always: full }),
+      remaining: () => options.jobs.compositeBackfillRemaining()
+    },
     logger: options.logger,
     now,
     ...(options.sleep ? { sleep: options.sleep } : {})

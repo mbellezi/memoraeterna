@@ -110,7 +110,85 @@ export function rematchFlags(summary: RematchSummary): string[] {
     flags.push("The link jobs did not drain.");
   if (summary.digest.actual.sha256 !== summary.digest.expected.sha256)
     flags.push("The notes digest differs from the pinned one.");
+  const composites = summary.compositeBackfill;
+  if (composites.remaining > 0)
+    flags.push(
+      `${composites.remaining} hierarchy roots still have no composite vector: discovery skips them.`
+    );
+  if (composites.failed > 0)
+    flags.push(`${composites.failed} composite backfill nodes or jobs failed.`);
+  if (composites.placements.topicJobsOpen > 0)
+    flags.push(
+      `${composites.placements.topicJobsOpen} topic placement jobs caused by the composite backfill were still open when the run started.`
+    );
+  if (composites.placements.movedWithCurrentNotes > 0)
+    flags.push(
+      `${composites.placements.movedWithCurrentNotes} roots with current notes moved in the topic tree after the composite backfill (3.20 expects none).`
+    );
   return flags;
+}
+
+/** The composite backfill section: what the first step wrote and the re-placements it caused. */
+function compositeBackfillLines(summary: RematchSummary): string[] {
+  const composites = summary.compositeBackfill;
+  const { placements } = composites;
+  const lines = [
+    "## Composite backfill",
+    "",
+    "The composite vectors of hierarchy roots that had none, built before the first release (discovery selects pairs over composite vectors, so a root without one is never judged).",
+    "",
+    table(
+      [
+        "Jobs",
+        "Examined",
+        "Written",
+        "Rebuilt",
+        "Current",
+        "Waiting",
+        "Failed",
+        "Remaining",
+        "Waited (s)"
+      ],
+      [
+        [
+          composites.jobs,
+          composites.examined,
+          composites.written,
+          composites.rebuilt,
+          composites.current,
+          composites.incomplete,
+          composites.failed,
+          composites.remaining,
+          seconds(composites.waitedMs)
+        ]
+      ]
+    ),
+    ""
+  ];
+  if (composites.skipped.length > 0)
+    lines.push(`Skipped or stopped: ${composites.skipped.join(", ")}.`, "");
+  lines.push(
+    `Topic tree (3.20): ${placements.backfilledRoots} roots had a composite written, ${placements.withCurrentNotes} of them with current notes (their vector comes from their notes); ${placements.moved} moved once PLACE ran, ${placements.movedWithCurrentNotes} of them with current notes.`,
+    ""
+  );
+  if (placements.moves.length > 0)
+    lines.push(
+      table(
+        ["Root", "Current notes", "Before", "After"],
+        placements.moves.map((move) => [
+          move.title,
+          move.hasCurrentNotes ? "yes" : "no",
+          move.before
+            ? `${move.before.topicId.slice(0, 8)}${move.before.needsVector ? " (needs vector)" : ""}`
+            : "none",
+          move.after
+            ? `${move.after.topicId.slice(0, 8)}${move.after.needsVector ? " (needs vector)" : ""}`
+            : "none"
+        ])
+      ),
+      ""
+    );
+  return lines;
 }
 
 export function renderRematchReport(summary: RematchSummary): string {
@@ -180,6 +258,7 @@ export function renderRematchReport(summary: RematchSummary): string {
       ]
     ),
     "",
+    ...compositeBackfillLines(summary),
     "## X3 clock",
     "",
     table(

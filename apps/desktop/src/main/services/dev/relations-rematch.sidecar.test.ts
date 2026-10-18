@@ -32,6 +32,7 @@ import {
   seedBackgroundMatchState,
   seedBackgroundNoteState
 } from "./relations-rematch-state.js";
+import { noCompositeBackfill } from "./relations-rematch-summary.js";
 
 // The state a re-match run reads and changes, and the fence that hides unreleased roots from
 // retrieval, on a real PostgreSQL database with the product's own retrieval SQL.
@@ -555,6 +556,7 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
         seedBackgroundNotes: (rootIds, deciderKey) =>
           seedBackgroundNoteState(pool, { rootIds, deciderKey, k: 2, vectorK: 4 }),
         recordCandidates: () => enableCandidateRecording(pool),
+        backfillComposites: async () => noCompositeBackfill,
         noteIds: async (recordId) =>
           (await repository.listBySourceItem(recordId))
             .filter((entry) => entry.status !== "rejected")

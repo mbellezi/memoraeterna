@@ -14,18 +14,23 @@ export interface EmbeddingBatch extends EmbeddingIdentity {
   embeddings: number[][];
 }
 
-/** Embeds a batch of texts; null when no embedding model is routed. */
+/**
+ * Embeds a batch of texts; null when no embedding model is routed. The ingestion run and document
+ * are absent for work that belongs to no run (the backfill of composite vectors), and `priority`
+ * is `P3` for background work that always yields to ingestion (`P2`, the default).
+ */
 export type EmbeddingBatchGenerator = (
   texts: string[],
   signal: AbortSignal,
   context: {
     jobId: string;
-    ingestionRunId: string;
+    ingestionRunId?: string;
     sourceItemId: string;
-    documentId: string;
+    documentId?: string;
     stage: string;
     embeddingInputType: "document";
     chunkIds?: string[];
+    priority?: "P2" | "P3";
   }
 ) => Promise<EmbeddingBatch | null>;
 

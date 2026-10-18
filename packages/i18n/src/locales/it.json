@@ -478,7 +478,8 @@
     "relations": {
       "link": "Collegamento delle relazioni",
       "retype": "Tipizzazione delle relazioni",
-      "promote": "Relazioni tra fonti dalle note"
+      "promote": "Relazioni tra fonti dalle note",
+      "composite": "Vettori di libri e articoli per la scoperta tra fonti"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",

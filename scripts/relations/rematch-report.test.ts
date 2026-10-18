@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  noCompositeBackfill,
   rematchSummaryFormat,
   type RematchSummary,
   type RematchTimelineEntry
@@ -72,6 +73,7 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
   },
   backgroundSeeded: 0,
   backgroundNotesSeeded: 0,
+  compositeBackfill: noCompositeBackfill,
   plan: { released: 4, background: 0, withoutNotes: 1, notes: 12 },
   timeline: [
     entry(0, "Aprendizagem"),
@@ -217,6 +219,73 @@ describe("the re-match report", () => {
     expect(markdown).toContain("**Check before use:**");
     expect(markdown).toContain("- root-2: errors.ai.providerUnavailable");
     expect(markdown).toContain("- atomic-note-generation kkkkkkkkkkkkkkkk");
+  });
+
+  it("says how many composites the run backfilled and which topic re-placements they caused", () => {
+    const backfilled = summary({
+      compositeBackfill: {
+        jobs: 1,
+        examined: 11,
+        written: 11,
+        rebuilt: 0,
+        current: 0,
+        incomplete: 0,
+        failed: 0,
+        skipped: [],
+        remaining: 0,
+        waitedMs: 4_200,
+        placements: {
+          backfilledRoots: 11,
+          withCurrentNotes: 10,
+          moved: 1,
+          movedWithCurrentNotes: 0,
+          topicJobsOpen: 0,
+          moves: [
+            {
+              rootId: "root-9",
+              title: "Livro | sem notas",
+              hasCurrentNotes: false,
+              before: { topicId: "11111111-aaaa", needsVector: true },
+              after: { topicId: "22222222-bbbb", needsVector: false }
+            }
+          ]
+        }
+      }
+    });
+    expect(rematchFlags(backfilled)).toEqual([]);
+    const markdown = renderRematchReport(backfilled);
+    expect(markdown).toContain("## Composite backfill");
+    expect(markdown).toContain("| 1 | 11 | 11 | 0 | 0 | 0 | 0 | 0 | 4.2 |");
+    expect(markdown).toContain(
+      "11 roots had a composite written, 10 of them with current notes (their vector comes from their notes); 1 moved once PLACE ran, 0 of them with current notes."
+    );
+    expect(markdown).toContain("| Livro \\| sem notas | no | 11111111 (needs vector) | 22222222 |");
+    // A run that backfilled nothing says so with zeros, and is usable.
+    expect(renderRematchReport(summary())).toContain("| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 |");
+  });
+
+  it("flags a hierarchy root left without a composite and a root with notes that moved", () => {
+    const bad = summary({
+      compositeBackfill: {
+        ...summary().compositeBackfill,
+        failed: 1,
+        remaining: 2,
+        placements: {
+          ...summary().compositeBackfill.placements,
+          moved: 1,
+          movedWithCurrentNotes: 1,
+          topicJobsOpen: 3
+        }
+      }
+    });
+    expect(rematchFlags(bad)).toEqual(
+      expect.arrayContaining([
+        "2 hierarchy roots still have no composite vector: discovery skips them.",
+        "1 composite backfill nodes or jobs failed.",
+        "3 topic placement jobs caused by the composite backfill were still open when the run started.",
+        "1 roots with current notes moved in the topic tree after the composite backfill (3.20 expects none)."
+      ])
+    );
   });
 
   it("renders a burst with no order and a run without a cassette", () => {

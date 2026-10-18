@@ -45,6 +45,7 @@ import {
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { diffRootPlacements, readRootPlacements } from "../dev/relations-rematch-composites.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
 import { JobSupervisor } from "../job-supervisor.js";
 import { KnowledgeService } from "../knowledge-service.js";
@@ -428,6 +429,8 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
       pollIntervalMs: 20,
       logger: quiet,
       topicHooks: hooks,
+      // The space the route writes to: the composite backfill (T53f) builds in it.
+      embeddingSpaceKey: async () => space.spaceKey,
       // Chunk and header embeddings are the group's cluster vector: every source keeps its place.
       generateEmbedding: async (_text, _signal, context) => ({
         embedding: Array.from(
@@ -817,5 +820,117 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     expect(results.notesChangedMs.p95).toBeLessThan(250);
     expect(results.itemsRemovedInTransactionMs.p95).toBeLessThan(250);
     expect(await queued("topic-sweep")).toBe(0);
+  });
+
+  it("backfills a book's composite without moving a root that has current placed notes (T53f, 3.20)", async () => {
+    await pool.query("update jobs set status = 'canceled' where status = 'queued'");
+    const compositeStrategy = `source-composite-centroid-v2:${space.spaceKey}`;
+    /** A chapter under `parent` that has its composite vector (a chapter embedded before design E). */
+    async function chapter(parent: string, title: string, row: number): Promise<string> {
+      const id = randomUUID();
+      await pool.query(
+        `insert into source_items (id, type, title, content_hash, parent_source_item_id)
+         values ($1, 'BookChapter', $2, $3, $4)`,
+        [id, title, sha(`source-${id}`), parent]
+      );
+      await pool.query(
+        `insert into embeddings_256 (target_type, target_id, provider, model, runtime, usage, strategy,
+           content_hash, embedding)
+         values ('source_item', $1, $2, $3, $4, 'matching', $5, $6, $7::vector)`,
+        [
+          id,
+          space.provider,
+          space.model,
+          space.runtime,
+          compositeStrategy,
+          sha(`c-${id}`),
+          vectorText(row)
+        ]
+      );
+      return id;
+    }
+    const primary = async (source: string) =>
+      (
+        await pool.query<{ topicId: string; placedAt: Date; needsVector: boolean }>(
+          `select topic_id as "topicId", placed_at as "placedAt", needs_vector as "needsVector"
+             from topic_placements where source_item_id = $1 and rank = 0`,
+          [source]
+        )
+      ).rows[0];
+
+    // A root with current, placed notes and no composite of its own; chapters that have theirs.
+    const noted = await insertSource(3, "Noted hierarchy book");
+    const noteIds = await insertNotes(noted, groupRows(3, 0, 12));
+    const tree = await activeTree();
+    await services.triggers.place(tree.id, [{ rootSourceId: noted }], { debounce: immediate });
+    await drain();
+    expect(await placements(noteIds)).toBe(12);
+    expect(
+      await count(
+        "select count(*) from embeddings_256 where target_type = 'source_item' and target_id = $1",
+        [noted]
+      )
+    ).toBe(0);
+    await chapter(noted, "Noted chapter one", 3 * pointsPerGroup + 1);
+    await chapter(noted, "Noted chapter two", 3 * pointsPerGroup + 2);
+    // A root with chapters and no notes, never placed: the composite is all it will have.
+    const bare = await insertSource(2, "Bare hierarchy book");
+    await chapter(bare, "Bare chapter one", 2 * pointsPerGroup + 1);
+    await chapter(bare, "Bare chapter two", 2 * pointsPerGroup + 2);
+    expect(await primary(bare)).toBeUndefined();
+    const before = await primary(noted);
+    expect(before).toBeDefined();
+    const placementsBefore = await readRootPlacements(pool);
+
+    expect(await supervisor.ensureCompositeBackfill()).toBe(true);
+    const job = await supervisor.runLightOnce("relations");
+    expect(job).toMatchObject({ type: "relation-composite", status: "succeeded" });
+    expect(job?.result).toMatchObject({
+      written: 2,
+      roots: 2,
+      rootsWithCurrentNotes: 1,
+      failed: 0
+    });
+    expect(
+      await count(
+        "select count(*) from embeddings_256 where target_type = 'source_item' and target_id = any($1::uuid[]) and strategy = $2",
+        [[noted, bare], compositeStrategy]
+      )
+    ).toBe(2);
+    // Both roots were handed to PLACE; it runs like any other PLACE.
+    expect(await queued("topic-place")).toBe(2);
+    const ran = await drain();
+    expect(ran.filter((entry) => entry.type === "topic-place")).toHaveLength(2);
+    expect(ran.every((entry) => entry.status === "succeeded")).toBe(true);
+
+    // The root with current notes keeps its notes' vector: it is where it was, untouched.
+    expect(await primary(noted)).toEqual(before);
+    // The root with no notes was placed by its composite.
+    expect(await primary(bare)).toMatchObject({ needsVector: false });
+    // What the re-match harness reports (3.20): one re-placement, and none of a root with notes.
+    const replaced = diffRootPlacements(
+      placementsBefore,
+      await readRootPlacements(pool),
+      new Set([noted, bare])
+    );
+    expect(replaced).toMatchObject({
+      backfilledRoots: 2,
+      withCurrentNotes: 1,
+      moved: 1,
+      movedWithCurrentNotes: 0
+    });
+    expect(replaced.moves).toEqual([
+      expect.objectContaining({
+        rootId: bare,
+        hasCurrentNotes: false,
+        before: null,
+        after: expect.objectContaining({ needsVector: false })
+      })
+    ]);
+    await expectReachable();
+    await expectStatsExact();
+    // Nothing is left to build, and a second run changes nothing.
+    expect(await supervisor.compositeBackfillRemaining()).toBe(0);
+    expect(await supervisor.ensureCompositeBackfill()).toBe(false);
   });
 });

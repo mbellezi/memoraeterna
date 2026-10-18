@@ -14,7 +14,7 @@ import {
   type RematchRunInput
 } from "./relations-rematch-run.js";
 import type { ClearedCounts, RunFacts } from "./relations-rematch-state.js";
-import { RematchSummarySchema } from "./relations-rematch-summary.js";
+import { noCompositeBackfill, RematchSummarySchema } from "./relations-rematch-summary.js";
 
 const start = Date.parse("2026-10-17T10:00:00.000Z");
 const digest = { notes: 6, sha256: "a".repeat(64) };
@@ -95,6 +95,7 @@ function harness(
       events.push("record-candidates");
       return true;
     },
+    backfillComposites: async () => noCompositeBackfill,
     noteIds: async (recordId) => [`${recordId}-n1`],
     matchRecord: async (input): Promise<MatchRecordResult> => {
       matches.push(input);
@@ -203,6 +204,131 @@ describe("a re-match run", () => {
     expect(summary.outcome).toBe("failed");
     expect(summary.error).toContain("candidate lists cannot be kept");
     expect(h.events.some((event) => event.startsWith("clear"))).toBe(false);
+  });
+
+  describe("the composite backfill, its first step (T53f)", () => {
+    const facts = {
+      ...noCompositeBackfill,
+      jobs: 1,
+      examined: 11,
+      written: 11,
+      current: 0,
+      waitedMs: 4_200,
+      placements: {
+        backfilledRoots: 11,
+        withCurrentNotes: 11,
+        moved: 0,
+        movedWithCurrentNotes: 0,
+        topicJobsOpen: 0,
+        moves: []
+      }
+    };
+
+    it("drains before the clear and before any root is released, and the summary says how many it wrote", async () => {
+      const h = harness({
+        backfillComposites: async (call) => {
+          h.events.push(`composites:${call.timeoutMs}:${call.pollMs}`);
+          expect(call.signal).toBe(h.controller.signal);
+          return facts;
+        }
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.outcome).toBe("completed");
+      expect(h.events.slice(0, 3)).toEqual(["decider", "composites:60000:1000", "clear:all"]);
+      expect(h.events.indexOf("composites:60000:1000")).toBeLessThan(
+        h.events.indexOf("match:book-1")
+      );
+      expect(summary.compositeBackfill).toEqual(facts);
+      // The summary round-trips through its schema, as the report reads it.
+      expect(
+        RematchSummarySchema.parse(JSON.parse(JSON.stringify(summary))).compositeBackfill
+      ).toEqual(facts);
+    });
+
+    it("starts the run's clock once the backfill has drained, so its calls are not in the measured span", async () => {
+      const since: Date[] = [];
+      const h = harness({
+        backfillComposites: async () => {
+          h.clock.now += 30_000;
+          return facts;
+        },
+        facts: async (from) => {
+          since.push(from);
+          return {
+            aiCalls: [],
+            firstDecideAdmissionAt: new Date(start + 30_500),
+            lastCommitAt: new Date(start + 50_500),
+            noteRelations: [],
+            typings: [],
+            sourceRelations: [],
+            linkJobs: []
+          };
+        }
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.startedAt).toBe(new Date(start + 30_000).toISOString());
+      expect(since).toEqual([new Date(start + 30_000)]);
+      // The first release is at the start of the clock, and X3's T0 is measured from it.
+      expect(summary.timeline[0]!.releasedAtMs).toBe(0);
+      expect(summary.clock.t0Ms).toBe(500);
+    });
+
+    it("runs after the candidate lists are secured, so a refusal leaves the library untouched", async () => {
+      const h = harness({
+        recordCandidates: async () => false,
+        backfillComposites: async () => {
+          h.events.push("composites");
+          return facts;
+        }
+      });
+      const summary = await runRematch(
+        h.ports,
+        input(h, buildRematchPlan(library(), arrival), { candidates: "record" })
+      );
+      expect(summary.outcome).toBe("failed");
+      expect(h.events).not.toContain("composites");
+    });
+
+    it("stops before it clears or releases a root when a hierarchy root still has no composite", async () => {
+      const h = harness({
+        backfillComposites: async () => ({
+          ...facts,
+          written: 9,
+          remaining: 2,
+          skipped: ["no_embedding"]
+        })
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary.outcome).toBe("failed");
+      expect(summary.error).toContain("2 hierarchy roots still have no composite vector");
+      expect(summary.error).toContain("no_embedding");
+      expect(h.events.some((event) => event.startsWith("clear"))).toBe(false);
+      expect(h.matches).toEqual([]);
+      // What the backfill did before it stopped the run is still told.
+      expect(summary.compositeBackfill).toMatchObject({ written: 9, remaining: 2 });
+    });
+
+    it("fails the run, with the summary written, when the backfill itself throws", async () => {
+      const h = harness({
+        backfillComposites: async () => {
+          throw new Error("embedding model unavailable");
+        }
+      });
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      expect(summary).toMatchObject({ outcome: "failed", error: "embedding model unavailable" });
+      expect(summary.compositeBackfill).toEqual(noCompositeBackfill);
+      expect(h.matches).toEqual([]);
+    });
+
+    it("reads a summary written before the backfill existed as one that backfilled nothing", async () => {
+      const h = harness();
+      const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+      const { compositeBackfill: _written, ...older } = JSON.parse(
+        JSON.stringify(summary)
+      ) as Record<string, unknown>;
+      void _written;
+      expect(RematchSummarySchema.parse(older).compositeBackfill).toEqual(noCompositeBackfill);
+    });
   });
 
   it("shows retrieval only the roots released so far, a snapshot for each call", async () => {

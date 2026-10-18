@@ -99,6 +99,84 @@ const cassetteSchema = z
   })
   .strict();
 
+const rootPlacementSchema = z.object({ topicId: z.string(), needsVector: z.boolean() }).strict();
+export type RootPlacement = z.infer<typeof rootPlacementSchema>;
+
+/**
+ * The first step of a run (T53f): the composite vectors of hierarchy roots that had none, built by
+ * the background job `relation-composite` before the first root is released, and the topic
+ * re-placements they caused (3.20: a root with current notes must not move).
+ */
+export const compositeBackfillSchema = z
+  .object({
+    /** Backfill jobs this app run ran (the start queues one when the library has a gap). */
+    jobs: count,
+    /** Hierarchy nodes with a descendant composite in the route's space, as the jobs counted. */
+    examined: count,
+    /** Composites written: built where there was none, rebuilt where it was stale. */
+    written: count,
+    rebuilt: count,
+    /** Nodes whose composite already held its inputs (untouched). */
+    current: count,
+    /** Nodes waiting for a descendant that has no composite (the last descendant to embed builds). */
+    incomplete: count,
+    failed: count,
+    /** Why a job wrote nothing (no embedding space, no model routed, the space changed). */
+    skipped: z.array(z.string()),
+    /** Hierarchy nodes that still lack a composite their descendants imply: 0 in a usable run. */
+    remaining: count,
+    waitedMs: milliseconds,
+    placements: z
+      .object({
+        /** Root sources of the written nodes. */
+        backfilledRoots: count,
+        /** Of those, roots with current notes: they keep their notes' vector. */
+        withCurrentNotes: count,
+        /** Of those, roots whose primary placement changed once PLACE ran. */
+        moved: count,
+        /** Moved roots that have current notes: must be 0 (3.20). */
+        movedWithCurrentNotes: count,
+        /** Topic placement or gate jobs still open when the step gave up waiting: 0 normally. */
+        topicJobsOpen: count,
+        moves: z.array(
+          z
+            .object({
+              rootId: z.string(),
+              title: z.string(),
+              hasCurrentNotes: z.boolean(),
+              before: rootPlacementSchema.nullable(),
+              after: rootPlacementSchema.nullable()
+            })
+            .strict()
+        )
+      })
+      .strict()
+  })
+  .strict();
+export type CompositeBackfillFacts = z.infer<typeof compositeBackfillSchema>;
+
+/** The facts of a run that did not get as far as the backfill (and of summaries that predate it). */
+export const noCompositeBackfill: CompositeBackfillFacts = {
+  jobs: 0,
+  examined: 0,
+  written: 0,
+  rebuilt: 0,
+  current: 0,
+  incomplete: 0,
+  failed: 0,
+  skipped: [],
+  remaining: 0,
+  waitedMs: 0,
+  placements: {
+    backfilledRoots: 0,
+    withCurrentNotes: 0,
+    moved: 0,
+    movedWithCurrentNotes: 0,
+    topicJobsOpen: 0,
+    moves: []
+  }
+};
+
 export const RematchSummarySchema = z
   .object({
     format: z.literal(rematchSummaryFormat),
@@ -128,6 +206,8 @@ export const RematchSummarySchema = z
     backgroundSeeded: count,
     /** Background notes given the match state of a library matched at arrival (0 in older summaries). */
     backgroundNotesSeeded: count.default(0),
+    /** The composite vectors the run built before its first release (none in older summaries). */
+    compositeBackfill: compositeBackfillSchema.default(noCompositeBackfill),
     plan: z
       .object({ released: count, background: count, withoutNotes: count, notes: count })
       .strict(),
