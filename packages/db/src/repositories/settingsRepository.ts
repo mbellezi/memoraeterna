@@ -45,6 +45,19 @@ export function createSettingsRepository(db: Queryable) {
       return mapSetting(row);
     },
 
+    /**
+     * Replaces a value only while it is still the one that was read, in one statement: false when
+     * another writer changed or removed it in between, so that writer's change is never lost.
+     */
+    async replaceIfUnchanged(key: string, expected: unknown, value: unknown): Promise<boolean> {
+      const result = await db.query(
+        `update settings set value = $3::jsonb, updated_at = now()
+         where key = $1 and value = $2::jsonb`,
+        [key, JSON.stringify(expected), JSON.stringify(value)]
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
     async delete(key: string): Promise<boolean> {
       const result = await db.query("delete from settings where key = $1", [key]);
       return (result.rowCount ?? 0) > 0;

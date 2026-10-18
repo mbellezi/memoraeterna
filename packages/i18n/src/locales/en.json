@@ -1214,7 +1214,6 @@
         "canonical": "Entity and relation-type identity",
         "sources": "Source evidence and cost",
         "maxRerankOutputTokens": "AI output token limit per note",
-        "resetNotes": "Restore note defaults",
         "resetCanonical": "Restore identity defaults",
         "resetSources": "Restore advanced source defaults",
         "relationTypeCandidateLimit": "Candidates per relation type",

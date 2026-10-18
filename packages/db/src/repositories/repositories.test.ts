@@ -286,6 +286,16 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("on conflict (key) do update");
   });
 
+  it("replaces a setting only while it still holds the value that was read", async () => {
+    const db = new FakeQueryable([[{ key: "ui.locale" }], []]);
+    const repo = createSettingsRepository(db);
+
+    expect(await repo.replaceIfUnchanged("ui.locale", { a: 1 }, { a: 2 })).toBe(true);
+    expect(await repo.replaceIfUnchanged("ui.locale", { a: 1 }, { a: 2 })).toBe(false);
+    expect(db.queries[0]?.text).toContain("where key = $1 and value = $2::jsonb");
+    expect(db.queries[0]?.values).toEqual(["ui.locale", '{"a":1}', '{"a":2}']);
+  });
+
   it("records traceable source summaries", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
     const db = new TransactionalSummaryPool({

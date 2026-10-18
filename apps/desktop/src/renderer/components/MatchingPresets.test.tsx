@@ -57,6 +57,7 @@ describe("matching preset interface", () => {
       expect(html).toContain("Entity and relation-type identity");
       for (const removed of [
         "Minimum match score",
+        "Restore note defaults",
         "Fewer, stricter relations",
         "Scoring weights",
         "With embeddings and graph",

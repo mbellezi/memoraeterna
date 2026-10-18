@@ -84,8 +84,13 @@ try {
     if (
       existing.configuration !== configuration ||
       existing.trainingResultsHash !== trainingResultsHash ||
-      JSON.stringify(benchmarkConfiguration(existing.settings, "baseline")) !==
-        JSON.stringify(benchmarkConfiguration(settings, "baseline"))
+      JSON.stringify(
+        benchmarkConfiguration(
+          // A selection frozen before matching settings v2 (T53b) reads through its migration.
+          migrateMatchingSettingsV2(existing.settings) as typeof settings,
+          "baseline"
+        )
+      ) !== JSON.stringify(benchmarkConfiguration(settings, "baseline"))
     )
       throw Error("A different selection is already frozen");
   }

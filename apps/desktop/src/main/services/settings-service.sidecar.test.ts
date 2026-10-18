@@ -44,6 +44,7 @@ interface StoredSettings {
   sourceRelationSettings: Record<string, unknown>;
   activeMatchingPresetId?: string;
   themeMode?: string;
+  debugMode?: boolean;
   updatedAt: string;
 }
 
@@ -120,5 +121,37 @@ describe.skipIf(!sidecarInstalled)("matching settings v2 migration on a real Pos
     expect(saved.atomicNoteRelationThreshold).toBeUndefined();
     expect(Object.keys(saved.atomicNoteMatchingSettings)).toEqual(["maxRerankOutputTokens"]);
     expect(saved.sourceRelationSettings).not.toHaveProperty("reciprocalRankConstant");
+  });
+
+  it("never overwrites a change another writer made after the migration read the row", async () => {
+    await createSettingsRepository(pool).set("app.preferences", profileDocument);
+    let raced = false;
+    // The re-match tool's `enableCandidateRecording` lands between the read and the rewrite.
+    const racing = {
+      async query(text: string, values?: readonly unknown[]) {
+        if (!raced && text.includes("value = $2::jsonb")) {
+          raced = true;
+          await pool.query(
+            `update settings set value = jsonb_set(value, '{debugMode}', 'true'::jsonb)
+              where key = 'app.preferences'`
+          );
+        }
+        return pool.query(text, values ? [...values] : undefined);
+      }
+    };
+    const app = await new SettingsService(workDir, {
+      getDatabasePool: () => racing as never
+    }).getApp();
+    expect(raced).toBe(true);
+    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+    // The other writer's change stands and the migration waits for the next start.
+    expect((await row()).value).toMatchObject({
+      debugMode: true,
+      atomicNoteRelationThreshold: 0.6
+    });
+    await service().getApp();
+    const migrated = (await row()).value;
+    expect(migrated.debugMode).toBe(true);
+    expect(migrated.atomicNoteRelationThreshold).toBeUndefined();
   });
 });

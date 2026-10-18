@@ -1212,7 +1212,6 @@
         "canonical": "Identità di entità e tipi di relazione",
         "sources": "Evidenze delle fonti e costo",
         "maxRerankOutputTokens": "Limite di token di output IA per nota",
-        "resetNotes": "Ripristina valori delle note",
         "resetCanonical": "Ripristina valori di identità",
         "resetSources": "Ripristina valori avanzati delle fonti",
         "relationTypeCandidateLimit": "Candidati per tipo di relazione",

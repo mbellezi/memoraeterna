@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -282,6 +282,29 @@ describe("recommended matching preset upgrade", () => {
     }
   });
 
+  it("follows the recommendation when recommended-v1 differs only in fields that no longer exist", () => {
+    // The comparison runs after the matching settings v2 migration (T53b): what the owner changed
+    // in a dead field is gone, so nothing of the owner's is left to preserve as "Custom settings".
+    const dead = {
+      atomicNoteRelationThreshold: 0.8,
+      atomicNoteMatchingSettings: {
+        ...retired.atomicNoteMatchingSettings,
+        rerankerWeight: 0.9,
+        requireReranking: false,
+        fusedCandidateLimit: 5
+      },
+      sourceRelationSettings: { ...retired.sourceRelationSettings, maxPairs: 3 }
+    };
+    for (const activeMatchingPresetId of [retiredRecommendedMatchingPresetId, undefined]) {
+      const upgraded = parseSavedAppSettings(
+        stored({ ...retired, ...dead, matchingPresets: [], activeMatchingPresetId })
+      );
+      expect(upgraded.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+      expect(upgraded.matchingPresets).toEqual([]);
+      expect(MatchingConfigurationSchema.parse(upgraded)).toEqual(recommendedMatchingConfiguration);
+    }
+  });
+
   it("never changes a custom preset, even one that equals recommended-v1", () => {
     const custom = { id: customId, name: "My matching", settings: retired };
     const unchanged = parseSavedAppSettings(
@@ -439,6 +462,8 @@ describe("matching settings v2 migration of a stored document", () => {
     expect(holdsRetiredField(migrated)).toBe(false);
     expect(Object.keys(migrated.atomicNoteMatchingSettings)).toEqual(["maxRerankOutputTokens"]);
     expect(migrated).toEqual(migrateMatchingSettingsV2(stored));
+    // The rewrite is atomic: no temporary file is left next to the document.
+    expect(await readdir(path)).toEqual(["app-settings.json"]);
     // A later start finds nothing to drop and writes nothing.
     const written = await readStored(path);
     await new SettingsService(path).getApp();
@@ -491,12 +516,25 @@ describe("matching settings v2 migration of a stored document", () => {
     expect((await new SettingsService(path).getApp()).themeMode).toBe("light");
   });
 
-  it("still reads a document it cannot rewrite, migrated in memory", async () => {
+  it("still reads a document it cannot rewrite, migrated in memory, and says so once", async () => {
     const path = await directory(stored);
-    await chmod(join(path, "app-settings.json"), 0o444);
-    const app = await new SettingsService(path).getApp();
-    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
-    expect(parseSavedAppSettings(stored)).toEqual(app);
+    const warn = vi.fn();
+    // A folder that takes no new file: the temporary file of the atomic rewrite cannot be created.
+    await chmod(path, 0o555);
+    try {
+      const service = new SettingsService(path, { logger: { warn } });
+      const app = await service.getApp();
+      await service.getApp();
+      expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+      expect(parseSavedAppSettings(stored)).toEqual(app);
+      // A superuser can write anywhere: there is nothing to report then.
+      expect(warn).toHaveBeenCalledTimes(process.getuid?.() === 0 ? 0 : 1);
+      expect(JSON.parse(await readStored(path))).toEqual(
+        process.getuid?.() === 0 ? migrateMatchingSettingsV2(stored) : stored
+      );
+    } finally {
+      await chmod(path, 0o755);
+    }
   });
 
   it("refuses an update that still carries a dead field", async () => {
@@ -515,9 +553,10 @@ describe("matching settings v2 migration of a stored document", () => {
     expect(await service.getApp()).toEqual(app);
   });
 
-  it("migrates the settings row of a database the same way", async () => {
-    const rows = new Map<string, unknown>([["app.preferences", structuredClone(stored)]]);
+  /** The `settings` table in memory: reads, the upsert, and the conditional rewrite of the migration. */
+  function fakeSettingsPool(rows: Map<string, unknown>) {
     const writes: string[] = [];
+    let beforeConditionalWrite: (() => void) | null = null;
     const pool = {
       async query(text: string, values: readonly unknown[] = []) {
         const key = String(values[0]);
@@ -527,17 +566,51 @@ describe("matching settings v2 migration of a stored document", () => {
           };
         }
         writes.push(key);
+        if (/^\s*update/iu.test(text)) {
+          beforeConditionalWrite?.();
+          if (JSON.stringify(rows.get(key)) !== values[1]) return { rows: [], rowCount: 0 };
+          rows.set(key, JSON.parse(String(values[2])));
+          return { rows: [], rowCount: 1 };
+        }
         rows.set(key, structuredClone(values[1]));
-        return { rows: [{ key, value: values[1], updatedAt: new Date() }] };
+        return { rows: [{ key, value: values[1], updatedAt: new Date() }], rowCount: 1 };
       }
     };
-    const service = new SettingsService(tmpdir(), { getDatabasePool: () => pool as never });
+    return {
+      pool: pool as never,
+      writes,
+      beforeConditionalWrite: (change: () => void) => {
+        beforeConditionalWrite = change;
+      }
+    };
+  }
+
+  it("migrates the settings row of a database the same way", async () => {
+    const rows = new Map<string, unknown>([["app.preferences", structuredClone(stored)]]);
+    const { pool, writes } = fakeSettingsPool(rows);
+    const service = new SettingsService(tmpdir(), { getDatabasePool: () => pool });
     const app = await service.getApp();
     expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
     expect(writes).toEqual(["app.preferences"]);
     expect(rows.get("app.preferences")).toEqual(migrateMatchingSettingsV2(stored));
-    await new SettingsService(tmpdir(), { getDatabasePool: () => pool as never }).getApp();
+    await new SettingsService(tmpdir(), { getDatabasePool: () => pool }).getApp();
     expect(writes).toEqual(["app.preferences"]);
+  });
+
+  it("never overwrites a row another writer changed after the migration read it", async () => {
+    const rows = new Map<string, unknown>([["app.preferences", structuredClone(stored)]]);
+    const { pool, beforeConditionalWrite } = fakeSettingsPool(rows);
+    // The re-match tool turns debug mode on with a `jsonb_set` between the read and the rewrite.
+    const changed = { ...structuredClone(stored), debugMode: true };
+    beforeConditionalWrite(() => rows.set("app.preferences", structuredClone(changed)));
+    const app = await new SettingsService(tmpdir(), { getDatabasePool: () => pool }).getApp();
+    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+    // The row keeps the other writer's change, dead fields included, for the next start to migrate.
+    expect(rows.get("app.preferences")).toEqual(changed);
+    beforeConditionalWrite(() => undefined);
+    const next = await new SettingsService(tmpdir(), { getDatabasePool: () => pool }).getApp();
+    expect(next.debugMode).toBe(true);
+    expect(rows.get("app.preferences")).toEqual(migrateMatchingSettingsV2(changed));
   });
 });
 

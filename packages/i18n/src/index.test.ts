@@ -114,6 +114,7 @@ describe("@app/i18n", () => {
         "withGraph",
         "textAndMetadata",
         "rerankerWeight",
+        "resetNotes",
         "weights",
         "weightsHint",
         "invalidWeights",

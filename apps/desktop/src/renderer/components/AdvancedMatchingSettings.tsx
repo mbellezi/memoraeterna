@@ -43,14 +43,6 @@ export function AdvancedMatchingSettings({
               }
             />
           </div>
-          <Button
-            className="justify-self-start"
-            onClick={() =>
-              onChange({ atomicNoteMatchingSettings: defaultAtomicNoteMatchingSettings })
-            }
-          >
-            {label("resetNotes")}
-          </Button>
         </fieldset>
         <fieldset className="grid min-w-0 gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
           <legend className="font-medium">{label("canonical")}</legend>
@@ -155,7 +147,6 @@ function NumericSetting({
   resetLabel,
   min,
   max,
-  step = 1,
   onCommit
 }: {
   label: string;
@@ -164,8 +155,7 @@ function NumericSetting({
   resetLabel: string;
   min: number;
   max: number;
-  step?: number;
-  onCommit: (value: number) => boolean | void;
+  onCommit: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
@@ -173,13 +163,10 @@ function NumericSetting({
     const parsed = Number(draft);
     const next =
       draft.trim() && Number.isFinite(parsed)
-        ? Math.max(
-            min,
-            Math.min(max, step === 1 ? Math.floor(parsed) : Math.round(parsed * 100) / 100)
-          )
+        ? Math.max(min, Math.min(max, Math.floor(parsed)))
         : value;
     setDraft(String(next));
-    if (next !== value && onCommit(next) === false) setDraft(String(value));
+    if (next !== value) onCommit(next);
   };
   return (
     <label className="grid min-w-0 gap-1 text-xs">
@@ -197,7 +184,6 @@ function NumericSetting({
         type="number"
         min={min}
         max={max}
-        step={step}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}

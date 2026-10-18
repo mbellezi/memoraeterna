@@ -101,6 +101,17 @@ const identityChecks = results.entities
   }));
 const thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.72, 0.75];
 const gates = settings.atomicNoteMatchingSettings;
+// The note gates this replay applies were retired by matching settings v2 (T53b): it reads runs
+// recorded before, and stops on a record without them rather than computing on undefined.
+for (const [key, type] of [
+  ["requireReranking", "boolean"],
+  ["minRerankScore", "number"],
+  ["includeWeakTypes", "boolean"]
+] as const)
+  if (typeof gates?.[key] !== type)
+    throw Error(
+      `${join(directory, "settings-run.json")} has no retired note gate "${key}"; this analysis replays runs recorded before matching settings v2`
+    );
 const sweep = thresholds.map((threshold) => {
   const passing = results.diagnostics.filter(
     (r: any) =>

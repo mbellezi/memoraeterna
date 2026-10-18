@@ -105,6 +105,18 @@ const measure = (relations: any[]) => {
   };
 };
 const gates = settings.atomicNoteMatchingSettings;
+// The note gates this replay applies were retired by matching settings v2 (T53b): it reads runs
+// recorded before, and stops on a record without them rather than computing on undefined.
+for (const [key, type] of [
+  ["rerankerWeight", "number"],
+  ["requireReranking", "boolean"],
+  ["minRerankScore", "number"],
+  ["includeWeakTypes", "boolean"]
+] as const)
+  if (typeof gates?.[key] !== type)
+    throw Error(
+      `${join(directory, phase, "settings.json")} has no retired note gate "${key}"; this analysis replays runs recorded before matching settings v2`
+    );
 const replayNotes = (threshold: number, rerankerWeight: number) => {
   const score = (r: any) =>
     typeof r.metadata?.baseScore === "number" && r.rerank_score !== null

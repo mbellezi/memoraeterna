@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -58,6 +58,20 @@ export interface SettingsServiceOptions {
   readonly getDatabasePool?: () => Queryable | null;
   readonly requireDatabase?: boolean;
   readonly desktopLocale?: string;
+  /** Where a failed rewrite of the stored settings is reported, once. */
+  readonly logger?: Pick<Console, "warn">;
+}
+
+/** Writes a file whole or not at all: a reader never sees a half-written document. */
+async function writeFileAtomically(path: string, text: string): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, text, "utf8");
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 function createDefaultAppSettings(locale: string | null | undefined): AppSettings {
@@ -84,6 +98,9 @@ export function parseSavedAppSettings(value: unknown): AppSettings {
     active.settings = configuration;
   } else {
     // Values still equal to the retired recommendation follow the recommendation; any other are the owner's.
+    // The comparison runs after the matching settings v2 migration (T53b), so a document that differs
+    // from the recommendation only in a field that no longer exists now follows it too, instead of
+    // becoming "Custom settings": there is nothing of the owner's left in it.
     if (matchingConfigurationsEqual(configuration, retiredRecommendedMatchingConfiguration)) {
       configuration = structuredClone(recommendedMatchingConfiguration);
       Object.assign(saved, structuredClone(configuration));
@@ -181,7 +198,7 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
       }
       const migrated = migrateMatchingSettingsV2(stored);
       if (migrated === stored) return false;
-      await writeFile(appSettingsPath, JSON.stringify(migrated, null, 2), "utf8");
+      await writeFileAtomically(appSettingsPath, JSON.stringify(migrated, null, 2));
       return true;
     },
     async saveAppSettings(settings) {
@@ -226,8 +243,9 @@ function createDbSettingsRepository(
       if (!stored) return false;
       const migrated = migrateMatchingSettingsV2(stored);
       if (migrated === stored) return false;
-      await appRepository.set(appSettingsKey, migrated);
-      return true;
+      // Only while the row still holds what was read: a concurrent change to the document (a
+      // `jsonb_set` of the re-match tool, say) is never overwritten with the older copy.
+      return appRepository.replaceIfUnchanged(appSettingsKey, stored, migrated);
     },
     async saveAppSettings(settings) {
       await appRepository.set(appSettingsKey, settings);
@@ -395,14 +413,18 @@ export class SettingsService {
 
   /**
    * Matching settings v2 (T53b): the first read of a service drops the retired matching settings
-   * from the stored document, once, before anything else reads or saves it. A failure is not fatal:
-   * every read migrates in memory and the next save writes the clean document.
+   * from the stored document, once, before anything else reads or saves it. A failure is not fatal
+   * and is reported once, not retried: every read migrates in memory and the next save writes the
+   * clean document.
    */
   private migrateStoredAppSettings(repository: SettingsRepository): Promise<void> {
     this.appSettingsMigration ??= repository.migrateAppSettings().then(
       () => undefined,
-      () => {
-        this.appSettingsMigration = null;
+      (error: unknown) => {
+        (this.options.logger ?? console).warn(
+          "The stored matching settings could not be rewritten; they are read migrated in memory.",
+          error instanceof Error ? error.message : String(error)
+        );
       }
     );
     return this.appSettingsMigration;
