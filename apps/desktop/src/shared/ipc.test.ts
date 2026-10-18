@@ -475,8 +475,9 @@ describe("desktop IPC contracts", () => {
     ).toBe(false);
   });
 
-  it("registers the objects.locate channel", () => {
+  it("registers the objects.locate and objects.neighborhood channels", () => {
     expect(ipcChannels.objectsLocate).toBe("app:objects:locate");
+    expect(ipcChannels.objectsNeighborhood).toBe("app:objects:neighborhood");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 

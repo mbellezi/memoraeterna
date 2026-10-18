@@ -1,9 +1,16 @@
-import { createObjectLocateRepository, type PgPool } from "@app/db";
+import {
+  createObjectLocateRepository,
+  createObjectNeighborhoodRepository,
+  type PgPool
+} from "@app/db";
 import {
   ObjectLocateInputSchema,
   ObjectLocateResultSchema,
+  ObjectNeighborhoodInputSchema,
+  ObjectNeighborhoodSchema,
   parseObjectAddress,
-  type ObjectLocateResult
+  type ObjectLocateResult,
+  type ObjectNeighborhood
 } from "@app/domain";
 
 /**
@@ -32,5 +39,20 @@ export class ObjectsService {
     if (target.kind === "note")
       return ObjectLocateResultSchema.nullable().parse(await repository.locateNote(target.id));
     throw new Error("objects.errors.unsupportedKind");
+  }
+
+  /**
+   * The local graph around a note (F3 D43, R30; the plan 4.5 name, restricted to notes until F5):
+   * the note, its strongest related notes and, at depth 2, theirs, with every shown relation among
+   * them. A suggestion is an edge in the `suggested` state; a withdrawn or removed relation is
+   * never drawn. Resolves to null when the note does not exist. Read-only, without AI.
+   */
+  async neighborhood(input: unknown): Promise<ObjectNeighborhood | null> {
+    const { objectId, depth, limit } = ObjectNeighborhoodInputSchema.parse(input);
+    const pool = this.getPool();
+    if (!pool) throw new Error("objects.errors.unavailable");
+    return ObjectNeighborhoodSchema.nullable().parse(
+      await createObjectNeighborhoodRepository(pool).read({ objectId, depth, limit })
+    );
   }
 }

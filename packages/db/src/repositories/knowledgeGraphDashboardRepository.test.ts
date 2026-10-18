@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PgPool } from "../client.js";
 import { createKnowledgeGraphDashboardRepository } from "./knowledgeGraphDashboardRepository.js";
-import { appliedNoteRelationSql } from "./note-relation-sql.js";
+import { noteRelationStateSql, shownNoteRelationSql } from "./note-relation-sql.js";
 
 class FakeGraphPool {
   readonly queries: string[] = [];
@@ -105,8 +105,10 @@ describe("knowledge graph dashboard repository", () => {
       confidence: 0.92
     });
     expect(pool.queries[0]).toContain("supersession_status = 'current'");
-    // Applied relations are drawn (D9), directed ones from their subject (the stored direction).
-    expect(pool.queries[1]).toContain(appliedNoteRelationSql("relation"));
+    // Shown relations are drawn (D9, decision 29), directed ones from their subject (the stored
+    // direction); the predicates, never another filter, choose them and mark the suggestions.
+    expect(pool.queries[1]).toContain(shownNoteRelationSql("relation"));
+    expect(pool.queries[1]).toContain(`${noteRelationStateSql.suggested("relation")} as suggested`);
     expect(pool.queries[1]).toContain("case when relation.direction = 'hi_to_lo'");
   });
 
@@ -144,6 +146,45 @@ describe("knowledge graph dashboard repository", () => {
     ]);
     // The band is only read as a value: the visibility predicates choose the rows.
     expect(pool.queries[1]).toContain("relation.band as band");
+  });
+
+  it("marks a suggested note relation and not a kept or applied one (decision 29)", async () => {
+    const note = (id: string) => ({
+      id,
+      title: id,
+      ideaStatement: id,
+      content: id,
+      status: "approved",
+      sourceItemId: "source-1",
+      sourceTitle: "Source",
+      entityCount: 0
+    });
+    const relation = (id: string, band: string | null, suggested: boolean) => ({
+      id,
+      source: "note-1",
+      target: "note-2",
+      relationType: "supports",
+      explanation: "Evidence overlaps",
+      finalScore: 0.88,
+      band,
+      suggested
+    });
+    const pool = new FakeGraphPool([
+      [note("note-1"), note("note-2")],
+      [
+        relation("kept", "suggest", false),
+        relation("possible", "suggest", true),
+        relation("legacy", null, false)
+      ]
+    ]);
+    const result = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool).get(
+      "atomic_notes"
+    );
+    expect(result.edges.map((edge) => [edge.id, edge.suggested])).toEqual([
+      ["kept", false],
+      ["possible", true],
+      ["legacy", false]
+    ]);
   });
 
   it("gives a source relation promoted from note links no confidence to show", async () => {

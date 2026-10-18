@@ -4,6 +4,7 @@ import type { NotePage } from "@app/domain";
 import { createTranslator, supportedLanguageCodes, type Translator } from "@app/i18n";
 
 import { NoteLeaveDialog } from "./NoteLeaveDialog";
+import { ViewTabs } from "./NoteRelations";
 import { NotePageView, type NotePageLoad, type NotePageViewProps } from "./NotePageView";
 import type { ExplanationState } from "./RelationEvidenceCard";
 import { evidenceItem, fixtureId, idleMore, notePage, relationItem } from "./note-page-fixtures";
@@ -519,6 +520,93 @@ describe("Note page relations", () => {
     expect(render(ready(page))).toContain("Show 20 more");
     const failed = render(ready(page), { more: { ...idleMore, shown: { status: "error" } } });
     expect(failed).toContain("More relations could not be loaded.");
+  });
+});
+
+describe("Note page relation graph tabs (F3 D43)", () => {
+  const graph = { active: true, revision: 0 };
+
+  it("offers List and Graph tabs, with the list shown and selected by default", () => {
+    const html = render(ready(), { graph });
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('aria-label="Relations view"');
+    const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((match) => match[0]);
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toContain('aria-selected="true"');
+    expect(tabs[0]).toContain('tabindex="0"');
+    expect(tabs[1]).toContain('aria-selected="false"');
+    expect(tabs[1]).toContain('tabindex="-1"');
+    expect(html).toContain(">List<");
+    expect(html).toContain(">Graph<");
+    // The list is the panel the first tab names, and it is the text alternative: the relation is in it.
+    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain("Spaced repetition flattens the forgetting curve.");
+    expect(html).not.toContain('role="application"');
+    const panel = /role="tabpanel" id="([^"]+)"/.exec(html)?.[1];
+    expect(html).toContain(`aria-controls="${panel}"`);
+  });
+
+  it("has no tabs without the graph's inputs or without a shown relation", () => {
+    expect(render(ready())).not.toContain('role="tablist"');
+    const none = notePage({ relations: { items: [], total: 0 } });
+    const html = render(ready(none), { graph });
+    expect(html).not.toContain('role="tablist"');
+    expect(html).toContain("No relations to other notes were found.");
+  });
+
+  it("keeps the withdrawn and earlier-version groups below the tabs", () => {
+    const page = notePage({
+      withdrawn: { items: [relationItem({ id: fixtureId(70), state: "withdrawn" })], total: 1 },
+      earlierVersions: { items: [], total: 2 }
+    });
+    const html = render(ready(page), { graph });
+    expect(html).toContain("1 relation withdrawn");
+    expect(html).toContain("Earlier versions");
+    expect(html.indexOf('role="tablist"')).toBeLessThan(html.indexOf("1 relation withdrawn"));
+  });
+
+  it("keeps the Graph tab but cannot be chosen, with a notice, when this window cannot draw it", () => {
+    const refs = { list: { current: null }, graph: { current: null } };
+    const html = renderToString(
+      <ViewTabs
+        t={en}
+        id="tabs"
+        view="list"
+        graphUnavailable
+        onView={noop}
+        listTab={refs.list}
+        graphTab={refs.graph}
+      />
+    ).replaceAll("<!-- -->", "");
+    const graphTab = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((m) => m[0])[1];
+    expect(graphTab).toContain('aria-disabled="true"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain(
+      "The graph cannot be drawn on this computer, so the relations are listed instead."
+    );
+    const available = renderToString(
+      <ViewTabs
+        t={en}
+        id="tabs"
+        view="list"
+        graphUnavailable={false}
+        onView={noop}
+        listTab={refs.list}
+        graphTab={refs.graph}
+      />
+    );
+    expect(available).not.toContain('aria-disabled="true"');
+    expect(available).not.toContain('role="status"');
+  });
+
+  it("says it in every language", () => {
+    for (const locale of supportedLanguageCodes) {
+      const t = createTranslator(locale);
+      const html = render(ready(), { graph }, t);
+      expect(html, locale).toContain('role="tablist"');
+      expect(html, locale).not.toContain("notePage.");
+      expect(html, locale).not.toContain("[[missing");
+    }
   });
 });
 

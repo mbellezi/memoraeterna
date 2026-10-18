@@ -90,6 +90,51 @@ describe("colour tokens", () => {
       expect(sets.light.get(`--graph-stance-${name}`)).toBe(sets.dark.get(`--stance-${name}`));
     expect(sets.dark.has("--graph-canvas-center")).toBe(false);
   });
+
+  it("keep the graph token reader's fallback palette equal to the graph tokens (F3 T60g)", () => {
+    const reader = read(`${renderer}/components/graph/graph-tokens.ts`);
+    const block = /fallbackGraphPalette: GraphPalette = \{([\s\S]*?)\n\};/u.exec(reader)?.[1] ?? "";
+    const fallback = (field: string) =>
+      new RegExp(`\\b${field}: "(#[0-9a-f]{6})"`, "u").exec(block)?.[1];
+    expect(fallback("canvasCenter")).toBe(sets.light.get("--graph-canvas-center"));
+    expect(fallback("canvasEdge")).toBe(sets.light.get("--graph-canvas-edge"));
+    expect(fallback("label")).toBe(sets.light.get("--graph-label"));
+    expect(fallback("labelMuted")).toBe(sets.light.get("--graph-label-muted"));
+    expect(fallback("note")).toBe(sets.light.get("--graph-object-note"));
+    const stanceBlock = /stance: \{([\s\S]*?)\}/u.exec(block)?.[1] ?? "";
+    for (const name of [
+      "supports",
+      "contradicts",
+      "extends",
+      "depends_on",
+      "example_of",
+      "related"
+    ])
+      expect(new RegExp(`\\b${name}: "(#[0-9a-f]{6})"`, "u").exec(stanceBlock)?.[1], name).toBe(
+        sets.light.get(`--graph-stance-${name.replace("_", "-")}`)
+      );
+  });
+
+  it("leave a suggested relation, drawn softer and dashed, 3:1 against the graph canvas", () => {
+    // A suggestion keeps its stance colour at a lower opacity (F3 decision 29); softer is never
+    // below the 3:1 a graph line needs, on the canvas edge it is blended with.
+    const source = read(`${renderer}/components/graph/ego-graph-sigma.ts`);
+    const opacity = Number(/egoSuggestionOpacity = ([0-9.]+)/u.exec(source)?.[1]);
+    expect(opacity).toBeGreaterThan(0.5);
+    expect(opacity).toBeLessThan(1);
+    for (const background of ["--graph-canvas-center", "--graph-canvas-edge"]) {
+      const canvas = parseHexColour(sets.light.get(background)!)!;
+      for (const name of stances) {
+        const base = parseHexColour(sets.light.get(`--graph-stance-${name}`)!)!;
+        const blend = (channel: "r" | "g" | "b") =>
+          Math.round(base[channel] * opacity + canvas[channel] * (1 - opacity));
+        const softened = { r: blend("r"), g: blend("g"), b: blend("b") };
+        expect(contrastRatio(softened, canvas), `${name} on ${background}`).toBeGreaterThanOrEqual(
+          3
+        );
+      }
+    }
+  });
 });
 
 describe("control boundaries", () => {

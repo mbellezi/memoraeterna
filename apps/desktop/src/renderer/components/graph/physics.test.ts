@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createGraphPhysics } from "./knowledge-graph-physics";
+import { createGraphPhysics } from "./physics";
 import {
   defaultGraphForceSettings,
   graphLayoutCommandSchema,
   graphLayoutEventSchema,
   type GraphLayoutEdge
-} from "./knowledge-graph-layout-contract";
+} from "./layout-contract";
 
 function fixture() {
   const nodes = Array.from({ length: 32 }, (_, index) => ({

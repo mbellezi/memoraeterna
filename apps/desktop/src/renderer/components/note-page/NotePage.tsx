@@ -702,6 +702,7 @@ export function NotePage({
         onReview={reviewRelation}
         relationFocus={relationFocus}
         withdrawnOpen={withdrawnOpen}
+        graph={{ active, revision: attempt }}
         onToggleWithdrawn={() => setWithdrawnOpen((current) => !current)}
         onRelationFocusHandled={() => setRelationFocus(null)}
         onShowMore={showMore}

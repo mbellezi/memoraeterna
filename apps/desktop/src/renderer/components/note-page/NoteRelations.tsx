@@ -1,9 +1,18 @@
-import { useEffect, useId, useRef, type FocusEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  type FocusEvent,
+  type KeyboardEvent,
+  type RefObject
+} from "react";
 import { Check, ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
 import type { NotePageEvidence, NotePageRelation, NotePageRelations } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { EgoGraph } from "../graph/EgoGraph";
 import { ObjectKindGlyph } from "../glyphs";
 import { RelationStanceLabel } from "../RelationStanceLabel";
 import { Button } from "../ui/button";
@@ -17,6 +26,13 @@ import {
   type ReviewState
 } from "./note-page-model";
 import type { CardEvent } from "./relation-card-state";
+import {
+  drawsGraph,
+  initialRelationsView,
+  relationsViewForKey,
+  relationsViewReducer,
+  type RelationsView
+} from "./relations-view";
 
 const pill =
   "inline-flex h-5 items-center rounded-full border border-border px-2 text-xs font-medium text-secondary-foreground";
@@ -26,6 +42,101 @@ const focusRing =
 
 export interface RelationsMore {
   status: "idle" | "loading" | "error";
+}
+
+/**
+ * What the relation graph needs from the page (F3 D43): whether the page is shown, and a number
+ * that grows each time the page read the note's relations again, so the graph reads its own answer
+ * again then. Without it the section has no Graph tab.
+ */
+export interface RelationsGraph {
+  active: boolean;
+  revision: number;
+}
+
+const tab = cn(
+  "inline-flex h-7 items-center rounded-md px-3 text-xs font-medium",
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  "aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+);
+
+/**
+ * The List and Graph tabs of the Relations section. List is the default and the text alternative of
+ * the graph; the roving tab stop and the arrow keys follow the tabs pattern.
+ */
+export function ViewTabs({
+  t,
+  id,
+  view,
+  graphUnavailable,
+  onView,
+  listTab,
+  graphTab
+}: {
+  t: Translator;
+  id: string;
+  view: RelationsView;
+  graphUnavailable: boolean;
+  onView: (view: RelationsView) => void;
+  listTab: RefObject<HTMLButtonElement | null>;
+  graphTab: RefObject<HTMLButtonElement | null>;
+}) {
+  const choose = (next: RelationsView) => {
+    if (next === "graph" && graphUnavailable) return;
+    onView(next);
+    (next === "list" ? listTab : graphTab).current?.focus();
+  };
+  const tabs: Array<{ view: RelationsView; label: MessageKey; ref: typeof listTab }> = [
+    { view: "list", label: "notePage.graph.list", ref: listTab },
+    { view: "graph", label: "notePage.graph.graph", ref: graphTab }
+  ];
+  return (
+    <>
+      <div
+        role="tablist"
+        aria-label={t("notePage.graph.tabs")}
+        className="inline-flex w-fit gap-0.5 rounded-lg border border-border-strong p-0.5"
+        onKeyDown={(event: KeyboardEvent) => {
+          const next = relationsViewForKey(event.key);
+          if (next === null) return;
+          event.preventDefault();
+          choose(next);
+        }}
+      >
+        {tabs.map((entry) => {
+          const selected = view === entry.view;
+          const disabled = entry.view === "graph" && graphUnavailable;
+          return (
+            <button
+              key={entry.view}
+              ref={entry.ref}
+              type="button"
+              role="tab"
+              id={`${id}-${entry.view}`}
+              aria-selected={selected}
+              aria-controls={`${id}-panel`}
+              aria-disabled={disabled || undefined}
+              tabIndex={selected ? 0 : -1}
+              className={cn(
+                tab,
+                selected
+                  ? "bg-accent-soft text-accent"
+                  : "text-secondary-foreground hover:bg-soft hover:text-foreground"
+              )}
+              onClick={() => choose(entry.view)}
+            >
+              {t(entry.label)}
+            </button>
+          );
+        })}
+      </div>
+      {graphUnavailable ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("notePage.graph.unavailable")}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -280,6 +391,7 @@ export function NoteRelations({
   more,
   withdrawnOpen,
   focusRequest,
+  graph,
   onCardEvent,
   onOpenNote,
   onRetryExplanation,
@@ -301,6 +413,8 @@ export function NoteRelations({
   /** Whether the withdrawn relations are listed (they are behind "Show" until the owner asks). */
   withdrawnOpen: boolean;
   focusRequest: RelationFocus | null;
+  /** The relation graph's inputs; absent, the section is the list alone. */
+  graph?: RelationsGraph | undefined;
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
@@ -310,6 +424,13 @@ export function NoteRelations({
   onShowMore: (group: RelationGroup) => void;
 }) {
   const headingId = useId();
+  const tabsId = useId();
+  const [{ view, graphUnavailable }, dispatchView] = useReducer(
+    relationsViewReducer,
+    initialRelationsView
+  );
+  const listTab = useRef<HTMLButtonElement>(null);
+  const graphTab = useRef<HTMLButtonElement>(null);
   const withdrawnId = useId();
   const withdrawnListId = useId();
   const earlierId = useId();
@@ -318,6 +439,9 @@ export function NoteRelations({
   const withdrawnHeading = useRef<HTMLHeadingElement>(null);
   const earlierHeading = useRef<HTMLHeadingElement>(null);
   const empty = relations.total === 0 && withdrawn.total === 0 && earlierVersions.total === 0;
+  // The Graph tab draws the shown relations: with none there is nothing to choose between.
+  const tabs = graph !== undefined && relations.total > 0;
+  const drawing = drawsGraph({ tabs, state: { view, graphUnavailable } });
   const list: ListProps = {
     t,
     thisId,
@@ -369,20 +493,60 @@ export function NoteRelations({
         {relations.total > 0 ? (
           <span className="text-sm text-muted-foreground tabular-nums">{relations.total}</span>
         ) : null}
-        {relations.items.length > 0 ? (
+        {relations.items.length > 0 && !drawing ? (
           <span className="text-xs text-muted-foreground">{t("notePage.relations.hint")}</span>
         ) : null}
       </div>
+      {tabs ? (
+        <ViewTabs
+          t={t}
+          id={tabsId}
+          view={view}
+          graphUnavailable={graphUnavailable}
+          onView={(next) => dispatchView({ type: "choose", view: next })}
+          listTab={listTab}
+          graphTab={graphTab}
+        />
+      ) : null}
       {empty ? (
         <p className="text-sm text-muted-foreground">{t("notePage.relations.empty")}</p>
       ) : null}
-      {relations.items.length > 0 ? <RelationList relations={relations} {...list} /> : null}
-      <ShowMore
-        t={t}
-        relations={relations}
-        more={more.shown}
-        onShowMore={() => onShowMore("shown")}
-      />
+      <div
+        {...(tabs
+          ? {
+              role: "tabpanel",
+              id: `${tabsId}-panel`,
+              "aria-labelledby": `${tabsId}-${drawing ? "graph" : "list"}`
+            }
+          : {})}
+        className="flex flex-col gap-2"
+      >
+        {drawing && graph ? (
+          <EgoGraph
+            key={thisId}
+            t={t}
+            noteId={thisId}
+            revision={graph.revision}
+            active={graph.active}
+            onOpenNote={onOpenNote}
+            onUnavailable={() => dispatchView({ type: "unavailable" })}
+            onShowList={() => {
+              dispatchView({ type: "choose", view: "list" });
+              listTab.current?.focus();
+            }}
+          />
+        ) : (
+          <>
+            {relations.items.length > 0 ? <RelationList relations={relations} {...list} /> : null}
+            <ShowMore
+              t={t}
+              relations={relations}
+              more={more.shown}
+              onShowMore={() => onShowMore("shown")}
+            />
+          </>
+        )}
+      </div>
       {withdrawn.total > 0 ? (
         <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

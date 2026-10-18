@@ -30,6 +30,7 @@ export * from "./prompt-catalog.js";
 export * from "./prompt-definitions.js";
 export * from "./wiki-reference.js";
 export * from "./object-address.js";
+export * from "./object-neighborhood.js";
 export * from "./note-page.js";
 export * from "./relation-explanation.js";
 export * from "./relation-calibration.js";

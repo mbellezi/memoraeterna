@@ -266,7 +266,14 @@
       "semantic_relation": "Relación semántica",
       "atomic_note_relation": "Relación entre notas atómicas"
     },
-    "relationLegend": { "trigger": "Filtros", "title": "Filtros de conexiones" }
+    "relationLegend": {
+      "trigger": "Filtros",
+      "title": "Filtros de conexiones",
+      "lines": "Estilo de línea",
+      "keptLine": "Línea continua: relación mantenida o aplicada",
+      "suggestedLine": "Línea discontinua: sugerencia que nadie ha mantenido todavía"
+    },
+    "suggestedEdge": "Sugerencia: nadie ha mantenido todavía esta relación."
   },
   "database": {
     "startup": {
@@ -2840,6 +2847,33 @@
       "hideWithdrawn": "Ocultar",
       "earlierTitle": "Versiones anteriores",
       "earlierHint": "Relaciones con una nota que una versión más nueva reemplazó, o cuya fuente ya no existe. Quedan fuera del grafo y de los recuentos."
+    },
+    "graph": {
+      "tabs": "Vista de las relaciones",
+      "list": "Lista",
+      "graph": "Grafo",
+      "unavailable": "El grafo no se puede dibujar en este equipo, así que las relaciones se muestran en una lista.",
+      "loading": "Cargando el grafo de relaciones…",
+      "error": "No se pudo cargar el grafo de relaciones.",
+      "empty": "Esta nota aún no tiene relaciones que dibujar. Aparecen aquí cuando otras notas se vinculan a ella.",
+      "depthTwo": "Incluir las relaciones de las notas relacionadas",
+      "counts": "{notes} notas · {relations} relaciones",
+      "showList": "Mostrar como lista",
+      "label": "Grafo de relaciones: {notes} notas y {relations} relaciones. Arrastra el fondo para moverte; la lista tiene las mismas relaciones en texto.",
+      "keyboardHint": "Teclado: usa Tab hasta el grafo; las flechas pasan entre notas y relaciones, Intro abre una nota y Esc cierra la ficha.",
+      "legend": "Leyenda",
+      "legendKept": "Línea continua: una relación que mantuviste o que se aplicó",
+      "legendSuggested": "Línea discontinua: una sugerencia que nadie ha mantenido todavía",
+      "legendArrow": "Flecha: la relación va de una nota a la otra",
+      "legendFocus": "Nodo más grande: esta nota",
+      "truncated": "Se muestran {shown} de {total} notas relacionadas. La lista las tiene todas.",
+      "thisNote": "Esta nota: {title}",
+      "noteCard": "Nota: {title}",
+      "thisNoteHint": "Estás en esta nota.",
+      "openHint": "Haz clic, o pulsa Intro, para abrir esta nota.",
+      "stateSuggested": "Sugerencia: nadie ha mantenido todavía esta relación.",
+      "stateKept": "Mantuviste esta relación.",
+      "stateApplied": "Esta relación está aplicada."
     },
     "stance": {
       "supports": "apoya",

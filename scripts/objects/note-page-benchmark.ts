@@ -8,15 +8,18 @@ import pg from "pg";
 
 import {
   NotePageSchema,
+  ObjectNeighborhoodSchema,
   noteRelationGroups,
   notePageLimits,
-  objectLocateListLimit
+  objectLocateListLimit,
+  objectNeighborhoodLimits
 } from "@app/domain";
 import {
   aiConfigGeneration,
   createAiConfigRepository,
   createNotePageRepository,
   createObjectLocateRepository,
+  createObjectNeighborhoodRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations
@@ -64,6 +67,11 @@ const usage = `Usage: npx tsx scripts/objects/note-page-benchmark.ts (--db <conn
                        resolves; the exit code is 1 when the wired service's p95 is above
                        --service-target-ms.
   --service-target-ms <n>  p95 target of the wired service call (default 5).
+  --neighborhood       Also measure objects.neighborhood (the Note page's relation graph, F3 T60g):
+                       depth 1 and depth 2 over every sampled note, the hubs included, and explain
+                       its statements. The exit code is 1 when a p95 is above its target.
+  --neighborhood-d1-ms <n>  p95 target at depth 1 (default 20).
+  --neighborhood-d2-ms <n>  p95 target at depth 2 (default 50).
   --json <file>        Also write the measurements as JSON.
   --help               Show this text.`;
 
@@ -79,6 +87,9 @@ const { values } = parseArgs({
     "target-ms": { type: "string" },
     service: { type: "boolean" },
     "service-target-ms": { type: "string" },
+    neighborhood: { type: "boolean" },
+    "neighborhood-d1-ms": { type: "string" },
+    "neighborhood-d2-ms": { type: "string" },
     json: { type: "string" },
     help: { type: "boolean", short: "h" }
   },
@@ -108,6 +119,8 @@ const sampleSize = integer(values.sample, 300, "sample");
 const rounds = integer(values.rounds, 5, "rounds");
 const targetMs = integer(values["target-ms"], 50, "target-ms");
 const serviceTargetMs = integer(values["service-target-ms"], 5, "service-target-ms");
+const neighborhoodD1Ms = integer(values["neighborhood-d1-ms"], 20, "neighborhood-d1-ms");
+const neighborhoodD2Ms = integer(values["neighborhood-d2-ms"], 50, "neighborhood-d2-ms");
 
 function log(message: string): void {
   console.error(`[note-page-benchmark] ${message}`);
@@ -285,6 +298,79 @@ async function measureService(
   };
 }
 
+/**
+ * objects.neighborhood as the desktop service runs it (the repository and the Zod parse) at depth 1
+ * and depth 2 for every sampled note, hubs of 400 relations included. The statements of the first
+ * hub's depth-2 answer are explained.
+ */
+async function measureNeighborhood(client: pg.Pool, samples: readonly Sample[]) {
+  const repository = createObjectNeighborhoodRepository(client);
+  const read = async (objectId: string, depth: 1 | 2) => {
+    const start = performance.now();
+    const answer = ObjectNeighborhoodSchema.nullable().parse(
+      await repository.read({ objectId, depth, limit: objectNeighborhoodLimits.nodes })
+    );
+    return { ms: performance.now() - start, answer };
+  };
+  const shapes = { nodes: 0, edges: 0, suggested: 0, truncated: 0, reads: 0 };
+  const result: Record<"d1" | "d2", Map<SampleKind, number[]>> = {
+    d1: new Map(),
+    d2: new Map()
+  };
+  for (const depth of [1, 2] as const) for (const sample of samples) await read(sample.id, depth); // warm-up
+  for (let round = 0; round < rounds; round += 1)
+    for (const depth of [1, 2] as const)
+      for (const sample of samples) {
+        const { ms, answer } = await read(sample.id, depth);
+        const bucket = result[depth === 1 ? "d1" : "d2"];
+        bucket.set(sample.kind, [...(bucket.get(sample.kind) ?? []), ms]);
+        if (depth === 2 && round === 0 && answer) {
+          shapes.reads += 1;
+          shapes.nodes += answer.nodes.length;
+          shapes.edges += answer.edges.length;
+          shapes.suggested += answer.edges.filter((edge) => edge.state === "suggested").length;
+          shapes.truncated += answer.truncated ? 1 : 0;
+        }
+      }
+  const hub = samples.find((sample) => sample.kind === "hub") ?? samples[0]!;
+  const heaviest = (await read(hub.id, 2)).answer!;
+  const depthOne = heaviest.nodes.filter((node) => node.depth === 1).map((node) => node.id);
+  const plans = {
+    neighbourhoodNeighbours: await plan(client, repository.statements.neighbours, [
+      hub.id,
+      objectNeighborhoodLimits.nodes - 1
+    ]),
+    neighbourhoodSecondRing: await plan(client, repository.statements.secondRing, [
+      hub.id,
+      depthOne.slice(0, objectNeighborhoodLimits.seeds),
+      objectNeighborhoodLimits.seedPool,
+      objectNeighborhoodLimits.perSeed
+    ]),
+    neighbourhoodEdges: await plan(client, repository.statements.edges, [
+      heaviest.nodes.map((node) => node.id)
+    ])
+  };
+  const flat = (bucket: Map<SampleKind, number[]>) => [...bucket.values()].flat();
+  return {
+    d1: { overall: summary(flat(result.d1)), byKind: summarizeKinds(result.d1) },
+    d2: { overall: summary(flat(result.d2)), byKind: summarizeKinds(result.d2) },
+    // What a depth-2 answer holds on the first round, over the sampled notes.
+    shapes: {
+      reads: shapes.reads,
+      meanNodes: shapes.reads ? shapes.nodes / shapes.reads : 0,
+      meanEdges: shapes.reads ? shapes.edges / shapes.reads : 0,
+      suggestedEdges: shapes.suggested,
+      truncatedAnswers: shapes.truncated
+    },
+    hubAnswer: { nodes: heaviest.nodes.length, edges: heaviest.edges.length },
+    plans
+  };
+}
+
+function summarizeKinds(buckets: Map<SampleKind, number[]>) {
+  return Object.fromEntries([...buckets].map(([kind, list]) => [kind, summary(list)]));
+}
+
 async function plan(client: pg.Pool, statement: string, parameters: unknown[]): Promise<string[]> {
   const result = await client.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
     `explain (analyze, format json) ${statement}`,
@@ -419,6 +505,14 @@ try {
   const service = values.service
     ? await measureService(pool, samples, workDir ?? tmpdir(), Boolean(values.seed))
     : null;
+  const neighborhood = values.neighborhood ? await measureNeighborhood(pool, samples) : null;
+  const neighborhoodSeqScans = neighborhood
+    ? Object.entries(neighborhood.plans).flatMap(([name, lines]) =>
+        lines
+          .filter((line) => largeTables.some((table) => line.startsWith(`Seq Scan on ${table}`)))
+          .map((line) => `${name}: ${line}`)
+      )
+    : [];
   const report = {
     origin,
     library,
@@ -433,10 +527,18 @@ try {
     seqScans,
     service,
     serviceTargetMs: service ? serviceTargetMs : null,
+    neighborhood,
+    neighborhoodTargetsMs: neighborhood
+      ? { depth1: neighborhoodD1Ms, depth2: neighborhoodD2Ms }
+      : null,
     passed:
       all.p95 <= targetMs &&
       seqScans.length === 0 &&
-      (service === null || (service.wired.p95 <= serviceTargetMs && service.writerResolved)),
+      neighborhoodSeqScans.length === 0 &&
+      (service === null || (service.wired.p95 <= serviceTargetMs && service.writerResolved)) &&
+      (neighborhood === null ||
+        (neighborhood.d1.overall.p95 <= neighborhoodD1Ms &&
+          neighborhood.d2.overall.p95 <= neighborhoodD2Ms)),
     slowest: { kind: slowest.sample.kind, ms: slowest.ms },
     heaviestPlans: plans,
     wallSeconds: Math.round((Date.now() - startedAt) / 1000)
@@ -469,6 +571,24 @@ try {
             row("wired (memoized per configuration)", service.wired),
             `resolving the writer once: p50 ${fixed(service.resolveWriter.p50)} ms, p95 ${fixed(service.resolveWriter.p95)} ms`,
             `Service target p95 <= ${serviceTargetMs} ms: ${service.wired.p95 <= serviceTargetMs && service.writerResolved ? "PASS" : "FAIL"} (${fixed(service.wired.p95)} ms)`
+          ]
+        : []),
+      ...(neighborhood
+        ? [
+            "",
+            `objects.neighborhood (R30), at most ${objectNeighborhoodLimits.nodes} nodes; a depth-2 answer holds ${fixed(neighborhood.shapes.meanNodes)} nodes and ${fixed(neighborhood.shapes.meanEdges)} edges on average (${neighborhood.shapes.suggestedEdges} suggested edges, ${neighborhood.shapes.truncatedAnswers} of ${neighborhood.shapes.reads} truncated); the first hub's: ${neighborhood.hubAnswer.nodes} nodes, ${neighborhood.hubAnswer.edges} edges`,
+            "| Depth | Calls | p50 | p95 | p99 | max |",
+            "| --- | --- | --- | --- | --- | --- |",
+            row("1", neighborhood.d1.overall),
+            ...Object.entries(neighborhood.d1.byKind).map(([kind, s]) => row(`1 ${kind}`, s)),
+            row("2", neighborhood.d2.overall),
+            ...Object.entries(neighborhood.d2.byKind).map(([kind, s]) => row(`2 ${kind}`, s)),
+            `Depth 1 target p95 <= ${neighborhoodD1Ms} ms: ${neighborhood.d1.overall.p95 <= neighborhoodD1Ms ? "PASS" : "FAIL"} (${fixed(neighborhood.d1.overall.p95)} ms)`,
+            `Depth 2 target p95 <= ${neighborhoodD2Ms} ms: ${neighborhood.d2.overall.p95 <= neighborhoodD2Ms ? "PASS" : "FAIL"} (${fixed(neighborhood.d2.overall.p95)} ms)`,
+            `Sequential scans of large tables in the neighbourhood plans: ${neighborhoodSeqScans.length ? neighborhoodSeqScans.join("; ") : "none"}`,
+            ...Object.entries(neighborhood.plans).flatMap(([name, lines]) =>
+              lines.map((line) => `  - ${name}: ${line}`)
+            )
           ]
         : []),
       `Sequential scans of large tables (${largeTables.join(", ") || "none this large"}) in the heaviest note's plans: ${seqScans.length ? seqScans.join("; ") : "none"}`,

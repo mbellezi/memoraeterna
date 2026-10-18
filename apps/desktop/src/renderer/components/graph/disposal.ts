@@ -50,3 +50,35 @@ function releaseAfterPaint(release: () => void): void {
     frame = window.requestAnimationFrame(finish);
   });
 }
+
+/**
+ * Teardown that runs once. Steps run in the reverse order they were added, each isolated from the
+ * others' failures, and a step added after disposal runs at once (an asynchronous setup that
+ * finished after its view unmounted still releases what it just built). `dispose` is safe to call
+ * from several places: a React cleanup, a failed setup, a retry.
+ */
+export function createDisposer() {
+  const steps: Array<() => void> = [];
+  let disposed = false;
+  const run = (step: () => void) => {
+    try {
+      step();
+    } catch {
+      // One failing release must not keep the others from running.
+    }
+  };
+  return {
+    get disposed() {
+      return disposed;
+    },
+    add(step: () => void): void {
+      if (disposed) run(step);
+      else steps.push(step);
+    },
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      for (const step of steps.splice(0).reverse()) run(step);
+    }
+  };
+}

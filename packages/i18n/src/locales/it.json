@@ -266,7 +266,14 @@
       "semantic_relation": "Relazione semantica",
       "atomic_note_relation": "Relazione tra note atomiche"
     },
-    "relationLegend": { "trigger": "Filtri", "title": "Filtri delle connessioni" }
+    "relationLegend": {
+      "trigger": "Filtri",
+      "title": "Filtri delle connessioni",
+      "lines": "Stile della linea",
+      "keptLine": "Linea continua: relazione mantenuta o applicata",
+      "suggestedLine": "Linea tratteggiata: suggerimento che nessuno ha ancora mantenuto"
+    },
+    "suggestedEdge": "Suggerimento: nessuno ha ancora mantenuto questa relazione."
   },
   "database": {
     "startup": {
@@ -2831,6 +2838,33 @@
       "hideWithdrawn": "Nascondi",
       "earlierTitle": "Versioni precedenti",
       "earlierHint": "Relazioni con una nota sostituita da una versione più recente, o la cui fonte non esiste più. Restano fuori dal grafo e dai conteggi."
+    },
+    "graph": {
+      "tabs": "Vista delle relazioni",
+      "list": "Elenco",
+      "graph": "Grafo",
+      "unavailable": "Il grafo non può essere disegnato su questo computer, quindi le relazioni sono mostrate in elenco.",
+      "loading": "Caricamento del grafo delle relazioni…",
+      "error": "Impossibile caricare il grafo delle relazioni.",
+      "empty": "Questa nota non ha ancora relazioni da disegnare. Compaiono qui quando altre note vengono collegate a essa.",
+      "depthTwo": "Includi le relazioni delle note collegate",
+      "counts": "{notes} note · {relations} relazioni",
+      "showList": "Mostra come elenco",
+      "label": "Grafo delle relazioni: {notes} note e {relations} relazioni. Trascina lo sfondo per spostarti; l’elenco contiene le stesse relazioni come testo.",
+      "keyboardHint": "Tastiera: raggiungi il grafo con Tab; le frecce passano tra note e relazioni, Invio apre una nota e Esc chiude la scheda.",
+      "legend": "Legenda",
+      "legendKept": "Linea continua: una relazione che hai mantenuto o che è stata applicata",
+      "legendSuggested": "Linea tratteggiata: un suggerimento che nessuno ha ancora mantenuto",
+      "legendArrow": "Freccia: la relazione va da una nota all’altra",
+      "legendFocus": "Nodo più grande: questa nota",
+      "truncated": "Mostrate {shown} di {total} note collegate. L’elenco le contiene tutte.",
+      "thisNote": "Questa nota: {title}",
+      "noteCard": "Nota: {title}",
+      "thisNoteHint": "Sei su questa nota.",
+      "openHint": "Fai clic, o premi Invio, per aprire questa nota.",
+      "stateSuggested": "Suggerimento: nessuno ha ancora mantenuto questa relazione.",
+      "stateKept": "Hai mantenuto questa relazione.",
+      "stateApplied": "Questa relazione è applicata."
     },
     "stance": {
       "supports": "sostiene",

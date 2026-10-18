@@ -5,7 +5,7 @@ import {
   type GraphLayoutCommand,
   type GraphLayoutEdge,
   type GraphLayoutNode
-} from "./knowledge-graph-layout-contract";
+} from "./layout-contract";
 
 /** Accepts ongoing network motion while protecting the pointer-controlled node from stale snapshots. */
 export class KnowledgeGraphLayout {
@@ -24,7 +24,7 @@ export class KnowledgeGraphLayout {
     onError: () => void
   ) {
     this.indices = new Map(nodes.map((node, index) => [node.id, index]));
-    this.worker = new Worker(new URL("./knowledge-graph-layout.worker.ts", import.meta.url), {
+    this.worker = new Worker(new URL("./layout-worker.ts", import.meta.url), {
       type: "module"
     });
     const fail = () => {

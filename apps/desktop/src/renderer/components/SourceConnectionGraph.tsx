@@ -8,9 +8,9 @@ import type Sigma from "sigma";
 import { Maximize2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphSourceConnectionDetails } from "../../shared/ipc";
-import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
-import { disposeConnectionGraphRenderer } from "./knowledge-graph-disposal";
-import { graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
+import { KnowledgeGraphLayout } from "./graph/layout";
+import { disposeConnectionGraphRenderer } from "./graph/disposal";
+import { graphLayoutRadius, type GraphForceSettings } from "./graph/layout-contract";
 import {
   GraphHoverIntent,
   GraphWheelMotion,
@@ -20,13 +20,13 @@ import {
   boundedGraphWheelRatio,
   captureGraphWheelEvent,
   type GraphHoverTarget
-} from "./knowledge-graph-interaction";
+} from "./graph/interaction";
 import {
   graphNodeSize,
   graphTypography,
   relationHitAreaScreenThickness,
   zoomCompensatedEdgeSize
-} from "./knowledge-graph-view-model";
+} from "./graph/view-model";
 
 export const sourceConnectionEdgeThickness = 2.1;
 export const sourceConnectionArrowOptions = {
@@ -162,7 +162,7 @@ export function SourceConnectionGraph({
         { drawDiscNodeHover }
       ] = await Promise.all([
         import("sigma"),
-        import("./knowledge-graph-programs"),
+        import("./graph/programs"),
         import("sigma/rendering")
       ]);
       if (disposed || !container) return;

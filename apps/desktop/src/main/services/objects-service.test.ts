@@ -163,3 +163,88 @@ describe("objects IPC registration", () => {
     expect(locate).toHaveBeenCalledWith(input);
   });
 });
+
+describe("ObjectsService.neighborhood and its IPC registration (R30)", () => {
+  const note = (n: number, depth: 0 | 1) => ({
+    id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+    kind: "note" as const,
+    title: `Note ${n}`,
+    ideaStatement: `Idea ${n}.`,
+    language: null,
+    depth
+  });
+
+  /** A pool whose connection answers the three statements of the repository. */
+  function pooled(focusFound: boolean) {
+    const focus = note(1, 0);
+    const query = vi.fn(async (config: string | { name?: string }) => {
+      const name = typeof config === "string" ? "" : (config.name ?? "");
+      if (name === "object-neighborhood-neighbours")
+        return {
+          rows: [
+            focusFound
+              ? { focus, total: 1, neighbours: [{ ...note(2, 1), depth: undefined }] }
+              : { focus: null, total: 0, neighbours: [] }
+          ]
+        };
+      return { rows: [] };
+    });
+    const pool = {
+      connect: async () => ({ query, release: () => undefined })
+    } as unknown as PgPool;
+    return { service: new ObjectsService(() => pool), query };
+  }
+
+  it("validates the request: notes only, depth 1 or 2, at most 40 nodes", async () => {
+    const { service, query } = pooled(true);
+    const objectId = note(1, 0).id;
+    await expect(service.neighborhood({ objectId, objectTypes: ["source"] })).rejects.toThrow();
+    await expect(service.neighborhood({ objectId, depth: 3 })).rejects.toThrow();
+    await expect(service.neighborhood({ objectId, limit: 41 })).rejects.toThrow();
+    await expect(service.neighborhood({ objectId: "nope" })).rejects.toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("answers the contract for a note, null for a missing one, and fails without a database", async () => {
+    const objectId = note(1, 0).id;
+    const found = await pooled(true).service.neighborhood({ objectId });
+    expect(found).toMatchObject({
+      focus: objectId,
+      depth: 1,
+      nodes: [
+        { id: objectId, depth: 0 },
+        { id: note(2, 1).id, depth: 1 }
+      ],
+      edges: [],
+      neighbourTotal: 1,
+      truncated: false
+    });
+    expect(await pooled(false).service.neighborhood({ objectId })).toBeNull();
+    await expect(new ObjectsService(() => null).neighborhood({ objectId })).rejects.toThrow(
+      "objects.errors.unavailable"
+    );
+  });
+
+  it("handles objects.neighborhood and validates the payload before the service", async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
+    const neighborhood = vi.fn(async () => null);
+    registerObjectsIpc(
+      ipc as unknown as IpcMain,
+      { locate: vi.fn(), neighborhood } as unknown as ObjectsService
+    );
+    const handler = handlers.get(ipcChannels.objectsNeighborhood);
+    expect(ipcChannels.objectsNeighborhood).toBe("app:objects:neighborhood");
+    expect(handler).toBeDefined();
+    expect(() => handler!({}, { objectId: "nope" })).toThrow();
+    expect(() => handler!({}, { objectId: ids.note, objectTypes: ["topic"] })).toThrow();
+    expect(neighborhood).not.toHaveBeenCalled();
+    await handler!({}, { objectId: ids.note });
+    expect(neighborhood).toHaveBeenCalledWith({
+      objectId: ids.note,
+      objectTypes: ["note"],
+      depth: 1,
+      limit: 40
+    });
+  });
+});

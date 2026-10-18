@@ -266,7 +266,14 @@
       "semantic_relation": "Semantic relation",
       "atomic_note_relation": "Atomic-note relation"
     },
-    "relationLegend": { "trigger": "Filters", "title": "Connection filters" }
+    "relationLegend": {
+      "trigger": "Filters",
+      "title": "Connection filters",
+      "lines": "Line style",
+      "keptLine": "Solid line: relation kept or applied",
+      "suggestedLine": "Dashed line: suggestion nobody has kept yet"
+    },
+    "suggestedEdge": "Suggestion: nobody has kept this relation yet."
   },
   "database": {
     "startup": {
@@ -2833,6 +2840,33 @@
       "hideWithdrawn": "Hide",
       "earlierTitle": "Earlier versions",
       "earlierHint": "Relations to a note that a newer version replaced, or whose source is gone. They stay out of the graph and the counts."
+    },
+    "graph": {
+      "tabs": "Relations view",
+      "list": "List",
+      "graph": "Graph",
+      "unavailable": "The graph cannot be drawn on this computer, so the relations are listed instead.",
+      "loading": "Loading the relation graph…",
+      "error": "The relation graph could not be loaded.",
+      "empty": "This note has no relations to draw yet. They appear here when other notes are linked to it.",
+      "depthTwo": "Include the relations of related notes",
+      "counts": "{notes} notes · {relations} relations",
+      "showList": "Show as list",
+      "label": "Relation graph: {notes} notes and {relations} relations. Drag the background to pan; the List has the same relations as text.",
+      "keyboardHint": "Keyboard: Tab to the graph, then the arrow keys move between notes and relations, Enter opens a note and Escape closes the card.",
+      "legend": "Legend",
+      "legendKept": "Solid line: a relation you kept or that was applied",
+      "legendSuggested": "Dashed line: a suggestion nobody has kept yet",
+      "legendArrow": "Arrow: the relation reads from one note to the other",
+      "legendFocus": "Larger node: this note",
+      "truncated": "Showing {shown} of {total} related notes. The List has all of them.",
+      "thisNote": "This note: {title}",
+      "noteCard": "Note: {title}",
+      "thisNoteHint": "You are on this note.",
+      "openHint": "Click, or press Enter, to open this note.",
+      "stateSuggested": "Suggestion: nobody has kept this relation yet.",
+      "stateKept": "You kept this relation.",
+      "stateApplied": "This relation is applied."
     },
     "stance": {
       "supports": "supports",

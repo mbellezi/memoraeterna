@@ -266,7 +266,14 @@
       "semantic_relation": "Relação semântica",
       "atomic_note_relation": "Relação entre notas atômicas"
     },
-    "relationLegend": { "trigger": "Filtros", "title": "Filtros de conexões" }
+    "relationLegend": {
+      "trigger": "Filtros",
+      "title": "Filtros de conexões",
+      "lines": "Estilo da linha",
+      "keptLine": "Linha contínua: relação mantida ou aplicada",
+      "suggestedLine": "Linha tracejada: sugestão que ninguém manteve ainda"
+    },
+    "suggestedEdge": "Sugestão: ninguém manteve esta relação ainda."
   },
   "database": {
     "startup": {
@@ -2836,6 +2843,33 @@
       "hideWithdrawn": "Ocultar",
       "earlierTitle": "Versões anteriores",
       "earlierHint": "Relações com uma nota que uma versão mais nova substituiu, ou cuja fonte não existe mais. Ficam fora do grafo e das contagens."
+    },
+    "graph": {
+      "tabs": "Visualização das relações",
+      "list": "Lista",
+      "graph": "Grafo",
+      "unavailable": "O grafo não pode ser desenhado neste computador; as relações aparecem em lista.",
+      "loading": "Carregando o grafo de relações…",
+      "error": "Não foi possível carregar o grafo de relações.",
+      "empty": "Esta nota ainda não tem relações para desenhar. Elas aparecem aqui quando outras notas forem ligadas a ela.",
+      "depthTwo": "Incluir as relações das notas relacionadas",
+      "counts": "{notes} notas · {relations} relações",
+      "showList": "Mostrar como lista",
+      "label": "Grafo de relações: {notes} notas e {relations} relações. Arraste o fundo para mover; a Lista tem as mesmas relações em texto.",
+      "keyboardHint": "Teclado: use Tab até o grafo; as setas passam entre notas e relações, Enter abre uma nota e Esc fecha o cartão.",
+      "legend": "Legenda",
+      "legendKept": "Linha contínua: uma relação que você manteve ou que foi aplicada",
+      "legendSuggested": "Linha tracejada: uma sugestão que ninguém manteve ainda",
+      "legendArrow": "Seta: a relação vai de uma nota para a outra",
+      "legendFocus": "Nó maior: esta nota",
+      "truncated": "Mostrando {shown} de {total} notas relacionadas. A Lista tem todas.",
+      "thisNote": "Esta nota: {title}",
+      "noteCard": "Nota: {title}",
+      "thisNoteHint": "Você está nesta nota.",
+      "openHint": "Clique, ou pressione Enter, para abrir esta nota.",
+      "stateSuggested": "Sugestão: ninguém manteve esta relação ainda.",
+      "stateKept": "Você manteve esta relação.",
+      "stateApplied": "Esta relação foi aplicada."
     },
     "stance": {
       "supports": "apoia",

@@ -1,5 +1,5 @@
-import { graphLayoutCommandSchema, type GraphLayoutEvent } from "./knowledge-graph-layout-contract";
-import { createGraphPhysics } from "./knowledge-graph-physics";
+import { graphLayoutCommandSchema, type GraphLayoutEvent } from "./layout-contract";
+import { createGraphPhysics } from "./physics";
 
 let physics: ReturnType<typeof createGraphPhysics> | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;

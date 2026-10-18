@@ -1,7 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
-import { appliedNoteRelationSql } from "./note-relation-sql.js";
+import { noteRelationStateSql, shownNoteRelationSql } from "./note-relation-sql.js";
 import {
   currentSourceRelationSql,
   sourceRelationImportanceOrderSql,
@@ -40,7 +40,10 @@ export interface KnowledgeGraphDashboardEdgeRecord {
    */
   confidence: number | null;
   details: string[];
-  /** A source relation nobody kept (decision 29); absent on the other kinds of edge. */
+  /**
+   * A relation nobody kept (decision 29): a suggested note relation or a suggested source relation.
+   * A graph draws it apart from the relations the owner kept; absent on the other kinds of edge.
+   */
   suggested?: boolean;
 }
 
@@ -100,6 +103,8 @@ interface AtomicNoteEdgeRow extends QueryResultRow {
   finalScore: number;
   /** Automation's band; null on a legacy row, whose stored score still reads as a percentage. */
   band: string | null;
+  /** The relation is a suggestion nobody kept (decision 29). */
+  suggested: boolean;
 }
 
 interface SourceConnectionDetailRow extends QueryResultRow {
@@ -397,7 +402,8 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
   const noteIds = selectedRows.map((row) => row.id);
   if (noteIds.length === 0) return { mode: "atomic_notes", nodes: [], edges: [], truncated: false };
 
-  // Applied relations are drawn (D9). A directed relation points from its subject to its object;
+  // Shown relations are drawn (D9, decision 29): applied, kept and suggested ones, the suggestions
+  // marked so the graph draws them apart. A directed relation points from its subject to its object;
   // a symmetric or legacy undirected one keeps the canonical (sorted) order. Untyped reads neutral.
   const edgeResult = await pool.query<AtomicNoteEdgeRow>(
     `select relation.id,
@@ -406,9 +412,10 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
             case when relation.direction = 'hi_to_lo' then relation.source_atomic_note_id
                  else relation.target_atomic_note_id end as target,
             coalesce(relation.relation_type, 'related') as "relationType",
-            relation.explanation, relation.final_score as "finalScore", relation.band as band
+            relation.explanation, relation.final_score as "finalScore", relation.band as band,
+            ${noteRelationStateSql.suggested("relation")} as suggested
      from atomic_note_relations relation
-     where ${appliedNoteRelationSql("relation")}
+     where ${shownNoteRelationSql("relation")}
        and relation.source_atomic_note_id = any($1::uuid[])
        and relation.target_atomic_note_id = any($1::uuid[])
      order by relation.final_score desc, relation.id
@@ -441,7 +448,8 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
       weight: 1,
       // A banded (relations v2) row shows no per-pair percentage (F3 D42, R4).
       confidence: row.band ? null : score(Number(row.finalScore)),
-      details: []
+      details: [],
+      suggested: row.suggested === true
     })),
     truncated: hasMoreNodes || edgeResult.rows.length > maxEdges
   };

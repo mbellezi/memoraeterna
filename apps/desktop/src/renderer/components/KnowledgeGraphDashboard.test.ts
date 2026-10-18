@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
-import { isInHierarchyActionCorridor, isInGraphPopupCorridor } from "./knowledge-graph-view-model";
+import { isInHierarchyActionCorridor, isInGraphPopupCorridor } from "./graph/view-model";
 
 describe("popup pointer corridor", () => {
   it("protects slow diagonal paths to cards on either side and rejects movement away", () => {
@@ -28,7 +28,7 @@ describe("popup pointer corridor", () => {
     }
   });
 });
-import { GraphHoverIntent } from "./knowledge-graph-interaction";
+import { GraphHoverIntent } from "./graph/interaction";
 import {
   sourceHierarchyRelationTarget,
   prevalentSourceRelationTypes,
@@ -371,7 +371,7 @@ import {
   relationHitAreaScreenThickness,
   zoomCompensatedEdgeSize,
   zoomVisualStrength
-} from "./knowledge-graph-view-model";
+} from "./graph/view-model";
 
 describe("knowledge graph level of detail", () => {
   it("makes the background nearly transparent and monochrome, highlights relations in light red, and restores the original colors", () => {
@@ -967,5 +967,145 @@ describe("an edge with no confidence to show (F3 D42, R4)", () => {
     expect(Number.isFinite(attributes.layoutWeight)).toBe(true);
     expect(attributes.layoutWeight).toBeGreaterThan(0);
     expect(Number.isFinite(attributes.labelRevealAt)).toBe(true);
+  });
+});
+
+import { softenSuggestion, suggestedEdgeOpacity } from "./KnowledgeGraphDashboard";
+
+describe("suggestions in the dashboard graphs (decision 29)", () => {
+  const t = ((key: string) => key) as Translator;
+  const noteData = (suggested: Array<boolean | undefined>): KnowledgeGraphDashboard => ({
+    mode: "atomic_notes",
+    truncated: false,
+    nodes: ["a", "b", "c", "d"].map((id) => ({
+      id,
+      kind: "atomic_note" as const,
+      title: id,
+      subtitle: null,
+      content: null,
+      sourceItemId: id,
+      sourceType: null,
+      noteStatus: "active" as const,
+      detailCount: 0,
+      parentSourceItemId: null,
+      childCount: 0
+    })),
+    edges: suggested.map((flag, index) => ({
+      id: `e${index}`,
+      source: "a",
+      target: ["b", "c", "d"][index]!,
+      kind: "atomic_note_relation" as const,
+      label: "supports",
+      description: null,
+      weight: 1,
+      confidence: null,
+      details: [],
+      ...(flag === undefined ? {} : { suggested: flag })
+    }))
+  });
+  const edgeAttributes = (graph: ReturnType<typeof buildGraph>["graph"], id: string) =>
+    graph.getEdgeAttributes(`item-edge:${id}`);
+
+  it("draws a suggested note relation with the dashed program and a kept or legacy one solid", () => {
+    const { graph } = buildGraph(noteData([true, false, undefined]), t);
+    expect(edgeAttributes(graph, "e0")).toMatchObject({ suggested: true, type: "dashed" });
+    expect(edgeAttributes(graph, "e1")).toMatchObject({ suggested: false, type: "line" });
+    expect(edgeAttributes(graph, "e2")).toMatchObject({ suggested: false, type: "line" });
+    // The invisible hit area stands for the relation and is never dashed, so a gap is no hole.
+    const hit = graph.getEdgeAttributes("hit:item-edge:e0");
+    expect(hit).toMatchObject({ kind: "hit_area", type: "line", suggested: false });
+  });
+
+  it("softens a suggestion at rest and when hovered, and never a kept relation", () => {
+    const { graph } = buildGraph(noteData([true, false]), t);
+    const suggested = reduceEdge(graph, "item-edge:e0", edgeAttributes(graph, "e0"), 0.05, null, 0);
+    const kept = reduceEdge(graph, "item-edge:e1", edgeAttributes(graph, "e1"), 0.05, null, 0);
+    const alpha = (color: string) => Number(/, ([0-9.]+)\)$/u.exec(color)?.[1]);
+    expect(alpha(suggested.color)).toBeCloseTo(alpha(kept.color) * suggestedEdgeOpacity, 5);
+    const hovered = reduceEdge(
+      graph,
+      "item-edge:e0",
+      edgeAttributes(graph, "e0"),
+      0.05,
+      "item:a",
+      1
+    );
+    const hoveredKept = reduceEdge(
+      graph,
+      "item-edge:e1",
+      edgeAttributes(graph, "e1"),
+      0.05,
+      "item:a",
+      1
+    );
+    expect(alpha(hovered.color)).toBeLessThan(alpha(hoveredKept.color));
+    expect(softenSuggestion("rgba(1, 2, 3, 0.5)", false)).toBe("rgba(1, 2, 3, 0.5)");
+    expect(softenSuggestion("rgb(1, 2, 3)", true)).toBe(`rgba(1, 2, 3, ${suggestedEdgeOpacity})`);
+    expect(softenSuggestion("not a colour", true)).toBe("not a colour");
+  });
+
+  it("marks a pair of sources a suggestion only while every relation between them is one", () => {
+    const sources = ["s1", "s2", "s3"].map((id) => ({
+      id,
+      kind: "source" as const,
+      title: id,
+      subtitle: null,
+      content: null,
+      sourceItemId: id,
+      sourceType: "Book" as const,
+      noteStatus: null,
+      detailCount: 0,
+      parentSourceItemId: null,
+      childCount: 0
+    }));
+    const relation = (
+      id: string,
+      source: string,
+      target: string,
+      suggested: boolean | undefined,
+      kind: "source_relation" | "shared_entity" = "source_relation"
+    ) => ({
+      id,
+      source,
+      target,
+      kind,
+      label: kind === "source_relation" ? "supports" : "shared_entity",
+      description: null,
+      weight: 1,
+      confidence: null,
+      details: [],
+      ...(suggested === undefined ? {} : { suggested })
+    });
+    const data: KnowledgeGraphDashboard = {
+      mode: "sources",
+      sourceView: "relations",
+      truncated: false,
+      nodes: sources,
+      edges: [
+        // s1 - s2: both relations are suggestions, so the connection is.
+        relation("r1", "s1", "s2", true),
+        relation("r2", "s2", "s1", true),
+        // s1 - s3: one is kept, so the connection is solid.
+        relation("r3", "s1", "s3", true),
+        relation("r4", "s3", "s1", false),
+        // s2 - s3: a shared entity is never a suggestion.
+        relation("r5", "s2", "s3", undefined, "shared_entity")
+      ]
+    };
+    const bySource = new Map(prepareGraphEdges(data, t).map((edge) => [edge.id, edge.suggested]));
+    expect(bySource.get("s1:s2")).toBe(true);
+    expect(bySource.get("s1:s3")).toBe(false);
+    expect(bySource.get("s2:s3")).toBe(false);
+    const { graph } = buildGraph(data, t);
+    expect(graph.getEdgeAttribute("item-edge:s1:s2", "type")).toBe("dashed");
+    expect(graph.getEdgeAttribute("item-edge:s1:s3", "type")).toBe("line");
+    expect(graph.getEdgeAttribute("item-edge:s2:s3", "type")).toBe("line");
+  });
+
+  it("keeps the type of an edge right when the live graph is reconciled with a new answer", () => {
+    const { graph } = buildGraph(noteData([true, false]), t);
+    const next = buildGraph(noteData([false, false]), t).graph;
+    reconcileGraphProjection(graph, next, 55);
+    expect(edgeAttributes(graph, "e0")).toMatchObject({ suggested: false, type: "line" });
   });
 });

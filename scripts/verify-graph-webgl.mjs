@@ -8,10 +8,10 @@ import { fileURLToPath } from "node:url";
 // Isolated, hidden renderer: no application UI, preload, database or user profile is loaded.
 app.setPath("userData", mkdtempSync(join(tmpdir(), "memora-graph-webgl-")));
 const programs = fileURLToPath(
-  new URL("../apps/desktop/src/renderer/components/knowledge-graph-programs.ts", import.meta.url)
+  new URL("../apps/desktop/src/renderer/components/graph/programs.ts", import.meta.url)
 );
 const fixture = `
-import { GraphNodeProgram, GraphEdgeProgram } from ${JSON.stringify(programs)};
+import { GraphNodeProgram, GraphEdgeProgram, GraphDashedEdgeProgram, createGraphArrowProgram, createGraphDashedArrowProgram } from ${JSON.stringify(programs)};
 import { NodeCircleProgram, EdgeRectangleProgram } from "sigma/rendering";
 
 export function verify() {
@@ -53,6 +53,46 @@ export function verify() {
       program.kill();
       return Array.from(pixels);
     }
+    // A suggested relation is a dashed line (decision 29): the alpha along a horizontal edge shows
+    // the dashes and the gaps the shader cuts, with the solid program as the reference.
+    function alphaRow(Program) {
+      for (const framebuffer of [null, picking]) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      const program = new Program(gl, picking, null);
+      program.reallocate(1);
+      const node = { x: 0, y: 0, size: 3, color: "rgba(255, 255, 255, 1)", hidden: false };
+      program.process(12, 0, { ...node, x: -0.8 }, { ...node, x: 0.8 }, { size: 4, color: "rgba(255, 255, 255, 1)", hidden: false });
+      program.render(params);
+      const pixels = new Uint8Array(64 * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.readPixels(0, 32, 64, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error("WebGL draw failed");
+      program.kill();
+      return Array.from({ length: 64 }, (_, x) => pixels[x * 4 + 3]);
+    }
+    const solidRow = alphaRow(GraphEdgeProgram);
+    const dashedRow = alphaRow(GraphDashedEdgeProgram);
+    // The edge runs from x = 6.4 to 57.6 pixels: 7 px of line, 5 px of gap, and again.
+    for (const x of [8, 10, 21, 22, 33, 45]) {
+      if (solidRow[x] < 200 || dashedRow[x] < 200) throw new Error("dash missing at " + x + ": " + dashedRow[x]);
+    }
+    for (const x of [15, 16, 27, 28, 39, 51]) {
+      if (solidRow[x] < 200 || dashedRow[x] > 0) throw new Error("gap filled at " + x + ": " + dashedRow[x]);
+    }
+    const arrowOptions = { lengthToThicknessRatio: 4, widenessToThicknessRatio: 3 };
+    const arrowRow = alphaRow(createGraphArrowProgram(arrowOptions));
+    const dashedArrowRow = alphaRow(createGraphDashedArrowProgram(arrowOptions));
+    const opaque = (row) => row.filter((value) => value > 200).length;
+    // The pieces of line along the row: one for a solid line, several for a dashed one.
+    const pieces = (row) => row.filter((value, x) => value > 0 && (x === 0 || row[x - 1] === 0)).length;
+    if (opaque(arrowRow) < 40 || pieces(arrowRow) !== 1) throw new Error("solid arrow row changed: " + arrowRow.join());
+    if (pieces(dashedArrowRow) < 3 || opaque(dashedArrowRow) >= opaque(arrowRow) || opaque(dashedArrowRow) < 10) {
+      throw new Error("dashed arrow has no dashes: " + dashedArrowRow.join());
+    }
+    results.push({ contextType, kind: "dashed", dashedRow, dashedArrowRow });
     for (const [kind, Original, Corrected] of [["node", NodeCircleProgram, GraphNodeProgram], ["edge", EdgeRectangleProgram, GraphEdgeProgram]]) {
       const before = draw(Original, kind, "rgba(148, 148, 148, 0.1)");
       const after = draw(Corrected, kind, "rgba(148, 148, 148, 0.1)");
@@ -122,9 +162,13 @@ async function verify() {
     console.log("Loading isolated renderer...");
     await window.loadURL("data:text/html,<html><body></body></html>");
     console.log("Checking rendered pixels...");
-    const results = await window.webContents.executeJavaScript(
-      output.code + "\nGraphAlphaCheck.verify();"
+    // A failure inside the renderer reaches here as its own message, not as Electron's generic one.
+    const outcome = await window.webContents.executeJavaScript(
+      output.code +
+        "\n(() => { try { return { results: GraphAlphaCheck.verify() }; } catch (error) { return { failure: String((error && error.stack) || error) }; } })();"
     );
+    if (outcome.failure) throw new Error(outcome.failure);
+    const { results } = outcome;
     console.log(JSON.stringify({ passed: true, results }, null, 2));
   } catch (error) {
     console.error(error);

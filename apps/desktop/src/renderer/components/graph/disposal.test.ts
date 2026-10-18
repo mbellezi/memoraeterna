@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { disposeConnectionGraphRenderer } from "./knowledge-graph-disposal";
+import { createDisposer, disposeConnectionGraphRenderer } from "./disposal";
 
 describe("connection graph GPU disposal", () => {
   let frames: Map<number, FrameRequestCallback>;
@@ -121,5 +121,43 @@ describe("connection graph GPU disposal", () => {
     expect(renderer.kill).toHaveBeenCalledOnce();
     expect(frames.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("the graph disposer", () => {
+  it("runs each step once, last added first, however many times it is asked", () => {
+    const order: string[] = [];
+    const disposer = createDisposer();
+    disposer.add(() => order.push("layout"));
+    disposer.add(() => order.push("listeners"));
+    disposer.add(() => order.push("renderer"));
+    expect(disposer.disposed).toBe(false);
+    disposer.dispose();
+    disposer.dispose();
+    disposer.dispose();
+    expect(order).toEqual(["renderer", "listeners", "layout"]);
+    expect(disposer.disposed).toBe(true);
+  });
+
+  it("lets a failing step fail alone and still runs the others", () => {
+    const ran: string[] = [];
+    const disposer = createDisposer();
+    disposer.add(() => ran.push("first"));
+    disposer.add(() => {
+      throw new Error("release failed");
+    });
+    disposer.add(() => ran.push("last"));
+    expect(() => disposer.dispose()).not.toThrow();
+    expect(ran).toEqual(["last", "first"]);
+  });
+
+  it("releases at once what a late setup built after the view was gone", () => {
+    const disposer = createDisposer();
+    disposer.dispose();
+    const release = vi.fn();
+    disposer.add(release);
+    expect(release).toHaveBeenCalledOnce();
+    disposer.dispose();
+    expect(release).toHaveBeenCalledOnce();
   });
 });

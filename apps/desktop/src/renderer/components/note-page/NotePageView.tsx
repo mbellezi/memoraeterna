@@ -10,7 +10,12 @@ import { WhereIsThisView } from "../WhereIsThis";
 import { NoteBodyText } from "./NoteBodyText";
 import { NoteEvidence } from "./NoteEvidence";
 import { NoteHeader, type NoteEditing } from "./NoteHeader";
-import { NoteRelations, type RelationFocus, type RelationsMore } from "./NoteRelations";
+import {
+  NoteRelations,
+  type RelationFocus,
+  type RelationsGraph,
+  type RelationsMore
+} from "./NoteRelations";
 import type { ExplanationState } from "./RelationEvidenceCard";
 import type { NoteDraft, RelationGroup, ReviewState } from "./note-page-model";
 import type { CardEvent } from "./relation-card-state";
@@ -39,6 +44,8 @@ export interface NotePageViewProps {
   relationFocus: RelationFocus | null;
   /** Whether the withdrawn relations are listed. */
   withdrawnOpen: boolean;
+  /** The relation graph's inputs (F3 D43); absent, the relations are the list alone. */
+  graph?: RelationsGraph | undefined;
   openFailed: boolean;
   /** "Place in topic" (T26): whether the page shows, and what to do once the note was placed. */
   place?: { active: boolean; onPlaced: () => void } | undefined;
@@ -167,6 +174,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         more={props.more}
         withdrawnOpen={props.withdrawnOpen}
         focusRequest={props.relationFocus}
+        graph={props.graph}
         onCardEvent={props.onCardEvent}
         onOpenNote={props.onOpenNote}
         onRetryExplanation={props.onRetryExplanation}

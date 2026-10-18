@@ -16,7 +16,7 @@ import {
   type GraphForceSettings,
   type GraphLayoutEdge,
   type GraphLayoutNode
-} from "./knowledge-graph-layout-contract";
+} from "./layout-contract";
 
 interface PhysicsNode extends SimulationNodeDatum {
   id: string;

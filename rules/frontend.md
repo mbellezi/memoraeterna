@@ -27,9 +27,8 @@ accessibility, visualizations or user-visible backend messages.
 - Inter (interface) and Source Serif 4 (reading surfaces) are bundled offline; no
   remote font or stylesheet is used. Motion is short and functional; durations
   are tokens, zero under `prefers-reduced-motion`.
-- Themes: System (the default, follows the OS live), Light and Dark. Check UI in
-  the DEV app at the normal opening window size (never full screen), at the
-  minimum supported window size, and in both light and dark.
+- Themes: System (default, follows the OS live), Light and Dark. Check UI in DEV
+  at the normal opening and minimum window sizes (never full screen), in both themes.
 
 ## Accessibility
 
@@ -78,7 +77,9 @@ accessibility, visualizations or user-visible backend messages.
 - Layout, positions and community assignments are presentation state, never
   canonical identity; layout physics runs in a renderer Web Worker.
 - Graph views show context around a focus and expand on demand instead of
-  defaulting to a global hairball; global views stay bounded.
+  defaulting to a global hairball; global views stay bounded. A relation graph
+  draws a suggestion (an automatic relation nobody kept) dashed and softer than
+  a kept one, and an arrow only for a directed relation type.
 - Renderers, workers, listeners and animation frames are disposed when a view
   unmounts; teardown is idempotent. They are rebuilt only when their data or
   mode changes, never because a parent passed a new callback.

@@ -19,15 +19,16 @@ export {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Graph from "graphology";
 import { SourceConnectionGraph } from "./SourceConnectionGraph";
+import { LineSample } from "./graph/LineSamples";
 import { SourceRelationsList } from "./SourceRelationsList";
 import { AtomicNoteRelationReferenceText } from "./AtomicNoteRelationReferenceText";
 import { SourceReferenceBadge } from "./SourceRelationReferenceText";
-import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
+import { KnowledgeGraphLayout } from "./graph/layout";
 import {
   defaultGraphForceSettings,
   graphLayoutRadius,
   type GraphForceSettings
-} from "./knowledge-graph-layout-contract";
+} from "./graph/layout-contract";
 import {
   GraphHoverIntent,
   GraphWheelMotion,
@@ -39,7 +40,7 @@ import {
   graphZoomOutRatio,
   zoomOutCenteringStrength,
   type GraphHoverTarget
-} from "./knowledge-graph-interaction";
+} from "./graph/interaction";
 import type Sigma from "sigma";
 import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/rendering";
 import {
@@ -81,7 +82,7 @@ import {
   relationHitAreaScreenThickness,
   zoomCompensatedEdgeSize,
   zoomVisualStrength
-} from "./knowledge-graph-view-model";
+} from "./graph/view-model";
 
 type SourceRelationKind = "shared_entity" | "semantic_relation" | "source_relation";
 
@@ -92,6 +93,8 @@ interface SourceRelationGroup {
   /** Null when the relation has no confidence to show (a promoted source relation, F3 R4). */
   confidence: number | null;
   details: string[];
+  /** A source relation nobody kept (decision 29). */
+  suggested?: boolean;
 }
 
 /**
@@ -150,6 +153,13 @@ interface EdgeAttributes {
   relationType: string | null;
   sourceRelations: SourceRelationGroup[];
   interactionTarget: string | null;
+  /**
+   * A relation nobody kept (decision 29): drawn dashed and softer than the relations the owner kept
+   * or an apply band wrote, with its words in the card and the legend.
+   */
+  suggested: boolean;
+  /** Sigma's edge program: `dashed` for a suggestion, `line` otherwise. */
+  type?: "line" | "dashed";
 }
 
 interface HoverCard {
@@ -209,6 +219,7 @@ interface PreparedGraphEdge {
   details: string[];
   sourceRelations: SourceRelationGroup[];
   relationType: string | null;
+  suggested: boolean;
 }
 
 interface SourceHierarchyProjectionOptions {
@@ -543,14 +554,19 @@ export function KnowledgeGraphDashboard({
     };
 
     async function initializeRenderer() {
-      const [{ default: SigmaConstructor }, { GraphNodeProgram, GraphEdgeProgram }] =
-        await Promise.all([import("sigma"), import("./knowledge-graph-programs")]);
+      const [
+        { default: SigmaConstructor },
+        { GraphNodeProgram, GraphEdgeProgram, GraphDashedEdgeProgram }
+      ] = await Promise.all([import("sigma"), import("./graph/programs")]);
       if (disposed) return;
       const labels = createSmoothNodeLabels(() => sigmaRef.current?.scheduleRender());
       const renderer = new SigmaConstructor<NodeAttributes, EdgeAttributes>(graph, graphContainer, {
         nodeProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
         nodeHoverProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
-        edgeProgramClasses: { line: GraphEdgeProgram<NodeAttributes, EdgeAttributes> },
+        edgeProgramClasses: {
+          line: GraphEdgeProgram<NodeAttributes, EdgeAttributes>,
+          dashed: GraphDashedEdgeProgram<NodeAttributes, EdgeAttributes>
+        },
         allowInvalidContainer: true,
         defaultDrawNodeHover: (context, node, settings) => {
           if (
@@ -1693,6 +1709,23 @@ export function KnowledgeGraphDashboard({
                     </li>
                   ))}
                 </ul>
+                {data.edges.some((edge) => edge.suggested === true) ? (
+                  <section aria-label={t("knowledgeGraph.relationLegend.lines")}>
+                    <h4 className="mb-1.5 mt-3 border-t border-white/10 pt-2 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
+                      {t("knowledgeGraph.relationLegend.lines")}
+                    </h4>
+                    <ul className="grid gap-1.5 text-xs">
+                      <li className="flex items-center gap-2">
+                        <LineSample suggested={false} className="shrink-0" />
+                        <span>{t("knowledgeGraph.relationLegend.keptLine")}</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <LineSample suggested className="shrink-0" />
+                        <span>{t("knowledgeGraph.relationLegend.suggestedLine")}</span>
+                      </li>
+                    </ul>
+                  </section>
+                ) : null}
               </section>
             ) : null}
             <button
@@ -2107,8 +2140,10 @@ function SourceHierarchyPreviewGraph({
     };
 
     async function initialize() {
-      const [{ default: SigmaConstructor }, { GraphNodeProgram, GraphEdgeProgram }] =
-        await Promise.all([import("sigma"), import("./knowledge-graph-programs")]);
+      const [
+        { default: SigmaConstructor },
+        { GraphNodeProgram, GraphEdgeProgram, GraphDashedEdgeProgram }
+      ] = await Promise.all([import("sigma"), import("./graph/programs")]);
       if (disposed || !container) return;
       const graph = bundle.graph;
       const labels = createSmoothNodeLabels(() => renderer?.scheduleRender());
@@ -2125,7 +2160,10 @@ function SourceHierarchyPreviewGraph({
       >(graph, container, {
         nodeProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
         nodeHoverProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
-        edgeProgramClasses: { line: GraphEdgeProgram<NodeAttributes, EdgeAttributes> },
+        edgeProgramClasses: {
+          line: GraphEdgeProgram<NodeAttributes, EdgeAttributes>,
+          dashed: GraphDashedEdgeProgram<NodeAttributes, EdgeAttributes>
+        },
         allowInvalidContainer: true,
         defaultDrawNodeLabel: labels.draw,
         defaultDrawEdgeLabel: drawFadingEdgeLabel,
@@ -2712,6 +2750,12 @@ function GraphTooltip({
               </span>
             )}
           </div>
+          {edge.suggested ? (
+            <p className="flex items-center gap-2 text-xs opacity-80">
+              <LineSample suggested />
+              {t("knowledgeGraph.suggestedEdge")}
+            </p>
+          ) : null}
           <p className="flex min-w-0 items-center gap-1 text-xs text-slate-400">
             <span className="min-w-0 flex-1 truncate">
               <SourceReferenceBadge number={1} title={sourceTitle} />
@@ -3053,7 +3097,9 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
           : 2,
       relationType: edge.relationType,
       sourceRelations: edge.sourceRelations,
-      interactionTarget: null
+      interactionTarget: null,
+      suggested: edge.suggested,
+      type: edge.suggested ? "dashed" : "line"
     });
   }
 
@@ -3080,7 +3126,9 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
         labelRevealAt: 2,
         relationType: null,
         sourceRelations: [],
-        interactionTarget: null
+        interactionTarget: null,
+        suggested: false,
+        type: "line"
       });
     }
   }
@@ -3120,7 +3168,9 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       labelRevealAt: 2,
       relationType: null,
       sourceRelations: [],
-      interactionTarget: edge
+      interactionTarget: edge,
+      suggested: false,
+      type: "line"
     });
   }
   return {
@@ -3305,7 +3355,8 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       label: formatEdgeLabel(edge.label, t),
       description: formatAtomicRelationExplanation(edge.description, t),
       relationType: edge.label,
-      sourceRelations: []
+      sourceRelations: [],
+      suggested: edge.suggested === true
     }));
   }
 
@@ -3325,7 +3376,8 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       confidence: null,
       details: [],
       sourceRelations: [],
-      relationType: null
+      relationType: null,
+      suggested: false
     };
     current.weight += edge.weight;
     current.confidence = mergeConfidence(current.confidence, edge.confidence);
@@ -3335,11 +3387,20 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       ...(edge.kind === "source_relation" ? { relationType: edge.label } : {}),
       weight: edge.weight,
       confidence: edge.confidence,
-      details: edge.details
+      details: edge.details,
+      ...(edge.suggested === true ? { suggested: true } : {})
     });
     if (edge.kind === "source_relation") current.label = t("sourceRelations.title");
     grouped.set(key, current);
   }
+  // A pair of sources is a suggestion only while every relation between them is one: a relation
+  // somebody kept (or a shared entity) makes the connection solid.
+  for (const edge of grouped.values())
+    edge.suggested =
+      edge.sourceRelations.length > 0 &&
+      edge.sourceRelations.every(
+        (relation) => relation.kind === "source_relation" && relation.suggested === true
+      );
   return [...grouped.values()];
 }
 
@@ -3589,7 +3650,10 @@ function reduceEdgeBase(
     return {
       ...attributes,
       hidden: false,
-      color: restingEdgeColor(attributes.kind, zoomStrength),
+      color: softenSuggestion(
+        restingEdgeColor(attributes.kind, zoomStrength),
+        attributes.suggested
+      ),
       size: compensatedSize,
       forceLabel: showRestingLabel,
       label: showRestingLabel ? attributes.label : null,
@@ -3600,12 +3664,15 @@ function reduceEdgeBase(
   return {
     ...attributes,
     hidden: false,
-    color: hoveredEdgeColor(
-      attributes.kind,
-      hoverStrength,
-      zoomStrength,
-      incident,
-      graph.hasNode(hovered) ? 0.1 : undefined
+    color: softenSuggestion(
+      hoveredEdgeColor(
+        attributes.kind,
+        hoverStrength,
+        zoomStrength,
+        incident,
+        graph.hasNode(hovered) ? 0.1 : undefined
+      ),
+      attributes.suggested
     ),
     size: compensatedSize,
     forceLabel: Boolean(attributes.label) && (showRestingLabel || incident),
@@ -3620,6 +3687,18 @@ function reduceEdgeBase(
       : restingLabelOpacity * (1 - hoverStrength * 0.97),
     zIndex: incident ? 2 : 0
   };
+}
+
+/** How much of a suggestion's colour is left next to a relation somebody kept (decision 29). */
+export const suggestedEdgeOpacity = 0.7;
+
+/** A suggestion's colour at a lower opacity; the dashes carry the meaning, the softness only the emphasis. */
+export function softenSuggestion(color: string, suggested: boolean): string {
+  if (!suggested) return color;
+  const rgba = /^rgba?\(([^)]+)\)$/.exec(color);
+  const channels = rgba?.[1]?.split(",").map(Number);
+  if (!channels || channels.length < 3) return color;
+  return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${(channels[3] ?? 1) * suggestedEdgeOpacity})`;
 }
 
 function restingEdgeColor(kind: EdgeAttributes["kind"], strength: number): string {

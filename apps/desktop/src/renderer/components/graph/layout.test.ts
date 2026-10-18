@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
-import { defaultGraphForceSettings } from "./knowledge-graph-layout-contract";
+import { KnowledgeGraphLayout } from "./layout";
+import { defaultGraphForceSettings } from "./layout-contract";
 
 class FakeWorker {
   static instances: FakeWorker[] = [];

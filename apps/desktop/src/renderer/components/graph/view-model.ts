@@ -140,3 +140,10 @@ function stableFraction(value: string, salt: number): number {
   }
   return (hash >>> 0) / 4294967295;
 }
+
+/**
+ * The dash pattern of a suggested relation, in CSS pixels along the line (decision 29). A suggestion
+ * is never told by colour alone: it is drawn dashed, and the legend and the list say so in words.
+ * Here, not in `programs.ts`, so a legend can draw the same pattern without loading Sigma.
+ */
+export const graphDashPattern = { dash: 7, gap: 5 } as const;

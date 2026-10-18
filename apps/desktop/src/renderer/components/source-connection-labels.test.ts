@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildSourceConnectionGraph, addSourceConnectionHitAreas } from "./SourceConnectionGraph";
 import { drawSourceConnectionLabel } from "./source-connection-labels";
-import { graphTypography } from "./knowledge-graph-view-model";
+import { graphTypography } from "./graph/view-model";
 
 const relations = [
   { id: "b", source: "a", target: "b", label: "Julgamento no plenário" },

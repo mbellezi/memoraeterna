@@ -26,7 +26,12 @@ import {
 } from "../shared/ipc.js";
 import { RelationExplanationDeltaEventSchema, RelationsChangedEventSchema } from "../shared/ipc.js";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
-import { ObjectLocateInputSchema, ObjectLocateResultSchema } from "@app/domain";
+import {
+  ObjectLocateInputSchema,
+  ObjectLocateResultSchema,
+  ObjectNeighborhoodInputSchema,
+  ObjectNeighborhoodSchema
+} from "@app/domain";
 import {
   NotePageInputSchema,
   NotePageRelationsSchema,
@@ -227,6 +232,13 @@ const api: DesktopApi = {
     locate: async (input) =>
       ObjectLocateResultSchema.nullable().parse(
         await ipcRenderer.invoke(ipcChannels.objectsLocate, ObjectLocateInputSchema.parse(input))
+      ),
+    neighborhood: async (input) =>
+      ObjectNeighborhoodSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.objectsNeighborhood,
+          ObjectNeighborhoodInputSchema.parse(input)
+        )
       )
   },
   notes: {

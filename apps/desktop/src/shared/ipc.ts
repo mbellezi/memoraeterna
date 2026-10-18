@@ -36,6 +36,8 @@ import type {
   NotePageRelations,
   NoteRelationsInputSchema,
   ObjectLocateInput,
+  ObjectNeighborhood,
+  ObjectNeighborhoodInput,
   RelationExplainInput,
   RelationExplainOutcome,
   RelationExplanationResult,
@@ -108,6 +110,7 @@ export const ipcChannels = {
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
+  objectsNeighborhood: "app:objects:neighborhood",
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
@@ -1819,6 +1822,12 @@ export interface DesktopApi {
   objects: {
     /** Where an object is (primary path, other placements, citations); null when it does not exist. */
     locate: (input: ObjectLocateInput) => Promise<ObjectLocateResult | null>;
+    /**
+     * The bounded local graph around a note (F3 D43, R30): the note, its strongest related notes
+     * and, at depth 2, theirs, with every shown relation among them (suggestions marked); null
+     * when the note does not exist. Without AI.
+     */
+    neighborhood: (input: ObjectNeighborhoodInput) => Promise<ObjectNeighborhood | null>;
   };
   /** Note pages: one read-only read of everything a page shows, and further pages of relations. */
   notes: {

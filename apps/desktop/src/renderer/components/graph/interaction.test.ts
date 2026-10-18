@@ -7,7 +7,7 @@ import {
   graphZoomOutRatio,
   softenGraphZoomDelta,
   zoomOutCenteringStrength
-} from "./knowledge-graph-interaction";
+} from "./interaction";
 
 describe("graph hover intent", () => {
   beforeEach(() => vi.useFakeTimers());

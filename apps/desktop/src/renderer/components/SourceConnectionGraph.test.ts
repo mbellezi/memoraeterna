@@ -6,7 +6,7 @@ import {
   sourceConnectionArrowOptions,
   sourceConnectionEdgeThickness
 } from "./SourceConnectionGraph";
-import { graphNodeSize, zoomCompensatedEdgeSize } from "./knowledge-graph-view-model";
+import { graphNodeSize, zoomCompensatedEdgeSize } from "./graph/view-model";
 
 describe("source connection graph preview", () => {
   it("preserves canonical identity, isolated shared entities, direction and parallel relations", () => {
