@@ -271,6 +271,13 @@ runs alone need about 1.29M against 1.25M left); the Decisions API may spend up 
 text (F3 total about US$ 2.80). X1 has zero margin on the local decider (27/28 in all 200 simulated orders): one typer
 veto on a single-support pair fails it; reported as a known risk before M2.
 
+### X7 at M2 (owner, 2026-10-18)
+
+X7-REF at D36's remote batches (7,000 characters, 24/24 caps): 30.5 generative calls per chapter (bar 40; the dedicated
+ranker's `relation_decide` calls excluded) but 2.197 distinct entities per chunk against F1a's 2.576, 85.3% (bar 90%; the
+loss is mostly "The Tell-Tale Heart", 29 to 13). By Q8 remote writers keep F1a's 3,500 characters with 12/12 caps, and
+X7-REF is measured again at that batch; the owner chose that path over a second 7,000 run or a lower yield bar.
+
 ## Measurement
 
 ### Exit criteria

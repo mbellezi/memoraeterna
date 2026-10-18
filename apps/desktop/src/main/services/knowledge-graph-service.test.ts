@@ -310,10 +310,10 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
     });
   });
 
-  it("sends a remote writer larger batches with 24/24 caps", async () => {
+  it("keeps a remote writer on 3,500 characters and 12/12 caps too (X7's yield, Q8)", async () => {
     const { prompts } = await run("remote");
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain("at most 24 entities and 24 relations");
+    expect(prompts).toHaveLength(3);
+    expect(prompts[0]).toContain("at most 12 entities and 12 relations");
   });
 
   it("keeps a local writer, or an unknown one, on 3,500 characters and 12/12 caps", async () => {
@@ -332,8 +332,8 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
   });
 
   it("lets an explicit batch size override the writer's", async () => {
-    const { prompts } = await run("remote", { knowledgeGraphMaxInputCharacters: 3_500 });
-    expect(prompts).toHaveLength(3);
+    const { prompts } = await run("remote", { knowledgeGraphMaxInputCharacters: 7_000 });
+    expect(prompts).toHaveLength(2);
   });
 
   it("records the items it dropped with no call as salvaged_items", async () => {
@@ -351,7 +351,11 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
         }
       ]
     };
-    const { prompts, traces } = await run("remote", {}, bad);
+    const { prompts, traces } = await run(
+      "remote",
+      { knowledgeGraphMaxInputCharacters: 7_000 },
+      bad
+    );
     // Two batches, one dropped relation each, no repair call.
     expect(prompts).toHaveLength(2);
     expect(traces.find((trace) => trace.operation === "graph_salvage")?.details).toEqual({

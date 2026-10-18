@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * Knowledge-graph extraction batches by writer locality (F3 D36). A remote write-quality writer takes
- * larger batches (fewer calls per chapter); a local writer keeps the small batches that its 4B to 9B
- * models answer reliably. Extraction stays once per source over its chunks. These are start values
- * that the X7 reference run confirms or revises, so they live here and not in a prompt or a rule.
+ * Knowledge-graph extraction batches by writer locality (F3 D36). Extraction stays once per source
+ * over its chunks. D36 gave remote writers 7,000-character batches with 24/24 caps; on X7-REF at M2
+ * that kept 85% of F1a's entity yield (bar 90%), so by Q8 remote writers keep F1a's 3,500 with 12/12,
+ * like local ones (owner, 2026-10-18). The split stays so a later measurement can change one side.
  */
 const batchSchema = z
   .object({
@@ -27,7 +27,7 @@ export type KnowledgeGraphBatch = z.infer<typeof batchSchema>;
 
 export const defaultKnowledgeGraphBatching: KnowledgeGraphBatching =
   knowledgeGraphBatchingSchema.parse({
-    remote: { maxInputCharacters: 7_000, maxEntities: 24, maxRelations: 24 },
+    remote: { maxInputCharacters: 3_500, maxEntities: 12, maxRelations: 12 },
     local: { maxInputCharacters: 3_500, maxEntities: 12, maxRelations: 12 }
   });
 

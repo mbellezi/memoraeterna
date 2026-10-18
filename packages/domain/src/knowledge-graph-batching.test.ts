@@ -8,9 +8,9 @@ import {
 } from "./knowledge-graph-batching.js";
 
 describe("knowledge-graph batches by writer locality (F3 D36)", () => {
-  it("holds the start values: 7,000 characters with 24/24 caps remote, 3,500 with 12/12 local", () => {
+  it("holds the values X7 confirmed: 3,500 characters with 12/12 caps on both sides (Q8)", () => {
     expect(defaultKnowledgeGraphBatching).toEqual({
-      remote: { maxInputCharacters: 7_000, maxEntities: 24, maxRelations: 24 },
+      remote: { maxInputCharacters: 3_500, maxEntities: 12, maxRelations: 12 },
       local: { maxInputCharacters: 3_500, maxEntities: 12, maxRelations: 12 }
     });
     expect(pinnedKnowledgeGraphBatch).toEqual(defaultKnowledgeGraphBatching.local);
