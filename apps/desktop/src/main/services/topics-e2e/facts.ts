@@ -1,6 +1,8 @@
 // What the zero-config end-to-end test (F2 T32) reads back from the database once the light lane
 // drained: placements, topic names, E1 on the cached tree, the Unsorted share and the AI audit.
 // Plain SELECTs on the library the run just made; the verdict is `assertions.ts`.
+import { createHash } from "node:crypto";
+
 import { createLegacyStateRepository, hasLegacyContent } from "@app/db";
 import type { PgPool } from "@app/db";
 import { areasActive, itemKey, isLive, shapeReport, walkTopics } from "@app/domain/topic-tree";
@@ -33,6 +35,17 @@ export interface E1Facts {
   needsVectorItems: number;
 }
 
+/**
+ * The end state as content, with no ID and no time: what two replays of one recording must share
+ * (F3 T55k). `digest` covers the topics (name, parent, notes) and every note relation (the notes by
+ * title, type, direction, band, status and veto).
+ */
+export interface EndStateFacts {
+  noteRelations: number;
+  sourceRelations: number;
+  digest: string;
+}
+
 export interface StoreFacts {
   activeTree: { id: string; generation: string } | null;
   currentNotes: number;
@@ -56,6 +69,17 @@ export interface StoreFacts {
   /** Stages that failed inside a run that went on (a failed stage is recorded, not thrown). */
   failedStages: number;
   failedJobs: Array<{ type: string; count: number }>;
+  /**
+   * Matching over the ingestion runs (F3 D25): the runs that decided their notes, the runs whose
+   * graph stage failed, and how many of those still decided theirs.
+   */
+  matching: {
+    runs: number;
+    matchedRuns: number;
+    graphFailedRuns: number;
+    graphFailedMatchedRuns: number;
+  };
+  endState: EndStateFacts;
   aiCalls: Array<{ taskType: string; adapter: string | null; status: string; count: number }>;
 }
 
@@ -93,6 +117,17 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
        where status::text in ('failed') group by 1 order by 1`
     )
   ).rows;
+  const matching = (
+    await pool.query<StoreFacts["matching"]>(
+      `select count(*)::int as runs,
+         count(*) filter (where matched)::int as "matchedRuns",
+         count(*) filter (where graph_failed)::int as "graphFailedRuns",
+         count(*) filter (where graph_failed and matched)::int as "graphFailedMatchedRuns"
+       from (select coalesce(stages_checkpoint -> 'atomicNoteMatching' ->> 'status' = 'completed', false) as matched,
+                    coalesce(stages_checkpoint -> 'knowledgeGraph' ->> 'status' = 'failed', false) as graph_failed
+             from ingestion_runs) runs`
+    )
+  ).rows[0]!;
   const aiCalls = (
     await pool.query<{ taskType: string; adapter: string | null; status: string; count: number }>(
       `select task_type::text as "taskType", adapter, status::text as status, count(*)::int as count
@@ -105,11 +140,13 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
     ingestionRuns,
     failedStages,
     failedJobs,
+    matching,
     aiCalls
   };
   if (!tree) {
     return {
       ...common,
+      endState: await collectEndState(pool, []),
       activeTree: null,
       notesWithPrimary: 0,
       notesWithoutPrimary: notes.slice(0, 10),
@@ -204,6 +241,7 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
 
   return {
     ...common,
+    endState: await collectEndState(pool, topics),
     activeTree: tree,
     notesWithPrimary: notes.length - Number(missingCount.rows[0]?.count ?? 0),
     notesWithoutPrimary: missing.rows.map((row) => row.id),
@@ -216,6 +254,56 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
     },
     e1: await collectE1(pool, tree.id, notes, sources),
     lastNamedAt: named?.at ? new Date(named.at) : null
+  };
+}
+
+/** The relations and the topics as content, hashed: two replays of one recording share the digest. */
+async function collectEndState(pool: PgPool, topics: readonly E6Topic[]): Promise<EndStateFacts> {
+  const rows = (
+    await pool.query<{
+      lo: string;
+      hi: string;
+      type: string | null;
+      direction: string;
+      band: string | null;
+      status: string;
+      vetoed: boolean;
+    }>(
+      `select lo.title as lo, hi.title as hi, r.relation_type as type, r.direction, r.band,
+         r.status::text as status, r.vetoed_at is not null as vetoed
+       from atomic_note_relations r
+         join atomic_notes lo on lo.id = r.source_atomic_note_id
+         join atomic_notes hi on hi.id = r.target_atomic_note_id`
+    )
+  ).rows;
+  const sourceRelations = Number(
+    (await pool.query<{ count: number }>("select count(*)::int as count from source_relations"))
+      .rows[0]?.count ?? 0
+  );
+  const relations = rows
+    .map((row) => {
+      // The pair reads in UUID order; the digest names the notes by title, in the relation's direction.
+      const [from, to] =
+        row.direction === "lo_to_hi"
+          ? [row.lo, row.hi]
+          : row.direction === "hi_to_lo"
+            ? [row.hi, row.lo]
+            : [row.lo, row.hi].sort();
+      return JSON.stringify([from, to, row.type, row.band, row.status, row.vetoed]);
+    })
+    .sort();
+  const titles = new Map(topics.map((topic) => [topic.id, topic.title ?? ""]));
+  const placed = topics
+    .map((topic) =>
+      JSON.stringify([topic.title ?? "", titles.get(topic.parentId ?? "") ?? "", topic.notes])
+    )
+    .sort();
+  return {
+    noteRelations: rows.length,
+    sourceRelations,
+    digest: createHash("sha256")
+      .update(JSON.stringify({ topics: placed, relations }))
+      .digest("hex")
   };
 }
 

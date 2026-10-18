@@ -234,4 +234,24 @@ describe("the route of a recording", () => {
       result: { notes: 63, topics: 7 }
     });
   });
+
+  it("keeps the extraction pin of the recording, and reads a cassette from before it as pinned", () => {
+    const facts = {
+      contentLanguage: "pt-BR",
+      source: "plos-one-murre-dros-2015",
+      notes: 76,
+      topics: 14,
+      recordedAt: new Date("2026-10-18T12:00:00Z")
+    };
+    const spec = RouteSpecSchema.parse(remote);
+    expect(recordedRoute(spec, facts).pin).toBe("extraction");
+    const f3 = recordedRoute(spec, { ...facts, pin: "off" });
+    expect(f3.pin).toBe("off");
+    expect(RecordedRouteSchema.parse(JSON.parse(JSON.stringify(f3)))).toEqual(f3);
+    // `e2e-plos` was recorded in F2 and has no pin in its route file.
+    const f2: Record<string, unknown> = { ...recordedRoute(spec, facts) };
+    delete f2.pin;
+    expect(RecordedRouteSchema.parse(f2).pin).toBe("extraction");
+    expect(RecordedRouteSchema.safeParse({ ...f2, pin: "other" }).success).toBe(false);
+  });
 });

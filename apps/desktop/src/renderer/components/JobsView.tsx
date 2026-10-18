@@ -107,7 +107,7 @@ export function JobsView({ t }: { t: Translator }) {
       (card) => card.status === "queued" || card.status === "running" || card.status === "retrying"
     ).length,
     completed: cards.filter((card) => card.status === "succeeded").length,
-    attention: cards.filter((card) => card.status === "failed" || card.status === "canceled").length
+    attention: cards.filter((card) => matchesFilter(card, "attention")).length
   };
 
   async function runAction(jobId: string, action: "retry" | "cancel" | "delete") {
@@ -445,6 +445,14 @@ export function JobCard({
             className="mt-4 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-700 dark:text-rose-300"
           >
             {jobErrorLabel(t, card.stageError)}
+          </p>
+        )}
+        {card.status === "graphIncomplete" && (
+          <p
+            role="status"
+            className="mt-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
+          >
+            {t("jobs.statusHints.graphIncomplete")}
           </p>
         )}
         {card.ingestionRun ? <PipelineTimeline run={card.ingestionRun} t={t} /> : null}
@@ -1085,6 +1093,13 @@ function statusStyle(status: JobCardModel["status"]) {
     },
     canceled: {
       icon: X,
+      badge: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+      iconSurface:
+        "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+    },
+    // Done, but its knowledge graph failed (F3 D25): a warning with a Retry, not a failure.
+    graphIncomplete: {
+      icon: AlertTriangle,
       badge: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
       iconSurface:
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"

@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { clusterTopics } from "../../workers/topic-clustering.worker.js";
 import { catalogHeaderRefreshEnabled } from "../catalog-header-policy.js";
+import { productLinkRuntime, relationLinkRuntime } from "../relations/link-runtime.js";
 import type { ClusterTopics } from "../topic-tree/topic-build.js";
 import { parseE2eArgs } from "./config.js";
 import type { E2eConfig } from "./config.js";
@@ -53,10 +54,12 @@ describe.skipIf(!sidecarAvailable)(
     let workDir = "";
     let config: E2eConfig;
     let passes: PassResult[] = [];
+    const events: Array<{ event: string; data: Record<string, unknown> | undefined }> = [];
 
     const deps = () => ({
       electron: sharedElectronStub(),
       env: {},
+      log: (event: string, data?: Record<string, unknown>) => void events.push({ event, data }),
       pollIntervalMs: 20,
       quietPolls: 5,
       clusterTopics: clusterInProcess,
@@ -107,6 +110,12 @@ describe.skipIf(!sidecarAvailable)(
       });
     });
 
+    it("reports an end state with no ID or time in it, equal in the recording and its replay (T55k)", () => {
+      const [record, replay] = passes.map((pass) => pass.report.reported.endState);
+      expect(record!.digest).toMatch(/^[0-9a-f]{64}$/);
+      expect(replay).toEqual(record);
+    });
+
     it("switches the catalog-header refresh off, says so, and a replay sees no refresh job (T53h)", async () => {
       for (const pass of passes)
         expect(pass.catalogHeaders, pass.mode).toEqual({
@@ -120,6 +129,15 @@ describe.skipIf(!sidecarAvailable)(
       expect(report.catalogHeaders).toEqual({ refresh: "off", reason: "topics_e2e", jobs: 0 });
       // The runner lets go of the refresh when it ends: the process is as it was.
       expect(catalogHeaderRefreshEnabled({})).toBe(true);
+    });
+
+    it("drains the link jobs one at a time so two replays make the same requests, then lets go (T55k)", () => {
+      // Once per pass: the record and each replay start the matching in admission order.
+      expect(events.filter((entry) => entry.event === "relations")).toEqual([
+        { event: "relations", data: { linkPool: "drain" } },
+        { event: "relations", data: { linkPool: "drain" } }
+      ]);
+      expect(relationLinkRuntime()).toEqual(productLinkRuntime);
     });
 
     it("runs on a fresh database with its own scratch workspace, removed afterwards", async () => {

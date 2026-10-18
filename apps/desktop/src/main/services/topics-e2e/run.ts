@@ -36,7 +36,12 @@ import {
   readCatalogHeaderFacts,
   type CatalogHeaderFacts
 } from "../catalog-header-policy.js";
-import { readE2ePinConfig, setExtractionPin } from "../extraction-pin.js";
+import {
+  goldenPinKnob,
+  readE2ePinConfig,
+  setExtractionPin,
+  type GoldenPinConfig
+} from "../extraction-pin.js";
 import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker.js";
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
@@ -46,6 +51,11 @@ import { JobSupervisor } from "../job-supervisor.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { LocalModelService } from "../local-model-service.js";
 import { registerPromptIpc } from "../prompt-ipc.js";
+import {
+  goldenLinkRuntime,
+  resetRelationLinkRuntime,
+  setRelationLinkRuntime
+} from "../relations/link-runtime.js";
 import { PromptService } from "../prompt-service.js";
 import { SearchService } from "../search-service.js";
 import { SettingsService } from "../settings-service.js";
@@ -189,6 +199,13 @@ async function runPass(
     // A replay rebuilds what was recorded, in the content language it was recorded with.
     recorded = await readRecordedRoute(cassetteDir);
     locale = recorded.contentLanguage;
+    // A replay makes the requests it was recorded with: its extraction pin is the recording's, and
+    // a pin set to another value would only miss.
+    const stated = deps.env[goldenPinKnob]?.trim();
+    if (stated && readE2ePinConfig(deps.env).mode !== recorded.pin)
+      throw new UsageError(
+        `The cassette was recorded with ${goldenPinKnob}=${recorded.pin}: replay it with ${goldenPinKnob}=${recorded.pin} or leave it unset`
+      );
     const source = config.synthetic ? "synthetic" : config.sourceKey;
     if (recorded.source !== source)
       throw new UsageError(
@@ -278,13 +295,21 @@ async function runPass(
     if (Number(empty.rows[0]?.n) !== 0) throw new Error("The scratch database is not empty");
 
     // MEMORA_GOLDEN_PIN (F3 D5, default `extraction`: the cassette is F2-era) and the local-miss replay
-    // policy (D41) are DEV knobs of this runner, as they are of the golden runner.
-    const pin = readE2ePinConfig(deps.env);
+    // policy (D41) are DEV knobs of this runner, as they are of the golden runner. A replay takes the
+    // pin its cassette was recorded with.
+    const pin: GoldenPinConfig = recorded
+      ? { read: true, mode: recorded.pin }
+      : readE2ePinConfig(deps.env);
     setExtractionPin(pin);
     // The refresh calls the embedding and graph models for headers a replayed cassette does not
     // hold: this run never queues it (T53h), whatever its pin.
     holdCatalogHeaderRefresh("topics_e2e");
     log("pin", { mode: pin.mode });
+    // Link jobs drain one at a time in admission order and the heavy lane waits for them (D24, 5.6),
+    // so every prompt of the matching is a function of the arrival order and two replays of the
+    // recording make the same requests. The writer is local, so no relation call is remote.
+    setRelationLinkRuntime(goldenLinkRuntime("live"));
+    log("relations", { linkPool: "drain" });
     const localMisses = readAiCassetteLocalMisses(deps.env);
     const cassette = new AiCassette({
       mode,
@@ -576,7 +601,8 @@ async function runPass(
         source: facts.source,
         notes: store.currentNotes,
         topics: store.topics.length,
-        recordedAt: now()
+        recordedAt: now(),
+        pin: pin.mode
       });
       await mkdir(cassetteDir, { recursive: true });
       await writeFile(
@@ -591,6 +617,7 @@ async function runPass(
     setAiAdapterDecorator(null);
     setExtractionPin(false);
     holdCatalogHeaderRefresh(null);
+    resetRelationLinkRuntime();
     await jobs?.stop().catch(() => undefined);
     topicServices?.dispose();
     await ai?.dispose().catch(() => undefined);

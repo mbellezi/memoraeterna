@@ -5,6 +5,7 @@ import {
   canManuallyRetryJob,
   hasIncompleteIngestionStages,
   isParkedForLinking,
+  manualRetryStages,
   stageRetryStages
 } from "./job-retry.js";
 
@@ -57,6 +58,61 @@ describe("runs parked for their link job and the stage-level retry (F3 D24, D25)
         },
         "atomicNoteMatching"
       )
+    ).toBeNull();
+  });
+});
+
+describe("a run that ended with its graph incomplete (F3 D25, R25)", () => {
+  const failedGraph = { status: "failed", error: "errors.knowledgeGraph.invalidOutput" };
+  const incomplete = {
+    status: "succeeded" as const,
+    stagesCheckpoint: {
+      chunking: { status: "completed" },
+      embedding: { status: "completed" },
+      summarization: { status: "completed" },
+      atomicNotes: { status: "completed" },
+      knowledgeGraph: failedGraph,
+      atomicNoteMatching: { status: "completed" },
+      sourceMatching: { status: "completed" },
+      obsidianProjection: { status: "completed" }
+    }
+  };
+
+  it("offers the retry and re-runs the graph stage alone", () => {
+    expect(hasIncompleteIngestionStages(incomplete)).toBe(true);
+    expect(canManuallyRetryJob({ type: "ingestion", status: "succeeded" }, incomplete)).toBe(true);
+    expect(stageRetryStages(incomplete, "knowledgeGraph")).toEqual(["knowledgeGraph"]);
+    expect(manualRetryStages(incomplete)).toEqual(["knowledgeGraph"]);
+  });
+
+  it("adds the matching stages that also waited for a ranker, graph first", () => {
+    const waiting = { status: "skipped", reason: "waiting_for_decider" };
+    expect(
+      manualRetryStages({
+        ...incomplete,
+        stagesCheckpoint: {
+          ...incomplete.stagesCheckpoint,
+          atomicNoteMatching: waiting,
+          sourceMatching: waiting
+        }
+      })
+    ).toEqual(["knowledgeGraph", "atomicNoteMatching", "sourceMatching"]);
+    expect(
+      manualRetryStages({
+        status: "succeeded",
+        stagesCheckpoint: { atomicNoteMatching: waiting, sourceMatching: waiting }
+      })
+    ).toEqual(["atomicNoteMatching", "sourceMatching"]);
+  });
+
+  it("resumes a failed, canceled or complete run from its own checkpoints instead", () => {
+    expect(manualRetryStages({ ...incomplete, status: "failed" })).toBeNull();
+    expect(manualRetryStages({ ...incomplete, status: "canceled" })).toBeNull();
+    expect(
+      manualRetryStages({
+        status: "succeeded",
+        stagesCheckpoint: { knowledgeGraph: { status: "completed" } }
+      })
     ).toBeNull();
   });
 });

@@ -576,6 +576,25 @@ describe("repositories", () => {
       expect(text).toContain("parked.skip_reason = 'linking'");
   });
 
+  it("reopens stages for the stage-level retry, keeping what a failed stage had finished", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }], []]);
+    const runs = createIngestionRunRepository(db);
+
+    expect(await runs.reopenStages("run-1", [])).toBeNull();
+    await runs.reopenStages("run-1", ["knowledgeGraph"]);
+
+    const [run, stages] = db.queries;
+    // Only a finished run is reopened, and it goes back to pending for its job to resume.
+    expect(run?.text).toContain("status in ('succeeded', 'failed', 'canceled')");
+    expect(run?.text).toContain("set status = 'pending'");
+    expect(run?.values).toEqual(["run-1", ["knowledgeGraph"]]);
+    // A failed stage keeps its metadata (the graph's completed batches); a skipped one starts clean.
+    expect(run?.text).toContain("failed.value ->> 'status' = 'failed'");
+    expect(run?.text).toContain("jsonb_build_object('metadata', failed.value -> 'metadata')");
+    expect(stages?.text).toContain("metadata = case when status = 'failed' then metadata");
+    expect(stages?.values).toEqual(["run-1", ["knowledgeGraph"]]);
+  });
+
   it("counts only the live runs of a batch that have a stage still to finish", async () => {
     const db = new FakeQueryable([[{ count: "2" }]]);
     const runs = createIngestionRunRepository(db);

@@ -101,6 +101,49 @@ describe("the E6 replay with live local misses", () => {
     expect(existsSync(join(root, "models"))).toBe(false);
   });
 
+  describe("the extraction pin of the recording (T55k)", () => {
+    const record = async (pin?: "extraction" | "off") =>
+      writeFile(
+        join(root, ".cache", "cassette", "e2e-route.json"),
+        JSON.stringify(
+          recordedRoute(
+            RouteSpecSchema.parse({
+              writer: { kind: "local", catalogId: "mlx-qwen3.5-9b-4bit", path: "/models/writer" },
+              embedding: { path: "/models/embedding.gguf" }
+            }),
+            {
+              contentLanguage: "pt-BR",
+              source: "plos-one-murre-dros-2015",
+              notes: 76,
+              topics: 14,
+              recordedAt: new Date("2026-10-18T12:00:00.000Z"),
+              ...(pin ? { pin } : {})
+            }
+          )
+        )
+      );
+
+    it("refuses a pin that is not the recording's before it creates anything", async () => {
+      // A cassette from F2 (no pin kept) is pinned; one recorded under F3 is not.
+      await expect(run({ MEMORA_GOLDEN_PIN: "off" })).rejects.toThrow(
+        /recorded with MEMORA_GOLDEN_PIN=extraction/
+      );
+      await record("off");
+      await expect(run({ MEMORA_GOLDEN_PIN: "extraction" })).rejects.toThrow(
+        /recorded with MEMORA_GOLDEN_PIN=off: replay it with MEMORA_GOLDEN_PIN=off or leave it unset/
+      );
+      expect(existsSync(join(root, "scratch"))).toBe(false);
+    });
+
+    it("replays with the recording's pin whether the variable is unset or says the same", async () => {
+      await record("off");
+      for (const env of [{}, { MEMORA_GOLDEN_PIN: "off" }])
+        // The checkout of this test holds no golden manifest: the run stops at the paper, after the pin.
+        await expect(run(env)).rejects.toThrow(/manifest\.json/);
+      expect(existsSync(join(root, "scratch"))).toBe(false);
+    });
+  });
+
   it("goes on to the next check once both models are there", async () => {
     await writeFile(join(root, "e.gguf"), "");
     config = parse("--writer-path", root, "--embedding-gguf", join(root, "e.gguf"));

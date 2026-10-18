@@ -569,14 +569,22 @@ export function createIngestionRunRepository(db: Queryable) {
      * The stage-level retry (F3 D25): puts the given stages of a finished run back to pending (the
      * matching stages skipped with `waiting_for_decider`, or a failed stage) and the run back to
      * `pending`, so its ingestion job, queued again, runs those stages only: every other stage
-     * keeps its checkpoint. Null when the run is not finished: nothing is written then.
+     * keeps its checkpoint. A failed stage keeps the metadata of the work it finished (the graph's
+     * completed batches), so the retry resumes where the stage stopped. Null when the run is not
+     * finished: nothing is written then.
      */
     async reopenStages(id: string, stages: readonly string[]): Promise<IngestionRunRecord | null> {
       if (stages.length === 0) return null;
       const reopened = await db.query<IngestionRunRow>(
         `update ingestion_runs
          set status = 'pending', current_stage = ($2::text[])[1], error = null, completed_at = null,
-             stages_checkpoint = stages_checkpoint - $2::text[], updated_at = now()
+             stages_checkpoint = (stages_checkpoint - $2::text[]) || coalesce((
+               select jsonb_object_agg(failed.key, jsonb_build_object('metadata', failed.value -> 'metadata'))
+               from jsonb_each(stages_checkpoint) failed
+               where failed.key = any($2::text[]) and failed.value ->> 'status' = 'failed'
+                 and jsonb_typeof(failed.value -> 'metadata') = 'object'
+             ), '{}'::jsonb),
+             updated_at = now()
          where id = $1 and status in ('succeeded', 'failed', 'canceled')
          returning ${returning}`,
         [id, [...stages]]
@@ -585,8 +593,9 @@ export function createIngestionRunRepository(db: Queryable) {
       if (!row) return null;
       await db.query(
         `update ingestion_run_stages
-         set status = 'pending', skip_reason = null, error = null, progress = 0,
-             metadata = '{}'::jsonb, completed_at = null, ended_at = null, updated_at = now()
+         set metadata = case when status = 'failed' then metadata else '{}'::jsonb end,
+             status = 'pending', skip_reason = null, error = null, progress = 0,
+             completed_at = null, ended_at = null, updated_at = now()
          where ingestion_run_id = $1 and stage = any($2::text[])`,
         [id, [...stages]]
       );

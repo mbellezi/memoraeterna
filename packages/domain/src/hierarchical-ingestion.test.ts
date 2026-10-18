@@ -6,6 +6,7 @@ import {
   ProcessingStages,
   RetiredProcessingStages,
   defaultInteractivePreset,
+  isGraphIncomplete,
   isRetiredProcessingStage,
   processingPresetStages,
   processingStageDependencies,
@@ -199,6 +200,30 @@ describe("the retired organizeKnowledge stage (F2 D14)", () => {
     expect(readStoredStageCheckpoint("sourceMatching", storedRunCheckpoints.sourceMatching)).toBe(
       storedRunCheckpoints.sourceMatching
     );
+  });
+});
+
+describe("graph incomplete (F3 D25)", () => {
+  const failedGraph = { knowledgeGraph: { status: "failed", error: "invalid_json" } };
+
+  it("is a succeeded run whose knowledge-graph stage failed", () => {
+    expect(isGraphIncomplete({ status: "succeeded", stagesCheckpoint: failedGraph })).toBe(true);
+  });
+
+  it("is not a failed, canceled or running run, whose own state already says so", () => {
+    for (const status of ["pending", "running", "failed", "canceled"])
+      expect(isGraphIncomplete({ status, stagesCheckpoint: failedGraph })).toBe(false);
+  });
+
+  it("is not a run whose graph completed, was skipped or never ran, nor a failure of another stage", () => {
+    for (const stagesCheckpoint of [
+      { knowledgeGraph: { status: "completed" } },
+      { knowledgeGraph: { status: "skipped", reason: "not_requested" } },
+      { atomicNoteMatching: { status: "failed" } },
+      {},
+      null
+    ])
+      expect(isGraphIncomplete({ status: "succeeded", stagesCheckpoint })).toBe(false);
   });
 });
 

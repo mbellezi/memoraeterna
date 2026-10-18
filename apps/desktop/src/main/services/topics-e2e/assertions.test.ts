@@ -44,6 +44,8 @@ function store(overrides: Partial<StoreFacts> = {}): StoreFacts {
     ingestionRuns: [{ status: "succeeded", count: 9 }],
     failedStages: 0,
     failedJobs: [],
+    matching: { runs: 9, matchedRuns: 9, graphFailedRuns: 0, graphFailedMatchedRuns: 0 },
+    endState: { noteRelations: 14, sourceRelations: 0, digest: "0123456789abcdef".repeat(4) },
     aiCalls: [
       { taskType: "embedding", adapter: "cassette-replay", status: "succeeded", count: 80 }
     ],
@@ -329,6 +331,42 @@ describe("the E6 verdict", () => {
       "2 failed stages",
       "2 failed knowledge-graph-generation jobs"
     ]);
+  });
+
+  it("warns, when recording, of live calls that failed: a replay misses on them", () => {
+    const failedCall = {
+      taskType: "knowledge-graph-generation",
+      adapter: "mlx",
+      status: "failed",
+      count: 2
+    };
+    const facts = store({ aiCalls: [...store().aiCalls, failedCall] });
+    const recording = evaluateE6(facts, run({ mode: "record", recorded: null }));
+    expect(recording.reported.failedWork).toEqual([
+      "2 knowledge-graph-generation AI calls failed (no cassette entry: a replay misses on them)"
+    ]);
+    // A replay never calls the model for a request it holds, so the note belongs to a recording.
+    expect(evaluateE6(facts, run()).reported.failedWork).toEqual([]);
+  });
+
+  it("reports how many runs still matched after their graph failed (F3 D25)", () => {
+    const matching = { runs: 9, matchedRuns: 9, graphFailedRuns: 3, graphFailedMatchedRuns: 3 };
+    const facts = store({
+      failedStages: 3,
+      failedJobs: [{ type: "knowledge-graph-generation", count: 3 }],
+      matching
+    });
+    const report = evaluateE6(facts, run());
+    expect(failing(report.checks)).toEqual([]);
+    expect(report.reported.matching).toEqual({ ...matching, failedGraphJobs: 3 });
+    const markdown = renderE6Markdown(report, facts);
+    expect(markdown).toContain(
+      "9 of 9 ingestion runs decided their notes; 3 runs ended with a failed graph stage (3 failed knowledge-graph-generation jobs), 3 of them still matched."
+    );
+    expect(report.reported.endState.digest).toBe(facts.endState.digest);
+    expect(markdown).toContain(
+      "End state: 14 note relations, 0 source relations; digest 0123456789abcdef"
+    );
   });
 
   it("reports the share of notes left at the root and the time to named topics", () => {

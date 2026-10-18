@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     updateStageProgress: vi.fn(),
     completeStage: vi.fn(),
     skipStage: vi.fn(),
+    failStage: vi.fn(),
     parkForLinking: vi.fn(),
     complete: vi.fn(),
     update: vi.fn(),
@@ -369,7 +370,8 @@ describe("ingestion queue scheduling", () => {
     const ingest = async (
       knowledge: Partial<Record<keyof KnowledgeService, unknown>>,
       run = matchingRun(),
-      payload: Record<string, unknown> = {}
+      payload: Record<string, unknown> = {},
+      attempts = 1
     ) => {
       const pool = { query: vi.fn().mockResolvedValue({ rows: [{ id: "root" }] }) };
       supervisor = new JobSupervisor({
@@ -379,7 +381,7 @@ describe("ingestion queue scheduling", () => {
       mocks.jobs.claimNext.mockResolvedValue({
         id: "job",
         type: "ingestion",
-        attempts: 1,
+        attempts,
         maxAttempts: 3,
         payload: {
           ingestionRunId: "run",
@@ -487,6 +489,153 @@ describe("ingestion queue scheduling", () => {
       ]);
       expect(mocks.runs.parkForLinking).not.toHaveBeenCalled();
       expect(mocks.runs.complete).toHaveBeenCalledWith("run");
+    });
+
+    describe("a knowledge-graph failure no longer stops matching (D25, R25)", () => {
+      const graphRun = () =>
+        matchingRun({
+          effectiveStages: ["knowledgeGraph", "atomicNoteMatching", "sourceMatching"]
+        });
+      const matching = () => vi.fn().mockResolvedValue({ persistedCount: 0 });
+
+      it("fails the graph stage alone, matches without it and ends the run's job succeeded", async () => {
+        const matchAtomicNotes = matching();
+        const generateKnowledgeGraph = vi
+          .fn()
+          .mockRejectedValue(new Error("errors.knowledgeGraph.invalidOutput"));
+        const { job } = await ingest({ generateKnowledgeGraph, matchAtomicNotes }, graphRun());
+        expect(mocks.runs.failStage.mock.calls).toEqual([
+          ["run", "knowledgeGraph", "errors.knowledgeGraph.invalidOutput"]
+        ]);
+        // The run is not failed and the stage is not completed: it stays failed and retryable.
+        expect(mocks.runs.fail).not.toHaveBeenCalled();
+        expect(mocks.runs.completeStage).not.toHaveBeenCalledWith(
+          "run",
+          "knowledgeGraph",
+          expect.anything()
+        );
+        // Matching ran, and the run parks for its link job as any other run.
+        expect(matchAtomicNotes).toHaveBeenCalledOnce();
+        expect(mocks.runs.completeStage).toHaveBeenCalledWith(
+          "run",
+          "atomicNoteMatching",
+          expect.anything()
+        );
+        expect(mocks.runs.parkForLinking).toHaveBeenCalledWith("run", { rootId: "root" });
+        expect(job).toMatchObject({ status: "succeeded" });
+      });
+
+      it("completes a run whose plan stops at the graph, with the graph failed", async () => {
+        const { job } = await ingest(
+          { generateKnowledgeGraph: vi.fn().mockRejectedValue(new Error("bad_graph")) },
+          matchingRun({ effectiveStages: ["knowledgeGraph"] })
+        );
+        expect(mocks.runs.failStage).toHaveBeenCalledWith("run", "knowledgeGraph", "bad_graph");
+        expect(mocks.runs.complete).toHaveBeenCalledWith("run");
+        expect(job).toMatchObject({ status: "succeeded" });
+      });
+
+      it("leaves a failure the job's own retry can mend to that retry, with matching still waiting", async () => {
+        const matchAtomicNotes = matching();
+        const outage = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+        const { job } = await ingest(
+          { generateKnowledgeGraph: vi.fn().mockRejectedValue(outage), matchAtomicNotes },
+          graphRun()
+        );
+        expect(job).toMatchObject({ status: "queued" });
+        expect(mocks.runs.failStage).not.toHaveBeenCalled();
+        expect(mocks.runs.fail).toHaveBeenCalledWith("run", expect.any(String));
+        expect(matchAtomicNotes).not.toHaveBeenCalled();
+      });
+
+      it("fails the stage once a transient failure has used the job's attempts", async () => {
+        const matchAtomicNotes = matching();
+        const outage = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+        const { job } = await ingest(
+          { generateKnowledgeGraph: vi.fn().mockRejectedValue(outage), matchAtomicNotes },
+          graphRun(),
+          {},
+          3
+        );
+        expect(job).toMatchObject({ status: "succeeded" });
+        expect(mocks.runs.failStage).toHaveBeenCalledWith("run", "knowledgeGraph", "busy");
+        expect(matchAtomicNotes).toHaveBeenCalledOnce();
+      });
+
+      it("never turns a cancellation into a failed stage", async () => {
+        const matchAtomicNotes = matching();
+        const { job } = await ingest(
+          {
+            generateKnowledgeGraph: vi.fn(async () => {
+              await supervisor!.requestCancel("job");
+              throw new Error("canceled mid-call");
+            }),
+            matchAtomicNotes
+          },
+          graphRun()
+        );
+        expect(job).toMatchObject({ status: "canceled" });
+        expect(mocks.runs.failStage).not.toHaveBeenCalled();
+        expect(mocks.runs.cancel).toHaveBeenCalledWith("run");
+        expect(matchAtomicNotes).not.toHaveBeenCalled();
+      });
+
+      it("completes the graph stage as before when the graph succeeds", async () => {
+        const graph = { configured: true, generated: true };
+        await ingest(
+          {
+            generateKnowledgeGraph: vi.fn().mockResolvedValue(graph),
+            matchAtomicNotes: matching()
+          },
+          graphRun()
+        );
+        expect(mocks.runs.completeStage).toHaveBeenCalledWith("run", "knowledgeGraph", graph);
+        expect(mocks.runs.failStage).not.toHaveBeenCalled();
+      });
+
+      it("re-runs only the graph stage when a graph-incomplete run is retried", async () => {
+        supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+        const incomplete = {
+          id: "run",
+          jobId: "job",
+          status: "succeeded",
+          stagesCheckpoint: {
+            knowledgeGraph: { status: "failed", error: "bad_graph" },
+            atomicNoteMatching: { status: "completed" },
+            sourceMatching: { status: "completed" }
+          }
+        };
+        mocks.jobs.findById.mockResolvedValue({
+          id: "job",
+          type: "ingestion",
+          status: "succeeded",
+          payload: { ingestionRunId: "run" }
+        });
+        mocks.runs.findById.mockResolvedValue(incomplete);
+        mocks.runs.reopenStages.mockResolvedValue(incomplete);
+        await expect(supervisor.retry("job")).resolves.toMatchObject({ id: "retry" });
+        expect(mocks.runs.reopenStages.mock.calls).toEqual([["run", ["knowledgeGraph"]]]);
+        expect(mocks.jobs.retry).toHaveBeenCalledWith("job");
+      });
+
+      it("re-runs the graph of a finished run through retryStage, and nothing else", async () => {
+        supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+        const incomplete = {
+          id: "run",
+          jobId: "job",
+          status: "succeeded",
+          stagesCheckpoint: { knowledgeGraph: { status: "failed" } }
+        };
+        mocks.runs.findById.mockResolvedValue(incomplete);
+        mocks.jobs.findById.mockResolvedValue({ id: "job", status: "succeeded" });
+        mocks.runs.reopenStages.mockResolvedValue(incomplete);
+        await supervisor.retryStage("run", "knowledgeGraph");
+        expect(mocks.runs.reopenStages.mock.calls).toEqual([["run", ["knowledgeGraph"]]]);
+        // A stage that did not fail is not retried that way.
+        mocks.runs.reopenStages.mockClear();
+        await expect(supervisor.retryStage("run", "embedding")).resolves.toBeNull();
+        expect(mocks.runs.reopenStages).not.toHaveBeenCalled();
+      });
     });
 
     it("decides an interactive import at P1", async () => {

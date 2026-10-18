@@ -29,6 +29,7 @@ import { sha256 } from "@app/conversion";
 import {
   AtomicNoteMatchingSettingsSchema,
   DocumentDivisionCandidateSchema,
+  isGraphIncomplete,
   isSymmetricNoteRelationType,
   ProcessingPlanRequestSchema,
   SourceDescriptorSchema,
@@ -922,9 +923,11 @@ try {
   // job on the `relations` worker, so a failing source never delays its siblings. Five sources in
   // one batch, faults on the second: (a) a deterministic ranker error on its notes, (b) the local
   // helper killed during its rank call, (c) a remote 500 storm on its typing and discovery, (e) a
-  // transient failure re-queued (the siblings link before its retry), (f) a link-job failure. Case
-  // (d), a knowledge-graph failure, is T55k's. The fake knowledge service stands in for the AI.
-  type X5Fault = "a" | "b" | "c" | "e" | "f";
+  // transient failure re-queued (the siblings link before its retry), (f) a link-job failure, and
+  // (d) a knowledge-graph failure: the faulted source still matches and links, its run ends
+  // succeeded with its graph incomplete, and the stage-level retry re-runs the graph alone (D25,
+  // R25). The fake knowledge service stands in for the AI.
+  type X5Fault = "a" | "b" | "c" | "d" | "e" | "f";
   // One bounded call of the faulted source: a rank call or a typing call that ends in failure.
   const boundedCallMs = 300;
   const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
@@ -933,6 +936,9 @@ try {
     failing: "",
     killed: false,
     generationFailed: false,
+    graphMended: false,
+    graphCalls: [] as string[],
+    generatedFor: [] as string[],
     decidedNotes: [] as string[],
     typingPriorities: [] as string[],
     discovered: [] as string[]
@@ -974,8 +980,15 @@ try {
     isHierarchicalRoot: async () => false,
     summarizeSource: async () => ({ configured: true, generated: false }),
     summarizeHierarchiesForBatch: async () => ({ generatedCount: 0 }),
-    generateKnowledgeGraph: async () => ({ configured: true, generated: false }),
+    generateKnowledgeGraph: async (sourceItemId: string) => {
+      x5.graphCalls.push(sourceItemId);
+      // A writer that returns invalid graph JSON for good (case d), until the owner retries.
+      if (x5.fault === "d" && sourceItemId === x5.failing && !x5.graphMended)
+        throw new Error("knowledge_graph_output_invalid:schema");
+      return { configured: true, generated: false };
+    },
     generateAtomicNotes: async (sourceItemId: string, documentId: string) => {
+      x5.generatedFor.push(sourceItemId);
       if (x5.fault === "e" && sourceItemId === x5.failing && !x5.generationFailed) {
         x5.generationFailed = true;
         throw new AiProviderError("provider_unavailable", {
@@ -1136,6 +1149,9 @@ try {
       fault,
       killed: false,
       generationFailed: false,
+      graphMended: false,
+      graphCalls: [],
+      generatedFor: [],
       decidedNotes: [],
       typingPriorities: [],
       discovered: []
@@ -1290,6 +1306,103 @@ try {
     !canManuallyRetryJob(storm.jobs[1]!, stormRun)
   )
     throw new Error(`X5 c: the storm's source ended ${stormRun.status} (${stormRun.error}).`);
+
+  // (d) A knowledge-graph failure for good (invalid graph JSON, as a weak local writer returns):
+  // the graph stage fails alone, the source still decides its notes and links, and its run ends
+  // succeeded with the graph incomplete. Before D25 this run failed at the graph and never matched.
+  const graphFailure = await runX5("d");
+  siblingsOnTime(control, graphFailure);
+  const graphRun = graphFailure.records[1]!;
+  const graphJob = graphFailure.jobs[1]!;
+  const graphNotes = await pool.query<{ count: number }>(
+    `select count(*)::int as count from atomic_note_relations r
+     join atomic_notes n on n.id in (r.source_atomic_note_id, r.target_atomic_note_id)
+     where n.created_from_source_item_id = $1 and r.relation_type = 'supports'`,
+    [graphRun.sourceItemId]
+  );
+  const graphStages = await Promise.all(
+    ["knowledgeGraph", "atomicNoteMatching", "sourceMatching"].map((stage) =>
+      stageStatus(graphRun.id, stage)
+    )
+  );
+  if (
+    graphRun.status !== "succeeded" ||
+    graphJob.status !== "succeeded" ||
+    !isGraphIncomplete(graphRun) ||
+    graphFailure.records.filter((run) => isGraphIncomplete(run!)).length !== 1 ||
+    graphStages.join() !== "failed,completed,completed" ||
+    (graphNotes.rows[0]?.count ?? 0) < 1 ||
+    !x5.discovered.includes(graphRun.sourceItemId!) ||
+    !canManuallyRetryJob(graphJob, graphRun)
+  )
+    throw new Error(
+      `X5 d: the graph failure did not leave a matched, retryable source: ${JSON.stringify([
+        graphRun.status,
+        graphJob.status,
+        graphStages,
+        graphNotes.rows[0]?.count
+      ])}.`
+    );
+  // The Retry re-runs the graph stage alone: no note is generated again, nothing is decided or
+  // linked again, and the run is complete once the graph is.
+  const linkJobsOf = async () =>
+    (
+      await pool!.query<{ count: number }>(
+        `select count(*)::int as count from jobs
+         where type = 'relation-link' and payload->>'rootId' = $1`,
+        [graphRun.sourceItemId]
+      )
+    ).rows[0]!.count;
+  const decidedAt = async () =>
+    (
+      await pool!.query<{ at: Date }>(
+        `select completed_at as at from ingestion_run_stages
+         where ingestion_run_id = $1 and stage = 'atomicNoteMatching'`,
+        [graphRun.id]
+      )
+    ).rows[0]!.at.getTime();
+  const decidedBefore = await decidedAt();
+  const linksBefore = await linkJobsOf();
+  x5.graphMended = true;
+  const retrySupervisor = new JobSupervisor({
+    getPool: () => pool ?? null,
+    knowledgeService: x5Knowledge as unknown as KnowledgeService,
+    pollIntervalMs: 25
+  });
+  await retrySupervisor.start();
+  try {
+    if (!(await retrySupervisor.retry(graphJob.id)))
+      throw new Error("X5 d: the graph-incomplete run was not retried.");
+    for (const deadline = Date.now() + 30_000; ; await pause(25)) {
+      const mended = await createIngestionRunRepository(pool).findById(graphRun.id);
+      const job = await createJobRepository(pool).findById(graphJob.id);
+      if (
+        mended?.status === "succeeded" &&
+        job?.status === "succeeded" &&
+        !isGraphIncomplete(mended)
+      )
+        break;
+      if (Date.now() > deadline) throw new Error("X5 d: the retried graph did not settle.");
+    }
+  } finally {
+    await retrySupervisor.stop();
+  }
+  const graphCallsOfSource = x5.graphCalls.filter((id) => id === graphRun.sourceItemId).length;
+  const notesOfSource = x5.generatedFor.filter((id) => id === graphRun.sourceItemId).length;
+  if (
+    (await stageStatus(graphRun.id, "knowledgeGraph")) !== "completed" ||
+    graphCallsOfSource !== 2 ||
+    notesOfSource !== 1 ||
+    (await decidedAt()) !== decidedBefore ||
+    (await linkJobsOf()) !== linksBefore
+  )
+    throw new Error(
+      `X5 d: the stage-level retry re-ran more than the graph: ${JSON.stringify([
+        graphCallsOfSource,
+        notesOfSource,
+        linksBefore
+      ])}.`
+    );
 
   // (e) A transient failure is retried after its backoff; the siblings linked before the retry.
   const transient = await runX5("e");

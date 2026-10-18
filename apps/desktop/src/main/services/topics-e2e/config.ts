@@ -13,6 +13,9 @@ import { AiCapabilitySchema } from "@app/domain";
 import type { AiCapability } from "@app/domain";
 import { z } from "zod";
 
+import { goldenPinModes } from "../extraction-pin.js";
+import type { GoldenPinMode } from "../extraction-pin.js";
+
 export const defaultSourceKey = "plos-one-murre-dros-2015";
 export const defaultCassetteName = "e2e-plos";
 export const routeFileName = "e2e-route.json";
@@ -109,6 +112,12 @@ export const RecordedRouteSchema = z
     embedding: z.object({ catalogId: z.string().min(1) }).strict(),
     /** E6 runs without a ranker (`e2eRanker`); cassettes recorded before it was kept had none. */
     ranker: z.literal(e2eRanker).default(e2eRanker),
+    /**
+     * The extraction pin the recording ran under (F3 D5, `MEMORA_GOLDEN_PIN`): `off` is the product
+     * path of a recording made under F3 (T55k). A replay runs the same way, so it makes the same
+     * requests. A cassette recorded before it was kept is F2-era: pinned.
+     */
+    pin: z.enum(goldenPinModes).default("extraction"),
     /** What the recorded run produced; a replay must produce the same. */
     result: z
       .object({
@@ -170,6 +179,14 @@ export const usage = `Usage: npm run topics:e2e -- [options]
     MEMORA_AI_CASSETTE_LOCAL_MISSES=live MEMORA_GOLDEN_PIN=extraction npm run topics:e2e -- \
       --cassette-dir .cache/topics/cassettes/e2e-plos-nonreg-R --lane-timeout 45 \
       --writer-path <installed writer model dir> --embedding-gguf <installed embedding .gguf>
+
+  Re-record under F3 (T55k: the local writer, $0, the product path of extraction), then replay it. The
+  recording keeps its pin next to the cassette, so a replay runs the same way:
+    MEMORA_GOLDEN_PIN=off npm run topics:e2e -- --mode record \
+      --cassette-dir .cache/topics/cassettes/e2e-plos-f3 --lane-timeout 45 \
+      --writer-local <catalog id> --writer-path <installed writer model dir> \
+      --embedding-gguf <installed embedding .gguf>
+    npm run topics:e2e -- --cassette-dir .cache/topics/cassettes/e2e-plos-f3 --lane-timeout 45
 
   --mode record|replay|both  both = record then replay (synthetic only)
   --synthetic                tiny library and synthetic model instead of the PDF and real models
@@ -441,6 +458,7 @@ export function recordedRoute(
     notes: number;
     topics: number;
     recordedAt: Date;
+    pin?: GoldenPinMode;
   }
 ): RecordedRoute {
   const writer: RecordedRoute["writer"] =
@@ -462,6 +480,7 @@ export function recordedRoute(
     writer,
     embedding: { catalogId: spec.embedding.catalogId },
     ranker: e2eRanker,
+    pin: facts.pin ?? "extraction",
     result: { notes: facts.notes, topics: facts.topics }
   });
 }

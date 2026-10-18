@@ -81,7 +81,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   direction; automation's band (applied or suggested) stays apart from the human review status.
 - Source relations come from shown note relations (applied, kept or suggested) plus decider-confirmed
   discovery pairs, never same-root pairs; each is a suggestion until the owner keeps it or a note
-  relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier.
+  relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
   background, and cached for its inputs (ideas or titles, passages, type, direction, language,
   prompt, model). An explanation that finds the notes unrelated withdraws a relation nobody

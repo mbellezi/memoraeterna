@@ -7,6 +7,7 @@ import {
   groupJobs,
   jobTypeMessageKey,
   listActivityJobs,
+  matchesFilter,
   sourceRelationCoverageNotice,
   type JobCardModel
 } from "./jobs-view-model";
@@ -287,6 +288,79 @@ describe("jobs view model", () => {
         "summarization"
       ])
     ).toEqual(["preparation", "chunking", "summarization"]);
+  });
+});
+
+describe("a run that ended with its graph incomplete (F3 D25)", () => {
+  const graphRun = (
+    run: { status: string; graph: Record<string, unknown> },
+    job: { status: string } = { status: "succeeded" }
+  ) =>
+    jobRecordSchema.parse({
+      id: "00000000-0000-4000-8000-000000000301",
+      type: "ingestion",
+      status: job.status,
+      progress: 1,
+      attempts: 1,
+      maxAttempts: 3,
+      canCancel: false,
+      canRetry: true,
+      error: null,
+      errorHistory: [],
+      aiExecution: null,
+      createdAt: "2026-10-18T10:00:00.000Z",
+      updatedAt: "2026-10-18T10:00:01.000Z",
+      ingestionRun: {
+        id: "00000000-0000-4000-8000-000000000302",
+        status: run.status,
+        currentStage: "completed",
+        effectiveStages: ["knowledgeGraph", "atomicNoteMatching", "sourceMatching"],
+        stagesCheckpoint: {
+          knowledgeGraph: run.graph,
+          atomicNoteMatching: { status: "completed" },
+          sourceMatching: { status: "completed" }
+        }
+      }
+    });
+
+  it("is its own status, derived from the failed graph stage of a succeeded run", () => {
+    const [card] = groupJobs([
+      graphRun({ status: "succeeded", graph: { status: "failed", error: "bad_graph" } })
+    ]);
+    expect(card).toMatchObject({ status: "graphIncomplete", progress: 1 });
+    // Not a failure: the card has no stage error, and it asks for attention without being "failed".
+    expect(card!.stageError).toBeNull();
+    expect(matchesFilter(card!, "attention")).toBe(true);
+    expect(matchesFilter(card!, "completed")).toBe(false);
+    expect(matchesFilter(card!, "active")).toBe(false);
+  });
+
+  it("is a completed card once the graph completed, and a running one while it is retried", () => {
+    const [completed] = groupJobs([
+      graphRun({ status: "succeeded", graph: { status: "completed" } })
+    ]);
+    expect(completed!.status).toBe("succeeded");
+    expect(matchesFilter(completed!, "completed")).toBe(true);
+    const [retrying] = groupJobs([
+      graphRun(
+        { status: "pending", graph: { metadata: { completedBatches: [] } } },
+        { status: "queued" }
+      )
+    ]);
+    expect(retrying!.status).toBe("queued");
+    expect(matchesFilter(retrying!, "active")).toBe(true);
+  });
+
+  it("words the status and its hint in every locale", () => {
+    for (const locale of supportedLanguageCodes)
+      for (const key of [
+        "jobs.status.graphIncomplete",
+        "jobs.statusHints.graphIncomplete"
+      ] as const)
+        expect(
+          createTranslator(locale)(key, { missingKeyBehavior: "throw" }).trim().length,
+          `${key} in ${locale}`
+        ).toBeGreaterThan(0);
   });
 });
 

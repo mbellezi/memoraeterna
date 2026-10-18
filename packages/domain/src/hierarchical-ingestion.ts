@@ -147,6 +147,24 @@ export function readStoredStageCheckpoint(stage: string, checkpoint: unknown): u
     : checkpoint;
 }
 
+/**
+ * "Graph incomplete" (F3 D25, R25): a run that ended `succeeded` while its knowledge-graph stage
+ * failed. Matching ran without the graph signal and the stage stays retryable. The status is read
+ * from the stage's checkpoint; the run keeps its five states and nothing is stored for it.
+ */
+export function isGraphIncomplete(run: { status: unknown; stagesCheckpoint: unknown }): boolean {
+  if (run.status !== "succeeded") return false;
+  const checkpoint =
+    typeof run.stagesCheckpoint === "object" && run.stagesCheckpoint !== null
+      ? (run.stagesCheckpoint as Record<string, unknown>).knowledgeGraph
+      : undefined;
+  return (
+    typeof checkpoint === "object" &&
+    checkpoint !== null &&
+    (checkpoint as { status?: unknown }).status === "failed"
+  );
+}
+
 /** A stage list as stored or requested: retired IDs are accepted and dropped, unknown IDs are not. */
 const ProcessingStageListSchema = z
   .array(z.union([ProcessingStageSchema, z.enum(RetiredProcessingStages)]))

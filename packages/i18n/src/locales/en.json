@@ -447,7 +447,11 @@
       "succeeded": "Completed",
       "failed": "Failed",
       "canceled": "Canceled",
-      "retrying": "Retrying"
+      "retrying": "Retrying",
+      "graphIncomplete": "Graph incomplete"
+    },
+    "statusHints": {
+      "graphIncomplete": "Relations were matched without the knowledge graph. Retry rebuilds only the graph."
     },
     "types": {
       "ingestion": "Ingestion",

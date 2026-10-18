@@ -1,4 +1,5 @@
 import {
+  isGraphIncomplete,
   isRetiredProcessingStage,
   readStoredStageCheckpoint,
   SourceRelationCoverageSchema
@@ -34,7 +35,11 @@ export interface JobCardModel {
   jobs: JobRecord[];
   ingestionRun: NonNullable<JobRecord["ingestionRun"]> | null;
   source: NonNullable<JobRecord["source"]> | null;
-  status: JobRecord["status"] | "retrying";
+  /**
+   * `graphIncomplete` (F3 D25) is derived: a run that ended `succeeded` while its knowledge-graph
+   * stage failed. Matching ran without the graph and the Retry re-runs that stage alone.
+   */
+  status: JobRecord["status"] | "retrying" | "graphIncomplete";
   progress: number;
   currentStage: string;
   stageError: string | null;
@@ -60,11 +65,15 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
         .flatMap((job) => job.errorHistory);
       const errors = deduplicateErrors(childErrors.length > 0 ? childErrors : mainJob.errorHistory);
       const matching = deferredStagePresentation(mainJob, ingestionRun);
-      const status =
+      const settled =
         matching?.status ??
         (mainJob.status === "queued" && mainJob.attempts > 0 && errors.length > 0
           ? ("retrying" as const)
           : mainJob.status);
+      const status =
+        settled === "succeeded" && ingestionRun && isGraphIncomplete(ingestionRun)
+          ? ("graphIncomplete" as const)
+          : settled;
       return {
         id,
         mainJob,
@@ -145,7 +154,9 @@ export function matchesFilter(card: JobCardModel, filter: JobFilter): boolean {
   if (filter === "active")
     return card.status === "queued" || card.status === "running" || card.status === "retrying";
   if (filter === "completed") return card.status === "succeeded";
-  return card.status === "failed" || card.status === "canceled";
+  return (
+    card.status === "failed" || card.status === "canceled" || card.status === "graphIncomplete"
+  );
 }
 
 export function listActivityJobs(card: JobCardModel): JobRecord[] {

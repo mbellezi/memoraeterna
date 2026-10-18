@@ -449,7 +449,11 @@
       "succeeded": "Termine",
       "failed": "Echec",
       "canceled": "Annule",
-      "retrying": "Nouvelle tentative"
+      "retrying": "Nouvelle tentative",
+      "graphIncomplete": "Graphe incomplet"
+    },
+    "statusHints": {
+      "graphIncomplete": "Les relations ont été rapprochées sans le graphe de connaissances. Réessayer ne refait que le graphe."
     },
     "types": {
       "ingestion": "Ingestion",

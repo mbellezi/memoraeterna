@@ -88,7 +88,12 @@ import {
   embedHeaderVectors,
   type EmbeddingBatchGenerator
 } from "./embedding-stage.js";
-import { canManuallyRetryJob, isWaitingForDecider, stageRetryStages } from "./job-retry.js";
+import {
+  canManuallyRetryJob,
+  isWaitingForDecider,
+  manualRetryStages,
+  stageRetryStages
+} from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 import {
@@ -762,11 +767,9 @@ export class JobSupervisor {
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)
       : null;
     if (!canManuallyRetryJob(current, ingestionRun)) return null;
-    // A finished run whose matching waited for a ranker re-runs it (the stage-level retry, D25).
-    const reopen =
-      ingestionRun && isWaitingForDecider(ingestionRun.stagesCheckpoint.atomicNoteMatching)
-        ? stageRetryStages(ingestionRun, "atomicNoteMatching")
-        : null;
+    // A finished run whose graph failed or whose matching waited for a ranker re-runs those
+    // stages alone (the stage-level retry, D25).
+    const reopen = ingestionRun ? manualRetryStages(ingestionRun) : null;
     if (ingestionRun && reopen)
       await createIngestionRunRepository(pool).reopenStages(ingestionRun.id, reopen);
     const job = await repository.retry(jobId);
@@ -1302,53 +1305,69 @@ export class JobSupervisor {
       const graphMetadata = graphCheckpoint?.metadata as JsonObject | undefined;
       await runs.beginStage(ingestionRunId, "knowledgeGraph");
       this.notify();
-      const graph = this.options.knowledgeService
-        ? await this.runInlineStageJob(
-            "knowledge-graph-generation",
-            { ingestionRunId, sourceItemId, documentId },
-            (stageJobId) =>
-              catalogMetadataOnly
-                ? this.options.knowledgeService!.generateCatalogKnowledgeGraph(
-                    sourceItemId,
-                    documentId,
-                    {
-                      jobId: stageJobId,
-                      ingestionRunId,
-                      onProgress: (progress) => this.reportInlineProgress(stageJobId, progress)
-                    },
-                    signal
-                  )
-                : this.options.knowledgeService!.generateKnowledgeGraph(
-                    sourceItemId,
-                    documentId,
-                    {
-                      jobId: stageJobId,
-                      ingestionRunId,
-                      // One graph pass over the chunks per source; a second pass over the notes
-                      // only when the processing plan asks for it.
-                      includeAtomicNotesGraph:
-                        shouldRun("atomicNotes") && job.payload.knowledgeGraphOnNotes === true,
-                      completedBatches: graphMetadata?.completedBatches,
-                      onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
-                      onBatchCompleted: async ({ completed, total, checkpoints }) => {
-                        const progress = total > 0 ? completed / total : 1;
-                        await Promise.all([
-                          createJobRepository(pool).reportProgress(stageJobId, progress),
-                          createJobRepository(pool).reportProgress(job.id, 0.84 + progress * 0.05),
-                          runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, {
-                            completed,
-                            total,
-                            completedBatches: checkpoints
-                          })
-                        ]);
-                      }
-                    },
-                    signal
-                  ),
-            controller
-          )
-        : { configured: false, generated: false, projected: false };
-      await runs.completeStage(ingestionRunId, "knowledgeGraph", graph);
+      let graph: Record<string, unknown> | null = null;
+      try {
+        graph = this.options.knowledgeService
+          ? await this.runInlineStageJob(
+              "knowledge-graph-generation",
+              { ingestionRunId, sourceItemId, documentId },
+              (stageJobId) =>
+                catalogMetadataOnly
+                  ? this.options.knowledgeService!.generateCatalogKnowledgeGraph(
+                      sourceItemId,
+                      documentId,
+                      {
+                        jobId: stageJobId,
+                        ingestionRunId,
+                        onProgress: (progress) => this.reportInlineProgress(stageJobId, progress)
+                      },
+                      signal
+                    )
+                  : this.options.knowledgeService!.generateKnowledgeGraph(
+                      sourceItemId,
+                      documentId,
+                      {
+                        jobId: stageJobId,
+                        ingestionRunId,
+                        // One graph pass over the chunks per source; a second pass over the notes
+                        // only when the processing plan asks for it.
+                        includeAtomicNotesGraph:
+                          shouldRun("atomicNotes") && job.payload.knowledgeGraphOnNotes === true,
+                        completedBatches: graphMetadata?.completedBatches,
+                        onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
+                        onBatchCompleted: async ({ completed, total, checkpoints }) => {
+                          const progress = total > 0 ? completed / total : 1;
+                          await Promise.all([
+                            createJobRepository(pool).reportProgress(stageJobId, progress),
+                            createJobRepository(pool).reportProgress(
+                              job.id,
+                              0.84 + progress * 0.05
+                            ),
+                            runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, {
+                              completed,
+                              total,
+                              completedBatches: checkpoints
+                            })
+                          ]);
+                        }
+                      },
+                      signal
+                    ),
+              controller
+            )
+          : { configured: false, generated: false, projected: false };
+      } catch (error) {
+        // A graph that failed for good ends this stage only (D25, R25). Cancellation and a failure
+        // the job's own retry can still mend (a provider outage, a first local deadline) take the
+        // job's path, so the graph comes back before matching runs.
+        if (signal.aborted || (job.attempts < job.maxAttempts && isTransientJobFailure(error)))
+          throw error;
+        // Matching runs with the graph signal absent; the stage stays failed and retryable, and
+        // the run ends `succeeded` with its graph incomplete.
+        await runs.failStage(ingestionRunId, "knowledgeGraph", normalizeWorkerError(error));
+        this.options.logger?.warn(normalizeWorkerError(error));
+      }
+      if (graph) await runs.completeStage(ingestionRunId, "knowledgeGraph", graph);
       this.notify();
     }
     throwIfAborted(signal);

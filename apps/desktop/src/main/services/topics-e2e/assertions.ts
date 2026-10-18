@@ -82,6 +82,14 @@ export interface E6Report {
     needsVectorItems: number;
     /** Failed ingestion work outside the topic jobs, empty when none. */
     failedWork: string[];
+    /**
+     * F3 D25 (T55k): a failed knowledge-graph stage no longer stops matching. The runs that decided
+     * their notes, the runs whose graph failed, how many of those still decided theirs, and the
+     * failed `knowledge-graph-generation` jobs (F2's recording had 10 of 18 runs fail there).
+     */
+    matching: StoreFacts["matching"] & { failedGraphJobs: number };
+    /** The relations and the digest of the end state (no IDs, no times): equal across two replays. */
+    endState: StoreFacts["endState"];
     importToNamedMs: number | null;
     importToHeavyDoneMs: number | null;
     importToDrainedMs: number | null;
@@ -249,7 +257,17 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
   const failedWork = [
     ...failedRuns.map((row) => `${row.count} ingestion runs ${row.status}`),
     ...(store.failedStages > 0 ? [`${store.failedStages} failed stages`] : []),
-    ...failedOtherJobs.map((row) => `${row.count} failed ${row.type} jobs`)
+    ...failedOtherJobs.map((row) => `${row.count} failed ${row.type} jobs`),
+    // A live call that failed (a local deadline, a runtime error) leaves no cassette entry: the
+    // recording is good, but a replay misses on that request. Say so where the recording is read.
+    ...(run.mode === "record"
+      ? store.aiCalls
+          .filter((row) => row.status !== "succeeded")
+          .map(
+            (row) =>
+              `${row.count} ${row.taskType} AI calls ${row.status} (no cassette entry: a replay misses on them)`
+          )
+      : [])
   ];
 
   return {
@@ -273,6 +291,12 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
       unsortedShare: e1?.unsortedShare ?? 0,
       needsVectorItems: e1?.needsVectorItems ?? 0,
       failedWork,
+      matching: {
+        ...store.matching,
+        failedGraphJobs:
+          store.failedJobs.find((row) => row.type === "knowledge-graph-generation")?.count ?? 0
+      },
+      endState: store.endState,
       importToNamedMs: between(run.timing.importStartedAt, store.lastNamedAt),
       importToHeavyDoneMs: between(run.timing.importStartedAt, run.timing.heavyDoneAt),
       importToDrainedMs: between(run.timing.importStartedAt, run.timing.drainedAt),
@@ -311,6 +335,11 @@ export function renderE6Markdown(report: E6Report, store: StoreFacts): string {
       `${r.rootNeedsGate} waiting for the gate), ${share(r.rootDirectNotes / Math.max(1, r.notes))} of the notes; ` +
       `Unsorted share (D27, notes and root sources) ${share(r.unsortedShare)}; \`needs_vector\` items ${r.needsVectorItems}.`,
     `- Failed ingestion work outside the topics: ${r.failedWork.length > 0 ? r.failedWork.join("; ") : "none"}.`,
+    `- Matching: ${r.matching.matchedRuns} of ${r.matching.runs} ingestion runs decided their notes; ` +
+      `${r.matching.graphFailedRuns} runs ended with a failed graph stage (${r.matching.failedGraphJobs} failed ` +
+      `knowledge-graph-generation jobs), ${r.matching.graphFailedMatchedRuns} of them still matched.`,
+    `- End state: ${r.endState.noteRelations} note relations, ${r.endState.sourceRelations} source relations; ` +
+      `digest ${r.endState.digest.slice(0, 16)} (two replays of one recording share it).`,
     `- Import start to named topics ${formatDuration(r.importToNamedMs)}; to the end of the heavy work ` +
       `${formatDuration(r.importToHeavyDoneMs)}; to a drained light lane ${formatDuration(r.importToDrainedMs)} (m:ss).`,
     `- AI cassette ${r.cassette.mode}: ${r.cassette.served} served, ${r.cassette.recorded} recorded, ` +

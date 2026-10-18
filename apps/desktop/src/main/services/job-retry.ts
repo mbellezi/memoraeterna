@@ -82,6 +82,19 @@ export function stageRetryStages(
   );
 }
 
+/**
+ * What a manual retry of a finished run re-runs alone (D25): the knowledge-graph stage of a run
+ * that ended "graph incomplete" (T55k), and the matching stages that waited for a validated ranker
+ * (C7). Null when the run has neither, so the retry resumes the run from its own checkpoints.
+ */
+export function manualRetryStages(ingestionRun: RetryableIngestionRunState): string[] | null {
+  if (ingestionRun.status !== "succeeded") return null;
+  const stages = new Set<string>();
+  for (const stage of ["knowledgeGraph", "atomicNoteMatching"])
+    for (const reopened of stageRetryStages(ingestionRun, stage) ?? []) stages.add(reopened);
+  return stages.size > 0 ? [...stages] : null;
+}
+
 /** A stage skipped to wait for a validated ranker (C7). */
 export function isWaitingForDecider(checkpoint: unknown): boolean {
   return (

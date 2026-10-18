@@ -449,7 +449,11 @@
       "succeeded": "Completata",
       "failed": "Non riuscita",
       "canceled": "Annullata",
-      "retrying": "Nuovo tentativo"
+      "retrying": "Nuovo tentativo",
+      "graphIncomplete": "Grafo incompleto"
+    },
+    "statusHints": {
+      "graphIncomplete": "Le relazioni sono state collegate senza il grafo della conoscenza. Riprova rigenera solo il grafo."
     },
     "types": {
       "ingestion": "Ingestione",
