@@ -42,6 +42,9 @@ export interface DatabaseServiceOptions {
   readonly logger?: Pick<Console, "debug" | "info" | "error" | "warn">;
 }
 
+/** The longest the pool is given to hand back its connections before the sidecar is stopped anyway. */
+const poolCloseTimeoutMs = 10_000;
+
 const statusMessageKeys = {
   starting: "database.status.starting",
   migrating: "database.status.migrating",
@@ -311,7 +314,9 @@ export class DatabaseService {
     }
 
     try {
-      await closePgPool(pool);
+      // `pool.end()` waits for every checked-out connection: one held by an abandoned job would keep
+      // the sidecar from ever being stopped. The sidecar's fast stop closes the sessions that remain.
+      await withTimeout(closePgPool(pool), poolCloseTimeoutMs, "PostgreSQL pool close timed out.");
     } catch (error) {
       this.logger?.warn(redactError(error));
     }

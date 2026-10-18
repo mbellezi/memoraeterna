@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiProviderError } from "@app/ai";
 import type { JobLane, JobRecord, PgPool } from "@app/db";
+import { runShutdownSteps } from "./application-shutdown.js";
 import { JobSupervisor, lightJobUpdate } from "./job-supervisor.js";
 import type { LightJobRegistry } from "./job-lanes.js";
 
@@ -339,6 +340,55 @@ describe("heavy and light lanes", () => {
     const claimsAfterStop = claims.length;
     await vi.advanceTimersByTimeAsync(2_000);
     expect(claims).toHaveLength(claimsAfterStop);
+  });
+
+  it("leaves the quit path after its bound when a job ignores its cancellation, and names the job", async () => {
+    let release!: () => void;
+    const stubborn = vi.fn(
+      () =>
+        new Promise<Record<string, never>>((resolve) => {
+          release = () => resolve({});
+        })
+    );
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({ "topic-place": { needsModel: false, execute: stubborn } })
+    });
+    await supervisor.start();
+    const place = enqueue("topic-place", "light");
+    supervisor.wake("light");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(supervisor.inFlightJobIds()).toEqual([place.id]);
+
+    const stopSupervisor = supervisor;
+    const database = vi.fn();
+    const warnings: string[] = [];
+    const running = runShutdownSteps(
+      [
+        {
+          name: "job supervisor",
+          timeoutMs: 30_000,
+          run: () => stopSupervisor.stop(),
+          describe: () => `jobs in flight: ${stopSupervisor.inFlightJobIds().join(", ")}`
+        },
+        { name: "database", timeoutMs: 45_000, run: database }
+      ],
+      {
+        logger: {
+          info: () => undefined,
+          warn: (line) => warnings.push(line),
+          error: () => undefined
+        }
+      }
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    const outcomes = await running;
+    expect(outcomes.map((entry) => entry.outcome)).toEqual(["timeout", "done"]);
+    expect(database).toHaveBeenCalledOnce();
+    expect(warnings.join(" ")).toContain(`jobs in flight: ${place.id}`);
+    release();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(supervisor.inFlightJobIds()).toEqual([]);
   });
 
   it("releases local models only when every loop is idle", async () => {

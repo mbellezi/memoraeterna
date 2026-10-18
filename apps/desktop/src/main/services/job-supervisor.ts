@@ -508,6 +508,11 @@ export class JobSupervisor {
     for (const loop of this.loops()) loop.start();
   }
 
+  /** The jobs executing now (their ids): what the quit path reports when stopping them overruns. */
+  public inFlightJobIds(): string[] {
+    return [...this.controllers.keys()];
+  }
+
   /** Stops every loop and resolves once each one's job in progress has ended. */
   public async stop(): Promise<void> {
     this.running = false;

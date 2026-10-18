@@ -303,44 +303,58 @@ function pastDeadlineCheck(run: LoadedRun): { check: Check; wedged: string[] } {
   };
 }
 
-function repairsCheck(run: LoadedRun, injected: Map<string, string>): Check {
-  const calls = run.rows.filter((row) => isStructuredGenerative(row) && !injected.has(row.id));
-  const repairs = calls.filter((row) => row.isRepair);
-  const share = (rows: TaskRunRecord[], of: TaskRunRecord[]) =>
-    of.length === 0 ? 0 : rows.length / of.length;
-  const localKg = (row: TaskRunRecord) =>
-    row.taskType === "knowledge-graph-generation" && (row.lane ?? "local") === "local";
-  const withoutLocalKg = calls.filter((row) => !localKg(row));
-  const overall = share(repairs, calls);
-  const apart = share(
-    repairs.filter((row) => !localKg(row)),
-    withoutLocalKg
+/**
+ * Decision 31a (plan section 2, 2026-10-18): the repair bar sets aside every structured call of the
+ * local writer, because the MLX writer has no schema enforcement and returns invalid structured
+ * output in 8-19 % of its calls (F4 builds JSON-constrained decoding in the helper). The predicate:
+ * a call on the local lane (a row without a lane is a local one), run by the MLX runtime, whose
+ * request did not state an enforced schema mode (`strict`, `json` or `grammar`, which a constrained
+ * helper will record). Remote providers and the GGUF runtime (a grammar) stay counted.
+ */
+export function isUnconstrainedLocalWriterCall(row: TaskRunRecord): boolean {
+  return (
+    (row.lane ?? "local") === "local" &&
+    row.runtime === "mlx" &&
+    (row.schemaMode === null || row.schemaMode === "none")
   );
-  const classes = [...new Set(calls.map((row) => row.workloadClass ?? "?"))].sort();
+}
+
+function repairsCheck(run: LoadedRun, injected: Map<string, string>): Check {
+  const all = run.rows.filter((row) => isStructuredGenerative(row) && !injected.has(row.id));
+  const apart = all.filter(isUnconstrainedLocalWriterCall);
+  const calls = all.filter((row) => !isUnconstrainedLocalWriterCall(row));
+  const repairs = calls.filter((row) => row.isRepair);
+  const apartRepairs = apart.filter((row) => row.isRepair);
+  const share = (count: number, of: number) => (of === 0 ? 0 : count / of);
+  const rate = share(repairs.length, calls.length);
+  const classes = [...new Set(all.map((row) => row.workloadClass ?? "?"))].sort();
   const bar = 0.02;
-  const status: CheckStatus =
-    calls.length === 0 ? "review" : overall <= bar ? "pass" : apart <= bar ? "review" : "fail";
+  const status: CheckStatus = calls.length === 0 ? "review" : rate <= bar ? "pass" : "fail";
   const pct = (value: number) => `${(value * 100).toFixed(2)} %`;
+  const count = (rows: TaskRunRecord[], workloadClass?: string) => {
+    const inClass =
+      workloadClass === undefined
+        ? rows
+        : rows.filter((row) => (row.workloadClass ?? "?") === workloadClass);
+    const repaired = inClass.filter((row) => row.isRepair).length;
+    return `${repaired} of ${inClass.length} = ${pct(share(repaired, inClass.length))}`;
+  };
   return {
     id: "repairs",
     title: "Repairs (D35) over non-injected structured generative calls",
-    bar: "<= 2 % overall; per class reported, the local writer's graph apart",
+    bar: "<= 2 % of the structured calls that count; decision 31a sets aside the local MLX writer's (lane local, runtime mlx, no enforced schema mode), reported apart",
     status,
-    value: `${repairs.length} of ${calls.length} = ${pct(overall)}; without the local writer's graph ${pct(apart)}`,
+    value: `${count(calls)} counted; set aside by decision 31a: ${apart.length} local writer call(s), ${apartRepairs.length} repair(s) = ${pct(share(apartRepairs.length, apart.length))} (information)`,
     details: [
       ...classes.map((workloadClass) => {
-        const inClass = calls.filter((row) => (row.workloadClass ?? "?") === workloadClass);
-        return `${workloadClass}: ${inClass.filter((row) => row.isRepair).length} of ${inClass.length} = ${pct(
-          share(
-            inClass.filter((row) => row.isRepair),
-            inClass
-          )
-        )}`;
+        const counted = calls.filter((row) => (row.workloadClass ?? "?") === workloadClass);
+        const aside = apart.filter((row) => (row.workloadClass ?? "?") === workloadClass);
+        return `${workloadClass}: counted ${count(counted)}; set aside ${count(aside)}`;
       }),
-      `local writer's graph: ${repairs.filter(localKg).length} of ${calls.filter(localKg).length}`,
-      ...(status === "review" && calls.length > 0
+      `all structured calls, set-aside ones included: ${count(all)} (information)`,
+      ...(calls.length === 0
         ? [
-            "Only the local writer's graph repairs exceed 2 %: report the split and ask the owner before changing the soak writer (Q4); the line stops until answered."
+            "No structured call outside the local MLX writer ran: nothing counts against the bar. A person decides whether that is enough."
           ]
         : [])
     ]

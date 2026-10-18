@@ -333,7 +333,9 @@ The owner decided (plan decision 29), amending D18 and D23:
     `aborted` at the 30 s bound, the 25 s stall at the 20 s bound, Codex-wire calls ran through the Codex adapter
     (count > 0), and totals are the remote ones.
   - If only the local writer's graph repairs exceed 2%, the orchestrator reports the split and asks the owner before
-    changing the soak writer; the line stops until answered.
+    changing the soak writer; the line stops until answered. Answered by plan decision 31a: the report sets aside
+    every structured call of the local MLX writer (lane local, runtime `mlx`, no enforced schema mode), reported
+    apart as information; F4's constrained decoding ends the set-aside.
 - **X7. ≤40 generative calls per reference chapter *(cal.)*** (T63; measured, not projected).
   - Run: X7-REF (below) imported through the real ingestion path on a fresh `env-x7` profile with the Hybrid preset at
     product settings: no pin (7,000-character remote graph batches with 24/24 caps, salvage and item-level repair on,

@@ -19,6 +19,7 @@ import {
   injectedJobFailures,
   injectedRows,
   isStructuredGenerative,
+  isUnconstrainedLocalWriterCall,
   loadRun,
   p0Waits,
   presoakAssertions,
@@ -67,7 +68,7 @@ function row(offsetMs: number, overrides: Partial<TaskRunRecord> = {}): TaskRunR
     taskType: "summarization",
     provider: "local-mlx",
     modelId: "writer",
-    runtime: "local",
+    runtime: "mlx",
     workloadClass: "write-fast",
     lane: "local",
     priority: 2,
@@ -144,7 +145,7 @@ function goodRun(
   const rows = [
     row(30 * minute, {
       taskType: "knowledge-graph-generation",
-      schemaMode: "strict",
+      schemaMode: "none",
       durationMs: 40_000
     }),
     row(40 * minute, {
@@ -266,27 +267,34 @@ describe("calls past deadline", () => {
 });
 
 describe("repairs", () => {
-  it("excludes injected calls and reports the local writer's graph apart", () => {
+  /** A call of a remote answer provider: schema output on, so it counts against the bar. */
+  const answer = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+    row(offsetMs, {
+      taskType: "structured-output",
+      workloadClass: "answer",
+      provider: "openai-compatible",
+      runtime: "remote",
+      lane: "remote:aaa",
+      schemaMode: "json",
+      ...overrides
+    });
+  /** A call of the local MLX writer: no schema enforcement (schema mode none). */
+  const writer = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+    row(offsetMs, {
+      taskType: "knowledge-graph-generation",
+      workloadClass: "write-quality",
+      schemaMode: "none",
+      ...overrides
+    });
+
+  it("excludes injected calls: a repair after an injected malformed answer is not counted", () => {
     const structured = Array.from({ length: 100 }, (_, index) =>
-      row(80 * minute + index * 1_000, {
-        taskType: "structured-output",
-        workloadClass: "write-quality",
-        schemaMode: "strict"
-      })
+      answer(80 * minute + index * 1_000)
     );
     expect(statusOf(analyzeRun(goodRun({ rows: structured })).checks, "repairs")).toBe("pass");
     // Four repairs in 104 calls is above 2 %: a failure, unless they follow an injected malformed answer.
     const repairs = [0, 1, 2, 3].map((index) =>
-      row(90 * minute + index * 10_000, {
-        taskType: "structured-output",
-        workloadClass: "answer",
-        provider: "openai-compatible",
-        runtime: "remote",
-        lane: "remote:aaa",
-        schemaMode: "json",
-        isRepair: true,
-        attempt: 1
-      })
+      answer(90 * minute + index * 10_000, { isRepair: true, attempt: 1 })
     );
     expect(
       statusOf(analyzeRun(goodRun({ rows: [...structured, ...repairs] })).checks, "repairs")
@@ -301,19 +309,88 @@ describe("repairs", () => {
     const excused = analyzeRun(goodRun({ rows: [...structured, ...repairs], events: malformed }));
     expect(statusOf(excused.checks, "repairs")).toBe("pass");
     expect(injectedRows(goodRun({ rows: repairs, events: malformed })).size).toBe(4);
-    // Repairs only in the local writer's graph: the split is reported and the owner asked.
-    const graph = Array.from({ length: 10 }, (_, index) =>
-      row(100 * minute + index * 1_000, {
-        taskType: "knowledge-graph-generation",
-        schemaMode: "strict",
-        isRepair: index < 3
-      })
+  });
+
+  it("sets aside every structured call of the local MLX writer (decision 31a), not only its graph", () => {
+    const remote = Array.from({ length: 100 }, (_, index) => answer(80 * minute + index * 1_000));
+    // Repairs in the writer's graph, atomic notes and structured output: 8-19 % of the writer's calls.
+    const local = [
+      ...Array.from({ length: 10 }, (_, index) =>
+        writer(100 * minute + index * 1_000, { isRepair: index < 3 })
+      ),
+      ...Array.from({ length: 10 }, (_, index) =>
+        writer(101 * minute + index * 1_000, {
+          taskType: "atomic-note-generation",
+          isRepair: index < 2
+        })
+      ),
+      ...Array.from({ length: 10 }, (_, index) =>
+        writer(102 * minute + index * 1_000, {
+          taskType: "structured-output",
+          workloadClass: "write-fast",
+          isRepair: index < 2
+        })
+      )
+    ];
+    const report = analyzeRun(goodRun({ rows: [...remote, ...local] }));
+    const check = report.checks.find((entry) => entry.id === "repairs")!;
+    expect(check.status).toBe("pass");
+    // The run's own remote answer is the 101st counted call and its local graph call the 31st set aside.
+    expect(check.value).toContain("0 of 101 = 0.00 % counted");
+    expect(check.value).toContain("31 local writer call(s), 7 repair(s) = 22.58 %");
+    expect(check.bar).toContain("decision 31a");
+    // The set-aside calls stay visible in the per-class lines, with their own rate.
+    expect(check.details.join(" ")).toContain(
+      "write-quality: counted 0 of 0 = 0.00 %; set aside 5 of 20"
     );
-    const split = analyzeRun(goodRun({ rows: [...structured, ...graph] }));
-    expect(statusOf(split.checks, "repairs")).toBe("review");
-    expect(split.checks.find((check) => check.id === "repairs")!.details.join(" ")).toContain(
-      "ask the owner"
+    expect(check.details.join(" ")).toContain(
+      "all structured calls, set-aside ones included: 7 of 132"
     );
+  });
+
+  it("keeps remote, GGUF and schema-constrained local calls counted", () => {
+    const base = (index: number) => 100 * minute + index * 1_000;
+    const counted = [
+      // A remote provider's repair.
+      answer(base(0), { isRepair: true, attempt: 1 }),
+      // The GGUF runtime constrains the answer with a grammar: its repairs count.
+      writer(base(1), {
+        runtime: "gguf",
+        provider: "local-gguf",
+        schemaMode: "grammar",
+        isRepair: true
+      }),
+      // A local MLX call that states an enforced schema mode (a constrained helper, F4) counts too.
+      writer(base(2), { schemaMode: "json", isRepair: true }),
+      // A GGUF call that stated no schema mode counts: only the MLX writer is set aside.
+      writer(base(3), { runtime: "gguf", provider: "local-gguf", isRepair: true })
+    ];
+    const none = writer(base(4), { isRepair: true });
+    const unstated = writer(base(5), { schemaMode: null, isRepair: true });
+    for (const entry of counted) expect(isUnconstrainedLocalWriterCall(entry)).toBe(false);
+    expect(isUnconstrainedLocalWriterCall(none)).toBe(true);
+    expect(isUnconstrainedLocalWriterCall(unstated)).toBe(true);
+    // A row without a lane predates the scheduler's columns: it is a local one.
+    expect(isUnconstrainedLocalWriterCall(writer(base(6), { lane: null }))).toBe(true);
+    // A remote lane never is, whatever its runtime or schema mode says.
+    expect(
+      isUnconstrainedLocalWriterCall(answer(base(7), { schemaMode: "none", runtime: "mlx" }))
+    ).toBe(false);
+    const report = analyzeRun(goodRun({ rows: [...counted, none, unstated] }));
+    const check = report.checks.find((entry) => entry.id === "repairs")!;
+    // Four repairs in five counted calls (the run's own remote answer is the fifth): the bar fails;
+    // the two set-aside repairs and the run's own local graph call are information.
+    expect(check.status).toBe("fail");
+    expect(check.value).toContain("4 of 5 = 80.00 % counted");
+    expect(check.value).toContain("3 local writer call(s), 2 repair(s)");
+  });
+
+  it("asks for a person when only the writer's calls ran", () => {
+    const only = Array.from({ length: 20 }, (_, index) => writer(100 * minute + index * 1_000));
+    const report = analyzeRun({ ...goodRun(), rows: only });
+    const check = report.checks.find((entry) => entry.id === "repairs")!;
+    expect(check.status).toBe("review");
+    expect(check.details.join(" ")).toContain("nothing counts against the bar");
   });
 
   it("counts only structured generative calls", () => {
@@ -820,6 +897,26 @@ describe("the pre-soak assertion", () => {
     expect(
       assertions.filter((entry) => entry.kind === "stall").every((entry) => entry.status === "fail")
     ).toBe(true);
+  });
+
+  it("fails a malformed answer whose second call the audit does not mark as a repair", () => {
+    // The Ask path asked again at once (the soak's presoak4 run), but the second call carried
+    // neither is_repair nor a retry index: the audit cannot tell it from a new question.
+    const run = injectedRun();
+    const unmarked = {
+      ...run,
+      rows: run.rows.map((entry) =>
+        entry.isRepair && entry.lane === "remote:aaa"
+          ? { ...entry, isRepair: false, attempt: null }
+          : entry
+      )
+    };
+    const malformed = presoakAssertions(unmarked).filter((entry) => entry.kind === "malformed");
+    expect(malformed.find((entry) => entry.provider === "openai-compatible")).toMatchObject({
+      status: "fail"
+    });
+    // The Codex wire's repair stays marked, so only the Ask path's kind fails.
+    expect(malformed.find((entry) => entry.provider === "codex-wire")?.status).toBe("pass");
   });
 });
 

@@ -1,6 +1,11 @@
 import { aiConfigGeneration } from "@app/db";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
+import {
+  createApplicationShutdown,
+  describeLanes,
+  type ShutdownStep
+} from "./services/application-shutdown.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
 import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { ConsultationService } from "./services/consultation-service.js";
@@ -190,7 +195,6 @@ let soakPreparation: SoakPreparation | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceStartupPromise: Promise<void> | null = null;
-let shutdownPromise: Promise<void> | null = null;
 let isShutdownInProgress = false;
 let isQuittingAfterShutdown = false;
 
@@ -849,6 +853,9 @@ void app.whenReady().then(() => {
               console.error("SOAK failed:", error instanceof Error ? error.message : String(error))
             )
             .finally(() => {
+              // The driver ended (its duration, a STOP file, or a failure): the app quits, and the
+              // quit path bounds every step it takes (application-shutdown.ts).
+              console.info("SOAK: the driver ended; quitting");
               if (!app.isPackaged) app.quit();
             });
         }
@@ -1005,43 +1012,131 @@ app.on("before-quit", (event) => {
 
   event.preventDefault();
   isShutdownInProgress = true;
-  shutdownPromise ??= shutdownServices().finally(() => {
-    isQuittingAfterShutdown = true;
-    app.quit();
-  });
+  void applicationShutdown.begin();
 });
 
-async function shutdownServices(): Promise<void> {
-  activeMainWindow?.destroy();
-  activeMainWindow = null;
-  tray?.destroy();
-  tray = null;
-  await serviceStartupPromise;
-  serviceStartupPromise = null;
-  await soakPreparation?.stop();
-  soakPreparation = null;
-  await integrationGateway?.stop();
-  integrationGateway = null;
-  await jobSupervisor?.stop();
-  jobSupervisor = null;
-  topicTreeServices?.dispose();
-  topicTreeServices = null;
-  await localModelService?.shutdown();
-  localModelService = null;
-  backupService = null;
-  libraryResetService = null;
-  searchService = null;
-  knowledgeService = null;
-  await obsidianSyncService?.shutdown();
-  obsidianSyncService = null;
-  ingestionService = null;
-  metadataEnrichmentService = null;
-  await aiService?.dispose();
-  aiService = null;
-  await settingsService?.dispose();
-  settingsService = null;
-  await databaseService?.stop();
-  databaseService = null;
+/**
+ * The quit path (application-shutdown.ts): the services stop in this order, each within its bound,
+ * and a step that overruns is logged by name and left behind, so the database is always asked to
+ * stop and the process always ends. The bounds are generous: a normal quit takes seconds.
+ */
+const applicationShutdown = createApplicationShutdown({
+  steps: shutdownSteps,
+  logger: console,
+  quit: () => {
+    isQuittingAfterShutdown = true;
+    app.quit();
+  },
+  exit: () => app.exit(Number(process.exitCode ?? 0))
+});
+
+function shutdownSteps(): ShutdownStep[] {
+  return [
+    {
+      name: "window and tray",
+      timeoutMs: 2_000,
+      run: () => {
+        activeMainWindow?.destroy();
+        activeMainWindow = null;
+        tray?.destroy();
+        tray = null;
+      }
+    },
+    {
+      name: "service startup",
+      // A quit during the first start waits for the migrations the start runs, not for ever.
+      timeoutMs: 300_000,
+      run: async () => {
+        await serviceStartupPromise;
+        serviceStartupPromise = null;
+      }
+    },
+    {
+      name: "soak driver and fake providers",
+      timeoutMs: 10_000,
+      run: async () => {
+        await soakPreparation?.stop();
+        soakPreparation = null;
+      }
+    },
+    {
+      name: "integration gateway",
+      timeoutMs: 10_000,
+      run: async () => {
+        await integrationGateway?.stop();
+        integrationGateway = null;
+      }
+    },
+    {
+      name: "job supervisor",
+      timeoutMs: 30_000,
+      run: async () => {
+        await jobSupervisor?.stop();
+        jobSupervisor = null;
+      },
+      describe: () =>
+        `jobs in flight: ${jobSupervisor?.inFlightJobIds().join(", ") || "none"}; ${describeAiLanes()}`
+    },
+    {
+      name: "topic tree",
+      timeoutMs: 5_000,
+      run: () => {
+        topicTreeServices?.dispose();
+        topicTreeServices = null;
+      }
+    },
+    {
+      name: "local models",
+      timeoutMs: 15_000,
+      run: async () => {
+        await localModelService?.shutdown();
+        localModelService = null;
+        backupService = null;
+        libraryResetService = null;
+        searchService = null;
+        knowledgeService = null;
+      }
+    },
+    {
+      name: "Obsidian sync",
+      timeoutMs: 15_000,
+      run: async () => {
+        await obsidianSyncService?.shutdown();
+        obsidianSyncService = null;
+        ingestionService = null;
+        metadataEnrichmentService = null;
+      }
+    },
+    {
+      name: "AI runtime",
+      timeoutMs: 15_000,
+      run: async () => {
+        await aiService?.dispose();
+      },
+      describe: describeAiLanes
+    },
+    {
+      name: "settings",
+      timeoutMs: 5_000,
+      run: async () => {
+        aiService = null;
+        await settingsService?.dispose();
+        settingsService = null;
+      }
+    },
+    {
+      name: "database",
+      timeoutMs: 45_000,
+      run: async () => {
+        await databaseService?.stop();
+        databaseService = null;
+      }
+    }
+  ];
+}
+
+function describeAiLanes(): string {
+  return aiService ? describeLanes(aiService.laneSnapshots()) : "no AI service";
 }
 
 function createApplicationTray(): void {

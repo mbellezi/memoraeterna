@@ -353,6 +353,25 @@ describe("the soak driver", () => {
     expect(Date.parse(meta.endedAt!) - Date.parse(meta.startedAt)).toBeLessThan(8 * minute);
   });
 
+  it("waits at most the settle time for an action that never ends, then ends and lets the app quit", async () => {
+    let stop = false;
+    // The Ask at minute 2 never returns, as a call held up behind work that does not end.
+    const { ports: driverPorts } = ports({
+      stopRequested: async () => stop,
+      ask: () => new Promise<never>(() => undefined)
+    });
+    const { clock, done } = await start(driverPorts, { settleMs: 10 * minute });
+    let ended = false;
+    void done.then(() => (ended = true));
+    await clock.advance(3 * minute);
+    stop = true;
+    // The STOP file is seen at the next sample; the stuck action holds the end, but only for the settle time.
+    await clock.advance(minute + 9 * minute);
+    expect(ended).toBe(false);
+    await clock.advance(minute + 1_000);
+    expect((await done).reason).toBe("stop_file");
+  });
+
   it("ends as a signal when the app is quitting", async () => {
     const controller = new AbortController();
     const { ports: driverPorts } = ports();
