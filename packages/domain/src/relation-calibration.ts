@@ -72,8 +72,10 @@ export const RelationCalibrationParitySchema = z
 
 /**
  * A calibration of one identity. `threshold`: a provisional rule on the raw score (Spike A's frozen
- * thresholds until T58 freezes), with no probability. `isotonic`: the frozen fit of T58, a
- * probability per score and the bands in probability.
+ * thresholds until T58 freezes), with no probability. `isotonic`: the frozen calibration of T58, a
+ * probability per score (the panel's weighted isotonic map, reported) and the bands as score edges:
+ * plan decision 29 chooses the suggest edge on the fixture tuning partition, which a probability
+ * level of a step map could express only at a block start, and sets no apply band (null).
  */
 export const RelationCalibrationEntrySchema = z
   .discriminatedUnion("kind", [
@@ -94,8 +96,12 @@ export const RelationCalibrationEntrySchema = z
         kind: z.literal("isotonic"),
         identity: RelationCalibrationIdentitySchema,
         blocks: z.array(RelationCalibrationBlockSchema).min(1),
-        pApply: probability,
-        pSuggest: probability.nullable(),
+        /** The apply band starts at this score; null: no apply band (decision 29). */
+        applyFrom: score.nullable(),
+        /** The suggest band starts at this score; null: no suggest band. */
+        suggestFrom: score.nullable(),
+        /** How the edges were chosen. */
+        basis: z.string().min(1).max(300),
         labelSetHash: sha256Hex,
         freezeHash: sha256Hex,
         fittedAt: z.iso.datetime(),
@@ -119,8 +125,12 @@ export const RelationCalibrationEntrySchema = z
           path: ["blocks", index]
         });
     }
-    if (entry.pSuggest !== null && entry.pSuggest > entry.pApply)
-      context.addIssue({ code: "custom", message: "p_suggest lies above p_apply." });
+    if (
+      entry.suggestFrom !== null &&
+      entry.applyFrom !== null &&
+      entry.suggestFrom > entry.applyFrom
+    )
+      context.addIssue({ code: "custom", message: "The suggest band starts above apply." });
   });
 export type RelationCalibrationEntry = z.infer<typeof RelationCalibrationEntrySchema>;
 
@@ -281,35 +291,28 @@ export function bandScore(
       probability: null,
       calibration: "provisional"
     };
-  const calibrated = calibrate(value, entry.blocks);
   return {
     band:
-      calibrated >= entry.pApply
+      entry.applyFrom !== null && value >= entry.applyFrom
         ? "apply"
-        : entry.pSuggest !== null && calibrated >= entry.pSuggest
+        : entry.suggestFrom !== null && value >= entry.suggestFrom
           ? "suggest"
           : null,
-    probability: calibrated,
+    probability: calibrate(value, entry.blocks),
     calibration: "frozen"
   };
 }
 
 /**
  * Where the bands start in score space: the lowest score that applies or is suggested, null when
- * no score reaches the band, -Infinity when every score does.
+ * there is no such band.
  */
 export function bandThresholds(entry: RelationCalibrationEntry): {
   apply: number | null;
   suggest: number | null;
 } {
   if (entry.kind === "threshold") return { apply: entry.applyAt, suggest: entry.suggestAt };
-  const from = (level: number | null) => {
-    if (level === null) return null;
-    const index = entry.blocks.findIndex((block) => block.probability >= level);
-    if (index < 0) return null;
-    return index === 0 ? Number.NEGATIVE_INFINITY : entry.blocks[index]!.fromScore;
-  };
-  return { apply: from(entry.pApply), suggest: from(entry.pSuggest) };
+  return { apply: entry.applyFrom, suggest: entry.suggestFrom };
 }
 
 /** The Wilson score interval's lower bound of a share `p` over `n` observations (95% by default). */
@@ -370,7 +373,8 @@ export function stratumWeights(
  * p_apply is the smallest probability whose accepted labels have weighted precision >= 0.95 with a
  * Wilson lower bound >= 0.85, and p_suggest the smallest with weighted precision >= 0.80; neither
  * may leave a forbidden fixture-tuning root pair (its best probability) at or above it. A suggest
- * band that would start at or above p_apply is none.
+ * band that would start at or above p_apply is none. Plan decision 29 no longer freezes these
+ * levels (the suggest edge comes from the fixture tuning partition); the bake-off reports them.
  */
 export function selectBands(input: {
   points: ReadonlyArray<{ probability: number; positive: boolean; weight?: number }>;

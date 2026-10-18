@@ -456,8 +456,9 @@ describe("the ranker decider", () => {
             { fromScore: 2, probability: 0.85 },
             { fromScore: 4, probability: 0.97 }
           ],
-          pApply: 0.95,
-          pSuggest: 0.8,
+          applyFrom: 4,
+          suggestFrom: 2,
+          basis: "test",
           labelSetHash: "a".repeat(64),
           freezeHash: "b".repeat(64),
           fittedAt: "2026-10-20T10:00:00.000Z",

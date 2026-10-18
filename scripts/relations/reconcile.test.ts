@@ -50,8 +50,9 @@ const entry: RelationCalibrationEntry = RelationCalibrationEntrySchema.parse({
     { fromScore: 2, probability: 0.83 },
     { fromScore: 4, probability: 0.96 }
   ],
-  pApply: 0.95,
-  pSuggest: 0.8,
+  applyFrom: 4,
+  suggestFrom: 2,
+  basis: "test",
   labelSetHash: "1".repeat(64),
   freezeHash: "2".repeat(64),
   fittedAt: "2026-10-18T00:00:00.000Z",
@@ -202,7 +203,7 @@ describe("the reconcile plan (D18)", () => {
             runtime: "mlx",
             identity,
             blocks: entry.kind === "isotonic" ? entry.blocks : [],
-            bands: { pApply: null, pSuggest: 0.8 }
+            threshold: { edge: 2, basis: "plan decision 29" }
           }
         ]
       };
@@ -212,7 +213,11 @@ describe("the reconcile plan (D18)", () => {
         runtime: "mlx"
       });
       expect(fromProposal.frozen).toBe(false);
-      expect(fromProposal.entry).toMatchObject({ kind: "isotonic", pApply: 1, pSuggest: 0.8 });
+      expect(fromProposal.entry).toMatchObject({
+        kind: "isotonic",
+        applyFrom: null,
+        suggestFrom: 2
+      });
       await writeFile(
         join(directory, "frozen.json"),
         JSON.stringify({

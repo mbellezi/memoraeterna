@@ -40,6 +40,7 @@ import {
 import {
   aggregateDirections,
   bandScore,
+  bandThresholds,
   reconcileBands,
   RelationCalibrationEntrySchema,
   relationsConfig,
@@ -126,8 +127,9 @@ export interface ReconcilePlan {
     rule: string;
     bodyCharacters: number;
     instructionSha256: string;
-    pApply: number;
-    pSuggest: number | null;
+    /** Where the bands start in score space (null: no such band; decision 29 has no apply band). */
+    applyFrom: number | null;
+    suggestFrom: number | null;
   };
   considered: number;
   legacy: number;
@@ -263,8 +265,8 @@ export function planReconcile(input: {
       rule: entry.identity.rule,
       bodyCharacters: entry.identity.bodyCharacters,
       instructionSha256: entry.identity.instructionSha256,
-      pApply: entry.kind === "isotonic" ? entry.pApply : entry.applyAt,
-      pSuggest: entry.kind === "isotonic" ? entry.pSuggest : entry.suggestAt
+      applyFrom: bandThresholds(entry).apply,
+      suggestFrom: bandThresholds(entry).suggest
     },
     considered: input.relations.length,
     legacy,
@@ -524,9 +526,10 @@ const proposalSchema = z
           runtime: z.enum(["mlx", "gguf"]),
           identity: z.unknown(),
           blocks: z.unknown(),
-          bands: z
-            .object({ pApply: z.number().nullable(), pSuggest: z.number().nullable() })
+          threshold: z
+            .object({ edge: z.number().nullable(), basis: z.string() })
             .passthrough()
+            .nullable()
         })
         .passthrough()
     )
@@ -545,12 +548,17 @@ export async function readCalibration(input: {
     const proposal = proposalSchema.parse(JSON.parse(await readFile(input.proposal, "utf8")));
     const decider = proposal.deciders.find((candidate) => candidate.runtime === input.runtime);
     if (!decider) throw new Error(`The proposal has no ${input.runtime} decider.`);
+    if (!decider.threshold || decider.threshold.edge === null)
+      throw new Error(
+        `The proposal's ${input.runtime} decider has no decide threshold (decision 29).`
+      );
     const entry = RelationCalibrationEntrySchema.parse({
       kind: "isotonic",
       identity: decider.identity,
       blocks: decider.blocks,
-      pApply: decider.bands.pApply ?? 1,
-      pSuggest: decider.bands.pSuggest,
+      applyFrom: null,
+      suggestFrom: decider.threshold.edge,
+      basis: decider.threshold.basis,
       labelSetHash: proposal.inputs.labelSetSha256 ?? zeroHash,
       freezeHash: zeroHash,
       fittedAt: proposal.computedAt,
@@ -583,7 +591,7 @@ export function renderReconcile(plan: ReconcilePlan, applied: ReconcileApplied |
   const lines = [
     `# Reconcile ${applied ? "applied" : "dry run"} (${reconcileTask})`,
     "",
-    `Calibration: ${plan.calibration.source}; rule ${plan.calibration.rule}, ${plan.calibration.bodyCharacters} body characters, instruction sha256 ${plan.calibration.instructionSha256.slice(0, 12)}... (assumed for the stored scores), p_apply ${plan.calibration.pApply}, p_suggest ${plan.calibration.pSuggest ?? "none"}. Model calls: 0.`,
+    `Calibration: ${plan.calibration.source}; rule ${plan.calibration.rule}, ${plan.calibration.bodyCharacters} body characters, instruction sha256 ${plan.calibration.instructionSha256.slice(0, 12)}... (assumed for the stored scores), apply band ${plan.calibration.applyFrom === null ? "none" : `from ${plan.calibration.applyFrom}`}, suggest band ${plan.calibration.suggestFrom === null ? "none" : `from ${plan.calibration.suggestFrom}`}. Model calls: 0.`,
     "",
     "| Relations (shown, no human verdict) | Count |",
     "| --- | ---: |",

@@ -35,15 +35,16 @@ const identity: RelationCalibrationIdentity = {
 };
 const isotonic = (
   blocks: Array<[number, number]>,
-  pApply: number,
-  pSuggest: number | null
+  applyFrom: number | null,
+  suggestFrom: number | null
 ): RelationCalibrationEntry =>
   RelationCalibrationEntrySchema.parse({
     kind: "isotonic",
     identity,
     blocks: blocks.map(([fromScore, probability]) => ({ fromScore, probability })),
-    pApply,
-    pSuggest,
+    applyFrom,
+    suggestFrom,
+    basis: "test",
     labelSetHash: hash("c"),
     freezeHash: hash("d"),
     fittedAt: "2026-10-20T10:00:00.000Z",
@@ -208,7 +209,7 @@ describe("bands", () => {
     expect(bandThresholds(entry)).toEqual({ apply: 3.3125, suggest: null });
   });
 
-  it("bands a frozen calibration by probability, and finds the score where each band starts", () => {
+  it("bands a frozen calibration by its score edges and reports the map's probability", () => {
     const entry = isotonic(
       [
         [0, 0.05],
@@ -216,8 +217,8 @@ describe("bands", () => {
         [3, 0.85],
         [4, 0.97]
       ],
-      0.95,
-      0.8
+      4,
+      3
     );
     expect(bandScore(4.2, entry, pass)).toEqual({
       band: "apply",
@@ -227,10 +228,28 @@ describe("bands", () => {
     expect(bandScore(3.1, entry, pass).band).toBe("suggest");
     expect(bandScore(2.5, entry, pass).band).toBeNull();
     expect(bandThresholds(entry)).toEqual({ apply: 4, suggest: 3 });
-    expect(bandThresholds(isotonic([[0, 0.99]], 0.95, null))).toEqual({
-      apply: Number.NEGATIVE_INFINITY,
-      suggest: null
+    // Plan decision 29: no apply band, a suggest edge inside a block (chosen on the tuning partition).
+    const suggestOnly = isotonic(
+      [
+        [0, 0.05],
+        [2, 0.6],
+        [4, 0.97]
+      ],
+      null,
+      2.5
+    );
+    expect(bandScore(2.4, suggestOnly, pass)).toEqual({
+      band: null,
+      probability: 0.6,
+      calibration: "frozen"
     });
+    expect(bandScore(2.5, suggestOnly, pass).band).toBe("suggest");
+    expect(bandScore(9, suggestOnly, pass)).toEqual({
+      band: "suggest",
+      probability: 0.97,
+      calibration: "frozen"
+    });
+    expect(bandThresholds(suggestOnly)).toEqual({ apply: null, suggest: 2.5 });
   });
 
   it("refuses blocks that decrease and a suggest band above apply", () => {
@@ -240,11 +259,11 @@ describe("bands", () => {
           [0, 0.5],
           [1, 0.4]
         ],
-        0.9,
-        null
+        null,
+        1
       )
     ).toThrow();
-    expect(() => isotonic([[0, 0.5]], 0.8, 0.9)).toThrow();
+    expect(() => isotonic([[0, 0.5]], 1, 2)).toThrow();
   });
 });
 
@@ -325,8 +344,8 @@ describe("reconcile", () => {
       [3, 0.85],
       [4, 0.97]
     ],
-    0.95,
-    0.8
+    4,
+    3
   );
   it("keeps an applied relation inside the hysteresis and moves it beyond", () => {
     const transitions = reconcileBands({

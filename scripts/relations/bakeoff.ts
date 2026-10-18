@@ -96,8 +96,6 @@ export const gateFBars = {
   typerSwapConsistency: 0.9
 } as const;
 export const typerCheckPairCount = 60;
-/** An isotonic entry always has p_apply; with no apply band it sits where no smoothed block reaches. */
-export const noApplyBand = 1;
 
 const cacheDirectory = join(repositoryRoot, ".cache");
 export const freezeDirectory = join(cacheDirectory, "f3", "freeze");
@@ -1195,20 +1193,25 @@ export function listsOf(
 
 const rootPairKey = (a: string, b: string) => (a < b ? `${a}/${b}` : `${b}/${a}`);
 
+/**
+ * A calibration as the offline reads apply it: the map gives the probability, the bands start at score
+ * edges (an isotonic entry's `applyFrom` / `suggestFrom`; a probability level of D18 maps to the score
+ * where its block starts, `scoreAtLevel`).
+ */
 export interface Calibration {
   blocks: readonly RelationCalibrationBlock[];
-  pApply: number | null;
-  pSuggest: number | null;
+  applyFrom: number | null;
+  suggestFrom: number | null;
   rule: RelationAggregationRule;
 }
 
 export const bandOf = (
-  probability: number,
-  calibration: Pick<Calibration, "pApply" | "pSuggest">
+  score: number,
+  calibration: Pick<Calibration, "applyFrom" | "suggestFrom">
 ): "apply" | "suggest" | null =>
-  calibration.pApply !== null && probability >= calibration.pApply
+  calibration.applyFrom !== null && score >= calibration.applyFrom
     ? "apply"
-    : calibration.pSuggest !== null && probability >= calibration.pSuggest
+    : calibration.suggestFrom !== null && score >= calibration.suggestFrom
       ? "suggest"
       : null;
 
@@ -1256,7 +1259,7 @@ export function acceptedPairs(input: {
         const score = pairScore(input.scores, lo, hi, input.calibration.rule);
         if (score === null) return null;
         const probability = calibrate(score, input.calibration.blocks);
-        const band = bandOf(probability, input.calibration);
+        const band = bandOf(score, input.calibration);
         return band ? { lo, hi, score, probability, band, contentOrder: row.contentOrder } : null;
       })
       .filter((row): row is NonNullable<typeof row> => row !== null)
@@ -1287,6 +1290,8 @@ export function acceptedPairs(input: {
 
 export interface RootLevel {
   expected: number;
+  /** Found by the decider's band alone, before the typer's vetoes (decision 29's edge reads this). */
+  expectedBeforeTyping: number;
   expectedOf: number;
   expectedPessimistic: number;
   expectedApplied: number;
@@ -1353,6 +1358,7 @@ export function rootLevel(input: {
   const count = (keys: string[], set: Set<string>) => keys.filter((key) => set.has(key)).length;
   return {
     expected: count(expectedKeys, linked.optimistic),
+    expectedBeforeTyping: count(expectedKeys, linked.any),
     expectedOf: expectedKeys.length,
     expectedPessimistic: count(expectedKeys, linked.pessimistic),
     expectedApplied: count(expectedKeys, linked.applied),
@@ -1407,6 +1413,111 @@ export function expectedAtZeroForbidden(input: {
   return input.lists.expected.filter(
     ([a, b]) => (best.get(rootPairKey(a, b)) ?? Number.NEGATIVE_INFINITY) > ceiling
   ).length;
+}
+
+// --- Plan decision 29: the decide threshold from the fixture tuning partition ---------------------
+
+export interface PanelAtEdge {
+  labels: number;
+  precision: number | null;
+  wilson: number | null;
+  neff: number | null;
+  recall: number | null;
+}
+
+export interface DecideThreshold {
+  basis: string;
+  /** The suggest band starts at this score; null when no edge finds an expected pair at 0 forbidden. */
+  edge: number | null;
+  /** The map's probability at the edge (reported). */
+  probability: number | null;
+  expectedBeforeTyping: number;
+  forbiddenBeforeTyping: number;
+  expectedOf: number;
+  forbiddenOf: number;
+  /** Candidate edges looked at (every distinct decided tuning score). */
+  candidates: number;
+  /** Reported, not gating (decision 29): the panel's fit labels at or above the edge, in sample. */
+  panel: Record<string, PanelAtEdge>;
+  panelCrossRoot: PanelAtEdge;
+}
+
+export const decisionTwentyNineBasis =
+  "plan decision 29: suggest from the fixture tuning partition's edge that finds the most expected root pairs at 0 forbidden (ties: the higher edge); no apply band";
+
+/**
+ * Plan decision 29's threshold: over every distinct aggregated score of the decided tuning pairs, the edge
+ * whose suggest band (alone, before the typer, capped per note as the matcher caps it) finds the most
+ * expected fixture-tuning root pairs while linking no forbidden one; on a tie the higher edge. The panel's
+ * weighted precision at the edge is reported beside it.
+ */
+export function decideThreshold(input: {
+  data: Pick<RetrievalExport, "notes" | "candidates" | "typings" | "decisions">;
+  scores: DirectedScores;
+  rule: RelationAggregationRule;
+  blocks: readonly RelationCalibrationBlock[];
+  lists: FixtureLists;
+  labels: ReadonlyArray<Label & { score: number }>;
+  sameRoot?: (label: Label) => boolean;
+}): DecideThreshold {
+  const edges = [
+    ...new Set(
+      input.data.decisions.flatMap((row) => {
+        const score = pairScore(input.scores, row.lo, row.hi, input.rule);
+        return score === null ? [] : [score];
+      })
+    )
+  ].sort((a, b) => b - a);
+  let best: { edge: number; level: RootLevel } | null = null;
+  for (const edge of edges) {
+    const level = rootLevel({
+      data: input.data,
+      scores: input.scores,
+      calibration: { blocks: input.blocks, applyFrom: null, suggestFrom: edge, rule: input.rule },
+      lists: input.lists
+    });
+    if (level.forbiddenBeforeTyping > 0) continue;
+    if (!best || level.expectedBeforeTyping > best.level.expectedBeforeTyping)
+      best = { edge, level };
+  }
+  const chosen = best && best.level.expectedBeforeTyping > 0 ? best : null;
+  const at = (rows: ReadonlyArray<Label & { score: number }>): PanelAtEdge => {
+    if (!chosen) return { labels: 0, precision: null, wilson: null, neff: null, recall: null };
+    const band = rows.filter((row) => row.score >= chosen.edge);
+    const measure = weightedPrecision(band);
+    const positives = rows.filter((row) => row.positive).reduce((t, row) => t + row.weight, 0);
+    const found = band.filter((row) => row.positive).reduce((t, row) => t + row.weight, 0);
+    return {
+      labels: band.length,
+      precision: measure?.precision ?? null,
+      wilson: measure?.wilsonLower ?? null,
+      neff: measure?.effectiveCount ?? null,
+      recall: positives > 0 ? found / positives : null
+    };
+  };
+  const sameRoot =
+    input.sameRoot ??
+    ((label: Label) => {
+      const [a, b] = (label.group.split(":")[1] ?? "").split("|");
+      return a !== undefined && a === b;
+    });
+  return {
+    basis: decisionTwentyNineBasis,
+    edge: chosen?.edge ?? null,
+    probability: chosen ? calibrate(chosen.edge, input.blocks) : null,
+    expectedBeforeTyping: chosen?.level.expectedBeforeTyping ?? 0,
+    forbiddenBeforeTyping: chosen?.level.forbiddenBeforeTyping ?? 0,
+    expectedOf: input.lists.expected.length,
+    forbiddenOf: input.lists.forbidden.length,
+    candidates: edges.length,
+    panel: Object.fromEntries(
+      (["pooled", ...pools] as const).map((pool) => [
+        pool,
+        at(pool === "pooled" ? input.labels : input.labels.filter((label) => label.pool === pool))
+      ])
+    ),
+    panelCrossRoot: at(input.labels.filter((label) => !sameRoot(label)))
+  };
 }
 
 // --- Escalation ----------------------------------------------------------------------------------
@@ -1628,7 +1739,10 @@ export interface DeciderProposal {
   fitLabels: { labels: number; positives: number; weightedPositiveShare: number };
   blocks: RelationCalibrationBlock[];
   bands: BandChoice & { applyFromScore: number | null; suggestFromScore: number | null };
+  /** The fixture tuning partition at the frozen band (decision 29: the suggest edge, no apply band). */
   tuning: RootLevel | null;
+  /** Plan decision 29's threshold, with the panel's precision at it (reported, not gating). */
+  threshold: DecideThreshold | null;
   tuningNote: string | null;
   escalation: EscalationResult | null;
   /** The accept band's cross-validated weighted precision and recall in each pool (reported only). */
@@ -1689,8 +1803,8 @@ export const selectionReadings = [
   "Log-loss is the plain mean over the fit labels' out-of-fold probabilities (weighted PAV fits); the population-weighted log-loss is reported beside it.",
   "The instruction, template and rule are chosen on the default decider (MLX, decisions 3 and 12) and shared by every decider, as relations-config.ts holds one instruction, template and rule; each decider gets its own isotonic map and bands.",
   "A forbidden fixture-tuning root pair is 'at or above' a level when any of its decided note pairs reaches it before typing (the typer's veto is not part of the calibration).",
-  "The uncertain band is the band just below the accept band whose pairs the generative decide-only verdict accepts at the uncalibrated pass (0.65); its lower edge is the lowest out-of-fold level that keeps the accept band's precision bar with no forbidden tuning root pair added.",
-  "With no level reaching p_apply's bars there is no apply band; an isotonic entry then stores p_apply = 1, which no smoothed block reaches."
+  "Plan decision 29 (owner, 2026-10-18) amends D18: no apply band; the suggest edge is the score whose band alone (before typing, capped per note) finds the most expected fixture-tuning root pairs with 0 forbidden, ties to the higher edge, on the instruction, template and rule the panel selection picked; the panel's precision, ECE and Brier are reported, not gating. D18's own reading is reported beside it.",
+  "The uncertain-band escalation is not evaluated: its clause needs the precision bar decision 29 removed (adopting it is an owner decision)."
 ] as const;
 
 export interface SelectInputs {
@@ -1788,17 +1902,7 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
     bodyCharacters: selection.template.chosen,
     rule: selection.rule.chosen
   };
-  const tuningNotes = new Set(inputs.tuningExport.value.notes.map((note) => note.id));
-  const rootOf = new Map(inputs.tuningExport.value.notes.map((note) => [note.id, note.root]));
-  // Verdicts of pairs with a note outside the tuning export are never looked at (held-out stays sealed).
-  const fitPairs = new Set(labels.map((label) => notePairKey(label.lo, label.hi)));
-  const verdicts = verdictsByPair(
-    inputs.v9.value.verdicts.filter(
-      (row) =>
-        fitPairs.has(notePairKey(row.lo, row.hi)) ||
-        (tuningNotes.has(row.lo) && tuningNotes.has(row.hi))
-    )
-  );
+  // The v9 verdicts stay an input (hashed) for the escalation clause, which decision 29 does not evaluate.
   const pass = relationsConfig.decide.uncalibratedPass.probability;
   const deciders: DeciderProposal[] = [];
   for (const runtime of runtimes) {
@@ -1823,26 +1927,24 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
       tuningFile?.scores ?? (provisionalRun ? exportScores(inputs.tuningExport.value) : null);
     let tuning: RootLevel | null = null;
     let forbiddenBestScores: number[] = [];
-    const calibrationOf = (bands: {
-      pApply: number | null;
-      pSuggest: number | null;
-    }): Calibration => ({
+    const edgesOf = (bands: { pApply: number | null; pSuggest: number | null }): Calibration => ({
       blocks,
-      pApply: bands.pApply,
-      pSuggest: bands.pSuggest,
+      applyFrom: scoreAtLevel(blocks, bands.pApply),
+      suggestFrom: scoreAtLevel(blocks, bands.pSuggest),
       rule: choice.rule
     });
     if (tuningScores) {
       const before = rootLevel({
         data: inputs.tuningExport.value,
         scores: tuningScores,
-        calibration: calibrationOf({ pApply: null, pSuggest: null }),
+        calibration: edgesOf({ pApply: null, pSuggest: null }),
         lists
       });
       forbiddenBestScores = before.forbiddenBest.flatMap((row) =>
         row.bestScore === null ? [] : [row.bestScore]
       );
     }
+    // D18's reading (reported, not frozen since plan decision 29).
     const bands = chooseBands({ oof, blocks, forbiddenBestScores });
     // Reported only: where the accept band's cross-validated precision comes from, pool by pool.
     const acceptByPool: DeciderProposal["acceptByPool"] = {};
@@ -1856,51 +1958,26 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
         recall: level === null ? null : weightedRecall(own, level)
       };
     }
-    const calibration = calibrationOf(bands);
-    if (tuningScores)
+    // Plan decision 29: the suggest edge from the fixture tuning partition, no apply band.
+    const threshold = tuningScores
+      ? decideThreshold({
+          data: inputs.tuningExport.value,
+          scores: tuningScores,
+          rule: choice.rule,
+          blocks,
+          lists,
+          labels: scored
+        })
+      : null;
+    if (tuningScores && threshold)
       tuning = rootLevel({
         data: inputs.tuningExport.value,
         scores: tuningScores,
-        calibration,
+        calibration: { blocks, applyFrom: null, suggestFrom: threshold.edge, rule: choice.rule },
         lists
       });
-    // Escalation: fit labels with their verdicts, tuning note pairs below the accept band with theirs.
-    const escalationTuning: Array<Parameters<typeof evaluateEscalation>[0]["tuning"][number]> = [];
-    if (tuningScores && tuning) {
-      const expectedKeys = new Set(lists.expected.map(([a, b]) => rootPairKey(a, b)));
-      const forbiddenKeys = new Set(lists.forbidden.map(([a, b]) => rootPairKey(a, b)));
-      const missed = new Set(tuning.missed.map((row) => row.pair));
-      for (const row of inputs.tuningExport.value.decisions) {
-        const a = rootOf.get(row.lo),
-          b = rootOf.get(row.hi);
-        if (!a || !b || a === b) continue;
-        const score = pairScore(tuningScores, row.lo, row.hi, choice.rule);
-        if (score === null) continue;
-        const key = rootPairKey(a, b);
-        escalationTuning.push({
-          rootPair: key,
-          kind: expectedKeys.has(key) ? "expected" : forbiddenKeys.has(key) ? "forbidden" : "other",
-          score,
-          probability: calibrate(score, blocks),
-          verdict: verdicts.get(notePairKey(row.lo, row.hi)) ?? null,
-          found: !missed.has(key)
-        });
-      }
-    }
-    const escalation = tuningScores
-      ? evaluateEscalation({
-          points: oof.map((label) => ({
-            ...label,
-            verdict: verdicts.get(notePairKey(label.lo, label.hi)) ?? null
-          })),
-          acceptLevel: bands.acceptLevel,
-          precisionBar:
-            bands.pSuggest !== null ? bandBars.suggestPrecision : bandBars.applyPrecision,
-          blocks,
-          pass,
-          tuning: escalationTuning
-        })
-      : null;
+    // The uncertain-band escalation's clause needs a precision bar, which decision 29 removed.
+    const escalation: EscalationResult | null = null;
     const ece = expectedCalibrationError(oof);
     const aucByPool: Record<string, number | null> = {};
     for (const pool of pools)
@@ -1931,6 +2008,7 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
         suggestFromScore: scoreAtLevel(blocks, bands.pSuggest)
       },
       tuning,
+      threshold,
       tuningNote: tuningScores
         ? tuningFile
           ? `M1's ${inputs.tuningExport.value.decisions.length} tuning candidate pairs re-scored at ${configurationName({ runtime, instructionId: choice.instructionId, bodyCharacters: choice.bodyCharacters })} (${tuningFile.facts.path})`
@@ -2052,8 +2130,8 @@ export function renderProposal(proposal: Proposal): string {
         (block) => `| ${fmt(block.fromScore, 4)} | ${fmt(block.probability, 4)} |`
       ),
       "",
-      `- **p_apply: ${bands.pApply === null ? "none (no level reaches weighted precision >= 0.95 with Wilson >= 0.85)" : fmt(bands.pApply, 4)}**; apply band ${scoreText(bands.applyFromScore)}.`,
-      `- **p_suggest: ${bands.pSuggest === null ? "none" : fmt(bands.pSuggest, 4)}**; suggest band ${scoreText(bands.suggestFromScore)}.`,
+      `- D18's reading (reported, not frozen since decision 29): p_apply ${bands.pApply === null ? "none (no level reaches weighted precision >= 0.95 with Wilson >= 0.85)" : fmt(bands.pApply, 4)}; apply band ${scoreText(bands.applyFromScore)}.`,
+      `- D18's p_suggest ${bands.pSuggest === null ? "none" : fmt(bands.pSuggest, 4)}; suggest band ${scoreText(bands.suggestFromScore)}.`,
       ...(bands.apply
         ? [
             `- At p_apply (cross-validated): weighted precision ${fmt(bands.apply.precision)}, Wilson ${fmt(bands.apply.wilsonLower)}, n_eff ${fmt(bands.apply.effectiveCount, 1)}, weighted recall ${fmt(bands.apply.recall)}.`
@@ -2083,6 +2161,17 @@ export function renderProposal(proposal: Proposal): string {
       `Tuning: ${decider.tuningNote ?? ""}`,
       ""
     );
+    if (decider.threshold) {
+      const threshold = decider.threshold;
+      const panel = (row: PanelAtEdge) =>
+        `${fmt(row.precision)} (Wilson ${fmt(row.wilson)}, n_eff ${fmt(row.neff, 1)}, recall ${fmt(row.recall)}, ${row.labels} labels)`;
+      lines.push(
+        `**Plan decision 29: suggest from mean ${threshold.edge === null ? "none" : `>= ${fmt(threshold.edge, 4)}`} (map P ${fmt(threshold.probability)}), no apply band.** On the fixture tuning partition (before typing): ${threshold.expectedBeforeTyping}/${threshold.expectedOf} expected root pairs, ${threshold.forbiddenBeforeTyping}/${threshold.forbiddenOf} forbidden (${threshold.candidates} candidate edges).`,
+        "",
+        `Reported, not gating: the panel's fit labels at the edge (in sample, cell weights): pooled ${panel(threshold.panel.pooled!)}; ${pools.map((pool) => `${pool} ${panel(threshold.panel[pool]!)}`).join("; ")}; cross-root ${panel(threshold.panelCrossRoot)}.`,
+        ""
+      );
+    }
     if (decider.tuning) {
       const tuning = decider.tuning;
       lines.push(
@@ -2276,8 +2365,11 @@ export function buildFreezeRecord(input: {
       throw new Error(
         `${decider.runtime}: the parity baseline is of ${baseline.runtimeBuild}, the fit scores of ${decider.scoreFile.runtimeBuild ?? "an unknown build"}.`
       );
-    if (decider.bands.pSuggest === null && decider.bands.pApply === null)
-      throw new Error(`${decider.runtime}: the rule found no band; nothing to freeze.`);
+    // Plan decision 29: the suggest edge from the fixture tuning partition, no apply band.
+    if (!decider.threshold || decider.threshold.edge === null)
+      throw new Error(
+        `${decider.runtime}: no decide threshold (decision 29: no edge finds an expected tuning root pair at 0 forbidden); nothing to freeze.`
+      );
     parity[decider.runtime] = {
       ...input.parity.runtimes[decider.runtime],
       verdict: verdict.reason,
@@ -2287,8 +2379,9 @@ export function buildFreezeRecord(input: {
       kind: "isotonic",
       identity: decider.identity,
       blocks: decider.blocks,
-      pApply: decider.bands.pApply ?? noApplyBand,
-      pSuggest: decider.bands.pSuggest,
+      applyFrom: null,
+      suggestFrom: decider.threshold.edge,
+      basis: decider.threshold.basis,
       labelSetHash: proposal.inputs.labelSetSha256!,
       fittedAt: proposal.computedAt,
       parity: { referenceHash: baseline.referenceHash, scores: baseline.scores }
@@ -2419,8 +2512,8 @@ export function frozenCalibration(record: FreezeRecord, runtime: Runtime): Calib
     throw new Error(`The freeze has no isotonic calibration for ${runtime}.`);
   return {
     blocks: entry.blocks,
-    pApply: entry.pApply >= noApplyBand ? null : entry.pApply,
-    pSuggest: entry.pSuggest,
+    applyFrom: entry.applyFrom,
+    suggestFrom: entry.suggestFrom,
     rule: entry.identity.rule
   };
 }
@@ -2454,9 +2547,7 @@ export function reverseOnlyLossR6(input: {
     sameRootLost = 0;
   for (const item of set) {
     const score = pairScore(input.scores, item.lo, item.hi, input.calibration.rule);
-    const kept =
-      score !== null &&
-      bandOf(calibrate(score, input.calibration.blocks), input.calibration) !== null;
+    const kept = score !== null && bandOf(score, input.calibration) !== null;
     const [, roots = ""] = item.group.split(":");
     const [a, b] = roots.split("|");
     const sameRoot = a !== undefined && a === b;
@@ -2998,11 +3089,15 @@ export async function runGateF(input: {
       ...label,
       probability: calibrate(label.score, calibration.blocks)
     }));
-    const at = (level: number | null) =>
-      level === null
+    // The reported panel figures at the frozen edges (decision 29: not gating).
+    const at = (edge: number | null) =>
+      edge === null
         ? null
-        : (weightedPrecision(points.filter((point) => point.probability >= level))?.precision ??
-          null);
+        : (weightedPrecision(points.filter((point) => point.score >= edge))?.precision ?? null);
+    const acceptFrom = calibration.suggestFrom ?? calibration.applyFrom;
+    const positives = points
+      .filter((point) => point.positive)
+      .reduce((t, point) => t + point.weight, 0);
     const quality = expectedCalibrationError(points);
     const aucByPool: Record<string, number | null> = {};
     for (const pool of pools)
@@ -3010,9 +3105,14 @@ export async function runGateF(input: {
     cleanCheck.push({
       runtime,
       labels: points.length,
-      precisionAtApply: at(calibration.pApply),
-      precisionAtSuggest: at(calibration.pSuggest),
-      recallAtAccept: weightedRecall(points, calibration.pSuggest ?? calibration.pApply ?? 1),
+      precisionAtApply: at(calibration.applyFrom),
+      precisionAtSuggest: at(calibration.suggestFrom),
+      recallAtAccept:
+        acceptFrom === null || positives === 0
+          ? null
+          : points
+              .filter((point) => point.positive && point.score >= acceptFrom)
+              .reduce((t, point) => t + point.weight, 0) / positives,
       ece: quality.ece,
       brier: brierScore(points),
       reliability: quality.bins,

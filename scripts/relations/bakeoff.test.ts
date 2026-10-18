@@ -25,12 +25,12 @@ import {
   canonicalJson,
   chooseBands,
   crossValidatedProbabilities,
+  decideThreshold,
   evaluateEscalation,
   expectedAtZeroForbidden,
   expectedCalibrationError,
   frozenCalibration,
   logLoss,
-  noApplyBand,
   parityVerdict,
   poolLabels,
   reverseOnlyLossR6,
@@ -394,8 +394,8 @@ describe("the fixture partition at a calibration", () => {
       { fromScore: 3, probability: 0.82 },
       { fromScore: 5, probability: 0.9 }
     ],
-    pApply: 0.9,
-    pSuggest: 0.8,
+    applyFrom: 5,
+    suggestFrom: 3,
     rule: "mean"
   };
   const lists = {
@@ -439,7 +439,7 @@ describe("the fixture partition at a calibration", () => {
     const strict = rootLevel({
       data,
       scores,
-      calibration: { ...calibration, pSuggest: null },
+      calibration: { ...calibration, suggestFrom: null },
       lists
     });
     expect(strict.expected).toBe(0);
@@ -579,8 +579,8 @@ describe("the reverse-only losses (X2)", () => {
       { fromScore: 0, probability: 0.1 },
       { fromScore: 3, probability: 0.9 }
     ],
-    pApply: null,
-    pSuggest: 0.8,
+    applyFrom: null,
+    suggestFrom: 3,
     rule: "max"
   };
 
@@ -1014,8 +1014,11 @@ describe("the freeze guard (D3, R1)", () => {
     expect(record.inputHashes.proposal).toBe(
       sha256Hex(await readFile(join(directory, "proposal.json")))
     );
-    if (mlx.kind === "isotonic" && proposal.deciders[0]!.bands.pApply === null)
-      expect(mlx.pApply).toBe(noApplyBand);
+    // Plan decision 29: the suggest edge from the tuning partition, no apply band.
+    expect(mlx).toMatchObject({
+      applyFrom: null,
+      suggestFrom: proposal.deciders.find((decider) => decider.runtime === "mlx")!.threshold!.edge
+    });
   });
 
   it("never overwrites a freeze; a re-freeze keeps the first beside it", async () => {
@@ -1141,9 +1144,8 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
     // A score far inside the accept band and one far below it.
     const high = 50,
       low = -50;
-    expect(calibrate(high, calibration.blocks)).toBeGreaterThanOrEqual(
-      calibration.pSuggest ?? calibration.pApply!
-    );
+    expect(calibration.applyFrom).toBeNull();
+    expect(high).toBeGreaterThanOrEqual(calibration.suggestFrom!);
 
     const world = labelWorld();
     const rv6 = [true, true, false].map((related, index): LabelItem => ({
@@ -1520,5 +1522,108 @@ describe("population weights by cell (3.9, the top-up of 2026-10-18)", () => {
     expect(() =>
       weightedPoolLabels({ items: [labelled] }, { weightOf: new Map(), excluded: new Set() }, "fit")
     ).toThrow("No population weight");
+  });
+});
+
+describe("plan decision 29: the decide threshold from the fixture tuning partition", () => {
+  // Roots R1-R4, one note each; R1/R4 is forbidden, R1/R2, R1/R3 and R2/R3 are expected.
+  const data: Pick<RetrievalExport, "notes" | "candidates" | "typings" | "decisions"> = {
+    notes: [
+      { id: "a1", root: "R1" },
+      { id: "a2", root: "R2" },
+      { id: "a3", root: "R3" },
+      { id: "a4", root: "R4" }
+    ],
+    candidates: [
+      { noteId: "a2", candidateId: "a1", contentOrder: 1 },
+      { noteId: "a3", candidateId: "a1", contentOrder: 1 },
+      { noteId: "a4", candidateId: "a1", contentOrder: 1 },
+      { noteId: "a3", candidateId: "a2", contentOrder: 2 },
+      { noteId: "a4", candidateId: "a2", contentOrder: 2 }
+    ],
+    decisions: [
+      { lo: "a1", hi: "a2", loToHi: 5, hiToLo: 5 },
+      { lo: "a1", hi: "a3", loToHi: 3, hiToLo: 3 },
+      { lo: "a1", hi: "a4", loToHi: 2, hiToLo: 2 },
+      { lo: "a2", hi: "a3", loToHi: 3, hiToLo: 3 },
+      // A neither pair: a lower edge that finds as many expected pairs ties, and the higher edge wins.
+      { lo: "a2", hi: "a4", loToHi: 2.5, hiToLo: 2.5 }
+    ],
+    typings: []
+  };
+  const scores = scoresOf(
+    data.decisions.flatMap((row): Array<[string, string, number]> => [
+      [row.lo, row.hi, row.loToHi!],
+      [row.hi, row.lo, row.hiToLo!]
+    ])
+  );
+  const lists = {
+    expected: [
+      ["R1", "R2"],
+      ["R1", "R3"],
+      ["R2", "R3"]
+    ] as Array<[string, string]>,
+    forbidden: [["R1", "R4"]] as Array<[string, string]>
+  };
+  const blocks = [
+    { fromScore: 0, probability: 0.2 },
+    { fromScore: 2.7, probability: 0.6 }
+  ];
+  const label = (pairId: string, score: number, positive: boolean, group: string) => ({
+    pairId,
+    lo: `${pairId}lo`,
+    hi: `${pairId}hi`,
+    pool: "C" as const,
+    stratum: 3,
+    group,
+    positive,
+    weight: 2,
+    score
+  });
+
+  it("takes the edge with the most expected root pairs at 0 forbidden, the higher on a tie", () => {
+    const threshold = decideThreshold({
+      data,
+      scores,
+      rule: "mean",
+      blocks,
+      lists,
+      labels: [label("p", 4, true, "corpus:X|Y"), label("n", 2.9, false, "corpus:X|X")]
+    });
+    expect(threshold).toMatchObject({
+      edge: 3,
+      probability: 0.6,
+      expectedBeforeTyping: 3,
+      forbiddenBeforeTyping: 0,
+      expectedOf: 3,
+      candidates: 4
+    });
+    // The panel at the edge, reported: the positive above it, the negative (2.9) below.
+    expect(threshold.panel.pooled).toMatchObject({ labels: 1, precision: 1, recall: 1 });
+    expect(threshold.panelCrossRoot).toMatchObject({ labels: 1, precision: 1 });
+  });
+
+  it("has no edge when every band that finds an expected pair links a forbidden one", () => {
+    const blocked = {
+      ...data,
+      decisions: data.decisions.map((row) =>
+        row.lo === "a1" && row.hi === "a4" ? { ...row, loToHi: 9, hiToLo: 9 } : row
+      )
+    };
+    const threshold = decideThreshold({
+      data: blocked,
+      scores: scoresOf(
+        blocked.decisions.flatMap((row): Array<[string, string, number]> => [
+          [row.lo, row.hi, row.loToHi!],
+          [row.hi, row.lo, row.hiToLo!]
+        ])
+      ),
+      rule: "mean",
+      blocks,
+      lists,
+      labels: []
+    });
+    expect(threshold.edge).toBeNull();
+    expect(threshold.panel.pooled).toMatchObject({ labels: 0, precision: null });
   });
 });
