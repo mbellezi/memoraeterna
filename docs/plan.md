@@ -643,7 +643,7 @@ Wave 2 (M1 and gate R at the end):
 - [ ] T57 Campaign M1 (tuning partition only).
 
 Wave 3 (gate F after T58; gate P at the end):
-- [ ] T53b Note-matching settings cleanup (settings migration).
+- [x] T53b Note-matching settings cleanup (settings migration).
 - [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
 - [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
