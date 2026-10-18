@@ -9,6 +9,7 @@ import {
   AiClassIdSchema,
   AiPresetIdSchema,
   AiPresetModeSchema,
+  DecisionsStatusSchema,
   NoteDeciderModeSchema,
   NotePageRelationStateSchema,
   NoteRelationBandSchema,
@@ -237,6 +238,11 @@ export const ipcChannels = {
   aiTestClassRoute: "app:ai:class-routes:test",
   aiSetClassRoute: "app:ai:class-routes:set",
   aiSetDeciderMode: "app:ai:class-routes:decider-mode",
+  aiDecisionsStatus: "app:ai:decisions:status",
+  aiDecisionsSetEnabled: "app:ai:decisions:set-enabled",
+  aiDecisionsSaveKey: "app:ai:decisions:save-key",
+  aiDecisionsRemoveKey: "app:ai:decisions:remove-key",
+  aiDecisionsTestKey: "app:ai:decisions:test-key",
   aiLocalEmbeddingLoadStatus: "app:ai:local-embedding-load-status",
   localModelsList: "app:local-models:list",
   localModelsStatuses: "app:local-models:statuses",
@@ -1570,6 +1576,17 @@ export const aiSetDeciderModeInputSchema = z
   .object({ mode: NoteDeciderModeSchema.nullable() })
   .strict();
 
+/**
+ * The opt-in OpenAI Decisions decider (F3 plan decision 30). The renderer sends the OpenAI Platform
+ * key once, when the person saves it, and never receives it back: every answer is the status.
+ */
+export const aiDecisionsStatusSchema = DecisionsStatusSchema;
+export const aiDecisionsSetEnabledInputSchema = z.object({ enabled: z.boolean() }).strict();
+export const aiDecisionsSaveKeyInputSchema = z
+  .object({ apiKey: z.string().trim().min(16).max(400) })
+  .strict();
+export type AiDecisionsStatus = z.infer<typeof aiDecisionsStatusSchema>;
+
 export const localModelStatusSchema = z.enum([
   "not_downloaded",
   "downloading",
@@ -2069,6 +2086,11 @@ export interface DesktopApi {
     testClassRoute: (route: AiClassRouteTarget) => Promise<AiClassRoutes>;
     setClassRoute: (input: AiSetClassRouteInput) => Promise<AiClassRoutes>;
     setDeciderMode: (mode: NoteDeciderMode | null) => Promise<AiClassRoutes>;
+    decisionsStatus: () => Promise<AiDecisionsStatus>;
+    setDecisionsEnabled: (enabled: boolean) => Promise<AiDecisionsStatus>;
+    saveDecisionsKey: (apiKey: string) => Promise<AiDecisionsStatus>;
+    removeDecisionsKey: () => Promise<AiDecisionsStatus>;
+    testDecisionsKey: () => Promise<AiDecisionsStatus>;
     subscribeLocalEmbeddingLoadStatus: (
       listener: (status: LocalEmbeddingLoadStatus) => void
     ) => () => void;

@@ -539,6 +539,27 @@ try {
     {},
     "ranker rows never answer a probability lookup"
   );
+  // The Decisions decider's neighbourhood (plan decision 30): the other endpoint of every pair with
+  // a stored direction under the decider's key, from either side, and nothing under another key.
+  const partners = await decisions.findDecidedPartners({
+    deciderKey: rankerKey,
+    noteIds: [lo, hi, randomUUID()]
+  });
+  assert.deepEqual(
+    Object.fromEntries(partners),
+    { [lo]: [hi], [hi]: [lo] },
+    "a pair is a partner of both of its notes"
+  );
+  assert.equal(
+    (await decisions.findDecidedPartners({ deciderKey: "another-key", noteIds: [lo, hi] })).size,
+    0,
+    "partners are read under one decider key"
+  );
+  assert.equal(
+    (await decisions.findDecidedPartners({ deciderKey: rankerKey, noteIds: [] })).size,
+    0,
+    "no note asks for nothing"
+  );
   const [rankerRow] = (
     await db.query(
       `select score_scale, lo_to_hi_relation_type, hi_to_lo_relation_type, relation_type, accepted,
@@ -662,6 +683,7 @@ try {
         "an undecided direction reads the decided one as its reverse, for the same decider and content only",
         "each direction keeps its own AI run and time; a content change resets the pair",
         "0056: ranker rows store raw log-odds per direction with no type, on their own scale",
+        "the Decisions decider's decided neighbourhood: the partners of a note under one decider key",
         "constraints refuse inconsistent rows, including run or time without a verdict",
         "per-direction ai_task_run_id set null and note deletion cascade"
       ],

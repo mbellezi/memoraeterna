@@ -252,4 +252,35 @@ describe("ranker scores (F3 D12, D13)", () => {
     ).toBe(0);
     expect((await repository.findRankerScores({ deciderKey: "k", pairs: [] })).size).toBe(0);
   });
+
+  it("reads a note's decided partners from either side of a pair, under one key, capped per note", async () => {
+    const third = "00000000-0000-4000-8000-000000000003";
+    const { repository, query } = setup([
+      { loId: lo, hiId: hi },
+      { loId: lo, hiId: third },
+      { loId: hi, hiId: third }
+    ]);
+    const partners = await repository.findDecidedPartners({
+      deciderKey: "k",
+      noteIds: [hi, lo, hi]
+    });
+    expect(Object.fromEntries(partners)).toEqual({
+      [lo]: [hi, third],
+      [hi]: [lo, third]
+    });
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("score_scale = 'log_odds'");
+    expect(sql).toContain("lo_to_hi_score is not null or hi_to_lo_score is not null");
+    expect(values).toEqual(["k", [hi, lo]]);
+    const capped = await repository.findDecidedPartners({
+      deciderKey: "k",
+      noteIds: [lo],
+      limit: 1
+    });
+    expect(capped.get(lo)).toEqual([hi]);
+    // Nobody asked for: no query.
+    query.mockClear();
+    expect((await repository.findDecidedPartners({ deciderKey: "k", noteIds: [] })).size).toBe(0);
+    expect(query).not.toHaveBeenCalled();
+  });
 });

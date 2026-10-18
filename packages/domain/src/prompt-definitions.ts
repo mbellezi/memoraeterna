@@ -253,7 +253,7 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
           : family === "sources"
             ? "reranking"
             : family === "relations"
-              ? parts[1] === "decide"
+              ? parts[1] === "decide" || parts[1] === "decisions"
                 ? "reranking"
                 : parts[1] === "type"
                   ? "structured-output"
@@ -418,10 +418,11 @@ for (const definition of promptDefinitions) {
     !id.startsWith("shared.") &&
     !id.startsWith("embedding.") &&
     !id.startsWith("diagnostics.") &&
-    // A ranker instruction is plain English text: rankers get no language instruction.
+    // A ranker instruction is plain English text: rankers (and the Decisions API) get no language instruction.
     id !== "topic.gate.instruction" &&
     id !== "topic.overview.support" &&
     id !== "relations.decide.instruction" &&
+    id !== "relations.decisions.instruction" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
     !id.includes(".validation.")

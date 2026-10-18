@@ -132,14 +132,18 @@ export const f3Operations: readonly string[] = [
 /**
  * Operations that choose their model apart from the routes: settings diagnostics, which run the
  * model under test or the legacy task route of a prompt sample, and the DEV probes of a task
- * route's backend (the lane probe on `reranking`, the strict-schema probe on `structured-output`).
+ * route's backend (the lane probe on `reranking`, the strict-schema probe on `structured-output`),
+ * and the opt-in OpenAI Decisions decider and its key test, which run on a provider and a lane of
+ * their own with the person's Platform key (plan decision 30).
  */
 export const internalOperations: readonly string[] = [
   "local_model_test",
   "prompt_catalog_sample",
   "class_test",
   "lane_probe",
-  "schema_probe"
+  "schema_probe",
+  "relation_decide_decisions",
+  "decisions_key_test"
 ];
 
 /** The legacy tasks each class takes its route from, in order; `decide` is never mapped. */

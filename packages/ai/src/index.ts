@@ -20,6 +20,7 @@ export * from "./ranker-parity.js";
 export * from "./ranker-validation.js";
 export * from "./local-ranker-adapters.js";
 export * from "./cassette.js";
+export * from "./decisions/index.js";
 export * from "./active-deadline.js";
 export * from "./local-deadline.js";
 export * from "./scheduler/types.js";

@@ -39,26 +39,25 @@ retention, licensing, or adding dependencies and model artifacts.
 
 ## Remote AI and spending
 
-- The routed or explicitly selected model authorizes its provider; execution
-  location follows that model. Scope and exclusion filters apply before any
-  provider call.
-- Choosing a remote provider for a route (for example a remote decider)
-  discloses in the UI, at the moment of choice, what is sent and the provider's
-  data retention (for instance OpenAI Decisions' abuse-monitoring retention).
-- Automatic background spending obeys the user's monthly remote cap. Spend is
-  computed from recorded usage and a versioned price table; an unknown price is
-  estimated conservatively, never counted as zero. Routes without per-token
-  pricing (subscriptions) are bounded by concurrency and call caps instead. At
-  the cap, background work continues local-only or waits, and the UI says why.
-  Work the user starts shows its estimate before it runs (target F4).
+- The routed or explicitly selected model authorizes its provider; execution location follows that
+  model. Scope and exclusion filters apply before any provider call.
+- Choosing a remote provider for a route (for example a remote decider) discloses in the UI, at the
+  moment of choice, what is sent and the provider's data retention (for instance OpenAI Decisions'
+  abuse-monitoring retention). The Decisions decider is opt-in: off by default, offered only in the
+  Hybrid and Cloud setups, with its own key in `safeStorage` and a daily spend cap; when it cannot
+  decide, the local ranker does and the status says why.
+- Automatic background spending obeys the user's monthly remote cap. Spend is computed from recorded
+  usage and a versioned price table; an unknown price is estimated conservatively, never counted as
+  zero. Routes without per-token pricing (subscriptions) are bounded by concurrency and call caps
+  instead. At the cap, background work continues local-only or waits, and the UI says why. Work the
+  user starts shows its estimate before it runs (target F4).
 
 ## Logs, monitoring and telemetry
 
-- Usage and provenance monitoring is always on and separate from debug.
-  Operation diagnostics and full prompt/output capture are separate switches,
-  off by default; full capture needs both switches plus a confirmation that
-  explains content retention and disk use. Never capture credentials or auth
-  headers.
+- Usage and provenance monitoring is always on and separate from debug. Operation diagnostics and
+  full prompt/output capture are separate switches, off by default; full capture needs both
+  switches plus a confirmation that explains content retention and disk use. Never capture
+  credentials or auth headers.
 - Monitoring cleanup previews and confirms its scope; it never removes active
   operations or the canonical AI audit.
 - Optional usage telemetry is local, opt-in, time-limited and never leaves the
@@ -71,14 +70,13 @@ retention, licensing, or adding dependencies and model artifacts.
   files the app manages.
 - Synchronization never infers deletion from absence during a scan; prefer
   tombstones and recoverable deletion when data loss is possible.
-- Reset stops the gateway, jobs and downloads first; clears application data
-  while preserving model/provider configuration and installed models; checks
-  containment and rejects symlink traversal before deleting files; keeps backups
-  and unrelated personal files; and reloads the renderer afterwards. Relational
-  cleanup and graph projection removal share one transaction. An absent optional
-  AGE catalog skips only graph removal (an error with AGE present rolls the whole
-  reset back). File-deletion failures keep the ownership registry for retry and
-  are reported; a retry tolerates files already removed.
+- Reset stops the gateway, jobs and downloads first; clears application data while preserving
+  model/provider configuration and installed models; checks containment and rejects symlink
+  traversal before deleting files; keeps backups and unrelated personal files; and reloads the
+  renderer afterwards. Relational cleanup and graph projection removal share one transaction. An
+  absent optional AGE catalog skips only graph removal (an error with AGE present rolls the whole
+  reset back). File-deletion failures keep the ownership registry for retry and are reported; a
+  retry tolerates files already removed.
 - Backups use `pg_dump` plus managed folders, contain no plaintext secrets and
   report partial failures. Take a verified backup before destructive migrations
   or data wipes.

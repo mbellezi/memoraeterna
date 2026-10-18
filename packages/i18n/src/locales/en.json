@@ -293,6 +293,19 @@
     "matching": {
       "rerankingFailed": "AI validation failed. No unvalidated note connections were created. Retry the stage after checking the reranking profile."
     },
+    "relations": {
+      "decisions": {
+        "noKey": "Save your OpenAI Platform key first.",
+        "invalidKey": "OpenAI refused the key. Check it and save it again.",
+        "spendCap": "Today's OpenAI spending limit was reached.",
+        "quota": "Your OpenAI account has no credit left.",
+        "breakerOpen": "OpenAI is not responding. It will be tried again shortly.",
+        "network": "OpenAI could not be reached.",
+        "failed": "OpenAI Decisions failed.",
+        "keyFormat": "That does not look like an OpenAI Platform key.",
+        "presetNotAllowed": "OpenAI Decisions is available only in the Hybrid and Cloud setups."
+      }
+    },
     "sourceRelations": {
       "invalidOutput": "The source relationship model returned invalid or unsupported relationships.",
       "staleEvidence": "Source evidence changed during analysis. Process the source again.",
@@ -1431,6 +1444,69 @@
         },
         "errors": {
           "invalidOutput": "The model answered, but not in the form the test expects."
+        }
+      },
+      "decisions": {
+        "title": "OpenAI Decisions (optional)",
+        "description": "A remote decider that judges whether two notes are related, more accurately than the local ranker. It is off by default and offered only in the Hybrid and Cloud setups.",
+        "privacy": {
+          "title": "Your note text is sent to OpenAI",
+          "body": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
+          "cost": "It costs about US$ {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at US$ {cap}, and the local ranker takes over."
+        },
+        "state": {
+          "loading": "Loading…",
+          "error": "The OpenAI Decisions settings could not be read.",
+          "retry": "Retry",
+          "unavailablePreset": "Not available in this setup. Choose Hybrid or Cloud above to use it. The Local setup never sends note text out.",
+          "off": "Off. The local ranker decides note relations.",
+          "ready": "On. OpenAI Decisions decides note relations.",
+          "fallback": "On, but the local ranker is deciding: {reason}.",
+          "lastFallback": "The last time, the local ranker decided instead: {reason}."
+        },
+        "reasons": {
+          "noKey": "no OpenAI key is saved",
+          "invalidKey": "OpenAI refused the saved key",
+          "spendCap": "today's spending limit was reached",
+          "quota": "your OpenAI account has no credit left",
+          "breakerOpen": "OpenAI is not responding right now",
+          "network": "OpenAI could not be reached",
+          "error": "OpenAI returned an unexpected error"
+        },
+        "toggle": {
+          "label": "Use OpenAI Decisions to decide note relations",
+          "turnOn": "Turn on…",
+          "turnOff": "Turn off",
+          "confirmTitle": "Send note text to OpenAI?",
+          "confirmBody": "Turning this on sends note text to OpenAI as described above. You can turn it off at any time; nothing is sent after that.",
+          "confirmApply": "Turn on",
+          "confirmCancel": "Cancel"
+        },
+        "key": {
+          "label": "OpenAI Platform API key",
+          "placeholder": "sk-…",
+          "hint": "It is stored encrypted on this computer, never shown again and sent only to OpenAI.",
+          "save": "Save key",
+          "remove": "Remove key",
+          "test": "Test key",
+          "working": "Working…",
+          "stored": "A key is saved.",
+          "none": "No key is saved.",
+          "invalid": "OpenAI refused the saved key. Save a valid one."
+        },
+        "spend": {
+          "today": "Spent today: US$ {spent} of US$ {cap} ({requests} requests)."
+        },
+        "calibration": {
+          "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",
+          "uncalibrated": "It is not calibrated yet, so every relation it finds is a suggestion you can keep or remove."
+        },
+        "toasts": {
+          "keySaved": "The OpenAI key was saved.",
+          "keyRemoved": "The OpenAI key was removed.",
+          "keyWorks": "OpenAI accepted the key.",
+          "turnedOn": "OpenAI Decisions is on.",
+          "turnedOff": "OpenAI Decisions is off."
         }
       },
       "purposes": {

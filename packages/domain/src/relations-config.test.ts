@@ -108,6 +108,19 @@ describe("relations config", () => {
   });
 });
 
+describe("the Decisions decider's config (plan decision 30)", () => {
+  it("caps a day's spend at US$ 0.50 and suggests at Spike A2's pass while uncalibrated", () => {
+    expect(relationsConfig.decisions).toEqual({
+      dailyCapUsd: 0.5,
+      uncalibratedPassLogOdds: 1.3249
+    });
+    // Spike A2's p >= 0.79, as log-odds.
+    expect(relationsConfig.decisions.uncalibratedPassLogOdds).toBeCloseTo(Math.log(0.79 / 0.21), 3);
+    expect(RelationsConfigSchema.safeParse({ decisions: { dailyCapUsd: -1 } }).success).toBe(false);
+    expect(RelationsConfigSchema.safeParse({ decisions: { unknown: 1 } }).success).toBe(false);
+  });
+});
+
 describe("relation pair text", () => {
   it("renders title, idea and the first body characters, Spike A's way", () => {
     expect(

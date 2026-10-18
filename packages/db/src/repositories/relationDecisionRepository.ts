@@ -263,6 +263,42 @@ export function createRelationDecisionRepository(db: Queryable) {
     },
 
     /**
+     * The notes each given note was decided against under this decider: the other endpoint of every
+     * pair that has a stored direction, in ascending ID order, at most `limit` per note (200 by
+     * default). It is a note's decided neighbourhood in the request design of the Decisions API
+     * decider (plan decision 30): its own list and the notes whose lists hold it.
+     */
+    async findDecidedPartners(lookup: {
+      deciderKey: string;
+      noteIds: readonly string[];
+      limit?: number;
+    }): Promise<Map<string, string[]>> {
+      const partners = new Map<string, string[]>();
+      const wanted = new Set(lookup.noteIds);
+      if (wanted.size === 0) return partners;
+      const limit = lookup.limit ?? 200;
+      const result = await db.query<{ loId: string; hiId: string }>(
+        `select lo_atomic_note_id as "loId", hi_atomic_note_id as "hiId"
+         from relation_decisions
+         where decider_key = $1 and score_scale = 'log_odds'
+           and (lo_to_hi_score is not null or hi_to_lo_score is not null)
+           and (lo_atomic_note_id = any($2::uuid[]) or hi_atomic_note_id = any($2::uuid[]))
+         order by pair_key`,
+        [lookup.deciderKey, [...wanted]]
+      );
+      const add = (note: string, partner: string) => {
+        const list = partners.get(note) ?? [];
+        if (list.length < limit) list.push(partner);
+        partners.set(note, list);
+      };
+      for (const row of result.rows) {
+        if (wanted.has(row.loId)) add(row.loId, row.hiId);
+        if (wanted.has(row.hiId)) add(row.hiId, row.loId);
+      }
+      return partners;
+    },
+
+    /**
      * Stored ranker scores of these pairs by this decider, keyed by pair key (`lo:hi`), only where
      * both rendered-input hashes still match (D13). Pairs never scored are absent.
      */

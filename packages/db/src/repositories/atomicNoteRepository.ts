@@ -203,6 +203,16 @@ export function createAtomicNoteRepository(db: Queryable) {
       return row ? mapNote(row) : null;
     },
 
+    /** The notes of these IDs (any state), in no particular order; an unknown ID is absent. */
+    async findManyByIds(ids: readonly string[]): Promise<AtomicNoteRecord[]> {
+      if (ids.length === 0) return [];
+      const result = await db.query<AtomicNoteRow>(
+        `select ${returning} from atomic_notes where id = any($1::uuid[])`,
+        [[...new Set(ids)]]
+      );
+      return result.rows.map(mapNote);
+    },
+
     async listBySourceItem(sourceItemId: string): Promise<AtomicNoteRecord[]> {
       const retained =
         (await db.query("select to_regclass('public.atomic_note_evidence') is not null available"))

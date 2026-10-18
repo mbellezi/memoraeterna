@@ -41,6 +41,8 @@ import {
   aiTaskRouteSchema,
   aiApplyPresetInputSchema,
   aiSetClassRouteInputSchema,
+  aiDecisionsSaveKeyInputSchema,
+  aiDecisionsSetEnabledInputSchema,
   aiSetDeciderModeInputSchema,
   aiTestClassRouteInputSchema,
   aiProviderConfigInputSchema,
@@ -535,6 +537,17 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.aiSetDeciderMode, (_event, payload: unknown) =>
     aiService.setDeciderMode(aiSetDeciderModeInputSchema.parse(payload).mode)
   );
+  // The OpenAI Decisions decider (plan decision 30): the key travels to the main process once and
+  // never back; every answer is the status.
+  ipcMain.handle(ipcChannels.aiDecisionsStatus, () => aiService.decisionsStatus());
+  ipcMain.handle(ipcChannels.aiDecisionsSetEnabled, (_event, payload: unknown) =>
+    aiService.setDecisionsEnabled(aiDecisionsSetEnabledInputSchema.parse(payload).enabled)
+  );
+  ipcMain.handle(ipcChannels.aiDecisionsSaveKey, (_event, payload: unknown) =>
+    aiService.saveDecisionsKey(aiDecisionsSaveKeyInputSchema.parse(payload).apiKey)
+  );
+  ipcMain.handle(ipcChannels.aiDecisionsRemoveKey, () => aiService.removeDecisionsKey());
+  ipcMain.handle(ipcChannels.aiDecisionsTestKey, () => aiService.testDecisionsKey());
 
   ipcMain.handle(ipcChannels.localModelsList, () => localModelService.list());
   ipcMain.handle(ipcChannels.localModelsStatuses, () => localModelService.listStatuses());

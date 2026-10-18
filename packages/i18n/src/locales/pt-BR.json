@@ -293,6 +293,19 @@
     "matching": {
       "rerankingFailed": "A validação pela IA falhou. Nenhuma conexão de notas sem validação foi criada. Confira o perfil de reranking e repita a etapa."
     },
+    "relations": {
+      "decisions": {
+        "noKey": "Salve primeiro a sua chave da OpenAI Platform.",
+        "invalidKey": "A OpenAI recusou a chave. Confira e salve de novo.",
+        "spendCap": "O limite de gasto de hoje com a OpenAI foi atingido.",
+        "quota": "Sua conta da OpenAI está sem crédito.",
+        "breakerOpen": "A OpenAI não está respondendo. Uma nova tentativa será feita em breve.",
+        "network": "Não foi possível falar com a OpenAI.",
+        "failed": "O OpenAI Decisions falhou.",
+        "keyFormat": "Isso não parece uma chave da OpenAI Platform.",
+        "presetNotAllowed": "O OpenAI Decisions só está disponível nas configurações Híbrida e Nuvem."
+      }
+    },
     "sourceRelations": {
       "invalidOutput": "O modelo retornou relações entre fontes inválidas ou sem suporte.",
       "staleEvidence": "A evidência da fonte mudou durante a análise. Processe a fonte novamente.",
@@ -1431,6 +1444,69 @@
         },
         "errors": {
           "invalidOutput": "O modelo respondeu, mas não no formato que o teste espera."
+        }
+      },
+      "decisions": {
+        "title": "OpenAI Decisions (opcional)",
+        "description": "Um decisor remoto que julga se duas notas se relacionam, com mais precisão que o ranqueador local. Vem desligado e só é oferecido nas configurações Híbrida e Nuvem.",
+        "privacy": {
+          "title": "O texto das suas notas é enviado à OpenAI",
+          "body": "Enquanto estiver ligado, o título, a ideia e os primeiros {characters} caracteres do texto de cada nota comparada, e das notas com que ela é comparada (inclusive as comparadas antes), são enviados à OpenAI (a API Decisions, modelo {model}) com a sua própria chave da OpenAI Platform. Por padrão a OpenAI não treina com dados da API e pode guardar as requisições por até 30 dias para monitorar abusos. O Memora não controla essa retenção. Nada é enviado com ele desligado, na configuração Local ou sem uma chave.",
+          "cost": "Custa cerca de US$ {price} por milhão de tokens de entrada, tipicamente um centavo ou menos por nota. O Memora deixa de usá-lo no dia ao chegar a US$ {cap}, e o ranqueador local assume."
+        },
+        "state": {
+          "loading": "Carregando…",
+          "error": "Não foi possível ler as configurações do OpenAI Decisions.",
+          "retry": "Tentar de novo",
+          "unavailablePreset": "Indisponível nesta configuração. Escolha Híbrido ou Nuvem acima para usá-lo. A configuração Local nunca envia texto de notas para fora.",
+          "off": "Desligado. O ranqueador local decide as relações entre notas.",
+          "ready": "Ligado. O OpenAI Decisions decide as relações entre notas.",
+          "fallback": "Ligado, mas o ranqueador local está decidindo: {reason}.",
+          "lastFallback": "Da última vez, o ranqueador local decidiu no lugar: {reason}."
+        },
+        "reasons": {
+          "noKey": "nenhuma chave da OpenAI está salva",
+          "invalidKey": "a OpenAI recusou a chave salva",
+          "spendCap": "o limite de gasto de hoje foi atingido",
+          "quota": "sua conta da OpenAI está sem crédito",
+          "breakerOpen": "a OpenAI não está respondendo agora",
+          "network": "não foi possível falar com a OpenAI",
+          "error": "a OpenAI devolveu um erro inesperado"
+        },
+        "toggle": {
+          "label": "Usar o OpenAI Decisions para decidir as relações entre notas",
+          "turnOn": "Ligar…",
+          "turnOff": "Desligar",
+          "confirmTitle": "Enviar o texto das notas à OpenAI?",
+          "confirmBody": "Ligar isto envia o texto das notas à OpenAI como descrito acima. Você pode desligar a qualquer momento; depois disso nada é enviado.",
+          "confirmApply": "Ligar",
+          "confirmCancel": "Cancelar"
+        },
+        "key": {
+          "label": "Chave de API da OpenAI Platform",
+          "placeholder": "sk-…",
+          "hint": "Ela fica guardada criptografada neste computador, nunca é exibida de novo e só é enviada à OpenAI.",
+          "save": "Salvar chave",
+          "remove": "Remover chave",
+          "test": "Testar chave",
+          "working": "Trabalhando…",
+          "stored": "Há uma chave salva.",
+          "none": "Nenhuma chave salva.",
+          "invalid": "A OpenAI recusou a chave salva. Salve uma válida."
+        },
+        "spend": {
+          "today": "Gasto hoje: US$ {spent} de US$ {cap} ({requests} requisições)."
+        },
+        "calibration": {
+          "calibrated": "As relações acima do seu limiar calibrado são aplicadas automaticamente; as demais são sugestões que você pode manter ou remover.",
+          "uncalibrated": "Ainda não está calibrado, então toda relação que ele encontra é uma sugestão que você pode manter ou remover."
+        },
+        "toasts": {
+          "keySaved": "A chave da OpenAI foi salva.",
+          "keyRemoved": "A chave da OpenAI foi removida.",
+          "keyWorks": "A OpenAI aceitou a chave.",
+          "turnedOn": "O OpenAI Decisions está ligado.",
+          "turnedOff": "O OpenAI Decisions está desligado."
         }
       },
       "purposes": {

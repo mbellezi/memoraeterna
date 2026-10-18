@@ -37,6 +37,7 @@ import {
   type Queryable
 } from "@app/db";
 import {
+  DecisionsFallbackReasonSchema,
   NoteDeciderModeSchema,
   NoteRelationBandSchema,
   NoteRelationWriteTypeSchema,
@@ -109,12 +110,15 @@ export const StoredDecidedNoteSchema = z
     sourceItemId: z.string().min(1),
     decider: z
       .object({
-        kind: z.enum(["ranker", "generative"]),
+        kind: z.enum(["ranker", "generative", "decisions"]),
         mode: NoteDeciderModeSchema,
         deciderKey: z.string().min(1),
         calibration: z.enum(["frozen", "provisional", "uncalibrated"]),
-        profileId: z.string().min(1),
-        modelId: z.string().min(1)
+        /** A remote decider (the Decisions API) has no profile row. */
+        profileId: z.string().min(1).nullable(),
+        modelId: z.string().min(1),
+        /** Why a local decider decided although the Decisions API was on (plan decision 30). */
+        fallback: DecisionsFallbackReasonSchema.optional()
       })
       .strict(),
     pairs: z.array(DecidedPairSchema).max(100)
@@ -1233,7 +1237,9 @@ function decidedRelationRow(
     vectorScore: pair.vectorScore,
     graphScore: pair.graphScore,
     rerankScore: decider.kind === "generative" ? pair.score : null,
-    finalScore: pair.probability ?? (decider.kind === "ranker" ? sigmoid(pair.score) : pair.score),
+    // A ranker and the Decisions API score in log-odds; the generative decider in 0-1.
+    finalScore:
+      pair.probability ?? (decider.kind === "generative" ? pair.score : sigmoid(pair.score)),
     explanation: "knowledge.relations.explanations.reranked",
     matchingProfileId: decider.profileId,
     matchingModel: decider.modelId,

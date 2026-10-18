@@ -140,6 +140,25 @@ const LinkSchema = z
   })
   .strict();
 
+/**
+ * The Decisions API decider (plan decision 30), opt-in in the Hybrid and Cloud presets. Its request
+ * design, price and deadlines are typed limits in `packages/ai`; its frozen calibration is among
+ * `calibrations`. This holds what the relation pipeline decides: the day's spend cap and the score a
+ * Decisions decider without a matching calibration (an edited instruction) must reach to be
+ * suggested; it never applies then.
+ */
+const DecisionsDeciderSchema = z
+  .object({
+    /** Spend cap per local day in US$, from the provider's usage at the typed price (D26's sibling). */
+    dailyCapUsd: z.number().min(0).max(1_000).default(0.5),
+    /**
+     * Spike A2's frozen directed threshold p >= 0.79, as the log-odds of the mean of both
+     * directions on the bake-off scale.
+     */
+    uncalibratedPassLogOdds: logOdds.default(1.3249)
+  })
+  .strict();
+
 const RelationAiSchema = z
   .object({
     /**
@@ -157,6 +176,8 @@ export const RelationsConfigSchema = z
     decide: DecideSchema.prefault({}),
     /** Calibrations by identity (D13); a decider without one is uncalibrated. */
     calibrations: z.array(RelationCalibrationEntrySchema).default([]),
+    /** The Decisions API decider (plan decision 30): its spend cap and its uncalibrated pass. */
+    decisions: DecisionsDeciderSchema.prefault({}),
     /** Accepted pairs one decided note hands on (the former per-note relation cap). */
     maxShownPerNote: int(1, 100).default(10),
     /** Reconcile keeps a relation applied until its score falls this far below apply (log-odds). */

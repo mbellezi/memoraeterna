@@ -134,6 +134,9 @@ import {
   aiApplyPresetResultSchema,
   aiClassRoutesSchema,
   aiSetClassRouteInputSchema,
+  aiDecisionsSaveKeyInputSchema,
+  aiDecisionsSetEnabledInputSchema,
+  aiDecisionsStatusSchema,
   aiSetDeciderModeInputSchema,
   aiTestClassRouteInputSchema,
   aiProfileSchema,
@@ -1022,6 +1025,35 @@ const api: DesktopApi = {
           ipcChannels.aiSetDeciderMode,
           aiSetDeciderModeInputSchema.parse({ mode })
         )
+      );
+    },
+    async decisionsStatus() {
+      return aiDecisionsStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.aiDecisionsStatus));
+    },
+    async setDecisionsEnabled(enabled: boolean) {
+      return aiDecisionsStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiDecisionsSetEnabled,
+          aiDecisionsSetEnabledInputSchema.parse({ enabled })
+        )
+      );
+    },
+    async saveDecisionsKey(apiKey: string) {
+      return aiDecisionsStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiDecisionsSaveKey,
+          aiDecisionsSaveKeyInputSchema.parse({ apiKey })
+        )
+      );
+    },
+    async removeDecisionsKey() {
+      return aiDecisionsStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiDecisionsRemoveKey)
+      );
+    },
+    async testDecisionsKey() {
+      return aiDecisionsStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiDecisionsTestKey)
       );
     }
   },

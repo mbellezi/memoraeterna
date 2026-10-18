@@ -36,6 +36,7 @@ export * from "./relation-explanation.js";
 export * from "./relation-calibration.js";
 export * from "./relation-pair-text.js";
 export * from "./relations-config.js";
+export * from "./relation-decisions.js";
 export * from "./relation-typing.js";
 export * from "./topics.js";
 export * from "./topic-overview.js";

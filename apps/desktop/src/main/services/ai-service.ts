@@ -126,6 +126,7 @@ import {
   type AiModelParameterCapabilities,
   type AiOutputSchema,
   type AiSchemaMode,
+  type DecisionsStatus,
   type NoteDeciderMode
 } from "@app/domain";
 import type {
@@ -149,6 +150,13 @@ import type {
 import { aiConfigurableTaskSchema, aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { AiClassRouteService } from "./ai-class-routes.js";
+import {
+  DecisionsRuntime,
+  type DecisionsDecideInput,
+  type DecisionsDecideResult,
+  type DecisionsResolution,
+  type DecisionsRuntimeOptions
+} from "./ai-decisions.js";
 import { AiConfigCache } from "./ai-config-cache.js";
 import { createRouteMappingStore, mapLegacyRoutesV1 } from "./ai-route-mapping.js";
 import { CredentialService } from "./credential-service.js";
@@ -230,6 +238,17 @@ export interface AiServiceOptions {
    * build whatever is passed; the app sets it from `MEMORA_FAKE_REMOTE` (`treatAsRemoteHonoured`).
    */
   honourTreatAsRemote?: boolean;
+
+  /** The DEV cassette installed for this process: a replay needs no Decisions key (plan decision 30). */
+  cassetteMode?: "record" | "replay" | undefined;
+  /** DEV only (`MEMORA_RELATIONS_DECISIONS=on`): the Decisions decider is on and a profile with no setup counts as Hybrid. */
+  devDecisions?: boolean | undefined;
+  /** DEV only (`MEMORA_RELATIONS_DECISIONS_KEY_FILE`): a file holding the key, read instead of the secure store. */
+  devDecisionsKeyFile?: string | undefined;
+  /** DEV only (`MEMORA_RELATIONS_DECISIONS_CAP_USD`): the day's Decisions spend cap for a proof run. */
+  devDecisionsCapUsd?: number | undefined;
+  /** Limits, config, fetch and clock of the Decisions decider; the typed defaults apply to what is left out. */
+  decisions?: Pick<DecisionsRuntimeOptions, "limits" | "config" | "fetch" | "random" | "now">;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -579,6 +598,7 @@ export class AiService {
   /** The legacy route mapping of this process (D34); reset after a seeding so new routes map too. */
   private legacyRouteMapping: Promise<void> | null = null;
   private classRoutesHelper: AiClassRouteService | null = null;
+  private decisionsHelper: DecisionsRuntime | null = null;
   /**
    * Rankers whose validation is queued or running. Decide is unavailable on them: callers take the
    * no-decider path instead of waiting for the lane, and a runtime-build change is validated, with
@@ -1155,6 +1175,64 @@ export class AiService {
 
   public setDeciderMode(mode: NoteDeciderMode | null): Promise<AiClassRoutes> {
     return this.classRouteService().setDeciderMode(mode);
+  }
+
+  // --- the Decisions API decider (F3 plan decision 30) ------------------------------------------------
+
+  private decisionsRuntime(): DecisionsRuntime {
+    this.decisionsHelper ??= new DecisionsRuntime({
+      getPool: () => this.options.getPool(),
+      scheduler: this.scheduler,
+      registry: this.registry,
+      credentials: this.credentials,
+      readSecret: (reference) => this.credentialSecret(reference),
+      cassetteMode: this.options.cassetteMode,
+      devEnabled: this.options.devDecisions,
+      devKeyFile: this.options.devDecisionsKeyFile,
+      devCapUsd: this.options.devDecisionsCapUsd,
+      ...(this.options.monitoring ? { monitoring: this.options.monitoring } : {}),
+      ...(this.options.logger ? { logger: this.options.logger } : {}),
+      ...(this.options.decisions ?? {})
+    });
+    return this.decisionsHelper;
+  }
+
+  /** What Settings shows of the opt-in OpenAI Decisions decider; never its key. */
+  public decisionsStatus(): Promise<DecisionsStatus> {
+    return this.decisionsRuntime().status();
+  }
+
+  public setDecisionsEnabled(enabled: boolean): Promise<DecisionsStatus> {
+    return this.decisionsRuntime().setEnabled(enabled);
+  }
+
+  public saveDecisionsKey(apiKey: string): Promise<DecisionsStatus> {
+    return this.decisionsRuntime().saveKey(apiKey);
+  }
+
+  public removeDecisionsKey(): Promise<DecisionsStatus> {
+    return this.decisionsRuntime().removeKey();
+  }
+
+  public testDecisionsKey(signal?: AbortSignal): Promise<DecisionsStatus> {
+    return this.decisionsRuntime().testKey(signal);
+  }
+
+  /** Whether the next relation matching decides with the Decisions API, and if not why (the status). */
+  public resolveDecisions(): Promise<DecisionsResolution> {
+    return this.decisionsRuntime().resolve();
+  }
+
+  /**
+   * Scores directed lists on the Decisions API (the candidate lists stay the matcher's): the
+   * validated request design on the decider's own remote lane. Throws `DecisionsUnavailableError`
+   * when it cannot decide, so the matcher falls back to the local ranker.
+   */
+  public decideWithDecisions(
+    input: DecisionsDecideInput,
+    signal?: AbortSignal
+  ): Promise<DecisionsDecideResult> {
+    return this.decisionsRuntime().decide(input, signal);
   }
 
   private classRouteService(): AiClassRouteService {

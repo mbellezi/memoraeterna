@@ -134,6 +134,20 @@ export const shippedPromptBodies = [
     keys: []
   },
   {
+    // The instruction of the OpenAI Decisions API decider (F3 plan decision 30): Spike A's frozen
+    // `mechanism` (sha256 1fc9a2ee...), which the dense validation measured. The request's fixed
+    // wording lives in `packages/ai` (decisions design); this text, the model and that wording are the
+    // decider's calibration identity, so editing it makes the decider uncalibrated until a new freeze.
+    id: "relations.decisions.instruction",
+    caller:
+      "apps/desktop/src/main/services/relations/relation-matcher.ts:relationDecisionsInstruction",
+    template:
+      "Given a note (Query), decide whether the Document note makes a claim about the same underlying " +
+      "mechanism, rule or phenomenon, so that a careful reader would link the two notes. Shared names, " +
+      "titles, vocabulary, catalogs or credits do not count.",
+    keys: []
+  },
+  {
     id: "relations.explain",
     template:
       "Explain why two atomic notes are related, using only their idea statements and evidence passages below. " +

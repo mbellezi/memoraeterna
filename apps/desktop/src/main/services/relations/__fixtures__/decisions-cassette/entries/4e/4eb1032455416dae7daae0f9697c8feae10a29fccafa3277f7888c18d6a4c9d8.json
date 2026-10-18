@@ -1,0 +1,40 @@
+{
+  "format": "memora-ai-cassette-entry",
+  "version": 1,
+  "key": "4eb1032455416dae7daae0f9697c8feae10a29fccafa3277f7888c18d6a4c9d8",
+  "taskType": "reranking",
+  "request": {
+    "input": "{\"contract\":\"relation-decisions-v1\",\"instruction\":\"Given a note (Query), decide whether the Document note makes a claim about the same underlying mechanism, rule or phenomenon, so that a careful reader would link the two notes. Shared names, titles, vocabulary, catalogs or credits do not count.\",\"query\":\"Title: Memória e recuperação de buffers\\nIdea: Liberar buffers encerra a validade de acesso à região; ponteiros antigos não preservam propriedade.\\nText: Um buffer de memória mantém temporariamente bytes recebidos por um processo de computador. Quando o processo termina, a região pode ser devolvida ao alocador para reutilização. Recuperar essa região significa disponibilizar capacidade para uma alocação futura; não envolve lembrar uma explicação nem corrigir uma resposta de estudante. O contrato deste sistema determina que nenhuma rotina leia bytes depois de liberar a região que os contém. Manter um ponteiro antigo não preserva a propriedade da memória. Para evitar acesso a dados inválidos, o componente que recebe a região também recebe a respo\",\"candidates\":[\"Title: Evocação com correção no estudo\\nIdea: Evocação é equivalente à recuperação ativa.\\nText: Uma atividade de estudo pode pedir que o aluno produza de memória uma explicação e depois confronte sua resposta com uma referência. Neste texto, evocação significa produzir a informação sem vê-la; é o mesmo procedimento chamado de recuperação ativa em outros materiais. A comparação posterior revela tanto omissões quanto interpretações incorretas. A proposta é que essa combinação favoreça retenção posterior, enquanto reler uma página pode produzir familiaridade sem garantir recordação independente. A facilidade percebida durante a leitura não equivale à capacidade de explicar o conteúdo em out\"]}",
+    "instruction": null,
+    "model": {
+      "adapter": "openai-decisions",
+      "modelId": "gpt-6-luna",
+      "providerId": "openai-decisions",
+      "runtime": "remote"
+    },
+    "parameters": {},
+    "schema": null,
+    "taskType": "reranking",
+    "version": 1
+  },
+  "responses": [
+    {
+      "output": { "probabilities": [0] },
+      "providerId": "openai-decisions",
+      "modelId": "gpt-6-luna",
+      "runtime": "remote",
+      "durationMs": 245,
+      "inputTokens": 570,
+      "outputTokens": 0,
+      "tokenUsage": {
+        "inputTokens": 570,
+        "outputTokens": 0,
+        "totalTokens": 570,
+        "provider.input_tokens": 570,
+        "provider.output_tokens": 0
+      },
+      "costEstimate": 0.000057,
+      "recordedAt": "2026-10-18T08:15:16.615Z"
+    }
+  ]
+}

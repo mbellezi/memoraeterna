@@ -296,7 +296,17 @@ void app.whenReady().then(() => {
       }
     },
     // Owner decision 19: the library's first embedding route installs the local ranker.
-    onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks)
+    onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks),
+    // Decision 30: a DEV cassette replay needs no Decisions key; `MEMORA_RELATIONS_DECISIONS=on`
+    // (DEV only) turns the opt-in decider on for a proof run.
+    ...(aiCassette ? { cassetteMode: aiCassette.mode } : {}),
+    devDecisions: !app.isPackaged && process.env.MEMORA_RELATIONS_DECISIONS === "on",
+    ...(!app.isPackaged && process.env.MEMORA_RELATIONS_DECISIONS_KEY_FILE
+      ? { devDecisionsKeyFile: process.env.MEMORA_RELATIONS_DECISIONS_KEY_FILE }
+      : {}),
+    ...(!app.isPackaged && Number(process.env.MEMORA_RELATIONS_DECISIONS_CAP_USD) > 0
+      ? { devDecisionsCapUsd: Number(process.env.MEMORA_RELATIONS_DECISIONS_CAP_USD) }
+      : {})
   });
   soakPreparation?.attach(aiService);
   localModelService = new LocalModelService({

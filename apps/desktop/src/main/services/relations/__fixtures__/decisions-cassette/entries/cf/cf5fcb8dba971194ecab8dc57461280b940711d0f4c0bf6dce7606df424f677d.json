@@ -1,0 +1,40 @@
+{
+  "format": "memora-ai-cassette-entry",
+  "version": 1,
+  "key": "cf5fcb8dba971194ecab8dc57461280b940711d0f4c0bf6dce7606df424f677d",
+  "taskType": "reranking",
+  "request": {
+    "input": "{\"contract\":\"relation-decisions-v1\",\"instruction\":\"Given a note (Query), decide whether the Document note makes a claim about the same underlying mechanism, rule or phenomenon, so that a careful reader would link the two notes. Shared names, titles, vocabulary, catalogs or credits do not count.\",\"query\":\"Title: Evocação com correção no estudo\\nIdea: Evocação é equivalente à recuperação ativa.\\nText: Uma atividade de estudo pode pedir que o aluno produza de memória uma explicação e depois confronte sua resposta com uma referência. Neste texto, evocação significa produzir a informação sem vê-la; é o mesmo procedimento chamado de recuperação ativa em outros materiais. A comparação posterior revela tanto omissões quanto interpretações incorretas. A proposta é que essa combinação favoreça retenção posterior, enquanto reler uma página pode produzir familiaridade sem garantir recordação independente. A facilidade percebida durante a leitura não equivale à capacidade de explicar o conteúdo em out\",\"candidates\":[\"Title: Memória e recuperação de buffers\\nIdea: Liberar buffers encerra a validade de acesso à região; ponteiros antigos não preservam propriedade.\\nText: Um buffer de memória mantém temporariamente bytes recebidos por um processo de computador. Quando o processo termina, a região pode ser devolvida ao alocador para reutilização. Recuperar essa região significa disponibilizar capacidade para uma alocação futura; não envolve lembrar uma explicação nem corrigir uma resposta de estudante. O contrato deste sistema determina que nenhuma rotina leia bytes depois de liberar a região que os contém. Manter um ponteiro antigo não preserva a propriedade da memória. Para evitar acesso a dados inválidos, o componente que recebe a região também recebe a respo\",\"Title: Recordar antes de consultar\\nIdea: Recuperação ativa acompanhada de correção favorece retenção em relação à releitura passiva.\\nText: Em um curso fictício de história, a aprendizagem foi organizada em tentativas de recordar uma explicação sem consultar o material. Depois de cada tentativa, os participantes podiam conferir a resposta. O mecanismo proposto é que recuperar uma informação exige reconstruir o caminho que permite acessá-la mais tarde. A simples sensação de familiaridade durante a releitura não demonstra que o estudante consegue produzir a resposta sozinho. A conclusão se restringe à retenção das explicações estudadas: tentativas de recuperação acompanhadas de correção favorecem a lembrança posterior em comparação \"]}",
+    "instruction": null,
+    "model": {
+      "adapter": "openai-decisions",
+      "modelId": "gpt-6-luna",
+      "providerId": "openai-decisions",
+      "runtime": "remote"
+    },
+    "parameters": {},
+    "schema": null,
+    "taskType": "reranking",
+    "version": 1
+  },
+  "responses": [
+    {
+      "output": { "probabilities": [0, 1] },
+      "providerId": "openai-decisions",
+      "modelId": "gpt-6-luna",
+      "runtime": "remote",
+      "durationMs": 491,
+      "inputTokens": 900,
+      "outputTokens": 0,
+      "tokenUsage": {
+        "inputTokens": 900,
+        "outputTokens": 0,
+        "totalTokens": 900,
+        "provider.input_tokens": 900,
+        "provider.output_tokens": 0
+      },
+      "costEstimate": 0.00009,
+      "recordedAt": "2026-10-18T08:15:16.369Z"
+    }
+  ]
+}

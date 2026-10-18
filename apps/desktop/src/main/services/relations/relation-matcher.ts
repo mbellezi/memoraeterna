@@ -25,6 +25,7 @@ import {
   waitingForDeciderSkipReason,
   type AtomicNoteMatchingSettings,
   type AtomicNoteRelationType,
+  type DecisionsFallbackReason,
   type NoteDeciderMode,
   type NoteRelationWriteType,
   type RelationBandDecision,
@@ -54,9 +55,13 @@ import {
 import {
   decideValidationForCatalogEntry,
   decideValidationParityFailed,
+  DecisionsUnavailableError,
+  decisionsLogOdds,
   findLocalModelCatalogEntry,
   isRankerCatalogEntry,
-  rankerCatalogArtifactSha256
+  rankerCatalogArtifactSha256,
+  resolveDecisionsLimits,
+  type DecisionsLimits
 } from "@app/ai";
 
 import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "../ai-service.js";
@@ -73,9 +78,17 @@ import {
   type BatchRerankDecision
 } from "../knowledge-processing.js";
 import { capturePromptPin, promptFingerprint, renderPrompt } from "../prompt-runtime.js";
+import {
+  decisionsDesign,
+  relationDecisionsInstruction,
+  type DecisionsDesign
+} from "./decisions-identity.js";
 
 /** The ranker operation of note decide: `op:relation_decide`, else `class:decide`. */
 export const relationDecideOperation = "relation_decide";
+
+/** The operation of the Decisions decider's calls, for the AI audit. */
+export const relationDecisionsOperation = "relation_decide_decisions";
 
 /** Recorded on every relation the matcher hands on, and on its debug runs. */
 export const relationMatcherVersion = "relations-v2-matcher-1";
@@ -251,7 +264,10 @@ export interface MatcherNoteVector {
   space: { model: string; provider: string; runtime: string; spaceKey: string };
 }
 
-/** The decider one matching admission uses. */
+/**
+ * The decider one matching admission uses. `fallback` is set when the person turned the Decisions
+ * decider on and this local decider decided in its place, with the reason (plan decision 30).
+ */
 export type MatchDeciderSummary =
   | {
       kind: "ranker";
@@ -260,6 +276,7 @@ export type MatchDeciderSummary =
       calibration: RelationCalibrationState;
       profileId: string;
       modelId: string;
+      fallback?: DecisionsFallbackReason;
     }
   | {
       kind: "generative";
@@ -267,6 +284,17 @@ export type MatchDeciderSummary =
       deciderKey: string;
       calibration: "uncalibrated";
       profileId: string;
+      modelId: string;
+      fallback?: DecisionsFallbackReason;
+    }
+  | {
+      /** The OpenAI Decisions API: remote, opt-in, with a calibration of its own (decision 30). */
+      kind: "decisions";
+      mode: NoteDeciderMode;
+      deciderKey: string;
+      calibration: RelationCalibrationState;
+      /** A remote decider has no profile row. */
+      profileId: null;
       modelId: string;
     };
 
@@ -312,8 +340,9 @@ export interface MatchNotesInput {
   logContext?: AiTaskLogContext;
   onProgress?: ((progress: number) => void | Promise<void>) | undefined;
   /** Called once a note is decided and handed on: a resumable checkpoint. */
-  onNoteCompleted?: ((noteId: string, persistedCount: number) => void | Promise<void>) | undefined;
-  /** The visibility fence of a re-match run (3.17): retrieval sees only these roots. */
+  onNoteCompleted?:
+    | ((noteId: string, persistedCount: number) => void | Promise<void>)
+    | undefined; /** The visibility fence of a re-match run (3.17): retrieval sees only these roots. */
   fence?: RetrievalFence | undefined;
   handOff: DecidedNoteHandOff;
 }
@@ -328,13 +357,19 @@ export type MatchNotesResult = {
   /** Set when no call was made because mode `ranker` has no validated ranker (C7). */
   skipped?: typeof waitingForDeciderSkipReason;
   decider: MatchDeciderSummary["kind"] | null;
+  /** Notes the Decisions decider could not decide, which a local decider decided, and the last reason. */
+  decisionsFallback?: { notes: number; reason: DecisionsFallbackReason };
 };
 
 export interface RelationMatcherOptions {
   getPool: () => PgPool | null;
   ai: Pick<AiService, "rankPairs" | "runDefaultTask" | "decideRouteStatus" | "traceOperation"> &
-    Partial<Pick<AiService, "ensureLegacyRouteMapping">>;
+    Partial<
+      Pick<AiService, "ensureLegacyRouteMapping" | "resolveDecisions" | "decideWithDecisions">
+    >;
   config?: RelationsConfig;
+  /** The Decisions decider's typed limits (tests); the defaults of `packages/ai` apply when left out. */
+  decisionsLimits?: DecisionsLimits;
   /** The generative decider's output budget, the one note-matching setting that still decides (T53b). */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   isDebugEnabled?: () => Promise<boolean>;
@@ -357,6 +392,8 @@ interface RankerDecider {
   cacheKey: string;
   calibration: RelationCalibrationEntry | null;
   uncalibratedPass: number;
+  /** Why this decider decides although the person turned the Decisions decider on (decision 30). */
+  decisionsFallback?: DecisionsFallbackReason;
 }
 
 interface GenerativeDecider {
@@ -365,9 +402,24 @@ interface GenerativeDecider {
   key: string;
   profileId: string;
   modelId: string;
+  decisionsFallback?: DecisionsFallbackReason;
 }
 
-type Decider = RankerDecider | GenerativeDecider;
+/**
+ * The Decisions API as the decider of this admission (plan decision 30). The local decider that the
+ * mode would have used decides in its place when Decisions cannot (`fallback`); null when there is
+ * none, in which case a failure of Decisions fails the note visibly, for a job retry.
+ */
+interface DecisionsDecider {
+  kind: "decisions";
+  mode: NoteDeciderMode;
+  design: DecisionsDesign;
+  limits: DecisionsLimits;
+  fallback: LocalDecider | null;
+}
+
+type LocalDecider = RankerDecider | GenerativeDecider;
+type Decider = LocalDecider | DecisionsDecider;
 
 interface Candidate {
   note: AtomicNoteRecord;
@@ -453,6 +505,12 @@ export class RelationMatcher {
         return { ...result, skipped: waitingForDeciderSkipReason };
       }
       result.decided += 1;
+      const fellBack = decided.decider.kind === "decisions" ? undefined : decided.decider.fallback;
+      if (fellBack)
+        result.decisionsFallback = {
+          notes: (result.decisionsFallback?.notes ?? 0) + 1,
+          reason: fellBack
+        };
       result.accepted += decided.pairs.length;
       const persisted = decided.pairs.length > 0 ? await input.handOff(decided) : 0;
       result.persistedCount += persisted;
@@ -496,12 +554,17 @@ export class RelationMatcher {
   public async currentDeciderKey(): Promise<string | null> {
     const decider = await this.resolveDecider();
     if (decider === waitingForDeciderSkipReason) return null;
-    return decider.kind === "ranker" ? decider.cacheKey : decider.key;
+    return deciderKeyOf(decider);
   }
 
   // --- decider resolution -------------------------------------------------------------------------
 
-  /** The decider of this admission, or the skip of mode `ranker` without a validated ranker. */
+  /**
+   * The decider of this admission, or the skip of mode `ranker` without a validated ranker. When the
+   * person turned the Decisions API on and it may decide, it is the decider and the local decider
+   * the mode would have used is its fallback; when it is on and may not decide, the local decider
+   * decides and says why (plan decision 30).
+   */
   private async resolveDecider(): Promise<Decider | typeof waitingForDeciderSkipReason> {
     const pool = this.requirePool();
     // The routes are read here before any call: the generative-decide `op:` routes that the
@@ -519,12 +582,54 @@ export class RelationMatcher {
             rankerValidating: validating,
             generativeRerankingRoute: await this.generativeRerankingTaskRoute()
           });
+    const decisions = (await this.options.ai.resolveDecisions?.()) ?? {
+      use: "local" as const,
+      reason: null
+    };
+    let local: LocalDecider | typeof waitingForDeciderSkipReason;
+    try {
+      local = await this.localDecider(mode, ranker);
+    } catch (error) {
+      // With Decisions deciding, a local decider that cannot run is only a missing fallback.
+      if (decisions.use !== "decisions") throw error;
+      local = waitingForDeciderSkipReason;
+    }
+    if (decisions.use === "decisions")
+      return {
+        kind: "decisions",
+        mode,
+        design: this.decisionsDesign(),
+        limits: this.decisionsLimits(),
+        fallback: local === waitingForDeciderSkipReason ? null : local
+      };
+    if (local === waitingForDeciderSkipReason || !decisions.reason) return local;
+    return { ...local, decisionsFallback: decisions.reason };
+  }
+
+  /** The local decider a mode names: the validated ranker, the generative judge, or none yet. */
+  private async localDecider(
+    mode: NoteDeciderMode,
+    ranker: Omit<RankerDecider, "mode"> | null
+  ): Promise<LocalDecider | typeof waitingForDeciderSkipReason> {
     if (mode !== "generative" && ranker) return { ...ranker, mode };
     if (mode === "ranker") return waitingForDeciderSkipReason;
     const generative = await this.generativeDecider();
     // A required decider that cannot run fails visibly, before any checkpoint.
     if (!generative) throw new Error("errors.ai.noCompatibleModel");
     return { ...generative, mode };
+  }
+
+  private decisionsLimits(): DecisionsLimits {
+    return this.options.decisionsLimits ?? resolveDecisionsLimits();
+  }
+
+  /** The Decisions decider's identity, cache key and calibration for the catalog's instruction. */
+  private decisionsDesign(): DecisionsDesign {
+    return decisionsDesign({
+      instruction: relationDecisionsInstruction(),
+      config: this.config,
+      limits: this.decisionsLimits()
+    });
   }
 
   /**
@@ -653,20 +758,33 @@ export class RelationMatcher {
     }
   ): Promise<DecidedNote | typeof waitingForDeciderSkipReason> {
     const { candidates, kthCosine, graphError } = await this.retrieve(note, context);
-    const outcomes =
-      decider.kind === "ranker"
-        ? await this.decideWithRanker(note, candidates, decider, context)
-        : await this.decideGeneratively(note, candidates, decider, context);
+    // The Decisions decider scores the candidate lists the local retrieval built; when it cannot, the
+    // local decider the mode names decides this note, and the summary says why (decision 30).
+    let effective: Decider = decider;
+    let fallback: DecisionsFallbackReason | undefined;
+    let outcomes: CandidateOutcome[] | typeof waitingForDeciderSkipReason;
+    if (decider.kind === "decisions") {
+      try {
+        outcomes = await this.decideWithDecisions(note, candidates, decider, context);
+      } catch (error) {
+        if (context.signal?.aborted || !(error instanceof DecisionsUnavailableError)) throw error;
+        // With no local decider to take over, the note fails visibly, for a job retry.
+        if (!decider.fallback) throw new Error("errors.matching.rerankingFailed", { cause: error });
+        fallback = error.reason;
+        effective = decider.fallback;
+        outcomes = await this.decideLocally(note, candidates, decider.fallback, context);
+      }
+    } else outcomes = await this.decideLocally(note, candidates, decider, context);
     if (outcomes === waitingForDeciderSkipReason) return outcomes;
     // The note is decided: its k-th vector cosine opens the reverse guard to later notes (D19).
     if (context.vector)
       await createNoteMatchStateRepository(this.requirePool()).record({
         noteId: note.id,
-        deciderKey: decider.kind === "ranker" ? decider.cacheKey : decider.key,
+        deciderKey: deciderKeyOf(effective),
         spaceKey: context.vector.space.spaceKey,
         kthCosine
       });
-    const summary = deciderSummary(decider);
+    const summary = deciderSummary(effective, fallback);
     const accepted = outcomes
       .filter(
         (outcome): outcome is CandidateOutcome & { decision: RelationBandDecision } =>
@@ -861,18 +979,33 @@ export class RelationMatcher {
     return { candidates, kthCosine, graphError };
   }
 
-  /**
-   * Both directions of every candidate pair on the validated ranker (D16): stored scores under the
-   * decider cache key and both rendered-input hashes are reused (D13), the rest is scored in one
-   * `rankPairs` input, note -> candidate and candidate -> note side by side, so both directions
-   * of a pair share one bounded call. Raw log-odds are recorded per direction.
-   */
-  private async decideWithRanker(
+  /** The local decider the mode names scores the note's candidates. */
+  private decideLocally(
     note: AtomicNoteRecord,
     candidates: readonly Candidate[],
-    decider: RankerDecider,
-    context: { signal: AbortSignal | undefined; logContext: AiTaskLogContext }
+    decider: LocalDecider,
+    context: {
+      signal: AbortSignal | undefined;
+      logContext: AiTaskLogContext;
+      maxOutputTokens: number;
+    }
   ): Promise<CandidateOutcome[] | typeof waitingForDeciderSkipReason> {
+    return decider.kind === "ranker"
+      ? this.decideWithRanker(note, candidates, decider, context)
+      : this.decideGeneratively(note, candidates, decider, context);
+  }
+
+  /**
+   * The rendered texts of the note and its candidates, and the directions a decider scored before:
+   * stored scores under its cache key are reused only where both rendered-input hashes still match
+   * (D13). `scores` holds each candidate's two directions (null where none is stored) and
+   * `fromCache` the candidates both of whose directions are stored.
+   */
+  private async storedPairScores(
+    note: AtomicNoteRecord,
+    candidates: readonly Candidate[],
+    deciderKey: string
+  ) {
     const decisions = createRelationDecisionRepository(this.requirePool());
     const bodyCharacters = this.config.decide.bodyCharacters;
     const render = (record: AtomicNoteRecord) => {
@@ -894,7 +1027,7 @@ export class RelationMatcher {
       };
     });
     const stored = await decisions.findRankerScores({
-      deciderKey: decider.cacheKey,
+      deciderKey,
       pairs: pairs.map((pair) => ({
         loAtomicNoteId: pair.lo,
         hiAtomicNoteId: pair.hi,
@@ -918,6 +1051,217 @@ export class RelationMatcher {
           return value.loToHi !== null && value.hiToLo !== null;
         })
         .map((pair) => pair.candidate.note.id)
+    );
+    return { own, pairs, scores, fromCache };
+  }
+
+  /**
+   * Both directions of every candidate pair on the Decisions API (plan decision 30). The candidate
+   * lists are the local retrieval's, unchanged. Directions stored under the Decisions cache key are
+   * reused; the rest are scored as directed lists: the note against its candidates (the validated
+   * request: up to 20 candidates, in two candidate orders) and each candidate against the note. A
+   * direction scores the log-odds of the mean of its two orders' probabilities and a pair the mean of
+   * its two directions, banded under the decider's own calibration: automatic apply in its apply
+   * band, suggestions below, and only suggestions while it has no frozen entry.
+   */
+  private async decideWithDecisions(
+    note: AtomicNoteRecord,
+    candidates: readonly Candidate[],
+    decider: DecisionsDecider,
+    context: { signal: AbortSignal | undefined; logContext: AiTaskLogContext }
+  ): Promise<CandidateOutcome[]> {
+    const ai = this.options.ai;
+    const decide = ai.decideWithDecisions?.bind(ai);
+    if (!decide) throw new DecisionsUnavailableError("error");
+    const { design } = decider;
+    const decisions = createRelationDecisionRepository(this.requirePool());
+    const { own, pairs, scores, fromCache } = await this.storedPairScores(
+      note,
+      candidates,
+      design.cacheKey
+    );
+    type Pair = (typeof pairs)[number];
+    type Wanted = { pair: Pair; direction: "loToHi" | "hiToLo" };
+    const { limits } = decider;
+    const bodyCharacters = this.config.decide.bodyCharacters;
+    const render = (record: AtomicNoteRecord) => renderRelationPairText(record, bodyCharacters);
+    const known = new Map<string, AtomicNoteRecord>([
+      [note.id, note],
+      ...candidates.map((candidate) => [candidate.note.id, candidate.note] as const)
+    ]);
+    const byContent = (left: AtomicNoteRecord, right: AtomicNoteRecord) =>
+      compareContent(noteContentKey(left), noteContentKey(right)) ||
+      left.id.localeCompare(right.id);
+    const fresh = new Map<
+      string,
+      { loToHi: number | null; hiToLo: number | null; run: string | null }
+    >();
+    const sourceIds = new Set([note.createdFromSourceItemId]);
+    /**
+     * Scores some directions in one call. Each list queries one note with its decided neighbourhood,
+     * as the frozen design sends it: the targets (the note's own list, or the note a candidate is
+     * asked about) and the notes the queried note was decided against before, as far as a request has
+     * room (`maxNeighbourhood`). Only the directions asked for are read from the answers; the makeup
+     * is what the frozen scores were measured with.
+     */
+    const ask = async (
+      queries: ReadonlyArray<{
+        id: string;
+        text: string;
+        targets: AtomicNoteRecord[];
+        wanted: Map<string, Wanted>;
+      }>
+    ) => {
+      if (queries.length === 0) return;
+      const partners = await decisions.findDecidedPartners({
+        deciderKey: design.cacheKey,
+        noteIds: queries.map((query) => query.id)
+      });
+      const unknown = [...new Set([...partners.values()].flat())].filter((id) => !known.has(id));
+      if (unknown.length > 0)
+        for (const record of await createAtomicNoteRepository(this.requirePool()).findManyByIds(
+          unknown
+        ))
+          if (isCurrentNote(record)) known.set(record.id, record);
+      const lists = queries.map((query) => {
+        const targetIds = new Set(query.targets.map((target) => target.id));
+        const makeup = (partners.get(query.id) ?? [])
+          .filter((id) => !targetIds.has(id) && known.has(id))
+          .map((id) => known.get(id)!)
+          .sort(byContent)
+          .slice(0, Math.max(0, limits.maxNeighbourhood - query.targets.length));
+        // Content order, never IDs: the request is a function of the notes' content.
+        return [...query.targets, ...makeup].sort(byContent);
+      });
+      for (const member of lists.flat()) sourceIds.add(member.createdFromSourceItemId);
+      const scored = await decide(
+        {
+          operation: relationDecisionsOperation,
+          instruction: design.instruction,
+          lists: queries.map((query, index) => ({
+            query: query.text,
+            candidates: lists[index]!.map(render)
+          })),
+          // Note decide is background work (P2) unless its caller states a priority (D30).
+          priority: context.logContext.priority ?? "P2",
+          sourceIds: [...sourceIds],
+          ...(context.logContext.jobId ? { jobId: context.logContext.jobId } : {}),
+          stage: context.logContext.stage ?? "atomic_note_matching"
+        },
+        context.signal
+      );
+      queries.forEach((query, listIndex) =>
+        lists[listIndex]!.forEach((member, index) => {
+          const entry = query.wanted.get(member.id);
+          if (!entry) return;
+          const decided = scored.decisions[listIndex]?.[index];
+          const logOdds = decided?.logOdds ?? null;
+          // A refusal leaves the direction undecided: it is not stored, and the pair is not banded.
+          if (logOdds === null) return;
+          const id = entry.pair.candidate.note.id;
+          scores.get(id)![entry.direction] = logOdds;
+          const value = fresh.get(id) ?? { loToHi: null, hiToLo: null, run: null };
+          value[entry.direction] = logOdds;
+          value.run ??= decided?.aiTaskRunId ?? null;
+          fresh.set(id, value);
+        })
+      );
+    };
+    // The directions still to score. First the note against its candidates, in one list.
+    const forward: Wanted[] = [];
+    const backward: Wanted[] = [];
+    for (const pair of pairs) {
+      if (fromCache.has(pair.candidate.note.id)) continue;
+      const value = scores.get(pair.candidate.note.id)!;
+      const toCandidate = pair.noteIsLo ? "loToHi" : "hiToLo";
+      const toNote = pair.noteIsLo ? "hiToLo" : "loToHi";
+      if (value[toCandidate] === null) forward.push({ pair, direction: toCandidate });
+      if (value[toNote] === null) backward.push({ pair, direction: toNote });
+    }
+    if (forward.length > 0)
+      await ask([
+        {
+          id: note.id,
+          text: own.text,
+          targets: candidates.map((candidate) => candidate.note),
+          wanted: new Map(forward.map((entry) => [entry.pair.candidate.note.id, entry]))
+        }
+      ]);
+    // Then each candidate against the note, but only where the pair can still be accepted. A pair's
+    // score is the mean of its two directions, so a direction below `2 x edge - ceiling` leaves the
+    // mean under the lowest band edge whatever the other direction says: the pair is out, and the
+    // request that would have said so is not sent (a lossless filter, `rules/knowledge.md`).
+    const edge = lowestAcceptEdge(design);
+    const ceiling = decisionsLogOdds(1, limits.probabilityEpsilon);
+    const reachable = (entry: Wanted) => {
+      if (this.config.decide.rule !== "mean") return true;
+      const toCandidate = entry.pair.noteIsLo ? "loToHi" : "hiToLo";
+      const forwardScore = scores.get(entry.pair.candidate.note.id)![toCandidate];
+      return forwardScore !== null && (forwardScore + ceiling) / 2 >= edge;
+    };
+    await ask(
+      backward.filter(reachable).map((entry) => ({
+        id: entry.pair.candidate.note.id,
+        text: entry.pair.other.text,
+        targets: [note],
+        wanted: new Map([[note.id, entry]])
+      }))
+    );
+    for (const pair of pairs) {
+      const entry = fresh.get(pair.candidate.note.id);
+      if (!entry) continue;
+      await decisions.recordRankerScores({
+        loAtomicNoteId: pair.lo,
+        hiAtomicNoteId: pair.hi,
+        loInputHash: pair.loHash,
+        hiInputHash: pair.hiHash,
+        deciderKey: design.cacheKey,
+        loToHi: entry.loToHi,
+        hiToLo: entry.hiToLo,
+        aiTaskRunId: entry.run
+      });
+    }
+    return pairs.map((pair) => {
+      const value = scores.get(pair.candidate.note.id)!;
+      if (value.loToHi === null || value.hiToLo === null)
+        return {
+          candidate: pair.candidate,
+          decisionSource: "undecided",
+          score: null,
+          decision: null,
+          relationType: null,
+          subjectId: null
+        };
+      const score = aggregateDirections(value.loToHi, value.hiToLo, this.config.decide.rule);
+      return {
+        candidate: pair.candidate,
+        decisionSource: fromCache.has(pair.candidate.note.id) ? "cache" : "model",
+        score,
+        decision: bandScore(score, design.calibration, design.uncalibratedPass),
+        relationType: null,
+        subjectId: null
+      };
+    });
+  }
+
+  /**
+   * Both directions of every candidate pair on the validated ranker (D16): stored scores under the
+   * decider cache key and both rendered-input hashes are reused (D13), the rest is scored in one
+   * `rankPairs` input, note -> candidate and candidate -> note side by side, so both directions
+   * of a pair share one bounded call. Raw log-odds are recorded per direction.
+   */
+  private async decideWithRanker(
+    note: AtomicNoteRecord,
+    candidates: readonly Candidate[],
+    decider: RankerDecider,
+    context: { signal: AbortSignal | undefined; logContext: AiTaskLogContext }
+  ): Promise<CandidateOutcome[] | typeof waitingForDeciderSkipReason> {
+    const decisions = createRelationDecisionRepository(this.requirePool());
+    const bodyCharacters = this.config.decide.bodyCharacters;
+    const { own, pairs, scores, fromCache } = await this.storedPairScores(
+      note,
+      candidates,
+      decider.cacheKey
     );
     // Directed pairs still to score, in the candidates' content order: note -> candidate, then back.
     const requests: Array<{
@@ -1286,7 +1630,41 @@ export class RelationMatcher {
   }
 }
 
-function deciderSummary(decider: Decider): MatchDeciderSummary {
+/**
+ * The lowest score the Decisions decider accepts: its suggest edge (or its apply edge when it has
+ * no suggest band) under a frozen calibration, else the pass of an uncalibrated one.
+ */
+function lowestAcceptEdge(design: DecisionsDesign): number {
+  const entry = design.calibration;
+  if (!entry) return design.uncalibratedPass;
+  if (entry.kind !== "isotonic") return Math.min(entry.applyAt, entry.suggestAt ?? Infinity);
+  return Math.min(entry.applyFrom ?? Infinity, entry.suggestFrom ?? Infinity);
+}
+
+/** The key a decider's decisions are stored and reused under. */
+function deciderKeyOf(decider: Decider): string {
+  return decider.kind === "ranker"
+    ? decider.cacheKey
+    : decider.kind === "decisions"
+      ? decider.design.cacheKey
+      : decider.key;
+}
+
+/**
+ * What a decided note records of its decider. `fallback` is the reason a local decider decided
+ * although the Decisions API was on: found while this note was decided, else when the admission began.
+ */
+function deciderSummary(decider: Decider, fallback?: DecisionsFallbackReason): MatchDeciderSummary {
+  if (decider.kind === "decisions")
+    return {
+      kind: "decisions",
+      mode: decider.mode,
+      deciderKey: decider.design.cacheKey,
+      calibration: decider.design.calibration ? "frozen" : "uncalibrated",
+      profileId: null,
+      modelId: decider.design.identity.model
+    };
+  const reason = fallback ?? decider.decisionsFallback;
   if (decider.kind === "generative")
     return {
       kind: "generative",
@@ -1294,7 +1672,8 @@ function deciderSummary(decider: Decider): MatchDeciderSummary {
       deciderKey: decider.key,
       calibration: "uncalibrated",
       profileId: decider.profileId,
-      modelId: decider.modelId
+      modelId: decider.modelId,
+      ...(reason ? { fallback: reason } : {})
     };
   return {
     kind: "ranker",
@@ -1307,7 +1686,8 @@ function deciderSummary(decider: Decider): MatchDeciderSummary {
           ? "frozen"
           : "provisional",
     profileId: decider.profileId,
-    modelId: decider.modelId
+    modelId: decider.modelId,
+    ...(reason ? { fallback: reason } : {})
   };
 }
 

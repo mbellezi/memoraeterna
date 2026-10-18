@@ -78,7 +78,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   explanation are assigned only to accepted pairs. Shared topics, names, dates or homonyms alone
   never create a relation; it must be supported by evidence from both endpoints and is shown only
   while both have current evidence. A note relation stores its pair once with an explicit
-  direction; automation's band (applied or suggested) stays apart from the human review status.
+  direction; automation's band (applied or suggested) stays apart from the human review status. A
+  decider applies only inside the apply band of its own frozen calibration; without one it suggests.
 - Source relations come from shown note relations (applied, kept or suggested) plus decider-confirmed
   discovery pairs, never same-root pairs; each is a suggestion until the owner keeps it or a note
   relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).

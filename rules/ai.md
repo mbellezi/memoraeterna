@@ -7,10 +7,10 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 - Application code calls AI only through `AiModelAdapter`. Provider SDK behavior,
   wire formats, streaming, cancellation, timeouts and error mapping stay inside
   adapters. Agent harnesses or SDKs never own canonical storage or bypass routing.
-- Remote paths: Google Gemini, OpenAI-compatible endpoints and ChatGPT/Codex
-  Responses through desktop OAuth (generative only). Local models are MLX-first:
-  the MLX implementation in the supervised Swift helper when one exists and the
-  host is macOS arm64, else GGUF through `node-llama-cpp`.
+- Remote paths: Google Gemini, OpenAI-compatible endpoints, ChatGPT/Codex Responses through
+  desktop OAuth (generative only) and the OpenAI Decisions API (a relation decider only, on a lane
+  of its own). Local models are MLX-first: the MLX implementation in the supervised Swift helper
+  when one exists and the host is macOS arm64, else GGUF through `node-llama-cpp`.
 - A model declares only capabilities its adapter and runtime validated. Never
   infer a capability from the provider: a generative model is not a reranker,
   though the decision route (`reranking`) may take it as an explicit decider.

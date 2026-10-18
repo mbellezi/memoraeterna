@@ -17,6 +17,7 @@ import type {
   AiClassTest,
   AiProfile
 } from "../../shared/ipc";
+import { DecisionsDeciderPanel } from "./DecisionsDecider";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import type { ToastTone } from "./ui/toast";
@@ -769,6 +770,7 @@ export function AiClassRoutesPanel({ t, onToast = () => undefined }: AiClassRout
           )
         }
       />
+      <DecisionsDeciderPanel t={t} preset={routes.preset} onToast={onToast} />
     </div>
   );
 }
