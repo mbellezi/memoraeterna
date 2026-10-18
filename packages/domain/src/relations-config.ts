@@ -199,9 +199,13 @@ export const RelationsConfigSchema = z
       .object({ enabled: z.boolean().default(false) })
       .strict()
       .prefault({}),
-    /** Source discovery of design E (D27): 2 neighbours is S1's fallback. */
+    /**
+     * Source discovery of design E (D27): each new root is judged against its 2 nearest unlinked earlier
+     * roots. One neighbour was the start value; at M2 it accepted 6 of the second library's 27
+     * panel-positive pairs against two neighbours' 13, so S1's pre-registered fallback applies.
+     */
     discovery: z
-      .object({ neighbours: int(1, 2).default(1) })
+      .object({ neighbours: int(1, 2).default(2) })
       .strict()
       .prefault({}),
     /** The source judge (`sources.decide` v5, D27). */
