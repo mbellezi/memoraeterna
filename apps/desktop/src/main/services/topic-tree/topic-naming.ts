@@ -958,6 +958,9 @@ class NamingRun {
       contentLanguage: this.contentLanguage,
       promptVersion: topicNamePromptVersion,
       attempt,
+      // Attempts after the first re-ask the topics the validation refused: the audit counts them
+      // as repairs (D35), like the `*_repair` operations.
+      isRepair: attempt > 0,
       sourceItemIds
     };
     if (attempt === 0) this.counters.calls += 1;

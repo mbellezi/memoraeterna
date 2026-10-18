@@ -152,6 +152,15 @@ describe("relation description processing", () => {
     ).rejects.toThrow("errors.relationLabels.invalidOutput");
     expect(runDefaultTask).toHaveBeenCalledTimes(2);
     expect(db.saveRelationLabels).not.toHaveBeenCalled();
+    // The audit counts the second call as the repair (D35); the first is not one.
+    const [first, repair] = runDefaultTask.mock.calls as unknown as Array<
+      [string, string, Record<string, unknown>]
+    >;
+    expect(first![2]).toMatchObject({ attempt: 0, isRepair: false });
+    expect(repair![2]).toMatchObject({ attempt: 1, isRepair: true });
+    // Only the flag differs: the repair prompt is the first prompt and the repair instruction.
+    expect(repair![1].startsWith(first![1])).toBe(true);
+    expect({ ...repair![2], attempt: 0, isRepair: false }).toEqual(first![2]);
   });
 
   it("does not persist an in-flight result after cancellation", async () => {

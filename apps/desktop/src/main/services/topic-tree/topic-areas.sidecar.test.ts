@@ -764,8 +764,10 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
         promptVersion: "topic-areas-v1",
         contentLanguage
       };
-      expect(grouping.context).toMatchObject({ ...recorded, attempt: 0 });
-      expect(repair.context).toMatchObject({ ...recorded, attempt: 1 });
+      expect(grouping.context).toMatchObject({ ...recorded, attempt: 0, isRepair: false });
+      // The audit counts the second call as a repair (D35); only the flag and the attempt differ.
+      expect(repair.context).toMatchObject({ ...recorded, attempt: 1, isRepair: true });
+      expect({ ...repair.context, attempt: 0, isRepair: false }).toEqual(grouping.context);
       expect(repair.context.sourceItemIds).toEqual(grouping.context.sourceItemIds);
       // The repair prompt is the grouping prompt plus the problems, in aliases and content only.
       expect(repair.input.startsWith(grouping.input)).toBe(true);

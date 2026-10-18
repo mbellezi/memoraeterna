@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ActiveDeadline,
+  aiCassetteRequestKey,
   createAiScheduler,
   LocalDeadlineError,
   NodeLlamaCppAdapter,
@@ -413,6 +414,41 @@ describe("the scheduler's audit of every execution (S9)", () => {
       isRepair: true
     });
     expect(rows()[4]).toMatchObject({ status: "succeeded", lane: "local" });
+  });
+
+  it("audits the repair flag the caller states, and the flag changes nothing the adapter is asked", async () => {
+    const { ai, remote } = service();
+    const context = {
+      operation: "topic_areas",
+      stage: "topic_areas",
+      workloadClass: "write-fast" as const,
+      priority: "P3" as const,
+      promptVersion: "topic-areas-v1",
+      attempt: 1
+    };
+    await ai.runDefaultTask("text-generation", "the same prompt", { ...context, isRepair: false });
+    await ai.runDefaultTask("text-generation", "the same prompt", { ...context, isRepair: true });
+    await ai.runDefaultTask("text-generation", "the same prompt", context);
+    // An operation named `*_repair` is a repair unless the caller says otherwise.
+    await ai.runDefaultTask("text-generation", "the same prompt", {
+      ...context,
+      operation: "topic_areas_repair"
+    });
+    expect(rows().map((row) => row.isRepair)).toEqual([false, true, false, true]);
+    // Request shape: the adapter gets the same request, so a cassette key is the same one.
+    const requests = remote.run.mock.calls.map(([request]) => request);
+    expect(requests).toHaveLength(4);
+    for (const request of requests.slice(1, 3)) expect(request).toEqual(requests[0]);
+    const keys = new Set(
+      requests.map(
+        (request) =>
+          aiCassetteRequestKey(
+            { ...remote.describe(), requirements: {} } as never,
+            request as never
+          ).key
+      )
+    );
+    expect(keys.size).toBe(1);
   });
 
   it("records a call its local deadline ended as aborted, and does not retry a second one on the same input", async () => {

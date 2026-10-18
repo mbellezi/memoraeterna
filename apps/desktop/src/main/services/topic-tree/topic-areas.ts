@@ -570,6 +570,8 @@ export class TopicAreasService {
       contentLanguage: prepared.contentLanguage,
       promptVersion: topicAreasPromptVersion,
       attempt,
+      // Attempt 1 is the repair of the grouping: the audit counts it (D35).
+      isRepair: attempt > 0,
       sourceItemIds: prepared.sourceItemIds
     };
     let result;

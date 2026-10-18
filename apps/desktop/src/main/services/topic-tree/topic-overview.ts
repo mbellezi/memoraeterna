@@ -328,6 +328,7 @@ export class TopicOverviewService {
         contentLanguage: identity.language,
         promptVersion: topicOverviewPromptVersion,
         attempt: 0,
+        isRepair: false,
         sourceItemIds,
         chunkIds: evidence.map((item) => item.chunkId)
       };
@@ -360,7 +361,7 @@ export class TopicOverviewService {
           execution = await this.options.ai.runDefaultTask(
             "structured-output",
             buildTopicOverviewRepairPrompt(prompt, validation.errors.join("\n")),
-            { ...logContext, attempt: 1 },
+            { ...logContext, attempt: 1, isRepair: true },
             deadline.signal,
             limits
           );

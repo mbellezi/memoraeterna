@@ -426,6 +426,7 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
         stage: "topic_overview",
         contentLanguage: "en",
         attempt: 0,
+        isRepair: false,
         sourceItemIds: [w.sources.A1]
       });
       expect(call!.context.chunkIds).toHaveLength(4);
@@ -604,6 +605,12 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       const repaired = ready(await w.overview.overview({ id: w.topics.B1 }));
       expect(w.writes).toHaveLength(2);
       expect(w.writes[1]!.context.attempt).toBe(1);
+      // The audit counts the second call as a repair (D35); the first is not one.
+      expect(w.writes[0]!.context.isRepair).toBe(false);
+      expect(w.writes[1]!.context.isRepair).toBe(true);
+      expect({ ...w.writes[1]!.context, attempt: 0, isRepair: false }).toEqual(
+        w.writes[0]!.context
+      );
       expect(w.writes[1]!.input).toContain("cites [9], which is not in the evidence");
       expect(repaired.citations).toHaveLength(4);
 

@@ -787,6 +787,8 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
           contentLanguage,
           stage: "topic_naming"
         });
+        // Only the attempts after the first are repairs (D35).
+        expect(call.context.isRepair).toBe(call.context.attempt !== 0);
         expect((call.context.sourceItemIds as string[]).length).toBeGreaterThan(0);
         expect(call.context.sourceItemIds).toEqual(
           [...(call.context.sourceItemIds as string[])].sort()
@@ -919,6 +921,8 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       });
       // The repair call carries the one rejected topic and the reason.
       const repair = w.calls.find((call) => call.context.attempt === 1)!;
+      expect(repair.context.isRepair).toBe(true);
+      expect(w.calls.find((call) => call.context.attempt === 0)!.context.isRepair).toBe(false);
       expect(repair.groups.flatMap((group) => group.topics)).toHaveLength(1);
       expect(repair.input).toContain("the name is not in the content language");
       expect(repair.input).toContain("was rejected");
@@ -1246,6 +1250,7 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
         repairAccepted: 2
       });
       const repair = w.calls.find((call) => call.context.attempt === 1)!;
+      expect(repair.context.isRepair).toBe(true);
       expect(repair.groups.flatMap((group) => group.topics)).toHaveLength(2);
       expect(repair.input).toContain("repeats the title of one of its subtopics");
       const named = await rows(w);

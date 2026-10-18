@@ -85,6 +85,7 @@ export async function processRelationLabels(
       contentLanguage: input.contentLanguage,
       promptVersion: relationLabelPromptVersion,
       attempt: 0,
+      isRepair: false,
       sourceItemIds: [
         ...new Set(
           relations.flatMap((relation) => (relation.sourceItemId ? [relation.sourceItemId] : []))
@@ -103,7 +104,7 @@ export async function processRelationLabels(
       execution = await ai.runDefaultTask(
         "knowledge-graph-generation",
         joinPrompts(prompt, renderPrompt("graph.relation_labels.repair")),
-        { ...context, attempt: 1 },
+        { ...context, attempt: 1, isRepair: true },
         signal
       );
       if (!execution) throw new Error("errors.ai.noCompatibleModel");
