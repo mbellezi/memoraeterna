@@ -35,7 +35,8 @@ import { InFlightRegistry } from "./relations/in-flight-registry.js";
 
 /**
  * Source relations by design E (F3 D27, decision 17). Per root, with no batch barrier: (1) every
- * typed applied cross-root note relation is promoted into a source relation with no call; (2)
+ * typed shown (applied or suggested, decision 29) cross-root note relation is promoted into a source
+ * relation with no call, a suggestion while only suggestions support it; (2)
  * discovery selects the root's nearest earlier root and its reverse neighbours on the stored
  * composite vectors; (3) each selected unordered pair is judged once with the compact, score-only
  * `source-relations-v5` verdict: at most two `[from, to, type, importance, confidence, [from
@@ -927,7 +928,7 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
 
 /**
  * Re-promotes the roots of these sources (D27, R14): each root's pairs with every other root are
- * recomputed from the current typed applied note relations, with no call. What typing, a change of
+ * recomputed from the current typed shown note relations, with no call. What typing, a change of
  * type or direction, a review or a revert of note relations enqueues for both roots. A pair two of
  * the roots share is recomputed twice; the second pass changes nothing.
  */

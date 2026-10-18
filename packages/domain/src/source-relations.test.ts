@@ -121,6 +121,7 @@ describe("source decisions without prose", () => {
       confidence: 0.85,
       origin: "judged",
       supportCount: null,
+      suggested: false,
       status: "pending_review",
       current: true,
       evidence: [],
@@ -138,6 +139,13 @@ describe("source decisions without prose", () => {
       writtenExplanation: null
     };
     expect(SourceRelationViewSchema.parse(promoted)).toEqual(promoted);
+    // Decision 29: a promoted relation only note suggestions support says it is a suggestion; the
+    // flag is required, so a reader cannot forget it.
+    expect(SourceRelationViewSchema.parse({ ...promoted, suggested: true }).suggested).toBe(true);
+    const withoutFlag = Object.fromEntries(
+      Object.entries(promoted).filter(([key]) => key !== "suggested")
+    );
+    expect(SourceRelationViewSchema.safeParse(withoutFlag).success).toBe(false);
     expect(SourceRelationViewSchema.safeParse({ ...promoted, supportCount: 0 }).success).toBe(
       false
     );

@@ -1830,6 +1830,8 @@
     "loadError": "Impossible de charger ou modifier les relations. Rechargez et réessayez.",
     "empty": "Aucune relation qualifiée. Lancez « Relations entre sources » pour en découvrir.",
     "pending_review": "Suggestion IA",
+    "suggested": "Suggérée",
+    "suggestedHint": "Suggérée à partir de suggestions entre notes. Acceptez pour la conserver ou rejetez pour la retirer.",
     "accepted": "Acceptée",
     "rejected": "Rejetée",
     "direction": "Sens de la relation",

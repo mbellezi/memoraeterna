@@ -151,13 +151,18 @@ export function noteRelationFingerprintSql(relation: string, a: string, b: strin
 const noteFingerprint = noteRelationFingerprintSql("n", "a", "b");
 
 /**
- * The note relations between roots that source matching may use: applied (F3 D9, D23), between
- * current, source-owned notes whose evidence chunks are current. `a` reads to `b` in the stored
- * direction (a symmetric relation reads from its lower endpoint); a relation whose direction is
- * unknown is left out, as it was before relations v2. The endpoints join on the relation's own
- * columns. `roots` is the condition on the two notes' roots (`ta.root_id`, `tb.root_id`).
+ * The note relations between roots that source matching may use, between current, source-owned
+ * notes whose evidence chunks are current: `applied` for the judge's hypotheses and its pair key
+ * (F3 D9), `shown` (applied or suggested, decision 29) for promotion. `a` reads to `b` in the
+ * stored direction (a symmetric relation reads from its lower endpoint); a relation whose
+ * direction is unknown is left out, as it was before relations v2. The endpoints join on the
+ * relation's own columns. `roots` is the condition on the two notes' roots (`ta.root_id`,
+ * `tb.root_id`).
  */
-const noteRelationsBetweenRootsSql = (roots: string) => `from atomic_note_relations n
+const noteRelationsBetweenRootsSql = (
+  roots: string,
+  state: "applied" | "shown"
+) => `from atomic_note_relations n
         join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end
         join atomic_notes b on b.id = case when n.direction = 'hi_to_lo' then n.source_atomic_note_id else n.target_atomic_note_id end
         join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
@@ -167,33 +172,52 @@ const noteRelationsBetweenRootsSql = (roots: string) => `from atomic_note_relati
           and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
           and n.direction <> 'unknown'
           and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
-          and ${noteRelationStateSql.applied("n")} and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
+          and ${noteRelationStateSql[state]("n")} and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source'
           and a.supersession_status = 'current' and b.supersession_status = 'current'
           and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null`;
 /** $1 and $2 are the two roots, in either order. */
 const pairNoteRelationsSql = noteRelationsBetweenRootsSql(
-  "((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))"
+  "((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))",
+  "applied"
 );
 
 // Currentness is derived at read time, so edits and review changes never leave live stale edges.
-// Note-origin evidence is current only while its note relation is applied (F3 C3): an automatic
-// veto is not a status, and a withdrawn note relation stops supporting its source relation.
+// Note-origin evidence is current only while its note relation is shown, applied or suggested (F3
+// C3, decision 29): an automatic veto is not a status, and a withdrawn note relation stops
+// supporting its source relation.
 export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.source_chunk_id
   left join chunks tc on tc.id = e.target_chunk_id
   left join documents sd on sd.id = sc.document_id left join documents td on td.id = tc.document_id
   left join atomic_note_relations n on n.id = e.note_relation_id
   left join atomic_notes a on a.id = e.source_note_id
   left join atomic_notes b on b.id = e.target_note_id`;
-export const currentSourceRelationEvidenceSql = `(sc.id is not null and tc.id is not null
+/** Current evidence whose note relation is in `state` (the joins above: `e`, `n`, `a`, `b`...). */
+const currentEvidenceWhenSql = (
+  state: "applied" | "shown"
+) => `(sc.id is not null and tc.id is not null
   and sd.metadata->>'supersededByDocumentId' is null and td.metadata->>'supersededByDocumentId' is null
   and sc.content_hash = e.snapshot->>'sourceHash' and tc.content_hash = e.snapshot->>'targetHash'
-  and (e.origin = 'source_analysis' or (n.id is not null and ${noteRelationStateSql.applied("n")}
+  and (e.origin = 'source_analysis' or (n.id is not null and ${noteRelationStateSql[state]("n")}
     and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
     and a.supersession_status = 'current' and b.supersession_status = 'current'
     and ${noteFingerprint} = e.snapshot->>'noteFingerprint')))`;
+export const currentSourceRelationEvidenceSql = currentEvidenceWhenSql("shown");
 export const currentSourceRelationSql = `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
   where e.relation_id = r.id and ${currentSourceRelationEvidenceSql})`;
+/**
+ * A suggestion nobody kept (decision 29), over the relation alias (`r`): promoted, with no human
+ * verdict, some of its evidence current, and none of that evidence resting on an applied note
+ * relation (one the owner kept, or applied before F3): only suggestions support it. Derived at read
+ * time like currentness, so keeping a supporting note relation, or the source relation itself,
+ * ends the suggestion at once, with no stored flag to go stale. A judged relation is never one.
+ */
+export const suggestedSourceRelationSql = (r = "r") =>
+  `(${r}.origin = 'promoted' and ${r}.status = 'pending_review'
+  and exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
+    where e.relation_id = ${r}.id and ${currentEvidenceWhenSql("shown")})
+  and not exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
+    where e.relation_id = ${r}.id and e.origin = 'atomic_notes' and ${currentEvidenceWhenSql("applied")}))`;
 /**
  * Every importance-ordered read of source relations (F3 R4, I-R11): a promoted relation has no
  * score, so it lists after the scored ones, the better supported first. `r` is the relation alias.
@@ -496,14 +520,17 @@ export function createSourceRelationRepository(pool: PgPool) {
     },
 
     /**
-     * Promotes a root's typed applied cross-root note relations into source relations with no call
-     * (design E, F3 D27): per other root, the relations `planPromotedSourceRelations` plans, with
-     * no scores, the supporting note relations as evidence and their count; a judged relation of
-     * the same root pair and type keeps its origin and scores and only has its support refreshed;
-     * an owner rejection of an equivalent relation is final; a promoted relation whose support is
-     * gone is retired (one the owner accepted is kept). Recomputed from the current set, so a
-     * second pass changes nothing. Every change is an event of one `promote` run (D14). Limit the
-     * pass to some other roots with `otherRootIds`.
+     * Promotes a root's typed shown (applied or suggested, decision 29) cross-root note relations
+     * into source relations with no call (design E, F3 D27): per other root, the relations
+     * `planPromotedSourceRelations` plans, with no scores, the supporting note relations as
+     * evidence and their count. A relation promoted only from suggestions is itself a suggestion
+     * (`suggestedSourceRelationSql`, read from its evidence) until the owner keeps it or keeps any
+     * supporting note relation; nothing is stored for that, so no pass is needed to end it. A
+     * judged relation of the same root pair and type keeps its origin and scores and only has its
+     * support refreshed; an owner rejection of an equivalent relation is final; a promoted
+     * relation whose support is gone is retired (one the owner accepted is kept). Recomputed from
+     * the current set, so a second pass changes nothing. Every change is an event of one `promote`
+     * run (D14). Limit the pass to some other roots with `otherRootIds`.
      */
     async promoteFromNotes(
       rootId: string,
@@ -976,16 +1003,20 @@ interface HeldRelation extends QueryResultRow {
 }
 
 /**
- * $1 the root, $2 the other roots (null: all): the typed applied note relations between the root
- * and other roots, each read from its subject (a symmetric one from its lower endpoint).
+ * $1 the root, $2 the other roots (null: all): the typed shown (applied or suggested, decision 29)
+ * note relations between the root and other roots, each read from its subject (a symmetric one
+ * from its lower endpoint).
  */
 const promotionRelationsSql = `${sourceRelationTreeSql}
   select n.id, n.relation_type as type, coalesce(n.probability, n.final_score)::float8 as probability,
     a.id as "subjectNoteId", b.id as "objectNoteId", ta.root_id as "subjectRootId", tb.root_id as "objectRootId",
     a.idea_statement as "subjectIdea", b.idea_statement as "objectIdea",
     a.evidence_chunk_id as "subjectChunkId", b.evidence_chunk_id as "objectChunkId", ${noteFingerprint} as fingerprint
-  ${noteRelationsBetweenRootsSql(`$1 in (ta.root_id, tb.root_id) and ta.root_id <> tb.root_id
-    and ($2::uuid[] is null or (case when ta.root_id = $1 then tb.root_id else ta.root_id end) = any($2::uuid[]))`)}
+  ${noteRelationsBetweenRootsSql(
+    `$1 in (ta.root_id, tb.root_id) and ta.root_id <> tb.root_id
+    and ($2::uuid[] is null or (case when ta.root_id = $1 then tb.root_id else ta.root_id end) = any($2::uuid[]))`,
+    "shown"
+  )}
     and n.relation_type is not null
   order by n.id`;
 
@@ -1505,7 +1536,7 @@ export async function listSourceRelations(
     select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId",
       a.title as "sourceTitle", b.title as "targetTitle", r.relation_type as "relationType",
       r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.explanation,r.importance,r.confidence,r.status,
-      r.origin, r.support_count as "supportCount",
+      r.origin, r.support_count as "supportCount", ${suggestedSourceRelationSql("r")} as suggested,
       ${currentSourceRelationSql} as current,r.updated_at as "updatedAt",count(*) over()::int as total
     from source_relations r join source_items a on a.id = r.source_item_id join source_items b on b.id = r.target_source_item_id
     where ($5::uuid is null or r.id=$5) and (r.source_item_id in (select id from source_scope) or r.target_source_item_id in (select id from source_scope))

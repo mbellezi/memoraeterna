@@ -996,7 +996,9 @@ export const knowledgeGraphDashboardEdgeSchema = z
     description: z.string().nullable(),
     weight: z.number().positive(),
     confidence: z.number().min(0).max(1),
-    details: z.array(z.string())
+    details: z.array(z.string()),
+    /** A source relation nobody kept (decision 29); only source relation edges say so. */
+    suggested: z.boolean().optional()
   })
   .strict();
 export const knowledgeGraphDashboardSchema = z

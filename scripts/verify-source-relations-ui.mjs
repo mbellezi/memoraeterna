@@ -23,13 +23,14 @@ const relationships=Array.from({length:3},(_,i)=>({
   id:String(i),sourceItemId:"A",targetSourceItemId:"B",sourceTitle:"Livro: Mecanismos de aprendizagem",targetTitle:"Artigo: Recuperação ativa e memória",
   relationType:["supports","contrasts","extends"][i],sourceIdea:"A recuperação ativa fortalece a retenção.",targetIdea:"O esforço de recordar favorece a aprendizagem.",
   explanation:["Sustenta o benefício da recuperação ativa para a retenção de longo prazo, quando há oportunidade de corrigir erros.","Contrasta quanto à necessidade de feedback imediato: as fontes descrevem condições diferentes para consolidar a aprendizagem.","Amplia a explicação dos mecanismos ao relacionar o esforço de recordar à correção de erros."][i],
-  importance:0.9,confidence:0.9,origin:"judged",supportCount:null,status:"pending_review",current:true,updatedAt:"2026-09-07T00:00:00.000Z",
+  importance:0.9,confidence:0.9,origin:"judged",supportCount:null,suggested:false,status:"pending_review",current:true,updatedAt:"2026-09-07T00:00:00.000Z",
   evidence:[{id:"e"+i,origin:i===0?"atomic_notes":"source_analysis",current:true,sourceChunkId:"c1",targetChunkId:"c2",sourceSpanId:null,targetSpanId:null,
     sourceExcerpt:"A recuperação ativa promove a retenção. O efeito depende de tentativas de recordar acompanhadas de oportunidades de corrigir interpretações equivocadas.",
     targetExcerpt:"O esforço de recordar favorece a aprendizagem. As condições experimentais devem ser preservadas ao comparar os resultados.",sourceNoteId:i===0?"note-A":null,targetNoteId:i===0?"note-B":null,noteRelationId:null}]
 }));
 // Design E (F3 D27): the third relation is promoted from three note connections, with no scores.
-Object.assign(relationships[2],{importance:null,confidence:null,origin:"promoted",supportCount:3});
+// Decision 29: only note suggestions support it, so it is a suggestion until the owner keeps it.
+Object.assign(relationships[2],{importance:null,confidence:null,origin:"promoted",supportCount:3,suggested:true});
 window.app={knowledge:{listSourceRelations:async(input)=>{lastOffset=input.offset;await new Promise(r=>setTimeout(r,60));if(mode==="error")throw new Error("fixture");return mode==="empty"?{relations:[],hasMore:false,total:0}:{relations:relationships,hasMore:input.offset===0,total:33};},
  reviewSourceRelation:async(input)=>{const row=relationships.find(r=>r.id===input.id);row.status=input.status;return true;}}};
 const root=createRoot(document.querySelector("#root"));
@@ -42,6 +43,10 @@ export async function verify(){
  if(document.querySelector("#root").scrollWidth>document.querySelector("#root").clientWidth+1)throw new Error("Horizontal overflow");
  if(!document.querySelectorAll("article")[2].textContent.includes("Ligadas por 3 conexões entre notas"))throw new Error("A promoted relation must read as linked through its note connections");
  if(document.querySelectorAll("article")[0].textContent.includes("conexões entre notas"))throw new Error("A judged relation shows no support count");
+ const suggestedCard=document.querySelectorAll("article")[2];
+ if(!suggestedCard.textContent.includes("Sugerida")||!suggestedCard.textContent.includes("Aceite para mantê-la"))throw new Error("A suggested relation must read as a suggestion and say how to keep it");
+ if(suggestedCard.textContent.includes("Sugestão da IA"))throw new Error("A suggested relation is not an unreviewed judged relation");
+ if(document.querySelectorAll("article")[0].textContent.includes("Sugerida"))throw new Error("A judged relation is not a suggestion");
  document.querySelector("summary").click();
  await waitFor(()=>document.querySelector("details").open);
  const noteButton=[...document.querySelectorAll("button")].find(el=>el.textContent.includes("Ver nota"));noteButton.click();
@@ -55,7 +60,7 @@ export async function verify(){
  const canvas=document.querySelector("canvas"),ctx=canvas.getContext("2d");
  ctx.strokeStyle="#475569";ctx.beginPath();ctx.moveTo(25,35);ctx.lineTo(375,35);ctx.stroke();
  drawFadingEdgeLabel(ctx,{label:"relations",kind:"source_connection",labelOpacity:1,sourceRelations:[{kind:"source_relation",relationType:"supports",weight:3},{kind:"source_relation",relationType:"extends",weight:1},{kind:"source_relation",relationType:"contrasts",weight:1}]},{x:25,y:35},{x:375,y:35},{});
- return {cards:cards.length,overlap:false,review:true,pagination:true,empty:true,error:true,noteNavigation:true,promoted:true};
+ return {cards:cards.length,overlap:false,review:true,pagination:true,empty:true,error:true,noteNavigation:true,promoted:true,suggested:true};
 }
 `;
 async function verify() {

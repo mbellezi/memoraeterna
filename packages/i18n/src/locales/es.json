@@ -1832,6 +1832,8 @@
     "loadError": "No se pudieron cargar o actualizar las relaciones. Recarga e inténtalo de nuevo.",
     "empty": "Aún no hay relaciones cualificadas. Procesa “Relaciones entre fuentes” para encontrarlas.",
     "pending_review": "Sugerencia de IA",
+    "suggested": "Sugerida",
+    "suggestedHint": "Sugerida a partir de sugerencias entre notas. Acepta para conservarla o rechaza para quitarla.",
     "accepted": "Aceptada",
     "rejected": "Rechazada",
     "direction": "Dirección de la relación",

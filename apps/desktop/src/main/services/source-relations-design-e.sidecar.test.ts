@@ -18,16 +18,20 @@ import {
   createChunkRepository,
   createDocumentRepository,
   createEmbeddingRepository,
+  createKnowledgeGraphDashboardRepository,
+  createObsidianWikiRepository,
   createPgPool,
   createRelationEventRepository,
   createRelationMatchRunRepository,
   createSourceItemRepository,
+  createSourceRelationExplanationRepository,
   createSourceRelationRepository,
   currentSourceRelationEvidenceSql,
   listSourceRelations,
   resolvePostgresSidecarPaths,
   runMigrations,
   sourceRelationEvidenceJoins,
+  sourceRelationExplainable,
   type PgPool,
   type SourceRelationChunk
 } from "@app/db";
@@ -37,9 +41,11 @@ import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.j
 import { hierarchyRootComposite, refreshAncestorComposites } from "./source-composite.js";
 import { matchSources } from "./source-relation-processing.js";
 
-// Design E (F3 D27) against a real database: promotion of typed applied note relations (majority
-// type and direction, null scores, support count, owner rejection final, idempotent, retired when
-// support is lost, typed-only with re-promotion on typing, R14), the merge rules with judged
+// Design E (F3 D27) against a real database: promotion of typed shown (applied or suggested,
+// decision 29) note relations (majority type and direction, null scores, support count, owner
+// rejection final, idempotent, retired when support is lost, typed-only with re-promotion on
+// typing, R14), a relation only suggestions support reading as a suggestion until it is kept (by
+// the owner or through a supporting note relation), the merge rules with judged
 // verdicts and the readers' order (R4, I-R11), discovery's nearest and reverse neighbours on the
 // composite vectors, a judged pair end to end, and a hierarchy root's composite recomputed.
 // The generative judge's route (`op:source_relation_matching`, class `decide`); routing itself is
@@ -258,7 +264,7 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     await relate(r2!, x2!, "supports");
     await relate(r3!, x3!, "extends");
     await relate(r1!, x2!, null); // untyped: shown, never promoted
-    await relate(r2!, x3!, "supports", "suggest"); // suggested: not applied
+    await relate(r2!, x3!, "supports", "suggest"); // suggested: promoted with the applied ones
 
     const promotion = await repository.promoteFromNotes(retrieval.id);
     expect(promotion).toMatchObject({
@@ -277,19 +283,22 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       target_source_item_id: feedback.id,
       importance: null,
       confidence: null,
-      support_count: 2,
+      support_count: 3,
       status: "pending_review"
     });
-    // Its evidence is the two supporting note relations, current while they are applied.
+    // Its evidence is the three supporting note relations, current while they are shown; two are
+    // applied, so the relation is not a suggestion.
     const page = await listSourceRelations(db(), retrieval.id, feedback.id);
     const view = SourceRelationViewSchema.parse({ ...page.relations[0], writtenExplanation: null });
     expect(view).toMatchObject({
       origin: "promoted",
-      supportCount: 2,
+      supportCount: 3,
       importance: null,
-      current: true
+      current: true,
+      suggested: false
     });
     expect(view.evidence.map((evidence) => [evidence.origin, evidence.current])).toEqual([
+      ["atomic_notes", true],
       ["atomic_notes", true],
       ["atomic_notes", true]
     ]);
@@ -600,6 +609,268 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     expect((await relationsBetween(left.id, right.id)).map((row) => row.status)).toEqual([
       "rejected"
     ]);
+  });
+
+  // --- suggestions (decision 29) -------------------------------------------------------------------
+
+  /** The relations between two works as readers list them, parsed with the view schema. */
+  const viewsBetween = async (left: string, right: string) =>
+    (await listSourceRelations(db(), left, right)).relations.map((relation) =>
+      SourceRelationViewSchema.parse({ ...relation, writtenExplanation: null })
+    );
+  /** The owner's verdict on a note relation (the review writer's effect on its row). */
+  const decideNote = (relationId: string, status: "accepted" | "rejected") =>
+    db().query(
+      "update atomic_note_relations set status = $2::atomic_note_relation_status where id = $1",
+      [relationId, status]
+    );
+  /** What the vault's wiki would write of the relations between two works. */
+  const wikiRelations = async (left: string, right: string) =>
+    (await createObsidianWikiRepository(db()).relationRefs([left, right])).map((ref) =>
+      String(ref.id)
+    );
+  /** Two works with one typed note relation of the given band between each pair of their notes. */
+  const linkedWorks = async (
+    names: [string, string],
+    relations: Array<{ type: NoteRelationWriteType | null; band: "apply" | "suggest" }>
+  ) => {
+    const left = await work(names[0]);
+    const right = await work(names[1]);
+    const lefts = await withNotes(
+      left,
+      relations.map((_, index) => `${names[0]} idea ${index}`)
+    );
+    const rights = await withNotes(
+      right,
+      relations.map((_, index) => `${names[1]} idea ${index}`)
+    );
+    const noteRelationIds: string[] = [];
+    for (const [index, item] of relations.entries())
+      noteRelationIds.push(await relate(lefts[index]!, rights[index]!, item.type, item.band));
+    return { left, right, noteRelationIds };
+  };
+
+  it("promotes typed suggestions to a suggested source relation that every reader reads as one", async () => {
+    const repository = createSourceRelationRepository(db());
+    const { left, right } = await linkedWorks(
+      ["Spaced repetition", "Flashcard design"],
+      [
+        { type: "supports", band: "suggest" },
+        { type: "supports", band: "suggest" },
+        { type: null, band: "suggest" } // untyped: shown, never promoted
+      ]
+    );
+    const promotion = await repository.promoteFromNotes(left.id);
+    expect(promotion).toMatchObject({ promoted: 1, refreshed: 0, retired: 0, ownerRejected: 0 });
+    const [row, ...others] = await relationsBetween(left.id, right.id);
+    expect(others).toEqual([]);
+    expect(row).toMatchObject({
+      origin: "promoted",
+      relation_type: "supports",
+      importance: null,
+      confidence: null,
+      support_count: 2,
+      status: "pending_review"
+    });
+    // The list reads it as a suggestion, with current evidence: a suggested note relation supports it.
+    const [view, ...more] = await viewsBetween(left.id, right.id);
+    expect(more).toEqual([]);
+    expect(view).toMatchObject({
+      origin: "promoted",
+      suggested: true,
+      supportCount: 2,
+      status: "pending_review",
+      current: true
+    });
+    expect(view!.evidence.map((evidence) => evidence.current)).toEqual([true, true]);
+    // Its explanation can be written: both sides have current passages.
+    const context = await createSourceRelationExplanationRepository(db()).readContext(view!.id);
+    expect(context && sourceRelationExplainable(context)).toBe(true);
+    // The graph draws it, marked as a suggestion; the vault's wiki leaves it out, as the vault's
+    // note links leave out suggestions.
+    const graph = await createKnowledgeGraphDashboardRepository(db()).get("sources", "relations");
+    expect(graph.edges.find((edge) => edge.id === view!.id)).toMatchObject({
+      kind: "source_relation",
+      label: "supports",
+      suggested: true
+    });
+    expect(await wikiRelations(left.id, right.id)).toEqual([]);
+    // Idempotent from either root: nothing changes, no run is recorded, and it stays a suggestion.
+    for (const root of [left.id, right.id])
+      expect(await repository.promoteFromNotes(root)).toMatchObject({
+        promoted: 0,
+        refreshed: 0,
+        retired: 0,
+        runId: null
+      });
+    expect((await viewsBetween(left.id, right.id)).map((item) => item.suggested)).toEqual([true]);
+  });
+
+  it("ends the suggestion when the owner keeps the source relation, or any note relation that supports it", async () => {
+    const repository = createSourceRelationRepository(db());
+    // Kept on the source relation itself: Accept.
+    const kept = await linkedWorks(
+      ["Interleaved practice", "Blocked practice"],
+      [
+        { type: "contradicts", band: "suggest" },
+        { type: "contradicts", band: "suggest" }
+      ]
+    );
+    await repository.promoteFromNotes(kept.left.id);
+    const [suggestion] = await viewsBetween(kept.left.id, kept.right.id);
+    expect(suggestion).toMatchObject({ suggested: true, status: "pending_review" });
+    expect(await repository.review(suggestion!.id, "accepted", suggestion!.updatedAt)).toBe(true);
+    expect(await viewsBetween(kept.left.id, kept.right.id)).toEqual([
+      expect.objectContaining({ id: suggestion!.id, suggested: false, status: "accepted" })
+    ]);
+    expect(await wikiRelations(kept.left.id, kept.right.id)).toEqual([suggestion!.id]);
+
+    // Kept through a supporting note relation: the owner keeps one of the two suggestions. The
+    // source relation reads as kept at once, with no new promotion pass, and its evidence and
+    // support do not change.
+    const through = await linkedWorks(
+      ["Elaborative interrogation", "Self explanation"],
+      [
+        { type: "extends", band: "suggest" },
+        { type: "extends", band: "suggest" }
+      ]
+    );
+    await repository.promoteFromNotes(through.left.id);
+    expect((await viewsBetween(through.left.id, through.right.id))[0]).toMatchObject({
+      suggested: true
+    });
+    expect(await wikiRelations(through.left.id, through.right.id)).toEqual([]);
+    await decideNote(through.noteRelationIds[0]!, "accepted");
+    const [upgraded] = await viewsBetween(through.left.id, through.right.id);
+    expect(upgraded).toMatchObject({
+      suggested: false,
+      status: "pending_review",
+      supportCount: 2,
+      current: true
+    });
+    expect(await wikiRelations(through.left.id, through.right.id)).toEqual([upgraded!.id]);
+    expect(await repository.promoteFromNotes(through.left.id)).toMatchObject({
+      promoted: 0,
+      refreshed: 0,
+      retired: 0,
+      runId: null
+    });
+    // Removing the kept one leaves the other suggestion: it is a suggestion again.
+    await decideNote(through.noteRelationIds[0]!, "rejected");
+    expect(await repository.promoteFromNotes(through.left.id)).toMatchObject({ refreshed: 1 });
+    expect((await viewsBetween(through.left.id, through.right.id))[0]).toMatchObject({
+      suggested: true,
+      supportCount: 1
+    });
+  });
+
+  it("keeps a relation that applied note relations support as it was, suggestions beside them counted", async () => {
+    const repository = createSourceRelationRepository(db());
+    const { left, right } = await linkedWorks(
+      ["Dual coding", "Concrete examples"],
+      [
+        { type: "clarifies", band: "apply" },
+        { type: "clarifies", band: "suggest" },
+        { type: "clarifies", band: "suggest" }
+      ]
+    );
+    expect(await repository.promoteFromNotes(left.id)).toMatchObject({ promoted: 1 });
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      origin: "promoted",
+      suggested: false,
+      supportCount: 3
+    });
+  });
+
+  it("retires a suggested relation when its last supporting relation is removed, and keeps an owner removal final", async () => {
+    const repository = createSourceRelationRepository(db());
+    const { left, right, noteRelationIds } = await linkedWorks(
+      ["Desirable difficulties", "Fluency illusions"],
+      [
+        { type: "supports", band: "suggest" },
+        { type: "supports", band: "suggest" }
+      ]
+    );
+    await repository.promoteFromNotes(left.id);
+    // One removal refreshes the support; the last one retires the relation, as one event.
+    await decideNote(noteRelationIds[0]!, "rejected");
+    expect(await repository.promoteFromNotes(left.id)).toMatchObject({ refreshed: 1, retired: 0 });
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      suggested: true,
+      supportCount: 1
+    });
+    await decideNote(noteRelationIds[1]!, "rejected");
+    // Before the pass runs nothing supports it: it reads as stale, not as a suggestion.
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      suggested: false,
+      current: false
+    });
+    const retired = await repository.promoteFromNotes(right.id);
+    expect(retired).toMatchObject({ promoted: 0, retired: 1 });
+    expect(await relationsBetween(left.id, right.id)).toEqual([]);
+    expect(
+      (await createRelationEventRepository(db()).listByRun(retired.runId!)).map(
+        (event) => event.kind
+      )
+    ).toEqual(["retired"]);
+
+    // The owner removes a suggested source relation: it is never promoted again, and the note
+    // suggestions that supported it stay as they are.
+    const other = await linkedWorks(
+      ["Testing effect", "Restudy"],
+      [{ type: "supports", band: "suggest" }]
+    );
+    await repository.promoteFromNotes(other.left.id);
+    const [suggestion] = await viewsBetween(other.left.id, other.right.id);
+    expect(await repository.review(suggestion!.id, "rejected", suggestion!.updatedAt)).toBe(true);
+    expect(await repository.promoteFromNotes(other.left.id)).toMatchObject({
+      promoted: 0,
+      ownerRejected: 1
+    });
+    expect(
+      (await relationsBetween(other.left.id, other.right.id)).map((row) => row.status)
+    ).toEqual(["rejected"]);
+    expect((await viewsBetween(other.left.id, other.right.id))[0]).toMatchObject({
+      suggested: false,
+      status: "rejected"
+    });
+  });
+
+  it("does not read a judged relation as a suggestion, even one that absorbed suggested support", async () => {
+    const repository = createSourceRelationRepository(db());
+    const { left, right } = await linkedWorks(
+      ["Mnemonic devices", "Method of loci"],
+      [{ type: "extends", band: "suggest" }]
+    );
+    await repository.promoteFromNotes(left.id);
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({ suggested: true });
+    const leftChunk = await passage(left, "Mnemonics organise material into memorable images.");
+    const rightChunk = await passage(right, "The method of loci places images along a route.");
+    await repository.commitDecision(
+      `judged-${randomUUID()}`,
+      left.id,
+      right.id,
+      [
+        {
+          existingId: null,
+          sourceItemId: left.id,
+          targetSourceItemId: right.id,
+          relationType: "extends",
+          sourceIdea: null,
+          targetIdea: null,
+          explanation: null,
+          importance: 0.9,
+          confidence: 0.95,
+          evidence: [{ source: leftChunk, target: rightChunk, note: null }]
+        }
+      ],
+      {}
+    );
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      origin: "judged",
+      suggested: false,
+      supportCount: 1
+    });
   });
 
   // --- discovery ----------------------------------------------------------------------------------

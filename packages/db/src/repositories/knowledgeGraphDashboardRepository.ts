@@ -4,7 +4,8 @@ import type { PgPool } from "../client.js";
 import { appliedNoteRelationSql } from "./note-relation-sql.js";
 import {
   currentSourceRelationSql,
-  sourceRelationImportanceOrderSql
+  sourceRelationImportanceOrderSql,
+  suggestedSourceRelationSql
 } from "./sourceRelationRepository.js";
 import type { AtomicNoteStatus, SourceItemType } from "./types.js";
 
@@ -34,6 +35,8 @@ export interface KnowledgeGraphDashboardEdgeRecord {
   weight: number;
   confidence: number;
   details: string[];
+  /** A source relation nobody kept (decision 29); absent on the other kinds of edge. */
+  suggested?: boolean;
 }
 
 export interface KnowledgeGraphDashboardRecord {
@@ -230,7 +233,8 @@ async function listSourceGraph(
   if (sourceView === "relations") {
     const result = await pool.query(
       `select r.id,r.source_item_id as source,r.target_source_item_id as target,
-      r.relation_type as label,r.explanation as description,r.confidence,r.importance
+      r.relation_type as label,r.explanation as description,r.confidence,r.importance,
+      ${suggestedSourceRelationSql("r")} as suggested
       from source_relations r where r.status <> 'rejected' and ${currentSourceRelationSql}
       and r.source_item_id = any($1::uuid[]) and r.target_source_item_id = any($1::uuid[])
       order by ${sourceRelationImportanceOrderSql()},r.id limit $2`,
@@ -262,7 +266,8 @@ async function listSourceGraph(
         description: row.description ?? null,
         confidence: Number(row.confidence),
         weight: 1,
-        details: row.description ? [row.description] : []
+        details: row.description ? [row.description] : [],
+        suggested: row.suggested === true
       })),
       truncated: hasMoreNodes || result.rows.length > maxEdges
     };

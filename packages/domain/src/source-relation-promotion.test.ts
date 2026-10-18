@@ -26,7 +26,7 @@ const relation = (
 const plan = (relations: PromotionNoteRelation[]) =>
   planPromotedSourceRelations({ rootId: "R", relations, compareRoots });
 
-describe("promotion of typed applied note relations (D27)", () => {
+describe("promotion of typed shown note relations (D27, decision 29)", () => {
   it("gives one relation per other root with the majority type and its supporting relations", () => {
     const a = relation("supports", "R", "X", { contentKey: "a" }),
       b = relation("supports", "R", "X", { contentKey: "b" }),

@@ -334,9 +334,9 @@ export class KnowledgeService {
   }
 
   /**
-   * Re-promotes the source relations of these roots from their typed applied note relations, with
-   * no call (F3 D27, R14): what a typing, a change of type or direction, a review or a revert
-   * enqueues for both roots of the note relations it changed.
+   * Re-promotes the source relations of these roots from their typed shown (applied or suggested)
+   * note relations, with no call (F3 D27, R14, decision 29): what a typing, a change of type or
+   * direction, a review or a revert enqueues for both roots of the note relations it changed.
    */
   public async promoteSourceRelations(rootIds: readonly string[]) {
     return promoteSourceRelations(this.requirePool(), rootIds);

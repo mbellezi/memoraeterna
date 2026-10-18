@@ -4,7 +4,8 @@ import { readNoteEvidence, retainedNoteCurrentSql } from "./noteEvidence.js";
 import {
   currentSourceRelationSql,
   currentSourceRelationEvidenceSql,
-  sourceRelationEvidenceJoins
+  sourceRelationEvidenceJoins,
+  suggestedSourceRelationSql
 } from "./sourceRelationRepository.js";
 import type { Queryable } from "./types.js";
 
@@ -243,13 +244,18 @@ export function createObsidianWikiRepository(pool: PgPool) {
         content: e.excerpt
       }));
     },
-    /** The source relations between these sources, without their evidence. */
+    /**
+     * The source relations between these sources, without their evidence. Like the vault's note
+     * links (applied relations only, D9), the wiki keeps suggestions out: they are reviewed in
+     * Memora, and a suggestion the owner keeps is written on the next pass (decision 29).
+     */
     async relationRefs(sourceIds: string[]) {
       return (
         await pool.query(
           `select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current
         from source_relations r join source_items a on a.id=r.source_item_id join source_items b on b.id=r.target_source_item_id
-        where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) order by r.id`,
+        where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[])
+          and not ${suggestedSourceRelationSql("r")} order by r.id`,
           [sourceIds]
         )
       ).rows;

@@ -125,3 +125,14 @@ export function sourceRelationSupport(
     ? { count: relation.supportCount }
     : null;
 }
+
+/**
+ * The label a relation's row shows (decision 29): a suggestion nobody kept reads "suggested", and
+ * keeping it (the owner's Accept, or keeping a note relation that supports it) turns it into
+ * "accepted" or an ordinary connection; every other relation reads its review status.
+ */
+export function sourceRelationStatusKey(
+  relation: Pick<SourceRelationView, "status" | "suggested">
+): "suggested" | SourceRelationView["status"] {
+  return relation.status === "pending_review" && relation.suggested ? "suggested" : relation.status;
+}

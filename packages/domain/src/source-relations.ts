@@ -169,7 +169,8 @@ export const SourceRelationEvidenceSchema = z
 
 /**
  * How a source relation came to be (F3 D27): `judged` by the source judge, with its scores, or
- * `promoted` from typed applied note relations with no call, with no scores (unknown stays unknown).
+ * `promoted` from typed shown note relations (applied, kept or suggested) with no call, with no
+ * scores (unknown stays unknown).
  */
 export const SourceRelationOriginSchema = z.enum(["judged", "promoted"]);
 export type SourceRelationOrigin = z.infer<typeof SourceRelationOriginSchema>;
@@ -201,6 +202,12 @@ export const SourceRelationViewSchema = z
     origin: SourceRelationOriginSchema,
     /** The note relations it is promoted from (a judged relation may carry them too); else null. */
     supportCount: z.number().int().positive().nullable(),
+    /**
+     * Decision 29: a suggestion nobody kept. True while the relation is promoted, has no human
+     * verdict and every note relation that supports it is itself a suggestion; it stops being one
+     * when the owner keeps it (`status` accepted) or keeps any of its supporting note relations.
+     */
+    suggested: z.boolean(),
     status: AtomicNoteRelationStatusSchema,
     current: z.boolean(),
     evidence: z.array(SourceRelationEvidenceSchema).max(100),

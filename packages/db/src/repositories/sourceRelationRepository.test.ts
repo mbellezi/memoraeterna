@@ -7,7 +7,9 @@ import { noteRelationStateSql } from "./note-relation-sql.js";
 import {
   createSourceRelationRepository,
   currentSourceRelationEvidenceSql,
-  noteRelationFingerprintSql
+  sourceRelationEvidenceJoins,
+  noteRelationFingerprintSql,
+  suggestedSourceRelationSql
 } from "./sourceRelationRepository.js";
 
 const citedExclusion =
@@ -92,8 +94,51 @@ describe("source-relation evidence currency", () => {
     );
   });
 
-  it("counts note-origin evidence only while its note relation is applied (C3)", () => {
-    expect(currentSourceRelationEvidenceSql).toContain(noteRelationStateSql.applied("n"));
+  it("counts note-origin evidence while its note relation is shown, applied or suggested (C3, decision 29)", () => {
+    expect(currentSourceRelationEvidenceSql).toContain(noteRelationStateSql.shown("n"));
     expect(currentSourceRelationEvidenceSql).not.toContain("n.status <> 'rejected'");
+  });
+});
+
+describe("source relations only note suggestions support (decision 29)", () => {
+  const sql = suggestedSourceRelationSql("rel").replace(/\s+/g, " ");
+
+  it("promotes typed shown note relations, while the judge's hypotheses stay applied ones", async () => {
+    const queries: string[] = [];
+    const pool = {
+      async query<T extends QueryResultRow>(text: string) {
+        queries.push(text.replace(/\s+/g, " "));
+        return { command: "SELECT", rowCount: 0, oid: 0, fields: [], rows: [] } as QueryResult<T>;
+      }
+    } as unknown as PgPool;
+    const repository = createSourceRelationRepository(pool);
+    await repository.promoteFromNotes("root");
+    await repository.pairNotes("a", "b");
+    // A pass reads its relations first, then the pairs it holds; the judge's read comes last.
+    const promotion = queries[0];
+    const hypotheses = queries.at(-1);
+    // Promotion reads relations through the shown predicate (applied or suggested) and no other
+    // filter on their status, band or veto (the static visibility test also forbids one).
+    expect(promotion).toContain(noteRelationStateSql.shown("n"));
+    expect(promotion).toContain("n.relation_type is not null");
+    expect(hypotheses).toContain(noteRelationStateSql.applied("n"));
+    expect(hypotheses).not.toContain(noteRelationStateSql.suggested("n"));
+  });
+
+  it("is promoted, unreviewed, supported by current shown evidence and by no applied note relation", () => {
+    expect(sql).toContain("rel.origin = 'promoted' and rel.status = 'pending_review'");
+    // Some evidence is current under the shown predicate...
+    expect(sql).toContain(
+      `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins.replace(/\s+/g, " ")} where e.relation_id = rel.id and ${currentSourceRelationEvidenceSql.replace(/\s+/g, " ")})`
+    );
+    // ...and none rests on an applied (kept, or applied before F3) note relation.
+    const [, notApplied] = sql.split("and not exists");
+    expect(notApplied).toContain("e.origin = 'atomic_notes'");
+    expect(notApplied).toContain(noteRelationStateSql.applied("n"));
+    expect(notApplied).not.toContain(noteRelationStateSql.suggested("n"));
+  });
+
+  it("takes only a plain relation alias", () => {
+    expect(suggestedSourceRelationSql()).toContain("r.origin = 'promoted'");
   });
 });

@@ -20,6 +20,7 @@ import {
   sourceRelationExcerpt,
   sourceRelationExplanationView,
   sourceRelationOpenReducer,
+  sourceRelationStatusKey,
   sourceRelationSupport,
   type WrittenSourceExplanation
 } from "./source-relation-explanation-state";
@@ -227,10 +228,14 @@ export function SourceRelationsList({
           const excerpt = shownInRow ? null : sourceRelationExcerpt(relation);
           // A promoted relation has no judge's score: its note connections stand in for one.
           const support = sourceRelationSupport(relation);
+          // Decision 29: a relation only note suggestions support is a suggestion until it is kept.
+          const statusKey = sourceRelationStatusKey(relation);
+          const suggested = statusKey === "suggested";
           return (
             <article
               key={relation.id}
-              className="grid min-w-0 gap-2 rounded-xl border border-current/15 p-3"
+              data-suggested={suggested ? "true" : undefined}
+              className={`grid min-w-0 gap-2 rounded-xl border border-current/15 p-3${suggested ? " border-dashed" : ""}`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Icon
@@ -240,7 +245,7 @@ export function SourceRelationsList({
                 />
                 <strong>{formatEdgeLabel(relation.relationType, t)}</strong>
                 <span className="ml-auto text-[11px] opacity-70">
-                  {t(`sourceRelations.${relation.status}`)}
+                  {t(`sourceRelations.${statusKey}`)}
                 </span>
               </div>
               <p className="flex flex-wrap items-center gap-1 text-xs opacity-70">
@@ -278,6 +283,9 @@ export function SourceRelationsList({
                   ? ` · ${t("sourceRelations.linkedThrough", { values: { count: support.count } })}`
                   : null}
               </p>
+              {suggested && !compact ? (
+                <p className="text-xs opacity-70">{t("sourceRelations.suggestedHint")}</p>
+              ) : null}
               {!relation.current ? (
                 <p className="text-xs text-amber-500">{t("sourceRelations.stale")}</p>
               ) : null}

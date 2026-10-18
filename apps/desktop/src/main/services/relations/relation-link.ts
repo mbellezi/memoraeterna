@@ -197,7 +197,7 @@ export interface RelationLinkSteps {
     input: RelationDiscoveryInput,
     signal?: AbortSignal
   ) => Promise<Record<string, unknown>>;
-  /** Promotes the typed applied note relations of these roots to source relations (T53, D27). */
+  /** Promotes the typed shown note relations of these roots to source relations (T53, D27). */
   promoteSourceRelations?: (
     rootIds: readonly string[],
     signal?: AbortSignal
@@ -658,8 +658,8 @@ export class RelationLinker {
         typing.untyped[reason] = (typing.untyped[reason] ?? 0) + (count ?? 0);
       for (const root of linked.typedRoots) promotedRoots.add(root);
     }
-    // Step 5: promotion of the typed applied relations (T53) for the root and every root its new
-    // typed relations reach, then discovery.
+    // Step 5: promotion of the typed shown relations, suggestions included (T53, decision 29), for
+    // the root and every root its new typed relations reach, then discovery.
     const promotion =
       this.deps.steps.promoteSourceRelations &&
       (runs.length > 0 || carried.length > 0 || counts.typed > 0)

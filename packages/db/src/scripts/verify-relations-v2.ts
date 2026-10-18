@@ -1040,7 +1040,8 @@ async function selfContained() {
     const { library, evidence, counts } = await verifyPendingPath(db, workDir);
 
     // 2. I-R7 and C3: status, band, probability, veto and metadata are not facts of the evidence;
-    // type and direction are; a vetoed (withdrawn) note relation supports nothing.
+    // type and direction are; a vetoed (withdrawn) note relation supports nothing, a suggestion
+    // supports a suggested source relation (decision 29).
     const directed = library.relations[0]!;
     const evidenceRow = (
       await db.query<{ id: string }>(
@@ -1089,7 +1090,11 @@ async function selfContained() {
     await db.query("update atomic_note_relations set band = 'suggest' where id = $1", [
       directed.id
     ]);
-    assert.equal(await isCurrent(), false, "a suggestion is not applied: it supports nothing");
+    assert.equal(
+      await isCurrent(),
+      true,
+      "decision 29: a suggestion supports its evidence (a suggested source relation)"
+    );
     await db.query("update atomic_note_relations set band = null where id = $1", [directed.id]);
     await db.query("update atomic_note_relations set direction = 'hi_to_lo' where id = $1", [
       directed.id
@@ -1127,7 +1132,7 @@ async function selfContained() {
             "current source evidence identical before and after under the facts-only fingerprint",
             "every fingerprint of the former formula re-keyed, current or not: a discarded note's evidence revives on approval",
             "I-R7: status, band, probability, veto, keys and metadata keep the fingerprint; type and direction change it",
-            "C3: a withdrawn or suggested note relation supports no source evidence",
+            "C3: a withdrawn note relation supports no source evidence; a suggested one supports a suggested source relation",
             "constraints of note relations, source relations, typings, runs and events",
             "0056 through the baseline seed on an empty database: identical shape",
             "a migration killed mid-transaction leaves the database unchanged and migrates later"

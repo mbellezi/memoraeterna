@@ -1,5 +1,7 @@
-// Promotion of note relations into source relations (design E, F3 D27): every typed applied
-// cross-root note relation becomes evidence of a source relation with no call. Pure: the repository
+// Promotion of note relations into source relations (design E, F3 D27): every typed shown (applied,
+// kept or suggested, decision 29) cross-root note relation becomes evidence of a source relation
+// with no call. Whether the result is a suggestion is read from its support, never planned here:
+// the plan counts every shown relation alike. Pure: the repository
 // reads the note relations and writes what this plans, so the order replay and the tests share it.
 import {
   directedNoteRelationTypes,
@@ -8,7 +10,7 @@ import {
 } from "./knowledge.js";
 import { promotableNoteRelationType } from "./source-relations.js";
 
-/** A typed applied note relation between two roots, read in its direction. */
+/** A typed shown note relation between two roots, read in its direction. */
 export interface PromotionNoteRelation {
   id: string;
   /** Its stored type, write or legacy; a type that promotes nothing is left out. */
@@ -82,7 +84,7 @@ const inContentOrder = (relations: readonly PromotionNoteRelation[]) =>
     .map((relation) => relation.id);
 
 /**
- * What promotion makes of a root's typed applied cross-root note relations (D27): per other root,
+ * What promotion makes of a root's typed shown cross-root note relations (D27): per other root,
  * the majority type; a symmetric one gives one relation; a directed one gives one relation per
  * direction in which it is also the majority of that direction's directed relations, and, when no
  * direction has its own majority, the direction holding most of its relations. `compareRoots` is a
