@@ -27,6 +27,11 @@ export interface OperationCount {
   calls: number;
   /** Calls answered from a cassette; unknown stays undefined. */
   replayed?: number | undefined;
+  /**
+   * A dedicated ranker served the calls (a local model that scores pairs and writes no text). The F3
+   * note decide keeps its `relation_decide` operation on the ranker, so the operation alone cannot tell.
+   */
+  ranker?: boolean | undefined;
 }
 
 const rate = z.number().nullable();
@@ -55,8 +60,10 @@ const excludedOperation =
   /(^|_)(embedding|rank|rank_pairs|gate)(_|$)|^ask$|^local_model_test$|^prompt_catalog_sample$|^benchmark_note_warmup$/u;
 const topicOperation = /^topic_/u;
 
-export function classify(row: Pick<OperationCount, "operation" | "task">): CallClass {
-  if (excludedTasks.has(row.task)) return "excluded";
+export function classify(
+  row: Pick<OperationCount, "operation" | "task"> & { ranker?: boolean | undefined }
+): CallClass {
+  if (row.ranker || excludedTasks.has(row.task)) return "excluded";
   if (row.operation) {
     if (excludedOperation.test(row.operation)) return "excluded";
     if (topicOperation.test(row.operation)) return "topic";
@@ -75,7 +82,8 @@ export function summarizeCallsPerChapter(
 ): CallsPerChapter {
   const grouped = new Map<string, ChapterRow>();
   for (const count of counts) {
-    const key = count.operation ?? count.task;
+    const name = count.operation ?? count.task;
+    const key = count.ranker ? `${name} (ranker)` : name;
     const cls = classify(count);
     const existing = grouped.get(key);
     const replayed = count.replayed === undefined ? null : count.replayed;
@@ -164,7 +172,8 @@ const operationsFileSchema = z.union([
       operation: z.string().nullable().default(null),
       task: z.string(),
       calls: z.number().int().nonnegative(),
-      replayed: z.number().int().nonnegative().optional()
+      replayed: z.number().int().nonnegative().optional(),
+      ranker: z.boolean().optional()
     })
   ),
   z.object({
@@ -174,7 +183,8 @@ const operationsFileSchema = z.union([
         operation: z.string().nullable().default(null),
         task: z.string(),
         calls: z.number().int().nonnegative(),
-        replayed: z.number().int().nonnegative().optional()
+        replayed: z.number().int().nonnegative().optional(),
+        ranker: z.boolean().optional()
       })
     )
   })

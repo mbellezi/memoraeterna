@@ -75,6 +75,11 @@ describe("calls per chapter", () => {
     expect(classify({ operation: "ask", task: "text-generation" })).toBe("excluded");
     expect(classify({ operation: null, task: "embedding" })).toBe("excluded");
     expect(classify({ operation: null, task: "knowledge-graph-generation" })).toBe("generative");
+    // The F3 note decide keeps its operation on the dedicated ranker: only the ranker flag tells.
+    expect(classify({ operation: "relation_decide", task: "reranking", ranker: true })).toBe(
+      "excluded"
+    );
+    expect(classify({ operation: "relation_decide", task: "reranking" })).toBe("generative");
 
     const summary = summarizeCallsPerChapter(
       [
