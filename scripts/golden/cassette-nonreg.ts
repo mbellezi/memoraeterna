@@ -17,7 +17,7 @@
  * failure leaves nothing behind. Besides the kept entries it holds the base's top-level files
  * (`cassette.json`, `e2e-route.json`) and `nonreg.json`, the provenance: base path, rule version, counts.
  *
- * THE RULE (`matching-strip-v1`): an entry is a matching entry when the prompt it carries is one of the matching
+ * THE RULE (`matching-strip-v2`): an entry is a matching entry when the prompt it carries is one of the matching
  * prompts of the catalog (`packages/domain/src/prompt-defaults.ts`), whatever the task type or the runtime,
  * because the E6 cassette holds its note decide on a local writer and the golden one on Codex:
  *
@@ -51,7 +51,8 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 
 /** Bump when a rule below changes: the provenance file names the version a copy was made with. */
-export const nonRegressionRuleVersion = "matching-strip-v1";
+// v2: the ranker note decide also carries the F3 bake-off's `relation` instruction.
+export const nonRegressionRuleVersion = "matching-strip-v2";
 
 export const nonRegressionFileName = "nonreg.json";
 
@@ -81,7 +82,10 @@ export const MATCHING_RULES: readonly Rule[] = [
   {
     kind: "note-decide-ranker",
     probe: "instruction",
-    startsWith: ["Given a note (Query), decide whether the Document note"]
+    startsWith: [
+      "Judge whether the Document states an idea with a substantive conceptual relationship to the Query note",
+      "Given a note (Query), decide whether the Document note"
+    ]
   },
   {
     kind: "source-judge",

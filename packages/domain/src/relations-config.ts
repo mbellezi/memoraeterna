@@ -1,7 +1,7 @@
 // The typed configuration of relations v2 (F3 D46; spec 4.4): retrieval, decide, calibrations and
 // bands. Every number note matching uses lives here, not in rules (RULES.md section 1). Values
 // marked (cal.) in docs/f3-decisions.md are start values: T52 added the link job, the daily cap and
-// coalescing; T53 adds discovery, and T58 writes the frozen calibrations and bands (defaults only).
+// coalescing; T53 adds discovery, and T58 wrote the frozen calibrations and bands (defaults only).
 import { z } from "zod";
 
 import {
@@ -88,10 +88,10 @@ const DecideSchema = z
     /** Sequences per MLX forward pass; part of the decider cache key. */
     helperBatchSize: int(1, 64).default(16),
     template: z.literal(relationPairTextTemplate).default(relationPairTextTemplate),
-    /** Body characters of the rendered note (400 or 600; the bake-off chooses). */
-    bodyCharacters: int(1, 10_000).default(400),
-    /** Aggregation of the two directions (D18): max until T58 selects. */
-    rule: RelationAggregationRuleSchema.default("max"),
+    /** Body characters of the rendered note: 600, the F3 bake-off's choice (D13). */
+    bodyCharacters: int(1, 10_000).default(600),
+    /** Aggregation of the two directions (D18): mean, the F3 bake-off's choice. */
+    rule: RelationAggregationRuleSchema.default("mean"),
     /**
      * The score an uncalibrated decider must reach to be suggested (it never applies, D18): a
      * ranker without a calibration entry, or whose parity check failed, at Spike A's thresholds in
@@ -203,8 +203,8 @@ export const RelationsConfigSchema = z
 export type RelationsConfig = z.infer<typeof RelationsConfigSchema>;
 export type RelationsConfigInput = z.input<typeof RelationsConfigSchema>;
 
-/** The catalog instruction `relations.decide.instruction` as shipped: Spike A's `mechanism`. */
-const shippedInstructionSha256 = "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164";
+/** Spike A's `mechanism` instruction (`relations.decide.instruction` revision 1): the provisional rule's. */
+const spikeAInstructionSha256 = "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164";
 
 const provisionalIdentity = (
   ranker: Pick<
@@ -213,7 +213,7 @@ const provisionalIdentity = (
   >
 ): RelationCalibrationIdentity => ({
   contract: relationDecideContract,
-  instructionSha256: shippedInstructionSha256,
+  instructionSha256: spikeAInstructionSha256,
   template: relationPairTextTemplate,
   bodyCharacters: 400,
   rule: "max",
@@ -222,8 +222,10 @@ const provisionalIdentity = (
 });
 
 /**
- * Provisional calibrations of the two catalog rankers until T58 freezes (spec 3.8 step 6): max of
- * both directions applies at Spike A's frozen thresholds, with no suggest band.
+ * The provisional calibrations of the two catalog rankers before T58 froze (spec 3.8 step 6): max of
+ * both directions applies at Spike A's frozen thresholds, with no suggest band. They hold Spike A's
+ * identity (mechanism, 400, max), which the shipped defaults no longer have; kept as the record and
+ * as the base identity of the bake-off's selections.
  */
 export const provisionalRelationCalibrations: readonly RelationCalibrationEntry[] = [
   {
@@ -256,8 +258,115 @@ export const provisionalRelationCalibrations: readonly RelationCalibrationEntry[
   }
 ];
 
+/**
+ * The calibrations T58 froze (F3 bake-off, plan decision 29; config 745469e5a7acce86, frozen at
+ * 2026-10-18T07:10:50.254Z): relation / 600 / mean, the panel's weighted isotonic map for the
+ * reported probability, no apply band, and the suggest edge chosen on the fixture tuning partition.
+ * Copied from `.cache/f3/freeze/frozen.json`, never edited by hand: a re-freeze replaces them. The
+ * Decisions API decider (plan decision 30) gets an entry of its own identity later.
+ */
+export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
+  {
+    kind: "isotonic",
+    identity: {
+      contract: "relation-decide-v1",
+      instructionSha256: "991ad3a617c4ca6cabab1cb8d45a5806b1e258ef0e5e80a7380d750a09b89c5b",
+      template: "relation-pair-text-v1",
+      bodyCharacters: 600,
+      rule: "mean",
+      provider: "local",
+      model: "mlx-qwen3-reranker-0.6b",
+      runtimeKind: "mlx",
+      repository: "Qwen/Qwen3-Reranker-0.6B",
+      revision: "e61197ed45024b0ed8a2d74b80b4d909f1255473",
+      quantization: "bf16",
+      artifactSha256: "174f5d43f89c73d2b8935f36af5f6a80a9fb31267d05ba7172393e978f6a3a01"
+    },
+    blocks: [
+      { fromScore: -10.234375, probability: 0.013586464290411849 },
+      { fromScore: -6.4375, probability: 0.015537299377036256 },
+      { fromScore: -2.1875, probability: 0.17771307874961412 },
+      { fromScore: -0.96875, probability: 0.3859252426000536 },
+      { fromScore: 2, probability: 0.6348038320852363 },
+      { fromScore: 3.90625, probability: 0.7236861722530442 }
+    ],
+    applyFrom: null,
+    suggestFrom: 0.125,
+    basis:
+      "plan decision 29: suggest from the fixture tuning partition's edge that finds the most expected root pairs at 0 forbidden (ties: the higher edge); no apply band",
+    labelSetHash: "70ee96f7ed1925cef50557469f8207cfc74d5cebc54507309c955411d51b338d",
+    freezeHash: "745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371",
+    fittedAt: "2026-10-18T05:42:47.694Z",
+    parity: {
+      referenceHash: "77c2d41683fc4b9697e5925ae95b1a8f2b18a3a2673e52bd560118750b9854f9",
+      scores: [
+        -14.0546875, -12.65625, -12.640625, -12.1875, -12.765625, -11.125, -10.5625, -12.140625,
+        -11.0625, -10.15625, -10.78125, -9.53125, -8.625, -10.40625, -8.3125, -9, -8.90625, -7.125,
+        -9.21875, -5.8125, -10, -3.4375, -5.375, -6.625, -5.6875, -5.1875, -5.0625, -4.25, -6.5625,
+        -1.5, -3.1875, -3.6875, -0.875, -4.5625, -4.3125, 0, 0.5, -3.1875, 2, -3.5625, -0.75, 0.75,
+        -2.0625, 3.75, 2.75, -0.375, 0.75, 3.25, 3.9375, 1.5, 6.125, 0.375, 1.875, 5.9375, 5.5625,
+        3.625, 4.75, 6.0625, 6.8125, 5.1875, 7.625, 5.8125, 7.6875, 6.9375
+      ]
+    }
+  },
+  {
+    kind: "isotonic",
+    identity: {
+      contract: "relation-decide-v1",
+      instructionSha256: "991ad3a617c4ca6cabab1cb8d45a5806b1e258ef0e5e80a7380d750a09b89c5b",
+      template: "relation-pair-text-v1",
+      bodyCharacters: 600,
+      rule: "mean",
+      provider: "local",
+      model: "gguf-qwen3-reranker-0.6b-q8-0",
+      runtimeKind: "gguf",
+      repository: "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+      revision: "a02f48bb4f057028298c21fa033da2b30d7742d5",
+      quantization: "Q8_0",
+      artifactSha256: "22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48"
+    },
+    blocks: [
+      { fromScore: -10.05329106624119, probability: 0.013586464290411849 },
+      { fromScore: -6.330080728980645, probability: 0.017573326860467284 },
+      { fromScore: -2.5470474785561086, probability: 0.12203578013037089 },
+      { fromScore: -1.4054030838884093, probability: 0.32044405242505963 },
+      { fromScore: 0.5518530589600384, probability: 0.41105723830443475 },
+      { fromScore: 1.7995876376203648, probability: 0.6080726679167734 },
+      { fromScore: 4.256137532103466, probability: 0.7292117680690456 }
+    ],
+    applyFrom: null,
+    suggestFrom: 0.6186392038897985,
+    basis:
+      "plan decision 29: suggest from the fixture tuning partition's edge that finds the most expected root pairs at 0 forbidden (ties: the higher edge); no apply band",
+    labelSetHash: "70ee96f7ed1925cef50557469f8207cfc74d5cebc54507309c955411d51b338d",
+    freezeHash: "745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371",
+    fittedAt: "2026-10-18T05:42:47.694Z",
+    parity: {
+      referenceHash: "77c2d41683fc4b9697e5925ae95b1a8f2b18a3a2673e52bd560118750b9854f9",
+      scores: [
+        -13.979554351772022, -11.956564139434244, -13.116980861168143, -11.987827114564771,
+        -13.679491403032161, -10.646373600118558, -10.733213942474451, -12.352076894896431,
+        -11.781102370433945, -10.815447609089599, -12.052484496748752, -9.776902090113285,
+        -9.435445550863715, -10.761592883284798, -8.40931707531615, -8.606384050912244,
+        -8.049385160361076, -7.6717871958725325, -9.077499567041428, -5.652110041136986,
+        -8.975402340566173, -4.545490045038014, -6.869924624721169, -6.2174641827800485,
+        -6.308344910304574, -5.504241682182784, -5.653672055355986, -5.5433826740913466,
+        -6.786654560311466, -2.059238381721378, -4.1949796417033935, -3.314390234859011,
+        0.6629086809476934, -5.135674527887624, -4.914860732502787, 0.8452471092558945,
+        -1.8582418533188416, -3.159220731139479, 1.8775537770859754, -2.8234625046608306,
+        -0.6970329578667336, 0.7333355613966511, -1.77724070285174, 3.0831981723685935,
+        2.0732303490660167, -0.7810019142072288, 1.0615177381999448, 3.4603710547774935,
+        2.2574267943658133, 1.0301057151137094, 6.320724227874671, -0.11848247994976793,
+        0.874366911270387, 6.165143253861916, 5.520282459257673, 2.381741288403319,
+        4.932301608676971, 6.100450384850788, 7.008080622592154, 5.416012038611887,
+        7.582506893393163, 5.6989027670023695, 7.502277557267472, 6.956802437806665
+      ]
+    }
+  }
+];
+
 export const relationsConfig: RelationsConfig = RelationsConfigSchema.parse({
-  calibrations: provisionalRelationCalibrations
+  calibrations: frozenRelationCalibrations
 });
 
 /** The calibration of an identity, or null: the decider is then uncalibrated (suggest only). */

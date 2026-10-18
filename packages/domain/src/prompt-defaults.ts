@@ -122,13 +122,15 @@ export const shippedPromptBodies = [
   {
     // The ranker instruction of the relations v2 decider (F3 D16): a dedicated ranker scores both directions of a note
     // pair, each note as the query of one and the document of the other. Initial text: Spike A's `mechanism`.
+    // Revision 2: the F3 bake-off's `relation` instruction (sha256 991ad3a6...), which the frozen
+    // calibrations are fitted under; revision 1 was Spike A's `mechanism`. Changing this text changes
+    // the ranker's calibration identity: the deciders are uncalibrated until a new freeze.
     id: "relations.decide.instruction",
     caller:
       "apps/desktop/src/main/services/relations/relation-matcher.ts:relationDecideInstruction",
     template:
-      "Given a note (Query), decide whether the Document note makes a claim about the same underlying mechanism, rule " +
-      "or phenomenon, so that a careful reader would link the two notes. Shared names, titles, vocabulary, catalogs or " +
-      "credits do not count.",
+      "Judge whether the Document states an idea with a substantive conceptual relationship to the Query note: it " +
+      "supports, contradicts, extends, depends on, exemplifies or clarifies it. Sharing a topic alone is not enough.",
     keys: []
   },
   {

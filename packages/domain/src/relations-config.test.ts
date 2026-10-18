@@ -4,13 +4,14 @@ import { bandScore } from "./relation-calibration.js";
 import { renderRelationPairText } from "./relation-pair-text.js";
 import {
   findRelationCalibration,
+  frozenRelationCalibrations,
   provisionalRelationCalibrations,
   relationsConfig,
   RelationsConfigSchema
 } from "./relations-config.js";
 
 describe("relations config", () => {
-  it("holds the provisional values of gate 0 and the spec", () => {
+  it("holds the values of gate 0, the spec and the F3 bake-off", () => {
     expect(relationsConfig.retrieval).toEqual({
       vectorK: 24,
       textK: 16,
@@ -26,8 +27,8 @@ describe("relations config", () => {
       rankPairsPerCall: { mlx: 32, gguf: 16 },
       helperBatchSize: 16,
       template: "relation-pair-text-v1",
-      bodyCharacters: 400,
-      rule: "max",
+      bodyCharacters: 600,
+      rule: "mean",
       uncalibratedPass: { logOdds: { mlx: 3.3125, gguf: 3.16 }, probability: 0.65 }
     });
     expect(relationsConfig.maxShownPerNote).toBe(10);
@@ -59,18 +60,39 @@ describe("relations config", () => {
     ).toThrow();
   });
 
-  it("applies the provisional rule of each catalog ranker at Spike A's threshold, with no suggest band", () => {
-    const [mlx, gguf] = provisionalRelationCalibrations;
+  it("holds T58's frozen calibrations: no apply band, suggest from the tuning partition's edge", () => {
+    const [mlx, gguf] = frozenRelationCalibrations;
+    expect(relationsConfig.calibrations).toEqual(frozenRelationCalibrations);
     expect(findRelationCalibration(relationsConfig, mlx!.identity)).toEqual(mlx);
     expect(findRelationCalibration(relationsConfig, gguf!.identity)).toEqual(gguf);
-    expect(bandScore(3.3125, mlx!, 3.3125).band).toBe("apply");
-    expect(bandScore(3.3, mlx!, 3.3125).band).toBeNull();
-    expect(bandScore(3.16, gguf!, 3.16).band).toBe("apply");
-    expect(bandScore(3.15, gguf!, 3.16).band).toBeNull();
-    // Another instruction or rule is another identity: no calibration.
-    expect(findRelationCalibration(relationsConfig, { ...mlx!.identity, rule: "mean" })).toBeNull();
+    for (const entry of [mlx!, gguf!])
+      expect(entry).toMatchObject({
+        kind: "isotonic",
+        applyFrom: null,
+        identity: {
+          // The F3 bake-off's `relation` instruction, 600 body characters, the mean of both directions.
+          instructionSha256: "991ad3a617c4ca6cabab1cb8d45a5806b1e258ef0e5e80a7380d750a09b89c5b",
+          bodyCharacters: 600,
+          rule: "mean",
+          template: "relation-pair-text-v1"
+        },
+        freezeHash: "745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371"
+      });
+    expect([mlx!.identity.runtimeKind, gguf!.identity.runtimeKind]).toEqual(["mlx", "gguf"]);
+    expect(bandScore(0.125, mlx!, 3.3125)).toMatchObject({
+      band: "suggest",
+      calibration: "frozen"
+    });
+    expect(bandScore(0.0625, mlx!, 3.3125).band).toBeNull();
+    expect(bandScore(9, mlx!, 3.3125).band).toBe("suggest");
+    expect(bandScore(0.62, gguf!, 3.16).band).toBe("suggest");
+    expect(bandScore(0.6, gguf!, 3.16).band).toBeNull();
+    // Spike A's provisional identity (mechanism, 400, max) is another identity: no calibration.
+    for (const provisional of provisionalRelationCalibrations)
+      expect(findRelationCalibration(relationsConfig, provisional.identity)).toBeNull();
+    expect(findRelationCalibration(relationsConfig, { ...mlx!.identity, rule: "max" })).toBeNull();
     expect(
-      findRelationCalibration(relationsConfig, { ...mlx!.identity, bodyCharacters: 600 })
+      findRelationCalibration(relationsConfig, { ...mlx!.identity, bodyCharacters: 400 })
     ).toBeNull();
   });
 });

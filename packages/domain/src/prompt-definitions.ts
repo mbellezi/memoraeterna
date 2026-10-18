@@ -302,7 +302,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                 // Names that cover the whole topic: covering samples and subtopics (topic-name-v2).
                 "topic.name",
                 // The typer asks the panel's strict relatedness question first (F3 decision 29).
-                "relations.type"
+                "relations.type",
+                // The F3 bake-off's `relation` ranker instruction (the frozen calibrations' own).
+                "relations.decide.instruction"
               ].includes(row.id)
             ? "2"
             : "1",

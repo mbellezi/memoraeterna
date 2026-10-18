@@ -414,7 +414,7 @@ describe("the non-regression copy", () => {
       "base-nonreg-R"
     ]);
     const text = renderNonRegressionReport(report, out);
-    expect(text).toContain("rule matching-strip-v1");
+    expect(text).toContain("rule matching-strip-v2");
     expect(text).toMatch(/note-decide\s+0\s+3/u);
     expect(text).toMatch(/total\s+7\s+8/u);
   });

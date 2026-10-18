@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256 } from "@app/conversion";
 import { findLocalModelCatalogEntry, rankerCatalogArtifactSha256, rankPairsLimits } from "@app/ai";
 import {
+  calibrate,
+  frozenRelationCalibrations,
   provisionalRelationCalibrations,
   RelationsConfigSchema,
   relationsConfig,
@@ -205,7 +207,24 @@ const verdicts = (...items: Array<[number, number, string]>) => ({
   aiTaskRunId: `gen-${ai.runDefaultTask.mock.calls.length}`
 });
 
-function matcher(config: RelationsConfig = relationsConfig, debug = false) {
+/**
+ * Spike A's provisional rule (max of both directions at 400 characters, applied from 3.3125 log-odds)
+ * under the shipped instruction: the band, cache and fallback mechanics most tests read. The shipped
+ * defaults (T58's frozen calibrations: mean, 600, suggest only) have tests of their own.
+ */
+const provisionalConfig = RelationsConfigSchema.parse({
+  decide: { bodyCharacters: 400, rule: "max" },
+  calibrations: provisionalRelationCalibrations.map((entry) => ({
+    ...entry,
+    identity: { ...entry.identity, instructionSha256: sha256(relationDecideInstruction()) }
+  }))
+});
+/** No calibration at Spike A's 400 characters and max: every decider uncalibrated. */
+const uncalibratedConfig = RelationsConfigSchema.parse({
+  decide: { bodyCharacters: 400, rule: "max" }
+});
+
+function matcher(config: RelationsConfig = provisionalConfig, debug = false) {
   return new RelationMatcher({
     getPool: () => ({}) as PgPool,
     ai: ai as unknown as AiService,
@@ -427,7 +446,7 @@ describe("the ranker decider", () => {
         pair.calibration
       ]);
     };
-    expect(await bands({ config: RelationsConfigSchema.parse({}) })).toEqual([
+    expect(await bands({ config: uncalibratedConfig })).toEqual([
       ["n-b", "suggest", "uncalibrated"]
     ]);
     mocks.validation.parityFailed = true;
@@ -437,16 +456,17 @@ describe("the ranker decider", () => {
     expect(await bands()).toEqual([["n-b", "suggest", "uncalibrated"]]);
     // Below the uncalibrated pass nothing is suggested either.
     rankerScores.set("Source>Beta", 3);
-    expect(await bands({ config: RelationsConfigSchema.parse({}) })).toEqual([]);
+    expect(await bands({ config: uncalibratedConfig })).toEqual([]);
   });
 
   it("gives a frozen calibration's probability and both bands", async () => {
     const identity = rankerCalibrationIdentity({
       instructionSha256: sha256(relationDecideInstruction()),
-      config: relationsConfig,
+      config: provisionalConfig,
       model: mlxModel
     });
     const config = RelationsConfigSchema.parse({
+      decide: { bodyCharacters: 400, rule: "max" },
       calibrations: [
         {
           kind: "isotonic",
@@ -477,6 +497,25 @@ describe("the ranker decider", () => {
     );
   });
 
+  it("suggests by the shipped frozen calibration: the mean of both directions from 0.125, never applied", async () => {
+    // Alpha: mean 0.125 (suggested); Beta: mean 9 (suggested, not applied); Gamma: mean 0.0625.
+    rankerScores.set("Source>Alpha", 2).set("Alpha>Source", -1.75);
+    rankerScores.set("Source>Beta", 9).set("Beta>Source", 9);
+    rankerScores.set("Source>Gamma", 0.125).set("Gamma>Source", 0);
+    const { handed } = await run([source.id], { config: relationsConfig });
+    const [input] = ai.rankPairs.mock.calls[0]!;
+    expect(input.pairs[0].query).toBe(renderRelationPairText(source, 600));
+    expect(handed[0]!.decider.calibration).toBe("frozen");
+    const [mlx] = frozenRelationCalibrations;
+    const blocks = mlx!.kind === "isotonic" ? mlx!.blocks : [];
+    expect(
+      handed[0]!.pairs.map((pair) => [pair.candidateId, pair.band, pair.score, pair.probability])
+    ).toEqual([
+      ["n-b", "suggest", 9, calibrate(9, blocks)],
+      ["n-a", "suggest", 0.125, calibrate(0.125, blocks)]
+    ]);
+  });
+
   it("keeps its calibration across a runtime-build or helper-batch change, under another cache key", async () => {
     rankerScores.set("Source>Beta", 9);
     const keys: string[] = [];
@@ -487,8 +526,8 @@ describe("the ranker decider", () => {
     ] as const) {
       mocks.validation.runtimeBuild = build;
       const config = RelationsConfigSchema.parse({
-        calibrations: provisionalRelationCalibrations,
-        decide: { helperBatchSize: batch }
+        calibrations: provisionalConfig.calibrations,
+        decide: { bodyCharacters: 400, rule: "max", helperBatchSize: batch }
       });
       const { handed } = await run([source.id], { config });
       expect(handed[0]!.pairs[0]).toMatchObject({ band: "apply", calibration: "provisional" });
@@ -685,7 +724,7 @@ describe("the ranker decider", () => {
     expect(completed).toEqual([["n-source", 0]]);
   });
 
-  it("splits like the AI service and starts from the provisional calibrations of the catalog rankers", () => {
+  it("splits like the AI service and ships T58's frozen calibrations of the catalog rankers", () => {
     expect(relationsConfig.decide.rankPairsPerCall).toEqual(rankPairsLimits.perCall);
     expect(relationsConfig.decide.helperBatchSize).toBe(rankPairsLimits.helperBatchSize);
     const instructionSha256 = sha256(relationDecideInstruction());
@@ -705,12 +744,15 @@ describe("the ranker decider", () => {
         }
       });
     });
-    expect(provisionalRelationCalibrations.map((entry) => entry.identity)).toEqual(identities);
-    // The shipped instruction is Spike A's `mechanism`, so the frozen thresholds apply to it.
+    expect(frozenRelationCalibrations.map((entry) => entry.identity)).toEqual(identities);
+    // The shipped instruction is the F3 bake-off's `relation`, which the frozen maps are fitted under.
     expect(relationDecideInstruction()).toBe(
-      "Given a note (Query), decide whether the Document note makes a claim about the same " +
-        "underlying mechanism, rule or phenomenon, so that a careful reader would link the two " +
-        "notes. Shared names, titles, vocabulary, catalogs or credits do not count."
+      "Judge whether the Document states an idea with a substantive conceptual relationship to the " +
+        "Query note: it supports, contradicts, extends, depends on, exemplifies or clarifies it. " +
+        "Sharing a topic alone is not enough."
+    );
+    expect(instructionSha256).toBe(
+      "991ad3a617c4ca6cabab1cb8d45a5806b1e258ef0e5e80a7380d750a09b89c5b"
     );
   });
 
@@ -1149,8 +1191,8 @@ describe("decider identities", () => {
       contract: "relation-decide-v1",
       instructionSha256: base.instructionSha256,
       template: "relation-pair-text-v1",
-      bodyCharacters: 400,
-      rule: "max",
+      bodyCharacters: 600,
+      rule: "mean",
       ...mlxModel
     });
   });
