@@ -1,30 +1,36 @@
-# F3 bake-off: the decider's selection, the freeze and gate F (2026-10-18)
+# F3 bake-off: the deciders' selection, the freezes and gate F (2026-10-18)
 
-Task T58 of F3 (`docs/f3-decisions.md` D3, D13, D18; plan decisions 29 and 30). The selection reads only the
-panel's fit labels and the fixture tuning partition. The configuration was frozen before any held-out read. Gate
-F then read the fixture held-out lists, R_v6, R_v9 and the panel's eval split, and nothing was re-tuned after it.
-The working files are under `.cache/f3/freeze/` (`RUN.md`, `proposal.{json,md}`, `frozen.json`, `gate-f/`).
+Task T58 of F3 (`docs/f3-decisions.md` D3, D13, D18; plan decisions 29 and 30). Each selection reads only the panel's
+fit labels and the fixture tuning partition, and each decider was frozen before its first held-out read. Gate F then
+read the fixture held-out lists, R_v6, R_v9 and the panel's eval split, and nothing was re-tuned after it. The working
+files are under `.cache/f3/freeze/`: `RUN.md`, `proposal.{json,md}`, `proposal-decisions.{json,md}`, `frozen.json`
+(the first freeze is kept beside it), `gate-f/`, `direction-analysis.md` and `x2-analysis.md`.
 
 ## Bottom line
 
-| Gate F row | Value | Bar | Status |
+| Gate F row | MLX (local, default) | Decisions API (remote, opt-in) | Bar |
 | --- | --- | --- | --- |
-| T61's parity (R1) | MLX build sha256:44d081e0...: 64 reference pairs and 522 M1 pairs, max abs delta 0; GGUF scores come from the checked build | pass | met |
-| `frozen.json` before any held-out read | frozen 2026-10-18T07:10:50.254Z; first held-out read 07:14:43.686Z | yes | met |
-| X1, fixture held-out expected (optimistic typing) | 27/28 (missed F3/F5, best mean -0.906) | >= 27/28 | met |
-| X1, fixture held-out forbidden | 0/35 | 0/35 | met |
-| X2, R_v6 loss over the panel-related pairs | 7/35 = 0.200 (literal 9/37 = 0.243; same-root 6/17) | <= 0.05 | **not met** |
-| X2, R_v9 loss | pending: 13/137 lost (literal 0.095; same-root 4/34), 5 of them unlabelled | <= 0.05 | pending (panel pass) |
-| Typer direction accuracy / swap consistency (G25) | pending (the orchestrator's DEV run) | >= 0.85 / >= 0.90 *(cal.)* | pending |
+| Parity (R1) | build sha256:44d081e0...: 64 reference pairs and 522 M1 pairs, max abs delta 0 | request design fingerprint 0e1ebd94... (no runtime build) | pass |
+| Frozen before its first held-out read | 2026-10-18T07:10:50Z, read 07:14:43Z | 07:53:06Z, read 07:56:29Z | yes |
+| X1, fixture held-out expected (optimistic typing) | 27/28 (F3/F5 missed): **met** | 28/28, of them 28/28 in the apply band: **met** | >= 27/28 |
+| X1, fixture held-out forbidden | 0/35: **met** | 0/35: **met** | 0/35 |
+| X2, R_v6 loss over the panel-related pairs | 7/35 = 0.200: **not met** | 12/35 = 0.343: **not met** | <= 0.05 |
+| X2, R_v9 loss | 13/137 = 0.095 [0.095, 0.101]: **not met** | 4/137 lost (3 related, 1 unlabelled): 0.022-0.029, **met either way**; formally pending the one label | <= 0.05 |
+| Typer direction accuracy / swap consistency (G25) | 0.567 / 0.417 with revision 2 (0.550 / 0.433 with revision 1): **not met** | same typer | >= 0.85 / >= 0.90 *(cal.)* |
+| Clean check, eval split: precision at the edge(s) | 0.673 at suggest (106 labels) | 1.000 at apply, 0.927 at suggest (34 labels: A 33, B 1; B and C not sent, public text) | reported |
 
-X1 also reports the following. The pessimistic bound is 0/28 and applied-only is 0/28: the offline export has no
-typing, and decision 29 sets no apply band. Held-out candidate recall is 28/28. The tuning counts in the same export
-are 25/26 expected and 0/25 forbidden.
+Also reported for X1, MLX:
+- Pessimistic bound 0/28 and applied-only 0/28: the offline export has no typing, and decision 29 sets no apply band.
+- Held-out candidate recall 28/28; tuning in the same export 25/26 at 0/25.
 
-## The selection (pre-registered rule, fit labels and tuning only)
+Also reported for X1, Decisions: tuning 26/26 at 0/25, all 26 in the apply band.
 
-The fit labels: 241 note pairs of pools A-C. That is T45's labels plus the 2026-10-18 top-up, with population weights
-by cell (3.9) and all 137 R_v9 pairs left out.
+GGUF is frozen beside MLX and read only on the eval split (0.705 at its suggest edge).
+
+## The local selection (pre-registered rule)
+
+The fit labels are 241 note pairs of pools A-C: T45's labels plus the 2026-10-18 top-up, with population weights by
+cell (3.9) and all 137 R_v9 pairs left out.
 
 | Step | Read | Choice |
 | --- | --- | --- |
@@ -32,72 +38,121 @@ by cell (3.9) and all 137 R_v9 pairs left out.
 | Template | relation, max: 400 0.7343, 600 0.7366 | 600 body characters |
 | Aggregation | 5-fold CV log-loss: mean 0.5755, max 0.6133 | mean of both directions |
 
-The relation and mechanism AUCs are not an exact tie, and no tolerance was pre-registered, so `relation` wins as the
-rule is written.
+Relation and mechanism are not an exact tie. No tolerance was pre-registered, so `relation` wins as the rule is
+written.
 
-Plan decision 29 replaced D18's bands. There is no apply band. The suggest band starts at the score whose band alone
-finds the most expected fixture-tuning root pairs with 0 forbidden. Here "alone" means before typing, capped per note
-as the matcher caps it. Ties go to the higher edge.
+Plan decision 29 sets no apply band. The suggest band starts at the score whose band alone (before typing, capped per
+note) finds the most expected fixture-tuning root pairs with 0 forbidden; ties go to the higher edge.
 
-| Decider | Isotonic map | Suggest from (mean log-odds) | Map P there | Tuning expected / forbidden | Panel fit labels at the edge, pooled (Wilson, n_eff, recall) | A / B / C | CV ECE / Brier |
-| --- | --- | ---: | ---: | --- | --- | --- | --- |
-| MLX Qwen3-Reranker-0.6B bf16 | 6 blocks | 0.125 | 0.386 | 25/26 / 0/25 (P02/P03 missed) | 0.497 (0.400, 97.0, 0.728) | 0.911 / 0.708 / 0.400 | 0.041 / 0.090 |
-| GGUF Qwen3-Reranker-0.6B Q8_0 | 7 blocks | 0.6186 | 0.411 | 25/26 / 0/25 | 0.563 (0.461, 92.9, 0.710) | 0.959 / 0.725 / 0.473 | 0.031 / 0.096 |
+| Decider | Suggest from (mean log-odds) | Map P there | Tuning expected / forbidden | Panel fit labels at the edge, pooled (Wilson, n_eff, recall) | A / B / C | CV ECE / Brier |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| MLX Qwen3-Reranker-0.6B bf16 | 0.125 | 0.386 | 25/26 / 0/25 (P02/P03 missed) | 0.497 (0.400, 97.0, 0.728) | 0.911 / 0.708 / 0.400 | 0.041 / 0.090 |
+| GGUF Qwen3-Reranker-0.6B Q8_0 | 0.6186 | 0.411 | 25/26 / 0/25 | 0.563 (0.461, 92.9, 0.710) | 0.959 / 0.725 / 0.473 | 0.031 / 0.096 |
 
-D18's own reading is reported, not frozen. No level reaches cross-validated weighted precision 0.95 with Wilson >= 0.85
-(the best is 0.739 for MLX and 0.627 for GGUF), and no level reaches 0.80. The uncertain-band escalation is not
-evaluated, because its clause reads the precision bar that decision 29 removed.
+D18's own reading is reported, not frozen: no level reaches 0.95 / 0.85 (best 0.739 for MLX and 0.627 for GGUF).
 
-## The freeze
+## The Decisions decider (plan decision 30)
 
-Config hash `745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371`, frozen at 2026-10-18T07:10:50.254Z, for
-the MLX and GGUF deciders. MLX passed parity on T61's numbers. GGUF passed because the proposal's GGUF scores come from
-the very build parity names. The calibration entries are `kind: isotonic` with the map's blocks, `applyFrom: null`
-and `suggestFrom` at the edge. They also carry the label-set and freeze hashes and each build's 64 parity scores.
-`relations-config.ts` ships them as the defaults, with `decide.bodyCharacters` 600 and `decide.rule` mean; the
-catalog's `relations.decide.instruction` is revision 2, the `relation` instruction. The Decisions API decider of plan
-decision 30 gets a calibration entry of its own identity later; it is not part of this freeze.
+The decider is `gpt-6-luna`, with one predicate question per candidate and Spike A's frozen `mechanism` instruction.
+Each request is a note against its whole decided neighbourhood, in id order, chunked at 20, at 600 characters. Every
+pair is asked in both directions and in the bake-off's two candidate orders. The two orders' probabilities are
+averaged, read as log-odds at epsilon 1e-7, and the two directions take the mean.
+
+It has its own calibration identity: provider and model, instruction hash, template, rule, and
+`requestDesignSha256` 0e1ebd94..., the fingerprint of the whole request design. It has no runtime build, so its
+parity is that fingerprint's equality. D18 was applied as written, to the dense validation's two-order-mean fit scores
+(`scripts/relations/bakeoff-remote.ts select`, the local proposal's cell weights and folds).
+
+| Read | Value |
+| --- | --- |
+| p_apply | 0.871: apply from mean 2.372 (CV precision 0.989, Wilson 0.863, n_eff 28.3, 49 labels) |
+| p_suggest | 0.601: suggest from 1.497 (precision 0.808, 102 labels) |
+| Fixture tuning at the bands | 26/26 expected (all 26 applied), 0/25 forbidden |
+| Decision 29's tuning edge, reported beside | 2.382, 26/26 at 0 forbidden; panel at it 1.000 (Wilson 0.877, 48 labels) |
+| Cross-validated quality | ECE 0.035, Brier 0.050, AUC 0.953 |
+| The accept band by pool | A 0.962, B 1.000, C 0.740 |
+
+## The freezes
+
+- **First freeze (local):** `745469e5a7acce86ece3f6d271a9646fd2f06116926080a34d9a9b371760b371`, 2026-10-18T07:10:50.254Z,
+  MLX and GGUF.
+  - MLX passed on T61's parity numbers.
+  - GGUF passed because its proposal scores come from the build that parity names.
+- **Re-freeze:** `8017633d054529975c25e2bbd2ae50f03d245e93e3c46c872215c9cb4be3e6e3`, 2026-10-18T07:53:06.300Z.
+  - It adds the Decisions entry and keeps the local entries exactly as they were (their `freezeHash` names the first
+    freeze).
+  - The first record is kept beside it as `frozen-2026-10-18T07-10-50-254Z.json` and named in `previous` (D3).
+- **What ships:** `relations-config.ts` ships all three entries, with `decide.bodyCharacters` 600 and `decide.rule`
+  mean, and the catalog's `relations.decide.instruction` at revision 2 (`relation`).
 
 ## Gate F reads
 
-- **X1.** F3's retrieval runs in S0 order on a fresh ENV-F clone. That is 52 roots released: 39 tuning in manifest
-  order, then 13 held-out; 8 roots with no notes are not released. It covers 138 notes, 2,154 candidate rows and
-  1,977 decided pairs. Each decided pair is scored by MLX at relation/600 on T61's build (27.2 ms per directed pair).
-  The one held-out expected root pair missed is F3/F5 (best mean -0.906, below 0.125).
-- **X2 R_v6.** The 37 Spike A reverse-only pairs are banded at the frozen edge. The panel calls 35 of them related, and
-  7 of those fall below 0.125. All 7 are `extends` pairs, at mean scores from -3.25 to -1.06. The bar fails. By the
-  rule, the measured value goes to the owner and nothing is re-tuned on it.
-- **X2 R_v9.** 13 of the 137 v9 acceptances are not in S0's suggest band. 5 of the lost pairs have no panel label, so
-  the loss waits for the lost-pair pass (`.cache/f3/labels/passes/freeze/`: 25 items, the 5 lost pairs and 20
-  consistency pairs, 2 pages, about 9.6k input tokens per judge, three blind Opus judges).
-- **The clean check (the panel's eval split, nothing chosen on it).** The precision at the suggest edge is
-  population-weighted, with the frozen proposal's cell weights.
+- **X1.** F3's retrieval runs in S0 order on a fresh ENV-F clone: 52 roots released, 39 tuning and then 13 held-out,
+  with 138 notes and 1,977 decided pairs.
+  - MLX scored every decided pair at relation/600 on T61's build.
+  - Decisions answered the same notes' dense requests: 532 requests, US$ 0.22 of the card's US$ 0.28, synthetic
+    fixture text only.
+  - MLX misses one held-out expected root pair, F3/F5 (best mean -0.906); Decisions finds it.
+- **X2 R_v6** (Spike A's 37 reverse-only acceptances).
+  - MLX loses 7 of the 35 related pairs: all `extends`, 4 same-root, mean scores -3.25 to -1.06. In all but one, both
+    directions are below the edge, so the max of the two directions would not keep them at that edge either.
+  - Decisions loses 12, all `extends`, 7 same-root. Their means are 0.06 to 1.39, under the 1.497 suggest edge. In 6
+    of them one direction is above it, and the mean of the two directions takes the pair under. Decisions keeps 2 of
+    MLX's 7 and loses 7 that MLX keeps.
+  - Spike A's library has no F3 export, so its dense shape is approximated: each note's 10 nearest judged rows by
+    cosine, and the notes whose 10 nearest hold it.
+  - R_v6 is the cost of the mean rule and the bands both deciders' fit labels chose. Changing them now would be
+    re-tuning on a gate read, so it is the owner's call.
+- **X2 R_v9** (the 137 v9 acceptances on the pinned fixture; the lost-pair panel pass, consistency 16/20).
+  - MLX loses 13, all below its edge and all panel-related: `extends` 7, `example_of` 3, `same_as` 3; 4 same-root.
+  - Decisions keeps all 13. It loses 4 others, each below its suggest edge: 3 related `extends` pairs (same-root) and
+    1 pair no pass has labelled.
+  - The Decisions loss is 0.022, or 0.029 if that pair is related. The bar is met either way; one label closes it
+    formally.
+  - Details: `.cache/f3/freeze/x2-analysis.md`.
+- **The typer (G25).** The two reports are `2026-10-18T07-31-49-973Z` (revision 2) and `07-32-53-182Z` (revision 1).
+  - Revision 2 reads 0.567 / 0.417, revision 1 0.550 / 0.433, so the strict prompt did not cause the failure.
+  - Both name the note shown second as the subject far more often than the panel does (first-position share
+    0.26 / 0.32 against 0.50).
+  - Of the 60 panel directions, 47 are unanimous.
+  - Offline readings (`.cache/f3/freeze/direction-analysis.md`):
+    - When the typer's two orders agree (25-26 of 60 pairs) it is right 0.73-0.76 of the time.
+    - The local rankers' directional asymmetry carries no direction (MLX 0.48, GGUF 0.48: chance).
+    - Decisions' asymmetry carries some: 0.70 on all 60, 0.78 on the 37 pairs whose directions differ by at least 1
+      log-odds. Those scores are paid already whenever Decisions decides.
+    - 78% of the panel's related pairs, and 92% of the strict typer's answers, have a directed type. The product
+      already shows an unknown direction as ↔ with "{subject} and {object} are linked: {word}".
+- **The clean check** (the panel's eval split, nothing chosen on it; population-weighted).
 
-| Decider | Labels | Precision at the suggest edge | Recall at the edge | ECE | Brier | AUC A / B / C |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| MLX | 106 | 0.673 | 0.565 | 0.030 | 0.104 | 0.989 / 0.758 / 0.825 |
-| GGUF | 106 | 0.705 | 0.457 | 0.088 | 0.098 | 0.985 / 0.807 / 0.831 |
+| Decider | Labels | Precision at apply | Precision at suggest | Recall at the accept band | ECE | Brier | AUC A / B / C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| MLX | 106 | - | 0.673 | 0.565 | 0.030 | 0.104 | 0.989 / 0.758 / 0.825 |
+| GGUF | 106 | - | 0.705 | 0.457 | 0.088 | 0.098 | 0.985 / 0.807 / 0.831 |
+| Decisions (covered labels only) | 34 | 1.000 | 0.927 | 0.785 | 0.032 | 0.011 | - |
 
-- **Reconcile dry run on the stored M1 run (0 calls).** It considered 109 relations. 92 move from apply to suggest. 17
-  are left to the next match, because their rendered text differs at 600 characters. None drops out. 74 stored scores
-  that have no relation would now be suggested (the next match types them).
+Two more reads:
+- **Decisions' clean check** covers the eval labels its dense requests answered: 33 of pool A's, 1 of pool B's. Pools
+  B and C are public texts that this card did not send.
+- **Reconcile dry run on the stored M1 run** (MLX, 0 calls): 109 relations considered. 92 move from apply to suggest,
+  17 wait for the next match because their rendered text changed, and none drops out.
 
-## The typer (plan decision 29's experiment)
+## The typer prompt (plan decision 29's experiment)
 
 At the MLX edge, all 147 fit labels were typed in content order on live Codex (14 calls, about 85k tokens).
-- **Typer prompt revision 1:** band + typed precision 0.677 pooled, recall kept 0.946, the panel's type on 39/85
-  typed positives.
-- **The panel's strict relatedness question (now revision 2):** precision 0.746, recall kept 0.906, the panel's type
-  on 46/82.
+- **Revision 1:** band + typed precision 0.677, recall kept 0.946.
+- **Revision 2,** with the panel's strict relatedness question: 0.746, recall kept 0.906.
 
-Neither reaches 0.80, so there is no "confirmed" tier. The strict wording ships as `relations.type` revision 2 (the
-orchestrator's adoption; content only, no model change). Revision 1 stays selectable as the candidate
-`candidate-shipped-1`. G25's position check runs on revision 2, with 60 fit-split directed pairs and no R_v9 pair.
+Neither reaches 0.80, so there is no "confirmed" tier. Revision 2 ships, and revision 1 stays selectable as
+`candidate-shipped-1`.
 
 ## Owner-relevant
 
-1. **X2 fails on R_v6** (0.200 against <= 0.05). Spike A's reverse-only `extends` pairs score far below the frozen
-   edge. X1 passes (27/28 at 0/35), and R_v9 waits for its pass.
-2. Every automatic note relation is a suggestion (decision 29). The panel calls about half of the band's weighted
-   pairs unrelated on the fit labels (MLX 0.497); the eval split reads 0.673 for MLX and 0.705 for GGUF.
-3. The typer's veto lifts the band to 0.746 with the strict prompt, short of a "confirmed" tier.
+1. **Local (MLX):** X1 passes; X2 fails on both R_v6 (0.200) and R_v9 (0.095), and the typer's direction fails.
+   Every automatic relation is a suggestion (decision 29).
+2. **Decisions:** X1 passes with every held-out expected pair in the apply band, and X2 R_v9 passes (0.022-0.029,
+   one label pending). X2 R_v6 fails (0.343), on reverse-only `extends` pairs that the mean of two directions puts
+   under the suggest edge.
+3. **Direction:** neither typer prompt reaches the bars. Options with no extra call:
+   - Show every automatic relation's direction as unknown (↔, "linked: supports") until the owner keeps it.
+   - Show a direction only where Decisions' two directions differ clearly (0.78 at 37/60).
+   - Show it only where the typer's two orders agree (0.76 at 25/60), at a second typing call per pair.
