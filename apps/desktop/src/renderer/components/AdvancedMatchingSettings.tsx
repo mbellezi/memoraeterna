@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { AtomicNoteMatchingSettingsSchema, recommendedMatchingConfiguration } from "@app/domain";
+import { recommendedMatchingConfiguration } from "@app/domain";
 import type { MessageKey } from "@app/i18n";
 import type { AppSettings, AppSettingsUpdate } from "../../shared/ipc";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { Switch } from "./ui/switch";
 import { MatchingResetButton } from "./MatchingResetButton";
-import { MatchingSlider } from "./MatchingSlider";
 
 export function AdvancedMatchingSettings({
   settings,
@@ -24,14 +22,7 @@ export function AdvancedMatchingSettings({
     sourceRelationSettings: defaultSourceRelationSettings
   } = recommendedMatchingConfiguration;
   const resetLabel = t("settings.matching.resetDefault");
-  const [invalidWeights, setInvalidWeights] = useState(false);
   const label = (key: string) => t(`settings.matching.advanced.${key}` as MessageKey);
-  const updateNotes = (patch: Partial<typeof notes>) => {
-    const result = AtomicNoteMatchingSettingsSchema.safeParse({ ...notes, ...patch });
-    setInvalidWeights(!result.success);
-    if (result.success) onChange({ atomicNoteMatchingSettings: result.data });
-    return result.success;
-  };
   return (
     <details className="min-w-0 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
       <summary className="cursor-pointer text-sm font-semibold">{label("title")}</summary>
@@ -40,106 +31,26 @@ export function AdvancedMatchingSettings({
         <fieldset className="grid min-w-0 gap-3">
           <legend className="mb-3 font-medium">{label("notes")}</legend>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {(
-              [
-                ["textCandidateLimit", 1, 200],
-                ["vectorCandidateLimit", 1, 200],
-                ["graphCandidateLimit", 0, 200],
-                ["fusedCandidateLimit", 1, 100],
-                ["minimumGraphOnlyCandidates", 0, 100],
-                ["reciprocalRankConstant", 1, 200],
-                ["maxRelationsPerNote", 1, 100],
-                ["maxRerankOutputTokens", 512, 16384]
-              ] as const
-            ).map(([key, min, max]) => (
-              <NumericSetting
-                key={key}
-                label={label(key)}
-                value={notes[key]}
-                defaultValue={defaultAtomicNoteMatchingSettings[key]}
-                resetLabel={resetLabel}
-                min={min}
-                max={max}
-                onCommit={(value) => updateNotes({ [key]: value })}
-              />
-            ))}
+            <NumericSetting
+              label={label("maxRerankOutputTokens")}
+              value={notes.maxRerankOutputTokens}
+              defaultValue={defaultAtomicNoteMatchingSettings.maxRerankOutputTokens}
+              resetLabel={resetLabel}
+              min={512}
+              max={16384}
+              onCommit={(value) =>
+                onChange({ atomicNoteMatchingSettings: { ...notes, maxRerankOutputTokens: value } })
+              }
+            />
           </div>
-          <MatchingSlider
-            id="matching-minRerankScore"
-            label={label("minRerankScore")}
-            value={notes.minRerankScore}
-            defaultValue={defaultAtomicNoteMatchingSettings.minRerankScore}
-            resetLabel={t("settings.matching.resetDefault")}
-            onCommit={(value) => updateNotes({ minRerankScore: value })}
-          />
-          <p className="text-xs leading-5 text-slate-500">{label("validationHint")}</p>
-          {(["requireReranking", "includeWeakTypes"] as const).map((key) => (
-            <label key={key} className="flex items-center justify-between gap-3 text-sm">
-              {label(key)}
-              <span className="flex items-center gap-2">
-                <MatchingResetButton
-                  label={`${label(key)}: ${resetLabel}`}
-                  onReset={() => updateNotes({ [key]: defaultAtomicNoteMatchingSettings[key] })}
-                />
-                <Switch
-                  checked={notes[key]}
-                  onChange={(event) => updateNotes({ [key]: event.target.checked })}
-                />
-              </span>
-            </label>
-          ))}
           <Button
             className="justify-self-start"
-            onClick={() => {
-              setInvalidWeights(false);
-              onChange({ atomicNoteMatchingSettings: defaultAtomicNoteMatchingSettings });
-            }}
+            onClick={() =>
+              onChange({ atomicNoteMatchingSettings: defaultAtomicNoteMatchingSettings })
+            }
           >
             {label("resetNotes")}
           </Button>
-        </fieldset>
-        <fieldset className="grid min-w-0 gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <legend className="font-medium">{label("weights")}</legend>
-          <p className="text-xs leading-5 text-slate-500">{label("weightsHint")}</p>
-          {invalidWeights && (
-            <p role="alert" className="text-sm text-red-600">
-              {label("invalidWeights")}
-            </p>
-          )}
-          {(
-            ["withEmbeddingAndGraph", "withEmbedding", "withGraph", "textAndMetadata"] as const
-          ).map((group) => (
-            <div key={group} className="grid gap-2">
-              <p className="text-xs font-medium">{label(group)}</p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {Object.entries(notes[group]).map(([key, value]) => (
-                  <NumericSetting
-                    key={key}
-                    label={label(key)}
-                    value={value}
-                    defaultValue={
-                      (defaultAtomicNoteMatchingSettings[group] as Record<string, number>)[key]!
-                    }
-                    resetLabel={resetLabel}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    onCommit={(next) => updateNotes({ [group]: { ...notes[group], [key]: next } })}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          <NumericSetting
-            label={label("rerankerWeight")}
-            value={notes.rerankerWeight}
-            defaultValue={defaultAtomicNoteMatchingSettings.rerankerWeight}
-            resetLabel={resetLabel}
-            min={0}
-            max={1}
-            step={0.01}
-            onCommit={(value) => updateNotes({ rerankerWeight: value })}
-          />
         </fieldset>
         <fieldset className="grid min-w-0 gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
           <legend className="font-medium">{label("canonical")}</legend>

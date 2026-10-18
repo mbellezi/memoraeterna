@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   MatchingConfigurationSchema,
   matchingConfigurationsEqual,
+  migrateMatchingSettingsV2,
   recommendedMatchingConfiguration,
   recommendedMatchingPresetId,
   retiredRecommendedMatchingConfiguration,
@@ -40,6 +41,11 @@ const importDirectorySchema = z.object({ directory: z.string().refine(isAbsolute
 
 export interface SettingsRepository {
   getAppSettings: () => Promise<AppSettings | null>;
+  /**
+   * Rewrites a stored app-settings document that still holds the matching settings the relations v2
+   * migration retired (T53b); resolves true when it rewrote one. Reads migrate in memory regardless.
+   */
+  migrateAppSettings: () => Promise<boolean>;
   saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   getStorageSettings: () => Promise<StorageSettings | null>;
   saveStorageSettings: (settings: StorageSettings) => Promise<StorageSettings>;
@@ -70,7 +76,7 @@ function withoutRetiredPresetId(value: unknown): unknown {
 }
 
 export function parseSavedAppSettings(value: unknown): AppSettings {
-  const saved = appSettingsSchema.parse(withoutRetiredPresetId(value));
+  const saved = appSettingsSchema.parse(withoutRetiredPresetId(migrateMatchingSettingsV2(value)));
   let configuration = MatchingConfigurationSchema.parse(saved);
   const active = saved.matchingPresets.find((preset) => preset.id === saved.activeMatchingPresetId);
   if (active) {
@@ -166,6 +172,18 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
         return null;
       }
     },
+    async migrateAppSettings() {
+      let stored: unknown;
+      try {
+        stored = JSON.parse(await readFile(appSettingsPath, "utf8"));
+      } catch {
+        return false;
+      }
+      const migrated = migrateMatchingSettingsV2(stored);
+      if (migrated === stored) return false;
+      await writeFile(appSettingsPath, JSON.stringify(migrated, null, 2), "utf8");
+      return true;
+    },
     async saveAppSettings(settings) {
       await mkdir(dirname(appSettingsPath), { recursive: true });
       await writeFile(appSettingsPath, JSON.stringify(settings, null, 2), "utf8");
@@ -202,6 +220,14 @@ function createDbSettingsRepository(
     async getAppSettings() {
       const value = await appRepository.get(appSettingsKey);
       return value ? parseSavedAppSettings(value) : null;
+    },
+    async migrateAppSettings() {
+      const stored = await appRepository.get(appSettingsKey);
+      if (!stored) return false;
+      const migrated = migrateMatchingSettingsV2(stored);
+      if (migrated === stored) return false;
+      await appRepository.set(appSettingsKey, migrated);
+      return true;
     },
     async saveAppSettings(settings) {
       await appRepository.set(appSettingsKey, settings);
@@ -260,6 +286,7 @@ async function createEnvDbSettingsRepository(): Promise<SettingsRepository | nul
 
 export class SettingsService {
   private repository: SettingsRepository | null = null;
+  private appSettingsMigration: Promise<void> | null = null;
   private appUpdateQueue: Promise<unknown> = Promise.resolve();
   private readonly defaultLocale: string | undefined;
 
@@ -294,6 +321,7 @@ export class SettingsService {
 
   public async getApp(): Promise<AppSettings> {
     const repository = await this.getRepository();
+    await this.migrateStoredAppSettings(repository);
     const saved = await repository.getAppSettings();
     return saved ?? repository.saveAppSettings(createDefaultAppSettings(this.defaultLocale));
   }
@@ -363,6 +391,21 @@ export class SettingsService {
     const disposableRepository = this.repository as
       (SettingsRepository & { dispose?: () => Promise<void> }) | null;
     await disposableRepository?.dispose?.();
+  }
+
+  /**
+   * Matching settings v2 (T53b): the first read of a service drops the retired matching settings
+   * from the stored document, once, before anything else reads or saves it. A failure is not fatal:
+   * every read migrates in memory and the next save writes the clean document.
+   */
+  private migrateStoredAppSettings(repository: SettingsRepository): Promise<void> {
+    this.appSettingsMigration ??= repository.migrateAppSettings().then(
+      () => undefined,
+      () => {
+        this.appSettingsMigration = null;
+      }
+    );
+    return this.appSettingsMigration;
   }
 
   private async getRepository(): Promise<SettingsRepository> {

@@ -327,11 +327,6 @@ export const appSettingsSchema = z.object({
   metadataEnrichmentEnabled: z.boolean().default(true),
   keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
-  atomicNoteRelationThreshold: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(recommendedMatchingConfiguration.atomicNoteRelationThreshold),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1).default(0.92),
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
@@ -365,7 +360,6 @@ export const appSettingsUpdateSchema = z
     metadataEnrichmentEnabled: z.boolean().optional(),
     keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
     bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
-    atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
     summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional(),
     entityIdentitySimilarityThreshold: z.number().min(0).max(1).optional(),
     relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),

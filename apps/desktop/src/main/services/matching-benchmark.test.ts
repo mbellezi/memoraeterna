@@ -5,32 +5,32 @@ import {
   appSettingsUpdateSchema,
   defaultAppSettings
 } from "../../shared/ipc.js";
+import { migrateMatchingSettingsV2 } from "@app/domain";
 import { benchmarkConfiguration } from "./matching-benchmark.js";
 
 describe("larger matching benchmark", () => {
-  it("compares bounded retrieval/context presets without changing acceptance or identity safeguards", () => {
+  it("compares bounded evidence presets without changing acceptance or identity safeguards", () => {
     const pilot = JSON.parse(readFileSync("docs/matching-pilot-settings.json", "utf8"));
-    const reference = appSettingsSchema.parse({
-      ...defaultAppSettings,
-      ...pilot.settings,
-      language: "pt-BR",
-      updatedAt: new Date().toISOString()
-    });
+    // The recorded settings predate matching settings v2 (T53b): they read through its migration.
+    const reference = appSettingsSchema.parse(
+      migrateMatchingSettingsV2({
+        ...defaultAppSettings,
+        ...pilot.settings,
+        language: "pt-BR",
+        updatedAt: new Date().toISOString()
+      })
+    );
     for (const variant of ["baseline", "economy", "coverage"] as const) {
       const settings = appSettingsUpdateSchema.parse(benchmarkConfiguration(reference, variant));
-      expect(settings.atomicNoteRelationThreshold).toBe(0.6);
       expect(settings.sourceRelationSettings?.minImportance).toBe(0.8);
-      expect(settings.atomicNoteMatchingSettings?.requireReranking).toBe(true);
+      expect(settings.atomicNoteMatchingSettings).toEqual(reference.atomicNoteMatchingSettings);
       expect(settings.entityIdentitySimilarityThreshold).toBe(
         reference.entityIdentitySimilarityThreshold
       );
-      expect(settings.atomicNoteMatchingSettings?.minimumGraphOnlyCandidates).toBeLessThanOrEqual(
-        settings.atomicNoteMatchingSettings!.fusedCandidateLimit
-      );
     }
     expect(
-      benchmarkConfiguration(reference, "economy").atomicNoteMatchingSettings!.fusedCandidateLimit
-    ).toBeLessThan(reference.atomicNoteMatchingSettings.fusedCandidateLimit);
+      benchmarkConfiguration(reference, "economy").sourceRelationSettings!.evidenceChunksPerSource
+    ).toBeLessThan(reference.sourceRelationSettings.evidenceChunksPerSource);
     expect(
       benchmarkConfiguration(reference, "coverage").sourceRelationSettings!.evidenceChunksPerSource
     ).toBeGreaterThan(reference.sourceRelationSettings.evidenceChunksPerSource);

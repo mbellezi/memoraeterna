@@ -1416,8 +1416,7 @@ try {
     userDataPath: workDir,
     getStorageSettings: settings as never,
     getUploadedFilesBasePath: async () => null,
-    getAtomicNoteMatchingSettings: async () =>
-      AtomicNoteMatchingSettingsSchema.parse({ graphCandidateLimit: 0 })
+    getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse({})
   });
   const pairSources: Array<{ sourceId: string; documentId: string }> = [];
   for (const title of ["Pair source one", "Pair source two"]) {

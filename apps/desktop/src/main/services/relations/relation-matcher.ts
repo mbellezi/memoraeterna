@@ -335,7 +335,7 @@ export interface RelationMatcherOptions {
   ai: Pick<AiService, "rankPairs" | "runDefaultTask" | "decideRouteStatus" | "traceOperation"> &
     Partial<Pick<AiService, "ensureLegacyRouteMapping">>;
   config?: RelationsConfig;
-  /** The generative decider's output budget; the rest of these settings no longer decide anything. */
+  /** The generative decider's output budget, the one note-matching setting that still decides (T53b). */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   isDebugEnabled?: () => Promise<boolean>;
 }

@@ -1,0 +1,81 @@
+{
+  "profiles": ["env-f", "env-g", "env-c", "dev"],
+  "document": {
+    "language": "pt-BR",
+    "debugMode": false,
+    "themeMode": "system",
+    "updatedAt": "2026-10-15T22:02:07.332Z",
+    "wikiTreeWidth": 320,
+    "contentLanguage": "pt-BR",
+    "matchingPresets": [],
+    "debugFullCapture": false,
+    "navigationCollapsed": false,
+    "bookMetadataProvider": "auto",
+    "activeMatchingPresetId": "recommended-v2",
+    "sourceRelationSettings": {
+      "maxPairs": 6,
+      "maxRelations": 10,
+      "maxCandidates": 30,
+      "minConfidence": 0.85,
+      "minImportance": 0.75,
+      "maxInputTokens": 60000,
+      "maxOutputTokens": 4096,
+      "includeWeakTypes": false,
+      "maxRelationsPerPair": 4,
+      "noteRelationsPerPair": 4,
+      "summaryMaxCharacters": 1000,
+      "evidenceMaxCharacters": 800,
+      "reciprocalRankConstant": 60,
+      "evidenceChunksPerSource": 2
+    },
+    "summaryMinimumWordCount": 40,
+    "canonicalMatchingSettings": {
+      "entityCandidateLimit": 3,
+      "confirmationBatchSize": 12,
+      "confirmationMaxCharacters": 12000,
+      "relationTypeCandidateLimit": 3
+    },
+    "graphWheelZoomSensitivity": 1,
+    "metadataEnrichmentEnabled": true,
+    "atomicNoteMatchingSettings": {
+      "withGraph": {
+        "text": 0.55,
+        "graph": 0.3,
+        "metadata": 0.15
+      },
+      "withEmbedding": {
+        "text": 0.3,
+        "vector": 0.55,
+        "metadata": 0.15
+      },
+      "minRerankScore": 0.65,
+      "rerankerWeight": 0.4,
+      "textAndMetadata": {
+        "text": 0.7,
+        "metadata": 0.3
+      },
+      "includeWeakTypes": false,
+      "requireReranking": true,
+      "textCandidateLimit": 20,
+      "fusedCandidateLimit": 20,
+      "graphCandidateLimit": 10,
+      "maxRelationsPerNote": 10,
+      "vectorCandidateLimit": 20,
+      "maxRerankOutputTokens": 4096,
+      "withEmbeddingAndGraph": {
+        "text": 0.25,
+        "graph": 0.2,
+        "vector": 0.45,
+        "metadata": 0.1
+      },
+      "reciprocalRankConstant": 60,
+      "minimumGraphOnlyCandidates": 3
+    },
+    "atomicNoteRelationThreshold": 0.6,
+    "keepLocalEmbeddingModelsLoaded": true,
+    "relationTypeSimilarityThreshold": 0.92,
+    "entityIdentitySimilarityThreshold": 0.92,
+    "knowledgeGraphMaxEntitiesPerSource": 250,
+    "knowledgeGraphMaxRelationsPerSource": 500
+  }
+}

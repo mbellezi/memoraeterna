@@ -549,16 +549,29 @@ describe("phase 2 renderer views", () => {
       />
     );
 
-    expect(html.match(/type="range"/g)).toHaveLength(6);
-    expect(html.match(/title="Restore recommended value"/g)).toHaveLength(6);
-    expect(html).toContain('id="atomicNoteRelationThreshold"');
+    expect(html.match(/type="range"/g)).toHaveLength(4);
+    expect(html.match(/title="Restore recommended value"/g)).toHaveLength(4);
     expect(html).toContain('id="relationTypeSimilarityThreshold"');
     expect(html).toContain('id="entityIdentitySimilarityThreshold"');
     expect(html).toContain('id="sourceRelations-minImportance"');
     expect(html).toContain('id="sourceRelations-minConfidence"');
     expect(html).toContain("Advanced matching");
-    expect(html).toContain('id="matching-minRerankScore"');
+    expect(html).toContain("AI output token limit per note");
     expect(html).toContain("Characters per evidence passage");
+    // Note relations are decided by the calibrated ranker: nothing left to tune for them.
+    expect(html).not.toContain('id="atomicNoteRelationThreshold"');
+    expect(html).not.toContain('id="matching-minRerankScore"');
+    for (const removed of [
+      "Minimum match score",
+      "More relations",
+      "Scoring weights",
+      "Text candidates per note",
+      "Rank fusion constant",
+      "Minimum AI validation score",
+      "Require successful AI validation",
+      "AI share of the final score"
+    ])
+      expect(html).not.toContain(removed);
     expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 

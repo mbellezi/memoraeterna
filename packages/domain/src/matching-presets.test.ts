@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { migrateMatchingSettingsV2 } from "./matching-settings-migration.js";
 import {
   MatchingConfigurationSchema,
   MatchingPresetsSchema,
@@ -17,8 +18,9 @@ describe("matching presets", () => {
         "utf8"
       )
     );
+    // The record predates matching settings v2: its dead note fields leave through the migration.
     expect(retiredRecommendedMatchingConfiguration).toEqual(
-      MatchingConfigurationSchema.parse(benchmark.settings)
+      MatchingConfigurationSchema.parse(migrateMatchingSettingsV2(benchmark.settings))
     );
     expect(retiredRecommendedMatchingPresetId).toBe("recommended-v1");
   });
@@ -62,12 +64,14 @@ describe("matching presets", () => {
     ).toBe(false);
     expect(MatchingPresetsSchema.safeParse([{ ...preset, name: " " }]).success).toBe(false);
   });
-  it("reads a preset saved with the shortlist settings design E deleted, without them", () => {
+  it("refuses a preset saved with settings that stopped deciding anything until the migration drops them", () => {
     const saved = {
       id: "afbec711-07cd-43b1-8088-153df3dc5f73",
       name: "Saved before F3",
       settings: {
         ...recommendedMatchingConfiguration,
+        atomicNoteRelationThreshold: 0.6,
+        atomicNoteMatchingSettings: { maxRerankOutputTokens: 4096, rerankerWeight: 0.4 },
         sourceRelationSettings: {
           ...recommendedMatchingConfiguration.sourceRelationSettings,
           reciprocalRankConstant: 60,
@@ -78,18 +82,28 @@ describe("matching presets", () => {
         }
       }
     };
-    const [read] = MatchingPresetsSchema.parse([saved]);
+    expect(MatchingPresetsSchema.safeParse([saved]).success).toBe(false);
+    const migrated = migrateMatchingSettingsV2({ matchingPresets: [saved] }) as {
+      matchingPresets: unknown[];
+    };
+    const [read] = MatchingPresetsSchema.parse(migrated.matchingPresets);
     expect(read!.settings).toEqual(recommendedMatchingConfiguration);
     expect(
-      MatchingPresetsSchema.safeParse([
-        {
-          ...saved,
-          settings: {
-            ...saved.settings,
-            sourceRelationSettings: { ...saved.settings.sourceRelationSettings, typo: 1 }
-          }
-        }
-      ]).success
+      MatchingPresetsSchema.safeParse(
+        (
+          migrateMatchingSettingsV2({
+            matchingPresets: [
+              {
+                ...saved,
+                settings: {
+                  ...saved.settings,
+                  sourceRelationSettings: { ...saved.settings.sourceRelationSettings, typo: 1 }
+                }
+              }
+            ]
+          }) as { matchingPresets: unknown[] }
+        ).matchingPresets
+      ).success
     ).toBe(false);
   });
 });

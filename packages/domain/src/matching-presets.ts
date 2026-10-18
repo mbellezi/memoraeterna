@@ -9,7 +9,6 @@ export const recommendedMatchingPresetId = "recommended-v2";
 // Retired id of the first recommendation; stored settings that still carry it are upgraded on read.
 export const retiredRecommendedMatchingPresetId = "recommended-v1";
 export const MatchingConfigurationSchema = z.object({
-  atomicNoteRelationThreshold: z.number().min(0).max(1),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1),
   relationTypeSimilarityThreshold: z.number().min(0).max(1),
   atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema,
@@ -21,30 +20,14 @@ export type MatchingConfiguration = z.infer<typeof MatchingConfigurationSchema>;
 // Versioned values frozen before held-out validation; independent of legacy fallbacks.
 // v2 is v1 with its source floors re-tuned on the tuning partition for `source-relations-v5`
 // (docs/kpi-f1b.md). v1 stays frozen only to recognize and upgrade older installs; add a version
-// instead of editing either set.
+// instead of editing either set. Both sets lost the note settings that stopped deciding anything
+// (matching settings v2, `matching-settings-migration.ts`); stored settings lose them the same way,
+// so what remained still equals what it did.
 export const retiredRecommendedMatchingConfiguration: MatchingConfiguration =
   MatchingConfigurationSchema.parse({
-    atomicNoteRelationThreshold: 0.6,
     entityIdentitySimilarityThreshold: 0.92,
     relationTypeSimilarityThreshold: 0.92,
-    atomicNoteMatchingSettings: {
-      textCandidateLimit: 20,
-      vectorCandidateLimit: 20,
-      graphCandidateLimit: 10,
-      fusedCandidateLimit: 20,
-      minimumGraphOnlyCandidates: 3,
-      reciprocalRankConstant: 60,
-      withEmbeddingAndGraph: { vector: 0.45, text: 0.25, graph: 0.2, metadata: 0.1 },
-      withEmbedding: { vector: 0.55, text: 0.3, metadata: 0.15 },
-      withGraph: { text: 0.55, graph: 0.3, metadata: 0.15 },
-      textAndMetadata: { text: 0.7, metadata: 0.3 },
-      rerankerWeight: 0.4,
-      minRerankScore: 0.65,
-      requireReranking: true,
-      includeWeakTypes: false,
-      maxRelationsPerNote: 10,
-      maxRerankOutputTokens: 4096
-    },
+    atomicNoteMatchingSettings: { maxRerankOutputTokens: 4096 },
     canonicalMatchingSettings: {
       relationTypeCandidateLimit: 3,
       entityCandidateLimit: 3,

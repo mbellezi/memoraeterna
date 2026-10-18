@@ -8,19 +8,10 @@ import {
 } from "./knowledge.js";
 
 /**
- * The settings of the shortlist that design E deleted (F3 D27): candidate retrieval, the 6-pair cap,
- * the relation limit, rank fusion and the note relations listed per pair. Stored settings and
- * presets that still hold them read without them; T53b's settings migration drops them for good.
+ * Source-relation settings: unknown fields are refused. The shortlist settings design E deleted
+ * (F3 D27) left stored settings through the matching settings v2 migration.
  */
-export const retiredSourceRelationSettingKeys = [
-  "reciprocalRankConstant",
-  "noteRelationsPerPair",
-  "maxCandidates",
-  "maxPairs",
-  "maxRelations"
-] as const;
-
-const SourceRelationSettingsObjectSchema = z
+export const SourceRelationSettingsSchema = z
   .object({
     evidenceChunksPerSource: z.number().int().min(1).max(12).default(3),
     evidenceMaxCharacters: z.number().int().min(300).max(6000).default(1000),
@@ -33,22 +24,9 @@ const SourceRelationSettingsObjectSchema = z
     includeWeakTypes: z.boolean().default(false)
   })
   .strict();
-
-const withoutRetiredSettings = (value: unknown): unknown => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
-  const kept: Record<string, unknown> = { ...(value as Record<string, unknown>) };
-  for (const key of retiredSourceRelationSettingKeys) delete kept[key];
-  return kept;
-};
-
-/** Source-relation settings: unknown fields are refused, the retired shortlist fields dropped. */
-export const SourceRelationSettingsSchema = z.preprocess(
-  withoutRetiredSettings,
-  SourceRelationSettingsObjectSchema
-);
-export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsObjectSchema>;
+export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsSchema>;
 export const defaultSourceRelationSettings: SourceRelationSettings =
-  SourceRelationSettingsObjectSchema.parse({});
+  SourceRelationSettingsSchema.parse({});
 
 /**
  * How far source matching got for a work, stored in the stage checkpoint metadata (design E, F3

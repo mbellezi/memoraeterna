@@ -374,7 +374,6 @@ async function runPass(
       getStorageSettings: () => settings.get(),
       getUploadedFilesBasePath: async () => (await settings.get()).uploadCopiesFolderPath,
       isDebugEnabled: async () => (await settings.getApp()).debugMode,
-      getRelationThreshold: async () => (await settings.getApp()).atomicNoteRelationThreshold,
       getAtomicNoteMatchingSettings: async () =>
         (await settings.getApp()).atomicNoteMatchingSettings,
       getCanonicalMatchingSettings: async () => (await settings.getApp()).canonicalMatchingSettings,

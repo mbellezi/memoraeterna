@@ -134,11 +134,7 @@ function updateGroupedChildSummary(
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
-  /** @deprecated Decides nothing since relations v2 (F3 D17); T53b removes the setting. */
-  relationThreshold?: number;
-  /** @deprecated Decides nothing since relations v2 (F3 D17); T53b removes the setting. */
-  getRelationThreshold?: () => Promise<number>;
-  /** Only the generative decider's output budget still applies (F3 D17, T53b). */
+  /** The generative decider's output budget, the one note-matching setting left (F3 D17, T53b). */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   getCanonicalMatchingSettings?: () => Promise<CanonicalMatchingSettings>;
   getSourceRelationSettings?: () => Promise<SourceRelationSettings>;

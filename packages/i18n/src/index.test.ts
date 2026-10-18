@@ -88,6 +88,47 @@ describe("@app/i18n", () => {
     }
   });
 
+  it("keeps the matching settings copy complete in every locale, without the retired settings", () => {
+    const flat = (value: object, prefix = ""): string[] =>
+      Object.entries(value).flatMap(([key, child]) =>
+        typeof child === "string" ? [`${prefix}${key}`] : flat(child as object, `${prefix}${key}.`)
+      );
+    const expected = flat(messages.en.settings.matching).sort();
+    const retired = [
+      "minimumScore",
+      "moreRelations",
+      "fewerRelations",
+      ...[
+        "textCandidateLimit",
+        "vectorCandidateLimit",
+        "graphCandidateLimit",
+        "fusedCandidateLimit",
+        "minimumGraphOnlyCandidates",
+        "reciprocalRankConstant",
+        "maxRelationsPerNote",
+        "minRerankScore",
+        "requireReranking",
+        "includeWeakTypes",
+        "withEmbeddingAndGraph",
+        "withEmbedding",
+        "withGraph",
+        "textAndMetadata",
+        "rerankerWeight",
+        "weights",
+        "weightsHint",
+        "invalidWeights",
+        "validationHint"
+      ].map((key) => `advanced.${key}`)
+    ];
+    for (const locale of supportedLanguageCodes) {
+      const keys = flat(messages[locale].settings.matching).sort();
+      expect(keys, locale).toEqual(expected);
+      for (const key of retired) expect(keys, `${locale} ${key}`).not.toContain(key);
+      expect(messages[locale].settings.dashboard.summary.knowledgeMatching, locale).toBeTruthy();
+    }
+    expect(messages.en.settings.matching.advanced.maxRerankOutputTokens).toBeTruthy();
+  });
+
   it("exports type-safe message keys and supported locales", () => {
     const key = "settings.storage.obsidianVaultPath" satisfies MessageKey;
 

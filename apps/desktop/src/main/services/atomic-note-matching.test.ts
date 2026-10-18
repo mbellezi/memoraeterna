@@ -86,8 +86,7 @@ function service(settings: unknown = {}) {
     userDataPath: "/tmp/test",
     getStorageSettings: async () => ({}) as never,
     getUploadedFilesBasePath: async () => null,
-    getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse(settings),
-    relationThreshold: 0.6
+    getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse(settings)
   });
 }
 const rerankCalls = () => mocks.run.mock.calls.filter(([task]) => task === "reranking");
@@ -244,25 +243,23 @@ describe("atomic note matching through the relations v2 matcher", () => {
     expect(completed).toEqual([]);
   });
 
-  it("keeps the prompt and the decider key independent of the settings that no longer decide", async () => {
+  it("keeps the prompt and the decider key independent of the output budget, which only bounds the call", async () => {
     const prompts: string[] = [];
     const keys: string[] = [];
-    for (const settings of [{ minRerankScore: 0.4 }, { minRerankScore: 0.9, rerankerWeight: 1 }]) {
+    const budgets: unknown[] = [];
+    for (const settings of [{}, { maxRerankOutputTokens: 1024 }]) {
       mocks.run.mockClear();
       mocks.decisions.findVerdicts.mockClear();
       respond(defaultVerdicts);
       await service(settings).matchAtomicNotes(["source"]);
       prompts.push(rerankCalls()[0]![1] as string);
       keys.push(mocks.decisions.findVerdicts.mock.calls[0]![0].deciderKey);
+      budgets.push(rerankCalls()[0]![4]);
     }
     expect(new Set(prompts).size).toBe(1);
     expect(new Set(keys).size).toBe(1);
     expect(prompts[0]).toContain("The score is an integer from 0 to 100");
-    // The output budget still applies to the generative call.
-    mocks.run.mockClear();
-    respond(defaultVerdicts);
-    await service({ maxRerankOutputTokens: 1024 }).matchAtomicNotes(["source"]);
-    expect(rerankCalls()[0]![4]).toEqual({ maxOutputTokens: 1024 });
+    expect(budgets).toEqual([{ maxOutputTokens: 4096 }, { maxOutputTokens: 1024 }]);
   });
 
   it("runs the decision with reasoning off by default and identifies the decider by that", async () => {

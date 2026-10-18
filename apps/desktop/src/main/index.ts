@@ -372,9 +372,6 @@ void app.whenReady().then(() => {
       getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
     })
   );
-  const relationThreshold = readRelationThreshold(
-    process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD
-  );
   knowledgeService = new KnowledgeService({
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
@@ -383,7 +380,6 @@ void app.whenReady().then(() => {
     getStorageSettings: () => settingsService!.get(),
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
-    getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
     getAtomicNoteMatchingSettings: async () =>
       (await settingsService!.getApp()).atomicNoteMatchingSettings,
     getCanonicalMatchingSettings: async () =>
@@ -403,8 +399,7 @@ void app.whenReady().then(() => {
       };
     },
     logger: console,
-    topicHooks: topicTreeServices.hooks,
-    ...(relationThreshold !== undefined ? { relationThreshold } : {})
+    topicHooks: topicTreeServices.hooks
   });
   obsidianSyncService = new ObsidianSyncService({
     getLocale: async () => (await settingsService!.getApp()).contentLanguage,
@@ -952,12 +947,6 @@ function installDevelopmentAiCassette(workspaceRoot: string): AiCassette | null 
 
 function getResourcesPath(): string {
   return (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? process.cwd();
-}
-
-function readRelationThreshold(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 }
 
 function readPositiveInteger(value: string | undefined): number | undefined {

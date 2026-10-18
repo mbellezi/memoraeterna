@@ -1,15 +1,20 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsService, parseSavedAppSettings } from "./settings-service.js";
 import { defaultAppSettings } from "../../shared/ipc";
 import {
   MatchingConfigurationSchema,
+  migrateMatchingSettingsV2,
   recommendedMatchingConfiguration,
   recommendedMatchingPresetId,
+  retiredMatchingSettingKeys,
+  retiredNoteMatchingSettingKeys,
   retiredRecommendedMatchingConfiguration,
-  retiredRecommendedMatchingPresetId
+  retiredRecommendedMatchingPresetId,
+  retiredSourceRelationSettingKeys
 } from "@app/domain";
 const paths: string[] = [];
 afterEach(async () => {
@@ -86,7 +91,7 @@ describe("advanced matching preferences", () => {
     expect(
       parseSavedAppSettings({ ...legacy, language: "en", updatedAt: new Date().toISOString() })
     ).toMatchObject({
-      atomicNoteMatchingSettings: { requireReranking: true, textCandidateLimit: 20 },
+      atomicNoteMatchingSettings: { maxRerankOutputTokens: 4096 },
       canonicalMatchingSettings: { entityCandidateLimit: 3 }
     });
     vi.stubEnv("MEMORA_DATABASE_URL", "");
@@ -97,15 +102,14 @@ describe("advanced matching preferences", () => {
     await service.updateApp({
       atomicNoteMatchingSettings: {
         ...before.atomicNoteMatchingSettings,
-        textCandidateLimit: 12,
-        minRerankScore: 0.8
+        maxRerankOutputTokens: 2048
       },
       canonicalMatchingSettings: { ...before.canonicalMatchingSettings, entityCandidateLimit: 5 },
       sourceRelationSettings: { ...before.sourceRelationSettings, evidenceChunksPerSource: 2 }
     });
     const after = await new SettingsService(path).getApp();
     expect(after).toMatchObject({
-      atomicNoteMatchingSettings: { textCandidateLimit: 12, minRerankScore: 0.8 },
+      atomicNoteMatchingSettings: { maxRerankOutputTokens: 2048 },
       canonicalMatchingSettings: { entityCandidateLimit: 5 },
       sourceRelationSettings: { evidenceChunksPerSource: 2 },
       language: before.language
@@ -114,12 +118,12 @@ describe("advanced matching preferences", () => {
       service.updateApp({
         atomicNoteMatchingSettings: {
           ...after.atomicNoteMatchingSettings,
-          fusedCandidateLimit: 101
+          maxRerankOutputTokens: 100
         }
       })
     ).rejects.toThrow();
-    expect((await service.getApp()).atomicNoteMatchingSettings.fusedCandidateLimit).toBe(
-      after.atomicNoteMatchingSettings.fusedCandidateLimit
+    expect((await service.getApp()).atomicNoteMatchingSettings.maxRerankOutputTokens).toBe(
+      after.atomicNoteMatchingSettings.maxRerankOutputTokens
     );
   });
 });
@@ -143,13 +147,13 @@ describe("matching preset persistence", () => {
     });
     await settings.updateApp({
       sourceRelationSettings: { ...initial.sourceRelationSettings, maxRelationsPerPair: 3 },
-      atomicNoteRelationThreshold: 0.67
+      relationTypeSimilarityThreshold: 0.67
     });
     const edited = await settings.getApp();
     expect(edited.matchingPresets[0]).toMatchObject({
       name: "My matching",
       settings: {
-        atomicNoteRelationThreshold: 0.67,
+        relationTypeSimilarityThreshold: 0.67,
         sourceRelationSettings: { maxRelationsPerPair: 3 }
       }
     });
@@ -160,7 +164,7 @@ describe("matching preset persistence", () => {
     const restarted = new SettingsService(path);
     await restarted.updateApp({ activeMatchingPresetId: id });
     expect(await restarted.getApp()).toMatchObject({
-      atomicNoteRelationThreshold: 0.67,
+      relationTypeSimilarityThreshold: 0.67,
       sourceRelationSettings: { maxRelationsPerPair: 3 }
     });
     await restarted.updateApp({
@@ -184,18 +188,18 @@ describe("matching preset persistence", () => {
     } = defaultAppSettings;
     const saved = parseSavedAppSettings({
       ...legacy,
-      atomicNoteRelationThreshold: 0.81,
+      relationTypeSimilarityThreshold: 0.81,
       language: "en",
       updatedAt: new Date().toISOString()
     });
     expect(saved.activeMatchingPresetId).not.toBe(recommendedMatchingPresetId);
-    expect(saved.matchingPresets[0]?.settings.atomicNoteRelationThreshold).toBe(0.81);
+    expect(saved.matchingPresets[0]?.settings.relationTypeSimilarityThreshold).toBe(0.81);
     expect(parseSavedAppSettings(saved)).toEqual(saved);
     const { settings } = await service();
-    await settings.updateApp({ atomicNoteRelationThreshold: 0.81 });
+    await settings.updateApp({ relationTypeSimilarityThreshold: 0.81 });
     expect((await settings.getApp()).activeMatchingPresetId).not.toBe(recommendedMatchingPresetId);
     await settings.updateApp({ activeMatchingPresetId: recommendedMatchingPresetId });
-    expect((await settings.getApp()).atomicNoteRelationThreshold).toBe(0.6);
+    expect((await settings.getApp()).relationTypeSimilarityThreshold).toBe(0.92);
   });
   it("refuses invalid activation without losing preferences and serializes concurrent updates", async () => {
     const { settings } = await service();
@@ -206,18 +210,18 @@ describe("matching preset persistence", () => {
     await expect(
       settings.updateApp({
         activeMatchingPresetId: recommendedMatchingPresetId,
-        atomicNoteRelationThreshold: 0.99
+        relationTypeSimilarityThreshold: 0.99
       })
     ).rejects.toThrow();
     expect(await settings.getApp()).toEqual(before);
     await Promise.all([
-      settings.updateApp({ atomicNoteRelationThreshold: 0.77 }),
+      settings.updateApp({ relationTypeSimilarityThreshold: 0.77 }),
       settings.updateApp({ language: "fr" })
     ]);
     expect(await settings.getApp()).toMatchObject({
       language: "fr",
-      atomicNoteRelationThreshold: 0.77,
-      matchingPresets: [{ settings: { atomicNoteRelationThreshold: 0.77 } }]
+      relationTypeSimilarityThreshold: 0.77,
+      matchingPresets: [{ settings: { relationTypeSimilarityThreshold: 0.77 } }]
     });
   });
 });
@@ -357,6 +361,183 @@ describe("recommended matching preset upgrade", () => {
           retiredRecommendedMatchingPresetId as typeof recommendedMatchingPresetId
       })
     ).rejects.toThrow();
+  });
+});
+
+interface StoredConfiguration {
+  atomicNoteMatchingSettings: Record<string, unknown>;
+  sourceRelationSettings: Record<string, unknown>;
+  [key: string]: unknown;
+}
+interface StoredDocument extends StoredConfiguration {
+  matchingPresets?: Array<{ settings: StoredConfiguration }>;
+  updatedAt: string;
+}
+
+describe("matching settings v2 migration of a stored document", () => {
+  // The matching part of the document ENV-F, ENV-G, ENV-C and the DEV profile hold (read through
+  // APFS clones of their databases): the recommendation with every field of the earlier schema.
+  const profiles = JSON.parse(
+    readFileSync(
+      resolve(
+        import.meta.dirname,
+        "../../../../../packages/domain/src/fixtures/app-settings-matching-before-v2.json"
+      ),
+      "utf8"
+    )
+  ) as { document: StoredDocument };
+  const stored = profiles.document;
+  const customId = "afbec711-07cd-43b1-8088-153df3dc5f73";
+  const customPreset = {
+    id: customId,
+    name: "My matching",
+    settings: {
+      atomicNoteRelationThreshold: 0.81,
+      entityIdentitySimilarityThreshold: 0.88,
+      relationTypeSimilarityThreshold: stored.relationTypeSimilarityThreshold,
+      canonicalMatchingSettings: stored.canonicalMatchingSettings,
+      atomicNoteMatchingSettings: {
+        ...stored.atomicNoteMatchingSettings,
+        rerankerWeight: 0.9,
+        fusedCandidateLimit: 40,
+        maxRerankOutputTokens: 2048
+      },
+      sourceRelationSettings: {
+        ...stored.sourceRelationSettings,
+        includeWeakTypes: true,
+        minImportance: 0.9
+      }
+    }
+  };
+  const holdsRetiredField = (document: StoredDocument) =>
+    [document, ...(document.matchingPresets ?? []).map((preset) => preset.settings)].some(
+      (configuration) =>
+        retiredMatchingSettingKeys.some((key) => key in configuration) ||
+        retiredNoteMatchingSettingKeys.some(
+          (key) => key in configuration.atomicNoteMatchingSettings
+        ) ||
+        retiredSourceRelationSettingKeys.some((key) => key in configuration.sourceRelationSettings)
+    );
+  async function directory(document: unknown) {
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-matching-v2-"));
+    paths.push(path);
+    await writeFile(join(path, "app-settings.json"), JSON.stringify(document, null, 2));
+    return path;
+  }
+  const readStored = async (path: string) => readFile(join(path, "app-settings.json"), "utf8");
+
+  it("drops the dead fields once, on the first read, and keeps the recommendation", async () => {
+    expect(holdsRetiredField(stored)).toBe(true);
+    const path = await directory(stored);
+    const app = await new SettingsService(path).getApp();
+    expect(app.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+    expect(app.matchingPresets).toEqual([]);
+    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+    expect(app.updatedAt).toBe(stored.updatedAt);
+    const migrated = JSON.parse(await readStored(path));
+    expect(holdsRetiredField(migrated)).toBe(false);
+    expect(Object.keys(migrated.atomicNoteMatchingSettings)).toEqual(["maxRerankOutputTokens"]);
+    expect(migrated).toEqual(migrateMatchingSettingsV2(stored));
+    // A later start finds nothing to drop and writes nothing.
+    const written = await readStored(path);
+    await new SettingsService(path).getApp();
+    await new SettingsService(path).getApp();
+    expect(await readStored(path)).toBe(written);
+  });
+
+  it("keeps a saved preset, its name and the live values it holds", async () => {
+    const path = await directory({
+      ...stored,
+      ...customPreset.settings,
+      activeMatchingPresetId: customId,
+      matchingPresets: [customPreset]
+    });
+    const app = await new SettingsService(path).getApp();
+    expect(app.activeMatchingPresetId).toBe(customId);
+    expect(app.matchingPresets).toHaveLength(1);
+    expect(app.matchingPresets[0]).toMatchObject({
+      id: customId,
+      name: "My matching",
+      settings: {
+        entityIdentitySimilarityThreshold: 0.88,
+        atomicNoteMatchingSettings: { maxRerankOutputTokens: 2048 },
+        sourceRelationSettings: { includeWeakTypes: true, minImportance: 0.9 }
+      }
+    });
+    expect(app).toMatchObject({
+      entityIdentitySimilarityThreshold: 0.88,
+      atomicNoteMatchingSettings: { maxRerankOutputTokens: 2048 }
+    });
+    const migrated = JSON.parse(await readStored(path));
+    expect(holdsRetiredField(migrated)).toBe(false);
+    expect(migrated.matchingPresets[0].settings.sourceRelationSettings.includeWeakTypes).toBe(true);
+    const again = await new SettingsService(path).getApp();
+    expect(again).toEqual(app);
+  });
+
+  it("does not lose a save that starts while the first read is migrating", async () => {
+    const path = await directory(stored);
+    const service = new SettingsService(path);
+    const [, saved] = await Promise.all([
+      service.getApp(),
+      service.updateApp({ themeMode: "light" }),
+      service.getApp()
+    ]);
+    expect(saved.themeMode).toBe("light");
+    const migrated = JSON.parse(await readStored(path));
+    expect(migrated.themeMode).toBe("light");
+    expect(holdsRetiredField(migrated)).toBe(false);
+    expect((await new SettingsService(path).getApp()).themeMode).toBe("light");
+  });
+
+  it("still reads a document it cannot rewrite, migrated in memory", async () => {
+    const path = await directory(stored);
+    await chmod(join(path, "app-settings.json"), 0o444);
+    const app = await new SettingsService(path).getApp();
+    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+    expect(parseSavedAppSettings(stored)).toEqual(app);
+  });
+
+  it("refuses an update that still carries a dead field", async () => {
+    const path = await directory(stored);
+    const service = new SettingsService(path);
+    const app = await service.getApp();
+    const stale: unknown[] = [
+      { atomicNoteRelationThreshold: 0.6 },
+      { atomicNoteMatchingSettings: { requireReranking: true } },
+      {
+        atomicNoteMatchingSettings: { ...app.atomicNoteMatchingSettings, fusedCandidateLimit: 20 }
+      },
+      { sourceRelationSettings: { ...app.sourceRelationSettings, maxPairs: 6 } }
+    ];
+    for (const update of stale) await expect(service.updateApp(update as never)).rejects.toThrow();
+    expect(await service.getApp()).toEqual(app);
+  });
+
+  it("migrates the settings row of a database the same way", async () => {
+    const rows = new Map<string, unknown>([["app.preferences", structuredClone(stored)]]);
+    const writes: string[] = [];
+    const pool = {
+      async query(text: string, values: readonly unknown[] = []) {
+        const key = String(values[0]);
+        if (/^\s*select/iu.test(text)) {
+          return {
+            rows: rows.has(key) ? [{ key, value: rows.get(key), updatedAt: new Date() }] : []
+          };
+        }
+        writes.push(key);
+        rows.set(key, structuredClone(values[1]));
+        return { rows: [{ key, value: values[1], updatedAt: new Date() }] };
+      }
+    };
+    const service = new SettingsService(tmpdir(), { getDatabasePool: () => pool as never });
+    const app = await service.getApp();
+    expect(MatchingConfigurationSchema.parse(app)).toEqual(recommendedMatchingConfiguration);
+    expect(writes).toEqual(["app.preferences"]);
+    expect(rows.get("app.preferences")).toEqual(migrateMatchingSettingsV2(stored));
+    await new SettingsService(tmpdir(), { getDatabasePool: () => pool as never }).getApp();
+    expect(writes).toEqual(["app.preferences"]);
   });
 });
 

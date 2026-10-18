@@ -1573,7 +1573,6 @@ async function runSourcePairs(
 
 const settingsKeys = [
   "contentLanguage",
-  "atomicNoteRelationThreshold",
   "atomicNoteMatchingSettings",
   "canonicalMatchingSettings",
   "sourceRelationSettings",

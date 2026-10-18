@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { sha256 } from "../packages/conversion/src/index.ts";
+import { migrateMatchingSettingsV2 } from "../packages/domain/src/index.ts";
 import {
   createPgPool,
   closePgPool,
@@ -24,8 +25,9 @@ for (const phase of ["baseline", "economy", "coverage"])
     throw Error("All training configurations must be verified");
 const text = await readFile(join(directory, configuration, "results.json"), "utf8");
 const snapshot = JSON.parse(text);
+// Snapshots written before matching settings v2 (T53b) read through its migration.
 const settings = appSettingsSchema.parse(
-  await read(join(directory, configuration, "settings.json"))
+  migrateMatchingSettingsV2(await read(join(directory, configuration, "settings.json")))
 );
 const generatedMinimumImportance = settings.sourceRelationSettings.minImportance;
 const minimumImportance =

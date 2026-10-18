@@ -280,6 +280,12 @@ export function SettingsView({
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
+  const activeMatchingPreset = appSettings.matchingPresets.find(
+    (preset) => preset.id === appSettings.activeMatchingPresetId
+  );
+  const activeMatchingPresetName = activeMatchingPreset
+    ? (activeMatchingPreset.name ?? t("settings.matching.presets.previous"))
+    : t("settings.matching.presets.recommended");
 
   function update<K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) {
     onChange({ ...settings, [key]: value });
@@ -330,9 +336,7 @@ export function SettingsView({
               </div>
               <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
                 <span>{t("settings.dashboard.summary.knowledgeMatching")}</span>
-                <strong className="text-amber-300">
-                  {appSettings.atomicNoteRelationThreshold.toFixed(2)}
-                </strong>
+                <strong className="text-amber-300">{activeMatchingPresetName}</strong>
               </div>
               <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
                 <span>{t("settings.dashboard.summary.obsidian")}</span>
@@ -789,20 +793,6 @@ function MatchingCard({
         disabled={isRecommended}
         className="grid min-w-0 gap-5"
       >
-        <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900">
-          <MatchingSlider
-            id="atomicNoteRelationThreshold"
-            label={t("settings.matching.minimumScore")}
-            defaultValue={defaultAppSettings.atomicNoteRelationThreshold}
-            resetLabel={t("settings.matching.resetDefault")}
-            value={appSettings.atomicNoteRelationThreshold}
-            onCommit={(value) => onChange({ atomicNoteRelationThreshold: value })}
-          />
-          <div className="mt-2 flex justify-between text-xs font-medium text-slate-500">
-            <span>{t("settings.matching.moreRelations")}</span>
-            <span>{t("settings.matching.fewerRelations")}</span>
-          </div>
-        </div>
         <div className="grid gap-2">
           <MatchingSlider
             id="relationTypeSimilarityThreshold"

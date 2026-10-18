@@ -9,7 +9,7 @@ import {
   createKnowledgeGraphRepository,
   createMatchingEvaluationRepository
 } from "@app/db";
-import { ProcessingPlanRequestSchema } from "@app/domain";
+import { ProcessingPlanRequestSchema, migrateMatchingSettingsV2 } from "@app/domain";
 import {
   appSettingsSchema,
   containerSourceInputSchema,
@@ -67,25 +67,17 @@ export function benchmarkConfiguration(
   variant: "baseline" | "economy" | "coverage"
 ): AppSettingsUpdate {
   const base = {
-    atomicNoteRelationThreshold: reference.atomicNoteRelationThreshold,
     atomicNoteMatchingSettings: reference.atomicNoteMatchingSettings,
     canonicalMatchingSettings: reference.canonicalMatchingSettings,
     entityIdentitySimilarityThreshold: reference.entityIdentitySimilarityThreshold,
     relationTypeSimilarityThreshold: reference.relationTypeSimilarityThreshold,
     sourceRelationSettings: reference.sourceRelationSettings
   };
+  // Design E (F3 D27) deleted the source shortlist limits and relations v2 (F3 D46) moved the note
+  // candidate limits to typed configuration: the variants differ in the source evidence limits.
   if (variant === "economy")
     return {
       ...base,
-      atomicNoteMatchingSettings: {
-        ...base.atomicNoteMatchingSettings,
-        textCandidateLimit: 20,
-        vectorCandidateLimit: 20,
-        graphCandidateLimit: 10,
-        fusedCandidateLimit: 20,
-        minimumGraphOnlyCandidates: 3
-      },
-      // Design E (F3 D27) deleted the shortlist limits; the evidence limits remain.
       sourceRelationSettings: {
         ...base.sourceRelationSettings,
         evidenceChunksPerSource: 2,
@@ -96,14 +88,6 @@ export function benchmarkConfiguration(
   if (variant === "coverage")
     return {
       ...base,
-      atomicNoteMatchingSettings: {
-        ...base.atomicNoteMatchingSettings,
-        textCandidateLimit: 50,
-        vectorCandidateLimit: 50,
-        graphCandidateLimit: 30,
-        fusedCandidateLimit: 40,
-        minimumGraphOnlyCandidates: 8
-      },
       sourceRelationSettings: {
         ...base.sourceRelationSettings,
         evidenceChunksPerSource: 4
@@ -142,8 +126,11 @@ export async function runMatchingBenchmark(
   ]);
   if (new Set(allKeys).size !== 82 || allKeys.length !== 82)
     throw Error("Invalid benchmark source identities");
+  // Snapshots written before matching settings v2 (T53b) read through its migration.
   const reference = appSettingsSchema.parse(
-    JSON.parse(await readFile(join(directory, "settings-before.json"), "utf8"))
+    migrateMatchingSettingsV2(
+      JSON.parse(await readFile(join(directory, "settings-before.json"), "utf8"))
+    )
   );
   const repository = createMatchingEvaluationRepository(options.pool);
   const manifestPath = join(directory, "manifest.json");
@@ -274,7 +261,7 @@ export async function runMatchingBenchmark(
         .object({
           frozenAt: z.string().datetime(),
           configuration: z.enum(["baseline", "economy", "coverage"]),
-          settings: appSettingsSchema,
+          settings: z.preprocess(migrateMatchingSettingsV2, appSettingsSchema),
           trainingResultsHash: z.string()
         })
         .parse(JSON.parse(await readFile(join(directory, "selection.json"), "utf8")));

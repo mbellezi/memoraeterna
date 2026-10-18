@@ -567,8 +567,7 @@ describe("the request", () => {
       userDataPath: "/tmp/test",
       getStorageSettings: async () => ({}) as never,
       getUploadedFilesBasePath: async () => null,
-      getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse({}),
-      relationThreshold: 0.6
+      getAtomicNoteMatchingSettings: async () => AtomicNoteMatchingSettingsSchema.parse({})
     }).matchAtomicNotes(["source"]);
     // The generative decider answered, not a ranker, and nothing was skipped.
     expect(result).toMatchObject({ decider: "generative", decided: 1 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { recommendedMatchingConfiguration } from "./matching-presets.js";
+import { retiredSourceRelationSettingKeys } from "./matching-settings-migration.js";
 import {
   SourceDecisionItemSchema,
   SourceRelationCoverageSchema,
@@ -9,20 +10,18 @@ import {
   defaultSourceRelationSettings,
   equivalentSourceRelationTypes,
   promotableNoteRelationType,
-  retiredSourceRelationSettingKeys,
   sourceDecisionLimits,
   sourceDecisionPassesFloors,
   sourceVerdictWriteType
 } from "./source-relations.js";
 
 describe("source relation settings of design E", () => {
-  it("drops the deleted shortlist settings on read and refuses any other unknown field", () => {
-    const stored = Object.fromEntries(retiredSourceRelationSettingKeys.map((key) => [key, 6]));
-    expect(
-      SourceRelationSettingsSchema.parse({ ...defaultSourceRelationSettings, ...stored })
-    ).toEqual(defaultSourceRelationSettings);
+  it("refuses the deleted shortlist settings and any other unknown field", () => {
     expect(Object.keys(defaultSourceRelationSettings)).not.toContain("maxPairs");
+    for (const key of retiredSourceRelationSettingKeys)
+      expect(SourceRelationSettingsSchema.safeParse({ [key]: 6 }).success, key).toBe(false);
     expect(SourceRelationSettingsSchema.safeParse({ unknownLimit: 1 }).success).toBe(false);
+    expect(SourceRelationSettingsSchema.parse({})).toEqual(defaultSourceRelationSettings);
   });
 
   it("reads coverage written before design E without its shortlist flags", () => {
