@@ -281,6 +281,10 @@ X7-REF at D36's remote batches (7,000 characters, 24/24 caps): 30.5 generative c
 ranker's `relation_decide` calls excluded) but 2.197 distinct entities per chunk against F1a's 2.576, 85.3% (bar 90%; the
 loss is mostly "The Tell-Tale Heart", 29 to 13). By Q8 remote writers keep F1a's 3,500 characters with 12/12 caps, and
 X7-REF is measured again at that batch; the owner chose that path over a second 7,000 run or a lower yield bar.
+At 3,500 with 12/12 caps X7-REF kept 105% of F1a's yield (2.712 per chunk) at 45.0 generative calls per chapter
+(extraction 33, identity 26). D36's identity lever (24 entities per call) cannot help there: each identity call
+already covers one extraction batch of at most 12 entities. By Q8 the owner re-based X7 for F3 to ≤45 per chapter,
+quality first, and moved the call reduction to F4 (identity grouped across a source's batches, bar back to ≤40).
 
 ## Measurement
 

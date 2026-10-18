@@ -720,6 +720,10 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
       library change; measured on the local writer's structured calls (identity, typing, notes, extraction, topic
       naming) against today's repair rate, then the soak's repair bar counts the local writer again.
 - [ ] Local-model benchmark and runtime-upgrade spike, record only (decision 26), then delete the test models.
+- [ ] Entity identity grouped across a source's extraction batches (F3 X7, owner 2026-10-19): with 3,500-character
+      batches each identity call covers one batch, so X7-REF needs 45 generative calls per chapter (F3 closed on
+      ≤45); grouping up to 24 entities per call across a source's batches projects about 38. Adopted only if the
+      merged-entity count stays within ±5% of the per-batch run, measured on X7-REF; the bar returns to ≤40.
 
 Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
 blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
