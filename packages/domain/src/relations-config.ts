@@ -158,7 +158,13 @@ const DecisionsDeciderSchema = z
      * Spike A2's frozen directed threshold p >= 0.79, as the log-odds of the mean of both
      * directions on the bake-off scale.
      */
-    uncalibratedPassLogOdds: logOdds.default(1.3249)
+    uncalibratedPassLogOdds: logOdds.default(1.3249),
+    /**
+     * A directed relation gets the Decisions decider's direction (shown, source `decider`) only when
+     * its two directional scores differ by at least this many log-odds; below it the relation has
+     * no direction until the owner gives one (decision 31b: 0.78 accurate at 1, 0.70 at any margin).
+     */
+    directionMarginLogOdds: z.number().min(0).max(20).default(1)
   })
   .strict();
 

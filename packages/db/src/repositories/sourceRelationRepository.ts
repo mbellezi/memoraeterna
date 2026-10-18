@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import {
+  directedNoteRelationTypes,
   equivalentSourceRelationTypes,
   planPromotedSourceRelations,
   relationsConfig,
@@ -12,7 +13,7 @@ import {
   type RelationsConfig
 } from "@app/domain";
 import { withTransaction, type PgPool } from "../client.js";
-import { noteRelationStateSql } from "./note-relation-sql.js";
+import { noteRelationDirectionSql, noteRelationStateSql } from "./note-relation-sql.js";
 import { createRelationEventRepository } from "./relationEventRepository.js";
 import { createRelationMatchRunRepository } from "./relationMatchRunRepository.js";
 import type { RetrievalFence } from "./noteRetrievalSql.js";
@@ -154,23 +155,26 @@ const noteFingerprint = noteRelationFingerprintSql("n", "a", "b");
  * The note relations between roots that source matching may use, between current, source-owned
  * notes whose evidence chunks are current: `applied` for the judge's hypotheses and its pair key
  * (F3 D9), `shown` (applied or suggested, decision 29) for promotion. `a` reads to `b` in the
- * stored direction (a symmetric relation reads from its lower endpoint); a relation whose
- * direction is unknown is left out, as it was before relations v2. The endpoints join on the
- * relation's own columns. `roots` is the condition on the two notes' roots (`ta.root_id`,
- * `tb.root_id`).
+ * direction the relation may be shown in (decision 31b; a symmetric relation, or one nobody gave a
+ * direction, reads from its lower endpoint). A legacy relation whose direction is unknown is left
+ * out, as it was before relations v2, and so is a relation with no shown direction in the judge's
+ * hypotheses, which would state one; promotion keeps it, as a relation that reads both ways. The
+ * endpoints join on the relation's own columns. `roots` is the condition on the two notes' roots
+ * (`ta.root_id`, `tb.root_id`).
  */
 const noteRelationsBetweenRootsSql = (
   roots: string,
   state: "applied" | "shown"
 ) => `from atomic_note_relations n
-        join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end
-        join atomic_notes b on b.id = case when n.direction = 'hi_to_lo' then n.source_atomic_note_id else n.target_atomic_note_id end
+        join atomic_notes a on a.id = case when ${noteRelationDirectionSql("n")} = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end
+        join atomic_notes b on b.id = case when ${noteRelationDirectionSql("n")} = 'hi_to_lo' then n.source_atomic_note_id else n.target_atomic_note_id end
         join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
         join chunks ca on ca.id = a.evidence_chunk_id join documents da on da.id = ca.document_id
         join chunks cb on cb.id = b.evidence_chunk_id join documents db on db.id = cb.document_id
         where ${roots}
           and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
           and n.direction <> 'unknown'
+          ${state === "applied" ? `and ${noteRelationDirectionSql("n")} <> 'unknown'` : ""}
           and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
           and ${noteRelationStateSql[state]("n")} and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source'
@@ -237,6 +241,19 @@ export const suggestedSourceRelationSql = (r = "r") =>
  */
 export const sourceRelationImportanceOrderSql = (r = "r") =>
   `${r}.importance desc nulls last, ${r}.support_count desc nulls last`;
+
+/**
+ * Whether a source relation reads from its source to its target (decision 31b), over the relation
+ * alias: a directed type that the judge decided, or that rests on a note relation whose direction
+ * the owner or the decider gave. A promoted relation resting on notes that are only linked reads
+ * both ways. Derived at read time, so a Keep that gives a note relation a direction shows at once.
+ */
+export const directedSourceRelationSql = (r = "r") =>
+  `(${r}.relation_type in (${directedNoteRelationTypes.map((type) => `'${type}'`).join(",")})
+  and (${r}.origin = 'judged' or exists (
+    select 1 from source_relation_evidence de join atomic_note_relations dn on dn.id = de.note_relation_id
+     where de.relation_id = ${r}.id and de.origin = 'atomic_notes'
+       and ${noteRelationDirectionSql("dn")} in ('lo_to_hi','hi_to_lo'))))`;
 
 /** Evidence rows promotion wrote carry this writer; only those are removed when support is lost. */
 const promotionEvidenceWriter = "promotion";
@@ -744,12 +761,25 @@ function relationMetadata(metadata: JsonObject): JsonObject {
 export function sourceRelationIdentityKey(
   sourceItemId: string,
   targetSourceItemId: string,
-  relationType: string
+  relationType: string,
+  /** The relation reads both ways although its type is directed (promoted from linked notes). */
+  readsBothWays = false
 ): string {
-  const endpoints = symmetricSourceRelationTypes.includes(relationType)
-    ? [sourceItemId, targetSourceItemId].sort()
-    : [sourceItemId, targetSourceItemId];
-  return hash(JSON.stringify(["source-relation", ...endpoints, relationType]));
+  const symmetric = symmetricSourceRelationTypes.includes(relationType);
+  const endpoints =
+    symmetric || readsBothWays
+      ? [sourceItemId, targetSourceItemId].sort()
+      : [sourceItemId, targetSourceItemId];
+  // A directed type that reads both ways is not the same relation as one that reads from a source
+  // to a target, whichever way the sorted endpoints fall.
+  return hash(
+    JSON.stringify([
+      "source-relation",
+      ...endpoints,
+      relationType,
+      ...(readsBothWays && !symmetric ? ["linked"] : [])
+    ])
+  );
 }
 
 /** $1 one source: its root. */
@@ -990,6 +1020,8 @@ interface PromotionRow extends QueryResultRow {
   subjectChunkId: string;
   objectChunkId: string;
   fingerprint: string;
+  /** The subject to object reading is a direction the owner or the decider gave (decision 31b). */
+  directed: boolean;
 }
 
 interface PromotionChunk extends QueryResultRow {
@@ -1024,7 +1056,8 @@ const promotionRelationsSql = `${sourceRelationTreeSql}
   select n.id, n.relation_type as type, coalesce(n.probability, n.final_score)::float8 as probability,
     a.id as "subjectNoteId", b.id as "objectNoteId", ta.root_id as "subjectRootId", tb.root_id as "objectRootId",
     a.idea_statement as "subjectIdea", b.idea_statement as "objectIdea",
-    a.evidence_chunk_id as "subjectChunkId", b.evidence_chunk_id as "objectChunkId", ${noteFingerprint} as fingerprint
+    a.evidence_chunk_id as "subjectChunkId", b.evidence_chunk_id as "objectChunkId", ${noteFingerprint} as fingerprint,
+    (${noteRelationDirectionSql("n")} in ('lo_to_hi','hi_to_lo')) as directed
   ${noteRelationsBetweenRootsSql(
     `$1 in (ta.root_id, tb.root_id) and ta.root_id <> tb.root_id
     and ($2::uuid[] is null or (case when ta.root_id = $1 then tb.root_id else ta.root_id end) = any($2::uuid[]))`,
@@ -1130,6 +1163,7 @@ async function promoteFromNotes(
             subjectRootId: row.subjectRootId,
             objectRootId: row.objectRootId,
             probability: row.probability === null ? null : Number(row.probability),
+            directed: row.directed,
             contentKey: `${row.subjectIdea}\u0000${row.objectIdea}`
           })),
           compareRoots
@@ -1181,7 +1215,12 @@ async function promoteFromNotes(
                  importance, confidence, origin, support_count, metadata)
                values ($1, $2, $3, $4, null, null, 'promoted', $5, $6) on conflict (identity_key) do nothing returning id`,
               [
-                sourceRelationIdentityKey(plan.sourceRootId, plan.targetRootId, plan.type),
+                sourceRelationIdentityKey(
+                  plan.sourceRootId,
+                  plan.targetRootId,
+                  plan.type,
+                  plan.symmetric
+                ),
                 plan.sourceRootId,
                 plan.targetRootId,
                 plan.type,
@@ -1549,7 +1588,8 @@ export async function listSourceRelations(
     select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId",
       a.title as "sourceTitle", b.title as "targetTitle", r.relation_type as "relationType",
       r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.explanation,r.importance,r.confidence,r.status,
-      r.origin, r.support_count as "supportCount", ${suggestedSourceRelationSql("r")} as suggested,
+      r.origin, r.support_count as "supportCount", ${directedSourceRelationSql("r")} as directed,
+      ${suggestedSourceRelationSql("r")} as suggested,
       ${currentSourceRelationSql} as current,r.updated_at as "updatedAt",count(*) over()::int as total
     from source_relations r join source_items a on a.id = r.source_item_id join source_items b on b.id = r.target_source_item_id
     where ($5::uuid is null or r.id=$5) and (r.source_item_id in (select id from source_scope) or r.target_source_item_id in (select id from source_scope))

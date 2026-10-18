@@ -95,7 +95,12 @@ describe.skipIf(!sidecarInstalled)("migration 0058 on a real PostgreSQL database
     const journal = JSON.parse(await readFile(join(before, "meta/_journal.json"), "utf8")) as {
       entries: Array<{ tag: string }>;
     };
-    journal.entries = journal.entries.filter((entry) => entry.tag !== lastTag);
+    // The history ends right before 0058: a later migration applied first would put its time past
+    // 0058's, and drizzle applies only what is newer than the last one applied.
+    journal.entries = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag === lastTag)
+    );
     await writeFile(join(before, "meta/_journal.json"), JSON.stringify(journal));
     await runMigrations(pool, before);
 
@@ -166,7 +171,7 @@ describe.skipIf(!sidecarInstalled)("migration 0058 on a real PostgreSQL database
     await rm(workDir, { recursive: true, force: true });
   }, 30_000);
 
-  it("applies as the only pending migration and keeps every note and vector", async () => {
+  it("applies as a pending migration and keeps every note and vector", async () => {
     const column = await pool.query(
       "select 1 from information_schema.columns where table_name = 'atomic_notes' and column_name = 'search_tsv'"
     );

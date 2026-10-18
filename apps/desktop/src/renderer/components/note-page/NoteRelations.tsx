@@ -21,8 +21,10 @@ import {
   bandWordKey,
   cardContent,
   interpolateNodes,
+  isLinkedOnly,
   relationStateKey,
   type RelationGroup,
+  type ReviewDirection,
   type ReviewState
 } from "./note-page-model";
 import type { CardEvent } from "./relation-card-state";
@@ -181,7 +183,7 @@ function RelationRow({
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
-  onReview: (relationId: string, verdict: "keep" | "remove") => void;
+  onReview: (relationId: string, verdict: "keep" | "remove", direction?: ReviewDirection) => void;
 }) {
   const { other } = relation;
   const id = relation.id;
@@ -222,7 +224,7 @@ function RelationRow({
         onClick={() => onOpenNote(other.id)}
       >
         <span className="flex-none basis-26 pt-1">
-          <RelationStanceLabel type={relation.type} t={t} />
+          <RelationStanceLabel type={relation.type} t={t} linked={isLinkedOnly(relation)} />
         </span>
         <span className="flex min-w-0 flex-1 basis-80 flex-col gap-1.5">
           <span className="flex gap-2">
@@ -289,7 +291,7 @@ function RelationRow({
           explanation={explanation}
           review={review}
           onRetryExplanation={() => onRetryExplanation(id)}
-          onReview={(verdict) => onReview(id, verdict)}
+          onReview={(verdict, direction) => onReview(id, verdict, direction)}
         />
       ) : null}
     </li>
@@ -306,7 +308,7 @@ interface ListProps {
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
-  onReview: (relationId: string, verdict: "keep" | "remove") => void;
+  onReview: (relationId: string, verdict: "keep" | "remove", direction?: ReviewDirection) => void;
 }
 
 function RelationList({
@@ -418,7 +420,7 @@ export function NoteRelations({
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
-  onReview: (relationId: string, verdict: "keep" | "remove") => void;
+  onReview: (relationId: string, verdict: "keep" | "remove", direction?: ReviewDirection) => void;
   onToggleWithdrawn: () => void;
   onFocusHandled: () => void;
   onShowMore: (group: RelationGroup) => void;

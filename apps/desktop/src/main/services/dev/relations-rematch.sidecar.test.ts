@@ -195,8 +195,8 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
     for (const [lo, hi] of pairs) {
       await pool.query(
         `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
-            final_score, explanation, direction, band, probability, status)
-         values ($1, $2, 'supports', 0.9, 'x', 'lo_to_hi', 'apply', 0.9, 'accepted')`,
+            final_score, explanation, direction, direction_source, band, probability, status)
+         values ($1, $2, 'supports', 0.9, 'x', 'lo_to_hi', 'typer', 'apply', 0.9, 'accepted')`,
         [note(lo).id, note(hi).id]
       );
       for (const deciderKey of ["key-now", "key-before"])

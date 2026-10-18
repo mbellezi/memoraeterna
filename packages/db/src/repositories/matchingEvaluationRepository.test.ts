@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { ZodError } from "zod";
 import type { PgPool } from "../client.js";
 import { createMatchingEvaluationRepository } from "./matchingEvaluationRepository.js";
 const ids = Array.from({ length: 20 }, () => randomUUID());
@@ -36,6 +37,40 @@ describe("synthetic pilot rematch boundary", () => {
       })
     ).rejects.toThrow("unrelated relationships");
     expect(query).not.toHaveBeenCalled();
+  });
+  it("refuses a snapshot whose relations do not say where their direction came from (decision 31b)", async () => {
+    const { repository, query } = setup({ total: 20, selected: 20, reviewed: 0, active: 0 });
+    const relation = (extra: Record<string, unknown>) => ({
+      id: randomUUID(),
+      source_atomic_note_id: randomUUID(),
+      target_atomic_note_id: randomUUID(),
+      status: "pending_review",
+      direction: "lo_to_hi",
+      ...extra
+    });
+    const snapshot = (noteRelations: unknown[]) => ({
+      noteRelations,
+      sourceRelations: [],
+      sourceEvidence: []
+    });
+    // Taken before migration 0059: no key, so a banded directed relation would have no source.
+    await expect(
+      repository.resetPilotMatching(ids, 20, snapshot([relation({})]))
+    ).rejects.toThrow();
+    await expect(
+      repository.resetPilotMatching(ids, 20, snapshot([relation({ direction_source: "someone" })]))
+    ).rejects.toThrow();
+    expect(query).not.toHaveBeenCalled();
+    // Every source the table allows passes the snapshot's schema (the mock database answers little).
+    for (const direction_source of [null, "typer", "decider", "owner"]) {
+      const error = await repository
+        .resetPilotMatching(ids, 20, snapshot([relation({ direction_source })]))
+        .then(
+          () => null,
+          (reason: unknown) => reason
+        );
+      expect(error instanceof ZodError).toBe(false);
+    }
   });
   it("requires the full expanded fixture identity set before resetting a tuning graph", async () => {
     const expanded = Array.from({ length: 62 }, () => randomUUID());

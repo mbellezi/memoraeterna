@@ -6,7 +6,9 @@ import type { PgPool } from "../client.js";
 import {
   currentNoteSql,
   earlierVersionNoteRelationSql,
+  noteRelationDirectionSourceSql,
   noteRelationStateLabelSql,
+  noteRelationSubjectSql,
   shownNoteRelationSql,
   withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
@@ -66,6 +68,7 @@ const relationItem = (overrides: Record<string, unknown> = {}) => ({
   group: "shown",
   type: "supports",
   direction: "incoming",
+  directionSource: null,
   state: "applied",
   band: null,
   calibration: null,
@@ -272,6 +275,7 @@ describe("note page repository", () => {
       id: id(20),
       type: "supports",
       direction: "incoming",
+      directionSource: null,
       state: "applied",
       band: null,
       calibration: null,
@@ -696,8 +700,11 @@ describe("note page repository", () => {
     expect(relations).toContain("partition by rel.grp");
     expect(relations).toContain(`${currentNoteSql("n")} as current`);
     expect(relations).toContain(`${currentNoteSql("o")} as current`);
-    // The direction is the stored column, never the metadata.
-    expect(relations).toContain("case r.direction when 'lo_to_hi'");
+    // The direction is the stored column through the module (a typer's guess reads as unknown),
+    // never the metadata.
+    expect(relations).toContain(noteRelationSubjectSql("r"));
+    expect(relations).toContain(noteRelationDirectionSourceSql("r"));
+    expect(relations).not.toContain("case r.direction when");
     expect(relations).not.toContain("metadata->>'semantic");
   });
 });

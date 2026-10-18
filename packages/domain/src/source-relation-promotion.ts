@@ -19,6 +19,11 @@ export interface PromotionNoteRelation {
   subjectRootId: string;
   /** Root of the object note. */
   objectRootId: string;
+  /**
+   * Whether the subject to object reading is a direction the owner or the Decisions decider gave
+   * (decision 31b). False: the notes are only linked, and the subject is just the lower endpoint.
+   */
+  directed: boolean;
   /** The calibrated probability, or the decider's own score; null when unknown. */
   probability: number | null;
   /** The two notes' ideas in reading order: content-order ties, never IDs. */
@@ -27,10 +32,14 @@ export interface PromotionNoteRelation {
 
 /** One source relation promotion makes (or keeps): one per root pair and type (D27). */
 export interface PromotedSourceRelationPlan {
-  /** The subject's root for a directed type; the root first in content order for a symmetric one. */
+  /**
+   * The subject's root when a note relation gave the type a direction; otherwise the root first in
+   * content order.
+   */
   sourceRootId: string;
   targetRootId: string;
   type: NoteRelationWriteType;
+  /** Reads both ways: a symmetric type, or a directed type none of whose notes gave a direction. */
   symmetric: boolean;
   /** The supporting note relations in content order (its `support_count`). */
   noteRelationIds: string[];
@@ -48,7 +57,7 @@ const isDirected = (type: NoteRelationWriteType) =>
   (directedNoteRelationTypes as readonly string[]).includes(type);
 const promotesDirected = (relation: PromotionNoteRelation) => {
   const type = promotableNoteRelationType(relation.type);
-  return type !== null && isDirected(type);
+  return type !== null && isDirected(type) && relation.directed;
 };
 
 /**
@@ -87,8 +96,11 @@ const inContentOrder = (relations: readonly PromotionNoteRelation[]) =>
  * What promotion makes of a root's typed shown cross-root note relations (D27): per other root,
  * the majority type; a symmetric one gives one relation; a directed one gives one relation per
  * direction in which it is also the majority of that direction's directed relations, and, when no
- * direction has its own majority, the direction holding most of its relations. `compareRoots` is a
- * content order of roots (title, then ID): the endpoint order of a symmetric relation.
+ * direction has its own majority, the direction holding most of its relations. Only a direction the
+ * owner or the decider gave counts (decision 31b): a directed type none of whose note relations has
+ * one gives a single relation that reads both ways, and the notes without a direction add no
+ * support to a directed one. `compareRoots` is a content order of roots (title, then ID): the
+ * endpoint order of a relation that reads both ways.
  */
 export function planPromotedSourceRelations(input: {
   rootId: string;
@@ -108,7 +120,7 @@ export function planPromotedSourceRelations(input: {
     const relations = byOther.get(other)!;
     const winner = majority(relations);
     if (!winner) continue;
-    if (!isDirected(winner.type)) {
+    if (!isDirected(winner.type) || !winner.relations.some((item) => item.directed)) {
       const [sourceRootId, targetRootId] = [input.rootId, other].toSorted(input.compareRoots) as [
         string,
         string

@@ -4,17 +4,23 @@ import { cn } from "../lib/cn";
 import { relationTypeView, stanceTextClass } from "../lib/relation-stance";
 import { StanceGlyph } from "./glyphs";
 
-/** The one stance label of relation views: glyph and word in the stance colour, never the raw type. */
+/**
+ * The one stance label of relation views: glyph and word in the stance colour, never the raw type.
+ * `linked` reads "linked: extends" for a relation of a directed type that nobody gave a direction
+ * (decision 31b), so the word beside a note never says who extends whom.
+ */
 export function RelationStanceLabel({
   type,
   t,
   size = 14,
-  className
+  className,
+  linked = false
 }: {
   type: string;
   t: Translator;
   size?: number;
   className?: string;
+  linked?: boolean;
 }) {
   const view = relationTypeView(type);
   return (
@@ -26,7 +32,7 @@ export function RelationStanceLabel({
       )}
     >
       <StanceGlyph stance={view.stance} size={size} />
-      {t(view.wordKey)}
+      {linked ? t("notePage.linkedStance", { values: { type: t(view.wordKey) } }) : t(view.wordKey)}
     </span>
   );
 }

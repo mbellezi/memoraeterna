@@ -2,7 +2,7 @@ import { SourceReferenceBadge, SourceRelationReferenceText } from "./SourceRelat
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
-import { sourceRelationState, type SourceRelationView } from "@app/domain";
+import { isDirectedRelationType, sourceRelationState, type SourceRelationView } from "@app/domain";
 import {
   atomicRelationIcon,
   atomicRelationColor,
@@ -242,7 +242,14 @@ export function SourceRelationsList({
                   style={{ color: atomicRelationColor(relation.relationType) }}
                   aria-hidden="true"
                 />
-                <strong>{formatEdgeLabel(relation.relationType, t)}</strong>
+                <strong>
+                  {!relation.directed && isDirectedRelationType(relation.relationType)
+                    ? // Nobody gave the type a direction: the sources are linked (decision 31b).
+                      t("knowledge.relations.linked", {
+                        values: { type: formatEdgeLabel(relation.relationType, t) }
+                      })
+                    : formatEdgeLabel(relation.relationType, t)}
+                </strong>
                 <span className="ml-auto text-[11px] opacity-70">
                   {t(`sourceRelations.${statusKey}`)}
                 </span>
@@ -252,10 +259,16 @@ export function SourceRelationsList({
                   <SourceReferenceBadge number={1} title={relation.sourceTitle} />
                   {relation.sourceTitle}
                 </span>
-                <ArrowRight
-                  className="h-3 w-3 shrink-0"
-                  aria-label={t("sourceRelations.direction")}
-                />
+                {relation.directed ? (
+                  <ArrowRight
+                    className="h-3 w-3 shrink-0"
+                    aria-label={t("sourceRelations.direction")}
+                  />
+                ) : (
+                  <span className="shrink-0" aria-hidden="true">
+                    ·
+                  </span>
+                )}
                 <span className="min-w-0 break-words">
                   <SourceReferenceBadge number={2} title={relation.targetTitle} />
                   {relation.targetTitle}

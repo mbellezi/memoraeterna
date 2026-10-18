@@ -162,7 +162,8 @@ describe("where focus goes when a row leaves its list", () => {
 });
 
 describe("the owner's verdict on a relation (I-R2, I-R3)", () => {
-  const suggested = (n: number) => row(n, { state: "suggested", band: "suggest" });
+  const suggested = (n: number, overrides: Partial<NotePageRelation> = {}) =>
+    row(n, { state: "suggested", band: "suggest", ...overrides });
 
   it("removes a removed relation from its list and takes it out of the total once", () => {
     const page = pageWith({ shown: [suggested(60), row(62)], totals: [5, 0, 0] });
@@ -197,6 +198,45 @@ describe("the owner's verdict on a relation (I-R2, I-R3)", () => {
       vetoSource: null
     });
     expect(moved.relations.total).toBe(3);
+  });
+
+  it("shows the owner's direction at once on the relation it kept, and none as linked (decision 31b)", () => {
+    const page = pageWith({
+      shown: [suggested(60), suggested(62)],
+      withdrawn: [row(64, { state: "withdrawn", vetoSource: "typer", direction: "unknown" })],
+      totals: [2, 1, 0]
+    });
+    const item = (next: ReturnType<typeof withReviewed>, n: number) =>
+      [...next.relations.items].find((candidate) => candidate.id === fixtureId(n))!;
+    expect(item(withReviewed(page, fixtureId(60), "kept", "thisToOther"), 60)).toMatchObject({
+      state: "kept",
+      direction: "outgoing",
+      directionSource: "owner"
+    });
+    expect(item(withReviewed(page, fixtureId(62), "kept", "otherToThis"), 62)).toMatchObject({
+      direction: "incoming",
+      directionSource: "owner"
+    });
+    // "No direction" hides a direction the card showed, and is nobody's to display.
+    const decided = pageWith({
+      shown: [suggested(60, { direction: "outgoing", directionSource: "decider" })],
+      totals: [1, 0, 0]
+    });
+    expect(item(withReviewed(decided, fixtureId(60), "kept", "none"), 60)).toMatchObject({
+      state: "kept",
+      direction: "unknown",
+      directionSource: null
+    });
+    // A Keep that offered no choice leaves the direction as it was; a relation that moves lists keeps it.
+    expect(item(withReviewed(decided, fixtureId(60), "kept"), 60)).toMatchObject({
+      direction: "outgoing",
+      directionSource: "decider"
+    });
+    expect(item(withReviewed(page, fixtureId(64), "kept", "otherToThis"), 64)).toMatchObject({
+      state: "kept",
+      direction: "incoming",
+      directionSource: "owner"
+    });
   });
 
   it("does not append a kept withdrawn relation to a shown list that was read in part", () => {

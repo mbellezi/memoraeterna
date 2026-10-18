@@ -1703,6 +1703,10 @@ export const atomicNoteRelations = pgTable(
     // `direction`; automation's band, calibrated probability and veto stay apart from `status`,
     // which keeps its human meaning (`pending_review` = no human verdict). Legacy rows: band null.
     direction: text("direction").notNull(),
+    // Where `direction` came from (decision 31b): the typer's guess from note position is kept but
+    // never shown; `decider` and `owner` directions are. Null on legacy rows and on relations that
+    // read the same both ways.
+    directionSource: text("direction_source"),
     band: text("band"),
     probability: real("probability"),
     deciderKey: text("decider_key"),
@@ -1729,17 +1733,20 @@ export const atomicNoteRelations = pgTable(
         and (${table.probability} is null or ${table.probability} between 0 and 1)
         and (${table.vetoSource} is null or ${table.vetoSource} in ('explainer','typer'))
         and (${table.vetoSource} is null) = (${table.vetoedAt} is null)
+        and (${table.directionSource} is null or ${table.directionSource} in ('typer','decider','owner'))
         and (${table.relationType} is null or ${table.relationType} in ${noteRelationReadTypesSql})`
     ),
     v2: check(
       "atomic_note_relations_v2",
       sql`(${table.relationType} is not null or ${table.band} is not null)
         and (${table.direction} <> 'unknown' or ${table.band} is null)
+        and (${table.band} is not null or ${table.directionSource} is null)
         and (${table.band} is null or (
           (${table.relationType} is null or ${table.relationType} in ('supports','contradicts','extends','depends_on','example_of','clarifies','same_as'))
           and case when ${table.relationType} in ('supports','extends','depends_on','example_of','clarifies')
-                then ${table.direction} in ('lo_to_hi','hi_to_lo')
-                else ${table.direction} = 'symmetric' end))`
+                then (${table.direction} in ('lo_to_hi','hi_to_lo') and ${table.directionSource} is not null)
+                  or (${table.direction} = 'symmetric' and ${table.directionSource} is not distinct from 'owner')
+                else ${table.direction} = 'symmetric' and ${table.directionSource} is null end))`
     )
   })
 );

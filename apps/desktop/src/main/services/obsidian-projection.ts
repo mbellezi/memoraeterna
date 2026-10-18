@@ -1,5 +1,6 @@
 import { posix } from "node:path";
 
+import { isDirectedNoteRelationType } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import { parseObsidianMarkdown, type ObsidianManagedFrontmatter } from "@app/integration-contracts";
 
@@ -16,10 +17,32 @@ const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
   related: "knowledge.relations.types.related"
 };
 
+/**
+ * Whether a relation only links the note to another (decision 31b): its type is directed and the
+ * note is not its subject, because nobody gave the relation a direction (the owner or the
+ * decider) or it reads the other way. The note lists such a relation as linked, never under the
+ * type's own heading, which states that this note is the subject. `shownDirection` is the stored
+ * pair's `lo_to_hi` or `hi_to_lo` as the relation may be shown; `noteIsLow` says which end the
+ * note is.
+ */
+export function onlyLinksThisNote(
+  relationType: string,
+  shownDirection: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown",
+  noteIsLow: boolean
+): boolean {
+  if (!isDirectedNoteRelationType(relationType)) return false;
+  return shownDirection !== (noteIsLow ? "lo_to_hi" : "hi_to_lo");
+}
+
 export interface ObsidianRelatedNote {
   noteId?: string;
   appSourceId?: string;
   relationType: string;
+  /**
+   * The relation is of a directed type and this note is not its given subject: it only links the
+   * two notes, so the note lists it as "linked" and states no direction (decision 31b).
+   */
+  linked?: boolean;
   title: string;
   target: string;
 }
@@ -85,15 +108,21 @@ export function appendObsidianRelations(
 ): string {
   const grouped = new Map<string, ObsidianRelatedNote[]>();
   for (const relatedNote of relatedNotes) {
-    const entries = grouped.get(relatedNote.relationType) ?? [];
+    const group = `${relatedNote.linked ? "linked:" : ""}${relatedNote.relationType}`;
+    const entries = grouped.get(group) ?? [];
     entries.push(relatedNote);
-    grouped.set(relatedNote.relationType, entries);
+    grouped.set(group, entries);
   }
   const sections = [...grouped.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([relationType, entries]) => {
+    .map(([group, entries]) => {
+      const linked = group.startsWith("linked:");
+      const relationType = linked ? group.slice("linked:".length) : group;
       const key = relationTypeMessageKeys[relationType];
-      const heading = key ? translate(locale, key) : relationType;
+      const typeHeading = key ? translate(locale, key) : relationType;
+      const heading = linked
+        ? translate(locale, "knowledge.relations.linked", { values: { type: typeHeading } })
+        : typeHeading;
       const links = entries
         .sort(
           (left, right) =>

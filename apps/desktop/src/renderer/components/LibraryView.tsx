@@ -2235,7 +2235,14 @@ export function SourceDetailView({
                         {relationConfidenceLabel(relation, t)}
                       </span>
                     </div>
-                    <p className="text-sm">{t(relationTypeKey(relation.relationType))}</p>
+                    <p className="text-sm">
+                      {relationTypeView(relation.relationType).directed &&
+                      relation.direction === "unknown"
+                        ? t("knowledge.relations.linked", {
+                            values: { type: t(relationTypeKey(relation.relationType)) }
+                          })
+                        : t(relationTypeKey(relation.relationType))}
+                    </p>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
                       <AtomicNoteRelationReferenceText
                         text={

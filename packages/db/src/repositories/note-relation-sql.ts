@@ -1,6 +1,7 @@
 /**
  * Visibility of note relations (F3 decision D9): the one module that reads
- * `atomic_note_relations.status`, `band` and `vetoed_at` to say what a relation is. `status` keeps
+ * `atomic_note_relations.status`, `band`, `vetoed_at` and `direction_source` to say what a relation
+ * is and which direction it may be shown in (decision 31b). `status` keeps
  * its human meaning (`pending_review` = no human verdict); automation's outcome is the band
  * (`apply`, `suggest`; null on legacy rows) and an automatic veto (`vetoed_at`).
  *
@@ -13,12 +14,14 @@
  * `supersession_status = current`) with current primary evidence (the note's evidence chunk belongs
  * to a non-superseded document): the rule's "supported by evidence from both endpoints". A fifth,
  * Note-page-only predicate lists applied relations to an earlier version of a note (or to a note
- * whose evidence is gone), never shown, drawn, promoted or counted. `note-relation-visibility.test.ts` forbids any other filter on these
- * columns in repositories, scripts and the main process.
+ * whose evidence is gone), never shown, drawn, promoted or counted. `note-relation-visibility.test.ts`
+ * forbids any other filter on these columns in repositories, scripts and the main process.
  *
- * Every function returns a SQL boolean expression over trusted aliases (checked here); no input
- * value is ever interpolated.
+ * Every function returns a SQL expression over trusted aliases (checked here); no input value is
+ * ever interpolated.
  */
+
+import { directedNoteRelationTypes } from "@app/domain";
 
 const aliasPattern = /^[a-z_][a-z0-9_]*$/u;
 
@@ -70,6 +73,49 @@ export const noteRelationStateSql = {
     return `(${r}.status = 'pending_review' and ${r}.vetoed_at is null)`;
   }
 } as const;
+
+const directedTypesSql = directedNoteRelationTypes.map((type) => `'${type}'`).join(",");
+
+/**
+ * The direction a relation may be shown in (plan decision 31b): `lo_to_hi` or `hi_to_lo` for a
+ * legacy row (no band; it reads as it was decided) and for a banded one whose direction the owner
+ * chose or the Decisions decider gave (`direction_source`); `symmetric` for a type that reads both
+ * ways; otherwise `unknown`, which readers show as linked with no arrow, no subject and no verb:
+ * the typer's guess from note position, a generative fallback's judged direction, and the owner's
+ * "no direction" on a directed type. Every reader of a note relation's direction goes through this
+ * expression or `noteRelationSubjectSql`; the raw `direction` is the audit record.
+ */
+export function noteRelationDirectionSql(relation: string): string {
+  const r = alias(relation);
+  return `(case when ${r}.band is null then ${r}.direction
+               when ${r}.direction in ('lo_to_hi','hi_to_lo')
+                 then case when ${r}.direction_source in ('decider','owner') then ${r}.direction else 'unknown' end
+               when ${r}.relation_type in (${directedTypesSql}) then 'unknown'
+               else ${r}.direction end)`;
+}
+
+/** Who gave the direction `noteRelationDirectionSql` shows (`decider` or `owner`), else null. */
+export function noteRelationDirectionSourceSql(relation: string): string {
+  const r = alias(relation);
+  return `(case when ${noteRelationDirectionSql(r)} in ('lo_to_hi','hi_to_lo') then ${r}.direction_source end)`;
+}
+
+/**
+ * The owner may give this relation a direction on Keep (decision 31b): an automatic (banded)
+ * relation of a directed type. Any other relation keeps the direction it has.
+ */
+export function ownerDirectableNoteRelationSql(relation: string): string {
+  const r = alias(relation);
+  return `(${r}.band is not null and ${r}.relation_type in (${directedTypesSql}))`;
+}
+
+/** The subject note of a relation shown with a direction (`noteRelationDirectionSql`), else null. */
+export function noteRelationSubjectSql(relation: string): string {
+  const r = alias(relation);
+  const shown = noteRelationDirectionSql(r);
+  return `(case ${shown} when 'lo_to_hi' then ${r}.source_atomic_note_id
+                         when 'hi_to_lo' then ${r}.target_atomic_note_id end)`;
+}
 
 /**
  * A note that counts as an endpoint: neither discarded nor archived, the current version, and its

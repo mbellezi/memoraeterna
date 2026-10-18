@@ -119,7 +119,9 @@ export interface NoteRelationSeedOptions {
  * direction; a third have an explanation written on open), hub notes, human edits on 5% of the
  * notes and retained evidence snapshots on 1%. Relations are stored as relations v2 rows (F3 D8):
  * the sorted pair with its direction; an eighth are banded v2 rows with the write vocabulary
- * (half of those suggested, a quarter of the applied ones withdrawn), the rest legacy rows.
+ * (half of those suggested, a quarter of the applied ones withdrawn), the rest legacy rows. A banded
+ * directed row holds the typer's guess, and one in four the decider's direction (decision 31b), so
+ * the readers draw some arrows and not others.
  */
 export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[] => {
   const legacyTypes =
@@ -130,7 +132,7 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
   const insertRelations = (pairs: string) => `
     insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
         direction, band, probability, vetoed_at, veto_source, final_score, explanation,
-        matching_model, metadata)
+        matching_model, metadata, direction_source)
      select least(x.f, x.t), greatest(x.f, x.t), x.type,
             case when x.type in ('contrasts','similar_to','contradicts','same_as') then 'symmetric'
                  when not x.v2 and x.k % 4 = 0 then 'unknown'
@@ -143,7 +145,9 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
             case when x.k % 2 = 0 then 'knowledge.relations.explanations.reranked'
                  else 'Both describe it in <note-ref id="' || x.f || '" />.' end,
             'seed-decider',
-            case when x.k % 4 = 0 then '{}'::jsonb else jsonb_build_object('decisionSource', 'model') end
+            case when x.k % 4 = 0 then '{}'::jsonb else jsonb_build_object('decisionSource', 'model') end,
+            case when x.v2 and x.type in ('supports','extends','depends_on','example_of','clarifies')
+                 then case when x.k % 4 = 1 then 'decider' else 'typer' end end
        from (select p.f, p.t, p.k, p.score, p.k % 8 = 1 as v2,
                     case when p.k % 8 = 1 then (${writeTypes})[1 + ((p.k / 8) % 7)::int]
                          else (${legacyTypes})[1 + (p.k % 6)::int] end as type
@@ -276,10 +280,10 @@ export const bookPairSeedSteps = (options: BookPairSeedOptions): string[] => {
      select id, 'Note ' || r || '-' || k, 'Body ' || k, 'Idea ' || r || '-' || k, 'active', 'current', 'source',
             source_id, chunk_id, 'seed', 'seed', 'local', 'seed', id::text from t_pair_note`,
     `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type, direction,
-        band, probability, final_score, explanation, matching_model)
+        band, probability, final_score, explanation, matching_model, direction_source)
      select least(a.id, b.id), greatest(a.id, b.id), 'supports',
             case when a.id < b.id then 'lo_to_hi' else 'hi_to_lo' end, 'apply', 0.9, 0.9,
-            'knowledge.relations.explanations.reranked', 'seed-decider'
+            'knowledge.relations.explanations.reranked', 'seed-decider', 'typer'
        from t_pair_note a join t_pair_note b on b.r = 2 and b.k = a.k
       where a.r = 1 and a.k <= ${options.noteRelations}`,
     `create temp table t_pair_entity as select gen_random_uuid() as id, g from generate_series(1, ${options.entities}) g`,

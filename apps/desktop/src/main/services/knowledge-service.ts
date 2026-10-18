@@ -486,9 +486,9 @@ export class KnowledgeService {
           targetTitle: relation.targetTitle,
           sourceStatus: relation.sourceStatus,
           targetStatus: relation.targetStatus,
-          // The stored pair is sorted by ID; the direction says how it reads (F3 D8). An untyped
-          // relation reads neutral.
-          direction: relation.direction,
+          // The stored pair is sorted by ID; the direction says how it reads (F3 D8), as far as
+          // the owner or the decider gave one (decision 31b). An untyped relation reads neutral.
+          direction: relation.shownDirection,
           relationType: relation.relationType ?? "related",
           band: relation.band,
           calibration: noteRelationCalibration(relation.metadata),

@@ -37,6 +37,7 @@ import {
   type Queryable
 } from "@app/db";
 import {
+  automaticNoteRelationDirection,
   DecisionsFallbackReasonSchema,
   NoteDeciderModeSchema,
   NoteRelationBandSchema,
@@ -94,6 +95,8 @@ const DecidedPairSchema = z
     calibration: z.enum(["frozen", "provisional", "uncalibrated"]),
     relationType: NoteRelationWriteTypeSchema.nullable(),
     subjectId: z.string().min(1).nullable(),
+    // The Decisions decider's clear direction (decision 31b); absent in a checkpoint written before.
+    directionSubjectId: z.string().min(1).nullable().optional(),
     decisionSource: z.enum(["model", "cache", "reverse_cache"]),
     vectorScore: z.number().finite().nullable(),
     graphScore: z.number().finite().nullable()
@@ -979,12 +982,19 @@ export class RelationLinker {
             item.sourceItemIds
           );
         } else if (typing?.outcome.kind === "typed") {
+          // The typer's direction is a guess from note position (decision 31b): it is kept, and
+          // shown only when the Decisions decider named the same pair's subject clearly.
+          const direction = automaticNoteRelationDirection({
+            relationType: typing.outcome.relationType,
+            typed: typing.outcome.direction,
+            decider: deciderDirectionOf(item)
+          });
           record(
             await relations.upsert({
               ...base,
               loAtomicNoteId: item.lo,
               hiAtomicNoteId: item.hi,
-              direction: typing.outcome.direction,
+              ...direction,
               relationType: typing.outcome.relationType,
               typerKey: input.typing.typerKey
             }),
@@ -1222,6 +1232,17 @@ function readRootId(job: JobRecord): string {
 }
 
 const sigmoid = (value: number) => 1 / (1 + Math.exp(-value));
+
+/** The direction the Decisions decider named for a pending pair, from its subject note (31b). */
+function deciderDirectionOf(item: PendingPair): "lo_to_hi" | "hi_to_lo" | null {
+  const subject = item.decider.kind === "decisions" ? item.pair.directionSubjectId : null;
+  if (!subject) return null;
+  return subject.toLowerCase() === item.lo
+    ? "lo_to_hi"
+    : subject.toLowerCase() === item.hi
+      ? "hi_to_lo"
+      : null;
+}
 
 /**
  * The stored columns of a decided pair (D17): its band and probability, the decider's key, the

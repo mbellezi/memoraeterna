@@ -11,6 +11,7 @@ import {
   currentNoteEndpointsSql,
   earlierVersionNoteRelationSql,
   noteRelationStateSql,
+  noteRelationSubjectSql,
   shownNoteRelationSql,
   withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
@@ -197,15 +198,14 @@ const noteJson = (alias: string, chunk: string) => `jsonb_build_object(
 
 /**
  * $1 relation ID. One row by primary keys: the relation, both notes, their passages and the cache.
- * The subject of a directed relation comes from its stored direction (F3 D8); an untyped relation
- * reads as neutral. `listed`: the Note page lists the relation (shown, withdrawn, or to an earlier
+ * The subject of a directed relation comes from the direction it may be shown in (F3 D8, decision
+ * 31b: a typer's guess is no subject); an untyped relation reads as neutral. `listed`: the Note page lists the relation (shown, withdrawn, or to an earlier
  * version of a note), which is what may be explained. `vetoable`: undecided and between current
  * notes, which is what may be withdrawn.
  */
 const contextSql = `
 select r.id as "relationId", coalesce(r.relation_type, 'related') as type, r.status::text as status,
-       (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
-                         when 'hi_to_lo' then r.target_atomic_note_id end)::text as "semanticSourceId",
+       ${noteRelationSubjectSql("r")}::text as "semanticSourceId",
        (${shownNoteRelationSql("r", ["a", "b"])} or ${withdrawnNoteRelationSql("r", ["a", "b"])}
         or ${earlierVersionNoteRelationSql("r", "a", "b")}) as listed,
        (${noteRelationStateSql.vetoable("r")} and ${currentNoteEndpointsSql("r", ["a", "b"])}) as vetoable,

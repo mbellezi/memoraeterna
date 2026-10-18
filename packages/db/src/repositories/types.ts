@@ -114,7 +114,12 @@ export interface AtomicNoteRelationRecord {
   matchingProfileId: string | null;
   matchingModel: string | null;
   metadata: JsonObject;
+  /** The stored direction: the audit record, a typer guess included. Readers use `shownDirection`. */
   direction: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown";
+  /** Where the direction came from (decision 31b); null on a legacy row or a symmetric relation. */
+  directionSource: "typer" | "decider" | "owner" | null;
+  /** The direction the relation may be shown in; `unknown` for a guess nobody confirmed. */
+  shownDirection: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown";
   band: "apply" | "suggest" | null;
   probability: number | null;
   deciderKey: string | null;

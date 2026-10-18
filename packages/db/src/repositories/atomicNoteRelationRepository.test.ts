@@ -11,6 +11,7 @@ import { runMigrations } from "../migrations.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
 import { createAtomicNoteRelationRepository } from "./atomicNoteRelationRepository.js";
 import { createNoteMatchStateRepository } from "./noteMatchStateRepository.js";
+import { createObjectNeighborhoodRepository } from "./objectNeighborhoodRepository.js";
 import { createNotePageRepository } from "./notePageRepository.js";
 import {
   appliedNoteRelationSql,
@@ -524,7 +525,12 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       after?: (id: string) => Promise<unknown>;
       expected: string[];
     }> = [
-      { name: "applied", other: await other("p1"), input: {}, expected: ["applied", "shown"] },
+      {
+        name: "applied",
+        other: await other("p1"),
+        input: { directionSource: "decider" },
+        expected: ["applied", "shown"]
+      },
       {
         name: "legacy",
         other: await other("p2"),
@@ -628,23 +634,33 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     const all = [...shownPage.items, ...withdrawnPage.items, ...earlierPage.items];
     expect(new Set(all.map((item) => item.id)).size).toBe(all.length);
     const listed = new Map(shownPage.items.map((item) => [item.other.id, item]));
-    expect(listed.get(cases[0]!.other)?.direction).toBe("outgoing");
-    expect(listed.get(cases[0]!.other)).toMatchObject({ state: "applied", band: "apply" });
+    expect(listed.get(cases[0]!.other)).toMatchObject({
+      direction: "outgoing",
+      directionSource: "decider",
+      state: "applied",
+      band: "apply"
+    });
     expect(listed.get(cases[1]!.other)).toMatchObject({
       type: "similar_to",
       direction: "unknown",
       state: "applied",
       band: null
     });
-    expect(listed.get(cases[2]!.other)).toMatchObject({ state: "suggested", band: "suggest" });
+    // A suggestion carries the typer's guess, which the page never shows (decision 31b).
+    expect(listed.get(cases[2]!.other)).toMatchObject({
+      direction: "unknown",
+      directionSource: null,
+      state: "suggested",
+      band: "suggest"
+    });
     expect(listed.get(cases[3]!.other)).toMatchObject({ state: "kept" });
     const earlier = new Map(earlierPage.items.map((item) => [item.other.id, item]));
     expect(earlier.get(cases[7]!.other)?.other.superseded).toBe(true);
   });
 
-  it("reads the direction from the column in every reader", async () => {
+  it("reads the direction the owner or the decider gave in every reader, and no guess (decision 31b)", async () => {
     const [a, b] = [await note("M", "x"), await note("N", "y")];
-    const { relation } = await decided(b, a, { relationType: "extends" });
+    const { relation } = await decided(b, a, { relationType: "extends", directionSource: "owner" });
     const notePages = createNotePageRepository(db());
     const read = (note: string) =>
       notePages.listRelations(note, {
@@ -655,15 +671,55 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
       });
     const fromA = await read(a);
     const fromB = await read(b);
-    expect(fromA.items.find((item) => item.id === relation.id)?.direction).toBe("incoming");
-    expect(fromB.items.find((item) => item.id === relation.id)?.direction).toBe("outgoing");
+    expect(fromA.items.find((item) => item.id === relation.id)).toMatchObject({
+      direction: "incoming",
+      directionSource: "owner"
+    });
+    expect(fromB.items.find((item) => item.id === relation.id)).toMatchObject({
+      direction: "outgoing",
+      directionSource: "owner"
+    });
     const context = await createRelationExplanationRepository(db()).readContext(relation.id);
     expect(context).toMatchObject({ semanticSourceId: b, type: "extends", listed: true });
-    // A legacy relation whose direction was never recorded reads neutral everywhere.
+    const edges = async () =>
+      (await createObjectNeighborhoodRepository(db()).read({ objectId: a, depth: 1, limit: 10 }))
+        ?.edges ?? [];
+    const lo = [a, b].sort()[0]!;
+    expect(await edges()).toEqual([
+      expect.objectContaining({ id: relation.id, direction: lo === b ? "lo_to_hi" : "hi_to_lo" })
+    ]);
+    // The same relation with the typer's guess shows no direction anywhere, and no subject.
+    await db().query("update atomic_note_relations set direction_source = 'typer' where id = $1", [
+      relation.id
+    ]);
+    expect((await read(a)).items.find((item) => item.id === relation.id)).toMatchObject({
+      direction: "unknown",
+      directionSource: null
+    });
+    expect(
+      (await createRelationExplanationRepository(db()).readContext(relation.id))?.semanticSourceId
+    ).toBeNull();
+    expect(await edges()).toEqual([expect.objectContaining({ direction: "unknown" })]);
+    expect(
+      (await relations().listBySourceItem(works.x.id)).find((row) => row.id === relation.id)
+    ).toMatchObject({
+      direction: lo === b ? "lo_to_hi" : "hi_to_lo",
+      directionSource: "typer",
+      shownDirection: "unknown"
+    });
+    // A legacy relation (no band) reads as it was decided, and one whose direction was never
+    // recorded reads neutral.
     await db().query(
-      "update atomic_note_relations set direction = 'unknown', band = null where id = $1",
+      "update atomic_note_relations set band = null, direction_source = null where id = $1",
       [relation.id]
     );
+    expect((await read(a)).items.find((item) => item.id === relation.id)).toMatchObject({
+      direction: "incoming",
+      directionSource: null
+    });
+    await db().query("update atomic_note_relations set direction = 'unknown' where id = $1", [
+      relation.id
+    ]);
     expect((await read(a)).items.find((item) => item.id === relation.id)?.direction).toBe(
       "unknown"
     );
@@ -673,9 +729,163 @@ describe.skipIf(!sidecarInstalled)("note relations v2 on a real PostgreSQL datab
     const listedBySource = await relations().listBySourceItem(works.x.id);
     expect(listedBySource.find((row) => row.id === relation.id)).toMatchObject({
       direction: "unknown",
+      shownDirection: "unknown",
       shown: true,
       applied: true
     });
+  });
+
+  it("records where a direction came from and refuses a direction without one (decision 31b)", async () => {
+    const [a, b] = [await note("Q1", "x"), await note("Q2", "y")];
+    const [lo, hi] = [a, b].sort() as [string, string];
+    // Left out, a banded directed relation stores the typing step's guess as a guess.
+    const guess = await decided(hi, lo);
+    expect(guess.relation).toMatchObject({
+      direction: "hi_to_lo",
+      directionSource: "typer",
+      shownDirection: "unknown"
+    });
+    // A decider's direction replaces the guess, and its source changes the relation.
+    const given = await decided(hi, lo, { directionSource: "decider" });
+    expect(given.change).toBe("updated");
+    expect(given.relation).toMatchObject({
+      direction: "hi_to_lo",
+      directionSource: "decider",
+      shownDirection: "hi_to_lo"
+    });
+    expect(given.before).toMatchObject({ direction_source: "typer" });
+    expect(given.after).toMatchObject({ direction_source: "decider" });
+    // A relation that reads both ways has no source and shows `symmetric`; untyped likewise.
+    const [c, d] = [await note("Q3", "x"), await note("Q4", "y")];
+    expect((await decided(c, d, { relationType: "same_as" })).relation).toMatchObject({
+      direction: "symmetric",
+      directionSource: null,
+      shownDirection: "symmetric"
+    });
+    // The database holds the rule: a banded directed relation names its source, a symmetric one
+    // has none, and only the owner's "no direction" is `symmetric` on a directed type.
+    const [e, f] = [await note("Q5", "x"), await note("Q6", "y")];
+    const pair = (type: string | null, direction: string, source: string | null, band = "apply") =>
+      db().query(
+        `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+           direction, direction_source, band, final_score, explanation)
+         values (least($5::uuid, $6::uuid), greatest($5::uuid, $6::uuid), $1, $2, $3, $4, 1, 'x')`,
+        [type, direction, source, band, e, f]
+      );
+    await expect(pair("extends", "lo_to_hi", null)).rejects.toThrow(/atomic_note_relations_v2/);
+    await expect(pair("extends", "symmetric", "typer")).rejects.toThrow(/atomic_note_relations_v2/);
+    await expect(pair("same_as", "symmetric", "typer")).rejects.toThrow(/atomic_note_relations_v2/);
+    await expect(pair("extends", "lo_to_hi", "someone")).rejects.toThrow(
+      /atomic_note_relations_values/
+    );
+    await expect(pair("extends", "lo_to_hi", "owner", "apply")).resolves.toBeDefined();
+    // A legacy row has no source.
+    const [g, h] = [await note("Q7", "x"), await note("Q8", "y")];
+    await expect(
+      db().query(
+        `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+           direction, direction_source, final_score, explanation)
+         values (least($1::uuid, $2::uuid), greatest($1::uuid, $2::uuid), 'supports', 'lo_to_hi', 'typer', 1, 'x')`,
+        [g, h]
+      )
+    ).rejects.toThrow(/atomic_note_relations_v2/);
+  });
+
+  it("keeps a relation with the owner's direction, none, or the one it has, and records the owner's (decision 31b)", async () => {
+    const reviewIn = async (
+      relationId: string,
+      direction?: { subjectAtomicNoteId: string | null }
+    ) => {
+      const client = await db().connect();
+      try {
+        await client.query("begin");
+        await createAtomicNoteRelationRepository(client).lockForReview(relationId);
+        const written = await createAtomicNoteRelationRepository(client).review(
+          relationId,
+          "keep",
+          await run("review"),
+          direction
+        );
+        await client.query("commit");
+        return written;
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    const [a, b] = [await note("R1", "x"), await note("R2", "y")];
+    const [lo, hi] = [a, b].sort() as [string, string];
+    // The owner names the subject: the relation reads from it, as the owner's.
+    const first = await decided(lo, hi, { band: "suggest" });
+    expect(first.relation.directionSource).toBe("typer");
+    const kept = await reviewIn(first.relation.id, { subjectAtomicNoteId: hi.toUpperCase() });
+    expect(kept?.change).toBe("updated");
+    expect(kept?.relation).toMatchObject({
+      status: "accepted",
+      direction: "hi_to_lo",
+      directionSource: "owner",
+      shownDirection: "hi_to_lo"
+    });
+    // One event: the verdict with the direction it gave, from the guess it replaced.
+    expect(kept?.before).toMatchObject({ direction: "lo_to_hi", direction_source: "typer" });
+    expect(kept?.after).toMatchObject({ direction: "hi_to_lo", direction_source: "owner" });
+    expect(
+      (
+        await db().query(
+          "select kind from relation_events where relation_id = $1 order by seq desc limit 1",
+          [first.relation.id]
+        )
+      ).rows[0]
+    ).toEqual({ kind: "kept" });
+    // The verdict is final: a second review with another direction changes nothing (I-R3).
+    const again = await reviewIn(first.relation.id, { subjectAtomicNoteId: lo });
+    expect(again?.change).toBe("reviewed");
+    expect(again?.relation).toMatchObject({ direction: "hi_to_lo", directionSource: "owner" });
+
+    // "No direction" is the owner's too: it hides a decider's direction and a guess alike.
+    const [c, d] = [await note("R3", "x"), await note("R4", "y")];
+    const given = await decided(c, d, { band: "suggest", directionSource: "decider" });
+    const none = await reviewIn(given.relation.id, { subjectAtomicNoteId: null });
+    expect(none?.relation).toMatchObject({
+      status: "accepted",
+      direction: "symmetric",
+      directionSource: "owner",
+      shownDirection: "unknown"
+    });
+
+    // Without a choice the relation keeps the direction it has.
+    const [e, f] = [await note("R5", "x"), await note("R6", "y")];
+    const plain = await decided(e, f, { band: "suggest", directionSource: "decider" });
+    const kept2 = await reviewIn(plain.relation.id);
+    expect(kept2?.relation).toMatchObject({ status: "accepted", directionSource: "decider" });
+
+    // A relation that reads both ways, and a legacy one, take no direction.
+    const [g, h] = [await note("R7", "x"), await note("R8", "y")];
+    const symmetric = await decided(g, h, { band: "suggest", relationType: "same_as" });
+    const keptSymmetric = await reviewIn(symmetric.relation.id, { subjectAtomicNoteId: g });
+    expect(keptSymmetric?.relation).toMatchObject({
+      status: "accepted",
+      direction: "symmetric",
+      directionSource: null
+    });
+    const [i, j] = [await note("R9", "x"), await note("R10", "y")];
+    const legacy = await decided(i, j, { band: null, probability: null });
+    const keptLegacy = await reviewIn(legacy.relation.id, { subjectAtomicNoteId: null });
+    expect(keptLegacy?.relation).toMatchObject({ status: "accepted", directionSource: null });
+    expect(keptLegacy?.relation.shownDirection).toBe(legacy.relation.direction);
+
+    // A subject outside the pair is refused, and a Remove ignores the direction.
+    const [k, l] = [await note("R11", "x"), await note("R12", "y")];
+    const outside = await decided(k, l, { band: "suggest" });
+    await expect(reviewIn(outside.relation.id, { subjectAtomicNoteId: a })).rejects.toThrow(
+      "one of its two notes"
+    );
+    const removed = await relations().review(outside.relation.id, "remove", runId, {
+      subjectAtomicNoteId: k
+    });
+    expect(removed?.relation).toMatchObject({ status: "rejected", directionSource: "typer" });
   });
 
   it("caches the typer's verdict per pair and typer, reused only on unchanged inputs", async () => {

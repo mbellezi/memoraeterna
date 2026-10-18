@@ -1072,6 +1072,7 @@
     "relations": {
       "empty": "Nenhuma relacao relevante entre notas foi encontrada.",
       "pendingInvolved": "Inclui nota pendente de revisao",
+      "linked": "Ligadas: {type}",
       "explanations": {
         "hybrid": "As notas ultrapassaram o limiar de similaridade hibrida.",
         "reranked": "As notas ultrapassaram o limiar de similaridade hibrida apos o reranking em lote."
@@ -2951,6 +2952,7 @@
       "stateKept": "Você manteve esta relação.",
       "stateApplied": "Esta relação foi aplicada."
     },
+    "linkedStance": "ligadas: {type}",
     "stance": {
       "supports": "apoia",
       "contradicts": "contradiz",
@@ -2978,6 +2980,8 @@
       "label": "Evidência da relação: {type}",
       "betweenNotes": "relação entre notas",
       "directionConfirmed": "direção confirmada",
+      "directionOwner": "direção definida por você",
+      "directionDecider": "direção sugerida pelo OpenAI Decisions",
       "thisNoteSubject": "Esta nota",
       "thisNoteObject": "esta nota",
       "quoted": "“{text}”",
@@ -2995,6 +2999,13 @@
         "mentions": "menciona",
         "related": "está relacionada a",
         "same_as": "é igual a"
+      },
+      "direction": {
+        "legend": "Direção",
+        "none": "Sem direção",
+        "otherSubject": "A outra nota",
+        "otherObject": "a outra nota",
+        "hint": "Opcional. As relações automáticas não têm direção até que você dê uma."
       },
       "passageLabel": "{source} · trecho {number}",
       "decided": "Decidiu",

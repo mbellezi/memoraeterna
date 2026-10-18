@@ -38,6 +38,7 @@ const context = (
   type: "supports",
   status: "pending_review",
   hasProse: false,
+  directed: true,
   source: {
     id: ids.source,
     title: "Feedback study",

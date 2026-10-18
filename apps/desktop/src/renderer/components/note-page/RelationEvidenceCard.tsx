@@ -10,12 +10,16 @@ import { Button } from "../ui/button";
 import { NoteRefText } from "./NoteRefText";
 import {
   bandWordKey,
+  initialDirectionChoice,
   interpolateNodes,
   offersReview,
   relationSentence,
+  subjectOfDirectionChoice,
   type CardContent,
+  type DirectionChoice,
   type ExplanationState,
   type ProvenanceLine,
+  type ReviewDirection,
   type ReviewState
 } from "./note-page-model";
 
@@ -58,13 +62,17 @@ function stateNoteKey(
   return null;
 }
 
+const directionChoices: DirectionChoice[] = ["none", "thisToOther", "otherToThis"];
+
 /**
  * The evidence of a relation, shown beside its row on hover or focus: what the relation says, how
  * confident the matcher was (a word, never a percentage), the two passages, the explanation
  * (written once the card stayed open, if none is stored, and shown as it is written) and who
  * decided, typed and explained it. When the writer finds the notes unrelated the card says so and
- * that the relation is hidden. A suggested or withdrawn relation offers Keep and Remove (F3 D15).
- * It is non-modal (a group, never a dialog), holds no focus of its own and never answers Cmd-W.
+ * that the relation is hidden. A suggested or withdrawn relation offers Keep and Remove (F3 D15);
+ * of a directed type it also offers the direction, none by default, which Keep records as the
+ * owner's (decision 31b). It is non-modal (a group, never a dialog), holds no focus of its own and
+ * never answers Cmd-W.
  */
 export function RelationEvidenceCard({
   t,
@@ -88,10 +96,15 @@ export function RelationEvidenceCard({
   /** The owner's verdict being saved, or that could not be saved. */
   review: ReviewState | null;
   onRetryExplanation: () => void;
-  onReview: (verdict: "keep" | "remove") => void;
+  onReview: (verdict: "keep" | "remove", direction?: ReviewDirection) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const scopeId = useId();
+  const directionName = useId();
+  const directionHintId = useId();
+  const [choice, setChoice] = useState<DirectionChoice>(() =>
+    initialDirectionChoice(relation.direction)
+  );
   const [above, setAbove] = useState(false);
   useLayoutEffect(() => {
     const card = ref.current;
@@ -125,6 +138,26 @@ export function RelationEvidenceCard({
   const bandKey = bandWordKey(relation);
   const stateNote = stateNoteKey(relation, explanation);
   const reviewing = review?.status === "pending";
+  const reviewable = offersReview(relation, explanation);
+  // A directed type states a direction only when the owner or the decider gave one: Keep may add it.
+  const offersDirection = reviewable && view.directed;
+  const directionLabel = (option: DirectionChoice): string =>
+    option === "none"
+      ? t("notePage.card.direction.none")
+      : t("notePage.card.sentence", {
+          values:
+            option === "thisToOther"
+              ? {
+                  subject: t("notePage.card.thisNoteSubject"),
+                  verb: t(view.verbKey),
+                  object: t("notePage.card.direction.otherObject")
+                }
+              : {
+                  subject: t("notePage.card.direction.otherSubject"),
+                  verb: t(view.verbKey),
+                  object: t("notePage.card.thisNoteObject")
+                }
+        });
   return (
     <div
       ref={ref}
@@ -147,7 +180,7 @@ export function RelationEvidenceCard({
         </span>
         <span className="text-xs text-muted-foreground">
           {t("notePage.card.betweenNotes")}
-          {sentence.directionConfirmed ? ` · ${t("notePage.card.directionConfirmed")}` : null}
+          {sentence.directionKey ? ` · ${t(sentence.directionKey)}` : null}
         </span>
         {bandKey ? (
           <span className="text-xs text-muted-foreground">
@@ -244,8 +277,37 @@ export function RelationEvidenceCard({
         </div>
       ) : null}
       {stateNote ? <p className="text-sm text-muted-foreground">{t(stateNote)}</p> : null}
-      {offersReview(relation, explanation) ? (
+      {reviewable ? (
         <div className="flex flex-col gap-2" aria-busy={reviewing || undefined}>
+          {offersDirection ? (
+            <fieldset className="flex flex-col gap-1.5" aria-describedby={directionHintId}>
+              <legend className="mb-1 text-xs font-semibold text-secondary-foreground">
+                {t("notePage.card.direction.legend")}
+              </legend>
+              {directionChoices.map((option) => (
+                <label key={option} className="flex items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name={directionName}
+                    value={option}
+                    checked={choice === option}
+                    aria-disabled={reviewing || undefined}
+                    className={cn(
+                      "mt-1 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                      savingStyle
+                    )}
+                    onChange={() => {
+                      if (!reviewing) setChoice(option);
+                    }}
+                  />
+                  <span>{directionLabel(option)}</span>
+                </label>
+              ))}
+              <p id={directionHintId} className="text-xs text-muted-foreground">
+                {t("notePage.card.direction.hint")}
+              </p>
+            </fieldset>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -253,7 +315,16 @@ export function RelationEvidenceCard({
               className={savingStyle}
               aria-describedby={scopeId}
               onClick={() => {
-                if (!reviewing) onReview("keep");
+                if (reviewing) return;
+                if (offersDirection)
+                  onReview("keep", {
+                    choice,
+                    subjectNoteId: subjectOfDirectionChoice(choice, {
+                      thisId,
+                      otherId: relation.other.id
+                    })
+                  });
+                else onReview("keep");
               }}
             >
               <Check aria-hidden="true" />

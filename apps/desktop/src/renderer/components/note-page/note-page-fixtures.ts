@@ -38,6 +38,7 @@ export function relationItem(overrides: Partial<NotePageRelation> = {}): NotePag
     id: fixtureId(60),
     type: "supports",
     direction: "outgoing",
+    directionSource: null,
     state: "applied",
     band: null,
     calibration: null,

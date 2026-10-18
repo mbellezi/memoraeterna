@@ -15,6 +15,7 @@ import {
   AtomicNoteMatchingSettingsSchema,
   AtomicNoteRelationTypeSchema,
   bandScore,
+  deciderRelationDirection,
   findRelationCalibration,
   generativeDeciderCapabilities,
   NoteDeciderModeSchema,
@@ -315,6 +316,11 @@ export interface DecidedPair {
   relationType: NoteRelationWriteType | null;
   /** The judged subject of a generative verdict; null for the ranker (the typer decides). */
   subjectId: string | null;
+  /**
+   * The subject the Decisions decider named, when its two directional scores differ by the typed
+   * margin (decision 31b); null for any other decider and for a pair without a clear direction.
+   */
+  directionSubjectId?: string | null;
   decisionSource: "model" | "cache" | "reverse_cache";
   vectorScore: number | null;
   graphScore: number | null;
@@ -448,6 +454,8 @@ interface CandidateOutcome {
   decision: RelationBandDecision | null;
   relationType: NoteRelationWriteType | null;
   subjectId: string | null;
+  /** The Decisions decider's clear subject (decision 31b), else null. */
+  directionSubjectId: string | null;
 }
 
 const isCurrentNote = (note: AtomicNoteRecord) =>
@@ -836,6 +844,7 @@ export class RelationMatcher {
         calibration: outcome.decision.calibration,
         relationType: outcome.relationType,
         subjectId: outcome.subjectId,
+        directionSubjectId: outcome.directionSubjectId,
         decisionSource: outcome.decisionSource as DecidedPair["decisionSource"],
         vectorScore: outcome.candidate.vectorScore,
         graphScore: outcome.candidate.graphScore
@@ -1257,7 +1266,8 @@ export class RelationMatcher {
           score: null,
           decision: null,
           relationType: null,
-          subjectId: null
+          subjectId: null,
+          directionSubjectId: null
         };
       const score = aggregateDirections(value.loToHi, value.hiToLo, this.config.decide.rule);
       return {
@@ -1266,7 +1276,14 @@ export class RelationMatcher {
         score,
         decision: bandScore(score, design.calibration, design.uncalibratedPass),
         relationType: null,
-        subjectId: null
+        subjectId: null,
+        // Only this decider's asymmetry carries a direction (decision 31b).
+        directionSubjectId: decisionsDirectionSubject(
+          pair,
+          value.loToHi,
+          value.hiToLo,
+          this.config.decisions.directionMarginLogOdds
+        )
       };
     });
   }
@@ -1397,7 +1414,8 @@ export class RelationMatcher {
           score: null,
           decision: null,
           relationType: null,
-          subjectId: null
+          subjectId: null,
+          directionSubjectId: null
         };
       const score = aggregateDirections(value.loToHi, value.hiToLo, this.config.decide.rule);
       return {
@@ -1406,7 +1424,8 @@ export class RelationMatcher {
         score,
         decision: bandScore(score, calibration, decider.uncalibratedPass),
         relationType: null,
-        subjectId: null
+        subjectId: null,
+        directionSubjectId: null
       };
     });
   }
@@ -1572,7 +1591,8 @@ export class RelationMatcher {
           score: null,
           decision: null,
           relationType: null,
-          subjectId: null
+          subjectId: null,
+          directionSubjectId: null
         };
       // The type belongs to the direction it was judged in: candidate -> note for a reused verdict.
       const subjectId = !model && !fromCache && fromReverse ? id : note.id;
@@ -1582,7 +1602,8 @@ export class RelationMatcher {
         score: verdict.score,
         decision: bandScore(verdict.score, null, pass),
         relationType: mapGenerativeRelationType(verdict.relationType),
-        subjectId
+        subjectId,
+        directionSubjectId: null
       };
     });
   }
@@ -1655,6 +1676,21 @@ export class RelationMatcher {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
+}
+
+/**
+ * The note the Decisions decider names as the subject of a directed relation, when its two
+ * directional scores differ by at least the typed margin (decision 31b); null otherwise. `loToHi`
+ * scores the higher note, as the Document, against the lower note as the query.
+ */
+function decisionsDirectionSubject(
+  pair: { lo: string; hi: string },
+  loToHi: number,
+  hiToLo: number,
+  marginLogOdds: number
+): string | null {
+  const direction = deciderRelationDirection(loToHi, hiToLo, marginLogOdds);
+  return direction === null ? null : direction === "lo_to_hi" ? pair.lo : pair.hi;
 }
 
 /**

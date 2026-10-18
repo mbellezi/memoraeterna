@@ -33,6 +33,12 @@ import {
 } from "./obsidian-topic-projection.js";
 import type { ObsidianWikiScope } from "./obsidian-wiki-projection.js";
 
+/**
+ * Between the two sources of a relation: an arrow when it reads from one to the other (decision
+ * 31b), a dot when it only links them. A relation page never states a direction nobody gave.
+ */
+export const relationPairSeparator = (directed: boolean) => (directed ? " → " : " · ");
+
 export interface MirrorTarget {
   id: string;
   type: ObsidianManagedFrontmatter["memoraType"];
@@ -571,8 +577,8 @@ async function renderMirrorTargets(
       id: r.id,
       type: "source_relation",
       revision: digest(JSON.stringify({ ...r, evidence })),
-      title: r.sourceTitle + " → " + r.targetTitle,
-      editorial: `# ${markdownHeading(r.sourceTitle + " → " + r.targetTitle)}\n\n`,
+      title: r.sourceTitle + relationPairSeparator(r.directed) + r.targetTitle,
+      editorial: `# ${markdownHeading(r.sourceTitle + relationPairSeparator(r.directed) + r.targetTitle)}\n\n`,
       generated: [
         t("obsidianWiki.readOnly"),
         // The wiki holds no suggestion (`relationRefs` leaves them out): a relation without a
@@ -582,7 +588,7 @@ async function renderMirrorTargets(
             sourceRelationState({ status: r.status, suggested: false })) as MessageKey
         ),
         link(r.source_item_id, r.sourceTitle) +
-          " → " +
+          relationPairSeparator(r.directed) +
           link(r.target_source_item_id, r.targetTitle),
         // Relations decided without prose have none stored: their explanation is written on open.
         ...[r.source_idea, r.target_idea, r.explanation]
@@ -615,7 +621,10 @@ async function renderMirrorTargets(
       [RELATIONS]: [
         t("obsidianWiki.connections"),
         list(
-          context.relations.map((r) => ({ id: r.id, title: r.sourceTitle + " → " + r.targetTitle }))
+          context.relations.map((r) => ({
+            id: r.id,
+            title: r.sourceTitle + relationPairSeparator(r.directed) + r.targetTitle
+          }))
         )
       ],
       [stableId("notes")]: [l.notes, list(notes, "note")],

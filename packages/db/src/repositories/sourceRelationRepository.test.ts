@@ -3,11 +3,12 @@ import { join } from "node:path";
 import type { QueryResult, QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 import type { PgPool } from "../client.js";
-import { noteRelationStateSql } from "./note-relation-sql.js";
+import { noteRelationDirectionSql, noteRelationStateSql } from "./note-relation-sql.js";
 import {
   createSourceRelationRepository,
   currentSourceRelationEvidenceSql,
   noteRelationFingerprintSql,
+  sourceRelationIdentityKey,
   suggestedSourceRelationSql
 } from "./sourceRelationRepository.js";
 
@@ -37,12 +38,41 @@ describe("source pair note relations", () => {
     for (const { text } of [listed!, keyed!]) {
       expect(text).toContain(noteRelationStateSql.applied("n"));
       expect(text).toContain("a.supersession_status = 'current'");
+      // Decision 31b: the subject is the one the owner or the decider gave; the judge is told no
+      // direction nobody gave, so a relation without one is left out of its hypotheses.
+      const shown = noteRelationDirectionSql("n").replace(/\s+/g, " ");
       expect(text).toContain(
-        "join atomic_notes a on a.id = case when n.direction = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end"
+        `join atomic_notes a on a.id = case when ${shown} = 'hi_to_lo' then n.target_atomic_note_id else n.source_atomic_note_id end`
       );
       expect(text).toContain("n.direction <> 'unknown'");
+      expect(text).toContain(`${shown} <> 'unknown'`);
       expect(text).not.toContain("n.metadata");
     }
+  });
+});
+
+describe("source relation identity", () => {
+  const [a, b] = ["00000000-0000-4000-8000-00000000000a", "00000000-0000-4000-8000-00000000000b"];
+
+  it("orders the endpoints of a symmetric type, and keeps a directed type's order", () => {
+    expect(sourceRelationIdentityKey(a, b, "same_as")).toBe(
+      sourceRelationIdentityKey(b, a, "same_as")
+    );
+    expect(sourceRelationIdentityKey(a, b, "extends")).not.toBe(
+      sourceRelationIdentityKey(b, a, "extends")
+    );
+  });
+
+  it("tells a directed type that reads both ways from one that reads from a source (decision 31b)", () => {
+    const linked = sourceRelationIdentityKey(a, b, "extends", true);
+    expect(linked).toBe(sourceRelationIdentityKey(b, a, "extends", true));
+    // Whichever way the sorted endpoints fall, a directed relation keeps its own identity.
+    expect(linked).not.toBe(sourceRelationIdentityKey(a, b, "extends"));
+    expect(linked).not.toBe(sourceRelationIdentityKey(b, a, "extends"));
+    // A symmetric type is the same relation with or without the flag.
+    expect(sourceRelationIdentityKey(a, b, "same_as", true)).toBe(
+      sourceRelationIdentityKey(a, b, "same_as")
+    );
   });
 });
 

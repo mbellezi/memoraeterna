@@ -801,7 +801,7 @@ describe.skipIf(!sidecarInstalled)(
         await writer.query(
           `with prior as (select to_jsonb(r) as image from atomic_note_relations r where r.id = $1),
               moved as (update atomic_note_relations r set relation_type = 'extends', direction = 'lo_to_hi',
-                          updated_at = clock_timestamp() where r.id = $1 returning r.*)
+                          direction_source = 'typer', updated_at = clock_timestamp() where r.id = $1 returning r.*)
          insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
          select $2::uuid, 'note', moved.id, 'pair', 'typed', prior.image, to_jsonb(moved) from moved, prior`,
           [target.relation.id, later]

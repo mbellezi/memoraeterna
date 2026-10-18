@@ -1074,6 +1074,7 @@
     "relations": {
       "empty": "Aucune relation pertinente entre les notes.",
       "pendingInvolved": "Inclut une note en attente de revision",
+      "linked": "Liées : {type}",
       "explanations": {
         "hybrid": "Les notes ont depasse le seuil de similarite hybride.",
         "reranked": "Les notes ont depasse le seuil de similarite hybride apres le reranking par lot."
@@ -2953,6 +2954,7 @@
       "stateKept": "Vous avez conservé cette relation.",
       "stateApplied": "Cette relation est appliquée."
     },
+    "linkedStance": "liées : {type}",
     "stance": {
       "supports": "soutient",
       "contradicts": "contredit",
@@ -2980,6 +2982,8 @@
       "label": "Preuves de la relation : {type}",
       "betweenNotes": "relation entre notes",
       "directionConfirmed": "sens confirmé",
+      "directionOwner": "sens choisi par vous",
+      "directionDecider": "sens suggéré par OpenAI Decisions",
       "thisNoteSubject": "Cette note",
       "thisNoteObject": "cette note",
       "quoted": "« {text} »",
@@ -2997,6 +3001,13 @@
         "mentions": "mentionne",
         "related": "est liée à",
         "same_as": "est identique à"
+      },
+      "direction": {
+        "legend": "Sens",
+        "none": "Sans sens",
+        "otherSubject": "L’autre note",
+        "otherObject": "l’autre note",
+        "hint": "Facultatif. Les relations automatiques n’ont pas de sens tant que vous n’en donnez pas un."
       },
       "passageLabel": "{source} · passage {number}",
       "decided": "A décidé",

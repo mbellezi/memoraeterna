@@ -4,13 +4,16 @@ import {
   noteRelationPair,
   type NoteRelationBand,
   type NoteRelationDirection,
+  type NoteRelationDirectionSource,
   type NoteRelationVetoSource
 } from "@app/domain";
 
 import {
   appliedNoteRelationSql,
+  noteRelationDirectionSql,
   noteRelationStateLabelSql,
   noteRelationStateSql,
+  ownerDirectableNoteRelationSql,
   shownNoteRelationSql,
   type NoteRelationStateLabel
 } from "./note-relation-sql.js";
@@ -37,6 +40,8 @@ interface AtomicNoteRelationRow extends QueryResultRow {
   matchingModel: string | null;
   metadata: unknown;
   direction: NoteRelationDirection;
+  directionSource: NoteRelationDirectionSource | null;
+  shownDirection: NoteRelationDirection;
   band: NoteRelationBand | null;
   probability: number | null;
   deciderKey: string | null;
@@ -52,7 +57,9 @@ const columns = (r: string) => `${r}.id, ${r}.source_atomic_note_id as "sourceAt
   ${r}.vector_score as "vectorScore", ${r}.graph_score as "graphScore",
   ${r}.rerank_score as "rerankScore", ${r}.final_score as "finalScore", ${r}.explanation,
   ${r}.status, ${r}.matching_profile_id as "matchingProfileId", ${r}.matching_model as "matchingModel",
-  ${r}.metadata, ${r}.direction, ${r}.band, ${r}.probability, ${r}.decider_key as "deciderKey",
+  ${r}.metadata, ${r}.direction, ${r}.direction_source as "directionSource",
+  ${noteRelationDirectionSql(r)} as "shownDirection", ${r}.band, ${r}.probability,
+  ${r}.decider_key as "deciderKey",
   ${r}.typer_key as "typerKey", ${r}.vetoed_at as "vetoedAt", ${r}.veto_source as "vetoSource",
   ${r}.created_at as "createdAt", ${r}.updated_at as "updatedAt"`;
 
@@ -72,6 +79,8 @@ function mapRelation(row: AtomicNoteRelationRow): AtomicNoteRelationRecord {
     matchingModel: row.matchingModel,
     metadata: asJsonObject(row.metadata),
     direction: row.direction,
+    directionSource: row.directionSource,
+    shownDirection: row.shownDirection,
     band: row.band,
     probability: row.probability === null ? null : Number(row.probability),
     deciderKey: row.deciderKey,
@@ -92,6 +101,12 @@ export interface NoteRelationUpsert {
   loAtomicNoteId: string;
   hiAtomicNoteId: string;
   direction: Exclude<NoteRelationDirection, "unknown">;
+  /**
+   * Where `direction` came from (decision 31b). Left out, a banded directed relation stores the
+   * typing step's guess (`typer`, never shown); null for a relation that reads both ways. The owner's
+   * and the decider's directions are given here or by the review writer.
+   */
+  directionSource?: NoteRelationDirectionSource | null;
   /** Null for an untyped relations v2 row (D20). */
   relationType: string | null;
   /**
@@ -151,13 +166,13 @@ const eventPairKey = (r: string) =>
 
 export const atomicNoteRelationSql = {
   /**
-   * $1 lo, $2 hi, then the written columns, $18 the run. On conflict a row without a human verdict
-   * takes the new type, direction, band, probability, keys and scores; a reviewed row is left as it
-   * is. Nothing is rewritten when every value is unchanged. A written row with a run records one
-   * event in the same statement (D14), its kind from the change: a reconcile run's `reconciled`;
-   * a creation `untyped` without a type, else `suggested` or `applied` by band; a change of type or
-   * direction `typed` (`untyped` when the type is cleared); any other change `suggested` or
-   * `applied` by band.
+   * $1 lo, $2 hi, then the written columns, $18 the run, $19 the direction source. On conflict a
+   * row without a human verdict takes the new type, direction and its source, band, probability,
+   * keys and scores; a reviewed row is left as it is. Nothing is rewritten when every value is
+   * unchanged. A written row with a run records one event in the same statement (D14), its kind
+   * from the change: a reconcile run's `reconciled`; a creation `untyped` without a type, else
+   * `suggested` or `applied` by band; a change of type, direction or direction source `typed`
+   * (`untyped` when the type is cleared); any other change `suggested` or `applied` by band.
    */
   upsert: `
 with prior as (
@@ -168,11 +183,12 @@ written as (
   insert into atomic_note_relations as r (
     source_atomic_note_id, target_atomic_note_id, direction, relation_type, band, probability,
     decider_key, typer_key, vector_score, graph_score, rerank_score, final_score, explanation,
-    status, matching_profile_id, matching_model, metadata
+    status, matching_profile_id, matching_model, metadata, direction_source
   ) values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-            $14::atomic_note_relation_status, $15::uuid, $16, $17::jsonb)
+            $14::atomic_note_relation_status, $15::uuid, $16, $17::jsonb, $19)
   on conflict (source_atomic_note_id, target_atomic_note_id) do update set
-    direction = excluded.direction, relation_type = excluded.relation_type, band = excluded.band,
+    direction = excluded.direction, direction_source = excluded.direction_source,
+    relation_type = excluded.relation_type, band = excluded.band,
     probability = excluded.probability, decider_key = excluded.decider_key,
     typer_key = excluded.typer_key, vector_score = excluded.vector_score,
     graph_score = excluded.graph_score, rerank_score = excluded.rerank_score,
@@ -180,12 +196,13 @@ written as (
     matching_profile_id = excluded.matching_profile_id, matching_model = excluded.matching_model,
     metadata = excluded.metadata, updated_at = now()
   where ${noteRelationStateSql.undecidedByHuman("r")}
-    and (r.direction, r.relation_type, r.band, r.probability, r.decider_key, r.typer_key,
-         r.vector_score, r.graph_score, r.rerank_score, r.final_score, r.explanation,
+    and (r.direction, r.direction_source, r.relation_type, r.band, r.probability, r.decider_key,
+         r.typer_key, r.vector_score, r.graph_score, r.rerank_score, r.final_score, r.explanation,
          r.matching_profile_id, r.matching_model, r.metadata)
         is distinct from
-        (excluded.direction, excluded.relation_type, excluded.band, excluded.probability,
-         excluded.decider_key, excluded.typer_key, excluded.vector_score, excluded.graph_score,
+        (excluded.direction, excluded.direction_source, excluded.relation_type, excluded.band,
+         excluded.probability, excluded.decider_key, excluded.typer_key, excluded.vector_score,
+         excluded.graph_score,
          excluded.rerank_score, excluded.final_score, excluded.explanation,
          excluded.matching_profile_id, excluded.matching_model, excluded.metadata)
   returning r.*
@@ -197,7 +214,8 @@ event as (
               when prior.image is null and w.relation_type is null then 'untyped'
               when prior.image is not null
                 and (prior.image->>'relation_type' is distinct from w.relation_type
-                     or prior.image->>'direction' <> w.direction)
+                     or prior.image->>'direction' <> w.direction
+                     or prior.image->>'direction_source' is distinct from w.direction_source)
                 then case when w.relation_type is null then 'untyped' else 'typed' end
               when w.band = 'suggest' then 'suggested' else 'applied' end,
          prior.image, to_jsonb(w)
@@ -241,9 +259,12 @@ select ${columns("w")}, true as written, to_jsonb(w) as after, (select image fro
 
   /**
    * $1 relation ID, $2 the new status (`accepted` or `rejected`), $3 the run, $4 whether the verdict
-   * clears the veto (keep), $5 the event kind (`kept` or `removed`). The owner's verdict on a
-   * relation that has none, with its event in the same statement (D14, D15). A relation that
-   * already has a human verdict is returned as it is (the first verdict stays final, I-R2, I-R3).
+   * clears the veto (keep), $5 the event kind (`kept` or `removed`), $6 whether the owner chose a
+   * direction and $7 its subject note (null: no direction). The owner's verdict on a relation that
+   * has none, with its event in the same statement (D14, D15). A chosen direction is the owner's
+   * (decision 31b): the subject's way for a banded relation of a directed type, `symmetric` for
+   * "no direction"; any other relation keeps what it has. A relation that already has a human
+   * verdict is returned as it is (the first verdict stays final, I-R2, I-R3).
    */
   review: `
 with prior as (select to_jsonb(p) as image from atomic_note_relations p where p.id = $1::uuid),
@@ -251,6 +272,13 @@ written as (
   update atomic_note_relations r set status = $2::atomic_note_relation_status,
          vetoed_at = case when $4::boolean then null else r.vetoed_at end,
          veto_source = case when $4::boolean then null else r.veto_source end,
+         direction = case when $6::boolean and ${ownerDirectableNoteRelationSql("r")}
+                          then case when $7::uuid is null then 'symmetric'
+                                    when $7::uuid = r.source_atomic_note_id then 'lo_to_hi'
+                                    else 'hi_to_lo' end
+                          else r.direction end,
+         direction_source = case when $6::boolean and ${ownerDirectableNoteRelationSql("r")}
+                                 then 'owner' else r.direction_source end,
          updated_at = now()
    where r.id = $1::uuid and ${noteRelationStateSql.undecidedByHuman("r")}
   returning r.*
@@ -319,6 +347,14 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
         throw new Error("A new note relation needs a known direction.");
       if (input.band !== null && !input.runId)
         throw new Error("A banded note relation write records its event: it needs its run (D14).");
+      // Decision 31b: without a stated source a banded directed relation stores a guess that is
+      // never shown; a relation that reads both ways has no source.
+      const directionSource =
+        input.directionSource === undefined
+          ? input.band !== null && input.direction !== "symmetric"
+            ? "typer"
+            : null
+          : input.directionSource;
       const result = await db.query<WriteRow>(atomicNoteRelationSql.upsert, [
         lo,
         hi,
@@ -337,7 +373,8 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
         input.matchingProfileId ?? null,
         input.matchingModel ?? null,
         JSON.stringify(input.metadata ?? {}),
-        input.runId ?? null
+        input.runId ?? null,
+        directionSource
       ]);
       const row = result.rows[0];
       if (!row) throw new Error("Atomic note relation upsert returned no row.");
@@ -399,26 +436,44 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
 
     /**
      * The owner's verdict on a relation (D15): `keep` accepts it and clears any veto, `remove`
-     * rejects it. The verdict and its `kept` or `removed` event in run `runId` are one statement
-     * (D14). Final in both directions: a relation that already has a human verdict is returned
-     * unchanged (`change` is `reviewed`), and automation never changes either verdict. Resolves to
-     * null when the relation is gone. Call `lockForReview` first in the same transaction: without
-     * the lock a concurrent writer can leave a stale before image and a stale answer.
+     * rejects it. A `keep` may carry the owner's direction (decision 31b): the subject note, or
+     * null for "no direction"; without it the relation keeps the direction it has. The verdict and
+     * its `kept` or `removed` event in run `runId` are one statement (D14). Final in both
+     * directions: a relation that already has a human verdict is returned unchanged (`change` is
+     * `reviewed`), and automation never changes either verdict. Resolves to null when the relation
+     * is gone. Call `lockForReview` first in the same transaction: without the lock a concurrent
+     * writer can leave a stale before image and a stale answer.
      */
     async review(
       relationId: string,
       verdict: "keep" | "remove",
-      runId: string
+      runId: string,
+      direction?: { subjectAtomicNoteId: string | null }
     ): Promise<NoteRelationWriteResult | null> {
       if (!runId) throw new Error("A review records its event: it needs its run (D14).");
       const keep = verdict === "keep";
+      // Only a Keep carries the owner's direction (decision 31b); a subject must be a note of the pair.
+      const subject = keep ? (direction?.subjectAtomicNoteId?.toLowerCase() ?? null) : null;
+      if (subject) {
+        const ends = (
+          await db.query<{ lo: string; hi: string }>(
+            `select source_atomic_note_id::text as lo, target_atomic_note_id::text as hi
+               from atomic_note_relations where id = $1::uuid`,
+            [relationId]
+          )
+        ).rows[0];
+        if (ends && subject !== ends.lo && subject !== ends.hi)
+          throw new Error("The subject of a relation's direction must be one of its two notes.");
+      }
       const row = (
         await db.query<WriteRow>(atomicNoteRelationSql.review, [
           relationId,
           keep ? "accepted" : "rejected",
           runId,
           keep,
-          keep ? "kept" : "removed"
+          keep ? "kept" : "removed",
+          keep && direction !== undefined,
+          subject
         ])
       ).rows[0];
       return row ? writeResult(row, false) : null;

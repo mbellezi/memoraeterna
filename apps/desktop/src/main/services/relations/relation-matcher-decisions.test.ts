@@ -794,6 +794,43 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     });
   });
 
+  it("names a pair's subject only when its two directions differ by the typed margin, and checkpoints it (decision 31b)", async () => {
+    // "Source>Alpha" is Alpha as the Document: Alpha (the lower note) scores 5 against 2.5 for
+    // Source, so Alpha is the subject. Beta's directions are too close to name one.
+    decisionTable.set("Source>Alpha", 5).set("Alpha>Source", 2.5);
+    decisionTable.set("Source>Beta", 4).set("Beta>Source", 3.5);
+    decisionTable.set("Source>Gamma", 2).set("Gamma>Source", 5);
+    const { handed } = await run([source.id], uncalibrated);
+    const subjects = new Map(handed[0]!.pairs.map((pair) => [pair.candidateId, pair]));
+    expect(subjects.get("n-a")?.directionSubjectId).toBe("n-a");
+    expect(subjects.get("n-b")?.directionSubjectId).toBeNull();
+    // The Document with the higher score is the subject on either side of the pair.
+    expect(subjects.get("n-c")?.directionSubjectId).toBe("n-source");
+    // The checkpoint keeps it, and still reads a pair written before it existed.
+    const stored = StoredDecidedNoteSchema.parse(handed[0]);
+    expect(stored.pairs.find((pair) => pair.candidateId === "n-a")?.directionSubjectId).toBe("n-a");
+    const before = { ...handed[0]!.pairs[0]! } as Record<string, unknown>;
+    delete before.directionSubjectId;
+    expect(() => StoredDecidedNoteSchema.parse({ ...handed[0], pairs: [before] })).not.toThrow();
+    // The margin is typed configuration: 0.25 names Beta's too, 10 names none.
+    const sharper = await run(
+      [source.id],
+      RelationsConfigSchema.parse({ decisions: { directionMarginLogOdds: 0.25 } })
+    );
+    expect(
+      sharper.handed[0]!.pairs.find((pair) => pair.candidateId === "n-b")?.directionSubjectId
+    ).toBe("n-b");
+    const blunter = await run(
+      [source.id],
+      RelationsConfigSchema.parse({ decisions: { directionMarginLogOdds: 10 } })
+    );
+    expect(blunter.handed[0]!.pairs.map((pair) => pair.directionSubjectId)).toEqual([
+      null,
+      null,
+      null
+    ]);
+  });
+
   it("keeps the checkpoint strict: a local decider has a profile, the Decisions API has none", async () => {
     decisionTable.set("Source>Beta", 3).set("Beta>Source", 3);
     const { handed } = await run([source.id], uncalibrated);
@@ -875,6 +912,8 @@ describe("falling back to the local ranker", () => {
       expect(handed[0]!.pairs.map((pair) => [pair.candidateId, pair.band])).toEqual([
         ["n-b", "suggest"]
       ]);
+      // A local ranker's asymmetry carries no direction (decision 31b), whatever its scores say.
+      expect(handed[0]!.pairs.map((pair) => pair.directionSubjectId)).toEqual([null]);
       expect(result.decisionsFallback).toEqual({ notes: 1, reason });
       // The scores were stored under the ranker's key, and the note's state under it too.
       const [mlx] = frozenRelationCalibrations;

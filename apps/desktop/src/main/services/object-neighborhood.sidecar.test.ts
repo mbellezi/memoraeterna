@@ -127,7 +127,13 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
     from: string,
     to: string,
     kind: Kind,
-    options: { type?: string; probability?: number | null; score?: number } = {}
+    options: {
+      type?: string;
+      probability?: number | null;
+      score?: number;
+      /** Who gave a directed relation its direction (decision 31b); the typer's is a guess. */
+      directionSource?: "typer" | "decider" | "owner";
+    } = {}
   ) => {
     const [lo, hi] = from < to ? [from, to] : [to, from];
     const type = options.type ?? "supports";
@@ -146,9 +152,9 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
       await pool!.query<{ id: string }>(
         `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id,
            relation_type, direction, band, probability, final_score, explanation, status,
-           vetoed_at, veto_source, matching_model)
+           vetoed_at, veto_source, matching_model, direction_source)
          values ($1, $2, $3, $4, $5, $6, $7, 'knowledge.relations.explanations.reranked', $8,
-                 $9, $10, 'seed')
+                 $9, $10, 'seed', $11)
          returning id`,
         [
           lo,
@@ -160,7 +166,8 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
           options.score ?? 0.5,
           kind === "kept" ? "accepted" : kind === "removed" ? "rejected" : "pending_review",
           kind === "withdrawn" ? new Date() : null,
-          kind === "withdrawn" ? "explainer" : null
+          kind === "withdrawn" ? "explainer" : null,
+          !legacy && directed ? (options.directionSource ?? "typer") : null
         ]
       )
     ).rows[0]!;
@@ -184,7 +191,11 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
       )
     );
     const suggestion = await relate(focus, a!, "suggested", { probability: 0.6 });
-    const kept = await relate(b!, focus, "kept", { probability: 0.9, type: "extends" });
+    const kept = await relate(b!, focus, "kept", {
+      probability: 0.9,
+      type: "extends",
+      directionSource: "owner"
+    });
     const legacy = await relate(focus, c!, "legacy", { score: 0.8 });
     await relate(focus, d!, "withdrawn", { probability: 0.99 });
     await relate(focus, e!, "removed", { probability: 0.99 });
@@ -210,12 +221,18 @@ describe.skipIf(!sidecarInstalled)("objects.neighborhood on a real PostgreSQL da
     expect(answer.nodes[1]).toMatchObject({ language: null });
     const byId = new Map(answer.edges.map((edge) => [edge.id, edge]));
     expect([...byId.keys()].sort()).toEqual([suggestion, kept, legacy, among].sort());
+    // The typer's guess is never drawn (decision 31b): the suggestion is a line, the owner's is an arrow.
     expect(byId.get(suggestion)).toMatchObject({
       state: "suggested",
       band: "suggest",
-      type: "supports"
+      type: "supports",
+      direction: "unknown"
     });
-    expect(byId.get(kept)).toMatchObject({ state: "kept", type: "extends" });
+    expect(byId.get(kept)).toMatchObject({
+      state: "kept",
+      type: "extends",
+      direction: b! < focus ? "lo_to_hi" : "hi_to_lo"
+    });
     expect(byId.get(legacy)).toMatchObject({
       state: "applied",
       band: null,

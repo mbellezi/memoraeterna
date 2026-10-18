@@ -46,6 +46,7 @@ import {
   relationsConfig,
   renderRelationPairText,
   type NoteRelationDirection,
+  type NoteRelationDirectionSource,
   type RelationCalibrationEntry
 } from "@app/domain";
 import { z } from "zod";
@@ -69,6 +70,8 @@ export interface StoredRelation {
   probability: number | null;
   deciderKey: string | null;
   direction: NoteRelationDirection;
+  /** Where the direction came from (decision 31b): kept as it is, a recalibration decides no direction. */
+  directionSource: NoteRelationDirectionSource | null;
   relationType: string | null;
   typerKey: string | null;
   vectorScore: number | null;
@@ -291,6 +294,7 @@ interface RelationRow {
   probability: number | null;
   deciderKey: string | null;
   direction: NoteRelationDirection;
+  directionSource: NoteRelationDirectionSource | null;
   relationType: string | null;
   typerKey: string | null;
   vectorScore: number | null;
@@ -320,7 +324,8 @@ export async function readReconcileState(db: Queryable): Promise<{
   const relationRows = (
     await db.query<RelationRow>(
       `select r.id, r.source_atomic_note_id as lo, r.target_atomic_note_id as hi, r.band, r.probability,
-              r.decider_key as "deciderKey", r.direction, r.relation_type as "relationType",
+              r.decider_key as "deciderKey", r.direction, r.direction_source as "directionSource",
+              r.relation_type as "relationType",
               r.typer_key as "typerKey", r.vector_score as "vectorScore", r.graph_score as "graphScore",
               r.rerank_score as "rerankScore", r.final_score as "finalScore", r.explanation,
               r.matching_profile_id as "matchingProfileId", r.matching_model as "matchingModel", r.metadata,
@@ -342,6 +347,7 @@ export async function readReconcileState(db: Queryable): Promise<{
     probability: numberOrNull(row.probability),
     deciderKey: row.deciderKey,
     direction: row.direction,
+    directionSource: row.directionSource,
     relationType: row.relationType,
     typerKey: row.typerKey,
     vectorScore: numberOrNull(row.vectorScore),
@@ -454,6 +460,7 @@ export async function applyReconcilePlan(input: {
           loAtomicNoteId: relation.lo,
           hiAtomicNoteId: relation.hi,
           direction: relation.direction as Exclude<NoteRelationDirection, "unknown">,
+          directionSource: relation.directionSource,
           relationType: relation.relationType,
           band: transition.to,
           probability: transition.probability,

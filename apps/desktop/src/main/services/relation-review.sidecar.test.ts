@@ -14,6 +14,7 @@ import {
   createPgPool,
   createRelationEventRepository,
   createRelationMatchRunRepository,
+  noteRelationDirectionSql,
   resolvePostgresSidecarPaths,
   runMigrations,
   shownNoteRelationSql,
@@ -197,6 +198,77 @@ describe.skipIf(!sidecarInstalled)("the relation review on a real PostgreSQL dat
     }))!;
     expect(page.relations.items.map((item) => item.state)).toEqual(["kept"]);
     expect(page.withdrawn.total).toBe(0);
+  });
+
+  it("keeps a suggestion with the owner's direction, or with none, and records it as the owner's (decision 31b)", async () => {
+    const directionOf = async (relationId: string) =>
+      (
+        await pool!.query<{ direction: string; source: string | null; shown: string }>(
+          `select r.direction, r.direction_source as source, ${noteRelationDirectionSql("r")} as shown
+             from atomic_note_relations r where r.id = $1`,
+          [relationId]
+        )
+      ).rows[0]!;
+    const pageOf = async (noteId: string) =>
+      (await createNotePageRepository(pool!).readPage(noteId, {
+        relationLimit: 20,
+        contentLanguage: "en"
+      }))!.relations.items[0]!;
+
+    // The typer guessed lo -> hi and nothing shows it; the owner says hi is the subject.
+    const given = await seedRelation({ band: "suggest" });
+    expect(await directionOf(given.id)).toMatchObject({
+      direction: "lo_to_hi",
+      source: "typer",
+      shown: "unknown"
+    });
+    const { service } = build();
+    await service.review({ relationId: given.id, verdict: "keep", subjectNoteId: given.pair.hi });
+    expect(await directionOf(given.id)).toMatchObject({
+      direction: "hi_to_lo",
+      source: "owner",
+      shown: "hi_to_lo"
+    });
+    expect(await pageOf(given.pair.hi)).toMatchObject({
+      direction: "outgoing",
+      directionSource: "owner",
+      state: "kept"
+    });
+    expect(await pageOf(given.pair.lo)).toMatchObject({ direction: "incoming" });
+    const [kept] = (
+      await createRelationEventRepository(pool!).listByRelation("note", given.id)
+    ).filter((event) => event.kind === "kept");
+    expect(kept?.before).toMatchObject({ direction: "lo_to_hi", direction_source: "typer" });
+    expect(kept?.after).toMatchObject({ direction: "hi_to_lo", direction_source: "owner" });
+
+    // "No direction" is a choice too: the page reads the relation as linked.
+    const none = await seedRelation({ band: "suggest" });
+    await build().service.review({ relationId: none.id, verdict: "keep", subjectNoteId: null });
+    expect(await directionOf(none.id)).toMatchObject({
+      direction: "symmetric",
+      source: "owner",
+      shown: "unknown"
+    });
+    expect(await pageOf(none.pair.lo)).toMatchObject({
+      direction: "unknown",
+      directionSource: null,
+      state: "kept"
+    });
+
+    // Left out, a Keep leaves the guess where it was; a note outside the pair is refused whole.
+    const left = await seedRelation({ band: "suggest" });
+    await build().service.review({ relationId: left.id, verdict: "keep" });
+    expect(await directionOf(left.id)).toMatchObject({ direction: "lo_to_hi", source: "typer" });
+    const stranger = await seedRelation({ band: "suggest" });
+    await expect(
+      build().service.review({
+        relationId: stranger.id,
+        verdict: "keep",
+        subjectNoteId: (await seedNote("Stranger")).id
+      })
+    ).rejects.toThrow("one of its two notes");
+    expect(await state(stranger.id)).toMatchObject({ status: "pending_review" });
+    expect(await reviewRuns()).toBeGreaterThan(0);
   });
 
   it("removes a relation: rejected, one removed event, listed nowhere", async () => {

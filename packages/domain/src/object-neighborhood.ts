@@ -71,7 +71,11 @@ export type ObjectNeighborhoodEdgeState = z.infer<typeof ObjectNeighborhoodEdgeS
 export const ObjectNeighborhoodEdgeSchema = z
   .object({
     id: z.string().uuid(),
-    /** The canonical pair, sorted by ID (`lo < hi`): the direction says how it reads. */
+    /**
+     * The canonical pair, sorted by ID (`lo < hi`): the direction says how it reads. It is the
+     * direction the relation may be shown in (decision 31b): an arrow only when the owner or the
+     * decider gave one; `unknown` draws a line.
+     */
     lo: z.string().uuid(),
     hi: z.string().uuid(),
     direction: NoteRelationDirectionSchema,

@@ -18,8 +18,10 @@ import {
 
 // F3 D9 (I-R9): relation visibility is read only through `note-relation-sql.ts`. Outside it, no SQL
 // in the repositories, the scripts or the main process filters `atomic_note_relations` on `status`,
-// `band` or `vetoed_at`. Tests are exempt (their fixtures write those columns); so are the
-// package's verify scripts, which probe the database directly.
+// `band`, `vetoed_at` or `direction_source`. Tests are exempt (their fixtures write those columns);
+// so are the package's verify scripts, which probe the database directly. Decision 31b adds the
+// direction itself: a direction is shown only through the module's expressions, so a typer's guess
+// is never drawn, stated or exported by a reader that forgot the rule.
 const workspace = resolve(import.meta.dirname, "../../../..");
 const module = "packages/db/src/repositories/note-relation-sql.ts";
 const scanned = ["packages/db/src/repositories/", "scripts/", "apps/desktop/src/main/"];
@@ -50,7 +52,7 @@ const keywords = new Set([
   "for",
   "with"
 ]);
-const visibilityColumn = "(status|band|vetoed_at)";
+const visibilityColumn = "(status|band|vetoed_at|direction_source)";
 const comparison = String.raw`\s*(?:::\s*text\s*)?(?:=|<>|!=|\bin\b|\bnot\s+in\b|\bis\b)`;
 
 /** The text of the template literal (or string) around `index`: one SQL statement in practice. */
@@ -86,6 +88,38 @@ export function visibilityFilters(text: string): string[] {
   return [...new Set(found)];
 }
 
+/**
+ * The files that read the raw `direction` of `atomic_note_relations` on purpose (decision 31b): the
+ * repository that writes it, the promotion SQL that keeps a legacy unknown direction out and
+ * fingerprints the stored fact, the reconcile script that rewrites a row's bands and keeps its
+ * direction as it is, and the golden and end-to-end harnesses that digest the stored record. Every reader that shows a direction goes through `noteRelationDirectionSql`.
+ */
+const rawDirectionReaders = new Set([
+  "packages/db/src/repositories/atomicNoteRelationRepository.ts",
+  "packages/db/src/repositories/sourceRelationRepository.ts",
+  "apps/desktop/src/main/services/golden-runner.ts",
+  "apps/desktop/src/main/services/topics-e2e/facts.ts",
+  "apps/desktop/src/main/services/verify-phase4-e2e.ts",
+  "scripts/relations/reconcile.ts"
+]);
+
+/** Reads of the raw `direction` column of `atomic_note_relations` in one file's SQL. */
+export function rawDirectionReads(text: string): string[] {
+  const found: string[] = [];
+  for (const binding of text.matchAll(
+    /\batomic_note_relations\b(\s+(?:as\s+)?([a-z_][a-z0-9_]*))?/giu
+  )) {
+    const alias = binding[2]?.toLowerCase();
+    if (!alias || keywords.has(alias)) continue;
+    for (const match of statementAround(text, binding.index ?? 0).matchAll(
+      new RegExp(String.raw`\b${alias}\.direction\b`, "giu")
+    ))
+      found.push(match[0]);
+  }
+  for (const match of text.matchAll(/\batomicNoteRelations\.direction\b/gu)) found.push(match[0]);
+  return [...new Set(found)];
+}
+
 const isTest = (file: string): boolean =>
   /\.(test|spec)\.[cm]?[jt]sx?$/u.test(file) || /(^|\/)__fixtures__\//u.test(file);
 
@@ -111,6 +145,26 @@ describe("note relation visibility is read through one module (D9)", () => {
     expect(filters).toEqual([]);
   });
 
+  it("shows a direction only through the module's expressions (decision 31b)", () => {
+    const reads = sourceFiles()
+      .filter((file) => !rawDirectionReaders.has(file))
+      .flatMap((file) =>
+        rawDirectionReads(readFileSync(resolve(workspace, file), "utf8")).map(
+          (read) => `${file}: ${read}`
+        )
+      );
+    expect(reads).toEqual([]);
+    expect(rawDirectionReads("`select r.direction from atomic_note_relations r`")).toEqual([
+      "r.direction"
+    ]);
+    expect(
+      rawDirectionReads(
+        `\`select \${noteRelationDirectionSql("r")} from atomic_note_relations r where r.direction_source = 'owner'\``
+      )
+    ).toEqual([]);
+    expect(rawDirectionReads("`select s.direction from source_relations s`")).toEqual([]);
+  });
+
   it("detects a filter, aliased or not, and ignores reads and the predicates", () => {
     expect(
       visibilityFilters("`select 1 from atomic_note_relations r where r.status <> 'rejected'`")
@@ -134,6 +188,11 @@ describe("note relation visibility is read through one module (D9)", () => {
         `\`select r.status, r.band from atomic_note_relations r where \${shownNoteRelationSql("r")}\``
       )
     ).toEqual([]);
+    expect(
+      visibilityFilters(
+        "`select 1 from atomic_note_relations r where r.direction_source = 'owner'`"
+      )
+    ).toEqual(["r.direction_source ="]);
     // Another table's status under the same statement shape is not a note relation's.
     expect(
       visibilityFilters("`select 1 from source_relations r where r.status <> 'rejected'`")

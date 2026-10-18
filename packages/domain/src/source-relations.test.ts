@@ -122,6 +122,7 @@ describe("source decisions without prose", () => {
       confidence: 0.85,
       origin: "judged",
       supportCount: null,
+      directed: true,
       suggested: false,
       status: "pending_review",
       current: true,
@@ -140,6 +141,13 @@ describe("source decisions without prose", () => {
       writtenExplanation: null
     };
     expect(SourceRelationViewSchema.parse(promoted)).toEqual(promoted);
+    // Decision 31b: whether it reads from its source to its target is required too.
+    expect(SourceRelationViewSchema.parse({ ...promoted, directed: false }).directed).toBe(false);
+    expect(
+      SourceRelationViewSchema.safeParse(
+        Object.fromEntries(Object.entries(promoted).filter(([key]) => key !== "directed"))
+      ).success
+    ).toBe(false);
     // Decision 29: an automatic relation nobody kept says it is a suggestion; the flag is required,
     // so a reader cannot forget it.
     expect(SourceRelationViewSchema.parse({ ...promoted, suggested: true }).suggested).toBe(true);

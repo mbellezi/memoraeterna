@@ -7,6 +7,7 @@ import { notePageLoadDecision, notePageOpenedObject, withoutWithdrawn } from "./
 import {
   asksForExplanation,
   cardContent,
+  directionOfChoice,
   editBase,
   editChanges,
   editRequest,
@@ -18,7 +19,9 @@ import {
   explanationStreamed,
   formatNoteDate,
   hasUnsavedEdit,
+  initialDirectionChoice,
   interpolateNodes,
+  isLinkedOnly,
   isPristineDraft,
   keepShownRelations,
   keepsNotePageMounted,
@@ -30,6 +33,7 @@ import {
   refreshRelationLimit,
   relationSentence,
   reviewErrorKind,
+  subjectOfDirectionChoice,
   unsavedEditNavigationGuard,
   withPlacement
 } from "./note-page-model";
@@ -151,28 +155,60 @@ describe("evidence", () => {
 });
 
 describe("relation sentence", () => {
-  it("states a decided direction and never invents one", () => {
-    expect(relationSentence({ type: "supports", direction: "outgoing" })).toMatchObject({
+  it("states a direction only when someone gave one, and says who", () => {
+    expect(
+      relationSentence({ type: "supports", direction: "outgoing", directionSource: "owner" })
+    ).toMatchObject({
       key: "notePage.card.sentence",
       subject: "this",
       object: "other",
-      directionConfirmed: true
+      directionKey: "notePage.card.directionOwner"
     });
-    expect(relationSentence({ type: "extends", direction: "incoming" })).toMatchObject({
+    expect(
+      relationSentence({ type: "extends", direction: "incoming", directionSource: "decider" })
+    ).toMatchObject({
       subject: "other",
       object: "this",
-      directionConfirmed: true
+      directionKey: "notePage.card.directionDecider"
     });
-    expect(relationSentence({ type: "contrasts", direction: "incoming" })).toMatchObject({
+    // A legacy row was decided with its direction: it keeps saying so as it did.
+    expect(
+      relationSentence({ type: "supports", direction: "outgoing", directionSource: null })
+    ).toMatchObject({ directionKey: "notePage.card.directionConfirmed" });
+    expect(
+      relationSentence({ type: "contrasts", direction: "incoming", directionSource: null })
+    ).toMatchObject({
       key: "notePage.card.sentence",
       subject: "this",
-      directionConfirmed: false
+      directionKey: null
     });
-    expect(relationSentence({ type: "supports", direction: "unknown" })).toMatchObject({
+    expect(
+      relationSentence({ type: "supports", direction: "unknown", directionSource: null })
+    ).toMatchObject({
       key: "notePage.card.undirected",
       wordKey: "notePage.stance.supports",
-      directionConfirmed: false
+      directionKey: null
     });
+  });
+
+  it("reads a directed type nobody gave a direction as linked, and a symmetric type as it is", () => {
+    expect(isLinkedOnly({ type: "extends", direction: "unknown" })).toBe(true);
+    expect(isLinkedOnly({ type: "extends", direction: "outgoing" })).toBe(false);
+    expect(isLinkedOnly({ type: "contradicts", direction: "unknown" })).toBe(false);
+    expect(isLinkedOnly({ type: "related", direction: "unknown" })).toBe(false);
+  });
+
+  it("offers the direction a card already shows, else none, and names the subject of a choice", () => {
+    expect(initialDirectionChoice("outgoing")).toBe("thisToOther");
+    expect(initialDirectionChoice("incoming")).toBe("otherToThis");
+    expect(initialDirectionChoice("unknown")).toBe("none");
+    const ids = { thisId: "this", otherId: "other" };
+    expect(subjectOfDirectionChoice("none", ids)).toBeNull();
+    expect(subjectOfDirectionChoice("thisToOther", ids)).toBe("this");
+    expect(subjectOfDirectionChoice("otherToThis", ids)).toBe("other");
+    expect(directionOfChoice("thisToOther")).toBe("outgoing");
+    expect(directionOfChoice("otherToThis")).toBe("incoming");
+    expect(directionOfChoice("none")).toBe("unknown");
   });
 
   it("puts elements where the template has tokens, never HTML", () => {

@@ -276,7 +276,8 @@ describe("Keep and Remove (D15)", () => {
     const saving = open(suggested, { reviews: { [suggested.id]: { status: "pending" } } });
     // Not `disabled`: a disabled button can lose the focus, and the card closes with it.
     expect(saving).not.toContain('disabled=""');
-    expect(saving.match(/aria-disabled="true"/g)).toHaveLength(2);
+    // Both buttons and, on a directed type, the three radios of the owner's direction (31b).
+    expect(saving.match(/aria-disabled="true"/g)).toHaveLength(5);
     expect(saving).toContain('aria-busy="true"');
   });
 
@@ -442,6 +443,154 @@ describe("every state in the five languages", () => {
       expect(t("notePage.relations.withdrawn")).toContain("{count}");
       // Keep and Remove are two different words.
       expect(t("notePage.card.keep")).not.toBe(t("notePage.card.remove"));
+    }
+  });
+});
+
+describe("direction of an automatic relation (plan decision 31b)", () => {
+  const suggested = (n: number, overrides: Partial<NotePageRelation> = {}) =>
+    rel(n, {
+      type: "extends",
+      state: "suggested",
+      band: "suggest",
+      direction: "unknown",
+      directionSource: null,
+      ...overrides
+    });
+  const open = (relation: NotePageRelation, overrides: Partial<NotePageViewProps> = {}) =>
+    render(pageOf([relation]), { openCard: relation.id, ...overrides });
+  /** The visible text with its emphasis joined to the words around it. */
+  const flat = (html: string) =>
+    plain(html)
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ");
+  const radios = (html: string) =>
+    [
+      ...html.matchAll(/<label[^>]*><input type="radio"([^>]*)\/><span>([^<]*)<\/span><\/label>/g)
+    ].map((match) => ({ label: match[2]!, checked: match[1]!.includes('checked=""') }));
+
+  it("calls a relation nobody gave a direction linked, in its row and in its card, and states no one extends", () => {
+    const html = open(suggested(60));
+    // The row's label reads "linked: extends", never the bare verb beside the other note.
+    expect(text(html)).toContain("linked: extends");
+    expect(flat(html)).toContain("This note and “Idea 60.” are linked: extends");
+    expect(text(html)).not.toContain("direction confirmed");
+    expect(text(html)).not.toContain("direction set by you");
+    // A relation that reads both ways is not "linked".
+    const symmetric = open(suggested(62, { type: "contradicts" }));
+    expect(text(symmetric)).not.toContain("linked:");
+    expect(flat(symmetric)).toContain("This note contradicts");
+  });
+
+  it("states a direction only for the one who gave it, and says who", () => {
+    const owner = open(suggested(60, { direction: "outgoing", directionSource: "owner" }));
+    expect(flat(owner)).toContain("This note extends “Idea 60.”");
+    expect(text(owner)).toContain("direction set by you");
+    expect(text(owner)).not.toContain("linked:");
+    const decider = open(suggested(62, { direction: "incoming", directionSource: "decider" }));
+    expect(flat(decider)).toContain("“Idea 62.” extends this note");
+    expect(text(decider)).toContain("direction suggested by OpenAI Decisions");
+    // A legacy relation was decided with its direction and keeps saying so.
+    const legacy = open(rel(64, { type: "extends", direction: "outgoing", directionSource: null }));
+    expect(text(legacy)).toContain("direction confirmed");
+  });
+
+  it("offers the direction beside Keep, none by default, as a group of three radios", () => {
+    const html = open(suggested(60));
+    expect(html).toContain("<fieldset");
+    expect(html).toMatch(/<legend[^>]*>Direction<\/legend>/);
+    expect(radios(html)).toEqual([
+      { label: "No direction", checked: true },
+      { label: "This note extends the other note", checked: false },
+      { label: "The other note extends this note", checked: false }
+    ]);
+    // The radios share one name, and the group is described by the hint that follows it.
+    const names = [...html.matchAll(/<input type="radio"[^>]*name="([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(names).size).toBe(1);
+    expect(names).toHaveLength(3);
+    const hint = html.match(/<fieldset[^>]*aria-describedby="([^"]+)"/)?.[1];
+    expect(hint).toBeTruthy();
+    expect(html).toContain(`id="${hint}"`);
+    expect(text(html)).toContain(
+      "Optional. Automatic relations have no direction until you give one."
+    );
+    // It comes before Keep and Remove, so Tab reaches the choice first.
+    expect(html.indexOf("<fieldset")).toBeLessThan(html.indexOf(">Keep<"));
+  });
+
+  it("opens on the direction the card already shows, so a Keep confirms what it says", () => {
+    expect(
+      radios(open(suggested(60, { direction: "outgoing", directionSource: "decider" })))
+    ).toEqual([
+      { label: "No direction", checked: false },
+      { label: "This note extends the other note", checked: true },
+      { label: "The other note extends this note", checked: false }
+    ]);
+    expect(
+      radios(open(suggested(62, { direction: "incoming", directionSource: "decider" }))).map(
+        (radio) => radio.checked
+      )
+    ).toEqual([false, false, true]);
+  });
+
+  it("offers no direction for a type that reads both ways, for a kept relation or while it is applied", () => {
+    expect(open(suggested(60, { type: "same_as" }))).not.toContain("<fieldset");
+    expect(open(suggested(62, { state: "kept" }))).not.toContain("<fieldset");
+    expect(open(rel(64, { type: "extends", direction: "outgoing" }))).not.toContain("<fieldset");
+    // A withdrawn relation the owner may still keep offers it too.
+    const withdrawn = suggested(66, { state: "withdrawn", band: "apply", vetoSource: "typer" });
+    expect(
+      render(pageOf([], { withdrawn: { items: [withdrawn], total: 1 } }), {
+        withdrawnOpen: true,
+        openCard: withdrawn.id
+      })
+    ).toContain("<fieldset");
+  });
+
+  it("stops answering the choice while a verdict is saved, without disabling it", () => {
+    const relation = suggested(60);
+    const saving = open(relation, { reviews: { [relation.id]: { status: "pending" } } });
+    expect(saving).not.toContain('disabled=""');
+    // Two buttons and three radios say they do not answer.
+    expect(saving.match(/aria-disabled="true"/g)).toHaveLength(5);
+  });
+
+  it("says it in every language with no raw key", () => {
+    for (const code of supportedLanguageCodes) {
+      const t = createTranslator(code);
+      for (const key of [
+        "notePage.linkedStance",
+        "notePage.card.directionOwner",
+        "notePage.card.directionDecider",
+        "notePage.card.direction.legend",
+        "notePage.card.direction.none",
+        "notePage.card.direction.otherSubject",
+        "notePage.card.direction.otherObject",
+        "notePage.card.direction.hint",
+        "knowledge.relations.linked"
+      ] as const) {
+        expect(t(key), `${code} ${key}`).not.toBe(key);
+        expect(t(key), `${code} ${key}`).not.toContain("[[missing");
+      }
+      expect(t("notePage.linkedStance"), code).toContain("{type}");
+      expect(t("knowledge.relations.linked"), code).toContain("{type}");
+      for (const relation of [
+        suggested(60),
+        suggested(62, { direction: "outgoing", directionSource: "owner" }),
+        suggested(64, { direction: "incoming", directionSource: "decider" })
+      ]) {
+        const html = render(pageOf([relation]), { openCard: relation.id }, t);
+        expect(html, `${code} ${relation.id}`).not.toContain("[[missing");
+        expect(html, `${code} ${relation.id}`).not.toMatch(/notePage\.[a-zA-Z.]+/);
+        expect(html, `${code} ${relation.id}`).not.toMatch(/\{[a-z]+\}/);
+      }
+      // The owner's sentence reads in each language, one way and then the other.
+      const [, thisToOther, otherToThis] = radios(
+        render(pageOf([suggested(66)]), { openCard: fixtureId(66) }, t)
+      );
+      expect(thisToOther!.label, code).not.toBe(otherToThis!.label);
+      expect(thisToOther!.label, code).toContain(t("notePage.card.direction.otherObject"));
+      expect(otherToThis!.label, code).toContain(t("notePage.card.direction.otherSubject"));
     }
   });
 });

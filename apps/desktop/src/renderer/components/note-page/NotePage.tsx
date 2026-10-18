@@ -42,6 +42,7 @@ import {
   type NoteDraft,
   type NoteEditBase,
   type RelationGroup,
+  type ReviewDirection,
   type ReviewState
 } from "./note-page-model";
 import { cardReducer, escapeClosesCard, initialCardState } from "./relation-card-state";
@@ -551,12 +552,21 @@ export function NotePage({
   // The owner keeps or removes a suggested or withdrawn relation (F3 D15). The verdict is final, so
   // it is shown at once and the page reads the relations again; the row that leaves takes its
   // focus to the next one (or the one before it), and the outcome is announced.
-  const reviewRelation = (relationId: string, verdict: "keep" | "remove") => {
+  const reviewRelation = (
+    relationId: string,
+    verdict: "keep" | "remove",
+    direction?: ReviewDirection
+  ) => {
     if (!page || reviewsNow.current[relationId]?.status === "pending") return;
     const located = locateRelation(page, relationId);
     setReviews((current) => ({ ...current, [relationId]: { status: "pending" } }));
     window.app.relations
-      .review({ relationId, verdict })
+      // A Keep carries the owner's direction when the card offered one (decision 31b).
+      .review({
+        relationId,
+        verdict,
+        ...(verdict === "keep" && direction ? { subjectNoteId: direction.subjectNoteId } : {})
+      })
       .then((result) => {
         // A relation that is gone reads as removed.
         const outcome = result?.outcome ?? "removed";
@@ -570,7 +580,10 @@ export function NotePage({
         setExplanations((current) => without(current, relationId));
         setLoad((current) =>
           current.status === "ready"
-            ? { status: "ready", page: withReviewed(current.page, relationId, outcome) }
+            ? {
+                status: "ready",
+                page: withReviewed(current.page, relationId, outcome, direction?.choice)
+              }
             : current
         );
         if (located) {

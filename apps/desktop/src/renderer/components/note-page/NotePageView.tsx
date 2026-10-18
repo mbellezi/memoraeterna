@@ -17,7 +17,7 @@ import {
   type RelationsMore
 } from "./NoteRelations";
 import type { ExplanationState } from "./RelationEvidenceCard";
-import type { NoteDraft, RelationGroup, ReviewState } from "./note-page-model";
+import type { NoteDraft, RelationGroup, ReviewDirection, ReviewState } from "./note-page-model";
 import type { CardEvent } from "./relation-card-state";
 
 export type NotePageLoad =
@@ -65,7 +65,7 @@ export interface NotePageViewProps {
   onOpenPlacement: (navigation: ObjectNavigation) => void;
   onCardEvent: (event: CardEvent) => void;
   onRetryExplanation: (relationId: string) => void;
-  onReview: (relationId: string, verdict: "keep" | "remove") => void;
+  onReview: (relationId: string, verdict: "keep" | "remove", direction?: ReviewDirection) => void;
   onRelationFocusHandled: () => void;
   onToggleWithdrawn: () => void;
   onShowMore: (group: RelationGroup) => void;

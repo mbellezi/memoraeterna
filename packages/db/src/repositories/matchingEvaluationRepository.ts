@@ -1,12 +1,12 @@
-import { NoteRelationDirectionSchema } from "@app/domain";
+import { NoteRelationDirectionSchema, NoteRelationDirectionSourceSchema } from "@app/domain";
 import { z } from "zod";
 
 import type { PgPool } from "../client.js";
 import { noteRelationStateSql } from "./note-relation-sql.js";
 
 const savedMatchingSchema = z.object({
-  // Relations v2 rows (F3 D8): the canonical pair with its direction. A snapshot taken before
-  // migration 0056 has no direction and is refused rather than guessed.
+  // Relations v2 rows (F3 D8): the canonical pair with its direction and where it came from. A
+  // snapshot taken before migration 0056 has no direction and is refused rather than guessed.
   noteRelations: z
     .array(
       z
@@ -15,7 +15,11 @@ const savedMatchingSchema = z.object({
           source_atomic_note_id: z.string().uuid(),
           target_atomic_note_id: z.string().uuid(),
           status: z.literal("pending_review"),
-          direction: NoteRelationDirectionSchema
+          direction: NoteRelationDirectionSchema,
+          // Decision 31b: where the direction came from, null on a legacy row. A snapshot taken
+          // before migration 0059 has no such key and is refused: restoring it would give a banded
+          // directed relation a direction nobody can place.
+          direction_source: NoteRelationDirectionSourceSchema.nullable()
         })
         .passthrough()
     )

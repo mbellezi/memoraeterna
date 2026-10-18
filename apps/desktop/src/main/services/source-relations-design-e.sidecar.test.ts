@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   SourceRelationViewSchema,
   defaultSourceRelationSettings,
+  isDirectedNoteRelationType,
   type NoteRelationWriteType
 } from "@app/domain";
 import {
@@ -32,6 +33,7 @@ import {
   runMigrations,
   sourceRelationEvidenceJoins,
   sourceRelationExplainable,
+  sourceRelationExplanationPlan,
   type PgPool,
   type SourceRelationChunk
 } from "@app/db";
@@ -187,11 +189,16 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     }
     return notes;
   };
+  /**
+   * A note relation read from `subject` to `object`. The direction is the owner's by default, so
+   * promotion reads it; `typer` stores the guess nobody gave (decision 31b), which promotion does not.
+   */
   const relate = async (
     subject: string,
     object: string,
     type: NoteRelationWriteType | null,
-    band: "apply" | "suggest" | null = "apply"
+    band: "apply" | "suggest" | null = "apply",
+    directionSource: "owner" | "decider" | "typer" = "owner"
   ) => {
     const run = await createRelationMatchRunRepository(db()).start({ kind: "link" });
     const written = await createAtomicNoteRelationRepository(db()).upsertDecided({
@@ -199,6 +206,7 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       objectAtomicNoteId: object,
       relationType: type,
       band,
+      directionSource: isDirectedNoteRelationType(type) ? directionSource : null,
       probability: 0.9,
       finalScore: 0.9,
       explanation: "knowledge.relations.explanations.reranked",
@@ -366,6 +374,69 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     await relate(s2!, m2!, null);
     expect(await repository.promoteFromNotes(sleep.id)).toMatchObject({ retired: 1 });
     expect(await relationsBetween(spacing.id, sleep.id)).toEqual([]);
+  });
+
+  it("reads a promoted relation from its notes' direction only when someone gave one (decision 31b)", async () => {
+    const repository = createSourceRelationRepository(db());
+    // Content order puts "Alpha blocking" before "Zeta interleaving", the reverse of the notes' guess.
+    const zeta = await work("Zeta interleaving");
+    const alpha = await work("Alpha blocking");
+    const [z1, z2] = await withNotes(zeta, ["Mixing topics helps", "Interleaving beats blocking"]);
+    const [a1, a2] = await withNotes(alpha, ["Blocking groups topics", "Blocking is easy"]);
+    const readers = async () => {
+      const [row] = await relationsBetween(zeta.id, alpha.id);
+      const page = await listSourceRelations(db(), zeta.id, alpha.id);
+      const context = await createSourceRelationExplanationRepository(db()).readContext(row!.id);
+      const refs = await createObsidianWikiRepository(db()).relationRefs([zeta.id, alpha.id]);
+      return {
+        row: row!,
+        directed: page.relations[0]?.directed,
+        explanation: context ? sourceRelationExplanationPlan(context, "en").direction : null,
+        // The vault's wiki leaves suggestions out; this one stays while a note relation is applied.
+        wikiDirected: refs.find((ref) => ref.id === row!.id)?.directed ?? null
+      };
+    };
+    // Guesses only: one relation that reads both ways, the roots in content order, and nothing
+    // that states a direction names one.
+    await relate(z1!, a1!, "extends", "apply", "typer");
+    await relate(a2!, z2!, "extends", "apply", "typer");
+    expect(await repository.promoteFromNotes(zeta.id)).toMatchObject({ promoted: 1 });
+    const guessed = await readers();
+    expect(guessed.row).toMatchObject({
+      relation_type: "extends",
+      source_item_id: alpha.id,
+      target_source_item_id: zeta.id,
+      support_count: 2
+    });
+    expect(guessed).toMatchObject({ directed: false, explanation: "symmetric" });
+    // Idempotent from either root, and the guess changing its mind changes nothing.
+    await relate(a1!, z1!, "extends", "apply", "typer");
+    for (const root of [zeta.id, alpha.id])
+      expect(await repository.promoteFromNotes(root)).toMatchObject({ promoted: 0, retired: 0 });
+    // The owner gives one note relation a direction: the relation reads from its subject, resting
+    // on that note relation alone; the notes that are only linked add no support to it.
+    await relate(z1!, a1!, "extends", "apply", "owner");
+    const given = await repository.promoteFromNotes(zeta.id);
+    expect(given).toMatchObject({ promoted: 1, retired: 1 });
+    const directed = await readers();
+    expect(directed.row).toMatchObject({
+      relation_type: "extends",
+      source_item_id: zeta.id,
+      target_source_item_id: alpha.id,
+      support_count: 1
+    });
+    expect(directed).toMatchObject({ directed: true, explanation: "s1_to_s2" });
+    expect(await relationsBetween(zeta.id, alpha.id)).toHaveLength(1);
+    expect(await staleNoteEvidence([directed.row.id])).toBe(0);
+    // A symmetric type reads both ways whatever its source; it is never "directed".
+    await relate(z2!, a2!, "same_as", "apply", "typer");
+    await repository.promoteFromNotes(zeta.id);
+    const same = (await relationsBetween(zeta.id, alpha.id)).find(
+      (row) => row.relation_type === "same_as"
+    );
+    expect(same).toBeDefined();
+    const page = await listSourceRelations(db(), zeta.id, alpha.id);
+    expect(page.relations.find((item) => item.id === same!.id)?.directed).toBe(false);
   });
 
   it("plans a pair's promotion from what it reads under the pair's lock (R14, I-R10)", async () => {

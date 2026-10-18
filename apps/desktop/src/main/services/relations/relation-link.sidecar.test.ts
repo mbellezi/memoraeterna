@@ -14,6 +14,7 @@ import {
   createJobRepository,
   createPgPool,
   createRelationTypingRepository,
+  noteRelationDirectionSql,
   resolvePostgresSidecarPaths,
   runMigrations,
   type JobRecord,
@@ -156,19 +157,31 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       with: Note;
       relationType?: StoredDecidedNote["pairs"][number]["relationType"];
       subject?: Note;
+      /** The subject the Decisions decider named (decision 31b). */
+      directionSubject?: Note;
       band?: "apply" | "suggest";
-    }>
+    }>,
+    options: { decisions?: boolean } = {}
   ): StoredDecidedNote => ({
     noteId: note.id,
     sourceItemId: note.sourceId,
-    decider: {
-      kind: pairs.some((pair) => pair.relationType) ? "generative" : "ranker",
-      mode: "ranker",
-      deciderKey: "decider-key",
-      calibration: "provisional",
-      profileId,
-      modelId: "decider"
-    },
+    decider: options.decisions
+      ? {
+          kind: "decisions",
+          mode: "ranker",
+          deciderKey: "decisions-key",
+          calibration: "frozen",
+          profileId: null,
+          modelId: "gpt-6-luna"
+        }
+      : {
+          kind: pairs.some((pair) => pair.relationType) ? "generative" : "ranker",
+          mode: "ranker",
+          deciderKey: "decider-key",
+          calibration: "provisional",
+          profileId,
+          modelId: "decider"
+        },
     pairs: pairs.map((pair) => ({
       noteId: note.id,
       candidateId: pair.with.id,
@@ -179,6 +192,7 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       calibration: "provisional",
       relationType: pair.relationType ?? null,
       subjectId: pair.subject?.id ?? (pair.relationType ? note.id : null),
+      directionSubjectId: pair.directionSubject?.id ?? null,
       decisionSource: "model",
       vectorScore: 0.8,
       graphScore: null
@@ -306,11 +320,12 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
         hi: string;
         type: string | null;
         direction: string;
+        directionSource: string | null;
         band: string;
         typerKey: string | null;
       }>(
         `select source_atomic_note_id as lo, target_atomic_note_id as hi, relation_type as type,
-                direction, band, typer_key as "typerKey"
+                direction, direction_source as "directionSource", band, typer_key as "typerKey"
          from atomic_note_relations order by source_atomic_note_id, target_atomic_note_id`
       )
     ).rows;
@@ -349,10 +364,12 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     const stored = await relations();
     expect(stored).toHaveLength(2);
     const typed = stored.find((row) => [row.lo, row.hi].includes(b1.id))!;
-    expect(typed).toMatchObject({ type: "supports", band: "apply" });
+    // The typer's direction and the generative decider's judged one are guesses (decision 31b).
+    expect(typed).toMatchObject({ type: "supports", band: "apply", directionSource: "typer" });
     expect(typed.typerKey).toMatch(/^[0-9a-f]{64}$/u);
     const extended = stored.find((row) => row.type === "extends")!;
     expect(extended.direction).toBe(a2.id === extended.lo ? "lo_to_hi" : "hi_to_lo");
+    expect(extended.directionSource).toBe("typer");
     expect((await events()).map((event) => [event.kind, event.runKind])).toEqual([
       ["applied", "link"],
       ["applied", "link"]
@@ -364,6 +381,54 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     expect(after!.stagesCheckpoint.sourceMatching).toMatchObject({ status: "completed" });
     expect(discovered.map((entry) => entry.rootId)).toEqual([a.sourceId]);
     expect(changed).toEqual([[a1.id, a2.id, b1.id].sort()]);
+  });
+
+  it("stores the typer's direction as a guess and the Decisions decider's clear one as its own (decision 31b)", async () => {
+    const a = await seedSource("Kappa");
+    const b = await seedSource("Lambda");
+    const k1 = await seedNote(a, "Kappa one");
+    const k2 = await seedNote(a, "Kappa two");
+    const l1 = await seedNote(b, "Lambda one");
+    const l2 = await seedNote(b, "Lambda two");
+    const l3 = await seedNote(b, "Lambda three");
+    await park(a.sourceId, a.sourceId, [
+      decided(
+        k1,
+        [
+          // The decider named Lambda one as the subject, the way the typer's `ab` does not.
+          { with: l1, directionSubject: l1 },
+          // No clear direction: the typer's guess stays a guess.
+          { with: l2 },
+          // A subject outside the pair names nothing.
+          { with: l3, directionSubject: k2 }
+        ],
+        { decisions: true }
+      )
+    ]);
+    await linker().instance.link(await claim(a.sourceId), signal());
+    const stored = await relations();
+    const pairOf = (note: Note, other: Note) =>
+      stored.find(
+        (row) => [row.lo, row.hi].includes(note.id) && [row.lo, row.hi].includes(other.id)
+      )!;
+    const given = pairOf(k1, l1);
+    expect(given).toMatchObject({
+      type: "supports",
+      directionSource: "decider",
+      direction: l1.id === given.lo ? "lo_to_hi" : "hi_to_lo"
+    });
+    expect(pairOf(k1, l2).directionSource).toBe("typer");
+    expect(pairOf(k1, l3).directionSource).toBe("typer");
+    // Every row holds a direction and says where it came from; the page shows only the decider's.
+    const shown = (
+      await pool!.query<{ lo: string; hi: string; shown: string }>(
+        `select source_atomic_note_id as lo, target_atomic_note_id as hi,
+                ${noteRelationDirectionSql("r")} as shown from atomic_note_relations r`
+      )
+    ).rows;
+    expect(shown.filter((row) => row.shown !== "unknown")).toEqual([
+      expect.objectContaining({ lo: given.lo, hi: given.hi })
+    ]);
   });
 
   it("persists the pairs of a run whose plan stops at note matching, and discovers nothing", async () => {

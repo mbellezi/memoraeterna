@@ -28,6 +28,7 @@ const relation = (overrides: Partial<NotePageRelation> = {}): NotePageRelation =
   id: id(20),
   type: "supports",
   direction: "outgoing",
+  directionSource: null,
   state: "applied",
   band: null,
   calibration: null,
@@ -387,6 +388,25 @@ describe("relations.review contract (D15)", () => {
       relationId: id(20),
       verdict: "keep"
     });
+    // A Keep may carry the owner's direction: the subject note, or null for none (decision 31b).
+    expect(
+      RelationReviewInputSchema.parse({
+        relationId: id(20),
+        verdict: "keep",
+        subjectNoteId: id(21)
+      }).subjectNoteId
+    ).toBe(id(21));
+    expect(
+      RelationReviewInputSchema.parse({ relationId: id(20), verdict: "keep", subjectNoteId: null })
+        .subjectNoteId
+    ).toBeNull();
+    expect(
+      RelationReviewInputSchema.safeParse({
+        relationId: id(20),
+        verdict: "keep",
+        subjectNoteId: "x"
+      }).success
+    ).toBe(false);
     expect(
       RelationReviewInputSchema.safeParse({ relationId: id(20), verdict: "maybe" }).success
     ).toBe(false);

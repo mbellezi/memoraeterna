@@ -182,6 +182,19 @@ export type NoteRelationTyping = z.infer<typeof NoteRelationTypingSchema>;
 export const NoteRelationDirectionSchema = z.enum(["lo_to_hi", "hi_to_lo", "symmetric", "unknown"]);
 export type NoteRelationDirection = z.infer<typeof NoteRelationDirectionSchema>;
 
+/**
+ * Where a stored direction came from (plan decision 31b). The typer reads a directed relation's
+ * direction from the order the notes are shown (0.57 accurate), so its guess is kept for audit and
+ * never shown. A direction is shown only when the owner chose it on Keep (`owner`, where
+ * `symmetric` on a directed type is "no direction") or the Decisions decider's two directional
+ * scores differ clearly (`decider`). A generative fallback's judged direction is a `typer` guess
+ * too. Null: a legacy row (no band; it reads as it was decided) or a relation that reads the same
+ * both ways.
+ */
+export const noteRelationDirectionSources = ["typer", "decider", "owner"] as const;
+export const NoteRelationDirectionSourceSchema = z.enum(noteRelationDirectionSources);
+export type NoteRelationDirectionSource = z.infer<typeof NoteRelationDirectionSourceSchema>;
+
 /** Automation's outcome (D9), apart from the human review status; null on legacy rows. */
 export const NoteRelationBandSchema = z.enum(["apply", "suggest"]);
 export type NoteRelationBand = z.infer<typeof NoteRelationBandSchema>;
@@ -222,7 +235,59 @@ export function noteRelationPair(
   return { lo, hi, direction: subject === lo ? "lo_to_hi" : "hi_to_lo" };
 }
 
-/** The decided subject of a stored pair, or null when the relation reads both ways or is unknown. */
+/** Whether a stored type (write or legacy) reads in one direction: a subject and an object. */
+export function isDirectedNoteRelationType(type: string | null): boolean {
+  return type !== null && (directedNoteRelationTypes as readonly string[]).includes(type);
+}
+
+/**
+ * The direction a new automatic relation stores and where it came from (decision 31b). A relation
+ * that reads both ways stores `symmetric` and no source. A directed one stores the Decisions
+ * decider's direction when it gave one (`decider`, shown), else the typing step's guess (`typer`,
+ * kept for audit and never shown).
+ */
+export function automaticNoteRelationDirection(input: {
+  relationType: string | null;
+  /** The typing step's direction: the typer's, or the generative fallback's judged one. */
+  typed: Exclude<NoteRelationDirection, "unknown">;
+  /** The Decisions decider's clear direction, when it gave one. */
+  decider?: "lo_to_hi" | "hi_to_lo" | null | undefined;
+}): {
+  direction: Exclude<NoteRelationDirection, "unknown">;
+  directionSource: NoteRelationDirectionSource | null;
+} {
+  if (!isDirectedNoteRelationType(input.relationType) || input.typed === "symmetric")
+    return { direction: "symmetric", directionSource: null };
+  return input.decider
+    ? { direction: input.decider, directionSource: "decider" }
+    : { direction: input.typed, directionSource: "typer" };
+}
+
+/**
+ * The direction a pair of directional scores names, or null when they do not differ clearly
+ * (decision 31b). `loToHi` is the log-odds that the pair's higher note, the Document, relates to
+ * the lower note as the query (the stored score of `lo_to_hi`), and `hiToLo` the reverse. A decider
+ * names its Document as the subject of a directed relation, so the higher score names the subject:
+ * `loToHi` above `hiToLo` makes the higher note the subject, a relation that reads `hi_to_lo`. The
+ * rule is read from the deciders' wording, not fitted; only the Decisions decider's asymmetry
+ * carries a direction (0.78 accurate at a margin of 1 log-odds; the local rankers' is chance).
+ */
+export function deciderRelationDirection(
+  loToHi: number,
+  hiToLo: number,
+  marginLogOdds: number
+): "lo_to_hi" | "hi_to_lo" | null {
+  const difference = loToHi - hiToLo;
+  if (!Number.isFinite(difference) || Math.abs(difference) < marginLogOdds || difference === 0)
+    return null;
+  return difference > 0 ? "hi_to_lo" : "lo_to_hi";
+}
+
+/**
+ * The decided subject of a stored pair, or null when the relation reads both ways or is unknown.
+ * `direction` is the direction the relation may be shown in (`noteRelationDirectionSql`), never a
+ * typer guess.
+ */
 export function noteRelationSubject(relation: {
   sourceAtomicNoteId: string;
   targetAtomicNoteId: string;

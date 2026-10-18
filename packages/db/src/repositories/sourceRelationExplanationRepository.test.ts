@@ -31,6 +31,7 @@ const context = (
   type: "supports",
   status: "pending_review",
   hasProse: false,
+  directed: true,
   source: side(ids.high, "Zeta review", "Retrieval improves recall."),
   target: side(ids.low, "Alpha study", "Feedback qualified the benefit."),
   stored: null,
@@ -68,6 +69,17 @@ describe("source relation explanation inputs", () => {
     expect(sourceRelationExplanationPlan(reversed, "en")).toEqual(plan);
   });
 
+  it("states no direction for a directed type nobody gave one, and orders its sources by content (31b)", () => {
+    const linked = context({ directed: false });
+    const reversed = context({ directed: false, source: linked.target, target: linked.source });
+    const plan = sourceRelationExplanationPlan(linked, "en");
+    expect(plan.direction).toBe("symmetric");
+    expect(plan.first.title).toBe("Alpha study");
+    expect(sourceRelationExplanationPlan(reversed, "en")).toEqual(plan);
+    // A written explanation that claimed a direction is stale once the relation says it has none.
+    expect(plan.inputHash).not.toBe(sourceRelationExplanationPlan(context(), "en").inputHash);
+  });
+
   it("explains only relations without stored prose, not rejected, with current evidence on both sides", () => {
     expect(sourceRelationExplainable(context())).toBe(true);
     expect(sourceRelationExplainable(context({ status: "rejected" }))).toBe(false);
@@ -95,6 +107,7 @@ describe("source relation explanation repository", () => {
     type: "supports",
     status: "accepted",
     hasProse: false,
+    directed: true,
     sourceId: ids.high,
     targetId: ids.low,
     sourceTitle: "Zeta review",

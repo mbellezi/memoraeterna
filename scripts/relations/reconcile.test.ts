@@ -87,6 +87,7 @@ function relation(
     probability: null,
     deciderKey: "key",
     direction: "lo_to_hi",
+    directionSource: "typer",
     relationType: "supports",
     typerKey: null,
     vectorScore: null,
@@ -352,6 +353,11 @@ describe.skipIf(!sidecarInstalled)("reconcile on a real PostgreSQL database", ()
     const dropped = await decided("suggest", -3, link.id); // -> leaves the band
     const reviewed = await decided("apply", -3, link.id, "accepted"); // a human verdict: not considered
     await runs.finish(link.id, { outcome: "completed" });
+    // A recalibration decides no direction: the decider's stays what it was (decision 31b).
+    await db().query(
+      "update atomic_note_relations set direction_source = 'decider' where id = $1",
+      [promoted]
+    );
     const before = await snapshot();
 
     const state = await readReconcileState(db());
@@ -394,6 +400,14 @@ describe.skipIf(!sidecarInstalled)("reconcile on a real PostgreSQL database", ()
     expect(bands.get(demoted)).toBe("suggest");
     expect(bands.has(dropped)).toBe(false);
     expect(bands.get(reviewed)).toBe("apply");
+    expect(
+      (
+        await db().query<{ direction_source: string }>(
+          "select direction_source from atomic_note_relations where id = $1",
+          [promoted]
+        )
+      ).rows[0]
+    ).toEqual({ direction_source: "decider" });
 
     const reverted = await createRelationEventRepository(db()).revertRun(applied.runId);
     expect(reverted.kind).toBe("reverted");

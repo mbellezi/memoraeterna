@@ -1072,6 +1072,7 @@
     "relations": {
       "empty": "No relevant note relations were found.",
       "pendingInvolved": "Includes a note pending review",
+      "linked": "Linked: {type}",
       "explanations": {
         "hybrid": "The notes passed the hybrid similarity threshold.",
         "reranked": "The notes passed the hybrid similarity threshold after batch reranking."
@@ -2948,6 +2949,7 @@
       "stateKept": "You kept this relation.",
       "stateApplied": "This relation is applied."
     },
+    "linkedStance": "linked: {type}",
     "stance": {
       "supports": "supports",
       "contradicts": "contradicts",
@@ -2975,6 +2977,8 @@
       "label": "Evidence for the relation: {type}",
       "betweenNotes": "relation between notes",
       "directionConfirmed": "direction confirmed",
+      "directionOwner": "direction set by you",
+      "directionDecider": "direction suggested by OpenAI Decisions",
       "thisNoteSubject": "This note",
       "thisNoteObject": "this note",
       "quoted": "“{text}”",
@@ -2992,6 +2996,13 @@
         "mentions": "mentions",
         "related": "is related to",
         "same_as": "is the same as"
+      },
+      "direction": {
+        "legend": "Direction",
+        "none": "No direction",
+        "otherSubject": "The other note",
+        "otherObject": "the other note",
+        "hint": "Optional. Automatic relations have no direction until you give one."
       },
       "passageLabel": "{source} · passage {number}",
       "decided": "Decided",

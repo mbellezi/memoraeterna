@@ -203,6 +203,12 @@ export const SourceRelationViewSchema = z
     /** The note relations it is promoted from (a judged relation may carry them too); else null. */
     supportCount: z.number().int().positive().nullable(),
     /**
+     * Whether it reads from its source to its target (decision 31b): a directed type the judge
+     * decided, or one that rests on a note relation whose direction the owner or the decider gave.
+     * False: the sources are linked and nothing says who extends whom.
+     */
+    directed: z.boolean(),
+    /**
      * Decision 29: an automatic relation nobody kept, judged or promoted alike. True while the
      * relation has no human verdict (`status` pending review) and no note relation that reads as
      * applied supports it; it stops being one when the owner keeps it (`status` accepted) or any

@@ -26,7 +26,9 @@ import type { PgPool } from "../client.js";
 import {
   currentNoteSql,
   earlierVersionNoteRelationSql,
+  noteRelationDirectionSourceSql,
   noteRelationStateLabelSql,
+  noteRelationSubjectSql,
   shownNoteRelationSql,
   withdrawnNoteRelationSql
 } from "./note-relation-sql.js";
@@ -88,6 +90,7 @@ interface RelationItem {
   group: NoteRelationGroup;
   type: string;
   direction: NotePageRelation["direction"];
+  directionSource: NotePageRelation["directionSource"];
   state: NotePageRelation["state"];
   band: NoteRelationBand | null;
   calibration: string | null;
@@ -224,7 +227,8 @@ select (select count(*)::int from items) as total,
  * The groups come from the predicates of `note-relation-sql.ts` alone. Each is ordered by the
  * calibrated probability (nulls last), then the stored legacy score, which never leaves this
  * statement, then the other note's title and the ID. The direction comes from the stored
- * `direction` (F3 D8): the endpoint columns are the canonical pair, sorted by ID. Every counted
+ * `direction` (F3 D8) through the visibility module (decision 31b): the endpoint columns are the
+ * canonical pair, sorted by ID, and a typer's guess reads as unknown. Every counted
  * relation is listed: a knowledge-owned note outlives its home source (it has no foreign key to
  * it), so that source is a left join. `left()` counts characters (code points) and the contract
  * bounds the excerpt in the same unit. The runs behind the decider's verdict and the typer's are
@@ -246,11 +250,10 @@ rel as (
          case when ${shownNoteRelationSql("r", [self, other])} then 'shown'
               when ${withdrawnNoteRelationSql("r", [self, other])} then 'withdrawn'
               else 'earlier' end as grp,
-         (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
-                           when 'hi_to_lo' then r.target_atomic_note_id end)::text as semantic_source_id,
-         case when r.direction not in ('lo_to_hi', 'hi_to_lo') then 'unknown'
-              when (case r.direction when 'lo_to_hi' then r.source_atomic_note_id
-                                     else r.target_atomic_note_id end) = $1::uuid then 'outgoing'
+         ${noteRelationSubjectSql("r")}::text as semantic_source_id,
+         ${noteRelationDirectionSourceSql("r")} as direction_source,
+         case when ${noteRelationSubjectSql("r")} is null then 'unknown'
+              when ${noteRelationSubjectSql("r")} = $1::uuid then 'outgoing'
               else 'incoming' end as direction,
          o.id as other_id, o.title as other_title
     from atomic_note_relations r
@@ -290,6 +293,7 @@ select (select jsonb_build_object('shown', count(*) filter (where rel.grp = 'sho
        coalesce((select jsonb_agg(item.value order by item.grp, item.ord) from (
          select page.grp, page.ord, jsonb_build_object(
                   'id', page.id, 'group', page.grp, 'type', page.type, 'direction', page.direction,
+                  'directionSource', page.direction_source,
                   'state', page.state, 'band', page.band, 'calibration', page.calibration,
                   'probability', page.probability, 'vetoSource', page.veto_source,
                   'semanticSourceId', page.semantic_source_id,
@@ -437,6 +441,7 @@ function mapRelation(
     id: item.id,
     type: item.type,
     direction: item.direction,
+    directionSource: item.directionSource,
     state: item.state,
     band: item.band,
     calibration: noteRelationCalibration({ calibration: item.calibration }),

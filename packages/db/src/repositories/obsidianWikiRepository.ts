@@ -3,6 +3,7 @@ import { createJobRepository } from "./jobRepository.js";
 import { readNoteEvidence, retainedNoteCurrentSql } from "./noteEvidence.js";
 import {
   currentSourceRelationSql,
+  directedSourceRelationSql,
   currentSourceRelationEvidenceSql,
   sourceRelationEvidenceJoins,
   suggestedSourceRelationSql
@@ -255,7 +256,8 @@ export function createObsidianWikiRepository(pool: PgPool) {
     async relationRefs(sourceIds: string[]) {
       return (
         await pool.query(
-          `select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current
+          `select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current,
+          ${directedSourceRelationSql("r")} as directed
         from source_relations r join source_items a on a.id=r.source_item_id join source_items b on b.id=r.target_source_item_id
         where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[])
           and not ${suggestedSourceRelationSql("r")} order by r.id`,

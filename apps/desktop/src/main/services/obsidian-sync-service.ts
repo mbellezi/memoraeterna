@@ -50,6 +50,7 @@ import type { ObsidianSyncStatus, StorageSettings } from "../../shared/ipc.js";
 import {
   appendObsidianRelations,
   collisionFileName,
+  onlyLinksThisNote,
   parseManagedMarkdown,
   renderObsidianProjection,
   slugify,
@@ -705,9 +706,13 @@ export class ObsidianSyncService {
       const target = syncFile.relativePath
         ? normalizeRelativePath(syncFile.relativePath).replace(/\.md$/i, "")
         : slugify(title).replace(/\.md$/i, "");
+      // An untyped relation reads neutral (D20).
+      const relationType = relation.relationType ?? "related";
       relatedNotes.push({
-        // An untyped relation reads neutral (D20).
-        relationType: relation.relationType ?? "related",
+        relationType,
+        ...(onlyLinksThisNote(relationType, relation.shownDirection, isSource)
+          ? { linked: true }
+          : {}),
         title,
         target,
         noteId: relatedId,

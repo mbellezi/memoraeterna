@@ -193,8 +193,16 @@ export const NotePageRelationSchema = z
     id: z.string().uuid(),
     /** The stored type; later phases add values, so renderers map unknown ones safely. */
     type: z.string().min(1).max(40),
-    /** Read from the decided direction, never from the stored column order. */
+    /**
+     * Read from the direction the relation may be shown in, never from the stored column order
+     * (decision 31b): `unknown` is a relation that is only linked, with no subject and no arrow.
+     */
     direction: z.enum(["outgoing", "incoming", "unknown"]),
+    /**
+     * Who gave a shown direction: the owner on Keep, or the Decisions decider's clear asymmetry;
+     * null when the relation has none to show or is a legacy row, which reads as it was decided.
+     */
+    directionSource: z.enum(["decider", "owner"]).nullable(),
     /**
      * Suggested, withdrawn by an automatic veto, kept by the owner, or applied (a legacy row or one
      * an apply band wrote). A relation the owner removed is listed nowhere.
@@ -371,7 +379,13 @@ export function noteRelationCalibration(metadata: unknown): NoteRelationCalibrat
 export const RelationReviewInputSchema = z
   .object({
     relationId: z.string().uuid(),
-    verdict: z.enum(["keep", "remove"])
+    verdict: z.enum(["keep", "remove"]),
+    /**
+     * Keep only (decision 31b): the owner's direction for a relation of a directed type, as the note
+     * that is its subject ("this note extends the other"), or null for "no direction". Left out, the
+     * relation keeps the direction it has. It has no meaning for a relation that reads both ways.
+     */
+    subjectNoteId: z.string().uuid().nullable().optional()
   })
   .strict();
 export type RelationReviewInput = z.infer<typeof RelationReviewInputSchema>;

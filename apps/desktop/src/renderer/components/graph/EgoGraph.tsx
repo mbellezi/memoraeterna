@@ -14,6 +14,7 @@ import type { ObjectNeighborhood } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { relationTypeView } from "../../lib/relation-stance";
 import { useStableCallback } from "../../lib/stable-callback";
 import { RelationStanceLabel } from "../RelationStanceLabel";
 import { Button } from "../ui/button";
@@ -739,7 +740,11 @@ function EgoGraphCanvas({
           ) : null}
           {cardEdge ? (
             <>
-              <RelationStanceLabel type={cardEdge.type} t={t} />
+              <RelationStanceLabel
+                type={cardEdge.type}
+                t={t}
+                linked={relationTypeView(cardEdge.type).directed && !cardEdge.directed}
+              />
               <p className="mt-1 text-sm leading-snug">
                 {egoEdgeDescription(cardEdge, titleOf, t)}
               </p>

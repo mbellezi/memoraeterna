@@ -6,6 +6,7 @@ import { isDirectedRelationType, sourceRelationExplanationLimits } from "@app/do
 import { mapTimestamp } from "./sql.js";
 import {
   currentSourceRelationEvidenceSql,
+  directedSourceRelationSql,
   sourceRelationEvidenceJoins
 } from "./sourceRelationRepository.js";
 import type { Queryable } from "./types.js";
@@ -47,6 +48,8 @@ export interface SourceRelationExplanationContext {
   status: string;
   /** Relations saved with prose by the earlier matcher keep it and are not explained again. */
   hasProse: boolean;
+  /** The relation reads from its source to its target (decision 31b); see `directedSourceRelationSql`. */
+  directed: boolean;
   source: SourceRelationExplanationSide;
   target: SourceRelationExplanationSide;
   stored: StoredSourceRelationExplanation | null;
@@ -79,11 +82,13 @@ function compareSides(a: SourceRelationExplanationSide, b: SourceRelationExplana
 
 /**
  * The sources in prompt order with the direction, and the hash of what the explanation depends on.
- * A directed type reads from the relation's source (s1) to its target (s2); a symmetric one orders
- * the sources by content (title, then passages), so the prompt is a function of content.
+ * A directed type with a direction (the judge's, or a note relation's from the owner or the decider)
+ * reads from the relation's source (s1) to its target (s2); a symmetric one, or a directed type
+ * promoted from linked notes, orders the sources by content (title, then passages), so the prompt
+ * is a function of content, and states no direction.
  */
 export function sourceRelationExplanationPlan(
-  context: Pick<SourceRelationExplanationContext, "type" | "source" | "target">,
+  context: Pick<SourceRelationExplanationContext, "type" | "directed" | "source" | "target">,
   language: string
 ): {
   direction: SourceRelationExplanationDirection;
@@ -91,7 +96,7 @@ export function sourceRelationExplanationPlan(
   second: SourceRelationExplanationSide;
   inputHash: string;
 } {
-  const directed = isDirectedRelationType(context.type);
+  const directed = isDirectedRelationType(context.type) && context.directed;
   const [first, second] =
     directed || compareSides(context.source, context.target) <= 0
       ? [context.source, context.target]
@@ -119,6 +124,7 @@ interface RelationRow extends QueryResultRow {
   type: string;
   status: string;
   hasProse: boolean;
+  directed: boolean;
   sourceId: string;
   targetId: string;
   sourceTitle: string;
@@ -138,6 +144,7 @@ interface PassageRow extends QueryResultRow {
 const relationsSql = `
 select r.id as "relationId", r.relation_type as type, r.status::text as status,
        (r.source_idea is not null or r.target_idea is not null or r.explanation is not null) as "hasProse",
+       ${directedSourceRelationSql("r")} as directed,
        r.source_item_id as "sourceId", r.target_source_item_id as "targetId",
        a.title as "sourceTitle", b.title as "targetTitle",
        case when x.relation_id is null then null else jsonb_build_object(
@@ -225,6 +232,7 @@ export function createSourceRelationExplanationRepository(db: Queryable) {
         type: row.type,
         status: row.status,
         hasProse: row.hasProse,
+        directed: row.directed,
         source: { id: row.sourceId, title: row.sourceTitle, passages: of("source") },
         target: { id: row.targetId, title: row.targetTitle, passages: of("target") },
         stored: row.stored

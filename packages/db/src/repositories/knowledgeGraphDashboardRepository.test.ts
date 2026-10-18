@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import type { PgPool } from "../client.js";
 import { createKnowledgeGraphDashboardRepository } from "./knowledgeGraphDashboardRepository.js";
-import { noteRelationStateSql, shownNoteRelationSql } from "./note-relation-sql.js";
+import {
+  noteRelationDirectionSql,
+  noteRelationStateSql,
+  shownNoteRelationSql
+} from "./note-relation-sql.js";
 
 class FakeGraphPool {
   readonly queries: string[] = [];
@@ -105,11 +109,15 @@ describe("knowledge graph dashboard repository", () => {
       confidence: 0.92
     });
     expect(pool.queries[0]).toContain("supersession_status = 'current'");
-    // Shown relations are drawn (D9, decision 29), directed ones from their subject (the stored
-    // direction); the predicates, never another filter, choose them and mark the suggestions.
+    // Shown relations are drawn (D9, decision 29), directed ones from their subject (the direction
+    // the owner or the decider gave, decision 31b); the predicates, never another filter, choose
+    // them and mark the suggestions.
     expect(pool.queries[1]).toContain(shownNoteRelationSql("relation"));
     expect(pool.queries[1]).toContain(`${noteRelationStateSql.suggested("relation")} as suggested`);
-    expect(pool.queries[1]).toContain("case when relation.direction = 'hi_to_lo'");
+    expect(pool.queries[1]).toContain(
+      `case when ${noteRelationDirectionSql("relation")} = 'hi_to_lo'`
+    );
+    expect(pool.queries[1]).not.toContain("case when relation.direction = 'hi_to_lo'");
   });
 
   it("shows no percentage for a relations v2 note relation, and keeps a legacy one's (F3 D42, R4)", async () => {

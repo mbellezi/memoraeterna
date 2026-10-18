@@ -9,7 +9,7 @@ describe("relation pair arrow", () => {
     expect(relationPairArrow("lo_to_hi")).toBe("→");
     expect(relationPairArrow("hi_to_lo")).toBe("←");
     expect(relationPairArrow("symmetric")).toBe("↔");
-    expect(relationPairArrow("unknown")).toBe("↔");
+    expect(relationPairArrow("unknown")).toBe("·");
   });
 });
 

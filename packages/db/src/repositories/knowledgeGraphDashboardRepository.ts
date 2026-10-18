@@ -1,7 +1,11 @@
 import type { QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
-import { noteRelationStateSql, shownNoteRelationSql } from "./note-relation-sql.js";
+import {
+  noteRelationDirectionSql,
+  noteRelationStateSql,
+  shownNoteRelationSql
+} from "./note-relation-sql.js";
 import {
   currentSourceRelationSql,
   sourceRelationImportanceOrderSql,
@@ -403,13 +407,14 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
   if (noteIds.length === 0) return { mode: "atomic_notes", nodes: [], edges: [], truncated: false };
 
   // Shown relations are drawn (D9, decision 29): applied, kept and suggested ones, the suggestions
-  // marked so the graph draws them apart. A directed relation points from its subject to its object;
-  // a symmetric or legacy undirected one keeps the canonical (sorted) order. Untyped reads neutral.
+  // marked so the graph draws them apart. A relation shown with a direction (the owner's or the
+  // decider's, decision 31b) points from its subject to its object; any other keeps the canonical
+  // (sorted) order. Untyped reads neutral.
   const edgeResult = await pool.query<AtomicNoteEdgeRow>(
     `select relation.id,
-            case when relation.direction = 'hi_to_lo' then relation.target_atomic_note_id
+            case when ${noteRelationDirectionSql("relation")} = 'hi_to_lo' then relation.target_atomic_note_id
                  else relation.source_atomic_note_id end as source,
-            case when relation.direction = 'hi_to_lo' then relation.source_atomic_note_id
+            case when ${noteRelationDirectionSql("relation")} = 'hi_to_lo' then relation.source_atomic_note_id
                  else relation.target_atomic_note_id end as target,
             coalesce(relation.relation_type, 'related') as "relationType",
             relation.explanation, relation.final_score as "finalScore", relation.band as band,

@@ -30,8 +30,9 @@ export interface ReviewedRelation {
 
 /**
  * The owner's verdict on a note relation (F3 D15): Keep accepts it and clears any veto, Remove
- * rejects it. The verdict and its `kept` or `removed` event are one statement in a run of their own
- * (D14), and the verdict is final in both directions (I-R2, I-R3): a relation that already has a
+ * rejects it. A Keep may carry the owner's direction, written in the same statement as the
+ * owner's (decision 31b). The verdict and its `kept` or `removed` event are one statement in a run
+ * of their own (D14), and the verdict is final in both directions (I-R2, I-R3): a relation that already has a
  * human verdict is left as it is and the answer says which one stands, with `changed` false. A
  * typed relation fed the source relations promoted from it, so the roots of its two notes are
  * promoted again in the same transaction (R14); an untyped one never was promoted. Resolves to null
@@ -50,7 +51,13 @@ export async function reviewNoteRelation(
       if (!(await relations.lockForReview(input.relationId))) throw new NothingToReview(null);
       const runs = createRelationMatchRunRepository(client);
       const run = await runs.start({ kind: "review" });
-      const written = await relations.review(input.relationId, input.verdict, run.id);
+      // Keep may carry the owner's direction (decision 31b); the note must be one of the pair's.
+      const written = await relations.review(
+        input.relationId,
+        input.verdict,
+        run.id,
+        input.subjectNoteId === undefined ? undefined : { subjectAtomicNoteId: input.subjectNoteId }
+      );
       if (!written) throw new NothingToReview(null);
       // The run and its event are kept only when the verdict was written.
       if (written.change !== "updated") {

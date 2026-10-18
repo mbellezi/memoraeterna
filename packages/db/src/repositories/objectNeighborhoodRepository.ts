@@ -14,6 +14,7 @@ import {
 import type { PgPool } from "../client.js";
 import {
   currentNoteSql,
+  noteRelationDirectionSql,
   noteRelationStateLabelSql,
   noteRelationStateSql,
   shownNoteRelationSql
@@ -154,7 +155,7 @@ select seed.ord::int as "seedRank", c.probability, c.final_score as "finalScore"
 /** $1 the chosen nodes. Every shown relation between two of them, by the unique pair index. */
 const edgesSql = `
 select r.id, r.source_atomic_note_id as lo, r.target_atomic_note_id as hi,
-       coalesce(r.relation_type, 'related') as type, r.direction, r.band,
+       coalesce(r.relation_type, 'related') as type, ${noteRelationDirectionSql("r")} as direction, r.band,
        ${noteRelationStateLabelSql("r")} as state
   from (select a.id as lo, b.id as hi
           from unnest($1::uuid[]) a(id) join unnest($1::uuid[]) b(id) on a.id < b.id) p

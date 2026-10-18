@@ -74,12 +74,12 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   scores both directions; a generative decider judges each unordered pair once, and its verdict
   answers the reverse direction (the type stays with the judged direction) with no row written
   for the reuse.
-- Relation types use one fixed vocabulary shared by notes and sources; type, direction and
-  explanation are assigned only to accepted pairs. Shared topics, names, dates or homonyms alone
-  never create a relation; it must be supported by evidence from both endpoints and is shown only
-  while both have current evidence. A note relation stores its pair once with an explicit
-  direction; automation's band (applied or suggested) stays apart from the human review status. A
-  decider applies only in the apply band frozen for the requests it sends, else it suggests.
+- Relation types use one fixed vocabulary shared by notes and sources; type and explanation are
+  assigned only to accepted pairs. Shared topics, names, dates or homonyms alone never create a
+  relation; it needs evidence from both endpoints and is shown only while both are current. A note
+  relation stores its pair once; the band stays apart from the human review status. An automatic
+  relation has no direction: the typer's guess is never shown, only the owner's choice on Keep or
+  the Decisions decider's clear one. A decider applies only in its frozen apply band, else suggests.
 - Source relations come from shown note relations (applied, kept or suggested) plus decider-confirmed
   discovery pairs, never same-root pairs; each is a suggestion until the owner keeps it or a note
   relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).

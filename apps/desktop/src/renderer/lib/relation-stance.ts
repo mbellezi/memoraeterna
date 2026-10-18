@@ -58,13 +58,20 @@ export function relationTypeView(type: string): RelationTypeView {
 
 /**
  * How a stored note pair reads from its first note to its second: the stored endpoints are sorted
- * by ID (relations v2, D8), so a directed relation points either way; a symmetric relation, or a
- * legacy one whose direction is unknown, reads both ways.
+ * by ID (relations v2, D8), so a relation with a direction points either way; a symmetric type reads
+ * both ways. A relation nobody gave a direction (decision 31b), or a legacy one whose direction is
+ * unknown, draws no arrow: only a dot between the notes.
  */
 export function relationPairArrow(
   direction: "lo_to_hi" | "hi_to_lo" | "symmetric" | "unknown"
 ): string {
-  return direction === "lo_to_hi" ? "→" : direction === "hi_to_lo" ? "←" : "↔";
+  return direction === "lo_to_hi"
+    ? "→"
+    : direction === "hi_to_lo"
+      ? "←"
+      : direction === "symmetric"
+        ? "↔"
+        : "·";
 }
 
 /** Literal classes, so the styles are generated: `text-stance-<stance>` from tokens.css. */

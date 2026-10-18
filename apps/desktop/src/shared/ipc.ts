@@ -1214,7 +1214,8 @@ export const sourceDetailSchema = z
           targetTitle: z.string().min(1),
           sourceStatus: z.string().min(1),
           targetStatus: z.string().min(1),
-          // The pair is sorted by ID; how it reads (F3 D8).
+          // The pair is sorted by ID; how it reads (F3 D8). `unknown`: linked, with no direction
+          // (decision 31b).
           direction: z.enum(["lo_to_hi", "hi_to_lo", "symmetric", "unknown"]),
           relationType: z.string().min(1),
           // Automation's band and the calibration it was decided under (F3 D9, D42): null on a

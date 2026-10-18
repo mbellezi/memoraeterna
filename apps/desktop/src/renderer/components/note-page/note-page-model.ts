@@ -135,13 +135,22 @@ export interface RelationSentence {
   object: "this" | "other";
   verbKey: MessageKey;
   wordKey: MessageKey;
-  /** Only a directed type whose direction was decided states it. */
-  directionConfirmed: boolean;
+  /** Who gave the direction a directed type states; null when it states none (decision 31b). */
+  directionKey: MessageKey | null;
 }
 
-/** How the card says the relation: never invents a direction the decider did not give. */
+/** Whether a relation of a directed type is only linked: nobody gave it a direction (decision 31b). */
+export function isLinkedOnly(relation: Pick<NotePageRelation, "type" | "direction">): boolean {
+  return relationTypeView(relation.type).directed && relation.direction === "unknown";
+}
+
+/**
+ * How the card says the relation: never invents a direction nobody gave. A directed type states
+ * "A extends B" only when the owner or the decider chose the direction (or a legacy row was decided
+ * with one); otherwise the notes are "linked" by that type.
+ */
 export function relationSentence(
-  relation: Pick<NotePageRelation, "type" | "direction">
+  relation: Pick<NotePageRelation, "type" | "direction" | "directionSource">
 ): RelationSentence {
   const view = relationTypeView(relation.type);
   const base = { verbKey: view.verbKey, wordKey: view.wordKey };
@@ -151,7 +160,7 @@ export function relationSentence(
       key: "notePage.card.sentence",
       subject: "this",
       object: "other",
-      directionConfirmed: false
+      directionKey: null
     };
   if (relation.direction === "unknown")
     return {
@@ -159,7 +168,7 @@ export function relationSentence(
       key: "notePage.card.undirected",
       subject: "this",
       object: "other",
-      directionConfirmed: false
+      directionKey: null
     };
   const outgoing = relation.direction === "outgoing";
   return {
@@ -167,8 +176,44 @@ export function relationSentence(
     key: "notePage.card.sentence",
     subject: outgoing ? "this" : "other",
     object: outgoing ? "other" : "this",
-    directionConfirmed: true
+    directionKey:
+      relation.directionSource === "owner"
+        ? "notePage.card.directionOwner"
+        : relation.directionSource === "decider"
+          ? "notePage.card.directionDecider"
+          : "notePage.card.directionConfirmed"
   };
+}
+
+/** The owner's choice of direction on Keep (decision 31b). */
+export type DirectionChoice = "none" | "thisToOther" | "otherToThis";
+
+/** The choice a card opens on: the direction already shown, else none (the default). */
+export function initialDirectionChoice(direction: NotePageRelation["direction"]): DirectionChoice {
+  return direction === "outgoing"
+    ? "thisToOther"
+    : direction === "incoming"
+      ? "otherToThis"
+      : "none";
+}
+
+/** What a Keep carries of the owner's direction: the choice, and its subject note for the request. */
+export interface ReviewDirection {
+  choice: DirectionChoice;
+  subjectNoteId: string | null;
+}
+
+/** The note that is the subject of a choice (`null`: no direction), as the review request names it. */
+export function subjectOfDirectionChoice(
+  choice: DirectionChoice,
+  ids: { thisId: string; otherId: string }
+): string | null {
+  return choice === "none" ? null : choice === "thisToOther" ? ids.thisId : ids.otherId;
+}
+
+/** The direction a choice gives the relation on this page, as the page reads it. */
+export function directionOfChoice(choice: DirectionChoice): NotePageRelation["direction"] {
+  return choice === "thisToOther" ? "outgoing" : choice === "otherToThis" ? "incoming" : "unknown";
 }
 
 /**
@@ -611,7 +656,8 @@ export function focusAfterRemoval(ids: readonly string[], removedId: string): st
 export function withReviewed(
   page: NotePage,
   relationId: string,
-  outcome: "kept" | "removed"
+  outcome: "kept" | "removed",
+  choice?: DirectionChoice
 ): NotePage {
   const found = locateRelation(page, relationId);
   if (!found) return page;
@@ -622,7 +668,15 @@ export function withReviewed(
     total: Math.max(0, from.total - 1)
   };
   if (outcome === "removed") return { ...page, [found.list]: left };
-  const kept: NotePageRelation = { ...item, state: "kept", vetoSource: null };
+  // The owner's choice of direction (decision 31b), when the card offered one.
+  const given =
+    choice === undefined
+      ? {}
+      : {
+          direction: directionOfChoice(choice),
+          directionSource: choice === "none" ? null : ("owner" as const)
+        };
+  const kept: NotePageRelation = { ...item, ...given, state: "kept", vetoSource: null };
   if (found.list === "relations")
     return {
       ...page,

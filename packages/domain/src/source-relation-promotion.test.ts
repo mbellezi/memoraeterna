@@ -21,6 +21,7 @@ const relation = (
   objectRootId,
   probability: 0.9,
   contentKey: `idea ${next}`,
+  directed: true,
   ...overrides
 });
 const plan = (relations: PromotionNoteRelation[]) =>
@@ -96,6 +97,45 @@ describe("promotion of typed shown note relations (D27, decision 29)", () => {
     ]);
     // The legacy contrasts is promoted as contradicts.
     expect(plan([relation("contrasts", "R", "Y")])[0]!.type).toBe("contradicts");
+  });
+
+  it("reads a directed type with no given direction as one relation that reads both ways (decision 31b)", () => {
+    const relations = [
+      relation("extends", "R", "X", { directed: false, contentKey: "a" }),
+      relation("extends", "X", "R", { directed: false, contentKey: "b" })
+    ];
+    // The roots follow content order (Feedback before Retrieval), whatever the notes' endpoint order.
+    expect(plan(relations)).toEqual([
+      {
+        sourceRootId: "X",
+        targetRootId: "R",
+        type: "extends",
+        symmetric: true,
+        noteRelationIds: relations.map((item) => item.id)
+      }
+    ]);
+  });
+
+  it("takes a direction only from the notes that have one, and counts only them as its support", () => {
+    const given = relation("extends", "R", "X", { contentKey: "a" });
+    const unread = [
+      relation("extends", "X", "R", { directed: false, contentKey: "b" }),
+      relation("extends", "X", "R", { directed: false, contentKey: "c" })
+    ];
+    expect(plan([...unread, given])).toEqual([
+      {
+        sourceRootId: "R",
+        targetRootId: "X",
+        type: "extends",
+        symmetric: false,
+        noteRelationIds: [given.id]
+      }
+    ]);
+    // The type still wins by every relation: two undirected ones outvote one directed one of another type.
+    const other = relation("supports", "R", "X");
+    expect(plan([...unread, other])[0]).toEqual(
+      expect.objectContaining({ type: "extends", symmetric: true })
+    );
   });
 
   it("promotes nothing from untyped, weak or same-root relations, or relations of other roots", () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendObsidianRelations,
   collisionFileName,
+  onlyLinksThisNote,
   parseManagedMarkdown,
   renderObsidianProjection,
   stripObsidianRelations
@@ -55,6 +56,43 @@ describe("Obsidian projection", () => {
       "### Supports\n\n- [[Memora/Atomic/first-note|First note]]\n- [[Memora/Atomic/second-note|Second note]]"
     );
     expect(stripObsidianRelations(body)).toBe("# Main note\n\nBody");
+  });
+
+  it("lists a relation of a directed type nobody gave this note as its subject as linked, in every language (decision 31b)", () => {
+    const related = [
+      { relationType: "extends", title: "Given", target: "Memora/Atomic/given" },
+      { relationType: "extends", title: "Linked", target: "Memora/Atomic/linked", linked: true },
+      { relationType: "same_as", title: "Same", target: "Memora/Atomic/same" }
+    ];
+    const body = appendObsidianRelations("# Main", "en", related);
+    // The subject's own relations keep the type heading; the rest only link the two notes.
+    expect(body).toContain("### Extends\n\n- [[Memora/Atomic/given|Given]]");
+    expect(body).toContain("### Linked: Extends\n\n- [[Memora/Atomic/linked|Linked]]");
+    expect(stripObsidianRelations(body)).toBe("# Main");
+    for (const locale of ["en", "pt-BR", "es", "fr", "it"]) {
+      const text = appendObsidianRelations("# Main", locale, related);
+      expect(text, locale).not.toContain("knowledge.relations");
+      expect(text, locale).not.toMatch(/[{}]/u);
+      const headings = text.split("\n").filter((line) => line.startsWith("### "));
+      expect(new Set(headings).size, locale).toBe(headings.length);
+    }
+    expect(appendObsidianRelations("# Main", "pt-BR", related)).toContain("### Ligadas: Amplia");
+  });
+
+  it("links a note to a relation only when it is not the relation's given subject (decision 31b)", () => {
+    // The lower note is the subject of a `lo_to_hi` relation; the higher note is only linked to it.
+    expect(onlyLinksThisNote("extends", "lo_to_hi", true)).toBe(false);
+    expect(onlyLinksThisNote("extends", "lo_to_hi", false)).toBe(true);
+    expect(onlyLinksThisNote("supports", "hi_to_lo", false)).toBe(false);
+    expect(onlyLinksThisNote("supports", "hi_to_lo", true)).toBe(true);
+    // Nobody gave it a direction: both notes are only linked.
+    for (const noteIsLow of [true, false]) {
+      expect(onlyLinksThisNote("extends", "unknown", noteIsLow)).toBe(true);
+      expect(onlyLinksThisNote("depends_on", "unknown", noteIsLow)).toBe(true);
+    }
+    // A type that reads both ways, an untyped relation and a legacy neutral type state no direction.
+    for (const type of ["same_as", "contradicts", "contrasts", "similar_to", "related", "mentions"])
+      expect(onlyLinksThisNote(type, "symmetric", true), type).toBe(false);
   });
 
   it("keeps the generated relations section on notes without relations", () => {

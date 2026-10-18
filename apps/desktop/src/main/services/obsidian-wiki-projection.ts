@@ -3,6 +3,7 @@ import { createObsidianLayoutRepository } from "@app/db";
 import {
   buildObsidianMirror,
   planObsidianMirror,
+  relationPairSeparator,
   targetKey,
   type MirrorPlan,
   type PlannedTarget,
@@ -875,9 +876,9 @@ export class ObsidianWikiProjection {
         r.id,
         "source_relation",
         projectionHash(JSON.stringify([r, evidence])),
-        `${r.sourceTitle} → ${r.targetTitle}`,
-        `# ${safeWikiLabel(r.sourceTitle)} → ${safeWikiLabel(r.targetTitle)}\n\n`,
-        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)} → ${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n[${t("obsidianWiki.openApp")}](memora://open/source/${r.source_item_id}?relation=${r.id})`
+        `${r.sourceTitle}${relationPairSeparator(r.directed)}${r.targetTitle}`,
+        `# ${safeWikiLabel(r.sourceTitle)}${relationPairSeparator(r.directed)}${safeWikiLabel(r.targetTitle)}\n\n`,
+        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)}${relationPairSeparator(r.directed)}${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n[${t("obsidianWiki.openApp")}](memora://open/source/${r.source_item_id}?relation=${r.id})`
       );
     }
     const topicRoot = topics?.planned[0];
@@ -925,7 +926,7 @@ export class ObsidianWikiProjection {
       list(
         relations.map((r) => ({
           id: r.id,
-          title: `${r.sourceTitle} → ${r.targetTitle} · ${relationStatus(r.status)}`
+          title: `${r.sourceTitle}${relationPairSeparator(r.directed)}${r.targetTitle} · ${relationStatus(r.status)}`
         }))
       )
     );

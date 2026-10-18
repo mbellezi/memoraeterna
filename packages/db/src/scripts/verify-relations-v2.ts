@@ -17,6 +17,7 @@ import {
   noteRelationFingerprintSql,
   sourceRelationEvidenceJoins
 } from "../repositories/sourceRelationRepository.js";
+import { createRelationEventRepository } from "../repositories/relationEventRepository.js";
 import { createSourceItemRepository } from "../repositories/sourceItemRepository.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
 
@@ -38,13 +39,19 @@ import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/
  *       0056's report captured, and every relation is compared with its state before; with 0056
  *       already applied the state is checked. Prints one JSON summary.
  *
- * Database invariants: I-R1 (canonical pair and direction), I-R7 (the same current evidence under
+ * Migration 0059 `relation_direction_source` (plan decision 31b) is verified here too: a library at
+ * 0058 with automatic relations of every kind gets it as pending, and an existing database that
+ * holds 0056 and not 0059 gets it before its invariants are read.
+ *
+ * Database invariants: I-R1 (canonical pair and direction, and where a direction came from), I-R7 (the same current evidence under
  * the facts-only fingerprint, when this run migrates), and the stored halves of I-R2/I-R3 (no event
  * of an automatic run on a pair with a human verdict) and I-R8 (every banded or vetoed note relation
  * has its event). I-R4 to I-R6, I-R8's exact revert and I-R9 are properties of code, proven by their
  * tests (`elsewhere` in the summary).
  */
 export const relationsV2Tag = "0056_relations_v2";
+/** Plan decision 31b: where a note relation's direction came from. */
+export const directionSourceTag = "0059_relation_direction_source";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -758,6 +765,7 @@ async function checkConstraints(db: PgPool, library: LegacyLibrary) {
       target_atomic_note_id: hi,
       relation_type: "supports",
       direction: "lo_to_hi",
+      direction_source: "typer",
       band: "apply",
       probability: 0.9,
       vetoed_at: null,
@@ -788,9 +796,25 @@ async function checkConstraints(db: PgPool, library: LegacyLibrary) {
     direction: "symmetric"
   });
   await refused("a directed write type has a direction", { direction: "symmetric" });
-  await refused("a symmetric write type reads both ways", { relation_type: "same_as" });
-  await refused("an untyped row reads both ways", { relation_type: null });
+  await refused("a symmetric write type reads both ways", {
+    relation_type: "same_as",
+    direction_source: null
+  });
+  await refused("a symmetric write type has no direction source", {
+    relation_type: "same_as",
+    direction: "symmetric"
+  });
+  await refused("an untyped row reads both ways", { relation_type: null, direction_source: null });
   await refused("unknown only on legacy rows", { direction: "unknown" });
+  await refused("a banded directed row names where its direction came from", {
+    direction_source: null
+  });
+  await refused("only the owner leaves a directed type without a direction", {
+    direction: "symmetric",
+    direction_source: "decider"
+  });
+  await refused("a direction source from the list", { direction_source: "someone" });
+  await refused("a legacy row has no direction source", { band: null, probability: null });
   await refused("only v2 rows are untyped", {
     relation_type: null,
     band: null,
@@ -800,18 +824,31 @@ async function checkConstraints(db: PgPool, library: LegacyLibrary) {
   await refused("a veto source has a time", { veto_source: "typer" });
   await refused("a veto source from the list", { vetoed_at: new Date(), veto_source: "owner" });
   await accepted("an applied directed v2 row", {});
+  await accepted("a directed row whose direction the decider or the owner gave", {
+    direction_source: "decider"
+  });
+  await accepted("a directed row whose direction the owner left out", {
+    direction: "symmetric",
+    direction_source: "owner"
+  });
   await accepted("a suggested symmetric v2 row", {
     band: "suggest",
     relation_type: "contradicts",
-    direction: "symmetric"
+    direction: "symmetric",
+    direction_source: null
   });
-  await accepted("an untyped v2 row", { relation_type: null, direction: "symmetric" });
+  await accepted("an untyped v2 row", {
+    relation_type: null,
+    direction: "symmetric",
+    direction_source: null
+  });
   await accepted("a withdrawn row", { vetoed_at: new Date(), veto_source: "explainer" });
   await accepted("a legacy row in any stored direction", {
     band: null,
     probability: null,
     relation_type: "related",
-    direction: "unknown"
+    direction: "unknown",
+    direction_source: null
   });
 
   const [left, right] = (
@@ -959,6 +996,174 @@ async function checkKilledMigration(connectionString: string, workDir: string) {
  * 0056's report captured. Asserts the backfill of every shape, untouched metadata, statuses and
  * types, and the same current source evidence.
  */
+/**
+ * A library at migration 0058 holding automatic (banded) relations of every kind, and legacy ones:
+ * what 0059 gives a direction source (decision 31b).
+ */
+async function seedBandedLibrary(db: PgPool): Promise<{ ids: string[]; runId: string }> {
+  const sources = createSourceItemRepository(db);
+  const documents = createDocumentRepository(db);
+  const chunks = createChunkRepository(db);
+  const source = await sources.create({ type: "StandaloneArticle", title: "Banded" });
+  const document = await documents.create({
+    sourceItemId: source.id,
+    title: "Banded",
+    canonicalMarkdown: "One claim.",
+    contentHash: "doc-banded"
+  });
+  const chunk = { id: randomUUID(), sourceSpanId: randomUUID() };
+  await chunks.replaceDocumentChunks(document.id, source.id, [
+    {
+      ...chunk,
+      chunkIndex: 0,
+      content: "One claim.",
+      contentHash: "hash-banded",
+      span: { id: chunk.sourceSpanId, startOffset: 0, endOffset: 9 }
+    }
+  ]);
+  const shapes: Array<{
+    type: string | null;
+    direction: Direction;
+    band: "apply" | "suggest" | null;
+    status?: "pending_review" | "accepted";
+    vetoed?: boolean;
+  }> = [
+    { type: "extends", direction: "lo_to_hi", band: "apply" },
+    { type: "supports", direction: "hi_to_lo", band: "suggest" },
+    { type: "depends_on", direction: "lo_to_hi", band: "suggest", status: "accepted" },
+    { type: "example_of", direction: "hi_to_lo", band: "apply", vetoed: true },
+    { type: "same_as", direction: "symmetric", band: "apply" },
+    { type: "contradicts", direction: "symmetric", band: "suggest" },
+    { type: null, direction: "symmetric", band: "suggest" },
+    { type: "supports", direction: "lo_to_hi", band: null },
+    { type: "related", direction: "unknown", band: null },
+    { type: "similar_to", direction: "symmetric", band: null }
+  ];
+  const ids: string[] = [];
+  const runId = (
+    await db.query<{ id: string }>(
+      "insert into relation_match_runs (kind, outcome, finished_at) values ('link', 'succeeded', now()) returning id"
+    )
+  ).rows[0]!.id;
+  for (const [index, shape] of shapes.entries()) {
+    const notes: string[] = [];
+    for (const side of [0, 1]) {
+      const id = randomUUID();
+      await db.query(
+        `insert into atomic_notes (id, title, body_markdown, idea_statement, created_from_source_item_id,
+           evidence_chunk_id, generation_provider, generation_model, generation_runtime,
+           generation_prompt_version, generation_key)
+         values ($1::uuid, $2, 'Body', $3, $4, $5, 'verify', 'verify', 'local', 'verify', $1::uuid::text)`,
+        [id, `Banded ${index}.${side}`, `Idea ${index}.${side}`, source.id, chunk.id]
+      );
+      notes.push(id);
+    }
+    const [lo, hi] = notes.sort() as [string, string];
+    const id = (
+      await db.query<{ id: string }>(
+        `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+           direction, band, probability, status, vetoed_at, veto_source, final_score, explanation)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0.8, 'verify') returning id`,
+        [
+          lo,
+          hi,
+          shape.type,
+          shape.direction,
+          shape.band,
+          shape.band ? 0.8 : null,
+          shape.status ?? "pending_review",
+          shape.vetoed ? new Date() : null,
+          shape.vetoed ? "explainer" : null
+        ]
+      )
+    ).rows[0]!.id;
+    ids.push(id);
+    // An automatic change is recorded with the row it left, as the link job's writes were (D14).
+    if (shape.band)
+      await db.query(
+        `insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
+         select $1, 'note', r.id, r.source_atomic_note_id::text || ':' || r.target_atomic_note_id::text,
+                'applied', null, to_jsonb(r)
+           from atomic_note_relations r where r.id = $2`,
+        [runId, id]
+      );
+  }
+  return { ids, runId };
+}
+
+/**
+ * Migration 0059 on a database that has not seen it (decision 31b): every automatic relation of a
+ * directed type becomes a `typer` guess, nothing else changes (every other column of every row is
+ * equal before and after), and no relation is lost. Null when the database already has the column.
+ */
+async function migrateDirectionSource(db: PgPool, folder = migrationsFolder) {
+  if (await columnExists(db, "atomic_note_relations", "direction_source")) return null;
+  // The images of the relation events: those of an automatic directed relation get the value its row
+  // gets, so a run recorded before still reverts byte for byte (I-R8); nothing else in them changes.
+  const images = `select count(*) filter (where relation_kind = 'note' and (
+           (before->>'band' is not null and before->>'direction' in ('lo_to_hi','hi_to_lo'))
+        or (after->>'band' is not null and after->>'direction' in ('lo_to_hi','hi_to_lo'))))::int as "toPatch",
+       count(*) filter (where (before ? 'direction_source') or (after ? 'direction_source'))::int as "patched",
+       md5(coalesce(string_agg(coalesce((before - 'direction_source')::text, '') || '|' ||
+         coalesce((after - 'direction_source')::text, ''), ',' order by id), '')) as digest
+    from relation_events`;
+  const eventsBefore = (
+    await db.query<{ toPatch: number; patched: number; digest: string }>(images)
+  ).rows[0]!;
+  const image = `select count(*)::int as total,
+       count(*) filter (where band is not null and direction in ('lo_to_hi','hi_to_lo'))::int as "bandedDirected",
+       md5(coalesce(string_agg(to_jsonb(r)::text, '' order by r.id), '')) as digest
+    from atomic_note_relations r`;
+  const imageAfter = image.replace("to_jsonb(r)::text", "(to_jsonb(r) - 'direction_source')::text");
+  const before = (await db.query<{ total: number; bandedDirected: number; digest: string }>(image))
+    .rows[0]!;
+  const started = performance.now();
+  await runMigrations(db, folder);
+  const ms = Math.round(performance.now() - started);
+  const after = (
+    await db.query<{ total: number; bandedDirected: number; digest: string }>(imageAfter)
+  ).rows[0]!;
+  assert.equal(after.total, before.total, "0059 keeps every relation");
+  assert.equal(after.digest, before.digest, "0059 changes no column but the new one");
+  const count = async (where: string) =>
+    Number(
+      (
+        await db.query<{ n: string }>(
+          `select count(*)::text as n from atomic_note_relations where ${where}`
+        )
+      ).rows[0]!.n
+    );
+  const typer = await count("direction_source = 'typer'");
+  assert.equal(typer, before.bandedDirected, "every automatic directed relation is a typer guess");
+  assert.equal(
+    await count("direction_source is not null and direction_source <> 'typer'"),
+    0,
+    "no direction is shown that nobody gave"
+  );
+  const eventsAfter = (await db.query<{ toPatch: number; patched: number; digest: string }>(images))
+    .rows[0]!;
+  assert.equal(eventsBefore.patched, 0, "no event image knew the column before");
+  assert.equal(eventsAfter.digest, eventsBefore.digest, "0059 changes no event image but the key");
+  const stale = Number(
+    (
+      await db.query<{ n: string }>(
+        `select count(*)::text as n from relation_events where relation_kind = 'note' and (
+           (before->>'band' is not null and before->>'direction' in ('lo_to_hi','hi_to_lo')
+              and before->>'direction_source' is distinct from 'typer')
+        or (after->>'band' is not null and after->>'direction' in ('lo_to_hi','hi_to_lo')
+              and after->>'direction_source' is distinct from 'typer'))`
+      )
+    ).rows[0]!.n
+  );
+  assert.equal(stale, 0, "every image of an automatic directed relation names its source");
+  return {
+    relations: before.total,
+    typer,
+    eventImagesPatched: eventsBefore.toPatch,
+    ms
+  };
+}
+
 export async function verifyPendingPath(db: PgPool, workDir: string, folder = migrationsFolder) {
   const notices = captureNotices(db);
   await runMigrations(
@@ -1063,9 +1268,11 @@ async function selfContained() {
     const original = await fingerprint();
     for (const change of [
       "status = 'accepted'",
-      "band = 'apply', probability = 0.93",
+      "band = 'apply', direction_source = 'typer', probability = 0.93",
       "status = 'pending_review', band = 'suggest'",
-      "band = null, probability = null",
+      "direction_source = 'decider'",
+      "direction_source = 'owner'",
+      "band = null, direction_source = null, probability = null",
       'metadata = metadata || \'{"reviewNote": "seen"}\'::jsonb',
       "decider_key = 'ranker', typer_key = 'typer'"
     ]) {
@@ -1087,15 +1294,19 @@ async function selfContained() {
       [directed.id]
     );
     assert.equal(await isCurrent(), true, "kept again, it supports its evidence again");
-    await db.query("update atomic_note_relations set band = 'suggest' where id = $1", [
-      directed.id
-    ]);
+    await db.query(
+      "update atomic_note_relations set band = 'suggest', direction_source = 'typer' where id = $1",
+      [directed.id]
+    );
     assert.equal(
       await isCurrent(),
       true,
       "decision 29: a suggestion supports its evidence (a suggested source relation)"
     );
-    await db.query("update atomic_note_relations set band = null where id = $1", [directed.id]);
+    await db.query(
+      "update atomic_note_relations set band = null, direction_source = null where id = $1",
+      [directed.id]
+    );
     await db.query("update atomic_note_relations set direction = 'hi_to_lo' where id = $1", [
       directed.id
     ]);
@@ -1122,10 +1333,37 @@ async function selfContained() {
     await db.query("create database relations_v2_kill");
     await checkKilledMigration(database("relations_v2_kill"), workDir);
 
+    // 6. Decision 31b: a library at 0058 with automatic relations gets 0059 as pending.
+    await db.query("create database relations_v2_source");
+    const sourcePool = createPgPool({ connectionString: database("relations_v2_source"), max: 2 });
+    pools.push(sourcePool);
+    await runMigrations(
+      sourcePool,
+      await migrationsBefore(workDir, directionSourceTag, "drizzle-before-0059")
+    );
+    assert.equal(
+      await columnExists(sourcePool, "atomic_note_relations", "direction_source"),
+      false
+    );
+    const banded = await seedBandedLibrary(sourcePool);
+    const directionSource = await migrateDirectionSource(sourcePool);
+    assert.ok(directionSource && directionSource.typer === 4, "four banded directed relations");
+    assert.equal(directionSource.eventImagesPatched, 4, "four images name their source");
+    assert.equal(await historyCount(sourcePool), await journalLength(), "0059 applied as pending");
+    // A run recorded before the migration still reverts: its rows equal their images again.
+    const reverted = await createRelationEventRepository(sourcePool).revertRun(banded.runId);
+    assert.equal(
+      reverted.kind,
+      "reverted",
+      `a run recorded before 0059 reverts: ${JSON.stringify(reverted)}`
+    );
+
     console.info(
       JSON.stringify(
         {
           verified: [
+            "0059 applied as a pending migration on a library at 0058: every automatic directed relation is a typer guess",
+            "its event images name the source too; no other column or image key changed; a run recorded before 0059 reverts",
             "0056 applied as a pending migration on a library at 0055 with data",
             `direction backfill on ${legacyRelationShapes.length} metadata shapes; metadata, statuses and types untouched`,
             "the pair sorted (lo < hi) for rows stored high-to-low, with their decided direction",
@@ -1133,12 +1371,13 @@ async function selfContained() {
             "every fingerprint of the former formula re-keyed, current or not: a discarded note's evidence revives on approval",
             "I-R7: status, band, probability, veto, keys and metadata keep the fingerprint; type and direction change it",
             "C3: a withdrawn note relation supports no source evidence; a suggested one supports a suggested source relation",
-            "constraints of note relations, source relations, typings, runs and events",
+            "constraints of note relations (direction and its source), source relations, typings, runs and events",
             "0056 through the baseline seed on an empty database: identical shape",
             "a migration killed mid-transaction leaves the database unchanged and migrates later"
           ],
           report: evidence.report,
           counts,
+          directionSource,
           migrationMs: evidence.ms
         },
         null,
@@ -1211,6 +1450,10 @@ async function verifyExisting(db: PgPool, folder: string) {
     );
   const migration = applied === atRelationsV2 ? await migrateCapturing(db, notices, folder) : null;
   if (migration) assert.equal(await historyCount(db), total, "every pending migration applied");
+  // A database that already holds 0056 and not yet 0059 gets the direction source here.
+  const directionSource = migration ? null : await migrateDirectionSource(db, folder);
+  if (directionSource)
+    assert.equal(await historyCount(db), total, "every pending migration applied");
   const invariants = (
     await db.query<Record<string, number>>(
       `select count(*)::int as relations,
@@ -1225,7 +1468,12 @@ async function verifyExisting(db: PgPool, folder: string) {
                 and relation_type not in ('contrasts','similar_to','contradicts','same_as')
                 and ${metadataDirectionSql} is not null
                 and direction is distinct from ${metadataDirectionSql})::int as "metadataDisagreements",
-              count(*) filter (where direction = 'unknown')::int as "unknown"
+              count(*) filter (where direction = 'unknown')::int as "unknown",
+              count(*) filter (where band is not null and direction in ('lo_to_hi','hi_to_lo')
+                and direction_source is null)::int as "directedWithoutSource",
+              count(*) filter (where band is null and direction_source is not null)::int as "sourceOnLegacy",
+              count(*) filter (where direction_source is not null and direction = 'symmetric'
+                and direction_source <> 'owner')::int as "symmetricWithSource"
          from atomic_note_relations`
     )
   ).rows[0]!;
@@ -1234,6 +1482,9 @@ async function verifyExisting(db: PgPool, folder: string) {
     "bandedUnknown",
     "undirectedDirected",
     "directedSymmetric",
+    "directedWithoutSource",
+    "sourceOnLegacy",
+    "symmetricWithSource",
     "metadataDisagreements"
   ])
     assert.equal(invariants[key], 0, `I-R1: ${key}`);
@@ -1256,6 +1507,7 @@ async function verifyExisting(db: PgPool, folder: string) {
     migrationMs: migration?.ms ?? null,
     history: { before: applied, after: await historyCount(db), total },
     report: migration?.report ?? null,
+    directionSource,
     invariants: { ...invariants, ...automation },
     counts,
     tables,

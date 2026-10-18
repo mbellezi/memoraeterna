@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   AtomicNoteRelationTypeSchema,
+  automaticNoteRelationDirection,
+  deciderRelationDirection,
   directedNoteRelationTypes,
+  isDirectedNoteRelationType,
   isSymmetricNoteRelationType,
   noteRelationPair,
   NoteRelationReadTypeSchema,
@@ -78,5 +81,59 @@ describe("the stored pair (D8)", () => {
     expect(noteRelationSubject({ ...pair, direction: "hi_to_lo" })).toBe(hi);
     expect(noteRelationSubject({ ...pair, direction: "symmetric" })).toBeNull();
     expect(noteRelationSubject({ ...pair, direction: "unknown" })).toBeNull();
+  });
+});
+
+describe("the direction of an automatic relation (plan decision 31b)", () => {
+  it("knows which types read in one direction", () => {
+    for (const type of directedNoteRelationTypes)
+      expect(isDirectedNoteRelationType(type)).toBe(true);
+    for (const type of [...symmetricNoteRelationTypes, "related", "contrasts", "mentions", null])
+      expect(isDirectedNoteRelationType(type)).toBe(false);
+  });
+
+  it("names the Document with the higher score as the subject, only past the margin", () => {
+    // `loToHi` is the score with the lower note as the query and the higher note as the Document.
+    expect(deciderRelationDirection(2.5, 0.5, 1)).toBe("hi_to_lo");
+    expect(deciderRelationDirection(0.5, 2.5, 1)).toBe("lo_to_hi");
+    // A difference of exactly the margin names a direction; less does not.
+    expect(deciderRelationDirection(1.5, 0.5, 1)).toBe("hi_to_lo");
+    expect(deciderRelationDirection(1.4, 0.5, 1)).toBeNull();
+    // A tie names none, even at a margin of zero; a non-finite score names none.
+    expect(deciderRelationDirection(1, 1, 0)).toBeNull();
+    expect(deciderRelationDirection(Infinity, 0, 1)).toBeNull();
+    expect(deciderRelationDirection(Number.NaN, 0, 1)).toBeNull();
+    // A zero margin takes any difference.
+    expect(deciderRelationDirection(0.1, 0, 0)).toBe("hi_to_lo");
+  });
+
+  it("stores the typer's guess as a guess, and the decider's direction as the decider's", () => {
+    expect(automaticNoteRelationDirection({ relationType: "extends", typed: "lo_to_hi" })).toEqual({
+      direction: "lo_to_hi",
+      directionSource: "typer"
+    });
+    expect(
+      automaticNoteRelationDirection({ relationType: "extends", typed: "lo_to_hi", decider: null })
+    ).toEqual({ direction: "lo_to_hi", directionSource: "typer" });
+    // The decider's direction wins over the guess, also when they disagree.
+    expect(
+      automaticNoteRelationDirection({
+        relationType: "supports",
+        typed: "lo_to_hi",
+        decider: "hi_to_lo"
+      })
+    ).toEqual({ direction: "hi_to_lo", directionSource: "decider" });
+    // A relation that reads both ways has no direction and no source, whatever was guessed.
+    expect(
+      automaticNoteRelationDirection({
+        relationType: "same_as",
+        typed: "symmetric",
+        decider: "hi_to_lo"
+      })
+    ).toEqual({ direction: "symmetric", directionSource: null });
+    expect(automaticNoteRelationDirection({ relationType: null, typed: "symmetric" })).toEqual({
+      direction: "symmetric",
+      directionSource: null
+    });
   });
 });
