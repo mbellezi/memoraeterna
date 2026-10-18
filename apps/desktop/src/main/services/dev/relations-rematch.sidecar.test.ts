@@ -29,7 +29,8 @@ import {
   listLibraryRoots,
   readNotesDigest,
   readRunFacts,
-  seedBackgroundMatchState
+  seedBackgroundMatchState,
+  seedBackgroundNoteState
 } from "./relations-rematch-state.js";
 
 // The state a re-match run reads and changes, and the fence that hides unreleased roots from
@@ -441,6 +442,53 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
     expect(await seedBackgroundMatchState(pool, [])).toBe(0);
   });
 
+  it("gives the background notes the match state a library matched at arrival holds", async () => {
+    await wipeRelationState();
+    const states = async () =>
+      (
+        await pool.query<{ id: string; key: string; space: string; kth: number | null }>(
+          `select note_id::text as id, decider_key as key, space_key as space, kth_cosine as kth
+             from note_match_state order by note_id`
+        )
+      ).rows;
+    // Background: the book (notes 1-3) and the paper (4-5, plus a rejected note). The memo and the late
+    // article arrive after: their notes are no neighbours of a background note's k-th cosine.
+    const seeded = await seedBackgroundNoteState(pool, {
+      rootIds: [source.book, source.paper],
+      deciderKey: "key-now",
+      k: 2,
+      vectorK: 4
+    });
+    expect(seeded).toBe(5);
+    const rows = await states();
+    expect(rows.map((row) => row.id)).toEqual([1, 2, 3, 4, 5].map((n) => note(n).id));
+    expect(rows.every((row) => row.key === "key-now" && row.space === "test-space")).toBe(true);
+    // Note 1 (angle 0): its neighbours in the background are 4 (0.05), 2 (0.5), 5 (0.55) and 3 (1.0); the
+    // 2nd is note 2. The late article's note 7 (0.03) would have been the 1st if the fence let it in.
+    expect(rows[0]!.kth).toBeCloseTo(Math.cos(0.5), 3);
+    expect(rows[2]!.kth).toBeCloseTo(Math.cos(0.5), 3);
+    // The paper alone: each note has one neighbour, so its 1st cosine is that one and its 2nd is none. A
+    // note with fewer than k candidates opens its guard to every later note (null).
+    await wipeRelationState();
+    const alone = { rootIds: [source.paper], deciderKey: "key-now", vectorK: 4 };
+    expect(await seedBackgroundNoteState(pool, { ...alone, k: 1 })).toBe(2);
+    for (const row of await states()) expect(row.kth).toBeCloseTo(Math.cos(0.5), 3);
+    await wipeRelationState();
+    expect(await seedBackgroundNoteState(pool, { ...alone, k: 2 })).toBe(2);
+    expect((await states()).map((row) => row.kth)).toEqual([null, null]);
+    expect(
+      await seedBackgroundNoteState(pool, { rootIds: [], deciderKey: "k", k: 2, vectorK: 4 })
+    ).toBe(0);
+    expect(
+      await seedBackgroundNoteState(pool, {
+        rootIds: [source.empty],
+        deciderKey: "k",
+        k: 2,
+        vectorK: 4
+      })
+    ).toBe(0);
+  });
+
   it("turns debug mode on in the saved app preferences, and only there", async () => {
     // No saved preferences: the app would write its defaults, so nothing is invented here.
     await pool.query("delete from settings where key = 'app.preferences'");
@@ -504,6 +552,8 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
         deciderKey: async () => "key-now",
         clear: (input) => clearRelationState(pool, input),
         seedBackground: (rootIds) => seedBackgroundMatchState(pool, rootIds),
+        seedBackgroundNotes: (rootIds, deciderKey) =>
+          seedBackgroundNoteState(pool, { rootIds, deciderKey, k: 2, vectorK: 4 }),
         recordCandidates: () => enableCandidateRecording(pool),
         noteIds: async (recordId) =>
           (await repository.listBySourceItem(recordId))
@@ -654,6 +704,14 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
       );
       const summary = await runRematch(ports, runInput(plan, { background: "matched" }));
       expect(summary.backgroundSeeded).toBe(2);
+      // The background's notes (the book's three and the late article's) hold a match state in the
+      // vectors' space; the released roots' states were cleared and no decide step wrote new ones here.
+      expect(summary.backgroundNotesSeeded).toBe(4);
+      const kept = await pool.query<{ id: string; space: string }>(
+        "select note_id::text as id, space_key as space from note_match_state order by note_id"
+      );
+      expect(kept.rows.map((row) => row.id)).toEqual([1, 2, 3, 7].map((n) => note(n).id));
+      expect(kept.rows.every((row) => row.space === "test-space")).toBe(true);
       expect(matched[0]).toEqual([source.book, source.late]);
       const memo = seen.find((entry) => entry.note === note(6).id)!;
       expect(new Set(memo.roots)).toEqual(new Set([source.book, source.late]));

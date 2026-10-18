@@ -87,6 +87,10 @@ function harness(
       events.push(`seed:${rootIds.join(",")}`);
       return rootIds.length;
     },
+    seedBackgroundNotes: async (rootIds, deciderKey) => {
+      events.push(`seed-notes:${rootIds.join(",")}:${deciderKey}`);
+      return rootIds.length * 3;
+    },
     recordCandidates: async () => {
       events.push("record-candidates");
       return true;
@@ -158,6 +162,7 @@ describe("a re-match run", () => {
       "decider",
       "clear:all",
       "seed:",
+      "seed-notes::decider-key",
       "match:book-1",
       "match:book-2",
       "link:book",
@@ -264,10 +269,12 @@ describe("a re-match run", () => {
     const h = harness();
     const plan = buildRematchPlan(library(), arrival, ["Title paper", "memo"]);
     const summary = await runRematch(h.ports, input(h, plan, { background: "matched" }));
-    expect(h.events.slice(0, 4)).toEqual([
+    // The background's source state, then its notes' match state under the run's decider key, then the first root.
+    expect(h.events.slice(0, 5)).toEqual([
       "decider",
       "clear:paper,memo",
       "seed:book",
+      "seed-notes:book:decider-key",
       "match:paper"
     ]);
     expect(h.matches.map((call) => call.fence.rootSourceItemIds)).toEqual([
@@ -276,7 +283,16 @@ describe("a re-match run", () => {
     ]);
     expect(summary.background).toBe("matched");
     expect(summary.backgroundSeeded).toBe(1);
+    expect(summary.backgroundNotesSeeded).toBe(3);
     expect(summary.plan).toMatchObject({ released: 2, background: 1 });
+  });
+
+  it("seeds no match state when no root is left in the background", async () => {
+    const h = harness();
+    const summary = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+    // The port is asked with an empty list (it records nothing); the summary says 0 notes.
+    expect(h.events).toContain("seed-notes::decider-key");
+    expect(summary.backgroundNotesSeeded).toBe(0);
   });
 
   it("without a validated decider fails before it clears anything", async () => {

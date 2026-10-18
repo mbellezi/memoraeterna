@@ -71,6 +71,7 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
     events: 0
   },
   backgroundSeeded: 0,
+  backgroundNotesSeeded: 0,
   plan: { released: 4, background: 0, withoutNotes: 1, notes: 12 },
   timeline: [
     entry(0, "Aprendizagem"),

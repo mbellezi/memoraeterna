@@ -153,7 +153,9 @@ export function renderRematchReport(summary: RematchSummary): string {
         ["Candidate lists", summary.candidates === "record" ? "kept (debug mode on)" : "not kept"],
         [
           "Background",
-          summary.background === "matched" ? `matched (${summary.backgroundSeeded} roots)` : "none"
+          summary.background === "matched"
+            ? `matched (${summary.backgroundSeeded} roots, ${summary.backgroundNotesSeeded} notes with match state)`
+            : "none"
         ],
         [
           "Roots released",

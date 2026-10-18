@@ -12,7 +12,8 @@
 //     burst                      the batch reference: every root visible from the start
 //   MEMORA_RELATIONS_REMATCH_MAPPING=<file>     fixture mapping (partitions); default for an ENV-F profile
 //   MEMORA_RELATIONS_REMATCH_ROOTS=<file>       roots to release (titles or IDs, in manifest order)
-//   MEMORA_RELATIONS_REMATCH_BACKGROUND=matched the roots left out are already matched (TP-C200)
+//   MEMORA_RELATIONS_REMATCH_BACKGROUND=matched the roots left out are already matched (TP-C200): their
+//                                              source state and each note's k-th vector cosine (D19) are seeded
 //   MEMORA_RELATIONS_REMATCH_DISCOVERY=on|off   off: no nearest-source discovery (no source judge call);
 //                                              typing and promotion stay on (default on) (T57's M1)
 //   MEMORA_RELATIONS_REMATCH_CANDIDATES=off|record  record: turns the clone's debug mode on, so every
@@ -33,6 +34,7 @@ import { z } from "zod";
 
 import { resolveAiLaneRuntimeConfig, type AiCassette } from "@app/ai";
 import { createAtomicNoteRepository, createJobRepository, type PgPool } from "@app/db";
+import { relationsConfig } from "@app/domain";
 
 import type { KnowledgeService } from "../knowledge-service.js";
 import { isMeasurementProfilePath } from "../profile-reset.js";
@@ -56,6 +58,7 @@ import {
   readNotesDigest,
   readRunFacts,
   seedBackgroundMatchState,
+  seedBackgroundNoteState,
   type NotesDigest
 } from "./relations-rematch-state.js";
 import { rematchJobType, type RematchJobSlot } from "./relations-rematch-slot.js";
@@ -324,6 +327,14 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
     deciderKey: () => knowledge.currentRelationDeciderKey(),
     clear: (input) => clearRelationState(pool, input),
     seedBackground: (rootIds) => seedBackgroundMatchState(pool, rootIds),
+    // The matcher's own K and vector list, so the state is what it would have written at arrival.
+    seedBackgroundNotes: (rootIds, deciderKey) =>
+      seedBackgroundNoteState(pool, {
+        rootIds,
+        deciderKey,
+        k: relationsConfig.retrieval.fusedK,
+        vectorK: relationsConfig.retrieval.vectorK
+      }),
     recordCandidates: () => enableCandidateRecording(pool),
     // The same notes, in the same order, as the supervisor's matching stage.
     noteIds: async (recordId) =>

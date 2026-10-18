@@ -63,6 +63,11 @@ export interface RematchPorts {
   }): Promise<ClearedCounts>;
   /** Records the background roots as matched; resolves to how many. */
   seedBackground(rootIds: readonly string[]): Promise<number>;
+  /**
+   * Gives the background roots' notes the match state of a library matched at arrival (the k-th vector
+   * cosine, D19), so the reverse guard meets decided library notes; resolves to how many notes.
+   */
+  seedBackgroundNotes(rootIds: readonly string[], deciderKey: string): Promise<number>;
   /** Keeps every note's candidate list from now on (debug mode); false when it cannot be turned on. */
   recordCandidates(): Promise<boolean>;
   /** The notes of a record, in the order ingestion matches them. */
@@ -138,6 +143,7 @@ export async function runRematch(
   let deciderKey = "";
   let cleared = emptyCleared;
   let backgroundSeeded = 0;
+  let backgroundNotesSeeded = 0;
   let drainedAt: Date | null = null;
   try {
     const key = await ports.deciderKey();
@@ -159,7 +165,8 @@ export async function runRematch(
       scope: input.background === "matched" ? { rootIds: released } : "all"
     });
     backgroundSeeded = await ports.seedBackground(background);
-    ports.log("cleared", { ...cleared, backgroundSeeded });
+    backgroundNotesSeeded = await ports.seedBackgroundNotes(background, key);
+    ports.log("cleared", { ...cleared, backgroundSeeded, backgroundNotesSeeded });
     // A burst sees the whole library from the start; an arrival sees the background and, one by
     // one, the roots it releases.
     const fence = new RematchFence(
@@ -193,6 +200,7 @@ export async function runRematch(
     deciderKey,
     cleared,
     backgroundSeeded,
+    backgroundNotesSeeded,
     startedAt,
     finishedAt,
     drainedAt
@@ -287,6 +295,7 @@ function summarize(context: {
   deciderKey: string;
   cleared: ClearedCounts;
   backgroundSeeded: number;
+  backgroundNotesSeeded: number;
   startedAt: Date;
   finishedAt: Date;
   drainedAt: Date | null;
@@ -347,6 +356,7 @@ function summarize(context: {
     deciderKey: context.deciderKey,
     cleared: context.cleared,
     backgroundSeeded: context.backgroundSeeded,
+    backgroundNotesSeeded: context.backgroundNotesSeeded,
     plan: {
       released: input.plan.order.length,
       background: input.plan.others.length,

@@ -126,6 +126,8 @@ export const RematchSummarySchema = z
     deciderKey: z.string(),
     cleared: clearedSchema,
     backgroundSeeded: count,
+    /** Background notes given the match state of a library matched at arrival (0 in older summaries). */
+    backgroundNotesSeeded: count.default(0),
     plan: z
       .object({ released: count, background: count, withoutNotes: count, notes: count })
       .strict(),
