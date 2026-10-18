@@ -775,8 +775,15 @@ describe.skipIf(!sidecarInstalled)(
         const m = models(spaceKey);
         m.knowledge.catalogGraphLocality.mockResolvedValue("remote");
         const deps = depsFor(spaceKey, m, { budget: capped(2, clock), now: () => clock.now });
+        // The job queue counts its delay from the database's own clock, which a test does not move:
+        // the job is due one injected-clock wait (here to the next local midnight) after it is queued,
+        // whatever the real time of day is.
+        const waitForNextDay = new Date(2026, 9, 19).getTime() - clock.now.getTime();
+        const tolerance = 5_000;
+        const beforePass = Date.now();
 
         const { result } = await runPass(deps);
+        const afterPass = Date.now();
 
         expect(result).toMatchObject({ refreshed: 2, graphs: 2, cappedToday: 1 });
         expect(result.refreshedIds).toEqual([alpha.rootId, beta.rootId]);
@@ -795,9 +802,13 @@ describe.skipIf(!sidecarInstalled)(
             [catalogHeaderJobType]
           )
         ).rows;
-        const dueIn = queued!.runAfter.getTime() - Date.now();
-        expect(dueIn).toBeGreaterThan(0);
-        expect(queued!.runAfter.getTime()).toBeLessThanOrEqual(new Date(2026, 9, 19).getTime());
+        expect(queued!.runAfter.getTime()).toBeGreaterThanOrEqual(
+          beforePass + waitForNextDay - tolerance
+        );
+        expect(queued!.runAfter.getTime()).toBeLessThanOrEqual(
+          afterPass + waitForNextDay + tolerance
+        );
+        expect(waitForNextDay).toBeGreaterThan(0);
 
         // The day after, the count starts again and the root is refreshed.
         clock.now = new Date(2026, 9, 19, 0, 5);

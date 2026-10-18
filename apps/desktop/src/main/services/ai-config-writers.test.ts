@@ -40,8 +40,17 @@ const sqlWrite = new RegExp(
   "iu"
 );
 
+/**
+ * The one writer outside the repositories. The scripted soak setup (`MEMORA_SOAK_SETUP=1`) makes a
+ * profile the only default one, and no repository method does that (`createProfile` makes a new
+ * profile). It is DEV-only: `readSoakSetupKnob` refuses it in a packaged build, beside any other
+ * DEV knob and outside a clone under `.cache/profiles/`, and it bumps the configuration generation
+ * itself, so the hot path's cache is dropped like after any other write.
+ */
+const devOnlyWriters = ["apps/desktop/src/main/services/dev/soak-setup.ts"];
+
 describe("who writes the AI configuration tables", () => {
-  it("only the two repositories do, outside migrations, the baseline and the proof scripts", () => {
+  it("only the two repositories do, and a DEV-only soak setup, outside migrations, the baseline and the proof scripts", () => {
     const writers = tracked
       .filter(
         (file) =>
@@ -56,9 +65,18 @@ describe("who writes the AI configuration tables", () => {
       .filter((file) => sqlWrite.test(readFileSync(resolve(workspaceRoot, file), "utf8")))
       .toSorted();
     expect(writers).toEqual([
+      ...devOnlyWriters,
       "packages/db/src/repositories/aiConfigRepository.ts",
       "packages/db/src/repositories/localModelRepository.ts"
     ]);
+  });
+
+  it("keeps the DEV-only writer refused when packaged and reporting its own write", () => {
+    for (const file of devOnlyWriters) {
+      const text = readFileSync(resolve(workspaceRoot, file), "utf8");
+      expect(text).toContain("if (options.isPackaged)");
+      expect(text).toContain("bumpAiConfigGeneration()");
+    }
   });
 });
 
