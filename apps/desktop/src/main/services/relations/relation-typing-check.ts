@@ -8,6 +8,12 @@
 // typing cache is not read or written and no relation is created; the only rows written are the AI
 // audit of the calls themselves. The text it sends is whatever the pairs file holds (public or
 // synthetic text, never the library).
+//
+// Two DEV options serve the typer experiment of plan decision 29, both read only with the check
+// and refused when packaged: `MEMORA_TYPER_CHECK_PROMPT=<candidate revision>` types with a catalog
+// candidate revision of `relations.type` instead of the active one, and
+// `MEMORA_TYPER_CHECK_ORDERS=content` types in content order only (the product's single call), for
+// precision rather than position bias. Gate F reads neither kind of report.
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -18,10 +24,12 @@ import { createAiConfigRepository, type PgPool } from "@app/db";
 import {
   directedNoteRelationTypes,
   NoteRelationWriteTypeSchema,
+  promptCandidate,
   type NoteRelationWriteType
 } from "@app/domain";
 
 import type { AiService } from "../ai-service.js";
+import { capturePromptPin, promptPinWithCandidate, withPromptPin } from "../prompt-runtime.js";
 import {
   createTyperRouteResolver,
   typeRelationPairs,
@@ -32,10 +40,20 @@ import {
 } from "./relation-typing.js";
 
 export const typerCheckEnvironmentKnob = "MEMORA_TYPER_CHECK";
+export const typerCheckPromptKnob = "MEMORA_TYPER_CHECK_PROMPT";
+export const typerCheckOrdersKnob = "MEMORA_TYPER_CHECK_ORDERS";
+/** The prompt a candidate revision replaces in the check. */
+const typingPromptId = "relations.type";
 export const typerCheckReportFile = "typer-check.json";
 const reportFormat = "memora-typer-position-check";
-/** A guard against a runaway list: the check needs 60 pairs, a few calls in each order. */
-export const maxTyperCheckPairs = 120;
+/**
+ * A guard against a runaway list: the position check needs 60 pairs, a few calls in each order; the
+ * typer experiment of plan decision 29 types the 147 fit-labelled pairs at the decide threshold.
+ */
+export const maxTyperCheckPairs = 200;
+
+/** Both orders (the position check) or the content order only (the product's single call). */
+export type TyperCheckOrders = "both" | "content";
 
 /** The bars gate F reads, as calibrated start values *(cal.)*. */
 export const typerCheckBars = { directionAccuracy: 0.85, swapConsistency: 0.9 } as const;
@@ -87,13 +105,13 @@ export interface TyperCheckReading {
 export interface TyperCheckPairResult {
   id: string;
   panel: { type: NoteRelationWriteType; subject: "a" | "b" };
-  /** Content order first, the opposite positions second. */
-  readings: [TyperCheckReading, TyperCheckReading];
+  /** Content order first, the opposite positions second (absent in a content-order-only run). */
+  readings: [TyperCheckReading] | [TyperCheckReading, TyperCheckReading];
 }
 
 export interface TyperCheckSummary {
   pairs: number;
-  /** Two readings per pair. */
+  /** One reading per pair and order. */
   typings: number;
   /** Readings naming the panel's subject, over all readings (a veto or no answer is a miss). */
   directionAccuracy: number | null;
@@ -102,7 +120,7 @@ export interface TyperCheckSummary {
   directionAccuracyWhenDirected: number | null;
   /** Readings with the panel's type, over all readings. */
   typeAgreement: number | null;
-  /** Pairs whose two readings name the same subject (both directed). */
+  /** Pairs whose two readings name the same subject (both directed); null with one order. */
   swapConsistency: number | null;
   /** Pairs whose two readings have the same type. */
   typeSwapConsistency: number | null;
@@ -131,19 +149,21 @@ export function summarizeTyperCheck(results: readonly TyperCheckPairResult[]): T
     const own = readings.filter((entry) => entry.order === order);
     return share(own.filter(correct).length, own.length);
   };
-  const sameSubject = results.filter(
-    ({ readings: [first, second] }) => first.subject !== null && first.subject === second.subject
+  // The swap numbers read the pairs typed in both orders.
+  const swapped = results.flatMap(({ readings: [first, second] }) =>
+    second ? [{ first, second }] : []
   );
-  const sameType = results.filter(({ readings: [first, second] }) => first.type === second.type);
-  const sameVerdict = sameType.filter(
-    ({ readings: [first, second] }) => first.subject === second.subject
+  const sameSubject = swapped.filter(
+    ({ first, second }) => first.subject !== null && first.subject === second.subject
   );
+  const sameType = swapped.filter(({ first, second }) => first.type === second.type);
+  const sameVerdict = sameType.filter(({ first, second }) => first.subject === second.subject);
   const firstNamed = directed.filter((entry) => entry.reading.subject === entry.reading.shownFirst);
   const panelFirst = readings.filter(
     (entry) => entry.result.panel.subject === entry.reading.shownFirst
   );
   const directionAccuracy = share(readings.filter(correct).length, readings.length);
-  const swapConsistency = share(sameSubject.length, results.length);
+  const swapConsistency = share(sameSubject.length, swapped.length);
   return {
     pairs: results.length,
     typings: readings.length,
@@ -155,8 +175,8 @@ export function summarizeTyperCheck(results: readonly TyperCheckPairResult[]): T
       readings.length
     ),
     swapConsistency,
-    typeSwapConsistency: share(sameType.length, results.length),
-    verdictSwapConsistency: share(sameVerdict.length, results.length),
+    typeSwapConsistency: share(sameType.length, swapped.length),
+    verdictSwapConsistency: share(sameVerdict.length, swapped.length),
     firstPositionShare: share(firstNamed.length, directed.length),
     panelFirstPositionShare: share(panelFirst.length, readings.length),
     vetoes: readings.filter((entry) => entry.reading.verdict === "none").length,
@@ -198,14 +218,17 @@ export interface TyperCheckRun {
 }
 
 /**
- * Types every pair in both orders through the product's typing step. The cache is never read or
- * written. The notes of a pair get the IDs `<id>:a` and `<id>:b`, so which one a stored direction
- * names is read back without any lookup.
+ * Types every pair in both orders (or in content order only) through the product's typing step. The
+ * cache is never read or written. The notes of a pair get the IDs `<id>:a` and `<id>:b`, so which
+ * one a stored direction names is read back without any lookup.
  */
 export async function runTyperPositionCheck(
   deps: Omit<RelationTypingDeps, "store">,
   pairs: readonly TyperCheckPair[],
-  options: Omit<RelationTypingOptions, "reverseOrder"> = {},
+  {
+    orders = "both",
+    ...options
+  }: Omit<RelationTypingOptions, "reverseOrder"> & { orders?: TyperCheckOrders } = {},
   signal?: AbortSignal
 ): Promise<TyperCheckRun> {
   const hashOf = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -221,8 +244,8 @@ export async function runTyperPositionCheck(
     aiTaskRunIds: [],
     typerKey: null
   };
-  const orders: Array<Map<string, TyperCheckReading>> = [];
-  for (const reverseOrder of [false, true]) {
+  const readings: Array<Map<string, TyperCheckReading>> = [];
+  for (const reverseOrder of orders === "both" ? [false, true] : [false]) {
     const typed = await typeRelationPairs(
       { ...deps, store: null },
       typingPairs,
@@ -234,21 +257,22 @@ export async function runTyperPositionCheck(
     run.outputTokens += typed.outputTokens;
     run.aiTaskRunIds.push(...typed.aiTaskRunIds);
     run.typerKey = typed.typerKey;
-    const readings = new Map<string, TyperCheckReading>();
+    const order = new Map<string, TyperCheckReading>();
     for (const pair of pairs) {
       const entry = typed.pairs.get(`${pair.id}:a:${pair.id}:b`);
       if (!entry) throw new Error(`The check lost the pair ${pair.id}.`);
-      readings.set(
+      order.set(
         pair.id,
         reading(entry.outcome, entry.shownFirstNoteId === `${pair.id}:a` ? "a" : "b")
       );
     }
-    orders.push(readings);
+    readings.push(order);
   }
+  const [content, reversed] = readings;
   const results = pairs.map((pair): TyperCheckPairResult => ({
     id: pair.id,
     panel: { type: pair.type, subject: pair.subject },
-    readings: [orders[0]!.get(pair.id)!, orders[1]!.get(pair.id)!]
+    readings: reversed ? [content!.get(pair.id)!, reversed.get(pair.id)!] : [content!.get(pair.id)!]
   }));
   return { ...run, results, summary: summarizeTyperCheck(results) };
 }
@@ -258,18 +282,31 @@ export async function runTyperPositionCheck(
 
 export interface TyperCheckEnvironment {
   pairsPath: string;
+  /** A catalog candidate revision of `relations.type` to type with; null types with the active one. */
+  promptCandidate?: string | null;
+  orders?: TyperCheckOrders;
 }
 
-/** Reads MEMORA_TYPER_CHECK; null when unset. Packaged builds refuse it. */
+/**
+ * Reads MEMORA_TYPER_CHECK and its options; null when the check is unset (the options alone do
+ * nothing). Packaged builds refuse the check and its options; an unknown candidate or order is
+ * refused.
+ */
 export function readTyperCheckEnvironment(
   env: Readonly<Record<string, string | undefined>>,
   options: { isPackaged: boolean; workspaceRoot: string }
 ): TyperCheckEnvironment | null {
   const path = env[typerCheckEnvironmentKnob]?.trim();
-  if (!path) return null;
-  if (options.isPackaged)
+  const candidate = env[typerCheckPromptKnob]?.trim() || null;
+  const orders = env[typerCheckOrdersKnob]?.trim() || "both";
+  if (options.isPackaged && (path || candidate || orders !== "both"))
     throw new Error(`${typerCheckEnvironmentKnob} is refused in packaged builds`);
-  return { pairsPath: resolve(options.workspaceRoot, path) };
+  if (!path) return null;
+  if (orders !== "both" && orders !== "content")
+    throw new Error(`${typerCheckOrdersKnob} is both or content`);
+  // Throws for a revision the catalog does not hold as a candidate of the typing prompt.
+  if (candidate) promptCandidate(typingPromptId, candidate);
+  return { pairsPath: resolve(options.workspaceRoot, path), promptCandidate: candidate, orders };
 }
 
 export async function readTyperCheckPairs(path: string): Promise<TyperCheckPair[]> {
@@ -281,6 +318,14 @@ export interface TyperCheckReport extends TyperCheckRun {
   generatedAt: string;
   pairsFile: string;
   route: { provider: string; modelId: string; runtime: string; lane: string } | null;
+  orders: TyperCheckOrders;
+  /** The typing prompt the check ran: its revisions, origin and the candidate it was, if any. */
+  prompt: {
+    id: typeof typingPromptId;
+    candidate: string | null;
+    revisions: Array<{ id: string; revisionId: string }>;
+    origin: string;
+  };
 }
 
 export interface TyperCheckOptions {
@@ -302,15 +347,36 @@ export async function runTyperCheckFromEnvironment(options: TyperCheckOptions): 
     const resolveRoute = createTyperRouteResolver(createAiConfigRepository(options.pool));
     const route = await resolveRoute();
     if (!route) throw new Error("The check needs a writer route for structured output.");
-    log("start", { pairs: pairs.length, model: route.modelId, lane: route.lane });
-    const run = await runTyperPositionCheck(
-      {
-        ai: options.ai,
-        resolveRoute: async () => route,
-        contentLanguage: await options.readContentLanguage(),
-        logger: { warn: (message, error) => log(message, { error: String(error) }) }
-      },
-      pairs
+    const candidate = options.environment.promptCandidate ?? null;
+    const orders = options.environment.orders ?? "both";
+    const active = capturePromptPin();
+    const pin = candidate ? promptPinWithCandidate(active, typingPromptId, candidate) : active;
+    const entry = pin.entries.find((row) => row.id === typingPromptId);
+    const prompt: TyperCheckReport["prompt"] = {
+      id: typingPromptId,
+      candidate,
+      revisions: entry?.revisions ?? [],
+      origin: entry?.origin ?? "default"
+    };
+    log("start", {
+      pairs: pairs.length,
+      model: route.modelId,
+      lane: route.lane,
+      orders,
+      prompt: candidate ?? "active"
+    });
+    const contentLanguage = await options.readContentLanguage();
+    const run = await withPromptPin(pin, () =>
+      runTyperPositionCheck(
+        {
+          ai: options.ai,
+          resolveRoute: async () => route,
+          contentLanguage,
+          logger: { warn: (message, error) => log(message, { error: String(error) }) }
+        },
+        pairs,
+        { orders }
+      )
     );
     const generatedAt = (options.now ?? (() => new Date()))().toISOString();
     const directory = join(
@@ -331,6 +397,8 @@ export async function runTyperCheckFromEnvironment(options: TyperCheckOptions): 
         runtime: route.runtime,
         lane: route.lane
       },
+      orders,
+      prompt,
       ...run
     };
     const target = join(directory, typerCheckReportFile);

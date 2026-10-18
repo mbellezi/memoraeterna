@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { AtomicNoteGenerationOutputSchema } from "./knowledge.js";
 import { promptMetadataLabels } from "@app/i18n";
-import { shippedPromptBodies } from "./prompt-defaults.js";
+import { candidatePromptBodies, shippedPromptBodies } from "./prompt-defaults.js";
 import {
+  parsePromptTemplate,
   PromptDefinitionSchema,
   type PromptDefinition,
   type PromptVariable
@@ -450,4 +451,38 @@ for (const definition of promptDefinitions) {
     definition.fragmentIds.push(
       id === "consultation.repair" ? "consultation.answer" : id.slice(0, -7)
     );
+}
+
+/** A candidate revision of a catalog prompt: its editable body, never a default (plan decision 29). */
+export interface PromptCandidate {
+  id: string;
+  revisionId: string;
+  fields: { body: string };
+}
+
+/** The catalog's candidate revisions, each held to its prompt's variables and output contract. */
+export const promptCandidates: readonly PromptCandidate[] = candidatePromptBodies.map((row) => {
+  const body = promptDefinition(row.id).fields.find((field) => field.id === "body")!;
+  const used = new Set(
+    parsePromptTemplate(row.template)
+      .filter((token) => token.kind === "variable")
+      .map((token) => token.text)
+  );
+  if (
+    !row.revisionId.startsWith("candidate-") ||
+    used.size !== body.variableKeys.length ||
+    body.variableKeys.some((key) => !used.has(key)) ||
+    body.requiredContractIds.some((contract) => !used.has(contract))
+  )
+    throw new Error(`The candidate ${row.revisionId} of ${row.id} changes its prompt's variables.`);
+  return { id: row.id, revisionId: row.revisionId, fields: { body: row.template } };
+});
+
+/** One candidate revision; an unknown one is refused. */
+export function promptCandidate(id: string, revisionId: string): PromptCandidate {
+  const found = promptCandidates.find(
+    (candidate) => candidate.id === id && candidate.revisionId === revisionId
+  );
+  if (!found) throw new Error("prompts.errors.unknown");
+  return found;
 }

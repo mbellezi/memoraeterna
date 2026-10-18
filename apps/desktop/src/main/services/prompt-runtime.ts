@@ -2,6 +2,7 @@ import { legacyPromptEntryHashes } from "./prompt-legacy-fingerprints.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
+  promptCandidate,
   promptDefinitions,
   promptDefinition,
   renderPromptTemplate,
@@ -38,6 +39,30 @@ export function capturePromptPin(domainId?: string | null): PromptPin {
   return structuredClone(
     context.getStore()?.pin ?? (domainId ? domains[domainId] : null) ?? active ?? defaultPromptPin()
   );
+}
+/**
+ * The pin with one prompt's wording replaced by a catalog candidate revision (plan decision 29). DEV
+ * measurements only: the candidate's revision ID travels in every composition snapshot, so the AI
+ * audit and the prompt fingerprint tell it apart from the shipped revision.
+ */
+export function promptPinWithCandidate(pin: PromptPin, id: string, revisionId: string): PromptPin {
+  const candidate = promptCandidate(id, revisionId),
+    definition = promptDefinition(id);
+  return {
+    ...pin,
+    entries: [
+      ...pin.entries.filter((entry) => entry.id !== id),
+      {
+        id,
+        fields: {
+          ...Object.fromEntries(definition.fields.map((field) => [field.id, field.template])),
+          ...candidate.fields
+        },
+        revisions: [{ id, revisionId: candidate.revisionId }],
+        origin: "default"
+      }
+    ]
+  };
 }
 export function withPromptPin<T>(pin: PromptPin | null | undefined, fn: () => T): T {
   if (pin && context.getStore()?.pin === pin) return fn();

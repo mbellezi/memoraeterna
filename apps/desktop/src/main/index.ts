@@ -833,6 +833,8 @@ void app.whenReady().then(() => {
         }
         if (typerCheck) {
           // F3 G25: types the pairs of a file in both orders and writes the report; persists nothing.
+          // Its DEV options (plan decision 29) type in content order only or with a catalog
+          // candidate of the typing prompt.
           void import("./services/relations/relation-typing-check.js")
             .then(({ readTyperCheckEnvironment, runTyperCheckFromEnvironment }) => {
               const environment = readTyperCheckEnvironment(process.env, {

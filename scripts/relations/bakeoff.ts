@@ -2642,9 +2642,16 @@ export const typerReportSchema = z
         directionAccuracy: z.number().nullable(),
         swapConsistency: z.number().nullable()
       })
-      .passthrough()
+      .passthrough(),
+    // Absent in reports written before the typer experiment's options (plan decision 29).
+    orders: z.enum(["both", "content"]).optional(),
+    prompt: z.object({ candidate: z.string().nullable() }).passthrough().optional()
   })
-  .passthrough();
+  .passthrough()
+  .refine((report) => report.orders !== "content" && !report.prompt?.candidate, {
+    message:
+      "Gate F reads the two-order check of the product's typing prompt, not a typer experiment report."
+  });
 
 // --- Typer check pairs ---------------------------------------------------------------------------
 

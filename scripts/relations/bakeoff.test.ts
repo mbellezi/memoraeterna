@@ -45,6 +45,7 @@ import {
   sha256Hex,
   topupBandOf,
   typerCheckPairs,
+  typerReportSchema,
   weightedPoolLabels,
   weightedRecall,
   writeFreeze,
@@ -1625,5 +1626,23 @@ describe("plan decision 29: the decide threshold from the fixture tuning partiti
     });
     expect(threshold.edge).toBeNull();
     expect(threshold.panel.pooled).toMatchObject({ labels: 0, precision: null });
+  });
+});
+
+describe("the typer report gate F reads", () => {
+  const report = {
+    format: "memora-typer-position-check",
+    summary: { pairs: 60, directionAccuracy: 0.9, swapConsistency: 0.95 }
+  };
+
+  it("is the product prompt's two-order check, never a typer experiment report", () => {
+    expect(typerReportSchema.safeParse(report).success).toBe(true);
+    const product = { ...report, orders: "both", prompt: { candidate: null } };
+    expect(typerReportSchema.safeParse(product).success).toBe(true);
+    expect(typerReportSchema.safeParse({ ...product, orders: "content" }).success).toBe(false);
+    expect(
+      typerReportSchema.safeParse({ ...product, prompt: { candidate: "candidate-strict-related" } })
+        .success
+    ).toBe(false);
   });
 });

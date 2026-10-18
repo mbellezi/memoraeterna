@@ -8,13 +8,16 @@ import {
   PromptVariableSchema,
   PromptDefinitionSchema,
   promptVariablesUsed,
-  PromptTemplateError
+  PromptTemplateError,
+  promptCandidate
 } from "@app/domain";
 import {
   defaultPromptPin,
   withPromptPin,
   renderPrompt,
   promptAudit,
+  promptFingerprint,
+  promptPinWithCandidate,
   embeddingPromptIdentity,
   stagePromptFingerprints
 } from "./prompt-runtime.js";
@@ -184,4 +187,33 @@ it("every shipped field has usable typed synthetic examples", () => {
       d.id
     ).not.toThrow();
   }
+});
+
+it("a candidate revision replaces one prompt's wording in a pin and is audited as itself", () => {
+  const base = defaultPromptPin();
+  const pin = promptPinWithCandidate(base, "relations.type", "candidate-strict-related");
+  expect(pin.entries.filter((entry) => entry.id !== "relations.type")).toEqual(
+    base.entries.filter((entry) => entry.id !== "relations.type")
+  );
+  const values = { relation_pairs: [{ p: "p1", a: "Synthetic A", b: "Synthetic B" }] };
+  const shipped = withPromptPin(base, () => renderPrompt("relations.type", values));
+  const candidate = withPromptPin(pin, () => {
+    const rendered = renderPrompt("relations.type", values);
+    return { rendered, audit: promptAudit(rendered) };
+  });
+  expect(candidate.rendered).not.toBe(shipped);
+  expect(candidate.rendered).toContain(
+    promptCandidate("relations.type", "candidate-strict-related").fields.body.split("\n")[0]
+  );
+  expect(candidate.audit[0]?.promptId).toBe("relations.type");
+  expect(candidate.audit[0]?.revisions).toContainEqual({
+    id: "relations.type",
+    revisionId: "candidate-strict-related"
+  });
+  expect(promptFingerprint(["relations.type"], pin)).not.toBe(
+    promptFingerprint(["relations.type"], base)
+  );
+  expect(() => promptPinWithCandidate(base, "relations.type", "candidate-missing")).toThrow(
+    "prompts.errors.unknown"
+  );
 });

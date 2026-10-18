@@ -121,7 +121,26 @@ describe("the position-bias check", () => {
     });
     // The two orders show opposite notes first.
     for (const result of run.results)
-      expect(result.readings[0].shownFirst).not.toBe(result.readings[1].shownFirst);
+      expect(result.readings[0].shownFirst).not.toBe(result.readings[1]?.shownFirst);
+  });
+
+  it("types in content order only when asked: one call per batch, no swap numbers", async () => {
+    const pairs = panelPairs(60);
+    const ai = steadyAi(pairs);
+    const run = await runTyperPositionCheck(deps(ai), pairs, { orders: "content" });
+    expect(run.calls).toBe(3);
+    expect(ai.runDefaultTask).toHaveBeenCalledTimes(3);
+    for (const result of run.results) expect(result.readings).toHaveLength(1);
+    expect(run.summary).toMatchObject({
+      pairs: 60,
+      typings: 60,
+      directionAccuracy: 1,
+      directionAccuracyByOrder: [1, null],
+      swapConsistency: null,
+      typeSwapConsistency: null,
+      verdictSwapConsistency: null,
+      meetsBars: null
+    });
   });
 
   it("measures a writer that always names the note shown first: half right, never consistent", async () => {
@@ -253,6 +272,35 @@ describe("the pairs file", () => {
   });
 });
 
+/** The AI configuration's writer route, as the route resolver reads it. */
+const routePool = () => ({
+  query: vi.fn(async () => ({
+    rows: [
+      {
+        routeKey: "class:write-fast",
+        profileId: randomUUID(),
+        privacyMode: "allow_remote",
+        providerConfigId: randomUUID(),
+        localModelId: null,
+        provider: "openai-codex",
+        credentialRef: null,
+        baseUrl: null,
+        modelId: "gpt-test",
+        runtime: "remote",
+        managedPath: null,
+        repository: null,
+        revision: null,
+        quantization: null,
+        requiredCapabilities: ["structured-output"],
+        parameters: {},
+        modelDefaultParameters: {},
+        providerMetadata: {},
+        outputLanguage: "en"
+      }
+    ]
+  }))
+});
+
 describe("the DEV knob", () => {
   it("is off without the variable, resolves a relative path, and is refused when packaged", () => {
     const options = { isPackaged: false, workspaceRoot: "/repo" };
@@ -260,7 +308,7 @@ describe("the DEV knob", () => {
     expect(readTyperCheckEnvironment({ MEMORA_TYPER_CHECK: "  " }, options)).toBeNull();
     expect(
       readTyperCheckEnvironment({ MEMORA_TYPER_CHECK: ".cache/f3/pairs.json" }, options)
-    ).toEqual({ pairsPath: "/repo/.cache/f3/pairs.json" });
+    ).toEqual({ pairsPath: "/repo/.cache/f3/pairs.json", promptCandidate: null, orders: "both" });
     expect(() =>
       readTyperCheckEnvironment(
         { MEMORA_TYPER_CHECK: "pairs.json" },
@@ -268,6 +316,48 @@ describe("the DEV knob", () => {
       )
     ).toThrow("refused in packaged builds");
     expect(readTyperCheckEnvironment({}, { ...options, isPackaged: true })).toBeNull();
+  });
+
+  it("takes a catalog candidate of the typing prompt and the content order, DEV only", () => {
+    const options = { isPackaged: false, workspaceRoot: "/repo" };
+    const check = { MEMORA_TYPER_CHECK: "pairs.json" };
+    expect(readTyperCheckEnvironment(check, options)).toEqual({
+      pairsPath: "/repo/pairs.json",
+      promptCandidate: null,
+      orders: "both"
+    });
+    expect(
+      readTyperCheckEnvironment(
+        {
+          ...check,
+          MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related",
+          MEMORA_TYPER_CHECK_ORDERS: "content"
+        },
+        options
+      )
+    ).toEqual({
+      pairsPath: "/repo/pairs.json",
+      promptCandidate: "candidate-strict-related",
+      orders: "content"
+    });
+    // An unknown candidate or order is refused; the options alone do nothing.
+    expect(() =>
+      readTyperCheckEnvironment({ ...check, MEMORA_TYPER_CHECK_PROMPT: "shipped-1" }, options)
+    ).toThrow("prompts.errors.unknown");
+    expect(() =>
+      readTyperCheckEnvironment({ ...check, MEMORA_TYPER_CHECK_ORDERS: "reversed" }, options)
+    ).toThrow("both or content");
+    expect(
+      readTyperCheckEnvironment({ MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related" }, options)
+    ).toBeNull();
+    // Packaged builds refuse the options as they refuse the check.
+    for (const env of [
+      { MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related" },
+      { MEMORA_TYPER_CHECK_ORDERS: "content" }
+    ])
+      expect(() => readTyperCheckEnvironment(env, { ...options, isPackaged: true })).toThrow(
+        "refused in packaged builds"
+      );
   });
 
   it("runs from a file, writes the report beside .cache/f3 and quits, whatever happens", async () => {
@@ -280,33 +370,7 @@ describe("the DEV knob", () => {
       const ai = steadyAi(pairs);
       const quit = vi.fn();
       const log = vi.fn();
-      const pool = {
-        query: vi.fn(async () => ({
-          rows: [
-            {
-              routeKey: "class:write-fast",
-              profileId: randomUUID(),
-              privacyMode: "allow_remote",
-              providerConfigId: randomUUID(),
-              localModelId: null,
-              provider: "openai-codex",
-              credentialRef: null,
-              baseUrl: null,
-              modelId: "gpt-test",
-              runtime: "remote",
-              managedPath: null,
-              repository: null,
-              revision: null,
-              quantization: null,
-              requiredCapabilities: ["structured-output"],
-              parameters: {},
-              modelDefaultParameters: {},
-              providerMetadata: {},
-              outputLanguage: "en"
-            }
-          ]
-        }))
-      };
+      const pool = routePool();
       await runTyperCheckFromEnvironment({
         environment: { pairsPath },
         workspaceRoot: root,
@@ -343,6 +407,70 @@ describe("the DEV knob", () => {
       });
       expect(broken).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenCalledWith("failed", expect.any(Object));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("types with the candidate revision in content order and says so in the report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-typer-check-"));
+    try {
+      const pairs = panelPairs(4);
+      const pairsPath = join(root, "pairs.json");
+      await writeFile(pairsPath, JSON.stringify({ pairs }));
+      const run = async (
+        environment: Parameters<typeof runTyperCheckFromEnvironment>[0]["environment"],
+        at: string
+      ) => {
+        const ai = steadyAi(pairs);
+        await runTyperCheckFromEnvironment({
+          environment,
+          workspaceRoot: root,
+          pool: routePool() as never,
+          ai: ai as never,
+          readContentLanguage: async () => "en",
+          quit: vi.fn(),
+          log: vi.fn(),
+          now: () => new Date(at)
+        });
+        const [, prompt] = ai.runDefaultTask.mock.calls[0]! as unknown as [string, string];
+        const report = JSON.parse(
+          await readFile(
+            join(root, ".cache/f3/typer-check", at.replace(/[:.]/gu, "-"), "typer-check.json"),
+            "utf8"
+          )
+        );
+        return { prompt, report, calls: ai.runDefaultTask.mock.calls.length };
+      };
+      const active = await run({ pairsPath }, "2026-10-18T10:00:00.000Z");
+      const strict = await run(
+        { pairsPath, promptCandidate: "candidate-strict-related", orders: "content" },
+        "2026-10-18T11:00:00.000Z"
+      );
+      const criterion = "the same mechanism, rule or phenomenon as the other";
+      expect(active.prompt).not.toContain(criterion);
+      expect(strict.prompt).toContain(criterion);
+      expect(active.report).toMatchObject({
+        orders: "both",
+        prompt: {
+          id: "relations.type",
+          candidate: null,
+          revisions: [{ id: "relations.type", revisionId: "shipped-1" }]
+        }
+      });
+      expect(strict.report).toMatchObject({
+        orders: "content",
+        calls: 1,
+        prompt: {
+          id: "relations.type",
+          candidate: "candidate-strict-related",
+          revisions: [{ id: "relations.type", revisionId: "candidate-strict-related" }]
+        },
+        summary: { pairs: 4, typings: 4, swapConsistency: null }
+      });
+      expect(strict.calls).toBe(1);
+      // The typer key follows the prompt: a candidate never shares a cached verdict.
+      expect(strict.report.typerKey).not.toBe(active.report.typerKey);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
