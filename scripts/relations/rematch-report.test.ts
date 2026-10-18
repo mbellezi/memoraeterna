@@ -102,6 +102,7 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
     misses: 0,
     liveLocalMisses: 0,
     liveTokens: 9_000,
+    liveDecisionsTokens: 0,
     maxLiveTokens: 40_000,
     waitedMs: 0,
     byTask: { reranking: { served: 30, recorded: 0, misses: 0 } },
@@ -177,7 +178,7 @@ describe("the re-match report", () => {
     expect(markdown).toContain(
       "| reranking | decide | local | 30 | 30 | 0 | 0 | 0 | 0 | 90 | 140 | 0 | 4 |"
     );
-    expect(markdown).toContain("| record | off | 30 | 6 | 0 | 0 | 9000 | 40000 | 0.0 |");
+    expect(markdown).toContain("| record | off | 30 | 6 | 0 | 0 | 9000 | 0 | 40000 | 0.0 |");
     expect(markdown).toContain("| accepted | apply | supports | - | 5 |");
     expect(markdown).toContain("| promoted | accepted | 2 |");
   });

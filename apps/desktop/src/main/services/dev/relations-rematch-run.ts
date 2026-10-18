@@ -50,6 +50,8 @@ export interface CassetteFacts {
   misses: number;
   liveLocalMisses?: number | undefined;
   liveTokens: number;
+  /** Input tokens of the live Decisions API requests: counted apart, not against the live-token cap. */
+  liveDecisionsTokens?: number | undefined;
   maxLiveTokens: number | null;
   waitedMs?: number | undefined;
   byTask: Record<
@@ -518,6 +520,7 @@ function summarize(context: {
           misses: cassette.misses,
           liveLocalMisses: cassette.liveLocalMisses ?? 0,
           liveTokens: cassette.liveTokens,
+          liveDecisionsTokens: cassette.liveDecisionsTokens ?? 0,
           maxLiveTokens: cassette.maxLiveTokens,
           waitedMs: cassette.waitedMs ?? 0,
           byTask: Object.fromEntries(

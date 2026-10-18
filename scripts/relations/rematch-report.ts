@@ -400,6 +400,7 @@ export function renderRematchReport(summary: RematchSummary): string {
           "Misses",
           "Live local",
           "Live tokens",
+          "Decisions API input tokens",
           "Cap",
           "Waited (s)"
         ],
@@ -412,6 +413,7 @@ export function renderRematchReport(summary: RematchSummary): string {
             cassette.misses,
             cassette.liveLocalMisses,
             cassette.liveTokens,
+            cassette.liveDecisionsTokens,
             cassette.maxLiveTokens,
             seconds(cassette.waitedMs)
           ]

@@ -16,6 +16,7 @@ import type {
   AiTaskRequest,
   AiTaskResult
 } from "./contracts.js";
+import { defaultDecisionsLimits } from "./decisions/limits.js";
 import { embedManyRequest, sumTokenUsage } from "./embed-many.js";
 
 /**
@@ -132,8 +133,14 @@ export interface AiCassetteStats {
   timing?: "recorded";
   /** With recorded timing: the milliseconds served entries waited for their recorded duration. */
   waitedMs?: number;
-  /** Input plus output tokens of the live remote calls made through this cassette (record mode). */
+  /**
+   * Input plus output tokens of the live remote calls made through this cassette (record mode), the
+   * OpenAI Decisions API's apart: that provider has a spend cap of its own (US$ per day), and its
+   * requests carry thousands of input tokens each, which would cross a cap meant for the writer's.
+   */
   liveTokens: number;
+  /** Input tokens of the live Decisions API requests (record mode); not counted against the live-token cap. */
+  liveDecisionsTokens?: number;
   /** The live-token cap enforced before every live call, or null when there is none. */
   maxLiveTokens: number | null;
   /** The first misses, for diagnostics (bounded). */
@@ -397,6 +404,7 @@ export class AiCassette {
     liveLocalMisses: 0,
     byTask: {},
     liveTokens: 0,
+    liveDecisionsTokens: 0,
     missDetails: []
   };
   private waitedMs = 0;
@@ -542,8 +550,12 @@ export class AiCassette {
           `AI cassette live token cap reached (${this.counters.liveTokens} of ${this.maxLiveTokens}); the provider was not called`
         );
       const result = await live();
-      if (result.runtime === "remote")
-        this.counters.liveTokens += (result.inputTokens ?? 0) + (result.outputTokens ?? 0);
+      if (result.runtime === "remote") {
+        const tokens = (result.inputTokens ?? 0) + (result.outputTokens ?? 0);
+        if (result.providerId === defaultDecisionsLimits.providerId)
+          this.counters.liveDecisionsTokens = (this.counters.liveDecisionsTokens ?? 0) + tokens;
+        else this.counters.liveTokens += tokens;
+      }
       const response = recordedResponse(result, requestKey.ids, this.now());
       const outputSchema = entry?.outputSchema ?? request.outputSchema;
       await this.writeEntry({

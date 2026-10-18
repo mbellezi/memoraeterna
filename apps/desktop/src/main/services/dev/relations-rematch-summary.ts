@@ -85,8 +85,10 @@ const cassetteSchema = z
     recorded: count,
     misses: count,
     liveLocalMisses: count,
-    /** Input plus output tokens of the live remote calls. */
+    /** Input plus output tokens of the live remote calls (the Decisions API's apart). */
     liveTokens: count,
+    /** Input tokens of the live Decisions API requests (T63): they have a spend cap of their own. */
+    liveDecisionsTokens: count.default(0),
     maxLiveTokens: count.nullable(),
     waitedMs: count,
     byTask: z.record(

@@ -398,6 +398,25 @@ describe("AI cassette record and replay", () => {
     expect(cassette.stats()).toMatchObject({ liveTokens: 0, recorded: 3 });
   });
 
+  it("counts the Decisions API's tokens apart: its spend has a cap of its own", async () => {
+    const cassette = new AiCassette({ mode: "record", directory });
+    cassette.limitLiveTokens(50);
+    const decisions = cassette.wrap(
+      new FakeAdapter(() => "probabilities", { ...descriptor, providerId: "openai-decisions" })
+    );
+    for (const input of ["a", "b", "c", "d"])
+      await decisions.run(noteRequest([chunkA, chunkB], { input }));
+    // Four requests of about 100 input tokens each cross a cap of 50 if they were the writer's.
+    expect(cassette.stats()).toMatchObject({ liveTokens: 0, recorded: 4 });
+    expect(cassette.stats().liveDecisionsTokens).toBeGreaterThan(400);
+    const codex = cassette.wrap(new FakeAdapter(() => "typed"));
+    await codex.run(noteRequest([chunkA, chunkB], { input: "typing" }));
+    expect(cassette.stats().liveTokens).toBeGreaterThan(100);
+    await expect(
+      codex.run(noteRequest([chunkA, chunkB], { input: "more typing" }))
+    ).rejects.toMatchObject({ code: "token_limit" });
+  });
+
   it("refuses to replay a directory that holds no cassette", () => {
     expect(() => new AiCassette({ mode: "replay", directory })).toThrow(
       expect.objectContaining({ code: "not_a_cassette" })

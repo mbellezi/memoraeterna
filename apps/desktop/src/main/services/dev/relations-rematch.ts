@@ -476,6 +476,7 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
             misses: stats.misses,
             liveLocalMisses: stats.liveLocalMisses,
             liveTokens: stats.liveTokens,
+            liveDecisionsTokens: stats.liveDecisionsTokens ?? 0,
             maxLiveTokens: stats.maxLiveTokens,
             waitedMs: stats.waitedMs,
             byTask: stats.byTask,
