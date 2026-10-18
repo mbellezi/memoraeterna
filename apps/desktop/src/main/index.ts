@@ -67,6 +67,7 @@ import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { decisionsDevOptions } from "./services/dev/decisions-dev-options.js";
+import { relationsConfigForRun } from "./services/dev/relations-dev-options.js";
 import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
 import { prepareSoak, type SoakPreparation } from "./services/dev/soak-startup.js";
 import { readSoakSetupKnob, runSoakSetup } from "./services/dev/soak-setup.js";
@@ -453,10 +454,13 @@ void app.whenReady().then(() => {
       getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
     })
   );
+  const devRelationsConfig = relationsConfigForRun(process.env, app.isPackaged);
   knowledgeService = new KnowledgeService({
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
     aiService,
+    // DEV only (MEMORA_RELATIONS_HELPER_BATCH, F3 T63's B1): the ranker's helper batch of this run.
+    ...(devRelationsConfig ? { relationsConfig: devRelationsConfig } : {}),
     userDataPath: app.getPath("userData"),
     getStorageSettings: () => settingsService!.get(),
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
@@ -639,6 +643,15 @@ void app.whenReady().then(() => {
                   pool: databaseService!.getPool()!,
                   cassette: aiCassette,
                   knowledge: knowledgeService!,
+                  // X3's P0 probe (MEMORA_RELATIONS_REMATCH_P0_PROBE_MS): a query embedding at P0.
+                  probeEmbedding: async (text) => {
+                    await aiService!.runDefaultTask("embedding", text, {
+                      stage: "rematch_p0_probe",
+                      embeddingInputType: "query",
+                      workloadClass: "embed",
+                      priority: "P0"
+                    });
+                  },
                   jobs: jobSupervisor!,
                   slot: rematchSlot ?? createRematchJobSlot(),
                   quit: () => app.quit(),

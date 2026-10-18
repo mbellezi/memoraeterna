@@ -148,6 +148,9 @@ function input(
     candidates: "off",
     digest: { expected: digest, actual: digest },
     lanesMode: "serial",
+    link: "drain",
+    helperBatchSize: null,
+    p0Probe: null,
     drainTimeoutMs: 60_000,
     drainPollMs: 1_000,
     signal: h.controller.signal,
@@ -194,6 +197,56 @@ describe("a re-match run", () => {
     );
     expect(plain.events).not.toContain("record-candidates");
     expect(defaults).toMatchObject({ discovery: "on", candidates: "off" });
+  });
+
+  it("says which link runtime and helper batch it ran with, and runs no probe by default", async () => {
+    const h = harness();
+    const plain = await runRematch(h.ports, input(h, buildRematchPlan(library(), arrival)));
+    expect(plain).toMatchObject({ link: "drain", helperBatchSize: null, p0Probe: null });
+    const timing = harness();
+    const product = await runRematch(
+      timing.ports,
+      input(timing, buildRematchPlan(library(), arrival), {
+        link: "product",
+        lanesMode: "product",
+        helperBatchSize: 1
+      })
+    );
+    expect(product).toMatchObject({
+      link: "product",
+      lanes: { mode: "product" },
+      helperBatchSize: 1
+    });
+    expect(RematchSummarySchema.parse(product).link).toBe("product");
+  });
+
+  it("probes P0 once an interval from the run's clock until the links drain, with a text no cassette holds", async () => {
+    const h = harness({}, { matchMs: 4_000, openJobs: [1, 1, 1, 1, 0, 0] });
+    const texts: string[] = [];
+    let failures = 0;
+    const summary = await runRematch(
+      h.ports,
+      input(h, buildRematchPlan(library(), arrival), {
+        p0Probe: {
+          intervalMs: 10_000,
+          run: async (text) => {
+            texts.push(text);
+            h.clock.now += texts.length === 2 ? 1_500 : 200;
+            if (texts.length === 3) {
+              failures += 1;
+              throw new Error("embedding refused");
+            }
+          }
+        }
+      })
+    );
+    expect(summary.outcome).toBe("completed");
+    expect(texts.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(texts).size).toBe(texts.length);
+    expect(texts.every((text) => text.includes("run-1"))).toBe(true);
+    expect(summary.p0Probe).toMatchObject({ intervalMs: 10_000, failed: failures });
+    expect(summary.p0Probe!.calls).toBe(texts.length);
+    expect(summary.p0Probe!.wallMs.max).toBe(1_500);
   });
 
   it("stops before it clears when the candidate lists cannot be kept", async () => {

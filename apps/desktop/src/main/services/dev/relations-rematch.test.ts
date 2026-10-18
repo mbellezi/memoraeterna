@@ -119,6 +119,9 @@ describe("the re-match knobs", () => {
       background: "matched",
       discovery: "on",
       candidates: "off",
+      link: "drain",
+      p0ProbeMs: null,
+      helperBatchSize: null,
       digestOverride: { sha256: "b".repeat(64), notes: 138 },
       outDirectory: "/repo/.cache/f3/rematch/x",
       drainTimeoutMs: 60_000,
@@ -150,8 +153,32 @@ describe("the re-match knobs", () => {
     ).toMatchObject({ discovery: "off", candidates: "record" });
   });
 
+  it("read T63's timing knobs: the link runtime, the P0 probe and the ranker's helper batch", () => {
+    expect(readRematchEnvironment(knob, base)).toMatchObject({
+      link: "drain",
+      p0ProbeMs: null,
+      helperBatchSize: null
+    });
+    expect(
+      readRematchEnvironment(
+        {
+          ...knob,
+          MEMORA_RELATIONS_REMATCH_LINK: "product",
+          MEMORA_RELATIONS_REMATCH_P0_PROBE_MS: "10000",
+          MEMORA_RELATIONS_HELPER_BATCH: "1"
+        },
+        base
+      )
+    ).toMatchObject({ link: "product", p0ProbeMs: 10_000, helperBatchSize: 1 });
+  });
+
   it("refuse a value they cannot read", () => {
     for (const extra of [
+      { MEMORA_RELATIONS_REMATCH_LINK: "pool" },
+      { MEMORA_RELATIONS_REMATCH_P0_PROBE_MS: "10" },
+      { MEMORA_RELATIONS_REMATCH_P0_PROBE_MS: "soon" },
+      { MEMORA_RELATIONS_HELPER_BATCH: "0" },
+      { MEMORA_RELATIONS_HELPER_BATCH: "65" },
       { MEMORA_RELATIONS_REMATCH_DISCOVERY: "maybe" },
       { MEMORA_RELATIONS_REMATCH_CANDIDATES: "all" },
       { MEMORA_RELATIONS_REMATCH: "arrival:soon" },
@@ -384,6 +411,32 @@ describe("preparing a run", () => {
     );
     expect(result).toMatchObject({ outcome: "failed" });
     expect(statements.some((statement) => statement.startsWith("delete"))).toBe(false);
+  });
+
+  it("runs the app's own link runtime when the run asks for T63's timing (link=product)", async () => {
+    await pinFixture();
+    const { prepared } = options({
+      env: { ...knob, MEMORA_RELATIONS_REMATCH_LINK: "product" }
+    });
+    resetRelationLinkRuntime();
+    await prepareRelationsRematch(prepared);
+    // One link job at a time and no coalescing are the drain mode's; the product has neither.
+    expect(relationLinkRuntime().drain).toBe(false);
+    expect(relationLinkRuntime().remoteCallsOff).toBe(false);
+    resetRelationLinkRuntime();
+  });
+
+  it("refuses the P0 probe when the AI service's embedding port is not given", async () => {
+    await pinFixture();
+    const { prepared } = options({
+      env: { ...knob, MEMORA_RELATIONS_REMATCH_P0_PROBE_MS: "10000" }
+    });
+    await expect(prepareRelationsRematch(prepared)).rejects.toThrow(/embedding port/u);
+    const { prepared: withPort } = options({
+      env: { ...knob, MEMORA_RELATIONS_REMATCH_P0_PROBE_MS: "10000" },
+      probeEmbedding: async () => undefined
+    });
+    await expect(prepareRelationsRematch(withPort)).resolves.toBeDefined();
   });
 
   it("leaves the job unbound when it refuses, so a claim fails", async () => {

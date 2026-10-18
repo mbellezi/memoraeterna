@@ -31,7 +31,8 @@ import {
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
-  type SourceRelationSettings
+  type SourceRelationSettings,
+  type RelationsConfig
 } from "@app/domain";
 import {
   createRelationTypeResolver,
@@ -158,6 +159,11 @@ function updateGroupedChildSummary(
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
+  /**
+   * The typed relations configuration this process matches under; the shipped defaults when left out. Only
+   * a DEV run changes it (`dev/relations-dev-options.ts`: T63's helper batch of 1).
+   */
+  relationsConfig?: RelationsConfig;
   /** The generative decider's output budget, the one note-matching setting left (F3 D17, T53b). */
   getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
   getCanonicalMatchingSettings?: () => Promise<CanonicalMatchingSettings>;
@@ -222,6 +228,7 @@ export class KnowledgeService {
     this.relationMatcher = new RelationMatcher({
       getPool: options.getPool,
       ai: options.aiService,
+      ...(options.relationsConfig ? { config: options.relationsConfig } : {}),
       ...(options.getAtomicNoteMatchingSettings
         ? { getAtomicNoteMatchingSettings: options.getAtomicNoteMatchingSettings }
         : {}),

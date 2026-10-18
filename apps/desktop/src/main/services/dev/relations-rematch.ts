@@ -22,6 +22,13 @@
 //                                              typing and promotion stay on (default on) (T57's M1)
 //   MEMORA_RELATIONS_REMATCH_CANDIDATES=off|record  record: turns the clone's debug mode on, so every
 //                                              note's candidate list is kept for the export (default off)
+//   MEMORA_RELATIONS_REMATCH_LINK=drain|product  drain (default): one link job at a time, first in first out,
+//                                              no coalescing, no daily counting (quality samples); product: the app's
+//                                              own link pool, small-source coalescing and daily call counter
+//                                              (X3's timing runs, T63; use with MEMORA_AI_LANES=product)
+//   MEMORA_RELATIONS_REMATCH_P0_PROBE_MS=<n>    X3's P0 probe: a query embedding at P0 every <n> ms while the run works
+//   MEMORA_RELATIONS_HELPER_BATCH=<1-64>        the MLX ranker's helper batch size for this run (T63's B1; read at the
+//                                              app's start by dev/relations-dev-options.ts, recorded in the summary)
 //   MEMORA_RELATIONS_REMATCH_DIGEST=<sha256>:<notes>   the pinned notes digest, when the profile has none
 //   MEMORA_RELATIONS_REMATCH_OUT=<folder in .cache>    where the summary goes
 //   MEMORA_RELATIONS_REMATCH_DRAIN_MS=<n>       how long the link jobs may take to drain
@@ -59,7 +66,13 @@ import {
   type RootPlacementRow
 } from "./relations-rematch-composites.js";
 import { readCatalogHeaderFacts } from "../catalog-header-policy.js";
-import { runRematch, type CassetteFacts, type RematchPorts } from "./relations-rematch-run.js";
+import {
+  runRematch,
+  type CassetteFacts,
+  type P0Probe,
+  type RematchPorts
+} from "./relations-rematch-run.js";
+import { helperBatchOverride } from "./relations-dev-options.js";
 import {
   clearRelationState,
   countOpenLinkJobs,
@@ -123,6 +136,12 @@ export interface RematchEnvironment {
   background: "none" | "matched";
   discovery: "on" | "off";
   candidates: "off" | "record";
+  /** `drain`: the quality runtime; `product`: the app's own link pool and coalescing (X3). */
+  link: "drain" | "product";
+  /** X3's P0 probe interval in ms, or null when the probe is off. */
+  p0ProbeMs: number | null;
+  /** The helper batch size `MEMORA_RELATIONS_HELPER_BATCH` set for this run (B1), or null. */
+  helperBatchSize: number | null;
   digestOverride: NotesDigest | null;
   outDirectory: string | null;
   drainTimeoutMs: number;
@@ -180,6 +199,27 @@ export function readRematchEnvironment(
   const candidates = env[`${rematchKnob}_CANDIDATES`]?.trim() || "off";
   if (candidates !== "off" && candidates !== "record")
     throw new RematchRefusal("invalidValue", `${rematchKnob}_CANDIDATES must be off or record`);
+  const link = env[`${rematchKnob}_LINK`]?.trim() || "drain";
+  if (link !== "drain" && link !== "product")
+    throw new RematchRefusal("invalidValue", `${rematchKnob}_LINK must be drain or product`);
+  const p0ProbeMs = positiveInteger(
+    `${rematchKnob}_P0_PROBE_MS`,
+    env[`${rematchKnob}_P0_PROBE_MS`]
+  );
+  if (p0ProbeMs !== null && p0ProbeMs < 1_000)
+    throw new RematchRefusal(
+      "invalidValue",
+      `${rematchKnob}_P0_PROBE_MS must be at least 1000 ms (X3 probes every 10 s)`
+    );
+  let helperBatchSize: number | null;
+  try {
+    helperBatchSize = helperBatchOverride(env, options.isPackaged);
+  } catch (error) {
+    throw new RematchRefusal(
+      "invalidValue",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
   const rawDigest = env[`${rematchKnob}_DIGEST`]?.trim();
   const digest = rawDigest ? /^([0-9a-f]{64}):(\d+)$/u.exec(rawDigest) : null;
   if (rawDigest && !digest)
@@ -197,6 +237,9 @@ export function readRematchEnvironment(
     background,
     discovery,
     candidates,
+    link,
+    p0ProbeMs,
+    helperBatchSize,
     digestOverride: digest ? { sha256: digest[1]!, notes: Number(digest[2]) } : null,
     outDirectory,
     drainTimeoutMs:
@@ -468,6 +511,8 @@ export interface PrepareRematchOptions {
     ensureCompositeBackfill(options?: { always?: boolean }): Promise<boolean>;
     compositeBackfillRemaining(): Promise<number>;
   };
+  /** One query embedding at P0 through the AI service (X3's probe); needed only with the probe knob. */
+  probeEmbedding?: (text: string) => Promise<void>;
   slot: Pick<RematchJobSlot, "bind">;
   quit: () => void;
   logger: Pick<Console, "info" | "error">;
@@ -492,6 +537,11 @@ export async function prepareRelationsRematch(
 ): Promise<PreparedRematch> {
   const environment = readRematchEnvironment(options.env, options);
   if (!environment) throw new RematchRefusal("invalidValue", `${rematchKnob} is not set`);
+  if (environment.p0ProbeMs !== null && !options.probeEmbedding)
+    throw new RematchRefusal(
+      "invalidValue",
+      `${rematchKnob}_P0_PROBE_MS needs the AI service's embedding port`
+    );
   if (!(await isMeasurementProfilePath(options.userDataPath, options.workspaceRoot)))
     throw new RematchRefusal(
       "outsideProfiles",
@@ -568,6 +618,10 @@ export async function prepareRelationsRematch(
     ...(options.sleep ? { sleep: options.sleep } : {})
   });
   const runId = now().toISOString().replace(/[:.]/gu, "-");
+  const probe: P0Probe | null =
+    environment.p0ProbeMs !== null && options.probeEmbedding
+      ? { intervalMs: environment.p0ProbeMs, run: options.probeEmbedding }
+      : null;
   options.slot.bind(async (job, signal) => {
     const summary = await runRematch(ports, {
       runId,
@@ -580,6 +634,9 @@ export async function prepareRelationsRematch(
       candidates: environment.candidates,
       digest: { expected, actual },
       lanesMode,
+      link: environment.link,
+      helperBatchSize: environment.helperBatchSize,
+      p0Probe: probe,
       drainTimeoutMs: environment.drainTimeoutMs,
       drainPollMs: options.pollMs ?? 2_000,
       signal
@@ -593,7 +650,12 @@ export async function prepareRelationsRematch(
   // The link jobs drain one at a time in arrival order, as in a golden run (D24, link-runtime.ts):
   // every prompt is a function of the release order, and the run calls under no daily cap.
   // `discovery=off` (T57's M1) defers every root's discovery, so the run makes no source judge call.
-  setRelationLinkRuntime({ drain: true, discoveryOff: environment.discovery === "off" });
+  // `link=product` (T63's X3 timing runs) runs the app's own link runtime instead: its pool, small-source
+  // coalescing and daily counter, so the span measured is the product's.
+  setRelationLinkRuntime({
+    drain: environment.link === "drain",
+    discoveryOff: environment.discovery === "off"
+  });
   return {
     plan,
     environment,

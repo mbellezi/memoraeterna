@@ -624,6 +624,9 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
         actual: { notes: 8, sha256: "a".repeat(64) }
       },
       lanesMode: "serial",
+      link: "drain",
+      helperBatchSize: null,
+      p0Probe: null,
       drainTimeoutMs: 60_000,
       drainPollMs: 1,
       signal: new AbortController().signal,

@@ -209,6 +209,21 @@ export const unknownCatalogHeaders: CatalogHeadersFacts = {
   jobs: 0
 };
 
+/**
+ * X3's P0 probe: a query embedding at priority P0 every `intervalMs` while the run works. The caller's
+ * wall time per probe (queue wait plus the embedding) is summarized here; the exact queue wait of each
+ * probe is `ai_task_runs.queue_ms` of the rows whose stage is `rematch_p0_probe`.
+ */
+export const p0ProbeSchema = z
+  .object({
+    intervalMs: milliseconds,
+    calls: count,
+    failed: count,
+    wallMs: z.object({ p50: milliseconds, p95: milliseconds, max: milliseconds }).strict()
+  })
+  .strict();
+export type P0ProbeFacts = z.infer<typeof p0ProbeSchema>;
+
 export const RematchSummarySchema = z
   .object({
     format: z.literal(rematchSummaryFormat),
@@ -227,6 +242,15 @@ export const RematchSummarySchema = z
     discovery: z.enum(["on", "off"]).default("on"),
     candidates: z.enum(["off", "record"]).default("off"),
     lanes: z.object({ mode: z.enum(["serial", "product"]) }).strict(),
+    /**
+     * T63's timing knobs: `drain` is the quality runtime (one link job at a time, first in first out, no
+     * coalescing, no daily counting); `product` is the app's own (link pool, small-source coalescing,
+     * the daily call counter). The helper batch size a DEV override set for the ranker (B1), if any.
+     */
+    link: z.enum(["drain", "product"]).default("drain"),
+    helperBatchSize: z.number().int().positive().nullable().default(null),
+    /** The P0 probe of X3: one query embedding every `intervalMs` while the run works; null when off. */
+    p0Probe: p0ProbeSchema.nullable().default(null),
     profile: z.object({ name: z.string(), kind: z.string().nullable() }).strict(),
     startedAt: timestamp,
     finishedAt: timestamp,

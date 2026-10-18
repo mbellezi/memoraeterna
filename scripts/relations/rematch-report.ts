@@ -131,6 +131,17 @@ export function rematchFlags(summary: RematchSummary): string[] {
     flags.push(
       `${composites.placements.movedWithCurrentNotes} roots with current placed notes moved in the topic tree after the composite backfill (3.20 expects none).`
     );
+  // T63's timing knobs: a throughput number means something only under the product's own runtime.
+  if (summary.link === "product" && summary.lanes.mode === "serial")
+    flags.push(
+      "The product link runtime ran with serial lanes: X3 asks for MEMORA_AI_LANES=product beside it."
+    );
+  if (summary.link === "drain" && summary.p0Probe)
+    flags.push(
+      "The P0 probe ran under the drain link runtime: X3 measures it under the product's."
+    );
+  if (summary.p0Probe && summary.p0Probe.failed > 0)
+    flags.push(`${summary.p0Probe.failed} P0 probes failed.`);
   return flags;
 }
 
@@ -233,6 +244,22 @@ export function renderRematchReport(summary: RematchSummary): string {
           `${summary.profile.name}${summary.profile.kind ? ` (${summary.profile.kind})` : ""}`
         ],
         ["Lanes", summary.lanes.mode],
+        [
+          "Link runtime",
+          summary.link === "product" ? "product (pool, coalescing, daily counter)" : "drain"
+        ],
+        [
+          "Ranker helper batch",
+          summary.helperBatchSize === null
+            ? "product's (16)"
+            : `${summary.helperBatchSize} (DEV override)`
+        ],
+        [
+          "P0 probe",
+          summary.p0Probe
+            ? `every ${seconds(summary.p0Probe.intervalMs)} s: ${summary.p0Probe.calls} calls, ${summary.p0Probe.failed} failed, wall p50 ${summary.p0Probe.wallMs.p50} ms, p95 ${summary.p0Probe.wallMs.p95} ms, max ${summary.p0Probe.wallMs.max} ms (queue waits: ai_task_runs, stage rematch_p0_probe)`
+            : "off"
+        ],
         ["Source discovery", summary.discovery],
         ["Candidate lists", summary.candidates === "record" ? "kept (debug mode on)" : "not kept"],
         [

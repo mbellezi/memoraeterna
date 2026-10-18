@@ -51,6 +51,9 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
   discovery: "on",
   candidates: "off",
   lanes: { mode: "serial" },
+  link: "drain",
+  helperBatchSize: null,
+  p0Probe: null,
   profile: { name: "env-f-s1", kind: "env-f" },
   startedAt: "2026-10-17T10:00:00.000Z",
   finishedAt: "2026-10-17T10:01:00.000Z",
@@ -302,6 +305,32 @@ describe("the re-match report", () => {
         "1 roots with current placed notes moved in the topic tree after the composite backfill (3.20 expects none)."
       ])
     );
+  });
+
+  it("shows T63's timing knobs and flags a timing run that is not under the product's runtime", () => {
+    const timing = summary({
+      link: "product",
+      lanes: { mode: "product" },
+      helperBatchSize: 1,
+      p0Probe: { intervalMs: 10_000, calls: 20, failed: 0, wallMs: { p50: 60, p95: 410, max: 520 } }
+    });
+    const markdown = renderRematchReport(timing);
+    expect(markdown).toContain("product (pool, coalescing, daily counter)");
+    expect(markdown).toContain("1 (DEV override)");
+    expect(markdown).toContain(
+      "every 10.0 s: 20 calls, 0 failed, wall p50 60 ms, p95 410 ms, max 520 ms"
+    );
+    expect(rematchFlags(timing)).toEqual([]);
+    expect(renderRematchReport(summary())).toContain("| P0 probe | off |");
+    expect(rematchFlags({ ...timing, lanes: { mode: "serial" } })).toEqual([
+      "The product link runtime ran with serial lanes: X3 asks for MEMORA_AI_LANES=product beside it."
+    ]);
+    expect(rematchFlags(summary({ p0Probe: timing.p0Probe }))).toEqual([
+      "The P0 probe ran under the drain link runtime: X3 measures it under the product's."
+    ]);
+    expect(rematchFlags({ ...timing, p0Probe: { ...timing.p0Probe!, failed: 2 } })).toEqual([
+      "2 P0 probes failed."
+    ]);
   });
 
   it("renders a burst with no order and a run without a cassette", () => {

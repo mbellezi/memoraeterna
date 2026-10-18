@@ -19,6 +19,7 @@ import {
   unknownCatalogHeaders,
   type CatalogHeadersFacts,
   type CompositeBackfillFacts,
+  type P0ProbeFacts,
   type RematchSummary,
   type RematchTimelineEntry
 } from "./relations-rematch-summary.js";
@@ -104,6 +105,12 @@ export interface RematchPorts {
   log(event: string, data?: Record<string, unknown>): void;
 }
 
+/** One P0 probe: `run` embeds a query at priority P0 through the AI service (queue wait included). */
+export interface P0Probe {
+  intervalMs: number;
+  run(text: string): Promise<void>;
+}
+
 export interface RematchRunInput {
   runId: string;
   jobId: string;
@@ -117,6 +124,12 @@ export interface RematchRunInput {
   candidates: "off" | "record";
   digest: RematchSummary["digest"];
   lanesMode: "serial" | "product";
+  /** The link runtime the run set (`drain` for quality samples, `product` for X3's timing runs). */
+  link: "drain" | "product";
+  /** The helper batch size a DEV override set for the ranker (B1), or null for the product's own. */
+  helperBatchSize: number | null;
+  /** X3's P0 probe: a query embedding at P0 every `intervalMs` while the run works; null when off. */
+  p0Probe: P0Probe | null;
   /** How long the link jobs may take to drain after the last release. */
   drainTimeoutMs: number;
   drainPollMs: number;
@@ -165,6 +178,7 @@ export async function runRematch(
   let backgroundNotesSeeded = 0;
   let compositeBackfill = noCompositeBackfill;
   let drainedAt: Date | null = null;
+  let probe: RunningProbe | null = null;
   try {
     const key = await ports.deciderKey();
     // Mode `ranker` waits for a validated ranker: with none, a run would decide nothing.
@@ -200,6 +214,7 @@ export async function runRematch(
     // The run's clock (X3's T0 and every offset of the timeline, and the AI calls it counts) starts
     // here: the backfill's embedding calls and the topic jobs it caused are not part of the span.
     startedAt = ports.now();
+    probe = startP0Probe(ports, input);
     const released = plan.order.map((root) => root.id);
     const background = input.background === "matched" ? plan.others.map((root) => root.id) : [];
     cleared = await ports.clear({
@@ -227,6 +242,7 @@ export async function runRematch(
     }
     ports.log("stopped", { outcome, error: failure });
   }
+  const p0Probe = probe ? await probe.stop() : null;
   const finishedAt = ports.now();
   const facts = await ports.facts(startedAt).catch((error: unknown) => {
     ports.log("facts failed", { error: errorText(error) });
@@ -249,10 +265,71 @@ export async function runRematch(
     backgroundNotesSeeded,
     compositeBackfill,
     catalogHeaders,
+    p0Probe,
     startedAt,
     finishedAt,
     drainedAt
   });
+}
+
+interface RunningProbe {
+  stop(): Promise<P0ProbeFacts>;
+}
+
+const wallQuantile = (sorted: readonly number[], fraction: number): number =>
+  sorted.length === 0
+    ? 0
+    : sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)]!;
+
+/**
+ * X3's P0 probe: from the run's clock, one query embedding at P0 every `intervalMs` (the next one a
+ * full interval after the previous one started, never overlapping it). Each text is unique to the run,
+ * so a cassette cannot serve it: the call really waits for the local lane. A failed probe is counted,
+ * never fatal.
+ */
+function startP0Probe(ports: RematchPorts, input: RematchRunInput): RunningProbe | null {
+  const probe = input.p0Probe;
+  if (!probe) return null;
+  const walls: number[] = [];
+  let failed = 0;
+  let stopped = false;
+  let wake: () => void = () => undefined;
+  const stopSignal = new Promise<void>((resolve) => {
+    wake = resolve;
+  });
+  const loop = (async () => {
+    for (let index = 1; !stopped; index += 1) {
+      const began = ports.now().getTime();
+      try {
+        await probe.run(`rematch p0 probe ${input.runId} ${index}`);
+        walls.push(ports.now().getTime() - began);
+      } catch (error) {
+        failed += 1;
+        ports.log("p0 probe failed", { index, error: errorText(error) });
+      }
+      if (stopped) break;
+      const rest = Math.max(0, probe.intervalMs - (ports.now().getTime() - began));
+      await Promise.race([ports.sleep(rest), stopSignal]);
+    }
+  })();
+  return {
+    stop: async () => {
+      stopped = true;
+      wake();
+      await loop;
+      const sorted = [...walls].sort((a, b) => a - b);
+      return {
+        intervalMs: probe.intervalMs,
+        calls: walls.length + failed,
+        failed,
+        wallMs: {
+          p50: Math.round(wallQuantile(sorted, 0.5)),
+          p95: Math.round(wallQuantile(sorted, 0.95)),
+          max: Math.round(sorted.at(-1) ?? 0)
+        }
+      };
+    }
+  };
 }
 
 /**
@@ -346,6 +423,7 @@ function summarize(context: {
   backgroundNotesSeeded: number;
   compositeBackfill: CompositeBackfillFacts;
   catalogHeaders: CatalogHeadersFacts;
+  p0Probe: P0ProbeFacts | null;
   startedAt: Date;
   finishedAt: Date;
   drainedAt: Date | null;
@@ -398,6 +476,9 @@ function summarize(context: {
     discovery: input.discovery,
     candidates: input.candidates,
     lanes: { mode: input.lanesMode },
+    link: input.link,
+    helperBatchSize: input.helperBatchSize,
+    p0Probe: context.p0Probe,
     profile: input.profile,
     startedAt: startedAt.toISOString(),
     finishedAt: context.finishedAt.toISOString(),
