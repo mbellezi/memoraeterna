@@ -1293,3 +1293,40 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
     expect(report).toContain("Typer checks | needs --typer-report");
   });
 });
+
+describe("the calibration's parity scores", () => {
+  it("come from the build the fit scores came from", async () => {
+    const proposal = await runSelect(selectInputs({ withTuningScores: true }));
+    const parity: ParityFile = {
+      format: "memora-f3-freeze-parity",
+      version: 1,
+      runtimes: {
+        mlx: {
+          runtimeBuild: "mlx-build",
+          reference: { referenceHash: "a".repeat(64), maxAbsDelta: 0 },
+          m1Pairs: null,
+          source: "same build"
+        }
+      }
+    };
+    const baseline = (runtimeBuild: string) =>
+      ({
+        format: "memora-ranker-parity-baseline",
+        referenceHash: "a".repeat(64),
+        runtime: "mlx",
+        runtimeBuild,
+        scores: new Array(64).fill(0)
+      }) as never;
+    const build = (runtimeBuild: string) =>
+      buildFreezeRecord({
+        proposal,
+        proposalSha256: "p",
+        parity,
+        baselines: { mlx: baseline(runtimeBuild) },
+        frozenAt: new Date(0),
+        runtimes: ["mlx"]
+      });
+    expect(() => build("another-build")).toThrow("the parity baseline is of another-build");
+    expect(build("mlx-build").calibrations).toHaveLength(1);
+  });
+});

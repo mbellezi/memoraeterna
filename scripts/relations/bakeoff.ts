@@ -1839,7 +1839,7 @@ export const parityFileSchema = z
   .object({
     format: z.literal("memora-f3-freeze-parity"),
     version: z.literal(1),
-    runtimes: z.record(
+    runtimes: z.partialRecord(
       z.enum(runtimes),
       z
         .object({
@@ -1984,6 +1984,11 @@ export function buildFreezeRecord(input: {
       );
     const baseline = input.baselines[decider.runtime];
     if (!baseline) throw new Error(`${decider.runtime}: no parity baseline.`);
+    // The calibration keeps the reference scores of the build its fit scores came from (D13).
+    if (baseline.runtimeBuild !== decider.scoreFile.runtimeBuild)
+      throw new Error(
+        `${decider.runtime}: the parity baseline is of ${baseline.runtimeBuild}, the fit scores of ${decider.scoreFile.runtimeBuild ?? "an unknown build"}.`
+      );
     if (decider.bands.pSuggest === null && decider.bands.pApply === null)
       throw new Error(`${decider.runtime}: the rule found no band; nothing to freeze.`);
     parity[decider.runtime] = {
@@ -2098,8 +2103,11 @@ export async function writeFreeze(input: {
       );
   const parity = parityFileSchema.parse(JSON.parse(await readFile(input.parityPath, "utf8")));
   const baselines: Partial<Record<Runtime, z.infer<typeof parityBaselineSchema>>> = {};
+  // Only the baselines of the runtimes this freeze holds.
+  const frozenRuntimes = input.runtimes ?? proposal.deciders.map((decider) => decider.runtime);
   for (const [runtime, path] of Object.entries(input.baselinePaths) as Array<[Runtime, string]>)
-    baselines[runtime] = parityBaselineSchema.parse(JSON.parse(await readFile(path, "utf8")));
+    if (frozenRuntimes.includes(runtime))
+      baselines[runtime] = parityBaselineSchema.parse(JSON.parse(await readFile(path, "utf8")));
   const record = buildFreezeRecord({
     proposal,
     proposalSha256: sha256Hex(proposalBytes),
@@ -2271,8 +2279,9 @@ export const directedWriteTypes = [
 ] as const;
 
 /**
- * The position-bias check of G25: panel-positive pairs of pools A-C with a directed majority type and
- * direction, seeded, rendered as the decider reads them (`a` the lower id).
+ * The position-bias check of G25: panel-positive fit-split pairs of pools A-C with a directed majority
+ * type and direction (the eval split stays untouched for the clean check), seeded, rendered as the
+ * decider reads them (`a` the lower id).
  */
 export function typerCheckPairs(input: {
   items: readonly LabelItem[];
@@ -2285,6 +2294,7 @@ export function typerCheckPairs(input: {
       (item) =>
         item.kind === "note" &&
         (pools as readonly string[]).includes(item.pool ?? "") &&
+        item.split === "fit" &&
         item.related === true &&
         (directedWriteTypes as readonly string[]).includes(item.type ?? "") &&
         (item.direction === "lo_to_hi" || item.direction === "hi_to_lo")
@@ -2342,8 +2352,8 @@ export const usage = `Usage: npx tsx scripts/relations/bakeoff.ts <tuning-pairs|
       the pairs file of an export's decided pairs (M1's tuning candidates by default; X1's S0 export after the freeze)
   select [--out-dir .cache/f3/freeze] [--labels ...] [--weights ...] [--tuning-export ...]
          [--tuning-scores <dir>] [--label-scores <dir>] [--mapping ...] [--v9 ...]
-  typer-pairs [--body <chars>] [--out <pairs.json>]
-  freeze --parity <parity.json> [--proposal <proposal.json>] [--runtimes mlx,gguf] [--refreeze]
+  typer-pairs [--body <chars>] [--texts <note-texts.json>] [--labels ...] [--proposal ...] [--out <pairs.json>]
+  freeze --parity <parity.json> [--proposal <proposal.json>] [--runtimes mlx,gguf] [--baselines mlx=<file>] [--refreeze]
   gate-f [--x1-export <export.json> --x1-scores <scores.json>] [--rv9-pass <tally.json>[,<tally.json>]]
          [--typer-report <typer-check.json>] [--labels ...] [--weights ...] [--mapping ...] [--label-scores <dir>]
          [--rv9-relations <relations.json>] [--out-dir .cache/f3/freeze/gate-f]
@@ -2363,10 +2373,12 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
       mapping: { type: "string" },
       v9: { type: "string" },
       body: { type: "string" },
+      texts: { type: "string" },
       proposal: { type: "string" },
       parity: { type: "string" },
       refreeze: { type: "boolean" },
       runtimes: { type: "string" },
+      baselines: { type: "string" },
       "x1-export": { type: "string" },
       "x1-scores": { type: "string" },
       "rv9-pass": { type: "string" },
@@ -2423,13 +2435,14 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
     return;
   }
   if (command === "typer-pairs") {
-    const proposal = (await exists(defaultPaths.proposal))
-      ? (JSON.parse(await readFile(defaultPaths.proposal, "utf8")) as Proposal)
+    const proposalPath = resolve(values.proposal ?? defaultPaths.proposal);
+    const proposal = (await exists(proposalPath))
+      ? (JSON.parse(await readFile(proposalPath, "utf8")) as Proposal)
       : null;
     const body = Number(
       values.body ?? proposal?.choice.bodyCharacters ?? relationsConfig.decide.bodyCharacters
     );
-    const texts = await readNoteTexts(defaultPaths.labelTexts, body);
+    const texts = await readNoteTexts(resolve(values.texts ?? defaultPaths.labelTexts), body);
     const fixture = labelFixtureSchema.parse(
       JSON.parse(await readFile(resolve(values.labels ?? defaultPaths.labels), "utf8"))
     );
@@ -2450,12 +2463,21 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
     const record = await writeFreeze({
       proposalPath,
       parityPath: resolve(values.parity),
-      baselinePaths: Object.fromEntries(
-        runtimes.map((runtime) => [
-          runtime,
-          join(defaultPaths.parityBaselines, `ranker-parity-baseline-${runtime}.json`)
-        ])
-      ),
+      baselinePaths: {
+        ...Object.fromEntries(
+          runtimes.map((runtime) => [
+            runtime,
+            join(defaultPaths.parityBaselines, `ranker-parity-baseline-${runtime}.json`)
+          ])
+        ),
+        // --baselines mlx=<file>[,gguf=<file>]: the baseline of another build (scores re-done on T61's).
+        ...Object.fromEntries(
+          (typeof values.baselines === "string" ? values.baselines.split(",") : []).map((item) => {
+            const [runtime, path] = item.split("=");
+            return [z.enum(runtimes).parse(runtime), resolve(path ?? "")];
+          })
+        )
+      },
       frozenPath: resolve(frozenFileLocation()),
       gateFDirectory: defaultPaths.gateF,
       refreeze: values.refreeze === true,
