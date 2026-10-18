@@ -330,14 +330,14 @@ describe("the DEV knob", () => {
       readTyperCheckEnvironment(
         {
           ...check,
-          MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related",
+          MEMORA_TYPER_CHECK_PROMPT: "candidate-shipped-1",
           MEMORA_TYPER_CHECK_ORDERS: "content"
         },
         options
       )
     ).toEqual({
       pairsPath: "/repo/pairs.json",
-      promptCandidate: "candidate-strict-related",
+      promptCandidate: "candidate-shipped-1",
       orders: "content"
     });
     // An unknown candidate or order is refused; the options alone do nothing.
@@ -348,11 +348,11 @@ describe("the DEV knob", () => {
       readTyperCheckEnvironment({ ...check, MEMORA_TYPER_CHECK_ORDERS: "reversed" }, options)
     ).toThrow("both or content");
     expect(
-      readTyperCheckEnvironment({ MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related" }, options)
+      readTyperCheckEnvironment({ MEMORA_TYPER_CHECK_PROMPT: "candidate-shipped-1" }, options)
     ).toBeNull();
     // Packaged builds refuse the options as they refuse the check.
     for (const env of [
-      { MEMORA_TYPER_CHECK_PROMPT: "candidate-strict-related" },
+      { MEMORA_TYPER_CHECK_PROMPT: "candidate-shipped-1" },
       { MEMORA_TYPER_CHECK_ORDERS: "content" }
     ])
       expect(() => readTyperCheckEnvironment(env, { ...options, isPackaged: true })).toThrow(
@@ -443,34 +443,35 @@ describe("the DEV knob", () => {
         return { prompt, report, calls: ai.runDefaultTask.mock.calls.length };
       };
       const active = await run({ pairsPath }, "2026-10-18T10:00:00.000Z");
-      const strict = await run(
-        { pairsPath, promptCandidate: "candidate-strict-related", orders: "content" },
+      const previous = await run(
+        { pairsPath, promptCandidate: "candidate-shipped-1", orders: "content" },
         "2026-10-18T11:00:00.000Z"
       );
+      // The shipped revision 2 asks the panel's strict relatedness question; revision 1 does not.
       const criterion = "the same mechanism, rule or phenomenon as the other";
-      expect(active.prompt).not.toContain(criterion);
-      expect(strict.prompt).toContain(criterion);
+      expect(active.prompt).toContain(criterion);
+      expect(previous.prompt).not.toContain(criterion);
       expect(active.report).toMatchObject({
         orders: "both",
         prompt: {
           id: "relations.type",
           candidate: null,
-          revisions: [{ id: "relations.type", revisionId: "shipped-1" }]
+          revisions: [{ id: "relations.type", revisionId: "shipped-2" }]
         }
       });
-      expect(strict.report).toMatchObject({
+      expect(previous.report).toMatchObject({
         orders: "content",
         calls: 1,
         prompt: {
           id: "relations.type",
-          candidate: "candidate-strict-related",
-          revisions: [{ id: "relations.type", revisionId: "candidate-strict-related" }]
+          candidate: "candidate-shipped-1",
+          revisions: [{ id: "relations.type", revisionId: "candidate-shipped-1" }]
         },
         summary: { pairs: 4, typings: 4, swapConsistency: null }
       });
-      expect(strict.calls).toBe(1);
+      expect(previous.calls).toBe(1);
       // The typer key follows the prompt: a candidate never shares a cached verdict.
-      expect(strict.report.typerKey).not.toBe(active.report.typerKey);
+      expect(previous.report.typerKey).not.toBe(active.report.typerKey);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

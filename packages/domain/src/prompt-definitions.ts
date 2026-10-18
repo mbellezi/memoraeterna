@@ -300,7 +300,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                 "graph.source_chunks.repair",
                 "graph.catalog_metadata.repair",
                 // Names that cover the whole topic: covering samples and subtopics (topic-name-v2).
-                "topic.name"
+                "topic.name",
+                // The typer asks the panel's strict relatedness question first (F3 decision 29).
+                "relations.type"
               ].includes(row.id)
             ? "2"
             : "1",

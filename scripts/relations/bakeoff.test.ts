@@ -1641,7 +1641,7 @@ describe("the typer report gate F reads", () => {
     expect(typerReportSchema.safeParse(product).success).toBe(true);
     expect(typerReportSchema.safeParse({ ...product, orders: "content" }).success).toBe(false);
     expect(
-      typerReportSchema.safeParse({ ...product, prompt: { candidate: "candidate-strict-related" } })
+      typerReportSchema.safeParse({ ...product, prompt: { candidate: "candidate-shipped-1" } })
         .success
     ).toBe(false);
   });

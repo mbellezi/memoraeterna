@@ -191,24 +191,32 @@ it("every shipped field has usable typed synthetic examples", () => {
 
 it("a candidate revision replaces one prompt's wording in a pin and is audited as itself", () => {
   const base = defaultPromptPin();
-  const pin = promptPinWithCandidate(base, "relations.type", "candidate-strict-related");
+  const pin = promptPinWithCandidate(base, "relations.type", "candidate-shipped-1");
   expect(pin.entries.filter((entry) => entry.id !== "relations.type")).toEqual(
     base.entries.filter((entry) => entry.id !== "relations.type")
   );
   const values = { relation_pairs: [{ p: "p1", a: "Synthetic A", b: "Synthetic B" }] };
-  const shipped = withPromptPin(base, () => renderPrompt("relations.type", values));
-  const candidate = withPromptPin(pin, () => {
-    const rendered = renderPrompt("relations.type", values);
-    return { rendered, audit: promptAudit(rendered) };
+  const render = (with_: typeof base) =>
+    withPromptPin(with_, () => {
+      const rendered = renderPrompt("relations.type", values);
+      return { rendered, audit: promptAudit(rendered) };
+    });
+  const shipped = render(base);
+  const candidate = render(pin);
+  const previousNone = promptCandidate("relations.type", "candidate-shipped-1")
+    .fields.body.split("\n")
+    .find((line) => line.startsWith("- none:"))!;
+  expect(candidate.rendered).not.toBe(shipped.rendered);
+  expect(candidate.rendered).toContain(previousNone);
+  expect(shipped.rendered).not.toContain(previousNone);
+  expect(shipped.audit[0]?.revisions).toContainEqual({
+    id: "relations.type",
+    revisionId: "shipped-2"
   });
-  expect(candidate.rendered).not.toBe(shipped);
-  expect(candidate.rendered).toContain(
-    promptCandidate("relations.type", "candidate-strict-related").fields.body.split("\n")[0]
-  );
   expect(candidate.audit[0]?.promptId).toBe("relations.type");
   expect(candidate.audit[0]?.revisions).toContainEqual({
     id: "relations.type",
-    revisionId: "candidate-strict-related"
+    revisionId: "candidate-shipped-1"
   });
   expect(promptFingerprint(["relations.type"], pin)).not.toBe(
     promptFingerprint(["relations.type"], base)
