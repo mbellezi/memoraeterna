@@ -587,7 +587,10 @@ function helperCheck(run: LoadedRun): Check {
   const kills = localsOf(run.events).filter(
     (fault) => fault.kind === "mlx_kill" && fault.detail.killed === true
   );
-  const spawns = run.samples.flatMap((sample) => (sample.helper ? [sample.helper.spawnCount] : []));
+  // A sample taken before the helper's first spawn reads 0; the first spawn is the start, not a restart.
+  const spawns = run.samples.flatMap((sample) =>
+    sample.helper && sample.helper.spawnCount > 0 ? [sample.helper.spawnCount] : []
+  );
   if (spawns.length === 0)
     return {
       id: "helper-restarts",

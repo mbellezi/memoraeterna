@@ -380,6 +380,16 @@ describe("swap, P0 wait and helper restarts", () => {
       statusOf(analyzeRun(goodRun({ samples: extra, events: kills })).checks, "helper-restarts")
     ).toBe("fail");
   });
+
+  it("does not count the helper's first spawn as a restart", () => {
+    const beforeFirstSpawn = samples({ spawn: (index) => (index === 0 ? 0 : 1) });
+    expect(
+      statusOf(
+        analyzeRun(goodRun({ samples: beforeFirstSpawn, events: [] })).checks,
+        "helper-restarts"
+      )
+    ).toBe("pass");
+  });
 });
 
 describe("the breaker", () => {
