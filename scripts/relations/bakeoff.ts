@@ -258,7 +258,7 @@ export interface ScoreFileFacts {
   instruction: string | null;
 }
 
-async function readScores(
+export async function readScores(
   path: string
 ): Promise<{ scores: DirectedScores; facts: ScoreFileFacts }> {
   const bytes = await readFile(path).catch(() => {
@@ -3094,6 +3094,8 @@ export async function runGateF(input: {
   const cleanCheck: GateFResult["cleanCheck"] = [];
   for (const entry of record.calibrations) {
     const runtime = entry.identity.runtimeKind;
+    // A remote decider (plan decision 30) has gate F reads of its own (bakeoff-remote.ts).
+    if (runtime === "remote") continue;
     const calibration = frozenCalibration(record, runtime);
     const scores = (await labelScores(runtime)).scores;
     const scored = scoredLabels(evalLabels, scores, calibration.rule, `${runtime} eval scores`);

@@ -393,4 +393,66 @@ describe("calibration identity", () => {
       relationCalibrationIdentityKey(identity)
     );
   });
+
+  // Plan decision 30: a remote decider is named by its model and its request design, with no build.
+  const remote: RelationCalibrationIdentity = {
+    contract: "relation-decide-decisions-v1",
+    instructionSha256: hash("a"),
+    template: "relation-pair-text-v1",
+    bodyCharacters: 600,
+    rule: "mean",
+    provider: "openai",
+    model: "gpt-6-luna",
+    runtimeKind: "remote",
+    requestDesignSha256: hash("f")
+  };
+  const remoteEntry = (parity: unknown) =>
+    RelationCalibrationEntrySchema.safeParse({
+      kind: "isotonic",
+      identity: remote,
+      blocks: [{ fromScore: 0, probability: 0.5 }],
+      applyFrom: 2,
+      suggestFrom: 1,
+      basis: "test",
+      labelSetHash: hash("c"),
+      freezeHash: hash("d"),
+      fittedAt: "2026-10-20T10:00:00.000Z",
+      parity
+    });
+
+  it("keys a remote decider by its request design and holds its parity to that fingerprint", () => {
+    expect(relationCalibrationIdentityKey(remote)).not.toBe(
+      relationCalibrationIdentityKey({ ...remote, requestDesignSha256: hash("e") })
+    );
+    expect(relationCalibrationIdentityKey(remote)).not.toBe(
+      relationCalibrationIdentityKey(identity)
+    );
+    expect(remoteEntry({ requestDesignSha256: hash("f") }).success).toBe(true);
+    // Another fingerprint, or a local ranker's reference scores, is not a remote decider's parity.
+    expect(remoteEntry({ requestDesignSha256: hash("e") }).success).toBe(false);
+    expect(remoteEntry({ referenceHash: hash("e"), scores: [1] }).success).toBe(false);
+    // A local ranker keeps its reference scores; a remote decider has no threshold rule.
+    expect(
+      RelationCalibrationEntrySchema.safeParse({
+        ...isotonic([[0, 0.5]], 2, 1),
+        parity: { requestDesignSha256: hash("f") }
+      }).success
+    ).toBe(false);
+    expect(
+      RelationCalibrationEntrySchema.safeParse({
+        kind: "threshold",
+        identity: remote,
+        applyAt: 2,
+        suggestAt: null,
+        basis: "test"
+      }).success
+    ).toBe(false);
+    // A remote identity with a local ranker's fields is refused (each shape is strict).
+    expect(
+      RelationCalibrationEntrySchema.safeParse({
+        ...remoteEntry({ requestDesignSha256: hash("f") }).data,
+        identity: { ...remote, artifactSha256: hash("b") }
+      }).success
+    ).toBe(false);
+  });
 });

@@ -744,7 +744,11 @@ describe("the ranker decider", () => {
         }
       });
     });
-    expect(frozenRelationCalibrations.map((entry) => entry.identity)).toEqual(identities);
+    expect(
+      frozenRelationCalibrations
+        .filter((entry) => entry.identity.runtimeKind !== "remote")
+        .map((entry) => entry.identity)
+    ).toEqual(identities);
     // The shipped instruction is the F3 bake-off's `relation`, which the frozen maps are fitted under.
     expect(relationDecideInstruction()).toBe(
       "Judge whether the Document states an idea with a substantive conceptual relationship to the " +

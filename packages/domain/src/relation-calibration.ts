@@ -14,22 +14,26 @@ export const relationAggregationRules = ["max", "mean"] as const;
 export const RelationAggregationRuleSchema = z.enum(relationAggregationRules);
 export type RelationAggregationRule = z.infer<typeof RelationAggregationRuleSchema>;
 
+const identityBase = {
+  contract: z.string().min(1).max(100),
+  instructionSha256: sha256Hex,
+  template: z.string().min(1).max(100),
+  bodyCharacters: z.number().int().min(1).max(10_000),
+  rule: RelationAggregationRuleSchema,
+  provider: z.string().min(1).max(200),
+  model: z.string().min(1).max(200)
+};
+
 /**
- * What a calibration belongs to (D13): the decide contract, the exact instruction text (its hash),
- * the text template and its body length, the aggregation rule and the ranker model (provider,
- * model, runtime kind, repository, revision, quantization and artifact). The runtime build and the
- * helper batch size are not part of it: a rebuilt helper keeps its calibration while the parity
- * check passes.
+ * What a local ranker's calibration belongs to (D13): the decide contract, the exact instruction
+ * text (its hash), the text template and its body length, the aggregation rule and the ranker
+ * model (provider, model, runtime kind, repository, revision, quantization and artifact). The
+ * runtime build and the helper batch size are not part of it: a rebuilt helper keeps its
+ * calibration while the parity check passes.
  */
-export const RelationCalibrationIdentitySchema = z
+export const LocalRelationCalibrationIdentitySchema = z
   .object({
-    contract: z.string().min(1).max(100),
-    instructionSha256: sha256Hex,
-    template: z.string().min(1).max(100),
-    bodyCharacters: z.number().int().min(1).max(10_000),
-    rule: RelationAggregationRuleSchema,
-    provider: z.string().min(1).max(200),
-    model: z.string().min(1).max(200),
+    ...identityBase,
     runtimeKind: z.enum(["mlx", "gguf"]),
     repository: z.string().min(1).max(300),
     revision: z.string().min(1).max(200),
@@ -37,11 +41,37 @@ export const RelationCalibrationIdentitySchema = z
     artifactSha256: sha256Hex
   })
   .strict();
+
+/**
+ * What a remote decider's calibration belongs to (plan decision 30, the Decisions API): the decide
+ * contract, the instruction's hash, the text template and body length, the aggregation of the two
+ * directions, the provider's model, and the fingerprint of the whole request design (question
+ * wording, candidates per request, candidate orders and how they are combined, the probability
+ * scale). A remote model has no runtime build: its parity is the equality of that fingerprint.
+ */
+export const RemoteRelationCalibrationIdentitySchema = z
+  .object({
+    ...identityBase,
+    runtimeKind: z.literal("remote"),
+    requestDesignSha256: sha256Hex
+  })
+  .strict();
+
+export const RelationCalibrationIdentitySchema = z.union([
+  LocalRelationCalibrationIdentitySchema,
+  RemoteRelationCalibrationIdentitySchema
+]);
+export type LocalRelationCalibrationIdentity = z.infer<
+  typeof LocalRelationCalibrationIdentitySchema
+>;
+export type RemoteRelationCalibrationIdentity = z.infer<
+  typeof RemoteRelationCalibrationIdentitySchema
+>;
 export type RelationCalibrationIdentity = z.infer<typeof RelationCalibrationIdentitySchema>;
 
 /** The lookup key of an identity: its fields in a fixed order, whatever the object's key order. */
 export function relationCalibrationIdentityKey(identity: RelationCalibrationIdentity): string {
-  return JSON.stringify([
+  const shared = [
     identity.contract,
     identity.instructionSha256,
     identity.template,
@@ -49,12 +79,19 @@ export function relationCalibrationIdentityKey(identity: RelationCalibrationIden
     identity.rule,
     identity.provider,
     identity.model,
-    identity.runtimeKind,
-    identity.repository,
-    identity.revision,
-    identity.quantization,
-    identity.artifactSha256
-  ]);
+    identity.runtimeKind
+  ];
+  return JSON.stringify(
+    identity.runtimeKind === "remote"
+      ? [...shared, identity.requestDesignSha256]
+      : [
+          ...shared,
+          identity.repository,
+          identity.revision,
+          identity.quantization,
+          identity.artifactSha256
+        ]
+  );
 }
 
 /**
@@ -65,10 +102,15 @@ export function relationCalibrationIdentityKey(identity: RelationCalibrationIden
 export const RelationCalibrationBlockSchema = z.object({ fromScore: score, probability }).strict();
 export type RelationCalibrationBlock = z.infer<typeof RelationCalibrationBlockSchema>;
 
-/** The 64-pair scores a calibration was fitted with, compared on every runtime-build change (D13). */
-export const RelationCalibrationParitySchema = z
-  .object({ referenceHash: sha256Hex, scores: z.array(score).min(1) })
-  .strict();
+/**
+ * The parity a calibration is held to (D13, R1). A local ranker keeps the 64-pair scores it was
+ * fitted with, compared on every runtime-build change. A remote decider has no build to compare:
+ * its parity is the equality of the request design fingerprint (the identity's).
+ */
+export const RelationCalibrationParitySchema = z.union([
+  z.object({ referenceHash: sha256Hex, scores: z.array(score).min(1) }).strict(),
+  z.object({ requestDesignSha256: sha256Hex }).strict()
+]);
 
 /**
  * A calibration of one identity. `threshold`: a provisional rule on the raw score (Spike A's frozen
@@ -111,6 +153,8 @@ export const RelationCalibrationEntrySchema = z
   ])
   .superRefine((entry, context) => {
     if (entry.kind === "threshold") {
+      if (entry.identity.runtimeKind === "remote")
+        context.addIssue({ code: "custom", message: "A remote decider has no threshold rule." });
       if (entry.suggestAt !== null && entry.suggestAt > entry.applyAt)
         context.addIssue({ code: "custom", message: "The suggest band starts above apply." });
       return;
@@ -131,6 +175,22 @@ export const RelationCalibrationEntrySchema = z
       entry.suggestFrom > entry.applyFrom
     )
       context.addIssue({ code: "custom", message: "The suggest band starts above apply." });
+    // A local ranker keeps its reference scores; a remote decider its request design's fingerprint.
+    const { identity, parity } = entry;
+    const remote = identity.runtimeKind === "remote";
+    const held =
+      identity.runtimeKind === "remote"
+        ? "requestDesignSha256" in parity &&
+          parity.requestDesignSha256 === identity.requestDesignSha256
+        : "scores" in parity;
+    if (!held)
+      context.addIssue({
+        code: "custom",
+        message: remote
+          ? "A remote decider's parity is its request design fingerprint."
+          : "A local ranker's parity is its reference scores.",
+        path: ["parity"]
+      });
   });
 export type RelationCalibrationEntry = z.infer<typeof RelationCalibrationEntrySchema>;
 

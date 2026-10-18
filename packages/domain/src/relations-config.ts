@@ -8,6 +8,7 @@ import {
   RelationAggregationRuleSchema,
   RelationCalibrationEntrySchema,
   relationCalibrationIdentityKey,
+  type LocalRelationCalibrationIdentity,
   type RelationCalibrationEntry,
   type RelationCalibrationIdentity
 } from "./relation-calibration.js";
@@ -37,6 +38,12 @@ export const relationsDailyCallsSettingKey = "relations.ai.dailyCalls";
 
 /** The decide contract of the ranker decider; part of its cache key and calibration identity. */
 export const relationDecideContract = "relation-decide-v1";
+
+/**
+ * The decide contract of the Decisions API decider (plan decision 30): one predicate probability per
+ * candidate, both directions, the mean of two candidate orders; part of its calibration identity.
+ */
+export const relationDecideDecisionsContract = "relation-decide-decisions-v1";
 
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const logOdds = z.number().finite();
@@ -208,10 +215,10 @@ const spikeAInstructionSha256 = "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43
 
 const provisionalIdentity = (
   ranker: Pick<
-    RelationCalibrationIdentity,
+    LocalRelationCalibrationIdentity,
     "model" | "runtimeKind" | "repository" | "revision" | "quantization" | "artifactSha256"
   >
-): RelationCalibrationIdentity => ({
+): LocalRelationCalibrationIdentity => ({
   contract: relationDecideContract,
   instructionSha256: spikeAInstructionSha256,
   template: relationPairTextTemplate,
@@ -259,11 +266,13 @@ export const provisionalRelationCalibrations: readonly RelationCalibrationEntry[
 ];
 
 /**
- * The calibrations T58 froze (F3 bake-off, plan decision 29; config 745469e5a7acce86, frozen at
- * 2026-10-18T07:10:50.254Z): relation / 600 / mean, the panel's weighted isotonic map for the
+ * The calibrations T58 froze, copied from `.cache/f3/freeze/frozen.json` and never edited by hand (a
+ * re-freeze replaces them). The two local rankers (plan decision 29; config 745469e5a7acce86, frozen
+ * at 2026-10-18T07:10:50.254Z): relation / 600 / mean, the panel's weighted isotonic map for the
  * reported probability, no apply band, and the suggest edge chosen on the fixture tuning partition.
- * Copied from `.cache/f3/freeze/frozen.json`, never edited by hand: a re-freeze replaces them. The
- * Decisions API decider (plan decision 30) gets an entry of its own identity later.
+ * The Decisions API decider (plan decision 30; added by the re-freeze 8017633d05452997 at
+ * 2026-10-18T07:53:06.300Z): its own identity (model, instruction, request design), D18's apply and
+ * suggest bands on dense two-order requests; its parity is the request design's fingerprint.
  */
 export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
   {
@@ -361,6 +370,42 @@ export const frozenRelationCalibrations: readonly RelationCalibrationEntry[] = [
         4.932301608676971, 6.100450384850788, 7.008080622592154, 5.416012038611887,
         7.582506893393163, 5.6989027670023695, 7.502277557267472, 6.956802437806665
       ]
+    }
+  },
+  {
+    kind: "isotonic",
+    identity: {
+      contract: "relation-decide-decisions-v1",
+      instructionSha256: "1fc9a2eee90e36636d344db2c7c2566974ac47e67bcbc43eeff250bfd78b0164",
+      template: "relation-pair-text-v1",
+      bodyCharacters: 600,
+      rule: "mean",
+      provider: "openai",
+      model: "gpt-6-luna",
+      runtimeKind: "remote",
+      requestDesignSha256: "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
+    },
+    blocks: [
+      { fromScore: -16.118095550958316, probability: 0.013538958304543831 },
+      { fromScore: -10.705700187841405, probability: 0.029158550414730408 },
+      { fromScore: -2.3798644729023444, probability: 0.04706630461376537 },
+      { fromScore: -1.6918955246777925, probability: 0.05180954665532005 },
+      { fromScore: -1.1558174642569816, probability: 0.060311203111925255 },
+      { fromScore: -0.06474549154375886, probability: 0.3111784670606614 },
+      { fromScore: 0.7420854002313838, probability: 0.5590779918930682 },
+      { fromScore: 1.4970033237932603, probability: 0.7226752405029679 },
+      { fromScore: 2.036718938701393, probability: 0.7791987927777894 },
+      { fromScore: 2.3719827388660772, probability: 0.9458604984516219 }
+    ],
+    applyFrom: 2.3719827388660772,
+    suggestFrom: 1.4970033237932603,
+    basis:
+      "D18 on dense two-order requests (plan decision 30): p_apply 0.8706812712335298, p_suggest 0.6009455768505877, cross-validated, cell weights, 0 forbidden tuning root pairs",
+    labelSetHash: "70ee96f7ed1925cef50557469f8207cfc74d5cebc54507309c955411d51b338d",
+    freezeHash: "8017633d054529975c25e2bbd2ae50f03d245e93e3c46c872215c9cb4be3e6e3",
+    fittedAt: "2026-10-18T07:51:57.188Z",
+    parity: {
+      requestDesignSha256: "0e1ebd94857f256b1ea72cd5883c803c2b0db6d87277009b78c6679eaca4098c"
     }
   }
 ];

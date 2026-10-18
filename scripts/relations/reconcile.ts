@@ -191,9 +191,10 @@ export function planReconcile(input: {
   decisionsWithoutRelation?: readonly StoredDecision[];
 }): ReconcilePlan {
   const hysteresis = input.hysteresis ?? relationsConfig.hysteresisLogOdds;
-  const pass =
-    input.uncalibratedPass ??
-    relationsConfig.decide.uncalibratedPass.logOdds[input.entry.identity.runtimeKind];
+  const runtime = input.entry.identity.runtimeKind;
+  // Reconcile re-bands the stored scores of a local ranker; a remote decider's are not stored here.
+  if (runtime === "remote") throw new Error("Reconcile reads the local rankers' stored scores.");
+  const pass = input.uncalibratedPass ?? relationsConfig.decide.uncalibratedPass.logOdds[runtime];
   let legacy = 0,
     noScore = 0,
     inputChanged = 0;
