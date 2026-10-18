@@ -619,16 +619,16 @@ Wave 2 (M1 and gate R at the end):
 - [x] T51 Relations v2 matcher: the local ranker decides both directions with calibrated bands; the note decider
       mode and the wait for a validated ranker.
 - [x] T51t Typing batched per source, with `none` as a veto.
-- [ ] T52 Per-source matching with no batch barrier and the `relation-link` job on a light `relations` worker;
+- [x] T52 Per-source matching with no batch barrier and the `relation-link` job on a light `relations` worker;
       the untyped fallback, the daily relation cap and the stage-level retry; `rules/architecture.md`.
-- [ ] T52b Re-match harness with an arrival fence and recorded-timing replay.
-- [ ] T53 Source relations by design E (decision 17): promotion of typed applied note relations, nearest-source
+- [x] T52b Re-match harness with an arrival fence and recorded-timing replay.
+- [x] T53 Source relations by design E (decision 17): promotion of typed applied note relations, nearest-source
       discovery judged once with F1b's compact verdict; the shortlist and the Cartesian trigram join deleted.
 - [x] T54 Workload classes on every caller, legacy route mapping, Local / Hybrid / Cloud presets and Settings › AI
       by class with a "Generative judge" row.
 - [x] T55 Schema output in every runtime, item-level repair, graph salvage, graph batches by writer locality and
       the extraction pin; claims stay stopped.
-- [ ] T56 `embedMany` and hot-path caches.
+- [x] T56 `embedMany` and hot-path caches.
 - [ ] T57 Campaign M1 (tuning partition only).
 
 Wave 3 (gate F after T58; gate P at the end):
