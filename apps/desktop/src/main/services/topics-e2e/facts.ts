@@ -3,7 +3,7 @@
 // Plain SELECTs on the library the run just made; the verdict is `assertions.ts`.
 import { createHash } from "node:crypto";
 
-import { createLegacyStateRepository, hasLegacyContent } from "@app/db";
+import { createLegacyStateRepository, hasLegacyContent, noteRelationStateLabelSql } from "@app/db";
 import type { PgPool } from "@app/db";
 import { areasActive, itemKey, isLive, shapeReport, walkTopics } from "@app/domain/topic-tree";
 
@@ -267,10 +267,10 @@ async function collectEndState(pool: PgPool, topics: readonly E6Topic[]): Promis
       direction: string;
       band: string | null;
       status: string;
-      vetoed: boolean;
+      state: string;
     }>(
       `select lo.title as lo, hi.title as hi, r.relation_type as type, r.direction, r.band,
-         r.status::text as status, r.vetoed_at is not null as vetoed
+         r.status::text as status, ${noteRelationStateLabelSql("r")} as state
        from atomic_note_relations r
          join atomic_notes lo on lo.id = r.source_atomic_note_id
          join atomic_notes hi on hi.id = r.target_atomic_note_id`
@@ -289,7 +289,7 @@ async function collectEndState(pool: PgPool, topics: readonly E6Topic[]): Promis
           : row.direction === "hi_to_lo"
             ? [row.hi, row.lo]
             : [row.lo, row.hi].sort();
-      return JSON.stringify([from, to, row.type, row.band, row.status, row.vetoed]);
+      return JSON.stringify([from, to, row.type, row.band, row.status, row.state]);
     })
     .sort();
   const titles = new Map(topics.map((topic) => [topic.id, topic.title ?? ""]));

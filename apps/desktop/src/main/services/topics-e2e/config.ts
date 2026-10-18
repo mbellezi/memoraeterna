@@ -17,7 +17,7 @@ import { goldenPinModes } from "../extraction-pin.js";
 import type { GoldenPinMode } from "../extraction-pin.js";
 
 export const defaultSourceKey = "plos-one-murre-dros-2015";
-export const defaultCassetteName = "e2e-plos";
+export const defaultCassetteName = "e2e-plos-f3";
 export const routeFileName = "e2e-route.json";
 export const defaultEmbeddingCatalogId = "gguf-qwen3-embedding-0.6b-q8-0";
 export const defaultApiKeyEnv = "MEMORA_E2E_API_KEY";
