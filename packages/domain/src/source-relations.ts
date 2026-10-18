@@ -203,9 +203,11 @@ export const SourceRelationViewSchema = z
     /** The note relations it is promoted from (a judged relation may carry them too); else null. */
     supportCount: z.number().int().positive().nullable(),
     /**
-     * Decision 29: a suggestion nobody kept. True while the relation is promoted, has no human
-     * verdict and every note relation that supports it is itself a suggestion; it stops being one
-     * when the owner keeps it (`status` accepted) or keeps any of its supporting note relations.
+     * Decision 29: an automatic relation nobody kept, judged or promoted alike. True while the
+     * relation has no human verdict (`status` pending review) and no note relation that reads as
+     * applied supports it; it stops being one when the owner keeps it (`status` accepted) or any
+     * of its supporting note relations reads as applied (kept by the owner, or an existing applied
+     * one, D47). The owner's removal (`status` rejected) is final.
      */
     suggested: z.boolean(),
     status: AtomicNoteRelationStatusSchema,
@@ -215,6 +217,20 @@ export const SourceRelationViewSchema = z
   })
   .strict();
 export type SourceRelationView = z.infer<typeof SourceRelationViewSchema>;
+
+/**
+ * The one state a source relation reads as (decision 29): `suggested` while it is automatic and
+ * nobody kept it, `accepted` once the owner kept it, `confirmed` while it has no verdict of its own
+ * but rests on a note relation that reads as applied, `rejected` once the owner removed it.
+ */
+export type SourceRelationState = "suggested" | "confirmed" | "accepted" | "rejected";
+
+export function sourceRelationState(
+  relation: Pick<SourceRelationView, "status" | "suggested">
+): SourceRelationState {
+  if (relation.status !== "pending_review") return relation.status;
+  return relation.suggested ? "suggested" : "confirmed";
+}
 
 export const SourceRelationsPageSchema = z
   .object({

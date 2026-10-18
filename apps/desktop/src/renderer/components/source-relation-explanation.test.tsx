@@ -9,7 +9,6 @@ import {
   sourceRelationExcerpt,
   sourceRelationExplanationView,
   sourceRelationOpenReducer,
-  sourceRelationStatusKey,
   type SourceRelationExplanationView
 } from "./source-relation-explanation-state";
 import { notePageTiming } from "./note-page/note-page-model";
@@ -190,29 +189,34 @@ describe("source relation explanation states", () => {
 });
 
 describe("a suggested source relation (decision 29)", () => {
-  it("reads as suggested only while it is unreviewed, and as its review status otherwise", () => {
-    expect(sourceRelationStatusKey({ status: "pending_review", suggested: true })).toBe(
-      "suggested"
-    );
-    // Kept (through a supporting note relation, the flag clears) or reviewed by the owner.
-    expect(sourceRelationStatusKey({ status: "pending_review", suggested: false })).toBe(
-      "pending_review"
-    );
-    expect(sourceRelationStatusKey({ status: "accepted", suggested: false })).toBe("accepted");
-    expect(sourceRelationStatusKey({ status: "rejected", suggested: true })).toBe("rejected");
-  });
-
-  it("says so, and how to keep it, in every interface language", () => {
-    const labels = new Set<string>();
+  it("says suggested, confirmed and how to keep a suggestion in every interface language", () => {
+    const suggested = new Set<string>();
     for (const language of supportedLanguageCodes) {
       const t = createTranslator(language as "en");
-      for (const key of ["sourceRelations.suggested", "sourceRelations.suggestedHint"] as const) {
+      for (const key of [
+        "sourceRelations.suggested",
+        "sourceRelations.suggestedHint",
+        "sourceRelations.confirmed",
+        "sourceRelations.accepted",
+        "sourceRelations.rejected"
+      ] as const) {
         expect(t(key)).not.toContain("sourceRelations.");
         expect(t(key).trim()).not.toBe("");
       }
-      labels.add(t("sourceRelations.suggested"));
+      suggested.add(t("sourceRelations.suggested"));
     }
     // Translated, not copied: the five languages do not all read the same.
-    expect(labels.size).toBeGreaterThan(2);
+    expect(suggested.size).toBeGreaterThan(2);
+  });
+
+  it("has one word for an automatic relation nobody kept, not a second 'AI suggestion'", () => {
+    for (const language of supportedLanguageCodes) {
+      const t = createTranslator(language as "en");
+      expect(t("sourceRelations.restore")).not.toContain("sourceRelations.");
+      // The retired status wording stays retired: the key is gone from every language.
+      expect(() =>
+        t("sourceRelations.pending_review" as never, { missingKeyBehavior: "throw" })
+      ).toThrow();
+    }
   });
 });

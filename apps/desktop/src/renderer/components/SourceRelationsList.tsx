@@ -2,7 +2,7 @@ import { SourceReferenceBadge, SourceRelationReferenceText } from "./SourceRelat
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
-import type { SourceRelationView } from "@app/domain";
+import { sourceRelationState, type SourceRelationView } from "@app/domain";
 import {
   atomicRelationIcon,
   atomicRelationColor,
@@ -20,7 +20,6 @@ import {
   sourceRelationExcerpt,
   sourceRelationExplanationView,
   sourceRelationOpenReducer,
-  sourceRelationStatusKey,
   sourceRelationSupport,
   type WrittenSourceExplanation
 } from "./source-relation-explanation-state";
@@ -228,8 +227,8 @@ export function SourceRelationsList({
           const excerpt = shownInRow ? null : sourceRelationExcerpt(relation);
           // A promoted relation has no judge's score: its note connections stand in for one.
           const support = sourceRelationSupport(relation);
-          // Decision 29: a relation only note suggestions support is a suggestion until it is kept.
-          const statusKey = sourceRelationStatusKey(relation);
+          // Decision 29: an automatic relation is a suggestion until the owner keeps it.
+          const statusKey = sourceRelationState(relation);
           const suggested = statusKey === "suggested";
           return (
             <article

@@ -29,8 +29,11 @@ const relationships=Array.from({length:3},(_,i)=>({
     targetExcerpt:"O esforço de recordar favorece a aprendizagem. As condições experimentais devem ser preservadas ao comparar os resultados.",sourceNoteId:i===0?"note-A":null,targetNoteId:i===0?"note-B":null,noteRelationId:null}]
 }));
 // Design E (F3 D27): the third relation is promoted from three note connections, with no scores.
-// Decision 29: only note suggestions support it, so it is a suggestion until the owner keeps it.
+// Decision 29: every automatic relation is a suggestion until the owner keeps it, judged (the first)
+// or promoted (the third) alike; the second rests on a note connection that reads as applied (kept
+// by the owner, or existing applied data), so it is confirmed.
 Object.assign(relationships[2],{importance:null,confidence:null,origin:"promoted",supportCount:3,suggested:true});
+Object.assign(relationships[0],{suggested:true});
 window.app={knowledge:{listSourceRelations:async(input)=>{lastOffset=input.offset;await new Promise(r=>setTimeout(r,60));if(mode==="error")throw new Error("fixture");return mode==="empty"?{relations:[],hasMore:false,total:0}:{relations:relationships,hasMore:input.offset===0,total:33};},
  reviewSourceRelation:async(input)=>{const row=relationships.find(r=>r.id===input.id);row.status=input.status;return true;}}};
 const root=createRoot(document.querySelector("#root"));
@@ -43,10 +46,12 @@ export async function verify(){
  if(document.querySelector("#root").scrollWidth>document.querySelector("#root").clientWidth+1)throw new Error("Horizontal overflow");
  if(!document.querySelectorAll("article")[2].textContent.includes("Ligadas por 3 conexões entre notas"))throw new Error("A promoted relation must read as linked through its note connections");
  if(document.querySelectorAll("article")[0].textContent.includes("conexões entre notas"))throw new Error("A judged relation shows no support count");
- const suggestedCard=document.querySelectorAll("article")[2];
- if(!suggestedCard.textContent.includes("Sugerida")||!suggestedCard.textContent.includes("Aceite para mantê-la"))throw new Error("A suggested relation must read as a suggestion and say how to keep it");
- if(suggestedCard.textContent.includes("Sugestão da IA"))throw new Error("A suggested relation is not an unreviewed judged relation");
- if(document.querySelectorAll("article")[0].textContent.includes("Sugerida"))throw new Error("A judged relation is not a suggestion");
+ const articles=[...document.querySelectorAll("article")].map(el=>el.textContent);
+ for(const index of [0,2])
+  if(!articles[index].includes("Sugerida")||!articles[index].includes("Aceite para mantê-la"))throw new Error("An automatic relation nobody kept, judged or promoted, must read as one suggestion and say how to keep it");
+ if(document.querySelectorAll("article")[0].dataset.suggested!=="true"||document.querySelectorAll("article")[2].dataset.suggested!=="true")throw new Error("A suggestion is drawn as one card style");
+ if(!articles[1].includes("Confirmada")||articles[1].includes("Sugerida"))throw new Error("A relation resting on an applied note connection reads as confirmed, not as a suggestion");
+ if(articles.some(text=>text.includes("Sugestão da IA")))throw new Error("The separate AI suggestion wording is gone");
  document.querySelector("summary").click();
  await waitFor(()=>document.querySelector("details").open);
  const noteButton=[...document.querySelectorAll("button")].find(el=>el.textContent.includes("Ver nota"));noteButton.click();

@@ -192,13 +192,26 @@ export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.sou
   left join atomic_note_relations n on n.id = e.note_relation_id
   left join atomic_notes a on a.id = e.source_note_id
   left join atomic_notes b on b.id = e.target_note_id`;
-/** Current evidence whose note relation is in `state` (the joins above: `e`, `n`, `a`, `b`...). */
+/**
+ * A note relation that confirms the source relations resting on it (decisions 23 and 29, D47): one
+ * that reads as applied. Under decision 29 no decider applies a note relation, so in F3 that is
+ * exactly a relation the owner kept plus an existing one that reads as applied by D47's
+ * existing-data rule (a v9 relation with no band); a suggestion never confirms. If a later decider
+ * test restores an apply band, an automatically applied relation confirms too, as D23 intended.
+ * The visibility predicate is the module's, so no other filter reads the relation's columns.
+ */
+const confirmingNoteRelationSql = (relation: string) => noteRelationStateSql.applied(relation);
+
+/**
+ * Current evidence whose note relation is `shown` (applied or suggested) or `confirming` (applied)
+ * (the joins above: `e`, `n`, `a`, `b`...).
+ */
 const currentEvidenceWhenSql = (
-  state: "applied" | "shown"
+  state: "confirming" | "shown"
 ) => `(sc.id is not null and tc.id is not null
   and sd.metadata->>'supersededByDocumentId' is null and td.metadata->>'supersededByDocumentId' is null
   and sc.content_hash = e.snapshot->>'sourceHash' and tc.content_hash = e.snapshot->>'targetHash'
-  and (e.origin = 'source_analysis' or (n.id is not null and ${noteRelationStateSql[state]("n")}
+  and (e.origin = 'source_analysis' or (n.id is not null and ${state === "confirming" ? confirmingNoteRelationSql("n") : noteRelationStateSql.shown("n")}
     and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
     and a.supersession_status = 'current' and b.supersession_status = 'current'
     and ${noteFingerprint} = e.snapshot->>'noteFingerprint')))`;
@@ -206,18 +219,18 @@ export const currentSourceRelationEvidenceSql = currentEvidenceWhenSql("shown");
 export const currentSourceRelationSql = `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
   where e.relation_id = r.id and ${currentSourceRelationEvidenceSql})`;
 /**
- * A suggestion nobody kept (decision 29), over the relation alias (`r`): promoted, with no human
- * verdict, some of its evidence current, and none of that evidence resting on an applied note
- * relation (one the owner kept, or applied before F3): only suggestions support it. Derived at read
- * time like currentness, so keeping a supporting note relation, or the source relation itself,
- * ends the suggestion at once, with no stored flag to go stale. A judged relation is never one.
+ * An automatic relation nobody kept (decision 29), over the relation alias (`r`): judged or
+ * promoted alike, with no human verdict, and no confirming note relation (one that reads as
+ * applied: the owner's, or an existing applied one) supporting it with current evidence. Derived
+ * at read time like currentness, so keeping the source relation or a supporting note relation ends
+ * the suggestion at once, with no stored flag to go stale; the owner's removal (`rejected`) is
+ * final and never a suggestion. A relation whose evidence went stale and was never kept is still
+ * one, shown as stale.
  */
 export const suggestedSourceRelationSql = (r = "r") =>
-  `(${r}.origin = 'promoted' and ${r}.status = 'pending_review'
-  and exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
-    where e.relation_id = ${r}.id and ${currentEvidenceWhenSql("shown")})
+  `(${r}.status = 'pending_review'
   and not exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
-    where e.relation_id = ${r}.id and e.origin = 'atomic_notes' and ${currentEvidenceWhenSql("applied")}))`;
+    where e.relation_id = ${r}.id and e.origin = 'atomic_notes' and ${currentEvidenceWhenSql("confirming")}))`;
 /**
  * Every importance-ordered read of source relations (F3 R4, I-R11): a promoted relation has no
  * score, so it lists after the scored ones, the better supported first. `r` is the relation alias.
@@ -523,9 +536,9 @@ export function createSourceRelationRepository(pool: PgPool) {
      * Promotes a root's typed shown (applied or suggested, decision 29) cross-root note relations
      * into source relations with no call (design E, F3 D27): per other root, the relations
      * `planPromotedSourceRelations` plans, with no scores, the supporting note relations as
-     * evidence and their count. A relation promoted only from suggestions is itself a suggestion
-     * (`suggestedSourceRelationSql`, read from its evidence) until the owner keeps it or keeps any
-     * supporting note relation; nothing is stored for that, so no pass is needed to end it. A
+     * evidence and their count. Like a judged relation, it is a suggestion
+     * (`suggestedSourceRelationSql`, read from its evidence) until the owner keeps it or any
+     * supporting note relation reads as applied; nothing is stored for that, so no pass is needed to end it. A
      * judged relation of the same root pair and type keeps its origin and scores and only has its
      * support refreshed; an owner rejection of an equivalent relation is final; a promoted
      * relation whose support is gone is retired (one the owner accepted is kept). Recomputed from

@@ -12,6 +12,7 @@ import {
   promotableNoteRelationType,
   sourceDecisionLimits,
   sourceDecisionPassesFloors,
+  sourceRelationState,
   sourceVerdictWriteType
 } from "./source-relations.js";
 
@@ -139,8 +140,8 @@ describe("source decisions without prose", () => {
       writtenExplanation: null
     };
     expect(SourceRelationViewSchema.parse(promoted)).toEqual(promoted);
-    // Decision 29: a promoted relation only note suggestions support says it is a suggestion; the
-    // flag is required, so a reader cannot forget it.
+    // Decision 29: an automatic relation nobody kept says it is a suggestion; the flag is required,
+    // so a reader cannot forget it.
     expect(SourceRelationViewSchema.parse({ ...promoted, suggested: true }).suggested).toBe(true);
     const withoutFlag = Object.fromEntries(
       Object.entries(promoted).filter(([key]) => key !== "suggested")
@@ -162,5 +163,19 @@ describe("source decisions without prose", () => {
         writtenExplanation: null
       }).explanation
     ).toBe("Stored prose.");
+  });
+});
+
+describe("the state a source relation reads as (decision 29)", () => {
+  it("is suggested until the owner keeps it, whatever made it, and final once removed", () => {
+    // Judged or promoted, an automatic relation nobody kept is one state.
+    expect(sourceRelationState({ status: "pending_review", suggested: true })).toBe("suggested");
+    // Keeping it confirms it; a supporting note relation that reads as applied clears the flag.
+    expect(sourceRelationState({ status: "accepted", suggested: false })).toBe("accepted");
+    expect(sourceRelationState({ status: "pending_review", suggested: false })).toBe("confirmed");
+    // A human verdict on the relation itself outranks the flag.
+    expect(sourceRelationState({ status: "accepted", suggested: true })).toBe("accepted");
+    expect(sourceRelationState({ status: "rejected", suggested: true })).toBe("rejected");
+    expect(sourceRelationState({ status: "rejected", suggested: false })).toBe("rejected");
   });
 });

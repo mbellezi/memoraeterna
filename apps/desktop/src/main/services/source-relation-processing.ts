@@ -36,12 +36,12 @@ import { InFlightRegistry } from "./relations/in-flight-registry.js";
 /**
  * Source relations by design E (F3 D27, decision 17). Per root, with no batch barrier: (1) every
  * typed shown (applied or suggested, decision 29) cross-root note relation is promoted into a source
- * relation with no call, a suggestion while only suggestions support it; (2)
- * discovery selects the root's nearest earlier root and its reverse neighbours on the stored
+ * relation with no call; (2) discovery selects the root's nearest earlier root and its reverse neighbours on the stored
  * composite vectors; (3) each selected unordered pair is judged once with the compact, score-only
  * `source-relations-v5` verdict: at most two `[from, to, type, importance, confidence, [from
  * chunks], [to chunks]]` items per pair and no prose. Explanations are written when the owner opens
- * a relation.
+ * a relation. Promoted and judged relations alike are suggestions until the owner keeps them
+ * (decision 29).
  */
 export const sourceRelationPromptVersion = "source-relations-v5";
 export const sourceMatchingOperation = "source_relation_matching";

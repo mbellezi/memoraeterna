@@ -246,8 +246,11 @@ export function createObsidianWikiRepository(pool: PgPool) {
     },
     /**
      * The source relations between these sources, without their evidence. Like the vault's note
-     * links (applied relations only, D9), the wiki keeps suggestions out: they are reviewed in
-     * Memora, and a suggestion the owner keeps is written on the next pass (decision 29).
+     * links (applied relations only, D9), the wiki keeps suggestions out, judged or promoted: they
+     * are reviewed in Memora, and one the owner keeps (or whose supporting note relation reads as
+     * applied) is written on the next pass (decision 29). The owner's removals stay, as before. What
+     * is left is never a suggestion: a relation reads `sourceRelationState({ status, suggested:
+     * false })`.
      */
     async relationRefs(sourceIds: string[]) {
       return (

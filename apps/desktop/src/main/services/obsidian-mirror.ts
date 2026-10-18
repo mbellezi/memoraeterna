@@ -9,6 +9,7 @@ import {
   type PgPool,
   type ProjectionNoteRef
 } from "@app/db";
+import { sourceRelationState } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import {
   markdownHeading,
@@ -574,7 +575,12 @@ async function renderMirrorTargets(
       editorial: `# ${markdownHeading(r.sourceTitle + " → " + r.targetTitle)}\n\n`,
       generated: [
         t("obsidianWiki.readOnly"),
-        t(("sourceRelations." + r.status) as MessageKey),
+        // The wiki holds no suggestion (`relationRefs` leaves them out): a relation without a
+        // verdict of its own rests on a note relation that reads as applied.
+        t(
+          ("sourceRelations." +
+            sourceRelationState({ status: r.status, suggested: false })) as MessageKey
+        ),
         link(r.source_item_id, r.sourceTitle) +
           " → " +
           link(r.target_source_item_id, r.targetTitle),

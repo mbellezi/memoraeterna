@@ -7,7 +7,6 @@ import { noteRelationStateSql } from "./note-relation-sql.js";
 import {
   createSourceRelationRepository,
   currentSourceRelationEvidenceSql,
-  sourceRelationEvidenceJoins,
   noteRelationFingerprintSql,
   suggestedSourceRelationSql
 } from "./sourceRelationRepository.js";
@@ -100,7 +99,7 @@ describe("source-relation evidence currency", () => {
   });
 });
 
-describe("source relations only note suggestions support (decision 29)", () => {
+describe("automatic source relations nobody kept (decision 29)", () => {
   const sql = suggestedSourceRelationSql("rel").replace(/\s+/g, " ");
 
   it("promotes typed shown note relations, while the judge's hypotheses stay applied ones", async () => {
@@ -125,20 +124,26 @@ describe("source relations only note suggestions support (decision 29)", () => {
     expect(hypotheses).not.toContain(noteRelationStateSql.suggested("n"));
   });
 
-  it("is promoted, unreviewed, supported by current shown evidence and by no applied note relation", () => {
-    expect(sql).toContain("rel.origin = 'promoted' and rel.status = 'pending_review'");
-    // Some evidence is current under the shown predicate...
-    expect(sql).toContain(
-      `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins.replace(/\s+/g, " ")} where e.relation_id = rel.id and ${currentSourceRelationEvidenceSql.replace(/\s+/g, " ")})`
-    );
-    // ...and none rests on an applied (kept, or applied before F3) note relation.
-    const [, notApplied] = sql.split("and not exists");
-    expect(notApplied).toContain("e.origin = 'atomic_notes'");
-    expect(notApplied).toContain(noteRelationStateSql.applied("n"));
-    expect(notApplied).not.toContain(noteRelationStateSql.suggested("n"));
+  it("is any relation with no verdict that no note relation reading as applied supports", () => {
+    expect(sql.startsWith("(rel.status = 'pending_review' and not exists")).toBe(true);
+    // Judged and promoted alike: nothing in it reads the relation's origin.
+    expect(sql).not.toContain("origin = 'promoted'");
+    expect(sql).not.toContain("origin = 'judged'");
+    expect(sql).toContain("e.origin = 'atomic_notes'");
+    // The supporting note relation is current evidence that reads as applied through the module's
+    // predicate: the owner's Keep, or an existing relation with no band (D47). A suggestion never
+    // confirms, and the owner's verdict is not required of an applied one.
+    const evidence = sql.replace(/\s+/g, " ");
+    expect(evidence).toContain(noteRelationStateSql.applied("n"));
+    expect(evidence).not.toContain(noteRelationStateSql.suggested("n"));
+    expect(evidence).not.toContain(noteRelationStateSql.reviewed("n"));
+    expect(evidence).toContain("sc.content_hash = e.snapshot->>'sourceHash'");
+    // Evidence currentness is the one the reads use, with the applied predicate in place of shown.
+    expect(sql).not.toContain(noteRelationStateSql.shown("n"));
+    expect(currentSourceRelationEvidenceSql).toContain(noteRelationStateSql.shown("n"));
   });
 
-  it("takes only a plain relation alias", () => {
-    expect(suggestedSourceRelationSql()).toContain("r.origin = 'promoted'");
+  it("reads the relation alias r by default", () => {
+    expect(suggestedSourceRelationSql()).toContain("r.status = 'pending_review'");
   });
 });

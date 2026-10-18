@@ -26,6 +26,7 @@ import {
   type JobRecord,
   type ProjectionDelivery
 } from "@app/db";
+import { sourceRelationState } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import {
   normalizeProjectionText,
@@ -594,7 +595,10 @@ export class ObsidianWikiProjection {
       repo = createObsidianWikiRepository(pool),
       sync = createObsidianSyncRepository(pool);
     const t = (key: MessageKey) => translate(locale, key);
-    const relationStatus = (status: string) => t(("sourceRelations." + status) as MessageKey);
+    // The wiki holds no suggestion (the repository leaves them out): a relation without a verdict
+    // of its own rests on a note relation that reads as applied.
+    const relationStatus = (status: "pending_review" | "accepted" | "rejected") =>
+      t(("sourceRelations." + sourceRelationState({ status, suggested: false })) as MessageKey);
     const sources = await repo.sources(scope.sourceIds, scope.includeDescendants);
     const ids = sources.map((s) => String(s.id));
     const notes = await repo.noteRefs(ids, !scope.sourceIds.length);

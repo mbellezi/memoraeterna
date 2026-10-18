@@ -44,8 +44,8 @@ import { matchSources } from "./source-relation-processing.js";
 // Design E (F3 D27) against a real database: promotion of typed shown (applied or suggested,
 // decision 29) note relations (majority type and direction, null scores, support count, owner
 // rejection final, idempotent, retired when support is lost, typed-only with re-promotion on
-// typing, R14), a relation only suggestions support reading as a suggestion until it is kept (by
-// the owner or through a supporting note relation), the merge rules with judged
+// typing, R14), every automatic source relation, judged or promoted, reading as a suggestion until
+// it is kept (by the owner or through a supporting note relation that reads as applied), the merge rules with judged
 // verdicts and the readers' order (R4, I-R11), discovery's nearest and reverse neighbours on the
 // composite vectors, a judged pair end to end, and a hierarchy root's composite recomputed.
 // The generative judge's route (`op:source_relation_matching`, class `decide`); routing itself is
@@ -191,7 +191,7 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     subject: string,
     object: string,
     type: NoteRelationWriteType | null,
-    band: "apply" | "suggest" = "apply"
+    band: "apply" | "suggest" | null = "apply"
   ) => {
     const run = await createRelationMatchRunRepository(db()).start({ kind: "link" });
     const written = await createAtomicNoteRelationRepository(db()).upsertDecided({
@@ -286,8 +286,8 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       support_count: 3,
       status: "pending_review"
     });
-    // Its evidence is the three supporting note relations, current while they are shown; two are
-    // applied, so the relation is not a suggestion.
+    // Its evidence is the three supporting note relations, current while they are shown; two read
+    // as applied, which confirms the relation, so it is not a suggestion.
     const page = await listSourceRelations(db(), retrieval.id, feedback.id);
     const view = SourceRelationViewSchema.parse({ ...page.relations[0], writtenExplanation: null });
     expect(view).toMatchObject({
@@ -632,7 +632,7 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
   /** Two works with one typed note relation of the given band between each pair of their notes. */
   const linkedWorks = async (
     names: [string, string],
-    relations: Array<{ type: NoteRelationWriteType | null; band: "apply" | "suggest" }>
+    relations: Array<{ type: NoteRelationWriteType | null; band: "apply" | "suggest" | null }>
   ) => {
     const left = await work(names[0]);
     const right = await work(names[1]);
@@ -764,21 +764,51 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     });
   });
 
-  it("keeps a relation that applied note relations support as it was, suggestions beside them counted", async () => {
+  it("counts applied and suggested note relations alike, and any that reads as applied confirms (D47, decision 29)", async () => {
     const repository = createSourceRelationRepository(db());
-    const { left, right } = await linkedWorks(
+    // An F3 suggestion confirms nothing: the relation stays a suggestion, whatever the count.
+    const suggestions = await linkedWorks(
       ["Dual coding", "Concrete examples"],
       [
-        { type: "clarifies", band: "apply" },
+        { type: "clarifies", band: "suggest" },
         { type: "clarifies", band: "suggest" },
         { type: "clarifies", band: "suggest" }
       ]
     );
-    expect(await repository.promoteFromNotes(left.id)).toMatchObject({ promoted: 1 });
-    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+    expect(await repository.promoteFromNotes(suggestions.left.id)).toMatchObject({ promoted: 1 });
+    expect((await viewsBetween(suggestions.left.id, suggestions.right.id))[0]).toMatchObject({
+      origin: "promoted",
+      suggested: true,
+      supportCount: 3
+    });
+    // An existing relation with no band reads as applied (D47): one among the suggestions confirms,
+    // and every supporting relation is still counted.
+    const legacy = await linkedWorks(
+      ["Analogical reasoning", "Transfer of learning"],
+      [
+        { type: "same_as", band: null },
+        { type: "same_as", band: "suggest" },
+        { type: "same_as", band: "suggest" }
+      ]
+    );
+    expect(await repository.promoteFromNotes(legacy.left.id)).toMatchObject({ promoted: 1 });
+    expect((await viewsBetween(legacy.left.id, legacy.right.id))[0]).toMatchObject({
       origin: "promoted",
       suggested: false,
+      status: "pending_review",
       supportCount: 3
+    });
+    // The owner's Keep is an applied reading too, and it is what a suggestion needs to be confirmed.
+    await decideNote(suggestions.noteRelationIds[0]!, "accepted");
+    expect((await viewsBetween(suggestions.left.id, suggestions.right.id))[0]).toMatchObject({
+      suggested: false,
+      status: "pending_review",
+      supportCount: 3
+    });
+    // A confirmed relation whose confirming relation is removed is a suggestion again.
+    await decideNote(suggestions.noteRelationIds[0]!, "rejected");
+    expect((await viewsBetween(suggestions.left.id, suggestions.right.id))[0]).toMatchObject({
+      suggested: true
     });
   });
 
@@ -800,9 +830,9 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       supportCount: 1
     });
     await decideNote(noteRelationIds[1]!, "rejected");
-    // Before the pass runs nothing supports it: it reads as stale, not as a suggestion.
+    // Before the pass runs nothing supports it: it is stale, and still a suggestion nobody kept.
     expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
-      suggested: false,
+      suggested: true,
       current: false
     });
     const retired = await repository.promoteFromNotes(right.id);
@@ -836,9 +866,28 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     });
   });
 
-  it("does not read a judged relation as a suggestion, even one that absorbed suggested support", async () => {
+  const judgedVerdict = (
+    left: { id: string },
+    right: { id: string },
+    leftChunk: SourceRelationChunk,
+    rightChunk: SourceRelationChunk,
+    relationType = "extends"
+  ) => ({
+    existingId: null,
+    sourceItemId: left.id,
+    targetSourceItemId: right.id,
+    relationType,
+    sourceIdea: null,
+    targetIdea: null,
+    explanation: null,
+    importance: 0.9,
+    confidence: 0.95,
+    evidence: [{ source: leftChunk, target: rightChunk, note: null }]
+  });
+
+  it("keeps a promoted suggestion a suggestion when a judged verdict lands on it", async () => {
     const repository = createSourceRelationRepository(db());
-    const { left, right } = await linkedWorks(
+    const { left, right, noteRelationIds } = await linkedWorks(
       ["Mnemonic devices", "Method of loci"],
       [{ type: "extends", band: "suggest" }]
     );
@@ -850,26 +899,87 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       `judged-${randomUUID()}`,
       left.id,
       right.id,
-      [
-        {
-          existingId: null,
-          sourceItemId: left.id,
-          targetSourceItemId: right.id,
-          relationType: "extends",
-          sourceIdea: null,
-          targetIdea: null,
-          explanation: null,
-          importance: 0.9,
-          confidence: 0.95,
-          evidence: [{ source: leftChunk, target: rightChunk, note: null }]
-        }
-      ],
+      [judgedVerdict(left, right, leftChunk, rightChunk)],
       {}
     );
+    // Automatic and automatic: the judge's scores are in, the relation is still not the owner's.
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      origin: "judged",
+      suggested: true,
+      importance: 0.9,
+      supportCount: 1
+    });
+    expect(await wikiRelations(left.id, right.id)).toEqual([]);
+    // Keeping the supporting note relation confirms it, as for a promoted one.
+    await decideNote(noteRelationIds[0]!, "accepted");
     expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
       origin: "judged",
       suggested: false,
-      supportCount: 1
+      status: "pending_review"
+    });
+  });
+
+  it("reads an unreviewed judged relation as a suggestion that only the owner's Keep confirms", async () => {
+    const repository = createSourceRelationRepository(db());
+    const left = await work("Cognitive load theory");
+    const right = await work("Worked examples");
+    const leftChunk = await passage(left, "Working memory holds few elements at once.");
+    const rightChunk = await passage(right, "Studying solved problems lowers the load on novices.");
+    expect(
+      await repository.commitDecision(
+        `judged-${randomUUID()}`,
+        left.id,
+        right.id,
+        [judgedVerdict(left, right, leftChunk, rightChunk, "supports")],
+        {}
+      )
+    ).toBe(1);
+    const [suggestion] = await viewsBetween(left.id, right.id);
+    expect(suggestion).toMatchObject({
+      origin: "judged",
+      suggested: true,
+      status: "pending_review",
+      supportCount: null,
+      current: true
+    });
+    const graph = await createKnowledgeGraphDashboardRepository(db()).get("sources", "relations");
+    expect(graph.edges.find((edge) => edge.id === suggestion!.id)).toMatchObject({
+      kind: "source_relation",
+      suggested: true
+    });
+    expect(await wikiRelations(left.id, right.id)).toEqual([]);
+    // The owner's Keep confirms it, and the vault's wiki writes it.
+    expect(await repository.review(suggestion!.id, "accepted", suggestion!.updatedAt)).toBe(true);
+    expect((await viewsBetween(left.id, right.id))[0]).toMatchObject({
+      suggested: false,
+      status: "accepted"
+    });
+    expect(await wikiRelations(left.id, right.id)).toEqual([suggestion!.id]);
+    // Removed instead, it is final: a later verdict on the pair does not bring it back.
+    const other = await work("Expertise reversal");
+    const otherChunk = await passage(other, "Guidance that helps novices can hamper experts.");
+    await repository.commitDecision(
+      `judged-${randomUUID()}`,
+      left.id,
+      other.id,
+      [judgedVerdict(left, other, leftChunk, otherChunk, "extends")],
+      {}
+    );
+    const [removable] = await viewsBetween(left.id, other.id);
+    expect(removable).toMatchObject({ suggested: true });
+    expect(await repository.review(removable!.id, "rejected", removable!.updatedAt)).toBe(true);
+    expect(
+      await repository.commitDecision(
+        `judged-${randomUUID()}`,
+        left.id,
+        other.id,
+        [judgedVerdict(left, other, leftChunk, otherChunk, "extends")],
+        {}
+      )
+    ).toBe(0);
+    expect((await viewsBetween(left.id, other.id))[0]).toMatchObject({
+      suggested: false,
+      status: "rejected"
     });
   });
 
