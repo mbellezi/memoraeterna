@@ -484,7 +484,7 @@ describe("source matching by design E (D27)", () => {
     expect(order).toEqual(["promote", "discover", "judge"]);
     expect(mocks.repository.promoteFromNotes).toHaveBeenCalledWith("root-A");
     expect(mocks.repository.planDiscovery).toHaveBeenCalledWith(
-      expect.objectContaining({ rootId: "root-A", fingerprint: "root-A", neighbours: 2 })
+      expect.objectContaining({ rootId: "root-A", fingerprint: "root-A", neighbours: 1 })
     );
     expect(result).toMatchObject({
       promoted: 2,

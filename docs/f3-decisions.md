@@ -288,13 +288,6 @@ At 3,500 with 12/12 caps X7-REF kept 105% of F1a's yield (2.712 per chunk) at 45
 already covers one extraction batch of at most 12 entities. By Q8 the owner re-based X7 for F3 to ≤45 per chapter,
 quality first, and moved the call reduction to F4 (identity grouped across a source's batches, bar back to ≤40).
 
-### S1 second library at M2 (2026-10-19)
-
-Over the 27 panel-positive pairs of the second library's labelled nearest and second-nearest pairs (GOLD and CORP
-roots, v5 verdicts from SPG and SPC), one-neighbour discovery accepts 6 (recall 0.222) and two-neighbour discovery 13
-(0.481): 6 is below 13 - 1, so by the pre-registered rule `discovery.neighbours` becomes 2 and S1 is measured again
-(time, quality and the order replay on fresh S0 and S1 samples).
-
 ## Measurement
 
 ### Exit criteria

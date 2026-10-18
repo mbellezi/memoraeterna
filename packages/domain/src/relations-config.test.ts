@@ -38,7 +38,7 @@ describe("relations config", () => {
     expect(relationsConfig.link).toEqual({ poolSize: 2, drainPoolSize: 1 });
     expect(relationsConfig.ai).toEqual({ maxBackgroundCallsPerDay: 500 });
     expect(relationsConfig.escalation).toEqual({ enabled: false });
-    expect(relationsConfig.discovery).toEqual({ neighbours: 2 });
+    expect(relationsConfig.discovery).toEqual({ neighbours: 1 });
     expect(relationsConfig.sourceJudge).toEqual({
       noteRelationsPerPair: 4,
       keepSimilarTo: false,
