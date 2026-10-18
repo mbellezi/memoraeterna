@@ -117,6 +117,12 @@ concurrency and automatic correction.
     changes after the header was built, the header chunk is rebuilt, re-embedded and its knowledge graph
     re-extracted (the old chunk's mentions replaced), and the root composite follows; existing libraries are
     brought up to date once. Built in F3 after T53f (it moves no F3 baseline: a one-batch import already does it).
+28. **Summaries of large sources are batched by the writer's capacity** (2026-10-18): a book's summary is built
+    from its chapters' summaries and a long chapter's from its partial summaries; when that input exceeds a
+    budget derived from the active writer model's context window (minus the prompt and the output reserve), the
+    summaries are combined in consecutive batches, recursively, until one call fits. The budget depends on the
+    model in use (large for Codex, smaller for a local writer); no model changes (decision 26). Built with
+    decision 27's task; sources that fit in one call keep today's requests.
 
 ## 3. The five swaps
 
