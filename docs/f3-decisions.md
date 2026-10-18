@@ -253,6 +253,17 @@ The owner decided (plan decision 29), amending D18 and D23:
   breaker, helper restarts and remote deadlines met; the repair bar sets aside the local writer's structured calls
   (8-19% invalid output; JSON-constrained decoding moves to F4).
 
+### Gate P passed (2026-10-18, second pre-soak presoak4-20261018T1530, 4 h, with T53d, T62f and the Ask repair audit)
+
+Every bar met: 0 calls past deadline (1,803 calls), repairs 0 of 15 counted (the local writer's 251 structured calls set
+aside by decision 31a: 38 repairs, 15.1%, information), 0 jobs past twice their class deadline, 0 stuck over 1 h, 0
+blocked, 0 MB swap growth, P0 wait within bound, breaker opened and closed on the outage, remote first-byte 7/7 and stall
+8/8 deadlines, every injected fault kind on both fakes ended as expected (malformed Ask now audited as a repair). Two
+REVIEW rows explained: 2 helper restarts for 3 injected kills (the last kill came near the end; the helper was not needed
+again), and 9 non-injected failed knowledge-graph jobs, all invalid structured output of the local writer (entity
+identity 7, relation types 2, nothing valid 1): decision 31a's known limitation; matching continued (T55k). The app quit
+by itself after the run (bounded shutdown). `e2e-plos-f3` replayed with 0 misses, E6 PASSED.
+
 ### M2 budget (owner, 2026-10-18)
 
 The Codex cap for F3 rises from 1.7M to 2.5M tokens (decision 29's wide suggest band multiplies typing: M2's gating
