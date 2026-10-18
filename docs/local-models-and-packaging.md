@@ -121,9 +121,16 @@ request of the topic gate is unchanged byte for byte, so recorded gate entries k
 
 `AiService` keeps one generative, one embedding and one ranker model resident, so a gate call
 between two embedding calls reloads neither; loading another generative model releases the first.
-The job supervisor's idle release never releases the ranker. Every MLX adapter shares one helper
-process; the helper has no unload command, so releasing an idle MLX model stops it once no MLX call
-runs, and a resident MLX ranker loads again on its next call.
+The job supervisor's idle release never releases the ranker or the generative model: the generative
+model unloads after `residency.generativeIdleUnloadMs` (300 s) without a call (F3 D39). On a machine
+whose memory cannot hold the writer beside the ranker (`residencyPlan`: catalog minimums plus 4 GiB
+headroom) the two take turns, and a writer that is about to load needs its catalog minimum plus
+1 GiB of free and inactive memory, else the call fails with `insufficient_memory` instead of
+swapping. Every MLX adapter shares one helper process, which announces `cancel`, `unload` and
+`stream` in `health`: a released MLX model is unloaded from its slot (the helper keeps its PID and
+the other slots), a call's deadline or abort cancels it at the next token or scoring batch, and
+the writer's text streams. An older helper without these capabilities is killed instead, once no
+MLX call runs, and a resident MLX ranker then loads again on its next call.
 
 ### DEV seed
 

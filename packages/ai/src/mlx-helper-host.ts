@@ -6,16 +6,19 @@ import type { z } from "zod";
 
 import {
   mlxHelperEmbedResultSchema,
+  mlxHelperHealthResultSchema,
   mlxHelperMessageSchema,
   mlxHelperRequestSchema,
   mlxHelperScoreResultSchema,
   mlxHelperTextResultSchema,
   type MlxEmbedInput,
   type MlxGenerationParameters,
+  type MlxHelperCapability,
   type MlxHelperEmbedResult,
   type MlxHelperMessage,
   type MlxHelperProgress,
   type MlxHelperScoreResult,
+  type MlxHelperSlot,
   type MlxHelperTextResult,
   type MlxScoreInput
 } from "./local-runtime-protocol.js";
@@ -31,9 +34,9 @@ const runtimeFailedKey = "errors.localModels.runtimeFailed";
 /**
  * A failed helper request. `message` is a localization key (the helper's own, or the generic
  * runtime failure key), so job failure classification and the UI treat it like every other
- * local-model error. `code` says what happened: `timeout`, `helper_exited`, `spawn_failed`,
- * `protocol`, `disposed`, or the helper's own error code. `stderr` is the tail of the helper's
- * diagnostics and must not be shown to the user.
+ * local-model error. `code` says what happened: `timeout`, `stalled`, `helper_exited`,
+ * `spawn_failed`, `protocol`, `disposed`, or the helper's own error code. `stderr` is the tail of
+ * the helper's diagnostics and must not be shown to the user.
  */
 export class MlxHelperError extends Error {
   public constructor(
@@ -57,16 +60,35 @@ export interface MlxHelperHostOptions {
 export interface MlxHelperCallOptions {
   /** Deadline from the start of execution; the wait for earlier requests does not count. */
   timeoutMs?: number;
-  /** Aborting kills the helper, because it cannot abandon a running forward pass. */
+  /**
+   * Aborting stops the request. A helper that announced `cancel` is sent one and stays up with its
+   * models loaded; an older helper, or one that has not answered `cancelGraceMs` later, is killed.
+   */
   signal?: AbortSignal;
   onProgress?: (progress: Pick<MlxHelperProgress, "progress" | "messageKey">) => void;
+  /** The pieces of text a streamed `generate` writes, in order. */
+  onDelta?: (text: string) => void;
+  /**
+   * Longest silence between two `delta` lines once the first one came. A longer one stops the
+   * request like its deadline does, with code `stalled`.
+   */
+  stallMs?: number;
 }
 
 export interface MlxGenerateInput {
   modelPath: string;
   prompt: string;
   parameters?: MlxGenerationParameters;
+  /** Ask for `delta` lines (`onDelta`); a helper without `stream` answers with the whole text only. */
+  stream?: boolean;
 }
+
+/**
+ * What `unload` did: the slot's model was dropped (`unloaded`), no helper runs so nothing is loaded
+ * (`not_running`), or the helper is an older build without `unload` (`unsupported`): only stopping
+ * it frees the slot.
+ */
+export type MlxUnloadOutcome = "unloaded" | "not_running" | "unsupported";
 
 /** One spawned helper process and the single request it may be answering. */
 interface HelperProcess {
@@ -76,9 +98,15 @@ interface HelperProcess {
   exited: boolean;
   /** Set once the helper survived its first answer, so it is not a one-request-per-process helper. */
   persistent: boolean;
+  /** Requests it answered. */
+  answers: number;
   /** Why the process could not start (for example a missing executable). */
   startupError: MlxHelperError | null;
   active: ActiveRequest | null;
+  /** What the process announced in `health`; null until it answered one. */
+  capabilities: ReadonlySet<string> | null;
+  /** The model each slot holds as far as the host knows: answered requests and unloads. */
+  readonly loaded: Map<MlxHelperSlot, string>;
   /** Resolves when the process has exited or failed to start. */
   readonly gone: Promise<void>;
   markGone: () => void;
@@ -90,11 +118,17 @@ interface ActiveRequest {
   onFailure: (error: Error) => void;
 }
 
+type HelperRequest = z.infer<typeof mlxHelperRequestSchema>;
+
 /**
  * The one supervised MLX helper process of a runtime. `generate`, `embed` and `score` all go to
  * the same process, which keeps at most one model loaded per command kind. Requests are
- * serialized (local inference runs one call at a time), a timeout or an abort kills the helper,
- * and the next request spawns a fresh one once the old one is gone, so two helpers never overlap.
+ * serialized (local inference runs one call at a time) and the next request spawns a fresh helper
+ * once a killed one is gone, so two helpers never overlap.
+ *
+ * A fresh process is asked for its capabilities (`health`) before its first request (F3 D39). At a
+ * deadline or an abort a helper that can is sent `cancel` and keeps its PID and its loaded models;
+ * one that cannot, or that has not answered the cancel within `cancelGraceMs`, is killed.
  */
 export class MlxHelperHost {
   public readonly config: MlxRuntimeConfig;
@@ -103,6 +137,8 @@ export class MlxHelperHost {
   private tail: Promise<unknown> = Promise.resolve();
   private epoch = 0;
   private spawned = 0;
+  /** Cleared once the executable proved to exit after each answer: it has no capabilities to ask. */
+  private probeCapabilities = true;
 
   public constructor(private readonly options: MlxHelperHostOptions) {
     this.environment = options.environment ?? process.env;
@@ -111,8 +147,8 @@ export class MlxHelperHost {
 
   /** The process ID of the running helper, if one is running. */
   public get pid(): number | undefined {
-    const current = this.current;
-    return current && !current.exited ? current.child.pid : undefined;
+    const current = this.running();
+    return current?.child.pid;
   }
 
   /** How many helper processes this host has started. */
@@ -120,9 +156,24 @@ export class MlxHelperHost {
     return this.spawned;
   }
 
+  /** What the running helper announced; undefined while none runs or before it was asked. */
+  public get capabilities(): ReadonlySet<string> | undefined {
+    return this.running()?.capabilities ?? undefined;
+  }
+
+  /** Whether the running helper announced a capability. */
+  public supports(capability: MlxHelperCapability): boolean {
+    return this.running()?.capabilities?.has(capability) === true;
+  }
+
+  /** The model the running helper holds in a slot, as far as the host knows. */
+  public loadedModel(slot: MlxHelperSlot): string | undefined {
+    return this.running()?.loaded.get(slot);
+  }
+
   /** Starts the helper if needed and checks that it answers. */
   public async health(options: MlxHelperCallOptions = {}): Promise<void> {
-    await this.call({ command: "health" }, mlxHelperTextResultSchema, {
+    await this.call({ command: "health" }, mlxHelperHealthResultSchema, {
       timeoutMs: this.config.healthTimeoutMs,
       ...options
     });
@@ -137,7 +188,8 @@ export class MlxHelperHost {
         command: "generate",
         modelPath: input.modelPath,
         prompt: input.prompt,
-        ...(input.parameters ? { parameters: input.parameters } : {})
+        ...(input.parameters ? { parameters: input.parameters } : {}),
+        ...(input.stream ? { stream: true } : {})
       },
       mlxHelperTextResultSchema,
       options
@@ -159,6 +211,30 @@ export class MlxHelperHost {
   }
 
   /**
+   * Drops one slot's model from the running helper, after the request it may be answering; the
+   * other slots keep theirs and the process keeps its PID. It never starts a helper.
+   */
+  public unload(slot: MlxHelperSlot): Promise<MlxUnloadOutcome> {
+    const epoch = this.epoch;
+    return this.serialize(undefined, async (): Promise<MlxUnloadOutcome> => {
+      const helper = this.running();
+      if (epoch !== this.epoch || !helper) return "not_running";
+      if (!helper.capabilities && this.probeCapabilities) await this.probe(helper, undefined);
+      if (helper.exited) return "not_running";
+      if (!helper.capabilities?.has("unload")) return "unsupported";
+      const requestId = randomUUID();
+      await this.execute(
+        helper,
+        mlxHelperRequestSchema.parse({ protocolVersion: 1, requestId, command: "unload", slot }),
+        requestId,
+        mlxHelperTextResultSchema,
+        { timeoutMs: this.config.healthTimeoutMs }
+      );
+      return "unloaded";
+    });
+  }
+
+  /**
    * Kills the helper and rejects the request it was answering and every queued one. The host
    * stays usable: the next request spawns a fresh helper.
    */
@@ -172,6 +248,11 @@ export class MlxHelperHost {
     await current.gone;
   }
 
+  private running(): HelperProcess | undefined {
+    const current = this.current;
+    return current && !current.exited ? current : undefined;
+  }
+
   private call<S extends z.ZodType>(
     body: Record<string, unknown>,
     resultSchema: S,
@@ -183,10 +264,19 @@ export class MlxHelperHost {
     if (!request.success) return Promise.reject(request.error);
     const epoch = this.epoch;
     return this.serialize(options.signal, async () => {
-      if (epoch !== this.epoch) throw new MlxHelperError(runtimeFailedKey, "disposed", true, "");
-      throwIfAborted(options.signal);
-      const helper = await this.acquire();
-      return this.execute(helper, request.data, requestId, resultSchema, options);
+      for (let attempt = 0; ; attempt += 1) {
+        if (epoch !== this.epoch) throw new MlxHelperError(runtimeFailedKey, "disposed", true, "");
+        throwIfAborted(options.signal);
+        const helper = await this.ready(options.signal, request.data.command !== "health");
+        try {
+          return await this.execute(helper, request.data, requestId, resultSchema, options);
+        } catch (error) {
+          if (attempt > 0 || !exitedAfterAnswering(helper, error)) throw error;
+          // An older helper that serves one request per process exited after its last answer,
+          // slower than the persistence probe saw: this request never ran; a fresh process takes it.
+          this.probeCapabilities = false;
+        }
+      }
     });
   }
 
@@ -201,6 +291,32 @@ export class MlxHelperHost {
       signal.addEventListener("abort", onAbort, { once: true });
       result.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
     });
+  }
+
+  /** The running helper, asked for its capabilities first when it is fresh. */
+  private async ready(
+    signal: AbortSignal | undefined,
+    needsCapabilities: boolean
+  ): Promise<HelperProcess> {
+    for (;;) {
+      const helper = await this.acquire();
+      if (!needsCapabilities || helper.capabilities || !this.probeCapabilities) return helper;
+      await this.probe(helper, signal);
+      if (!helper.exited) return helper;
+      // It answered and exited: an older helper that serves one request per process.
+      this.probeCapabilities = false;
+    }
+  }
+
+  private async probe(helper: HelperProcess, signal: AbortSignal | undefined): Promise<void> {
+    const requestId = randomUUID();
+    await this.execute(
+      helper,
+      mlxHelperRequestSchema.parse({ protocolVersion: 1, requestId, command: "health" }),
+      requestId,
+      mlxHelperHealthResultSchema,
+      { timeoutMs: this.config.healthTimeoutMs, ...(signal ? { signal } : {}) }
+    );
   }
 
   /** The running helper, or a new one once any killed predecessor has exited. */
@@ -231,8 +347,11 @@ export class MlxHelperHost {
       stderr: "",
       exited: false,
       persistent: false,
+      answers: 0,
       startupError: null,
       active: null,
+      capabilities: null,
+      loaded: new Map(),
       gone,
       markGone
     };
@@ -267,13 +386,14 @@ export class MlxHelperHost {
 
   private release(helper: HelperProcess): void {
     helper.exited = true;
+    helper.loaded.clear();
     if (this.current === helper) this.current = null;
     helper.markGone();
   }
 
   private execute<S extends z.ZodType>(
     helper: HelperProcess,
-    request: z.infer<typeof mlxHelperRequestSchema>,
+    request: HelperRequest,
     requestId: string,
     resultSchema: S,
     options: MlxHelperCallOptions
@@ -285,35 +405,87 @@ export class MlxHelperHost {
       );
     }
     const timeoutMs = options.timeoutMs ?? this.config.requestTimeoutMs;
+    const slot = requestSlot(request);
+    const modelPath = "modelPath" in request ? request.modelPath : undefined;
+    const before = slot ? helper.loaded.get(slot) : undefined;
+    // Only inference can be cancelled; a `health` or `unload` that does not answer is a stuck helper.
+    const cancellable = slot !== null && helper.capabilities?.has("cancel") === true;
     const answer = new Promise<z.infer<S>>((resolve, reject) => {
       let settled = false;
+      let interruption: Error | null = null;
+      let graceTimer: NodeJS.Timeout | undefined;
+      let stallTimer: NodeJS.Timeout | undefined;
       const finish = (settle: () => void) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearTimeout(graceTimer);
+        clearTimeout(stallTimer);
         options.signal?.removeEventListener("abort", onAbort);
         if (helper.active?.requestId === requestId) helper.active = null;
         settle();
       };
-      const stop = (error: Error) => {
+      const killWith = (error: Error) => {
         finish(() => reject(error));
         this.kill(helper);
       };
-      const onAbort = () => stop(abortError());
+      // What a slot holds after a request that did not succeed: a failed generation drops its
+      // model, and a request that was loading another model may have dropped the old one.
+      const forgetSlot = (failedGeneration: boolean) => {
+        if (slot && (failedGeneration || before !== modelPath)) helper.loaded.delete(slot);
+      };
+      /** Stops the request: `cancel` and a grace period on a helper that can, else the kill. */
+      const interrupt = (error: Error) => {
+        if (settled || interruption) return;
+        interruption = error;
+        clearTimeout(timer);
+        clearTimeout(stallTimer);
+        forgetSlot(false);
+        if (!cancellable || helper.exited) {
+          killWith(error);
+          return;
+        }
+        helper.child.stdin.write(
+          `${JSON.stringify({ protocolVersion: 1, requestId, command: "cancel" })}\n`
+        );
+        graceTimer = setTimeout(() => killWith(error), this.config.cancelGraceMs);
+      };
+      const onAbort = () => interrupt(abortError());
       const timer = setTimeout(
-        () => stop(new MlxHelperError(runtimeFailedKey, "timeout", true, helper.stderr)),
+        () => interrupt(new MlxHelperError(runtimeFailedKey, "timeout", true, helper.stderr)),
         timeoutMs
       );
+      const armStall = () => {
+        if (options.stallMs === undefined) return;
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(
+          () => interrupt(new MlxHelperError(runtimeFailedKey, "stalled", true, helper.stderr)),
+          options.stallMs
+        );
+      };
       options.signal?.addEventListener("abort", onAbort, { once: true });
       helper.active = {
         requestId,
-        onFailure: (error) => finish(() => reject(error)),
+        onFailure: (error) => finish(() => reject(interruption ?? error)),
         onMessage: (message) => {
+          if (message.kind === "result") helper.answers += 1;
+          if (interruption) {
+            // The stopped request answered (cancelled, or done just before the cancel arrived):
+            // the helper is free for the next request and keeps its models.
+            if (message.kind === "result") finish(() => reject(interruption));
+            return;
+          }
           if (message.kind === "progress") {
             options.onProgress?.({ progress: message.progress, messageKey: message.messageKey });
             return;
           }
+          if (message.kind === "delta") {
+            armStall();
+            options.onDelta?.(message.delta);
+            return;
+          }
           if (!message.ok) {
+            forgetSlot(request.command === "generate");
             finish(() =>
               reject(
                 new MlxHelperError(
@@ -327,8 +499,20 @@ export class MlxHelperHost {
             return;
           }
           const checked = resultSchema.safeParse(message);
-          if (checked.success) finish(() => resolve(checked.data));
-          else stop(new MlxHelperError(runtimeFailedKey, "protocol", false, helper.stderr));
+          if (!checked.success) {
+            killWith(new MlxHelperError(runtimeFailedKey, "protocol", false, helper.stderr));
+            return;
+          }
+          if (request.command === "health") {
+            helper.capabilities = new Set(
+              (checked.data as { capabilities?: string[] }).capabilities ?? []
+            );
+          } else if (request.command === "unload") {
+            helper.loaded.delete(request.slot);
+          } else if (slot && modelPath) {
+            helper.loaded.set(slot, modelPath);
+          }
+          finish(() => resolve(checked.data));
         }
       };
       helper.child.stdin.write(`${JSON.stringify(request)}\n`);
@@ -385,6 +569,7 @@ export class MlxHelperHost {
   private kill(helper: HelperProcess): void {
     if (helper.exited) return;
     helper.exited = true;
+    helper.loaded.clear();
     helper.child.kill("SIGTERM");
     setTimeout(() => {
       if (helper.child.exitCode === null && helper.child.signalCode === null) {
@@ -392,6 +577,28 @@ export class MlxHelperHost {
       }
     }, this.config.killGraceMs).unref();
   }
+}
+
+/**
+ * The helper ended cleanly (exit code 0) without answering this request, after it had answered
+ * an earlier one: an older one-request-per-process helper, not a crash.
+ */
+function exitedAfterAnswering(helper: HelperProcess, error: unknown): boolean {
+  return (
+    error instanceof MlxHelperError &&
+    error.code === "helper_exited" &&
+    helper.child.exitCode === 0 &&
+    helper.answers > 0
+  );
+}
+
+/** The model slot an inference request uses; null for the other commands. */
+function requestSlot(request: HelperRequest): MlxHelperSlot | null {
+  return request.command === "generate" ||
+    request.command === "embed" ||
+    request.command === "score"
+    ? request.command
+    : null;
 }
 
 function tail(text: string, characters: number): string {

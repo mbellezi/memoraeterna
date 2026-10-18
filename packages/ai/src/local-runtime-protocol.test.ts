@@ -270,3 +270,72 @@ describe("embed and score results", () => {
     ).toThrow();
   });
 });
+
+describe("cancel, unload and stream (F3 D39)", () => {
+  const upper = requestId.toUpperCase();
+
+  it("accepts cancel and unload requests and a streamed generate", () => {
+    expect(
+      mlxHelperRequestSchema.parse({ protocolVersion: 1, requestId, command: "cancel" })
+    ).toEqual({ protocolVersion: 1, requestId, command: "cancel" });
+    expect(
+      mlxHelperRequestSchema.parse({
+        protocolVersion: 1,
+        requestId,
+        command: "unload",
+        slot: "generate"
+      })
+    ).toMatchObject({ slot: "generate" });
+    expect(() =>
+      mlxHelperRequestSchema.parse({ protocolVersion: 1, requestId, command: "unload" })
+    ).toThrow();
+    expect(() =>
+      mlxHelperRequestSchema.parse({
+        protocolVersion: 1,
+        requestId,
+        command: "unload",
+        slot: "rank"
+      })
+    ).toThrow();
+    expect(
+      mlxHelperRequestSchema.parse({
+        protocolVersion: 1,
+        requestId,
+        command: "generate",
+        modelPath: "/m",
+        prompt: "p",
+        stream: true
+      })
+    ).toMatchObject({ stream: true });
+  });
+
+  it("reads delta lines and the capabilities a health result announces", () => {
+    expect(
+      mlxHelperMessageSchema.parse({
+        protocolVersion: 1,
+        requestId: upper,
+        kind: "delta",
+        delta: "piece "
+      })
+    ).toEqual({ protocolVersion: 1, requestId, kind: "delta", delta: "piece " });
+    expect(() =>
+      mlxHelperMessageSchema.parse({ protocolVersion: 1, requestId, kind: "delta", delta: "" })
+    ).toThrow();
+    const health = {
+      protocolVersion: 1,
+      requestId: upper,
+      kind: "result",
+      ok: true,
+      output: "ok",
+      durationMs: 0
+    };
+    expect(
+      mlxHelperMessageSchema.parse({ ...health, capabilities: ["cancel", "stream", "unload"] })
+    ).toMatchObject({ capabilities: ["cancel", "stream", "unload"] });
+    // An older helper announces nothing; a later one may announce more.
+    expect(mlxHelperMessageSchema.parse(health)).not.toHaveProperty("capabilities");
+    expect(
+      mlxHelperMessageSchema.parse({ ...health, capabilities: ["cancel", "future"] })
+    ).toMatchObject({ capabilities: ["cancel", "future"] });
+  });
+});

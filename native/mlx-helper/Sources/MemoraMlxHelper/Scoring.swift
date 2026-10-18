@@ -117,8 +117,11 @@ enum Scorer {
     static let defaultMaxTokens = 8_192
     static let defaultBatchSize = 16
 
-    /// `score`: Qwen3-Reranker relevance `softmax([logit_no, logit_yes])[1]` per document.
-    static func score(_ request: Request, cache: ScorerCache) async throws {
+    /// `score`: Qwen3-Reranker relevance `softmax([logit_no, logit_yes])[1]` per document. A
+    /// `cancel` of the request stops it before its next batch.
+    static func score(
+        _ request: Request, cache: ScorerCache, cancellation: CancellationRegistry
+    ) async throws {
         guard let modelPath = request.modelPath, !modelPath.isEmpty else {
             throw HelperError.invalidRequest("modelPath is required")
         }
@@ -129,12 +132,13 @@ enum Scorer {
         let started = ContinuousClock.now
         let (container, tokens, loadMs, cached) = try await cache.load(
             modelPath, requestId: request.requestId)
-        Output.progress(request.requestId, 0.1, "localModels.progress.scoring")
         let requestId = request.requestId
+        try cancellation.throwIfCancelled(requestId)
+        Output.progress(request.requestId, 0.1, "localModels.progress.scoring")
         let outcome = try await container.perform { context in
             try scoreBatches(
                 context: context, tokens: tokens, items: items, maxTokens: maxTokens,
-                batchSize: batchSize, requestId: requestId)
+                batchSize: batchSize, requestId: requestId, cancellation: cancellation)
         }
         guard outcome.logOdds.allSatisfy(\.isFinite) else { throw HelperError.nonFiniteOutput }
         let inferenceMs = outcome.batches.reduce(0) { $0 + $1.ms }
@@ -182,7 +186,7 @@ enum Scorer {
 
     private static func scoreBatches(
         context: ModelContext, tokens: RerankerTokens, items: [ScoreItem], maxTokens: Int,
-        batchSize: Int, requestId: UUID
+        batchSize: Int, requestId: UUID, cancellation: CancellationRegistry
     ) throws -> ScoreOutcome {
         guard let model = context.model as? MLXLLM.Qwen3Model else {
             throw HelperError.unsupportedArchitecture("score requires a Qwen3 reranker")
@@ -209,6 +213,8 @@ enum Scorer {
         var timings: [BatchTiming] = []
         let plan = BatchPlan.make(lengths: sequences.map(\.count), batchSize: batchSize)
         for (batchIndex, batch) in plan.enumerated() {
+            // The forward pass of a batch cannot be abandoned; a cancel stops before the next one.
+            try cancellation.throwIfCancelled(requestId)
             let batchStarted = ContinuousClock.now
             let lengths = batch.map { sequences[$0].count }
             let width = lengths.max() ?? 0

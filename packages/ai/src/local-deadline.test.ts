@@ -62,12 +62,12 @@ describe("local deadlines", () => {
   it("states a deadline per workload class, from the class the request states or its task type", () => {
     expect(localRequestDeadlineMs({ taskType: "embedding" })).toBe(30_000);
     expect(localRequestDeadlineMs({ taskType: "reranking" })).toBe(10_000);
-    expect(localRequestDeadlineMs({ taskType: "summarization" })).toBe(180_000);
-    expect(localRequestDeadlineMs({ taskType: "knowledge-graph-generation" })).toBe(900_000);
+    expect(localRequestDeadlineMs({ taskType: "summarization" })).toBe(140_000);
+    expect(localRequestDeadlineMs({ taskType: "knowledge-graph-generation" })).toBe(350_000);
     expect(localRequestDeadlineMs({ taskType: "text-generation" })).toBe(300_000);
     expect(
       localRequestDeadlineMs({ taskType: "structured-output", workloadClass: "write-fast" })
-    ).toBe(180_000);
+    ).toBe(140_000);
     expect(defaultAiLaneRuntimeConfig.localDeadlines).toMatchObject({
       tokenStallMs: 60_000,
       graceMs: 2_000

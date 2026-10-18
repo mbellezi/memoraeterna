@@ -4,7 +4,21 @@ import { z } from "zod";
  * JSONL protocol 1 of the supervised MLX helper (`native/mlx-helper`, documented in its README).
  * Requests go to stdin, one JSON object per line; responses come back on stdout. The helper
  * echoes the request ID as uppercase UUID text, so every schema lowercases it.
+ *
+ * Additive capabilities (F3 D39), announced by `health` in `capabilities`: `cancel` (a `cancel`
+ * line names a running request by its ID and gets no answer; the request answers `cancelled`),
+ * `unload` (`unload {slot}` drops one slot's model) and `stream` (`generate {stream: true}` sends
+ * `delta` lines before its result). A helper that announces none is an older build: the host kills
+ * it instead of cancelling or unloading.
  */
+
+/** Capabilities a helper may announce in `health`. Unknown ones are kept and ignored. */
+export const mlxHelperCapabilities = ["cancel", "stream", "unload"] as const;
+export type MlxHelperCapability = (typeof mlxHelperCapabilities)[number];
+
+/** The helper keeps one model per command kind; `unload` names the kind. */
+export const mlxHelperSlotSchema = z.enum(["generate", "embed", "score"]);
+export type MlxHelperSlot = z.infer<typeof mlxHelperSlotSchema>;
 
 const requestIdSchema = z
   .string()
@@ -96,11 +110,29 @@ export const mlxHelperRequestSchema = z.discriminatedUnion("command", [
         maxTokens: 1_024,
         temperature: 0.2,
         enableThinking: false
-      })
+      }),
+      /** Send the text as `delta` lines while it is generated; an older helper ignores it. */
+      stream: z.boolean().optional()
     })
     .strict(),
   mlxHelperEmbedRequestSchema,
   mlxHelperScoreRequestSchema,
+  z
+    .object({
+      protocolVersion: z.literal(1),
+      requestId: requestIdSchema,
+      command: z.literal("unload"),
+      slot: mlxHelperSlotSchema
+    })
+    .strict(),
+  /** Stops the running request with this ID; no answer of its own (capability `cancel`). */
+  z
+    .object({
+      protocolVersion: z.literal(1),
+      requestId: requestIdSchema,
+      command: z.literal("cancel")
+    })
+    .strict(),
   z
     .object({
       protocolVersion: z.literal(1),
@@ -120,7 +152,17 @@ const mlxHelperProgressSchema = z
   })
   .strict();
 
-/** The result of `health`, `shutdown` and `generate`. */
+/** A piece of the text a `generate {stream: true}` request is writing, before its result. */
+const mlxHelperDeltaSchema = z
+  .object({
+    protocolVersion: z.literal(1),
+    requestId: requestIdSchema,
+    kind: z.literal("delta"),
+    delta: z.string().min(1)
+  })
+  .strict();
+
+/** The result of `health`, `shutdown`, `unload` and `generate`. */
 export const mlxHelperTextResultSchema = z
   .object({
     protocolVersion: z.literal(1),
@@ -132,6 +174,11 @@ export const mlxHelperTextResultSchema = z
     outputTokens: z.number().int().nonnegative().optional(),
     durationMs: z.number().int().nonnegative()
   })
+  .strict();
+
+/** The result of `health`: an older helper announces no capabilities. */
+export const mlxHelperHealthResultSchema = mlxHelperTextResultSchema
+  .extend({ capabilities: z.array(z.string().min(1).max(64)).max(64).optional() })
   .strict();
 
 const mlxHelperErrorSchema = z
@@ -223,7 +270,9 @@ export const mlxHelperScoreResultSchema = z
 
 export const mlxHelperMessageSchema = z.union([
   mlxHelperProgressSchema,
+  mlxHelperDeltaSchema,
   mlxHelperTextResultSchema,
+  mlxHelperHealthResultSchema,
   mlxHelperEmbedResultSchema,
   mlxHelperScoreResultSchema,
   mlxHelperErrorSchema
@@ -232,7 +281,9 @@ export const mlxHelperMessageSchema = z.union([
 export type MlxHelperRequest = z.infer<typeof mlxHelperRequestSchema>;
 export type MlxHelperMessage = z.infer<typeof mlxHelperMessageSchema>;
 export type MlxHelperProgress = z.infer<typeof mlxHelperProgressSchema>;
+export type MlxHelperDelta = z.infer<typeof mlxHelperDeltaSchema>;
 export type MlxHelperTextResult = z.infer<typeof mlxHelperTextResultSchema>;
+export type MlxHelperHealthResult = z.infer<typeof mlxHelperHealthResultSchema>;
 export type MlxHelperEmbedResult = z.infer<typeof mlxHelperEmbedResultSchema>;
 export type MlxHelperScoreResult = z.infer<typeof mlxHelperScoreResultSchema>;
 export type MlxHelperTiming = z.infer<typeof mlxHelperTimingSchema>;

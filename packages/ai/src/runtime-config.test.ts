@@ -18,14 +18,27 @@ describe("resolveAiLaneRuntimeConfig", () => {
     expect(config.mode).toBe("product");
     expect(config.lanes).toMatchObject({ apiKeyMax: 4, codexMax: 2, minimum: 1 });
     expect(config.aging).toEqual({ p3ToP2Ms: 60_000, p2ToP1Ms: 120_000 });
+    // min(cap, 3 x measured p99), F3 T61; decide, embed and answer stay at their caps.
     expect(config.localDeadlines.totalMs).toEqual({
       embed: 30_000,
       decide: 10_000,
-      "write-fast": 180_000,
-      "write-quality": 900_000,
+      "write-fast": 140_000,
+      "write-quality": 350_000,
       answer: 300_000
     });
     expect(localDeadlineMs(config.localDeadlines, "decide")).toBe(10_000);
+    // The generative model unloads after 5 idle minutes; 4 GiB headroom, 1 GiB load margin (D39).
+    expect(config.residency).toEqual({
+      generativeIdleUnloadMs: 300_000,
+      headroomBytes: 4 * 1_024 ** 3,
+      loadMarginBytes: 1_024 ** 3
+    });
+    expect(
+      resolveAiLaneRuntimeConfig(
+        { residency: { generativeIdleUnloadMs: 1_000 } },
+        { environment: {} }
+      ).residency
+    ).toMatchObject({ generativeIdleUnloadMs: 1_000, headroomBytes: 4 * 1_024 ** 3 });
   });
 
   it("runs serial lanes for golden runs and on MEMORA_AI_LANES=serial, never in packaged builds", () => {

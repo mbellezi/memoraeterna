@@ -10,15 +10,20 @@ import {
   type AiEmbedManyOptions,
   type AiEmbedManyResult,
   type AiProgressListener,
+  type AiProgressStep,
   type AiModelAdapter,
   type AiModelDescriptor,
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
 import { embedManyDimensions, embedManyRequest } from "./embed-many.js";
-import { localRuntimeWedgedError, runWithLocalDeadline } from "./local-deadline.js";
+import {
+  LocalDeadlineError,
+  localRuntimeWedgedError,
+  runWithLocalDeadline
+} from "./local-deadline.js";
 import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
-import { MlxHelperHost } from "./mlx-helper-host.js";
+import { MlxHelperError, MlxHelperHost } from "./mlx-helper-host.js";
 import { hasGeneration, localParameterCapabilities } from "./parameter-capabilities.js";
 import { requestWorkloadClass } from "./remote-execution.js";
 import {
@@ -392,28 +397,79 @@ export class MlxAdapter implements AiModelAdapter {
     );
   }
 
+  /**
+   * Whether the shared helper holds this model now. After an unload, a stopped helper or a failed
+   * generation it does not, and the next call loads it (the memory guard runs first, F3 D39).
+   */
+  public isLoaded(): boolean {
+    return this.host ? this.host.loadedModel("generate") === this.options.modelPath : true;
+  }
+
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
+    const result = await this.execute(this.executionInput(input, signal));
+    return this.taskResult(input, result);
+  }
+
+  /**
+   * Generates with the text streamed (F3 D22): the helper's `delta` lines become `{kind: "text"}`
+   * events carrying the answer only (never the reasoning before a `</think>`), and its progress
+   * lines progress events. Once the first piece came, a silence longer than the token stall bound
+   * stops the call like its deadline does. An older helper that does not stream answers at the end.
+   */
+  public async runStreaming(
+    request: AiTaskRequest,
+    signal: AbortSignal | undefined,
+    onProgress: AiProgressListener
+  ): Promise<AiTaskResult> {
+    const input = aiTaskRequestSchema.parse(request);
+    if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
+    const answer = mlxAnswerStream(
+      mlxGenerationParameters(input.parameters).enableThinking === true
+    );
+    const emit = (text: string) => {
+      if (text.length > 0) onProgress({ kind: "text", delta: text });
+    };
+    const execution = this.executionInput(input, signal);
+    const stallMs = (this.options.localDeadlines ?? defaultAiLaneRuntimeConfig.localDeadlines)
+      .tokenStallMs;
     const result = await this.execute({
-      helperPath: this.options.helperPath,
-      modelPath: this.options.modelPath,
-      prompt: promptFromInput(input.input),
-      parameters: input.parameters,
-      // The class deadline from execution start (F3 D31); until the helper can cancel (T61), the
-      // host kills it at the deadline.
-      timeoutMs:
-        this.options.timeoutMs ?? localRequestDeadlineMs(input, this.options.localDeadlines),
-      ...(signal ? { signal } : {})
+      ...execution,
+      stallMs,
+      onDelta: (chunk) => emit(answer.push(chunk)),
+      onProgress
+    }).catch((error: unknown) => {
+      throw mlxGenerationFailure(error, execution.timeoutMs, stallMs);
     });
-    return taskResult(input, "local-mlx", this.options.modelId, {
-      ...result,
-      output: typeof result.output === "string" ? stripThinkingOutput(result.output) : result.output
-    });
+    emit(answer.end());
+    onProgress({ progress: 1 });
+    return this.taskResult(input, result);
   }
 
   public async dispose(): Promise<void> {
     if (this.ownsHost) await this.host?.dispose();
+  }
+
+  private executionInput(input: AiTaskRequest, signal: AbortSignal | undefined): MlxExecutionInput {
+    return {
+      helperPath: this.options.helperPath,
+      modelPath: this.options.modelPath,
+      prompt: promptFromInput(input.input),
+      parameters: input.parameters,
+      // The class deadline from execution start (F3 D31): the host cancels the request then, and
+      // kills the helper only if it has not stopped within the grace period.
+      timeoutMs:
+        this.options.timeoutMs ?? localRequestDeadlineMs(input, this.options.localDeadlines),
+      ...(signal ? { signal } : {})
+    };
+  }
+
+  private taskResult(input: AiTaskRequest, result: LocalExecutionResult): AiTaskResult {
+    return taskResult(input, "local-mlx", this.options.modelId, {
+      ...result,
+      output: typeof result.output === "string" ? stripThinkingOutput(result.output) : result.output
+    });
   }
 
   private async generate(input: MlxExecutionInput): Promise<LocalExecutionResult> {
@@ -421,9 +477,20 @@ export class MlxAdapter implements AiModelAdapter {
       {
         modelPath: input.modelPath,
         prompt: input.prompt,
-        parameters: mlxGenerationParameters(input.parameters)
+        parameters: mlxGenerationParameters(input.parameters),
+        ...(input.onDelta ? { stream: true } : {})
       },
-      { timeoutMs: input.timeoutMs, ...(input.signal ? { signal: input.signal } : {}) }
+      {
+        timeoutMs: input.timeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.onDelta ? { onDelta: input.onDelta } : {}),
+        ...(input.stallMs !== undefined ? { stallMs: input.stallMs } : {}),
+        ...(input.onProgress
+          ? {
+              onProgress: ({ progress, messageKey }) => input.onProgress!({ progress, messageKey })
+            }
+          : {})
+      }
     );
     return {
       output: result.output,
@@ -432,6 +499,67 @@ export class MlxAdapter implements AiModelAdapter {
       ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {})
     };
   }
+}
+
+/** A streamed generation that went silent is a local deadline outcome (`stalled`, transient). */
+function mlxGenerationFailure(error: unknown, deadlineMs: number, stallMs: number): unknown {
+  if (!(error instanceof MlxHelperError) || error.code !== "stalled") return error;
+  return new LocalDeadlineError(`Local model generation stalled for ${stallMs} ms.`, {
+    code: "stalled",
+    deadlineMs
+  });
+}
+
+/**
+ * The answer part of a streamed MLX generation, read the way {@link stripThinkingOutput} reads the
+ * whole output: text up to a closing `</think>` is reasoning and is never streamed (F3 D22). With
+ * thinking on, everything waits for the closing tag (the chat template may open the block in the
+ * prompt); with thinking off, only text that starts with `<think>` waits for it. The answer's
+ * leading whitespace is dropped. Without a closing tag the whole output is the answer, sent at the end.
+ */
+export function mlxAnswerStream(thinking: boolean): {
+  push: (chunk: string) => string;
+  end: () => string;
+} {
+  const open = "<think>";
+  const close = "</think>";
+  let held = "";
+  let answering = false;
+  let started = false;
+  const answer = (text: string) => {
+    if (started) return text;
+    const trimmed = text.replace(/^\s+/u, "");
+    if (trimmed.length > 0) started = true;
+    return trimmed;
+  };
+  return {
+    push(chunk) {
+      if (answering) return answer(chunk);
+      held += chunk;
+      const closing = held.indexOf(close);
+      if (closing >= 0) {
+        answering = true;
+        const rest = held.slice(closing + close.length);
+        held = "";
+        return answer(rest);
+      }
+      if (thinking) return "";
+      const head = held.trimStart();
+      const mayBeReasoning =
+        head.length < open.length ? open.startsWith(head) : head.startsWith(open);
+      if (mayBeReasoning) return "";
+      answering = true;
+      const text = held;
+      held = "";
+      return answer(text);
+    },
+    end() {
+      if (answering || held.length === 0) return "";
+      const text = held.trim();
+      held = "";
+      return answer(text);
+    }
+  };
 }
 
 export function detectLocalRuntimeCompatibility(input: {
@@ -452,13 +580,18 @@ export function detectLocalRuntimeCompatibility(input: {
   return { compatible: true, reason: "compatible" };
 }
 
-interface MlxExecutionInput {
+export interface MlxExecutionInput {
   helperPath: string;
   modelPath: string;
   prompt: string;
   parameters: Record<string, unknown>;
   timeoutMs: number;
   signal?: AbortSignal;
+  /** Streams the generation: each piece of text as the helper writes it. */
+  onDelta?: (text: string) => void;
+  /** Longest silence between two streamed pieces once the first one came. */
+  stallMs?: number;
+  onProgress?: (event: AiProgressStep) => void;
 }
 
 /** Maps the canonical task parameters to the helper's generation parameters. */

@@ -9,16 +9,45 @@
  * Options: `--model-path <dir>` (generation, or MEMORA_MLX_MODEL_PATH), `--helper-path <file>`
  * (or MEMORA_MLX_HELPER_PATH), `--report <file>` (writes the measurements as JSON).
  * Naming only `--score-model-path` or `--embed-model-path` skips the generation smoke. Every section
- * that runs shares one helper process, which the smoke asserts.
+ * that runs shares one helper process, which the smoke asserts: a cancelled request keeps it.
+ *
+ * The bars of F3 3.5 (T61) run on a helper that announces `cancel`, `stream` and `unload`: with a
+ * generation model, the streamed text equals the non-streamed one for a fixed seed and a cancel
+ * during the generation stops it within 200 ms at p95 (`--cancel-repeats`, default 20); with a
+ * ranker, a cancel during a scoring batch stops it before the next batch; with both, a rank call
+ * after the generative model's unload is within 10% of its warm latency. Helper RSS is sampled.
+ *
+ * Score parity of a helper build (F3 D13, R1), with `--score-model-path`:
+ *   --parity-baseline <baseline.json>    the 64 reference pairs, scored in their fixed plan, against
+ *                                        a `memora-ranker-parity-baseline` file
+ *   --parity-cassette <cassette dir>     recorded `pairs` rank calls (M1's), replayed whole at the
+ *                                        batch size they were recorded with, against their scores
+ *   --parity-pairs <n>                   at least this many recorded pairs (default 500)
+ *   --parity-seed <n>                    which calls are drawn (default 20261018)
+ *   --parity-out <parity.json>           the freeze's parity file (with `--parity-template`, whose
+ *                                        other runtimes are kept)
+ * Naming a parity option skips every other section.
  */
 import { execFile } from "node:child_process";
-import { access, mkdir, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 
 import { MlxAdapter } from "../packages/ai/src/local-adapters.js";
+import {
+  MlxRerankerAdapter,
+  rankPairsWithAdapter
+} from "../packages/ai/src/local-ranker-adapters.js";
 import { MlxHelperHost } from "../packages/ai/src/mlx-helper-host.js";
+import { readRankResult } from "../packages/ai/src/ranker-input.js";
+import {
+  compareRankerParity,
+  rankerParityPlan,
+  rankerParityReferenceHash,
+  scoreRankerParityReference
+} from "../packages/ai/src/ranker-parity.js";
 
 if (process.platform !== "darwin" || process.arch !== "arm64") {
   throw new Error("The MLX helper smoke currently targets darwin-arm64.");
@@ -36,11 +65,24 @@ await Promise.all([access(helperPath), access(join(dirname(helperPath), "mlx.met
 const scoreModelPath = optionValue("--score-model-path") ?? process.env.MEMORA_MLX_SCORE_MODEL_PATH;
 const embedModelPath = optionValue("--embed-model-path") ?? process.env.MEMORA_MLX_EMBED_MODEL_PATH;
 const generationModelPath = optionValue("--model-path") ?? process.env.MEMORA_MLX_MODEL_PATH;
-const sections = {
-  generate: Boolean(generationModelPath?.trim()) || (!scoreModelPath && !embedModelPath),
-  score: Boolean(scoreModelPath),
-  embed: Boolean(embedModelPath)
+const parity = {
+  baseline: optionValue("--parity-baseline"),
+  cassette: optionValue("--parity-cassette"),
+  pairs: Number(optionValue("--parity-pairs") ?? 500),
+  seed: Number(optionValue("--parity-seed") ?? 20261018),
+  out: optionValue("--parity-out"),
+  template: optionValue("--parity-template")
 };
+const parityOnly = Boolean(parity.baseline || parity.cassette);
+if (parityOnly && !scoreModelPath) throw new Error("The parity check needs --score-model-path.");
+const sections = {
+  generate:
+    !parityOnly && (Boolean(generationModelPath?.trim()) || (!scoreModelPath && !embedModelPath)),
+  score: !parityOnly && Boolean(scoreModelPath),
+  embed: !parityOnly && Boolean(embedModelPath),
+  parity: parityOnly
+};
+const cancelRepeats = Number(optionValue("--cancel-repeats") ?? 20);
 
 const host = new MlxHelperHost({ helperPath });
 const report: Record<string, unknown> = {
@@ -53,7 +95,7 @@ const failures: string[] = [];
 
 // --- generate ---------------------------------------------------------------------------------
 
-async function generateSection(): Promise<void> {
+async function generateSection(): Promise<string> {
   console.info("\n== generate");
   const modelPath = await resolveGenerationModelPath();
   const adapter = new MlxAdapter({
@@ -82,6 +124,7 @@ async function generateSection(): Promise<void> {
   recordPid();
   console.info(`generation passed twice for ${basename(modelPath)} in ${results.join("/")} ms`);
   report.generate = { model: basename(modelPath), durationsMs: results };
+  return modelPath;
 }
 
 // --- score ------------------------------------------------------------------------------------
@@ -289,6 +332,485 @@ async function embedSection(modelPath: string): Promise<void> {
   };
 }
 
+// --- T61: stream, cancel, unload (F3 3.5) -------------------------------------------------------
+
+const streamedPrompt =
+  "Write four sentences about how rivers shape valleys over thousands of years. Use plain words.";
+const longPrompt =
+  "Write a long, detailed essay of at least 1,500 words about the history of bookbinding, with " +
+  "sections on materials, tools, techniques and famous workshops.";
+/** Cancel latency at p95 during a generation (F3 3.5). */
+const cancelBarMs = 200;
+/** A rank call after a generative unload, against its warm latency (F3 3.5). */
+const unloadLatencyFactor = 1.1;
+
+function requireCapabilities(): void {
+  for (const capability of ["cancel", "stream", "unload"] as const)
+    expect(host.supports(capability), `the helper does not announce ${capability}`);
+}
+
+/** Streamed text equals the non-streamed text for a fixed seed; the pieces add up to it. */
+async function streamSection(modelPath: string): Promise<void> {
+  console.info("\n== stream");
+  const input = {
+    modelPath,
+    prompt: streamedPrompt,
+    parameters: { maxTokens: 160, temperature: 0.7, topP: 0.9, seed: 61, enableThinking: false }
+  };
+  const whole = await host.generate(input);
+  const pieces: string[] = [];
+  let firstPieceMs: number | undefined;
+  const started = performance.now();
+  const streamed = await host.generate(
+    { ...input, stream: true },
+    {
+      onDelta: (piece) => {
+        firstPieceMs ??= performance.now() - started;
+        pieces.push(piece);
+      }
+    }
+  );
+  const equal = streamed.output === whole.output;
+  expect(equal, "the streamed text differs from the non-streamed text for the same seed");
+  expect(pieces.join("") === streamed.output, "the streamed pieces do not add up to the text");
+  expect(pieces.length > 1, "the helper sent the text in one piece");
+  console.info(
+    `streamed ${pieces.length} pieces (${streamed.output.length} characters), first after ` +
+      `${round(firstPieceMs ?? 0, 0)} ms; equal to the non-streamed text: ${equal}`
+  );
+  recordPid();
+  report.stream = {
+    equal,
+    pieces: pieces.length,
+    characters: streamed.output.length,
+    outputTokens: streamed.outputTokens,
+    firstPieceMs: round(firstPieceMs ?? 0, 1),
+    durationMs: streamed.durationMs
+  };
+}
+
+/** Cancels generations mid-stream: the helper stops within the bar and keeps its PID. */
+async function cancelSection(modelPath: string): Promise<void> {
+  console.info("\n== cancel (generation)");
+  const pid = requirePid();
+  const latencies: number[] = [];
+  const pieces: number[] = [];
+  const measured = await measureRss(pid, async () => {
+    for (let attempt = 0; attempt < cancelRepeats; attempt += 1) {
+      const controller = new AbortController();
+      const cancelAfter = 8 + (attempt % 8);
+      let seen = 0;
+      let cancelledAt = 0;
+      const outcome = await host
+        .generate(
+          {
+            modelPath,
+            prompt: longPrompt,
+            parameters: {
+              maxTokens: 2_000,
+              temperature: 0.7,
+              seed: attempt,
+              enableThinking: false
+            },
+            stream: true
+          },
+          {
+            signal: controller.signal,
+            onDelta: () => {
+              seen += 1;
+              if (seen === cancelAfter) {
+                cancelledAt = performance.now();
+                controller.abort();
+              }
+            }
+          }
+        )
+        .then(
+          () => "finished",
+          (error: unknown) => (error as Error).name
+        );
+      // An aborted caller is released at once; the helper is free again once the cancelled request
+      // answered, which is when a request queued behind it is answered.
+      await host.health();
+      const latency = performance.now() - cancelledAt;
+      expect(outcome === "AbortError", `cancel ${attempt}: the generation ended with ${outcome}`);
+      expect(host.pid === pid, `cancel ${attempt}: the helper changed PID`);
+      latencies.push(latency);
+      pieces.push(seen);
+    }
+  });
+  const p95 = percentile(latencies, 0.95);
+  console.info(
+    `${latencies.length} cancels: p50 ${round(percentile(latencies, 0.5), 1)} ms, p95 ` +
+      `${round(p95, 1)} ms, max ${round(Math.max(...latencies), 1)} ms (bar ${cancelBarMs} ms), ` +
+      `same PID ${host.pid === pid}, peak RSS ${measured.rss.peakMb} MB`
+  );
+  expect(p95 <= cancelBarMs, `cancel latency p95 ${p95} ms is above ${cancelBarMs} ms`);
+  // A class deadline cancels the same way; the call itself settles once the helper stopped.
+  const deadlineMs = 1_500;
+  const pastDeadline: number[] = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const started = performance.now();
+    const outcome = await host
+      .generate(
+        {
+          modelPath,
+          prompt: longPrompt,
+          parameters: { maxTokens: 2_000, temperature: 0.7, seed: 100 + attempt },
+          stream: true
+        },
+        { timeoutMs: deadlineMs }
+      )
+      .then(
+        () => "finished",
+        (error: unknown) => String((error as { code?: string }).code)
+      );
+    pastDeadline.push(performance.now() - started - deadlineMs);
+    expect(outcome === "timeout", `deadline ${attempt}: the generation ended with ${outcome}`);
+    expect(host.pid === pid, `deadline ${attempt}: the helper changed PID`);
+  }
+  console.info(
+    `5 deadline cancels settled ${pastDeadline.map((value) => round(value, 1)).join(", ")} ms ` +
+      `after the ${deadlineMs} ms deadline`
+  );
+  expect(
+    percentile(pastDeadline, 0.95) <= cancelBarMs,
+    `a deadline cancel settled ${Math.max(...pastDeadline)} ms after its deadline`
+  );
+  // The model stays loaded: the next generation does not load it again.
+  const after = await host.generate({
+    modelPath,
+    prompt: "Reply with exactly: OK",
+    parameters: { maxTokens: 4, temperature: 0, enableThinking: false }
+  });
+  expect(after.output.trim() === "OK", `after the cancels: ${JSON.stringify(after.output)}`);
+  recordPid();
+  report.cancel = {
+    repeats: latencies.length,
+    latenciesMs: latencies.map((value) => round(value, 1)),
+    p50Ms: round(percentile(latencies, 0.5), 1),
+    p95Ms: round(p95, 1),
+    maxMs: round(Math.max(...latencies), 1),
+    barMs: cancelBarMs,
+    piecesBeforeCancel: pieces,
+    deadline: { deadlineMs, settledAfterMs: pastDeadline.map((value) => round(value, 1)) },
+    samePid: host.pid === pid,
+    rss: measured.rss
+  };
+}
+
+/** Cancels a long scoring request: it stops before its next batch and keeps the PID. */
+async function scoreCancelSection(modelPath: string): Promise<void> {
+  console.info("\n== cancel (scoring)");
+  const pid = requirePid();
+  const documents = buildWorkloadDocuments(512);
+  const latencies: number[] = [];
+  let batchMs = 0;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const controller = new AbortController();
+    let cancelledAt = 0;
+    const timer = setTimeout(
+      () => {
+        cancelledAt = performance.now();
+        controller.abort();
+      },
+      400 + attempt * 150
+    );
+    const outcome = await host
+      .score(
+        { modelPath, query: relevanceCases[0]!.query, documents, batchSize: 16 },
+        { signal: controller.signal }
+      )
+      .then(
+        (result) => {
+          batchMs = Math.max(batchMs, ...result.timing.batches.map((batch) => batch.ms));
+          return "finished";
+        },
+        (error: unknown) => (error as Error).name
+      );
+    clearTimeout(timer);
+    await host.health();
+    expect(
+      outcome === "AbortError",
+      `scoring cancel ${attempt}: the request ended with ${outcome}`
+    );
+    expect(host.pid === pid, `scoring cancel ${attempt}: the helper changed PID`);
+    latencies.push(performance.now() - cancelledAt);
+  }
+  const warm = await host.score({
+    modelPath,
+    query: relevanceCases[0]!.query,
+    documents: documents.slice(0, 16),
+    batchSize: 16
+  });
+  batchMs = Math.max(batchMs, ...warm.timing.batches.map((batch) => batch.ms));
+  const max = Math.max(...latencies);
+  console.info(
+    `${latencies.length} scoring cancels: max ${round(max, 1)} ms; one 16-pair batch ` +
+      `${round(batchMs, 1)} ms; same PID ${host.pid === pid}`
+  );
+  // A cancel waits for the batch in flight at most, plus the answer.
+  expect(max <= batchMs + cancelBarMs, `a scoring cancel took ${max} ms`);
+  recordPid();
+  report.scoreCancel = {
+    latenciesMs: latencies.map((value) => round(value, 1)),
+    maxMs: round(max, 1),
+    batchMs: round(batchMs, 1),
+    samePid: host.pid === pid
+  };
+}
+
+/**
+ * After the generative model's unload the ranker answers at its warm latency: the helper keeps
+ * the ranker's weights, its PID and its other slots; RSS falls by about the writer's weights.
+ */
+async function unloadSection(generateModelPath: string, scoreModelPath: string): Promise<void> {
+  console.info("\n== unload");
+  const pid = requirePid();
+  const small = { modelPath: scoreModelPath, ...relevanceCaseRequest() };
+  const full = {
+    modelPath: scoreModelPath,
+    query: relevanceCases[0]!.query,
+    documents: buildWorkloadDocuments(workloadDocuments),
+    batchSize: 16
+  };
+  const timeRank = async (input: Parameters<typeof host.score>[0]) => {
+    const started = performance.now();
+    const result = await host.score(input);
+    return { wallMs: performance.now() - started, cached: result.timing.modelCached };
+  };
+  const warmSmall: number[] = [];
+  const warmFull: number[] = [];
+  for (let repeat = 0; repeat < 5; repeat += 1) {
+    warmSmall.push((await timeRank(small)).wallMs);
+    warmFull.push((await timeRank(full)).wallMs);
+  }
+  await host.generate({
+    modelPath: generateModelPath,
+    prompt: "Reply with exactly: OK",
+    parameters: { maxTokens: 4, temperature: 0, enableThinking: false }
+  });
+  const withWriterKb = (await residentSetKb(pid)) ?? 0;
+  const outcome = await host.unload("generate");
+  const afterUnloadKb = (await residentSetKb(pid)) ?? 0;
+  expect(outcome === "unloaded", `unload answered ${outcome}`);
+  expect(host.pid === pid, "the unload changed the helper's PID");
+  expect(host.loadedModel("score") === scoreModelPath, "the unload dropped the ranker");
+  const nextSmall = await timeRank(small);
+  const nextFull = await timeRank(full);
+  const warmSmallMs = percentile(warmSmall, 0.5);
+  const warmFullMs = percentile(warmFull, 0.5);
+  expect(nextSmall.cached && nextFull.cached, "the ranker loaded again after the unload");
+  expect(
+    nextFull.wallMs <= warmFullMs * unloadLatencyFactor,
+    `the ${workloadDocuments}-pair rank call after the unload took ${nextFull.wallMs} ms (warm ${warmFullMs})`
+  );
+  console.info(
+    `rank call after the unload: ${round(nextSmall.wallMs, 1)} ms for 2 pairs (warm p50 ` +
+      `${round(warmSmallMs, 1)}), ${round(nextFull.wallMs, 1)} ms for ${workloadDocuments} (warm ` +
+      `${round(warmFullMs, 1)}); helper RSS ${round(mb(withWriterKb), 0)} -> ` +
+      `${round(mb(afterUnloadKb), 0)} MB`
+  );
+  recordPid();
+  report.unload = {
+    warmSmallMs: warmSmall.map((value) => round(value, 1)),
+    warmFullMs: warmFull.map((value) => round(value, 1)),
+    afterUnloadSmallMs: round(nextSmall.wallMs, 1),
+    afterUnloadFullMs: round(nextFull.wallMs, 1),
+    factor: round(nextFull.wallMs / warmFullMs, 3),
+    bar: unloadLatencyFactor,
+    rssWithWriterMb: round(mb(withWriterKb), 1),
+    rssAfterUnloadMb: round(mb(afterUnloadKb), 1),
+    samePid: host.pid === pid
+  };
+}
+
+function relevanceCaseRequest(): { query: string; documents: string[] } {
+  const testCase = relevanceCases[0]!;
+  return { query: testCase.query, documents: [testCase.relevant, testCase.irrelevant] };
+}
+
+// --- parity (F3 D13, R1) ------------------------------------------------------------------------
+
+/** One recorded `pairs` rank call of a cassette and the log-odds it was answered with. */
+interface RecordedRankCall {
+  key: string;
+  input: string;
+  parameters: Record<string, unknown>;
+  logOdds: number[];
+}
+
+async function recordedRankCalls(directory: string): Promise<RecordedRankCall[]> {
+  const calls: RecordedRankCall[] = [];
+  const root = join(directory, "entries");
+  for (const shard of (await readdir(root)).sort()) {
+    for (const file of (await readdir(join(root, shard))).sort()) {
+      const entry = JSON.parse(await readFile(join(root, shard, file), "utf8")) as {
+        key: string;
+        taskType: string;
+        request: {
+          input: string;
+          parameters: Record<string, unknown>;
+          model: { providerId: string };
+        };
+        responses: Array<{ output: { logOdds: number[] } }>;
+      };
+      if (entry.taskType !== "reranking" || entry.request.model.providerId !== "local-mlx")
+        continue;
+      if (!entry.request.input.includes('"pairs"')) continue;
+      // Every occurrence of a key was answered by the same build at the same batch; the first counts.
+      calls.push({
+        key: entry.key,
+        input: entry.request.input,
+        parameters: entry.request.parameters,
+        logOdds: entry.responses[0]!.output.logOdds
+      });
+    }
+  }
+  return calls;
+}
+
+async function paritySection(modelPath: string): Promise<void> {
+  console.info("\n== parity");
+  const adapter = new MlxRerankerAdapter({
+    modelId: "parity",
+    modelPath,
+    helperPath,
+    host,
+    capabilities: ["reranking", "offline", "local-files"]
+  });
+  const runtimeBuild = await adapter.runtimeBuild();
+  const result: Record<string, unknown> = { runtimeBuild, model: basename(modelPath) };
+  let reference: { referenceHash: string; maxAbsDelta: number } | null = null;
+  if (parity.baseline) {
+    const baseline = JSON.parse(await readFile(resolve(parity.baseline), "utf8")) as {
+      referenceHash: string;
+      plan: unknown;
+      runtimeBuild: string;
+      scores: number[];
+    };
+    const referenceHash = rankerParityReferenceHash();
+    expect(baseline.referenceHash === referenceHash, "the baseline is of another reference set");
+    expect(
+      JSON.stringify(baseline.plan) === JSON.stringify(rankerParityPlan("mlx")),
+      "the baseline was scored under another plan"
+    );
+    const scores = await scoreRankerParityReference("mlx", (request, plan) =>
+      rankPairsWithAdapter(
+        adapter,
+        request,
+        plan.helperBatchSize === undefined ? {} : { batchSize: plan.helperBatchSize }
+      )
+    );
+    const delta = compareRankerParity(baseline.scores, scores);
+    reference = { referenceHash, maxAbsDelta: delta.maxDelta };
+    console.info(
+      `64 reference pairs against ${baseline.runtimeBuild}: max |delta| ${delta.maxDelta}, mean ` +
+        `${round(delta.meanDelta, 4)}`
+    );
+    result.reference = { ...delta, baselineBuild: baseline.runtimeBuild, scores };
+  }
+  let m1Pairs: { pairs: number; maxAbsDelta: number } | null = null;
+  if (parity.cassette) {
+    const calls = await recordedRankCalls(resolve(parity.cassette));
+    const order = seededShuffle(calls, parity.seed);
+    const chosen: RecordedRankCall[] = [];
+    let pairs = 0;
+    for (const call of order) {
+      if (pairs >= parity.pairs) break;
+      chosen.push(call);
+      pairs += call.logOdds.length;
+    }
+    expect(
+      pairs >= parity.pairs,
+      `the cassette holds ${pairs} recorded pairs, fewer than ${parity.pairs}`
+    );
+    let maxAbsDelta = 0;
+    let total = 0;
+    let identical = 0;
+    for (const call of chosen) {
+      const ran = await adapter.run({
+        taskType: "reranking",
+        input: call.input,
+        requiredCapabilities: ["reranking"],
+        parameters: call.parameters,
+        metadata: {}
+      });
+      const scored = readRankResult(ran, call.logOdds.length).logOdds;
+      scored.forEach((value, index) => {
+        const delta = Math.abs(value - call.logOdds[index]!);
+        maxAbsDelta = Math.max(maxAbsDelta, delta);
+        total += delta;
+        if (delta === 0) identical += 1;
+      });
+    }
+    m1Pairs = { pairs, maxAbsDelta };
+    console.info(
+      `${chosen.length} recorded calls, ${pairs} pairs at their recorded batch: max |delta| ` +
+        `${maxAbsDelta}, mean ${round(total / pairs, 4)}, identical ${identical}`
+    );
+    result.m1Pairs = {
+      calls: chosen.length,
+      callsInCassette: calls.length,
+      pairs,
+      maxAbsDelta,
+      meanAbsDelta: total / pairs,
+      identical,
+      keys: chosen.map((call) => call.key),
+      seed: parity.seed
+    };
+  }
+  recordPid();
+  report.parity = result;
+  if (parity.out) {
+    if (!reference) throw new Error("--parity-out needs --parity-baseline.");
+    const template = parity.template
+      ? (JSON.parse(await readFile(resolve(parity.template), "utf8")) as {
+          runtimes: Record<string, unknown>;
+        })
+      : { runtimes: {} };
+    const file = {
+      format: "memora-f3-freeze-parity",
+      version: 1,
+      runtimes: {
+        ...template.runtimes,
+        mlx: {
+          runtimeBuild,
+          reference,
+          m1Pairs,
+          source: resolve(optionValue("--report") ?? parity.out)
+        }
+      }
+    };
+    await mkdir(dirname(resolve(parity.out)), { recursive: true });
+    await writeFile(resolve(parity.out), `${JSON.stringify(file, null, 1)}\n`);
+    console.info(`Parity file: ${resolve(parity.out)}`);
+  }
+}
+
+/** A deterministic shuffle (mulberry32), so the same seed draws the same calls. */
+function seededShuffle<T>(values: readonly T[], seed: number): T[] {
+  let state = seed >>> 0;
+  const random = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const copy = [...values];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(random() * (index + 1));
+    [copy[index], copy[other]] = [copy[other]!, copy[index]!];
+  }
+  return copy;
+}
+
+function percentile(values: readonly number[], fraction: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? 0;
+}
+
 // --- support ----------------------------------------------------------------------------------
 
 interface RssMeasurement {
@@ -444,9 +966,20 @@ try {
   report.idleRssMb = round(mb((await residentSetKb(requirePid())) ?? 0), 1);
   console.info(`helper pid ${requirePid()}, idle RSS ${String(report.idleRssMb)} MB`);
 
-  if (sections.generate) await generateSection();
-  if (sections.score) await scoreSection(await resolveModelDirectory(scoreModelPath!));
+  report.capabilities = [...(host.capabilities ?? [])];
+  const scoreModel = sections.score ? await resolveModelDirectory(scoreModelPath!) : undefined;
+  let generationModel: string | undefined;
+  if (sections.generate) generationModel = await generateSection();
+  if (scoreModel) await scoreSection(scoreModel);
   if (sections.embed) await embedSection(await resolveModelDirectory(embedModelPath!));
+  if (sections.parity) await paritySection(await resolveModelDirectory(scoreModelPath!));
+  if (generationModel || scoreModel) requireCapabilities();
+  if (generationModel) {
+    await streamSection(generationModel);
+    await cancelSection(generationModel);
+  }
+  if (scoreModel) await scoreCancelSection(scoreModel);
+  if (generationModel && scoreModel) await unloadSection(generationModel, scoreModel);
 
   expect(pids.size === 1 && host.spawnCount === 1, `expected one helper process, saw ${[...pids]}`);
   report.helperProcesses = { pids: [...pids], spawnCount: host.spawnCount };

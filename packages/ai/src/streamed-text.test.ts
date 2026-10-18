@@ -9,6 +9,7 @@ import {
 import { GoogleGeminiAdapter } from "./google.js";
 import {
   MlxAdapter,
+  mlxAnswerStream,
   NodeLlamaCppAdapter,
   reportGeneratedChunk,
   stripThinkingOutput
@@ -250,18 +251,58 @@ describe("the answer text of a local call", () => {
     expect(result.output).toBe("Local text.");
   });
 
-  it("keeps the MLX path non-streaming: the final text arrives at once, as T61 has not mapped its deltas", async () => {
+  it("streams the MLX helper's delta lines as text events, the answer only (T61)", async () => {
+    const pieces = ["Thinking Process:\nprivate", "\n</think>\n\n", "mlx ", "answer"];
+    const executions: Array<Record<string, unknown>> = [];
     const adapter = new MlxAdapter(
       {
         ...base,
         capabilities: ["text-generation", "supports-progress-events"],
         helperPath: "/managed/helper"
       },
-      async () => ({ output: "Thinking Process:\nprivate\n</think>\n\nmlx answer", durationMs: 3 })
+      async (input) => {
+        executions.push({ stream: Boolean(input.onDelta), stallMs: input.stallMs });
+        input.onProgress?.({ progress: 0.65, messageKey: "localModels.progress.generating" });
+        for (const piece of pieces) input.onDelta?.(piece);
+        return { output: pieces.join(""), durationMs: 3 };
+      }
     );
-    expect("runStreaming" in adapter).toBe(false);
-    expect(runsStreaming(adapter, "text-generation")).toBe(false);
+    expect(runsStreaming(adapter, "text-generation")).toBe(true);
+    const seen: AiProgressEvent[] = [];
+    const result = await adapter.runStreaming(
+      { ...request, parameters: { maxTokens: 64, reasoningLevel: "low" } },
+      undefined,
+      (event) => seen.push(event)
+    );
+    // The reasoning before `</think>` never leaves; the answer's leading whitespace neither.
+    expect(wordsOf(seen)).toEqual(["mlx ", "answer"]);
+    expect(wordsOf(seen).join("")).toBe(result.output);
+    expect(result.output).toBe("mlx answer");
+    expect(seen).toContainEqual({ progress: 0.65, messageKey: "localModels.progress.generating" });
+    expect(executions).toEqual([{ stream: true, stallMs: 60_000 }]);
+    // Without streaming the same text comes back whole.
     expect((await adapter.run(request)).output).toBe("mlx answer");
+    expect(executions[1]).toEqual({ stream: false, stallMs: undefined });
     expect(stripThinkingOutput("a</think> b")).toBe("b");
+  });
+
+  it("holds an MLX answer back only while it may be a reasoning block", () => {
+    const off = mlxAnswerStream(false);
+    expect([off.push("  <th"), off.push("ink>plan"), off.push("</think> Yes"), off.end()]).toEqual([
+      "",
+      "",
+      "Yes",
+      ""
+    ]);
+    const plain = mlxAnswerStream(false);
+    expect([plain.push(" <"), plain.push("b>bold"), plain.push(" text"), plain.end()]).toEqual([
+      "",
+      "<b>bold",
+      " text",
+      ""
+    ]);
+    // Thinking on: the template opens the block in the prompt, so nothing streams before `</think>`.
+    const on = mlxAnswerStream(true);
+    expect([on.push("reasoning "), on.push("more"), on.end()]).toEqual(["", "", "reasoning more"]);
   });
 });

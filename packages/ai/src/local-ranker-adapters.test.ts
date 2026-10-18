@@ -370,7 +370,8 @@ const fail = (request, reason, code = "HelperError") => {
 };
 for await (const line of readline.createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
-  if (request.modelPath === "/gemma") fail(request, "unsupported model architecture: Gemma3Model");
+  if (request.command === "health") send(request, { kind: "result", ok: true, output: "ok", durationMs: 0 });
+  else if (request.modelPath === "/gemma") fail(request, "unsupported model architecture: Gemma3Model");
   else if (request.modelPath === "/embedding") fail(request, "tokenizer mismatch: unexpected yes/no token ids 1/2");
   else if (request.modelPath === "/request") fail(request, "invalid request: maxTokens is too small");
   else if (request.modelPath === "/weights") fail(request, 'keyNotFound(path: ["model", "norm"])', "UpdateError");

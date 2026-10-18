@@ -3,7 +3,8 @@
 This macOS arm64 native helper runs offline inference with MLX models managed by
 the desktop. It receives versioned JSONL requests on stdin, emits progress and
 results on stdout (one JSON object per line), writes diagnostics to stderr, and
-never downloads models itself. Requests are processed one at a time.
+never downloads models itself. Requests are processed one at a time; stdin is
+read on its own thread meanwhile, so a `cancel` reaches the running request.
 
 Pinned dependencies:
 
@@ -54,13 +55,45 @@ Every response line echoes the `requestId` (uppercase UUID text) and has
   "error": { "code": "HelperError", "messageKey": "errors.localModels.runtimeFailed", "recoverable": true } }
 ```
 
-`health`, `shutdown` and `generate` are unchanged:
+`health`, `shutdown` and `generate` keep their shape:
 
 ```jsonc
 { "protocolVersion": 1, "requestId": "…", "command": "generate", "modelPath": "/abs/model", "prompt": "…",
   "parameters": { "maxTokens": 1024, "temperature": 0.2, "topP": 0.95, "topK": 20, "presencePenalty": 1.5, "enableThinking": false, "seed": 1 } }
 → { …, "kind": "result", "ok": true, "output": "…", "durationMs": 812, "inputTokens": 12, "outputTokens": 3 }
 ```
+
+### Capabilities: `cancel`, `stream`, `unload`
+
+`health` announces what this build adds to protocol 1; a host treats a helper
+that announces nothing as an older build and kills it instead.
+
+```jsonc
+{ "protocolVersion": 1, "requestId": "…", "command": "health" }
+→ { …, "kind": "result", "ok": true, "output": "ok", "durationMs": 0, "capabilities": ["cancel", "stream", "unload"] }
+
+// Stops the running (or queued) request with this requestId; no answer of its own.
+{ "protocolVersion": 1, "requestId": "<the request to stop>", "command": "cancel" }
+→ (the stopped request) { …, "kind": "result", "ok": false,
+    "error": { "code": "cancelled", "messageKey": "errors.localModels.runtimeFailed", "recoverable": true } }
+
+// Drops one slot's model ("generate", "embed" or "score") and returns its buffers; the others stay.
+{ "protocolVersion": 1, "requestId": "…", "command": "unload", "slot": "generate" }
+→ { …, "kind": "result", "ok": true, "output": "", "durationMs": 3 }
+
+// `generate` with "stream": true sends the text as it is generated, before its result.
+→ { …, "kind": "delta", "delta": "The " }
+```
+
+- A generation checks for a cancel at every token, a scoring request before
+  every batch (the forward pass in flight finishes), `embed` before it starts.
+  A cancel for a request that already answered is ignored.
+- A cancelled request keeps the loaded models and the process; a host kills the
+  helper only when the cancelled request has not answered within its grace
+  period.
+- The `delta` pieces concatenate to the result's `output`; the generation is
+  the same with or without `stream` (the same chat input, cache and token loop
+  as MLX Swift LM's `ChatSession`), so a fixed seed gives the same text.
 
 ### `embed`
 
@@ -128,5 +161,7 @@ the Query and the Instruct provided. Note that the answer can only be "yes" or
 
 The helper keeps at most one model per command kind loaded (`generate`,
 `embed`, `score`) and reuses it while requests name the same `modelPath`.
-A different `modelPath` replaces that kind's model. A failed `generate` drops
-the generation model; failed `embed`/`score` requests keep loaded models.
+A different `modelPath` replaces that kind's model (a generation model leaves
+before the next one loads). A failed `generate` drops the generation model;
+failed `embed`/`score` requests and cancelled requests keep loaded models.
+`unload {slot}` drops one kind's model.

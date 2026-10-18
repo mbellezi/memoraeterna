@@ -6,7 +6,7 @@ import {
   OpenAiCompatibleAdapter,
   type LocalAdapterOptions
 } from "@app/ai";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AiService, embeddingSpaceKey } from "./ai-service.js";
 
@@ -45,6 +45,7 @@ vi.mock("@app/db", async () => ({
 }));
 
 const generativeEntry = findLocalModelCatalogEntry("mlx-qwen3-4b-instruct-2507-4bit")!;
+const writerEntry = findLocalModelCatalogEntry("mlx-qwen3.5-9b-4bit")!;
 const embeddingEntry = findLocalModelCatalogEntry("gguf-qwen3-embedding-0.6b-q8-0")!;
 const rankerEntry = findLocalModelCatalogEntry("mlx-qwen3-reranker-0.6b")!;
 
@@ -52,6 +53,7 @@ const ids = {
   profile: "00000000-0000-4000-8000-000000000001",
   generativeA: "00000000-0000-4000-8000-0000000000a1",
   generativeB: "00000000-0000-4000-8000-0000000000a2",
+  writer: "00000000-0000-4000-8000-0000000000a3",
   embedding: "00000000-0000-4000-8000-0000000000e1",
   ranker: "00000000-0000-4000-8000-0000000000c1"
 };
@@ -124,7 +126,16 @@ function fakeLocal(model: { modelId: string; runtime: string }, capabilities: st
   };
 }
 
-function service(options: { mlxHost?: unknown } = {}) {
+const gib = 1_024 ** 3;
+
+interface ServiceOptions {
+  mlxHost?: unknown;
+  /** Total memory of the machine; 64 GiB (the owner's Mac) unless a test states another. */
+  totalMemoryBytes?: number;
+  availableMemoryBytes?: () => Promise<number>;
+}
+
+function service(options: ServiceOptions = {}) {
   const ai = new AiService({
     userDataPath: "/tmp/ai-residency-tests",
     getPool: () => ({}) as never,
@@ -132,6 +143,12 @@ function service(options: { mlxHost?: unknown } = {}) {
     resourcesPath: "/tmp",
     isPackaged: false,
     getKeepLocalEmbeddingModelsLoaded: async () => true,
+    machine: {
+      platform: "darwin",
+      arch: "arm64",
+      totalMemoryBytes: options.totalMemoryBytes ?? 64 * gib
+    },
+    availableMemoryBytes: options.availableMemoryBytes ?? (async () => 48 * gib),
     ...(options.mlxHost ? { mlxHost: options.mlxHost as never } : {})
   });
   const internals = ai as unknown as {
@@ -145,13 +162,17 @@ function service(options: { mlxHost?: unknown } = {}) {
   return { ai, internals };
 }
 
-/** A service whose local adapters are fakes; `built` lists them in creation order. */
-function fakeService() {
-  const { ai, internals } = service();
+/**
+ * A service whose local adapters are fakes; `built` lists them in creation order. A fake reports
+ * itself loaded unless `loaded` says otherwise, so only the tests of a load meet the memory guard.
+ */
+function fakeService(options: ServiceOptions & { loaded?: () => boolean } = {}) {
+  const { ai, internals } = service(options);
   const built: Array<ReturnType<typeof fakeLocal> & { localModelId: string }> = [];
   const create = (model: Record<string, unknown>, capabilities: string[]) => {
     const adapter = Object.assign(fakeLocal(model as never, capabilities), {
-      localModelId: String(model.id)
+      localModelId: String(model.id),
+      isLoaded: options.loaded ?? (() => true)
     });
     built.push(adapter);
     return adapter;
@@ -161,10 +182,21 @@ function fakeService() {
   return { ai, internals, built };
 }
 
+/** A shared MLX helper host that records unloads; `unload` answers like an older helper when asked. */
+function fakeHost(outcome: "unloaded" | "unsupported" = "unloaded") {
+  return {
+    dispose: vi.fn(async () => undefined),
+    unload: vi.fn<(slot: string) => Promise<typeof outcome>>(async () => outcome)
+  };
+}
+
+const idleMs = 300_000;
+
 const generativeA = localModel(ids.generativeA, generativeEntry);
 const generativeB = localModel(ids.generativeB, generativeEntry, {
   modelId: "mlx-community/another-generative-4bit"
 });
+const writer = localModel(ids.writer, writerEntry);
 const embedding = localModel(ids.embedding, embeddingEntry);
 const ranker = localModel(ids.ranker, rankerEntry);
 
@@ -173,25 +205,71 @@ beforeEach(() => {
   state.models.clear();
   state.newest = null;
   state.recordTaskRun.mockReset().mockResolvedValue("run-id");
-  for (const model of [generativeA, generativeB, embedding, ranker])
+  for (const model of [generativeA, generativeB, writer, embedding, ranker])
     state.models.set(model.id, model);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("residency", () => {
   it("keeps a wedged local runtime resident and in use until its abandoned call ended (F3 D31)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { ai, built } = fakeService();
     state.selections.set("text-generation", localSelection(generativeA));
     await ai.runDefaultTask("text-generation", "first");
     const [writer] = built;
     // The runtime ignored a deadline: its own recovery disposes it once the native call ended.
     Object.assign(writer!, { wedged: true });
-    await ai.releaseLocalRuntime();
+    await vi.advanceTimersByTimeAsync(idleMs);
     expect(writer!.dispose).not.toHaveBeenCalled();
     expect(ai.isLocalModelInUse(ids.generativeA)).toBe(true);
     Object.assign(writer!, { wedged: false });
     expect(ai.isLocalModelInUse(ids.generativeA)).toBe(false);
-    await ai.releaseLocalRuntime();
+    // The idle period that found it wedged started another one.
+    await vi.advanceTimersByTimeAsync(idleMs);
     expect(writer!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("unloads the generative model after its idle period, on a fake clock (F3 D39)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { ai, internals, built } = fakeService();
+    state.selections.set("text-generation", localSelection(generativeA));
+    state.selections.set("embedding", localSelection(embedding));
+    await internals.residentRanker(ranker);
+    await ai.runDefaultTask("embedding", "text");
+    await ai.runDefaultTask("text-generation", "first");
+    const [rankerAdapter, embeddingAdapter, generative] = built;
+
+    // An idle poll of the job loops no longer releases it: only its own timer does.
+    await ai.releaseLocalRuntime(false, true);
+    await vi.advanceTimersByTimeAsync(idleMs - 1_000);
+    expect(generative!.dispose).not.toHaveBeenCalled();
+    // A call restarts the period.
+    await ai.runDefaultTask("text-generation", "second");
+    await vi.advanceTimersByTimeAsync(idleMs - 1_000);
+    expect(generative!.dispose).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(generative!.dispose).toHaveBeenCalledOnce();
+    expect(internals.resident.generate).toBeUndefined();
+    // The ranker and the embedder are exempt.
+    expect(rankerAdapter!.dispose).not.toHaveBeenCalled();
+    expect(embeddingAdapter!.dispose).not.toHaveBeenCalled();
+    expect(internals.resident.rank?.localModelId).toBe(ids.ranker);
+    expect(internals.resident.embed?.localModelId).toBe(ids.embedding);
+  });
+
+  it("does not unload a generative model that runs a call when its period ends", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { internals, built } = fakeService();
+    await internals.createLocalAdapter(ids.generativeA);
+    internals.activeLocalModels.add(ids.generativeA);
+    await vi.advanceTimersByTimeAsync(idleMs);
+    expect(built[0]!.dispose).not.toHaveBeenCalled();
+    internals.activeLocalModels.delete(ids.generativeA);
+    await vi.advanceTimersByTimeAsync(idleMs);
+    expect(built[0]!.dispose).toHaveBeenCalledOnce();
   });
 
   it("never keeps two generative models resident, while the embedding model stays", async () => {
@@ -231,7 +309,7 @@ describe("residency", () => {
     expect(internals.resident.generate?.localModelId).toBe(ids.generativeA);
   });
 
-  it("keeps the ranker through idle releases, the embedding model when asked, and drops all on dispose", async () => {
+  it("keeps the ranker and the writer through idle releases, the embedding model when asked, and drops all on dispose", async () => {
     const { ai, internals, built } = fakeService();
     await internals.createLocalAdapter(ids.generativeA);
     await internals.createLocalAdapter(ids.embedding);
@@ -239,16 +317,18 @@ describe("residency", () => {
     const [generative, embeddingAdapter, rankerAdapter] = built;
 
     await ai.releaseLocalRuntime(false, true);
-    expect(generative!.dispose).toHaveBeenCalledOnce();
+    expect(generative!.dispose).not.toHaveBeenCalled();
     expect(embeddingAdapter!.dispose).not.toHaveBeenCalled();
     expect(rankerAdapter!.dispose).not.toHaveBeenCalled();
 
     await ai.releaseLocalRuntime(false, false);
     expect(embeddingAdapter!.dispose).toHaveBeenCalledOnce();
     expect(rankerAdapter!.dispose).not.toHaveBeenCalled();
+    expect(generative!.dispose).not.toHaveBeenCalled();
     expect(internals.resident.rank?.localModelId).toBe(ids.ranker);
 
     await ai.dispose();
+    expect(generative!.dispose).toHaveBeenCalledOnce();
     expect(rankerAdapter!.dispose).toHaveBeenCalledOnce();
     expect(Object.values(internals.resident).filter(Boolean)).toEqual([]);
   });
@@ -263,8 +343,9 @@ describe("residency", () => {
     expect(built[0]!.dispose).not.toHaveBeenCalled();
   });
 
-  it("runs every MLX adapter on one shared helper, which stops only when no MLX call runs", async () => {
-    const host = { dispose: vi.fn(async () => undefined) };
+  it("runs every MLX adapter on one shared helper and unloads the idle writer from it, keeping the PID", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const host = fakeHost();
     const { ai, internals } = service({ mlxHost: host });
     const generative = (await internals.createLocalAdapter(ids.generativeA)) as MlxAdapter;
     const rankerAdapter = internals.buildRankerAdapter(ranker, [
@@ -275,14 +356,39 @@ describe("residency", () => {
     expect(generative).toBeInstanceOf(MlxAdapter);
     expect((generative as unknown as { host: unknown }).host).toBe(host);
     expect((rankerAdapter as unknown as { host: unknown }).host).toBe(host);
-
-    // A resident ranker running a call keeps the helper alive after the generative model left it.
     Object.assign(internals.resident, {
       rank: { localModelId: ids.ranker, adapter: rankerAdapter, runtime: "mlx" }
     });
-    internals.activeLocalModels.add(ids.ranker);
-    await ai.releaseLocalRuntime(false, true);
+
+    await vi.advanceTimersByTimeAsync(idleMs);
     expect(internals.resident.generate).toBeUndefined();
+    expect(host.unload.mock.calls).toEqual([["generate"]]);
+    // The helper keeps running with the ranker's weights.
+    expect(host.dispose).not.toHaveBeenCalled();
+    await ai.releaseLocalRuntime(false, true);
+    expect(host.dispose).not.toHaveBeenCalled();
+    expect(internals.resident.rank?.localModelId).toBe(ids.ranker);
+  });
+
+  it("stops an older helper that cannot unload once no MLX call runs", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const host = fakeHost("unsupported");
+    const { ai, internals } = service({ mlxHost: host });
+    await internals.createLocalAdapter(ids.generativeA);
+    const rankerAdapter = internals.buildRankerAdapter(ranker, [
+      "reranking",
+      "offline",
+      "local-files"
+    ]);
+    Object.assign(internals.resident, {
+      rank: { localModelId: ids.ranker, adapter: rankerAdapter, runtime: "mlx" }
+    });
+
+    // A ranker running a call keeps the helper alive after the generative model left it.
+    internals.activeLocalModels.add(ids.ranker);
+    await vi.advanceTimersByTimeAsync(idleMs);
+    expect(internals.resident.generate).toBeUndefined();
+    expect(host.unload).toHaveBeenCalledWith("generate");
     expect(host.dispose).not.toHaveBeenCalled();
 
     internals.activeLocalModels.delete(ids.ranker);
@@ -292,6 +398,84 @@ describe("residency", () => {
     await ai.releaseLocalRuntime(false, true);
     expect(host.dispose).toHaveBeenCalledOnce();
     expect(internals.resident.rank?.localModelId).toBe(ids.ranker);
+  });
+
+  it("unloads the first writer from the helper before a second one loads", async () => {
+    const host = fakeHost();
+    const { internals } = service({ mlxHost: host });
+    await internals.createLocalAdapter(ids.generativeA);
+    expect(host.unload).not.toHaveBeenCalled();
+    await internals.createLocalAdapter(ids.generativeB);
+    expect(host.unload.mock.calls).toEqual([["generate"]]);
+    expect(internals.resident.generate?.localModelId).toBe(ids.generativeB);
+  });
+
+  it("lets the ranker and the writer take turns when the machine cannot hold both (16 GiB)", async () => {
+    const { ai, internals, built } = fakeService({ totalMemoryBytes: 16 * gib });
+    state.selections.set("text-generation", localSelection(writer));
+    state.selections.set("embedding", localSelection(embedding));
+    await ai.runDefaultTask("embedding", "text");
+    await internals.residentRanker(ranker);
+    const [embeddingAdapter, firstRanker] = built;
+
+    // 12 GiB writer + 2 + 2 + 4 GiB headroom > 16 GiB: the ranker leaves while the writer is loaded.
+    await ai.runDefaultTask("text-generation", "first");
+    expect(firstRanker!.dispose).toHaveBeenCalledOnce();
+    expect(internals.resident.rank).toBeUndefined();
+    const writerAdapter = built[2]!;
+    expect(writerAdapter.run).toHaveBeenCalledOnce();
+
+    // The ranker comes back for its call, and the writer leaves for it.
+    await internals.residentRanker(ranker);
+    expect(writerAdapter.dispose).toHaveBeenCalledOnce();
+    expect(internals.resident.generate).toBeUndefined();
+    expect(internals.resident.rank?.localModelId).toBe(ids.ranker);
+    expect(embeddingAdapter!.dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the ranker beside the writer when the machine holds both (24 GiB)", async () => {
+    const { ai, internals, built } = fakeService({ totalMemoryBytes: 24 * gib });
+    state.selections.set("text-generation", localSelection(writer));
+    await internals.residentRanker(ranker);
+    await ai.runDefaultTask("text-generation", "first");
+    await internals.residentRanker(ranker);
+    expect(built.map((adapter) => adapter.dispose.mock.calls.length)).toEqual([0, 0]);
+  });
+
+  it("refuses to load a writer that free memory cannot hold (blocked: memory), never swapping", async () => {
+    const available = vi.fn(async () => 12 * gib);
+    const { ai, built } = fakeService({ availableMemoryBytes: available, loaded: () => false });
+    state.selections.set("text-generation", localSelection(writer));
+
+    await expect(ai.runDefaultTask("text-generation", "first")).rejects.toThrow(
+      "errors.localModels.insufficient_memory"
+    );
+    // The 12 GiB writer needs 13 GiB with the 1 GiB margin; the call never reached it.
+    expect(available).toHaveBeenCalledOnce();
+    expect(built[0]!.run).not.toHaveBeenCalled();
+
+    available.mockResolvedValue(13 * gib);
+    await expect(ai.runDefaultTask("text-generation", "second")).resolves.toBeDefined();
+    expect(built[0]!.run).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a writer the machine cannot hold even alone, and reads no memory for a loaded one", async () => {
+    const available = vi.fn(async () => 64 * gib);
+    const small = fakeService({
+      totalMemoryBytes: 12 * gib,
+      availableMemoryBytes: available,
+      loaded: () => false
+    });
+    state.selections.set("text-generation", localSelection(writer));
+    await expect(small.ai.runDefaultTask("text-generation", "first")).rejects.toMatchObject({
+      message: "errors.localModels.insufficient_memory",
+      reason: "plan"
+    });
+    expect(available).not.toHaveBeenCalled();
+
+    const loaded = fakeService({ availableMemoryBytes: available });
+    await loaded.ai.runDefaultTask("text-generation", "first");
+    expect(available).not.toHaveBeenCalled();
   });
 });
 

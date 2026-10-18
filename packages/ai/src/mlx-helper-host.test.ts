@@ -143,8 +143,10 @@ describe("MlxHelperHost", () => {
     expect(scored).toMatchObject({ yesTokenId: 9693, noTokenId: 2152 });
     expect(host.spawnCount).toBe(1);
     const entries = await log();
-    expect(entries.map((entry) => entry[1])).toEqual(["generate", "embed", "score"]);
+    // A fresh process is asked for its capabilities first; this older one announces none.
+    expect(entries.map((entry) => entry[1])).toEqual(["health", "generate", "embed", "score"]);
     expect(new Set(entries.map((entry) => entry[0]))).toEqual(new Set([String(pid)]));
+    expect(host.capabilities).toEqual(new Set());
   });
 
   it("reports a helper failure without killing the helper", async () => {
@@ -402,5 +404,289 @@ describe("MlxAdapter with a shared helper host", () => {
     await adapter.dispose();
     await expect(adapter.run({ ...request, input: "again" })).resolves.toBeDefined();
     await adapter.dispose();
+  });
+});
+
+/**
+ * A stand-in for the T61 helper: it reads stdin while it works, so a `cancel` line reaches the
+ * request that runs (F3 D39, R12). `generate` writes a piece every 10 ms (three for most prompts,
+ * a thousand for "long" and "stubborn"; "silent" writes one and then nothing) and streams them when
+ * asked; `score` runs one batch every 20 ms (a thousand for the query "longscore") and checks for a
+ * cancel before each. "stubborn" ignores a cancel. Every line is logged as `<pid> <command>`, and
+ * every batch as `<pid> batch`.
+ */
+async function createCapableHelper(): Promise<{
+  helperPath: string;
+  log: () => Promise<string[][]>;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "memora-mlx-host-t61-"));
+  roots.push(root);
+  const helperPath = join(root, "fake-helper.mjs");
+  const logPath = join(root, "requests.log");
+  await writeFile(
+    helperPath,
+    `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import readline from "node:readline";
+const log = (text) => appendFileSync(${JSON.stringify(logPath)}, process.pid + " " + text + "\\n");
+const send = (id, body) => process.stdout.write(JSON.stringify({
+  protocolVersion: 1, requestId: id.toUpperCase(), ...body }) + "\\n");
+const cancelled = { kind: "result", ok: false,
+  error: { code: "cancelled", messageKey: "errors.localModels.runtimeFailed", recoverable: true } };
+const timing = { loadMs: 0, modelCached: true, tokenizeMs: 0, inferenceMs: 1, perItemMs: 1, totalMs: 1,
+  batches: [{ size: 1, sequenceLength: 8, ms: 1 }] };
+const running = new Map();
+const queue = [];
+let busy = false;
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const request = JSON.parse(line);
+  log(request.command + (request.slot ? ":" + request.slot : ""));
+  if (request.command === "cancel") return running.get(request.requestId.toLowerCase())?.();
+  queue.push(request);
+  pump();
+});
+function pump() {
+  if (busy || queue.length === 0) return;
+  busy = true;
+  handle(queue.shift(), () => { busy = false; pump(); });
+}
+function handle(request, done) {
+  const id = request.requestId;
+  const finish = (body) => { running.delete(id.toLowerCase()); send(id, body); done(); };
+  if (request.command === "health")
+    return finish({ kind: "result", ok: true, output: "ok", durationMs: 0,
+      capabilities: ["cancel", "stream", "unload"] });
+  if (request.command === "unload")
+    return finish({ kind: "result", ok: true, output: "", durationMs: 0 });
+  if (request.command === "generate") {
+    const marker = request.prompt;
+    const total = marker === "long" || marker === "stubborn" ? 1000 : 3;
+    let written = 0;
+    let text = "";
+    const timer = setInterval(() => {
+      if (marker === "silent" && written === 1) return;
+      const piece = "w" + written + " ";
+      text += piece;
+      written += 1;
+      if (request.stream) send(id, { kind: "delta", delta: piece });
+      if (written < total) return;
+      clearInterval(timer);
+      finish({ kind: "result", ok: true, output: text, durationMs: 1, inputTokens: 1,
+        outputTokens: written });
+    }, 10);
+    running.set(id.toLowerCase(), () => {
+      if (marker === "stubborn") return;
+      clearInterval(timer);
+      finish(cancelled);
+    });
+    return;
+  }
+  if (request.command === "score") {
+    const count = (request.documents ?? request.pairs).length;
+    const batches = (request.query ?? request.pairs[0].query) === "longscore" ? 1000 : 1;
+    let batch = 0;
+    let stop = false;
+    const timer = setInterval(() => {
+      if (stop) {
+        clearInterval(timer);
+        return finish(cancelled);
+      }
+      batch += 1;
+      log("batch");
+      if (batch < batches) return;
+      clearInterval(timer);
+      finish({ kind: "result", ok: true, durationMs: 1, inputTokens: count,
+        scores: Array(count).fill(0.5), logOdds: Array(count).fill(0), yesTokenId: 9693,
+        noTokenId: 2152, tokenCounts: Array(count).fill(8), truncated: Array(count).fill(false),
+        timing });
+    }, 20);
+    running.set(id.toLowerCase(), () => { stop = true; });
+  }
+}
+`
+  );
+  await chmod(helperPath, 0o755);
+  return {
+    helperPath,
+    log: async () => {
+      const text = await readFile(logPath, "utf8").catch(() => "");
+      return text
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.split(" "));
+    }
+  };
+}
+
+describe("MlxHelperHost with a helper that can cancel, unload and stream (F3 T61)", () => {
+  it("asks a fresh helper for its capabilities once", async () => {
+    const { helperPath, log } = await createCapableHelper();
+    const host = createHost(helperPath);
+    await host.generate({ modelPath: "/m", prompt: "a" });
+    await host.generate({ modelPath: "/m", prompt: "b" });
+
+    expect(host.capabilities).toEqual(new Set(["cancel", "stream", "unload"]));
+    expect(host.supports("cancel")).toBe(true);
+    expect((await log()).map((entry) => entry[1])).toEqual(["health", "generate", "generate"]);
+  });
+
+  it("cancels a generation at its deadline and keeps the PID and the loaded model", async () => {
+    const { helperPath, log } = await createCapableHelper();
+    const host = createHost(helperPath);
+    await host.generate({ modelPath: "/m", prompt: "load" });
+    const pid = host.pid;
+    expect(host.loadedModel("generate")).toBe("/m");
+
+    const startedAt = Date.now();
+    await expect(
+      host.generate({ modelPath: "/m", prompt: "long" }, { timeoutMs: 100 })
+    ).rejects.toMatchObject({ name: "MlxHelperError", code: "timeout" });
+    // It stopped on the cancel, well before the 2 s grace would have killed it.
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(host.pid).toBe(pid);
+    expect(isAlive(pid!)).toBe(true);
+    expect(host.loadedModel("generate")).toBe("/m");
+    await expect(host.generate({ modelPath: "/m", prompt: "next" })).resolves.toMatchObject({
+      output: "w0 w1 w2 "
+    });
+    expect(host.spawnCount).toBe(1);
+    expect((await log()).map((entry) => entry[1])).toContain("cancel");
+  });
+
+  it("honours a cancel that arrives while a scoring batch runs, on an abort", async () => {
+    const { helperPath, log } = await createCapableHelper();
+    const host = createHost(helperPath);
+    await host.health();
+    const pid = host.pid;
+    const controller = new AbortController();
+    const scoring = host.score(
+      { modelPath: "/r", query: "longscore", documents: ["a", "b"] },
+      { signal: controller.signal }
+    );
+    setTimeout(() => controller.abort(), 100);
+    const startedAt = Date.now();
+
+    await expect(scoring).rejects.toMatchObject({ name: "AbortError" });
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    const batches = (await log()).filter((entry) => entry[1] === "batch").length;
+    expect(batches).toBeGreaterThan(0);
+    expect(batches).toBeLessThan(50);
+    expect(host.pid).toBe(pid);
+    await expect(
+      host.score({ modelPath: "/r", query: "q", documents: ["d"] })
+    ).resolves.toMatchObject({ scores: [0.5] });
+  });
+
+  it("kills a helper that has not answered a cancel within the grace period", async () => {
+    const { helperPath } = await createCapableHelper();
+    const host = createHost(helperPath, { config: { cancelGraceMs: 150 } });
+    await host.health();
+    const pid = host.pid!;
+
+    const startedAt = Date.now();
+    await expect(
+      host.generate({ modelPath: "/m", prompt: "stubborn" }, { timeoutMs: 50 })
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(190);
+    expect(host.pid).toBeUndefined();
+    await host.health();
+    expect(host.pid).not.toBe(pid);
+    expect(isAlive(pid)).toBe(false);
+  });
+
+  it("streams the pieces of a generation and stops one that goes silent", async () => {
+    const { helperPath } = await createCapableHelper();
+    const host = createHost(helperPath);
+    const pieces: string[] = [];
+    const result = await host.generate(
+      { modelPath: "/m", prompt: "stream", stream: true },
+      { onDelta: (piece) => pieces.push(piece), stallMs: 1_000 }
+    );
+    expect(pieces).toEqual(["w0 ", "w1 ", "w2 "]);
+    expect(pieces.join("")).toBe(result.output);
+    const pid = host.pid;
+
+    await expect(
+      host.generate({ modelPath: "/m", prompt: "silent", stream: true }, { stallMs: 100 })
+    ).rejects.toMatchObject({ code: "stalled" });
+    expect(host.pid).toBe(pid);
+  });
+
+  it("unloads one slot and keeps the process and the other slots", async () => {
+    const { helperPath, log } = await createCapableHelper();
+    const host = createHost(helperPath);
+    expect(await host.unload("generate")).toBe("not_running");
+    expect(host.spawnCount).toBe(0);
+
+    await host.generate({ modelPath: "/writer", prompt: "a" });
+    await host.score({ modelPath: "/ranker", query: "q", documents: ["d"] });
+    const pid = host.pid;
+    expect(await host.unload("generate")).toBe("unloaded");
+
+    expect(host.pid).toBe(pid);
+    expect(host.loadedModel("generate")).toBeUndefined();
+    expect(host.loadedModel("score")).toBe("/ranker");
+    expect((await log()).map((entry) => entry[1])).toContain("unload:generate");
+  });
+
+  it("serves an older one-request-per-process helper that exits slower than the persistence probe", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-mlx-host-oneshot-"));
+    roots.push(root);
+    const helperPath = join(root, "one-shot.mjs");
+    await writeFile(
+      helperPath,
+      `#!/usr/bin/env node
+import readline from "node:readline";
+readline.createInterface({ input: process.stdin }).once("line", (line) => {
+  const request = JSON.parse(line);
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: request.requestId,
+    kind: "result", ok: true, output: "legacy", durationMs: 1 }) + "\\n");
+  setTimeout(() => process.exit(0), 150);
+});
+`
+    );
+    await chmod(helperPath, 0o755);
+    const host = createHost(helperPath);
+
+    await expect(host.generate({ modelPath: "/m", prompt: "a" })).resolves.toMatchObject({
+      output: "legacy"
+    });
+    await expect(host.generate({ modelPath: "/m", prompt: "b" })).resolves.toMatchObject({
+      output: "legacy"
+    });
+    // Every answer came from a fresh process: the requests written to a dying one ran again.
+    expect(host.spawnCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("says an older helper cannot unload, so only stopping it frees the slot", async () => {
+    const { helperPath } = await createFakeHelper();
+    const host = createHost(helperPath);
+    await host.generate({ modelPath: "/writer", prompt: "a" });
+
+    expect(await host.unload("generate")).toBe("unsupported");
+    expect(host.loadedModel("generate")).toBe("/writer");
+  });
+
+  it("tells the MLX adapter whether the shared helper holds its model", async () => {
+    const { helperPath } = await createCapableHelper();
+    const host = createHost(helperPath);
+    const adapter = new MlxAdapter({
+      modelId: "local-test",
+      modelPath: "/writer",
+      helperPath,
+      host,
+      capabilities: ["text-generation", "offline"]
+    });
+    expect(adapter.isLoaded()).toBe(false);
+    await adapter.run({
+      taskType: "text-generation",
+      input: "hello",
+      requiredCapabilities: ["text-generation"],
+      parameters: {},
+      metadata: {}
+    });
+    expect(adapter.isLoaded()).toBe(true);
+    await host.unload("generate");
+    expect(adapter.isLoaded()).toBe(false);
   });
 });

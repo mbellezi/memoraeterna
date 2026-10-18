@@ -614,6 +614,11 @@ const lines = readline.createInterface({ input: process.stdin });
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.command === "shutdown") process.exit(0);
+  if (request.command === "health") {
+    process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: request.requestId,
+      kind: "result", ok: true, output: "ok", durationMs: 0 }) + "\\n");
+    continue;
+  }
   if (request.prompt === "hang") continue;
   if ("contextWindow" in request.parameters) process.exit(9);
   requests += 1;

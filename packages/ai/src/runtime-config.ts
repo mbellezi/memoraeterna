@@ -27,6 +27,11 @@ export const mlxRuntimeConfigSchema = z
     /** How long a killed helper gets to exit after SIGTERM before it receives SIGKILL. */
     killGraceMs: z.number().int().min(10).max(60_000),
     /**
+     * How long a request the host cancelled (at its deadline or on an abort) may take to answer
+     * before the helper is killed (F3 D31). A helper without `cancel` is killed at once.
+     */
+    cancelGraceMs: z.number().int().min(10).max(60_000),
+    /**
      * How long after its first answer a fresh helper is watched for exiting. A helper that exits
      * after every request is respawned instead of being written to while it dies.
      */
@@ -44,6 +49,7 @@ export const defaultMlxRuntimeConfig: MlxRuntimeConfig = {
   requestTimeoutMs: 10 * 60_000,
   healthTimeoutMs: 30_000,
   killGraceMs: 1_000,
+  cancelGraceMs: 2_000,
   persistenceProbeMs: 50,
   stderrTailChars: 2_000
 };
@@ -175,6 +181,23 @@ export const aiLaneRuntimeConfigSchema = z
          */
         graceMs: laneMilliseconds
       })
+      .strict(),
+    /** Which local models stay loaded (F3 D39); the embedder and the ranker are always kept. */
+    residency: z
+      .object({
+        /** Idle time after the last call of the local generative model before it is unloaded. */
+        generativeIdleUnloadMs: laneMilliseconds,
+        /**
+         * Memory kept free beyond the catalog minimums of the resident models. The writer stays
+         * beside the ranker only when both fit with it; otherwise the ranker leaves while it runs.
+         */
+        headroomBytes: z.number().int().nonnegative().max(1_099_511_627_776),
+        /**
+         * Before a generative model loads, free plus inactive memory must exceed its catalog
+         * minimum by this much; otherwise the call is refused (`blocked: memory`), never swapped.
+         */
+        loadMarginBytes: z.number().int().nonnegative().max(1_099_511_627_776)
+      })
       .strict()
   })
   .strict();
@@ -189,9 +212,21 @@ export interface AiLaneRuntimeConfigInput {
   localDeadlines?: Partial<Omit<AiLocalDeadlines, "totalMs">> & {
     totalMs?: Partial<AiLocalDeadlines["totalMs"]>;
   };
+  residency?: Partial<AiLocalResidencyConfig>;
 }
+export type AiLocalResidencyConfig = AiLaneRuntimeConfig["residency"];
 
-/** Start values (cal.): T61 measures local p99s and sets min(cap, 3 x p99); B5 measures Codex. */
+const gib = 1_024 ** 3;
+
+/**
+ * Local deadlines per class = min(cap, 3 x p99 rounded up) (F3 D31, T61), caps embed 30 s per batch,
+ * decide 10 s per call, write-fast 180 s, write-quality 900 s, answer 300 s. The p99s are of the
+ * recorded E6 runs on the owner's Mac (Qwen3.5-9B MLX writer, 2026-10-17) and of M1's ranker calls:
+ * write-fast 46.4 s (62 calls) -> 140 s; write-quality 116.6 s (211 calls; the two calls above it
+ * ran away to the 32,768-token cap for ~10 min) -> 350 s; decide 1.0 s for the MLX ranker (141
+ * calls) but 6.1 s for the 9B generative decider (117 calls), so the cap binds. Embed batches and
+ * local answers are not recorded yet and keep their caps. Lane values (cal.): B5 measures Codex.
+ */
 export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
   mode: "product",
   lanes: {
@@ -208,13 +243,14 @@ export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
     totalMs: {
       embed: 30_000,
       decide: 10_000,
-      "write-fast": 180_000,
-      "write-quality": 900_000,
+      "write-fast": 140_000,
+      "write-quality": 350_000,
       answer: 300_000
     },
     tokenStallMs: 60_000,
     graceMs: 2_000
-  }
+  },
+  residency: { generativeIdleUnloadMs: 300_000, headroomBytes: 4 * gib, loadMarginBytes: gib }
 };
 
 /**
@@ -278,7 +314,8 @@ export function resolveAiLaneRuntimeConfig(
       ...defaultAiLaneRuntimeConfig.localDeadlines,
       ...definedEntries(localDeadlines),
       totalMs: { ...defaultAiLaneRuntimeConfig.localDeadlines.totalMs, ...definedEntries(totalMs) }
-    }
+    },
+    residency: { ...defaultAiLaneRuntimeConfig.residency, ...definedEntries(input.residency) }
   });
 }
 

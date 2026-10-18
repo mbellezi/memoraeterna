@@ -348,7 +348,7 @@ describe("the scheduler's audit of every execution (S9)", () => {
       lane: "local",
       workloadClass: "write-fast",
       priority: 2,
-      deadlineMs: 180_000,
+      deadlineMs: 140_000,
       deadlineOutcome: "met"
     });
     expect(rows()[2]).toMatchObject({ status: "canceled", lane: "local", deadlineOutcome: "met" });
@@ -356,7 +356,7 @@ describe("the scheduler's audit of every execution (S9)", () => {
       status: "succeeded",
       workloadClass: "write-quality",
       priority: 3,
-      deadlineMs: 900_000,
+      deadlineMs: 350_000,
       isRepair: true
     });
     expect(rows()[4]).toMatchObject({ status: "succeeded", lane: "local" });
@@ -408,12 +408,12 @@ describe("the scheduler's audit of every execution (S9)", () => {
     wedging.open();
     await expect(wedged).rejects.toMatchObject({ code: "aborted_deadline" });
     const queued = await waiting.catch((error: unknown) => error);
-    expect(queued).toMatchObject({ code: "wedged", deadlineMs: 180_000 });
+    expect(queued).toMatchObject({ code: "wedged", deadlineMs: 140_000 });
     // Admitted while the lane is held: refused at once, as a failure a job retries.
     const refused = await ai
       .runDefaultTask("atomic-note-generation", "meanwhile", { priority: "P0" })
       .catch((error: unknown) => error);
-    expect(refused).toMatchObject({ code: "wedged", deadlineMs: 900_000 });
+    expect(refused).toMatchObject({ code: "wedged", deadlineMs: 350_000 });
     expect(isTransientJobFailure(refused)).toBe(true);
     // Remote lanes are not held.
     await expect(ai.runDefaultTask("text-generation", "question")).resolves.toMatchObject({

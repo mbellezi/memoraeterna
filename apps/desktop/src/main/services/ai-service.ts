@@ -80,15 +80,21 @@ import {
   isRemoteExecution,
   localDeadlineMs,
   LocalDeadlineError,
+  LocalMemoryBlockedError,
   LocalRankerError,
   localRuntimeWedgedError,
+  availableMemoryBytes,
+  memoryGuard,
   priorityNumber,
   ProviderUnavailableError,
   remoteTotalDeadlineMs,
   requestWorkloadClass,
+  residencyPlan,
   resolveAiLaneRuntimeConfig,
   resolveAiRuntimeConfig,
-  sumTokenUsage
+  sumTokenUsage,
+  type MlxHelperSlot,
+  type ResidencyPlan
 } from "@app/ai";
 import {
   aiRouteKeys,
@@ -160,6 +166,7 @@ import {
   refreshOpenAiCodexCredential,
   type OpenAiCodexCredential
 } from "./openai-codex-oauth.js";
+import { totalmem } from "node:os";
 import { extname, join } from "node:path";
 
 export interface AiServiceOptions {
@@ -192,8 +199,16 @@ export interface AiServiceOptions {
    * embedding and one ranker model (D18). Created on first use when left out; proofs inject one.
    */
   mlxHost?: MlxHelperHost;
-  /** The machine; it decides whether an MLX ranker can be seeded (D18). Defaults to this one. */
+  /**
+   * The machine; it decides whether an MLX ranker can be seeded (D18) and, by its memory, which
+   * local models stay loaded together (F3 D39). Defaults to this one.
+   */
   machine?: { platform: string; arch: string; totalMemoryBytes?: number };
+  /**
+   * Free plus inactive memory now, read before a local generative model loads (F3 D39). Defaults to
+   * `vm_stat` on macOS and `os.freemem()` elsewhere.
+   */
+  availableMemoryBytes?: () => Promise<number>;
   /**
    * Called with the task and class routes a seeding just created (never throws into it): the
    * first-run ranker install follows the first embedding route (owner decision 19).
@@ -398,14 +413,26 @@ export interface ActiveEmbeddingSpace {
   confirmed: boolean;
 }
 
-/** Residency slots (D18): one generative, one embedding and one ranker model stay loaded. */
+/**
+ * Residency slots (D18): one generative, one embedding and one ranker model stay loaded; the
+ * generative one leaves after an idle period, and the ranker leaves while it is loaded when the
+ * machine cannot hold both (F3 D39).
+ */
 type ResidencySlot = "generate" | "embed" | "rank";
 const residencySlots: readonly ResidencySlot[] = ["generate", "embed", "rank"];
+/** The MLX helper's model slot of each residency slot. */
+const mlxHelperSlots: Record<ResidencySlot, MlxHelperSlot> = {
+  generate: "generate",
+  embed: "embed",
+  rank: "score"
+};
 
 interface ResidentLocalAdapter {
   localModelId: string;
   runtime: string;
   adapter: AiModelAdapter;
+  /** The catalog minimum of the model's memory; unknown for a model outside the catalog. */
+  minimumMemoryBytes?: number | undefined;
   /** A ranker's runtime build, read once while it stays resident. */
   runtimeBuild?: Promise<string> | undefined;
 }
@@ -562,10 +589,12 @@ export class AiService {
   private readonly resident: Partial<Record<ResidencySlot, ResidentLocalAdapter>> = {};
   private mlxHost: MlxHelperHost | null;
   /**
-   * An MLX adapter was released while the shared helper still holds its weights: the helper has
-   * no unload command, so the next idle release stops it (the next MLX call starts a fresh one).
+   * An MLX adapter was released while the shared helper still holds its weights: an older helper
+   * has no `unload`, so the next idle release stops it (the next MLX call starts a fresh one).
    */
   private mlxHoldsReleasedModel = false;
+  /** Unloads the generative model once it has been idle for its period (F3 D39). */
+  private generativeIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor(private readonly options: AiServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
@@ -1713,6 +1742,8 @@ export class AiService {
           : adapter.run(request, execution);
       };
       const runLocal = async () => {
+        if (taskType !== "embedding")
+          await this.beforeLocalGeneration(selection.localModelId!, adapter);
         const needsLoad =
           taskType === "embedding" && adapter.isLoaded?.() === false && adapter.ensureLoaded;
         if (needsLoad) {
@@ -2001,9 +2032,10 @@ export class AiService {
 
   /**
    * Releases the resident local models that are not running a call (all of them with `force`).
-   * The ranker stays loaded (D18), and so does an embedding model when `keepEmbedding` is set, so a
-   * gate call between two embedding calls reloads neither. A released MLX model leaves the shared
-   * helper, which is stopped once no MLX call runs.
+   * The ranker stays loaded (D18), the generative model leaves on its own idle timer (F3 D39), and
+   * an embedding model stays when `keepEmbedding` is set, so a gate call between two embedding
+   * calls reloads neither. A released MLX model is unloaded from the shared helper, which keeps
+   * running; an older helper without `unload` is stopped once no MLX call runs.
    */
   public async releaseLocalRuntime(force = false, keepEmbedding = false): Promise<void> {
     for (const slot of residencySlots) {
@@ -2011,16 +2043,18 @@ export class AiService {
       if (!occupant) continue;
       if (!force) {
         if (this.occupied(occupant)) continue;
-        if (slot === "rank") continue;
+        if (slot === "rank" || slot === "generate") continue;
         if (keepEmbedding && occupant.adapter.describe().capabilities.includes("embedding"))
           continue;
       }
-      await this.releaseSlot(slot);
+      // Stopping everything stops the helper too: no unload first.
+      await this.releaseSlot(slot, { unload: !force });
     }
     await this.stopIdleMlxHelper(force);
   }
 
   public async dispose(): Promise<void> {
+    this.clearGenerativeIdleTimer();
     await this.releaseLocalRuntime(true);
   }
 
@@ -2571,16 +2605,17 @@ export class AiService {
       input
     });
     try {
-      const result = await this.withLocalModelUsage(localModelId, () =>
-        adapter.run({
+      const result = await this.withLocalModelUsage(localModelId, async () => {
+        if (!embeddingOnly) await this.beforeLocalGeneration(localModelId, adapter);
+        return adapter.run({
           taskType,
           input,
           modelId: adapter.describe().modelId,
           requiredCapabilities,
           parameters,
           metadata: { purpose: "local-model-test" }
-        })
-      );
+        });
+      });
       const aiTaskRunId = await repository.recordTaskRun({
         taskType,
         provider: result.providerId,
@@ -2889,15 +2924,127 @@ export class AiService {
     model: LocalModelRecord,
     entry: LocalModelCatalogEntry
   ): Promise<RankerAdapter> {
+    await this.makeRoomForRanker(entry.minimumMemoryBytes);
     return (await this.makeResident("rank", model, [...entry.capabilities]))
       .adapter as RankerAdapter;
   }
 
   /** The routed ranker, resident in the ranker slot with its stored (validated) capabilities. */
   private async residentRanker(model: LocalModelRecord): Promise<ResidentLocalAdapter> {
+    await this.makeRoomForRanker(findLocalModelCatalogEntry(model.catalogId)?.minimumMemoryBytes);
     const resident = this.resident.rank;
     if (resident?.localModelId === model.id) return resident;
     return this.makeResident("rank", model, parseCapabilities(model.capabilities));
+  }
+
+  /**
+   * The residency plan (F3 D39) of the generative model with the resident embedder and a ranker of
+   * this minimum; null when the generative model's minimum is unknown (outside the catalog).
+   */
+  private residencyPlanFor(
+    generativeMinimumBytes: number | undefined,
+    rankMinimumBytes: number | undefined
+  ): ResidencyPlan | null {
+    if (generativeMinimumBytes === undefined) return null;
+    return residencyPlan({
+      totalMemoryBytes: this.options.machine?.totalMemoryBytes ?? totalmem(),
+      resident: {
+        embed: this.resident.embed?.minimumMemoryBytes ?? 0,
+        rank: rankMinimumBytes ?? 0
+      },
+      generative: generativeMinimumBytes,
+      headroomBytes: this.laneConfig.residency.headroomBytes
+    });
+  }
+
+  /**
+   * Before a ranker call: when the machine cannot hold the ranker beside the generative model, the
+   * generative one leaves first (it loads again on its next call).
+   */
+  private async makeRoomForRanker(rankMinimumBytes: number | undefined): Promise<void> {
+    const generative = this.resident.generate;
+    if (!generative || this.occupied(generative)) return;
+    const plan = this.residencyPlanFor(generative.minimumMemoryBytes, rankMinimumBytes);
+    if (!plan || plan.keepRankDuringGeneration) return;
+    await this.releaseSlot("generate");
+    await this.stopIdleMlxHelper(false);
+  }
+
+  /**
+   * Before a call of the local generative model (F3 D39): the ranker leaves when the machine cannot
+   * hold both, and a model that is about to load must fit the residency plan and the memory that is
+   * free now (its catalog minimum plus the load margin), else the call is refused visibly
+   * (`blocked: memory`) instead of pushing the machine into swap.
+   */
+  private async beforeLocalGeneration(
+    localModelId: string,
+    adapter: AiModelAdapter
+  ): Promise<void> {
+    const generative = this.resident.generate;
+    if (generative?.localModelId !== localModelId) return;
+    const minimum = generative.minimumMemoryBytes;
+    const plan = this.residencyPlanFor(minimum, this.resident.rank?.minimumMemoryBytes);
+    const ranker = this.resident.rank;
+    if (plan && !plan.keepRankDuringGeneration && ranker && !this.occupied(ranker)) {
+      await this.releaseSlot("rank");
+      await this.stopIdleMlxHelper(false);
+    }
+    // Only a load needs room; a replayed call loads nothing.
+    if (minimum === undefined || adapter.isLoaded?.() !== false) return;
+    const residency = this.laneConfig.residency;
+    if (plan && !plan.allowed) {
+      throw new LocalMemoryBlockedError(
+        "plan",
+        minimum + residency.headroomBytes,
+        this.options.machine?.totalMemoryBytes ?? totalmem()
+      );
+    }
+    const available = await (this.options.availableMemoryBytes ?? availableMemoryBytes)();
+    const guard = memoryGuard({
+      availableBytes: available,
+      minimumBytes: minimum,
+      marginBytes: residency.loadMarginBytes
+    });
+    if (!guard.allowed) {
+      this.options.logger?.info(
+        `Local generative model not loaded: ${available} bytes free, ${guard.requiredBytes} needed`
+      );
+      throw new LocalMemoryBlockedError("free", guard.requiredBytes, available);
+    }
+  }
+
+  /** (Re)starts the generative model's idle period: it unloads when the period ends unused. */
+  private armGenerativeIdleTimer(): void {
+    this.clearGenerativeIdleTimer();
+    const occupant = this.resident.generate;
+    if (!occupant) return;
+    const timer = setTimeout(() => {
+      if (this.generativeIdleTimer === timer) this.generativeIdleTimer = null;
+      void this.unloadIdleGenerative(occupant).catch((error: unknown) =>
+        this.options.logger?.error("Idle unload of the local generative model", error)
+      );
+    }, this.laneConfig.residency.generativeIdleUnloadMs);
+    timer.unref?.();
+    this.generativeIdleTimer = timer;
+  }
+
+  private clearGenerativeIdleTimer(): void {
+    if (this.generativeIdleTimer) clearTimeout(this.generativeIdleTimer);
+    this.generativeIdleTimer = null;
+  }
+
+  /**
+   * The idle period ended: the generative model leaves, unless a call or an abandoned (wedged) one
+   * still holds it; then another period starts.
+   */
+  private async unloadIdleGenerative(occupant: ResidentLocalAdapter): Promise<void> {
+    if (this.resident.generate !== occupant) return;
+    if (this.occupied(occupant)) {
+      this.armGenerativeIdleTimer();
+      return;
+    }
+    await this.releaseSlot("generate");
+    await this.stopIdleMlxHelper(false);
   }
 
   /** The slot a local model is kept in: rankers, embedding-only models, everything else. */
@@ -2931,22 +3078,44 @@ export class AiService {
     const resident: ResidentLocalAdapter = {
       localModelId: model.id,
       runtime: model.runtime,
-      adapter
+      adapter,
+      minimumMemoryBytes: findLocalModelCatalogEntry(model.catalogId)?.minimumMemoryBytes
     };
     this.resident[slot] = resident;
     this.registerAdapter(adapter);
+    if (slot === "generate") this.armGenerativeIdleTimer();
     return resident;
   }
 
-  private async releaseSlot(slot: ResidencySlot): Promise<void> {
+  private async releaseSlot(
+    slot: ResidencySlot,
+    options: { unload?: boolean } = {}
+  ): Promise<void> {
     const occupant = this.resident[slot];
     if (!occupant) return;
     delete this.resident[slot];
+    if (slot === "generate") this.clearGenerativeIdleTimer();
     const descriptor = occupant.adapter.describe();
     this.registry.unregister(descriptor.providerId, descriptor.modelId);
     await occupant.adapter.dispose?.();
-    // The shared helper keeps the weights of a released MLX adapter until it stops.
-    if (occupant.runtime === "mlx") this.mlxHoldsReleasedModel = true;
+    if (occupant.runtime === "mlx") await this.unloadMlxSlot(slot, options.unload ?? true);
+  }
+
+  /**
+   * Drops a released MLX model from the shared helper, which keeps its PID and its other models
+   * (F3 D39). An older helper without `unload` keeps the weights until it stops: the next idle
+   * release stops it once no MLX call runs.
+   */
+  private async unloadMlxSlot(slot: ResidencySlot, unload: boolean): Promise<void> {
+    const host = this.mlxHost;
+    const outcome =
+      host && unload
+        ? await host.unload(mlxHelperSlots[slot]).catch((error: unknown) => {
+            this.options.logger?.error("MLX helper unload failed", error);
+            return "unsupported" as const;
+          })
+        : "unsupported";
+    if (outcome === "unsupported") this.mlxHoldsReleasedModel = true;
   }
 
   /** Releases one local model unless it is running a call or wedged. */
@@ -2978,9 +3147,15 @@ export class AiService {
     await host.dispose();
   }
 
-  /** The one MLX helper of this service (D18). */
+  /**
+   * The one MLX helper of this service (D18). A call it cancels at its deadline may take the local
+   * grace period to stop before the helper is killed (F3 D31).
+   */
   private mlxHelper(): MlxHelperHost {
-    this.mlxHost ??= new MlxHelperHost({ helperPath: this.resolveMlxHelperPath() });
+    this.mlxHost ??= new MlxHelperHost({
+      helperPath: this.resolveMlxHelperPath(),
+      config: { cancelGraceMs: this.laneConfig.localDeadlines.graceMs }
+    });
     return this.mlxHost;
   }
 
@@ -3177,7 +3352,11 @@ export class AiService {
     const resident = residencySlots
       .map((slot) => this.resident[slot])
       .find((occupant) => occupant?.localModelId === localModelId);
-    if (resident) return resident.adapter;
+    if (resident) {
+      // A call is on its way: the generative model's idle period starts again.
+      if (resident === this.resident.generate) this.armGenerativeIdleTimer();
+      return resident.adapter;
+    }
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model || model.status !== "ready" || !model.managedPath)
       throw new Error("errors.localModels.notReady");
@@ -3217,6 +3396,8 @@ export class AiService {
       return await run();
     } finally {
       this.activeLocalModels.delete(localModelId);
+      // The generative model's idle period starts when its last call ends (F3 D39).
+      if (this.resident.generate?.localModelId === localModelId) this.armGenerativeIdleTimer();
     }
   }
 
