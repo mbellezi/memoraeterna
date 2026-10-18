@@ -648,7 +648,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
 - [ ] T58e Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
-- [ ] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
+- [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
 - [ ] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
 - [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
 - [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
