@@ -131,6 +131,14 @@ concurrency and automatic correction.
     relation final. Panel precision and calibration are reported, not gating; F6 recalibrates from the owner's
     real Keep and Remove. A typer prompt with the panel's strict criterion is tested on live Codex (about
     60-100k tokens); if typed suggestions reach precision 0.80 they form a "confirmed" tier.
+30. **The Decisions API as an opt-in decider** (2026-10-18): on F3's panel labels the OpenAI Decisions API
+    (gpt-6-luna, remote, paid) is the only decider that clears decision 18's apply bar (cross-validated precision
+    1.000, Wilson 0.89; fixture tuning 26/26 at 0 forbidden); the local Qwen3-Reranker-4B ranks better than the
+    0.6B but reaches no apply band and is 5-8x too slow, so it is not adopted and was deleted. After a validation
+    with product-shaped (dense) requests on the public golden and corpus texts, F3 adds the Decisions API as an
+    opt-in decider in the Hybrid and Cloud presets: its own frozen calibration, automatic apply in its apply band,
+    suggestions below, the local ranker as candidate filter and fallback, a Platform key and a privacy notice in
+    Settings. The Local preset keeps decision 29. This is decision 26's owner-approved exception.
 
 ## 3. The five swaps
 
