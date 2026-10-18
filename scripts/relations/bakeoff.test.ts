@@ -11,6 +11,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { frozenFileEnvironmentVariable, readHeldOutAccess } from "../golden/freeze-guard.ts";
+import { notePairKey } from "../golden/relations-export.ts";
 import { seededRandom } from "../spikes/reranker/metrics.ts";
 import {
   acceptedPairs,
@@ -19,6 +20,8 @@ import {
   bandBars,
   brierScore,
   buildFreezeRecord,
+  buildWeighting,
+  cellWeights,
   canonicalJson,
   chooseBands,
   crossValidatedProbabilities,
@@ -40,7 +43,9 @@ import {
   scoreAtLevel,
   selectConfiguration,
   sha256Hex,
+  topupBandOf,
   typerCheckPairs,
+  weightedPoolLabels,
   weightedRecall,
   writeFreeze,
   type Calibration,
@@ -49,7 +54,8 @@ import {
   type ParityFile,
   type Proposal,
   type RetrievalExport,
-  type SelectInputs
+  type SelectInputs,
+  type Weighting
 } from "./bakeoff.ts";
 
 const scoresOf = (rows: Array<[string, string, number]>): DirectedScores =>
@@ -750,6 +756,28 @@ describe("the parity verdict (R1)", () => {
   });
 });
 
+/** A weighting with one weight per pool and stratum (T57's shape) and nothing kept out. */
+function testWeighting(
+  items: readonly LabelItem[],
+  weights: Record<string, { weight: number[] }>,
+  excluded: ReadonlySet<string> = new Set()
+): Weighting {
+  const weightOf = new Map<string, number>();
+  for (const item of items)
+    if (item.pool && item.stratum !== null)
+      weightOf.set(item.pairId, weights[item.pool]!.weight[item.stratum]!);
+  return {
+    scheme: { A: "stratum", B: "stratum", C: "stratum" },
+    weightOf,
+    excluded,
+    excludedLabels: 0,
+    excludedPopulation: 0,
+    cells: [],
+    unrepresented: [],
+    hashes: { weighting: "test" }
+  };
+}
+
 /** A selection world on disk-free inputs: labels, weights, scores, an M1-like export, the mapping. */
 function selectInputs(options: { withTuningScores: boolean }): SelectInputs {
   const world = labelWorld();
@@ -823,7 +851,7 @@ function selectInputs(options: { withTuningScores: boolean }): SelectInputs {
         items: world.items
       }
     },
-    weights: { path: "/x/weights.json", sha256: "3".repeat(64), value: weights },
+    weighting: testWeighting(world.items, weights.pools),
     tuningExport: { path: "/x/m1.json", sha256: "4".repeat(64), value: tuning },
     mapping: { path: "/x/mapping.json", sha256: "5".repeat(64), value: mapping as never },
     v9: {
@@ -945,8 +973,8 @@ describe("the freeze guard (D3, R1)", () => {
 
   it("refuses a proposal whose inputs changed and a failed parity check", async () => {
     await expect(
-      freeze({ currentHashes: async (value) => ({ ...value.inputs, weights: "0".repeat(64) }) })
-    ).rejects.toThrow("input weights changed");
+      freeze({ currentHashes: async (value) => ({ ...value.inputs, weighting: "0".repeat(64) }) })
+    ).rejects.toThrow("input weighting changed");
     const failed = {
       ...parity,
       runtimes: {
@@ -1100,9 +1128,11 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
         runtimeBuild: `${runtime}-build`,
         scores: new Array(64).fill(1)
       }) as never;
+    const proposalText = JSON.stringify(proposal);
+    await writeFile(join(directory, "proposal.json"), proposalText);
     const record = buildFreezeRecord({
       proposal,
-      proposalSha256: "p",
+      proposalSha256: sha256Hex(proposalText),
       parity,
       baselines: { mlx: baseline("mlx"), gguf: baseline("gguf") },
       frozenAt: new Date("2026-10-19T00:00:00Z")
@@ -1163,11 +1193,6 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
     await mkdir(join(directory, "scores"), { recursive: true });
     for (const runtime of ["mlx", "gguf"])
       await writeFile(join(directory, "scores", name(runtime)), JSON.stringify(scoreFile));
-    const ones = [1, 1, 1, 1, 1];
-    const weights = {
-      strata: ["a", "b", "c", "d", "e"],
-      pools: { A: { weight: ones }, B: { weight: ones }, C: { weight: ones } }
-    };
     const root = (id: string, partition: "tuning" | "holdout") => ({
       id,
       manifestKey: `mf-${id}`,
@@ -1232,7 +1257,7 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
       { source_note: "h1", target_note: "h3", source_root: "H01", target_root: "H03" }
     ];
     const pass = { items: [{ lo: "h1", hi: "h3", related: { majority: true } }] };
-    const files = { labels: fixture, weights, mapping, x1Export, x1Scores, rv9, pass };
+    const files = { labels: fixture, mapping, x1Export, x1Scores, rv9, pass };
     for (const [key, value] of Object.entries(files))
       await writeFile(join(directory, `${key}.json`), JSON.stringify(value));
     const result = await runGateF({
@@ -1244,7 +1269,7 @@ describe("the gate F reads on a synthetic world (after a freeze)", () => {
       },
       paths: {
         labels: join(directory, "labels.json"),
-        weights: join(directory, "weights.json"),
+        proposal: join(directory, "proposal.json"),
         mapping: join(directory, "mapping.json"),
         labelScores: join(directory, "scores"),
         rv9Relations: join(directory, "rv9.json"),
@@ -1328,5 +1353,172 @@ describe("the calibration's parity scores", () => {
       });
     expect(() => build("another-build")).toThrow("the parity baseline is of another-build");
     expect(build("mlx-build").calibrations).toHaveLength(1);
+  });
+});
+
+describe("population weights by cell (3.9, the top-up of 2026-10-18)", () => {
+  it("names the top-up bands by the proposed mean at 600 characters", () => {
+    expect([-0.1, 0, 2.15, 2.15625, 4.374, 4.375, 9].map(topupBandOf)).toEqual([
+      0, 1, 1, 2, 2, 3, 3
+    ]);
+  });
+
+  it("weighs a label by its cell's candidates over its labels, merging empty cells downwards", () => {
+    const population = [
+      // Stratum 3: band 2 holds 30 candidates, band 3 holds 6 (no label there: it merges into band 2).
+      ...Array.from({ length: 30 }, () => ({ stratum: 3, band: 2 })),
+      ...Array.from({ length: 6 }, () => ({ stratum: 3, band: 3 })),
+      // Stratum 4: band 3 has 20 candidates and 4 labels; band 0 has 2 candidates and no label, the lowest
+      // band, so it merges upwards into band 1, which has no candidate but one label.
+      ...Array.from({ length: 20 }, () => ({ stratum: 4, band: 3 })),
+      ...Array.from({ length: 2 }, () => ({ stratum: 4, band: 0 }))
+    ];
+    const labels = [
+      ...Array.from({ length: 6 }, (_, index) => ({ key: `s3-${index}`, stratum: 3, band: 2 })),
+      ...Array.from({ length: 4 }, (_, index) => ({ key: `s4-${index}`, stratum: 4, band: 3 })),
+      { key: "s4-low", stratum: 4, band: 1 }
+    ];
+    const result = cellWeights({ pool: "C", population, labels, scheme: "stratum-and-band" });
+    expect(result.weights.get("s3-0")).toBe(36 / 6);
+    expect(result.weights.get("s4-0")).toBe(20 / 4);
+    expect(result.weights.get("s4-low")).toBe(2);
+    expect(
+      result.cells.map((cell) => [cell.stratum, cell.bands, cell.population, cell.labels])
+    ).toEqual([
+      [3, [2, 3], 36, 6],
+      [4, [0, 1], 2, 1],
+      [4, [3], 20, 4]
+    ]);
+    // T57's coarse cells: one per stratum.
+    const coarse = cellWeights({ pool: "C", population, labels, scheme: "stratum" });
+    expect(coarse.weights.get("s3-0")).toBe(36 / 6);
+    expect(coarse.weights.get("s4-0")).toBe(22 / 5);
+  });
+
+  it("reports a stratum with candidates and no label, and refuses labels with no candidate", () => {
+    const unrepresented = cellWeights({
+      pool: "B",
+      population: [{ stratum: 0, band: 0 }],
+      labels: [{ key: "x", stratum: 1, band: 0 }].filter(() => false),
+      scheme: "stratum"
+    });
+    expect(unrepresented.unrepresented).toEqual([{ pool: "B", stratum: 0, population: 1 }]);
+    expect(() =>
+      cellWeights({
+        pool: "B",
+        population: [],
+        labels: [{ key: "x", stratum: 2, band: 1 }],
+        scheme: "stratum"
+      })
+    ).toThrow("labels and no candidate");
+  });
+
+  it("keeps every R_v9 pair out of the labels and the population, and bands labels by the frame", () => {
+    const item = (
+      pool: string,
+      n: number,
+      stratum: number,
+      split: "fit" | "eval" = "fit"
+    ): LabelItem => ({
+      pairId: `note:${pool}:${n}`,
+      kind: "note",
+      library: "x",
+      lo: `${pool}lo${n}`,
+      hi: `${pool}hi${n}`,
+      group: `g${n}`,
+      sets: [`pool-${pool}`],
+      pool,
+      stratum,
+      split,
+      related: true
+    });
+    const items = [
+      item("A", 1, 4),
+      item("A", 2, 4, "eval"),
+      item("A", 3, 4),
+      item("B", 1, 4),
+      item("C", 1, 4)
+    ];
+    const pair = (pool: string, n: number) => ({
+      lo: `${pool}lo${n}`,
+      hi: `${pool}hi${n}`,
+      stratum: 4
+    });
+    const population = (pool: string, count: number) =>
+      Array.from({ length: count }, (_, index) => pair(pool, index + 1));
+    const frameOf = (pool: string, count: number, score: (n: number) => number) =>
+      scoresOf(
+        Array.from({ length: count }, (_, index) => index + 1).flatMap(
+          (n): Array<[string, string, number]> => [
+            [`${pool}lo${n}`, `${pool}hi${n}`, score(n)],
+            [`${pool}hi${n}`, `${pool}lo${n}`, score(n)]
+          ]
+        )
+      );
+    const weighting = buildWeighting({
+      items,
+      // A3 is an R_v9 pair: out of pool A's labels and population.
+      excluded: new Set([notePairKey("Alo3", "Ahi3")]),
+      populations: {
+        A: { pairs: population("A", 10), frame: null, scheme: "stratum" },
+        B: {
+          pairs: population("B", 8),
+          frame: frameOf("B", 8, (n) => (n <= 2 ? 5 : 3)),
+          scheme: "stratum-and-band"
+        },
+        C: {
+          pairs: population("C", 6),
+          frame: frameOf("C", 6, () => 5),
+          scheme: "stratum-and-band"
+        }
+      },
+      labelBand: null,
+      hashes: { weighting: "test" }
+    });
+    expect(weighting.excludedLabels).toBe(1);
+    expect(weighting.excludedPopulation).toBe(1);
+    // Pool A: 9 candidates over 2 labels (fit and eval).
+    expect(weighting.weightOf.get("note:A:1")).toBe(4.5);
+    expect(weighting.weightOf.has("note:A:3")).toBe(false);
+    // Pool B: B1 is in band 3 (2 candidates); band 2's 6 candidates have no label and merge into band 3.
+    expect(weighting.weightOf.get("note:B:1")).toBe(8);
+    expect(weighting.weightOf.get("note:C:1")).toBe(6);
+    const fit = weightedPoolLabels({ items }, weighting, "fit");
+    expect(fit.map((label) => label.pairId)).toEqual(["note:A:1", "note:B:1", "note:C:1"]);
+    expect(weightedPoolLabels({ items }, weighting, "eval").map((label) => label.pairId)).toEqual([
+      "note:A:2"
+    ]);
+    expect(() =>
+      buildWeighting({
+        items,
+        excluded: new Set(),
+        populations: {
+          A: { pairs: population("A", 10), frame: null, scheme: "stratum" },
+          B: { pairs: population("B", 8), frame: null, scheme: "stratum-and-band" },
+          C: { pairs: population("C", 6), frame: null, scheme: "stratum" }
+        },
+        labelBand: null,
+        hashes: {}
+      })
+    ).toThrow("frame scores");
+  });
+
+  it("refuses a pool label without a weight", () => {
+    const labelled: LabelItem = {
+      pairId: "note:A:9",
+      kind: "note",
+      library: "x",
+      lo: "a",
+      hi: "b",
+      group: "g",
+      sets: ["pool-A"],
+      pool: "A",
+      stratum: 1,
+      split: "fit",
+      related: false
+    };
+    expect(() =>
+      weightedPoolLabels({ items: [labelled] }, { weightOf: new Map(), excluded: new Set() }, "fit")
+    ).toThrow("No population weight");
   });
 });

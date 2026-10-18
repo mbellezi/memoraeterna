@@ -112,6 +112,27 @@ export const defaultPaths = {
   v9: join(cacheDirectory, "f3", "scores", "bakeoff", "v9-verdicts.json"),
   labelTexts: join(cacheDirectory, "f3", "scores", "bakeoff", "inputs", "label-note-texts.json"),
   rv9Relations: join(cacheDirectory, "f3", "labels", "r-v9", "relations.json"),
+  /** Pools B and C's populations (T57's F3-retrieval exports) and their frame scores at mechanism/600. */
+  populationB: join(cacheDirectory, "f3", "m1", "export", "envg-pool-export.json"),
+  populationC: join(cacheDirectory, "f3", "m1", "export", "envc-sample-pool-export.json"),
+  frameB: join(
+    cacheDirectory,
+    "f3",
+    "labels",
+    "topup-2026-10-18",
+    "frame",
+    "pool-b",
+    "labels-mlx-mechanism-t600.json"
+  ),
+  frameC: join(
+    cacheDirectory,
+    "f3",
+    "labels",
+    "topup-2026-10-18",
+    "frame",
+    "pool-c",
+    "labels-mlx-mechanism-t600.json"
+  ),
   parityBaselines: join(cacheDirectory, "f3", "ranker-parity"),
   proposal: join(freezeDirectory, "proposal.json"),
   gateF: join(freezeDirectory, "gate-f")
@@ -332,6 +353,248 @@ export function poolLabels(
       group: item.group,
       positive: item.related,
       weight: weights.pools[pool].weight[item.stratum]!
+    });
+  }
+  return labels;
+}
+
+// --- Population weights by cell (3.9, R18; the top-up of 2026-10-18) -----------------------------
+
+/**
+ * The draw strata of the label top-up of 2026-10-18 (`.cache/f3/labels/topup-2026-10-18.md`): the proposed MLX mean of
+ * both directions at 600 characters, below 0, [0, 2.15625), [2.15625, 4.375), >= 4.375. Fixed by its pre-registration,
+ * whatever the selection picks.
+ */
+export const topupBandEdges = [0, 2.15625, 4.375] as const;
+export const topupBandNames = ["<0", "[0,2.15625)", "[2.15625,4.375)", ">=4.375"] as const;
+
+export function topupBandOf(score: number): number {
+  let band = 0;
+  while (band < topupBandEdges.length && score >= topupBandEdges[band]!) band++;
+  return band;
+}
+
+/** `stratum`: T57's (pool, T45 stratum) cells; `stratum-and-band`: each stratum split by top-up band. */
+export type CellScheme = "stratum" | "stratum-and-band";
+export const cellSchemes = ["stratum", "stratum-and-band"] as const;
+
+export interface WeightCell {
+  pool: Pool;
+  stratum: number;
+  /** The top-up bands the cell holds after merging (one band, or [0] for the `stratum` scheme). */
+  bands: number[];
+  population: number;
+  labels: number;
+  weight: number;
+}
+
+/**
+ * 3.9's weight of a label: the candidates of its cell in the population over the labels of that cell (fit and
+ * eval). Under `stratum-and-band` a (pool, stratum) splits by band; a cell with candidates and no label, or labels
+ * and no candidate, merges with its nearest lower band cell in the same stratum (the upper one when it is the
+ * lowest), until every cell has both (the top-up's pre-registration, section 9). A stratum with candidates and no
+ * label at all is reported as unrepresented; labels with no candidate in their stratum are an error.
+ */
+export function cellWeights(input: {
+  pool: Pool;
+  population: ReadonlyArray<{ stratum: number; band: number }>;
+  labels: ReadonlyArray<{ key: string; stratum: number; band: number }>;
+  scheme: CellScheme;
+}): {
+  weights: Map<string, number>;
+  cells: WeightCell[];
+  unrepresented: Array<{ pool: Pool; stratum: number; population: number }>;
+} {
+  const bandCount = input.scheme === "stratum" ? 1 : topupBandEdges.length + 1;
+  const bandOf = (band: number) => (input.scheme === "stratum" ? 0 : band);
+  const weights = new Map<string, number>();
+  const cells: WeightCell[] = [];
+  const unrepresented: Array<{ pool: Pool; stratum: number; population: number }> = [];
+  for (let stratum = 0; stratum < 5; stratum++) {
+    let groups = Array.from({ length: bandCount }, (_, band) => ({
+      bands: [band],
+      population: input.population.filter(
+        (row) => row.stratum === stratum && bandOf(row.band) === band
+      ).length,
+      labels: input.labels
+        .filter((row) => row.stratum === stratum && bandOf(row.band) === band)
+        .map((row) => row.key)
+    })).filter((group) => group.population > 0 || group.labels.length > 0);
+    for (;;) {
+      const index = groups.findIndex((group) => group.population > 0 !== group.labels.length > 0);
+      if (index < 0) break;
+      if (groups.length === 1) {
+        const [only] = groups;
+        if (only!.labels.length > 0)
+          throw new Error(
+            `Pool ${input.pool} stratum ${stratum} has labels and no candidate in the population.`
+          );
+        unrepresented.push({ pool: input.pool, stratum, population: only!.population });
+        groups = [];
+        break;
+      }
+      const low = index > 0 ? index - 1 : index;
+      const left = groups[low]!,
+        right = groups[low + 1]!;
+      groups.splice(low, 2, {
+        bands: [...left.bands, ...right.bands],
+        population: left.population + right.population,
+        labels: [...left.labels, ...right.labels]
+      });
+    }
+    for (const group of groups) {
+      const weight = group.population / group.labels.length;
+      cells.push({
+        pool: input.pool,
+        stratum,
+        bands: group.bands,
+        population: group.population,
+        labels: group.labels.length,
+        weight
+      });
+      for (const key of group.labels) weights.set(key, weight);
+    }
+  }
+  return { weights, cells, unrepresented };
+}
+
+/** The pairs of a pool's population: an F3-retrieval export's decided pairs with T57's stratum. */
+export const populationExportSchema = z
+  .object({
+    decisions: z.array(
+      z
+        .object({
+          lo: z.string().min(1),
+          hi: z.string().min(1),
+          stratum: z.number().int().min(0).max(4)
+        })
+        .passthrough()
+    )
+  })
+  .passthrough();
+
+export interface Weighting {
+  scheme: Record<Pool, CellScheme>;
+  /** The weight of every pool label (fit and eval) by pair id; R_v9 pairs have none. */
+  weightOf: Map<string, number>;
+  /** Note pair keys kept out of every pool statistic: R_v9 (spec 5.2, D4: evaluation-only). */
+  excluded: ReadonlySet<string>;
+  excludedLabels: number;
+  excludedPopulation: number;
+  cells: WeightCell[];
+  unrepresented: Array<{ pool: Pool; stratum: number; population: number }>;
+  /** SHA-256 of every input the weights come from, by role. */
+  hashes: Record<string, string>;
+}
+
+/**
+ * The population weights of every pool label (3.9, R18): R_v9 pairs out of the labels and the population of every
+ * pool (the calibration never reads them), cells by `scheme` per pool. A label's band is its population pair's
+ * frame score when it is a population pair, else its bake-off label score at mechanism/600/mean.
+ */
+export function buildWeighting(input: {
+  items: readonly LabelItem[];
+  excluded: ReadonlySet<string>;
+  populations: Record<
+    Pool,
+    {
+      pairs: ReadonlyArray<{ lo: string; hi: string; stratum: number }>;
+      frame: DirectedScores | null;
+      scheme: CellScheme;
+    }
+  >;
+  labelBand: DirectedScores | null;
+  hashes: Record<string, string>;
+}): Weighting {
+  const weightOf = new Map<string, number>();
+  const cells: WeightCell[] = [];
+  const unrepresented: Weighting["unrepresented"] = [];
+  let excludedLabels = 0,
+    excludedPopulation = 0;
+  for (const pool of pools) {
+    const { pairs, frame, scheme } = input.populations[pool];
+    const banded = scheme === "stratum-and-band";
+    if (banded && !frame) throw new Error(`Pool ${pool}: the band cells need its frame scores.`);
+    const frameBand = new Map<string, number>();
+    const population: Array<{ stratum: number; band: number }> = [];
+    for (const pair of pairs) {
+      const key = notePairKey(pair.lo, pair.hi);
+      if (input.excluded.has(key)) {
+        excludedPopulation++;
+        continue;
+      }
+      let band = 0;
+      if (banded) {
+        const score = pairScore(frame!, pair.lo, pair.hi, "mean");
+        if (score === null) throw new Error(`Pool ${pool}: no frame score for ${key}.`);
+        band = topupBandOf(score);
+        frameBand.set(key, band);
+      }
+      population.push({ stratum: pair.stratum, band });
+    }
+    const labels: Array<{ key: string; stratum: number; band: number }> = [];
+    for (const item of input.items) {
+      if (item.kind !== "note" || item.pool !== pool || item.split === null) continue;
+      if (item.related === null || item.stratum === null) continue;
+      const key = notePairKey(item.lo, item.hi);
+      if (input.excluded.has(key)) {
+        excludedLabels++;
+        continue;
+      }
+      let band = 0;
+      if (banded) {
+        const fromFrame = frameBand.get(key);
+        const fromLabel = input.labelBand
+          ? pairScore(input.labelBand, item.lo, item.hi, "mean")
+          : null;
+        if (fromFrame === undefined && fromLabel === null)
+          throw new Error(`Pool ${pool}: no band score for label ${item.pairId}.`);
+        band = fromFrame ?? topupBandOf(fromLabel!);
+      }
+      labels.push({ key: item.pairId, stratum: item.stratum, band });
+    }
+    const result = cellWeights({ pool, population, labels, scheme });
+    for (const [key, weight] of result.weights) weightOf.set(key, weight);
+    cells.push(...result.cells);
+    unrepresented.push(...result.unrepresented);
+  }
+  return {
+    scheme: Object.fromEntries(
+      pools.map((pool) => [pool, input.populations[pool].scheme])
+    ) as Record<Pool, CellScheme>,
+    weightOf,
+    excluded: input.excluded,
+    excludedLabels,
+    excludedPopulation,
+    cells,
+    unrepresented,
+    hashes: input.hashes
+  };
+}
+
+/** `poolLabels` with the cell weights: R_v9 pairs never enter a pool statistic. */
+export function weightedPoolLabels(
+  fixture: Pick<LabelFixture, "items">,
+  weighting: Pick<Weighting, "weightOf" | "excluded">,
+  split: "fit" | "eval"
+): Label[] {
+  const labels: Label[] = [];
+  for (const item of fixture.items) {
+    if (item.kind !== "note" || item.split !== split) continue;
+    if (!(pools as readonly string[]).includes(item.pool ?? "")) continue;
+    if (item.related === null || item.stratum === null) continue;
+    if (weighting.excluded.has(notePairKey(item.lo, item.hi))) continue;
+    const weight = weighting.weightOf.get(item.pairId);
+    if (weight === undefined) throw new Error(`No population weight for ${item.pairId}.`);
+    labels.push({
+      pairId: item.pairId,
+      lo: item.lo,
+      hi: item.hi,
+      pool: item.pool as Pool,
+      stratum: item.stratum,
+      group: item.group,
+      positive: item.related,
+      weight
     });
   }
   return labels;
@@ -1399,6 +1662,16 @@ export interface Proposal {
   folds: { seed: number; count: number; sizes: number[] };
   deciders: DeciderProposal[];
   verdictPass: number;
+  /** The population weights the rule used (3.9): cells, R_v9 kept out, every pool label's weight. */
+  weighting: {
+    scheme: Record<Pool, CellScheme>;
+    cells: WeightCell[];
+    unrepresented: Weighting["unrepresented"];
+    excludedLabels: number;
+    excludedPopulation: number;
+    excludedPairs: string[];
+    weights: Record<string, number>;
+  };
 }
 
 export const sealedSets = [
@@ -1409,6 +1682,8 @@ export const sealedSets = [
 ] as const;
 
 export const selectionReadings = [
+  "R_v9 pairs (all 137, not only the 50-pair sample) leave pools A-C in both splits and every pool's population (spec 5.2, D4: evaluation-only); the R_v9 sample keeps its 50 pairs.",
+  "Population weights by cell (3.9): pools B and C by (T45 stratum, top-up band of the mechanism/600/mean score) with the empty-cell merge rule of the 2026-10-18 top-up's pre-registration; pool A by T45 stratum.",
   "AUC is the plain Mann-Whitney AUC of the fit labels (the text names no weight); the weighted AUC is reported beside it and the proposal records whether it picks the same.",
   "The rule is read step by step at the provisional values of the later choices (instruction at 400 characters and max, template at max); the joint best AUC is reported beside it.",
   "Log-loss is the plain mean over the fit labels' out-of-fold probabilities (weighted PAV fits); the population-weighted log-loss is reported beside it.",
@@ -1420,7 +1695,8 @@ export const selectionReadings = [
 
 export interface SelectInputs {
   labels: Hashed<LabelFixture>;
-  weights: Hashed<PopulationWeights>;
+  /** The population weights of the pool labels, R_v9 kept out (`buildWeighting`). */
+  weighting: Weighting;
   tuningExport: Hashed<RetrievalExport>;
   mapping: Hashed<MatchingMapping>;
   v9: Hashed<z.infer<typeof v9VerdictsSchema>>;
@@ -1439,7 +1715,7 @@ export interface SelectInputs {
 
 /** The whole pre-freeze analysis. Reads the fit split and the tuning partition only. */
 export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
-  const labels = poolLabels(inputs.labels.value, inputs.weights.value, "fit");
+  const labels = weightedPoolLabels(inputs.labels.value, inputs.weighting, "fit");
   if (labels.length === 0) throw new Error("No fit labels.");
   const folds = assignFolds(
     labels.map((label) => ({ group: label.group, cell: `${label.pool}:${label.stratum}` }))
@@ -1674,7 +1950,7 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
   const inputHashes: Record<string, string> = {
     labels: inputs.labels.sha256,
     labelSetSha256: inputs.labels.value.labelSetSha256,
-    weights: inputs.weights.sha256,
+    ...inputs.weighting.hashes,
     tuningExport: inputs.tuningExport.sha256,
     mapping: inputs.mapping.sha256,
     v9: inputs.v9.sha256
@@ -1695,7 +1971,18 @@ export async function runSelect(inputs: SelectInputs): Promise<Proposal> {
     choice,
     folds: { seed: foldSeed, count: foldCount, sizes },
     deciders,
-    verdictPass: pass
+    verdictPass: pass,
+    weighting: {
+      scheme: inputs.weighting.scheme,
+      cells: inputs.weighting.cells,
+      unrepresented: inputs.weighting.unrepresented,
+      excludedLabels: inputs.weighting.excludedLabels,
+      excludedPopulation: inputs.weighting.excludedPopulation,
+      excludedPairs: [...inputs.weighting.excluded].sort(),
+      weights: Object.fromEntries(
+        [...inputs.weighting.weightOf].sort(([a], [b]) => (a < b ? -1 : 1))
+      )
+    }
   };
 }
 
@@ -2320,24 +2607,96 @@ export function typerCheckPairs(input: {
 
 // --- CLI -----------------------------------------------------------------------------------------
 
+/** The R_v9 pairs (spec 5.2: evaluation-only), as note pair keys. */
+export async function readRv9Pairs(path: string): Promise<{ pairs: Set<string>; sha256: string }> {
+  const read = await readHashed(path, (value) =>
+    z
+      .array(
+        z.object({ source_note: z.string().min(1), target_note: z.string().min(1) }).passthrough()
+      )
+      .parse(value)
+  );
+  return {
+    pairs: new Set(read.value.map((row) => notePairKey(row.source_note, row.target_note))),
+    sha256: read.sha256
+  };
+}
+
+/** The cell weights from the files: R_v9 out, pools B and C by (stratum, band), pool A by stratum. */
+export async function readWeighting(input: {
+  items: readonly LabelItem[];
+  poolA: { pairs: ReadonlyArray<{ lo: string; hi: string; stratum: number }>; sha256: string };
+  rv9Path: string;
+  populationB: string;
+  populationC: string;
+  frameB: string;
+  frameC: string;
+  labelBand: string;
+  /** T57's coarse (pool, stratum) cells everywhere: the reported sensitivity. */
+  coarse?: boolean;
+}): Promise<Weighting> {
+  const rv9 = await readRv9Pairs(input.rv9Path);
+  const population = (path: string) =>
+    readHashed(path, (value) => populationExportSchema.parse(value));
+  const [b, c] = [await population(input.populationB), await population(input.populationC)];
+  const scheme: CellScheme = input.coarse ? "stratum" : "stratum-and-band";
+  const frameB = scheme === "stratum" ? null : await readScores(input.frameB);
+  const frameC = scheme === "stratum" ? null : await readScores(input.frameC);
+  const labelBand = scheme === "stratum" ? null : await readScores(input.labelBand);
+  return buildWeighting({
+    items: input.items,
+    excluded: rv9.pairs,
+    populations: {
+      A: { pairs: input.poolA.pairs, frame: null, scheme: "stratum" },
+      B: { pairs: b.value.decisions, frame: frameB?.scores ?? null, scheme },
+      C: { pairs: c.value.decisions, frame: frameC?.scores ?? null, scheme }
+    },
+    labelBand: labelBand?.scores ?? null,
+    hashes: {
+      weighting: `${scheme}:R_v9-out`,
+      rv9: rv9.sha256,
+      populationB: b.sha256,
+      populationC: c.sha256,
+      ...(frameB ? { frameB: frameB.facts.sha256 } : {}),
+      ...(frameC ? { frameC: frameC.facts.sha256 } : {}),
+      ...(labelBand ? { labelBand: labelBand.facts.sha256 } : {})
+    }
+  });
+}
+
 async function readInputs(values: Record<string, string | boolean | undefined>) {
   const path = (key: string, fallback: string) =>
     resolve(typeof values[key] === "string" ? (values[key] as string) : fallback);
+  const labels = await readHashed(path("labels", defaultPaths.labels), (value) =>
+    labelFixtureSchema.parse(value)
+  );
+  const tuningExport = await readHashed(path("tuning-export", defaultPaths.tuningExport), (value) =>
+    retrievalExportSchema.parse(value)
+  );
+  const labelScoresDir = path("label-scores", defaultPaths.labelScores);
+  const weighting = await readWeighting({
+    items: labels.value.items,
+    poolA: {
+      pairs: populationExportSchema.parse(tuningExport.value).decisions,
+      sha256: tuningExport.sha256
+    },
+    rv9Path: path("rv9-relations", defaultPaths.rv9Relations),
+    populationB: path("population-b", defaultPaths.populationB),
+    populationC: path("population-c", defaultPaths.populationC),
+    frameB: path("frame-b", defaultPaths.frameB),
+    frameC: path("frame-c", defaultPaths.frameC),
+    labelBand: join(labelScoresDir, scoreFileName("mlx", "mechanism", 600)),
+    coarse: values.coarse === true
+  });
   return {
-    labels: await readHashed(path("labels", defaultPaths.labels), (value) =>
-      labelFixtureSchema.parse(value)
-    ),
-    weights: await readHashed(path("weights", defaultPaths.weights), (value) =>
-      populationWeightsSchema.parse(value)
-    ),
-    tuningExport: await readHashed(path("tuning-export", defaultPaths.tuningExport), (value) =>
-      retrievalExportSchema.parse(value)
-    ),
+    labels,
+    weighting,
+    tuningExport,
     mapping: await readHashed(path("mapping", defaultPaths.mapping), (value) =>
       matchingMappingSchema.parse(value)
     ),
     v9: await readHashed(path("v9", defaultPaths.v9), (value) => v9VerdictsSchema.parse(value)),
-    labelScoresDir: path("label-scores", defaultPaths.labelScores),
+    labelScoresDir,
     tuningScoresDir: path("tuning-scores", defaultPaths.tuningScores)
   };
 }
@@ -2350,12 +2709,15 @@ async function writeJsonFile(path: string, value: unknown): Promise<void> {
 export const usage = `Usage: npx tsx scripts/relations/bakeoff.ts <tuning-pairs|select|typer-pairs|freeze|gate-f> [options]
   tuning-pairs [--tuning-export <retrieval export.json>] [--out <pairs.json>]
       the pairs file of an export's decided pairs (M1's tuning candidates by default; X1's S0 export after the freeze)
-  select [--out-dir .cache/f3/freeze] [--labels ...] [--weights ...] [--tuning-export ...]
-         [--tuning-scores <dir>] [--label-scores <dir>] [--mapping ...] [--v9 ...]
+  select [--out-dir .cache/f3/freeze] [--labels ...] [--tuning-export ...] [--tuning-scores <dir>]
+         [--label-scores <dir>] [--mapping ...] [--v9 ...] [--rv9-relations ...] [--population-b ...]
+         [--population-c ...] [--frame-b ...] [--frame-c ...] [--coarse]
+      population weights by cell (3.9): R_v9 pairs out of every pool, pools B and C by (T45 stratum, top-up band),
+      pool A by stratum; --coarse: T57's (pool, stratum) cells everywhere (a sensitivity)
   typer-pairs [--body <chars>] [--texts <note-texts.json>] [--labels ...] [--proposal ...] [--out <pairs.json>]
   freeze --parity <parity.json> [--proposal <proposal.json>] [--runtimes mlx,gguf] [--baselines mlx=<file>] [--refreeze]
   gate-f [--x1-export <export.json> --x1-scores <scores.json>] [--rv9-pass <tally.json>[,<tally.json>]]
-         [--typer-report <typer-check.json>] [--labels ...] [--weights ...] [--mapping ...] [--label-scores <dir>]
+         [--typer-report <typer-check.json>] [--labels ...] [--proposal ...] [--mapping ...] [--label-scores <dir>]
          [--rv9-relations <relations.json>] [--out-dir .cache/f3/freeze/gate-f]
 Paths default to the repository's .cache; run from the repository root.`;
 
@@ -2366,7 +2728,6 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
       out: { type: "string" },
       "out-dir": { type: "string" },
       labels: { type: "string" },
-      weights: { type: "string" },
       "tuning-export": { type: "string" },
       "tuning-scores": { type: "string" },
       "label-scores": { type: "string" },
@@ -2384,6 +2745,11 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
       "rv9-pass": { type: "string" },
       "typer-report": { type: "string" },
       "rv9-relations": { type: "string" },
+      "population-b": { type: "string" },
+      "population-c": { type: "string" },
+      "frame-b": { type: "string" },
+      "frame-c": { type: "string" },
+      coarse: { type: "boolean" },
       help: { type: "boolean", short: "h" }
     },
     allowPositionals: true,
@@ -2489,7 +2855,7 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
         const hashes: Record<string, string> = {
           labels: inputs.labels.sha256,
           labelSetSha256: inputs.labels.value.labelSetSha256,
-          weights: inputs.weights.sha256,
+          ...inputs.weighting.hashes,
           tuningExport: inputs.tuningExport.sha256,
           mapping: inputs.mapping.sha256,
           v9: inputs.v9.sha256
@@ -2530,7 +2896,7 @@ export async function runBakeoffCli(argv: string[]): Promise<void> {
     const paths: Partial<GateFPaths> = Object.fromEntries(
       Object.entries({
         labels: flag("labels"),
-        weights: flag("weights"),
+        proposal: flag("proposal"),
         mapping: flag("mapping"),
         labelScores: flag("label-scores"),
         rv9Relations: flag("rv9-relations"),
@@ -2573,7 +2939,8 @@ export interface GateFResult {
 /** Where gate F reads its inputs and writes its outputs (the defaults are the repository's). */
 export interface GateFPaths {
   labels: string;
-  weights: string;
+  /** The frozen proposal: the eval split takes its population weights (the freeze record holds its hash). */
+  proposal: string;
   mapping: string;
   labelScores: string;
   rv9Relations: string;
@@ -2593,7 +2960,7 @@ export async function runGateF(input: {
   const { record, values } = input;
   const paths: GateFPaths = {
     labels: defaultPaths.labels,
-    weights: defaultPaths.weights,
+    proposal: defaultPaths.proposal,
     mapping: defaultPaths.mapping,
     labelScores: defaultPaths.labelScores,
     rv9Relations: defaultPaths.rv9Relations,
@@ -2601,7 +2968,15 @@ export async function runGateF(input: {
     ...input.paths
   };
   const fixture = labelFixtureSchema.parse(JSON.parse(await readFile(paths.labels, "utf8")));
-  const weights = populationWeightsSchema.parse(JSON.parse(await readFile(paths.weights, "utf8")));
+  const proposalBytes = await readFile(paths.proposal);
+  if (sha256Hex(proposalBytes) !== record.proposal.sha256)
+    throw new Error(`${paths.proposal} is not the proposal the freeze holds.`);
+  const proposal = JSON.parse(proposalBytes.toString("utf8")) as Proposal;
+  // The eval split's weights are the frozen proposal's (the same cells, R_v9 out).
+  const weighting = {
+    weightOf: new Map(Object.entries(proposal.weighting.weights)),
+    excluded: new Set(proposal.weighting.excludedPairs)
+  };
   const mapping = matchingMappingSchema.parse(JSON.parse(await readFile(paths.mapping, "utf8")));
   const mlx = frozenCalibration(record, "mlx");
   const labelScores = (runtime: Runtime) =>
@@ -2612,7 +2987,7 @@ export async function runGateF(input: {
       )
     );
   // The panel's eval split: the clean check beside X1 (nothing was chosen on it).
-  const evalLabels = poolLabels(fixture, weights, "eval");
+  const evalLabels = weightedPoolLabels(fixture, weighting, "eval");
   const cleanCheck: GateFResult["cleanCheck"] = [];
   for (const entry of record.calibrations) {
     const runtime = entry.identity.runtimeKind;
