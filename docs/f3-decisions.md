@@ -271,6 +271,10 @@ runs alone need about 1.29M against 1.25M left); the Decisions API may spend up 
 text (F3 total about US$ 2.80). X1 has zero margin on the local decider (27/28 in all 200 simulated orders): one typer
 veto on a single-support pair fails it; reported as a known risk before M2.
 
+On 2026-10-19 the owner raised the Codex cap to 2.9M tokens: DS0 ran while the OpenAI account had no credit (the
+decider fell back to the MLX ranker, so the sample measured MLX and its Codex tokens were spent), and DS0 and DS1 are
+run again once the account has credit.
+
 ### X7 at M2 (owner, 2026-10-18)
 
 X7-REF at D36's remote batches (7,000 characters, 24/24 caps): 30.5 generative calls per chapter (bar 40; the dedicated
