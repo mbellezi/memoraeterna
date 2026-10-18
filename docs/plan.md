@@ -660,7 +660,7 @@ Wave 3 (gate F after T58; gate P at the end):
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
 - [ ] T58e (superseded by decision 29: the rule rejected it; revisited only if a decider test changes decision 29) Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
 - [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
-- [ ] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
+- [x] T60 Evidence card v2 on the Note page, the `relations.review` writer and the relations push.
 - [ ] T60g Ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours from tokens).
 - [ ] T61 Residency group sizing, idle unload of the generative model, MLX helper `unload`, `cancel` and streaming,
       local deadlines from measured p99.
