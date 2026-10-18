@@ -664,7 +664,7 @@ Wave 3 (gate F after T58; gate P at the end):
 - [ ] T53h A book's header follows its summary; large summaries batched by the writer's window (decisions 27, 28).
 - [x] T53p Typed suggestions promote to suggested source relations (decision 29).
 - [ ] T55k A failed graph stage no longer stops matching; E6 re-recorded under F3.
-- [ ] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
+- [x] T58 Bake-off analysis and frozen calibration (gate F): decision-only generative, Qwen3-Reranker-0.6B on MLX
       and GGUF, bge-reranker-v2-m3 as a control, OpenAI Decisions on synthetic text (`docs/spikes/f3-bakeoff.md`).
 - [ ] T58e (superseded by decision 29: the rule rejected it; revisited only if a decider test changes decision 29) Uncertain-band escalation, planned since gate 0 (the owner kept X1 at ≥27/28; f3-decisions "Gate 0 outcome").
 - [x] T59 Streamed `relation.explain` with cache and the NOT_RELATED veto.
