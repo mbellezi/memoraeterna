@@ -724,6 +724,9 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
       second library's 27 panel-positive pairs, two accept 13, but two cost 2.96 judge calls and 5.09 AI-call seconds
       per source (bars 2 and 5.0). A batched or cheaper source judge first; then `discovery.neighbours = 2` with S1
       and X3 measured again.
+- [ ] The 7-day soak runs the Hybrid preset with the real Codex writer under a token cap (owner, 2026-10-19): F3's
+      24 h soak stays on the Local preset (X6 as registered, fakes for the remote faults); F4 adds the writer's real
+      quota, rejections and outages, with the cap and the expected token spend set before the run starts.
 - [ ] Entity identity grouped across a source's extraction batches (F3 X7, owner 2026-10-19): with 3,500-character
       batches each identity call covers one batch, so X7-REF needs 45 generative calls per chapter (F3 closed on
       ≤45); grouping up to 24 entities per call across a source's batches projects about 38. Adopted only if the
