@@ -130,7 +130,7 @@ Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
   MLX-space E6 and re-calibrates topic placement in that space; plan decision 26
   keeps today's models and runtimes until the program ends.
 - bge-reranker-v2-m3 Q8_0 GGUF (gpustack), pinned by SHA-256 (F0 spike): Spike A
-  rejected it for matching and F3 retired it as decision 3's fallback decider
+  rejected it for matching and F3 retired it as decision 3's second fallback
   (Q18; a bake-off control only), so it is not in the catalog.
 - `radix-ui` and `cmdk` through vendored shadcn components (F5).
 - `@playwright/test` for Electron journeys (F5).

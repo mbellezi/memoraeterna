@@ -106,7 +106,8 @@ cost. The models screen filters by purpose (text generation, embedding, rerankin
 
 ### Routing and residency (F2 D18)
 
-Rank calls (`AiService.rank` for the topic gate, `AiService.rankPairs` for the relation decider)
+Rank calls (`AiService.rank` for the topic gate and the topic overview's support check,
+`AiService.rankPairs` for the relation decider)
 resolve the operation's `op:<operation>` route, else the `class:decide` route. They never use the
 `reranking` task route, which carries the prompts of the generative note decider and the source
 judge. Those generative calls state class `decide` but resolve through their own `op:` routes

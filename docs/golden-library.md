@@ -291,8 +291,8 @@ npm run golden:calls -- --operations <ops.json> --chunks <n>   # by operation; a
   apart. The F3 note decide on a dedicated ranker is a `reranking` task, like the generative decider's calls,
   and keeps its `relation_decide` operation, which the script does not read as a rank operation. An operation
   row therefore carries `"ranker": true` when a ranker (a local model that writes no text) served it, and a
-  row without the flag counts as generative: unmarked, X7-REF's 58 ranker calls read 56.8 calls per chapter
-  instead of 30.5 (M2 marked the rows of the profile's local model, which has no `text-generation`). A run
+  row without the flag counts as generative: unmarked, the 58 ranker calls of M2's first X7-REF run (D36's
+  7,000-character batches, later set aside by Q8) read 56.8 calls per chapter instead of 30.5 (M2 marked the rows of the profile's local model, which has no `text-generation`). A run
   summary by task has no such flag, so all its `reranking` calls count as generative.
 - Parity with published numbers: `rescore --rule legacy-blend` on the end state of v9 sample A or B (an export
   of its backup) reproduces the stored `matching-v9a.json` (24/28) and `matching-v9b.json` (23/28) note
@@ -732,7 +732,7 @@ summary. It shows:
 - the timeline of releases, decides and links;
 - the AI calls by task, lane and class, and the cassette counters;
 - the relations and typings;
-- the flags that make a run unusable: an outcome other than completed, a cassette miss, the live-token cap
+- the flags that make a run unusable, among them: an outcome other than completed, a cassette miss, the live-token cap
   reached, failed AI calls or link jobs, a root not released or not committed, link jobs that did not drain, a
   notes digest that differs, a catalog-header refresh that was on or queued jobs, a root with no composite
   vector.
@@ -754,12 +754,15 @@ replaces the day's US$ cap, up to the schema's maximum. A Decisions quality samp
 The cassette records and replays Decisions requests like any adapter's, and a replay needs no key. Their live
 tokens are counted in `cassette.liveDecisionsTokens`, apart from `liveTokens`: a Decisions request carries about
 3,000 input tokens, so counted against `MEMORA_GOLDEN_MAX_TOKENS`, the cap meant for the writer, they would stop
-a sample after about a hundred requests. `MEMORA_GOLDEN_MAX_TOKENS` bounds the other remote calls, and the
-dollar cap bounds the Decisions API.
+a sample after about a hundred requests. Decisions tokens do not count toward `MEMORA_GOLDEN_MAX_TOKENS`, but
+once that cap is reached the cassette refuses every live call, Decisions requests included; the dollar cap bounds
+what the Decisions API spends.
 
 In F3 the key came from `.env`'s `OPENAPI_KEY` (the owner's test key, D6). For each run M2 wrote it into a
 mode-600 file under `.cache/f3/m2/secrets/`, deleted the file afterwards and scanned the run folder and the
-cassette for the key. Never print or log the key.
+cassette for the key. Never print or log the key. The test key is used only on measurement profiles whose
+text is synthetic or public (the fixture, the golden and the corpus libraries: D6 and plan decision 30), never on
+the owner's DEV library.
 
 When the decider may not decide or fails (no key, the day's cap, an open breaker, a provider error such as 429
 `insufficient_quota`), the matcher falls back to the local ranker. M2's DS0 measured the MLX ranker that way, so
@@ -786,8 +789,8 @@ The pre-run backup is in `summary.json` (`backup.path`).
 `summary.json` also records `catalogHeaders: {refresh, reason, jobs}`. Unless `MEMORA_CATALOG_HEADERS=on`
 forces it (below), a golden run does not queue the catalog-header refresh of plan decision 27, whose calls a
 recording does not hold: `refresh` is `off` with reason `golden_run` (or `switch`), and `jobs`, the
-`catalog-header` jobs created since the app started, must be 0. Re-match runs and the E6 runner record the
-same. `MEMORA_CATALOG_HEADERS=off` turns the refresh off on any start, and `on` forces it on even in a
+`catalog-header` jobs created since the app started, must be 0. Re-match runs and the E6 runner record
+`catalogHeaders` too, with reason `relations_rematch` and `topics_e2e`. `MEMORA_CATALOG_HEADERS=off` turns the refresh off on any start, and `on` forces it on even in a
 measurement run (a live proof on a recorded profile). The soak refuses `off` (section 8).
 
 ## Cassette key and offline guarantee
