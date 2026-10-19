@@ -320,6 +320,13 @@ On the frozen configuration (helper 44d081e0, R1 passed in every run; runbook an
 
 Spend: about 2.49M Codex tokens in F3 (cap 2.9M); the Decisions API US$ 0 in M2.
 
+### Direction of judged source relations (owner, 2026-10-19)
+
+Decision 31(b) shows a direction only when the owner or a clear decider gives it. The owner counts the source judge
+(`sources.decide` v5) as that decider for source relations: a judged source relation of a directed type keeps the
+judge's direction, as the code already does (`directedSourceRelationSql`); the typer's guess on note relations stays
+hidden. `rules/knowledge.md` names both deciders.
+
 ## Measurement
 
 ### Exit criteria
