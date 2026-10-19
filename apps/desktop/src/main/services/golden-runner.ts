@@ -1243,17 +1243,20 @@ export interface TopicBoundary {
 
 /**
  * The topic barrier (D23). Topic jobs are held while sources ingest, so the items present at every
- * build and naming call are a function of the manifest order, not of lane timing. The ingestion
- * itself is never changed: it stays ONE batch, because the collective matching stages run once every
- * run has reached them and the recorded cassette holds exactly those prompts.
+ * build and naming call are a function of the manifest order, not of lane timing. The import stays
+ * ONE batch, as the recorded runs were made; pacing only decides when each source's jobs may start.
+ * That is not neutral for ingestion: a paced root's catalog-header job can run before the root's
+ * summary exists, so its header and the graph extracted from it can differ from a one-batch run's,
+ * and a measurement run never refreshes the header later (plan decision 27). Compare a paced run
+ * only with a paced baseline.
  *
  * - `batch`: the batch runs as usual with the topic jobs held, then the light lane is drained once.
  * - `per-source`: the batch's run jobs are paced. The supervisor is stopped while the batch is
  *   queued (so no job can start early) and the jobs of every source after the first are pushed far
  *   into the future; each source's jobs are then released only after the previous source's jobs
  *   finished and the light lane was drained. The heavy lane is idle at every drain, so nothing else
- *   can enqueue topic work, and the hold is re-armed before the next source runs. The last source
- *   also runs the batch's collective matching; its drain follows the whole batch.
+ *   can enqueue topic work, and the hold is re-armed before the next source runs. The last
+ *   source's drain follows the whole batch.
  *
  * A divergence or token limit leaves the topic jobs held (and logs it): a stopped run must not let
  * queued topic work reach the provider or add cassette misses. The hold is released after the last
@@ -1307,7 +1310,7 @@ async function processUnderTopicBarrier(
         options.jobs.wake();
       }
       if (outcome === "settled") {
-        // The last source and the collective matching, then the last drain.
+        // The last source, then the last drain.
         outcome = await waitForBatch(options, batchId, runDirectory);
         if (outcome === "settled") outcome = await drain(groups.at(-1)?.key ?? "*", batchId, false);
       }

@@ -694,8 +694,8 @@ try {
   // 8. G1 `full` with the topic barrier (D23) on the real services, the real supervisor and the real
   //    jobs table. The topic service is not part of this check: a fake barrier answers the hold and
   //    the release, queues a `topic-place` job at each release (as the held PLACE jobs would be) and
-  //    finishes it a moment later. The run must stay ONE batch (the collective matching sees every
-  //    source, as the recorded run did) and its jobs must be paced: each source's jobs are claimed
+  //    finishes it a moment later. The run must stay ONE batch (as the recorded run did) and its jobs
+  //    must be paced: each source's jobs are claimed
   //    only after the previous source's jobs finished and the light lane was drained, in manifest
   //    order, with the heavy lane idle at every drain.
   await resetLibrary();
