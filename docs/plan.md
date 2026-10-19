@@ -688,7 +688,7 @@ Wave 4 (gate X at the end):
 - [x] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
 - [ ] T64 24 h soak (X6), run by the orchestrator.
 - [ ] T64r Soak report and failure audit.
-- [ ] T65 Rule, stack and runbook sync (`rules/`, `STACK.md`, `docs/golden-library.md`).
+- [x] T65 Rule, stack and runbook sync (`rules/`, `STACK.md`, `docs/golden-library.md`).
 
 Wave 5 (exit):
 - [ ] T66 Exit measurement (`docs/kpi-f3.md`) and phase close.
