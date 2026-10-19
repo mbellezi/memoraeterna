@@ -95,6 +95,9 @@ A ranker is *validated for decide* on install, and only then does it expose `rer
    the background: the smoke test and the parity run. The ranker is unavailable to decide callers
    from the moment a validation is requested until it ends; they take their no-decider path instead
    of waiting for the local lane. Golden runs and AI cassettes never re-validate (no live model).
+   A ranker whose validation names another build then fails every call with
+   `errors.localModels.rankerNotValidated` until an app start with neither re-validates it
+   (`docs/golden-library.md` section 7).
    A ranker validated before the parity check existed has no baseline until a calibration supplies
    one or its next validation records one.
 
@@ -103,14 +106,17 @@ cost. The models screen filters by purpose (text generation, embedding, rerankin
 
 ### Routing and residency (F2 D18)
 
-Rank calls (`AiService.rank`) resolve the operation's `op:<operation>` route, else the
-`class:decide` route; they never use the `reranking` task route, which carries the prompts of note
-and source matching, and note matching never resolves `class:decide`. A profile that holds a
-validated ranker seeds `class:decide` (the MLX ranker first on macOS arm64, else the GGUF one);
-`class:write-fast` is seeded from the writer (summarization) route when it writes structured
-output. No route, a model that is not a dedicated ranker, or a validation that does not hold for the
-artifact and runtime build fails visibly, never with a generative fallback. `decideRouteStatus`
-answers the same question without loading the ranker.
+Rank calls (`AiService.rank` for the topic gate, `AiService.rankPairs` for the relation decider)
+resolve the operation's `op:<operation>` route, else the `class:decide` route. They never use the
+`reranking` task route, which carries the prompts of the generative note decider and the source
+judge. Those generative calls state class `decide` but resolve through their own `op:` routes
+(`op:note_matching_reranking` and its `_repair`, `op:source_relation_matching`,
+`op:relation_escalation`), never `class:decide`, which holds validated rankers only (F3 D16, D34). A
+profile that holds a validated ranker seeds `class:decide` (the MLX ranker first on macOS arm64,
+else the GGUF one); `class:write-fast` is seeded from the writer (summarization) route when it
+writes structured output. No route, a model that is not a dedicated ranker, or a validation that
+does not hold for the artifact and runtime build fails visibly, never with a generative fallback.
+`decideRouteStatus` answers the same question without loading the ranker.
 
 `AiService.rankPairs` (F3 D16) scores independent directed pairs under one instruction for the
 relation decider. It splits a list at the routed runtime's `rankPairsLimits.perCall` (MLX 32, GGUF
@@ -181,6 +187,12 @@ MEMORA_LOCAL_MODEL_INSTALL=mlx-qwen3-reranker-0.6b \
 MEMORA_SMOKE_AUTO_QUIT_MS=5000 \
 npm run dev -w @app/desktop
 ```
+
+A second ranker installed this way next to a routed one (the GGUF ranker beside the MLX one) gets its
+profile but not the route. It also gets no active `class:decide` profile task, and a route resolves only
+through an active profile task of the same key. To measure the GGUF ranker, M2's GGUF bases repointed
+`class:decide` by SQL on a clone and inserted that task, matching the MLX profile's. Whether the Settings
+flow has the same gap is an F4 follow-up.
 
 ## Download and storage
 

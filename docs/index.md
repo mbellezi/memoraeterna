@@ -21,10 +21,10 @@ conflicts with a rule, follow the rule and fix the document.
   benchmark and pilot. `matching-benchmark-settings.json` and
   `matching-pilot-settings.json` are read by tests; keep them in place.
 
-## F0 measurements
+## Measurements and decision records
 
-Evidence gathered in phase F0 that the plan's decisions rest on. They are
-dated measurements, not rules.
+Evidence gathered in phases F0-F3 that the plan's decisions rest on, and the
+binding decision records of F2 and F3. The measurements are dated, not rules.
 
 - [kpi-baseline.md](kpi-baseline.md) — the baseline of `npm run kpi` on restored
   library backups; the numbers the refactoring must beat.
@@ -34,6 +34,8 @@ dated measurements, not rules.
   Decisions API as an optional remote relation decider, on the same data.
 - [spikes/spike-b-topic-tree.md](spikes/spike-b-topic-tree.md) — a deterministic
   topic tree built on real embeddings.
+- [spikes/hardware-tiers-and-models.md](spikes/hardware-tiers-and-models.md) — hardware tiers (Apple Silicon and Windows), recommended local
+  and cheap cloud models per tier, the detection design and the benchmark plan (decision 25; research of 2026-10-18).
 - [spikes/f1a-matching-latency.md](spikes/f1a-matching-latency.md) — where note-matching time goes on
   the golden library and the ranked fixes behind decision 16.
 - [spikes/source-relations-plan.md](spikes/source-relations-plan.md) — source matching cost, what the
@@ -47,12 +49,16 @@ dated measurements, not rules.
 - [f2-decisions.md](f2-decisions.md) — the binding F2 decisions (D1-D40), owner-question defaults, gates and
   measurement datasets for the Topic Tree Engine.
 - [kpi-f2.md](kpi-f2.md) — F2 measurements, starting with gate W (the legacy wiki wipe).
-- [f3-decisions.md](f3-decisions.md) — the binding F3 decisions (D1-D47), owner-question answers Q1-Q20, gates,
+- [f3-decisions.md](f3-decisions.md) — the binding F3 decisions (D1-D48), owner-question answers Q1-Q20, gates,
   measurement rules and the budget for Relations v2 and the AI runtime lanes.
+- [spikes/f3-m0.md](spikes/f3-m0.md) — F3 M0: the offline re-score of the pinned matching runs, the retrieval
+  diagnosis and B4 behind gate 0.
+- [spikes/f3-bakeoff.md](spikes/f3-bakeoff.md) — the F3 bake-off: the deciders' selection, the freezes and gate F
+  (plan decisions 29 and 30).
 - [topic-placement-calibration.md](topic-placement-calibration.md) — F2 T29a: the registered rules
   and the evidence for the placement and gate parameters of the Topic Tree Engine.
-- [golden-library.md](golden-library.md) — the public reference library, DEV-only
-  AI cassettes (record/replay) and the golden runner.
+- [golden-library.md](golden-library.md) — the public reference library, DEV-only AI cassettes (record/replay),
+  the golden runner, and the F3 soak, relation re-match, Decisions and probe runs.
 
 ## Archive
 
@@ -60,5 +66,3 @@ dated measurements, not rules.
 and benchmark/pilot reports unchanged for historical reference. They are not
 normative and may describe behavior that the plan replaces. Links inside
 archived files may point to rules that no longer exist.
-- [spikes/hardware-tiers-and-models.md](spikes/hardware-tiers-and-models.md) — hardware tiers (Apple Silicon and Windows), recommended local
-  and cheap cloud models per tier, the detection design and the benchmark plan (decision 25; research of 2026-10-18).

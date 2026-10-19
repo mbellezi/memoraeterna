@@ -78,11 +78,11 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   assigned only to accepted pairs. Shared topics, names, dates or homonyms alone never create a
   relation; it needs evidence from both endpoints and is shown only while both are current. A note
   relation stores its pair once; the band stays apart from the human review status. An automatic
-  relation has no direction: the typer's guess is never shown, only the owner's choice on Keep or
-  the Decisions decider's clear one. A decider applies only in its frozen apply band, else suggests.
-- Source relations come from shown note relations (applied, kept or suggested) plus decider-confirmed
-  discovery pairs, never same-root pairs; each is a suggestion until the owner keeps it or a note
-  relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).
+  note relation has no direction: the typer's guess is never shown, only the owner's choice on Keep
+  or the Decisions decider's clear one. A decider applies only in its frozen apply band, else suggests.
+- Source relations come from typed shown note relations (applied, kept or suggested) plus
+  decider-confirmed discovery pairs, never same-root pairs; each is a suggestion until the owner
+  keeps it or a note relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
   background, and cached for its inputs (ideas or titles, passages, type, direction, language,
   prompt, model). An explanation that finds the notes unrelated withdraws a relation nobody

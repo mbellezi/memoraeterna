@@ -63,12 +63,13 @@ sources, stage outcomes and wall times, AI calls, tokens, durations and `queue_m
 `ai_task_runs`, routes, settings, cassette counters, ID-free content digests). Without
 `MEMORA_GOLDEN_EXIT=1` the app stays open.
 
-The token cap counts input plus output tokens of live calls to remote models. The cassette checks it
-before every live call and makes none once it is reached (calls already running finish, so the total can
-pass the cap by what they use); the runner cancels the batch at its next poll (every 5 s) with status
-`token_limit`. Recording again into the same directory serves recorded calls and calls the provider only
-for new ones (new directory = fresh take), so after a `token_limit` stop: reset the library from
-Settings, raise the cap and start the same command; the calls already recorded cost nothing.
+The token cap counts input plus output tokens of live calls to remote models, except the OpenAI Decisions
+API's: those are counted apart (`cassette.liveDecisionsTokens`) and bounded by the decider's own daily dollar
+cap (section 9). The cassette checks the cap before every live call and makes none once it is reached (calls
+already running finish, so the total can pass the cap by what they use); the runner cancels the batch at its
+next poll (every 5 s) with status `token_limit`. Recording again into the same directory serves recorded calls
+and calls the provider only for new ones (new directory = fresh take), so after a `token_limit` stop: reset
+the library from Settings, raise the cap and start the same command; the calls already recorded cost nothing.
 
 ### Dry run
 
@@ -140,6 +141,12 @@ in the cassette), and its monitoring entry carries `cassette.replayed = 1`. A ca
 hold fails loudly: the error names the key, the request is saved to `<cassette>/misses/<key>.json` (diff it
 against `<cassette>/entries/<k[0..2]>/<key>.json`), and the runner cancels the batch with status
 `diverged`.
+
+With `MEMORA_AI_CASSETTE_TIMING=recorded` (record or replay; refused without a cassette) a served entry
+first waits its recorded duration inside the lane slot the call holds, and an `embedMany` batch served
+whole waits the sum of its entries' durations. A throughput rerun of remote work therefore costs nothing
+and still queues and overlaps like the recording. The audit's duration then includes the wait, and the
+cassette counters add `timing` and `waitedMs`. In record mode a miss goes live as usual.
 
 Replay is offline for AI task calls only. Route resolution still runs, so an expired Codex OAuth token
 is refreshed once (an authentication request, not an AI call), and the Settings actions that test a
@@ -225,9 +232,12 @@ text or a password.
   reported and not scored). A library built by the benchmark controller is found by id instead:
   `--ids .cache/matching-benchmark/manifest.json`.
 - A note belongs to its source and a chapter to its book, so note relations and source relations are both
-  aggregated to root pairs. A root pair counts as linked when at least one relation of the layer joins it;
-  statuses `accepted` and `pending_review` count (`--statuses` changes that), `rejected` does not. Rejected,
-  archived and superseded notes are not part of the library; relations inside one root are ignored.
+  aggregated to root pairs. A root pair counts as linked when at least one relation of the layer joins it. On a
+  library with the relations v2 columns a note relation counts when it is shown (applied or suggested, not
+  withdrawn; `scripts/golden/relation-visibility.ts`). Source relations, and the note relations of a library
+  restored from a backup taken before relations v2, count by status: `accepted` and `pending_review` count
+  (`--statuses` changes that), `rejected` does not. Rejected, archived and superseded notes are not part of the
+  library; relations inside one root are ignored.
 - Per partition and layer (note relations, source relations, either): relations, linked root pairs,
   expected pairs linked and the ones missing, forbidden pairs linked, unlabelled pairs (bridges, not errors
   by themselves), pairs involving a designated nonconceptual source.
@@ -262,19 +272,28 @@ npm run golden:rescore -- --export <export.json> --rule legacy-blend|decider-onl
 npm run golden:recall -- --export <export.json> [--k 20]
 npm run golden:reverse-only -- --spike-dataset <dataset.json> --spike-scores <scores.json> --rule max:3.3125
 npm run golden:calls -- --summary .cache/golden/runs/<run>/summary.json
+npm run golden:calls -- --operations <ops.json> --chunks <n>   # by operation; a row may carry "ranker": true
 ```
 
 - An export holds the held-out candidate lists too: only the scripts here read it, and they apply the freeze
   guard. Run them from the repository root, where the default paths resolve.
 - A relation counts as **shown** (applied, suggested or kept) or **applied** through
-  `scripts/golden/relation-visibility.ts`, the swap point for the relations v2 predicates; before the band
-  columns exist both follow the counted statuses.
+  `scripts/golden/relation-visibility.ts`, which reads the relations v2 predicates of
+  `packages/db/src/repositories/note-relation-sql.ts` (D9). On a library restored from a backup taken before
+  relations v2 (no `band` or `vetoed_at` column) both follow the counted statuses.
 - Before the freeze, pair-level output (`rescore`, `candidate-recall`) covers tuning pairs only. `rescore --parity`
   prints whether the rescored root pairs equal a stored report's, and that report's own counts when they do.
 - `reverse-only` gives the literal loss of a set of old acceptances (R_v6 from Spike A's files, R_v9 from an
   export), split by same-root pairs, and the adjudicated loss when `--labels` names the panel's verdicts.
 - `calls-per-chapter` counts generative calls per chunk and per 30-chunk reference chapter by AI task (a golden
-  run summary) or by operation (an export of `ai_task_runs`); embeddings and rankers do not count.
+  run summary) or by operation (an export of `ai_task_runs`). Embeddings, the rank and gate operations, the
+  interactive and diagnostic operations and rows marked as a ranker's do not count; topic calls are reported
+  apart. The F3 note decide on a dedicated ranker is a `reranking` task, like the generative decider's calls,
+  and keeps its `relation_decide` operation, which the script does not read as a rank operation. An operation
+  row therefore carries `"ranker": true` when a ranker (a local model that writes no text) served it, and a
+  row without the flag counts as generative: unmarked, X7-REF's 58 ranker calls read 56.8 calls per chapter
+  instead of 30.5 (M2 marked the rows of the profile's local model, which has no `text-generation`). A run
+  summary by task has no such flag, so all its `reranking` calls count as generative.
 - Parity with published numbers: `rescore --rule legacy-blend` on the end state of v9 sample A or B (an export
   of its backup) reproduces the stored `matching-v9a.json` (24/28) and `matching-v9b.json` (23/28) note
   layers; `reverse-only` on Spike A's stored MLX scores at `max:3.3125` loses 12 of 37; `calls-per-chapter` on
@@ -367,12 +386,15 @@ db:restore` makes a scratch cluster):
 | `spike-f3-fix3.json` | 30 | FIX3, fixture after the v8 final run | `.cache/golden/matching-fixture/manifest.json` | `.cache/f0/backups/memora-backup-2026-10-15T00-47-37-770Z` | 120000 |
 | `spike-f3-fix1.json` | 18 | FIX1, fixture after the v8 first run | the same | `.cache/f1a/backups/memora-backup-2026-10-14T23-17-41-000Z` | 70000 |
 | `spike-f3-old.json` | 17 | OLD, the September benchmark library | the same | `.cache/matching-benchmark/memora-backup-2026-09-09T01-46-23-785Z` | 70000 |
-| `spike-f3-gold.json` | 14 | GOLD, golden library after `golden-small-v9-a` | `scripts/golden/manifest.json` | `.cache/f0/backups/memora-backup-2026-10-15T04-15-46-285Z` | 80000 |
+| `spike-f3-gold.json` | 14 | GOLD, golden library after `golden-small-v9-a` | `scripts/golden/manifest.json` | `.cache/f0/backups/memora-backup-2026-10-15T14-20-20-933Z` | 80000 |
 
 A pair's request depends on the library's notes and chunks, so a file run against another state of the library
-judges a different request. The label (`fix3:F1/Q1`) is the pair ID of the spike analysis. The caps are twice the
-plan's per-call figures (about 1.5k input tokens on the fixture, 2.1k on golden, about 0.4k output with
-reasoning). One run, for example the golden library (repeat per file with its manifest and cassette folder):
+judges a different request. The GOLD backup is the spike run's own pre-run backup: the `04-15-46` backup named
+here before reproduces only 11 of the 14 GOLD requests (the library had changed by the time of the spike),
+while `14-20-20` reproduces all 14 and FIX3's backup all 30 (T53's proof). The label (`fix3:F1/Q1`) is the
+pair ID of the spike analysis. The caps are twice the plan's per-call figures (about 1.5k input tokens on the
+fixture, 2.1k on golden, about 0.4k output with reasoning). One run, for example the golden library (repeat
+per file with its manifest and cassette folder):
 
 ```sh
 MEMORA_AI_CASSETTE=record MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/source-spike-gold \
@@ -425,19 +447,22 @@ other run behaves as `full` and ignores it, whatever its value.
   topic service's job barrier and is refused without it, before anything changes.
 - `MEMORA_GOLDEN_TOPICS_ARRIVAL` (only with `full`) decides when topic jobs run. **The topic barrier:** topic
   jobs are held while a source ingests, so the items present at every build and naming call are a function of
-  the manifest order and not of lane timing. The ingestion itself never changes: it stays one batch, because the
-  collective matching stages (atomic notes and sources) run once every run has reached them and the recorded
-  cassette holds exactly those prompts, so the extraction is served from the cassette copy as before.
-  `per-source` (the default) paces the batch's jobs: the supervisor is stopped while the batch is queued, the
-  jobs of every source after the first are pushed far into the future (`run_after`), and each source's jobs
-  are released only after the previous source's jobs have finished and the light lane was drained. The heavy
-  lane is idle at every drain, so nothing else can enqueue topic work, and the hold is re-armed before the next
-  source runs. The last source also runs the collective matching; its drain follows the whole batch. `batch`
-  keeps the single batch unpaced and drains the light lane once after it. A drain ends after two polls without
-  a queued or running `topic-*` job; a replay miss or the live token cap stops the run (`diverged`,
-  `token_limit`) and leaves the topic jobs held. A run needs an idle job queue to start in `full` mode.
-  `summary.json` then has `topics: {mode, arrival, held, boundaries: [{source, batchId, drainMs, polls}],
-  drainMs, jobs}`.
+  the manifest order and not of lane timing. The import stays one batch: a book's aggregate summary is written
+  once every summarization stage of the batch has completed, and each source matches its own notes as soon as
+  they exist (F3 D24). `per-source` (the default) paces the batch's jobs: the supervisor is stopped while the
+  batch is queued, the jobs of every source after the first are pushed far into the future (`run_after`), and
+  each source's jobs are released only after the previous source's jobs have finished and the light lane was
+  drained. The heavy lane is idle at every drain, so nothing else can enqueue topic work, and the hold is
+  re-armed before the next source runs. The last source's drain follows the whole batch. `batch` keeps the
+  single batch unpaced and drains the light lane once after it. Pacing is not neutral for books. Under
+  `per-source` a book's catalog run comes right after its own chapters, before its aggregate summary exists, so
+  its catalog header (chunk 0) carries no summary and the header's graph output differs from a one-batch run's
+  (gate R: 488 entities against 484). A golden run does not queue the catalog-header refresh that would rebuild
+  it (After a run), so compare a run only with a reference of the same topics mode and arrival. A drain ends
+  after two polls without a queued or running `topic-*` job; a replay miss or the live token cap stops the run
+  (`diverged`, `token_limit`) and leaves the topic jobs held. A run needs an idle job queue to start in `full`
+  mode. `summary.json` then has
+  `topics: {mode, arrival, held, boundaries: [{source, batchId, drainMs, polls}], drainMs, jobs}`.
 
 Measurement profiles ENV-G (golden-small), ENV-F (matching fixture) and ENV-C (the corpus) live under
 `.cache/profiles/<name>`:
@@ -466,6 +491,28 @@ which installs the ranker from the seed folder, creates its AI profile, validate
 packaged or without the seed folder, and must run without `MEMORA_AI_CASSETTE` (the validation scores
 real pairs on the local ranker). See "DEV install at startup" in `local-models-and-packaging.md`.
 
+The install changes no existing route: on a profile that already has a ranker, `class:decide` stays on the
+first one, and the new ranker gets only its profile. A route pointed at it by hand also needs an active
+`class:decide` row in `ai_profile_tasks` on that profile, or it resolves to nothing (M2's GGUF bases).
+
+A ranker's validation holds only for the runtime build it ran on (`memora-mlx-helper@sha256:<hash>` for MLX;
+F3 froze the ranker on build `44d081e0…`, the SHA-256 of `native/mlx-helper/.build/release/memora-mlx-helper`).
+A start with no `MEMORA_AI_CASSETTE` and no `MEMORA_GOLDEN_RUN` re-validates, in the background, every ranker
+whose validation names another build: the smoke test and the 64-pair parity check. Golden, re-match and other
+cassette runs never re-validate. On a profile validated on an older build their rank calls fail
+`errors.localModels.rankerNotValidated` and matching finds nothing (M2's first golden non-regression replay on
+ENV-G). After `npm run mlx:build` changes the helper, start a clone of each base profile once with neither, as
+M2 refreshed ENV-F, ENV-G and ENV-C, then clone that clone for the runs:
+
+```sh
+MEMORA_USER_DATA_DIR="$PWD/.cache/profiles/<clone of env-g>" MEMORA_SMOKE_AUTO_QUIT_MS=150000 \
+MEMORA_CATALOG_HEADERS=off MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
+```
+
+`MEMORA_CATALOG_HEADERS=off` keeps that start from queuing the catalog-header refresh (with no cassette and no
+measurement knob it would be on, and it would rebuild headers that lack their summary and extract their graph
+again). Give the quit time for the parity check (M2: 150 s on ENV-F and ENV-G, 300 s on ENV-C).
+
 `npm run topics:export -- --db <dev-connection.json | scratch-<slug>.json | postgres url> --name env-f` exports
 the tree of a running profile through a read-only session: `.cache/topics/exports/<name>/export.json` (tree,
 names, placements, gate log, change-sets, daily metrics, shape audit) and the replay store
@@ -479,8 +526,9 @@ embedding space, in import order), which `npm run topics:replay` loads by name.
 extraction, entity identity and relation-type resolution: strict parse, whole-output repair, no salvage, no
 item-level repair, no output schema, the 3,500-character graph batch with 12/12 caps, and the error codes the
 answers were recorded under. Every recorded repair of the F2-era cassettes then replays. `off` runs the
-product path (schema output, item-level repair, graph salvage, batches by writer locality), for a re-record
-under F3. `summary.json` records `pin`.
+product path (schema output, item-level repair, graph salvage, batches by writer locality, which since X7 at
+M2 give remote writers the same 3,500 characters and 12/12 caps as local ones, the pin's batch), for a
+re-record under F3. `summary.json` records `pin`.
 
 `MEMORA_AI_CASSETTE_LOCAL_MISSES=live` (DEV, golden and E6 runners, with `MEMORA_AI_CASSETTE=replay`) lets a
 replay miss on a local runtime (ranker, local writer, local embedder) run live; the answer is recorded into
@@ -494,9 +542,30 @@ npm run golden:cassette-nonreg -- --base .cache/golden/cassettes/golden-small-f2
 
 The copy never overwrites an existing folder (a replay with live local misses records into it, so each sample
 needs a fresh copy), leaves the base untouched and writes `nonreg.json` (base, rule version, counts per kind).
-The rule (`scripts/golden/cassette-nonreg.ts`, tested against the prompt catalog) strips the generative note
-decide, the ranker's note decide, the source judge and the relation typer by their prompts, whatever the
-runtime that recorded them; extraction, embeddings and the topic calls stay.
+The rule (`scripts/golden/cassette-nonreg.ts`, version `matching-strip-v2`, tested against the prompt catalog)
+strips the generative note decide, the ranker's note decide, the source judge and the relation typer by their
+prompts, whatever the runtime that recorded them. A ranker request is recognised by the `instruction` of its
+`{instruction, query, documents}` JSON or of the `{instruction, pairs}` JSON that F3's note decide sends, so the
+rank entries of an F3-recorded cassette are stripped too. Extraction, embeddings, the topic calls and the topic
+gate's rank calls stay. An entry no rule recognises is kept and reported, and `--strict` refuses to write a
+copy that holds one.
+
+The golden-small replay that uses such a copy (gate R's G1; the full script is `.cache/f3/gate-r/run-golden.sh`)
+starts on a fresh APFS clone of ENV-G whose ranker validation names the current helper build (above):
+
+```sh
+MEMORA_USER_DATA_DIR=<absolute path of the clone> \
+MEMORA_AI_CASSETTE=replay MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/golden-small-f2-nonreg-<tag> \
+MEMORA_AI_CASSETTE_LOCAL_MISSES=live MEMORA_GOLDEN_RUN=scripts/golden/manifest.json MEMORA_GOLDEN_RESET=1 \
+MEMORA_GOLDEN_TOPICS=deterministic MEMORA_GOLDEN_PIN=extraction MEMORA_GOLDEN_RELATIONS=local \
+MEMORA_AI_LANES=serial MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
+```
+
+`MEMORA_GOLDEN_RELATIONS` is read only in a golden run: `live` (the default) or `local`, which switches relation
+remote calls off (a pair with no cached typing is persisted untyped and discovery is deferred). Link jobs drain
+one at a time either way. `MEMORA_USER_DATA_DIR` must be absolute, because npm runs the app from `apps/desktop`.
+The bar is 0 extraction misses and 0 remote misses (D41), and gate R also required the chunk, note, summary and
+entity digests of the G1 deterministic reference; the ranker's note decide runs live and is counted.
 
 An E6 replay with `MEMORA_AI_CASSETTE_LOCAL_MISSES=live` runs its misses on the real models, so it also takes
 `--writer-path <installed writer dir>` and `--embedding-gguf <installed .gguf>` (a plain replay installs
@@ -582,20 +651,144 @@ driver action and breaker move), `samples.ndjson` (every minute: lanes, jobs, he
 lag, pool), `task-runs.ndjson` (the `ai_task_runs` rows with the 0057 columns), `articles.ndjson`. Creating a
 `STOP` file in the folder ends the run in an orderly way; the app then quits.
 
-**Report.** `npm run soak:report -- .cache/f3/soak/<run> --status` is the health check of a run in progress (nothing is
-written). `npm run soak:report -- .cache/f3/soak/<run> [--presoak]` writes `report.md` and `report.json`: the X6
-table (calls past deadline by audit row and by the lane watchdog, repairs per D35 without injected calls, stuck
-and blocked jobs, pageouts after warm-up, P0 wait, breaker, helper restarts, remote deadlines), the audited
-sample of 50 non-injected failures and every wedged slot. With `--presoak` it asserts, for each injected fault
-kind on each fake, the attempt (the fake's record: a 429 with `Retry-After`, a stall that the client left at
-the stall bound, a first byte that the client left at the first-byte bound) and the call (its audit row's
-`deadline_outcome` and error class). Exit code 0 passes, 2 needs a person (the report says which line), 1 fails.
+**Report.** `npm run soak:report -- .cache/f3/soak/<run> --status` is the health check of a run in progress
+(nothing is written). `npm run soak:report -- .cache/f3/soak/<run> [--presoak]` writes `report.md` and
+`report.json`: the X6 table (calls past deadline by audit row and by the lane watchdog, repairs per D35 over
+the structured calls that count (no injected call, and by plan decision 31(a) none of the local MLX writer's:
+lane local, runtime mlx, no enforced schema mode; those are reported apart as information until F4's
+constrained decoding), stuck and blocked jobs, pageouts after warm-up, P0 wait, breaker, helper restarts,
+remote deadlines), the audited sample of 50 non-injected failures and every wedged slot. With `--presoak` it
+asserts, for each injected fault kind on each fake, the attempt (the fake's record: a 429 with `Retry-After`,
+a stall that the client left at the stall bound, a first byte that the client left at the first-byte bound)
+and the call (its audit row's `deadline_outcome` and error class). Exit code 0 passes, 2 needs a person (the
+report says which line), 1 fails.
+
+## 9. Relation re-match runs and the F3 DEV probes (T52b, T63)
+
+`MEMORA_RELATIONS_REMATCH` (`apps/desktop/src/main/services/dev/relations-rematch.ts`) matches again the notes a
+measurement profile already holds, with no extraction, so a quality sample spends no extraction quota (D5). It
+first waits for the composite vectors of the hierarchy roots that have none (T53f). It then clears the relation
+state, checks that the library holds the pinned notes and releases the roots one at a time behind a visibility
+fence, through the DEV heavy job `relation-rematch`. Each root's notes are decided with the call ingestion makes,
+and its link job (typing, persistence, promotion, discovery) is queued. The next root is released as soon as the
+root's decide step has committed. When the link jobs have drained, the run writes `summary.json` and the app
+quits. Lanes are serial unless `MEMORA_AI_LANES=product`, and the catalog-header refresh is off (the summary's
+`catalogHeaders.jobs` must be 0).
+
+The run is refused:
+
+- when packaged;
+- beside another DEV knob that imports, wipes, resets or probes a library (the golden runner and its pair
+  modes, the resets, the legacy wipe, the matching pilot and benchmark, the lane and explanation probes, the
+  typer check);
+- outside `.cache/profiles/`, or without the DEV PostgreSQL sidecar;
+- without `MEMORA_AI_CASSETTE` (recording also needs `MEMORA_GOLDEN_MAX_TOKENS`);
+- when the library's notes are not the pinned ones (the digest of the profile's kind in
+  `.cache/f3/m0/digests.json`, or `MEMORA_RELATIONS_REMATCH_DIGEST`).
+
+Start every sample from a fresh clone of a base whose ranker validation names the current helper build
+(section 7), with its own cassette copy.
+
+| Knob | Meaning |
+| --- | --- |
+| `MEMORA_RELATIONS_REMATCH=arrival:<seed>\|burst` | `arrival:manifest` (or `arrival:S0`): tuning roots, then held-out roots, each in manifest order. `arrival:<seed>` shuffles each partition with that seed (S1 20261031, S2 20261032). `burst`: every root is visible from the start (the batch reference). |
+| `MEMORA_RELATIONS_REMATCH_MAPPING=<file>` | The fixture mapping that gives the partitions; an ENV-F profile defaults to `.cache/golden/matching-fixture/mapping.json`. |
+| `MEMORA_RELATIONS_REMATCH_ROOTS=<file>` | The roots to release, titles or IDs in manifest order (a JSON list or `{"roots": [...]}`); default: every root with notes. |
+| `MEMORA_RELATIONS_REMATCH_BACKGROUND=matched` | The roots left out count as already matched (TP-C200): their source state and each note's k-th vector cosine (D19) are seeded. |
+| `MEMORA_RELATIONS_REMATCH_DISCOVERY=off` | No nearest-source discovery and no judge call; typing and promotion stay on (M1). |
+| `MEMORA_RELATIONS_REMATCH_CANDIDATES=record` | Turns the clone's debug mode on, so every note's candidate list is kept for the evaluator's export. |
+| `MEMORA_RELATIONS_REMATCH_LINK=drain\|product` | `drain` (the default, quality samples): one link job at a time, first in first out, no coalescing and no daily counting. `product` (X3's timing runs, with `MEMORA_AI_LANES=product`): the app's own link pool, small-source coalescing and daily call counter. |
+| `MEMORA_RELATIONS_REMATCH_P0_PROBE_MS=<n>` | X3's P0 probe: one query embedding at P0 every `n` ms (at least 1,000) while the run works. |
+| `MEMORA_RELATIONS_HELPER_BATCH=<1-64>` | The MLX ranker's helper batch for this DEV start (B1 runs batch 1 against the product's 16), recorded in the summary. The rank request carries it in its parameters, so it changes the cassette key. |
+| `MEMORA_RELATIONS_REMATCH_DIGEST=<sha256>:<notes>` | The pinned notes digest, for a profile whose kind has none recorded. |
+| `MEMORA_RELATIONS_REMATCH_OUT=<folder in .cache>` | Where `summary.json` goes (default `.cache/f3/rematch/<run>/`). |
+| `MEMORA_RELATIONS_REMATCH_DRAIN_MS=<n>` | How long the link jobs may take to drain (default 2 h). |
+| `MEMORA_AI_CASSETTE_TIMING=recorded` | Recorded timing (section 3), for X3's throughput reruns. |
+
+The X1 quality sample S0 runs on a fresh copy of `matching-fixture-f2` with its matching entries stripped
+(section 7), so ranking, typing and judging run live:
+
+```sh
+MEMORA_USER_DATA_DIR=<repository>/.cache/profiles/<fresh clone of env-f> MEMORA_WORKSPACE_ROOT=<repository> \
+MEMORA_RELATIONS_REMATCH=arrival:manifest MEMORA_RELATIONS_REMATCH_ROOTS=.cache/f3/freeze/x1/roots-s0.json \
+MEMORA_RELATIONS_REMATCH_CANDIDATES=record MEMORA_RELATIONS_REMATCH_OUT=.cache/f3/rematch/<run> \
+MEMORA_AI_CASSETTE=record MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/<run> \
+MEMORA_GOLDEN_MAX_TOKENS=<cap> MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
+```
+
+A timing run adds `MEMORA_AI_LANES=product` and `MEMORA_RELATIONS_REMATCH_LINK=product`, plus
+`MEMORA_AI_CASSETTE_TIMING=recorded` wherever it serves recorded entries. TP-C200 also sets
+`..._BACKGROUND=matched` and `..._P0_PROBE_MS=10000`. The summary's `p0Probe` holds the caller's wall time per
+probe; the queue wait X3 reads is `ai_task_runs.queue_ms` of the rows whose stage is `rematch_p0_probe`. Each
+probe embeds a text that names the run, so a cassette never serves it: a replay that probes needs
+`MEMORA_AI_CASSETTE_LOCAL_MISSES=live`.
+
+`npm run relations:rematch-report -- .cache/f3/rematch/<run>/summary.json [--out report.md]` reads only the
+summary. It shows:
+
+- the run's identity;
+- X3's clock: T0 is the first decide admission, T1 the last relation, typing, veto or source-relation commit,
+  and W the span normalized to 200 notes;
+- the timeline of releases, decides and links;
+- the AI calls by task, lane and class, and the cassette counters;
+- the relations and typings;
+- the flags that make a run unusable: an outcome other than completed, a cassette miss, the live-token cap
+  reached, failed AI calls or link jobs, a root not released or not committed, link jobs that did not drain, a
+  notes digest that differs, a catalog-header refresh that was on or queued jobs, a root with no composite
+  vector.
+
+M2 used a run only when it completed with 0 cassette misses and 0 failed link jobs, and its calibration identity
+check (R1) passed. A run that reaches its cap is void (its pairs persist untyped): raise the cap and run again
+on the same cassette copy, whose recorded calls are served at no cost.
+
+### The Decisions decider in a run (plan decision 30)
+
+`MEMORA_RELATIONS_DECISIONS=on` (`dev/decisions-dev-options.ts`; ignored when packaged) turns the Decisions
+decider on without the Settings opt-in. It still needs the Hybrid or Cloud preset: a DEV run with the knob and no
+preset chosen counts as Hybrid, and the Local preset still refuses it. `MEMORA_RELATIONS_DECISIONS_KEY_FILE=<file>`
+reads the OpenAI Platform key from a file instead of the secure store. `MEMORA_RELATIONS_DECISIONS_CAP_USD=<n>`
+replaces the day's US$ cap, up to the schema's maximum. A Decisions quality sample is the S0 command above plus
+`MEMORA_RELATIONS_DECISIONS=on`, `MEMORA_RELATIONS_DECISIONS_KEY_FILE=<key file>` and
+`MEMORA_RELATIONS_DECISIONS_CAP_USD=1.00` (M2's DS0).
+
+The cassette records and replays Decisions requests like any adapter's, and a replay needs no key. Their live
+tokens are counted in `cassette.liveDecisionsTokens`, apart from `liveTokens`: a Decisions request carries about
+3,000 input tokens, so counted against `MEMORA_GOLDEN_MAX_TOKENS`, the cap meant for the writer, they would stop
+a sample after about a hundred requests. `MEMORA_GOLDEN_MAX_TOKENS` bounds the other remote calls, and the
+dollar cap bounds the Decisions API.
+
+In F3 the key came from `.env`'s `OPENAPI_KEY` (the owner's test key, D6). For each run M2 wrote it into a
+mode-600 file under `.cache/f3/m2/secrets/`, deleted the file afterwards and scanned the run folder and the
+cassette for the key. Never print or log the key.
+
+When the decider may not decide or fails (no key, the day's cap, an open breaker, a provider error such as 429
+`insufficient_quota`), the matcher falls back to the local ranker. M2's DS0 measured the MLX ranker that way, so
+check that the run's Decisions requests succeeded (its AI calls and `cassette.liveDecisionsTokens`) before you
+read it as a Decisions sample.
+
+### Other F3 DEV probes
+
+| Knob | What it does |
+| --- | --- |
+| `MEMORA_DEV_LANE_PROBE=<report path in .cache>` | B5: decide-sized calls on synthetic text at concurrency 1, 2 and 3 (about 40 calls, 60k tokens), stopping at the first level that sees a 429 or a failed call. The job supervisor stays stopped, and the app quits at the end. |
+| `MEMORA_DEV_EXPLAIN_PROBE=<report path in .cache>` | T59: on a clone inside `.cache/profiles/`, opens relations as the Note page does, one after the other and again, and measures the time to the first text and to the validated explanation, and whether the second open makes no call. `MEMORA_DEV_EXPLAIN_PROBE_OPENS` sets the number of opens (10 by default, at most 50; about 10k tokens on a remote writer). It writes the explanations and withdraws the relations the writer finds unrelated. |
+| `MEMORA_TYPER_CHECK=<pairs file>` | The typer's position-bias check (gate F): panel pairs typed in both orders by the product's typing step. It persists nothing, writes `.cache/f3/typer-check/<time>/typer-check.json` and quits. `MEMORA_TYPER_CHECK_PROMPT=<candidate revision>` and `MEMORA_TYPER_CHECK_ORDERS=content` serve decision 29's typer experiment. |
+
+All three are refused when packaged. The lane and explanation probes are also refused with a cassette or with
+another measurement run.
 
 ## After a run
 
 The runner pauses nothing and `summary.json` has no `automation` entry: the legacy wiki automation is
 unwired and nothing creates its policies or schedules (F2 D3), so a run leaves no legacy state behind.
 The pre-run backup is in `summary.json` (`backup.path`).
+
+`summary.json` also records `catalogHeaders: {refresh, reason, jobs}`. Unless `MEMORA_CATALOG_HEADERS=on`
+forces it (below), a golden run does not queue the catalog-header refresh of plan decision 27, whose calls a
+recording does not hold: `refresh` is `off` with reason `golden_run` (or `switch`), and `jobs`, the
+`catalog-header` jobs created since the app started, must be 0. Re-match runs and the E6 runner record the
+same. `MEMORA_CATALOG_HEADERS=off` turns the refresh off on any start, and `on` forces it on even in a
+measurement run (a live proof on a recorded profile). The soak refuses `off` (section 8).
 
 ## Cassette key and offline guarantee
 
@@ -607,7 +800,10 @@ serving). UUIDs become positional placeholders,
 so a fresh library with new chunk IDs yields the same keys and recorded outputs map to the new IDs. The
 cassette wraps `AiModelAdapter.run`/`runStreaming` via the registry: remote and local generation, local
 embeddings and reranking alike (local calls are recorded: GPU embeddings are not bit-stable and replay
-must not load models). Replay never delegates a task call.
+must not load models). Replay never delegates a task call. Since F3 an `embedMany` batch is served and
+recorded per text under the single-call key (D37). An MLX ranker's `pairs` request carries the helper batch
+in its parameters, so the batch is part of the key. The OpenAI Decisions adapter is registered like any other
+adapter, so its requests are recorded and replayed too (a replay needs no Decisions key).
 
 ## What is and is not deterministic
 

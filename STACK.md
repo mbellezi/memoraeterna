@@ -116,21 +116,26 @@ for files, sizes and checksums):
 | Qwen3-Reranker-0.6B | MLX, bf16 safetensors on the MLX Swift LM helper | `Qwen/Qwen3-Reranker-0.6B` @ `e61197ed45024b0ed8a2d74b80b4d909f1255473`; `model.safetensors` 1,191,588,280 B, sha256 `27cd75a4…5e65b` |
 | Qwen3-Reranker-0.6B Q8_0 | GGUF through `node-llama-cpp` (fallback) | `ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF` @ `a02f48bb4f057028298c21fa033da2b30d7742d5`; 639,153,184 B, sha256 `22c9979c…23429a48` |
 
+The opt-in remote relation decider, the OpenAI Decisions API (plan decision 30),
+is a `fetch` adapter (`packages/ai/src/decisions/adapter.ts`) and adds no
+dependency.
+
 ## Planned additions (pending their phase)
 
 Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
 
 - MLX weights for Qwen3-Embedding-0.6B (Apache-2.0; Qwen safetensors or
   mlx-community conversions), pinned revision plus SHA-256, run on MLXEmbedders
-  (F0 spike, F3 adapter).
-- Fallback reranker GGUF artifact bge-reranker-v2-m3 Q8_0 (gpustack), pinned by
-  SHA-256 (F0 spike); Spike A rejected it for matching, so it is not in the
-  catalog.
+  (F0 spike). The adapter left F3 (F3 D40) for the phase that records an
+  MLX-space E6 and re-calibrates topic placement in that space; plan decision 26
+  keeps today's models and runtimes until the program ends.
+- bge-reranker-v2-m3 Q8_0 GGUF (gpustack), pinned by SHA-256 (F0 spike): Spike A
+  rejected it for matching and F3 retired it as decision 3's fallback decider
+  (Q18; a bake-off control only), so it is not in the catalog.
 - `radix-ui` and `cmdk` through vendored shadcn components (F5).
 - `@playwright/test` for Electron journeys (F5).
 - `umap-js` and `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike
   (F6). Stay on `sigma` `3.0.3` until a sigma 4 spike decides otherwise.
-- Remote deciders (OpenAI Decisions) as fetch adapters with no new dependency.
 
 Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use `@cosmos.gl/graph`
 (MIT) instead if a GPU force layout is ever needed.

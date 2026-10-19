@@ -40,14 +40,17 @@ summaries and extracted graph evidence. Each tuning pass starts without previous
 unreviewed matching relationships or pair decisions, rebuilds AGE from canonical
 data, and verifies the extraction fingerprint afterward.
 
-The baseline uses the saved pilot settings. The economical variant lowers note
-shortlists to 20 and source-pair allowance to six, with shorter evidence context.
-The coverage variant uses 40 note candidates and 12 source pairs, with more
-retrieved candidates and evidence passages. All variants keep the same acceptance
-thresholds, AI validation requirement, identity safeguards and model routes.
-These are comparisons of complete configurations; they do not isolate the effect
-of each individual parameter. Offline threshold sweeps reuse recorded decisions
-and do not imply new retrieval or generation.
+The baseline uses the saved pilot settings. Since F3 the variants differ only in
+the source judge's evidence: design E (F3 D27) deleted the source-pair
+shortlist, and relations v2 (F3 D46) moved the note candidate limits to typed
+configuration. The economical variant sets `evidenceChunksPerSource` 2,
+`evidenceMaxCharacters` 800 and `summaryMaxCharacters` 1000; the coverage
+variant sets `evidenceChunksPerSource` 4. All variants keep the reference's note
+matching, identity thresholds and model routes. Settings snapshots written
+before the matching settings v2 migration (T53b) are read through it. These are
+comparisons of complete configurations; they do not isolate the effect of each
+individual parameter. Offline threshold sweeps reuse recorded decisions and do
+not imply new retrieval or generation.
 
 The experiment limit is 5,000,000 reported input-plus-output tokens across all
 new preparation, comparison and validation work. It is checked between calls and

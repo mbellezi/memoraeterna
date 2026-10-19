@@ -1,9 +1,14 @@
 # Matching calibration in DEV
 
-The advanced controls are in Settings → Matching → Advanced matching. They
-persist in application preferences, require no schema migration, and apply to
-subsequent processing. Existing note pairs are excluded from generation;
-changing thresholds does not delete or rewrite previous relationships.
+The advanced controls are in Settings → Matching → Advanced matching. Since F3
+(T53b) they hold only the note decider's output budget, the canonical matching
+limits and the source judge's evidence and output limits. Relations v2 takes its
+note thresholds and candidate limits from typed configuration
+(`packages/domain/src/relations-config.ts`), so the note threshold, candidate
+limits and scoring weights are no longer settings. The controls persist in
+application preferences, require no schema migration, and apply to subsequent
+processing. Existing note pairs are excluded from generation; changing a setting
+does not delete or rewrite previous relationships.
 
 The synthetic pilot contains 12 roots, including four books with two chapters
 apiece: 20 source records and 16 content documents. Its fixture is
