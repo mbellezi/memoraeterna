@@ -391,7 +391,7 @@ and a `model` worker, so placement never waits for a model), with per-source exc
 | Shape | tree size, depth, violations, growth; before/after diffs | zoomable icicle, d3-hierarchy | Map › Shape, Home, Inbox |
 | Atlas | all notes by meaning with tree territories and labels | UMAP + Procrustes; positions are presentation state | Map › Atlas (F6, spike-gated) |
 | Evidence card | type, direction, confidence, both passages, decider and writer | progressive provenance, shadcn HoverCard | relation rows and edges |
-| Relations (advanced) | current force graph scoped to a branch, coloured by topic | force + Louvain, topic super-nodes when zoomed out | Map › Relations |
+| Relations (advanced) | current force graph scoped to a branch, coloured by topic | force + Louvain, topic super-nodes when zoomed out | Map › Relations (F5) |
 
 Canvas/WebGL lenses always have a text or table alternative. Stay on sigma 3.0.3; the sigma 4 migration is
 decided by a spike in F6. Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use
@@ -751,6 +751,13 @@ in ≤10 min (e2e); ≤6 visible automation settings (from 37+).
       Diagnostics); search across settings; "changed from default" markers with a per-item reset; plain-language
       help; design-system components; the old settings screens removed.
 - [ ] Remove the old top-level views and duplicate wiki browsers.
+- [ ] Map › Relations (moved from F6, owner 2026-10-19): the force graph scoped to a branch, coloured by topic
+      (force + Louvain, topic super-nodes when zoomed out) on the canvas T60g extracted, with its table
+      alternative; it replaces the old global Knowledge Graph screen that this phase removes.
+- [ ] Map › Shape (owner 2026-10-19): the zoomable icicle of the tree (size, depth, violations, growth) on the
+      icicle component F4 builds for the Inbox's structural diffs.
+- [ ] Atlas spike, record only (owner 2026-10-19): UMAP + Procrustes on the reference library; does each branch
+      form a contiguous territory? F6 builds Atlas only on a go.
 
 Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
 clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in
@@ -759,7 +766,8 @@ all 5 locales; 5 destinations; Settings v2 with ≤7 sections, every setting fou
 
 ### F6 Lenses, lean ingestion, consolidation (weeks 23-26)
 
-- [ ] Atlas only if the spike shows contiguous branches; branch mind map; scoped Relations lens.
+- [ ] Atlas only if F5's spike shows contiguous branches; branch mind map (the scoped Relations lens and Shape
+      moved to F5, owner 2026-10-19).
 - [ ] Windowed ingestion under A/B on the reference library.
 - [ ] Finish the design system (primitives, raw-class codemod, pt-BR accents); sigma 4 migration spike with
       go/no-go.
