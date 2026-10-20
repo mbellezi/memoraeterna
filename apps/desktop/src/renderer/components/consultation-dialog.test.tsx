@@ -174,6 +174,7 @@ describe("the state of a question", () => {
       for (const key of [
         "consultation.errors.noRelevantEvidence",
         "consultation.errors.deadline",
+        "consultation.errors.rateLimited",
         "consultation.errors.model",
         "consultation.errors.context",
         "consultation.errors.canceled",
