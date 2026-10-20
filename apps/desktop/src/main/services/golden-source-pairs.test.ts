@@ -323,7 +323,8 @@ describe("source pair verdicts", () => {
       contentLanguage: "en",
       promptVersion: sourceRelationPromptVersion,
       sourceItemIds: ["root-A", "root-B", "src-A", "src-B"],
-      attempt: 0
+      attempt: 0,
+      isRepair: false
     });
     expect(reader.pairNotes).toHaveBeenCalledWith(
       "root-A",
@@ -490,7 +491,11 @@ describe("source pair verdicts", () => {
     });
     const result = await report;
     expect(ai.calls).toHaveLength(2);
-    expect(ai.calls[1]![2]).toMatchObject({ attempt: 1, operation: "source_relation_matching" });
+    expect(ai.calls[1]![2]).toMatchObject({
+      attempt: 1,
+      isRepair: true,
+      operation: "source_relation_matching"
+    });
     expect(ai.calls[1]![1].startsWith(ai.calls[0]![1])).toBe(true);
     const entry = result.pairs[0]!;
     expect(entry.attempts.map((attempt) => [attempt.attempt, attempt.invalidItems])).toEqual([

@@ -743,6 +743,17 @@ describe("source matching by design E (D27)", () => {
     expect(result.inputTokens).toBe(200);
     expect(ai.mock.calls[0]?.[4]).toEqual({ maxOutputTokens: 1900 });
   });
+  it("audits the second call after an invalid answer as a repair (D35)", async () => {
+    const ai = vi
+      .fn()
+      .mockResolvedValueOnce(execution("invalid"))
+      .mockResolvedValue(execution({ relations: [item()] }));
+    await run(ai);
+    expect(ai.mock.calls.map((call) => call[2])).toEqual([
+      expect.objectContaining({ attempt: 0, isRepair: false }),
+      expect.objectContaining({ attempt: 1, isRepair: true, stage: "sourceMatching" })
+    ]);
+  });
   it.each([0, 100, 15000])("records actual input usage %s", async (inputTokens) => {
     const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens });
     expect((await run(ai)).inputTokens).toBe(inputTokens);

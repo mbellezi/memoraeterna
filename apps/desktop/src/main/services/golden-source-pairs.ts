@@ -457,7 +457,9 @@ async function judgePair(
           contentLanguage,
           promptVersion: sourceRelationPromptVersion,
           sourceItemIds,
-          attempt
+          attempt,
+          // The same audit as the source judge's own calls: the second one is a repair.
+          isRepair: attempt > 0
         },
         undefined,
         { maxOutputTokens }

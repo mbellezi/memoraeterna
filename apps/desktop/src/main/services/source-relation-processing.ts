@@ -1022,7 +1022,9 @@ async function judgePair(input: {
         sourceItemIds: [
           ...new Set([root, candidate, ...chunks.map((chunk) => chunk.sourceItemId)])
         ],
-        attempt
+        attempt,
+        // The second call asks again after an answer that failed validation: a repair (D35).
+        isRepair: attempt > 0
       },
       signal,
       { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance) }
