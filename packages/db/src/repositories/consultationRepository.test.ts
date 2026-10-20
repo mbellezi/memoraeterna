@@ -29,6 +29,33 @@ const source = { a: u(1), b: u(2), c: u(3), d: u(4) };
 const chunk = { a0: u(21), a1: u(22), b0: u(31), b1: u(32), c0: u(41), d0: u(51) };
 const question = "How does photosynthesis work?";
 
+/** One node of an `EXPLAIN (FORMAT JSON)` plan. */
+interface PlanNode {
+  "Node Type": string;
+  "Parent Relationship"?: string;
+  "Subplan Name"?: string;
+  "Relation Name"?: string;
+  Alias?: string;
+  Plans?: PlanNode[];
+}
+
+/** Every node of a plan with the nodes above it, outermost first. */
+function planNodes(
+  node: PlanNode,
+  above: PlanNode[] = []
+): { node: PlanNode; above: PlanNode[] }[] {
+  return [
+    { node, above },
+    ...(node.Plans ?? []).flatMap((child) => planNodes(child, [...above, node]))
+  ];
+}
+
+/** The plan runs this node once, as a CTE, whatever the number of rows that read it. */
+const isCteNode = (node: PlanNode) =>
+  node["Parent Relationship"] === "InitPlan" && node["Subplan Name"]?.startsWith("CTE ") === true;
+/** The plan runs this node again for every row of the node that holds it. */
+const isPerRowNode = (node: PlanNode) => node["Parent Relationship"] === "SubPlan";
+
 describe.skipIf(!sidecarInstalled)("Ask retrieval on a real PostgreSQL database", () => {
   let workDir = "";
   let manager: PostgresSidecarManager | undefined;
@@ -228,6 +255,50 @@ describe.skipIf(!sidecarInstalled)("Ask retrieval on a real PostgreSQL database"
     expect(reviewed.b1!.relation).toBe(0);
     expect(reviewed.b0!.relation).toBeCloseTo(r5, 6);
     expect(reviewed.c0!.relation).toBeCloseTo(r5, 6);
+  });
+
+  it("evaluates the concept and relation signals once per statement, never per candidate row", async () => {
+    // The statement `candidates` sends, captured as it goes to the pool and not run: only its plan
+    // is read, so the guard holds whatever the data and whatever plan statistics would choose.
+    const sent: { text: string; values: unknown[] }[] = [];
+    const spy = {
+      query: ((text: string, values?: unknown[]) => {
+        sent.push({ text, values: values ?? [] });
+        return Promise.resolve({ rows: [] });
+      }) as unknown as PgPool["query"]
+    };
+    await createConsultationRepository(spy).candidates(
+      [source.a, source.b, source.c],
+      question,
+      false
+    );
+    expect(sent).toHaveLength(1);
+    const { text, values } = sent[0]!;
+    const { rows } = await pool.query(`explain (format json) ${text}`, values);
+    const nodes = planNodes((rows[0]["QUERY PLAN"] as { Plan: PlanNode }[])[0]!.Plan);
+    // The three scans that once ran for every candidate chunk: the summaries and their concepts,
+    // the evidence of source relations, and the check of a concept's evidence IDs against the
+    // chunks in scope (`chunks cc`).
+    const scans = {
+      source_summaries: nodes.filter(({ node }) => node["Relation Name"] === "source_summaries"),
+      source_relation_evidence: nodes.filter(
+        ({ node }) => node["Relation Name"] === "source_relation_evidence"
+      ),
+      "chunks cc": nodes.filter(
+        ({ node }) => node["Relation Name"] === "chunks" && node.Alias === "cc"
+      )
+    };
+    for (const [name, found] of Object.entries(scans)) {
+      expect(found.length, `${name} is read by the statement`).toBeGreaterThan(0);
+      for (const { node, above } of found) {
+        const chain = [...above, node];
+        // The `candidates` CTE holds the per-chunk rows: what it reads in a SubPlan runs per row.
+        const cte = chain.toReversed().find(isCteNode)?.["Subplan Name"];
+        expect(cte, `${name} is read inside a CTE of its own`).toBeDefined();
+        expect(cte, `${name} is read outside the per-chunk CTE`).not.toBe("CTE candidates");
+        expect(chain.some(isPerRowNode), `${name} is not read in a SubPlan`).toBe(false);
+      }
+    }
   });
 
   it("stops a statement at its caller's remaining budget and leaves no setting behind", async () => {
