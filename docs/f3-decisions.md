@@ -327,6 +327,26 @@ Decision 31(b) shows a direction only when the owner or a clear decider gives it
 judge's direction, as the code already does (`directedSourceRelationSql`); the typer's guess on note relations stays
 hidden. `rules/knowledge.md` names both deciders.
 
+### Ask retrieval after the soak (2026-10-20)
+
+Root cause: the concept arm of the candidate search asked, for every candidate chunk, whether each evidence ID of the
+source's concepts matched a current chunk in scope (a correlated `NOT EXISTS` on `cc.id::text`, which no index can
+serve). Its plan flipped between a sub-second plan and one of 100 s and more as the library grew: on the soak database
+the `chunks` table took 92.9 M sequential scans, and an Ask spent its whole time budget before reaching a model.
+
+Fix: the concept signal (a source's best grounded concept) and the source-relation signal (the best current relation a
+chunk's evidence rests on) are computed once per statement in materialized CTEs and joined to the chunks, with the same
+results. Each statement of an Ask also runs in its own short transaction whose `statement_timeout` is what is left of
+the Ask's 120 s, the signal is checked between the preparation steps, and a statement the budget stopped ends the Ask
+with the deadline error. No migration, so D44 holds.
+
+Measured on the soak database: the candidates statement p95 fell from 1,219 ms to 176 ms, and the results were identical
+over 250 + 1,020 question and scope combinations.
+
+Remaining limit: the text, title, note and entity signals still rank every chunk in scope at about 0.07 ms per chunk,
+which is about 2 s near 25-30 k chunks. A stored unaccented `tsvector` with a GIN index is the next step; it is a
+migration, so it comes after F3 (F4 list in `docs/plan.md`).
+
 ## Measurement
 
 ### Exit criteria
