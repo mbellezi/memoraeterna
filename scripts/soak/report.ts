@@ -812,21 +812,37 @@ export function injectedJobFailures(
   return reasons;
 }
 
+/** The fake provider each kind of action reaches (fake-remote-provider.ts, fake-codex-provider.ts). */
+const actionProviders: Partial<Record<ActionRecord["kind"], string>> = {
+  ask: "openai-compatible",
+  explain: "codex-wire",
+  explain_burst: "codex-wire",
+  post_outage_probe: "codex-wire"
+};
+
 /**
- * The driver's failed actions (an Ask, an explanation...) that overlap no injected exchange. An
- * action names no provider, so an injected exchange on any fake explains it; one that overlaps
- * none is a failure of the product the call and job audits may not show (an Ask that ran out of
- * time before its model call has no failed call).
+ * The driver's failed actions (an Ask, an explanation...) that no injected exchange explains. An
+ * injected exchange explains a failed action only when it overlaps the action in time and sits on
+ * the action's own fake (an Ask reaches the OpenAI-compatible one, an explanation the Codex-wire
+ * one; an action of another kind has no remote provider of its own, so any fake may explain it),
+ * and never an action whose port says it did not start its remote call: nothing it sent could meet
+ * the fault. What remains is a failure of the product that the call and job audits may not show (an
+ * Ask that ran out of time before its model call has no failed call).
  */
 export function unexplainedActionFailures(run: LoadedRun): ActionRecord[] {
   const grace = 1_000;
   const injected = exchangesOf(run.events).filter((exchange) => exchange.injected);
   return actionsOf(run.events).filter((action) => {
     if (action.status !== "failed") return false;
+    if (action.detail.remoteCallStarted === false) return true;
+    const provider = actionProviders[action.kind];
     const start = toMs(action.startedAt) - grace;
     const end = toMs(action.startedAt) + action.durationMs + grace;
     return !injected.some(
-      (exchange) => toMs(exchange.startedAt) <= end && toMs(exchange.endedAt) >= start
+      (exchange) =>
+        (provider === undefined || exchange.provider === provider) &&
+        toMs(exchange.startedAt) <= end &&
+        toMs(exchange.endedAt) >= start
     );
   });
 }
