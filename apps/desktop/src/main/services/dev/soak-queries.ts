@@ -107,14 +107,17 @@ export async function readJobs(
 }
 
 /**
- * The answer-class calls (Ask's model calls) the audit recorded as ended since `sinceMs` (epoch
- * milliseconds), whatever their outcome: whether an Ask reached its model. The driver runs one Ask
- * at a time, so they are that Ask's.
+ * The model calls of an Ask that really started since `sinceMs` (epoch milliseconds), whatever
+ * their outcome: whether an Ask reached its model. They are the audit rows whose prompt is the
+ * Ask's own (`consultation.knowledge`, one of the compositions the call recorded), not every call
+ * of the answer class. A call recorded with no duration did not run, unless it is remote and its
+ * request may have been sent. The driver runs one Ask at a time, so the calls are that Ask's.
  */
 export async function countAnswerCalls(db: Db, sinceMs: number): Promise<number> {
   const result = await db.query<{ calls: number }>(
     `select count(*)::int as calls from ai_task_runs
-      where workload_class = 'answer' and finished_at is not null and finished_at >= $1`,
+      where prompt_compositions @> '[{"promptId": "consultation.knowledge"}]'::jsonb
+        and started_at >= $1 and (duration_ms > 0 or runtime = 'remote')`,
     [new Date(sinceMs)]
   );
   return result.rows[0]?.calls ?? 0;

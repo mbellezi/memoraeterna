@@ -1126,14 +1126,14 @@ describe("failures and files", () => {
       index: 98,
       durationMs: 150_000,
       error: "consultation.errors.deadline",
-      detail: { elapsedMs: 150_000, remoteCallStarted: false }
+      detail: { wallMs: 150_000, remoteCallStarted: false }
     });
     const report = analyzeRun(goodRun({ events: [limited, explained, late] }));
     const check = report.checks.find((entry) => entry.id === "failure-handling")!;
     expect(check.status).toBe("review");
     expect(check.value).toContain("1 failed driver action(s) with no injected fault");
     expect(check.details).toContain(
-      `failed action ask #98 at ${at(120 * minute)} after 150000 ms (elapsedMs 150000, remoteCallStarted false): consultation.errors.deadline`
+      `failed action ask #98 at ${at(120 * minute)} after 150000 ms (wallMs 150000, remoteCallStarted false): consultation.errors.deadline`
     );
   });
 
@@ -1162,18 +1162,14 @@ describe("failures and files", () => {
       unexplainedActionFailures(goodRun({ events })).map((entry) => entry.index);
 
     // An Ask that never started its call is not explained by a fault on the other fake...
-    const other = ask(
-      100 * minute,
-      { elapsedMs: 150_000, remoteCallStarted: false },
-      { index: 71 }
-    );
+    const other = ask(100 * minute, { wallMs: 150_000, remoteCallStarted: false }, { index: 71 });
     const codexFault = injectedOn("codex-wire", 100 * minute + 5_000);
     expect(listed([codexFault, other])).toEqual([71]);
     const check = verdict([codexFault, other]);
     expect(check.status).toBe("review");
     expect(check.value).toContain("1 failed driver action(s) with no injected fault");
     expect(check.details).toContain(
-      `failed action ask #71 at ${at(100 * minute)} after 20000 ms (elapsedMs 150000, remoteCallStarted false): consultation.errors.deadline`
+      `failed action ask #71 at ${at(100 * minute)} after 20000 ms (wallMs 150000, remoteCallStarted false): consultation.errors.deadline`
     );
     // ...nor by one on its own fake: it sent nothing that fault could have met.
     const own = injectedOn("openai-compatible", 100 * minute + 5_000);
@@ -1181,11 +1177,7 @@ describe("failures and files", () => {
     expect(verdict([own, other]).status).toBe("review");
 
     // An Ask that started its call and overlaps an injected exchange on its own fake is explained.
-    const started = ask(
-      110 * minute,
-      { elapsedMs: 20_000, remoteCallStarted: true },
-      { index: 72 }
-    );
+    const started = ask(110 * minute, { wallMs: 20_000, remoteCallStarted: true }, { index: 72 });
     const ownFault = injectedOn("openai-compatible", 110 * minute + 5_000);
     expect(listed([ownFault, started])).toEqual([]);
     expect(verdict([ownFault, started]).status).toBe("pass");
@@ -1194,11 +1186,7 @@ describe("failures and files", () => {
     expect(listed([codexOnly, started])).toEqual([72]);
     expect(verdict([codexOnly, started]).status).toBe("review");
     // One whose port could not tell (null) leans on the provider alone.
-    const unknown = ask(
-      120 * minute,
-      { elapsedMs: 20_000, remoteCallStarted: null },
-      { index: 73 }
-    );
+    const unknown = ask(120 * minute, { wallMs: 20_000, remoteCallStarted: null }, { index: 73 });
     expect(listed([injectedOn("openai-compatible", 120 * minute + 5_000), unknown])).toEqual([]);
     expect(listed([injectedOn("codex-wire", 120 * minute + 5_000), unknown])).toEqual([73]);
 

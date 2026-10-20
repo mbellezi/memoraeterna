@@ -213,18 +213,44 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     ]);
     expect(runs[0]!.error).toHaveLength(300);
     expect(await readTaskRuns(pool!, Date.now() + 60_000)).toEqual([]);
-    // Whether an Ask reached its model: the answer-class calls that ended since it began.
+    // Whether an Ask reached its model: its own calls (the audit rows composed from its prompt)
+    // that really started since it began.
     const askBegan = Date.now() - 5_000;
     expect(await countAnswerCalls(pool!, askBegan)).toBe(0);
-    await pool!.query(
-      `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status, started_at, finished_at,
-         lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode, retry_wait_ms, requeue_ms, queue_ms, error)
-       values ('structured-output', 'openai-compatible', 'answer', 'remote', 3000, 'canceled', now() - interval '3 seconds', now(),
-         'remote:abc', 'answer', 0, 180000, 'met', false, 'json', 0, 0, 1, 'The operation timed out.'),
-              ('structured-output', 'openai-compatible', 'answer', 'remote', 3000, 'succeeded', now() - interval '10 minutes', now() - interval '9 minutes',
-         'remote:abc', 'answer', 0, 180000, 'met', false, 'json', 0, 0, 1, null)`
-    );
+    const askPrompt = JSON.stringify([
+      { promptId: "consultation.guidance", compositionHash: "a".repeat(64) },
+      { promptId: "consultation.knowledge", compositionHash: "b".repeat(64) },
+      { promptId: "consultation.gaps", compositionHash: "c".repeat(64) }
+    ]);
+    const otherPrompt = JSON.stringify([
+      { promptId: "knowledge.summary", compositionHash: "d".repeat(64) }
+    ]);
+    const answerCall = (
+      runtime: string,
+      durationMs: number,
+      status: string,
+      startedAgo: string,
+      compositions: string
+    ) =>
+      pool!.query(
+        `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status, started_at, finished_at,
+           lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode, retry_wait_ms, requeue_ms, queue_ms, error, prompt_compositions)
+         values ('structured-output', 'openai-compatible', 'answer', $1, $2, $3, now() - $4::interval, now() - $4::interval + ($2::integer * interval '1 millisecond'),
+           'remote:abc', 'answer', 0, 180000, 'met', false, 'json', 0, 0, 1, null, $5::jsonb)`,
+        [runtime, durationMs, status, startedAgo, compositions]
+      );
+    // Not this Ask's: one that ended before it began, an answer-class call of another prompt, and a
+    // local call of its prompt that never ran.
+    await answerCall("remote", 3_000, "succeeded", "10 minutes", askPrompt);
+    await answerCall("remote", 3_000, "succeeded", "2 seconds", otherPrompt);
+    await answerCall("mlx", 0, "canceled", "2 seconds", askPrompt);
+    expect(await countAnswerCalls(pool!, askBegan)).toBe(0);
+    // Its own, whatever the outcome: a remote call a deadline ended, and a remote one recorded
+    // with no duration.
+    await answerCall("remote", 3_000, "canceled", "3 seconds", askPrompt);
     expect(await countAnswerCalls(pool!, askBegan)).toBe(1);
+    await answerCall("remote", 0, "canceled", "1 second", askPrompt);
+    expect(await countAnswerCalls(pool!, askBegan)).toBe(2);
 
     await pool!.query(
       `insert into jobs (type, status, lane, payload, attempts, error, finished_at)

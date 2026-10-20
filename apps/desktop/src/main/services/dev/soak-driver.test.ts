@@ -308,7 +308,7 @@ describe("the soak driver", () => {
     const { ports: driverPorts } = ports({
       ask: async () => {
         throw new SoakActionFailure("consultation.errors.deadline", {
-          elapsedMs: 121_500,
+          wallMs: 121_500,
           remoteCallStarted: false
         });
       }
@@ -319,7 +319,7 @@ describe("the soak driver", () => {
     expect(actions(sink).find((action) => action.kind === "ask")).toMatchObject({
       status: "failed",
       error: "consultation.errors.deadline",
-      detail: { elapsedMs: 121_500, remoteCallStarted: false }
+      detail: { wallMs: 121_500, remoteCallStarted: false }
     });
   });
 

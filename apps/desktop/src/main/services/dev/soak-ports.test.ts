@@ -256,7 +256,7 @@ describe("the ports", () => {
     expect(late).toBeInstanceOf(SoakActionFailure);
     expect(late).toMatchObject({
       message: "consultation.errors.deadline",
-      detail: { elapsedMs: expect.any(Number), remoteCallStarted: false }
+      detail: { wallMs: expect.any(Number), remoteCallStarted: false }
     });
     // The calls counted are those since the Ask began.
     const [db, since] = queries.countAnswerCalls.mock.calls.at(-1)!;

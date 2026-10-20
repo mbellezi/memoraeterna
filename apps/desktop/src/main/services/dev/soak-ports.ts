@@ -267,13 +267,14 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
       } catch (error) {
         const outcome = answerOutcome(error);
         if (outcome) return { outcome };
-        // How long the Ask ran, and whether it reached its model at all (one that spent its time
-        // preparing never calls it); unknown when the audit cannot be read.
-        const elapsedMs = Date.now() - began;
+        // How long the Ask ran on the wall clock (the Ask itself counts only the time it works, not
+        // the time it waits in the AI queue), and whether it reached its model at all (one that
+        // spent its time preparing never calls it); unknown when the audit cannot be read.
+        const wallMs = Date.now() - began;
         const calls = await countAnswerCalls(deps.pool, began).catch(() => null);
         throw new SoakActionFailure(
           error instanceof Error ? error.message : String(error),
-          { elapsedMs, remoteCallStarted: calls === null ? null : calls > 0 },
+          { wallMs, remoteCallStarted: calls === null ? null : calls > 0 },
           { cause: error }
         );
       }
