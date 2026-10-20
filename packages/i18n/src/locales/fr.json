@@ -28,7 +28,8 @@
       "context": "Les preuves dépassent le contexte du modèle. Réduisez le périmètre.",
       "scope": "Un passage cité est hors des sources sélectionnées. Posez de nouveau la question.",
       "wait": "L’appel annulé est encore en cours d’arrêt. Attendez avant de réessayer.",
-      "deadline": "Le délai a expiré. Réduisez le périmètre ou choisissez un modèle plus rapide.",
+      "deadline": "La réponse a pris plus de temps que la limite ne le permet. Réessayez ou réduisez le périmètre.",
+      "rateLimited": "Le fournisseur d’IA limite les requêtes pour le moment. Patientez un instant, puis reposez la question.",
       "model": "Aucun profil génératif configuré n’est disponible.",
       "unavailable": "La base de données n’est pas encore prête.",
       "sources": "Les sources n’ont pas pu être chargées."

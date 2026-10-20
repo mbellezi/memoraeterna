@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { PgPool } from "@app/db";
+import { StatementBudgetError, type PgPool } from "@app/db";
 import { ConsultationResultSchema } from "@app/domain";
 
-import { ActiveDeadline } from "@app/ai";
+import { ActiveDeadline, AiProviderError } from "@app/ai";
 import { askTimeoutMs, ConsultationService } from "./consultation-service.js";
 import { consultationSnapshot } from "./consultation-fixture.js";
 
@@ -18,7 +18,9 @@ const mocks = vi.hoisted(() => ({
     validate: vi.fn()
   },
   /** Every wiki, organization, curator or investigation repository the database package offers. */
-  legacy: { names: [] as string[], calls: [] as string[] }
+  legacy: { names: [] as string[], calls: [] as string[] },
+  /** What the service handed the retrieval repository to run its statements on. */
+  retrievalDb: null as { query(text: string): Promise<unknown> } | null
 }));
 vi.mock("@app/db", async (original) => {
   const db = await original<typeof import("@app/db")>();
@@ -39,7 +41,10 @@ vi.mock("@app/db", async (original) => {
         }
       ])
     ),
-    createConsultationRepository: () => mocks.retrieval,
+    createConsultationRepository: (db: typeof mocks.retrievalDb) => {
+      mocks.retrievalDb = db;
+      return mocks.retrieval;
+    },
     createKnowledgeConsultationRepository: () => mocks.grounding
   };
 });
@@ -85,7 +90,10 @@ type ModelCall = (
   context: unknown,
   signal: AbortSignal
 ) => Promise<unknown>;
-function service(runOrganizationTask: Mock<ModelCall> = vi.fn(async () => modelAnswer())) {
+function service(
+  runOrganizationTask: Mock<ModelCall> = vi.fn(async () => modelAnswer()),
+  pool = {} as PgPool
+) {
   const ai = {
     pinOrganizationProfile: vi.fn(async () => profile),
     runOrganizationTask,
@@ -94,7 +102,7 @@ function service(runOrganizationTask: Mock<ModelCall> = vi.fn(async () => modelA
   return {
     ai,
     service: new ConsultationService({
-      getPool: () => ({}) as PgPool,
+      getPool: () => pool,
       ai: ai as never,
       contentLanguage: async () => "en"
     })
@@ -445,5 +453,68 @@ describe("canceling and the time limit", () => {
     const result = await ask.ask(request());
     expect(result.answer).toEqual(answer);
     expect(runOrganizationTask).toHaveBeenCalledOnce();
+  });
+  it("stops preparing at the next step once the local work used the time up, and calls no model", async () => {
+    vi.useFakeTimers();
+    // The candidate search takes longer than the whole limit (a statement that ran on).
+    mocks.retrieval.candidates.mockImplementation(async () => {
+      await vi.advanceTimersByTimeAsync(askTimeoutMs + 1000);
+      return [row(1), row(2)];
+    });
+    const { ai, service: ask } = service();
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.deadline");
+    expect(mocks.grounding.contexts).not.toHaveBeenCalled();
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+  });
+  it("ends with the deadline error when the remaining time stopped a statement", async () => {
+    mocks.retrieval.candidates.mockRejectedValue(new StatementBudgetError());
+    const { ai, service: ask } = service();
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.deadline");
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+  });
+  it("bounds each statement it prepares with by what is left of its time", async () => {
+    vi.useFakeTimers();
+    const sent: string[] = [];
+    const pool = {
+      connect: async () => ({
+        query: async (text: string) => {
+          sent.push(text);
+          return { rows: [], rowCount: 0 };
+        },
+        release: () => undefined
+      })
+    } as unknown as PgPool;
+    mocks.retrieval.candidates.mockImplementation(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+      await mocks.retrievalDb!.query("select 'a candidate statement'");
+      return [row(1), row(2)];
+    });
+    const { service: ask } = service(undefined, pool);
+    await ask.ask(request());
+    expect(sent).toEqual([
+      `begin; set local statement_timeout = ${askTimeoutMs - 30_000}`,
+      "select 'a candidate statement'",
+      "commit"
+    ]);
+  });
+  it("names the provider's rate limit when it outlasts the retries, and asks only once", async () => {
+    const limited = new AiProviderError("AI provider request failed (429).", {
+      kind: "http",
+      transient: true,
+      status: 429,
+      retryAfterMs: 8_000
+    });
+    const task = vi.fn<ModelCall>().mockRejectedValue(limited);
+    const { service: ask } = service(task);
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.rateLimited");
+    expect(task).toHaveBeenCalledOnce();
+    // Other provider failures keep their own error.
+    const unavailable = new AiProviderError("AI provider request failed (503).", {
+      kind: "http",
+      transient: true,
+      status: 503
+    });
+    task.mockRejectedValue(unavailable);
+    await expect(ask.ask(request())).rejects.toBe(unavailable);
   });
 });

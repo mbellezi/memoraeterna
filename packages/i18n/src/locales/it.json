@@ -28,7 +28,8 @@
       "context": "Le prove superano il contesto del modello. Restringi l’ambito.",
       "scope": "Un brano citato è fuori dalle fonti selezionate. Poni di nuovo la domanda.",
       "wait": "La chiamata annullata sta ancora terminando. Attendi prima di riprovare.",
-      "deadline": "Il tempo limite è scaduto. Restringi l’ambito o scegli un modello più veloce.",
+      "deadline": "La risposta ha richiesto più tempo del limite consentito. Riprova o restringi l’ambito.",
+      "rateLimited": "Il provider di IA sta limitando le richieste in questo momento. Attendi un momento e chiedi di nuovo.",
       "model": "Nessun profilo generativo configurato disponibile.",
       "unavailable": "Il database non è ancora pronto.",
       "sources": "Non è stato possibile caricare le fonti."

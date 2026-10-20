@@ -28,7 +28,8 @@
       "context": "Las evidencias superan el contexto del modelo. Reduce el alcance.",
       "scope": "Un pasaje citado está fuera de las fuentes seleccionadas. Vuelve a preguntar.",
       "wait": "La llamada cancelada todavía está terminando. Espera antes de reintentar.",
-      "deadline": "Venció el tiempo límite. Reduce el alcance o elige un modelo más rápido.",
+      "deadline": "La respuesta tardó más de lo que permite el tiempo límite. Reintenta o reduce el alcance.",
+      "rateLimited": "El proveedor de IA está limitando las solicitudes en este momento. Espera un momento y vuelve a preguntar.",
       "model": "No hay un perfil generativo configurado disponible.",
       "unavailable": "La base de datos aún no está lista.",
       "sources": "No se pudieron cargar las fuentes."

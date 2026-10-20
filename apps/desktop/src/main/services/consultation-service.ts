@@ -10,8 +10,10 @@ import {
 } from "./prompt-runtime.js";
 import { z } from "zod";
 import {
+  budgetedQueries,
   createConsultationRepository,
   createKnowledgeConsultationRepository,
+  StatementBudgetError,
   type PgPool
 } from "@app/db";
 import {
@@ -26,7 +28,7 @@ import {
   type ConsultationRelation,
   type ConsultationResult
 } from "@app/domain";
-import { ActiveDeadline } from "@app/ai";
+import { ActiveDeadline, isRateLimitFailure } from "@app/ai";
 import type { AiService } from "./ai-service.js";
 
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
@@ -232,9 +234,13 @@ function consultationInstructions(question: string, language: string) {
 /** What the person sees when an answer fails, whatever layer failed. */
 function askFailure(error: unknown, canceled: AbortSignal, active: AbortSignal) {
   if (canceled.aborted) return new Error("consultation.errors.canceled");
-  if (active.aborted) return new Error("consultation.errors.deadline");
+  // A statement stopped by the remaining budget ends the Ask as its deadline does, a moment early.
+  if (active.aborted || error instanceof StatementBudgetError)
+    return new Error("consultation.errors.deadline");
   if (/organization\.errors\.model/.test(String(error)))
     return new Error("consultation.errors.model");
+  // The provider's rate limit outlasted the adapter's retries (a long wait is not retried inline).
+  if (isRateLimitFailure(error)) return new Error("consultation.errors.rateLimited");
   return error;
 }
 
@@ -263,10 +269,18 @@ export class ConsultationService {
     if (!pool) throw new Error("consultation.errors.unavailable");
     return pool;
   }
+  /**
+   * The database as an Ask uses it: no statement starts once `signal` ended, and each is bounded by
+   * what is left of the Ask's active time, so local work cannot run the Ask past its budget.
+   */
+  private queries(signal: AbortSignal) {
+    const deadline = ActiveDeadline.of(signal);
+    return budgetedQueries(this.pool(), () => askTimeoutMs - (deadline?.elapsedMs ?? 0), signal);
+  }
   /** Rejects a snapshot whose passages, relations or context changed since it was prepared. */
-  private async fresh(snapshot: ConsultationSnapshot) {
+  private async fresh(snapshot: ConsultationSnapshot, signal: AbortSignal) {
     if (snapshot.sample) return;
-    const grounding = createKnowledgeConsultationRepository(this.pool());
+    const grounding = createKnowledgeConsultationRepository(this.queries(signal));
     const scope = snapshot.consultationScope;
     if (scope?.topicId) {
       // Asked about a topic, the answer may rest only on what the topic's subtree still holds.
@@ -305,8 +319,10 @@ export class ConsultationService {
         );
         let stale = false;
         try {
-          await this.fresh(snapshot);
-        } catch {
+          await this.fresh(snapshot, signal);
+        } catch (error) {
+          // Running out of time is no change of the material: the Ask ends at its deadline.
+          if (error instanceof StatementBudgetError) throw error;
           stale = true;
         }
         signal.throwIfAborted();
@@ -326,11 +342,16 @@ export class ConsultationService {
       this.active.delete(input.requestId);
     }
   }
+  /**
+   * Selects what the answer may cite. Every statement is bounded by the Ask's remaining time and
+   * the signal is checked between the steps, so a slow step ends the Ask at its deadline.
+   */
   async prepare(input: ConsultationInput, signal: AbortSignal) {
-    const pool = this.pool(),
-      retrieval = createConsultationRepository(pool),
-      grounding = createKnowledgeConsultationRepository(pool);
+    const queries = this.queries(signal),
+      retrieval = createConsultationRepository(queries),
+      grounding = createKnowledgeConsultationRepository(queries);
     const sourceIds = await grounding.scope(input);
+    signal.throwIfAborted();
     if (!sourceIds.length)
       throw new Error(
         input.topicId
@@ -341,6 +362,7 @@ export class ConsultationService {
       workloadClass: "answer",
       operation: "wiki-consultation"
     });
+    signal.throwIfAborted();
     let vectorState: "disabled" | "available" | "unavailable" =
       input.mode === "text" ? "disabled" : "unavailable";
     let vectors: Array<{ id: string; score: number }> = [];
@@ -366,8 +388,9 @@ export class ConsultationService {
           );
           vectorState = "available";
         }
-      } catch {
+      } catch (error) {
         signal.throwIfAborted();
+        if (error instanceof StatementBudgetError) throw error;
       }
     const candidates = await retrieval.candidates(
       sourceIds,
@@ -376,6 +399,7 @@ export class ConsultationService {
       vectors.map((v) => v.id),
       input.topicId ?? null
     );
+    signal.throwIfAborted();
     const selected = rankConsultationCandidates(
       candidates.filter((c) => c.excerpt.length <= 12000),
       vectors
@@ -402,6 +426,7 @@ export class ConsultationService {
     )
       .map(({ chunkIds, ...c }) => ({ ...c, handles: chunkIds.map(handleOf) }))
       .slice(0, 60);
+    signal.throwIfAborted();
     const relations: ConsultationRelation[] = [];
     if (input.relationContext)
       for (const r of await grounding.relations(sourceIds)) {
@@ -425,9 +450,11 @@ export class ConsultationService {
         });
         if (relations.length === 6) break;
       }
+    signal.throwIfAborted();
     const language = z
       .enum(["en", "pt-BR", "it", "fr", "es"])
       .parse(await this.options.contentLanguage());
+    signal.throwIfAborted();
     const unpacked: ConsultationSnapshot = {
       promptPin: capturePromptPin(),
       consultationVersion,
@@ -514,7 +541,7 @@ export class ConsultationService {
       costEstimate: number | null = 0;
     for (let attempt = 0; attempt < 2 && !answer; attempt++) {
       signal.throwIfAborted();
-      await this.fresh(snapshot);
+      await this.fresh(snapshot, signal);
       const prompt = joinPrompts(base, attempt ? renderPrompt("consultation.repair") : "");
       const result = await this.options.ai.runOrganizationTask(
         profile,
@@ -534,7 +561,7 @@ export class ConsultationService {
         },
         signal,
         2048,
-        () => this.fresh(snapshot)
+        () => this.fresh(snapshot, signal)
       );
       auditIds.push(result.aiTaskRunId);
       inputTokens =

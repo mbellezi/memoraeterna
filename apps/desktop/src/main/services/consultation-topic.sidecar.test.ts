@@ -100,13 +100,28 @@ describe.skipIf(!sidecarInstalled)("Ask about a topic on a real PostgreSQL datab
 
   /** The service over the real database, with a model that cites the first passage. */
   const ask = (semantic = false) => {
+    // Every statement, on the pool or on a client checked out of it: an Ask runs each statement in
+    // its own transaction, bounded by its remaining time.
+    const record =
+      (query: (...a: unknown[]) => unknown) =>
+      (...args: unknown[]) => {
+        statements.push(String(typeof args[0] === "string" ? args[0] : ""));
+        return query(...args);
+      };
     const spied = new Proxy(pool!, {
       get(target, property) {
-        if (property !== "query") return Reflect.get(target, property) as unknown;
-        return (...args: unknown[]) => {
-          statements.push(String(typeof args[0] === "string" ? args[0] : ""));
-          return (target.query as (...a: unknown[]) => unknown)(...args);
-        };
+        if (property === "query") return record(target.query.bind(target) as never);
+        if (property === "connect")
+          return async () => {
+            const client = await target.connect();
+            return new Proxy(client, {
+              get: (checkedOut, name) =>
+                name === "query"
+                  ? record(checkedOut.query.bind(checkedOut) as never)
+                  : (Reflect.get(checkedOut, name) as unknown)
+            });
+          };
+        return Reflect.get(target, property) as unknown;
       }
     });
     const model = vi.fn(async () => ({

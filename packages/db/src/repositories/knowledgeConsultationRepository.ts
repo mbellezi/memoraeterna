@@ -38,7 +38,7 @@ const dependencyTables: Record<string, string> = {
  * summary concepts, entity mentions and source relations tied to those passages, and the check that
  * all of it is still current. It reads no page and no organization state.
  */
-export function createKnowledgeConsultationRepository(pool: PgPool) {
+export function createKnowledgeConsultationRepository(pool: Pick<PgPool, "query">) {
   const api = {
     /**
      * The sources a question may read: the selected ones (all when none) and, optionally, their

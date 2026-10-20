@@ -28,7 +28,8 @@
       "context": "The evidence exceeds the selected model’s context budget. Narrow the scope.",
       "scope": "A cited passage is outside the selected sources. Ask again.",
       "wait": "The canceled model call is still settling. Wait for it to finish before retrying.",
-      "deadline": "The time limit expired. Narrow the scope or choose a faster model.",
+      "deadline": "Answering took longer than the time limit allows. Try again or narrow the scope.",
+      "rateLimited": "The AI provider is limiting requests right now. Wait a moment and ask again.",
       "model": "No eligible configured generative profile is available.",
       "unavailable": "The database is not ready.",
       "sources": "The sources could not be loaded."

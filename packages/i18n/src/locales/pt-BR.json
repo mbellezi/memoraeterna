@@ -28,7 +28,8 @@
       "context": "As evidências excedem o contexto do modelo. Reduza o escopo.",
       "scope": "Um trecho citado está fora das fontes selecionadas. Pergunte novamente.",
       "wait": "A chamada cancelada ainda está terminando. Aguarde antes de tentar novamente.",
-      "deadline": "O tempo limite expirou. Reduza o escopo ou escolha um modelo mais rápido.",
+      "deadline": "A resposta levou mais tempo do que o limite permite. Tente novamente ou reduza o escopo.",
+      "rateLimited": "O provedor de IA está limitando as solicitações no momento. Aguarde um pouco e pergunte novamente.",
       "model": "Nenhum perfil generativo configurado está disponível.",
       "unavailable": "A base de dados ainda não está pronta.",
       "sources": "Não foi possível carregar as fontes."
