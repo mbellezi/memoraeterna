@@ -271,11 +271,15 @@ export class ConsultationService {
   }
   /**
    * The database as an Ask uses it: no statement starts once `signal` ended, and each is bounded by
-   * what is left of the Ask's active time, so local work cannot run the Ask past its budget.
+   * what is left of the Ask's active time, so local work cannot run the Ask past its budget. A
+   * signal without an active deadline (a caller of `prepare` outside `ask`) has no clock of its
+   * own: its budget starts when the queries are built.
    */
   private queries(signal: AbortSignal) {
     const deadline = ActiveDeadline.of(signal);
-    return budgetedQueries(this.pool(), () => askTimeoutMs - (deadline?.elapsedMs ?? 0), signal);
+    const built = Date.now();
+    const spentMs = () => (deadline ? deadline.elapsedMs : Date.now() - built);
+    return budgetedQueries(this.pool(), () => askTimeoutMs - spentMs(), signal);
   }
   /** Rejects a snapshot whose passages, relations or context changed since it was prepared. */
   private async fresh(snapshot: ConsultationSnapshot, signal: AbortSignal) {

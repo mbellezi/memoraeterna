@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { StatementBudgetError, type PgPool } from "@app/db";
-import { ConsultationResultSchema } from "@app/domain";
+import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 
 import { ActiveDeadline, AiProviderError } from "@app/ai";
 import { askTimeoutMs, ConsultationService } from "./consultation-service.js";
@@ -527,6 +527,42 @@ describe("canceling and the time limit", () => {
       "select 'a candidate statement'",
       "commit"
     ]);
+  });
+  it("starts the budget of a preparation outside an Ask when its queries are built, not at the full limit", async () => {
+    vi.useFakeTimers();
+    const sent: string[] = [];
+    const pool = {
+      connect: async () => ({
+        query: async (text: string) => {
+          sent.push(text);
+          return { rows: [], rowCount: 0 };
+        },
+        release: () => undefined
+      })
+    } as unknown as PgPool;
+    let late: Promise<unknown> | undefined;
+    mocks.retrieval.candidates.mockImplementation(async () => {
+      await vi.advanceTimersByTimeAsync(45_000);
+      await mocks.retrievalDb!.query("select 'a statement after 45 s'");
+      await vi.advanceTimersByTimeAsync(askTimeoutMs);
+      late = mocks.retrievalDb!.query("select 'a statement after the limit'");
+      await late.catch(() => undefined);
+      return [row(1), row(2)];
+    });
+    const { service: ask } = service(undefined, pool);
+    // A plain signal: no active deadline stands behind it, so the service keeps the time itself.
+    const prepared = ask.prepare(
+      ConsultationInputSchema.parse({ requestId: randomUUID(), question: "Does practice help?" }),
+      new AbortController().signal
+    );
+    await expect(prepared).resolves.toBeDefined();
+    expect(sent).toEqual([
+      `begin; set local statement_timeout = ${askTimeoutMs - 45_000}`,
+      "select 'a statement after 45 s'",
+      "commit"
+    ]);
+    // Once the limit passed, no statement starts at all.
+    await expect(late).rejects.toBeInstanceOf(StatementBudgetError);
   });
   it("names the provider's rate limit when it outlasts the retries, and asks only once", async () => {
     const limited = new AiProviderError("AI provider request failed (429).", {
