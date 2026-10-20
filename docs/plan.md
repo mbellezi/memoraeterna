@@ -731,6 +731,14 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
       batches each identity call covers one batch, so X7-REF needs 45 generative calls per chapter (F3 closed on
       ≤45); grouping up to 24 entities per call across a source's batches projects about 38. Adopted only if the
       merged-entity count stays within ±5% of the per-batch run, measured on X7-REF; the bar returns to ≤40.
+- [ ] A stored unaccented `tsvector` with a GIN index for Ask retrieval (F3 soak, 2026-10-20): the text, title, note
+      and entity signals still rank every chunk in scope at about 0.07 ms per chunk, about 2 s near 25-30 k chunks.
+      A migration, so it re-opens gate M (D44): generated, in the baseline and manifest, applied and verified on a
+      real PostgreSQL with EXPLAIN, and the candidates statement measured again on the soak database against
+      today's p95 of 176 ms.
+- [ ] Cancel a running Ask statement (F3 soak, 2026-10-20): the user's cancel stops an Ask between steps, but a
+      statement already running goes on until it ends or its `statement_timeout` stops it; `pg_cancel_backend` on
+      the backend of the client the Ask reserved stops it at once.
 
 Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
 blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
