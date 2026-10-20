@@ -49,6 +49,7 @@ binding decision records of F2 and F3. The measurements are dated, not rules.
 - [f2-decisions.md](f2-decisions.md) — the binding F2 decisions (D1-D40), owner-question defaults, gates and
   measurement datasets for the Topic Tree Engine.
 - [kpi-f2.md](kpi-f2.md) — F2 measurements, starting with gate W (the legacy wiki wipe).
+- [kpi-f3.md](kpi-f3.md) — F3 measurements: gate X (M2), the 24 h soak and the close.
 - [f3-decisions.md](f3-decisions.md) — the binding F3 decisions (D1-D48), owner-question answers Q1-Q20, gates,
   measurement rules and the budget for Relations v2 and the AI runtime lanes.
 - [spikes/f3-m0.md](spikes/f3-m0.md) — F3 M0: the offline re-score of the pinned matching runs, the retrieval

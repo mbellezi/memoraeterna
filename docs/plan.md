@@ -686,12 +686,12 @@ Wave 3 (gate F after T58; gate P at the end):
 
 Wave 4 (gate X at the end):
 - [x] T63 Campaign M2: X1-X5, X7 on X7-REF and S1 on the frozen configuration.
-- [ ] T64 24 h soak (X6), run by the orchestrator.
-- [ ] T64r Soak report and failure audit.
+- [x] T64 24 h soak (X6), run by the orchestrator.
+- [x] T64r Soak report and failure audit.
 - [x] T65 Rule, stack and runbook sync (`rules/`, `STACK.md`, `docs/golden-library.md`).
 
 Wave 5 (exit):
-- [ ] T66 Exit measurement (`docs/kpi-f3.md`) and phase close.
+- [x] T66 Exit measurement (`docs/kpi-f3.md`) and phase close.
 
 Exit (X1-X7 and S1 as defined in `docs/f3-decisions.md`, on the frozen configuration): fixture ≥27/28 expected on
 the note layer over pinned notes (mean of four samples), 0/35 forbidden; ≤5% loss of today's reverse-only
