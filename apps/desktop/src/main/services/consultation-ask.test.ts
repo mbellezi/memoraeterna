@@ -472,6 +472,37 @@ describe("canceling and the time limit", () => {
     await expect(ask.ask(request())).rejects.toThrow("consultation.errors.deadline");
     expect(ai.runOrganizationTask).not.toHaveBeenCalled();
   });
+  it("ends with the deadline error, not a stale answer, when the check after the answer ran out of time", async () => {
+    const { ai, service: ask } = service();
+    // The check before the model call passes; the one after the answer is stopped by the budget.
+    mocks.grounding.validate.mockResolvedValueOnce(undefined);
+    mocks.grounding.validate.mockRejectedValue(new StatementBudgetError());
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.deadline");
+    expect(ai.runOrganizationTask).toHaveBeenCalledOnce();
+    expect(mocks.grounding.validate).toHaveBeenCalledTimes(2);
+  });
+  it("ends with the deadline error when the semantic search ran out of time, and calls no model", async () => {
+    const { ai, service: ask } = service();
+    ai.runConsultationEmbedding.mockResolvedValue({
+      output: [0.1, 0.2],
+      modelId: "embedding-model",
+      providerId: "embedding-provider",
+      runtime: "test",
+      embeddingSpaceKey: "space"
+    } as never);
+    mocks.retrieval.vector.mockRejectedValue(new StatementBudgetError());
+    await expect(ask.ask(request({ mode: "hybrid" }))).rejects.toThrow(
+      "consultation.errors.deadline"
+    );
+    expect(mocks.retrieval.vector).toHaveBeenCalledOnce();
+    expect(mocks.retrieval.candidates).not.toHaveBeenCalled();
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+    // Any other failure of the semantic search only leaves the Ask on its text signals.
+    mocks.retrieval.vector.mockRejectedValue(new Error("relation embeddings_768 does not exist"));
+    const result = await ask.ask(request({ mode: "hybrid" }));
+    expect(result.coverage.vector).toBe("unavailable");
+    expect(ai.runOrganizationTask).toHaveBeenCalledOnce();
+  });
   it("bounds each statement it prepares with by what is left of its time", async () => {
     vi.useFakeTimers();
     const sent: string[] = [];
