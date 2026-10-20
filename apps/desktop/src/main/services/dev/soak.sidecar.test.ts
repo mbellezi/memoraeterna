@@ -22,6 +22,7 @@ import { startFakeRemote, explanationRoute } from "./fake-remote-install.js";
 import { findRealRemoteReach } from "./soak-routes.js";
 import { readSoakPlan } from "./soak-plan.js";
 import {
+  countAnswerCalls,
   forgetExplanations,
   pickEditableNote,
   pickQuestionTitle,
@@ -212,6 +213,18 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     ]);
     expect(runs[0]!.error).toHaveLength(300);
     expect(await readTaskRuns(pool!, Date.now() + 60_000)).toEqual([]);
+    // Whether an Ask reached its model: the answer-class calls that ended since it began.
+    const askBegan = Date.now() - 5_000;
+    expect(await countAnswerCalls(pool!, askBegan)).toBe(0);
+    await pool!.query(
+      `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status, started_at, finished_at,
+         lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode, retry_wait_ms, requeue_ms, queue_ms, error)
+       values ('structured-output', 'openai-compatible', 'answer', 'remote', 3000, 'canceled', now() - interval '3 seconds', now(),
+         'remote:abc', 'answer', 0, 180000, 'met', false, 'json', 0, 0, 1, 'The operation timed out.'),
+              ('structured-output', 'openai-compatible', 'answer', 'remote', 3000, 'succeeded', now() - interval '10 minutes', now() - interval '9 minutes',
+         'remote:abc', 'answer', 0, 180000, 'met', false, 'json', 0, 0, 1, null)`
+    );
+    expect(await countAnswerCalls(pool!, askBegan)).toBe(1);
 
     await pool!.query(
       `insert into jobs (type, status, lane, payload, attempts, error, finished_at)

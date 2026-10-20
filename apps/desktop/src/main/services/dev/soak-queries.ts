@@ -106,6 +106,20 @@ export async function readJobs(
   };
 }
 
+/**
+ * The answer-class calls (Ask's model calls) the audit recorded as ended since `sinceMs` (epoch
+ * milliseconds), whatever their outcome: whether an Ask reached its model. The driver runs one Ask
+ * at a time, so they are that Ask's.
+ */
+export async function countAnswerCalls(db: Db, sinceMs: number): Promise<number> {
+  const result = await db.query<{ calls: number }>(
+    `select count(*)::int as calls from ai_task_runs
+      where workload_class = 'answer' and finished_at is not null and finished_at >= $1`,
+    [new Date(sinceMs)]
+  );
+  return result.rows[0]?.calls ?? 0;
+}
+
 /** The audit rows of the calls that ended after `sinceMs` (epoch milliseconds), oldest first. */
 export async function readTaskRuns(db: Db, sinceMs: number): Promise<TaskRunRecord[]> {
   const result = await db.query<

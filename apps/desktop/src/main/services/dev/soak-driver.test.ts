@@ -4,7 +4,13 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseBreakerLog, runSoak, type SoakClock, type SoakPorts } from "./soak-driver.js";
+import {
+  parseBreakerLog,
+  runSoak,
+  SoakActionFailure,
+  type SoakClock,
+  type SoakPorts
+} from "./soak-driver.js";
 import { soakProfileSchema, type SoakProfile } from "./soak-plan.js";
 import {
   MemoryEventSink,
@@ -296,6 +302,25 @@ describe("the soak driver", () => {
       error: "sourceWorkspace.conflict"
     });
     expect(actions(sink).filter((action) => action.status === "ok").length).toBeGreaterThan(10);
+  });
+
+  it("keeps the facts a failing port reports about its action", async () => {
+    const { ports: driverPorts } = ports({
+      ask: async () => {
+        throw new SoakActionFailure("consultation.errors.deadline", {
+          elapsedMs: 121_500,
+          remoteCallStarted: false
+        });
+      }
+    });
+    const { clock, sink, done } = await start(driverPorts);
+    await clock.advance(13 * minute);
+    await done;
+    expect(actions(sink).find((action) => action.kind === "ask")).toMatchObject({
+      status: "failed",
+      error: "consultation.errors.deadline",
+      detail: { elapsedMs: 121_500, remoteCallStarted: false }
+    });
   });
 
   it("writes each audited call once, however often it is read", async () => {

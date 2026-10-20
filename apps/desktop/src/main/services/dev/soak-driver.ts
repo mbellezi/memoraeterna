@@ -29,6 +29,17 @@ import {
 /** Details an action reports about itself: counts, outcomes, error classes; never content. */
 export type ActionDetail = Record<string, string | number | boolean | null>;
 
+/** A port's failure that still reports facts about the action (how long it ran, how far it got). */
+export class SoakActionFailure extends Error {
+  public readonly detail: ActionDetail;
+
+  public constructor(message: string, detail: ActionDetail, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SoakActionFailure";
+    this.detail = detail;
+  }
+}
+
 export interface SoakClock {
   now(): number;
   /** Waits; resolves early (without error) when `signal` aborts. */
@@ -346,7 +357,7 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       }
     } catch (error) {
       logger.error(`SOAK ${entry.kind} #${entry.index} failed: ${failureText(error)}`);
-      finish("failed", {}, failureText(error));
+      finish("failed", error instanceof SoakActionFailure ? error.detail : {}, failureText(error));
     }
   };
 

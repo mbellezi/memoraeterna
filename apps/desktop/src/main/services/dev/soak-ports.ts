@@ -21,10 +21,11 @@ import type { ConsultationService } from "../consultation-service.js";
 import type { IngestionService } from "../ingestion-service.js";
 import type { KnowledgeService } from "../knowledge-service.js";
 import type { RelationExplanationService } from "../relation-explanation-service.js";
-import type { ActionDetail, SoakPorts } from "./soak-driver.js";
+import { SoakActionFailure, type ActionDetail, type SoakPorts } from "./soak-driver.js";
 import type { LocalFaultController } from "./soak-local-faults.js";
 import type { SoakProfile } from "./soak-plan.js";
 import {
+  countAnswerCalls,
   forgetExplanations,
   pickEditableNote,
   pickQuestionTitle,
@@ -246,6 +247,7 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
     async ask(index) {
       const title = await pickQuestionTitle(deps.pool, seed, index);
       if (title === null) return { outcome: "no_source" };
+      const began = Date.now();
       try {
         const result = await deps.consultation.ask(
           ConsultationInputSchema.parse({
@@ -265,7 +267,15 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
       } catch (error) {
         const outcome = answerOutcome(error);
         if (outcome) return { outcome };
-        throw error;
+        // How long the Ask ran, and whether it reached its model at all (one that spent its time
+        // preparing never calls it); unknown when the audit cannot be read.
+        const elapsedMs = Date.now() - began;
+        const calls = await countAnswerCalls(deps.pool, began).catch(() => null);
+        throw new SoakActionFailure(
+          error instanceof Error ? error.message : String(error),
+          { elapsedMs, remoteCallStarted: calls === null ? null : calls > 0 },
+          { cause: error }
+        );
       }
     },
 

@@ -395,9 +395,8 @@ describe("repairs", () => {
 
   it("counts only structured generative calls", () => {
     expect(isStructuredGenerative(row(0, { taskType: "embedding" }))).toBe(false);
-    expect(isStructuredGenerative(row(0, { taskType: "reranking", schemaMode: "json" }))).toBe(
-      false
-    );
+    // A dedicated cross-encoder ranker records no schema mode: it generates nothing.
+    expect(isStructuredGenerative(row(0, { taskType: "reranking", schemaMode: null }))).toBe(false);
     expect(isStructuredGenerative(row(0, { taskType: "summarization", schemaMode: "none" }))).toBe(
       false
     );
@@ -405,6 +404,24 @@ describe("repairs", () => {
       isStructuredGenerative(row(0, { taskType: "summarization", schemaMode: "grammar" }))
     ).toBe(true);
     expect(isStructuredGenerative(row(0, { taskType: "knowledge-graph-generation" }))).toBe(true);
+  });
+  it("counts the writer judging a source pair, and its repair, with the structured calls", () => {
+    // The source judge runs the reranking task on the writer, which records a schema mode.
+    const judge = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+      row(offsetMs, { taskType: "reranking", workloadClass: "decide", ...overrides });
+    expect(isStructuredGenerative(judge(0))).toBe(true);
+    expect(isStructuredGenerative(judge(0, { schemaMode: "json" }))).toBe(true);
+    const ranker = judge(70 * minute, { modelId: "ranker", schemaMode: null });
+    const run = goodRun({
+      rows: [
+        ranker,
+        judge(80 * minute, { attempt: 0 }),
+        judge(81 * minute, { attempt: 1, isRepair: true })
+      ]
+    });
+    const check = analyzeRun(run).checks.find((entry) => entry.id === "repairs")!;
+    // The writer on the local MLX lane: set aside by decision 31a, reported with its repair.
+    expect(check.details).toContain("decide: counted 0 of 0 = 0.00 %; set aside 1 of 2 = 50.00 %");
   });
 });
 
@@ -991,6 +1008,44 @@ describe("failed jobs", () => {
     expect(failureCheck(report).details.join(" ")).toContain("2 failed job(s) left out");
   });
 
+  it("lets only a local injected call, or a remote one that failed, explain a failed job", () => {
+    // A rate limit injected on an explanation that the retry then answered, on another lane.
+    const limited = exchange(100 * minute, {
+      provider: "codex-wire",
+      kind: "rate_limit",
+      injected: true,
+      status: 429
+    });
+    const recovered = row(100 * minute, {
+      taskType: "text-generation",
+      lane: "remote:ccc",
+      runtime: "remote",
+      provider: "openai-codex",
+      durationMs: 9_000
+    });
+    const graph = failedJob(100 * minute + 5_000);
+    // A local call the helper kill ended, and the job that failed with it.
+    const killed = row(140 * minute, {
+      status: "failed",
+      error: "errors.localModels.runtimeFailed",
+      durationMs: 5_000
+    });
+    const kill: SoakEvent = {
+      type: "local",
+      kind: "mlx_kill",
+      at: at(140 * minute + 1_000),
+      detail: { killed: true, pid: 10, status: "ok" }
+    };
+    const crashed = failedJob(140 * minute + 6_000, { error: "errors.localModels.runtimeFailed" });
+    const run = goodRun({ rows: [recovered, killed], events: [limited, graph, kill, crashed] });
+    const injected = injectedRows(run);
+    expect(injected.get(recovered.id)).toBe("rate_limit");
+    expect([...injectedJobFailures(run, injected).entries()]).toEqual([[crashed.id, "mlx_kill"]]);
+    expect(analyzeRun(run).failureAudit).toEqual([
+      expect.objectContaining({ class: "job", error: "errors.entityIdentity.invalidOutput" })
+    ]);
+  });
+
   it("asks for the jobs the samples counted as failed that the run did not record", () => {
     const counted = samples();
     for (const point of counted.slice(100)) point.jobCounts = { failed: 2, succeeded: 40 };
@@ -1023,6 +1078,62 @@ describe("failures and files", () => {
     expect(text("fetch failed ECONNREFUSED")).toBe("transient: network");
     expect(text("organization.errors.invalidOutput")).toBe("permanent: output");
     expect(text("something odd")).toBeNull();
+    // Output the writer could not shape, or none of whose items held.
+    expect(text("atomic_note_output_shape")).toBe("permanent: output");
+    expect(text("summary_nothing_valid")).toBe("permanent: output");
+    expect(text("knowledge_graph_output_invalid:nothing_valid")).toBe("permanent: output");
+    // A local helper that died or a busy local model: transient, as a job retry treats them.
+    expect(text("errors.localModels.runtimeFailed")).toBe("transient: local runtime");
+    expect(text("errors.localModels.modelBusy")).toBe("transient: local runtime");
+    // The caller's own cap (an Ask's budget) canceled the call; a provider deadline stays a timeout.
+    expect(classifyError(row(0, { status: "canceled", error: "The operation timed out." }))).toBe(
+      "cancelled by caller deadline"
+    );
+    expect(text("The operation timed out.")).toBe("transient: timeout");
+  });
+
+  it("lists a failed driver action that no injected fault explains, and asks a person", () => {
+    const action = (
+      offsetMs: number,
+      overrides: Partial<Extract<SoakEvent, { type: "action" }>> = {}
+    ): SoakEvent => ({
+      type: "action",
+      kind: "ask",
+      index: ++counter,
+      scheduledAt: at(offsetMs),
+      startedAt: at(offsetMs),
+      durationMs: 20_000,
+      status: "failed",
+      detail: {},
+      ...overrides
+    });
+    const limited = exchange(100 * minute + 5_000, {
+      provider: "openai-compatible",
+      kind: "rate_limit",
+      injected: true,
+      status: 429
+    });
+    const explained = action(100 * minute, { error: "AI provider request failed (429)." });
+    const answered = action(110 * minute, { status: "ok" });
+    expect(
+      statusOf(
+        analyzeRun(goodRun({ events: [limited, explained, answered] })).checks,
+        "failure-handling"
+      )
+    ).toBe("pass");
+    const late = action(120 * minute, {
+      index: 98,
+      durationMs: 150_000,
+      error: "consultation.errors.deadline",
+      detail: { elapsedMs: 150_000, remoteCallStarted: false }
+    });
+    const report = analyzeRun(goodRun({ events: [limited, explained, late] }));
+    const check = report.checks.find((entry) => entry.id === "failure-handling")!;
+    expect(check.status).toBe("review");
+    expect(check.value).toContain("1 failed driver action(s) with no injected fault");
+    expect(check.details).toContain(
+      `failed action ask #98 at ${at(120 * minute)} after 150000 ms (elapsedMs 150000, remoteCallStarted false): consultation.errors.deadline`
+    );
   });
 
   it("attributes a failed local call to the fault that took effect during it, and to no other", () => {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { SoakActionFailure } from "./soak-driver.js";
 import { LocalFaultController } from "./soak-local-faults.js";
 import { soakProfileSchema } from "./soak-plan.js";
 import {
@@ -16,6 +17,7 @@ import {
 import { MemoryEventSink, soakFiles, soakSampleSchema } from "./soak-records.js";
 
 const queries = vi.hoisted(() => ({
+  countAnswerCalls: vi.fn(),
   pickRelationsToExplain: vi.fn(),
   forgetExplanations: vi.fn(),
   pickEditableNote: vi.fn(),
@@ -236,9 +238,37 @@ describe("the ports", () => {
     (d.consultation.ask as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("boom")
     );
+    queries.countAnswerCalls.mockResolvedValueOnce(0);
     await expect(ports.ask(5)).rejects.toThrow("boom");
     queries.pickQuestionTitle.mockResolvedValue(null);
     expect(await ports.ask(6)).toEqual({ outcome: "no_source" });
+  });
+
+  it("records how long a failed Ask ran and whether it reached its model", async () => {
+    queries.pickQuestionTitle.mockResolvedValue("Memory");
+    const { deps: d } = deps();
+    const ports = await createSoakPorts(d);
+    const ask = d.consultation.ask as unknown as ReturnType<typeof vi.fn>;
+    const failure = async () => ports.ask(7).catch((error: unknown) => error);
+    ask.mockRejectedValueOnce(new Error("consultation.errors.deadline"));
+    queries.countAnswerCalls.mockResolvedValueOnce(0);
+    const late = await failure();
+    expect(late).toBeInstanceOf(SoakActionFailure);
+    expect(late).toMatchObject({
+      message: "consultation.errors.deadline",
+      detail: { elapsedMs: expect.any(Number), remoteCallStarted: false }
+    });
+    // The calls counted are those since the Ask began.
+    const [db, since] = queries.countAnswerCalls.mock.calls.at(-1)!;
+    expect(db).toBe(d.pool);
+    expect(since).toBeLessThanOrEqual(Date.now());
+    ask.mockRejectedValueOnce(new Error("AI provider request failed (429)."));
+    queries.countAnswerCalls.mockResolvedValueOnce(1);
+    expect(await failure()).toMatchObject({ detail: { remoteCallStarted: true } });
+    // Unknown when the audit cannot be read.
+    ask.mockRejectedValueOnce(new Error("consultation.errors.failed"));
+    queries.countAnswerCalls.mockRejectedValueOnce(new Error("pool closed"));
+    expect(await failure()).toMatchObject({ detail: { remoteCallStarted: null } });
   });
 
   it("opens explanations together, forgets the ones that were written before, and tallies the outcomes", async () => {

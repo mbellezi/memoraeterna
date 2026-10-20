@@ -25,6 +25,7 @@ import {
   soakMetaSchema,
   soakSampleSchema,
   taskRunRecordSchema,
+  type ActionRecord,
   type ExchangeRecord,
   type JobFailureEvent,
   type LocalFaultRecord,
@@ -115,7 +116,10 @@ const structuredTasks = new Set([
   "claim-extraction"
 ]);
 export function isStructuredGenerative(row: TaskRunRecord): boolean {
-  if (row.taskType === "embedding" || row.taskType === "reranking") return false;
+  if (row.taskType === "embedding") return false;
+  // A reranking row that records a schema mode is a generative model judging with a structured
+  // verdict (the source judge on the writer); a dedicated cross-encoder ranker records none.
+  if (row.taskType === "reranking") return row.schemaMode !== null;
   return (
     structuredTasks.has(row.taskType) ||
     row.schemaMode === "strict" ||
@@ -146,6 +150,8 @@ const localsOf = (events: readonly SoakEvent[]) =>
   events.filter((event): event is LocalFaultRecord => event.type === "local");
 const jobFailuresOf = (events: readonly SoakEvent[]) =>
   events.filter((event): event is JobFailureEvent => event.type === "job_failure");
+const actionsOf = (events: readonly SoakEvent[]) =>
+  events.filter((event): event is ActionRecord => event.type === "action");
 
 /** The marker an injected error carries in the audit (soak-local-faults.ts). */
 const injectedMarker = "soak-injected";
@@ -750,7 +756,13 @@ export function classifyError(row: TaskRunRecord): string | null {
 /** The same reading for the error a failed job kept. */
 function classifyErrorText(error: string | null, status: string): string | null {
   const text = error ?? "";
+  // The caller's own cap ended the call (an Ask's budget, for one), not a provider deadline.
+  if (status === "canceled" && /^The operation timed out\.?$/u.test(text.trim()))
+    return "cancelled by caller deadline";
   if (/429|rate[ _]?limit|usage_limit/iu.test(text)) return "transient: rate limit";
+  // The local helper died without answering, or the local model was busy (job-failure.ts).
+  if (/errors\.localModels\.(?:runtimeFailed|modelBusy)/u.test(text))
+    return "transient: local runtime";
   if (/\b5\d\d\b|overloaded|unavailable|server error/iu.test(text)) return "transient: server";
   if (/stalled|sent no data|did not respond|no answer text|deadline|timed? ?out/iu.test(text))
     return "transient: timeout";
@@ -758,7 +770,8 @@ function classifyErrorText(error: string | null, status: string): string | null 
     return "transient: network";
   if (/provider ?unavailable|circuit/iu.test(text)) return "transient: breaker";
   if (/context|exceed|too many tokens/iu.test(text)) return "permanent: context";
-  if (/invalid|schema|json|parse|unparseable/iu.test(text)) return "permanent: output";
+  if (/invalid|output_shape|nothing_valid|schema|json|parse|unparseable/iu.test(text))
+    return "permanent: output";
   if (/401|403|credential|unauthorized|forbidden/iu.test(text)) return "permanent: auth";
   if (/abort|cancel/iu.test(text) || status === "canceled") return "cancelled";
   return null;
@@ -769,15 +782,22 @@ const jobFaultLinkMs = 30_000;
 
 /**
  * The failed jobs an injected fault explains: those whose error names the marker, and those that
- * failed while, or right after, an injected call (`injectedRows`) was running. A job holds no
- * link to its calls, so the time is what ties them.
+ * failed while, or right after, an injected call (`injectedRows`) that could be their own was
+ * running: a call on the local lane, or a remote call that itself failed. A job holds no link to
+ * its calls, so the time is what ties them; a remote call that got its answer in the end (a
+ * retried 429, a slow answer) explains no failure.
  */
 export function injectedJobFailures(
   run: LoadedRun,
   injected: Map<string, string>
 ): Map<string, string> {
   const reasons = new Map<string, string>();
-  const calls = run.rows.filter((row) => injected.has(row.id));
+  const calls = run.rows.filter(
+    (row) =>
+      injected.has(row.id) &&
+      ((row.lane ?? "local") === "local" ||
+        (row.lane?.startsWith("remote:") === true && row.status !== "succeeded"))
+  );
   for (const job of jobFailuresOf(run.events)) {
     if (job.error?.includes(injectedMarker)) {
       reasons.set(job.id, "injected error");
@@ -791,6 +811,33 @@ export function injectedJobFailures(
   }
   return reasons;
 }
+
+/**
+ * The driver's failed actions (an Ask, an explanation...) that overlap no injected exchange. An
+ * action names no provider, so an injected exchange on any fake explains it; one that overlaps
+ * none is a failure of the product the call and job audits may not show (an Ask that ran out of
+ * time before its model call has no failed call).
+ */
+export function unexplainedActionFailures(run: LoadedRun): ActionRecord[] {
+  const grace = 1_000;
+  const injected = exchangesOf(run.events).filter((exchange) => exchange.injected);
+  return actionsOf(run.events).filter((action) => {
+    if (action.status !== "failed") return false;
+    const start = toMs(action.startedAt) - grace;
+    const end = toMs(action.startedAt) + action.durationMs + grace;
+    return !injected.some(
+      (exchange) => toMs(exchange.startedAt) <= end && toMs(exchange.endedAt) >= start
+    );
+  });
+}
+
+/** One failed action, with the facts its port recorded (how long it ran, how far it got). */
+const actionLine = (action: ActionRecord) => {
+  const facts = Object.entries(action.detail)
+    .map(([key, value]) => `${key} ${String(value)}`)
+    .join(", ");
+  return `failed action ${action.kind} #${action.index} at ${action.startedAt} after ${action.durationMs} ms${facts ? ` (${facts})` : ""}: ${action.error ?? "no error kept"}`;
+};
 
 /** A failure to audit: a failed call or a failed job, read the same way. */
 interface Failure {
@@ -809,6 +856,7 @@ function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: numbe
   const calls = run.rows.filter((row) => row.status !== "succeeded" && !injected.has(row.id));
   const explained = injectedJobFailures(run, injected);
   const jobs = jobFailuresOf(run.events).filter((job) => !explained.has(job.id));
+  const actions = unexplainedActionFailures(run);
   // Failed jobs the samples count that no record explains (a run that did not record them, or a
   // collector that missed one): a person reads the jobs table for them.
   const samples = run.samples.toSorted((a, b) => toMs(a.at) - toMs(b.at));
@@ -859,18 +907,22 @@ function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: numbe
     error: failure.error
   }));
   const unclassified = rows.filter((row) => row["classified as"] === "unclassified").length;
-  const total = failures.length + unrecorded;
+  const total = failures.length + unrecorded + actions.length;
   return {
     rows,
     total: failures.length,
     check: {
       id: "failure-handling",
       title: "Failure handling",
-      bar: "every non-injected failure (call or job) classified correctly (audited sample of 50); every wedged event explained",
+      bar: "every non-injected failure (call, job or driver action) classified correctly (audited sample of 50); every wedged event explained",
       status: total === 0 ? "pass" : "review",
-      value: `${calls.length} non-injected failed call(s), ${jobs.length} non-injected failed job(s)${unrecorded > 0 ? `, ${unrecorded} more failed job(s) in the job counts with no record` : ""}; ${rows.length} in the audited sample, ${unclassified} unclassified by the error text`,
+      value: `${calls.length} non-injected failed call(s), ${jobs.length} non-injected failed job(s)${unrecorded > 0 ? `, ${unrecorded} more failed job(s) in the job counts with no record` : ""}, ${actions.length} failed driver action(s) with no injected fault; ${rows.length} in the audited sample, ${unclassified} unclassified by the error text`,
       details: [
         "The classification column is a first reading of the error text; a person confirms each row (T64r) and explains every wedged event.",
+        ...actions.slice(0, 12).map(actionLine),
+        ...(actions.length > 12
+          ? [`${actions.length - 12} more failed driver action(s) with no injected fault.`]
+          : []),
         ...jobs
           .slice(0, 12)
           .map(
