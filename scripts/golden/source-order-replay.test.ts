@@ -5,10 +5,12 @@ import {
   renderReplayMarkdown,
   replayInputSchema,
   replayOrder,
+  replayOutcomes,
   replaySourceOrders,
   runSourceOrderReplay,
   shuffledOrder,
-  type ReplayInput
+  type ReplayInput,
+  type SelectedPairContext
 } from "./source-order-replay.ts";
 
 /** Unit vectors at a given cosine from axis 0 (each in its own plane). */
@@ -115,5 +117,72 @@ describe("source-order replay (S1)", () => {
     expect(replayInputSchema.safeParse({ format: "other" }).success).toBe(false);
     expect(await runSourceOrderReplay(["--help"])).toContain("--input");
     await expect(runSourceOrderReplay([])).rejects.toThrow("--input is required.");
+  });
+
+  it("counts the arrivals that had a pair to judge, the calls of a judge that takes a root in one call", () => {
+    const one = replayOrder(input(), ["A", "B", "C", "D"], { neighbours: 1 });
+    expect(one.batches).toBe(one.calls);
+    const two = replayOrder(input(), ["A", "B", "C", "D"], { neighbours: 2 });
+    expect(two.calls).toBeGreaterThan(two.batches);
+    expect(two.batches).toBe(3);
+  });
+
+  it("shares one cosine memo across orders without changing a single outcome", () => {
+    const ids = ["A", "B", "C", "D"];
+    const outcomes = replayOutcomes(input(), { orders: 12, neighbours: 2 });
+    expect(outcomes).toHaveLength(12);
+    outcomes.forEach((outcome, index) =>
+      expect(outcome).toEqual(
+        replayOrder(input(), shuffledOrder(ids, index + 1), { neighbours: 2, seed: index + 1 })
+      )
+    );
+  });
+
+  describe("a pair gate in front of the judge", () => {
+    const order = ["A", "B", "C", "D"];
+
+    it("keeps everything when it allows every pair, and says what it saw", () => {
+      const seen: Array<[string, string, number | null]> = [];
+      const gated = replayOrder(input(), order, {
+        neighbours: 2,
+        pairGate: (context) => {
+          seen.push([context.rootId, context.candidateId, context.nearestRank]);
+          return true;
+        }
+      });
+      expect(gated).toEqual(replayOrder(input(), order, { neighbours: 2 }));
+      expect(gated.skipped).toEqual([]);
+      // C is nearest to A (0.2) and then B (0.18): ranks 1 and 2.
+      expect(seen).toContainEqual(["C", "A", 1]);
+      expect(seen).toContainEqual(["C", "B", 2]);
+    });
+
+    it("spends no call on a pair it refuses, and never links it", () => {
+      const ungated = replayOrder(input(), order, { neighbours: 2 });
+      const gated = replayOrder(input(), order, {
+        neighbours: 2,
+        pairGate: (context) => context.nearestRank !== 2
+      });
+      expect(gated.skipped).toEqual(["B|C", "B|D"]);
+      expect(gated.calls).toBe(ungated.calls - gated.skipped.length);
+      expect(gated.unjudged.every((key) => !gated.skipped.includes(key))).toBe(true);
+    });
+
+    it("hands the gate both sides of a pair: the arriving root's nearest and the candidate's", () => {
+      const contexts: SelectedPairContext[] = [];
+      replayOrder(input(), order, {
+        neighbours: 2,
+        pairGate: (context) => {
+          contexts.push(context);
+          return true;
+        }
+      });
+      const second = contexts.find((item) => item.rootId === "C" && item.candidateId === "B")!;
+      expect(second).toMatchObject({ reason: "nearest", nearestRank: 2 });
+      expect(second.nearestCosine).toBeCloseTo(0.2, 9);
+      expect(second.cosine).toBeCloseTo(0.18, 9);
+      // B's stored nearest is A, at cosine 0.9.
+      expect(second.candidateNearestCosine).toBeCloseTo(0.9, 9);
+    });
   });
 });

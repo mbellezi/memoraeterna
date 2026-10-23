@@ -18,7 +18,12 @@ import { parseArgs } from "node:util";
 
 import { z } from "zod";
 
-import { selectDiscoveryPairs, type DiscoveryCandidate } from "@app/domain";
+import {
+  compareDiscoveryCandidates,
+  selectDiscoveryPairs,
+  type DiscoveryCandidate,
+  type DiscoveryPair
+} from "@app/domain";
 
 const pairSchema = z.tuple([z.string().min(1), z.string().min(1)]);
 export const replayInputSchema = z
@@ -55,7 +60,28 @@ export interface OrderOutcome {
   calls: number;
   /** Pairs this order judged that no recording judged (counted as not accepted). */
   unjudged: string[];
+  /** Pairs discovery selected that the `pairGate` kept from being judged (none without a gate). */
+  skipped: string[];
+  /** Arrivals that had at least one pair to judge: the calls of a judge that takes a root in one call. */
+  batches: number;
 }
+
+/** What a gate sees of one pair discovery selected for the arriving root (T71, option 2 of F4). */
+export interface SelectedPairContext {
+  rootId: string;
+  candidateId: string;
+  reason: DiscoveryPair["reason"];
+  cosine: number;
+  /** 1 or 2 when the candidate is among the arriving root's nearest unlinked roots, else null. */
+  nearestRank: number | null;
+  /** Cosine of the arriving root's nearest unlinked candidate; null without one. */
+  nearestCosine: number | null;
+  /** Cosine of the candidate and the root discovery stored as its nearest; null without one. */
+  candidateNearestCosine: number | null;
+}
+
+/** Whether a selected pair is judged; a pair a gate refuses costs no call and is never linked. */
+export type PairGate = (context: SelectedPairContext) => boolean;
 
 export interface ReplayReport {
   format: "memora-source-order-replay";
@@ -116,7 +142,13 @@ const cosine = (a: readonly number[], b: readonly number[]) => {
 export function replayOrder(
   input: ReplayInput,
   order: readonly string[],
-  options: { neighbours: number; seed?: number }
+  options: {
+    neighbours: number;
+    seed?: number;
+    pairGate?: PairGate;
+    /** A shared cosine memo (`replaySourceOrders` passes one); defaults to computing each time. */
+    cosineOf?: (a: string, b: string) => number;
+  }
 ): OrderOutcome {
   const roots = new Map(input.roots.map((root) => [root.id, root]));
   const promoted = new Set(input.promoted.map(([a, b]) => pairKey(a, b)));
@@ -127,7 +159,12 @@ export function replayOrder(
   const state = new Map<string, { nearestRootId: string | null; nearestCosine: number | null }>();
   const arrived: string[] = [];
   const unjudged = new Set<string>();
+  const skipped = new Set<string>();
+  const cosineOf =
+    options.cosineOf ??
+    ((a: string, b: string) => cosine(roots.get(a)!.vector, roots.get(b)!.vector));
   let calls = 0;
+  let batches = 0;
   for (const rootId of order) {
     const root = roots.get(rootId);
     if (!root) continue;
@@ -142,15 +179,16 @@ export function replayOrder(
         return {
           rootId: other,
           title: otherRoot.title,
-          cosine: cosine(root.vector, otherRoot.vector),
+          cosine: cosineOf(rootId, other),
           linked: linked.has(pairKey(rootId, other)),
           nearestRootId: known.nearestRootId,
           nearestCosine: known.nearestCosine,
-          nearestRootCosine: known.nearestRootId
-            ? cosine(otherRoot.vector, roots.get(known.nearestRootId)!.vector)
-            : null
+          nearestRootCosine: known.nearestRootId ? cosineOf(other, known.nearestRootId) : null
         };
       });
+    const ranked = options.pairGate
+      ? candidates.filter((candidate) => !candidate.linked).toSorted(compareDiscoveryCandidates)
+      : [];
     const selection = selectDiscoveryPairs({ rootId, candidates, neighbours: options.neighbours });
     state.set(rootId, selection.state);
     for (const update of selection.reverse)
@@ -158,13 +196,33 @@ export function replayOrder(
         nearestRootId: update.nearestRootId,
         nearestCosine: update.nearestCosine
       });
+    let judgedHere = 0;
     for (const pair of selection.pairs) {
       const key = pairKey(rootId, pair.rootId);
+      if (options.pairGate) {
+        const position = ranked.findIndex((candidate) => candidate.rootId === pair.rootId);
+        const candidate = candidates.find((item) => item.rootId === pair.rootId)!;
+        const keep = options.pairGate({
+          rootId,
+          candidateId: pair.rootId,
+          reason: pair.reason,
+          cosine: pair.cosine,
+          nearestRank: position >= 0 && position < 2 ? position + 1 : null,
+          nearestCosine: ranked[0]?.cosine ?? null,
+          candidateNearestCosine: candidate.nearestRootCosine
+        });
+        if (!keep) {
+          skipped.add(key);
+          continue;
+        }
+      }
       calls += 1;
+      judgedHere += 1;
       const verdict = verdicts.get(key);
       if (verdict === undefined) unjudged.add(key);
       else if (verdict) linked.add(key);
     }
+    if (judgedHere) batches += 1;
     arrived.push(rootId);
   }
   const count = (pairs: ReadonlyArray<readonly [string, string]>) =>
@@ -174,21 +232,49 @@ export function replayOrder(
     expected: count(input.expected),
     forbidden: count(input.forbidden),
     calls,
-    unjudged: [...unjudged].sort()
+    unjudged: [...unjudged].sort(),
+    skipped: [...skipped].sort(),
+    batches
   };
+}
+
+/** The per-order outcomes of `orders` seeded orders (seeds 1..orders), sharing one cosine memo. */
+export function replayOutcomes(
+  input: ReplayInput,
+  options: { orders: number; neighbours: number; pairGate?: PairGate }
+): OrderOutcome[] {
+  const ids = input.roots.map((root) => root.id).sort();
+  const vectors = new Map(input.roots.map((root) => [root.id, root.vector]));
+  const memo = new Map<string, number>();
+  const cosineOf = (a: string, b: string) => {
+    const key = pairKey(a, b);
+    let value = memo.get(key);
+    if (value === undefined) {
+      value = cosine(vectors.get(a)!, vectors.get(b)!);
+      memo.set(key, value);
+    }
+    return value;
+  };
+  const outcomes: OrderOutcome[] = [];
+  for (let seed = 1; seed <= options.orders; seed++)
+    outcomes.push(
+      replayOrder(input, shuffledOrder(ids, seed), {
+        neighbours: options.neighbours,
+        seed,
+        cosineOf,
+        ...(options.pairGate ? { pairGate: options.pairGate } : {})
+      })
+    );
+  return outcomes;
 }
 
 /** S1's order replay: `orders` seeded orders (seeds 1..orders). */
 export function replaySourceOrders(
   input: ReplayInput,
-  options: { orders: number; neighbours: number; minExpected: number }
+  options: { orders: number; neighbours: number; minExpected: number; pairGate?: PairGate }
 ): ReplayReport {
   const ids = input.roots.map((root) => root.id).sort();
-  const outcomes: OrderOutcome[] = [];
-  for (let seed = 1; seed <= options.orders; seed++)
-    outcomes.push(
-      replayOrder(input, shuffledOrder(ids, seed), { neighbours: options.neighbours, seed })
-    );
+  const outcomes = replayOutcomes(input, options);
   const expected = outcomes.map((outcome) => outcome.expected);
   const atLeast = expected.filter((value) => value >= options.minExpected).length;
   const forbiddenMax = Math.max(0, ...outcomes.map((outcome) => outcome.forbidden));
