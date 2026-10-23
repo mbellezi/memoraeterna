@@ -175,8 +175,9 @@ export function createRelationDecisionRepository(db: Queryable) {
     /**
      * Records one direction with its own AI run and time. The other direction's verdict, run and
      * time are kept while both content hashes are unchanged and discarded when either note changed,
-     * so a row never mixes content versions. The pair-level outcome (`accepted`, `relation_type`) is
-     * no longer written (F3 D12): acceptance is calibration's, outside this raw table.
+     * so a row never mixes content versions. The pair-level outcome of the pre-F3 matcher is gone
+     * (F3 D12 stopped writing it, migration 0063 dropped it): acceptance is calibration's, outside
+     * this raw table.
      */
     async record(input: RelationDecisionInput): Promise<void> {
       const pair = relationDecisionPair(input.sourceAtomicNoteId, input.targetAtomicNoteId);

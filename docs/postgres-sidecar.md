@@ -60,7 +60,7 @@ restored once.
 1. The service opens a `REPEATABLE READ` transaction, exports its snapshot
    (`pg_export_snapshot()`) and counts the key tables in it: `source_items`,
    `documents`, `chunks`, `atomic_notes`, `embeddings_256/768/1024`,
-   `wiki_pages`, `settings` and `ai_profile_sets`.
+   `settings` and `ai_profile_sets`.
 2. `pg_dump --snapshot` dumps that same snapshot, so the counts and the dump
    agree even while ingestion keeps writing. The snapshot is released as soon as
    the dump is written.

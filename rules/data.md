@@ -55,6 +55,9 @@ pgvector, AGE, projection views, provenance storage or data wipes.
   verified; command success alone is not verification.
 - Take a verified backup (restored into a scratch database with matching key-table counts) before any
   destructive migration or data wipe.
+- A migration that drops tables or columns is verified on rows in them: no kept table references a
+  dropped one (`CASCADE` would drop the reference silently), and the row counts and definitions of
+  every kept table are equal before and after.
 
 ## PostgreSQL sidecar
 
@@ -78,9 +81,3 @@ pgvector, AGE, projection views, provenance storage or data wipes.
 - AGE is a projection. Commit canonical SQL first; a projection or graph-query
   failure returns no graph signal and never rolls back canonical data. There is
   no hidden relational fallback for AGE traversal.
-
-## Legacy data
-
-- Pre-refactoring wiki, organization, curator and maintenance tables are legacy: no product code writes them
-  and the database refuses new legacy content. The legacy wipe empties them in one transaction after a
-  verified backup; nothing adopts or migrates them. Drop the empty tables only after F2's exit criteria pass.

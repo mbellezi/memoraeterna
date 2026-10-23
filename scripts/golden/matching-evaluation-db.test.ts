@@ -540,9 +540,8 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
     );
     await q(
       `insert into relation_decisions (pair_key, lo_atomic_note_id, hi_atomic_note_id, lo_content_hash,
-         hi_content_hash, decider_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_decided_at,
-         relation_type, accepted)
-       values ($1, $2, $3, 'h1', 'h2', 'key', 0.9, 'supports', now(), 'supports', true)`,
+         hi_content_hash, decider_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_decided_at)
+       values ($1, $2, $3, 'h1', 'h2', 'key', 0.9, 'supports', now())`,
       [`${n1}:${n2}`, n1, n2]
     );
     const data = await readRelationsExportData(pool);
@@ -572,10 +571,11 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
         hiNoteId: n2,
         loToHiScore: 0.9,
         hiToLoScore: null,
-        loToHiType: "supports",
-        accepted: true
+        loToHiType: "supports"
       })
     ]);
+    // The pair-level outcome was dropped with migration 0063: the export reads it as false.
+    expect(parsed.decisions[0]?.accepted).toBe(false);
     // Relations keep their pair columns and carry the visibility verdicts of the status reading.
     expect(data.relations.length).toBeGreaterThan(0);
     expect(data.relations.every((row) => typeof row.shown === "boolean")).toBe(true);

@@ -43,6 +43,7 @@ const decisionSchema = z.object({
   hiToLoScore: score.default(null),
   loToHiType: z.string().nullable().default(null),
   hiToLoType: z.string().nullable().default(null),
+  /** The pre-F3 matcher's pair-level outcome; migration 0063 dropped the column, so it reads false. */
   accepted: z.boolean().default(false)
 });
 

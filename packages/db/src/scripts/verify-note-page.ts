@@ -232,7 +232,7 @@ try {
     expectedUpdatedAt: editedPage.note.updatedAt
   });
 
-  // The legacy run that recorded the evolution; its id is history only (no FK since 0052).
+  // The run that recorded the evolution: note metadata only, no table holds it any more (0063).
   const run = randomUUID();
   const evolved = await addNote({
     title: "Evolved",
@@ -453,9 +453,7 @@ try {
         [explained]
       )
     ).rows[0];
-  const impacts = async () =>
-    Number((await db.query("select count(*)::int as n from knowledge_impact_events")).rows[0].n);
-  const [relationBefore, impactsBefore] = [await relationRow(), await impacts()];
+  const relationBefore = await relationRow();
   const explainContext = (await explanations.readContext(explained))!;
   assert.equal(explainContext.stored, null);
   const plan = relationExplanationPlan({ ...explainContext, language: "en" });
@@ -472,7 +470,6 @@ try {
   });
   assert.ok(saved?.writtenAt instanceof Date);
   assert.deepEqual(await relationRow(), relationBefore, "the relation row is not written");
-  assert.equal(await impacts(), impactsBefore, "writing an explanation records no legacy impact");
   let explainedRelation = (await read(note))!.relations.items.find((item) => item.id === explained);
   assert.deepEqual(explainedRelation?.explanation, {
     text: `Written on open about <note-ref id="${note}" />.`,
@@ -872,8 +869,8 @@ try {
 
   // 5. Successors.
   await db.query(
-    "insert into atomic_note_evolution (previous_id, next_id, run_id, kind, reason) values ($1, $2, $3, 'merge', 'verify')",
-    [superseded, evolved, run]
+    "insert into atomic_note_evolution (previous_id, next_id, kind, reason) values ($1, $2, 'merge', 'verify')",
+    [superseded, evolved]
   );
   assert.deepEqual((await read(superseded))!.successors, [{ id: evolved, title: "Evolved" }]);
 
@@ -911,7 +908,7 @@ try {
         "relations v2: shown, withdrawn and earlier-version groups paged apart with exact totals, probability order, states, bands",
         "relations v2: decider, typer and writer actors with where they ran",
         "review writer: keep clears the veto and remove rejects, one event each, final in both directions against a second review and against automation (I-R2, I-R3)",
-        "explanations written on demand: shown with their writer, stale after an edit or in another content language, no relation write or legacy impact, removed with the relation",
+        "explanations written on demand: shown with their writer, stale after an edit or in another content language, no relation write, removed with the relation",
         "successors, placement equal to objects.locate, every statement read-only"
       ]
     })

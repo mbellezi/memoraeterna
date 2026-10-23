@@ -200,7 +200,6 @@ try {
     before,
     "Catalog startup changes no library content"
   );
-  assert.equal((await pool.query("select count(*)::int n from wiki_pages")).rows[0].n, 0);
   const saved = (await prompts.command({
     command: "save",
     promptId: "summary.short",

@@ -201,9 +201,11 @@ describe.skipIf(!sidecarAvailable)("retiring the old wiki files on PostgreSQL", 
       before = await snapshot(vaultPath);
     }, 60_000);
 
-    it("starts with 22 registered page files, no wiki pages and a projection conflict", async () => {
+    it("starts with 22 registered page files, no wiki table and a projection conflict", async () => {
       expect(Object.keys(before)).toHaveLength(PAGES);
-      expect((await pool.query("select count(*)::int as n from wiki_pages")).rows[0].n).toBe(0);
+      expect(
+        (await pool.query("select to_regclass('public.wiki_pages') is null as gone")).rows[0].gone
+      ).toBe(true);
       const status = await service.wiki.status();
       expect(status.conflicts.map((c) => c.memora_id)).toEqual([pageIds[EDITED[0]!]]);
       expect(status.retired).toEqual({ archived: 0, absent: 0, keptTotal: 0, kept: [] });

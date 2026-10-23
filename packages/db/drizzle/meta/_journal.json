@@ -442,6 +442,13 @@
       "when": 1792788986470,
       "tag": "0062_change_set_envelope",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792792193888,
+      "tag": "0063_legacy_drop",
+      "breakpoints": true
     }
   ]
 }

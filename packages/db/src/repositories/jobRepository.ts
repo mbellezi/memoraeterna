@@ -963,8 +963,8 @@ export function createJobRepository(db: Queryable) {
     /**
      * Retention (3.1): deletes succeeded and canceled jobs that finished before `before`, at most
      * `limit` per call, oldest first. Kept: failed and quarantined jobs (until resolved), the
-     * `keepTypes` kinds (a model download's job owns its download row), a job an ingestion run or
-     * a legacy run still names (its stage retry and history need it), and the newest job of each
+     * `keepTypes` kinds (a model download's job owns its download row), a job an ingestion run
+     * still names (its stage retry and history need it), and the newest job of each
      * type whatever its age: `latestByType` readers keep their answer (Areas reads its last
      * outcome as final for a build and must not ask the model again).
      */
@@ -983,7 +983,6 @@ export function createJobRepository(db: Queryable) {
               and j.created_at < n.at
               and j.type <> all($2::text[])
               and not exists (select 1 from ingestion_runs r where r.job_id = j.id)
-              and not exists (select 1 from maintenance_runs r where r.job_id = j.id)
             order by coalesce(j.finished_at, j.updated_at)
             limit $3
          )
@@ -1006,8 +1005,6 @@ export function createJobRepository(db: Queryable) {
          set payload = jsonb_set(j.payload, '{dashboardDismissedAt}', (select value->'before' from cutoff))
          where j.status in ('succeeded', 'failed', 'canceled')
            and j.payload->>'dashboardDismissedAt' is null
-           and not exists(select 1 from organization_runs r where r.job_id=j.id and r.status not in ${terminalTaskStatusesSql})
-           and not exists(select 1 from maintenance_runs r where r.job_id=j.id and r.status not in ${terminalTaskStatusesSql})
            and not exists(select 1 from ingestion_runs r where r.job_id=j.id and r.status::text not in ${terminalTaskStatusesSql})`,
         [taskHistoryCutoffKey]
       );

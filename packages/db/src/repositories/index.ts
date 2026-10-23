@@ -35,8 +35,6 @@ export * from "./noteMatchStateRepository.js";
 export * from "./sourceMatchStateRepository.js";
 export * from "./libraryRepository.js";
 export * from "./libraryResetRepository.js";
-export * from "./legacyStateRepository.js";
-export * from "./legacyWipeRepository.js";
 export * from "./viewHistoryRepository.js";
 export * from "./sourceEditingRepository.js";
 export * from "./localModelRepository.js";

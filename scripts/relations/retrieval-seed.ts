@@ -83,7 +83,7 @@ export async function seedRetrievalLibrary(
   const client = await pool.connect();
   try {
     log(`library: ${options.books} books, ${options.notes} notes`);
-    for (const step of librarySeedSteps(options.books, options.notes, 0)) await client.query(step);
+    for (const step of librarySeedSteps(options.books, options.notes)) await client.query(step);
 
     // Drop the indexes the load would otherwise maintain row by row; rebuild them from their own
     // definitions afterwards.

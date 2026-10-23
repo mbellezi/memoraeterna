@@ -123,9 +123,6 @@ try {
             ($2, 'approve', 'pending_review', 'approved')`,
     [noteIds.auditedEdit, noteIds.approved]
   );
-  const impactsBefore = Number(
-    (await db.query("select count(*)::int as count from knowledge_impact_events")).rows[0]?.count
-  );
 
   await runMigrations(db, migrationsFolder);
   assert.equal(await historyCount(db), journal.entries.length, "0045 applied as pending");
@@ -159,13 +156,6 @@ try {
     ).rows[0]?.same,
     true,
     "the relabeling does not move updated_at"
-  );
-  assert.equal(
-    Number(
-      (await db.query("select count(*)::int as count from knowledge_impact_events")).rows[0]?.count
-    ),
-    impactsBefore,
-    "the relabeling records no wiki impact"
   );
 
   // 2. Baseline path: an empty database is seeded with every migration, 0045 included.
@@ -452,7 +442,7 @@ try {
         "0045 applied as a pending migration on a database with history and notes in every state",
         "0045 applied through the baseline seed on an empty database",
         "identical enum, default, status index, triggers and review-event columns on both paths",
-        "only unreviewed generated notes became active; protected, audited, approved, rejected and archived notes kept their status and updated_at; no wiki impact recorded",
+        "only unreviewed generated notes became active; protected, audited, approved, rejected and archived notes kept their status and updated_at",
         "generated notes are active at birth; the review queue offers active and pending notes",
         "an edit invalidates the embedding and queues one deduplicated note-embedding job; approve and discard queue none",
         "active notes are matching candidates next to pending and approved ones; discarded notes are not",

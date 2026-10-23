@@ -8,9 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
-  createLegacyStateRepository,
   createPgPool,
-  hasLegacyContent,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
@@ -54,9 +52,8 @@ import { LibraryResetService } from "./library-reset-service.js";
  * import could leave counts as golden for the reset only when its type and title are in the manifest.
  * Finally it covers MEMORA_GOLDEN_SOURCE_PAIRS on the complete library (verdict-only, a fake decider):
  * the real read queries build the requests, the verdicts are written and no relation, decision or
- * run state is persisted. The legacy wiki, organization and maintenance tables stay empty through
- * every run and reset (the runner no longer pauses legacy automation: none can exist). Last it covers
- * MEMORA_GOLDEN_TOPICS=full (G1, D23): a fake topic barrier on the real supervisor and jobs table, one
+ * run state is persisted. The runner no longer pauses legacy automation: the legacy tables are
+ * gone (migration 0063). Last it covers MEMORA_GOLDEN_TOPICS=full (G1, D23): a fake topic barrier on the real supervisor and jobs table, one
  * batch whose jobs are paced a source at a time in manifest order, the topic lane drained and the hold
  * re-armed in between and released after the last drain.
  *
@@ -130,10 +127,6 @@ try {
     getStorageSettings: storageSettings
   });
 
-  // The legacy-content tables (wiki pages, organization and maintenance runs and settings, curator
-  // policy revisions, investigations) must stay empty: nothing creates legacy state any more.
-  const legacyCounts = () => createLegacyStateRepository(pool!).legacyContentCounts();
-  const noLegacyContent = async () => !hasLegacyContent(await legacyCounts());
   // The real Settings reset; restoring the defaults is the prompt catalog only (a counter here).
   let defaultsRestored = 0;
   const libraryReset = new LibraryResetService({
@@ -199,7 +192,6 @@ try {
     /needs a configured embedding route/,
     "an unconfigured route"
   );
-  check(await noLegacyContent(), "a refused run must not create legacy state");
   check((await backupFolders()).length === 0, "a refused run must not take a backup");
   await pool.query(
     `insert into jobs (type, status, payload) values ('maintenance', 'queued', '{}')`
@@ -251,7 +243,7 @@ try {
   );
   await noJobsLeft("no job is left after the divergence");
 
-  // 4. A complete run with the supervisor: backup first, whole manifest processed, no legacy state.
+  // 4. A complete run with the supervisor: backup first, whole manifest processed.
   await resetLibrary();
   const run = await prepareGoldenRun(
     input({
@@ -266,16 +258,11 @@ try {
     join(run.backup.path, "database.dump")
   ]);
   check(/TABLE DATA public source_items/.test(stdout), "the backup dump lists the library tables");
-  check(await noLegacyContent(), "the prepared run created no legacy state");
 
   const summary = await withTimeout(run.start(), 180_000, "the golden run");
   report(summary);
   check(summary.status !== "failed", `the run did not fail: ${String(summary.error ?? "")}`);
   check(!("automation" in summary), "summary.json lists no paused legacy automation");
-  check(
-    await noLegacyContent(),
-    `the full-knowledge import wrote no legacy state: ${JSON.stringify(await legacyCounts())}`
-  );
   const sources = summary.sources as Array<{
     key: string;
     chunks: number;
@@ -491,10 +478,7 @@ try {
       /TABLE DATA public document_assets/.test(resetDump.stdout),
     "the pre-reset backup holds a dump of the library"
   );
-  check(
-    defaultsRestored === restoredBefore + 1 && (await noLegacyContent()),
-    "the defaults came back with the reset and the reset created no legacy state"
-  );
+  check(defaultsRestored === restoredBefore + 1, "the defaults came back with the reset");
 
   // 6b. A record-style import of two golden sources, then a reset and a run in the same database.
   const twoSources = selectGoldenSources(manifest, ["web", "story"]);
@@ -557,9 +541,8 @@ try {
   );
   check(
     (await rowCount("source_items")) === mixedSources &&
-      (await backupFolders()).length === backupsBeforeRefusal &&
-      (await noLegacyContent()),
-    "the refusal deleted nothing, took no backup and created no legacy state"
+      (await backupFolders()).length === backupsBeforeRefusal,
+    "the refusal deleted nothing and took no backup"
   );
   await expectRejection(
     prepareGoldenRun(input({ ...withRoutes, env: resetEnv({ MEMORA_GOLDEN_RESET: "yes" }) })),
@@ -650,7 +633,7 @@ try {
 
   // 7. A real full_knowledge plan, organizeKnowledge included as the Library and the gateway admit
   //    it, on a library with no curator policy (nothing creates one any more): the stage is
-  //    recorded as skipped and the legacy-content tables stay empty (F2 D3).
+  //    recorded as skipped (F2 D3).
   await resetLibrary();
   const [story] = await importSources(
     { workspaceRoot: workspace, ingestion, hierarchy },
@@ -683,12 +666,6 @@ try {
   check(
     organizeStages.length === 0,
     `organizeKnowledge is no longer a stage of the plan: ${JSON.stringify(organizeStages)}`
-  );
-  check(
-    (await noLegacyContent()) &&
-      (await rowCount("organization_runs")) === 0 &&
-      (await rowCount("maintenance_runs")) === 0,
-    `the full-knowledge import wrote no legacy state: ${JSON.stringify(await legacyCounts())}`
   );
 
   // 8. G1 `full` with the topic barrier (D23) on the real services, the real supervisor and the real
@@ -842,7 +819,6 @@ try {
       (fullSummary.sources as unknown[]).length === 4,
     "the paced run ended as the plain run did: no failure, only source matching waits"
   );
-  check(await noLegacyContent(), "the barrier run wrote no legacy state");
 
   console.log("GOLDEN_RUNNER_VERIFY ok");
 } catch (error) {

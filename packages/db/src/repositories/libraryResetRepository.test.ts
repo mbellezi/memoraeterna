@@ -72,28 +72,26 @@ describe("full application reset", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it("covers every embedding family and durable wiki/harness history", () => {
+  it("covers every embedding family and durable harness history", () => {
     for (const family of ["embeddings", "entity_identity_embeddings", "relation_type_embeddings"]) {
       for (const dimension of [256, 768, 1024])
         expect(resetClearedTables).toContain(`${family}_${dimension}`);
     }
     for (const table of [
-      "wiki_pages",
-      "wiki_page_revisions",
-      "wiki_evidence",
-      "wiki_dependencies",
-      "organization_settings_revisions",
-      "organization_settings_activations",
-      "organization_runs",
-      "maintenance_schedules",
-      "maintenance_runs",
-      "maintenance_decisions",
       "integration_clients",
       "settings",
       "storage_settings",
       "local_model_downloads"
     ])
       expect(resetClearedTables).toContain(table);
+  });
+
+  it("lists no legacy table (migration 0063 dropped them)", () => {
+    expect(
+      resetClearedTables.filter((name) =>
+        /^(wiki_|organization_|maintenance_|automatic_routine_|knowledge_impact_)/.test(name)
+      )
+    ).toEqual([]);
   });
 
   it("empties the topic tree (a reset leaves no tree; the service creates one, D39)", () => {

@@ -3,7 +3,7 @@
 // Plain SELECTs on the library the run just made; the verdict is `assertions.ts`.
 import { createHash } from "node:crypto";
 
-import { createLegacyStateRepository, hasLegacyContent, noteRelationStateLabelSql } from "@app/db";
+import { noteRelationStateLabelSql } from "@app/db";
 import type { PgPool } from "@app/db";
 import { areasActive, itemKey, isLive, shapeReport, walkTopics } from "@app/domain/topic-tree";
 
@@ -64,7 +64,6 @@ export interface StoreFacts {
   e1: E1Facts | null;
   /** The newest change-set that named a live topic; null when none was named. */
   lastNamedAt: Date | null;
-  legacyRows: number;
   ingestionRuns: Array<{ status: string; count: number }>;
   /** Stages that failed inside a run that went on (a failed stage is recorded, not thrown). */
   failedStages: number;
@@ -96,7 +95,6 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
   ).rows[0];
   const notes = (await pool.query<{ id: string }>(expectedNotesSql)).rows.map((row) => row.id);
   const sources = (await pool.query<{ id: string }>(expectedSourcesSql)).rows.map((row) => row.id);
-  const legacy = await createLegacyStateRepository(pool).legacyContentCounts();
   const ingestionRuns = (
     await pool.query<{ status: string; count: number }>(
       "select status::text as status, count(*)::int as count from ingestion_runs group by 1 order by 1"
@@ -136,7 +134,6 @@ export async function collectStoreFacts(pool: PgPool): Promise<StoreFacts> {
   ).rows;
   const common = {
     currentNotes: notes.length,
-    legacyRows: hasLegacyContent(legacy) ? 1 : 0,
     ingestionRuns,
     failedStages,
     failedJobs,

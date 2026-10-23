@@ -50,6 +50,7 @@
     "db:gardener:verify": "npm run db:gardener:verify -w @app/db",
     "db:budget:verify": "npm run db:budget:verify -w @app/db",
     "db:changes:verify": "npm run db:changes:verify -w @app/db",
+    "db:legacy-drop:verify": "npm run db:legacy-drop:verify -w @app/db",
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
     "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts",
     "db:prompts:verify": "node --import tsx scripts/verify-prompts.ts",

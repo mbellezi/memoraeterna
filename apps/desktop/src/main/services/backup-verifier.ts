@@ -24,7 +24,6 @@ export const backupKeyTables = [
   "embeddings_256",
   "embeddings_768",
   "embeddings_1024",
-  "wiki_pages",
   "settings",
   "ai_profile_sets"
 ] as const;

@@ -48,6 +48,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
   let manager: PostgresSidecarManager;
   let pool: PgPool;
   let report: KpiReport;
+  let current: KpiReport;
   let connectionString = "";
 
   beforeAll(async () => {
@@ -63,15 +64,15 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     });
     const connection = await manager.start();
     connectionString = connection.connectionString;
-    // Migration 0052 fences new legacy content (D40) and this scratch database seeds some on
-    // purpose. The database default is set before the pool opens, so every connection inherits it.
-    const setup = createPgPool({ connectionString, max: 1 });
-    await setup.query("alter database kpi_fixture set memora.legacy_fixture = 'on'");
-    await closePgPool(setup);
     pool = createPgPool({ connectionString, max: 2 });
     await runMigrations(pool, join(root, "packages/db/drizzle"), {
       seedFolder: join(root, "packages/db/seed")
     });
+    // The current schema has no legacy wiki or run tables (migration 0063).
+    current = await collectKpi(pool, options());
+    // Then the tables of a profile restored from a backup taken before the drop, reduced to the
+    // columns the collector reads, so its wiki and run sections keep a test.
+    await createLegacyTables(pool);
     await seed(pool);
     await seedTopicTree(pool);
     report = await collectKpi(pool, options());
@@ -204,7 +205,20 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     expect(markdown).toContain("fail: reachability, itemsWithoutPrimary, hardViolations");
   });
 
-  it("measures the wiki tree, note reachability and source TOCs", () => {
+  it("reports the dropped wiki and run sections as unavailable on the current schema", () => {
+    expect(current.wiki).toEqual({ available: false, reason: "missing table wiki_pages" });
+    expect(current.organization).toEqual({
+      available: false,
+      reason: "missing table organization_runs"
+    });
+    expect(current.maintenance).toEqual({
+      available: false,
+      reason: "missing table maintenance_runs"
+    });
+    expect(current.gaps).toEqual(expect.arrayContaining(["wiki: missing table wiki_pages"]));
+  });
+
+  it("measures the wiki tree, note reachability and source TOCs of a pre-drop backup", () => {
     const wiki = data(report.wiki);
     expect(wiki).toMatchObject({ pages: 6, archivedPages: 1, aiOrphanRoots: 1, humanRoots: 2 });
     expect(wiki.shape).toMatchObject({
@@ -220,7 +234,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     expect(wiki.sources).toEqual({ total: 3, withToc: 1, share: 1 / 3 });
   });
 
-  it("counts organization and maintenance runs by status and blocked reason", () => {
+  it("counts the runs of a pre-drop backup by status and blocked reason", () => {
     const organization = data(report.organization);
     expect(organization.byStatus).toEqual({ applied: 1, failed: 1, awaiting_review: 1 });
     expect(organization.blockedReasons).toEqual({ "organization.errors.context": 1 });
@@ -465,6 +479,20 @@ async function seedTopicTree(pool: PgPool): Promise<void> {
   }
 }
 
+/** The legacy tables the collector reads, with only the columns it reads, as an older backup has them. */
+async function createLegacyTables(pool: PgPool): Promise<void> {
+  await pool.query(`
+    create table wiki_pages (id uuid primary key, title text not null, kind text not null,
+      management text not null default 'human_managed', role text, parent_id uuid,
+      archived boolean not null default false, toc_owner_kind text, toc_owner_id uuid);
+    create table wiki_memberships (id uuid primary key, page_id uuid not null,
+      target_kind text not null, target_id uuid not null);
+    create table organization_runs (id uuid primary key default gen_random_uuid(),
+      status text not null, checkpoint jsonb not null);
+    create table maintenance_runs (id uuid primary key default gen_random_uuid(),
+      status text not null, checkpoint jsonb not null);`);
+}
+
 async function seed(pool: PgPool): Promise<void> {
   const q = (text: string, values: unknown[] = []) => pool.query(text, values);
 
@@ -530,15 +558,6 @@ async function seed(pool: PgPool): Promise<void> {
       ]
     );
   }
-  await q(
-    `insert into wiki_page_revisions (id, page_id, number, origin, content, content_hash)
-     values ($1, $2, 1, 'test', '{}'::jsonb, 'hash')`,
-    [uid(31), uid(23)]
-  );
-  await q(
-    `insert into wiki_toc_groups (id, page_id, revision_id, snapshot) values ($1, $2, $3, '{}'::jsonb)`,
-    [uid(32), uid(23), uid(31)]
-  );
   for (const [n, page, note] of [
     [41, 23, 11],
     [42, 23, 12],
@@ -546,9 +565,9 @@ async function seed(pool: PgPool): Promise<void> {
     [44, 26, 15]
   ] as const) {
     await q(
-      `insert into wiki_memberships (id, page_id, group_id, target_kind, target_id, position, snapshot)
-       values ($1, $2, $3, 'atomic_note', $4, 0, '{}'::jsonb)`,
-      [uid(n), uid(page), uid(32), uid(note)]
+      `insert into wiki_memberships (id, page_id, target_kind, target_id)
+       values ($1, $2, 'atomic_note', $3)`,
+      [uid(n), uid(page), uid(note)]
     );
   }
 
@@ -756,13 +775,9 @@ async function seed(pool: PgPool): Promise<void> {
 
   // Organization and maintenance runs.
   await q(
-    `insert into organization_runs (status, snapshot, checkpoint) values
-       ('applied', '{}'::jsonb, '{}'::jsonb), ('failed', '{}'::jsonb, '{"error": "organization.errors.context"}'::jsonb),
-       ('awaiting_review', '{}'::jsonb, '{}'::jsonb)`
+    `insert into organization_runs (status, checkpoint) values
+       ('applied', '{}'::jsonb), ('failed', '{"error": "organization.errors.context"}'::jsonb),
+       ('awaiting_review', '{}'::jsonb)`
   );
-  await q(
-    `insert into maintenance_runs (job_id, scope_key, period, schedule_ids, status, snapshot, checkpoint, reservation)
-     values ($1, 'scope', 'p1', '[]'::jsonb, 'no_change', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
-    [uid(57)]
-  );
+  await q(`insert into maintenance_runs (status, checkpoint) values ('no_change', '{}'::jsonb)`);
 }

@@ -20,9 +20,9 @@ import { ConsultationService } from "./consultation-service.js";
 /**
  * Real-database proof that Ask answers from sources, chunks, notes, summary concepts, entity
  * mentions and source relations alone: on a small library it checks scope, descendants, the
- * reviewed-only filter, optional context and relations, staleness, and that the answer and the
- * prompt are identical after every legacy wiki, organization, maintenance and impact table is
- * dropped. It starts its own temporary PostgreSQL sidecar and touches no other database.
+ * reviewed-only filter, optional context and relations, staleness, and that it needs no legacy
+ * wiki, organization, maintenance or impact table (migration 0063 dropped them). It starts its own
+ * temporary PostgreSQL sidecar and touches no other database.
  *
  *   npx tsx apps/desktop/src/main/services/verify-consultation.ts
  */
@@ -227,8 +227,6 @@ function asker(db: PgPool, onModelCall?: () => Promise<void>) {
 }
 const titles = (result: ConsultationResult) =>
   [...new Set(result.evidence.map((e) => e.sourceTitle))].toSorted();
-/** What must not change when the legacy tables disappear: everything but the request id. */
-const comparable = (result: ConsultationResult) => ({ ...result, id: null });
 
 try {
   const connection = await manager.start();
@@ -298,43 +296,22 @@ try {
   const settled = await asker(db).ask();
   assert.equal(settled.result.coverage.stale, false);
 
-  // 5. Ask needs no legacy table: drop every wiki, organization, maintenance and impact table.
+  // 5. Ask needs no legacy table: the legacy drop (0063) removed every wiki, organization,
+  //    maintenance and impact table, and the scoped answer holds without them.
   const legacy = (
     await db.query<{ tablename: string }>(
       `select tablename from pg_tables where schemaname = 'public'
          and tablename ~ '^(wiki_|organization_|maintenance_|automatic_routine_|knowledge_impact_)'`
     )
   ).rows.map((row) => row.tablename);
-  assert.ok(legacy.length >= 30, `found ${legacy.length} legacy tables`);
-  const before = asker(db),
-    reference = await before.ask({ requestId: id() });
-  for (const table of legacy) await db.query(`drop table if exists "${table}" cascade`);
-  const remaining = await db.query(
-    `select count(*)::int as count from pg_tables where schemaname = 'public'
-       and tablename ~ '^(wiki_|organization_|maintenance_|automatic_routine_|knowledge_impact_)'`
-  );
-  assert.equal(remaining.rows[0]!.count, 0, "no legacy table is left");
-  const after = asker(db),
-    withoutLegacy = await after.ask({ requestId: id() });
-  assert.deepEqual(
-    comparable(withoutLegacy.result),
-    comparable(reference.result),
-    "the same answer without the legacy tables"
-  );
-  assert.equal(after.prompts[0], before.prompts[0], "the same prompt without the legacy tables");
+  assert.equal(legacy.length, 0, `no legacy table is left: ${legacy.join(", ")}`);
   const scopedAfter = await asker(db).ask({
     sourceIds: [book],
     includeDescendants: true,
     reviewedOnly: true
   });
   assert.deepEqual(titles(scopedAfter.result), ["Learning Science chapter 1"]);
-  report.withoutLegacyTables = {
-    dropped: legacy.length,
-    sameAnswer: true,
-    samePrompt: true,
-    beforeMs: reference.ms,
-    afterMs: withoutLegacy.ms
-  };
+  report.legacyTables = legacy.length;
 
   console.info(JSON.stringify({ ok: true, ...report }, null, 2));
   await closePgPool(db);

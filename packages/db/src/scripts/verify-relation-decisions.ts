@@ -23,8 +23,8 @@ import {
  * migrations on a database with history and data (0046 over legacy pair-level audit rows), and
  * through the baseline seed on an empty one; columns, indexes and constraints; per-direction
  * verdicts keyed by content hashes and decider, each with its own AI run and time; the score scale
- * of 0056 (ranker log-odds rows without types, reused only on equal rendered inputs; no pair-level
- * outcome written); and cascades. It starts its own temporary PostgreSQL sidecar and never touches
+ * of 0056 (ranker log-odds rows without types, reused only on equal rendered inputs); the
+ * pair-level `accepted` and `relation_type` that 0063 dropped; and cascades. It starts its own temporary PostgreSQL sidecar and never touches
  * an existing database.
  */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -273,7 +273,6 @@ try {
   assert.deepEqual(
     migrated.columns,
     [
-      "accepted:boolean:NO",
       "decider_key:text:NO",
       "hi_atomic_note_id:uuid:NO",
       "hi_content_hash:text:NO",
@@ -289,10 +288,9 @@ try {
       "lo_to_hi_relation_type:text:YES",
       "lo_to_hi_score:double precision:YES",
       "pair_key:text:NO",
-      "relation_type:text:YES",
       "score_scale:text:NO"
     ].sort(),
-    "per-direction audit columns replace the pair-level ones; 0056 adds the score scale"
+    "per-direction audit columns replace the pair-level ones; 0056 adds the score scale; 0063 drops the pair-level outcome"
   );
   assert.deepEqual(
     migrated.constraints,
@@ -308,7 +306,7 @@ try {
       "relation_decisions_score_scale:c",
       "relation_decisions_types:c"
     ].sort(),
-    "0056 drops relation_decisions_accepted and adds the scale check"
+    "0056 drops relation_decisions_accepted and adds the scale check; 0063 keeps the type check"
   );
   assert.ok(
     migrated.indexes.some((def) =>
@@ -387,7 +385,7 @@ try {
       await db.query(
         `select pair_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_ai_task_run_id,
            lo_to_hi_decided_at, hi_to_lo_score, hi_to_lo_relation_type, hi_to_lo_ai_task_run_id,
-           hi_to_lo_decided_at, relation_type, accepted, decider_key
+           hi_to_lo_decided_at, decider_key
          from relation_decisions where decider_key like 'decider-%' order by pair_key, decider_key`
       )
     ).rows;
@@ -420,8 +418,6 @@ try {
       lo_to_hi_relation_type: both.lo_to_hi_relation_type,
       hi_to_lo_score: both.hi_to_lo_score,
       hi_to_lo_relation_type: both.hi_to_lo_relation_type,
-      relation_type: both.relation_type,
-      accepted: both.accepted,
       decider_key: both.decider_key
     },
     {
@@ -430,9 +426,6 @@ try {
       lo_to_hi_relation_type: "related",
       hi_to_lo_score: 0.9,
       hi_to_lo_relation_type: "extends",
-      // The pair-level outcome is no longer written (F3 D12): calibration owns acceptance.
-      relation_type: null,
-      accepted: false,
       decider_key: "decider-a"
     }
   );
@@ -480,8 +473,8 @@ try {
   await record(hi, lo, 0.3, "related", runC, "decider-a", "hash-hi-edited");
   const [pair] = (await rows()).filter((row) => row.pair_key === `${lo}:${hi}`);
   assert.deepEqual(
-    [pair.lo_to_hi_score, pair.hi_to_lo_score, pair.accepted, pair.relation_type],
-    [null, 0.3, false, null],
+    [pair.lo_to_hi_score, pair.hi_to_lo_score],
+    [null, 0.3],
     "a content change resets the pair"
   );
   assert.deepEqual(
@@ -562,7 +555,7 @@ try {
   );
   const [rankerRow] = (
     await db.query(
-      `select score_scale, lo_to_hi_relation_type, hi_to_lo_relation_type, relation_type, accepted,
+      `select score_scale, lo_to_hi_relation_type, hi_to_lo_relation_type,
               lo_to_hi_ai_task_run_id, hi_to_lo_ai_task_run_id
          from relation_decisions where decider_key = $1`,
       [rankerKey]
@@ -572,8 +565,6 @@ try {
     score_scale: "log_odds",
     lo_to_hi_relation_type: null,
     hi_to_lo_relation_type: null,
-    relation_type: null,
-    accepted: false,
     lo_to_hi_ai_task_run_id: runC,
     hi_to_lo_ai_task_run_id: runC
   });
@@ -597,8 +588,8 @@ try {
   const insert = `insert into relation_decisions (pair_key, lo_atomic_note_id, hi_atomic_note_id,
     lo_content_hash, hi_content_hash, decider_key, lo_to_hi_score, lo_to_hi_relation_type,
     lo_to_hi_decided_at, lo_to_hi_ai_task_run_id, hi_to_lo_decided_at, hi_to_lo_ai_task_run_id,
-    relation_type, accepted, score_scale)
-    values ($1, $2, $3, 'a', 'b', 'decider-c', $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
+    score_scale)
+    values ($1, $2, $3, 'a', 'b', 'decider-c', $4, $5, $6, $7, $8, $9, $10)`;
   const at = new Date();
   // A valid lo -> hi verdict with its time; each case breaks exactly one rule.
   const valid = {
@@ -611,26 +602,11 @@ try {
     loRun: null as string | null,
     hiAt: null as Date | null,
     hiRun: null as string | null,
-    relationType: null as string | null,
-    accepted: false,
     scale: "probability"
   };
   const values = (change: Partial<typeof valid>) => {
     const v = { ...valid, ...change };
-    return [
-      v.pair,
-      v.lo,
-      v.hi,
-      v.score,
-      v.type,
-      v.loAt,
-      v.loRun,
-      v.hiAt,
-      v.hiRun,
-      v.relationType,
-      v.accepted,
-      v.scale
-    ];
+    return [v.pair, v.lo, v.hi, v.score, v.type, v.loAt, v.loRun, v.hiAt, v.hiRun, v.scale];
   };
   const invalid = async (label: string, change: Partial<typeof valid>) => {
     await assert.rejects(db.query(insert, values(change)), /check constraint/, label);

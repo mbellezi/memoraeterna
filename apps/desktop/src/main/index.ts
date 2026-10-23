@@ -74,7 +74,6 @@ import { FirstRunRanker, settingsFirstRunRankerStore } from "./services/first-ru
 import { runLocalModelInstallStartup } from "./services/local-model-install-startup.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
-import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { decisionsDevOptions } from "./services/dev/decisions-dev-options.js";
@@ -822,22 +821,6 @@ void app.whenReady().then(() => {
               })
           : undefined;
         if (rematch === null) {
-          app.quit();
-          return;
-        }
-        // The LEGACY_RECREATED check, then the DEV-only one-shot legacy wipe
-        // (MEMORA_LEGACY_WIPE=preview|<token>): a preview, a wipe or a refusal quits here, before
-        // the local models, job supervisor, gateway and vault reconcile start.
-        const legacyWipe = await runLegacyWipeStartup({
-          env: process.env,
-          isPackaged: app.isPackaged,
-          pool: databaseService!.getPool()!,
-          workspaceRoot,
-          getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
-          getStorageSettings: () => settingsService!.get(),
-          logger: console
-        });
-        if (legacyWipe === "quit") {
           app.quit();
           return;
         }

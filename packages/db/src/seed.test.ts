@@ -109,7 +109,8 @@ describe("baseline seed", () => {
       "0059_relation_direction_source",
       "0060_gardener_tasks",
       "0061_ai_budget_class",
-      "0062_change_set_envelope"
+      "0062_change_set_envelope",
+      "0063_legacy_drop"
     ]);
   });
 
@@ -190,7 +191,8 @@ describe("baseline seed", () => {
         "0059_relation_direction_source",
         "0060_gardener_tasks",
         "0061_ai_budget_class",
-        "0062_change_set_envelope"
+        "0062_change_set_envelope",
+        "0063_legacy_drop"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

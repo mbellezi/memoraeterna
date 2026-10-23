@@ -56,7 +56,6 @@ const usage = `Usage: npx tsx scripts/objects/note-page-benchmark.ts (--db <conn
   --seed               Seed a throwaway sidecar database with a synthetic library instead.
   --books <n>          (--seed) root books; each has 3 chapters x 2 sections (default 300 = 3,000 sources).
   --notes <n>          (--seed) atomic notes (default 30000), 6 relations each plus 20 hubs of 400.
-  --pages <n>          (--seed) legacy wiki pages (default 2000).
   --sample <n>         Random notes measured (default 300), plus hubs and the heaviest evidence.
   --rounds <n>         Passes over the sample after one warm-up pass (default 5).
   --target-ms <n>      p95 target; the exit code is 1 above it (default 50).
@@ -81,7 +80,6 @@ const { values } = parseArgs({
     seed: { type: "boolean" },
     books: { type: "string" },
     notes: { type: "string" },
-    pages: { type: "string" },
     sample: { type: "string" },
     rounds: { type: "string" },
     "target-ms": { type: "string" },
@@ -114,7 +112,6 @@ const integer = (value: string | undefined, fallback: number, name: string): num
 };
 const books = integer(values.books, 300, "books");
 const noteTotal = integer(values.notes, 30_000, "notes");
-const pageTotal = integer(values.pages, 2_000, "pages");
 const sampleSize = integer(values.sample, 300, "sample");
 const rounds = integer(values.rounds, 5, "rounds");
 const targetMs = integer(values["target-ms"], 50, "target-ms");
@@ -414,11 +411,11 @@ try {
     pool = new pg.Pool({ connectionString: started.connectionString, max: 2 });
     log("migrating");
     await runMigrations(pool, resolve(repoRoot, "packages/db/drizzle"));
-    log(`seeding ${books * 10} sources, ${noteTotal} notes, ${pageTotal} legacy pages, relations`);
+    log(`seeding ${books * 10} sources, ${noteTotal} notes, relations`);
     const seedClient = await pool.connect();
     try {
       for (const step of [
-        ...librarySeedSteps(books, noteTotal, pageTotal),
+        ...librarySeedSteps(books, noteTotal),
         ...noteRelationSeedSteps({ relationsPerNote: 6, hubNotes: 20, hubRelations: 400 })
       ])
         await seedClient.query(step);

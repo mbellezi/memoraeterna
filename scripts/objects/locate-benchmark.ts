@@ -272,8 +272,7 @@ try {
     log(`seeding ${books * 10} sources and ${noteTotal} notes`);
     const seedClient = await pool.connect();
     try {
-      // No legacy wiki pages: the wiki is wiped (D37) and locate no longer reads its tables.
-      for (const step of librarySeedSteps(books, noteTotal, 0)) await seedClient.query(step);
+      for (const step of librarySeedSteps(books, noteTotal)) await seedClient.query(step);
     } finally {
       seedClient.release();
     }

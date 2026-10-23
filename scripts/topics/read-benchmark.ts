@@ -183,7 +183,7 @@ try {
     const seedClient = await pool.connect();
     try {
       for (const step of [
-        ...librarySeedSteps(books, noteTotal, 20),
+        ...librarySeedSteps(books, noteTotal),
         ...noteRelationSeedSteps({ relationsPerNote: 6, hubNotes: 20, hubRelations: 400 })
       ])
         await seedClient.query(step);

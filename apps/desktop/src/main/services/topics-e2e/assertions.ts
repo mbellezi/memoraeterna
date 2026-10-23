@@ -143,10 +143,10 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
   );
   check(
     "tree",
-    "An active tree exists on its own and the profile has no legacy content",
-    store.activeTree !== null && store.legacyRows === 0,
+    "An active tree exists on its own",
+    store.activeTree !== null,
     store.activeTree
-      ? `tree ${store.activeTree.id} at generation ${store.activeTree.generation}; legacy rows ${store.legacyRows}`
+      ? `tree ${store.activeTree.id} at generation ${store.activeTree.generation}`
       : "there is no active topic tree"
   );
   check(

@@ -105,10 +105,7 @@ managed`
     expect(pool.queries.some((query) => query.includes("truncate table"))).toBe(true);
     const truncate = pool.queries.find((query) => query.includes("truncate table"))!;
     for (const table of [
-      "wiki_pages",
-      "wiki_evidence",
-      "organization_settings_revisions",
-      "maintenance_schedules",
+      "topic_trees",
       "local_model_downloads",
       "settings",
       "storage_settings",
@@ -118,6 +115,7 @@ managed`
       "embeddings_1024"
     ])
       expect(truncate).toContain(`public."${table}"`);
+    expect(truncate).not.toContain("wiki_");
     for (const table of [
       "ai_profile_sets",
       "ai_profile_tasks",

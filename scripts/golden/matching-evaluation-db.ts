@@ -602,7 +602,10 @@ export async function readRelationsExportData(
           `select lo_atomic_note_id::text as "loNoteId", hi_atomic_note_id::text as "hiNoteId",
                   decider_key as "deciderKey", lo_to_hi_score as "loToHiScore",
                   hi_to_lo_score as "hiToLoScore", lo_to_hi_relation_type as "loToHiType",
-                  hi_to_lo_relation_type as "hiToLoType", accepted
+                  hi_to_lo_relation_type as "hiToLoType"${
+                    // The pair-level outcome exists only in a library from before migration 0063.
+                    has("relation_decisions", "accepted") ? ", accepted" : ""
+                  }
            from relation_decisions order by pair_key, decider_key`
         )
       ).rows

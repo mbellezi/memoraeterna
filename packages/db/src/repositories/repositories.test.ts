@@ -701,8 +701,7 @@ describe("repositories", () => {
     expect(queryText).not.toContain("delete from");
     expect(queryText).not.toContain("type not in");
     expect(queryText).toContain("insert into settings");
-    expect(queryText).toContain("not exists(select 1 from organization_runs");
-    expect(queryText).toContain("not exists(select 1 from maintenance_runs");
+    expect(queryText).not.toMatch(/organization_runs|maintenance_runs/);
     expect(queryText).toContain("not exists(select 1 from ingestion_runs");
   });
 
@@ -891,7 +890,7 @@ describe("repositories", () => {
     expect(statement).toContain("queue_ms, attempt, finished_at, started_at");
     expect(statement).toContain("now() - ($17::integer * interval '1 millisecond')");
     expect(db.queries[0]?.values[16]).toBe(2_900);
-    // The legacy organization and maintenance step tables are no longer written by any run.
+    // The legacy organization and maintenance step tables are gone (migration 0063).
     expect(statement).not.toMatch(/organization_steps|maintenance_steps/);
     expect(db.queries[0]?.values).toHaveLength(35);
   });

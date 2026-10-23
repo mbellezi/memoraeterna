@@ -40,7 +40,6 @@ function store(overrides: Partial<StoreFacts> = {}): StoreFacts {
       needsVectorItems: 0
     },
     lastNamedAt: new Date("2026-10-16T12:04:30Z"),
-    legacyRows: 0,
     ingestionRuns: [{ status: "succeeded", count: 9 }],
     failedStages: 0,
     failedJobs: [],
@@ -248,9 +247,8 @@ describe("the E6 verdict", () => {
     expect(failing(evaluateE6(store({ e1: null }), run()).checks)).toContain("e1");
   });
 
-  it("requires a tree without legacy content", () => {
+  it("requires an active tree", () => {
     expect(failing(evaluateE6(store({ activeTree: null }), run()).checks)).toContain("tree");
-    expect(failing(evaluateE6(store({ legacyRows: 1 }), run()).checks)).toEqual(["tree"]);
   });
 
   it("makes a replay fail on one miss, and on a replay that served nothing", () => {
