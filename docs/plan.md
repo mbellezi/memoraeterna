@@ -148,6 +148,12 @@ concurrency and automatic correction.
     automatically in its frozen apply band (frozen from the product's own requests, fragile across fold seeds:
     the owner accepted it); (d) X2 (reverse-only losses, mostly `extends`) is recorded as not met in F3 and
     revisited by F6's recalibration from real Keep and Remove.
+32. **Local models first; a remote run as the last check** (2026-10-23): every phase does all it can for the
+    local models to meet their bars as planned (tuning, constrained decoding, batching, prompts, within decision 26).
+    If a local model then comes close to a bar but still misses it, the same test runs with the Codex writer and the
+    Decisions API decider (gpt-6-luna); if that run passes, the bar is met for the phase. The local result is
+    recorded as reported, with its gap and the Local preset's limit. Each phase's decision record fixes "close" and
+    the remote spend for such runs before any run; above that spend the owner decides.
 
 ## 3. The five swaps
 
@@ -766,6 +772,11 @@ in ≤10 min (e2e); ≤6 visible automation settings (from 37+).
       icicle component F4 builds for the Inbox's structural diffs.
 - [ ] Atlas spike, record only (owner 2026-10-19): UMAP + Procrustes on the reference library; does each branch
       form a contiguous territory? F6 builds Atlas only on a go.
+- [ ] Parallel calls inside one import on remote routes (owner, 2026-10-23): a source's summary map batches and graph
+      extraction batches run at once up to the remote lane's limit (4 for API keys, 2 for Codex), their results kept
+      in input order; the cumulative per-source graph caps become fixed per-batch caps (12/12). Same tokens, less
+      time; the local lane stays at one call. Measured: import time (X3's TP-C200 on a paid route), entity yield and
+      calls per chapter (X7-REF), equal results in any completion order.
 
 Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
 clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in
