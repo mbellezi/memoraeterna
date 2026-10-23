@@ -83,7 +83,12 @@ const samples: Record<AppEvent["type"], AppEvent> = {
     }
   },
   "changes.changed": { type: "changes.changed", kind: "overview", id: id(7) },
-  "overview.changed": { type: "overview.changed", topicId: id(8) }
+  "overview.changed": { type: "overview.changed", topicId: id(8) },
+  "consultation.status": {
+    type: "consultation.status",
+    requestId: id(10),
+    status: "waitingForProvider"
+  }
 };
 
 describe("the app event contract", () => {
@@ -91,7 +96,7 @@ describe("the app event contract", () => {
     expect(AppEventSchema.safeParse(event).success).toBe(true);
   });
 
-  it("covers the six event types of D26 and the budget, change-set and overview changes", () => {
+  it("covers the six event types of D26, the budget, change-set and overview changes and the Ask's status", () => {
     expect(Object.keys(samples).sort()).toEqual(
       [
         "gardener.status",
@@ -102,7 +107,8 @@ describe("the app event contract", () => {
         "tree.changed",
         "budget.changed",
         "changes.changed",
-        "overview.changed"
+        "overview.changed",
+        "consultation.status"
       ].sort()
     );
   });
@@ -121,6 +127,14 @@ describe("the app event contract", () => {
     expect(AppEventSchema.safeParse({ type: "overview.changed", topicId: "t" }).success).toBe(
       false
     );
+  });
+
+  it("knows only the two states of a running Ask, for one request id", () => {
+    const status = samples["consultation.status"];
+    expect(AppEventSchema.safeParse({ ...status, status: "answering" }).success).toBe(true);
+    expect(AppEventSchema.safeParse({ ...status, status: "thinking" }).success).toBe(false);
+    expect(AppEventSchema.safeParse({ ...status, requestId: "r" }).success).toBe(false);
+    expect(AppEventSchema.safeParse({ ...status, message: "Waiting" }).success).toBe(false);
   });
 
   it("rejects an unknown type, a missing field, an extra field and a bad value", () => {

@@ -1,4 +1,5 @@
 import { subscribeWindowNavigation } from "../lib/window-navigation";
+import { useAppEvent } from "../lib/app-events";
 import { useEffect, useRef, useState } from "react";
 import { BookOpen, LoaderCircle, MessageCircle, Quote, X } from "lucide-react";
 import { ConsultationInputSchema, type ConsultationResult } from "@app/domain";
@@ -254,13 +255,15 @@ export function ConsultationDialog({
     [waiting, setWaiting] = useState(false),
     [error, setError] = useState<MessageKey | null>(null),
     [result, setResult] = useState<ConsultationResult | null>(null);
-  // Listens only while a question runs: the main process says when it waits for the provider.
-  useEffect(() => {
-    if (!busy) return;
-    return window.app.consultation.subscribeStatus((event) => {
+  // Listens only while a question runs (F4 D26): the main process says when it waits for the
+  // provider. Every window hears the event; this dialog keeps its own request only.
+  useAppEvent(
+    "consultation.status",
+    (event) => {
       if (event.requestId === request.current) setWaiting(event.status === "waitingForProvider");
-    });
-  }, [busy]);
+    },
+    busy
+  );
   useEffect(() => {
     const focus = document.activeElement as HTMLElement | null;
     if (!initialProfiles)

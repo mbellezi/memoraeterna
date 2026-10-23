@@ -635,7 +635,7 @@ void app.whenReady().then(() => {
     contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     wake: () => jobSupervisor?.wake()
   });
-  registerConsultationIpc(ipcMain, consultationService);
+  registerConsultationIpc(ipcMain, consultationService, events);
   registerBudgetIpc(
     ipcMain,
     remoteBudget!,

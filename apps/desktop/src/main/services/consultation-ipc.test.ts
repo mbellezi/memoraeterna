@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { IpcMain } from "electron";
 
-import { ConsultationStatusEventSchema, ipcChannels } from "../../shared/ipc.js";
+import { AppEventSchema, type AppEvent } from "../../shared/app-events.js";
+import { ipcChannels } from "../../shared/ipc.js";
+import { AppEventBus } from "./app-events.js";
 import { registerConsultationIpc } from "./consultation-ipc.js";
 import type { ConsultationService } from "./consultation-service.js";
 
@@ -10,7 +12,9 @@ function register() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
   const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
   const service = { ask: vi.fn(async () => "answer"), cancel: vi.fn(() => null) };
-  registerConsultationIpc(ipc as unknown as IpcMain, service as unknown as ConsultationService);
+  registerConsultationIpc(ipc as unknown as IpcMain, service as unknown as ConsultationService, {
+    publish: vi.fn()
+  });
   const call = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args);
   return { call, service, channels: [...handlers.keys()] };
 }
@@ -37,7 +41,7 @@ describe("Ask over IPC", () => {
   });
 });
 
-describe("what a running Ask tells the window that asked", () => {
+describe("what a running Ask tells the windows (F4 D26)", () => {
   /** Registers the handlers over a service whose Ask reports the given statuses as it runs. */
   function asking(statuses: string[]) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -49,32 +53,72 @@ describe("what a running Ask tells the window that asked", () => {
       }),
       cancel: vi.fn(async () => null)
     };
-    registerConsultationIpc(ipc as unknown as IpcMain, service as unknown as ConsultationService);
-    return (sender: unknown, requestId: string) =>
-      handlers.get(ipcChannels.consultationAsk)!({ sender }, { requestId, question: "A question" });
+    const sent: AppEvent[] = [];
+    const invalid: Error[] = [];
+    const bus = new AppEventBus({
+      send: (event) => sent.push(event),
+      onInvalid: (error) => invalid.push(error)
+    });
+    registerConsultationIpc(
+      ipc as unknown as IpcMain,
+      service as unknown as ConsultationService,
+      bus
+    );
+    const ask = (requestId: string) =>
+      handlers.get(ipcChannels.consultationAsk)!({}, { requestId, question: "A question" });
+    return { ask, bus, sent, invalid, channels: [...handlers.keys()] };
   }
-  const sender = (destroyed = false) => ({ isDestroyed: () => destroyed, send: vi.fn() });
 
-  it("pushes the status, tagged with the request, to the window that asked", async () => {
-    const window = sender();
+  it("publishes the status on the bus, tagged with the request, and opens no channel of its own", async () => {
+    const { ask, bus, sent, invalid, channels } = asking(["waitingForProvider"]);
     const requestId = randomUUID();
-    await asking(["waitingForProvider", "answering"])(window, requestId);
-    expect(window.send.mock.calls).toEqual([
-      [ipcChannels.consultationStatus, { requestId, status: "waitingForProvider" }],
-      [ipcChannels.consultationStatus, { requestId, status: "answering" }]
+    await expect(ask(requestId)).resolves.toBe("answer");
+    bus.flush();
+    expect(sent).toEqual([
+      { type: "consultation.status", requestId, status: "waitingForProvider" }
     ]);
-    for (const [, payload] of window.send.mock.calls)
-      expect(ConsultationStatusEventSchema.parse(payload)).toEqual(payload);
+    expect(invalid).toEqual([]);
+    for (const event of sent) expect(AppEventSchema.parse(event)).toEqual(event);
+    expect(channels.sort()).toEqual(
+      [ipcChannels.consultationAsk, ipcChannels.consultationCancel].sort()
+    );
+    expect(Object.keys(ipcChannels)).not.toContain("consultationStatus");
+    bus.dispose();
   });
-  it("sends nothing to a window that closed, and accepts nothing it does not know", async () => {
-    const closed = sender(true);
-    await asking(["waitingForProvider"])(closed, randomUUID());
-    expect(closed.send).not.toHaveBeenCalled();
+
+  it("keeps the newest status of each request apart from another request's", async () => {
+    const { ask, bus, sent } = asking(["waitingForProvider", "answering"]);
+    const first = randomUUID();
+    const second = randomUUID();
+    await ask(first);
+    await ask(second);
+    bus.flush();
+    expect(sent).toEqual([
+      { type: "consultation.status", requestId: first, status: "answering" },
+      { type: "consultation.status", requestId: second, status: "answering" }
+    ]);
+    bus.dispose();
+  });
+
+  it("sends a status the contract does not know to no window", async () => {
+    const { ask, bus, sent, invalid } = asking(["thinking"]);
+    await expect(ask(randomUUID())).resolves.toBe("answer");
+    bus.flush();
+    expect(sent).toEqual([]);
+    expect(invalid).toHaveLength(1);
     const requestId = randomUUID();
-    expect(() => ConsultationStatusEventSchema.parse({ requestId, status: "thinking" })).toThrow();
-    expect(() =>
-      ConsultationStatusEventSchema.parse({ requestId, status: "answering", detail: "x" })
-    ).toThrow();
-    await expect(asking([])(undefined, randomUUID())).resolves.toBe("answer");
+    expect(
+      AppEventSchema.safeParse({
+        type: "consultation.status",
+        requestId,
+        status: "answering",
+        detail: "x"
+      }).success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "consultation.status", requestId: "r", status: "answering" })
+        .success
+    ).toBe(false);
+    bus.dispose();
   });
 });

@@ -73,6 +73,8 @@ const coalescing: { [T in AppEventType]: Coalescing<T> } = {
     merge: (_previous, next) => next
   },
   "overview.changed": { key: (event) => event.topicId, merge: (_previous, next) => next },
+  // One Ask per request: the newest state wins, so a wait shorter than the window shows nothing.
+  "consultation.status": { key: (event) => event.requestId, merge: (_previous, next) => next },
   "relation.created": {
     key: () => "",
     merge: (previous, next) => ({

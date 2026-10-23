@@ -165,6 +165,22 @@ export const OverviewChangedEventSchema = z
   .object({ type: z.literal("overview.changed"), topicId: z.string().uuid() })
   .strict();
 
+/** What a running Ask tells the person besides its answer: it answers, or waits out a rate limit. */
+export const consultationStatusSchema = z.enum(["answering", "waitingForProvider"]);
+export type ConsultationStatus = z.infer<typeof consultationStatusSchema>;
+
+/**
+ * `consultation.status` (owner Q2): an Ask waits out the provider's rate limit, then answers again.
+ * Every window hears it; the dialog that asked keeps the events of its own request id only.
+ */
+export const ConsultationStatusEventSchema = z
+  .object({
+    type: z.literal("consultation.status"),
+    requestId: z.string().uuid(),
+    status: consultationStatusSchema
+  })
+  .strict();
+
 export const AppEventSchema = z.discriminatedUnion("type", [
   JobProgressEventSchema,
   InboxChangedEventSchema,
@@ -174,7 +190,8 @@ export const AppEventSchema = z.discriminatedUnion("type", [
   RelationCreatedEventSchema,
   BudgetChangedEventSchema,
   ChangeSetChangedEventSchema,
-  OverviewChangedEventSchema
+  OverviewChangedEventSchema,
+  ConsultationStatusEventSchema
 ]);
 
 export type AppEvent = z.infer<typeof AppEventSchema>;

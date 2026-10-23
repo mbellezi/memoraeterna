@@ -82,9 +82,14 @@ describe("Ask is decoupled from the legacy wiki and the organization domain", ()
       "ai.listProfiles",
       "consultation.ask",
       "consultation.cancel",
-      "consultation.subscribeStatus",
       "wiki.search"
     ]);
+    // Pushes arrive on the one event bus (F4 D26): only the Ask's own status.
+    const events = renderer.flatMap((file) =>
+      [...read(file).matchAll(/useAppEvent\(\s*"([a-z.]+)"/g)].map((m) => m[1])
+    );
+    expect(events).toEqual(["consultation.status"]);
+    expect(renderer.map((file) => read(file)).join("\n")).not.toMatch(/onAppEvent|subscribeStatus/);
   });
 
   it("is hosted without a page", () => {

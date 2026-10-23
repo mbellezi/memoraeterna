@@ -275,6 +275,38 @@ describe("the app event bus: coalescing", () => {
   });
 });
 
+describe("the app event bus: an Ask's status", () => {
+  const status = (
+    requestId: string,
+    value: AppEventOf<"consultation.status">["status"]
+  ): AppEventOf<"consultation.status"> => ({
+    type: "consultation.status",
+    requestId,
+    status: value
+  });
+
+  it("keeps the newest status per request, so a wait shorter than the window shows nothing", () => {
+    const { bus, sent } = newBus();
+    bus.publish(status(id(1), "waitingForProvider"));
+    bus.publish(status(id(2), "waitingForProvider"));
+    bus.publish(status(id(1), "answering"));
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    expect(sent).toEqual([status(id(1), "answering"), status(id(2), "waitingForProvider")]);
+  });
+
+  it("shows a wait that outlasts the window, then the answer resuming", () => {
+    const { bus, sent } = newBus();
+    bus.publish(status(id(1), "waitingForProvider"));
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    bus.publish(status(id(1), "answering"));
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    expect(sent.map((event) => (event as AppEventOf<"consultation.status">).status)).toEqual([
+      "waitingForProvider",
+      "answering"
+    ]);
+  });
+});
+
 describe("the app event bus: validation, listeners and shutdown", () => {
   it("reports an invalid event and never sends it", () => {
     const onInvalid = vi.fn();

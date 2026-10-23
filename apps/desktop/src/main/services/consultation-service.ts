@@ -31,7 +31,7 @@ import {
   type ConsultationResult
 } from "@app/domain";
 import { ActiveDeadline, aiErrorRetryAfterMs, isRateLimitFailure } from "@app/ai";
-import type { ConsultationStatus } from "../../shared/ipc.js";
+import type { ConsultationStatus } from "../../shared/app-events.js";
 import type { AiService } from "./ai-service.js";
 
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
