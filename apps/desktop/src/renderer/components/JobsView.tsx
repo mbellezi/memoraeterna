@@ -25,6 +25,7 @@ import {
 import { isRetiredProcessingStage } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { JobRecord, ProcessingBatch } from "../../shared/ipc";
+import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import {
   collapsePreparationStages,
@@ -86,18 +87,10 @@ export function JobsView({ t }: { t: Translator }) {
 
   useEffect(() => {
     void load();
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = window.app.jobs.subscribe(() => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => void load(), 100);
-    });
-    const fallbackTimer = setInterval(() => void load(), 5_000);
-    return () => {
-      unsubscribe();
-      if (refreshTimer) clearTimeout(refreshTimer);
-      clearInterval(fallbackTimer);
-    };
   }, []);
+  // Jobs arrive as pushed events (F4 D26), already coalesced by the main process: one read per
+  // burst, no timer.
+  useAppEvent("job.progress", () => void load());
 
   const cards = useMemo(() => groupJobs(jobs), [jobs]);
   const filteredCards = cards.filter((card) => matchesFilter(card, filter));

@@ -64,11 +64,10 @@ export function RelationLabelsCard(props: Props) {
       }
     };
     void load();
-    const timer = setInterval(() => void load(), 2_000);
-    const unsubscribe = window.app.jobs.subscribe(() => void load());
+    // The job moves as pushed events (F4 D26), not on a timer: one read per coalesced burst.
+    const unsubscribe = window.app.onAppEvent("job.progress", () => void load());
     return () => {
       active = false;
-      clearInterval(timer);
       unsubscribe();
     };
   }, [refresh]);

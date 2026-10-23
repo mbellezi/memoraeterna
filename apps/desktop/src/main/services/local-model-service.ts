@@ -33,6 +33,7 @@ import {
 } from "@app/db";
 import { normalizeAiModelParameters } from "@app/domain";
 import { aiModelParametersSchema } from "../../shared/ipc.js";
+import type { ModelDownloadEvent } from "../../shared/app-events.js";
 import type {
   AiModelParameters,
   LocalModelDownloadInput,
@@ -63,6 +64,12 @@ export interface LocalModelServiceOptions {
    */
   onModelSettled?: (catalogId: string) => void;
   /**
+   * Called (never awaited, never thrown into) as an install moves: requested, each progress step,
+   * verifying, ready, failed, canceled or removed. The event bus publishes `model.download` from it,
+   * so no screen reads the model list on a timer to follow a download.
+   */
+  onDownload?: (event: ModelDownloadEvent) => void;
+  /**
    * The runtime build an installed ranker would run on now (the MLX helper's SHA-256, or the
    * node-llama-cpp build). Given, `start` re-validates every ranker whose stored validation names
    * another build, in the background: the smoke test and the score-parity check (F3 D13, R1).
@@ -83,6 +90,9 @@ export interface RankerRevalidation {
 }
 
 const repositoryTokenSettingKey = "local-models.repository-token-ref";
+
+/** An announced file name or error is cut to this, so a long message never invalidates the event. */
+const maxAnnouncedText = 1_000;
 
 export class LocalModelService {
   private readonly credentials: CredentialService;
@@ -222,8 +232,10 @@ export class LocalModelService {
       await this.createDownload(model);
     }
     await repository.updateModel(model.id, { status: "downloading", lastError: null });
+    // Announced before the download starts, so a progress step can never be overtaken by it.
+    const requested = this.announced(await this.toView((await repository.findById(model.id))!));
     this.schedule(model.catalogId);
-    return this.toView((await repository.findById(model.id))!);
+    return requested;
   }
 
   /**
@@ -256,7 +268,7 @@ export class LocalModelService {
       status: "failed",
       lastError: "errors.localModels.canceled"
     });
-    return this.toView(next);
+    return this.announced(await this.toView(next));
   }
 
   public async resume(catalogId: string): Promise<LocalModelView> {
@@ -284,8 +296,9 @@ export class LocalModelService {
       });
     }
     const next = await repository.updateModel(model.id, { status: "downloading", lastError: null });
+    const resumed = this.announced(await this.toView(next));
     this.schedule(catalogId);
-    return this.toView(next);
+    return resumed;
   }
 
   public async remove(catalogId: string): Promise<LocalModelView> {
@@ -311,7 +324,7 @@ export class LocalModelService {
         lastError: null
       });
       await repository.deleteModel(model.id);
-      return { ...removed, download: null };
+      return this.announced({ ...removed, download: null });
     }
     await repository.updateModel(model.id, {
       status: "not_downloaded",
@@ -321,7 +334,7 @@ export class LocalModelService {
     });
     // A removed ranker is no longer validated: the sync closes its `reranking` capability.
     await this.syncCatalog();
-    return this.toView((await repository.findById(model.id))!);
+    return this.announced(await this.toView((await repository.findById(model.id))!));
   }
 
   public async test(catalogId: string): Promise<string> {
@@ -610,6 +623,15 @@ export class LocalModelService {
         ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
         signal: controller.signal,
         onProgress: async (progress) => {
+          this.announce(model, {
+            status: "downloading",
+            currentFile: progress.currentFile,
+            downloadedBytes: progress.downloadedBytes,
+            totalBytes: progress.totalBytes,
+            bytesPerSecond: Math.round(progress.bytesPerSecond),
+            etaSeconds: progress.etaSeconds === null ? null : Math.round(progress.etaSeconds),
+            error: null
+          });
           await Promise.all([
             repository.updateDownload(job.id, {
               currentFile: progress.currentFile,
@@ -635,6 +657,15 @@ export class LocalModelService {
         }
       });
       await repository.updateModel(model.id, { status: "verifying" });
+      this.announce(model, {
+        status: "verifying",
+        currentFile: null,
+        downloadedBytes: result.sizeBytes,
+        totalBytes: result.sizeBytes,
+        bytesPerSecond: 0,
+        etaSeconds: null,
+        error: null
+      });
       if (!(await verifyLocalModelFiles(entry, result.modelPath)))
         throw new Error("errors.localModels.checksumMismatch");
       // A dedicated ranker must also be a supported Qwen3 ranker before it counts as installed.
@@ -644,6 +675,15 @@ export class LocalModelService {
         managedPath: result.modelPath,
         installedSizeBytes: result.sizeBytes,
         lastError: null
+      });
+      this.announce(model, {
+        status: "ready",
+        currentFile: null,
+        downloadedBytes: result.sizeBytes,
+        totalBytes: result.sizeBytes,
+        bytesPerSecond: 0,
+        etaSeconds: 0,
+        error: null
       });
       await repository.updateDownload(job.id, {
         currentFile: null,
@@ -667,6 +707,15 @@ export class LocalModelService {
       const canceled = controller.signal.aborted;
       const message = canceled ? "errors.localModels.canceled" : redactSensitiveText(error);
       await repository.updateModel(model.id, { status: "failed", lastError: message });
+      this.announce(model, {
+        status: "failed",
+        currentFile: null,
+        downloadedBytes: 0,
+        totalBytes: model.expectedSizeBytes,
+        bytesPerSecond: 0,
+        etaSeconds: null,
+        error: message
+      });
       await repository.updateDownload(job.id, {
         error: message,
         bytesPerSecond: 0,
@@ -685,6 +734,43 @@ export class LocalModelService {
     }
     if (installed && isRankerCatalogEntry(entry)) await this.validateInstalledRanker(model.id);
     this.settledModel(catalogId);
+  }
+
+  /** Publishes one step of an install; a failing listener never reaches the install. */
+  private announce(
+    model: Pick<LocalModelRecord, "id" | "catalogId">,
+    state: Omit<ModelDownloadEvent, "type" | "localModelId" | "catalogId">
+  ): void {
+    if (!this.options.onDownload) return;
+    try {
+      this.options.onDownload({
+        type: "model.download",
+        localModelId: model.id,
+        catalogId: model.catalogId,
+        ...state,
+        currentFile: state.currentFile?.slice(0, maxAnnouncedText) ?? null,
+        error: state.error?.slice(0, maxAnnouncedText) ?? null
+      });
+    } catch (error) {
+      this.options.logger?.warn(redactSensitiveText(error));
+    }
+  }
+
+  /** Announces the state a model view shows (a request, a resume, a cancel, a removal) and returns it. */
+  private announced(view: LocalModelView): LocalModelView {
+    this.announce(
+      { id: view.id, catalogId: view.catalogId },
+      {
+        status: view.status,
+        currentFile: view.download?.currentFile ?? null,
+        downloadedBytes: view.download?.downloadedBytes ?? 0,
+        totalBytes: view.download?.totalBytes ?? view.expectedSizeBytes,
+        bytesPerSecond: view.download?.bytesPerSecond ?? 0,
+        etaSeconds: view.download?.etaSeconds ?? null,
+        error: view.lastError
+      }
+    );
+    return view;
   }
 
   private settledModel(catalogId: string): void {

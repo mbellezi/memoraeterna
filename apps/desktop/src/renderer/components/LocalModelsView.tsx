@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -16,6 +16,8 @@ import {
 
 import type { MessageKey } from "@app/i18n";
 import type { AiModelParameters, LocalModelView } from "../../shared/ipc";
+import { useAppEvent } from "../lib/app-events";
+import { applyModelDownloadEvent } from "../lib/model-download-events";
 import { AiParameterFields } from "./AiParameterFields";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -61,14 +63,17 @@ export function LocalModelsView({
     };
   }, []);
 
+  // Downloads arrive as pushed events (F4 D26), not as a timer reading the list.
+  const modelsRef = useRef(models);
   useEffect(() => {
-    if (!models.some((model) => model.status === "downloading" || model.status === "verifying"))
-      return;
-    const timer = window.setInterval(() => {
-      void load();
-    }, 1_000);
-    return () => window.clearInterval(timer);
+    modelsRef.current = models;
   }, [models]);
+  useAppEvent("model.download", (event) => {
+    const update = applyModelDownloadEvent(modelsRef.current, event);
+    modelsRef.current = update.models;
+    setModels(update.models);
+    if (update.reload) void load().catch(() => onToast("errors.common.unknown", "error"));
+  });
 
   const families = useMemo(
     () => [...new Set(models.map((model) => model.family))].sort(),

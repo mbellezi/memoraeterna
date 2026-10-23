@@ -403,11 +403,6 @@ export function registerIpcHandlers(
       serializeJob(job, ingestionRun, source)
     )
   );
-  jobSupervisor.subscribe(() => {
-    for (const contents of webContents.getAllWebContents()) {
-      if (!contents.isDestroyed()) contents.send(ipcChannels.jobsChanged);
-    }
-  });
   // F3 3.11: the notes whose relations a link job committed, coalesced by the supervisor.
   jobSupervisor.subscribeRelationsChanged((event) => {
     const payload = RelationsChangedEventSchema.parse(event);

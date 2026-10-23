@@ -24,6 +24,7 @@ import {
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { AppMenuCommand } from "./app-menu.js";
+import type { AppEventHandler, AppEventType } from "./app-events.js";
 import type {
   ViewHistoryEntry,
   ViewHistoryListInput,
@@ -106,6 +107,8 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
+  /** The one push channel of the typed event bus (`app-events.ts`). */
+  appEvents: "app:events",
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
   promptCommand: "app:prompts:command",
@@ -195,7 +198,6 @@ export const ipcChannels = {
   relationLabelsStart: "app:knowledge:relation-labels:start",
   relationLabelsStatus: "app:knowledge:relation-labels:status",
   jobsList: "app:jobs:list",
-  jobsChanged: "app:jobs:changed",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
   jobsDelete: "app:jobs:delete",
@@ -1832,6 +1834,11 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
+  /**
+   * Subscribes to one type of the typed push events (`app-events.ts`); the handler only receives
+   * payloads that matched the schema in the preload. Returns what stops listening.
+   */
+  onAppEvent: <T extends AppEventType>(type: T, handler: AppEventHandler<T>) => () => void;
   consultation: {
     ask: (input: ConsultationInput) => Promise<ConsultationResult>;
     cancel: (id: string) => Promise<null>;
@@ -2025,7 +2032,6 @@ export interface DesktopApi {
   };
   jobs: {
     list: () => Promise<JobRecord[]>;
-    subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;
     retry: (jobId: string) => Promise<JobRecord | null>;
     delete: (jobId: string) => Promise<JobsDeleteResult | null>;

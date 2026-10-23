@@ -55,6 +55,8 @@ import { IngestionService } from "./services/ingestion-service.js";
 import { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
 import { createJobEmbeddingGenerators } from "./services/job-embedding.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
+import { AppEventBus } from "./services/app-events.js";
+import { connectJobProgress, type JobProgressPublisher } from "./services/job-progress.js";
 import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
 import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
@@ -182,6 +184,8 @@ let ingestionService: IngestionService | null = null;
 let metadataEnrichmentService: MetadataEnrichmentService | null = null;
 let hierarchicalIngestionService: HierarchicalIngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
+let appEvents: AppEventBus | null = null;
+let jobProgress: JobProgressPublisher | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 let obsidianSyncService: ObsidianSyncService | null = null;
@@ -277,6 +281,16 @@ void app.whenReady().then(() => {
     }
   }
   soakPreparation?.installAdapterDecorator();
+  // The typed event bus (F4 D26): services publish after commit; the windows hear one validated channel.
+  const events = new AppEventBus({
+    send: (event) => {
+      for (const contents of webContents.getAllWebContents())
+        if (!contents.isDestroyed()) contents.send(ipcChannels.appEvents, event);
+    },
+    onInvalid: (error) => console.error(error.message),
+    onError: (error) => console.error(error instanceof Error ? error.message : String(error))
+  });
+  appEvents = events;
   const monitoringService = new MonitoringService(
     () => databaseService?.getPool() ?? null,
     () => settingsService!.getApp()
@@ -318,6 +332,7 @@ void app.whenReady().then(() => {
     isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
     testModel: (localModelId) => aiService!.testLocalModel(localModelId),
     onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId),
+    onDownload: (event) => events.publish(event),
     // F3 D13: a rebuilt runtime re-validates the ranker with its score-parity check. Golden runs
     // and AI cassettes run no live model, so they never re-validate.
     ...(!process.env.MEMORA_GOLDEN_RUN && aiCassette === null
@@ -364,6 +379,10 @@ void app.whenReady().then(() => {
     ai: aiService,
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
   });
+  // `topicsChanged` stays until F5; the bus carries the same committed, coalesced change as `tree.changed`.
+  topicTreeServices.changes.subscribe((change) =>
+    events.publish({ type: "tree.changed", ...change })
+  );
   libraryResetService = new LibraryResetService({
     // A reset leaves an empty active tree (D39).
     restoreDefaults: async () => {
@@ -533,6 +552,17 @@ void app.whenReady().then(() => {
     lightJobs: topicTreeServices.jobs,
     topicHooks: topicTreeServices.hooks
   });
+  // `job.progress` (F4 D26): every state change the supervisor announces becomes one coalesced read of
+  // the job counts. `relationsChanged` stays until F5; the bus carries it as `relation.created`.
+  jobProgress = connectJobProgress({
+    supervisor: jobSupervisor,
+    getPool: () => databaseService?.getPool() ?? null,
+    publish: (event) => events.publish(event),
+    onError: (error) => console.warn(error instanceof Error ? error.message : String(error))
+  });
+  jobSupervisor.subscribeRelationsChanged((change) =>
+    events.publish({ type: "relation.created", noteIds: change.noteIds })
+  );
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
@@ -1135,6 +1165,16 @@ function shutdownSteps(): ShutdownStep[] {
         aiService = null;
         await settingsService?.dispose();
         settingsService = null;
+      }
+    },
+    {
+      name: "event bus",
+      timeoutMs: 2_000,
+      run: () => {
+        jobProgress?.dispose();
+        jobProgress = null;
+        appEvents?.dispose();
+        appEvents = null;
       }
     },
     {

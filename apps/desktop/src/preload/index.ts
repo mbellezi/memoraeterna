@@ -11,6 +11,7 @@ import {
 } from "@app/integration-contracts";
 import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
 import { appMenuCommandSchema } from "../shared/app-menu.js";
+import { createAppEventDispatcher } from "../shared/app-events.js";
 import {
   viewHistoryEntrySchema,
   viewHistoryListInputSchema,
@@ -212,7 +213,18 @@ import {
   languageCodeSchema
 } from "../shared/ipc";
 
+// One IPC listener serves every `onAppEvent` subscription: it is attached with the first and
+// removed with the last, and each payload is validated again before a handler sees it.
+const appEvents = createAppEventDispatcher({
+  attach(deliver) {
+    const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => deliver(payload);
+    ipcRenderer.on(ipcChannels.appEvents, handler);
+    return () => ipcRenderer.removeListener(ipcChannels.appEvents, handler);
+  }
+});
+
 const api: DesktopApi = {
+  onAppEvent: (type, handler) => appEvents.subscribe(type, handler),
   consultation: {
     ask: async (input) =>
       ConsultationResultSchema.parse(
@@ -773,11 +785,6 @@ const api: DesktopApi = {
   jobs: {
     async list() {
       return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
-    },
-    subscribe(listener: () => void) {
-      const handler = () => listener();
-      ipcRenderer.on(ipcChannels.jobsChanged, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.jobsChanged, handler);
     },
     async cancel(jobId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.jobsCancel, jobId);
