@@ -7,7 +7,7 @@ import {
   type JsonObject,
   type PgPool
 } from "@app/db";
-import { changeSetConfig, type ChangeSetConfig } from "@app/domain";
+import { changeSetConfig, gardenerRetentionJobType, type ChangeSetConfig } from "@app/domain";
 
 import type { LightJobExecutor } from "../job-lanes.js";
 
@@ -19,7 +19,7 @@ import type { LightJobExecutor } from "../job-lanes.js";
  * verdicts, human passes, download jobs and the newest job of each type are never pruned; an undo
  * and what it undid go only together. It is one job on the jobs table, queued again for the next day when it ends.
  */
-export const gardenerRetentionJobType = "gardener-retention";
+export { gardenerRetentionJobType };
 const dedupeKey = gardenerRetentionJobType;
 const dayMs = 24 * 60 * 60 * 1000;
 

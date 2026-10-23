@@ -486,7 +486,7 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
     });
   });
 
-  it("prunes old succeeded and canceled jobs, never failed, downloads or a run's job", async () => {
+  it("prunes old succeeded and canceled jobs, never failed, downloads, a run's job or the newest of a type", async () => {
     const old = new Date(Date.now() - 40 * 86_400_000);
     const make = async (type: string, status: string) => {
       const job = await jobs().create({ type, lane: type === "ingestion" ? "heavy" : "light" });
@@ -500,11 +500,14 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
     const kept = [
       await make("topic-areas", "failed"),
       await make("local-model-download", "succeeded"),
-      await make("ingestion", "succeeded")
+      await make("ingestion", "succeeded"),
+      // The only job of its type: `latestByType` still reads it (T77 review F1).
+      await make("topic-sweep", "succeeded")
     ];
     await db().query("insert into ingestion_runs (job_id) values ($1)", [kept[2]]);
     const recent = await jobs().create({ type: "topic-place", lane: "light" });
     await jobs().update(recent.id, { status: "succeeded", finishedAt: new Date() });
+    kept.push((await jobs().create({ type: "topic-name", lane: "light" })).id);
     const before = new Date(Date.now() - 30 * 86_400_000);
     expect(await jobs().pruneFinished({ before, limit: 1 })).toBe(1);
     expect(await jobs().pruneFinished({ before })).toBe(1);

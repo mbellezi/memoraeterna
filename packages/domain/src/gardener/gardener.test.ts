@@ -197,7 +197,6 @@ describe("Gardener states and blockers (D5, D7)", () => {
   it("keeps its numbers in typed configuration", () => {
     expect(gardenerTaskConfig).toEqual({
       quarantineAfterFailedJobs: 2,
-      jobRetentionDays: 30,
       blockRecheckMs: 600_000,
       releaseDueBlocksEveryMs: 30_000
     });

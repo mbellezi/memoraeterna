@@ -113,15 +113,14 @@ export function gardenerStateOf(job: GardenerStateInput): GardenerState {
 /**
  * Numbers of the task model (D36: typed configuration, not rules). `quarantineAfterFailedJobs`:
  * consecutive failed jobs on one (kind, subject, fingerprint) that quarantine it (D8: the second,
- * six attempts). `jobRetentionDays`: succeeded and canceled jobs older than this are pruned (3.1,
- * calibration). `blockRecheckMs`: a job set aside with no known clear time is looked at again after
- * it, so a missed clearing event never leaves it waiting for good. `releaseDueBlocksEveryMs`: how
- * often a worker releases the set-aside jobs whose clear time passed.
+ * six attempts); the retention window of finished jobs is `changeSetConfig.retention.jobDays`, read
+ * by the `gardener-retention` job. `blockRecheckMs`: a job set aside with no known clear time is
+ * looked at again after it, so a missed clearing event never leaves it waiting for good.
+ * `releaseDueBlocksEveryMs`: how often a worker releases the set-aside jobs whose clear time passed.
  */
 export const GardenerTaskConfigSchema = z
   .object({
     quarantineAfterFailedJobs: z.number().int().min(1).max(10),
-    jobRetentionDays: z.number().int().min(1).max(365),
     blockRecheckMs: z
       .number()
       .int()
@@ -135,7 +134,6 @@ export type GardenerTaskConfig = z.infer<typeof GardenerTaskConfigSchema>;
 export const gardenerTaskConfig: Readonly<GardenerTaskConfig> = Object.freeze(
   GardenerTaskConfigSchema.parse({
     quarantineAfterFailedJobs: 2,
-    jobRetentionDays: 30,
     blockRecheckMs: 600_000,
     releaseDueBlocksEveryMs: 30_000
   })
