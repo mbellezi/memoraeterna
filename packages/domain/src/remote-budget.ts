@@ -8,7 +8,7 @@ import { z } from "zod";
 import { resolvePrice, tokensCostUsd, type PriceTable, type ResolvedPrice } from "./price-table.js";
 
 /**
- * Who a remote call spends for (D14): `user` (work the person started: an import's own stages and
+ * Who a remote call spends for (D14): `user` (work the person started: an imported source's own stages and
  * its link job), `background` (Gardener work, metered and refused at the caps) and `interactive`
  * (the person waits for the answer). Callers state it beside the workload class and the priority.
  */

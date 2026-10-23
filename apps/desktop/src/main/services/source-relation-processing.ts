@@ -1017,7 +1017,7 @@ async function judgePair(input: {
         stage: "sourceMatching",
         workloadClass: "decide",
         priority: "P2",
-        // The link job's wrapper states its own class; an import's judge runs for its user.
+        // The link job's wrapper states its own class; an imported source's judge runs for its user.
         budgetClass: input.context?.budgetClass ?? "user",
         contentLanguage: input.contentLanguage,
         promptVersion: sourceRelationPromptVersion,

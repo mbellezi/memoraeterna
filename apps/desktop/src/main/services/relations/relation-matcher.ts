@@ -1189,7 +1189,7 @@ export class RelationMatcher {
           })),
           // Note decide is background work (P2) unless its caller states a priority (D30).
           priority: context.logContext.priority ?? "P2",
-          // An import's own matching unless its caller states otherwise (MATCH: background, D14).
+          // An imported source's own matching unless its caller states otherwise (MATCH: background, D14).
           budgetClass: context.logContext.budgetClass ?? "user",
           sourceIds: [...sourceIds],
           ...(context.logContext.jobId ? { jobId: context.logContext.jobId } : {}),
@@ -1503,7 +1503,7 @@ export class RelationMatcher {
             // The decide class: its deadline and the lean shape, on its `op:` route (D16, R5).
             workloadClass: "decide",
             priority: context.logContext.priority ?? "P2",
-            // An import's own matching unless its caller states otherwise (MATCH: background, D14).
+            // An imported source's own matching unless its caller states otherwise (MATCH: background, D14).
             budgetClass: context.logContext.budgetClass ?? "user"
           },
           [

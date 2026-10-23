@@ -12,7 +12,7 @@ import { createElectronStub, installElectronStub } from "./topics-e2e/electron-s
  * services without Electron (a stub stands in for it), configures the profiles through the Settings
  * handlers, then imports the paper through the Import handlers with the default plan while counting
  * every IPC call. The AI calls (generation and embeddings) go through a cassette; the topic jobs
- * are held while the import's heavy work runs and released when it completes (D23); there is no
+ * are held while the imported source's heavy work runs and released when it completes (D23); there is no
  * ranker, so the placement gate falls back. It evaluates every E6 assertion and writes
  * `report.json` and `report.md` under `.cache/topics/e2e/<time>/`.
  *

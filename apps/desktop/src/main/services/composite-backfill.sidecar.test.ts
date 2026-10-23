@@ -1162,7 +1162,7 @@ describe.skipIf(!sidecarInstalled)("hierarchy-root composites on PostgreSQL (T53
       const jobs = createJobRepository(db());
       const root = await sourceRepository.create({ type: "Book", title });
       const book: Book = { root, chapters: [], chapterJobs: [], rootRun: "" };
-      // A chapter's plan, as an import's: its notes are matched and its source is discovered, so
+      // A chapter's plan, as an imported source's: its notes are matched and its source is discovered, so
       // its run parks for the link job of the book, whose discovery waits for the last chapter.
       const contentStages = [
         "chunking",

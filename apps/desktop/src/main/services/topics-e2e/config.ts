@@ -22,7 +22,7 @@ export const routeFileName = "e2e-route.json";
 export const defaultEmbeddingCatalogId = "gguf-qwen3-embedding-0.6b-q8-0";
 export const defaultApiKeyEnv = "MEMORA_E2E_API_KEY";
 export const defaultLocale = "pt-BR";
-/** E6: the light lane may take at most this long to drain after the import's heavy work. */
+/** E6: the light lane may take at most this long to drain after the imported source's heavy work. */
 export const defaultLaneTimeoutMinutes = 15;
 /**
  * E6 runs without a ranker on purpose (spec E6 "no ranker, so the gate fallback is exercised",

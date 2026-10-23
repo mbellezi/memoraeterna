@@ -800,7 +800,7 @@ try {
   // the same document, so a chapter was rejected as a duplicate of an unrelated article.
   const legacyEmptyImport = await createSourceItemRepository(pool).create({
     type: "StandaloneArticle",
-    title: "Legacy empty import",
+    title: "Legacy empty import source",
     sourceOrigin: "file_upload",
     contentHash: sha256(""),
     language: "en"

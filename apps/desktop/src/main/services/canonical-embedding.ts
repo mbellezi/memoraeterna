@@ -36,7 +36,7 @@ export function createCanonicalEmbedder(options: {
         embeddingInputType: "document",
         workloadClass: "embed",
         priority: "P2",
-        // An import's own canonicalization unless the graph pass says otherwise (a catalog header).
+        // An imported source's own canonicalization unless the graph pass says otherwise (a catalog header).
         budgetClass: options.context.budgetClass ?? "user"
       },
       options.signal

@@ -1,4 +1,4 @@
-// How the zero-config end-to-end test (F2 T32) waits: for the import's heavy work, then for the
+// How the zero-config end-to-end test (F2 T32) waits: for the imported source's heavy work, then for the
 // light lane. A queue counts as drained after several quiet polls in a row, because a finished job
 // enqueues its follow-up a moment later (the change notice that asks for a name is coalesced).
 export type WaitStop = "cassette_miss" | "token_limit";

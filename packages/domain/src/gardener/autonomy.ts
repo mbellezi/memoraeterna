@@ -1,6 +1,6 @@
 // The autonomy matrix (F4 spec 3.2, D12) and the background policy of each Gardener job kind: which
 // work a kind does, which model calls it makes, and whether every one of its rows is background work
-// (then the global gates hold it at claim) or only some (an import's own link job is the user's: its
+// (then the global gates hold it at claim) or only some (an imported source's own link job is the user's: its
 // background rows are held per call, at admission).
 import type { GardenerAutonomy } from "./controls.js";
 
@@ -46,7 +46,7 @@ export interface GardenerKindPolicy {
   readonly ai: GardenerKindAi;
   /**
    * `background`: every row is the Gardener's, so pause, autonomy, only-idle and only-AC hold the
-   * kind at claim. `mixed`: an import's own rows are the user's and never wait for those gates; the
+   * kind at claim. `mixed`: an imported source's own rows are the user's and never wait for those gates; the
    * kind's background calls are held at admission instead.
    */
   readonly budget: "background" | "mixed";

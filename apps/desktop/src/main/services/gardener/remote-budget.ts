@@ -341,7 +341,7 @@ export class RemoteBudget {
 
   /**
    * `budget.estimateImport` (spec 3.3): an import plan's chunk count priced on the route that writes
-   * its notes and graph (the bulk of an import's tokens), with the typed tokens per chunk.
+   * its notes and graph (the bulk of an imported source's tokens), with the typed tokens per chunk.
    */
   public async estimateImport(
     input: ImportEstimateInput,

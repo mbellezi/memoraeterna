@@ -287,10 +287,10 @@ export interface RelationTypingDeps {
 }
 
 export interface RelationTypingOptions {
-  /** Lane priority of the calls: P1 for an interactive import's link job, P2 by default (D30). */
+  /** Lane priority of the calls: P1 for the link job of an interactive import, P2 by default (D30). */
   priority?: AiPriorityInput;
   /**
-   * Who the calls spend for (F4 D14): `user` for an import's own link job (the default),
+   * Who the calls spend for (F4 D14): `user` for an imported source's own link job (the default),
    * `background` for the retype sweep and Gardener matching.
    */
   budgetClass?: BudgetClass;

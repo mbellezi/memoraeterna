@@ -137,7 +137,7 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
     expect(await jobs().create({ type: "ingestion" })).toMatchObject({ scopeKey: null });
   });
 
-  it("runs an import's inline stage rows beside its scoped parent (B2)", async () => {
+  it("runs an imported source's inline stage rows beside its scoped parent (B2)", async () => {
     const root = randomUUID();
     const parent = await jobs().create({ type: "ingestion", payload: { sourceItemId: root } });
     expect((await jobs().claimNext("heavy", ["ingestion"], "heavy"))?.id).toBe(parent.id);

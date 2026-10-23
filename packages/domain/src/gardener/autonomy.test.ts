@@ -86,7 +86,7 @@ describe("autonomy matrix (spec 3.2)", () => {
     expect(changeDisposition({ work: "naming", autonomy: "off", risk: "low" })).toBe("applied");
   });
 
-  it("never holds a mixed kind at claim: an import's own link job is the user's", () => {
+  it("never holds a mixed kind at claim: an imported source's own link job is the user's", () => {
     expect(gardenerKindPolicy("relation-link")?.budget).toBe("mixed");
     expect(gardenerKindPolicy("relation-promote")?.budget).toBe("mixed");
     expect(autonomyHoldsKind("relation-link", "off")).toBe(false);

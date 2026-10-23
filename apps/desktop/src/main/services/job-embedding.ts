@@ -5,7 +5,7 @@ import type { JobSupervisorOptions } from "./job-supervisor.js";
 
 /**
  * Who a job's embeddings spend for (F4 D14): what the job states, else background work at P3 (the
- * composite backfill, a catalog header) and the import's own chunks at P2.
+ * composite backfill, a catalog header) and the imported source's own chunks at P2.
  */
 function jobEmbeddingBudgetClass(
   context: { priority?: unknown; budgetClass?: BudgetClass } | undefined

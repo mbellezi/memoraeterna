@@ -188,7 +188,7 @@ export interface KnowledgeServiceOptions {
 export interface AtomicNoteGenerationLogContext {
   jobId?: string;
   ingestionRunId?: string;
-  /** Who the calls spend for (F4 D14): an import's own notes are `user` (the default). */
+  /** Who the calls spend for (F4 D14): an imported source's own notes are `user` (the default). */
   budgetClass?: BudgetClass;
   onProgress?: (progress: number) => void;
 }
@@ -198,7 +198,7 @@ export interface KnowledgeGraphGenerationContext {
   ingestionRunId?: string;
   /** The lane priority of the calls; background work that yields to ingestion states `P3`. */
   priority?: "P2" | "P3";
-  /** Who the calls spend for (F4 D14): an import's own graph is `user` (the default). */
+  /** Who the calls spend for (F4 D14): an imported source's own graph is `user` (the default). */
   budgetClass?: BudgetClass;
   includeAtomicNotesGraph?: boolean;
   completedBatches?: unknown;
@@ -633,7 +633,7 @@ export class KnowledgeService {
               documentId,
               workloadClass: "write-fast",
               priority: "P2",
-              // An import's own stage (D14), unless its caller says otherwise.
+              // An imported source's own stage (D14), unless its caller says otherwise.
               budgetClass: logContext.budgetClass ?? "user",
               onProgress: (event) => onProgress?.(event.progress)
             },
@@ -1901,7 +1901,7 @@ export class KnowledgeService {
               operation: sourceMatchingOperation,
               workloadClass: "decide",
               priority: input.priority,
-              // The link job's: user for an import's own, background otherwise (D14).
+              // The link job's: user for an imported source's own, background otherwise (D14).
               budgetClass: input.budgetClass
             },
             callSignal,

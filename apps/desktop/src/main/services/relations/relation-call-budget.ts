@@ -1,7 +1,7 @@
 // The daily cap of background remote relation calls (F3 D26), until F4's money cap. One counter per
 // local day in the setting `relations.ai.dailyCalls`: every remote typing or discovery call of a
 // link job or sweep counts; a background call (P2, P3) is refused once the day's count reaches
-// the cap, an interactive one (P1, an interactive import's link job) is counted and never refused.
+// the cap, an interactive one (P1, the link job of an interactive import) is counted and never refused.
 // Calls on the local lane, and every call of a golden or re-match run (drain mode, whose token cap
 // bounds it), are not counted.
 import { z } from "zod";

@@ -531,7 +531,7 @@ export async function backfillSourceComposites(input: {
     input.signal?.throwIfAborted();
     const nodeId = listed.id;
     try {
-      // The import's own stages build a node it is still working on (with the summary it writes).
+      // The imported source's own stages build a node it is still working on (with the summary it writes).
       const node = listed.busy ? null : await sources.findById(nodeId);
       if (listed.busy) result.incomplete += 1;
       else if (node) {

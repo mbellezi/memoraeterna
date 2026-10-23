@@ -3,7 +3,7 @@
 // configures one writer profile plus the default local embedding model the way the first run does,
 // imports one paper through the product's IPC handlers with the default plan and waits for the
 // light lane. The AI calls run through a cassette (record, or replay with 0 misses), the topic jobs
-// are held while the import's heavy work runs (D23) and released when it completes, and no ranker
+// are held while the imported source's heavy work runs (D23) and released when it completes, and no ranker
 // exists on purpose (`e2eRanker`: the product's first-run ranker install stays off), so every
 // ambiguous note takes the gate's no-decider fallback (owner decision 19). Then E6 is evaluated
 // (`assertions.ts`).
@@ -106,7 +106,7 @@ export interface RunDeps {
   pollIntervalMs?: number;
   /** Quiet polls in a row that count as a drained queue (default 6). */
   quietPolls?: number;
-  /** How long the import's heavy work may take (default 6 hours). */
+  /** How long the imported source's heavy work may take (default 6 hours). */
   heavyTimeoutMs?: number;
   /** Clusters builds in process (tests); the app's clustering worker otherwise. */
   clusterTopics?: ClusterTopics;
@@ -523,7 +523,7 @@ async function runPass(
       timing.heavyDoneAt = now();
       if (heavy !== "settled") stoppedBy = heavy === "timeout" ? "drain_timeout" : heavy;
       if (stoppedBy === null) {
-        // D23: the topic jobs run once the import's heavy work completed.
+        // D23: the topic jobs run once the imported source's heavy work completed.
         await topics.releaseTopicJobs();
         supervisor.wake("light");
         const lane = await waitQuiet({
@@ -661,7 +661,7 @@ async function activeJobs(pool: PgPool, topic: boolean): Promise<number> {
   return Number(result.rows[0]?.n ?? 0);
 }
 
-/** Ingestion runs that have not ended: the import's heavy work is over only when none is left. */
+/** Ingestion runs that have not ended: the imported source's heavy work is over only when none is left. */
 async function unfinishedRuns(pool: PgPool): Promise<number> {
   const result = await pool.query<{ n: number }>(
     "select count(*)::int as n from ingestion_runs where status::text in ('pending', 'running')"

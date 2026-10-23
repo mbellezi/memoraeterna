@@ -202,7 +202,7 @@ const rows: readonly GardenerTaskKind[] = [
     gardener: true,
     generative: true,
     remote: true,
-    // An import's own link job is the user's; the backfill and re-match ones are background.
+    // An imported source's own link job is the user's; the backfill and re-match ones are background.
     budgetClass: "background",
     routeClass: "write-fast",
     fingerprint: "existing state keys",

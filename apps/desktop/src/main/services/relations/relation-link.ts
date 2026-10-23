@@ -164,7 +164,7 @@ function parseDecidedNotes(decided: unknown): StoredDecidedNote[] {
   });
 }
 
-/** An interactive import's runs, and so its link job, run at P1 (D30). */
+/** The runs of an interactive import, and so its link job, run at P1 (D30). */
 export function isInteractiveRun(run: Pick<IngestionRunRecord, "trigger">): boolean {
   return run.trigger === "interactive_import";
 }
@@ -195,7 +195,7 @@ export interface RelationDiscoveryInput {
   runKey: string;
   regenerate: boolean;
   priority: AiPriorityInput;
-  /** Who the judge's calls spend for (F4 D14): `user` for an import's own link job. */
+  /** Who the judge's calls spend for (F4 D14): `user` for an imported source's own link job. */
   budgetClass: BudgetClass;
   /** Asked before every remote call; false stops the pass (`relationDailyCapError`). */
   reserveCall: (lane: "local" | "remote") => Promise<boolean>;
@@ -244,8 +244,8 @@ export interface RelationLinkDeps {
 
 /**
  * Queues the link job of a root, or makes the queued one due now (a running one never absorbs a
- * request: it may have read its runs already, so a new job is queued beside it). An interactive
- * import's link job is claimed before background ones (D30: `jobs.priority` 1). `discovery` asks
+ * request: it may have read its runs already, so a new job is queued beside it). The link job of an
+ * interactive import is claimed before background ones (D30: `jobs.priority` 1). `discovery` asks
  * the job to discover the root's source relations even with no parked run, from `notBefore` on:
  * discovery the daily cap deferred (D26).
  */
