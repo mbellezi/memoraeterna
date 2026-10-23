@@ -9,9 +9,15 @@ export const jobActivityChangedIdsMax = 50;
  */
 const cursorOverlapSql = "interval '1 second'";
 
+/**
+ * Jobs of one lane by state. A queued job a blocker set aside (D5, D7) counts as `blocked`, never as
+ * `queued`: readers of queued work skip it.
+ */
+export type JobActivityCounts = Record<JobStatus | "blocked", number>;
+
 export interface JobActivity {
   /** Jobs by lane and state; a combination with no job is zero. */
-  counts: Record<JobLane, Record<JobStatus, number>>;
+  counts: Record<JobLane, JobActivityCounts>;
   /** Jobs touched since the previous read, newest first (a superset is fine); empty at the first read. */
   changedIds: string[];
   /** More jobs were touched than `changedIds` holds. */
@@ -22,12 +28,13 @@ export interface JobActivity {
 
 interface CountRow {
   lane: JobLane;
-  status: JobStatus;
+  status: keyof JobActivityCounts;
   count: number;
 }
 
-const emptyCounts = (): Record<JobStatus, number> => ({
+const emptyCounts = (): JobActivityCounts => ({
   queued: 0,
+  blocked: 0,
   running: 0,
   succeeded: 0,
   failed: 0,
@@ -35,8 +42,9 @@ const emptyCounts = (): Record<JobStatus, number> => ({
 });
 
 /**
- * The read behind `job.progress`: counts of the `jobs` table by lane and state, and which jobs
- * changed since the last read. Two cheap statements per read; it writes nothing.
+ * The read behind `job.progress`: counts of the `jobs` table by lane and state (a blocked queued
+ * job apart from the queued ones), and which jobs changed since the last read. Two cheap
+ * statements per read; it writes nothing.
  */
 export function createJobActivityRepository(db: Queryable) {
   return {
@@ -48,9 +56,12 @@ export function createJobActivityRepository(db: Queryable) {
       if (!cursor) throw new Error("job_activity_clock_unavailable");
       const [counted, changed] = await Promise.all([
         db.query<CountRow>(
-          `select lane, status::text as status, count(*)::int as count
+          `select lane,
+                  case when status = 'queued' and blocked_class is not null then 'blocked'
+                       else status::text end as status,
+                  count(*)::int as count
            from jobs
-           group by lane, status`
+           group by 1, 2`
         ),
         options.since
           ? db.query<{ id: string }>(

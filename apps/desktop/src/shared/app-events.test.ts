@@ -12,7 +12,7 @@ import {
 import { ipcChannels } from "./ipc";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const counts = { queued: 1, running: 2, succeeded: 3, failed: 0, canceled: 0 };
+const counts = { queued: 1, blocked: 0, running: 2, succeeded: 3, failed: 0, canceled: 0 };
 
 const samples: Record<AppEvent["type"], AppEvent> = {
   "job.progress": {

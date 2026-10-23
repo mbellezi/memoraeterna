@@ -36,6 +36,7 @@ describe("the job activity read", () => {
       [
         { lane: "heavy", status: "running", count: 2 },
         { lane: "light", status: "queued", count: 40 },
+        { lane: "light", status: "blocked", count: 3 },
         { lane: "light", status: "failed", count: 1 }
       ]
     ]);
@@ -43,10 +44,12 @@ describe("the job activity read", () => {
     const activity = await createJobActivityRepository(db).read();
 
     expect(db.queries[0]?.text).toContain("clock_timestamp()");
+    // A queued job a blocker set aside is counted apart (D5): it is not queued work.
+    expect(db.queries[1]?.text).toContain("blocked_class is not null then 'blocked'");
     expect(activity.cursor).toBe("2026-10-23 10:00:00.5+00");
     expect(activity.counts).toEqual({
-      heavy: { queued: 0, running: 2, succeeded: 0, failed: 0, canceled: 0 },
-      light: { queued: 40, running: 0, succeeded: 0, failed: 1, canceled: 0 }
+      heavy: { queued: 0, blocked: 0, running: 2, succeeded: 0, failed: 0, canceled: 0 },
+      light: { queued: 40, blocked: 3, running: 0, succeeded: 0, failed: 1, canceled: 0 }
     });
     // The first read has no cursor to compare with, so it names no job and asks for none.
     expect(activity.changedIds).toEqual([]);
@@ -114,7 +117,7 @@ describe.skipIf(!sidecarInstalled)("the job activity read on a real PostgreSQL d
     await db().query("delete from jobs");
   });
 
-  it("counts by lane and state", async () => {
+  it("counts by lane and state, a blocked queued job apart", async () => {
     const jobs = createJobRepository(db());
     await jobs.create({ type: "ingestion" });
     await jobs.create({ type: "ingestion" });
@@ -123,12 +126,14 @@ describe.skipIf(!sidecarInstalled)("the job activity read on a real PostgreSQL d
     await jobs.update(running.id, { status: "running" });
     const failed = await jobs.create({ type: "topic-sweep", lane: "light" });
     await jobs.update(failed.id, { status: "failed" });
+    const held = await jobs.create({ type: "topic-name", lane: "light" });
+    await jobs.markBlocked({ ids: [held.id] }, { class: "paused", reason: "user_pause" });
 
     const activity = await createJobActivityRepository(db()).read();
 
     expect(activity.counts).toEqual({
-      heavy: { queued: 2, running: 0, succeeded: 0, failed: 0, canceled: 0 },
-      light: { queued: 1, running: 1, succeeded: 0, failed: 1, canceled: 0 }
+      heavy: { queued: 2, blocked: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 },
+      light: { queued: 1, blocked: 1, running: 1, succeeded: 0, failed: 1, canceled: 0 }
     });
   });
 

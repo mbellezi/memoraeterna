@@ -15,9 +15,19 @@ const share = z.number().min(0).max(1);
 /** The jobs that changed since the previous `job.progress`: at most this many IDs travel. */
 export const appEventJobIdsMax = 50;
 
-/** Jobs of one lane by state. */
+/**
+ * Jobs of one lane by state. `blocked` counts the queued jobs a blocker set aside (D5, D7): they
+ * wait for their blocker to clear and are never in `queued`.
+ */
 export const jobStateCountsSchema = z
-  .object({ queued: count, running: count, succeeded: count, failed: count, canceled: count })
+  .object({
+    queued: count,
+    blocked: count,
+    running: count,
+    succeeded: count,
+    failed: count,
+    canceled: count
+  })
   .strict();
 export type JobStateCounts = z.infer<typeof jobStateCountsSchema>;
 

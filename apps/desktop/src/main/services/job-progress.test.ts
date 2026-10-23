@@ -10,7 +10,7 @@ import {
 } from "./job-progress.js";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const zero = { queued: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
+const zero = { queued: 0, blocked: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
 
 const activity = (cursor: string, overrides: Partial<JobActivity> = {}): JobActivity => ({
   counts: { heavy: { ...zero, running: 1 }, light: { ...zero, queued: 12 } },

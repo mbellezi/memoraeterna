@@ -6,7 +6,7 @@ import { appEventJobIdsMax, type AppEvent, type AppEventOf } from "../../shared/
 import { AppEventBus, appEventCoalesceMs } from "./app-events.js";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const counts = { queued: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
+const counts = { queued: 0, blocked: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
 
 const progress = (
   changedIds: string[],
