@@ -110,6 +110,7 @@ describe("the link job's discovery step", () => {
         runKey: "relation-link:job",
         regenerate: false,
         priority: "P1",
+        budgetClass: "user",
         reserveCall,
         registry,
         context: { jobId: "job" }
@@ -122,7 +123,13 @@ describe("the link job's discovery step", () => {
     expect(ai.runDefaultTask).toHaveBeenCalledWith(
       "reranking",
       "first",
-      { operation: "source_relation_matching", workloadClass: "decide", priority: "P1" },
+      {
+        operation: "source_relation_matching",
+        workloadClass: "decide",
+        priority: "P1",
+        // The link job's budget class (F4 D14).
+        budgetClass: "user"
+      },
       undefined,
       undefined
     );

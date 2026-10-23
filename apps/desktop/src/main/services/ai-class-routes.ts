@@ -563,6 +563,7 @@ export class AiClassRouteService {
       stage: "class_test",
       origin: "settings",
       priority: "P0" as const,
+      budgetClass: "interactive" as const,
       sourceItemIds: [] as string[]
     };
     const invalid = () => new Error("settings.ai.classes.errors.invalidOutput");

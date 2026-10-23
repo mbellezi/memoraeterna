@@ -43,3 +43,5 @@ export * from "./topics.js";
 export * from "./topic-overview.js";
 export * from "./structured-output.js";
 export * from "./knowledge-graph-batching.js";
+export * from "./price-table.js";
+export * from "./remote-budget.js";

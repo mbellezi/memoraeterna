@@ -189,6 +189,7 @@ export class RelationExplanationService {
       operation: relationExplanationOperation,
       workloadClass: "write-fast" as const,
       priority: "P0" as const,
+      budgetClass: "interactive" as const,
       contentLanguage,
       promptVersion: relationExplanationPromptVersion,
       // Only sources that still exist: a knowledge note outlives its home source, and the audit of

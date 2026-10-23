@@ -497,6 +497,7 @@ export async function runMatchingBenchmark(
           stage: "embedding",
           workloadClass: "embed",
           priority: "P2",
+          budgetClass: "user",
           atomicNoteId: note.id,
           sourceItemId: note.created_from_source_item_id,
           sourceItemIds: [note.created_from_source_item_id]

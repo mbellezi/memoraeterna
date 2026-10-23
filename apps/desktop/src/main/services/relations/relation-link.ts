@@ -44,6 +44,7 @@ import {
   NoteRelationWriteTypeSchema,
   relationsConfig as defaultRelationsConfig,
   renderRelationPairText,
+  type BudgetClass,
   type RelationsConfig
 } from "@app/domain";
 
@@ -169,6 +170,15 @@ export function isInteractiveRun(run: Pick<IngestionRunRecord, "trigger">): bool
 }
 
 /**
+ * Who a link job spends for (F4 D14): the imports whose runs parked for it (`user`, counted and
+ * never refused); a job with no parked run (a re-match's carried notes, a discovery the daily cap
+ * deferred) is background work, metered and refused at the remote caps.
+ */
+export function linkJobBudgetClass(runs: readonly unknown[]): BudgetClass {
+  return runs.length > 0 ? "user" : "background";
+}
+
+/**
  * Whether a parked run asked for source relations: its plan has the source stage (a legacy run,
  * with no stored plan, runs every stage). A run whose plan stops at note matching parks only for
  * its note pairs to be persisted (D21); its link job discovers nothing for it.
@@ -185,6 +195,8 @@ export interface RelationDiscoveryInput {
   runKey: string;
   regenerate: boolean;
   priority: AiPriorityInput;
+  /** Who the judge's calls spend for (F4 D14): `user` for an import's own link job. */
+  budgetClass: BudgetClass;
   /** Asked before every remote call; false stops the pass (`relationDailyCapError`). */
   reserveCall: (lane: "local" | "remote") => Promise<boolean>;
   /** The link jobs' in-flight registry: a pair another job is judging is judged once (D24). */
@@ -640,6 +652,7 @@ export class RelationLinker {
     const runtime = this.runtime();
     const interactive = runs.some(isInteractiveRun);
     const priority: AiPriorityInput = interactive ? "P1" : "P2";
+    const budgetClass = linkJobBudgetClass(runs);
     const roots = new Map<string, string>();
     // Drain mode types each run's pairs by themselves, in decide order: a prompt never depends on
     // how many runs of the root had parked when the job was claimed (deterministic replays).
@@ -659,6 +672,7 @@ export class RelationLinker {
         retypeRoot: index === units.length - 1,
         coalesce: !runtime.drain,
         priority,
+        budgetClass,
         runtime,
         roots,
         signal
@@ -678,7 +692,15 @@ export class RelationLinker {
       (runs.length > 0 || carried.length > 0 || counts.typed > 0)
         ? await this.deps.steps.promoteSourceRelations([...promotedRoots].sort(), signal)
         : null;
-    const discovery = await this.discover({ job, rootId, runs, interactive, runtime, signal });
+    const discovery = await this.discover({
+      job,
+      rootId,
+      runs,
+      interactive,
+      budgetClass,
+      runtime,
+      signal
+    });
     // Step 6: the parked runs complete with their link job.
     const summary: JsonObject = {
       linkJobId: job.id,
@@ -734,6 +756,7 @@ export class RelationLinker {
     retypeRoot: boolean;
     coalesce: boolean;
     priority: AiPriorityInput;
+    budgetClass: BudgetClass;
     runtime: Readonly<RelationLinkRuntime>;
     roots: Map<string, string>;
     signal: AbortSignal;
@@ -776,6 +799,7 @@ export class RelationLinker {
     const typing = await this.type(requests, {
       job: input.job,
       priority: input.priority,
+      budgetClass: input.budgetClass,
       runtime: input.runtime,
       signal: input.signal
     });
@@ -843,6 +867,7 @@ export class RelationLinker {
     input: {
       job: JobRecord;
       priority: AiPriorityInput;
+      budgetClass: BudgetClass;
       runtime: Readonly<RelationLinkRuntime>;
       signal: AbortSignal;
     }
@@ -858,6 +883,7 @@ export class RelationLinker {
     const byKey = new Map(requests.map((request) => [request.key, request]));
     const options: RelationTypingOptions = {
       priority: input.priority,
+      budgetClass: input.budgetClass,
       jobId: input.job.id,
       reserveCall: (route) =>
         this.deps.budget.reserve({
@@ -1073,6 +1099,7 @@ export class RelationLinker {
     rootId: string;
     runs: readonly IngestionRunRecord[];
     interactive: boolean;
+    budgetClass: BudgetClass;
     runtime: Readonly<RelationLinkRuntime>;
     signal: AbortSignal;
   }): Promise<{ summary: JsonObject }> {
@@ -1118,6 +1145,7 @@ export class RelationLinker {
           runKey: `${relationLinkJobType}:${input.job.id}`,
           regenerate,
           priority,
+          budgetClass: input.budgetClass,
           reserveCall: (lane) =>
             this.deps.budget.reserve({ lane, priority, drain: input.runtime.drain }),
           registry: this.deps.registry,
@@ -1125,7 +1153,8 @@ export class RelationLinker {
             jobId: input.job.id,
             sourceItemId: input.rootId,
             stage: "sourceMatching",
-            origin: "job"
+            origin: "job",
+            budgetClass: input.budgetClass
           }
         },
         input.signal
@@ -1155,7 +1184,8 @@ export class RelationLinker {
     }
     const typing = await this.type(
       retypes.map((item) => item.request),
-      { job, priority: "P3", runtime, signal }
+      // The library-wide sweep is Gardener maintenance: metered and refused at the caps (D14).
+      { job, priority: "P3", budgetClass: "background", runtime, signal }
     );
     const persisted = await this.persist({
       kind: "retype",

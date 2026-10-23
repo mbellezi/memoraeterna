@@ -22,7 +22,7 @@ import { TopicAreasService } from "./topic-areas.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
-import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
+import type { TopicAiBudgetStore, TopicAiMode, TopicAiRoute } from "./topic-ai.js";
 import { TopicChangeCoalescer } from "./topic-changes.js";
 import { createTopicChangeHooks } from "./topic-hooks.js";
 import type { TopicChangeHooks } from "./topic-hooks.js";
@@ -74,7 +74,8 @@ export interface TopicTreeServicesOptions {
   ai?: Pick<
     AiService,
     "runDefaultTask" | "embedMany" | "activeEmbeddingSpace" | "rank" | "decideRouteStatus"
-  >;
+  > &
+    Partial<Pick<AiService, "taskRouteLocality">>;
   getContentLanguage?: () => Promise<string>;
 }
 
@@ -169,10 +170,18 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(logger ? { logger } : {}),
     ...(options.now ? { now: options.now } : {})
   });
+  const routedAi = options.ai;
   const budget = new TopicAiBudget({
     store: options.budgetStore ?? settingsAiBudgetStore(getPool),
     cap: () => renameKnobs.dailyCap ?? service!.config().ai.maxBackgroundCallsPerDay,
-    ...(options.now ? { now: options.now } : {})
+    ...(options.now ? { now: options.now } : {}),
+    // Only calls routed to a remote model count (F4 D14).
+    ...(routedAi?.taskRouteLocality
+      ? {
+          routeLocality: (route: TopicAiRoute) =>
+            routedAi.taskRouteLocality!("structured-output", route)
+        }
+      : {})
   });
   const topicService = new TopicTreeService({
     getPool,

@@ -319,6 +319,7 @@ describe("source pair verdicts", () => {
       stage: "sourceMatching",
       workloadClass: "decide",
       priority: "P2",
+      budgetClass: "user",
       origin: "golden_source_pairs",
       contentLanguage: "en",
       promptVersion: sourceRelationPromptVersion,

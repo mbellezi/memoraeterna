@@ -108,6 +108,38 @@ describe("D34: the daily cap of background topic AI", () => {
     expect(store.value).toEqual({ day: "2026-10-15", calls: 5 });
   });
 
+  it("counts only calls routed to a remote model (F4 D14)", async () => {
+    const store = memoryStore();
+    const where = new Map<string, "local" | "remote" | null>([
+      ["topic_name", "local"],
+      ["topic_areas", "remote"]
+    ]);
+    const routeLocality = vi.fn(async (route: { operation: string }) => {
+      if (route.operation === "broken") throw new Error("no database");
+      return where.get(route.operation) ?? null;
+    });
+    const budget = new TopicAiBudget({
+      store,
+      cap: () => 1,
+      now: () => new Date(2026, 9, 15),
+      routeLocality
+    });
+    const local = { operation: "topic_name", workloadClass: "write-fast" as const };
+    const remote = { operation: "topic_areas", workloadClass: "write-fast" as const };
+    await expect(budget.reserve(1, local)).resolves.toBe(true);
+    await expect(budget.reserve(1, local)).resolves.toBe(true);
+    expect(store.value).toBeNull();
+    await expect(budget.reserve(1, remote)).resolves.toBe(true);
+    await expect(budget.reserve(1, remote)).resolves.toBe(false);
+    // Unknown locality, an unreadable route or no route: the call counts (here, refused at the cap).
+    await expect(
+      budget.reserve(1, { operation: "broken", workloadClass: "write-fast" })
+    ).resolves.toBe(false);
+    await expect(budget.reserve(1)).resolves.toBe(false);
+    await expect(budget.reserve(1, local)).resolves.toBe(true);
+    expect(store.value).toEqual({ day: "2026-10-15", calls: 1 });
+  });
+
   it("refuses to reserve a non-positive or fractional number of calls", () => {
     const budget = new TopicAiBudget({ store: memoryStore(), cap: () => 5 });
     expect(() => budget.reserve(0)).toThrow(RangeError);

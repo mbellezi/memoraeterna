@@ -42,7 +42,8 @@ describe("hierarchical aggregate summaries", () => {
       stage: "library_search",
       embeddingInputType: "query",
       workloadClass: "embed",
-      priority: "P0"
+      priority: "P0",
+      budgetClass: "interactive"
     });
   });
 

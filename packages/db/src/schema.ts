@@ -1483,6 +1483,13 @@ export const aiTaskRuns = pgTable(
     schemaMode: text("schema_mode"),
     retryWaitMs: integer("retry_wait_ms"),
     requeueMs: integer("requeue_ms"),
+    // The RemoteBudget's view of the call (F4 D14, 0061), null on rows written before it (unknown):
+    // who it spent for (`user`, `background`, `interactive`), the job it ran for (no foreign key: the
+    // audit outlives pruned jobs), and the US$ estimate its attempts were admitted with on a priced
+    // route, which the monthly ledger counts when the provider reported no usage.
+    budgetClass: text("budget_class"),
+    jobId: uuid("job_id"),
+    budgetEstimateUsd: doublePrecision("budget_estimate_usd"),
     status: text("status").notNull(),
     error: text("error"),
     // The call's start: the row is written when the call ends, so it is stored as finishedAt - durationMs.
@@ -1517,7 +1524,19 @@ export const aiTaskRuns = pgTable(
       "ai_task_runs_waits",
       sql`(${table.retryWaitMs} is null or ${table.retryWaitMs} >= 0)
         and (${table.requeueMs} is null or ${table.requeueMs} >= 0)`
-    )
+    ),
+    budgetClassCheck: check(
+      "ai_task_runs_budget_class",
+      sql`(${table.budgetClass} is null or ${table.budgetClass} in ('user','background','interactive'))
+        and (${table.budgetEstimateUsd} is null or ${table.budgetEstimateUsd} >= 0)`
+    ),
+    // The monthly ledger of background remote spend (D14): background rows, and the unclassified
+    // P2/P3 rows written before 0061, by start time.
+    budgetLedgerIdx: index("ai_task_runs_budget_ledger_idx")
+      .on(table.startedAt)
+      .where(
+        sql`${table.lane} like 'remote:%' and (${table.budgetClass} = 'background' or (${table.budgetClass} is null and ${table.priority} between 2 and 3))`
+      )
   })
 );
 

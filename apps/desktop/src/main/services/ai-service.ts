@@ -71,6 +71,7 @@ import {
   type LaneSnapshot,
   ActiveDeadline,
   aiCassetteReplayedUsageKey,
+  bindAttemptAdmission,
   bindLanePermit,
   createAiScheduler,
   embedManyLimits,
@@ -129,6 +130,7 @@ import {
   type AiOutputContract,
   type AiOutputSchema,
   type AiSchemaMode,
+  type BudgetClass,
   type DecisionsStatus,
   type NoteDeciderMode
 } from "@app/domain";
@@ -174,6 +176,13 @@ import {
 } from "./ai-task-parameters.js";
 import type { MonitoringService } from "./monitoring-service.js";
 import { logStructuredError } from "./structured-logging.js";
+import {
+  attemptTokenEstimate,
+  unmeteredBudgetTicket,
+  type RemoteBudget,
+  type RemoteBudgetTicket,
+  type RemoteBudgetUsage
+} from "./gardener/remote-budget.js";
 import {
   loginOpenAiCodex,
   parseOpenAiCodexCredential,
@@ -252,6 +261,12 @@ export interface AiServiceOptions {
   devDecisionsCapUsd?: number | undefined;
   /** Limits, config, fetch and clock of the Decisions decider; the typed defaults apply to what is left out. */
   decisions?: Pick<DecisionsRuntimeOptions, "limits" | "config" | "fetch" | "random" | "now">;
+  /**
+   * The RemoteBudget (F4 D14): every attempt of a metered remote call is admitted by it before it is
+   * sent, and the call settles after its audit row commits. Without one nothing is metered (tests,
+   * proof scripts).
+   */
+  remoteBudget?: Pick<RemoteBudget, "open"> | undefined;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -493,6 +508,12 @@ export interface AiTaskLogContext {
   embeddingInputType?: "query" | "document";
   /** Overrides the priority derived from the context; see {@link aiTaskPriority}. */
   priority?: AiPriorityInput;
+  /**
+   * Who the call spends for (F4 D14): `user` (work the person started), `background` (metered and
+   * refused at the remote caps) or `interactive`. Product callers state it beside the class and the
+   * priority (`workload-class-callers.test.ts`); left out, the audit reads it as unknown.
+   */
+  budgetClass?: BudgetClass;
   /** A second call for the same items after a validation failure; operations named `*_repair` are. */
   isRepair?: boolean;
   /**
@@ -1201,6 +1222,7 @@ export class AiService {
       devEnabled: this.options.devDecisions,
       devKeyFile: this.options.devDecisionsKeyFile,
       devCapUsd: this.options.devDecisionsCapUsd,
+      ...(this.options.remoteBudget ? { remoteBudget: this.options.remoteBudget } : {}),
       ...(this.options.monitoring ? { monitoring: this.options.monitoring } : {}),
       ...(this.options.logger ? { logger: this.options.logger } : {}),
       ...(this.options.decisions ?? {})
@@ -1326,6 +1348,24 @@ export class AiService {
   }
 
   /**
+   * The provider and model a task is routed to, and where it runs, read without a call (F4 D14: the
+   * import estimate prices them). Null when no route serves the task.
+   */
+  public async taskRouteModel(
+    task: RoutedTask,
+    context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
+  ): Promise<{ locality: "local" | "remote"; provider: string; modelId: string } | null> {
+    await this.ensureLegacyRouteMapping();
+    const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
+    if (!selection) return null;
+    return {
+      locality: isRemoteExecution(this.executionTarget(selection)) ? "remote" : "local",
+      provider: selection.provider,
+      modelId: selection.modelId
+    };
+  }
+
+  /**
    * What the model a task is routed to can take in one call: the context window its calls are
    * admitted against and the output they reserve, read without a call (plan decision 28). Work whose
    * input grows with its source (a book's summary) sizes its calls by it before it plans. Null when
@@ -1406,6 +1446,7 @@ export class AiService {
         embeddingInputType: "query",
         workloadClass: "embed",
         priority: priority ?? "P0",
+        budgetClass: "interactive",
         sourceItemIds
       },
       signal
@@ -1768,6 +1809,8 @@ export class AiService {
           this.options.logger?.error("Failed to release local embedding runtime", error);
         });
     };
+    // The call's RemoteBudget ticket, once the call is known to be remote (D14).
+    let budget: RemoteBudgetTicket | undefined;
     const started = Date.now();
     // Not awaited on the lane: the entry is completed after the lane is released.
     const capture = this.startMonitoring({
@@ -1874,6 +1917,14 @@ export class AiService {
       };
       // The adapter's signal carries the lane permit, so retry backoffs sleep off the lane.
       const execution = laneSignal(signal, permit);
+      // A metered remote call: each attempt is admitted by the RemoteBudget before it is sent (D14).
+      budget = await this.openRemoteBudget(permit, selection, logContext, {
+        input: taskInput,
+        instruction: admission.instruction,
+        maxOutputTokens: taskType === "embedding" ? 0 : (parameters.maxTokens ?? 16384)
+      });
+      if (budget.metered)
+        bindAttemptAdmission(execution, (attempt) => budget!.admitAttempt(attempt));
       const progress = createProgressReporter(onProgress, onTextDelta);
       const run = async () => {
         await beforeProvider?.();
@@ -1925,15 +1976,16 @@ export class AiService {
       progress({ progress: 1 });
       this.localDeadlineHistory.settled(selection.localModelId, taskInput);
       await releaseEmbeddingModel();
+      const replayed = Boolean(result.tokenUsage?.[aiCassetteReplayedUsageKey]);
       return async () => {
-        const aiTaskRunId = await repository.recordTaskRun({
+        const recorded = repository.recordTaskRun({
           profileId: selection.profileId,
           taskType,
           provider: result.providerId,
           modelId: result.modelId,
           runtime: selection.localModelId ? selection.runtime : result.runtime,
           capabilitiesUsed: requiredCapabilities,
-          adapter: result.tokenUsage?.[aiCassetteReplayedUsageKey]
+          adapter: replayed
             ? "cassette-replay"
             : selection.localModelId
               ? localAdapterName(selection.runtime)
@@ -1952,8 +2004,15 @@ export class AiService {
           ...queueAndAttempt(admission, logContext),
           ...lane(),
           ...(result.schemaMode ? { schemaMode: result.schemaMode } : {}),
+          ...budgetAudit(logContext, budget),
           status: "succeeded",
           sourceItemIds
+        });
+        // Released only once the audit row that holds the usage committed (D14).
+        const aiTaskRunId = await this.settledAfter(recorded, budget, {
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          replayed
         });
         await this.options.monitoring?.finish(await capture, {
           status: "succeeded",
@@ -1989,8 +2048,9 @@ export class AiService {
       const failedReport = remoteCallReport(caught);
       const durationMs = Date.now() - started;
       await releaseEmbeddingModel();
+      const failedUsage = failedCallUsage(caught);
       return async () => {
-        const aiTaskRunId = await repository.recordTaskRun({
+        const recorded = repository.recordTaskRun({
           profileId: selection.profileId,
           taskType,
           provider: selection.provider,
@@ -2007,13 +2067,15 @@ export class AiService {
           inputHash: sha256(taskInput),
           durationMs,
           ...queueAndAttempt(admission, logContext),
-          ...failedCallUsage(caught),
+          ...failedUsage,
           ...lane({ error }),
           ...failedSchemaMode(failedReport?.requestOptions),
+          ...budgetAudit(logContext, budget),
           status: signal?.aborted ? "canceled" : "failed",
           error: redactSensitiveText(error),
           sourceItemIds
         });
+        const aiTaskRunId = await this.settledAfter(recorded, budget, failedUsage);
         await this.options.monitoring?.finish(await capture, {
           status: signal?.aborted ? "canceled" : "failed",
           aiTaskRunId,
@@ -2051,6 +2113,46 @@ export class AiService {
     }
   }
 
+  /**
+   * The RemoteBudget ticket of one execution (D14): metered when it runs on a remote lane and the
+   * budget counts its class; its attempts are reserved with the planning estimate of the request.
+   */
+  private async openRemoteBudget(
+    permit: Pick<LanePermit, "lane" | "priority">,
+    selection: Pick<TaskSelection, "provider" | "modelId">,
+    context: Pick<AiTaskLogContext, "budgetClass">,
+    estimate: { input: string; instruction: string; maxOutputTokens: number }
+  ): Promise<RemoteBudgetTicket> {
+    const remoteBudget = this.options.remoteBudget;
+    if (!remoteBudget || permit.lane === "local") return unmeteredBudgetTicket;
+    return remoteBudget.open({
+      lane: permit.lane,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      budgetClass: context.budgetClass ?? null,
+      priority: priorityNumber(permit.priority),
+      estimate: attemptTokenEstimate(estimate.input, estimate.instruction, estimate.maxOutputTokens)
+    });
+  }
+
+  /**
+   * Waits for a call's audit row, then settles its budget ticket: a reservation is released only
+   * after the audit row that holds the call's usage committed (D14), and also when that write failed.
+   */
+  private async settledAfter(
+    recorded: Promise<string>,
+    budget: RemoteBudgetTicket | undefined,
+    usage: RemoteBudgetUsage
+  ): Promise<string> {
+    try {
+      return await recorded;
+    } finally {
+      await budget?.settle(usage).catch((error: unknown) => {
+        this.options.logger?.error("Failed to settle a remote budget reservation", error);
+      });
+    }
+  }
+
   /** The audit of an admitted call that failed before anything was sent to a model. */
   private async recordUnstartedTask(
     taskType: RoutedTask,
@@ -2080,6 +2182,7 @@ export class AiService {
       durationMs: 0,
       ...queueAndAttempt(admission, context),
       ...lane({ error }),
+      ...budgetAudit(context, undefined),
       status: signal?.aborted ? "canceled" : "failed",
       error: redactSensitiveText(error),
       sourceItemIds: taskSourceItemIds(context)
@@ -3824,6 +3927,22 @@ function localModelTestClass(model: LocalModelRecord): AiWorkloadClass {
   return model.capabilities.includes("embedding") && !model.capabilities.includes("text-generation")
     ? "embed"
     : "answer";
+}
+
+/**
+ * The RemoteBudget's audit of one call (0061): who it spent for, the job it ran for, and the US$
+ * estimate its attempts were admitted with on a priced route; each left out when unknown.
+ */
+function budgetAudit(
+  context: Pick<AiTaskLogContext, "budgetClass" | "jobId">,
+  budget: Pick<RemoteBudgetTicket, "estimateUsd"> | undefined
+): { budgetClass?: BudgetClass; jobId?: string; budgetEstimateUsd?: number } {
+  const estimateUsd = budget?.estimateUsd;
+  return {
+    ...(context.budgetClass ? { budgetClass: context.budgetClass } : {}),
+    ...(context.jobId ? { jobId: context.jobId } : {}),
+    ...(estimateUsd !== null && estimateUsd !== undefined ? { budgetEstimateUsd: estimateUsd } : {})
+  };
 }
 
 /**

@@ -115,6 +115,9 @@ function positiveInteger(value: number | null | undefined): number | null {
   return rounded !== null && rounded > 0 ? rounded : null;
 }
 
+/** A job id the audit can store; a caller's non-UUID job label stays out of the column. */
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 function mapProvider(row: ProviderRow): AiProviderConfigRecord {
   return {
     ...row,
@@ -586,6 +589,12 @@ function aiConfigMethods(db: Queryable) {
       retryWaitMs?: number | null;
       /** Time spent waiting for the lane again between attempts, excluded from the deadline. */
       requeueMs?: number | null;
+      /** Who the call spent for (F4 D14): `user`, `background` or `interactive`; omitted when unknown. */
+      budgetClass?: "user" | "background" | "interactive" | null;
+      /** The job the call ran for. */
+      jobId?: string | null;
+      /** The US$ estimate the call's attempts were admitted with on a priced route. */
+      budgetEstimateUsd?: number | null;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
         `with inserted_run as (
@@ -595,11 +604,11 @@ function aiConfigMethods(db: Queryable) {
              input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
              duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at, started_at,
              lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode,
-             retry_wait_ms, requeue_ms
+             retry_wait_ms, requeue_ms, budget_class, job_id, budget_estimate_usd
            ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,$22,$23,now(),
              -- The row is written when the call ends, so its real start is the end minus the measured duration.
              now() - ($17::integer * interval '1 millisecond'),
-             $24,$25,$26,$27,$28,$29,$30,$31,$32)
+             $24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34::uuid,$35)
            returning id
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)
@@ -647,7 +656,14 @@ function aiConfigMethods(db: Queryable) {
           input.isRepair === true,
           input.schemaMode ?? null,
           nonNegativeInteger(input.retryWaitMs),
-          nonNegativeInteger(input.requeueMs)
+          nonNegativeInteger(input.requeueMs),
+          input.budgetClass ?? null,
+          input.jobId && uuidPattern.test(input.jobId) ? input.jobId : null,
+          typeof input.budgetEstimateUsd === "number" &&
+          Number.isFinite(input.budgetEstimateUsd) &&
+          input.budgetEstimateUsd >= 0
+            ? input.budgetEstimateUsd
+            : null
         ]
       );
       const row = result.rows[0];

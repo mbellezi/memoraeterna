@@ -103,6 +103,7 @@ export class SourceRelationExplanationService {
       operation: sourceRelationExplanationOperation,
       workloadClass: "write-fast" as const,
       priority: "P0" as const,
+      budgetClass: "interactive" as const,
       contentLanguage,
       promptVersion: sourceRelationExplanationPromptVersion,
       sourceItemIds: [plan.first.id, plan.second.id],

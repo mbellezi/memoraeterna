@@ -938,7 +938,13 @@ class NamingRun {
     prompt: string,
     attempt: number
   ): Promise<{ output: unknown } | "unavailable"> {
-    if (!(await this.lib.budget.reserve(1))) {
+    // A remote call counts against the daily cap; one on a local model does not (F4 D14).
+    if (
+      !(await this.lib.budget.reserve(1, {
+        operation: topicNameOperation,
+        workloadClass: "write-fast"
+      }))
+    ) {
       this.counters.capReached = true;
       this.llm = false;
       return "unavailable";
@@ -956,6 +962,7 @@ class NamingRun {
       origin: "job",
       workloadClass: "write-fast",
       priority: "P3",
+      budgetClass: "background",
       contentLanguage: this.contentLanguage,
       promptVersion: topicNamePromptVersion,
       outputContract: topicNamingOutputContract,

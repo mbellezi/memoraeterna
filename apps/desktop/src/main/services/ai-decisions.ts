@@ -13,6 +13,7 @@ import { sha256 } from "@app/conversion";
 import {
   ActiveDeadline,
   aiCassetteReplayedUsageKey,
+  bindAttemptAdmission,
   bindLanePermit,
   classifyDecisionsFailure,
   cleanDecisionsError,
@@ -51,6 +52,7 @@ import {
   relationsDecisionsSettingKey,
   relationsDecisionsStateSettingKey,
   type AiPresetMode,
+  type BudgetClass,
   type DecisionsFallbackReason,
   type DecisionsStatus,
   type DecisionsStoredState,
@@ -68,6 +70,7 @@ import {
 } from "./relations/decisions-budget.js";
 import { decisionsDesign, relationDecisionsInstruction } from "./relations/decisions-identity.js";
 import { localDay } from "./relations/relation-call-budget.js";
+import { unmeteredBudgetTicket, type RemoteBudget } from "./gardener/remote-budget.js";
 
 /**
  * Money reserved for a request that was admitted and has not yet reported its usage: the
@@ -90,6 +93,8 @@ export interface DecisionsDecideInput {
   /** Directed lists: a query note and its candidates (query to candidate). */
   lists: readonly DecisionsList[];
   priority?: AiPriorityInput | undefined;
+  /** Who the requests spend for (F4 D14); background requests are metered by the RemoteBudget. */
+  budgetClass?: BudgetClass | undefined;
   sourceIds?: string[] | undefined;
   jobId?: string | undefined;
   stage?: string | undefined;
@@ -131,6 +136,11 @@ export interface DecisionsRuntimeOptions {
   devCapUsd?: number | undefined;
   limits?: DecisionsLimitsInput | undefined;
   config?: RelationsConfig | undefined;
+  /**
+   * The RemoteBudget (F4 D14): a background request's attempts are admitted by it and count in the
+   * monthly ledger; the decider's own daily US$ cap stays as a sub-cap.
+   */
+  remoteBudget?: Pick<RemoteBudget, "open"> | undefined;
   fetch?: typeof fetch | undefined;
   random?: (() => number) | undefined;
   now?: (() => Date) | undefined;
@@ -672,6 +682,40 @@ export class DecisionsRuntime {
     // sleeps off the lane and reports rate limits and outcomes to its breaker.
     const own = AbortSignal.any([signal]);
     bindLanePermit(own, permit);
+    // A background request's attempts are admitted by the RemoteBudget before each is sent (D14);
+    // the request's estimate is the decider's own, output tokens being free.
+    const budget = this.options.remoteBudget
+      ? await this.options.remoteBudget.open({
+          lane: permit.lane,
+          provider: this.limits.providerId,
+          modelId: this.limits.model,
+          budgetClass: input.budgetClass ?? null,
+          priority: priorityNumber(permit.priority),
+          estimate: {
+            inputTokens: estimatePlanInputTokens([planned], this.limits),
+            outputTokens: 0
+          }
+        })
+      : unmeteredBudgetTicket;
+    if (budget.metered) bindAttemptAdmission(own, (attempt) => budget.admitAttempt(attempt));
+    const budgetAudit = () => ({
+      ...(input.budgetClass ? { budgetClass: input.budgetClass } : {}),
+      ...(input.jobId ? { jobId: input.jobId } : {}),
+      ...(budget.estimateUsd !== null ? { budgetEstimateUsd: budget.estimateUsd } : {})
+    });
+    // Released only once the audit row that holds the usage committed (D14), or its write failed.
+    const settledAfter = async (
+      recorded: Promise<string>,
+      usage: Parameters<typeof budget.settle>[0]
+    ): Promise<string> => {
+      try {
+        return await recorded;
+      } finally {
+        await budget.settle(usage).catch((error: unknown) => {
+          this.options.logger?.error("Failed to settle a Decisions budget reservation", error);
+        });
+      }
+    };
     try {
       const result = await this.adapter.run(taskRequest, own);
       const { probabilities } = outputSchema.parse(result.output);
@@ -681,7 +725,7 @@ export class DecisionsRuntime {
         ? 0
         : (result.costEstimate ?? decisionsCostUsd(inputTokens, this.limits));
       return async () => {
-        const aiTaskRunId = await repository.recordTaskRun({
+        const recorded = repository.recordTaskRun({
           ...audit,
           outputHash: sha256(JSON.stringify(result.output)),
           inputTokens,
@@ -689,7 +733,13 @@ export class DecisionsRuntime {
           costEstimate: costUsd,
           durationMs: result.durationMs,
           ...lane(),
+          ...budgetAudit(),
           status: "succeeded"
+        });
+        const aiTaskRunId = await settledAfter(recorded, {
+          inputTokens,
+          outputTokens: result.outputTokens ?? 0,
+          replayed
         });
         // A request a cassette served spent nothing.
         if (!replayed)
@@ -716,15 +766,18 @@ export class DecisionsRuntime {
       // Refused at a retry because the decider was turned off: canceled, not a provider failure.
       const canceled = signal.aborted || error instanceof DecisionsDisabledError;
       return async () => {
-        const aiTaskRunId = await repository.recordTaskRun({
+        const recorded = repository.recordTaskRun({
           ...audit,
           durationMs,
           ...lane({ error }),
+          ...budgetAudit(),
           status: canceled ? "canceled" : "failed",
           error: redactSensitiveText(
             redactDecisionsSecrets(String(error instanceof Error ? error.message : error))
           )
         });
+        // A failed request reported no usage: its admitted attempts' estimate is its spend.
+        const aiTaskRunId = await settledAfter(recorded, {});
         await this.options.monitoring?.finish(await capture, {
           status: canceled ? "canceled" : "failed",
           aiTaskRunId,

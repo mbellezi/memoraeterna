@@ -557,6 +557,7 @@ export class ConsultationService {
           origin: "consultation",
           workloadClass: "answer",
           priority: "P0",
+          budgetClass: "interactive",
           promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
           contentLanguage: language,
           attempt: attempt + 1,

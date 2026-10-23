@@ -287,7 +287,9 @@ async function probeLevels(
             operation: laneProbeOperation,
             stage: laneProbeOperation,
             origin: laneProbeOperation,
-            priority: "P2"
+            priority: "P2",
+            // A DEV probe the developer starts: audited, never refused by the budget.
+            budgetClass: "user"
           },
           undefined,
           { maxOutputTokens: probeMaxOutputTokens }

@@ -4,7 +4,12 @@ import {
   obsidianLayoutApplyInputSchema
 } from "@app/integration-contracts";
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
-import type { NoteDeciderMode, PromptCommand } from "@app/domain";
+import type {
+  ImportEstimate,
+  ImportEstimateInput,
+  NoteDeciderMode,
+  PromptCommand
+} from "@app/domain";
 import {
   AiClassIdSchema,
   AiPresetIdSchema,
@@ -111,6 +116,8 @@ export const ipcChannels = {
   appEvents: "app:events",
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
+  /** F4 D14: the import plan chip's estimate (T76). */
+  budgetEstimateImport: "app:budget:estimateImport",
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
@@ -1842,6 +1849,10 @@ export interface DesktopApi {
   consultation: {
     ask: (input: ConsultationInput) => Promise<ConsultationResult>;
     cancel: (id: string) => Promise<null>;
+  };
+  budget: {
+    /** What an import plan of this many chunks would cost on the writer's route (F4 D14). */
+    estimateImport: (input: ImportEstimateInput) => Promise<ImportEstimate>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   objects: {

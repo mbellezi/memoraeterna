@@ -114,6 +114,8 @@ export async function runSchemaProbe(input: {
           stage: "schema_probe",
           origin: "interactive",
           priority: "P2",
+          // A DEV probe the developer starts: audited, never refused by the budget.
+          budgetClass: "user",
           outputSchema: schemaProbeOutputSchema
         },
         input.signal

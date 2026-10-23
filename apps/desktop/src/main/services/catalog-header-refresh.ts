@@ -418,7 +418,8 @@ export async function refreshCatalogHeader(
         knowledge.generateCatalogKnowledgeGraph(
           stale.rootId,
           stale.documentId,
-          { jobId: job.id, priority: "P3" },
+          // Gardener maintenance: metered and refused at the remote caps (F4 D14).
+          { jobId: job.id, priority: "P3", budgetClass: "background" },
           signal
         )
       );

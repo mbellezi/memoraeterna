@@ -47,11 +47,11 @@ retention, licensing, or adding dependencies and model artifacts.
   Hybrid and Cloud setups, with its own key in `safeStorage` and a daily spend cap; when it cannot
   decide, the local ranker does and the status says why. Turning it off, or leaving those setups,
   stops requests already admitted; the cap holds across plans admitted together.
-- Automatic background spending obeys the user's monthly remote cap, computed from recorded usage
-  and a versioned price table (an unknown price estimated conservatively, never as zero); work the
-  user starts shows its estimate first, and at the cap background work goes local-only or waits with
-  the reason shown (target F4). Until then daily caps bound background AI on every route (relation
-  and topic call counts, catalog-header re-extractions, the Decisions decider's US$) plus concurrency.
+- Automatic background spending obeys the user's monthly remote cap: recorded usage times a
+  versioned price table (an unknown price estimated conservatively, never as zero), each attempt
+  reserved before it is sent. Work the user starts is counted and shows its estimate first; at the
+  cap background work goes local-only or waits with the reason shown. Subscription routes (Codex)
+  have a daily background call cap instead; the relation, topic, header and Decisions caps remain.
 
 ## Logs, monitoring and telemetry
 

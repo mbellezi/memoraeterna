@@ -25,7 +25,8 @@ import {
   relationsDecisionsCredentialRef,
   relationsDecisionsSettingKey,
   relationsDecisionsSpendSettingKey,
-  relationsDecisionsStateSettingKey
+  relationsDecisionsStateSettingKey,
+  RemoteBudgetRefusal
 } from "@app/domain";
 
 import { DecisionsRuntime, type DecisionsRuntimeOptions } from "./ai-decisions.js";
@@ -965,5 +966,73 @@ describe("the calibration of the status", () => {
     ).toMatchObject({
       calibrated: false
     });
+  });
+});
+
+describe("the RemoteBudget (F4 D14)", () => {
+  /** A budget that records what it was asked and refuses when told to. */
+  function fakeBudget(refuse = false) {
+    const opened: Array<Record<string, unknown>> = [];
+    const settledAfterRuns: number[] = [];
+    const budget = {
+      open: vi.fn(async (call: Record<string, unknown>) => {
+        opened.push(call);
+        let reserved = 0;
+        return {
+          metered: true,
+          get estimateUsd() {
+            return reserved;
+          },
+          admitAttempt: async () => {
+            if (refuse) throw new RemoteBudgetRefusal("money_100", null);
+            reserved += 0.001;
+          },
+          settle: async () => {
+            settledAfterRuns.push(store.runs.length);
+          }
+        };
+      })
+    };
+    return {
+      budget: budget as unknown as DecisionsRuntimeOptions["remoteBudget"],
+      opened,
+      settledAfterRuns
+    };
+  }
+
+  it("admits each background request's attempts and audits its class, job and estimate", async () => {
+    const { budget, opened, settledAfterRuns } = fakeBudget();
+    const h = harness({ remoteBudget: budget });
+    const result = await decide(h, { budgetClass: "background", jobId: "job-1" });
+    expect(opened).toHaveLength(result.calls);
+    for (const call of opened)
+      expect(call).toMatchObject({
+        lane: "remote:openai-decisions",
+        provider: "openai-decisions",
+        modelId: "gpt-6-luna",
+        budgetClass: "background",
+        priority: 2,
+        estimate: { inputTokens: expect.any(Number), outputTokens: 0 }
+      });
+    for (const run of store.runs)
+      expect(run).toMatchObject({
+        budgetClass: "background",
+        jobId: "job-1",
+        budgetEstimateUsd: 0.001
+      });
+    // Each request settles once its own audit row was written.
+    expect(settledAfterRuns).toHaveLength(result.calls);
+    settledAfterRuns.forEach((runs, index) => expect(runs).toBeGreaterThanOrEqual(index + 1));
+  });
+
+  it("sends nothing when the budget refuses, and the matcher falls back to the local ranker", async () => {
+    const { budget } = fakeBudget(true);
+    const h = harness({ remoteBudget: budget });
+    await expect(decide(h, { budgetClass: "background" })).rejects.toBeInstanceOf(
+      DecisionsUnavailableError
+    );
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(store.runs.length).toBeGreaterThan(0);
+    expect(store.runs.every((run) => run.status === "failed")).toBe(true);
   });
 });

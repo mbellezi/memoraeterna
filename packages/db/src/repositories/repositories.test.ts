@@ -9,6 +9,7 @@ import { createLocalModelRepository } from "./localModelRepository.js";
 import { createJobRepository } from "./jobRepository.js";
 import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
 import { createAiConfigRepository } from "./aiConfigRepository.js";
+import { createAiBudgetRepository } from "./aiBudgetRepository.js";
 import { createIngestionRunRepository } from "./ingestionRunRepository.js";
 import {
   createLibraryRepository,
@@ -892,7 +893,7 @@ describe("repositories", () => {
     expect(db.queries[0]?.values[16]).toBe(2_900);
     // The legacy organization and maintenance step tables are no longer written by any run.
     expect(statement).not.toMatch(/organization_steps|maintenance_steps/);
-    expect(db.queries[0]?.values).toHaveLength(32);
+    expect(db.queries[0]?.values).toHaveLength(35);
   });
 
   it("records the scheduler's lane, class, priority, deadline and waits, or null when unknown", async () => {
@@ -932,7 +933,7 @@ describe("repositories", () => {
     expect(db.queries[0]?.text.replace(/\s+/g, " ")).toContain(
       "lane, workload_class, priority, deadline_ms, deadline_outcome, is_repair, schema_mode, retry_wait_ms, requeue_ms"
     );
-    expect(db.queries[0]?.values.slice(23)).toEqual([
+    expect(db.queries[0]?.values.slice(23, 32)).toEqual([
       "remote:provider-1",
       "decide",
       2,
@@ -943,7 +944,7 @@ describe("repositories", () => {
       813,
       0
     ]);
-    expect(db.queries[1]?.values.slice(23)).toEqual([
+    expect(db.queries[1]?.values.slice(23, 32)).toEqual([
       null,
       null,
       null,
@@ -955,7 +956,78 @@ describe("repositories", () => {
       null
     ]);
     expect(db.queries[2]?.values.slice(25, 28)).toEqual([null, null, null]);
-    expect(db.queries[2]?.values.slice(30)).toEqual([null, null]);
+    expect(db.queries[2]?.values.slice(30, 32)).toEqual([null, null]);
+  });
+
+  it("records the budget class, the job and the admission estimate, or null when unknown (F4 D14)", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }], [{ id: "run-2" }], [{ id: "run-3" }]]);
+    const repository = createAiConfigRepository(db);
+    const base = {
+      taskType: "summarization",
+      provider: "openai-compatible",
+      modelId: "gpt-5",
+      runtime: "remote",
+      durationMs: 12,
+      status: "succeeded"
+    };
+    const jobId = "00000000-0000-4000-8000-0000000000b1";
+    await repository.recordTaskRun({
+      ...base,
+      budgetClass: "background",
+      jobId,
+      budgetEstimateUsd: 0.25
+    });
+    await repository.recordTaskRun(base);
+    await repository.recordTaskRun({ ...base, jobId: "job-label", budgetEstimateUsd: -1 });
+
+    expect(db.queries[0]?.text.replace(/\s+/g, " ")).toContain(
+      "retry_wait_ms, requeue_ms, budget_class, job_id, budget_estimate_usd"
+    );
+    expect(db.queries[0]?.values.slice(32)).toEqual(["background", jobId, 0.25]);
+    expect(db.queries[1]?.values.slice(32)).toEqual([null, null, null]);
+    expect(db.queries[2]?.values.slice(32)).toEqual([null, null, null]);
+  });
+
+  it("reads the monthly ledger of background remote spend per provider and model (F4 D14)", async () => {
+    const db = new FakeQueryable([
+      [
+        {
+          provider: "openai-compatible",
+          modelId: "gpt-5",
+          calls: "3",
+          inputTokens: "1000",
+          outputTokens: "500",
+          estimatedCalls: "1",
+          estimateUsd: 0.25,
+          unestimatedCalls: "1",
+          unestimatedInputTokens: "0",
+          unestimatedOutputTokens: "16384"
+        }
+      ]
+    ]);
+    const window = { start: new Date(2026, 9, 1), end: new Date(2026, 10, 1) };
+    const ledger = await createAiBudgetRepository(db).monthLedger(window);
+    expect(ledger).toEqual([
+      {
+        provider: "openai-compatible",
+        modelId: "gpt-5",
+        calls: 3,
+        inputTokens: 1_000,
+        outputTokens: 500,
+        estimatedCalls: 1,
+        estimateUsd: 0.25,
+        unestimatedCalls: 1,
+        unestimatedInputTokens: 0,
+        unestimatedOutputTokens: 16_384
+      }
+    ]);
+    const statement = db.queries[0]?.text.replace(/\s+/g, " ") ?? "";
+    // The row filter repeats the partial index's predicate so the planner can use it (0061).
+    expect(statement).toContain(
+      "where lane like 'remote:%' and (budget_class = 'background' or (budget_class is null and priority between 2 and 3))"
+    );
+    expect(statement).toContain("adapter is distinct from 'cassette-replay'");
+    expect(db.queries[0]?.values).toEqual([window.start, window.end]);
   });
 
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {

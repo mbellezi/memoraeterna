@@ -10,6 +10,8 @@ import { registerPromptIpc } from "./services/prompt-ipc.js";
 import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
+import { RemoteBudget } from "./services/gardener/remote-budget.js";
+import { registerBudgetIpc } from "./services/gardener/budget-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -180,6 +182,8 @@ function createMainWindow(): BrowserWindow {
 let settingsService: SettingsService | null = null;
 let databaseService: DatabaseService | null = null;
 let aiService: AiService | null = null;
+/** F4 D14 (T76): meters background remote spend; the monthly cap is the typed default until T75. */
+let remoteBudget: RemoteBudget | null = null;
 let ingestionService: IngestionService | null = null;
 let metadataEnrichmentService: MetadataEnrichmentService | null = null;
 let hierarchicalIngestionService: HierarchicalIngestionService | null = null;
@@ -295,8 +299,13 @@ void app.whenReady().then(() => {
     () => databaseService?.getPool() ?? null,
     () => settingsService!.getApp()
   );
+  remoteBudget = new RemoteBudget({
+    getPool: () => databaseService?.getPool() ?? null,
+    logger: console
+  });
   aiService = new AiService({
     monitoring: monitoringService,
+    remoteBudget,
     userDataPath: app.getPath("userData"),
     getPool: () => databaseService?.getPool() ?? null,
     workspaceRoot,
@@ -388,6 +397,8 @@ void app.whenReady().then(() => {
     restoreDefaults: async () => {
       await initializeKnowledgeDefaults();
       await topicTreeServices?.ensureActiveTree();
+      // The reset cleared the audit and the counters the budget meters with (F4 D14).
+      await remoteBudget?.reload();
     },
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
@@ -529,6 +540,9 @@ void app.whenReady().then(() => {
     wake: () => jobSupervisor?.wake()
   });
   registerConsultationIpc(ipcMain, consultationService);
+  registerBudgetIpc(ipcMain, remoteBudget!, (task, context) =>
+    aiService!.taskRouteModel(task, context)
+  );
   // DEV relation re-match (MEMORA_RELATIONS_REMATCH, F3 T52b): its heavy job type is registered
   // here; the harness binds its handler once its checks passed (below).
   const rematchSlot =
@@ -679,7 +693,8 @@ void app.whenReady().then(() => {
                       stage: "rematch_p0_probe",
                       embeddingInputType: "query",
                       workloadClass: "embed",
-                      priority: "P0"
+                      priority: "P0",
+                      budgetClass: "interactive"
                     });
                   },
                   jobs: jobSupervisor!,

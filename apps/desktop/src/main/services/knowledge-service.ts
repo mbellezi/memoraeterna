@@ -29,6 +29,7 @@ import {
   knowledgeGraphBatchFor,
   noteRelationCalibration,
   type AtomicNoteMatchingSettings,
+  type BudgetClass,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
   type SourceRelationSettings,
@@ -187,6 +188,8 @@ export interface KnowledgeServiceOptions {
 export interface AtomicNoteGenerationLogContext {
   jobId?: string;
   ingestionRunId?: string;
+  /** Who the calls spend for (F4 D14): an import's own notes are `user` (the default). */
+  budgetClass?: BudgetClass;
   onProgress?: (progress: number) => void;
 }
 
@@ -195,6 +198,8 @@ export interface KnowledgeGraphGenerationContext {
   ingestionRunId?: string;
   /** The lane priority of the calls; background work that yields to ingestion states `P3`. */
   priority?: "P2" | "P3";
+  /** Who the calls spend for (F4 D14): an import's own graph is `user` (the default). */
+  budgetClass?: BudgetClass;
   includeAtomicNotesGraph?: boolean;
   completedBatches?: unknown;
   onProgress?: (progress: number) => void;
@@ -249,7 +254,8 @@ export class KnowledgeService {
           stage: "library_search",
           embeddingInputType: "query",
           workloadClass: "embed",
-          priority: "P0"
+          priority: "P0",
+          budgetClass: "interactive"
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
@@ -627,6 +633,8 @@ export class KnowledgeService {
               documentId,
               workloadClass: "write-fast",
               priority: "P2",
+              // An import's own stage (D14), unless its caller says otherwise.
+              budgetClass: logContext.budgetClass ?? "user",
               onProgress: (event) => onProgress?.(event.progress)
             },
             signal
@@ -848,6 +856,7 @@ export class KnowledgeService {
               operation: "hierarchy_summary",
               workloadClass: "write-fast",
               priority: "P2",
+              budgetClass: logContext.budgetClass ?? "user",
               promptVersion: hierarchyAggregateSummaryPromptVersion,
               sourceItemId: root.rootId,
               documentId: root.documentId,
@@ -975,6 +984,7 @@ export class KnowledgeService {
                 stage: "atomic_note_generation",
                 workloadClass: "write-quality",
                 priority: "P2",
+                budgetClass: structuredLogContext.budgetClass ?? "user",
                 onProgress: (event) => onProgress?.(event.progress)
               },
               signal
@@ -1265,7 +1275,8 @@ export class KnowledgeService {
         sourceItemId,
         documentId,
         ...(context.jobId ? { jobId: context.jobId } : {}),
-        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {})
+        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
+        ...(context.budgetClass ? { budgetClass: context.budgetClass } : {})
       },
       ...(signal ? { signal } : {})
     });
@@ -1280,7 +1291,8 @@ export class KnowledgeService {
         sourceItemId,
         documentId,
         ...(context.jobId ? { jobId: context.jobId } : {}),
-        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {})
+        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
+        ...(context.budgetClass ? { budgetClass: context.budgetClass } : {})
       },
       ...(signal ? { signal } : {})
     });
@@ -1327,6 +1339,7 @@ export class KnowledgeService {
               stage: "knowledge_graph_generation",
               workloadClass: "write-quality",
               priority: context.priority ?? "P2",
+              budgetClass: context.budgetClass ?? "user",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
             signal
@@ -1389,6 +1402,7 @@ export class KnowledgeService {
                     stage: "atomic_note_knowledge_graph_generation",
                     workloadClass: "write-quality",
                     priority: context.priority ?? "P2",
+                    budgetClass: context.budgetClass ?? "user",
                     onProgress: (event) => context.onProgress?.(event.progress)
                   },
                   signal
@@ -1577,7 +1591,8 @@ export class KnowledgeService {
           atomicNoteId: note.id,
           operation: "note_embedding",
           workloadClass: "embed",
-          priority: "P2"
+          priority: "P2",
+          budgetClass: logContext.budgetClass ?? "user"
         },
         [note.createdFromSourceItemId]
       ),
@@ -1661,7 +1676,8 @@ export class KnowledgeService {
             ...input.logContext,
             operation: input.operation,
             workloadClass: "embed",
-            priority: "P2"
+            priority: "P2",
+            budgetClass: input.logContext.budgetClass ?? "user"
           },
           notes.map((note) => note.createdFromSourceItemId)
         ),
@@ -1708,7 +1724,8 @@ export class KnowledgeService {
           atomicNoteId: note.id,
           operation: input.operation,
           workloadClass: "embed",
-          priority: "P2"
+          priority: "P2",
+          budgetClass: input.logContext.budgetClass ?? "user"
         },
         [note.createdFromSourceItemId]
       )
@@ -1883,7 +1900,9 @@ export class KnowledgeService {
               ...context,
               operation: sourceMatchingOperation,
               workloadClass: "decide",
-              priority: input.priority
+              priority: input.priority,
+              // The link job's: user for an import's own, background otherwise (D14).
+              budgetClass: input.budgetClass
             },
             callSignal,
             limits

@@ -1,5 +1,17 @@
+import type { BudgetClass } from "@app/domain";
+
 import type { AiService } from "./ai-service.js";
 import type { JobSupervisorOptions } from "./job-supervisor.js";
+
+/**
+ * Who a job's embeddings spend for (F4 D14): what the job states, else background work at P3 (the
+ * composite backfill, a catalog header) and the import's own chunks at P2.
+ */
+function jobEmbeddingBudgetClass(
+  context: { priority?: unknown; budgetClass?: BudgetClass } | undefined
+): BudgetClass {
+  return context?.budgetClass ?? (context?.priority === "P3" ? "background" : "user");
+}
 
 /**
  * How the job supervisor embeds the chunks of a document (F3 D37): in batches of at most 32 texts,
@@ -18,7 +30,12 @@ export function createJobEmbeddingGenerators(
       const result = await ai.runDefaultTask(
         "embedding",
         text,
-        { ...context, workloadClass: "embed", priority: context?.priority === "P3" ? "P3" : "P2" },
+        {
+          ...context,
+          workloadClass: "embed",
+          priority: context?.priority === "P3" ? "P3" : "P2",
+          budgetClass: jobEmbeddingBudgetClass(context)
+        },
         signal
       );
       if (!result || !Array.isArray(result.output)) return null;
@@ -33,7 +50,12 @@ export function createJobEmbeddingGenerators(
     generateEmbeddings: async (texts, signal, context) => {
       const result = await ai.embedMany(
         texts,
-        { ...context, workloadClass: "embed", priority: context?.priority === "P3" ? "P3" : "P2" },
+        {
+          ...context,
+          workloadClass: "embed",
+          priority: context?.priority === "P3" ? "P3" : "P2",
+          budgetClass: jobEmbeddingBudgetClass(context)
+        },
         signal
       );
       if (!result) return null;

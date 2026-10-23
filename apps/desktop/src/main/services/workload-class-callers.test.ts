@@ -1,4 +1,4 @@
-import { aiClassIds } from "@app/domain";
+import { aiClassIds, budgetClasses } from "@app/domain";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -27,6 +27,8 @@ const sites = callSites(files, constants);
 
 const priorities = ["P0", "P1", "P2", "P3"];
 const place = (site: Pick<CallSite, "file" | "line">) => `${site.file}:${site.line}`;
+/** What a caller states beside its input: the class, the lane priority and (F4 D14) the budget class. */
+type Stated = "workloadClass" | "priority" | "budgetClass";
 
 /**
  * Calls that cannot state what they do not know, each with the reason. `missing` names what the
@@ -36,14 +38,14 @@ const exceptions: Array<{
   file: string;
   enclosing: string;
   method: CallSite["method"];
-  missing: Array<"workloadClass" | "priority">;
+  missing: Array<Stated>;
   reason: string;
 }> = [
   {
     file: "apps/desktop/src/main/services/knowledge-service.ts",
     enclosing: "tryRunDefaultTask",
     method: "runDefaultTask",
-    missing: ["workloadClass", "priority"],
+    missing: ["workloadClass", "priority", "budgetClass"],
     reason: "a pass-through wrapper: its callers state the context (embedAtomicNoteVector)"
   },
   {
@@ -74,19 +76,21 @@ const exceptions: Array<{
     file: "apps/desktop/src/main/services/golden-note-pairs.ts",
     enclosing: "judgeCall",
     method: "runDefaultTask",
-    missing: ["workloadClass", "priority"],
+    missing: ["workloadClass", "priority", "budgetClass"],
     reason:
-      "the DEV note-pair knob sends the context noteCallRequest builds, which states the generative decider's class and priority; golden-note-pairs.test.ts compares it with the matcher's request"
+      "the DEV note-pair knob sends the context noteCallRequest builds, which states the generative decider's class, priority and budget class; golden-note-pairs.test.ts compares it with the matcher's request"
   }
 ];
 
-function missingOf(site: CallSite): Array<"workloadClass" | "priority"> {
+function missingOf(site: CallSite): Array<Stated> {
   const stated = site.context;
-  const missing: Array<"workloadClass" | "priority"> = [];
-  // `rank` and `rankPairs` always run the `decide` class: only their priority is stated.
-  if (!(site.method === "rank" || site.method === "rankPairs"))
-    if (!stated?.properties.has("workloadClass")) missing.push("workloadClass");
+  const missing: Array<Stated> = [];
+  // `rank` and `rankPairs` always run the `decide` class on the local ranker: only their priority
+  // is stated, since the RemoteBudget never meters the local lane.
+  const ranker = site.method === "rank" || site.method === "rankPairs";
+  if (!ranker && !stated?.properties.has("workloadClass")) missing.push("workloadClass");
   if (!stated?.properties.has("priority")) missing.push("priority");
+  if (!ranker && !stated?.properties.has("budgetClass")) missing.push("budgetClass");
   return missing;
 }
 
@@ -121,7 +125,7 @@ describe("the readers find the calls", () => {
   });
 });
 
-describe("every caller states its workload class and priority (D34)", () => {
+describe("every caller states its workload class, priority (D34) and budget class (F4 D14)", () => {
   it("leaves nothing unstated beyond the documented exceptions", () => {
     const problems: string[] = [];
     for (const site of sites) {
@@ -162,6 +166,25 @@ describe("every caller states its workload class and priority (D34)", () => {
       for (const value of site.context?.values.get("priority") ?? [])
         if (!priorities.includes(value))
           problems.push(`${place(site)} states the priority ${value}, not P0 to P3`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("states a known budget class, background for maintenance and never for P0 (F4 D14)", () => {
+    const problems: string[] = [];
+    for (const site of sites) {
+      const stated = site.context?.values.get("budgetClass") ?? [];
+      for (const value of stated)
+        if (!budgetClasses.includes(value as (typeof budgetClasses)[number]))
+          problems.push(`${place(site)} states the budget class ${value}`);
+      const priority = site.context?.values.get("priority") ?? [];
+      // Maintenance (P3) is Gardener work, metered and refused at the caps.
+      if (priority.length > 0 && priority.every((value) => value === "P3"))
+        for (const value of stated)
+          if (value !== "background") problems.push(`${place(site)} runs P3 as ${value}`);
+      // P0 is never refused: a P0 call is the person's, never background.
+      if (priority.length > 0 && priority.every((value) => value === "P0"))
+        if (stated.includes("background")) problems.push(`${place(site)} runs P0 as background`);
     }
     expect(problems).toEqual([]);
   });

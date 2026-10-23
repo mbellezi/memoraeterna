@@ -588,6 +588,7 @@ describe("the request", () => {
       operation: context.operation,
       workloadClass: context.workloadClass,
       priority: context.priority,
+      budgetClass: context.budgetClass,
       promptVersion: context.promptVersion,
       attempt: context.attempt,
       limits: call[4]

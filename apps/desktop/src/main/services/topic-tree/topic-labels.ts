@@ -131,6 +131,7 @@ export class TopicLabelService {
       origin: "job",
       workloadClass: "embed",
       priority: "P3",
+      budgetClass: "background",
       embeddingInputType: "document",
       sourceItemIds: []
     };

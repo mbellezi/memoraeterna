@@ -27,6 +27,7 @@ import {
 } from "../shared/ipc.js";
 import { RelationExplanationDeltaEventSchema, RelationsChangedEventSchema } from "../shared/ipc.js";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
+import { ImportEstimateInputSchema, ImportEstimateSchema } from "@app/domain";
 import {
   ObjectLocateInputSchema,
   ObjectLocateResultSchema,
@@ -236,6 +237,15 @@ const api: DesktopApi = {
         .parse(
           await ipcRenderer.invoke(ipcChannels.consultationCancel, z.string().uuid().parse(id))
         )
+  },
+  budget: {
+    estimateImport: async (input) =>
+      ImportEstimateSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.budgetEstimateImport,
+          ImportEstimateInputSchema.parse(input)
+        )
+      )
   },
   prompts: {
     command: async (input) =>

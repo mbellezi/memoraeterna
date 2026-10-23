@@ -211,7 +211,9 @@ export async function confirmMatchGroup(input: {
         stage: input.stage,
         operation: entityIdentity ? "entity_identity_resolution" : "relation_type_resolution",
         workloadClass: "write-quality",
-        priority: "P2"
+        priority: "P2",
+        // An import's own graph unless the graph pass says otherwise (a catalog header, D14).
+        budgetClass: input.context.budgetClass ?? "user"
       },
       input.signal
     );

@@ -453,6 +453,8 @@ async function judgePair(
           stage: "sourceMatching",
           workloadClass: "decide",
           priority: "P2",
+          // A DEV measurement the developer starts: audited, never refused by the budget.
+          budgetClass: "user",
           origin: "golden_source_pairs",
           contentLanguage,
           promptVersion: sourceRelationPromptVersion,

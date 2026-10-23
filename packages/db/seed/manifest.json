@@ -62,6 +62,7 @@
     "0057_ai_task_run_lanes",
     "0058_relation_retrieval_indexes",
     "0059_relation_direction_source",
-    "0060_gardener_tasks"
+    "0060_gardener_tasks",
+    "0061_ai_budget_class"
   ]
 }

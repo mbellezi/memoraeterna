@@ -635,6 +635,7 @@ export async function runPromptSamples(
           operation: "prompt_catalog_sample",
           origin: "settings",
           priority: "P0",
+          budgetClass: "interactive",
           sourceItemIds: [],
           contentLanguage: "en"
         },

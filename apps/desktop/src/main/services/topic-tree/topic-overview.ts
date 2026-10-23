@@ -326,6 +326,7 @@ export class TopicOverviewService {
         operation: topicOverviewOperation,
         workloadClass: "write-fast",
         priority: "P0",
+        budgetClass: "interactive",
         contentLanguage: identity.language,
         promptVersion: topicOverviewPromptVersion,
         outputContract: topicOverviewOutputContract,

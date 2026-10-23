@@ -63,7 +63,8 @@ export class SearchService {
           stage: "knowledge_search",
           embeddingInputType: "query",
           workloadClass: "embed",
-          priority: "P0"
+          priority: "P0",
+          budgetClass: "interactive"
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);

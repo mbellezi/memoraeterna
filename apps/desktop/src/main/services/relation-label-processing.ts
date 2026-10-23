@@ -82,6 +82,7 @@ export async function processRelationLabels(
       operation: "relation_labels",
       workloadClass: "write-quality" as const,
       priority: "P3" as const,
+      budgetClass: "background" as const,
       contentLanguage: input.contentLanguage,
       promptVersion: relationLabelPromptVersion,
       attempt: 0,

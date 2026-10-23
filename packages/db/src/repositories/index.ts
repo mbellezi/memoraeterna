@@ -54,3 +54,4 @@ export * from "./topicTreeRepository.js";
 export * from "./topicReadRepository.js";
 export * from "./topicNamingRepository.js";
 export * from "./topicOverviewRepository.js";
+export * from "./aiBudgetRepository.js";

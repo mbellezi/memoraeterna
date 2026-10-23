@@ -2,7 +2,9 @@
 // `MEMORA_GOLDEN_TOPICS=deterministic|full` once at startup and defaults to `deterministic`, which
 // places and rebalances but makes no topic AI call; every other run (DEV, packaged, E6) is `full`.
 // D34: background naming, Areas and label-embedding calls are capped per local day; at the cap the
-// work waits for the next day and the status says why. Interactive overviews are not capped.
+// work waits for the next day and the status says why. Interactive overviews are not capped. F4 D14:
+// only calls routed to a remote model count; the RemoteBudget meters them as well.
+import type { AiWorkloadClass } from "@app/ai";
 import { createSettingsRepository } from "@app/db";
 import type { PgPool } from "@app/db";
 import { z } from "zod";
@@ -108,9 +110,17 @@ export interface TopicAiBudgetUsage {
   capReached: boolean;
 }
 
+/** The route a topic call is made on: its operation and class, as the AI service resolves them. */
+export interface TopicAiRoute {
+  operation: string;
+  workloadClass: AiWorkloadClass;
+}
+
 /**
- * The D34 counter of background topic AI calls per local day. Reservations run one at a time in
- * this process, so concurrent callers never overspend; a new day starts from zero.
+ * The D34 counter of background topic AI calls per local day, a sub-cap of the RemoteBudget (F4
+ * D14) that counts remote calls only: a call routed to a model on this machine costs nothing and is
+ * not counted. Reservations run one at a time in this process, so concurrent callers never
+ * overspend; a new day starts from zero.
  */
 export class TopicAiBudget {
   private tail: Promise<unknown> = Promise.resolve();
@@ -121,6 +131,11 @@ export class TopicAiBudget {
       /** `topics.ai.maxBackgroundCallsPerDay` of the active tree's configuration. */
       cap: () => number;
       now?: () => Date;
+      /**
+       * Where the model of a call's route runs (the AI service's `taskRouteLocality` for structured
+       * output). Without it, or when it cannot tell, the call counts.
+       */
+      routeLocality?: (route: TopicAiRoute) => Promise<"local" | "remote" | null>;
     }
   ) {}
 
@@ -128,9 +143,20 @@ export class TopicAiBudget {
     return this.serialized(async () => this.describe(await this.today()));
   }
 
-  /** Reserves `calls` of today's budget; false (nothing reserved) when they would pass the cap. */
-  public reserve(calls = 1): Promise<boolean> {
+  /**
+   * Reserves `calls` of today's budget; false (nothing reserved) when they would pass the cap. A
+   * call whose `route` runs on a local model is admitted without being counted.
+   */
+  public reserve(calls = 1, route?: TopicAiRoute): Promise<boolean> {
     if (!Number.isInteger(calls) || calls < 1) throw new RangeError("Reserve whole calls");
+    const locality =
+      route && this.options.routeLocality
+        ? this.options.routeLocality(route).catch(() => null)
+        : Promise.resolve(null);
+    return locality.then((where) => (where === "local" ? true : this.count(calls)));
+  }
+
+  private count(calls: number): Promise<boolean> {
     return this.serialized(async () => {
       const record = await this.today();
       if (record.calls + calls > this.options.cap()) return false;

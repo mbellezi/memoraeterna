@@ -21,6 +21,7 @@ import {
   relationTypingOutputSchema,
   validateRelationTypingAnswer,
   type AiOutputContract,
+  type BudgetClass,
   type NoteRelationBand,
   type NoteRelationWriteType,
   type RelationTypingItem,
@@ -288,6 +289,11 @@ export interface RelationTypingDeps {
 export interface RelationTypingOptions {
   /** Lane priority of the calls: P1 for an interactive import's link job, P2 by default (D30). */
   priority?: AiPriorityInput;
+  /**
+   * Who the calls spend for (F4 D14): `user` for an import's own link job (the default),
+   * `background` for the retype sweep and Gardener matching.
+   */
+  budgetClass?: BudgetClass;
   jobId?: string;
   ingestionRunId?: string;
   sourceItemIds?: string[];
@@ -472,6 +478,7 @@ export async function typeRelationPairs(
         origin: "job",
         workloadClass: "write-fast",
         priority: options.priority ?? "P2",
+        budgetClass: options.budgetClass ?? "user",
         promptVersion: relationTypingContractVersion,
         outputContract,
         attempt,

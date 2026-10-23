@@ -311,9 +311,10 @@ export function noteCallRequest(
       promptVersion: atomicNoteMatchingVersion,
       contentLanguage,
       attempt,
-      // The class and priority the matcher's generative decider states (D16, R5).
+      // The class, priority and budget class the matcher's generative decider states (D16, R5, D14).
       workloadClass: "decide",
-      priority: "P2"
+      priority: "P2",
+      budgetClass: "user"
     },
     limits: { maxOutputTokens: maxRerankOutputTokens }
   };

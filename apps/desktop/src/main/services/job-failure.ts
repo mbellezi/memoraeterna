@@ -35,7 +35,10 @@ const transientMessages = [
   // The local helper died without answering, the routed model changed while the call waited, or
   // the local model was busy: a new attempt is admitted again with the current routing.
   /^errors\.localModels\.(?:runtimeFailed|modelBusy)$/,
-  /^organization\.errors\.modelChanged$/
+  /^organization\.errors\.modelChanged$/,
+  // The RemoteBudget refused an attempt before it was sent (F4 D14): the work waits for the cap to
+  // clear (T75 sets it aside as a blocker without spending an attempt).
+  /^gardener\.blocked\.cap\.(?:money_80|money_100|subscription_daily)$/
 ];
 
 /**

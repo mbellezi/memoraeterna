@@ -275,6 +275,35 @@ export interface RemoteCallOptions {
   retry?: boolean;
   /** Receives the report when the call succeeds; a failed call's report is read with {@link remoteCallReport}. */
   report?: ((report: RemoteCallReport) => void) | undefined;
+  /**
+   * Awaited before every attempt, the first included; the one bound to the caller's signal with
+   * {@link bindAttemptAdmission} when left out. See {@link RemoteAttemptAdmission}.
+   */
+  beforeAttempt?: RemoteAttemptAdmission | undefined;
+}
+
+/**
+ * Asked before each attempt of a remote call starts (F4 D14): the RemoteBudget reserves the attempt
+ * here, because every attempt may be billed. `attempt` counts from 1. Throwing ends the call with
+ * that error before the attempt sends anything; it is never retried and the attempt is not counted.
+ */
+export type RemoteAttemptAdmission = (attempt: number) => void | Promise<void>;
+
+const attemptAdmissions = new WeakMap<AbortSignal, RemoteAttemptAdmission>();
+
+/**
+ * Attaches an execution's attempt admission to the signal its adapter receives, as the lane permit
+ * is attached, so the adapters need not carry it. The signal must be the execution's own.
+ */
+export function bindAttemptAdmission(signal: AbortSignal, admit: RemoteAttemptAdmission): void {
+  attemptAdmissions.set(signal, admit);
+}
+
+/** The attempt admission bound to an execution's signal, if any. */
+export function attemptAdmissionOf(
+  signal: AbortSignal | undefined
+): RemoteAttemptAdmission | undefined {
+  return signal ? attemptAdmissions.get(signal) : undefined;
 }
 
 const failedCallReports = new WeakMap<object, RemoteCallReport>();
@@ -376,6 +405,7 @@ export async function runRemoteCall<T>(
   });
   const caller = options.signal;
   const permit = lanePermitOf(caller);
+  const beforeAttempt = options.beforeAttempt ?? attemptAdmissionOf(caller);
   const highReasoning = options.parameters !== undefined && isHighReasoning(options.parameters);
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
@@ -391,6 +421,11 @@ export async function runRemoteCall<T>(
   try {
     for (let number = 1; ; number++) {
       caller?.throwIfAborted();
+      // The budget admits each attempt before it is sent; a refusal sends nothing (F4 D14).
+      if (beforeAttempt) {
+        await beforeAttempt(number);
+        caller?.throwIfAborted();
+      }
       report.attempts = requestsMade + 1;
       const call = new RemoteAttempt({
         streaming: options.streaming,

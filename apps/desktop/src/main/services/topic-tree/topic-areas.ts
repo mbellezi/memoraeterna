@@ -558,7 +558,13 @@ export class TopicAreasService {
     job: JobRecord,
     signal: AbortSignal
   ): Promise<Attempt> {
-    if (!(await this.options.budget.reserve(1))) {
+    // A remote call counts against the daily cap; one on a local model does not (F4 D14).
+    if (
+      !(await this.options.budget.reserve(1, {
+        operation: topicAreasOperation,
+        workloadClass: "write-fast"
+      }))
+    ) {
       return { kind: "stopped", result: { status: "cap_reached" } };
     }
     const logContext: AiTaskLogContext = {
@@ -568,6 +574,7 @@ export class TopicAreasService {
       origin: "job",
       workloadClass: "write-fast",
       priority: "P3",
+      budgetClass: "background",
       contentLanguage: prepared.contentLanguage,
       promptVersion: topicAreasPromptVersion,
       outputContract: topicAreasOutputContract,

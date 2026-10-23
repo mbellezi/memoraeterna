@@ -428,6 +428,13 @@
       "when": 1792781167481,
       "tag": "0060_gardener_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792781167482,
+      "tag": "0061_ai_budget_class",
+      "breakpoints": true
     }
   ]
 }
