@@ -128,6 +128,7 @@ export const ipcChannels = {
   appEvents: "app:events",
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
+  consultationStatus: "app:consultation:status",
   /** F4 D14: the import plan chip's estimate (T76). */
   budgetEstimateImport: "app:budget:estimateImport",
   /** F4 D14: the budget's meters, and the Activity's "continue" past the pause share. */
@@ -349,6 +350,15 @@ export const RelationsChangedEventSchema = z
   .object({ noteIds: z.array(z.string().uuid()).min(1).max(200) })
   .strict();
 export type RelationsChangedEvent = z.infer<typeof RelationsChangedEventSchema>;
+
+/** What a running Ask tells the person besides its answer: it is working, or waiting out a rate limit. */
+export const consultationStatusSchema = z.enum(["answering", "waitingForProvider"]);
+export type ConsultationStatus = z.infer<typeof consultationStatusSchema>;
+/** The `consultationStatus` push (owner Q2): sent to the window that asked, for the request's id. */
+export const ConsultationStatusEventSchema = z
+  .object({ requestId: z.string().uuid(), status: consultationStatusSchema })
+  .strict();
+export type ConsultationStatusEvent = z.infer<typeof ConsultationStatusEventSchema>;
 
 /**
  * The `relationExplanationDelta` push (F3 D22): an explanation as it is written, to the window that
@@ -1868,7 +1878,10 @@ export interface DesktopApi {
   onAppEvent: <T extends AppEventType>(type: T, handler: AppEventHandler<T>) => () => void;
   consultation: {
     ask: (input: ConsultationInput) => Promise<ConsultationResult>;
+    /** Ends the Ask and stops the statement it has running. */
     cancel: (id: string) => Promise<null>;
+    /** Pushed while an Ask waits out the provider's rate limit, then when it answers again. */
+    subscribeStatus: (listener: (event: ConsultationStatusEvent) => void) => () => void;
   };
   budget: {
     /** What an import plan of this many chunks would cost on the writer's route (F4 D14). */

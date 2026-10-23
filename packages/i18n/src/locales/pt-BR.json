@@ -61,7 +61,10 @@
     "vectorUnavailable": "Recuperação semântica indisponível ou excluída pela privacidade; a busca textual permanece disponível.",
     "processingHint": "Organize este lote em um tópico após o processamento selecionado. Reutilize um título ou alias elegível e revise antes de aplicar. Notas, grafo e correspondências continuam opcionais.",
     "processingRequired": "Informe o título do tópico. O modelo segue o roteador, salvo substituição explícita.",
-    "cancelBatch": "Cancelar lote e organização"
+    "cancelBatch": "Cancelar lote e organização",
+    "status": {
+      "waitingForProvider": "Aguardando o provedor"
+    }
   },
   "organization": {
     "forceModel": "Forçar outro modelo",

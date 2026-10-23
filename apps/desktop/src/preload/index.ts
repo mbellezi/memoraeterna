@@ -25,7 +25,11 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
-import { RelationExplanationDeltaEventSchema, RelationsChangedEventSchema } from "../shared/ipc.js";
+import {
+  ConsultationStatusEventSchema,
+  RelationExplanationDeltaEventSchema,
+  RelationsChangedEventSchema
+} from "../shared/ipc.js";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 import { BudgetSnapshotSchema, ImportEstimateInputSchema, ImportEstimateSchema } from "@app/domain";
 import {
@@ -247,7 +251,15 @@ const api: DesktopApi = {
         .null()
         .parse(
           await ipcRenderer.invoke(ipcChannels.consultationCancel, z.string().uuid().parse(id))
-        )
+        ),
+    subscribeStatus(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const event = ConsultationStatusEventSchema.safeParse(payload);
+        if (event.success) listener(event.data);
+      };
+      ipcRenderer.on(ipcChannels.consultationStatus, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.consultationStatus, handler);
+    }
   },
   budget: {
     estimateImport: async (input) =>

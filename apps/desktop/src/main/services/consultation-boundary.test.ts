@@ -82,6 +82,7 @@ describe("Ask is decoupled from the legacy wiki and the organization domain", ()
       "ai.listProfiles",
       "consultation.ask",
       "consultation.cancel",
+      "consultation.subscribeStatus",
       "wiki.search"
     ]);
   });

@@ -4,7 +4,12 @@ import { StatementBudgetError, type PgPool } from "@app/db";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 
 import { ActiveDeadline, AiProviderError } from "@app/ai";
-import { askTimeoutMs, ConsultationService } from "./consultation-service.js";
+import {
+  askRateLimitWait,
+  askTimeoutMs,
+  ConsultationService,
+  rateLimitWaitMs
+} from "./consultation-service.js";
 import { consultationSnapshot } from "./consultation-fixture.js";
 
 const mocks = vi.hoisted(() => ({
@@ -521,10 +526,12 @@ describe("canceling and the time limit", () => {
       return [row(1), row(2)];
     });
     const { service: ask } = service(undefined, pool);
-    await ask.ask(request());
+    const input = request();
+    await ask.ask(input);
+    // Each statement starts with the Ask's marker, which a cancel finds among the active backends.
     expect(sent).toEqual([
       `begin; set local statement_timeout = ${askTimeoutMs - 30_000}`,
-      "select 'a candidate statement'",
+      `/* ask:${(input as { requestId: string }).requestId} */ select 'a candidate statement'`,
       "commit"
     ]);
   });
@@ -564,24 +571,325 @@ describe("canceling and the time limit", () => {
     // Once the limit passed, no statement starts at all.
     await expect(late).rejects.toBeInstanceOf(StatementBudgetError);
   });
-  it("names the provider's rate limit when it outlasts the retries, and asks only once", async () => {
-    const limited = new AiProviderError("AI provider request failed (429).", {
-      kind: "http",
-      transient: true,
-      status: 429,
-      retryAfterMs: 8_000
-    });
-    const task = vi.fn<ModelCall>().mockRejectedValue(limited);
-    const { service: ask } = service(task);
-    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.rateLimited");
-    expect(task).toHaveBeenCalledOnce();
-    // Other provider failures keep their own error.
+  it("keeps the error of any other provider failure", async () => {
     const unavailable = new AiProviderError("AI provider request failed (503).", {
       kind: "http",
       transient: true,
       status: 503
     });
-    task.mockRejectedValue(unavailable);
+    const task = vi.fn<ModelCall>().mockRejectedValue(unavailable);
+    const { service: ask } = service(task);
     await expect(ask.ask(request())).rejects.toBe(unavailable);
+    expect(task).toHaveBeenCalledOnce();
+  });
+});
+
+/** A rate limit (429) the adapter did not retry because its reset is past what it waits inline. */
+const rateLimit = (retryAfterMs?: number) =>
+  new AiProviderError("AI provider request failed (429).", {
+    kind: "http",
+    transient: true,
+    status: 429,
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs })
+  });
+
+describe("the wait for a provider's rate limit (owner Q2)", () => {
+  /** Lets the Ask run until `done` holds, without moving the fake clock. */
+  async function until(done: () => boolean) {
+    for (let step = 0; step < 500 && !done(); step++) await vi.advanceTimersByTimeAsync(0);
+    expect(done()).toBe(true);
+  }
+  const statusesOf = () => {
+    const seen: string[] = [];
+    return { seen, onStatus: (status: string) => seen.push(status) };
+  };
+
+  it("waits once for a reset that fits, says so, and asks the provider again", async () => {
+    vi.useFakeTimers();
+    const task = vi
+      .fn<ModelCall>()
+      .mockRejectedValueOnce(rateLimit(8_000))
+      .mockResolvedValue(modelAnswer());
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    const running = ask.ask(request(), { onStatus });
+    await until(() => seen.length === 1);
+    expect(seen).toEqual(["waitingForProvider"]);
+    // It waits the whole reset and not a moment less.
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(task).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await running;
+    expect(result.answer).toEqual(answer);
+    expect(seen).toEqual(["waitingForProvider", "answering"]);
+    expect(task).toHaveBeenCalledTimes(2);
+    // The failed call stays a failed call in the audit; the second is an ordinary call, no repair.
+    const [first, second] = task.mock.calls.map(
+      ([, , context]) => context as Record<string, unknown>
+    );
+    expect(first).toMatchObject({ attempt: 1, isRepair: false });
+    expect(second).toMatchObject({ attempt: 1, isRepair: false, origin: "consultation" });
+  });
+
+  it("gives up with the rate-limit error when the second call is limited too", async () => {
+    vi.useFakeTimers();
+    const task = vi.fn<ModelCall>().mockRejectedValue(rateLimit(5_000));
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    const settled = expect(ask.ask(request(), { onStatus })).rejects.toThrow(
+      "consultation.errors.rateLimited"
+    );
+    await until(() => seen.length === 1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
+    // One wait for the whole Ask: no second wait, no third call.
+    expect(task).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual(["waitingForProvider", "answering"]);
+  });
+
+  it("waits once for the whole Ask, even when an invalid answer asks for a repair", async () => {
+    vi.useFakeTimers();
+    const invalid = { ...modelAnswer(), output: "not json at all" };
+    const task = vi
+      .fn<ModelCall>()
+      .mockRejectedValueOnce(rateLimit(2_000))
+      .mockResolvedValueOnce(invalid)
+      .mockRejectedValue(rateLimit(2_000));
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    const settled = expect(ask.ask(request(), { onStatus })).rejects.toThrow(
+      "consultation.errors.rateLimited"
+    );
+    await until(() => seen.length === 1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await settled;
+    expect(task).toHaveBeenCalledTimes(3);
+    expect(seen).toEqual(["waitingForProvider", "answering"]);
+    expect(task.mock.calls[2]![2]).toMatchObject({ attempt: 2, isRepair: true });
+  });
+
+  it("does not wait for a reset past 30 s, or for one the provider did not state", async () => {
+    const task = vi.fn<ModelCall>().mockRejectedValue(rateLimit(askRateLimitWait.maxWaitMs + 1));
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    await expect(ask.ask(request(), { onStatus })).rejects.toThrow(
+      "consultation.errors.rateLimited"
+    );
+    task.mockRejectedValue(rateLimit());
+    await expect(ask.ask(request(), { onStatus })).rejects.toThrow(
+      "consultation.errors.rateLimited"
+    );
+    expect(task).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([]);
+  });
+
+  it("waits for a reset of exactly 30 s while the Ask has time for it", async () => {
+    vi.useFakeTimers();
+    const task = vi
+      .fn<ModelCall>()
+      .mockRejectedValueOnce(rateLimit(askRateLimitWait.maxWaitMs))
+      .mockResolvedValue(modelAnswer());
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    const running = ask.ask(request(), { onStatus });
+    await until(() => seen.length === 1);
+    await vi.advanceTimersByTimeAsync(askRateLimitWait.maxWaitMs);
+    await expect(running).resolves.toMatchObject({ answer });
+  });
+
+  it("counts the wait in the Ask's time and keeps 15 s of it for the second call", async () => {
+    vi.useFakeTimers();
+    // The first call used `leftMs` less than the whole limit before the provider refused it.
+    const refusedWithLeft = (leftMs: number) =>
+      vi
+        .fn<ModelCall>()
+        .mockImplementationOnce(async () => {
+          await vi.advanceTimersByTimeAsync(askTimeoutMs - leftMs);
+          throw rateLimit(10_000);
+        })
+        .mockResolvedValue(modelAnswer());
+    // 25 s left, 10 s to wait: exactly the 15 s reserve remain, so it waits.
+    const fits = refusedWithLeft(25_000);
+    const first = statusesOf();
+    const running = service(fits).service.ask(request(), { onStatus: first.onStatus });
+    await until(() => first.seen.length === 1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(running).resolves.toMatchObject({ answer });
+    expect(fits).toHaveBeenCalledTimes(2);
+    // 24 s left, 10 s to wait: 14 s would remain, so the Ask ends at once as before.
+    const tight = refusedWithLeft(24_000);
+    const second = statusesOf();
+    await expect(
+      service(tight).service.ask(request(), { onStatus: second.onStatus })
+    ).rejects.toThrow("consultation.errors.rateLimited");
+    expect(tight).toHaveBeenCalledOnce();
+    expect(second.seen).toEqual([]);
+  });
+
+  it("stops waiting the moment the person cancels", async () => {
+    vi.useFakeTimers();
+    const task = vi.fn<ModelCall>().mockRejectedValue(rateLimit(20_000));
+    const { service: ask } = service(task);
+    const { seen, onStatus } = statusesOf();
+    const input = request();
+    const settled = expect(ask.ask(input, { onStatus })).rejects.toThrow(
+      "consultation.errors.canceled"
+    );
+    await until(() => seen.length === 1);
+    await ask.cancel((input as { requestId: string }).requestId);
+    await settled;
+    expect(task).toHaveBeenCalledOnce();
+    expect(seen).toEqual(["waitingForProvider"]);
+  });
+
+  it("decides from the failure and the time left alone", () => {
+    const { maxWaitMs, reserveMs } = askRateLimitWait;
+    expect(rateLimitWaitMs(rateLimit(8_000), 100_000)).toBe(8_000);
+    expect(rateLimitWaitMs(rateLimit(0), 100_000)).toBe(0);
+    expect(rateLimitWaitMs(rateLimit(maxWaitMs), 100_000)).toBe(maxWaitMs);
+    expect(rateLimitWaitMs(rateLimit(maxWaitMs + 1), 100_000)).toBeNull();
+    expect(rateLimitWaitMs(rateLimit(), 100_000)).toBeNull();
+    // The wait must leave the reserve.
+    expect(rateLimitWaitMs(rateLimit(10_000), 10_000 + reserveMs)).toBe(10_000);
+    expect(rateLimitWaitMs(rateLimit(10_000), 10_000 + reserveMs - 1)).toBeNull();
+    // An Ask without a clock of its own has no time to wait with.
+    expect(rateLimitWaitMs(rateLimit(8_000), null)).toBeNull();
+    // Not a rate limit: a server error, a plain error, an exhausted quota.
+    const unavailable = new AiProviderError("AI provider request failed (503).", {
+      kind: "http",
+      transient: true,
+      status: 503,
+      retryAfterMs: 8_000
+    });
+    expect(rateLimitWaitMs(unavailable, 100_000)).toBeNull();
+    expect(rateLimitWaitMs(new Error("boom"), 100_000)).toBeNull();
+  });
+});
+
+/**
+ * A pool whose client hangs on a marked statement until `stop` ends it with SQLSTATE 57014, the way
+ * PostgreSQL ends a statement it was asked to cancel; its own `query` is the cancel's control
+ * connection, which records the cancel and stops the statement.
+ */
+function hangingStatementPool() {
+  const sent: string[] = [];
+  let stop: (() => void) | undefined;
+  const cancels = vi.fn<(text: string, values: unknown[]) => Promise<unknown>>(async () => {
+    stop?.();
+    return { rows: [{ canceled: true }] };
+  });
+  const pool = {
+    connect: async () => ({
+      query: (text: string) => {
+        sent.push(text);
+        if (!text.startsWith("/* ask:")) return Promise.resolve({ rows: [], rowCount: 0 });
+        return new Promise<never>((_resolve, reject) => {
+          stop = () =>
+            reject(
+              Object.assign(new Error("canceling statement due to user request"), {
+                code: "57014"
+              })
+            );
+        });
+      },
+      release: () => undefined
+    }),
+    query: cancels
+  } as unknown as PgPool;
+  return { pool, sent, cancels, stop: () => stop?.() };
+}
+
+describe("canceling a running statement", () => {
+  const idOf = (input: unknown) => (input as { requestId: string }).requestId;
+  const slowCandidates = () =>
+    mocks.retrieval.candidates.mockImplementation(async () => {
+      await mocks.retrievalDb!.query("select pg_sleep(30)");
+      return [row(1), row(2)];
+    });
+
+  it("stops the statement in flight and ends the Ask as canceled, not as a timeout", async () => {
+    const { pool, sent, cancels } = hangingStatementPool();
+    slowCandidates();
+    const { ai, service: ask } = service(undefined, pool);
+    const input = request(),
+      id = idOf(input);
+    const settled = expect(ask.ask(input)).rejects.toThrow("consultation.errors.canceled");
+    await vi.waitFor(() => expect(sent).toContain(`/* ask:${id} */ select pg_sleep(30)`));
+    await expect(ask.cancel(id)).resolves.toBeNull();
+    await settled;
+    expect(cancels).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
+      `/* ask:${id} */`
+    ]);
+    // The cancelled statement was rolled back, and the Ask went no further.
+    expect(sent.at(-1)).toBe("rollback");
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+    // The same request id can be asked again.
+    mocks.retrieval.candidates.mockResolvedValue([row(1), row(2)]);
+    await expect(ask.ask(input)).resolves.toMatchObject({ id });
+  });
+
+  it("ends as the deadline when the time budget stopped the statement", async () => {
+    // PostgreSQL stopped it for its statement_timeout: the same SQLSTATE, with the Ask still live.
+    const sent: string[] = [];
+    const pool = {
+      connect: async () => ({
+        query: async (text: string) => {
+          sent.push(text);
+          if (text.startsWith("/* ask:"))
+            throw Object.assign(new Error("canceling statement due to statement timeout"), {
+              code: "57014"
+            });
+          return { rows: [], rowCount: 0 };
+        },
+        release: () => undefined
+      })
+    } as unknown as PgPool;
+    slowCandidates();
+    const { ai, service: ask } = service(undefined, pool);
+    await expect(ask.ask(request())).rejects.toThrow("consultation.errors.deadline");
+    expect(sent.at(-1)).toBe("rollback");
+    expect(ai.runOrganizationTask).not.toHaveBeenCalled();
+  });
+
+  it("asks the database for nothing when no statement of the request is running", async () => {
+    const { pool, cancels } = hangingStatementPool();
+    const { service: ask } = service(undefined, pool);
+    await expect(ask.cancel(randomUUID())).resolves.toBeNull();
+    expect(cancels).not.toHaveBeenCalled();
+    // And nothing happens without a database.
+    const closed = new ConsultationService({
+      getPool: () => null,
+      ai: {} as never,
+      contentLanguage: async () => "en"
+    });
+    await expect(closed.cancel(randomUUID())).resolves.toBeNull();
+  });
+
+  it("still ends the Ask as canceled when the cancel itself fails", async () => {
+    const { pool, sent, stop } = hangingStatementPool();
+    slowCandidates();
+    const cancelActive = vi.fn(async () => {
+      throw new Error("the control connection is gone");
+    });
+    const ask = new ConsultationService({
+      getPool: () => pool,
+      ai: {
+        pinOrganizationProfile: vi.fn(async () => profile),
+        runOrganizationTask: vi.fn(),
+        runConsultationEmbedding: vi.fn(async () => null)
+      } as never,
+      contentLanguage: async () => "en",
+      statementCanceler: () => ({ cancelActive, close: async () => undefined })
+    });
+    const input = request(),
+      id = idOf(input);
+    const settled = expect(ask.ask(input)).rejects.toThrow("consultation.errors.canceled");
+    await vi.waitFor(() => expect(sent).toContain(`/* ask:${id} */ select pg_sleep(30)`));
+    await expect(ask.cancel(id)).resolves.toBeNull();
+    expect(cancelActive).toHaveBeenCalledWith(id);
+    // The statement was not stopped; PostgreSQL ends it later at its own time limit, and the Ask,
+    // which the person already gave up on, reports the cancel.
+    stop();
+    await settled;
   });
 });

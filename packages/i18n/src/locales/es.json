@@ -61,7 +61,10 @@
     "vectorUnavailable": "Recuperación semántica no disponible o excluida por privacidad; la búsqueda textual sigue disponible.",
     "processingHint": "Organiza el lote en un tema después del procesamiento elegido. Reutiliza un título o alias apto y revisa antes de aplicar. Notas, grafo y correspondencias siguen siendo opcionales.",
     "processingRequired": "Introduce un título. El modelo sigue el enrutador, salvo una selección explícita.",
-    "cancelBatch": "Cancelar lote y organización"
+    "cancelBatch": "Cancelar lote y organización",
+    "status": {
+      "waitingForProvider": "Esperando al proveedor"
+    }
   },
   "organization": {
     "forceModel": "Forzar otro modelo",

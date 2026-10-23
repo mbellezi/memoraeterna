@@ -26,11 +26,14 @@ export function ConsultationStatus({
   t,
   error,
   busy,
+  waiting = false,
   onCancel
 }: {
   t: Translator;
   error: MessageKey | null;
   busy: boolean;
+  /** The question waits out the provider's rate limit before it asks once more. */
+  waiting?: boolean;
   onCancel: () => void;
 }) {
   return (
@@ -46,7 +49,9 @@ export function ConsultationStatus({
           className="flex items-center gap-3 rounded-xl bg-cyan-500/10 p-4 text-sm"
         >
           <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} />
-          <span className="mr-auto">{t("consultation.answering")}</span>
+          <span className="mr-auto">
+            {t(waiting ? "consultation.status.waitingForProvider" : "consultation.answering")}
+          </span>
           <button className={control} onClick={onCancel}>
             {t("organization.cancel")}
           </button>
@@ -246,8 +251,16 @@ export function ConsultationDialog({
     [profile, setProfile] = useState("");
   const [loading, setLoading] = useState(!initialProfiles),
     [busy, setBusy] = useState(false),
+    [waiting, setWaiting] = useState(false),
     [error, setError] = useState<MessageKey | null>(null),
     [result, setResult] = useState<ConsultationResult | null>(null);
+  // Listens only while a question runs: the main process says when it waits for the provider.
+  useEffect(() => {
+    if (!busy) return;
+    return window.app.consultation.subscribeStatus((event) => {
+      if (event.requestId === request.current) setWaiting(event.status === "waitingForProvider");
+    });
+  }, [busy]);
   useEffect(() => {
     const focus = document.activeElement as HTMLElement | null;
     if (!initialProfiles)
@@ -302,6 +315,7 @@ export function ConsultationDialog({
       if (request.current === id) {
         request.current = null;
         setBusy(false);
+        setWaiting(false);
       }
     }
   }
@@ -311,6 +325,7 @@ export function ConsultationDialog({
       request.current = null;
       await window.app.consultation.cancel(id);
       setBusy(false);
+      setWaiting(false);
       setError("consultation.errors.canceled");
     }
   }
@@ -434,7 +449,13 @@ export function ConsultationDialog({
               </fieldset>
             </details>
           )}
-          <ConsultationStatus t={t} error={error} busy={busy} onCancel={() => void cancel()} />
+          <ConsultationStatus
+            t={t}
+            error={error}
+            busy={busy}
+            waiting={waiting}
+            onCancel={() => void cancel()}
+          />
           {result && (
             <ConsultationAnswer t={t} result={result} onOpenSource={onOpenSource} active={active} />
           )}

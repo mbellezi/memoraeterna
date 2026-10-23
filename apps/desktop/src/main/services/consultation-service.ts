@@ -13,8 +13,10 @@ import {
   budgetedQueries,
   createConsultationRepository,
   createKnowledgeConsultationRepository,
+  createStatementCanceler,
   StatementBudgetError,
-  type PgPool
+  type PgPool,
+  type StatementCanceler
 } from "@app/db";
 import {
   ConsultationAnswerSchema,
@@ -28,7 +30,8 @@ import {
   type ConsultationRelation,
   type ConsultationResult
 } from "@app/domain";
-import { ActiveDeadline, isRateLimitFailure } from "@app/ai";
+import { ActiveDeadline, aiErrorRetryAfterMs, isRateLimitFailure } from "@app/ai";
+import type { ConsultationStatus } from "../../shared/ipc.js";
 import type { AiService } from "./ai-service.js";
 
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
@@ -239,15 +242,61 @@ function askFailure(error: unknown, canceled: AbortSignal, active: AbortSignal) 
     return new Error("consultation.errors.deadline");
   if (/organization\.errors\.model/.test(String(error)))
     return new Error("consultation.errors.model");
-  // The provider's rate limit outlasted the adapter's retries (a long wait is not retried inline).
+  // The provider's rate limit outlasted the adapter's retries and the Ask's one wait (a longer
+  // reset, or too little time left, is not waited out).
   if (isRateLimitFailure(error)) return new Error("consultation.errors.rateLimited");
   return error;
 }
 
 /** Time an Ask may spend working; waiting for the AI queue does not count. */
 export const askTimeoutMs = 120_000;
+
+/**
+ * The one wait an Ask makes when the provider's rate limit names a reset (owner Q2): it waits when
+ * the reset is no later than `maxWaitMs` and at least `reserveMs` of the Ask's time remain after the
+ * wait, so the second call still has room to answer. A longer reset ends the Ask as before.
+ */
+export const askRateLimitWait = { maxWaitMs: 30_000, reserveMs: 15_000 } as const;
+
+/**
+ * How long an Ask waits before it asks the provider again, or null when it should not wait: the
+ * failure is not a rate limit that states its reset, the reset is past `maxWaitMs`, or the time
+ * remaining (null when the Ask keeps no clock) would leave less than `reserveMs` after the wait.
+ */
+export function rateLimitWaitMs(error: unknown, remainingMs: number | null): number | null {
+  if (remainingMs === null || !isRateLimitFailure(error)) return null;
+  const waitMs = aiErrorRetryAfterMs(error);
+  if (waitMs === undefined || !Number.isFinite(waitMs) || waitMs < 0) return null;
+  if (waitMs > askRateLimitWait.maxWaitMs) return null;
+  return remainingMs - waitMs >= askRateLimitWait.reserveMs ? waitMs : null;
+}
+
+/** Resolves after `ms`, or rejects with the signal's reason as soon as it ends. */
+function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** What the person is told about a running Ask besides its answer. */
+export interface AskHooks {
+  onStatus?: (status: ConsultationStatus) => void;
+}
+
 export class ConsultationService {
   private active = new Map<string, AbortController>();
+  /** The request id behind each Ask's signal, so its statements carry the marker a cancel looks for. */
+  private requestIds = new WeakMap<AbortSignal, string>();
+  private cancelers = new WeakMap<PgPool, StatementCanceler>();
   constructor(
     private readonly options: {
       getPool: () => PgPool | null;
@@ -258,11 +307,31 @@ export class ConsultationService {
       contentLanguage: () => Promise<string>;
       /** Unused since an answer stopped creating jobs; the main wiring still passes it. */
       wake?: () => void;
+      /** Builds the canceler for a pool; the default asks PostgreSQL from a connection of its own. */
+      statementCanceler?: (pool: PgPool) => StatementCanceler;
     }
   ) {}
-  cancel(id: string) {
+  /**
+   * Ends the Ask and stops the statement it has running, so a slow query does not go on after the
+   * person gave up. Stopping the statement is best effort: the Ask has ended either way, and the
+   * statement's own time limit is the bound.
+   */
+  async cancel(id: string): Promise<null> {
     this.active.get(id)?.abort();
+    const pool = this.options.getPool();
+    if (pool)
+      await this.cancelerFor(pool)
+        .cancelActive(id)
+        .catch(() => 0);
     return null;
+  }
+  private cancelerFor(pool: PgPool) {
+    let canceler = this.cancelers.get(pool);
+    if (!canceler) {
+      canceler = (this.options.statementCanceler ?? createStatementCanceler)(pool);
+      this.cancelers.set(pool, canceler);
+    }
+    return canceler;
   }
   private pool() {
     const pool = this.options.getPool();
@@ -279,7 +348,18 @@ export class ConsultationService {
     const deadline = ActiveDeadline.of(signal);
     const built = Date.now();
     const spentMs = () => (deadline ? deadline.elapsedMs : Date.now() - built);
-    return budgetedQueries(this.pool(), () => askTimeoutMs - spentMs(), signal);
+    const requestId = this.requestIds.get(signal);
+    return budgetedQueries(
+      this.pool(),
+      () => askTimeoutMs - spentMs(),
+      signal,
+      requestId === undefined ? {} : { requestId }
+    );
+  }
+  /** What is left of an Ask's active time, or null for a signal without an active deadline. */
+  private remainingMs(signal: AbortSignal) {
+    const deadline = ActiveDeadline.of(signal);
+    return deadline ? askTimeoutMs - deadline.elapsedMs : null;
   }
   /** Rejects a snapshot whose passages, relations or context changed since it was prepared. */
   private async fresh(snapshot: ConsultationSnapshot, signal: AbortSignal) {
@@ -305,7 +385,7 @@ export class ConsultationService {
     }
     await grounding.validate(snapshot);
   }
-  async ask(raw: ConsultationInput): Promise<ConsultationResult> {
+  async ask(raw: ConsultationInput, hooks: AskHooks = {}): Promise<ConsultationResult> {
     const input = ConsultationInputSchema.parse(raw);
     if (this.active.has(input.requestId)) throw new Error("consultation.errors.wait");
     const controller = new AbortController();
@@ -313,13 +393,15 @@ export class ConsultationService {
     // The timeout runs while the question is prepared and answered, not while it waits for the AI queue.
     const deadline = new ActiveDeadline(askTimeoutMs, controller.signal);
     const signal = deadline.signal;
+    this.requestIds.set(signal, input.requestId);
     try {
       return await withPromptPin(capturePromptPin(), async () => {
         const { snapshot, metadata } = await this.prepare(input, signal);
         const { answer, inputTokens, outputTokens, costEstimate } = await this.generate(
           snapshot,
           input.question,
-          signal
+          signal,
+          hooks
         );
         let stale = false;
         try {
@@ -519,10 +601,15 @@ export class ConsultationService {
       }
     };
   }
-  async generate(snapshot: ConsultationSnapshot, question: string, signal: AbortSignal) {
+  async generate(
+    snapshot: ConsultationSnapshot,
+    question: string,
+    signal: AbortSignal,
+    hooks: AskHooks = {}
+  ) {
     return withPromptPin(snapshot.promptPin, async () => {
       try {
-        return await this.generatePinned(snapshot, question, signal);
+        return await this.generatePinned(snapshot, question, signal, hooks);
       } catch (error) {
         if (String(error).includes("errors.ai.contextWindowLimit"))
           throw new Error("consultation.errors.context");
@@ -533,7 +620,8 @@ export class ConsultationService {
   private async generatePinned(
     snapshot: ConsultationSnapshot,
     question: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    hooks: AskHooks
   ) {
     const { contentLanguage: language, profile, sourceIds } = snapshot;
     const base = consultationPrompt(snapshot, question);
@@ -542,32 +630,49 @@ export class ConsultationService {
     let answer: ReturnType<typeof parseConsultationAnswer> | null = null,
       inputTokens: number | null = 0,
       outputTokens: number | null = 0,
-      costEstimate: number | null = 0;
+      costEstimate: number | null = 0,
+      waited = false;
     for (let attempt = 0; attempt < 2 && !answer; attempt++) {
       signal.throwIfAborted();
       await this.fresh(snapshot, signal);
       const prompt = joinPrompts(base, attempt ? renderPrompt("consultation.repair") : "");
-      const result = await this.options.ai.runOrganizationTask(
-        profile,
-        prompt,
-        {
-          sourceItemIds: snapshot.sample ? [] : sourceIds,
-          operation: "wiki-consultation",
-          stage: "answer",
-          origin: "consultation",
-          workloadClass: "answer",
-          priority: "P0",
-          budgetClass: "interactive",
-          promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
-          contentLanguage: language,
-          attempt: attempt + 1,
-          // The second call follows an answer that failed validation: a repair for the audit (D35).
-          isRepair: attempt > 0
-        },
-        signal,
-        2048,
-        () => this.fresh(snapshot, signal)
-      );
+      const call = () =>
+        this.options.ai.runOrganizationTask(
+          profile,
+          prompt,
+          {
+            sourceItemIds: snapshot.sample ? [] : sourceIds,
+            operation: "wiki-consultation",
+            stage: "answer",
+            origin: "consultation",
+            workloadClass: "answer",
+            priority: "P0",
+            budgetClass: "interactive",
+            promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
+            contentLanguage: language,
+            attempt: attempt + 1,
+            // The second call follows an answer that failed validation: a repair for the audit (D35).
+            isRepair: attempt > 0
+          },
+          signal,
+          2048,
+          () => this.fresh(snapshot, signal)
+        );
+      let result: Awaited<ReturnType<typeof call>>;
+      try {
+        result = await call();
+      } catch (error) {
+        // The provider's rate limit outlasted the adapter's own retries. A reset that fits the Ask's
+        // time is waited out once for the whole Ask (Q2); the failed call stays in the audit as a
+        // failed call, and the second one is an ordinary call, not a repair.
+        const waitMs = waited ? null : rateLimitWaitMs(error, this.remainingMs(signal));
+        if (waitMs === null) throw error;
+        waited = true;
+        hooks.onStatus?.("waitingForProvider");
+        await sleepUnlessAborted(waitMs, signal);
+        hooks.onStatus?.("answering");
+        result = await call();
+      }
       auditIds.push(result.aiTaskRunId);
       inputTokens =
         inputTokens === null || result.inputTokens === undefined

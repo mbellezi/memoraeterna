@@ -48,13 +48,13 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   byte, stalled stream, total). Only progress (answer text, or reasoning text before it) keeps a
   stream alive, not bytes or lifecycle events, and unless high-reasoning or local a request must
   start answering within a bound of the first byte. Decide calls ask for no reasoning summary, so
-  only that bound limits their thinking (a refusing backend gets the previous shape). Adapters
-  retry only transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with bounded,
-  jittered exponential backoff, honoring `Retry-After` or a stated reset (a long wait goes to the
-  job); never invalid requests, auth failures, exhausted billing quota, context overflow or schema
+  only that bound limits their thinking (a refusing backend gets the previous shape). Adapters retry
+  only transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with bounded, jittered
+  backoff, honoring `Retry-After` or a stated reset (a long wait goes to the job; an Ask waits
+  once); never invalid requests, auth failures, exhausted billing quota, context overflow or schema
   failures after the allowed repair. Job retries classify alike. Every runtime, local included,
-  enforces a per-class deadline from execution start; a local call that ignores cancellation
-  keeps its lane until the runtime is reloaded, and calls needing that lane fail meanwhile.
+  enforces a per-class deadline from execution start; a local call that ignores cancellation keeps
+  its lane until the runtime is reloaded, and calls needing that lane fail meanwhile.
 - Structured output is requested with a schema where the runtime supports it and
   is always validated with Zod. Invalid output gets a bounded repair; valid items
   are kept and only missing ones are requested again.

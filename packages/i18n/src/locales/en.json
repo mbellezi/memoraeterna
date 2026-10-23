@@ -61,7 +61,10 @@
     "vectorUnavailable": "Semantic retrieval unavailable or excluded by privacy; textual retrieval remains available.",
     "processingHint": "Organize this batch into one topic after selected processing finishes. Reuse an eligible title or alias; review changes before applying. Notes, graph and matching remain optional.",
     "processingRequired": "Enter a topic title. The model follows the task router unless overridden.",
-    "cancelBatch": "Cancel batch and organization"
+    "cancelBatch": "Cancel batch and organization",
+    "status": {
+      "waitingForProvider": "Waiting for the provider"
+    }
   },
   "organization": {
     "forceModel": "Force another model",

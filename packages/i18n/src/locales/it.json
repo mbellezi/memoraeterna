@@ -61,7 +61,10 @@
     "vectorUnavailable": "Ricerca semantica indisponibile o esclusa dalla privacy; resta disponibile la ricerca testuale.",
     "processingHint": "Organizza il lotto in un argomento dopo l’elaborazione selezionata. Riutilizza un titolo o alias idoneo e rivedi prima di applicare. Note, grafo e confronti restano facoltativi.",
     "processingRequired": "Inserisci il titolo. Il modello segue il router, salvo una scelta esplicita.",
-    "cancelBatch": "Annulla lotto e organizzazione"
+    "cancelBatch": "Annulla lotto e organizzazione",
+    "status": {
+      "waitingForProvider": "In attesa del provider"
+    }
   },
   "organization": {
     "forceModel": "Forza un altro modello",

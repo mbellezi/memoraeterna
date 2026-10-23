@@ -195,6 +195,25 @@ describe("the state of a question", () => {
     expect(html).toContain(t("consultation.answering"));
     expect(html).toContain(t("organization.cancel"));
   });
+  it("says in every language that it waits for the provider, and still allows a cancel", () => {
+    const wording = new Set<string>();
+    for (const locale of supportedLanguageCodes) {
+      const t = createTranslator(locale),
+        html = renderToString(
+          <ConsultationStatus t={t} error={null} busy waiting onCancel={() => {}} />
+        );
+      expect(html).toContain('role="status"');
+      expect(html).toContain(t("consultation.status.waitingForProvider"));
+      expect(html).not.toContain(t("consultation.answering"));
+      expect(html).toContain(t("organization.cancel"));
+      wording.add(t("consultation.status.waitingForProvider"));
+    }
+    // Written for each language, not copied from one.
+    expect(wording.size).toBe(supportedLanguageCodes.length);
+    expect(createTranslator("en")("consultation.status.waitingForProvider")).toBe(
+      "Waiting for the provider"
+    );
+  });
 });
 
 describe("a cited answer", () => {

@@ -1,6 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { budgetedQueries, StatementBudgetError, type PgPool } from "./client.js";
+import {
+  budgetedQueries,
+  createStatementCanceler,
+  StatementBudgetError,
+  type PgPool
+} from "./client.js";
 
 /** A pool whose one client records what it is sent and answers `fail` with the given error. */
 function recordingPool(fail?: { text: string; error: Error }) {
@@ -68,5 +74,131 @@ describe("statements bounded by a caller's time budget", () => {
       budgetedQueries(pool, () => 60_000, controller.signal).query("select 1")
     ).rejects.toThrow("canceled");
     expect(connect).not.toHaveBeenCalled();
+  });
+});
+
+const canceledByRequest = () =>
+  Object.assign(new Error("canceling statement due to user request"), { code: "57014" });
+
+/**
+ * A pool whose one client hangs on a marked statement until the pool's own `query` (the canceler's
+ * control connection) answers `cancelAnswers` in turn; the first `true` ends the statement with 57014.
+ */
+function cancellablePool(cancelAnswers: boolean[]) {
+  const sent: string[] = [];
+  let stop: ((error: Error) => void) | undefined;
+  const release = vi.fn();
+  const client = {
+    query: (text: string) => {
+      sent.push(text);
+      return text.startsWith("/* ask:")
+        ? new Promise<never>((_resolve, reject) => {
+            stop = reject;
+          })
+        : Promise.resolve({ rows: [], rowCount: 0 });
+    },
+    release
+  };
+  const answers = [...cancelAnswers];
+  const control = vi.fn<(text: string, values: unknown[]) => Promise<unknown>>(async () => {
+    const canceled = answers.shift() ?? false;
+    if (canceled) stop?.(canceledByRequest());
+    return { rows: [{ canceled }] };
+  });
+  const pool = { connect: async () => client, query: control } as unknown as PgPool;
+  return { pool, sent, control, release };
+}
+
+describe("statements an Ask can cancel", () => {
+  it("starts each statement with the request's marker and leaves unmarked callers alone", async () => {
+    const { pool, sent } = recordingPool();
+    const id = randomUUID();
+    await budgetedQueries(pool, () => 5_000, undefined, { requestId: id }).query("select 1");
+    await budgetedQueries(pool, () => 5_000).query("select 2");
+    expect(sent.filter((text) => text.includes("select"))).toEqual([
+      `/* ask:${id} */ select 1`,
+      "select 2"
+    ]);
+    expect(() =>
+      budgetedQueries(pool, () => 5_000, undefined, { requestId: "x */ select 1; /*" })
+    ).toThrow(TypeError);
+  });
+
+  it("cancels the statement in flight by its marker and reports the cancel, not a timeout", async () => {
+    const { pool, sent, control, release } = cancellablePool([true]);
+    const id = randomUUID();
+    const controller = new AbortController();
+    const running = budgetedQueries(pool, () => 60_000, controller.signal, {
+      requestId: id
+    }).query("select pg_sleep(30)");
+    const settled = running.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(sent).toContain(`/* ask:${id} */ select pg_sleep(30)`));
+    controller.abort(new Error("canceled"));
+    await expect(createStatementCanceler(pool).cancelActive(id)).resolves.toBe(1);
+    const failure = await settled;
+    expect(failure).not.toBeInstanceOf(StatementBudgetError);
+    expect((failure as Error).message).toBe("canceled");
+    expect(control).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
+      `/* ask:${id} */`
+    ]);
+    // The failed statement was rolled back and its connection returned.
+    expect(sent.at(-1)).toBe("rollback");
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("asks again while the statement is still in flight and finds nothing yet", async () => {
+    const { pool, sent, control } = cancellablePool([false, false, true]);
+    const id = randomUUID();
+    const controller = new AbortController();
+    const settled = budgetedQueries(pool, () => 60_000, controller.signal, { requestId: id })
+      .query("select pg_sleep(30)")
+      .catch((error: unknown) => error);
+    await vi.waitFor(() => expect(sent.some((text) => text.includes("pg_sleep"))).toBe(true));
+    controller.abort(new Error("canceled"));
+    await expect(createStatementCanceler(pool).cancelActive(id)).resolves.toBe(1);
+    expect(control).toHaveBeenCalledTimes(3);
+    expect(((await settled) as Error).message).toBe("canceled");
+  });
+
+  it("costs no round trip when the request has no statement in flight", async () => {
+    const { pool, control } = cancellablePool([true]);
+    await expect(createStatementCanceler(pool).cancelActive(randomUUID())).resolves.toBe(0);
+    expect(control).not.toHaveBeenCalled();
+    await expect(createStatementCanceler(pool).cancelActive("a */ b")).rejects.toThrow(TypeError);
+  });
+
+  it("starts no statement when the cancel came while its transaction began", async () => {
+    const controller = new AbortController();
+    const sent: string[] = [];
+    const pool = {
+      connect: async () => ({
+        query: async (text: string) => {
+          sent.push(text);
+          if (text.startsWith("begin")) controller.abort(new Error("canceled"));
+          return { rows: [], rowCount: 0 };
+        },
+        release: () => undefined
+      })
+    } as unknown as PgPool;
+    await expect(
+      budgetedQueries(pool, () => 60_000, controller.signal, { requestId: randomUUID() }).query(
+        "select 1"
+      )
+    ).rejects.toThrow("canceled");
+    expect(sent).toEqual(["begin; set local statement_timeout = 60000", "rollback"]);
+  });
+
+  it("still reports a statement the timeout stopped as out of budget while the signal is live", async () => {
+    const { pool } = recordingPool({
+      text: "/* ask:abc */ select slow()",
+      error: Object.assign(new Error("canceling statement due to statement timeout"), {
+        code: "57014"
+      })
+    });
+    await expect(
+      budgetedQueries(pool, () => 5_000, new AbortController().signal, {
+        requestId: "abc"
+      }).query("select slow()")
+    ).rejects.toBeInstanceOf(StatementBudgetError);
   });
 });

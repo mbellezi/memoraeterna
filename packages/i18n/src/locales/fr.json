@@ -61,7 +61,10 @@
     "vectorUnavailable": "Recherche sémantique indisponible ou exclue par la confidentialité ; la recherche textuelle reste disponible.",
     "processingHint": "Organisez ce lot en un sujet après le traitement choisi. Réutilisez un titre ou alias admissible et examinez avant application. Notes, graphe et rapprochements restent facultatifs.",
     "processingRequired": "Saisissez un titre. Le modèle suit le routeur, sauf remplacement explicite.",
-    "cancelBatch": "Annuler le lot et l’organisation"
+    "cancelBatch": "Annuler le lot et l’organisation",
+    "status": {
+      "waitingForProvider": "En attente du fournisseur"
+    }
   },
   "organization": {
     "forceModel": "Forcer un autre modèle",
