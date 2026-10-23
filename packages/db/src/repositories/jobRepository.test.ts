@@ -123,7 +123,11 @@ describe("job lanes and dedupe keys", () => {
       { sourceItemId: "root" },
       3,
       2.5,
-      30
+      30,
+      // No tree in the payload: no scope or subject key, and no root to look up.
+      null,
+      null,
+      null
     ]);
   });
 
@@ -136,7 +140,7 @@ describe("job lanes and dedupe keys", () => {
       /when \$7::double precision <= 0 then least\(j\.run_after, clock_timestamp\(\)\)\s+when j\.run_after <= clock_timestamp\(\) then j\.run_after\s+else greatest\(/
     );
     // An immediate request carries a zero delay, which is how the statement tells it apart.
-    expect(query?.values.slice(6)).toEqual([0, 0]);
+    expect(query?.values.slice(6, 8)).toEqual([0, 0]);
   });
 
   it("refuses a key that is queued for another type or lane", async () => {

@@ -306,6 +306,13 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       )
     ).rows[0];
     expect(job).toBeDefined();
+    // The job the root's last claim ran has ended, as the supervisor ends it after `link`: one
+    // running job per scope (F4 D6).
+    await pool!.query(
+      `update jobs set status = 'succeeded', finished_at = now()
+        where type = 'relation-link' and status = 'running' and payload->>'rootId' = $1`,
+      [rootId]
+    );
     await pool!.query(
       `update jobs set status = 'running', locked_at = now(), dedupe_key = null where id = $1`,
       [job!.id]
@@ -608,7 +615,7 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     );
     expect(waiting.rows).toEqual([
       {
-        payload: { rootId: a.sourceId, discover: true },
+        payload: { rootId: a.sourceId, sourceItemId: a.sourceId, discover: true },
         due: false,
         runAfter: expect.any(Date)
       }
@@ -632,7 +639,12 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       rootId: b.sourceId,
       discovery: { regenerate: true, notBefore: retryAfter }
     });
-    expect(merged.payload).toEqual({ rootId: b.sourceId, discover: true, regenerate: true });
+    expect(merged.payload).toEqual({
+      rootId: b.sourceId,
+      sourceItemId: b.sourceId,
+      discover: true,
+      regenerate: true
+    });
     const queued = await pool!.query<{ due: boolean }>(
       `select run_after <= now() as due from jobs
        where type = 'relation-link' and status = 'queued' and payload->>'rootId' = $1`,

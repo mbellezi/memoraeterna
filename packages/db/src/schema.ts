@@ -800,6 +800,21 @@ export const jobs = pgTable(
     lane: text("lane").notNull().default("heavy"),
     /** At most one queued job per key. Claiming or retrying a job drops its key. */
     dedupeKey: text("dedupe_key"),
+    /**
+     * Gardener task state (F4 D5-D8, 0060). `scope_key`: two running jobs of one scope never
+     * exist (claimable kinds only; inline ingestion stages keep null). `subject_key`: the outcome
+     * cache's key with the type. `outcome` on a succeeded job; a blocker on a queued job set aside;
+     * `quarantined_at` on a failed job whose input failed before. A succeeded job without an
+     * outcome finished before 0060.
+     */
+    scopeKey: text("scope_key"),
+    subjectKey: text("subject_key"),
+    outcome: text("outcome"),
+    blockedClass: text("blocked_class"),
+    blockedReason: text("blocked_reason"),
+    blockedAt: timestamp("blocked_at", { withTimezone: true }),
+    quarantinedAt: timestamp("quarantined_at", { withTimezone: true }),
+    inputFingerprint: text("input_fingerprint"),
     ...timestamps
   },
   (table) => ({
@@ -811,10 +826,65 @@ export const jobs = pgTable(
     dedupeQueuedUidx: uniqueIndex("jobs_dedupe_queued_uidx")
       .on(table.dedupeKey)
       .where(sql`${table.dedupeKey} is not null and ${table.status} = 'queued'`),
+    runningScopeUidx: uniqueIndex("jobs_running_scope_uidx")
+      .on(table.scopeKey)
+      .where(sql`${table.scopeKey} is not null and ${table.status} = 'running'`),
+    typeStatusIdx: index("jobs_type_status_idx").on(table.type, table.status),
     laneCheck: check("jobs_lane", sql`${table.lane} in ('heavy','light')`),
     dedupeKeyCheck: check(
       "jobs_dedupe_key",
       sql`${table.dedupeKey} is null or char_length(${table.dedupeKey}) between 1 and 200`
+    ),
+    gardenerCheck: check(
+      "jobs_gardener",
+      sql`(${table.scopeKey} is null or char_length(${table.scopeKey}) between 1 and 200)
+        and (${table.subjectKey} is null or char_length(${table.subjectKey}) between 1 and 200)
+        and (${table.inputFingerprint} is null or char_length(${table.inputFingerprint}) between 1 and 200)
+        and (${table.outcome} is null or (${table.outcome} in ('done','no_change','skipped') and ${table.status} = 'succeeded'))
+        and (${table.blockedClass} is null) = (${table.blockedReason} is null)
+        and (${table.blockedClass} is null) = (${table.blockedAt} is null)
+        and (${table.blockedClass} is null or (${table.status} = 'queued'
+          and ${table.blockedClass} in ('paused','no_model','cap','download','waiting','offline')
+          and char_length(${table.blockedReason}) between 1 and 64))
+        and (${table.quarantinedAt} is null or ${table.status} = 'failed')`
+    )
+  })
+);
+
+/**
+ * The Gardener's outcome cache (F4 D8, D9): per (kind, subject) the fingerprint of the last
+ * successful job (an equal one skips), the current run of consecutive failed jobs with the
+ * fingerprint they failed on (the second quarantines it) and the last job. Written in the
+ * statement that finishes the job. `last_job_id` has no foreign key: retention prunes jobs.
+ */
+export const gardenerOutcomes = pgTable(
+  "gardener_outcomes",
+  {
+    kind: text("kind").notNull(),
+    subjectKey: text("subject_key").notNull(),
+    lastOutcome: text("last_outcome").notNull(),
+    lastFingerprint: text("last_fingerprint"),
+    failedFingerprint: text("failed_fingerprint"),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastErrorClass: text("last_error_class"),
+    lastJobId: uuid("last_job_id"),
+    quarantinedAt: timestamp("quarantined_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.kind, table.subjectKey] }),
+    quarantinedIdx: index("gardener_outcomes_quarantined_idx")
+      .on(table.quarantinedAt)
+      .where(sql`${table.quarantinedAt} is not null`),
+    values: check(
+      "gardener_outcomes_values",
+      sql`char_length(${table.kind}) between 1 and 200 and char_length(${table.subjectKey}) between 1 and 200
+        and ${table.lastOutcome} in ('done','no_change','skipped','failed')
+        and (${table.lastFingerprint} is null or char_length(${table.lastFingerprint}) between 1 and 200)
+        and (${table.failedFingerprint} is null or char_length(${table.failedFingerprint}) between 1 and 200)
+        and (${table.lastErrorClass} is null or char_length(${table.lastErrorClass}) between 1 and 200)
+        and ${table.consecutiveFailures} >= 0
+        and (${table.quarantinedAt} is null or ${table.consecutiveFailures} >= 1)`
     )
   })
 );
@@ -1901,13 +1971,19 @@ export const noteMatchState = pgTable(
     deciderKey: text("decider_key").notNull(),
     spaceKey: text("space_key").notNull(),
     kthCosine: real("kth_cosine"),
+    /**
+     * The note's rendered decision input hash when it was matched (F4 D16, MATCH): an edit that
+     * leaves it and the space unchanged is not matched again. Null: match again (rows before 0060).
+     */
+    inputHash: text("input_hash"),
     matchedAt: timestamp("matched_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
     values: check(
       "note_match_state_values",
       sql`char_length(${table.deciderKey}) between 1 and 200 and char_length(${table.spaceKey}) between 1 and 200
-        and (${table.kthCosine} is null or ${table.kthCosine} between -1 and 1)`
+        and (${table.kthCosine} is null or ${table.kthCosine} between -1 and 1)
+        and (${table.inputHash} is null or char_length(${table.inputHash}) between 1 and 200)`
     )
   })
 );

@@ -6,6 +6,7 @@ import type { KnowledgeService } from "./knowledge-service.js";
 const mocks = vi.hoisted(() => ({
   jobs: {
     recoverInterrupted: vi.fn(),
+    releaseBlocks: vi.fn(),
     claimNext: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),

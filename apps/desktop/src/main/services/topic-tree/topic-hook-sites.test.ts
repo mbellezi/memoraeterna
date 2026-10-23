@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   notes: { review: vi.fn() },
   jobs: {
     recoverInterrupted: vi.fn(),
+    releaseBlocks: vi.fn(),
     claimNext: vi.fn(),
     update: vi.fn(),
     reportProgress: vi.fn()

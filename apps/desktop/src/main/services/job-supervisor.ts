@@ -2,6 +2,12 @@ import { jobTaskPayload } from "../job-task-payload.js";
 import { promptStageProviders } from "./prompt-strategies.js";
 import { aiErrorRetryAfterMs } from "@app/ai";
 import {
+  blockerClearAt,
+  GardenerFingerprintSchema,
+  gardenerResultOf,
+  gardenerSkipReason,
+  gardenerTaskConfig,
+  gardenerTaskKind,
   PromptPinSchema,
   relationsConfig as defaultRelationsConfig,
   waitingForDeciderSkipReason,
@@ -45,12 +51,14 @@ import {
   createDocumentRepository,
   createAtomicNoteRepository,
   createEmbeddingRepository,
+  createGardenerOutcomeRepository,
   createIngestionRunRepository,
   createJobRepository,
   createKnowledgeGraphRepository,
   createProcessingTaskRepository,
   createHierarchicalIngestionRepository,
   createSourceItemRepository,
+  type GardenerOutcomeWrite,
   type JobLane,
   type JobRecord,
   type JsonObject,
@@ -235,6 +243,8 @@ export class JobSupervisor {
   private retypeSweepDay: string | null = null;
   /** The last heavy pass waited for relation jobs (drain mode): the lane is held, not idle. */
   private heavyHeldForLinks = false;
+  /** When a light pass last released the set-aside jobs whose clear time passed (D7). */
+  private lastDueRelease = Number.NEGATIVE_INFINITY;
 
   public constructor(private readonly options: JobSupervisorOptions) {
     const wiki = options.obsidianSyncService?.wiki;
@@ -483,7 +493,11 @@ export class JobSupervisor {
   public async start(): Promise<void> {
     if (this.running) return;
     const pool = this.requirePool();
-    await createJobRepository(pool).recoverInterrupted();
+    const jobs = createJobRepository(pool);
+    await jobs.recoverInterrupted();
+    // Startup re-gate (D7): every job set aside by a blocker is looked at again before the workers
+    // start; one whose blocker still holds is set aside again when it runs.
+    await jobs.releaseBlocks();
     const runs = createIngestionRunRepository(pool);
     await runs.recoverInterrupted();
     // A run parked for its link job survives a restart: its root's link job is queued again (a
@@ -630,7 +644,9 @@ export class JobSupervisor {
       }
     const types = this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.());
     if (types.length === 0) return null;
-    const repository = createJobRepository(this.requirePool());
+    const pool = this.requirePool();
+    const repository = createJobRepository(pool);
+    await this.releaseDueBlocks(repository);
     const job = await repository.claimNext(
       `${this.workerId}:light-${worker}${slot > 0 ? `-${slot}` : ""}`,
       types,
@@ -641,8 +657,54 @@ export class JobSupervisor {
     const executor = this.lightJobs[job.type]!;
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
+    // A Gardener task keeps an outcome cache per (kind, subject): skip by fingerprint, quarantine.
+    const subject = gardenerTaskKind(job.type)?.gardener === true ? job.subjectKey : null;
+    let fingerprint: string | null = null;
+    const outcomeOf = (
+      result: GardenerOutcomeWrite["result"],
+      errorClass: string | null = null
+    ): GardenerOutcomeWrite | undefined =>
+      subject
+        ? {
+            kind: job.type,
+            subjectKey: subject,
+            result,
+            fingerprint,
+            errorClass,
+            quarantineAfter: gardenerTaskConfig.quarantineAfterFailedJobs
+          }
+        : undefined;
+    // The job's last write, with its outcome cache's when it has one (one statement, D8).
+    const end = (input: UpdateJobInput, write: GardenerOutcomeWrite | undefined) =>
+      write ? repository.finish(job.id, input, write) : repository.update(job.id, input);
     try {
       const taskJob = { ...job, payload: jobTaskPayload(job.payload) };
+      if (subject && executor.fingerprint) {
+        const read = await executor.fingerprint(taskJob, controller.signal);
+        fingerprint = read === null ? null : GardenerFingerprintSchema.parse(read);
+        const skip = gardenerSkipReason(
+          fingerprint,
+          fingerprint ? await createGardenerOutcomeRepository(pool).get(job.type, subject) : null
+        );
+        if (skip) {
+          const skipped = finishedJob(
+            job,
+            { status: skip === "quarantined" ? "quarantined" : "skipped", reason: skip },
+            controller.signal
+          );
+          // Canceled meanwhile: it ends canceled, with no outcome.
+          const ran = skipped.status === "succeeded";
+          const updated = await end(
+            { ...skipped, outcome: ran ? "skipped" : null, inputFingerprint: fingerprint },
+            ran ? outcomeOf("skipped") : undefined
+          );
+          // A quarantined input does not run; the work the job owned is settled as not done.
+          if (skip === "quarantined" || !ran)
+            await this.settleLight(executor, job, new Error("gardener_quarantined"), !ran);
+          this.notify();
+          return updated;
+        }
+      }
       const execute = async () =>
         withPromptPin(
           job.payload.promptPin ? PromptPinSchema.parse(job.payload.promptPin) : null,
@@ -659,33 +721,95 @@ export class JobSupervisor {
         },
         execute
       ) ?? execute());
-      const updated = await repository.update(
-        job.id,
-        lightJobUpdate(job, result, controller.signal)
-      );
+      const step = lightJobUpdate(job, result, controller.signal);
+      let updated: JobRecord | null;
+      if (step.status !== "succeeded") {
+        // Queued again with its next step, or canceled while it ran: no outcome yet.
+        updated = await repository.update(job.id, step);
+      } else {
+        const ended = gardenerResultOf(job.type, step.result ?? null);
+        if (ended.state === "failed")
+          throw new GardenerAttemptFailure(ended.status, step.result ?? {}, ended.retry);
+        if (ended.state === "blocked") {
+          // Set aside without burning the attempt; the job is due again when the blocker clears.
+          const setAside = await repository.setAside(job.id, {
+            blocker: ended.blocker,
+            clearAt: blockerClearAt(ended.blocker, new Date()),
+            dedupeKey: job.claimedDedupeKey ?? null,
+            result: step.result ?? null
+          });
+          updated = setAside?.job ?? null;
+        } else {
+          updated = await end(
+            {
+              ...step,
+              outcome: ended.outcome,
+              ...(fingerprint ? { inputFingerprint: fingerprint } : {})
+            },
+            outcomeOf(ended.outcome)
+          );
+        }
+      }
       this.notify();
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
+      const attemptFailed = error instanceof GardenerAttemptFailure;
       const shouldRetry =
-        !wasCanceled && job.attempts < job.maxAttempts && isTransientJobFailure(error);
-      const updated = await repository.update(
-        job.id,
-        failedJob(job, error, wasCanceled, shouldRetry)
+        !wasCanceled &&
+        job.attempts < job.maxAttempts &&
+        (attemptFailed ? error.retryable : isTransientJobFailure(error));
+      const update: UpdateJobInput = {
+        ...failedJob(job, error, wasCanceled, shouldRetry),
+        // A failed attempt keeps the step's result for the code that reads its status.
+        ...(attemptFailed ? { result: error.result } : {}),
+        ...(fingerprint ? { inputFingerprint: fingerprint } : {})
+      };
+      // A job that failed for good counts toward its input's quarantine (D8).
+      const updated = await end(
+        update,
+        !wasCanceled && !shouldRetry ? outcomeOf("failed", jobErrorClass(error)) : undefined
       );
       // A job that ended for good settles the work it owned (the runs a link job completes).
-      if (!shouldRetry)
-        try {
-          await executor.ended?.(job, error, wasCanceled);
-        } catch (settleError) {
-          this.options.logger?.warn(normalizeWorkerError(settleError));
-        }
+      if (!shouldRetry) await this.settleLight(executor, job, error, wasCanceled);
       this.notify();
       return updated;
     } finally {
       this.controllers.delete(job.id);
       // A heavy lane held for relation jobs (drain mode) looks again as soon as one ends.
       if (worker === "relations" && this.heavyHeldForLinks) this.wakeLoops("heavy");
+    }
+  }
+
+  /** Settles the work a light job owned once it ended for good; a settle failure is logged. */
+  private async settleLight(
+    executor: LightJobExecutor,
+    job: JobRecord,
+    error: unknown,
+    canceled: boolean
+  ): Promise<void> {
+    try {
+      await executor.ended?.(job, error, canceled);
+    } catch (settleError) {
+      this.options.logger?.warn(normalizeWorkerError(settleError));
+    }
+  }
+
+  /**
+   * Releases the jobs set aside with a clear time that has passed (D7: a daily cap at the next
+   * day, a recheck when no event is known), at most every `releaseDueBlocksEveryMs`. Never fails
+   * the pass that asked.
+   */
+  private async releaseDueBlocks(
+    repository: Pick<ReturnType<typeof createJobRepository>, "releaseBlocks">
+  ): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastDueRelease < gardenerTaskConfig.releaseDueBlocksEveryMs) return;
+    this.lastDueRelease = now;
+    try {
+      if ((await repository.releaseBlocks({ due: true })) > 0) this.notify();
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
     }
   }
 
@@ -818,8 +942,16 @@ export class JobSupervisor {
     return { deletedJobs: result.deletedJobs, deletedRuns: result.deletedRuns };
   }
 
+  /**
+   * The newest jobs of each lane (up to `limit` each, newest first): the Gardener's light volume
+   * never crowds the imports out of the Jobs screen (3.1).
+   */
   public async list(limit = 100): Promise<JobRecord[]> {
-    return createJobRepository(this.requirePool()).list(limit);
+    const repository = createJobRepository(this.requirePool());
+    const lanes = await Promise.all(
+      (["heavy", "light"] as const).map((lane) => repository.list(limit, { lane }))
+    );
+    return lanes.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   public async clearCompletedOrFailed(): Promise<number> {
@@ -857,7 +989,7 @@ export class JobSupervisor {
   public async listWithRuns(limit = 100) {
     const pool = this.requirePool();
     const [jobs, runs, sources] = await Promise.all([
-      createJobRepository(pool).list(limit),
+      this.list(limit),
       createIngestionRunRepository(pool).list(limit),
       createSourceItemRepository(pool).list(limit)
     ]);
@@ -1830,6 +1962,29 @@ function failedJob(
     lockedBy: null,
     finishedAt: shouldRetry ? null : new Date()
   };
+}
+
+/**
+ * A Gardener step that returned a failure status (3.1b): `call_failed` is retried with backoff like
+ * a transient failure, an answer still `invalid` after the producer's own repair fails at once;
+ * the failed job counts toward its input's quarantine (D8).
+ */
+export class GardenerAttemptFailure extends Error {
+  public constructor(
+    public readonly status: string,
+    public readonly result: JsonObject,
+    public readonly retryable: boolean
+  ) {
+    super(`gardener_attempt_failed:${status}`);
+    this.name = "GardenerAttemptFailure";
+  }
+}
+
+/** The error class a quarantine names: a failed attempt's status, transient, or the message. */
+export function jobErrorClass(error: unknown): string {
+  if (error instanceof GardenerAttemptFailure) return `result:${error.status}`;
+  if (isTransientJobFailure(error)) return "transient";
+  return `error:${normalizeWorkerError(error)}`.slice(0, 200);
 }
 
 function appendErrorHistory(

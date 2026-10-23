@@ -8,6 +8,7 @@ import { resetRelationLinkRuntime, setRelationLinkRuntime } from "./relations/li
 const mocks = vi.hoisted(() => ({
   jobs: {
     recoverInterrupted: vi.fn(),
+    releaseBlocks: vi.fn(),
     findById: vi.fn(),
     retry: vi.fn(),
     claimNext: vi.fn(),
@@ -443,7 +444,7 @@ describe("ingestion queue scheduling", () => {
           type: "relation-link",
           lane: "light",
           dedupeKey: "relation-link:root",
-          payload: { rootId: "root", batchId: "batch" }
+          payload: { rootId: "root", sourceItemId: "root", batchId: "batch" }
         })
       );
       // The run completes when its link job does, not here.
@@ -718,7 +719,10 @@ describe("ingestion queue scheduling", () => {
       mocks.jobs.claimNext.mockResolvedValue(null);
       await supervisor.start();
       expect(mocks.jobs.enqueueDeduped).toHaveBeenCalledWith(
-        expect.objectContaining({ dedupeKey: "relation-link:root", payload: { rootId: "root" } })
+        expect.objectContaining({
+          dedupeKey: "relation-link:root",
+          payload: { rootId: "root", sourceItemId: "root" }
+        })
       );
     });
   });

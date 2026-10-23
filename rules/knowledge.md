@@ -111,10 +111,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   fabricated. Scope and privacy filters apply before retrieval and before any
   provider call. Browsing and asking are read-only; saving is explicit.
 
-## Background maintenance (Gardener, target F4)
+## Background maintenance (Gardener)
 
-- Maintenance runs as event- and threshold-driven tasks on the jobs table, never
-  as calendar routines. One failed, rejected or waiting item never blocks others.
-- Freshness depends only on content hashes. Saving settings or changing a model never invalidates coverage.
-- Every applied change is a change-set with undo. Changes that touch human,
-  pinned or protected content go to the Inbox for approval.
+- Maintenance runs as event- and threshold-driven tasks on the jobs table, never as calendar routines. One
+  failed, rejected or waiting item never blocks others; a waiting task names its blocker, a failing input is quarantined.
+- Freshness depends only on content fingerprints (an unchanged input is skipped); saving settings or changing a model never invalidates coverage.
+- Every applied change is a change-set with undo. Changes that touch human, pinned or protected content go to the
+  Inbox for approval.

@@ -19,8 +19,17 @@ export interface LightJobExecutor {
   held?: () => boolean;
   execute: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   /**
-   * Called once a job has ended for good without a result: failed with no attempt left, or
-   * canceled. The work the job owned (the runs a link job completes) is settled here.
+   * The job's content-only input fingerprint (F4 D9, `@app/domain` `gardenerFingerprint`), read
+   * before it runs; null when it cannot tell. A job whose fingerprint equals the last successful
+   * one of its (kind, subject) is skipped, and one equal to a quarantined input waits for the
+   * input to change or a manual retry (D8). A kind that declares it owns no work a skip would
+   * leave unsettled, except through `ended`.
+   */
+  fingerprint?: (job: JobRecord, signal: AbortSignal) => Promise<string | null>;
+  /**
+   * Called once a job has ended for good without a result: failed with no attempt left, skipped
+   * as quarantined, or canceled. The work the job owned (the runs a link job completes) is
+   * settled here.
    */
   ended?: (job: JobRecord, error: unknown, canceled: boolean) => Promise<void>;
 }

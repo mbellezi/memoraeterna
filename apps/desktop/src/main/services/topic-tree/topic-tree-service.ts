@@ -1165,10 +1165,11 @@ export class TopicTreeService {
     else if (space) this.noticedSpaceChange = null;
     const build = pool ? await createJobRepository(pool).latestByType(topicJobTypes.build) : null;
     // While the tree waits for a space change, its build checks the re-embedding: not a build yet.
+    // A build set aside by a blocker waits, it is not building (F4 D5).
     const building =
       space?.kind !== "space_changed" &&
       build !== null &&
-      (build.status === "queued" || build.status === "running") &&
+      (build.status === "running" || (build.status === "queued" && !build.blockedClass)) &&
       build.payload.treeId === active.id;
     return {
       ...base,

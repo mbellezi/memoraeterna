@@ -13,6 +13,7 @@ const queue = vi.hoisted(() => {
     find,
     repository: {
       recoverInterrupted: async () => 0,
+      releaseBlocks: async () => 0,
       findById: async (id: string) => find(id),
       reportProgress: async () => null,
       claimNext: async (workerId: string, types?: readonly string[], lane?: JobLane) => {
@@ -70,6 +71,14 @@ function enqueue(type: string, lane: JobLane, maxAttempts = 3): JobRecord {
     cancelRequestedAt: null,
     lane,
     dedupeKey: null,
+    scopeKey: null,
+    subjectKey: null,
+    outcome: null,
+    blockedClass: null,
+    blockedReason: null,
+    blockedAt: null,
+    quarantinedAt: null,
+    inputFingerprint: null,
     createdAt: now,
     updatedAt: now
   };

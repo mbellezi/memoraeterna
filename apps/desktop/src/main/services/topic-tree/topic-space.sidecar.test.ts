@@ -689,7 +689,10 @@ describe.skipIf(!sidecarAvailable)("an embedding-space change on the PostgreSQL 
         reembedding: "finishing"
       });
       // Nothing else asks for a build: the last jobs fail for good, and their ends do.
-      await pool.query("update jobs set status = 'canceled' where type = 'topic-build'");
+      // (A canceled job has no Gardener outcome: F4 D5.)
+      await pool.query(
+        "update jobs set status = 'canceled', outcome = null where type = 'topic-build'"
+      );
       await pool.query("update jobs set run_after = now() where type = 'note-embedding'");
       await runHeavy();
       expect(

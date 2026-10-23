@@ -256,8 +256,10 @@ export async function enqueueRelationLink(
     type: relationLinkJobType,
     lane: "light",
     dedupeKey: relationLinkDedupeKey(input.rootId),
+    // The root as `sourceItemId` too: cancelling or deleting the source reaches the job (F4 D6).
     payload: {
       rootId: input.rootId,
+      sourceItemId: input.rootId,
       ...(input.batchId ? { batchId: input.batchId } : {}),
       ...discovery
     },
@@ -298,6 +300,7 @@ export async function enqueueRematchLink(
     dedupeKey: relationLinkDedupeKey(input.rootId),
     payload: {
       rootId: input.rootId,
+      sourceItemId: input.rootId,
       rematch: true,
       discover: true,
       decided: decided as unknown as JsonObject[]
@@ -1169,7 +1172,7 @@ export class RelationLinker {
           type: relationPromoteJobType,
           lane: "light",
           dedupeKey: relationPromoteDedupeKey(root),
-          payload: { rootId: root },
+          payload: { rootId: root, sourceItemId: root },
           debounce: immediateJobDebounce
         });
     const capped = (typing.untyped.daily_cap ?? 0) > 0;

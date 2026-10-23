@@ -65,15 +65,15 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 - Jobs, ingestion runs, stage checkpoints and processing batches persist in PostgreSQL. UI progress,
   states and errors are localized views of persisted work, never its owner.
 - Workers claim jobs atomically (`FOR UPDATE SKIP LOCKED`) in two lanes, `heavy` (ingestion) and `light`
-  (tree, relation and projection work); light work never waits behind heavy work or a model call it does not make.
-- Stages are resumable from checkpoints after restart, crash, timeout or
-  cancellation, without repeating validated work or replaying an uncertain
-  provider call. Unrequested stages are recorded as skipped, not pending.
+  (tree, relation and projection work); light work never waits behind heavy work or a model call it does not
+  make, only for a running task of its own scope: two tasks of one scope key never run at once.
+- Stages are resumable from checkpoints after restart, crash, timeout or cancellation, without repeating
+  validated work or replaying an uncertain provider call. Unrequested stages are recorded as skipped, not pending.
 - One failed or canceled item never blocks or invalidates its siblings or unrelated tasks.
   Aggregate progress never hides a failed child. Cancellation preserves completed results.
 - Only transient errors are retried, with bounded attempts and backoff. A `dedupe_key` admits one queued
   job per key; an immediate request merged into it makes it due now and a debounced one never postpones
-  a due job.
+  a due job. A job a blocker sets aside waits with its reason and keeps its attempts and its key.
 - Reuse an artifact only when its source revision, input hashes and required dependencies still
   match; invalidation is explicit and limited to affected dependents.
 

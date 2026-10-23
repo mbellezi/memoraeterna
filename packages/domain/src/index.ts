@@ -3,6 +3,7 @@ export * from "./ai-presets.js";
 export * from "./ai-task-support.js";
 export * from "./bibliographic.js";
 export * from "./document.js";
+export * from "./gardener/index.js";
 export * from "./graph.js";
 export * from "./hierarchical-ingestion.js";
 export * from "./jobs.js";

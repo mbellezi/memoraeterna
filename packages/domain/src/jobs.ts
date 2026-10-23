@@ -1,23 +1,8 @@
 import { z } from "zod";
 
-import {
-  IsoDateTimeSchema,
-  OptionalMetadataSchema,
-  ProgressRatioSchema,
-  StableIdSchema
-} from "./primitives.js";
+import { IsoDateTimeSchema, OptionalMetadataSchema, StableIdSchema } from "./primitives.js";
 
-export const JobStatusSchema = z.enum([
-  "pending",
-  "queued",
-  "running",
-  "retrying",
-  "completed",
-  "failed",
-  "canceled"
-]);
-
-export type JobStatus = z.infer<typeof JobStatusSchema>;
+// A job's state is the `jobs` row's status plus the Gardener columns (F4 D5): see `gardener/state.ts`.
 
 export const IngestionRunStatusSchema = z.enum([
   "pending",
@@ -67,54 +52,3 @@ export const IngestionRunSchema = z
   .strict();
 
 export type IngestionRun = z.infer<typeof IngestionRunSchema>;
-
-export const IngestionJobSchema = z
-  .object({
-    id: StableIdSchema,
-    type: z.literal("ingestion"),
-    status: JobStatusSchema,
-    sourceItemId: StableIdSchema.optional(),
-    documentId: StableIdSchema.optional(),
-    ingestionRunId: StableIdSchema.optional(),
-    payload: OptionalMetadataSchema,
-    progress: ProgressRatioSchema,
-    error: z.string().optional(),
-    createdAt: IsoDateTimeSchema,
-    updatedAt: IsoDateTimeSchema,
-    startedAt: IsoDateTimeSchema.optional(),
-    finishedAt: IsoDateTimeSchema.optional()
-  })
-  .strict();
-
-export type IngestionJob = z.infer<typeof IngestionJobSchema>;
-
-export const EmbeddingTargetTypeSchema = z.enum([
-  "chunk",
-  "atomic_note",
-  "document",
-  "source_item"
-]);
-
-export type EmbeddingTargetType = z.infer<typeof EmbeddingTargetTypeSchema>;
-
-export const EmbeddingJobSchema = z
-  .object({
-    id: StableIdSchema,
-    type: z.literal("embedding"),
-    status: JobStatusSchema,
-    targetType: EmbeddingTargetTypeSchema,
-    targetId: StableIdSchema,
-    provider: z.string().min(1),
-    model: z.string().min(1),
-    dimensions: z.number().int().positive(),
-    payload: OptionalMetadataSchema,
-    progress: ProgressRatioSchema,
-    error: z.string().optional(),
-    createdAt: IsoDateTimeSchema,
-    updatedAt: IsoDateTimeSchema,
-    startedAt: IsoDateTimeSchema.optional(),
-    finishedAt: IsoDateTimeSchema.optional()
-  })
-  .strict();
-
-export type EmbeddingJob = z.infer<typeof EmbeddingJobSchema>;

@@ -177,9 +177,25 @@ export interface JobRecord {
   lane: JobLane;
   /** Set only while the job waits in the queue; claiming or retrying it drops the key. */
   dedupeKey: string | null;
+  /** Gardener task state (F4 D5-D8): see `@app/domain` `gardenerStateOf`. */
+  scopeKey: string | null;
+  subjectKey: string | null;
+  outcome: JobOutcome | null;
+  blockedClass: string | null;
+  blockedReason: string | null;
+  blockedAt: Date | null;
+  quarantinedAt: Date | null;
+  inputFingerprint: string | null;
+  /**
+   * The dedupe key the job held when this process claimed it (from `claimNext` only): a job set
+   * aside by a blocker gets it back (D7).
+   */
+  claimedDedupeKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type JobOutcome = "done" | "no_change" | "skipped";
 
 export interface SourceSpanRecord {
   id: string;

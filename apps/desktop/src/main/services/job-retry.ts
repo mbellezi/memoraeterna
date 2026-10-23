@@ -1,5 +1,5 @@
 import type { IngestionRunRecord, JobRecord } from "@app/db";
-import { linkingParkReason, waitingForDeciderSkipReason } from "@app/domain";
+import { gardenerTaskKind, linkingParkReason, waitingForDeciderSkipReason } from "@app/domain";
 
 export const resumableIngestionStages = [
   "chunking",
@@ -33,6 +33,8 @@ export function canManuallyRetryJob(
   ingestionRun?: RetryableIngestionRunState | null
 ): boolean {
   if (job.type === "relation-labels") return job.status === "failed" || job.status === "canceled";
+  // A Gardener task that failed, quarantined or not (F4 D8): the retry also ends the quarantine.
+  if (gardenerTaskKind(job.type)?.gardener === true) return job.status === "failed";
   if (job.type !== "ingestion" || !ingestionRun) return false;
   if (job.status === "queued" || job.status === "running") return false;
   // A run parked for its link job is still in progress: the link job completes it (F3 D24).

@@ -486,6 +486,25 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     });
   });
 
+  it("reads a build a blocker set aside as waiting, not building (F4 D5)", async () => {
+    const tree = await activeTree();
+    const jobs = createJobRepository(pool);
+    const build = await jobs.create({
+      type: "topic-build",
+      lane: "light",
+      payload: { treeId: tree.id },
+      runAfter: new Date(Date.now() + 3_600_000)
+    });
+    try {
+      await expect(services.service.status()).resolves.toMatchObject({ phase: "building" });
+      await jobs.markBlocked({ ids: [build.id] }, { class: "paused", reason: "user_pause" });
+      await expect(services.service.status()).resolves.toMatchObject({ phase: "active" });
+    } finally {
+      await jobs.requestCancel(build.id);
+    }
+    await expect(services.service.status()).resolves.toMatchObject({ phase: "active" });
+  });
+
   it("leaves an empty active tree after a library reset (D39)", async () => {
     const before = await activeTree();
     await createLibraryResetRepository(pool).reset();
