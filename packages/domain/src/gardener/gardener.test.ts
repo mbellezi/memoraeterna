@@ -215,11 +215,17 @@ describe("result.status mapping (3.1b)", () => {
       state: "outcome",
       outcome: "done"
     });
-    expect(gardenerResultOf("topic-areas", { status: "pending_review" })).toMatchObject({
-      outcome: "done"
-    });
-    for (const status of ["no_change", "deferred", "space_changed", "skipped", "review_pending"])
-      expect(gardenerResultOf("topic-areas", { status })).toMatchObject({ outcome: "no_change" });
+    for (const status of ["pending_review", "pending"])
+      expect(gardenerResultOf("topic-rebalance", { status })).toMatchObject({ outcome: "done" });
+    for (const status of [
+      "no_change",
+      "deferred",
+      "space_changed",
+      "skipped",
+      "review_pending",
+      "dismissed"
+    ])
+      expect(gardenerResultOf("topic-build", { status })).toMatchObject({ outcome: "no_change" });
     expect(gardenerResultOf("topic-areas", { status: "no_route" })).toEqual({
       state: "blocked",
       blocker: { class: "no_model", reason: "no_route" },

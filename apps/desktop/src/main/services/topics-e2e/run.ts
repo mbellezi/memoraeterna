@@ -646,11 +646,16 @@ function syntheticRoute(modelsDirectory: string): RouteSpec {
   };
 }
 
-/** Queued or running jobs: the topic ones (the light lane) or everything else (the heavy work). */
+/**
+ * Queued or running jobs: the topic ones (the light lane) or everything else (the heavy work). A
+ * job a blocker set aside waits for its blocker, not for the lane (F4 D5): without a ranker every
+ * gate job ends `no_decider` and waits for one.
+ */
 async function activeJobs(pool: PgPool, topic: boolean): Promise<number> {
   const result = await pool.query<{ n: number }>(
     `select count(*)::int as n from jobs
-     where status::text in ('queued', 'running') and (type::text like 'topic-%') = $1`,
+     where (status::text = 'running' or (status::text = 'queued' and blocked_class is null))
+       and (type::text like 'topic-%') = $1`,
     [topic]
   );
   return Number(result.rows[0]?.n ?? 0);

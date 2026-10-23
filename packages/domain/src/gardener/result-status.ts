@@ -29,8 +29,10 @@ export const resultStatusStates: Readonly<Record<string, ResultStatusState>> = O
   swept: done,
   judged: done,
   synced: done,
-  // Done with a change-set that waits for review (E3 counts it completed).
+  // Done with a change-set that waits for review (E3 counts it completed); REBALANCE names its
+  // change-set outcome `pending` (`topic-build.ts`, the kind of `applyChangeSet`'s result).
   pending_review: done,
+  pending: done,
   // No change: nothing to do, or nothing to do yet without anything blocking the task.
   no_change: noChange,
   current: noChange,
@@ -46,6 +48,8 @@ export const resultStatusStates: Readonly<Record<string, ResultStatusState>> = O
   awaiting_build: noChange,
   // Areas wait for an open review; never blocks other work.
   review_pending: noChange,
+  // A build skipped because the owner dismissed that configuration's rebuild (`topic-build.ts`).
+  dismissed: noChange,
   // A producer's own skip; `skipped` the outcome is reserved for the fingerprint skip (D9).
   skipped: noChange,
   // A generation conflict re-requested by the producer, and a space change waiting for its

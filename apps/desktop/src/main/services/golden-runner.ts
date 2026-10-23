@@ -1482,7 +1482,9 @@ async function drainTopicLane(
 
 /**
  * Waits until no topic job is queued or running, like `waitForBatch` waits for a batch: two quiet
- * polls in a row. A queued job counts even before its debounce has elapsed, because it will run.
+ * polls in a row. A queued job counts even before its debounce has elapsed, because it will run;
+ * one a blocker set aside does not (F4 D5): it waits for its blocker, as a pre-F4 job that ended
+ * with that status did.
  * A replay miss or the live token cap stops it (`diverged`, `token_limit`); a lane that never
  * drains within `topicDrainTimeoutMs` is an error.
  */
@@ -1500,7 +1502,8 @@ export async function waitForTopicLane(
     if (stopped) return { outcome: stopped, polls };
     const active = await options.pool.query<{ active: number }>(
       `select count(*)::int as active from jobs
-       where type::text like $1 and status::text in ('queued', 'running')`,
+       where type::text like $1
+         and (status::text = 'running' or (status::text = 'queued' and blocked_class is null))`,
       [`${topicJobTypePrefix}%`]
     );
     // Two quiet polls in a row: no queued, running or retrying topic job is left.

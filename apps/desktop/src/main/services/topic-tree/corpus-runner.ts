@@ -822,8 +822,9 @@ export class CorpusRunner {
 
   /**
    * Waits until no topic job is queued or running, two quiet polls in a row (a queued job counts
-   * before its debounce has elapsed, because it will run). The live token cap is checked on every
-   * poll: past it, the topic jobs are held again and the run stops.
+   * before its debounce has elapsed, because it will run; one a blocker set aside does not, F4 D5).
+   * The live token cap is checked on every poll: past it, the topic jobs are held again and the
+   * run stops.
    */
   private async waitForTopicLane(): Promise<number> {
     const interval = this.options.pollIntervalMs ?? 2000;
@@ -834,7 +835,8 @@ export class CorpusRunner {
       await this.checkTokenCap();
       const active = await this.pool().query<{ active: number }>(
         `select count(*)::int as active from jobs
-         where type::text like $1 and status::text in ('queued', 'running')`,
+         where type::text like $1
+           and (status::text = 'running' or (status::text = 'queued' and blocked_class is null))`,
         [`${topicJobPrefix}%`]
       );
       quiet = Number(active.rows[0]?.active ?? 0) === 0 ? quiet + 1 : 0;

@@ -66,10 +66,16 @@ const producers = [
 ];
 
 /**
- * Status literals in those files that are not job results: the change-set review and undo verdicts
- * `topic-tree-service.ts` returns to IPC (`reviewNow`, `undoNow`).
+ * Status literals in those files that are not job results: the undo verdict `topic-tree-service.ts`
+ * returns to IPC (`undoNow`). (`dismissed` is one too, but a build also returns it as a result.)
  */
-const notJobResults = new Set(["dismissed", "undone"]);
+const notJobResults = new Set(["undone"]);
+
+/**
+ * Statuses a producer builds from a value rather than a literal: `topic-build.ts` REBALANCE returns
+ * the kind of `applyChangeSet`'s result (`pending`, `no_change`) and a build its skip decision.
+ */
+const computedStatuses = ["pending", "no_change"];
 
 describe("the Gardener kind table", () => {
   it("has a row for every job type string the product code queues", () => {
@@ -101,10 +107,14 @@ describe("the result.status table (3.1b)", () => {
     const literals = new Map<string, string>();
     for (const file of producers) {
       const text = readFileSync(join(workspace, file), "utf8");
-      for (const match of text.matchAll(/\bstatus:\s*"([a-z_]+)"/gu))
+      // `status: "x"`, and a build's skip decision (`{ skip: "x" }` becomes `{ status: "x" }`).
+      for (const match of text.matchAll(/\b(?:status|skip):\s*"([a-z_]+)"/gu))
         if (!literals.has(match[1]!)) literals.set(match[1]!, file);
     }
+    for (const status of computedStatuses)
+      if (!literals.has(status)) literals.set(status, "topic-tree/topic-build.ts");
     expect(literals.size).toBeGreaterThan(20);
+    expect(literals.get("dismissed")).toBeDefined();
     const unmapped = [...literals].filter(
       ([status]) => !(status in resultStatusStates) && !notJobResults.has(status)
     );

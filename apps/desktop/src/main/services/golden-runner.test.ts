@@ -2294,6 +2294,8 @@ describe("golden topic lane waiting", () => {
     expect(polls()).toBe(6);
     expect(queries[0]!.params).toEqual(["topic-%"]);
     expect(queries[0]!.sql).toContain("type::text like $1");
+    // A job a blocker set aside waits for its blocker, not for the lane (F4 D5).
+    expect(queries[0]!.sql).toContain("status::text = 'queued' and blocked_class is null");
   });
 
   it("stops a replay at its first cassette miss and a recording at the live token limit", async () => {
