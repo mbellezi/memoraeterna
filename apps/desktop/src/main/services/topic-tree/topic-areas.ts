@@ -560,12 +560,8 @@ export class TopicAreasService {
     signal: AbortSignal
   ): Promise<Attempt> {
     // A remote call counts against the daily cap; one on a local model does not (F4 D14).
-    if (
-      !(await this.options.budget.reserve(1, {
-        operation: topicAreasOperation,
-        workloadClass: "write-fast"
-      }))
-    ) {
+    const route = { operation: topicAreasOperation, workloadClass: "write-fast" as const };
+    if (!(await this.options.budget.reserve(1, route))) {
       return { kind: "stopped", result: { status: "cap_reached" } };
     }
     const logContext: AiTaskLogContext = {
@@ -600,7 +596,9 @@ export class TopicAreasService {
         }
       );
     } catch (error) {
-      // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
+      // A background refusal (F4 D7) ends the job; the supervisor sets it aside. The refused call
+      // sent nothing, so its unit of the daily cap goes back (D14).
+      if (isBackgroundBlocked(error)) await this.options.budget.release(1, route);
       if (signal.aborted || isBackgroundBlocked(error)) throw error;
       this.options.logger?.warn("The topic Areas call failed", error);
       return {

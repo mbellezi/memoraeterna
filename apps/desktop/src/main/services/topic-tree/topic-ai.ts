@@ -156,6 +156,31 @@ export class TopicAiBudget {
     return locality.then((where) => (where === "local" ? true : this.count(calls)));
   }
 
+  /**
+   * Gives back `calls` reserved today for a call that a background gate or the RemoteBudget refused
+   * before anything was sent (F4 D7, D14): the cap counts calls made, not calls asked. A call on a
+   * local route was never counted, so nothing is given back for it; a new day has nothing to give.
+   */
+  public release(calls = 1, route?: TopicAiRoute): Promise<void> {
+    if (!Number.isInteger(calls) || calls < 1) throw new RangeError("Release whole calls");
+    const locality =
+      route && this.options.routeLocality
+        ? this.options.routeLocality(route).catch(() => null)
+        : Promise.resolve(null);
+    return locality.then((where) =>
+      where === "local"
+        ? undefined
+        : this.serialized(async () => {
+            const record = await this.today();
+            if (record.calls === 0) return;
+            await this.options.store.write({
+              day: record.day,
+              calls: Math.max(0, record.calls - calls)
+            });
+          })
+    );
+  }
+
   private count(calls: number): Promise<boolean> {
     return this.serialized(async () => {
       const record = await this.today();

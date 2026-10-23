@@ -140,6 +140,31 @@ describe("D34: the daily cap of background topic AI", () => {
     expect(store.value).toEqual({ day: "2026-10-15", calls: 1 });
   });
 
+  it("gives back the calls of a refused call, never below zero and never for a local route", async () => {
+    const store = memoryStore();
+    const routeLocality = vi.fn(async (route: { operation: string }) =>
+      route.operation === "topic_name" ? ("local" as const) : ("remote" as const)
+    );
+    const budget = new TopicAiBudget({
+      store,
+      cap: () => 2,
+      now: () => new Date(2026, 9, 15),
+      routeLocality
+    });
+    const remote = { operation: "topic_areas", workloadClass: "write-fast" as const };
+    await budget.reserve(1, remote);
+    await budget.reserve(1, remote);
+    await expect(budget.reserve(1, remote)).resolves.toBe(false);
+    await budget.release(1, remote);
+    await expect(budget.reserve(1, remote)).resolves.toBe(true);
+    // A local call was never counted, so nothing comes back for it.
+    await budget.release(1, { operation: "topic_name", workloadClass: "write-fast" });
+    expect(store.value).toEqual({ day: "2026-10-15", calls: 2 });
+    await budget.release(5, remote);
+    expect(store.value).toEqual({ day: "2026-10-15", calls: 0 });
+    expect(() => budget.release(0)).toThrow(RangeError);
+  });
+
   it("refuses to reserve a non-positive or fractional number of calls", () => {
     const budget = new TopicAiBudget({ store: memoryStore(), cap: () => 5 });
     expect(() => budget.reserve(0)).toThrow(RangeError);

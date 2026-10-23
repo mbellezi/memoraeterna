@@ -1430,8 +1430,11 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder(() => {
         throw new BackgroundBlockedError(gardenerBlocker("paused", "autonomy_off"));
       });
+      const before = (await w.services.budget.usage()).calls;
       const job = await runNaming(w);
       expect(job.status).toBe("succeeded");
+      // The refused call sent nothing: it spends no unit of the daily cap (D14, T75 review m5).
+      expect((await w.services.budget.usage()).calls).toBe(before);
       expect(job.result).toMatchObject({
         status: "named",
         llmNamed: 0,
@@ -1457,7 +1460,9 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       w.setResponder(() => {
         throw new BackgroundBlockedError(gardenerBlocker("paused", "user_pause"));
       });
+      const before = (await w.services.budget.usage()).calls;
       const job = await runNaming(w);
+      expect((await w.services.budget.usage()).calls).toBe(before);
       // This supervisor has no background policy: the refusal surfaces as the job's error.
       expect(job.error).toMatch(/paused\.user_pause/u);
       expect(Object.values(await rows(w)).every((topic) => topic.state === "unnamed")).toBe(true);

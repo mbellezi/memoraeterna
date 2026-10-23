@@ -939,12 +939,8 @@ class NamingRun {
     attempt: number
   ): Promise<{ output: unknown } | "unavailable"> {
     // A remote call counts against the daily cap; one on a local model does not (F4 D14).
-    if (
-      !(await this.lib.budget.reserve(1, {
-        operation: topicNameOperation,
-        workloadClass: "write-fast"
-      }))
-    ) {
+    const route = { operation: topicNameOperation, workloadClass: "write-fast" as const };
+    if (!(await this.lib.budget.reserve(1, route))) {
       this.counters.capReached = true;
       this.llm = false;
       return "unavailable";
@@ -990,6 +986,8 @@ class NamingRun {
       );
     } catch (error) {
       const blocker = backgroundBlockerOf(error);
+      // A refused call sent nothing: its unit of the daily cap goes back (F4 D7, D14).
+      if (blocker) await this.lib.budget.release(1, route);
       // Autonomy Off (F4 D12, table 3.2): no generative call; topics get provisional TF-IDF names.
       // The refused call sent nothing, so it is no call of the job.
       if (blocker && gardenerBlockerKey(blocker) === "paused.autonomy_off") {
