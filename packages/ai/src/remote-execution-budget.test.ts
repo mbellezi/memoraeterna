@@ -4,9 +4,11 @@ import { AiProviderError } from "./provider-error.js";
 import {
   attemptAdmissionOf,
   bindAttemptAdmission,
+  failedAttemptObserverOf,
   remoteCallReport,
   resolveAiRuntimeConfig,
-  runRemoteCall
+  runRemoteCall,
+  type FailedRemoteAttempt
 } from "./remote-execution.js";
 
 /**
@@ -106,6 +108,71 @@ describe("the attempt admission of a remote call", () => {
     );
     expect(explicit).toEqual([1]);
     expect(bound).toEqual([1]);
+  });
+
+  it("tells which failed attempts the provider accepted without reporting their usage", async () => {
+    const failed: FailedRemoteAttempt[] = [];
+    const respond = (status: number) =>
+      (async () => new Response("{}", { status })) as typeof fetch;
+    let number = 0;
+    const value = await runRemoteCall(
+      {
+        config: resolveAiRuntimeConfig({
+          retry: { baseDelayMs: 1, maxDelayMs: 1, maxAttempts: 4 }
+        }),
+        random: () => 0
+      },
+      {
+        streaming: false,
+        taskType: "summarization",
+        beforeAttempt: () => undefined,
+        afterFailedAttempt: (attempt) => failed.push(attempt)
+      },
+      async (call) => {
+        number += 1;
+        if (number === 1) {
+          // An error status: the provider answered and did not accept the request.
+          await call.fetch(respond(503), "https://api.example.test/v1", {});
+          throw busy();
+        }
+        if (number === 2) {
+          // Accepted, then lost before its usage (a stall after deltas): it may have been billed.
+          await call.fetch(respond(200), "https://api.example.test/v1", {});
+          throw new AiProviderError("stalled", { kind: "stalled", transient: true });
+        }
+        if (number === 3) {
+          // Accepted and reported both counts before it failed.
+          await call.fetch(respond(200), "https://api.example.test/v1", {});
+          call.reportUsage({ inputTokens: 10, outputTokens: 2 });
+          throw new AiProviderError("stalled", { kind: "stalled", transient: true });
+        }
+        return "ok";
+      }
+    );
+    expect(value).toBe("ok");
+    expect(failed).toEqual([
+      { attempt: 1, usage: {}, unreported: false },
+      { attempt: 2, usage: {}, unreported: true },
+      { attempt: 3, usage: { inputTokens: 10, outputTokens: 2 }, unreported: false }
+    ]);
+  });
+
+  it("binds the observer of failed attempts with the admission to the caller's signal", async () => {
+    const signal = new AbortController().signal;
+    const failed: number[] = [];
+    bindAttemptAdmission(
+      signal,
+      () => undefined,
+      (attempt) => failed.push(attempt.attempt)
+    );
+    expect(failedAttemptObserverOf(signal)).toBeDefined();
+    let number = 0;
+    await runRemoteCall(context, { streaming: false, signal }, async () => {
+      number += 1;
+      if (number === 1) throw busy();
+      return "ok";
+    });
+    expect(failed).toEqual([1]);
   });
 
   it("does not send an attempt once the caller canceled during its admission", async () => {

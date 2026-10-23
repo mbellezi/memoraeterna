@@ -257,7 +257,11 @@ export async function runDecisionsLedgerProbe(options: {
       estimate: { inputTokens: estimateTokens, outputTokens: 0 }
     });
     const signal = AbortSignal.any([]);
-    bindAttemptAdmission(signal, (attempt) => ticket.admitAttempt(attempt));
+    bindAttemptAdmission(
+      signal,
+      (attempt) => ticket.admitAttempt(attempt),
+      (failed) => ticket.attemptFailed(failed)
+    );
     const before = seen.length;
     let row: ProbeAuditRow;
     try {
@@ -267,12 +271,16 @@ export async function runDecisionsLedgerProbe(options: {
       record.providerOutputTokens = reported?.output ?? null;
       record.adapterCostUsd = result.costEstimate ?? null;
       record.status = "succeeded";
+      const usage = {
+        inputTokens: result.inputTokens ?? null,
+        outputTokens: result.outputTokens ?? 0
+      };
       row = {
         status: "succeeded",
-        inputTokens: result.inputTokens ?? null,
-        outputTokens: result.outputTokens ?? 0,
+        ...usage,
         costEstimate: result.costEstimate ?? null,
-        budgetEstimateUsd: ticket.estimateUsd,
+        // What the ledger counts beyond the reported usage, as the ticket settles it.
+        budgetEstimateUsd: ticket.auditEstimateUsd(usage),
         error: null
       };
     } catch (error) {
@@ -287,7 +295,7 @@ export async function runDecisionsLedgerProbe(options: {
         inputTokens: null,
         outputTokens: null,
         costEstimate: null,
-        budgetEstimateUsd: ticket.estimateUsd,
+        budgetEstimateUsd: ticket.auditEstimateUsd({}),
         error: message
       };
     }

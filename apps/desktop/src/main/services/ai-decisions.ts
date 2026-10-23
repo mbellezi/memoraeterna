@@ -697,12 +697,21 @@ export class DecisionsRuntime {
           }
         })
       : unmeteredBudgetTicket;
-    if (budget.metered) bindAttemptAdmission(own, (attempt) => budget.admitAttempt(attempt));
-    const budgetAudit = () => ({
-      ...(input.budgetClass ? { budgetClass: input.budgetClass } : {}),
-      ...(input.jobId ? { jobId: input.jobId } : {}),
-      ...(budget.estimateUsd !== null ? { budgetEstimateUsd: budget.estimateUsd } : {})
-    });
+    if (budget.metered)
+      bindAttemptAdmission(
+        own,
+        (attempt) => budget.admitAttempt(attempt),
+        (failed) => budget.attemptFailed(failed)
+      );
+    // The estimate the ledger counts beyond the usage the row records, as the ticket settles it.
+    const budgetAudit = (usage: Parameters<typeof budget.settle>[0]) => {
+      const estimateUsd = budget.auditEstimateUsd(usage);
+      return {
+        ...(input.budgetClass ? { budgetClass: input.budgetClass } : {}),
+        ...(input.jobId ? { jobId: input.jobId } : {}),
+        ...(estimateUsd !== null ? { budgetEstimateUsd: estimateUsd } : {})
+      };
+    };
     // Released only once the audit row that holds the usage committed (D14), or its write failed.
     const settledAfter = async (
       recorded: Promise<string>,
@@ -724,6 +733,7 @@ export class DecisionsRuntime {
       const costUsd = replayed
         ? 0
         : (result.costEstimate ?? decisionsCostUsd(inputTokens, this.limits));
+      const usage = { inputTokens, outputTokens: result.outputTokens ?? 0, replayed };
       return async () => {
         const recorded = repository.recordTaskRun({
           ...audit,
@@ -733,14 +743,10 @@ export class DecisionsRuntime {
           costEstimate: costUsd,
           durationMs: result.durationMs,
           ...lane(),
-          ...budgetAudit(),
+          ...budgetAudit(usage),
           status: "succeeded"
         });
-        const aiTaskRunId = await settledAfter(recorded, {
-          inputTokens,
-          outputTokens: result.outputTokens ?? 0,
-          replayed
-        });
+        const aiTaskRunId = await settledAfter(recorded, usage);
         // A request a cassette served spent nothing.
         if (!replayed)
           await this.spend.add(inputTokens).catch((error: unknown) => {
@@ -770,7 +776,7 @@ export class DecisionsRuntime {
           ...audit,
           durationMs,
           ...lane({ error }),
-          ...budgetAudit(),
+          ...budgetAudit({}),
           status: canceled ? "canceled" : "failed",
           error: redactSensitiveText(
             redactDecisionsSecrets(String(error instanceof Error ? error.message : error))

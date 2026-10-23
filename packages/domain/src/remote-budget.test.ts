@@ -79,6 +79,26 @@ describe("the remote budget's arithmetic (F4 D14)", () => {
     expect(auditedCallUsd({ price, inputTokens: null, outputTokens: 10, estimateUsd: 0.5 })).toBe(
       0.5
     );
+    // A failed attempt the provider accepted without reporting its usage counts on top of the
+    // reported tokens; with a missing count the whole estimate already covers it.
+    expect(
+      auditedCallUsd({
+        price,
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        estimateUsd: 99,
+        unreportedUsd: 0.75
+      })
+    ).toBeCloseTo(1.25 + 1 + 0.75, 12);
+    expect(
+      auditedCallUsd({
+        price,
+        inputTokens: null,
+        outputTokens: 10,
+        estimateUsd: 0.5,
+        unreportedUsd: 0.2
+      })
+    ).toBe(0.5);
     expect(
       auditedCallUsd({ price, inputTokens: 5, outputTokens: undefined, estimateUsd: 0.25 })
     ).toBe(0.25);

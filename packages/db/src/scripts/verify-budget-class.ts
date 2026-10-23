@@ -177,6 +177,8 @@ try {
     status: "succeeded",
     lane
   };
+  // A call that reported its usage and had a retried attempt the provider accepted without reporting
+  // its own (a stream that stalled after its deltas): that attempt's estimate counts on top.
   const background = await ai.recordTaskRun({
     ...base,
     priority: 3,
@@ -261,7 +263,8 @@ try {
         inputTokens: 2_000 + 1_000 + 1_000,
         outputTokens: 1_000 + 500 + 500,
         estimatedCalls: 1,
-        estimateUsd: 0.5,
+        // The failed call's estimate, and the unreported attempt of the call that reported usage.
+        estimateUsd: 0.5 + 0.25,
         unestimatedCalls: 1,
         unestimatedInputTokens: 0,
         unestimatedOutputTokens: 2_000

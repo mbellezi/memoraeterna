@@ -1923,8 +1923,14 @@ export class AiService {
         instruction: admission.instruction,
         maxOutputTokens: taskType === "embedding" ? 0 : (parameters.maxTokens ?? 16384)
       });
-      if (budget.metered)
-        bindAttemptAdmission(execution, (attempt) => budget!.admitAttempt(attempt));
+      if (budget.metered) {
+        const ticket = budget;
+        bindAttemptAdmission(
+          execution,
+          (attempt) => ticket.admitAttempt(attempt),
+          (failed) => ticket.attemptFailed(failed)
+        );
+      }
       const progress = createProgressReporter(onProgress, onTextDelta);
       const run = async () => {
         await beforeProvider?.();
@@ -1977,6 +1983,11 @@ export class AiService {
       this.localDeadlineHistory.settled(selection.localModelId, taskInput);
       await releaseEmbeddingModel();
       const replayed = Boolean(result.tokenUsage?.[aiCassetteReplayedUsageKey]);
+      const usage: RemoteBudgetUsage = {
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        replayed
+      };
       return async () => {
         const recorded = repository.recordTaskRun({
           profileId: selection.profileId,
@@ -2004,16 +2015,12 @@ export class AiService {
           ...queueAndAttempt(admission, logContext),
           ...lane(),
           ...(result.schemaMode ? { schemaMode: result.schemaMode } : {}),
-          ...budgetAudit(logContext, budget),
+          ...budgetAudit(logContext, budget, usage),
           status: "succeeded",
           sourceItemIds
         });
         // Released only once the audit row that holds the usage committed (D14).
-        const aiTaskRunId = await this.settledAfter(recorded, budget, {
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
-          replayed
-        });
+        const aiTaskRunId = await this.settledAfter(recorded, budget, usage);
         await this.options.monitoring?.finish(await capture, {
           status: "succeeded",
           aiTaskRunId,
@@ -2070,7 +2077,7 @@ export class AiService {
           ...failedUsage,
           ...lane({ error }),
           ...failedSchemaMode(failedReport?.requestOptions),
-          ...budgetAudit(logContext, budget),
+          ...budgetAudit(logContext, budget, failedUsage),
           status: signal?.aborted ? "canceled" : "failed",
           error: redactSensitiveText(error),
           sourceItemIds
@@ -2182,7 +2189,7 @@ export class AiService {
       durationMs: 0,
       ...queueAndAttempt(admission, context),
       ...lane({ error }),
-      ...budgetAudit(context, undefined),
+      ...budgetAudit(context, undefined, {}),
       status: signal?.aborted ? "canceled" : "failed",
       error: redactSensitiveText(error),
       sourceItemIds: taskSourceItemIds(context)
@@ -3930,14 +3937,16 @@ function localModelTestClass(model: LocalModelRecord): AiWorkloadClass {
 }
 
 /**
- * The RemoteBudget's audit of one call (0061): who it spent for, the job it ran for, and the US$
- * estimate its attempts were admitted with on a priced route; each left out when unknown.
+ * The RemoteBudget's audit of one call (0061): who it spent for, the job it ran for, and on a priced
+ * route the US$ the ledger counts beyond the usage the row records (the same the ticket settles
+ * with); each left out when unknown.
  */
 function budgetAudit(
   context: Pick<AiTaskLogContext, "budgetClass" | "jobId">,
-  budget: Pick<RemoteBudgetTicket, "estimateUsd"> | undefined
+  budget: Pick<RemoteBudgetTicket, "auditEstimateUsd"> | undefined,
+  usage: RemoteBudgetUsage
 ): { budgetClass?: BudgetClass; jobId?: string; budgetEstimateUsd?: number } {
-  const estimateUsd = budget?.estimateUsd;
+  const estimateUsd = budget?.auditEstimateUsd(usage);
   return {
     ...(context.budgetClass ? { budgetClass: context.budgetClass } : {}),
     ...(context.jobId ? { jobId: context.jobId } : {}),

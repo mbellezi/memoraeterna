@@ -1485,8 +1485,9 @@ export const aiTaskRuns = pgTable(
     requeueMs: integer("requeue_ms"),
     // The RemoteBudget's view of the call (F4 D14, 0061), null on rows written before it (unknown):
     // who it spent for (`user`, `background`, `interactive`), the job it ran for (no foreign key: the
-    // audit outlives pruned jobs), and the US$ estimate its attempts were admitted with on a priced
-    // route, which the monthly ledger counts when the provider reported no usage.
+    // audit outlives pruned jobs), and the US$ the monthly ledger counts beyond the reported tokens on
+    // a priced route: every admitted attempt's estimate when the usage misses a count, else the
+    // estimates of failed attempts the provider accepted and reported no usage for.
     budgetClass: text("budget_class"),
     jobId: uuid("job_id"),
     budgetEstimateUsd: doublePrecision("budget_estimate_usd"),

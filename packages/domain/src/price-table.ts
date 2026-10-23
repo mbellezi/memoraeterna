@@ -78,7 +78,7 @@ export const PriceTableSchema = z
   });
 export type PriceTable = z.infer<typeof PriceTableSchema>;
 
-export const priceTableVersion = "2026-10-23.1";
+export const priceTableVersion = "2026-10-23.2";
 
 const unverified =
   "the provider's published list price as the implementing agent knew it (T76); re-read the provider's page before relying on it";
@@ -87,8 +87,9 @@ const unverified =
  * The shipped table. Codex OAuth is a subscription; the Decisions API price is the one its typed
  * limits carry (`@app/ai` `defaultDecisionsLimits`, a test keeps them equal). The per-token entries
  * of the OpenAI API (through an OpenAI-compatible configuration) and of Gemini are unverified list
- * prices (Gemini 2.5 Pro at its tier for prompts up to 200k tokens); every other model is unknown
- * and priced at 1.5 times the highest prices here.
+ * prices (Gemini 2.5 Pro at its tier for prompts up to 200k tokens), the embedding models of the
+ * Cloud preset's provider embedding included (input only); every other model is unknown and priced
+ * at 1.5 times the highest prices here.
  */
 export const defaultPriceTable: PriceTable = PriceTableSchema.parse({
   version: priceTableVersion,
@@ -123,7 +124,10 @@ export const defaultPriceTable: PriceTable = PriceTableSchema.parse({
       ["gpt-4.1", 2, 0.5, 8],
       ["gpt-4.1-mini", 0.4, 0.1, 1.6],
       ["gpt-4o", 2.5, 1.25, 10],
-      ["gpt-4o-mini", 0.15, 0.075, 0.6]
+      ["gpt-4o-mini", 0.15, 0.075, 0.6],
+      ["text-embedding-3-small", 0.02, 0.02, 0],
+      ["text-embedding-3-large", 0.13, 0.13, 0],
+      ["text-embedding-ada-002", 0.1, 0.1, 0]
     ].map(([model, input, cached, output]) => ({
       provider: "openai-compatible",
       model,
@@ -138,7 +142,8 @@ export const defaultPriceTable: PriceTable = PriceTableSchema.parse({
     ...[
       ["gemini-2.5-pro", 1.25, 0.31, 10],
       ["gemini-2.5-flash", 0.3, 0.075, 2.5],
-      ["gemini-2.5-flash-lite", 0.1, 0.025, 0.4]
+      ["gemini-2.5-flash-lite", 0.1, 0.025, 0.4],
+      ["gemini-embedding-001", 0.15, 0.15, 0]
     ].map(([model, input, cached, output]) => ({
       provider: "google",
       model,

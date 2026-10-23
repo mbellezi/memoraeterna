@@ -45,6 +45,20 @@ describe("the price table (F4 D14)", () => {
     expect(resolvePrice(defaultPriceTable, "openai-compatible", "gpt-5-turbo").known).toBe(false);
   });
 
+  it("prices the Cloud preset's provider embedding models by their input tokens", () => {
+    for (const [provider, model, input] of [
+      ["openai-compatible", "text-embedding-3-small", 0.02],
+      ["openai-compatible", "text-embedding-3-large", 0.13],
+      ["google", "models/gemini-embedding-001", 0.15]
+    ] as const)
+      expect(resolvePrice(defaultPriceTable, provider, model)).toMatchObject({
+        billing: "per_token",
+        known: true,
+        inputUsdPerM: input,
+        outputUsdPerM: 0
+      });
+  });
+
   it("prices an unknown model conservatively, above every listed price and never zero", () => {
     const unknown = resolvePrice(defaultPriceTable, "openai-compatible", "someone/new-model");
     expect(unknown.known).toBe(false);

@@ -280,6 +280,11 @@ export interface RemoteCallOptions {
    * {@link bindAttemptAdmission} when left out. See {@link RemoteAttemptAdmission}.
    */
   beforeAttempt?: RemoteAttemptAdmission | undefined;
+  /**
+   * Told about every attempt that failed; the one bound with the admission when neither is given.
+   * See {@link FailedRemoteAttempt}.
+   */
+  afterFailedAttempt?: RemoteAttemptObserver | undefined;
 }
 
 /**
@@ -289,21 +294,55 @@ export interface RemoteCallOptions {
  */
 export type RemoteAttemptAdmission = (attempt: number) => void | Promise<void>;
 
-const attemptAdmissions = new WeakMap<AbortSignal, RemoteAttemptAdmission>();
+/**
+ * An attempt of a remote call that failed (F4 D14), told after the provider's last usage report for
+ * it. An attempt the provider accepted (a 2xx response to one of its requests) may have been billed
+ * even though it failed, such as a stream that stalled after its deltas: when the provider did not
+ * report both of its token counts it is `unreported`, and the RemoteBudget keeps its reservation as
+ * spend instead of counting it as zero. An attempt the provider answered with an error status, or
+ * that never got an answer, was not accepted.
+ */
+export interface FailedRemoteAttempt {
+  /** Counts from 1, as {@link RemoteAttemptAdmission}'s `attempt`. */
+  attempt: number;
+  /** The tokens the provider reported for it, its last report. */
+  usage: PartialTokenUsage;
+  /** The provider accepted the attempt and did not report both of its token counts. */
+  unreported: boolean;
+}
+
+export type RemoteAttemptObserver = (failed: FailedRemoteAttempt) => void;
+
+const attemptAdmissions = new WeakMap<
+  AbortSignal,
+  { admit: RemoteAttemptAdmission; afterFailed: RemoteAttemptObserver | undefined }
+>();
 
 /**
- * Attaches an execution's attempt admission to the signal its adapter receives, as the lane permit
- * is attached, so the adapters need not carry it. The signal must be the execution's own.
+ * Attaches an execution's attempt admission (and the observer of its failed attempts) to the signal
+ * its adapter receives, as the lane permit is attached, so the adapters need not carry them. The
+ * signal must be the execution's own.
  */
-export function bindAttemptAdmission(signal: AbortSignal, admit: RemoteAttemptAdmission): void {
-  attemptAdmissions.set(signal, admit);
+export function bindAttemptAdmission(
+  signal: AbortSignal,
+  admit: RemoteAttemptAdmission,
+  afterFailed?: RemoteAttemptObserver
+): void {
+  attemptAdmissions.set(signal, { admit, afterFailed });
 }
 
 /** The attempt admission bound to an execution's signal, if any. */
 export function attemptAdmissionOf(
   signal: AbortSignal | undefined
 ): RemoteAttemptAdmission | undefined {
-  return signal ? attemptAdmissions.get(signal) : undefined;
+  return signal ? attemptAdmissions.get(signal)?.admit : undefined;
+}
+
+/** The observer of failed attempts bound to an execution's signal, if any. */
+export function failedAttemptObserverOf(
+  signal: AbortSignal | undefined
+): RemoteAttemptObserver | undefined {
+  return signal ? attemptAdmissions.get(signal)?.afterFailed : undefined;
 }
 
 const failedCallReports = new WeakMap<object, RemoteCallReport>();
@@ -406,6 +445,10 @@ export async function runRemoteCall<T>(
   const caller = options.signal;
   const permit = lanePermitOf(caller);
   const beforeAttempt = options.beforeAttempt ?? attemptAdmissionOf(caller);
+  // The observer that goes with the admission: an explicit admission brings its own, if any.
+  const afterFailedAttempt =
+    options.afterFailedAttempt ??
+    (options.beforeAttempt ? undefined : failedAttemptObserverOf(caller));
   const highReasoning = options.parameters !== undefined && isHighReasoning(options.parameters);
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
@@ -466,6 +509,13 @@ export async function runRemoteCall<T>(
             ? total.signal.reason
             : (call.expired ?? toProviderNetworkError(caught));
         report.failedUsage = addUsage(report.failedUsage, call.usage);
+        afterFailedAttempt?.({
+          attempt: number,
+          usage: { ...call.usage },
+          unreported:
+            call.accepted &&
+            (call.usage.inputTokens === undefined || call.usage.outputTokens === undefined)
+        });
       } finally {
         call.dispose();
       }
@@ -540,6 +590,8 @@ export class RemoteAttempt {
   public requests = 0;
   /** The wire options stated for the last request this attempt started. */
   public wireOptions: RemoteRequestOptions | undefined;
+  /** The provider accepted one of its requests (a 2xx response): it may bill it even if it fails. */
+  public accepted = false;
   private readonly controller = new AbortController();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private answerTimer: ReturnType<typeof setTimeout> | undefined;
@@ -566,6 +618,7 @@ export class RemoteAttempt {
     const timed = this.options.streaming && !this.options.local;
     if (timed) this.arm("connect", this.options.connectMs);
     const response = await this.guard(fetchImplementation(input, { ...init, signal: this.signal }));
+    if (response.ok) this.accepted = true;
     if (timed) this.arm("firstByte", this.options.firstByteMs);
     else this.disarm();
     return response;

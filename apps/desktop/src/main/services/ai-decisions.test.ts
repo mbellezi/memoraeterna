@@ -987,6 +987,15 @@ describe("the RemoteBudget (F4 D14)", () => {
             if (refuse) throw new RemoteBudgetRefusal("money_100", null);
             reserved += 0.001;
           },
+          attemptFailed: () => undefined,
+          // As the RemoteBudget: a row with both counts stores no estimate beyond them.
+          auditEstimateUsd: (usage: {
+            inputTokens?: number | null;
+            outputTokens?: number | null;
+          }) =>
+            typeof usage.inputTokens === "number" && typeof usage.outputTokens === "number"
+              ? 0
+              : reserved,
           settle: async () => {
             settledAfterRuns.push(store.runs.length);
           }
@@ -1014,11 +1023,12 @@ describe("the RemoteBudget (F4 D14)", () => {
         priority: 2,
         estimate: { inputTokens: expect.any(Number), outputTokens: 0 }
       });
+    // Every request reported its usage: the ledger counts it, nothing beyond it.
     for (const run of store.runs)
       expect(run).toMatchObject({
         budgetClass: "background",
         jobId: "job-1",
-        budgetEstimateUsd: 0.001
+        budgetEstimateUsd: 0
       });
     // Each request settles once its own audit row was written.
     expect(settledAfterRuns).toHaveLength(result.calls);

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AiProviderError, resolveAiRuntimeConfig, runRemoteCall } from "@app/ai";
+import {
+  AiProviderError,
+  OpenAiCompatibleAdapter,
+  resolveAiRuntimeConfig,
+  runRemoteCall
+} from "@app/ai";
 import type { Queryable } from "@app/db";
 import { RemoteBudgetRefusal } from "@app/domain";
 
@@ -151,7 +156,8 @@ describe("remote calls on the RemoteBudget", () => {
     ).resolves.toMatchObject({ output: "answer" });
     const row = rows()[0]!;
     expect(row).toMatchObject({ budgetClass: "background", jobId: ids.job, status: "succeeded" });
-    expect(row.budgetEstimateUsd as number).toBeGreaterThan(0.1);
+    // The call reported its usage and no attempt went unreported: nothing counts beyond it.
+    expect(row.budgetEstimateUsd).toBe(0);
     const money = (await budget.snapshot()).money;
     expect(money.reservedUsd).toBe(0);
     expect(money.spentUsd).toBeCloseTo((1_000 * 1.25 + 2_000 * 10) / 1e6, 12);
@@ -223,5 +229,75 @@ describe("remote calls on the RemoteBudget", () => {
     // User-started work is audited with its class and no estimate: it is not metered.
     expect(rows().at(-2)).toMatchObject({ budgetClass: "user" });
     expect(rows().at(-2)!.budgetEstimateUsd).toBeUndefined();
+  });
+
+  it("keeps the estimate of a retried attempt that stalled after its deltas without usage", async () => {
+    // Attempt 1 is accepted, streams a few deltas and stalls before its usage arrives (billed by the
+    // provider, reported to nobody); attempt 2 answers with its usage. The stalled attempt is spend.
+    const encoder = new TextEncoder();
+    const event = (data: unknown) => encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+    let requests = 0;
+    const fakeFetch = (async (_url: string, init?: RequestInit) => {
+      requests += 1;
+      const stall = requests === 1;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal!.reason));
+          for (let index = 0; index < 5; index += 1)
+            controller.enqueue(event({ choices: [{ delta: { content: "w " } }] }));
+          if (stall) return;
+          controller.enqueue(
+            event({ choices: [], usage: { prompt_tokens: 1_000, completion_tokens: 5 } })
+          );
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    const runtime = {
+      deadlines: { stallMs: 50, answerStartMs: 5_000, firstByteMs: 5_000 },
+      retry: { baseDelayMs: 1, maxDelayMs: 1 }
+    };
+    const budget = new RemoteBudget({ getPool: budgetDatabase, monthlyCapUsd: () => 100 });
+    const ai = new AiService({
+      userDataPath: "/tmp/ai-budget-tests",
+      getPool: () => ({}) as never,
+      workspaceRoot: "/tmp",
+      resourcesPath: "/tmp",
+      lanes: {},
+      isPackaged: false,
+      runtime,
+      remoteBudget: budget
+    });
+    const adapter = new OpenAiCompatibleAdapter({
+      baseUrl: pricedSelection.baseUrl,
+      apiKey: "test-key-not-a-secret",
+      modelId: "gpt-5",
+      capabilities: ["text-generation", "structured-output"],
+      runtime,
+      fetch: fakeFetch,
+      random: () => 0
+    });
+    const internals = ai as unknown as {
+      createAdapter: () => Promise<unknown>;
+      registerAdapter: (adapter: unknown) => unknown;
+    };
+    vi.spyOn(internals, "createAdapter").mockImplementation(async () =>
+      internals.registerAdapter(adapter)
+    );
+    await expect(
+      ai.runDefaultTask("text-generation", "a prompt", background, undefined, limits)
+    ).resolves.toMatchObject({ output: "w w w w w " });
+    expect(requests).toBe(2);
+    const row = rows()[0]!;
+    expect(row).toMatchObject({ status: "succeeded", inputTokens: 1_000, outputTokens: 5 });
+    const reported = (1_000 * 1.25 + 5 * 10) / 1e6;
+    const money = (await budget.snapshot()).money;
+    expect(money.reservedUsd).toBe(0);
+    // The stalled attempt's estimate stays as spend on top of the reported usage, and the audit
+    // stores it so a reload of the ledger counts the same.
+    expect(row.budgetEstimateUsd as number).toBeGreaterThan(0.1);
+    expect(money.spentUsd).toBeCloseTo(reported + (row.budgetEstimateUsd as number), 12);
   });
 });

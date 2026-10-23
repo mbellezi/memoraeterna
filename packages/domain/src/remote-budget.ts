@@ -176,8 +176,9 @@ export function nextLocalBudgetDay(at: Date): Date {
 
 /**
  * What one audited remote call cost in money: its tokens at its price when both counts are known,
- * else the estimate it was reserved with (D14: NULL usage keeps the estimate, never zero). Priced
- * calls only; a subscription call costs nothing in money.
+ * plus the estimates of its failed attempts the provider accepted without reporting their usage;
+ * else the estimate of every attempt it was reserved with (D14: NULL usage keeps the estimate, never
+ * zero). Priced calls only; a subscription call costs nothing in money.
  */
 export function auditedCallUsd(input: {
   price: Pick<ResolvedPrice, "billing" | "inputUsdPerM" | "outputUsdPerM">;
@@ -185,6 +186,11 @@ export function auditedCallUsd(input: {
   outputTokens: number | null | undefined;
   /** The admission estimate of the attempts it made, when it reserved any. */
   estimateUsd: number | null | undefined;
+  /**
+   * The admission estimate of its failed attempts that may have been billed and reported no usage
+   * (a stream that stalled after its deltas); counted on top of known token counts.
+   */
+  unreportedUsd?: number | null | undefined;
   /** Output tokens to price a call with no usage and no stored estimate at (its `maxTokens`). */
   fallbackOutputTokens?: number;
 }): number {
@@ -195,10 +201,12 @@ export function auditedCallUsd(input: {
     input.outputTokens !== null &&
     input.outputTokens !== undefined
   )
-    return tokensCostUsd(input.price, {
-      inputTokens: input.inputTokens,
-      outputTokens: input.outputTokens
-    });
+    return (
+      tokensCostUsd(input.price, {
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens
+      }) + Math.max(0, input.unreportedUsd ?? 0)
+    );
   if (input.estimateUsd !== null && input.estimateUsd !== undefined && input.estimateUsd > 0)
     return input.estimateUsd;
   // A row with neither (written before 0061): its output budget at the price, never zero.

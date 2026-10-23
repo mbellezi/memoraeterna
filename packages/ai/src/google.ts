@@ -212,6 +212,8 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     );
     const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
     if (output === undefined) throw new Error("AI generation response did not contain content.");
+    // The output count includes the thoughts, which Gemini bills as output (F4 D14).
+    const tokenUsage = normalizeTokenUsage(payload.usageMetadata, "google");
     return withCallReport(
       {
         taskType: request.taskType,
@@ -221,13 +223,11 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
         schemaMode: googleSchemaMode(request),
-        tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google"),
+        tokenUsage,
         ...(payload.usageMetadata?.promptTokenCount !== undefined
           ? { inputTokens: payload.usageMetadata.promptTokenCount }
           : {}),
-        ...(payload.usageMetadata?.candidatesTokenCount !== undefined
-          ? { outputTokens: payload.usageMetadata.candidatesTokenCount }
-          : {})
+        ...(tokenUsage.outputTokens !== undefined ? { outputTokens: tokenUsage.outputTokens } : {})
       },
       report
     );
@@ -343,10 +343,12 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
             else if (parts.some((part) => part.thought && part.text)) call.progressed("reasoning");
             output += text;
             textStream.delta(text);
-            tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
+            const eventUsage = normalizeTokenUsage(event.usageMetadata, "google");
+            tokenUsage = { ...tokenUsage, ...eventUsage };
             call.reportUsage(tokenUsage);
             inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
-            outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
+            // The thoughts count as output: Gemini bills them as output (F4 D14).
+            outputTokens = eventUsage.outputTokens ?? outputTokens;
             progress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
           },
           undefined,

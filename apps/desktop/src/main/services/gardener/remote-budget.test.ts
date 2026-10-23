@@ -162,6 +162,35 @@ describe("the RemoteBudget's money meter", () => {
     expect((await service.snapshot()).money).toMatchObject({ spentUsd: 2, reservedUsd: 0 });
   });
 
+  it("keeps the estimate of an accepted attempt that reported no usage when a retry did", async () => {
+    // Attempt 1 stalled after its deltas (accepted, billed, no usage), attempt 2 failed with an error
+    // status (not accepted), attempt 3 answered with its usage: attempt 1 stays as spend.
+    const { service } = budget({ cap: 100 });
+    const ticket = await service.open(call());
+    await ticket.admitAttempt(1);
+    ticket.attemptFailed({ attempt: 1, unreported: true });
+    await ticket.admitAttempt(2);
+    ticket.attemptFailed({ attempt: 2, unreported: false });
+    await ticket.admitAttempt(3);
+    const usage = { inputTokens: 1_000, outputTokens: 2_000 };
+    // The audit stores what the ledger counts beyond the reported usage; with a missing count, all.
+    expect(ticket.auditEstimateUsd(usage)).toBeCloseTo(1, 12);
+    expect(ticket.auditEstimateUsd({ inputTokens: 1_000 })).toBeCloseTo(3, 12);
+    await ticket.settle(usage);
+    expect((await service.snapshot()).money.spentUsd).toBeCloseTo(
+      tokensCostUsd(gpt5, usage) + 1,
+      12
+    );
+    // A clean call stores nothing beyond its usage; a subscription call is not metered in money.
+    const clean = await service.open(call());
+    await clean.admitAttempt(1);
+    expect(clean.auditEstimateUsd(usage)).toBe(0);
+    const codex = await service.open(call({ provider: "openai-codex", modelId: "gpt-5.6-luna" }));
+    await codex.admitAttempt(1);
+    codex.attemptFailed({ attempt: 1, unreported: true });
+    expect(codex.auditEstimateUsd(usage)).toBeNull();
+  });
+
   it("pauses past the pause share until the person continues, then stops at the cap", async () => {
     const { service, db } = budget({ cap: 5, ledger: [{ inputTokens: 0, outputTokens: 300_000 }] });
     // Spent 3 of 5: one more dollar reaches 4 (80%), a second would pass it.

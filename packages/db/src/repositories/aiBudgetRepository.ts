@@ -4,9 +4,10 @@ import type { Queryable } from "./types.js";
 
 /**
  * One provider and model of a month's background remote spend (F4 D14). The RemoteBudget prices it
- * with the versioned price table: the token counts of the calls that reported both, the admission
- * estimates of the calls that did not, and for those with no estimate either (rows written before
- * 0061) the output budget they asked for.
+ * with the versioned price table: the token counts of the calls that reported both, plus each call's
+ * stored estimate (`budget_estimate_usd`: every attempt's for a call that reported no complete usage,
+ * else the attempts the provider accepted without reporting their usage), and for the calls with
+ * neither (rows written before 0061) the output budget they asked for.
  */
 export interface BudgetLedgerEntry {
   provider: string;
@@ -16,8 +17,12 @@ export interface BudgetLedgerEntry {
   /** Input and output tokens of the calls that reported both counts. */
   inputTokens: number;
   outputTokens: number;
-  /** Calls missing a count that carry the US$ estimate they were admitted with, and its sum. */
+  /** Calls missing a count that carry the US$ estimate they were admitted with. */
   estimatedCalls: number;
+  /**
+   * The sum of the stored estimates of every call: those missing a count, and the unreported
+   * attempts of those that reported both.
+   */
   estimateUsd: number;
   /** Calls missing a count and an estimate, the tokens they did report, and their output budgets. */
   unestimatedCalls: number;
@@ -56,7 +61,7 @@ export const budgetLedgerStatement = `
       as "outputTokens",
     count(*) filter (where (input_tokens is null or output_tokens is null) and budget_estimate_usd is not null)::text
       as "estimatedCalls",
-    sum(budget_estimate_usd) filter (where input_tokens is null or output_tokens is null) as "estimateUsd",
+    sum(budget_estimate_usd) as "estimateUsd",
     count(*) filter (where (input_tokens is null or output_tokens is null) and budget_estimate_usd is null)::text
       as "unestimatedCalls",
     coalesce(sum(input_tokens) filter (where output_tokens is null and budget_estimate_usd is null), 0)::text

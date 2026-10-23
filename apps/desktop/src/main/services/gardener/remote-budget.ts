@@ -96,24 +96,46 @@ interface TicketState {
   month: string;
   day: string;
   reservedUsd: number;
+  /** The part of `reservedUsd` held by failed attempts the provider accepted and reported no usage for. */
+  unreportedUsd: number;
   reservedCalls: number;
   settled: boolean;
 }
 
+/** Whether a usage holds both token counts. */
+function completeUsage(usage: RemoteBudgetUsage): boolean {
+  return (
+    usage.inputTokens !== null &&
+    usage.inputTokens !== undefined &&
+    usage.outputTokens !== null &&
+    usage.outputTokens !== undefined
+  );
+}
+
 /**
  * The budget of one remote call: {@link RemoteBudgetTicket.admitAttempt} before each attempt (the
- * retry loop's `beforeAttempt`), {@link RemoteBudgetTicket.settle} once its audit row committed.
+ * retry loop's `beforeAttempt`), {@link RemoteBudgetTicket.attemptFailed} after each failed one (its
+ * `afterFailedAttempt`), {@link RemoteBudgetTicket.settle} once its audit row committed.
  */
 export interface RemoteBudgetTicket {
   /** Whether the call is metered at all (a remote lane and a counted budget class). */
   readonly metered: boolean;
-  /**
-   * The US$ its admitted attempts reserved on a priced route, which the audit stores as
-   * `budget_estimate_usd`; null when the call is not metered in money.
-   */
+  /** The US$ its admitted attempts reserved on a priced route; null when not metered in money. */
   readonly estimateUsd: number | null;
   /** Reserves one attempt, or throws a {@link RemoteBudgetRefusal} for background work at a cap. */
   admitAttempt(attempt: number): Promise<void>;
+  /**
+   * Notes an attempt that failed: one the provider accepted without reporting its usage may have been
+   * billed, so its reservation stays as spend even when a later attempt reports its own usage.
+   */
+  attemptFailed(failed: { attempt: number; unreported: boolean }): void;
+  /**
+   * What the audit row stores as `budget_estimate_usd` for the usage it records (0061), the US$ the
+   * monthly ledger counts beyond the reported token counts: every admitted attempt's estimate when
+   * the usage misses a count, else the estimates of the failed attempts the provider accepted and
+   * reported no usage for (0 when none); null when the call is not metered in money.
+   */
+  auditEstimateUsd(usage: RemoteBudgetUsage): number | null;
   /** Releases the reservations and counts the audited usage; call it after the audit row committed. */
   settle(usage: RemoteBudgetUsage): Promise<void>;
 }
@@ -123,6 +145,8 @@ export const unmeteredBudgetTicket: RemoteBudgetTicket = {
   metered: false,
   estimateUsd: null,
   admitAttempt: async () => undefined,
+  attemptFailed: () => undefined,
+  auditEstimateUsd: () => null,
   settle: async () => undefined
 };
 
@@ -232,6 +256,7 @@ export class RemoteBudget {
         month: this.month!,
         day: this.day!,
         reservedUsd: 0,
+        unreportedUsd: 0,
         reservedCalls: 0,
         settled: false
       };
@@ -246,6 +271,13 @@ export class RemoteBudget {
       get estimateUsd() {
         return subscription ? null : state.reservedUsd;
       },
+      attemptFailed: (failed) => {
+        // Every attempt that ran was admitted first, so its estimate is part of the reservation.
+        if (subscription || state.settled || !failed.unreported) return;
+        state.unreportedUsd = Math.min(state.reservedUsd, state.unreportedUsd + attemptUsd);
+      },
+      auditEstimateUsd: (usage) =>
+        subscription ? null : completeUsage(usage) ? state.unreportedUsd : state.reservedUsd,
       admitAttempt: () =>
         this.serialized(async () => {
           if (state.settled) throw new Error("A settled budget ticket admits no attempt.");
@@ -309,11 +341,13 @@ export class RemoteBudget {
               await this.storeCalls();
             }
           } else if (state.month === this.month) {
+            // What the audit row's usage and estimate make the ledger count (0061).
             this.spentUsd += auditedCallUsd({
               price,
               inputTokens: usage.inputTokens,
               outputTokens: usage.outputTokens,
-              estimateUsd: state.reservedUsd
+              estimateUsd: state.reservedUsd,
+              unreportedUsd: state.unreportedUsd
             });
           }
           this.options.onChange?.();

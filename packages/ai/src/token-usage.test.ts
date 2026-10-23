@@ -124,5 +124,24 @@ describe("AI monitoring usage", () => {
       reasoningTokens: 6,
       totalTokens: 16
     });
+    // The audited output count includes the thoughts Gemini bills as output (F4 D14).
+    expect(result).toMatchObject({ inputTokens: 8, outputTokens: 8 });
+    const unstreamed = await new GoogleGeminiAdapter({
+      modelId: "gemini",
+      apiKey: "secret",
+      capabilities: [],
+      fetch: async () =>
+        Response.json({
+          candidates: [{ content: { parts: [{ text: "ok" }] } }],
+          usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 2, thoughtsTokenCount: 6 }
+        })
+    }).run({
+      taskType: "summarization",
+      input: "hello",
+      parameters: {},
+      metadata: {},
+      requiredCapabilities: []
+    });
+    expect(unstreamed).toMatchObject({ inputTokens: 8, outputTokens: 8 });
   });
 });

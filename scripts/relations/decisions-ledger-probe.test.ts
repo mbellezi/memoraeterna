@@ -37,7 +37,8 @@ function memoryLedger() {
               estimatedCalls: String(
                 unknown.filter((row) => row.budgetEstimateUsd !== null).length
               ),
-              estimateUsd: unknown.reduce((sum, row) => sum + (row.budgetEstimateUsd ?? 0), 0),
+              // Every row's stored estimate, as the statement sums it (0061).
+              estimateUsd: rows.reduce((sum, row) => sum + (row.budgetEstimateUsd ?? 0), 0),
               unestimatedCalls: "0",
               unestimatedInputTokens: "0",
               unestimatedOutputTokens: "0"
