@@ -1513,6 +1513,17 @@ export class JobSupervisor {
       await runs.beginStage(ingestionRunId, "knowledgeGraph");
       this.notify();
       let graph: Record<string, unknown> | null = null;
+      const reportGraphProgress = async (
+        stageJobId: string,
+        progress: number,
+        metadata: JsonObject
+      ) => {
+        await Promise.all([
+          createJobRepository(pool).reportProgress(stageJobId, progress),
+          createJobRepository(pool).reportProgress(job.id, 0.84 + progress * 0.05),
+          runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, metadata)
+        ]);
+      };
       try {
         graph = this.options.knowledgeService
           ? await this.runInlineStageJob(
@@ -1542,21 +1553,20 @@ export class JobSupervisor {
                           shouldRun("atomicNotes") && job.payload.knowledgeGraphOnNotes === true,
                         completedBatches: graphMetadata?.completedBatches,
                         onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
-                        onBatchCompleted: async ({ completed, total, checkpoints }) => {
-                          const progress = total > 0 ? completed / total : 1;
-                          await Promise.all([
-                            createJobRepository(pool).reportProgress(stageJobId, progress),
-                            createJobRepository(pool).reportProgress(
-                              job.id,
-                              0.84 + progress * 0.05
-                            ),
-                            runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, {
-                              completed,
-                              total,
-                              completedBatches: checkpoints
-                            })
-                          ]);
-                        }
+                        // Extraction takes the stage to 0.6 (the run to 0.87), identity to 1 (0.89)
+                        // (D20); the raw extraction checkpoints stay the stage's resume point.
+                        onBatchCompleted: ({ completed, total, checkpoints }) =>
+                          reportGraphProgress(
+                            stageJobId,
+                            0.6 * (total > 0 ? completed / total : 1),
+                            { completed, total, completedBatches: checkpoints }
+                          ),
+                        onIdentityProgress: ({ fraction, checkpoints }) =>
+                          reportGraphProgress(stageJobId, 0.6 + 0.4 * fraction, {
+                            completed: checkpoints.length,
+                            total: checkpoints.length,
+                            completedBatches: checkpoints
+                          })
                       },
                       signal
                     ),

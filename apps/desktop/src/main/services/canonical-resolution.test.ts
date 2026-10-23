@@ -78,6 +78,11 @@ const type = {
   definition: "The subject was used as evidence to accuse the object."
 };
 const base = { pool: {} as PgPool, context: { sourceItemId: id }, threshold: 0.92 };
+/** A catalog commit that resolves every decision (keyed `b<batch>:<key>`) to `entityId`. */
+const commitAll =
+  (entityId: string) =>
+  async (decisions: Array<{ key: string }>): Promise<Map<string, string>> =>
+    new Map(decisions.map((decision) => [decision.key, entityId]));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -90,7 +95,7 @@ beforeEach(() => {
   mocks.entities.revision.mockResolvedValue("0:0:0");
   mocks.entities.missingVectors.mockResolvedValue([]);
   mocks.entities.candidates.mockResolvedValue([]);
-  mocks.entities.commit.mockResolvedValue(new Map([["e1", otherId]]));
+  mocks.entities.commit.mockImplementation(commitAll(otherId));
 });
 
 describe("compact canonical matching", () => {
@@ -135,8 +140,8 @@ describe("compact canonical matching", () => {
   it("reuses exact relation aliases without any AI call", async () => {
     mocks.types.findExact.mockResolvedValue(new Map([["utilized_to_accuse", type]]));
     const ai = { runDefaultTask: vi.fn() };
-    const resolved = await createRelationTypeResolver({ ...base, ai })(batch());
-    expect(resolved.relations[0]).toMatchObject({
+    const resolved = await createRelationTypeResolver({ ...base, ai })([batch()]);
+    expect(resolved[0]!.relations[0]).toMatchObject({
       predicate: "used_to_accuse",
       relationTypeId: id,
       originalPredicate: "utilized_to_accuse",
@@ -151,7 +156,7 @@ describe("compact canonical matching", () => {
         result(task === "embedding" ? vector : { matches: [["r1", "c1"]] })
       )
     };
-    await createRelationTypeResolver({ ...base, ai })(batch());
+    await createRelationTypeResolver({ ...base, ai })([batch()]);
     expect(mocks.types.commit).toHaveBeenCalledWith(
       [
         expect.objectContaining({
@@ -181,7 +186,7 @@ describe("compact canonical matching", () => {
         result(task === "embedding" ? vector : { matches: [["r2", "c1"]] })
       )
     };
-    await createRelationTypeResolver({ ...base, ai })(input);
+    await createRelationTypeResolver({ ...base, ai })([input]);
     expect(mocks.types.commit.mock.calls[0]?.[0][1]).toMatchObject({
       target: { predicate: "utilized_to_accuse" }
     });
@@ -193,7 +198,7 @@ describe("compact canonical matching", () => {
         result(task === "embedding" ? vector : { matches: [["r1", null]] })
       )
     };
-    await createRelationTypeResolver({ ...base, ai })(batch());
+    await createRelationTypeResolver({ ...base, ai })([batch()]);
     expect(mocks.types.commit.mock.calls[0]?.[0][0].target).toBeNull();
   });
   it("never registers an alias from malformed output after its repair attempt", async () => {
@@ -203,7 +208,7 @@ describe("compact canonical matching", () => {
         result(task === "embedding" ? vector : { matches: [["r1", "invented"]] })
       )
     };
-    await expect(createRelationTypeResolver({ ...base, ai })(batch())).rejects.toThrow(
+    await expect(createRelationTypeResolver({ ...base, ai })([batch()])).rejects.toThrow(
       "errors.relationTypes.invalidOutput"
     );
     expect(mocks.types.commit).not.toHaveBeenCalled();
@@ -218,7 +223,7 @@ describe("compact canonical matching", () => {
       })
     };
     await expect(
-      createRelationTypeResolver({ ...base, ai, signal: controller.signal })(batch())
+      createRelationTypeResolver({ ...base, ai, signal: controller.signal })([batch()])
     ).rejects.toThrow();
     expect(mocks.types.commit).not.toHaveBeenCalled();
   });
@@ -227,7 +232,7 @@ describe("compact canonical matching", () => {
       createRelationTypeResolver({
         ...base,
         ai: { runDefaultTask: vi.fn().mockResolvedValue(null) }
-      })(batch())
+      })([batch()])
     ).rejects.toThrow("errors.relationTypes.embeddingRequired");
     expect(mocks.types.commit).not.toHaveBeenCalled();
   });
@@ -250,8 +255,8 @@ describe("conservative entity identity", () => {
         result(task === "embedding" ? vector : { matches: [["r1", null]] })
       )
     };
-    const resolved = await createEntityIdentityResolver({ ...base, ai, language: "en" })(batch());
-    expect(resolved.entities[0]?.canonicalEntityId).toBe(otherId);
+    const resolved = await createEntityIdentityResolver({ ...base, ai, language: "en" })([batch()]);
+    expect(resolved[0]!.entities[0]?.canonicalEntityId).toBe(otherId);
     expect(mocks.entities.commit.mock.calls[0]?.[0][0].target).toBeNull();
     expect(ai.runDefaultTask.mock.calls.filter(([task]) => task !== "embedding")).toHaveLength(1);
   });
@@ -260,8 +265,8 @@ describe("conservative entity identity", () => {
       async (keys: string[]) => new Map([[keys[0], id]])
     );
     const ai = { runDefaultTask: vi.fn() };
-    const resolved = await createEntityIdentityResolver({ ...base, ai, language: "en" })(batch());
-    expect(resolved.entities[0]?.canonicalEntityId).toBe(id);
+    const resolved = await createEntityIdentityResolver({ ...base, ai, language: "en" })([batch()]);
+    expect(resolved[0]!.entities[0]?.canonicalEntityId).toBe(id);
     expect(ai.runDefaultTask).not.toHaveBeenCalled();
     expect(mocks.entities.commit).not.toHaveBeenCalled();
   });
@@ -321,7 +326,7 @@ describe("confirmation prompts do not depend on database IDs", () => {
         }
       ]);
       const ai = askingAi();
-      await createRelationTypeResolver({ ...base, ai })(batch());
+      await createRelationTypeResolver({ ...base, ai })([batch()]);
       prompts.push(confirmationPrompt(ai));
     }
     expect(prompts.length).toBeGreaterThan(1);
@@ -341,7 +346,7 @@ describe("confirmation prompts do not depend on database IDs", () => {
       mocks.entities.findResolved.mockResolvedValue(new Map());
       mocks.entities.revision.mockResolvedValue("0:0:0");
       mocks.entities.missingVectors.mockResolvedValue([]);
-      mocks.entities.commit.mockResolvedValue(new Map([["e1", otherId]]));
+      mocks.entities.commit.mockImplementation(commitAll(otherId));
       const person = (entityId: string, canonicalName: string, identityDescription: string) => ({
         id: entityId,
         type: "Person",
@@ -355,7 +360,7 @@ describe("confirmation prompts do not depend on database IDs", () => {
         person(secondId, "John Smith", "Chemist at University B")
       ]);
       const ai = askingAi();
-      await createEntityIdentityResolver({ ...base, ai, language: "en" })(batch());
+      await createEntityIdentityResolver({ ...base, ai, language: "en" })([batch()]);
       prompts.push(confirmationPrompt(ai));
     }
     expect(prompts.length).toBeGreaterThan(1);
@@ -375,7 +380,7 @@ it("fails before catalog persistence when the embedding model changes mid-batch"
   const ai = {
     runDefaultTask: vi.fn(async () => ({ ...result(vector), embeddingSpaceKey: String(++runs) }))
   };
-  await expect(createRelationTypeResolver({ ...base, ai })(input)).rejects.toThrow(
+  await expect(createRelationTypeResolver({ ...base, ai })([input])).rejects.toThrow(
     "errors.relationTypes.modelChanged"
   );
   expect(mocks.types.commit).not.toHaveBeenCalled();
@@ -417,8 +422,8 @@ it.each(["relation", "entity"] as const)(
     };
     await withPromptPin(pin, () =>
       kind === "relation"
-        ? createRelationTypeResolver({ ...base, ai })(batch())
-        : createEntityIdentityResolver({ ...base, ai, language: "en" })(batch())
+        ? createRelationTypeResolver({ ...base, ai })([batch()])
+        : createEntityIdentityResolver({ ...base, ai, language: "en" })([batch()])
     );
     const calls = ai.runDefaultTask.mock.calls;
     expect(calls.find((c) => c[0] === "embedding")![1]).toContain("CATALOG:" + embedding);

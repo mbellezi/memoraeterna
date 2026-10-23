@@ -111,6 +111,43 @@ describe("the knowledge graph pass of an ingestion run", () => {
     ).toBe(false);
   });
 
+  it("takes the run to 0.87 with extraction and to 0.89 with identity, keeping the checkpoints (D20)", async () => {
+    const checkpoints = [{ batchKey: "source:b1" }, { batchKey: "source:b2" }];
+    generateKnowledgeGraph.mockImplementation(
+      async (
+        _source: string,
+        _document: string,
+        context: {
+          onBatchCompleted: (input: object) => Promise<void>;
+          onIdentityProgress: (input: object) => Promise<void>;
+        }
+      ) => {
+        await context.onBatchCompleted({ completed: 2, total: 2, checkpoints });
+        await context.onIdentityProgress({ fraction: 0.5, checkpoints });
+        await context.onIdentityProgress({ fraction: 1, checkpoints });
+        return { configured: true, generated: true };
+      }
+    );
+    await graphContext({ stages });
+    const run = mocks.jobs.reportProgress.mock.calls
+      .filter(([id]) => id === "job")
+      .map(([, progress]) => progress as number);
+    const stage = mocks.runs.updateStageProgress.mock.calls.map(([, , progress, metadata]) => [
+      progress,
+      metadata
+    ]);
+    // After the stage starts at 0.84: the three graph reports.
+    const start = run.indexOf(0.84);
+    expect(run.slice(start + 1, start + 4).map((progress) => Number(progress.toFixed(4)))).toEqual([
+      0.87, 0.88, 0.89
+    ]);
+    expect(stage.map(([progress]) => Number((progress as number).toFixed(4)))).toEqual([
+      0.6, 0.8, 1
+    ]);
+    for (const [, metadata] of stage)
+      expect(metadata).toEqual({ completed: 2, total: 2, completedBatches: checkpoints });
+  });
+
   it("treats anything but an explicit true as off", async () => {
     expect(
       (await graphContext({ stages, payload: { knowledgeGraphOnNotes: "true" } }))

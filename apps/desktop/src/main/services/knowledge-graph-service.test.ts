@@ -12,15 +12,23 @@ const mocks = vi.hoisted(() => ({
   chunks: { listByDocument: vi.fn() },
   notes: { listGraphInputsBySourceItem: vi.fn() },
   graph: { replaceSourceExtraction: vi.fn(), projectSource: vi.fn() },
-  hierarchy: { ensureCurrentDocumentRevision: vi.fn() }
+  hierarchy: { ensureCurrentDocumentRevision: vi.fn() },
+  // Identity and relation-type resolution are covered by their own tests; here they pass through.
+  identity: { create: vi.fn(), resolve: vi.fn() },
+  types: { create: vi.fn() }
 }));
-// Identity and relation-type resolution are covered by their own tests; here they pass through.
 vi.mock("./entity-identity-resolution.js", () => ({
-  createEntityIdentityResolver: () => async (batch: unknown) => batch
+  createEntityIdentityResolver: (options: unknown) => {
+    mocks.identity.create(options);
+    return mocks.identity.resolve;
+  }
 }));
 vi.mock("./relation-type-resolution.js", async (original) => ({
   ...(await original<typeof import("./relation-type-resolution.js")>()),
-  createRelationTypeResolver: () => async (batch: unknown) => batch
+  createRelationTypeResolver: (options: unknown) => {
+    mocks.types.create(options);
+    return async (batches: unknown) => batches;
+  }
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
@@ -64,6 +72,7 @@ beforeEach(() => {
   mocks.notes.listGraphInputsBySourceItem.mockResolvedValue([]);
   mocks.hierarchy.ensureCurrentDocumentRevision.mockResolvedValue("revision-1");
   mocks.graph.replaceSourceExtraction.mockResolvedValue({ entityCount: 1 });
+  mocks.identity.resolve.mockImplementation(async (batches: unknown) => batches);
 });
 
 describe("knowledge graph generation for a stored source", () => {
@@ -400,5 +409,129 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
     await service.generateKnowledgeGraph(sourceItemId, documentId);
     expect(runDefaultTask).toHaveBeenCalledTimes(2);
     expect(traceOperation.mock.calls.map((call) => call[0])).not.toContain("graph_salvage");
+  });
+});
+
+describe("identity per source after extraction (F4 D20)", () => {
+  const chunks = Array.from({ length: 6 }, (_unused, index) => ({
+    id: `chunk-${index}`,
+    chunkIndex: index,
+    content: `Excerpt ${index}: ${"The curve falls fast. ".repeat(65)}`,
+    sourceSpanId: null
+  }));
+  const extraction = {
+    taskType: "knowledge-graph-generation",
+    output: JSON.stringify({ entities: [entity("e1", "c1")], relations: [] }),
+    providerId: "test",
+    modelId: "mock",
+    runtime: "remote",
+    durationMs: 1,
+    aiTaskRunId: "run-1",
+    profileId: "profile-1",
+    outputLanguage: "en"
+  };
+  const create = (
+    locality: "local" | "remote" | null,
+    stored = { confirmationBatchSize: 12, confirmationMaxCharacters: 12_000 }
+  ) => {
+    mocks.chunks.listByDocument.mockResolvedValue(chunks);
+    const runDefaultTask = vi.fn(async () => extraction);
+    const service = new KnowledgeService({
+      getPool: () => ({}) as PgPool,
+      aiService: {
+        runDefaultTask,
+        taskRouteLocality: async () => locality,
+        traceOperation: async (_operation: string, _context: unknown, task: () => unknown) => task()
+      } as unknown as AiService,
+      userDataPath: "/tmp/memora-test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null,
+      getCanonicalMatchingSettings: async () => ({
+        relationTypeCandidateLimit: 3,
+        entityCandidateLimit: 3,
+        ...stored
+      })
+    });
+    return { service, runDefaultTask };
+  };
+  const optionsOf = (create: ReturnType<typeof vi.fn>) =>
+    create.mock.calls[0]![0] as {
+      group: unknown;
+      onProgress: (completed: number, total: number) => Promise<void>;
+    };
+
+  it("checkpoints every raw batch first, then resolves the whole source in one pass", async () => {
+    const onBatchCompleted = vi.fn<
+      (input: { checkpoints: Array<{ batch: { entities: object[] } }> }) => Promise<void>
+    >(async () => undefined);
+    const { service, runDefaultTask } = create("remote");
+    await service.generateKnowledgeGraph(sourceItemId, documentId, { onBatchCompleted });
+    expect(runDefaultTask).toHaveBeenCalledTimes(3);
+    expect(mocks.identity.resolve).toHaveBeenCalledOnce();
+    expect(mocks.identity.resolve.mock.calls[0]![0]).toHaveLength(3);
+    expect(onBatchCompleted.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      mocks.identity.resolve.mock.invocationCallOrder[0]!
+    );
+    const saved = onBatchCompleted.mock.calls.at(-1)![0].checkpoints;
+    expect(saved).toHaveLength(3);
+    for (const checkpoint of saved)
+      expect(checkpoint.batch.entities[0]).not.toHaveProperty("canonicalEntityId");
+  });
+
+  it("gives a remote writer groups of 24 / 24,000 even when 12 is stored", async () => {
+    await create("remote").service.generateKnowledgeGraph(sourceItemId, documentId);
+    expect(optionsOf(mocks.identity.create).group).toEqual({ maxRows: 24, maxCharacters: 24_000 });
+    expect(optionsOf(mocks.types.create).group).toEqual({ maxRows: 24, maxCharacters: 24_000 });
+  });
+
+  it("gives a local or unknown writer the stored values, capped at 12 / 12,000", async () => {
+    for (const locality of ["local", null] as const) {
+      mocks.identity.create.mockClear();
+      await create(locality, {
+        confirmationBatchSize: 12,
+        confirmationMaxCharacters: 24_000
+      }).service.generateKnowledgeGraph(sourceItemId, documentId);
+      expect(optionsOf(mocks.identity.create).group).toEqual({
+        maxRows: 12,
+        maxCharacters: 12_000
+      });
+    }
+  });
+
+  it("keeps the extraction when identity fails, so a retried stage resumes at identity", async () => {
+    mocks.identity.resolve.mockRejectedValueOnce(new Error("errors.entityIdentity.invalidOutput"));
+    let saved: unknown[] = [];
+    const first = create("remote");
+    await expect(
+      first.service.generateKnowledgeGraph(sourceItemId, documentId, {
+        onBatchCompleted: async ({ checkpoints }) => {
+          saved = checkpoints;
+        }
+      })
+    ).rejects.toThrow("errors.entityIdentity.invalidOutput");
+    expect(saved).toHaveLength(3);
+    const retry = create("remote");
+    await retry.service.generateKnowledgeGraph(sourceItemId, documentId, {
+      completedBatches: saved
+    });
+    expect(retry.runDefaultTask).not.toHaveBeenCalled();
+    expect(mocks.identity.resolve).toHaveBeenCalledTimes(2);
+    expect(mocks.graph.replaceSourceExtraction).toHaveBeenCalledOnce();
+  });
+
+  it("reports identity's share with the extraction checkpoints: entities to 0.9, types to 1", async () => {
+    const onIdentityProgress = vi.fn(async () => undefined);
+    await create("remote").service.generateKnowledgeGraph(sourceItemId, documentId, {
+      onIdentityProgress
+    });
+    await optionsOf(mocks.identity.create).onProgress(5, 10);
+    expect(onIdentityProgress).toHaveBeenLastCalledWith({
+      fraction: 0.45,
+      checkpoints: expect.arrayContaining([
+        expect.objectContaining({ batchKey: expect.any(String) })
+      ])
+    });
+    await optionsOf(mocks.types.create).onProgress(1, 1);
+    expect(onIdentityProgress).toHaveBeenLastCalledWith(expect.objectContaining({ fraction: 1 }));
   });
 });

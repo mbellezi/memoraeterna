@@ -26,6 +26,7 @@ import type { RelationDiscoveryInput } from "./relations/relation-link.js";
 import { relationDailyCapError } from "./relations/relation-call-budget.js";
 import {
   CanonicalMatchingSettingsSchema,
+  identityGroupFor,
   knowledgeGraphBatchFor,
   noteRelationCalibration,
   type AtomicNoteMatchingSettings,
@@ -37,7 +38,8 @@ import {
 } from "@app/domain";
 import {
   createRelationTypeResolver,
-  defaultRelationTypeSimilarityThreshold
+  defaultRelationTypeSimilarityThreshold,
+  type IdentityGroupRecord
 } from "./relation-type-resolution.js";
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
@@ -206,6 +208,14 @@ export interface KnowledgeGraphGenerationContext {
   onBatchCompleted?: (input: {
     completed: number;
     total: number;
+    checkpoints: KnowledgeGraphBatchCheckpoint[];
+  }) => Promise<void>;
+  /**
+   * Identity's share done (0-1) after extraction (F4 D20), with the extraction checkpoints, which
+   * stay the stage's resume point: entities take 0-0.9, relation types the rest.
+   */
+  onIdentityProgress?: (input: {
+    fraction: number;
     checkpoints: KnowledgeGraphBatchCheckpoint[];
   }) => Promise<void>;
 }
@@ -1267,8 +1277,36 @@ export class KnowledgeService {
       for (const [reason, count] of Object.entries(salvage.dropped))
         salvaged.dropped[reason] = (salvaged.dropped[reason] ?? 0) + (count ?? 0);
     };
+    // Identity groups by the locality of the writer that answers them (D20, Q4): a remote writer takes
+    // 24 rows and 24,000 characters whatever is stored; a local or unknown one the stored values,
+    // capped at 12 / 12,000.
+    const routeLocality = async (operation: string) =>
+      typeof this.options.aiService.taskRouteLocality === "function"
+        ? this.options.aiService.taskRouteLocality("knowledge-graph-generation", {
+            operation,
+            workloadClass: "write-quality"
+          })
+        : null;
+    const identityLocality = {
+      entity_identity: await routeLocality("entity_identity_resolution"),
+      relation_type: await routeLocality("relation_type_resolution")
+    };
+    let extractedCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
+    const identityProgress = (start: number, span: number) => (completed: number, total: number) =>
+      context.onIdentityProgress?.({
+        fraction: start + span * (total > 0 ? completed / total : 1),
+        checkpoints: extractedCheckpoints
+      });
+    const traceGroup = <T>(record: IdentityGroupRecord, run: () => Promise<T>) =>
+      trace("identity_group", run, {
+        ...record,
+        locality: identityLocality[record.kind] ?? "unknown"
+      });
     const resolveTypes = createRelationTypeResolver({
       pinned,
+      group: identityGroupFor(identityLocality.relation_type, canonicalSettings),
+      traceGroup,
+      onProgress: identityProgress(0.9, 0.1),
       settings: canonicalSettings,
       pool,
       ai: this.options.aiService,
@@ -1286,6 +1324,9 @@ export class KnowledgeService {
     });
     const resolveEntities = createEntityIdentityResolver({
       pinned,
+      group: identityGroupFor(identityLocality.entity_identity, canonicalSettings),
+      traceGroup,
+      onProgress: identityProgress(0, 0.9),
       settings: canonicalSettings,
       pool,
       ai: this.options.aiService,
@@ -1316,12 +1357,17 @@ export class KnowledgeService {
         run,
         details
       ) ?? run();
-    const resolveRelations = async (batch: Parameters<typeof resolveTypes>[0]) => {
-      const entities = await trace("entity_canonicalization", () => resolveEntities(batch), {
-        entities: batch.entities.length
+    // Identity per source after extraction (D20): entities, then relation types, over every batch.
+    const resolveRelations = async (batches: Parameters<typeof resolveTypes>[0]) => {
+      const count = (key: "entities" | "relations") =>
+        batches.reduce((sum, batch) => sum + batch[key].length, 0);
+      const entities = await trace("entity_canonicalization", () => resolveEntities(batches), {
+        entities: count("entities"),
+        batches: batches.length
       });
       return trace("relation_canonicalization", () => resolveTypes(entities), {
-        relations: batch.relations.length
+        relations: count("relations"),
+        batches: batches.length
       });
     };
     let sourceCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
@@ -1356,7 +1402,6 @@ export class KnowledgeService {
         pinned,
         batchLimits,
         onSalvage,
-        resolveRelations,
         checkpointNamespace: "source",
         chunkPositions: positions,
         contentLanguage,
@@ -1419,7 +1464,6 @@ export class KnowledgeService {
               pinned,
               batchLimits,
               onSalvage,
-              resolveRelations,
               checkpointNamespace: "atomic_notes",
               chunkPositions: positions,
               contentLanguage,
@@ -1446,10 +1490,11 @@ export class KnowledgeService {
         relationCount: 0
       };
     }
+    extractedCheckpoints = [...sourceGraph.checkpoints, ...(atomicGraph?.checkpoints ?? [])];
     const generated = {
-      batches: [...sourceGraph.batches, ...(atomicGraph?.batches ?? [])],
+      batches: await resolveRelations([...sourceGraph.batches, ...(atomicGraph?.batches ?? [])]),
       executions: [...sourceGraph.executions, ...(atomicGraph?.executions ?? [])],
-      checkpoints: [...sourceGraph.checkpoints, ...(atomicGraph?.checkpoints ?? [])]
+      checkpoints: extractedCheckpoints
     };
     const finalExecution = generated.executions.at(-1);
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");

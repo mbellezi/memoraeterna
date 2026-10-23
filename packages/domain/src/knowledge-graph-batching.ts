@@ -54,3 +54,52 @@ export function knowledgeGraphBatchFor(
   if (options.pinned) return pinnedKnowledgeGraphBatch;
   return locality === "remote" ? config.remote : config.local;
 }
+
+/** The most rows one identity call may ask about: the confirmation answer's contract allows this many. */
+export const maxIdentityGroupRows = 24;
+
+const identityGroupSchema = z
+  .object({
+    /** Rows (an entity or relation type with at least one candidate) one identity call asks about. */
+    maxRows: z.number().int().min(1).max(maxIdentityGroupRows),
+    /** Characters of one identity prompt; a single row always fits. */
+    maxCharacters: z.number().int().min(2_000).max(24_000)
+  })
+  .strict();
+export type IdentityGroupLimits = z.infer<typeof identityGroupSchema>;
+
+/**
+ * Identity groups by writer locality (F4 D20). Extraction checkpoints every raw batch first; entity
+ * identity, then relation types, resolve a source's rows in groups across its batches. Remote writers
+ * take 24 rows and 24,000 characters per call; local ones 12 and 12,000, where the stored
+ * `confirmationBatchSize` and `confirmationMaxCharacters` (Advanced › Matching) may only lower them.
+ */
+export const identityGroupingSchema = z
+  .object({ remote: identityGroupSchema, local: identityGroupSchema })
+  .strict();
+export type IdentityGrouping = z.infer<typeof identityGroupingSchema>;
+
+export const defaultIdentityGrouping: IdentityGrouping = identityGroupingSchema.parse({
+  remote: { maxRows: 24, maxCharacters: 24_000 },
+  local: { maxRows: 12, maxCharacters: 12_000 }
+});
+
+/**
+ * The identity group of a writer (Q4's reading with D20). A remote writer takes the typed remote group
+ * whatever is stored; a local writer, or one nothing is known about, takes the stored values capped
+ * at the typed local group, so a stored 24,000 characters still gives local groups of 12,000.
+ */
+export function identityGroupFor(
+  locality: "local" | "remote" | null,
+  stored: { confirmationBatchSize: number; confirmationMaxCharacters: number },
+  config: IdentityGrouping = defaultIdentityGrouping
+): IdentityGroupLimits {
+  if (locality === "remote") return config.remote;
+  return {
+    maxRows: Math.max(1, Math.min(config.local.maxRows, Math.floor(stored.confirmationBatchSize))),
+    maxCharacters: Math.min(
+      config.local.maxCharacters,
+      Math.floor(stored.confirmationMaxCharacters)
+    )
+  };
+}

@@ -44,6 +44,11 @@ const knowledgeGraphExecutionTraceSchema = z
   })
   .strict();
 
+/**
+ * One extraction batch of the graph stage. Since F4 (D20) `batch` is the raw extraction, with no
+ * canonical IDs (the model never supplies them); a checkpoint stored before holds a resolved batch,
+ * and identity keeps the canonical IDs it already carries.
+ */
 const knowledgeGraphBatchCheckpointSchema = z
   .object({
     batchKey: z.string(),
@@ -157,9 +162,6 @@ export interface KnowledgeGraphGenerationOptions {
    * content gets the same aliases on every import; chunk IDs never order anything.
    */
   chunkPositions?: ReadonlyMap<string, number>;
-  resolveRelations?: (
-    batch: KnowledgeGraphGenerationOutput
-  ) => Promise<KnowledgeGraphGenerationOutput>;
   extractionLimits?: KnowledgeGraphExtractionLimits;
   /**
    * The recording-era parse path (F3 D5): the whole answer is validated strictly and repaired as a
@@ -510,7 +512,8 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       );
       parsed = limited.at(-1) ?? { entities: [], relations: [] };
     }
-    if (options.resolveRelations) parsed = await options.resolveRelations(parsed);
+    // The raw batch is checkpointed (F4 D20): identity runs per source after extraction, so a failed
+    // identity group never discards a batch's extraction, and a retried stage resumes at identity.
     checkpoints.push({
       batchKey: knowledgeGraphBatchKey(group, checkpointNamespace, options.contentLanguage),
       batch: parsed,

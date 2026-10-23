@@ -160,11 +160,6 @@
       "count": 2
     }
   },
-  "apps/desktop/src/main/services/relation-type-resolution.ts": {
-    "prefer-const": {
-      "count": 2
-    }
-  },
   "apps/desktop/src/main/services/settings-service.test.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 7

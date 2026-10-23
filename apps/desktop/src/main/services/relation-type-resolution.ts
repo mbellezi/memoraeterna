@@ -2,8 +2,11 @@ import { compareContent } from "./content-order.js";
 import { renderPrompt, joinPrompts } from "./prompt-runtime.js";
 import {
   CanonicalMatchingSettingsSchema,
+  identityGroupFor,
+  maxIdentityGroupRows,
   parseSingleJsonObject,
-  type CanonicalMatchingSettings
+  type CanonicalMatchingSettings,
+  type IdentityGroupLimits
 } from "@app/domain";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { z } from "zod";
@@ -20,7 +23,7 @@ import type { AiService, AiTaskLogContext } from "./ai-service.js";
 export const relationTypeResolutionVersion = "relation-type-resolution-v1";
 export const defaultRelationTypeSimilarityThreshold = 0.92;
 const pairSchema = z.tuple([z.string(), z.string().nullable()]);
-const matchSchema = z.object({ matches: z.array(pairSchema).max(12) }).strict();
+const matchSchema = z.object({ matches: z.array(pairSchema).max(maxIdentityGroupRows) }).strict();
 /** The contract of a confirmation answer (relation types and entity identities), for the structured-output catalog. */
 export const relationMatchOutputSchema = matchSchema;
 /** The contracts the confirmation calls state (F4 D23): the tuple keeps them prompt-level remotely. */
@@ -237,6 +240,94 @@ export async function confirmMatchGroup(input: {
   throw new Error(input.invalidOutputError);
 }
 
+/** What closed an identity group: its row cap, its character cap, or the end of the rows to decide. */
+export type IdentityGroupBound = "rows" | "characters" | "end";
+
+/** One identity call as it was formed (F4 D20): C1 reads the effective group sizes and the cap that bound. */
+export interface IdentityGroupRecord {
+  kind: "entity_identity" | "relation_type";
+  rows: number;
+  /** Characters of the call's prompt, before the runtime adds its preamble. */
+  characters: number;
+  maxRows: number;
+  maxCharacters: number;
+  bound: IdentityGroupBound;
+}
+export type IdentityGroupTracer = <T>(
+  record: IdentityGroupRecord,
+  run: () => Promise<T>
+) => Promise<T>;
+
+/** The cap one more row would break, or null when it joins the group. A first row always joins. */
+export function identityGroupCloses(
+  rows: readonly RelationMatchRow[],
+  next: RelationMatchRow,
+  limits: IdentityGroupLimits,
+  entityIdentity: boolean
+): Exclude<IdentityGroupBound, "end"> | null {
+  if (rows.length === 0) return null;
+  if (rows.length >= limits.maxRows) return "rows";
+  return buildRelationMatchPrompt([...rows, next], entityIdentity).length > limits.maxCharacters
+    ? "characters"
+    : null;
+}
+
+/**
+ * Asks about rows in calls that keep to `limits`, in order: split by serialized prompt size too, so
+ * long definitions cannot create unbounded requests. The last call's bound is `bound`, what closed
+ * the group the rows came from.
+ */
+export async function confirmRowsInGroups(
+  input: Omit<Parameters<typeof confirmMatchGroup>[0], "group"> & {
+    rows: readonly RelationMatchRow[];
+    limits: IdentityGroupLimits;
+    bound: IdentityGroupBound;
+    traceGroup?: IdentityGroupTracer | undefined;
+  }
+): Promise<Map<string, ConfirmedMatch>> {
+  const { rows, limits, bound: groupBound, traceGroup, ...confirmation } = input;
+  const decisions = new Map<string, ConfirmedMatch>();
+  const pending = [...rows];
+  while (pending.length) {
+    const group: RelationMatchRow[] = [];
+    let bound: IdentityGroupBound = groupBound;
+    while (pending.length) {
+      const closes = identityGroupCloses(group, pending[0]!, limits, confirmation.entityIdentity);
+      if (closes) {
+        bound = closes;
+        break;
+      }
+      group.push(pending.shift()!);
+    }
+    const record: IdentityGroupRecord = {
+      kind: confirmation.entityIdentity ? "entity_identity" : "relation_type",
+      rows: group.length,
+      characters: buildRelationMatchPrompt(group, confirmation.entityIdentity).length,
+      maxRows: limits.maxRows,
+      maxCharacters: limits.maxCharacters,
+      bound
+    };
+    const ask = () => confirmMatchGroup({ ...confirmation, group });
+    const confirmed = traceGroup ? await traceGroup(record, ask) : await ask();
+    for (const [key, decision] of confirmed) decisions.set(key, decision);
+  }
+  return decisions;
+}
+
+/**
+ * The options both identity resolvers take for grouping (F4 D20). Unpinned, a source's rows are asked
+ * in groups of `group` across its extraction batches (rows in batch order, then position); pinned
+ * (`MEMORA_GOLDEN_PIN=extraction`), each batch is resolved alone in slices of 12, as recorded.
+ */
+export interface IdentityGroupingOptions {
+  /** The group of the writer's locality (`identityGroupFor`); absent, the stored values capped at the local group. */
+  group?: IdentityGroupLimits;
+  /** Wraps each identity call with the group it was formed from. */
+  traceGroup?: IdentityGroupTracer;
+  /** Items decided so far (stored, reused or committed) of the items to decide. */
+  onProgress?: (completed: number, total: number) => void | Promise<void>;
+}
+
 export function relationTypeCosine(left: number[], right: number[]): number {
   if (left.length !== right.length) return -1;
   const dot = left.reduce((sum, value, index) => sum + value * right[index]!, 0);
@@ -251,18 +342,52 @@ export function embeddingText(input: { predicate: string; definition: string }):
   });
 }
 
-export function createRelationTypeResolver(options: {
-  settings?: CanonicalMatchingSettings;
-  pool: PgPool;
-  ai: Pick<AiService, "runDefaultTask">;
-  threshold: number;
-  context: AiTaskLogContext;
-  signal?: AbortSignal;
-  /** The recording-era path (F3 D5): strict reading of the answer, whole-group repair. */
-  pinned?: boolean;
-}) {
+type Predicate = { predicate: string; definition: string };
+
+/**
+ * Each batch's predicates still to resolve, once each in the order they first appear, with the batch's
+ * last definition of each (the per-batch reading the recordings were made with).
+ */
+function predicatesByBatch(batches: readonly KnowledgeGraphGenerationOutput[]): Predicate[][] {
+  return batches.map((batch) =>
+    [
+      ...new Map(
+        batch.relations
+          .filter((relation) => relation.relationTypeId === undefined)
+          .map((relation) => [relation.predicate, relation])
+      ).values()
+    ].map(({ predicate, definition }) => ({ predicate, definition }))
+  );
+}
+
+/**
+ * Resolves a source's relation types against the catalog (F4 D20). Unpinned, the source's new
+ * predicates, in batch order, are asked in groups across its batches; pinned, batch by batch in slices
+ * of 12 with the stored splits, as recorded. Relations a stored checkpoint already resolved are kept.
+ */
+export function createRelationTypeResolver(
+  options: {
+    settings?: CanonicalMatchingSettings;
+    pool: PgPool;
+    ai: Pick<AiService, "runDefaultTask">;
+    threshold: number;
+    context: AiTaskLogContext;
+    signal?: AbortSignal;
+    /** The recording-era path (F3 D5): strict reading of the answer, whole-group repair, per batch. */
+    pinned?: boolean;
+  } & IdentityGroupingOptions
+) {
   const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createRelationTypeRepository(options.pool);
+  const pinned = options.pinned === true;
+  const group = options.group ?? identityGroupFor(null, settings);
+  // A pinned run asks in the stored settings' splits, as it was recorded.
+  const confirmLimits: IdentityGroupLimits = pinned
+    ? {
+        maxRows: settings.confirmationBatchSize,
+        maxCharacters: settings.confirmationMaxCharacters
+      }
+    : group;
   const embedText = createCanonicalEmbedder({
     ...options,
     strategy: relationTypeResolutionVersion
@@ -277,105 +402,102 @@ export function createRelationTypeResolver(options: {
       for (const type of missing) await repository.saveVector(type.id, await embed(type));
     }
   }
-  async function confirm(rows: RelationMatchRow[]) {
-    const decisions = new Map<string, ConfirmedMatch>();
-    // Split by serialized prompt size too, so long definitions cannot create unbounded requests.
-    let pending = [...rows];
+  async function resolveScope(
+    relations: readonly Predicate[],
+    resolved: Map<string, CanonicalRelationType>,
+    progress: () => Promise<void>
+  ) {
+    if (!relations.length) return;
+    for (const [key, value] of await repository.findExact(relations.map((r) => r.predicate)))
+      resolved.set(key, value);
+    let pending = relations.filter((relation) => !resolved.has(relation.predicate));
+    await progress();
     while (pending.length) {
-      const group: RelationMatchRow[] = [];
-      while (pending.length && group.length < settings.confirmationBatchSize) {
-        const next = pending[0]!;
-        if (
-          group.length &&
-          buildRelationMatchPrompt([...group, next]).length > settings.confirmationMaxCharacters
-        )
-          break;
-        group.push(pending.shift()!);
-      }
-      const confirmed = await confirmMatchGroup({
-        ai: options.ai,
-        group,
-        entityIdentity: false,
-        context: options.context,
-        promptVersion: relationTypeResolutionVersion,
-        stage: "relation_type_resolution",
-        pinned: options.pinned === true,
-        invalidOutputError: "errors.relationTypes.invalidOutput",
-        signal: options.signal
-      });
-      for (const [key, decision] of confirmed) decisions.set(key, decision);
-    }
-    return decisions;
-  }
-  return async (batch: KnowledgeGraphGenerationOutput): Promise<KnowledgeGraphGenerationOutput> => {
-    const unique = [
-      ...new Map(batch.relations.map((relation) => [relation.predicate, relation])).values()
-    ];
-    const resolved = await repository.findExact(unique.map((relation) => relation.predicate));
-    let pending = unique.filter((relation) => !resolved.has(relation.predicate));
-    while (pending.length) {
-      const group = pending.splice(0, 12);
-      let committed: Map<string, CanonicalRelationType> | null = null;
-      for (let attempt = 0; attempt < 3 && !committed; attempt++) {
+      let outcome: { size: number; committed: Map<string, CanonicalRelationType> } | null = null;
+      for (let attempt = 0; attempt < 3 && !outcome; attempt++) {
+        // Pinned: slices of 12, as recorded. Unpinned: the group closes at the first cap it meets.
+        const window = pinned ? pending.slice(0, 12) : pending;
         const revision = await repository.revision();
-        const exact = await repository.findExact(group.map((relation) => relation.predicate));
+        const exact = await repository.findExact(window.map((relation) => relation.predicate));
         for (const [key, value] of exact) resolved.set(key, value);
-        const unknown = group.filter((relation) => !exact.has(relation.predicate));
+        let size = 0;
+        let bound: IdentityGroupBound = "end";
+        const unknown: Predicate[] = [];
+        const embedded: Array<Predicate & { vector: RelationTypeVector }> = [];
+        const candidatesByRow = new Map<string, Candidate[]>();
+        let candidateKeys = new Map<string, string>();
+        const rows: RelationMatchRow[] = [];
+        for (const relation of window) {
+          if (!exact.has(relation.predicate)) {
+            const vector = await embed(relation);
+            await indexMissing(vector);
+            const candidates: Candidate[] = (
+              await repository.candidates(
+                vector,
+                options.threshold,
+                settings.relationTypeCandidateLimit
+              )
+            ).map((candidate) => ({
+              ...candidate,
+              key: `id:${candidate.id}`,
+              target: { id: candidate.id }
+            }));
+            for (const previous of embedded) {
+              const score = relationTypeCosine(vector.embedding, previous.vector.embedding);
+              if (score >= options.threshold)
+                candidates.push({
+                  ...previous,
+                  key: `new:${previous.predicate}`,
+                  score,
+                  target: { predicate: previous.predicate }
+                });
+            }
+            const keys = new Map(candidateKeys);
+            const selected = candidates
+              .sort(compareConfirmationCandidates)
+              .slice(0, settings.relationTypeCandidateLimit)
+              .map((candidate) => {
+                if (!keys.has(candidate.key)) keys.set(candidate.key, `c${keys.size + 1}`);
+                return { ...candidate, key: keys.get(candidate.key)! };
+              });
+            const row: RelationMatchRow = {
+              key: `r${unknown.length + 1}`,
+              predicate: relation.predicate,
+              definition: relation.definition,
+              candidates: selected
+            };
+            const closes =
+              !pinned && selected.length ? identityGroupCloses(rows, row, group, false) : null;
+            if (closes) {
+              bound = closes;
+              break;
+            }
+            candidateKeys = keys;
+            candidatesByRow.set(row.key, selected);
+            unknown.push(relation);
+            embedded.push({ ...relation, vector });
+            if (selected.length) rows.push(row);
+          }
+          size += 1;
+        }
         if (!unknown.length) {
-          committed = exact;
+          outcome = { size, committed: exact };
           break;
         }
-        const embedded: Array<{
-          predicate: string;
-          definition: string;
-          vector: RelationTypeVector;
-        }> = [];
-        const candidatesByRow = new Map<string, Candidate[]>();
-        const candidateKeys = new Map<string, string>();
-        for (const [index, relation] of unknown.entries()) {
-          const vector = await embed(relation);
-          await indexMissing(vector);
-          const candidates: Candidate[] = (
-            await repository.candidates(
-              vector,
-              options.threshold,
-              settings.relationTypeCandidateLimit
-            )
-          ).map((candidate) => ({
-            ...candidate,
-            key: `id:${candidate.id}`,
-            target: { id: candidate.id }
-          }));
-          for (const previous of embedded) {
-            const score = relationTypeCosine(vector.embedding, previous.vector.embedding);
-            if (score >= options.threshold)
-              candidates.push({
-                ...previous,
-                key: `new:${previous.predicate}`,
-                score,
-                target: { predicate: previous.predicate }
-              });
-          }
-          const selected = candidates
-            .sort(compareConfirmationCandidates)
-            .slice(0, settings.relationTypeCandidateLimit)
-            .map((candidate) => {
-              if (!candidateKeys.has(candidate.key))
-                candidateKeys.set(candidate.key, `c${candidateKeys.size + 1}`);
-              return { ...candidate, key: candidateKeys.get(candidate.key)! };
-            });
-          candidatesByRow.set(`r${index + 1}`, selected);
-          embedded.push({ predicate: relation.predicate, definition: relation.definition, vector });
-        }
-        const rows = unknown
-          .map((relation, index) => ({
-            key: `r${index + 1}`,
-            predicate: relation.predicate,
-            definition: relation.definition,
-            candidates: candidatesByRow.get(`r${index + 1}`)!
-          }))
-          .filter((row) => row.candidates.length > 0);
-        const matches = await confirm(rows);
+        const matches = await confirmRowsInGroups({
+          ai: options.ai,
+          rows,
+          limits: confirmLimits,
+          bound,
+          traceGroup: options.traceGroup,
+          entityIdentity: false,
+          context: options.context,
+          promptVersion: relationTypeResolutionVersion,
+          stage: "relation_type_resolution",
+          pinned,
+          invalidOutputError: "errors.relationTypes.invalidOutput",
+          signal: options.signal
+        });
         const decisions: RelationTypeDecision[] = unknown.map((relation, index) => {
           const key = `r${index + 1}`,
             match = matches.get(key);
@@ -401,14 +523,39 @@ export function createRelationTypeResolver(options: {
           };
         });
         options.signal?.throwIfAborted();
-        committed = await repository.commit(decisions, revision);
+        const committed = await repository.commit(decisions, revision);
+        if (committed) outcome = { size, committed };
       }
-      if (!committed) throw new Error("errors.relationTypes.catalogChanged");
-      for (const [key, value] of committed) resolved.set(key, value);
+      if (!outcome) throw new Error("errors.relationTypes.catalogChanged");
+      for (const [key, value] of outcome.committed) resolved.set(key, value);
+      pending = pending.slice(outcome.size);
+      await progress();
     }
-    return {
+  }
+  return async (
+    batches: readonly KnowledgeGraphGenerationOutput[]
+  ): Promise<KnowledgeGraphGenerationOutput[]> => {
+    const byBatch = predicatesByBatch(batches);
+    const all = [...new Set(byBatch.flat().map((relation) => relation.predicate))];
+    const resolved = new Map<string, CanonicalRelationType>();
+    const progress = async () =>
+      options.onProgress?.(all.filter((predicate) => resolved.has(predicate)).length, all.length);
+    if (pinned) for (const relations of byBatch) await resolveScope(relations, resolved, progress);
+    else {
+      // The source's new predicates once each, in batch order: the first batch's reading of each.
+      const seen = new Set<string>();
+      const source: Predicate[] = [];
+      for (const relation of byBatch.flat())
+        if (!seen.has(relation.predicate)) {
+          seen.add(relation.predicate);
+          source.push(relation);
+        }
+      await resolveScope(source, resolved, progress);
+    }
+    return batches.map((batch) => ({
       ...batch,
       relations: batch.relations.map((relation) => {
+        if (relation.relationTypeId !== undefined) return relation;
         const type = resolved.get(relation.predicate)!;
         return {
           ...relation,
@@ -418,6 +565,6 @@ export function createRelationTypeResolver(options: {
           relationTypeId: type.id
         };
       })
-    };
+    }));
   };
 }
