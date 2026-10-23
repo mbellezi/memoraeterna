@@ -53,6 +53,11 @@ export interface BlockerServiceOptions {
   wake: (types: readonly string[]) => void;
   /** The generation of the AI configuration: a move means routes, sign-ins or models changed. */
   routesGeneration?: () => number;
+  /**
+   * Reads again what the gates other services add hold (the remote budget's meters and routes):
+   * before the startup re-gate and on every tick, so a gate answers the claim from current state.
+   */
+  refreshGates?: () => Promise<unknown>;
   config?: GardenerConfig;
   /** Wall clock. */
   now?: () => Date;
@@ -147,6 +152,7 @@ export class BlockerService {
   public regate(): Promise<void> {
     return this.serial(async (store) => {
       await this.options.signals.refreshControls();
+      await this.refreshGates();
       const evaluated = new Set(this.options.gate.evaluatedReasons());
       const eventOnly = gardenerBlockerKeys.filter(
         (key) => !evaluated.has(key) && !gardenerBlockerClearing[key].atRunAfter
@@ -194,6 +200,7 @@ export class BlockerService {
     } catch (error) {
       this.options.logger?.warn("The Knowledge controls could not be read", error);
     }
+    await this.refreshGates();
     const today = localDay(this.now());
     if (today.slice(0, 7) !== this.month) {
       this.month = today.slice(0, 7);
@@ -239,6 +246,15 @@ export class BlockerService {
       runAfter,
       dedupeKey: job.claimedDedupeKey ?? job.dedupeKey
     });
+  }
+
+  /** Reads the added gates again; a failure is logged, and the gates keep their last answer. */
+  private async refreshGates(): Promise<void> {
+    try {
+      await this.options.refreshGates?.();
+    } catch (error) {
+      this.options.logger?.warn("A background gate could not read its state", error);
+    }
   }
 
   private async reconcileWith(store: JobBlockerStore): Promise<string[]> {

@@ -65,6 +65,42 @@ export const BudgetContinueSchema = z
   .strict();
 export type BudgetContinue = z.infer<typeof BudgetContinueSchema>;
 
+const usd = z.number().finite().min(0);
+const calls = z.number().int().min(0);
+
+/**
+ * The budget's meters as the status, the Activity drawer's budget section and the soak read them
+ * (D27, D28): the month's background spend on priced routes against the cap (`paused` past the
+ * pause share until the person continues, `exhausted` at the cap) and the day's background calls on
+ * subscription routes. Validated where it crosses IPC and the event bus.
+ */
+export const BudgetSnapshotSchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-\d{2}$/u),
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    money: z
+      .object({
+        spentUsd: usd,
+        reservedUsd: usd,
+        capUsd: usd,
+        pauseShare: z.number().gt(0).lt(1),
+        continued: z.boolean(),
+        state: z.enum(["open", "paused", "exhausted"]),
+        priceTableVersion: z.string().min(1).max(80)
+      })
+      .strict(),
+    calls: z
+      .object({
+        usedCalls: calls,
+        reservedCalls: calls,
+        capCalls: calls,
+        state: z.enum(["open", "exhausted"])
+      })
+      .strict()
+  })
+  .strict();
+export type BudgetSnapshot = z.infer<typeof BudgetSnapshotSchema>;
+
 /** The blocker reasons of the cap class the budget refuses with (spec 3.1). */
 export const remoteBudgetRefusalReasons = ["money_80", "money_100", "subscription_daily"] as const;
 export type RemoteBudgetRefusalReason = (typeof remoteBudgetRefusalReasons)[number];

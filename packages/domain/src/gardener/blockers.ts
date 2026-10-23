@@ -4,6 +4,8 @@
 // class and reason, with every variable part (route class, times, names) as a parameter.
 import { z } from "zod";
 
+import { remoteBudgetRefusalOf } from "../remote-budget.js";
+
 /** Blocker classes in precedence order: paused > no_model > cap > download > waiting > offline. */
 export const gardenerBlockerClasses = [
   "paused",
@@ -239,15 +241,25 @@ export class BackgroundBlockedError extends Error {
 }
 
 /**
- * The blocker an error carries, when it is a background refusal. Read by shape, not by class, so a
- * refusal made by another module's copy of the class (a bundle, a worker) still maps.
+ * The blocker an error carries, when it is a background refusal: a gate's (this module's class)
+ * or the RemoteBudget's (`RemoteBudgetRefusal`, D14: a `cap` reason that clears when its day or
+ * month rolls over, or when the person continues or raises the cap), also when another error wraps
+ * it. Read by shape, not by class, so a refusal made by another module's copy of the class (a
+ * bundle, a worker) still maps.
  */
 export function backgroundBlockerOf(error: unknown): GardenerBlocker | null {
   if (!error || typeof error !== "object") return null;
   const candidate = error as { code?: unknown; blocker?: unknown };
-  if (candidate.code !== backgroundBlockedCode) return null;
-  const parsed = GardenerBlockerSchema.safeParse(candidate.blocker);
-  return parsed.success ? parsed.data : null;
+  if (candidate.code === backgroundBlockedCode) {
+    const parsed = GardenerBlockerSchema.safeParse(candidate.blocker);
+    return parsed.success ? parsed.data : null;
+  }
+  const refusal = remoteBudgetRefusalOf(error);
+  return refusal
+    ? gardenerBlocker("cap", refusal.blockedReason, {
+        clearsAt: refusal.clearsAt ? refusal.clearsAt.getTime() : null
+      })
+    : null;
 }
 
 export function isBackgroundBlocked(error: unknown): boolean {

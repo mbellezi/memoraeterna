@@ -5,6 +5,7 @@ import {
 } from "@app/integration-contracts";
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
 import type {
+  BudgetSnapshot,
   ImportEstimate,
   ImportEstimateInput,
   NoteDeciderMode,
@@ -129,6 +130,9 @@ export const ipcChannels = {
   consultationCancel: "app:consultation:cancel",
   /** F4 D14: the import plan chip's estimate (T76). */
   budgetEstimateImport: "app:budget:estimateImport",
+  /** F4 D14: the budget's meters, and the Activity's "continue" past the pause share. */
+  budgetSnapshot: "app:budget:snapshot",
+  budgetContinue: "app:budget:continue",
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
@@ -1869,6 +1873,10 @@ export interface DesktopApi {
   budget: {
     /** What an import plan of this many chunks would cost on the writer's route (F4 D14). */
     estimateImport: (input: ImportEstimateInput) => Promise<ImportEstimate>;
+    /** The budget's meters now: the month's spend against the cap, the day's subscription calls. */
+    snapshot: () => Promise<BudgetSnapshot>;
+    /** Continues remote background work past the pause share for the rest of the month (D14). */
+    continue: () => Promise<BudgetSnapshot>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   objects: {

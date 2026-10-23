@@ -223,6 +223,14 @@ export class BackgroundGate {
   /** The local lane's duty cycle for background calls now. */
   public readonly dutyCycle = (): number => this.options.dutyCycle?.() ?? 1;
 
+  /**
+   * Remembers a refusal a job's call met outside the scheduler's admission (the RemoteBudget's,
+   * D14), so the supervisor sets the task aside even when its executor swallowed the refusal.
+   */
+  public noteRefusal(jobId: string, blocker: GardenerBlocker): void {
+    this.rememberAdmissionBlock(jobId, blocker);
+  }
+
   /** The blocker a call of this job met at admission, once; undefined when none did. */
   public takeAdmissionBlock(jobId: string): GardenerBlocker | undefined {
     const entry = this.admissionBlocks.get(jobId);

@@ -235,6 +235,10 @@ describe("background gate at admission (D7, D15)", () => {
     expect(instance.takeAdmissionBlock("job-4")).toBeDefined();
     expect(instance.admit(call("user", "write-fast", "local", "P2", "job-5"))).toBeUndefined();
     expect(instance.takeAdmissionBlock("job-5")).toBeUndefined();
+    // A refusal met outside the scheduler (the RemoteBudget's) is kept for its job too, and the
+    // highest blocker still wins.
+    instance.noteRefusal("job-6", { class: "cap", reason: "money_80" });
+    expect(instance.takeAdmissionBlock("job-6")).toEqual({ class: "cap", reason: "money_80" });
   });
 
   it("gives the duty cycle of the power signals", () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { RemoteBudgetRefusal } from "../remote-budget.js";
+
 import {
   BackgroundBlockedError,
   GardenerBlockerSchema,
@@ -162,5 +164,37 @@ describe("gardener blockers", () => {
       false
     );
     expect(gardenerBlockerKey(blocker)).toBe("paused.user_pause");
+  });
+
+  it("maps the RemoteBudget's refusal to its cap blocker, with the time it clears (T76)", () => {
+    const monthEnd = new Date(2026, 10, 1);
+    expect(backgroundBlockerOf(new RemoteBudgetRefusal("money_100", monthEnd))).toEqual(
+      gardenerBlocker("cap", "money_100", { clearsAt: monthEnd.getTime() })
+    );
+    expect(backgroundBlockerOf(new RemoteBudgetRefusal("money_80", null))).toEqual(
+      gardenerBlocker("cap", "money_80", { clearsAt: null })
+    );
+    // Wrapped by the error of the call that met it, and copied by shape across a boundary.
+    const wrapped = new Error("call failed", {
+      cause: new RemoteBudgetRefusal("subscription_daily", monthEnd)
+    });
+    expect(backgroundBlockerOf(wrapped)).toMatchObject({
+      class: "cap",
+      reason: "subscription_daily"
+    });
+    expect(
+      isBackgroundBlocked({
+        name: "BackgroundBlocked",
+        blockedClass: "cap",
+        blockedReason: "money_80"
+      })
+    ).toBe(true);
+    expect(
+      isBackgroundBlocked({
+        name: "BackgroundBlocked",
+        blockedClass: "cap",
+        blockedReason: "other"
+      })
+    ).toBe(false);
   });
 });

@@ -127,6 +127,7 @@ import {
   capabilitiesForTask,
   generativeDeciderCapabilities,
   supportsTask,
+  remoteBudgetRefusalOf,
   type AiCapability,
   type AiModelParameterCapabilities,
   type AiOutputContract,
@@ -134,6 +135,7 @@ import {
   type AiSchemaMode,
   type BudgetClass,
   type DecisionsStatus,
+  type RemoteBudgetRefusal,
   type NoteDeciderMode
 } from "@app/domain";
 import type {
@@ -275,6 +277,12 @@ export interface AiServiceOptions {
    * proof scripts).
    */
   remoteBudget?: Pick<RemoteBudget, "open"> | undefined;
+  /**
+   * Hears an attempt of a job's call that the RemoteBudget refused (F4 D7, D14), so the supervisor
+   * sets the job aside even when its executor swallowed the refusal and went on (the background
+   * policy remembers it for the job, as it does a gate's refusal at admission).
+   */
+  onBudgetRefusal?: (jobId: string, refusal: RemoteBudgetRefusal) => void;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -1950,9 +1958,18 @@ export class AiService {
       });
       if (budget.metered) {
         const ticket = budget;
+        const jobId = logContext.jobId;
         bindAttemptAdmission(
           execution,
-          (attempt) => ticket.admitAttempt(attempt),
+          async (attempt) => {
+            try {
+              await ticket.admitAttempt(attempt);
+            } catch (error) {
+              const refusal = remoteBudgetRefusalOf(error);
+              if (refusal && jobId) this.options.onBudgetRefusal?.(jobId, refusal);
+              throw error;
+            }
+          },
           (failed) => ticket.attemptFailed(failed)
         );
       }

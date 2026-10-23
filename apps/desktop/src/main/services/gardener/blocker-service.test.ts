@@ -414,4 +414,47 @@ describe("blocker service (D7)", () => {
       )
     ).toBe(false);
   });
+
+  it("reads the added gates again before the startup re-gate and on every tick", async () => {
+    const logger = { warn: vi.fn() };
+    const order: string[] = [];
+    const refreshGates = vi
+      .fn(async () => {
+        order.push("refresh");
+      })
+      .mockRejectedValueOnce(new Error("budget unreadable"));
+    const service = new BlockerService({
+      store: () => ({
+        stampGateBlocks: async () => {
+          order.push("stamp");
+          return 0;
+        },
+        clearBlocks: async () => ({ cleared: 0, types: [] }),
+        blockTask: async () => false
+      }),
+      gate: new BackgroundGate({
+        controls: () => defaultKnowledgeControls,
+        power: () => ({ active: false, onBattery: false, idleMs: 0, overridden: false })
+      }),
+      signals: {
+        subscribeControls: () => () => undefined,
+        subscribePower: () => () => undefined,
+        refreshControls: async () => undefined
+      },
+      wake: vi.fn(),
+      refreshGates,
+      logger
+    });
+    // A gate that cannot read its state keeps its last answer; the re-gate still runs.
+    await expect(service.regate()).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "A background gate could not read its state",
+      expect.any(Error)
+    );
+    order.length = 0;
+    await service.tick();
+    expect(refreshGates).toHaveBeenCalledTimes(2);
+    // The gates answer the tick's re-gate from what they just read.
+    expect(order).toEqual(["refresh", "stamp"]);
+  });
 });

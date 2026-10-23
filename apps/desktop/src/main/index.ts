@@ -1,4 +1,5 @@
 import { aiConfigGeneration, createJobRepository } from "@app/db";
+import { backgroundBlockerOf, defaultRemoteBudgetConfig } from "@app/domain";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import {
@@ -11,6 +12,7 @@ import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
 import { RemoteBudget } from "./services/gardener/remote-budget.js";
+import { BudgetRelay, RemoteBudgetGate } from "./services/gardener/budget-gate.js";
 import { registerBudgetIpc } from "./services/gardener/budget-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
@@ -310,6 +312,31 @@ void app.whenReady().then(() => {
     onError: (error) => console.error(error instanceof Error ? error.message : String(error))
   });
   appEvents = events;
+  // The RemoteBudget in the background policy (F4 D7, D14): the claim leaves out a background kind
+  // whose route the budget refuses now, and the budget's changes re-gate the rows it held. Both read
+  // the budget and the AI routes, which exist below; the gate answers only after its first read.
+  const budgetGate = new RemoteBudgetGate({
+    snapshot: () => remoteBudget!.snapshot(),
+    metering: async (routeClass) => {
+      const route = await aiService?.taskRouteModel(
+        routeClass === "embed" ? "embedding" : "structured-output",
+        { workloadClass: routeClass }
+      );
+      if (!route || route.locality === "local") return "none";
+      return remoteBudget!.price(route.provider, route.modelId).billing === "subscription"
+        ? "calls"
+        : "money";
+    }
+  });
+  const budgetRelay = new BudgetRelay({
+    budget: {
+      snapshot: () => remoteBudget!.snapshot(),
+      continuePastPause: () => remoteBudget!.continuePastPause()
+    },
+    gate: budgetGate,
+    blockers: () => backgroundPolicy?.blockers ?? null,
+    logger: console
+  });
   // The Gardener's background policy (F4 T75). `MEMORA_DEV_POWER_BLOCKS` (DEV only, the soak's
   // activity and battery windows) is refused when it names an unknown block.
   try {
@@ -321,8 +348,12 @@ void app.whenReady().then(() => {
       wake: () => jobSupervisor?.wake("light"),
       refreshLanes: () => aiService?.refreshLanes(),
       routesGeneration: aiConfigGeneration,
+      kindGates: [budgetGate],
+      refreshGates: () => (remoteBudget && aiService ? budgetGate.refresh() : Promise.resolve()),
       logger: console
     });
+    // The monthly cap is a Knowledge control: a change moves the budget's meters (D13, D14).
+    backgroundPolicy.controls.subscribe(() => budgetRelay.changed());
   } catch (error) {
     console.error(
       `POWER override refused: ${error instanceof Error ? error.message : String(error)}`
@@ -338,6 +369,11 @@ void app.whenReady().then(() => {
   );
   remoteBudget = new RemoteBudget({
     getPool: () => databaseService?.getPool() ?? null,
+    // The person's monthly cap of background spend (`knowledge.controls.v1`, D13, Q3).
+    monthlyCapUsd: () =>
+      backgroundPolicy?.controls.current().monthlyCapUsd ??
+      defaultRemoteBudgetConfig.defaultMonthlyCapUsd,
+    onChange: () => budgetRelay.changed(),
     logger: console
   });
   aiService = new AiService({
@@ -367,7 +403,12 @@ void app.whenReady().then(() => {
     // (DEV only) turns the opt-in decider on for a proof run.
     ...(aiCassette ? { cassetteMode: aiCassette.mode } : {}),
     ...decisionsDevOptions(process.env, app.isPackaged),
-    ...(backgroundPolicy ? { backgroundAdmission: backgroundPolicy.admission } : {})
+    ...(backgroundPolicy ? { backgroundAdmission: backgroundPolicy.admission } : {}),
+    // A job's call the budget refused sets the task aside even when its executor went on (D7).
+    onBudgetRefusal: (jobId, refusal) => {
+      const blocker = backgroundBlockerOf(refusal);
+      if (blocker) backgroundPolicy?.gate.noteRefusal(jobId, blocker);
+    }
   });
   soakPreparation?.attach(aiService);
   localModelService = new LocalModelService({
@@ -592,8 +633,11 @@ void app.whenReady().then(() => {
     wake: () => jobSupervisor?.wake()
   });
   registerConsultationIpc(ipcMain, consultationService);
-  registerBudgetIpc(ipcMain, remoteBudget!, (task, context) =>
-    aiService!.taskRouteModel(task, context)
+  registerBudgetIpc(
+    ipcMain,
+    remoteBudget!,
+    (task, context) => aiService!.taskRouteModel(task, context),
+    budgetRelay
   );
   // DEV relation re-match (MEMORA_RELATIONS_REMATCH, F3 T52b): its heavy job type is registered
   // here; the harness binds its handler once its checks passed (below).

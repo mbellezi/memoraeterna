@@ -73,6 +73,7 @@ type Attempt = (number: number) => Promise<unknown>;
 
 function service(attempt: Attempt, cap = 100) {
   const budget = new RemoteBudget({ getPool: budgetDatabase, monthlyCapUsd: () => cap });
+  const refusals: Array<{ jobId: string; reason: string }> = [];
   const ai = new AiService({
     userDataPath: "/tmp/ai-budget-tests",
     getPool: () => ({}) as never,
@@ -80,7 +81,8 @@ function service(attempt: Attempt, cap = 100) {
     resourcesPath: "/tmp",
     lanes: {},
     isPackaged: false,
-    remoteBudget: budget
+    remoteBudget: budget,
+    onBudgetRefusal: (jobId, refusal) => refusals.push({ jobId, reason: refusal.blockedReason })
   });
   const sent: number[] = [];
   const runtime = resolveAiRuntimeConfig({ retry: { baseDelayMs: 1, maxDelayMs: 1 } });
@@ -125,7 +127,7 @@ function service(attempt: Attempt, cap = 100) {
   vi.spyOn(internals, "createAdapter").mockImplementation(async () =>
     internals.registerAdapter(adapter)
   );
-  return { ai, budget, sent };
+  return { ai, budget, sent, refusals };
 }
 
 const rows = () => state.record.mock.calls.map(([row]) => row as Record<string, unknown>);
@@ -202,11 +204,13 @@ describe("remote calls on the RemoteBudget", () => {
   });
 
   it("refuses background work before anything is sent, never P0 or user-started work", async () => {
-    const { ai, sent } = service(async () => "answer", 0);
+    const { ai, sent, refusals } = service(async () => "answer", 0);
     await expect(
       ai.runDefaultTask("text-generation", "a prompt", background, undefined, limits)
     ).rejects.toBeInstanceOf(RemoteBudgetRefusal);
     expect(sent).toEqual([]);
+    // The job's refusal is heard, so its task is set aside even if its executor swallows it (D7).
+    expect(refusals).toEqual([{ jobId: ids.job, reason: "money_100" }]);
     await expect(
       ai.runDefaultTask(
         "text-generation",

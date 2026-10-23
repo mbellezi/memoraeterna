@@ -30,6 +30,7 @@ import {
   type AttemptTokenEstimate,
   type BudgetClass,
   type BudgetContinue,
+  type BudgetSnapshot,
   type ImportEstimate,
   type ImportEstimateInput,
   type PriceTable,
@@ -68,28 +69,11 @@ export interface RemoteBudgetUsage {
   replayed?: boolean | undefined;
 }
 
-/** What the status, the Activity drawer and the soak read (D27, D28). */
-export interface RemoteBudgetSnapshot {
-  month: string;
-  day: string;
-  money: {
-    spentUsd: number;
-    reservedUsd: number;
-    capUsd: number;
-    pauseShare: number;
-    /** The person continued past the pause share this month, under this cap or a higher one. */
-    continued: boolean;
-    /** `paused`: past the pause share and not continued; `exhausted`: at the cap. */
-    state: "open" | "paused" | "exhausted";
-    priceTableVersion: string;
-  };
-  calls: {
-    usedCalls: number;
-    reservedCalls: number;
-    capCalls: number;
-    state: "open" | "exhausted";
-  };
-}
+/**
+ * What the status, the Activity drawer and the soak read (D27, D28); its schema
+ * (`BudgetSnapshotSchema`, `@app/domain`) validates it at IPC and on the event bus.
+ */
+export type RemoteBudgetSnapshot = BudgetSnapshot;
 
 /** The meters of a call that admitted attempts. */
 interface TicketState {

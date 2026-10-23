@@ -24,6 +24,8 @@ export interface BackgroundPolicyOptions {
   /** Gates other services add (the remote budget, the routes). */
   kindGates?: readonly KindGate[];
   callGates?: readonly CallGate[];
+  /** Reads what the added gates hold again, before the startup re-gate and on every tick. */
+  refreshGates?: () => Promise<unknown>;
   config?: GardenerConfig;
   logger?: Pick<Console, "warn">;
 }
@@ -86,6 +88,7 @@ export function createBackgroundPolicy(options: BackgroundPolicyOptions): Backgr
     },
     wake: () => options.wake(),
     ...(options.routesGeneration ? { routesGeneration: options.routesGeneration } : {}),
+    ...(options.refreshGates ? { refreshGates: options.refreshGates } : {}),
     config,
     ...(options.logger ? { logger: options.logger } : {})
   });
