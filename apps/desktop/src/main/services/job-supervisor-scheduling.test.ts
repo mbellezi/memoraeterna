@@ -826,9 +826,16 @@ describe("ingestion queue scheduling", () => {
         await supervisor.start();
         await vi.advanceTimersByTimeAsync(300);
         // A link job is due or running: no heavy claim, and the lane is not idle. Promotion jobs
-        // (T53) count too: discovery reads the source relations they write.
+        // (T53) count too: discovery reads the source relations they write. So does MATCH (F4
+        // D16), which hands its decided notes to a link job.
         expect(query).toHaveBeenCalledWith(expect.stringContaining("from jobs"), [
-          ["catalog-header", "relation-link", "relation-promote", "relation-retype"]
+          [
+            "catalog-header",
+            "relation-link",
+            "relation-match",
+            "relation-promote",
+            "relation-retype"
+          ]
         ]);
         expect(mocks.jobs.claimNext).not.toHaveBeenCalledWith(
           expect.any(String),

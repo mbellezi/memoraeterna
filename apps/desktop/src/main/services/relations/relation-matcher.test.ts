@@ -18,6 +18,7 @@ import { atomicNoteDeciderKey, atomicNoteDecisionContentHash } from "../knowledg
 import {
   deriveDeciderMode,
   mapGenerativeRelationType,
+  noteMatchInputHash,
   rankerCalibrationIdentity,
   rankerDeciderCacheKey,
   relationDecideInstruction,
@@ -694,12 +695,14 @@ describe("the ranker decider", () => {
       "V12",
       "V18"
     ]);
-    // The note's own k-th vector cosine opens the guard to later notes.
+    // The note's own k-th vector cosine opens the guard to later notes, and the hash of the text
+    // the decider was shown lets MATCH leave the note alone while that text stays the same (D16).
     expect(mocks.states.record).toHaveBeenCalledWith({
       noteId: "n-source",
       deciderKey: expect.any(String),
       spaceKey: "space-1",
-      kthCosine: cosine(9)
+      kthCosine: cosine(9),
+      inputHash: sha256(renderRelationPairText(source, 400))
     });
   });
 
@@ -843,6 +846,113 @@ describe("the ranker decider", () => {
     expect(mocks.notes.filterRetrievableCandidateIds).toHaveBeenCalledWith({
       candidateIds: excluded.map((n) => n.id)
     });
+  });
+});
+
+describe("MATCH: leaving an unchanged note alone (F4 D16)", () => {
+  /** Runs the matcher the way MATCH does: one note, `skipUnchanged`. */
+  async function match(options: { withVector?: boolean; skipUnchanged?: boolean } = {}) {
+    const handed: DecidedNote[] = [];
+    const completed: Array<[string, number]> = [];
+    const result = await matcher().matchNotes({
+      noteIds: [source.id],
+      vectors: new Map(options.withVector === false ? [] : [[source.id, vectorOf()] as const]),
+      ...(options.skipUnchanged === false ? {} : { skipUnchanged: true }),
+      onNoteCompleted: (id, persisted) => void completed.push([id, persisted]),
+      handOff: async (decided) => {
+        handed.push(decided);
+        return decided.pairs.length;
+      }
+    });
+    return { result, handed, completed };
+  }
+  /** The state a note was matched with: the stored text hash, in one embedding space. */
+  const stored = (inputHash: string | null, stateSpace = "space-1") =>
+    mocks.states.read.mockImplementation(async (ids: string[], spaceKey: string) =>
+      ids.includes("n-source") && spaceKey === stateSpace
+        ? new Map([["n-source", { kthCosine: null, inputHash }]])
+        : new Map()
+    );
+  const variant = (extra: Partial<Note>): Note => ({ ...source, ...extra });
+  const hashOf = (value: Note = source) => noteMatchInputHash(value, 400);
+
+  it("hashes the text the ranker is shown: title, idea and the first characters of the body", () => {
+    expect(hashOf()).toBe(sha256(renderRelationPairText(source, 400)));
+    expect(hashOf(variant({ title: "Renamed" }))).not.toBe(hashOf());
+    expect(hashOf(variant({ ideaStatement: "Another idea" }))).not.toBe(hashOf());
+    // The body past the rendered characters is not shown, so it is not part of the hash.
+    const long = (tail: string) => variant({ bodyMarkdown: `${"x".repeat(400)}${tail}` });
+    expect(hashOf(long(" one"))).toBe(hashOf(long(" two")));
+    // The body within them is shown; whitespace runs collapse as the ranker's text does.
+    expect(hashOf(variant({ bodyMarkdown: "a  b" }))).toBe(
+      hashOf(variant({ bodyMarkdown: "a b" }))
+    );
+    expect(hashOf(variant({ bodyMarkdown: "a b" }))).not.toBe(
+      hashOf(variant({ bodyMarkdown: "a c" }))
+    );
+  });
+
+  it("leaves a note whose text and space equal its state's, deciding nothing", async () => {
+    stored(hashOf());
+    const { result, handed, completed } = await match();
+    expect(result).toMatchObject({ decided: 0, unchanged: 1, accepted: 0 });
+    expect(ai.rankPairs).not.toHaveBeenCalled();
+    expect(mocks.states.record).not.toHaveBeenCalled();
+    expect(handed).toEqual([]);
+    // It is still checkpointed, so a caller counting notes sees it done.
+    expect(completed).toEqual([["n-source", 0]]);
+  });
+
+  it("does not look at the decider: a change of model or prompt is provenance (D9)", async () => {
+    mocks.states.read.mockResolvedValue(
+      new Map([["n-source", { kthCosine: null, inputHash: hashOf(), deciderKey: "another" }]])
+    );
+    expect((await match()).result).toMatchObject({ unchanged: 1, decided: 0 });
+  });
+
+  it("decides a note whose text changed, whose space changed, or that has no hash yet", async () => {
+    // An edit of the title, the idea or the body within the rendered characters.
+    stored(hashOf(variant({ title: "Before" })));
+    expect((await match()).result).toMatchObject({ decided: 1 });
+    expect(mocks.states.record).toHaveBeenLastCalledWith(
+      expect.objectContaining({ noteId: "n-source", inputHash: hashOf() })
+    );
+    // The same text in another embedding space (the read is by the vector's space).
+    stored(hashOf(), "space-0");
+    expect((await match()).result).toMatchObject({ decided: 1 });
+    // A state recorded before 0060: match again.
+    stored(null);
+    expect((await match()).result).toMatchObject({ decided: 1 });
+    // No state at all: a note nobody matched.
+    mocks.states.read.mockResolvedValue(new Map());
+    expect((await match()).result).toMatchObject({ decided: 1 });
+    expect(mocks.states.read).toHaveBeenCalledWith(["n-source"], "space-1");
+  });
+
+  it("decides a note with no vector: without a space there is nothing to compare in", async () => {
+    stored(hashOf());
+    expect((await match({ withVector: false })).result).toMatchObject({ decided: 1 });
+  });
+
+  it("never skips unless asked: ingestion keeps the pairs of every note it decides", async () => {
+    stored(hashOf());
+    const { result } = await match({ skipUnchanged: false });
+    expect(result).toMatchObject({ decided: 1 });
+    expect(result.unchanged).toBeUndefined();
+    expect(mocks.states.read).not.toHaveBeenCalledWith(["n-source"], "space-1");
+  });
+
+  it("leaves the unchanged note of a batch and decides the others", async () => {
+    mocks.states.read.mockImplementation(async (ids: string[]) =>
+      ids[0] === "n-a" ? new Map([["n-a", { kthCosine: null, inputHash: hashOf(a) }]]) : new Map()
+    );
+    const result = await matcher().matchNotes({
+      noteIds: [a.id, source.id],
+      vectors: new Map([a.id, source.id].map((id) => [id, vectorOf()] as const)),
+      skipUnchanged: true,
+      handOff: async () => 0
+    });
+    expect(result).toMatchObject({ decided: 1, unchanged: 1 });
   });
 });
 

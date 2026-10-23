@@ -61,6 +61,7 @@ const producers = [
   "apps/desktop/src/main/services/topic-tree/topic-place.ts",
   "apps/desktop/src/main/services/topic-tree/topic-tree-service.ts",
   "apps/desktop/src/main/services/relations/relation-link.ts",
+  "apps/desktop/src/main/services/relations/relation-match.ts",
   "apps/desktop/src/main/services/relations/composite-backfill.ts",
   "apps/desktop/src/main/services/catalog-header-refresh.ts"
 ];

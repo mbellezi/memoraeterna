@@ -43,6 +43,7 @@ import {
   linkRootOf,
   RelationLinker
 } from "./relations/relation-link.js";
+import { RelationMatchTask } from "./relations/relation-match.js";
 import {
   RelationsChangedEmitter,
   type RelationsChangedEvent
@@ -248,6 +249,8 @@ export class JobSupervisor {
   private readonly relationsConfig: RelationsConfig;
   /** The link jobs of relations v2 (F3 D24); present with a knowledge service. */
   private readonly linker: RelationLinker | null;
+  /** MATCH (F4 D16): a note a person edited or accepted is decided again; with a knowledge service. */
+  private readonly matcher: RelationMatchTask | null;
   private readonly relationsChanged: RelationsChangedEmitter;
   /** One catalog-header pass at a time (T53h): the next waits for the one running. */
   private readonly catalogHeaderGate = new CatalogHeaderGate();
@@ -267,7 +270,16 @@ export class JobSupervisor {
       onListenerError: (error) => this.options.logger?.warn(normalizeWorkerError(error))
     });
     this.linker = options.knowledgeService ? this.createLinker(options.knowledgeService) : null;
-    const relationJobs = this.linker?.jobs() ?? {};
+    this.matcher = options.knowledgeService
+      ? new RelationMatchTask({
+          getPool: () => this.requirePool(),
+          knowledge: options.knowledgeService,
+          ...(options.embeddingSpaceKey ? { spaceKey: options.embeddingSpaceKey } : {}),
+          config: this.relationsConfig,
+          wake: () => this.wakeLoops("light")
+        })
+      : null;
+    const relationJobs = { ...this.linker?.jobs(), ...this.matcher?.jobs() };
     for (const type of Object.keys(relationJobs))
       if (options.lightJobs?.[type]) throw new Error(`job_lane_conflict:${type}`);
     if (options.lightJobs?.[compositeBackfillJobType])
@@ -1144,6 +1156,11 @@ export class JobSupervisor {
       result.reason === "note_not_current"
     )
       await this.options.topicHooks?.notesChanged([atomicNoteId]);
+    // A person's edit has its vector again (a space change's job names a space; matching may have
+    // embedded the edited text first): MATCH decides the note once more, after a pause for further
+    // edits, and leaves it alone if its text and space are unchanged (F4 D16).
+    if ((result.embedded || result.reason === "unchanged") && !spaceKey)
+      await this.options.topicHooks?.notesToMatch?.([atomicNoteId]);
     return { ...result };
   }
 

@@ -14,6 +14,11 @@ export interface NoteMatchState {
   spaceKey: string;
   /** Null when the note had fewer than k vector candidates (every later note is then closer). */
   kthCosine: number | null;
+  /**
+   * The hash of the text the decider was shown when the note was matched (F4 D16): an edit that
+   * leaves it and the space unchanged is not matched again. Null: match again (rows before 0060).
+   */
+  inputHash: string | null;
   matchedAt: Date;
 }
 
@@ -22,11 +27,12 @@ interface StateRow extends QueryResultRow {
   deciderKey: string;
   spaceKey: string;
   kthCosine: number | null;
+  inputHash: string | null;
   matchedAt: unknown;
 }
 
 const columns = `note_id as "noteId", decider_key as "deciderKey", space_key as "spaceKey",
-  kth_cosine as "kthCosine", matched_at as "matchedAt"`;
+  kth_cosine as "kthCosine", input_hash as "inputHash", matched_at as "matchedAt"`;
 
 const mapState = (row: StateRow): NoteMatchState => ({
   ...row,
@@ -36,19 +42,28 @@ const mapState = (row: StateRow): NoteMatchState => ({
 
 export function createNoteMatchStateRepository(db: Queryable) {
   return {
-    /** Records that `noteId` was decided, replacing an earlier state. */
-    async record(input: Omit<NoteMatchState, "matchedAt">): Promise<NoteMatchState> {
+    /**
+     * Records that `noteId` was decided, replacing an earlier state. A caller that does not know
+     * the decided text's hash leaves it out: the note is then matched again by MATCH (D16).
+     */
+    async record(
+      input: Omit<NoteMatchState, "matchedAt" | "inputHash"> & { inputHash?: string | null }
+    ): Promise<NoteMatchState> {
       if (input.kthCosine !== null && !(input.kthCosine >= -1 && input.kthCosine <= 1))
         throw new Error("A k-th cosine lies between -1 and 1.");
+      const inputHash = input.inputHash ?? null;
+      if (inputHash !== null && (inputHash.length < 1 || inputHash.length > 200))
+        throw new Error("A note match input hash has 1 to 200 characters.");
       const row = (
         await db.query<StateRow>(
-          `insert into note_match_state (note_id, decider_key, space_key, kth_cosine, matched_at)
-           values ($1::uuid, $2, $3, $4, clock_timestamp())
+          `insert into note_match_state (note_id, decider_key, space_key, kth_cosine, input_hash,
+             matched_at)
+           values ($1::uuid, $2, $3, $4, $5, clock_timestamp())
            on conflict (note_id) do update set decider_key = excluded.decider_key,
              space_key = excluded.space_key, kth_cosine = excluded.kth_cosine,
-             matched_at = excluded.matched_at
+             input_hash = excluded.input_hash, matched_at = excluded.matched_at
            returning ${columns}`,
-          [input.noteId, input.deciderKey, input.spaceKey, input.kthCosine]
+          [input.noteId, input.deciderKey, input.spaceKey, input.kthCosine, inputHash]
         )
       ).rows[0];
       if (!row) throw new Error("Note match state insert returned no row.");

@@ -96,6 +96,20 @@ export const relationDecisionsOperation = "relation_decide_decisions";
 /** Recorded on every relation the matcher hands on, and on its debug runs. */
 export const relationMatcherVersion = "relations-v2-matcher-1";
 
+/**
+ * The hash of the text a decider is shown for a note (F4 D16): the SHA-256 of its rendered pair text
+ * (title, idea and the first `bodyCharacters` of the body), which keys its stored decisions. MATCH
+ * stores it in `note_match_state.input_hash` and skips a note whose hash and space are unchanged.
+ * A person's edit to anything the decider cannot see (the body past the rendered characters) leaves
+ * it alone; the decision hash of the generative decider (title and idea) is a part of this text.
+ */
+export function noteMatchInputHash(
+  note: { title: string; ideaStatement: string; bodyMarkdown: string },
+  bodyCharacters: number
+): string {
+  return sha256(renderRelationPairText(note, bodyCharacters));
+}
+
 /** The decider cache key format of D13 (v2: rendered input, runtime build, helper batch). */
 const deciderCacheKeyVersion = "relation-decider-cache-key-v2";
 
@@ -351,6 +365,13 @@ export interface MatchNotesInput {
   onNoteCompleted?: ((noteId: string, persistedCount: number) => void | Promise<void>) | undefined;
   /** The visibility fence of a re-match run (3.17): retrieval sees only these roots. */
   fence?: RetrievalFence | undefined;
+  /**
+   * MATCH (F4 D16): a note whose text hash and embedding space equal the ones its match state
+   * recorded is not decided again, whoever decided it then (ingestion or an earlier MATCH). The
+   * decider is provenance, so a change of it never skips by itself; the backlog states `false`.
+   * Ingestion never skips: its checkpoint must keep the pairs of every note it decides.
+   */
+  skipUnchanged?: boolean | undefined;
   handOff: DecidedNoteHandOff;
 }
 
@@ -363,6 +384,8 @@ export type MatchNotesResult = {
   accepted: number;
   /** Set when no call was made because mode `ranker` has no validated ranker (C7). */
   skipped?: typeof waitingForDeciderSkipReason;
+  /** Notes `skipUnchanged` left alone: their text and space equal their match state's. */
+  unchanged?: number;
   decider: MatchDeciderSummary["kind"] | null;
   /** Notes the Decisions decider could not decide, which a local decider decided, and the last reason. */
   decisionsFallback?: { notes: number; reason: DecisionsFallbackReason };
@@ -507,6 +530,12 @@ export class RelationMatcher {
         await input.onNoteCompleted?.(noteId, 0);
         continue;
       }
+      if (input.skipUnchanged && (await this.unchanged(note, input.vectors.get(note.id)))) {
+        result.unchanged = (result.unchanged ?? 0) + 1;
+        await input.onProgress?.((noteIndex + 1) / input.noteIds.length);
+        await input.onNoteCompleted?.(note.id, 0);
+        continue;
+      }
       const decided = await this.decideNote(note, decider, {
         vector: input.vectors.get(note.id),
         signal: input.signal,
@@ -569,6 +598,25 @@ export class RelationMatcher {
     const decider = await this.resolveDecider();
     if (decider === waitingForDeciderSkipReason) return null;
     return deciderKeyOf(decider);
+  }
+
+  /**
+   * Whether the note was matched already for this very text in this embedding space (F4 D16). A
+   * note with no vector has no space to compare in, and a state recorded before 0060 has no hash:
+   * both are matched again.
+   */
+  private async unchanged(note: AtomicNoteRecord, vector: MatcherNoteVector | undefined) {
+    if (!vector) return false;
+    const state = (
+      await createNoteMatchStateRepository(this.requirePool()).read(
+        [note.id],
+        vector.space.spaceKey
+      )
+    ).get(note.id);
+    return (
+      state !== undefined &&
+      state.inputHash === noteMatchInputHash(note, this.config.decide.bodyCharacters)
+    );
   }
 
   // --- decider resolution -------------------------------------------------------------------------
@@ -812,7 +860,8 @@ export class RelationMatcher {
         noteId: note.id,
         deciderKey: deciderKeyOf(effective),
         spaceKey: context.vector.space.spaceKey,
-        kthCosine
+        kthCosine,
+        inputHash: noteMatchInputHash(note, this.config.decide.bodyCharacters)
       });
     const summary = deciderSummary(effective, fallback);
     const accepted = outcomes

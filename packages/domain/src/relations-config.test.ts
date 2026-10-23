@@ -37,6 +37,13 @@ describe("relations config", () => {
     expect(relationsConfig.typing).toEqual({ pairsPerCall: 24, maxAttempts: 2, coalesceBelow: 6 });
     expect(relationsConfig.link).toEqual({ poolSize: 2, drainPoolSize: 1 });
     expect(relationsConfig.ai).toEqual({ maxBackgroundCallsPerDay: 500 });
+    expect(relationsConfig.match).toEqual({
+      debounceMs: 60_000,
+      maxDebounceMs: 300_000,
+      backlogPageSize: 500
+    });
+    // The longest wait cannot be shorter than the wait itself.
+    expect(RelationsConfigSchema.safeParse({ match: { debounceMs: 400_000 } }).success).toBe(false);
     expect(relationsConfig.escalation).toEqual({ enabled: false });
     expect(relationsConfig.discovery).toEqual({ neighbours: 1 });
     expect(relationsConfig.sourceJudge).toEqual({

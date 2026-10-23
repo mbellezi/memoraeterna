@@ -32,6 +32,7 @@ export * from "./relationMatchRunRepository.js";
 export * from "./relationEventRepository.js";
 export * from "./changeSetRepository.js";
 export * from "./noteMatchStateRepository.js";
+export * from "./relationMatchBacklogRepository.js";
 export * from "./sourceMatchStateRepository.js";
 export * from "./libraryRepository.js";
 export * from "./libraryResetRepository.js";

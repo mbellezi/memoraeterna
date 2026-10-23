@@ -543,8 +543,11 @@ export class KnowledgeService {
   }) {
     const note = await createAtomicNoteRepository(this.requirePool()).review(input);
     // A discarded note leaves the topic tree; an edited one is placed again once its new vector
-    // exists (the `note-embedding` job).
+    // exists (the `note-embedding` job), which also asks MATCH to decide it once more. An approval
+    // changes no vector and no decision, so MATCH only looks for a note it never matched (F4 D16).
     if (note && input.action === "discard") await this.options.topicHooks?.notesChanged([note.id]);
+    if (note && input.action === "approve")
+      await this.options.topicHooks?.notesToMatch?.([note.id]);
     return note ? serializeNote(note) : null;
   }
 
@@ -1785,6 +1788,8 @@ export class KnowledgeService {
       onNoteDecided?: (note: DecidedNote) => void | Promise<void>;
       /** The visibility fence of a re-match run (F3 3.17): retrieval sees only these roots. */
       fence?: RetrievalFence;
+      /** MATCH (F4 D16): a note whose text and space equal its match state's is left alone. */
+      skipUnchanged?: boolean;
     } = {}
   ): Promise<MatchNotesResult> {
     const pool = this.requirePool();
@@ -1816,6 +1821,7 @@ export class KnowledgeService {
       onProgress,
       onNoteCompleted: options.onNoteCompleted,
       fence: options.fence,
+      skipUnchanged: options.skipUnchanged,
       handOff: async (note) => {
         await options.onNoteDecided?.(note);
         return 0;

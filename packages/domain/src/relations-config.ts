@@ -140,6 +140,25 @@ const LinkSchema = z
   })
   .strict();
 
+/**
+ * The MATCH task (F4 D16, spec 3.5): a note a person edited or accepted is decided again once its
+ * vector is current, after a pause that lets a burst of edits settle (cal.). The backlog is the
+ * optional re-match a decider change offers; its notes are queued a page at a time.
+ */
+const MatchSchema = z
+  .object({
+    /** A request waits this long for the next edit of the note before MATCH decides it (cal.). */
+    debounceMs: z.number().int().min(0).max(3_600_000).default(60_000),
+    /** The longest a stream of edits can postpone the decision of one note (cal.). */
+    maxDebounceMs: z.number().int().min(0).max(86_400_000).default(300_000),
+    /** Notes one statement of an accepted backlog queues. */
+    backlogPageSize: int(1, 5_000).default(500)
+  })
+  .strict()
+  .refine((value) => value.maxDebounceMs >= value.debounceMs, {
+    message: "relations.match.maxDebounceBelowDebounce"
+  });
+
 /** The largest daily spend cap of the Decisions decider in US$, whoever sets it (a DEV proof run too). */
 export const decisionsDailyCapMaxUsd = 1_000;
 
@@ -194,6 +213,8 @@ export const RelationsConfigSchema = z
     typing: TypingSchema.prefault({}),
     link: LinkSchema.prefault({}),
     ai: RelationAiSchema.prefault({}),
+    /** The MATCH task of the Gardener (F4 D16). */
+    match: MatchSchema.prefault({}),
     /** The uncertain-band escalation (T58e); off until the selection rule adopts it. */
     escalation: z
       .object({ enabled: z.boolean().default(false) })

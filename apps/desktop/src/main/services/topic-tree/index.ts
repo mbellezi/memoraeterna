@@ -25,7 +25,7 @@ import type { ClusterTopics } from "./topic-build.js";
 import type { TopicAiBudgetStore, TopicAiMode, TopicAiRoute } from "./topic-ai.js";
 import { TopicChangeCoalescer } from "./topic-changes.js";
 import { createTopicChangeHooks } from "./topic-hooks.js";
-import type { TopicChangeHooks } from "./topic-hooks.js";
+import type { NoteMatchRequests, TopicChangeHooks } from "./topic-hooks.js";
 import { registerTopicTreeIpc } from "./topic-ipc.js";
 import type { TopicsChangedTarget } from "./topic-ipc.js";
 import { TopicGateService } from "./topic-gate.js";
@@ -77,6 +77,8 @@ export interface TopicTreeServicesOptions {
   > &
     Partial<Pick<AiService, "taskRouteLocality">>;
   getContentLanguage?: () => Promise<string>;
+  /** Queues MATCH for notes a person edited or accepted (F4 D16); absent, `notesToMatch` does nothing. */
+  noteMatching?: NoteMatchRequests;
 }
 
 export interface TopicTreeServices {
@@ -151,7 +153,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     onEnqueued: (job) => service?.trackEnqueued(job),
     ...(options.wake ? { wake: options.wake } : {})
   });
-  const hooks = createTopicChangeHooks(triggers, logger);
+  const hooks = createTopicChangeHooks(triggers, logger, options.noteMatching);
   // A pin writes the view history in the change-set's transaction; the navigator reads it again.
   const notifyViewHistory = options.ipc
     ? () => {

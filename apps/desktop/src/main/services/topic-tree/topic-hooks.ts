@@ -3,13 +3,24 @@
 // composite vector exists, and repair the tree when items were deleted. They sit on the trigger
 // API (`topic-triggers.ts`) and add the one policy callers need: a hook never fails its caller.
 // Deriving topic placements is background work; ingestion, review and deletion must not break on
-// it, and the sweep (startup, every cache load, `topic-sweep`) finds whatever a hook missed.
+// it, and the sweep (startup, every cache load, `topic-sweep`) finds whatever a hook missed. The one
+// hook that is not the tree's, `notesToMatch` (F4 D16), queues MATCH for notes a person edited.
 import type { Queryable } from "@app/db";
 
 import type { TopicTriggerOptions, TopicTriggers } from "./topic-triggers.js";
 
 /** Where a hook enqueues: in the caller's open transaction (`client`), or on its own. */
 export type TopicHookOptions = TopicTriggerOptions;
+
+/**
+ * What queues the MATCH job of a note (F4 D16, `relations/relation-match.ts`): the hooks hold it
+ * as a collaborator so the topic engine knows nothing of relations. Absent in scripts and tests
+ * that drive the topic services alone.
+ */
+export interface NoteMatchRequests {
+  /** Queues (debounced, one per note) the MATCH job of each of these notes that is current. */
+  request(noteIds: readonly string[], options: TopicHookOptions): Promise<unknown>;
+}
 
 export interface TopicChangeHooks {
   /**
@@ -27,6 +38,12 @@ export interface TopicChangeHooks {
   itemsRemoved(options?: TopicHookOptions): Promise<void>;
   /** A re-embedding job of a space change ended (D26): the build looks at the new space again. */
   reembeddingEnded?(options?: TopicHookOptions): Promise<void>;
+  /**
+   * A person edited these notes and their vectors are current again, or accepted them (F4 D16):
+   * MATCH decides them once more, unless their text and embedding space are unchanged. A no-op
+   * without a MATCH task. Like every hook it never fails its caller.
+   */
+  notesToMatch?(noteIds: readonly string[], options?: TopicHookOptions): Promise<void>;
 }
 
 const savepoint = "topic_hook";
@@ -50,7 +67,8 @@ async function inSavepoint<T>(client: Queryable, run: () => Promise<T>): Promise
 
 export function createTopicChangeHooks(
   triggers: TopicTriggers,
-  logger?: Pick<Console, "warn">
+  logger?: Pick<Console, "warn">,
+  matching?: NoteMatchRequests
 ): TopicChangeHooks {
   async function guarded(
     name: string,
@@ -73,6 +91,10 @@ export function createTopicChangeHooks(
     itemsRemoved: (options = {}) =>
       guarded("itemsRemoved", options, () => triggers.repair(options)),
     reembeddingEnded: (options = {}) =>
-      guarded("reembeddingEnded", options, () => triggers.reembeddingEnded(options))
+      guarded("reembeddingEnded", options, () => triggers.reembeddingEnded(options)),
+    notesToMatch: (noteIds, options = {}) =>
+      matching && noteIds.length > 0
+        ? guarded("notesToMatch", options, () => matching.request(noteIds, options))
+        : Promise.resolve()
   };
 }

@@ -96,6 +96,8 @@ import {
   retentionStartDelayMs,
   scheduleRetention
 } from "./services/gardener/retention.js";
+import { createNoteMatchRequests } from "./services/relations/relation-match.js";
+import { RelationMatchBacklog } from "./services/relations/relation-match-backlog.js";
 import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
 import {
   navigationDirectionFromAppCommand,
@@ -206,6 +208,8 @@ let appEvents: AppEventBus | null = null;
 let jobProgress: JobProgressPublisher | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
+/** F4 D16 (T83): the optional re-match a change of the note decider offers; the Inbox accepts it. */
+let relationMatchBacklog: RelationMatchBacklog | null = null;
 let obsidianSyncService: ObsidianSyncService | null = null;
 let integrationGateway: IntegrationGateway | null = null;
 let localModelService: LocalModelService | null = null;
@@ -470,7 +474,12 @@ void app.whenReady().then(() => {
     ipc: { main: ipcMain, targets: () => webContents.getAllWebContents() },
     // Topic names and label vectors (T18) call the AI service in the library's content language.
     ai: aiService,
-    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
+    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    // F4 D16: a note a person edited or accepted is queued for MATCH, once its job type is claimed.
+    noteMatching: createNoteMatchRequests({
+      getPool: () => databaseService?.getPool() ?? null,
+      isRegistered: (type) => jobSupervisor?.supportsJobType(type) === true
+    })
   });
   // `topicsChanged` stays until F5; the bus carries the same committed, coalesced change as `tree.changed`.
   topicTreeServices.changes.subscribe((change) =>
@@ -683,6 +692,12 @@ void app.whenReady().then(() => {
   jobSupervisor.subscribeRelationsChanged((change) =>
     events.publish({ type: "relation.created", noteIds: change.noteIds })
   );
+  relationMatchBacklog = new RelationMatchBacklog({
+    getPool: () => databaseService!.getPool()!,
+    deciderKey: () => knowledgeService!.currentRelationDeciderKey(),
+    spaceKey: () => aiService!.embeddingRouteSpaceKey(),
+    wake: () => jobSupervisor?.wake("light")
+  });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
@@ -973,6 +988,12 @@ void app.whenReady().then(() => {
           libraryQuiet ? undefined : integrationGateway?.start(),
           libraryQuiet ? undefined : obsidianSyncService?.reconcileVault()
         ]);
+        // F4 D16: a note decider that changed while the app was closed offers its optional re-match
+        // (an Inbox item); nothing is queued until the owner accepts. Best effort, in the background.
+        if (!libraryQuiet)
+          void relationMatchBacklog?.offer().catch((error: unknown) => {
+            console.warn("The MATCH backlog could not be offered", error);
+          });
         // DEV soak profile setup (MEMORA_SOAK_SETUP=1, F3 T62): the models are up, no job has started.
         // The Local preset, the checks and `.cache/f3/soak/setup.json`, then quit.
         if (soakSetup) {
@@ -1231,6 +1252,7 @@ function shutdownSteps(): ShutdownStep[] {
       run: async () => {
         await jobSupervisor?.stop();
         jobSupervisor = null;
+        relationMatchBacklog = null;
         backgroundPolicy?.stop();
       },
       describe: () =>

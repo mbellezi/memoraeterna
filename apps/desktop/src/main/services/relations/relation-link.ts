@@ -59,6 +59,12 @@ import {
   type RelationCallBudget
 } from "./relation-call-budget.js";
 import { relationMatcherVersion } from "./relation-matcher.js";
+import {
+  linkRunTitle,
+  matchedNotesOf,
+  matchedNotesPayloadKey,
+  type MatchedNote
+} from "./relation-run-title.js";
 import type {
   PairTyping,
   RelationTypingOptions,
@@ -300,12 +306,19 @@ export async function enqueueRelationLink(
  * Queues the link job of a root a re-match run decided (F3 T52b, 3.17). The run decides the root's
  * records outside any ingestion run, so the job carries their decided notes in its payload and is
  * told to discover with no parked run; a queued job of the root takes the notes in beside its own.
+ * MATCH (F4 D16) queues the same job for the notes it decided, with their titles in `matched`, which
+ * name the run's change-set.
  */
 export async function enqueueRematchLink(
   db: Queryable,
-  input: { rootId: string; decided: readonly StoredDecidedNote[] }
+  input: {
+    rootId: string;
+    decided: readonly StoredDecidedNote[];
+    matched?: readonly MatchedNote[];
+  }
 ): Promise<JobRecord> {
   const decided = input.decided.map((note) => StoredDecidedNoteSchema.parse(note));
+  const matched = input.matched ?? [];
   const { job, created } = await createJobRepository(db).enqueueDeduped({
     type: relationLinkJobType,
     lane: "light",
@@ -315,17 +328,23 @@ export async function enqueueRematchLink(
       sourceItemId: input.rootId,
       rematch: true,
       discover: true,
-      decided: decided as unknown as JsonObject[]
+      decided: decided as unknown as JsonObject[],
+      ...(matched.length ? { [matchedNotesPayloadKey]: matched as unknown as JsonObject[] } : {})
     },
     debounce: immediateJobDebounce,
     maxAttempts: 3
   });
   if (created) return job;
   const patched = await db.query<{ payload: JsonObject }>(
-    `update jobs set payload = payload || jsonb_build_object('rematch', true, 'discover', true,
-       'decided', coalesce(payload -> 'decided', '[]'::jsonb) || $2::jsonb), updated_at = now()
+    `update jobs set payload = payload
+       || jsonb_build_object('rematch', true, 'discover', true,
+            'decided', coalesce(payload -> 'decided', '[]'::jsonb) || $2::jsonb)
+       || case when jsonb_array_length($3::jsonb) > 0
+            then jsonb_build_object($4::text, coalesce(payload -> $4::text, '[]'::jsonb) || $3::jsonb)
+            else '{}'::jsonb end,
+       updated_at = now()
      where id = $1 and status = 'queued' returning payload`,
-    [job.id, JSON.stringify(decided)]
+    [job.id, JSON.stringify(decided), JSON.stringify(matched), matchedNotesPayloadKey]
   );
   const payload = patched.rows[0]?.payload;
   // Claimed meanwhile: it read its payload already, so the notes are queued beside it.
@@ -807,6 +826,12 @@ export class RelationLinker {
     const persisted = await this.persist({
       kind: "link",
       rootId: input.rootId,
+      jobId: input.job.id,
+      // What MATCH decided for edited notes names the run (F4 D10); a parked run's pairs do not.
+      matched:
+        input.runs.length === 0 && input.carried.length > 0
+          ? matchedNotesOf(input.job.payload)
+          : [],
       pending: toPersist,
       retypes: retypes.map((item) => item.relation),
       typing
@@ -932,6 +957,10 @@ export class RelationLinker {
   private async persist(input: {
     kind: "link" | "retype";
     rootId: string | null;
+    /** The job that ran the pass (provenance of its change-set). */
+    jobId: string;
+    /** The notes MATCH decided that this pass persists the pairs of (names the run). */
+    matched?: readonly MatchedNote[];
     pending: readonly PendingPair[];
     retypes: readonly UntypedRelation[];
     typing: TypingPass;
@@ -955,7 +984,8 @@ export class RelationLinker {
         kind: input.kind,
         rootId: input.rootId,
         deciderKey: first?.deciderKey ?? null,
-        calibrationVersion: first?.calibration ?? null
+        calibrationVersion: first?.calibration ?? null,
+        jobId: input.jobId
       });
       const record = (
         written: Awaited<ReturnType<typeof relations.upsert>>,
@@ -1084,10 +1114,30 @@ export class RelationLinker {
           }
         }
       }
+      // The run is a change-set (F4 D10): it says what it did, in a key the renderer translates.
+      const rootId = input.rootId;
+      const title = await linkRunTitle({
+        matched: input.matched ?? [],
+        counts: {
+          applied: counts.applied,
+          // New relations that wait for a type are suggestions too (decision 29).
+          suggested: counts.suggested + counts.untyped
+        },
+        rootTitle: async () =>
+          rootId
+            ? ((
+                await client.query<{ title: string }>(
+                  "select title from source_items where id = $1::uuid",
+                  [rootId]
+                )
+              ).rows[0]?.title ?? null)
+            : null
+      });
       await runs.finish(run.id, {
         outcome: "succeeded",
         counts: { ...counts },
-        timings: {}
+        timings: {},
+        ...(title ?? {})
       });
     });
     return { counts, changedNoteIds, typedSourceItemIds };
@@ -1190,6 +1240,7 @@ export class RelationLinker {
     const persisted = await this.persist({
       kind: "retype",
       rootId: null,
+      jobId: job.id,
       pending: [],
       retypes: retypes.map((item) => item.relation),
       typing

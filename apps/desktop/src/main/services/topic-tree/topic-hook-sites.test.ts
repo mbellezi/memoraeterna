@@ -47,7 +47,8 @@ function hooks() {
     notesChanged: vi.fn(async () => undefined),
     sourcesChanged: vi.fn(async () => undefined),
     itemsRemoved: vi.fn(async () => undefined),
-    reembeddingEnded: vi.fn(async () => undefined)
+    reembeddingEnded: vi.fn(async () => undefined),
+    notesToMatch: vi.fn(async () => undefined)
   } satisfies TopicChangeHooks;
 }
 
@@ -75,12 +76,37 @@ describe("reviewing a note", () => {
     expect(sink.notesChanged).toHaveBeenCalledWith([noteId]);
   });
 
-  it("leaves an edit to the note-embedding job and an approval to nobody", async () => {
+  it("leaves an edit to the note-embedding job and places nothing for an approval", async () => {
     mocks.notes.review.mockResolvedValue({ ...note, status: "approved" });
     const sink = hooks();
     await knowledge(sink).reviewNote({ id: noteId, action: "approve" });
     await knowledge(sink).reviewNote({ id: noteId, action: "edit", title: "Spacing, edited" });
     expect(sink.notesChanged).not.toHaveBeenCalled();
+  });
+
+  it("asks MATCH to look at an approved note, and at no other review (F4 D16)", async () => {
+    mocks.notes.review.mockResolvedValue({ ...note, status: "approved" });
+    const sink = hooks();
+    await knowledge(sink).reviewNote({ id: noteId, action: "approve" });
+    expect(sink.notesToMatch).toHaveBeenCalledOnce();
+    expect(sink.notesToMatch).toHaveBeenCalledWith([noteId]);
+    // An edit waits for its new vector (the note-embedding job); a discard leaves matching.
+    await knowledge(sink).reviewNote({ id: noteId, action: "edit", title: "Spacing, edited" });
+    await knowledge(sink).reviewNote({ id: noteId, action: "discard" });
+    expect(sink.notesToMatch).toHaveBeenCalledOnce();
+    // A note that does not exist is not matched.
+    mocks.notes.review.mockResolvedValueOnce(null);
+    await knowledge(sink).reviewNote({ id: noteId, action: "approve" });
+    expect(sink.notesToMatch).toHaveBeenCalledOnce();
+    // A set of hooks without MATCH (scripts and tests) is not a failure.
+    const withoutMatch: TopicChangeHooks = {
+      notesChanged: sink.notesChanged,
+      sourcesChanged: sink.sourcesChanged,
+      itemsRemoved: sink.itemsRemoved
+    };
+    await expect(
+      knowledge(withoutMatch).reviewNote({ id: noteId, action: "approve" })
+    ).resolves.toMatchObject({ id: noteId });
   });
 
   it("hands over nothing for a note that does not exist, and works without hooks", async () => {
@@ -144,6 +170,26 @@ describe("the note-embedding job", () => {
       await runEmbeddingJob({ embedded: false, reason }, sink);
       expect(sink.notesChanged).not.toHaveBeenCalled();
     }
+  });
+
+  it("asks MATCH to decide an edited note once its vector is current (F4 D16)", async () => {
+    // The vector is new, or matching embedded the edited text first: either way the note is current.
+    for (const result of [{ embedded: true }, { embedded: false, reason: "unchanged" }]) {
+      const sink = hooks();
+      await runEmbeddingJob(result, sink);
+      expect(sink.notesToMatch).toHaveBeenCalledOnce();
+      expect(sink.notesToMatch).toHaveBeenCalledWith([noteId]);
+    }
+    // No vector, or a note that is gone or no longer current, has nothing to match.
+    for (const reason of ["no_embedding", "note_not_found", "note_not_current"]) {
+      const sink = hooks();
+      await runEmbeddingJob({ embedded: false, reason }, sink);
+      expect(sink.notesToMatch).not.toHaveBeenCalled();
+    }
+    // A re-embedding of a space change is not an edit: the note's text is the one matched already.
+    const sink = hooks();
+    await runEmbeddingJob({ embedded: true }, sink, { spaceKey: "space-b" });
+    expect(sink.notesToMatch).not.toHaveBeenCalled();
   });
 
   it("runs without hooks", async () => {
