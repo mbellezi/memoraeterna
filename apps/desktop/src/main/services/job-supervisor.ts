@@ -508,8 +508,10 @@ export class JobSupervisor {
     const jobs = createJobRepository(pool);
     await jobs.recoverInterrupted();
     // Startup re-gate (D7): every job set aside by a blocker is looked at again before the workers
-    // start; one whose blocker still holds is set aside again when it runs.
-    await jobs.releaseBlocks();
+    // start. The background policy's re-gate (below, before the loops) keeps a time-bound wait
+    // until its clear time and a row a gate still holds, and frees every other one; without a
+    // policy every block is released, and one whose blocker still holds is set aside again.
+    if (!this.options.backgroundPolicy) await jobs.releaseBlocks();
     const runs = createIngestionRunRepository(pool);
     await runs.recoverInterrupted();
     // A run parked for its link job survives a restart: its root's link job is queued again (a

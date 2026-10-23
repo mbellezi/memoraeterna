@@ -52,7 +52,10 @@ const queue = vi.hoisted(() => {
       },
       // T74's job state: the startup and due releases of set-aside jobs, and the job's last write
       // (its outcome cache is the real repository's; here only the job row matters).
-      releaseBlocks: async () => 0,
+      releaseBlocks: async (filter?: { due?: boolean }) => {
+        if (!filter?.due) queue.events.push("releaseAll");
+        return 0;
+      },
       finish: async (id: string, input: Partial<JobRecord>) => {
         const job = find(id);
         if (job) Object.assign(job, input);
@@ -212,6 +215,8 @@ describe("background policy in the job supervisor", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(queue.events[0]).toBe("regate");
     expect(queue.events.slice(1).every((event) => event.startsWith("claim:"))).toBe(true);
+    // The policy's re-gate keeps time-bound waits and gated rows: nothing releases every block.
+    expect(queue.events).not.toContain("releaseAll");
   });
 
   it("never claims a held kind: its attempts and dedupe key are untouched, and Off still places", async () => {
