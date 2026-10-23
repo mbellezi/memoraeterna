@@ -3,6 +3,7 @@ import {
   defaultKnowledgeControls,
   gardenerBlocker,
   gardenerBlockerKey,
+  gardenerTaskConfig,
   type GardenerBlocker,
   type GardenerBlockerKey,
   type KnowledgeControls
@@ -354,10 +355,18 @@ describe("blocker service (D7)", () => {
     const probe = add("relation-link", null, { status: "running", attempts: 2 });
     await service.blockTask(job(probe), gardenerBlocker("offline", "network_unreachable"));
     expect(probe.runAfter).toBe(clock.now + 300_000);
+    // An event-only reason waits for its event, bounded by the task model's recheck (T74).
     const event = add("topic-name", null, { status: "running", attempts: 1 });
     await service.blockTask(job(event), gardenerBlocker("cap", "money_80"));
-    expect(event.runAfter).toBe(clock.now);
+    expect(event.runAfter).toBe(clock.now + gardenerTaskConfig.blockRecheckMs);
     expect(event.blocked).toEqual({ class: "cap", reason: "money_80" });
+    // The claim took the job's dedupe key (claimNext nulls it): the key it held is restored.
+    const claimed = add("topic-areas", null, { status: "running", attempts: 1 });
+    await service.blockTask(
+      { id: claimed.id, dedupeKey: null, claimedDedupeKey: "topic-areas:tree" } as JobRecord,
+      gardenerBlocker("paused", "user_pause")
+    );
+    expect(claimed).toMatchObject({ status: "queued", dedupeKey: "topic-areas:tree" });
   });
 
   it("never throws when the store fails, and does nothing without a database", async () => {

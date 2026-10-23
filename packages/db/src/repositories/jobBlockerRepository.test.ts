@@ -84,12 +84,6 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
     await runMigrations(pool, join(workspace, "packages/db/drizzle"), {
       seedFolder: join(workspace, "packages/db/seed")
     });
-    await pool.query(
-      `alter table jobs
-         add column if not exists blocked_class text,
-         add column if not exists blocked_reason text,
-         add column if not exists blocked_at timestamptz`
-    );
   }, 120_000);
 
   afterAll(async () => {
@@ -234,7 +228,7 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
     ).toBe(false);
   });
 
-  it("leaves the key off when a queued job of the key exists, so both stay queued", async () => {
+  it("merges into a queued job that holds the key now, never two queued jobs of one key (D7)", async () => {
     const blockers = createJobBlockerRepository(db());
     const queued = await insert({ type: "topic-name", dedupeKey: "topic-name:tree" });
     const running = await insert({ type: "topic-name", status: "running", attempts: 2 });
@@ -245,7 +239,10 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
         dedupeKey: "topic-name:tree"
       })
     ).toBe(true);
-    expect(await row(running)).toMatchObject({ status: "queued", attempts: 1, dedupe_key: null });
-    expect(await row(queued)).toMatchObject({ dedupe_key: "topic-name:tree" });
+    expect(await row(running)).toMatchObject({ status: "canceled", attempts: 1, dedupe_key: null });
+    expect((await createJobRepository(db()).findById(running))?.result).toMatchObject({
+      mergedInto: queued
+    });
+    expect(await row(queued)).toMatchObject({ status: "queued", dedupe_key: "topic-name:tree" });
   });
 });

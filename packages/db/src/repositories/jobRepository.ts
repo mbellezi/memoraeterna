@@ -131,7 +131,7 @@ export interface GardenerOutcomeWrite {
 
 /** A blocker met by a claimed job, when it clears if known, and the key it held (D7). */
 export interface SetAsideJobInput {
-  blocker: GardenerBlocker;
+  blocker: Pick<GardenerBlocker, "class" | "reason">;
   /** The clear time when known, else a recheck time; the job is due again then. */
   clearAt: Date;
   /** The dedupe key the job held when claimed (`claimedDedupeKey`). */

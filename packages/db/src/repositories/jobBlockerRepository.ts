@@ -5,6 +5,7 @@
 // never burns an attempt nor loses the key.
 import type { GardenerBlocker, GardenerBlockerKey } from "@app/domain";
 
+import { createJobRepository } from "./jobRepository.js";
 import type { Queryable } from "./types.js";
 
 /** One blocked group: queued rows of a type held by one reason. */
@@ -18,9 +19,6 @@ export interface BlockedJobGroup {
 }
 
 const blockerKeySql = "(blocked_class || '.' || blocked_reason)";
-
-/** SQLSTATE `unique_violation`: a queued job of the key appeared meanwhile. */
-const uniqueViolation = "23505";
 
 export function createJobBlockerRepository(db: Queryable) {
   return {
@@ -120,10 +118,12 @@ export function createJobBlockerRepository(db: Queryable) {
     },
 
     /**
-     * Returns a running job that met a blocker after its claim to the queue (D7): the attempt its
-     * claim counted is given back, its dedupe key restored unless a queued job holds the key now,
-     * and `run_after` set to the time the blocker clears (now when unknown). Resolves false when
-     * the job is no longer running.
+     * Returns a running job that met a blocker after its claim to the queue (D7) through the job
+     * repository's per-task block (`setAside`): the attempt its claim counted is given back, its
+     * dedupe key restored, and `run_after` set to the time the blocker clears (now when unknown).
+     * When a queued job holds the key now, this one merges into it (the queued job keeps the
+     * higher priority, this one ends canceled with `result.mergedInto`). Resolves false when the
+     * job is no longer running.
      */
     async blockTask(input: {
       jobId: string;
@@ -131,37 +131,12 @@ export function createJobBlockerRepository(db: Queryable) {
       runAfter?: Date | null;
       dedupeKey?: string | null;
     }): Promise<boolean> {
-      const run = async (dedupeKey: string | null) =>
-        db.query(
-          `update jobs j
-           set status = 'queued', attempts = greatest(j.attempts - 1, 0),
-               blocked_class = $2, blocked_reason = $3, blocked_at = now(),
-               run_after = coalesce($4::timestamptz, now()),
-               dedupe_key = case
-                 when $5::text is not null and not exists (
-                   select 1 from jobs q where q.dedupe_key = $5::text and q.status = 'queued'
-                 ) then $5::text
-                 else null
-               end,
-               locked_at = null, locked_by = null, finished_at = null, progress = 0,
-               updated_at = now()
-           where j.id = $1 and j.status = 'running'`,
-          [
-            input.jobId,
-            input.blocker.class,
-            input.blocker.reason,
-            input.runAfter ?? null,
-            dedupeKey
-          ]
-        );
-      let result;
-      try {
-        result = await run(input.dedupeKey ?? null);
-      } catch (error) {
-        if ((error as { code?: unknown }).code !== uniqueViolation || !input.dedupeKey) throw error;
-        result = await run(null);
-      }
-      return (result.rowCount ?? 0) > 0;
+      const setAside = await createJobRepository(db).setAside(input.jobId, {
+        blocker: input.blocker,
+        clearAt: input.runAfter ?? new Date(),
+        dedupeKey: input.dedupeKey ?? null
+      });
+      return setAside !== null;
     }
   };
 }

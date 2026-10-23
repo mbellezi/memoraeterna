@@ -14,6 +14,7 @@ import {
   type GardenerWork
 } from "./autonomy.js";
 import { gardenerAutonomyLevels, type GardenerAutonomy } from "./controls.js";
+import { gardenerTaskKinds } from "./kinds.js";
 
 // Table 3.2 of the F4 spec, one row per work and one column per level.
 const table: Record<GardenerWork, [AutonomyEffect, AutonomyEffect, AutonomyEffect]> = {
@@ -136,5 +137,17 @@ describe("autonomy matrix (spec 3.2)", () => {
     expect(changeDisposition({ work: "refresh", autonomy: "suggest", risk: "medium" })).toBe(
       "pending_review"
     );
+  });
+
+  it("covers exactly the Gardener kinds of the task model, generative where the model says so", () => {
+    // T74's kind table (scope, subject, budget class of the calls) and this policy table (what
+    // the gates hold) describe the same kinds: a kind added to one must be added to the other.
+    const gardenerKinds = Object.values(gardenerTaskKinds)
+      .filter((kind) => kind.gardener)
+      .map((kind) => kind.type)
+      .sort();
+    expect(Object.keys(gardenerKindPolicies).sort()).toEqual(gardenerKinds);
+    for (const [type, policy] of Object.entries(gardenerKindPolicies))
+      if (policy.ai === "generative") expect(gardenerTaskKinds[type]?.generative, type).toBe(true);
   });
 });

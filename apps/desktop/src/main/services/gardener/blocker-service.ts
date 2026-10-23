@@ -1,5 +1,6 @@
 import type { JobRecord } from "@app/db";
 import {
+  blockerClearAt,
   defaultGardenerConfig,
   gardenerBlockerClearing,
   gardenerBlockerKey,
@@ -216,21 +217,28 @@ export class BlockerService {
 
   /**
    * Returns a task that met a blocker after its claim to the queue (D7), its attempt given back
-   * and its dedupe key restored; it runs again once the blocker clears: at `clearsAt` when known,
-   * at the next probe for a time-bound wait, else on the reason's clearing event.
+   * and the dedupe key its claim took restored (merged into a queued duplicate that holds it now);
+   * it runs again once the blocker clears: at `clearsAt` when known, at the next probe for a
+   * time-bound wait, else on the reason's clearing event, with the task model's recheck
+   * (`blockerClearAt`) as the bound when that event never comes.
    */
   public async blockTask(job: JobRecord, blocker: GardenerBlocker): Promise<boolean> {
     const store = this.options.store();
     if (!store) return false;
     const key = gardenerBlockerKey(blocker);
-    const now = this.now().getTime();
+    const now = this.now();
     const runAfter =
-      typeof blocker.clearsAt === "number" && blocker.clearsAt > now
+      typeof blocker.clearsAt === "number" && blocker.clearsAt > now.getTime()
         ? new Date(blocker.clearsAt)
         : gardenerBlockerClearing[key].atRunAfter
-          ? new Date(now + this.config.blockers.recheckMs)
-          : null;
-    return store.blockTask({ jobId: job.id, blocker, runAfter, dedupeKey: job.dedupeKey });
+          ? new Date(now.getTime() + this.config.blockers.recheckMs)
+          : blockerClearAt(blocker, now);
+    return store.blockTask({
+      jobId: job.id,
+      blocker,
+      runAfter,
+      dedupeKey: job.claimedDedupeKey ?? job.dedupeKey
+    });
   }
 
   private async reconcileWith(store: JobBlockerStore): Promise<string[]> {

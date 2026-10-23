@@ -49,6 +49,14 @@ const queue = vi.hoisted(() => {
         const job = find(id);
         if (job) Object.assign(job, input);
         return job ? { ...job } : null;
+      },
+      // T74's job state: the startup and due releases of set-aside jobs, and the job's last write
+      // (its outcome cache is the real repository's; here only the job row matters).
+      releaseBlocks: async () => 0,
+      finish: async (id: string, input: Partial<JobRecord>) => {
+        const job = find(id);
+        if (job) Object.assign(job, input);
+        return job ? { ...job } : null;
       }
     }
   };
