@@ -1,6 +1,6 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F3 (authorized by the owner on 2026-10-17; F2 closed the same day).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+**Current phase: F4 (authorized by the owner on 2026-10-23; F3 closed on 2026-10-20).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
 target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
 starting points unless marked measured.
 
@@ -291,6 +291,9 @@ and a `model` worker, so placement never waits for a model), with per-source exc
 - **States:** queued → running → done | no_change | failed (retryable with backoff; quarantined after a few
   attempts, shown in the Inbox with an action) | blocked (no model, cap, paused, offline, downloading) |
   skipped (same input fingerprint). No policy-wide latch; a pending review never blocks unrelated work.
+  F4 derives these states from `jobs` columns without an enum change (`docs/f4-decisions.md` D5): blocked
+  sets a task aside without burning an attempt; quarantine follows the second failed job on one subject and
+  fingerprint.
 - **Freshness by content only:** fingerprints use chunk, note and member hashes. Model, prompt and settings
   are provenance; changing a model offers an optional backlog. Saving settings never invalidates coverage.
 - **Change-sets:** every applied task yields a localized, deterministic title, affected objects, risk level
@@ -320,8 +323,9 @@ and a `model` worker, so placement never waits for a model), with per-source exc
   OpenAI-compatible localhost/Ollama counts as local.
 - **Priorities:** P0 interactive (Ask, query embedding, explanation on open, user action), P1 focused
   source, P2 ingestion and linking, P3 maintenance; strict with aging; never preempts a running call.
-  Background local work is split into bounded calls so P0 waits at most one of them. *(F4/F5)* A P0 may use an
-  allowed remote lane when the local lane is busy; in F3 a P0 call never spills (`docs/f3-decisions.md` D33).
+  Background local work is split into bounded calls so P0 waits at most one of them. *(F5)* A P0 may use an
+  allowed remote lane when the local lane is busy; through F4 a P0 call never spills (`docs/f3-decisions.md`
+  D33): it needs alternate routes and a privacy gate (`docs/f4-decisions.md`).
 - **Deadlines** count from execution start (connect, first byte, stalled stream, total per workload class).
   **Retries** in adapters: backoff with jitter for 408, 425, 429, 5xx, network and stalls, honoring
   `Retry-After`; never for 400/401/403/404/413, context overflow or schema failure after repair.
@@ -708,48 +712,73 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
 
 ### F4 Gardener, Inbox, Activity and first run (weeks 16-18)
 
-- [ ] MATCH, REFRESH and AUDIT tasks; content fingerprints; outcome cache.
-- [ ] Money cap, duty cycle, autonomy, risk levels, complete change-sets with undo.
-- [ ] Overview writer limited to placed topics (additive patches, Divergences, non-blocking support check).
-- [ ] Event bus with push; Activity pill and drawer with the status sentence.
-- [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
-      controls and tree shape.
-- [ ] Hardware detection and recommended setups (decision 25): platform probe on macOS and Windows, tier
-      table and preset suggestion in the first run, from the research and the owner-approved benchmark.
-- [ ] Settings inventory (decision 24): every setting with its reader, default and fate (keep, merge, move to
-      Advanced, drop), the dead ones removed, and the F3/F4 additions (workload classes and presets, Knowledge,
-      automation) placed; it feeds F5's Settings v2.
-- [ ] Drop the legacy tables the F2 legacy wipe emptied, with their insert fence, and the source-deletion and
-      `jobRepository` guards on them (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
-      are removed in F2 (Q12).
-- [ ] JSON-constrained decoding in the MLX helper for structured output (decision 31a): our helper code, no model or
-      library change; measured on the local writer's structured calls (identity, typing, notes, extraction, topic
-      naming) against today's repair rate, then the soak's repair bar counts the local writer again.
-- [ ] Local-model benchmark and runtime-upgrade spike, record only (decision 26), then delete the test models.
-- [ ] Two-neighbour source discovery within S1's time bar (F3 S1, owner 2026-10-19): one neighbour accepts 6 of the
-      second library's 27 panel-positive pairs, two accept 13, but two cost 2.96 judge calls and 5.09 AI-call seconds
-      per source (bars 2 and 5.0). A batched or cheaper source judge first; then `discovery.neighbours = 2` with S1
-      and X3 measured again.
-- [ ] The 7-day soak runs the Hybrid preset with the real Codex writer under a token cap (owner, 2026-10-19): F3's
-      24 h soak stays on the Local preset (X6 as registered, fakes for the remote faults); F4 adds the writer's real
-      quota, rejections and outages, with the cap and the expected token spend set before the run starts.
-- [ ] Entity identity grouped across a source's extraction batches (F3 X7, owner 2026-10-19): with 3,500-character
-      batches each identity call covers one batch, so X7-REF needs 45 generative calls per chapter (F3 closed on
-      ≤45); grouping up to 24 entities per call across a source's batches projects about 38. Adopted only if the
-      merged-entity count stays within ±5% of the per-batch run, measured on X7-REF; the bar returns to ≤40.
-- [ ] A stored unaccented `tsvector` with a GIN index for Ask retrieval (F3 soak, 2026-10-20): the text, title, note
-      and entity signals still rank every chunk in scope at about 0.07 ms per chunk, about 2 s near 25-30 k chunks.
-      A migration, so it re-opens gate M (D44): generated, in the baseline and manifest, applied and verified on a
-      real PostgreSQL with EXPLAIN, and the candidates statement measured again on the soak database against
-      today's p95 of 176 ms.
-- [ ] Cancel a running Ask statement (F3 soak, 2026-10-20): the user's cancel stops an Ask between steps, but a
-      statement already running goes on until it ends or its `statement_timeout` stops it; `pg_cancel_backend` on
-      the backend of the client the Ask reserved stops it at once.
+Decisions D1-D38, the owner's answers to Q1-Q13 (2026-10-23), the gates M, S and X, the exit and carried bars
+(E1-E7, C1-C4) with their data and methods, decision 32's "close" and remote spend, the 7-day soak plan and the
+budget: `docs/f4-decisions.md`; it binds F4 and, where section 4 differs, it wins. Tasks run in waves as in F3
+(separate worktrees, one owner per shared file in a fixed merge order, a proof that starts the DEV app or a local
+model takes that slot). The 7-day Hybrid soak is the calendar spine: everything it tests merges before gate S, wave 3
+runs beside it model-free, and the proofs that need the slots follow it (D1, D2).
 
-Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
-blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
-status sentence explains 100% of non-running states; clean Hybrid install places and connects the first note
-in ≤10 min (e2e); ≤6 visible automation settings (from 37+).
+Wave 0 (folded into wave 1's start when F4 began on 2026-10-23):
+- [x] T67 Decision record (`docs/f4-decisions.md`): D1-D38, Q1-Q13 with the owner's answers, gates, bars, soak plan,
+      budget, decision 32's pre-registration, these task boxes.
+- [ ] T72 F3 follow-ups: catalog callers state their output contract (strict for remote typing and overview), a bare
+      AbortError with a live job is transient, the MLX helper's protocol shutdown.
+
+Wave 1 (W0 spill, foundations, the five migrations; T87, T88 and T99 start; gate M at the end):
+- [ ] T68 Settings inventory (decision 24, `docs/settings-inventory.md`): reader, default, fate; the dead ones marked.
+- [ ] T69 Prompt-replay harness and the record-only local-writer benchmark (decisions 25, 26).
+- [ ] T70 Runtime-upgrade spike (mlx-swift-lm 3.32.3, node-llama-cpp 3.22.2), record only.
+- [ ] T71 $0 pre-checks: the two-neighbour replay and the merged-entity statistic (C1's baseline).
+- [ ] T73 Delete the test models and the benchmark transients.
+- [ ] T74 Gardener task state, scope exclusion, outcome cache and quarantine (migration 0060).
+- [ ] T75 Background policy: controls, gates, blockers, duty cycle, power signals.
+- [ ] T76 RemoteBudget and the price table (migration 0061); the Decisions ledger probe (Q12).
+- [ ] T77 Change-set read model, risk, retention and the changes IPC (migration 0062).
+- [ ] T78 Drop the legacy tables, their fence and guards (migration 0063, after T82's backups).
+- [ ] T79 Ask stored text vectors and the candidates measurement (migration 0064; C3).
+- [ ] T80 Cancel a running Ask statement; the Retry-After wait (Q2).
+- [ ] T81 Event bus with job and download events (three polls removed).
+- [ ] T82 Gate M (the orchestrator): heads, backups, rehearsal, migration times.
+
+Wave 2 (tasks, status, harnesses; C1 and C2; gate S at the end):
+- [ ] T83 MATCH on note edits and accepts.
+- [ ] T84 REFRESH: additive overview patches with Divergences and versions; explanation backfill.
+- [ ] T85 AUDIT extensions: duplicates, broken links, stale embeddings, rolling re-placement, theme drift.
+- [ ] T86 Status service and sentence.
+- [ ] T87 Entity identity grouped per source and raw-batch checkpoints (C1, X7 ≤40).
+- [ ] T88 Batched source judge and two neighbours (C2, S1 and X3).
+- [ ] T89 The 7-day soak harness (real Codex writer knob, token cap, zero-token faults, ground truth).
+- [ ] T90 First-run Hybrid e2e harness and the live clean-install record (E6).
+- [ ] T91 Gate S, 5 h pre-soak with calibration (the orchestrator).
+
+The soak (from 2026-10-28):
+- [ ] T92 The 7-day Hybrid soak with the real Codex writer under a token cap (the orchestrator).
+
+Wave 3 (during the soak; model-free, background QoS):
+- [ ] T93 Activity pill and drawer.
+- [ ] T94 Inbox with the keyboard flow.
+- [ ] T95 Icicle diff.
+- [ ] T96 Three-step onboarding.
+- [ ] T97 Hardware probe and tier table (decision 25).
+- [ ] T98 Settings › Knowledge and the cut; matching to Advanced › Matching (Q4).
+- [ ] T99 JSON-constrained decoding in the MLX helper (decision 31a).
+- [ ] T100 Rules, stack and docs sync.
+
+Wave 4 (after the soak; C4 and E6):
+- [ ] T101 Soak report and failure audit (E1-E5).
+- [ ] T102 Decoder model proof and the Local 24 h re-run (C4; decision 32's remote check if close).
+- [ ] T103 First-run e2e gate on final code (E6).
+- [ ] T104 DEV proofs, screenshots and the settings count (E7).
+
+Wave 5 (exit):
+- [ ] T105 Exit measurement (`docs/kpi-f4.md`) and phase close.
+
+Exit (E1-E7, and the carried bars C1-C4, as defined in `docs/f4-decisions.md`): 7-day soak (start by week 17)
+with injected writer rejections, timeouts and a mid-run cap: 0 tasks blocked by another, quarantine ≤1%, ≥95%
+completed within 24 h; remote cap respected within one call; the status sentence explains 100% of non-running
+states; clean Hybrid install places and connects the first note in ≤10 min (e2e); ≤6 visible automation settings
+(from 37+).
 
 ### F5 Unified workspace (weeks 19-22)
 
