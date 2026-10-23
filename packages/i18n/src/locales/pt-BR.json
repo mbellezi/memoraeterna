@@ -17,6 +17,73 @@
     "historyCleared": "Histórico de execuções encerradas limpo. Pendências foram preservadas.",
     "clearHistoryFailed": "Não foi possível concluir a limpeza. Tente novamente."
   },
+  "gardener": {
+    "status": {
+      "idle": "Sua biblioteca está em dia.",
+      "running": "Organizando sua biblioteca em segundo plano.",
+      "paused": {
+        "user_pause": "A organização automática está pausada. Retome-a para manter sua biblioteca em ordem.",
+        "autonomy_off": "As alterações automáticas estão desativadas. As notas ainda são colocadas nos tópicos, mas nada é escrito nem renomeado.",
+        "only_idle_user_active": "O trabalho em segundo plano espera você se afastar do computador.",
+        "only_ac_on_battery": "O trabalho em segundo plano espera o computador ser ligado na tomada."
+      },
+      "no_model": {
+        "no_route": "Nenhum modelo de {routeClass} está configurado. Escolha um em Configurações para continuar.",
+        "model_missing": "Um modelo necessário não está instalado. Instale-o em Modelos locais para continuar.",
+        "no_decider": "Nenhum modelo de ranqueamento está pronto ainda. As notas difíceis de colocar esperam por um.",
+        "signin_required": "Seu provedor de IA precisa que você entre novamente. Faça login para continuar.",
+        "space_changed": "O modelo de embeddings mudou. O trabalho continua quando suas notas forem preparadas para ele."
+      },
+      "cap": {
+        "money_80": "O trabalho de IA em segundo plano está pausado perto do limite de gastos deste mês. Continue-o ou aumente o limite.",
+        "money_100": "O limite de gastos deste mês para o trabalho de IA em segundo plano foi atingido. Ele continua no próximo mês ou quando você aumentar o limite.",
+        "subscription_daily": "A cota diária de trabalho em segundo plano da sua assinatura de IA foi usada. O trabalho continua sozinho.",
+        "provider_quota": "Seu provedor de IA informa que a cota acabou. O trabalho em segundo plano continua quando ela for renovada.",
+        "feature_daily": "O limite de hoje para esta tarefa em segundo plano foi atingido. Ela continua amanhã."
+      },
+      "download": {
+        "model_downloading": "Um modelo está sendo baixado. O trabalho que depende dele começa quando terminar.",
+        "model_verifying": "Um modelo baixado está sendo verificado. Isso leva um instante.",
+        "model_loading": "Um modelo está sendo carregado na memória. Isso leva um instante."
+      },
+      "waiting": {
+        "queue": "Organizando sua biblioteca em segundo plano. As tarefas rodam uma após a outra.",
+        "same_scope": "Organizando sua biblioteca. Uma tarefa espera outra na mesma parte da biblioteca.",
+        "provider_rate_limit": "Seu provedor de IA está limitando as solicitações. O trabalho continua quando o limite for liberado.",
+        "provider_unavailable": "Seu provedor de IA não está respondendo. O trabalho tenta de novo sozinho.",
+        "local_memory": "Aguardando liberar memória para carregar um modelo.",
+        "waiting_for_embeddings": "Suas notas ainda estão sendo preparadas. O trabalho segue conforme elas terminam.",
+        "retry_backoff": "Uma tarefa não terminou e será tentada de novo em breve."
+      },
+      "offline": {
+        "network_unreachable": "Não há conexão com a internet. O trabalho que precisa de um modelo online continua quando você voltar a ficar online."
+      },
+      "detail": {
+        "budget": "{spent} de {cap} usados neste mês."
+      },
+      "eta": {
+        "duration": "Tempo restante: cerca de {duration}.",
+        "lessThanMinute": "Resta menos de um minuto.",
+        "at": "Continua por volta de {time}."
+      },
+      "routeClass": {
+        "embed": "embeddings",
+        "decide": "ranqueamento",
+        "writeFast": "escrita rápida",
+        "writeQuality": "escrita cuidadosa",
+        "answer": "respostas"
+      },
+      "actions": {
+        "resume": "Retomar",
+        "open_controls": "Alterar configurações",
+        "open_ai_settings": "Abrir configurações de IA",
+        "open_local_models": "Abrir modelos locais",
+        "sign_in": "Entrar",
+        "continue_budget": "Continuar",
+        "raise_budget": "Aumentar o limite"
+      }
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Não foi possível selecionar trechos originais relevantes para esta solicitação. Ajuste a pergunta ou o escopo de fontes.",

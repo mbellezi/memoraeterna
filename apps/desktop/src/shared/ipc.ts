@@ -6,6 +6,7 @@ import {
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
 import type {
   BudgetSnapshot,
+  GardenerStatusSnapshot,
   ImportEstimate,
   ImportEstimateInput,
   NoteDeciderMode,
@@ -133,6 +134,8 @@ export const ipcChannels = {
   /** F4 D14: the budget's meters, and the Activity's "continue" past the pause share. */
   budgetSnapshot: "app:budget:snapshot",
   budgetContinue: "app:budget:continue",
+  /** F4 D27: the Gardener's status now (what it does or why it does not; also pushed as `gardener.status`). */
+  gardenerStatus: "app:gardener:status",
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
@@ -1878,6 +1881,15 @@ export interface DesktopApi {
     snapshot: () => Promise<BudgetSnapshot>;
     /** Continues remote background work past the pause share for the rest of the month (D14). */
     continue: () => Promise<BudgetSnapshot>;
+  };
+  gardener: {
+    /**
+     * The Gardener's status now (F4 D27, spec 3.8): its state, the highest hold when there is one
+     * (class and reason), the parameters of its sentence, the coverage of the library, the time
+     * left and what the person can do. The same snapshot is pushed as `gardener.status` on change;
+     * `statusSentence()` from `@app/domain` renders it for a locale.
+     */
+    status: () => Promise<GardenerStatusSnapshot>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   objects: {

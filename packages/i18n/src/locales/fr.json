@@ -17,6 +17,73 @@
     "historyCleared": "Historique des exécutions terminées nettoyé. Les éléments en attente sont conservés.",
     "clearHistoryFailed": "Le nettoyage n’a pas abouti. Réessayez."
   },
+  "gardener": {
+    "status": {
+      "idle": "Votre bibliothèque est à jour.",
+      "running": "Organisation de votre bibliothèque en arrière-plan.",
+      "paused": {
+        "user_pause": "L’organisation automatique est en pause. Reprenez-la pour garder votre bibliothèque en ordre.",
+        "autonomy_off": "Les modifications automatiques sont désactivées. Les notes sont toujours rangées dans des sujets, mais rien n’est rédigé ni renommé.",
+        "only_idle_user_active": "Le travail en arrière-plan attend que vous vous éloigniez de l’ordinateur.",
+        "only_ac_on_battery": "Le travail en arrière-plan attend que l’ordinateur soit branché sur secteur."
+      },
+      "no_model": {
+        "no_route": "Aucun modèle n’est configuré pour {routeClass}. Choisissez-en un dans Paramètres pour continuer.",
+        "model_missing": "Un modèle nécessaire n’est pas installé. Installez-le dans Modèles locaux pour continuer.",
+        "no_decider": "Aucun modèle de classement n’est encore prêt. Les notes difficiles à placer en attendent un.",
+        "signin_required": "Votre fournisseur d’IA demande de vous reconnecter. Connectez-vous pour continuer.",
+        "space_changed": "Le modèle d’embedding a changé. Le travail reprend une fois vos notes préparées pour lui."
+      },
+      "cap": {
+        "money_80": "Le travail d’IA en arrière-plan est en pause près de la limite de dépenses de ce mois. Poursuivez-le ou relevez la limite.",
+        "money_100": "La limite de dépenses de ce mois pour le travail d’IA en arrière-plan est atteinte. Il reprend le mois prochain ou quand vous relevez la limite.",
+        "subscription_daily": "Le quota quotidien de travail en arrière-plan de votre abonnement IA est épuisé. Le travail reprend tout seul.",
+        "provider_quota": "Votre fournisseur d’IA signale que son quota est épuisé. Le travail en arrière-plan reprend à sa réinitialisation.",
+        "feature_daily": "La limite d’aujourd’hui pour cette tâche en arrière-plan est atteinte. Elle reprend demain."
+      },
+      "download": {
+        "model_downloading": "Un modèle est en cours de téléchargement. Le travail qui en a besoin démarre à la fin.",
+        "model_verifying": "Un modèle téléchargé est en cours de vérification. Cela prend un instant.",
+        "model_loading": "Un modèle est en cours de chargement en mémoire. Cela prend un instant."
+      },
+      "waiting": {
+        "queue": "Organisation de votre bibliothèque en arrière-plan. Les tâches s’exécutent l’une après l’autre.",
+        "same_scope": "Organisation de votre bibliothèque. Une tâche attend une autre sur la même partie de la bibliothèque.",
+        "provider_rate_limit": "Votre fournisseur d’IA limite les requêtes. Le travail reprend quand la limite est levée.",
+        "provider_unavailable": "Votre fournisseur d’IA ne répond pas. Le travail réessaie tout seul.",
+        "local_memory": "En attente de mémoire disponible pour charger un modèle.",
+        "waiting_for_embeddings": "Vos notes sont encore en préparation. Le travail suit à mesure qu’elles se terminent.",
+        "retry_backoff": "Une tâche ne s’est pas terminée et sera réessayée sous peu."
+      },
+      "offline": {
+        "network_unreachable": "Il n’y a pas de connexion Internet. Le travail qui nécessite un modèle en ligne reprend quand vous êtes de nouveau connecté."
+      },
+      "detail": {
+        "budget": "{spent} sur {cap} utilisés ce mois-ci."
+      },
+      "eta": {
+        "duration": "Temps restant : environ {duration}.",
+        "lessThanMinute": "Il reste moins d’une minute.",
+        "at": "Reprise vers {time}."
+      },
+      "routeClass": {
+        "embed": "les embeddings",
+        "decide": "le classement",
+        "writeFast": "la rédaction rapide",
+        "writeQuality": "la rédaction soignée",
+        "answer": "les réponses"
+      },
+      "actions": {
+        "resume": "Reprendre",
+        "open_controls": "Modifier les paramètres",
+        "open_ai_settings": "Ouvrir les paramètres d’IA",
+        "open_local_models": "Ouvrir les modèles locaux",
+        "sign_in": "Se connecter",
+        "continue_budget": "Poursuivre",
+        "raise_budget": "Relever la limite"
+      }
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Aucun passage original pertinent n’a pu être sélectionné pour cette demande. Ajustez la question ou le périmètre des sources.",

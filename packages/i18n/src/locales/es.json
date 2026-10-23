@@ -17,6 +17,73 @@
     "historyCleared": "Historial de ejecuciones terminadas limpiado. Se conservaron los pendientes.",
     "clearHistoryFailed": "No se pudo completar la limpieza. Inténtelo de nuevo."
   },
+  "gardener": {
+    "status": {
+      "idle": "Tu biblioteca está al día.",
+      "running": "Organizando tu biblioteca en segundo plano.",
+      "paused": {
+        "user_pause": "La organización automática está en pausa. Reanúdala para mantener tu biblioteca en orden.",
+        "autonomy_off": "Los cambios automáticos están desactivados. Las notas se siguen colocando en temas, pero no se escribe ni se renombra nada.",
+        "only_idle_user_active": "El trabajo en segundo plano espera a que te alejes del ordenador.",
+        "only_ac_on_battery": "El trabajo en segundo plano espera a que el ordenador esté conectado a la corriente."
+      },
+      "no_model": {
+        "no_route": "No hay ningún modelo de {routeClass} configurado. Elige uno en Ajustes para continuar.",
+        "model_missing": "Un modelo necesario no está instalado. Instálalo en Modelos locales para continuar.",
+        "no_decider": "Todavía no hay ningún modelo de clasificación listo. Las notas difíciles de colocar esperan uno.",
+        "signin_required": "Tu proveedor de IA necesita que vuelvas a iniciar sesión. Inicia sesión para continuar.",
+        "space_changed": "El modelo de embeddings cambió. El trabajo se reanuda cuando tus notas estén preparadas para él."
+      },
+      "cap": {
+        "money_80": "El trabajo de IA en segundo plano está en pausa cerca del límite de gasto de este mes. Continúalo o sube el límite.",
+        "money_100": "Se alcanzó el límite de gasto de este mes para el trabajo de IA en segundo plano. Se reanuda el mes que viene o cuando subas el límite.",
+        "subscription_daily": "Se agotó la cuota diaria de trabajo en segundo plano de tu suscripción de IA. El trabajo se reanuda solo.",
+        "provider_quota": "Tu proveedor de IA indica que su cuota se agotó. El trabajo en segundo plano se reanuda cuando se restablezca.",
+        "feature_daily": "Se alcanzó el límite de hoy para esta tarea en segundo plano. Se reanuda mañana."
+      },
+      "download": {
+        "model_downloading": "Se está descargando un modelo. El trabajo que lo necesita empieza cuando termine.",
+        "model_verifying": "Se está comprobando un modelo descargado. Tarda un momento.",
+        "model_loading": "Se está cargando un modelo en la memoria. Tarda un momento."
+      },
+      "waiting": {
+        "queue": "Organizando tu biblioteca en segundo plano. Las tareas se ejecutan una tras otra.",
+        "same_scope": "Organizando tu biblioteca. Una tarea espera a otra en la misma parte de la biblioteca.",
+        "provider_rate_limit": "Tu proveedor de IA está limitando las solicitudes. El trabajo se reanuda cuando se levante el límite.",
+        "provider_unavailable": "Tu proveedor de IA no responde. El trabajo lo reintenta solo.",
+        "local_memory": "Esperando a que se libere memoria para cargar un modelo.",
+        "waiting_for_embeddings": "Tus notas aún se están preparando. El trabajo continúa a medida que terminan.",
+        "retry_backoff": "Una tarea no terminó y se reintentará en breve."
+      },
+      "offline": {
+        "network_unreachable": "No hay conexión a internet. El trabajo que necesita un modelo en línea se reanuda cuando vuelvas a estar en línea."
+      },
+      "detail": {
+        "budget": "{spent} de {cap} usados este mes."
+      },
+      "eta": {
+        "duration": "Tiempo restante: aprox. {duration}.",
+        "lessThanMinute": "Queda menos de un minuto.",
+        "at": "Se reanuda alrededor de {time}."
+      },
+      "routeClass": {
+        "embed": "embeddings",
+        "decide": "clasificación",
+        "writeFast": "redacción rápida",
+        "writeQuality": "redacción cuidadosa",
+        "answer": "respuestas"
+      },
+      "actions": {
+        "resume": "Reanudar",
+        "open_controls": "Cambiar ajustes",
+        "open_ai_settings": "Abrir ajustes de IA",
+        "open_local_models": "Abrir modelos locales",
+        "sign_in": "Iniciar sesión",
+        "continue_budget": "Continuar",
+        "raise_budget": "Subir el límite"
+      }
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No se pudieron seleccionar pasajes originales relevantes para esta solicitud. Ajusta la pregunta o el ámbito de las fuentes.",

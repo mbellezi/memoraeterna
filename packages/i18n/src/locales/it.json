@@ -17,6 +17,73 @@
     "historyCleared": "Cronologia delle esecuzioni terminate pulita. Gli elementi in sospeso sono conservati.",
     "clearHistoryFailed": "Impossibile completare la pulizia. Riprova."
   },
+  "gardener": {
+    "status": {
+      "idle": "La tua libreria è aggiornata.",
+      "running": "Organizzazione della tua libreria in background.",
+      "paused": {
+        "user_pause": "L’organizzazione automatica è in pausa. Riprendila per mantenere in ordine la tua libreria.",
+        "autonomy_off": "Le modifiche automatiche sono disattivate. Le note vengono ancora collocate negli argomenti, ma nulla viene scritto o rinominato.",
+        "only_idle_user_active": "Il lavoro in background attende che ti allontani dal computer.",
+        "only_ac_on_battery": "Il lavoro in background attende che il computer sia collegato all’alimentazione."
+      },
+      "no_model": {
+        "no_route": "Nessun modello di {routeClass} è configurato. Scegline uno in Impostazioni per continuare.",
+        "model_missing": "Un modello necessario non è installato. Installalo in Modelli locali per continuare.",
+        "no_decider": "Nessun modello di classificazione è ancora pronto. Le note difficili da collocare ne attendono uno.",
+        "signin_required": "Il tuo provider di IA richiede un nuovo accesso. Accedi per continuare.",
+        "space_changed": "Il modello di embedding è cambiato. Il lavoro riprende quando le tue note saranno pronte per il nuovo modello."
+      },
+      "cap": {
+        "money_80": "Il lavoro di IA in background è in pausa vicino al limite di spesa di questo mese. Continualo oppure aumenta il limite.",
+        "money_100": "Il limite di spesa di questo mese per il lavoro di IA in background è stato raggiunto. Riprende il mese prossimo o quando aumenti il limite.",
+        "subscription_daily": "La quota giornaliera di lavoro in background del tuo abbonamento IA è esaurita. Il lavoro riprende da solo.",
+        "provider_quota": "Il tuo provider di IA segnala che la quota è esaurita. Il lavoro in background riprende quando viene ripristinata.",
+        "feature_daily": "Il limite di oggi per questa attività in background è stato raggiunto. Riprende domani."
+      },
+      "download": {
+        "model_downloading": "Un modello è in download. Il lavoro che ne ha bisogno parte quando termina.",
+        "model_verifying": "Un modello scaricato è in verifica. Ci vuole un attimo.",
+        "model_loading": "Un modello viene caricato in memoria. Ci vuole un attimo."
+      },
+      "waiting": {
+        "queue": "Organizzazione della tua libreria in background. Le attività vengono eseguite una dopo l’altra.",
+        "same_scope": "Organizzazione della tua libreria. Un’attività attende un’altra nella stessa parte della libreria.",
+        "provider_rate_limit": "Il tuo provider di IA sta limitando le richieste. Il lavoro riprende quando il limite si libera.",
+        "provider_unavailable": "Il tuo provider di IA non risponde. Il lavoro riprova da solo.",
+        "local_memory": "In attesa che si liberi memoria per caricare un modello.",
+        "waiting_for_embeddings": "Le tue note sono ancora in preparazione. Il lavoro prosegue man mano che terminano.",
+        "retry_backoff": "Un’attività non è terminata e verrà ritentata a breve."
+      },
+      "offline": {
+        "network_unreachable": "Non c’è connessione a internet. Il lavoro che richiede un modello online riprende quando torni online."
+      },
+      "detail": {
+        "budget": "{spent} di {cap} usati questo mese."
+      },
+      "eta": {
+        "duration": "Tempo rimanente: circa {duration}.",
+        "lessThanMinute": "Resta meno di un minuto.",
+        "at": "Riprende intorno a {time}."
+      },
+      "routeClass": {
+        "embed": "embedding",
+        "decide": "classificazione",
+        "writeFast": "scrittura rapida",
+        "writeQuality": "scrittura accurata",
+        "answer": "risposte"
+      },
+      "actions": {
+        "resume": "Riprendi",
+        "open_controls": "Modifica le impostazioni",
+        "open_ai_settings": "Apri le impostazioni IA",
+        "open_local_models": "Apri i modelli locali",
+        "sign_in": "Accedi",
+        "continue_budget": "Continua",
+        "raise_budget": "Aumenta il limite"
+      }
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti.",

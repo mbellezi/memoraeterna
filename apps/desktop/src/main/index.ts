@@ -3,6 +3,7 @@ import {
   backgroundBlockerOf,
   defaultKnowledgeControls,
   defaultRemoteBudgetConfig,
+  gardenerStatusKinds,
   relationExplainBackfillConfig
 } from "@app/domain";
 import { runPromptSamples } from "./services/prompt-samples.js";
@@ -19,6 +20,12 @@ import { registerConsultationIpc } from "./services/consultation-ipc.js";
 import { RemoteBudget } from "./services/gardener/remote-budget.js";
 import { BudgetRelay, RemoteBudgetGate } from "./services/gardener/budget-gate.js";
 import { registerBudgetIpc } from "./services/gardener/budget-ipc.js";
+import {
+  GardenerStatusService,
+  distinctHolds,
+  gardenerStatusStoreOf
+} from "./services/gardener/status-service.js";
+import { registerGardenerStatusIpc } from "./services/gardener/status-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -216,6 +223,8 @@ let hierarchicalIngestionService: HierarchicalIngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
 let appEvents: AppEventBus | null = null;
 let jobProgress: JobProgressPublisher | null = null;
+/** The Gardener's status (F4 D27, T86): what it does or why it does not, read and pushed. */
+let gardenerStatus: GardenerStatusService | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 /** F4 D16 (T83): the optional re-match a change of the note decider offers; the Inbox accepts it. */
@@ -408,6 +417,8 @@ void app.whenReady().then(() => {
       (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
     onLocalEmbeddingLoadStatus: (status) => {
       const payload = localEmbeddingLoadStatusSchema.parse(status);
+      // A model loading into memory is a wait the Activity explains (F4 D27).
+      gardenerStatus?.noteEmbeddingLoad(payload.state);
       for (const contents of webContents.getAllWebContents()) {
         if (!contents.isDestroyed()) contents.send(ipcChannels.aiLocalEmbeddingLoadStatus, payload);
       }
@@ -722,6 +733,29 @@ void app.whenReady().then(() => {
     spaceKey: () => aiService!.embeddingRouteSpaceKey(),
     wake: () => jobSupervisor?.wake("light")
   });
+  // The Gardener's status (F4 D27): composed from the gates, the blocked and waiting tasks, the AI
+  // lanes, the downloads and the budget; pushed as `gardener.status` on change and read over IPC.
+  gardenerStatus = new GardenerStatusService({
+    store: () => {
+      const pool = databaseService?.getPool();
+      return pool ? gardenerStatusStoreOf(pool) : null;
+    },
+    gateHolds: () =>
+      backgroundPolicy ? distinctHolds(backgroundPolicy.gate.forKinds(gardenerStatusKinds)) : [],
+    budget: async () => (remoteBudget ? await remoteBudget.snapshot() : null),
+    lanes: () => aiService?.laneSnapshots() ?? [],
+    models: async () => (localModelService ? await localModelService.listStatuses() : []),
+    publish: (event) => events.publish(event),
+    events,
+    signals: backgroundPolicy
+      ? [
+          (listener) => backgroundPolicy!.controls.subscribe(() => listener()),
+          (listener) => backgroundPolicy!.power.subscribe(() => listener())
+        ]
+      : [],
+    logger: console
+  });
+  registerGardenerStatusIpc(ipcMain, gardenerStatus);
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
@@ -793,6 +827,7 @@ void app.whenReady().then(() => {
         // The Knowledge controls, the power signals and the blocker service (F4 T75); the job
         // supervisor re-gates blocked rows before its workers start.
         backgroundPolicy?.start();
+        gardenerStatus?.start();
         // DEV-only note pair verdicts (MEMORA_GOLDEN_NOTE_PAIRS, golden-note-pairs.ts): exclusive of
         // every other golden knob and checked first, so a refusal quits before a wipe or a reset can run.
         const notePairs =
@@ -1343,6 +1378,8 @@ function shutdownSteps(): ShutdownStep[] {
       name: "event bus",
       timeoutMs: 2_000,
       run: () => {
+        gardenerStatus?.stop();
+        gardenerStatus = null;
         jobProgress?.dispose();
         jobProgress = null;
         appEvents?.dispose();

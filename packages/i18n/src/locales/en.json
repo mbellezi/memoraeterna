@@ -17,6 +17,73 @@
     "historyCleared": "Finished-run history cleared. Unresolved work was preserved.",
     "clearHistoryFailed": "Could not complete cleanup. Try again."
   },
+  "gardener": {
+    "status": {
+      "idle": "Your library is up to date.",
+      "running": "Organizing your library in the background.",
+      "paused": {
+        "user_pause": "Automatic organizing is paused. Resume it to keep your library tidy.",
+        "autonomy_off": "Automatic changes are off. Notes are still placed in topics, but nothing is written or renamed.",
+        "only_idle_user_active": "Background work waits for you to step away from the computer.",
+        "only_ac_on_battery": "Background work waits until the computer is plugged in."
+      },
+      "no_model": {
+        "no_route": "No {routeClass} model is set up. Choose one in Settings to continue.",
+        "model_missing": "A model this needs is not installed. Install it under Local models to continue.",
+        "no_decider": "No ranking model is ready yet. Notes that are hard to place wait for one.",
+        "signin_required": "Your AI provider needs you to sign in again. Sign in to continue.",
+        "space_changed": "The embedding model changed. Work resumes once your notes are prepared for it."
+      },
+      "cap": {
+        "money_80": "Background AI work is paused near this month’s spending limit. Continue it, or raise the limit.",
+        "money_100": "This month’s spending limit for background AI work is reached. It resumes next month, or when you raise the limit.",
+        "subscription_daily": "Today’s background allowance on your AI subscription is used up. Work resumes by itself.",
+        "provider_quota": "Your AI provider reports that its quota is used up. Background work resumes when it resets.",
+        "feature_daily": "Today’s limit for this background task is reached. It resumes tomorrow."
+      },
+      "download": {
+        "model_downloading": "A model is downloading. Work that needs it starts when it finishes.",
+        "model_verifying": "A downloaded model is being checked. This takes a moment.",
+        "model_loading": "A model is loading into memory. This takes a moment."
+      },
+      "waiting": {
+        "queue": "Organizing your library in the background. Tasks run one after another.",
+        "same_scope": "Organizing your library. A task waits for another one on the same part of your library.",
+        "provider_rate_limit": "Your AI provider is limiting requests. Work resumes when the limit lifts.",
+        "provider_unavailable": "Your AI provider is not answering. Work tries again by itself.",
+        "local_memory": "Waiting for memory to free up before a model can load.",
+        "waiting_for_embeddings": "Your notes are still being prepared. Work follows as they finish.",
+        "retry_backoff": "A task did not finish and will be tried again shortly."
+      },
+      "offline": {
+        "network_unreachable": "There is no internet connection. Work that needs an online model resumes when you are back online."
+      },
+      "detail": {
+        "budget": "{spent} of {cap} used this month."
+      },
+      "eta": {
+        "duration": "About {duration} left.",
+        "lessThanMinute": "Less than a minute left.",
+        "at": "Resumes around {time}."
+      },
+      "routeClass": {
+        "embed": "embedding",
+        "decide": "ranking",
+        "writeFast": "quick writing",
+        "writeQuality": "careful writing",
+        "answer": "answering"
+      },
+      "actions": {
+        "resume": "Resume",
+        "open_controls": "Change settings",
+        "open_ai_settings": "Open AI settings",
+        "open_local_models": "Open local models",
+        "sign_in": "Sign in",
+        "continue_budget": "Continue",
+        "raise_budget": "Raise the limit"
+      }
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No relevant original passages could be selected for this request. Adjust the question or source scope.",

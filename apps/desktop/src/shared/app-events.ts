@@ -4,13 +4,18 @@
 // handler only ever receives a payload that matches its type. Copy never travels in an event: names
 // are stored values, everything else is a state, a count or a parameter the renderer turns into
 // text through `@app/i18n`.
-import { BudgetSnapshotSchema, ChangeSetRefSchema, TopicsChangedEventSchema } from "@app/domain";
+import {
+  BudgetSnapshotSchema,
+  ChangeSetRefSchema,
+  GardenerStatusSnapshotSchema,
+  TopicsChangedEventSchema,
+  type GardenerStatusSnapshot
+} from "@app/domain";
 import { z } from "zod";
 
 import { localModelStatusSchema, RelationsChangedEventSchema } from "./ipc.js";
 
 const count = z.number().int().nonnegative();
-const share = z.number().min(0).max(1);
 
 /** The jobs that changed since the previous `job.progress`: at most this many IDs travel. */
 export const appEventJobIdsMax = 50;
@@ -71,43 +76,13 @@ export const InboxChangedEventSchema = z
   })
   .strict();
 
-export const gardenerStateSchema = z.enum(["running", "idle", "blocked", "attention"]);
-/** Blocker classes in precedence order (D7). */
-export const gardenerBlockerClassSchema = z.enum([
-  "paused",
-  "no_model",
-  "cap",
-  "download",
-  "waiting",
-  "offline"
-]);
-
 /**
- * The Gardener's status (spec 3.8). `params` carry the variable parts of the sentence (times,
- * names, route classes), never IDs. Published by the status service (T86), which owns the
- * snapshot; the shape here is the contract its sentence is rendered from.
+ * `gardener.status`: the Gardener's status (spec 3.8) when it changes. The snapshot is defined in
+ * `@app/domain` (`GardenerStatusSnapshotSchema`), where the status is composed and its sentence is
+ * rendered; it is read over IPC too (`gardener.status`). `params` carry the variable parts of the
+ * sentence (times, names, amounts), never IDs.
  */
-export const GardenerStatusSnapshotSchema = z
-  .object({
-    state: gardenerStateSchema,
-    class: gardenerBlockerClassSchema.optional(),
-    reason: z.string().min(1).max(80).optional(),
-    params: z.record(
-      z.string().min(1).max(40),
-      z.union([z.string().max(200), z.number(), z.boolean()])
-    ),
-    coverage: z.object({ placed: share, matched: share, overviewsFresh: share }).strict(),
-    /** Time left for the work ahead, or the instant a blocker clears. */
-    eta: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("duration"), seconds: count }).strict(),
-        z.object({ kind: z.literal("at"), at: z.string().datetime() }).strict()
-      ])
-      .optional(),
-    action: z.string().min(1).max(64).optional()
-  })
-  .strict();
-export type GardenerStatusSnapshot = z.infer<typeof GardenerStatusSnapshotSchema>;
+export { GardenerStatusSnapshotSchema, type GardenerStatusSnapshot };
 
 export const GardenerStatusEventSchema = z
   .object({ type: z.literal("gardener.status"), status: GardenerStatusSnapshotSchema })

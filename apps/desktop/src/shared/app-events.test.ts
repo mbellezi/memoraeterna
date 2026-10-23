@@ -36,13 +36,13 @@ const samples: Record<AppEvent["type"], AppEvent> = {
   "gardener.status": {
     type: "gardener.status",
     status: {
-      state: "blocked",
+      state: "attention",
       class: "cap",
-      reason: "monthly",
-      params: { resetsOn: "2026-11-01", capUsd: 5 },
+      reason: "money_100",
+      params: { spentUsd: 5, capUsd: 5 },
       coverage: { placed: 0.9, matched: 0.5, overviewsFresh: 0.2 },
       eta: { kind: "at", at: "2026-11-01T00:00:00.000Z" },
-      action: "continue"
+      action: "raise_budget"
     }
   },
   "model.download": {
