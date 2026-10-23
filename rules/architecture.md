@@ -71,9 +71,9 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
   validated work or replaying an uncertain provider call. Unrequested stages are recorded as skipped, not pending.
 - One failed or canceled item never blocks or invalidates its siblings or unrelated tasks.
   Aggregate progress never hides a failed child. Cancellation preserves completed results.
-- Only transient errors are retried, with bounded attempts and backoff. A `dedupe_key` admits one queued
-  job per key; an immediate request merged into it makes it due now and a debounced one never postpones
-  a due job. A job a blocker sets aside waits with its reason and keeps its attempts and its key.
+- Only transient errors and invalid model answers are retried, with bounded attempts and backoff. A `dedupe_key`
+  admits one queued job per key; an immediate request merged into it makes it due now and a debounced one never
+  postpones a due job. A job a blocker sets aside waits with its reason and keeps its attempts and key.
 - Reuse an artifact only when its source revision, input hashes and required dependencies still
   match; invalidation is explicit and limited to affected dependents.
 

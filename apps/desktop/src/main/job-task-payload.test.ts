@@ -9,7 +9,8 @@ describe("persisted job envelope", () => {
       generation: "1",
       promptPin: { version: "prompt-catalog-v1" },
       errorHistory: [{ message: "Previous attempt" }],
-      dashboardDismissedAt: "2026-09-12T00:00:00Z"
+      dashboardDismissedAt: "2026-09-12T00:00:00Z",
+      claimedDedupeKey: "topic-place:tree:root"
     };
     const before = structuredClone(payload),
       task = jobTaskPayload(payload);

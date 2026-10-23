@@ -245,12 +245,13 @@ describe("result.status mapping (3.1b)", () => {
       status: "call_failed",
       retry: true
     });
-    // Still invalid after the producer's repair: final, only transient errors are retried.
+    // Still invalid after the producer's repair: a failed attempt with backoff like `call_failed`
+    // (3.1b), not an immediate failure.
     for (const status of ["invalid", "invalid_output"])
       expect(gardenerResultOf("topic-areas", { status })).toEqual({
         state: "failed",
         status,
-        retry: false
+        retry: true
       });
   });
 

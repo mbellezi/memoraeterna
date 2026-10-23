@@ -238,7 +238,8 @@ export function evaluateE6(store: StoreFacts, run: RunFacts): E6Report {
     );
   }
   // E6 gates on the topic side only (spec section 8): the lane drained in time, nothing threw and
-  // no topic job failed. Failed ingestion work (a weak local writer's invalid knowledge-graph JSON,
+  // no topic job failed (one that spent its attempts, an invalid model answer included: those are
+  // retried with backoff first, 3.1b). Failed ingestion work (a weak local writer's invalid knowledge-graph JSON,
   // for example) is reported, not gating.
   const failedRuns = store.ingestionRuns.filter((row) => row.status !== "succeeded");
   const failedTopicJobs = store.failedJobs.filter((row) => row.type.startsWith("topic-"));

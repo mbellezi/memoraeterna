@@ -79,7 +79,8 @@ export function gardenerFingerprint(
 /**
  * Whether a claimed task skips instead of running (D8, D9), given its fingerprint and the outcome
  * cache of its (kind, subject). An unknown fingerprint never skips: nothing proves the input is the
- * same, so a kind without a fingerprint runs every time (its failures still mark a quarantine).
+ * same, so a kind without a fingerprint runs every time (and its failures never add up toward a
+ * quarantine: only equal known fingerprints do, D8).
  */
 export function gardenerSkipReason(
   fingerprint: string | null,

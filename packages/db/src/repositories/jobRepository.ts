@@ -117,8 +117,8 @@ export interface UpdateJobInput {
 /**
  * What the job's end writes to the outcome cache of its (kind, subject) (D8, D9): a success
  * (`done`, `no_change`) records the fingerprint and ends a failure run; a failed job extends the
- * run when it failed on the same fingerprint and quarantines the subject at `quarantineAfter`; a
- * skip leaves both as they are.
+ * run when it failed on the same known fingerprint (null, unknown, never matches) and quarantines
+ * the subject at `quarantineAfter`; a skip leaves both as they are.
  */
 export interface GardenerOutcomeWrite {
   kind: string;
@@ -275,6 +275,13 @@ function conflictingScope(error: unknown): string | null {
 /** Claim attempts after a same-scope race before giving up for this pass. */
 const scopeClaimAttempts = 4;
 
+/**
+ * The payload envelope field that remembers the dedupe key a claim dropped (`claimNext`), so a job
+ * a crash left running can get it back (`recoverStale`, `recoverInterrupted`). It is only read
+ * from a running job, and every claim rewrites it; `jobTaskPayload` keeps it from the task.
+ */
+export const claimedDedupeKeyField = "claimedDedupeKey";
+
 function mapJob(row: JobRow): JobRecord {
   return {
     id: row.id,
@@ -361,6 +368,74 @@ async function mergeIntoQueued(
   );
   const row = merged.rows[0];
   return row ? { job: mapJob(row), mergedInto: row.mergedInto } : null;
+}
+
+/**
+ * Puts a job a crash left running back in the queue, due now, with the dedupe key its claim
+ * dropped restored (D7, as `setAside` does), so a request made while it waits joins it instead of
+ * queuing a second run. When a queued job holds the key already (a request made during the run, or
+ * another crashed job restored first) this one merges into it: the queued job keeps the higher
+ * priority and this one ends canceled with `result.mergedInto`. False when it is not running.
+ */
+async function requeueCrashed(
+  db: Queryable,
+  id: string,
+  dedupeKey: string | null
+): Promise<boolean> {
+  for (let attempt = 1; ; attempt += 1) {
+    const restoreKey = attempt <= 2 ? dedupeKey : null;
+    try {
+      const queued = await db.query(
+        `update jobs
+         set status = 'queued', dedupe_key = $2, payload = payload - '${claimedDedupeKeyField}',
+             finished_at = null, run_after = now(), locked_at = null, locked_by = null,
+             updated_at = now()
+         where id = $1 and status = 'running'
+         returning id`,
+        [id, restoreKey]
+      );
+      return (queued.rowCount ?? 0) > 0;
+    } catch (error) {
+      if (uniqueViolation(error) !== "jobs_dedupe_queued_uidx" || !restoreKey) throw error;
+    }
+    if (await mergeIntoQueued(db, id, dedupeKey!, null)) return true;
+    // The queued job was claimed meanwhile: the key is free again (or, past two tries, dropped).
+  }
+}
+
+/**
+ * Recovers the jobs a crash left `running`: those whose lock is older than `staleAfterSeconds`, or
+ * all of them (null, at startup). A job with a cancel request ends canceled and one that spent its
+ * attempts ends failed (`worker_crashed`); every other one is queued again, with its dedupe key
+ * (`requeueCrashed`). Returns how many jobs it recovered.
+ */
+async function recoverRunning(db: Queryable, staleAfterSeconds: number | null): Promise<number> {
+  const params = staleAfterSeconds === null ? [] : [staleAfterSeconds];
+  const stale =
+    staleAfterSeconds === null
+      ? "status = 'running'"
+      : "status = 'running' and locked_at < now() - make_interval(secs => $1)";
+  const ended = await db.query(
+    `update jobs
+     set status = case when cancel_requested_at is not null
+                   then 'canceled'::job_status else 'failed'::job_status end,
+         error = case when cancel_requested_at is not null
+                   then error else coalesce(error, 'worker_crashed') end,
+         finished_at = now(), run_after = now(), locked_at = null, locked_by = null,
+         updated_at = now()
+     where ${stale} and (cancel_requested_at is not null or attempts >= max_attempts)`,
+    params
+  );
+  // The highest priority restores a shared key first; the others merge into it.
+  const crashed = await db.query<{ id: string; dedupeKey: string | null }>(
+    `select id, payload ->> '${claimedDedupeKeyField}' as "dedupeKey" from jobs
+      where ${stale} order by priority desc, created_at, id`,
+    params
+  );
+  let recovered = ended.rowCount ?? 0;
+  for (const job of crashed.rows)
+    if (await requeueCrashed(db, job.id, job.dedupeKey)) recovered += 1;
+  return recovered;
 }
 
 export function createJobRepository(db: Queryable) {
@@ -562,9 +637,10 @@ export function createJobRepository(db: Queryable) {
 
     /**
      * Ends a job and, when `outcome` is given, writes its (kind, subject) outcome cache in the same
-     * statement (D8, D9): a failed job that failed on the same fingerprint as the run before it
-     * extends the run and, at `quarantineAfter` failed jobs, quarantines the subject and marks
-     * this job.
+     * statement (D8, D9): a failed job that failed on the same known fingerprint as the run before
+     * it extends the run and, at `quarantineAfter` failed jobs, quarantines the subject and marks
+     * this job. An unknown fingerprint (null) is never the same input: such a job starts a run of
+     * its own and its failure adds to nothing (its own attempts end by `max_attempts`).
      */
     async finish(
       id: string,
@@ -589,8 +665,10 @@ export function createJobRepository(db: Queryable) {
         params.push(sanitizeStoredValue(value));
         return `"${column}" = $${params.length}`;
       });
-      const failedRun = `case when o.consecutive_failures > 0
-              and o.failed_fingerprint is not distinct from excluded.failed_fingerprint
+      // A run counts the jobs that failed on one known input: an unknown fingerprint (null) proves
+      // nothing, so `=` (never `is not distinct from`) keeps null failures from adding up.
+      const sameInput = "o.failed_fingerprint = excluded.failed_fingerprint";
+      const failedRun = `case when o.consecutive_failures > 0 and ${sameInput}
             then o.consecutive_failures + 1 else 1 end`;
       const result = await db.query<JobRow>(
         `with outcome as (
@@ -619,8 +697,7 @@ export function createJobRepository(db: Queryable) {
              last_job_id = excluded.last_job_id,
              quarantined_at = case excluded.last_outcome
                when 'failed' then case when ${failedRun} >= $7::int then
-                 coalesce(case when o.failed_fingerprint is not distinct from excluded.failed_fingerprint
-                   then o.quarantined_at end, now()) end
+                 coalesce(case when ${sameInput} then o.quarantined_at end, now()) end
                when 'skipped' then o.quarantined_at end,
              updated_at = now()
            returning quarantined_at
@@ -696,7 +773,8 @@ export function createJobRepository(db: Queryable) {
      * Claims the next due job, optionally of one lane and of the given types. The order matches
      * `jobs_lane_queue_idx`, so a lane claim reads the index in order. The claimed job drops its
      * dedupe key: from now on a request for the same work queues a new job (the key it held is
-     * returned as `claimedDedupeKey`, for a blocker that sets it aside, D7).
+     * returned as `claimedDedupeKey`, for a blocker that sets it aside, D7, and kept in the payload
+     * envelope for the recovery of a crash, `recoverInterrupted`).
      * Never claimed: a job set aside by a blocker, a job of a `gatedTypes` kind (a global gate,
      * whose rows keep their attempts and key), and a job whose scope has a running job (D6). Two
      * workers that claim jobs of one scope at once race on `jobs_running_scope_uidx`: the loser
@@ -744,7 +822,12 @@ export function createJobRepository(db: Queryable) {
              )
              update jobs
              set status = 'running', locked_at = now(), locked_by = $1,
-                 attempts = attempts + 1, dedupe_key = null, updated_at = now()
+                 attempts = attempts + 1, dedupe_key = null,
+                 payload = case
+                   when dedupe_key is not null then payload || jsonb_build_object('${claimedDedupeKeyField}', dedupe_key)
+                   when jsonb_exists(payload, '${claimedDedupeKeyField}') then payload - '${claimedDedupeKeyField}'
+                   else payload end,
+                 updated_at = now()
              where id = (select id from candidate)
              returning ${returning}, (select dedupe_key from candidate) as "claimedDedupeKey"`,
             values
@@ -1011,44 +1094,16 @@ export function createJobRepository(db: Queryable) {
       return result.rowCount ?? 0;
     },
 
+    /**
+     * Recovers the running jobs whose lock went stale (a worker that died): see `recoverRunning`.
+     */
     async recoverStale(staleAfterSeconds = 60): Promise<number> {
-      const result = await db.query(
-        `update jobs
-         set status = case
-               when cancel_requested_at is not null then 'canceled'::job_status
-               when attempts < max_attempts then 'queued'::job_status
-               else 'failed'::job_status
-             end,
-             error = case
-               when cancel_requested_at is not null or attempts < max_attempts then error
-               else coalesce(error, 'worker_crashed')
-             end,
-             finished_at = case when cancel_requested_at is not null or attempts >= max_attempts then now() else null end,
-             run_after = now(), locked_at = null, locked_by = null, updated_at = now()
-         where status = 'running'
-           and locked_at < now() - make_interval(secs => $1)`,
-        [staleAfterSeconds]
-      );
-      return result.rowCount ?? 0;
+      return recoverRunning(db, staleAfterSeconds);
     },
 
+    /** Recovers every running job at startup, before the workers start: see `recoverRunning`. */
     async recoverInterrupted(): Promise<number> {
-      const result = await db.query(
-        `update jobs
-         set status = case
-               when cancel_requested_at is not null then 'canceled'::job_status
-               when attempts < max_attempts then 'queued'::job_status
-               else 'failed'::job_status
-             end,
-             error = case
-               when cancel_requested_at is not null or attempts < max_attempts then error
-               else coalesce(error, 'worker_crashed')
-             end,
-             finished_at = case when cancel_requested_at is not null or attempts >= max_attempts then now() else null end,
-             run_after = now(), locked_at = null, locked_by = null, updated_at = now()
-         where status = 'running'`
-      );
-      return result.rowCount ?? 0;
+      return recoverRunning(db, null);
     }
   };
 }

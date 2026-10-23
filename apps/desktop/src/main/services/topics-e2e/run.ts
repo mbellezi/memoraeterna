@@ -649,7 +649,9 @@ function syntheticRoute(modelsDirectory: string): RouteSpec {
 /**
  * Queued or running jobs: the topic ones (the light lane) or everything else (the heavy work). A
  * job a blocker set aside waits for its blocker, not for the lane (F4 D5): without a ranker every
- * gate job ends `no_decider` and waits for one.
+ * gate job ends `no_decider` and waits for one. A job whose model answer was invalid, or whose call
+ * failed, is queued again after a backoff (3.1b) with no blocker: the lane has not drained until
+ * that retry ends, and only a job that spent its attempts is failed (E6 gates on those).
  */
 async function activeJobs(pool: PgPool, topic: boolean): Promise<number> {
   const result = await pool.query<{ n: number }>(

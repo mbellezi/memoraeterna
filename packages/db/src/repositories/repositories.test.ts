@@ -479,14 +479,31 @@ describe("repositories", () => {
   });
 
   it("immediately recovers every job left running by the previous process", async () => {
-    const db = new FakeQueryable([[], [], [], []]);
+    const db = new FakeQueryable([[], [{ id: "job-1", dedupeKey: "key-1" }], [{ id: "job-1" }]]);
 
-    await createJobRepository(db).recoverInterrupted();
+    expect(await createJobRepository(db).recoverInterrupted()).toBe(1);
 
+    // Canceled and exhausted jobs end; the others are listed with the key their claim dropped and
+    // queued again with it.
     expect(db.queries[0]?.text).toContain("where status = 'running'");
-    expect(db.queries[0]?.text).toContain("attempts < max_attempts");
+    expect(db.queries[0]?.text).toContain("attempts >= max_attempts");
     expect(db.queries[0]?.text).not.toContain("locked_at <");
     expect(db.queries[0]?.values).toEqual([]);
+    expect(db.queries[1]?.text).toContain("payload ->> 'claimedDedupeKey'");
+    expect(db.queries[1]?.text).not.toContain("locked_at <");
+    expect(db.queries[2]?.text).toContain("dedupe_key = $2");
+    expect(db.queries[2]?.values).toEqual(["job-1", "key-1"]);
+  });
+
+  it("recovers only the running jobs whose lock went stale", async () => {
+    const db = new FakeQueryable([[], []]);
+
+    expect(await createJobRepository(db).recoverStale(90)).toBe(0);
+
+    expect(db.queries[0]?.text).toContain("locked_at < now() - make_interval");
+    expect(db.queries[0]?.values).toEqual([90]);
+    expect(db.queries[1]?.text).toContain("locked_at < now() - make_interval");
+    expect(db.queries[1]?.values).toEqual([90]);
   });
 
   it("removes false running state from interrupted ingestion checkpoints", async () => {

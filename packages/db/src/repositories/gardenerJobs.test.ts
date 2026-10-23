@@ -395,6 +395,125 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
     expect(await jobs().requeue(job.id, { status: "queued" }, key)).toBeNull();
   });
 
+  it("queues a job a crash left running again with its dedupe key, merging into a newer request (T74 R7b)", async () => {
+    const root = randomUUID();
+    const key = `topic-place:${treeId}:${root}`;
+    const { job } = await jobs().enqueueDeduped(place(root));
+    const claimed = await jobs().claimNext("compute", ["topic-place"], "light");
+    // The claim drops the key from the column and keeps it in the payload envelope for a crash.
+    expect(claimed).toMatchObject({ dedupeKey: null, claimedDedupeKey: key });
+    expect(claimed?.payload.claimedDedupeKey).toBe(key);
+    expect(await columns(job.id)).toMatchObject({ status: "running", dedupe_key: null });
+
+    // The worker dies: startup queues the job again, with its attempt and its key back.
+    expect(await jobs().recoverInterrupted()).toBe(1);
+    const recovered = await columns(job.id);
+    expect(recovered).toMatchObject({ status: "queued", attempts: 1, dedupe_key: key });
+    expect(recovered?.payload).not.toHaveProperty("claimedDedupeKey");
+    // A request made while it waits joins it instead of queuing a second run.
+    expect((await jobs().enqueueDeduped(place(root))).created).toBe(false);
+
+    // A job claimed without a key (queued by a manual retry) wipes a stale envelope and has no key
+    // to restore.
+    await jobs().claimNext("compute", ["topic-place"], "light");
+    await jobs().update(job.id, { status: "failed", finishedAt: new Date() });
+    await jobs().retry(job.id);
+    await db().query(
+      `update jobs set payload = payload || '{"claimedDedupeKey":"stale"}'::jsonb where id = $1`,
+      [job.id]
+    );
+    await jobs().claimNext("compute", ["topic-place"], "light");
+    expect((await columns(job.id))?.payload).not.toHaveProperty("claimedDedupeKey");
+    expect(await jobs().recoverInterrupted()).toBe(1);
+    expect(await columns(job.id)).toMatchObject({ status: "queued", dedupe_key: null });
+
+    // Claimed with a key, a newer request is queued under it meanwhile, then the crash: the
+    // recovered job merges into the newer one (which keeps the higher priority), as setAside does.
+    const other = randomUUID();
+    const { job: running } = await jobs().enqueueDeduped(place(other, { priority: 6 }));
+    expect((await jobs().claimNext("compute", ["topic-place"], "light"))?.id).toBe(running.id);
+    const { job: newer, created } = await jobs().enqueueDeduped(place(other, { priority: 1 }));
+    expect(created).toBe(true);
+    expect(await jobs().recoverInterrupted()).toBe(1);
+    expect(await columns(running.id)).toMatchObject({ status: "canceled", dedupe_key: null });
+    expect((await jobs().findById(running.id))?.result).toMatchObject({ mergedInto: newer.id });
+    expect(await columns(newer.id)).toMatchObject({
+      status: "queued",
+      priority: 6,
+      dedupe_key: `topic-place:${treeId}:${other}`
+    });
+  });
+
+  it("merges the crashed jobs of one key into the first, and ends exhausted and canceled ones (T74 R7b)", async () => {
+    // Two running jobs under one key (a request queued during the first run and claimed since): an
+    // unscoped kind, so both run at once.
+    const retype = (priority: number) =>
+      jobs().enqueueDeduped({
+        type: "relation-retype",
+        lane: "light",
+        dedupeKey: "relation-retype",
+        payload: {},
+        priority,
+        debounce: immediateJobDebounce
+      });
+    const { job: older } = await retype(0);
+    expect((await jobs().claimNext("relations", ["relation-retype"], "light"))?.id).toBe(older.id);
+    const { job: newer } = await retype(5);
+    expect((await jobs().claimNext("relations", ["relation-retype"], "light"))?.id).toBe(newer.id);
+    // A job that spent its attempts, and one with a cancel request, end instead of queuing.
+    const spent = await jobs().create({ type: "topic-name", lane: "light", payload: { treeId } });
+    const asked = await jobs().create({ type: "topic-build", lane: "light", payload: { treeId } });
+    await db().query(
+      `update jobs set status = 'running', locked_at = now(), attempts = max_attempts where id = $1`,
+      [spent.id]
+    );
+    await db().query(
+      `update jobs set status = 'running', locked_at = now(), attempts = 1,
+              cancel_requested_at = now() where id = $1`,
+      [asked.id]
+    );
+    expect(await jobs().recoverInterrupted()).toBe(4);
+    // The higher priority restores the key; the other merges into it.
+    expect(await columns(newer.id)).toMatchObject({
+      status: "queued",
+      dedupe_key: "relation-retype",
+      priority: 5
+    });
+    expect(await columns(older.id)).toMatchObject({ status: "canceled", dedupe_key: null });
+    expect((await jobs().findById(older.id))?.result).toMatchObject({ mergedInto: newer.id });
+    expect(await columns(spent.id)).toMatchObject({ status: "failed" });
+    expect((await jobs().findById(spent.id))?.error).toBe("worker_crashed");
+    expect(await columns(asked.id)).toMatchObject({ status: "canceled" });
+    // A request joins the job that kept the key.
+    expect((await retype(0)).created).toBe(false);
+  });
+
+  it("recovers only the running jobs whose lock went stale, with their key (T74 R7b)", async () => {
+    const name = (tree: string) =>
+      jobs().enqueueDeduped({
+        type: "topic-name",
+        lane: "light",
+        dedupeKey: `topic-name:${tree}`,
+        payload: { treeId: tree },
+        debounce: immediateJobDebounce
+      });
+    const freshTree = randomUUID();
+    const staleTree = randomUUID();
+    const { job: fresh } = await name(freshTree);
+    const { job: stale } = await name(staleTree);
+    await jobs().claimNext("model", ["topic-name"], "light");
+    await jobs().claimNext("model", ["topic-name"], "light");
+    await db().query("update jobs set locked_at = now() - interval '10 minutes' where id = $1", [
+      stale.id
+    ]);
+    expect(await jobs().recoverStale(60)).toBe(1);
+    expect(await columns(fresh.id)).toMatchObject({ status: "running", dedupe_key: null });
+    expect(await columns(stale.id)).toMatchObject({
+      status: "queued",
+      dedupe_key: `topic-name:${staleTree}`
+    });
+  });
+
   it("raises a queued job's priority on merge and releases its blocker", async () => {
     const root = randomUUID();
     const { job } = await jobs().enqueueDeduped(place(root, { priority: 1 }));
@@ -489,12 +608,40 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
       failedFingerprint: null,
       quarantinedAt: null
     });
-    // Unknown fingerprints count too (null equals null), and a manual retry ends the quarantine.
+    // An unknown fingerprint (null) proves nothing (T74 R3): failed jobs without one never add up,
+    // with each other or with a job of a known fingerprint, and each ends by its own attempts.
+    const unknown = await failOnce(subject, null);
+    expect(unknown).toMatchObject({ status: "failed", quarantinedAt: null });
+    expect((await failOnce(subject, null))?.quarantinedAt).toBeNull();
+    expect(await outcomes.get("topic-name", subject)).toMatchObject({
+      consecutiveFailures: 1,
+      failedFingerprint: null,
+      quarantinedAt: null
+    });
+    await failOnce(subject, fp(4));
     await failOnce(subject, null);
-    const quarantined = await failOnce(subject, null);
+    await failOnce(subject, fp(4));
+    expect(await outcomes.get("topic-name", subject)).toMatchObject({
+      consecutiveFailures: 1,
+      failedFingerprint: fp(4),
+      quarantinedAt: null
+    });
+    expect(await outcomes.countQuarantined()).toBe(0);
+    // Two jobs that failed on one known fingerprint quarantine it; a failure on an unknown one is
+    // not that input, so it starts a run of its own and ends the quarantine.
+    const quarantined = await failOnce(subject, fp(4));
     expect(quarantined?.quarantinedAt).toBeInstanceOf(Date);
+    expect((await failOnce(subject, null))?.quarantinedAt).toBeNull();
+    expect(await outcomes.get("topic-name", subject)).toMatchObject({
+      consecutiveFailures: 1,
+      quarantinedAt: null
+    });
+    // A manual retry ends the quarantine.
+    await failOnce(subject, fp(5));
+    const quarantinedAgain = await failOnce(subject, fp(5));
+    expect(quarantinedAgain?.quarantinedAt).toBeInstanceOf(Date);
     expect(await outcomes.listQuarantined()).toHaveLength(1);
-    const retried = await jobs().retry(quarantined!.id);
+    const retried = await jobs().retry(quarantinedAgain!.id);
     expect(retried).toMatchObject({ status: "queued", quarantinedAt: null, outcome: null });
     expect(await outcomes.get("topic-name", subject)).toMatchObject({
       consecutiveFailures: 0,

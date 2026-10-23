@@ -207,13 +207,20 @@ describe.skipIf(!sidecarInstalled)("Gardener tasks through the job supervisor", 
       attempts: 3,
       quarantinedAt: null
     });
-    // An answer still invalid after the producer's repair fails at once (no retry), and an
-    // unrelated subject's failed job does not add to this input's run.
+    // An answer still invalid after the producer's repair is a failed attempt like a failed call
+    // (3.1b, T74 R4): backed off and retried, failed after its attempts, and an unrelated
+    // subject's failed job does not add to this input's run.
     const invalid = await enqueue(other);
+    expect(await supervisor!.runLightOnce("model")).toMatchObject({
+      status: "queued",
+      attempts: 1,
+      error: "gardener_attempt_failed:invalid",
+      result: { status: "invalid" }
+    });
     await drain();
     expect(await jobs().findById(invalid.id)).toMatchObject({
       status: "failed",
-      attempts: 1,
+      attempts: 3,
       result: { status: "invalid" }
     });
     const outcomes = createGardenerOutcomeRepository(db());
@@ -261,6 +268,71 @@ describe.skipIf(!sidecarInstalled)("Gardener tasks through the job supervisor", 
       status: "failed",
       quarantinedAt: null
     });
+  });
+
+  it("retries an invalid answer with backoff within its attempts and ends done once one is valid (T74 R4)", async () => {
+    const tree = randomUUID();
+    members.set(tree, "z");
+    const job = await enqueue(tree);
+    for (const status of ["invalid_output", "invalid"]) {
+      answer.set(tree, { status });
+      await db().query("update jobs set run_after = now() where id = $1", [job.id]);
+      const retried = await supervisor!.runLightOnce("model");
+      expect(retried).toMatchObject({
+        status: "queued",
+        error: `gardener_attempt_failed:${status}`,
+        result: { status },
+        finishedAt: null
+      });
+      // Queued again after a backoff, holding its dedupe key, with nothing settled as ended.
+      expect(retried!.runAfter.getTime()).toBeGreaterThan(Date.now());
+      expect(retried!.dedupeKey).toBe(`topic-areas:${tree}`);
+    }
+    expect(ended).not.toHaveBeenCalled();
+    const outcomes = createGardenerOutcomeRepository(db());
+    expect(await outcomes.get("topic-areas", `tree:${tree}`)).toBeNull();
+    answer.set(tree, { status: "applied" });
+    await drain();
+    expect(await jobs().findById(job.id)).toMatchObject({
+      status: "succeeded",
+      attempts: 3,
+      outcome: "done",
+      result: { status: "applied" }
+    });
+    expect(await outcomes.get("topic-areas", `tree:${tree}`)).toMatchObject({
+      lastOutcome: "done",
+      consecutiveFailures: 0,
+      quarantinedAt: null
+    });
+  });
+
+  it("never adds up jobs whose input fingerprint is unknown toward a quarantine (T74 R3)", async () => {
+    const tree = randomUUID();
+    // No fingerprint for this tree: each failed job stands alone, however often it fails.
+    answer.set(tree, { status: "call_failed" });
+    const outcomes = createGardenerOutcomeRepository(db());
+    for (let round = 1; round <= 3; round += 1) {
+      const job = await enqueue(tree);
+      await drain();
+      expect(await jobs().findById(job.id)).toMatchObject({
+        status: "failed",
+        attempts: 3,
+        quarantinedAt: null
+      });
+      expect(await outcomes.get("topic-areas", `tree:${tree}`)).toMatchObject({
+        consecutiveFailures: 1,
+        failedFingerprint: null,
+        quarantinedAt: null
+      });
+    }
+    // The same input is still tried (nothing proves it is the one that failed).
+    const calls = execute.mock.calls.length;
+    answer.set(tree, { status: "applied" });
+    const again = await enqueue(tree);
+    await drain();
+    expect(execute.mock.calls.length).toBe(calls + 1);
+    expect(await jobs().findById(again.id)).toMatchObject({ status: "succeeded" });
+    expect(await outcomes.countQuarantined()).toBe(0);
   });
 
   it("releases every blocked job at startup before the workers run", async () => {

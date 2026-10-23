@@ -638,6 +638,9 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
         ]
       }));
       const invalid = await runAreas(w);
+      // An answer still invalid after the repair is a failed attempt (3.1b): the job is queued
+      // again after a backoff, and the next request below joins that retry.
+      expect(invalid.status).toBe("queued");
       expect(invalid.result).toMatchObject({
         status: "invalid",
         calls: 2,
@@ -867,6 +870,16 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
       const queued = async () =>
         (await pool.query("select 1 from jobs where type = 'topic-areas' and status = 'queued'"))
           .rowCount;
+      // A failed attempt (3.1b): retried with backoff, and the retry waits in the queue.
+      expect(invalid.status).toBe("queued");
+      expect(await queued()).toBe(1);
+      await runQueued(w, "topic-areas");
+      await runQueued(w, "topic-areas");
+      expect(await createJobRepository(pool).findById(invalid.id)).toMatchObject({
+        status: "failed",
+        attempts: 3,
+        result: { status: "invalid", repairRevision: 1 }
+      });
       // Judged by the repair: final for this build.
       await w.services.areas!.requestIfNeeded(w.treeId);
       expect(await queued()).toBe(0);

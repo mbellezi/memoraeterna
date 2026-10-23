@@ -314,6 +314,19 @@ describe("the E6 verdict", () => {
     ).toEqual(["lane"]);
   });
 
+  it("fails on an Areas job that spent its attempts on invalid answers (3.1b), not on its retries", () => {
+    // An invalid answer is retried with backoff and the lane is not drained meanwhile; the failed
+    // job is the one that spent every attempt, and it gates E6 like any failed topic job.
+    const report = evaluateE6(
+      store({ failedJobs: [{ type: "topic-areas", count: 1 }] }),
+      run({ stoppedBy: null })
+    );
+    expect(failing(report.checks)).toEqual(["lane"]);
+    expect(report.checks.find((check) => check.id === "lane")?.detail).toBe(
+      "1 failed topic-areas jobs"
+    );
+  });
+
   it("reports failed ingestion work outside the topics without failing E6", () => {
     const report = evaluateE6(
       store({

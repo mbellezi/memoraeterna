@@ -17,7 +17,6 @@ export type ResultStatusState =
 const done = { state: "outcome", outcome: "done" } as const;
 const noChange = { state: "outcome", outcome: "no_change" } as const;
 const failedAttempt = { state: "failed", retry: true } as const;
-const failedJob = { state: "failed", retry: false } as const;
 
 export const resultStatusStates: Readonly<Record<string, ResultStatusState>> = Object.freeze({
   // Done: the task changed what it was asked to.
@@ -65,13 +64,12 @@ export const resultStatusStates: Readonly<Record<string, ResultStatusState>> = O
   no_decider: { state: "blocked", blocker: { class: "no_model", reason: "no_decider" } },
   cap_reached: { state: "blocked", blocker: { class: "cap", reason: "feature_daily" } },
   blocked: { state: "blocked", blocker: "by_reason" },
-  // A failed call: retried with backoff like a transient failure, then failed (D8).
+  // A failed call, and an answer still invalid after the producer's own repair (a model may answer
+  // better the next time): failed attempts, retried with backoff within the job's `max_attempts`
+  // like a transient failure; the job that spends them all counts toward quarantine (3.1b, D8).
   call_failed: failedAttempt,
-  // An answer still invalid after the producer's own repair is final for its input: only transient
-  // errors are retried (rules/architecture.md), so the job fails at once. Both count toward
-  // quarantine (D8).
-  invalid: failedJob,
-  invalid_output: failedJob
+  invalid: failedAttempt,
+  invalid_output: failedAttempt
 });
 
 /** The blockers of the topic engine's `blocked` resolutions (`result.reason`). */

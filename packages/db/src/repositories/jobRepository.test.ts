@@ -415,16 +415,18 @@ describe.skipIf(!sidecarInstalled)("job lanes on a real PostgreSQL database", ()
     expect((await jobs.claimNext("heavy", ["ingestion"], "heavy"))?.id).toBe(heavy.id);
   });
 
-  it("requeues interrupted and retried jobs next to a newer queued job of their key", async () => {
+  it("merges an interrupted job into a newer queued job of its key, and queues a retried one beside it", async () => {
     const jobs = createJobRepository(db());
     const now = { debounce: { delayMs: 0, maxDelayMs: 0 } };
     const interrupted = await jobs.enqueueDeduped(deduped(now));
     await jobs.claimNext("light-compute", ["topic-place"], "light");
     const newer = await jobs.enqueueDeduped(deduped(now));
     expect(await jobs.recoverInterrupted()).toBe(1);
+    // The newer request does the work (T74 R7b); the interrupted job ends canceled, merged into it.
     expect(await jobs.findById(interrupted.job.id)).toMatchObject({
-      status: "queued",
-      dedupeKey: null
+      status: "canceled",
+      dedupeKey: null,
+      result: { mergedInto: newer.job.id }
     });
     const canceled = await jobs.requestCancel(newer.job.id);
     expect(canceled).toMatchObject({ status: "canceled" });

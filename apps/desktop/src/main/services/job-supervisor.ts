@@ -2018,9 +2018,10 @@ function failedJob(
 }
 
 /**
- * A Gardener step that returned a failure status (3.1b): `call_failed` is retried with backoff like
- * a transient failure, an answer still `invalid` after the producer's own repair fails at once;
- * the failed job counts toward its input's quarantine (D8).
+ * A Gardener step that returned a failure status (3.1b): `call_failed`, and an answer still
+ * `invalid` or `invalid_output` after the producer's own repair, are failed attempts retried with
+ * backoff like a transient failure within `max_attempts`; the job that spends them all counts
+ * toward its input's quarantine (D8).
  */
 export class GardenerAttemptFailure extends Error {
   public constructor(
