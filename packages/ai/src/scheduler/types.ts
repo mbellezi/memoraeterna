@@ -1,3 +1,5 @@
+import type { BudgetClass } from "@app/domain";
+
 import type { AiWorkloadClass } from "../contracts.js";
 import type { BreakerSnapshot } from "./breaker.js";
 
@@ -13,6 +15,15 @@ export type RemoteLaneKind = "api-key" | "codex";
  */
 export const aiPriorities = ["P0", "P1", "P2", "P3"] as const;
 export type AiPriority = (typeof aiPriorities)[number];
+
+/**
+ * Whose call it is (F4 D14, D15): `user` (an import the user started, with its own link job),
+ * `background` (the Gardener) or `interactive` (the user waits for the answer). The local lane's duty
+ * cycle and the Gardener's gates hold background calls only, whatever their priority: P2 also
+ * carries ordinary user imports, which never wait for them. Unstated, a call is not background.
+ * One definition: the RemoteBudget's `BudgetClass` (`@app/domain`), which meters the same calls.
+ */
+export type AiBudgetClass = BudgetClass;
 
 /** Time and timers of the scheduler, injected so tests run on a fake clock. */
 export interface SchedulerClock {
@@ -47,7 +58,17 @@ export interface LaneTicket {
   reservation?: LaneReservation | undefined;
   /** Clocks that stand still while the entry waits for the lane, also when it waits again. */
   pauses?: readonly PausableClock[] | undefined;
+  /** Whose call it is; the duty cycle and the admission hook read it (F4 D15). */
+  budgetClass?: AiBudgetClass | undefined;
+  /** The persisted job the call works for, so a refused admission can be told to its job. */
+  jobId?: string | undefined;
 }
+
+/** What the admission hook sees of a new entry. */
+export type LaneAdmission = Pick<
+  LaneTicket,
+  "lane" | "priority" | "workloadClass" | "budgetClass" | "label" | "jobId"
+>;
 
 export type LaneOutcome = "ok" | "transient" | "permanent";
 
@@ -119,6 +140,11 @@ export interface AiScheduler {
    * circuit breaker rejects a remote lane's new entries at once with a `ProviderUnavailableError`.
    */
   run<T>(ticket: LaneTicket, execute: (permit: LanePermit) => Promise<T>): Promise<T>;
+  /**
+   * Hands free slots out again after a condition outside the scheduler changed, such as the duty
+   * cycle of background calls (the user went idle).
+   */
+  refresh(): void;
   /** AIMD decrease and pause of a remote lane until `retryAt` (scheduler clock), when known. */
   observeRateLimit(lane: LaneKey, retryAt: number | null): void;
   /**

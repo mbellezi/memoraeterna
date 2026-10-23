@@ -1,6 +1,7 @@
 import { topicsBlockedReasons, type TopicsBlockedReason } from "../topics.js";
 import { gardenerTaskKind } from "./kinds.js";
-import type { GardenerBlocker, GardenerOutcome } from "./state.js";
+import type { GardenerBlocker } from "./blockers.js";
+import type { GardenerOutcome } from "./state.js";
 
 /**
  * Table 3.1b: what each free-text `result.status` a Gardener executor returns means. The value

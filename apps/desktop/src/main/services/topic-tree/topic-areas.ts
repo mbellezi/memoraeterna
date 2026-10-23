@@ -31,6 +31,7 @@ import {
   topicStatsWrites
 } from "@app/db";
 import type { JobRecord, JsonObject, PgPool } from "@app/db";
+import { isBackgroundBlocked } from "@app/domain";
 import {
   areaGroupingInput,
   areaGroupingSignature,
@@ -599,7 +600,8 @@ export class TopicAreasService {
         }
       );
     } catch (error) {
-      if (signal.aborted) throw error;
+      // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
+      if (signal.aborted || isBackgroundBlocked(error)) throw error;
       this.options.logger?.warn("The topic Areas call failed", error);
       return {
         kind: "stopped",

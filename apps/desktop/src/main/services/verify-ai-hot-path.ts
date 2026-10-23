@@ -137,6 +137,7 @@ try {
         });
         return completion;
       }),
+    refresh: () => inner.refresh(),
     observeRateLimit: (lane, retryAt) => inner.observeRateLimit(lane, retryAt),
     observeOutcome: (lane, outcome) => inner.observeOutcome(lane, outcome),
     snapshot: () => inner.snapshot()

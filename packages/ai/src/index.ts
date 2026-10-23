@@ -30,4 +30,5 @@ export * from "./scheduler/aimd.js";
 export * from "./scheduler/breaker.js";
 export * from "./scheduler/lanes.js";
 export * from "./scheduler/execution.js";
+export * from "./scheduler/duty-cycle.js";
 export * from "./scheduler/scheduler.js";

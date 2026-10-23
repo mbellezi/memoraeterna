@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { chunkTexts, embedManyLimits } from "@app/ai";
 import { createTopicNamingRepository, createTopicTreeRepository } from "@app/db";
 import type { JobRecord, JsonObject, PgPool, TopicLoadSpace } from "@app/db";
+import { isBackgroundBlocked } from "@app/domain";
 import { isLive, setTopicLabel, topicLabelText } from "@app/domain/topic-tree";
 import type { TopicTreeState } from "@app/domain/topic-tree";
 
@@ -163,7 +164,8 @@ export class TopicLabelService {
           signal
         );
       } catch (error) {
-        if (signal.aborted) throw error;
+        // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
+        if (signal.aborted || isBackgroundBlocked(error)) throw error;
         this.options.logger?.warn("Topic labels could not be embedded", error);
         break;
       }

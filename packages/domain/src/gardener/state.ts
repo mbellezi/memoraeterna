@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { gardenerBlockerClasses, type GardenerBlocker, type GardenerBlockerClass } from "./blockers.js";
+
 /**
  * Gardener task state (F4 D5, spec 3.1). The `jobs` table keeps its five statuses; the Gardener
  * state is derived from them and the columns 0060 adds: an outcome on a finished job, a blocker
@@ -10,47 +12,6 @@ import { z } from "zod";
 export const gardenerOutcomeValues = ["done", "no_change", "skipped"] as const;
 export const GardenerOutcomeSchema = z.enum(gardenerOutcomeValues);
 export type GardenerOutcome = z.infer<typeof GardenerOutcomeSchema>;
-
-/** Blocker classes in precedence order: the first one a task meets is the one it shows (D7). */
-export const gardenerBlockerClasses = [
-  "paused",
-  "no_model",
-  "cap",
-  "download",
-  "waiting",
-  "offline"
-] as const;
-export const GardenerBlockerClassSchema = z.enum(gardenerBlockerClasses);
-export type GardenerBlockerClass = z.infer<typeof GardenerBlockerClassSchema>;
-
-/** The reasons of each class (spec 3.1). A reason names one i18n key; variable parts are parameters. */
-export const gardenerBlockerReasons = {
-  paused: ["user_pause", "autonomy_off", "only_idle_user_active", "only_ac_on_battery"],
-  no_model: ["no_route", "model_missing", "no_decider", "signin_required", "space_changed"],
-  cap: ["money_80", "money_100", "subscription_daily", "provider_quota", "feature_daily"],
-  download: ["model_downloading", "model_verifying", "model_loading"],
-  waiting: [
-    "queue",
-    "same_scope",
-    "provider_rate_limit",
-    "provider_unavailable",
-    "local_memory",
-    "waiting_for_embeddings",
-    "retry_backoff"
-  ],
-  offline: ["network_unreachable"]
-} as const satisfies Record<GardenerBlockerClass, readonly string[]>;
-
-export type GardenerBlockerReason = (typeof gardenerBlockerReasons)[GardenerBlockerClass][number];
-
-export const GardenerBlockerSchema = z
-  .object({ class: GardenerBlockerClassSchema, reason: z.string().min(1).max(64) })
-  .strict()
-  .superRefine((blocker, context) => {
-    if (!(gardenerBlockerReasons[blocker.class] as readonly string[]).includes(blocker.reason))
-      context.addIssue({ code: "custom", message: `Unknown ${blocker.class} reason` });
-  });
-export type GardenerBlocker = { class: GardenerBlockerClass; reason: GardenerBlockerReason };
 
 /** Negative when `a` takes precedence over `b` (paused > no_model > cap > download > waiting > offline). */
 export function compareBlockerClasses(a: GardenerBlockerClass, b: GardenerBlockerClass): number {

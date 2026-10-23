@@ -55,7 +55,9 @@ import {
   type AiLaneRuntimeConfigInput,
   type AiRuntimeConfig,
   type AiRuntimeConfigInput,
+  type AiBudgetClass,
   type AiScheduler,
+  type AiSchedulerHooks,
   type AiTaskRequest,
   type AiTaskResult,
   type AiWorkloadClass,
@@ -218,6 +220,12 @@ export interface AiServiceOptions {
    */
   scheduler?: AiScheduler;
   /**
+   * The Gardener's background policy on the lanes (F4 D7, D15): the admission hook that refuses a
+   * background call a gate holds, and the local lane's duty cycle for background calls. It applies
+   * to the scheduler the service creates, not to an injected one.
+   */
+  backgroundAdmission?: Pick<AiSchedulerHooks, "admit" | "backgroundDutyCycle">;
+  /**
    * The MLX helper every MLX adapter shares: one helper process holds at most one generative, one
    * embedding and one ranker model (D18). Created on first use when left out; proofs inject one.
    */
@@ -284,6 +292,8 @@ export interface AiRankInput {
   documents: string[];
   /** Lane priority; background (P2) unless the user waits for the answer (D18, F3 D30). */
   priority?: AiPriorityInput;
+  /** Whose call it is; the Gardener's background calls are held by its gates (F4 D15). */
+  budgetClass?: AiBudgetClass;
   /** Sources whose content takes part in the call, for the audit. */
   sourceIds?: string[];
   jobId?: string;
@@ -323,6 +333,8 @@ export interface AiRankPairsInput {
   helperBatchSize?: number;
   /** Lane priority; background (P2) unless the user waits for the answer (D30). */
   priority?: AiPriorityInput;
+  /** Whose call it is; the Gardener's background calls are held by its gates (F4 D15). */
+  budgetClass?: AiBudgetClass;
   /** Sources whose content takes part in the call, for the audit. */
   sourceIds?: string[];
   jobId?: string;
@@ -509,9 +521,11 @@ export interface AiTaskLogContext {
   /** Overrides the priority derived from the context; see {@link aiTaskPriority}. */
   priority?: AiPriorityInput;
   /**
-   * Who the call spends for (F4 D14): `user` (work the person started), `background` (metered and
-   * refused at the remote caps) or `interactive`. Product callers state it beside the class and the
-   * priority (`workload-class-callers.test.ts`); left out, the audit reads it as unknown.
+   * Who the call spends for (F4 D14, D15): `user` (work the person started), `background` (metered
+   * and refused at the remote caps; the Gardener's gates and the local lane's duty cycle hold it) or
+   * `interactive`. Product callers state it beside the class and the priority
+   * (`workload-class-callers.test.ts`); left out, the audit reads it as unknown and the call is not
+   * background.
    */
   budgetClass?: BudgetClass;
   /** A second call for the same items after a validation failure; operations named `*_repair` are. */
@@ -672,8 +686,17 @@ export class AiService {
       createAiScheduler(this.laneConfig, undefined, {
         // A breaker moving is the one lane event worth a line: it explains the calls that fail fast.
         onBreakerTransition: (lane, { from, to, reason }) =>
-          options.logger?.info(`AI lane ${lane}: circuit breaker ${from} -> ${to} (${reason})`)
+          options.logger?.info(`AI lane ${lane}: circuit breaker ${from} -> ${to} (${reason})`),
+        ...options.backgroundAdmission
       });
+  }
+
+  /**
+   * Hands free lane slots out again after the background policy moved (the user went idle, so
+   * the duty cycle no longer holds background calls).
+   */
+  public refreshLanes(): void {
+    this.scheduler.refresh();
   }
 
   /** The state of every lane the scheduler has seen: limits, waits, rate limits and breakers. */
@@ -1678,7 +1701,9 @@ export class AiService {
           signal,
           label: context.operation ?? context.stage ?? task,
           reservation,
-          pauses: deadline ? [deadline] : []
+          pauses: deadline ? [deadline] : [],
+          budgetClass: context.budgetClass,
+          jobId: context.jobId
         },
         (permit) =>
           withPromptPin(pin, async () => {
@@ -2445,7 +2470,10 @@ export class AiService {
 
   /** One rank call on the local lane; its audit is written once the lane is free. */
   private async runRankCall(
-    input: Pick<AiRankInput, "operation" | "priority" | "sourceIds" | "jobId" | "stage">,
+    input: Pick<
+      AiRankInput,
+      "operation" | "priority" | "budgetClass" | "sourceIds" | "jobId" | "stage"
+    >,
     wire: RankWire,
     admission: {
       pin: PromptPin;
@@ -2464,7 +2492,9 @@ export class AiService {
         workloadClass: "decide",
         signal,
         label: input.operation,
-        pauses: deadline ? [deadline] : []
+        pauses: deadline ? [deadline] : [],
+        budgetClass: input.budgetClass,
+        jobId: input.jobId
       },
       (permit) =>
         withPromptPin(pin, () =>

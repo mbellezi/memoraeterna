@@ -4,7 +4,7 @@ import type { AiLaneRuntimeConfig } from "../runtime-config.js";
 import { initialAimd, type AimdState } from "./aimd.js";
 import type { CircuitBreaker } from "./breaker.js";
 import type { RankedEntry } from "./priority.js";
-import type { AiPriority, LaneKey, LaneRefusal, RemoteLaneKind } from "./types.js";
+import type { AiBudgetClass, AiPriority, LaneKey, LaneRefusal, RemoteLaneKind } from "./types.js";
 
 /** Where a routed model executes; the lane follows from it at admission. */
 export interface ExecutionTarget {
@@ -95,6 +95,8 @@ export function laneMaximum(
 export interface WaitingEntry extends RankedEntry {
   readonly label: string;
   readonly workloadClass: AiWorkloadClass;
+  /** Whose call it is: the local lane's duty cycle holds background entries only (F4 D15). */
+  readonly budgetClass?: AiBudgetClass | undefined;
   /**
    * A new entry, which an opening circuit breaker fails fast; false for the re-wait of a running
    * call after a retry backoff, which the breaker leaves alone.
@@ -114,6 +116,8 @@ export class Lane {
   public held = 0;
   public pausedUntil: number | null = null;
   public pauseTimer: unknown = undefined;
+  /** The timer that ends the duty-cycle hold of background entries (local lane). */
+  public dutyTimer: unknown = undefined;
   /** Rate limits observed since the lane was created. */
   public rateLimits = 0;
   /** The circuit breaker of a remote lane (F3 D32). */

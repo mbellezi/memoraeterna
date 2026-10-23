@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 
 import { createTopicNamingRepository, createTopicTreeRepository } from "@app/db";
 import type { JobRecord, JsonObject, PgPool, TopicNamingRows } from "@app/db";
-import { topicLimits } from "@app/domain";
+import { isBackgroundBlocked, topicLimits } from "@app/domain";
 import {
   MembershipSketchSchema,
   clipIdea,
@@ -988,7 +988,8 @@ class NamingRun {
         }
       );
     } catch (error) {
-      if (this.signal.aborted) throw error;
+      // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
+      if (this.signal.aborted || isBackgroundBlocked(error)) throw error;
       this.counters.failedCalls += 1;
       this.consecutiveFailures += 1;
       if (this.consecutiveFailures >= topicNamingLimits.consecutiveFailures) this.llm = false;

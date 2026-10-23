@@ -5,11 +5,13 @@ import {
 } from "../runtime-config.js";
 import { aimdOnOutcome, aimdOnRateLimit } from "./aimd.js";
 import { CircuitBreaker, ProviderUnavailableError, type BreakerTransition } from "./breaker.js";
+import { DutyCycleHold } from "./duty-cycle.js";
 import { Lane, laneMaximum, type WaitingEntry } from "./lanes.js";
 import { selectNext } from "./priority.js";
 import type {
   AiPriority,
   AiScheduler,
+  LaneAdmission,
   LaneKey,
   LaneOutcome,
   LanePermit,
@@ -37,6 +39,20 @@ export const systemSchedulerClock: SchedulerClock = {
 export interface AiSchedulerHooks {
   /** A remote lane's circuit breaker changed state (F3 D32). */
   onBreakerTransition?: (lane: LaneKey, transition: BreakerTransition) => void;
+  /**
+   * The admission hook (F4 D7): called once for each new entry, before it waits for its lane and
+   * before a half-open breaker hands it the probe. A returned error rejects the entry at once (the
+   * Gardener's gates hold a background call); `undefined` or `null` admits it. A throwing hook
+   * rejects the entry with what it threw. The re-wait of a running call between two attempts is no
+   * new admission.
+   */
+  admit?: (entry: LaneAdmission) => unknown;
+  /**
+   * The share of the local lane background calls may take now, in (0, 1] (F4 D15): after a
+   * background call of duration d, background entries wait d × (1/duty − 1). Left out, or 1, nothing
+   * waits. User and interactive entries never wait for it.
+   */
+  backgroundDutyCycle?: () => number;
 }
 
 /**
@@ -60,12 +76,17 @@ export class LaneScheduler implements AiScheduler {
   private readonly lanes = new Map<LaneKey, Lane>();
   private sequence = 0;
   private dispatchQueued = false;
+  /** The local lane's duty-cycle hold of background entries; null without a duty cycle. */
+  private readonly dutyHold: DutyCycleHold | null;
 
   public constructor(
     private readonly config: AiLaneRuntimeConfig,
     private readonly clock: SchedulerClock = systemSchedulerClock,
     private readonly hooks: AiSchedulerHooks = {}
-  ) {}
+  ) {
+    const duty = hooks.backgroundDutyCycle;
+    this.dutyHold = duty ? new DutyCycleHold(duty) : null;
+  }
 
   public reserve(): LaneReservation {
     return { admittedAt: this.clock.now(), sequence: ++this.sequence };
@@ -74,6 +95,8 @@ export class LaneScheduler implements AiScheduler {
   public run<T>(ticket: LaneTicket, execute: (permit: LanePermit) => Promise<T>): Promise<T> {
     const signal = ticket.signal;
     if (signal?.aborted) return Promise.reject(signal.reason);
+    const refusal = this.admission(ticket);
+    if (refusal !== undefined) return Promise.reject(refusal);
     const lane = this.lane(ticket);
     // An open breaker fails the entry at once; a half-open one lets exactly one entry probe.
     const admission = lane.breaker?.admit(this.clock.now());
@@ -123,6 +146,10 @@ export class LaneScheduler implements AiScheduler {
     });
   }
 
+  public refresh(): void {
+    this.schedule();
+  }
+
   public observeRateLimit(key: LaneKey, retryAt: number | null): void {
     const lane = this.lanes.get(key);
     if (!lane?.adaptive) return;
@@ -163,7 +190,7 @@ export class LaneScheduler implements AiScheduler {
   /** Waits for a slot of the lane; resolves once the slot is counted for the caller. */
   public wait(
     lane: Lane,
-    ticket: Pick<LaneTicket, "signal" | "label" | "priority" | "workloadClass">,
+    ticket: Pick<LaneTicket, "signal" | "label" | "priority" | "workloadClass" | "budgetClass">,
     reservation: LaneReservation,
     pauses: readonly PausableClock[],
     fresh = false
@@ -186,6 +213,7 @@ export class LaneScheduler implements AiScheduler {
         priority: ticket.priority,
         label: ticket.label,
         workloadClass: ticket.workloadClass,
+        budgetClass: ticket.budgetClass,
         fresh,
         start: () => {
           signal?.removeEventListener("abort", onAbort);
@@ -227,6 +255,31 @@ export class LaneScheduler implements AiScheduler {
 
   public now(): number {
     return this.clock.now();
+  }
+
+  /** A background call held a slot of the lane for `durationMs` until now (F4 D15). */
+  public backgroundSettled(lane: Lane, durationMs: number): void {
+    if (lane.key !== "local" || !this.dutyHold) return;
+    this.dutyHold.settled(this.clock.now(), durationMs);
+  }
+
+  /** The admission hook's verdict on a new entry: the error to reject it with, or undefined. */
+  private admission(ticket: LaneTicket): unknown {
+    const admit = this.hooks.admit;
+    if (!admit) return undefined;
+    try {
+      const refusal = admit({
+        lane: ticket.lane,
+        priority: ticket.priority,
+        workloadClass: ticket.workloadClass,
+        budgetClass: ticket.budgetClass,
+        label: ticket.label,
+        jobId: ticket.jobId
+      });
+      return refusal ?? undefined;
+    } catch (error) {
+      return error ?? new Error("scheduler_admission_refused");
+    }
   }
 
   /** One response's outcome on a lane; `probe` is the token of a half-open breaker's probe. */
@@ -307,12 +360,30 @@ export class LaneScheduler implements AiScheduler {
       }
       lane.pausedUntil = null;
     }
+    const heldUntil = lane.key === "local" ? (this.dutyHold?.heldUntil() ?? null) : null;
+    const held = heldUntil !== null && now < heldUntil;
     while (lane.running < lane.aimd.limit && lane.waiting.length > 0) {
-      const index = selectNext(lane.waiting, now, this.config.aging);
-      const [entry] = lane.waiting.splice(index, 1);
+      // While the duty cycle holds background entries, the slot goes to the best other entry.
+      const candidates = held
+        ? lane.waiting.filter((entry) => entry.budgetClass !== "background")
+        : lane.waiting;
+      if (candidates.length === 0) break;
+      const entry = candidates[selectNext(candidates, now, this.config.aging)]!;
+      lane.remove(entry);
       lane.running += 1;
-      entry!.start();
+      entry.start();
     }
+    if (held && lane.waiting.some((entry) => entry.budgetClass === "background"))
+      this.armDutyTimer(lane, heldUntil, now);
+  }
+
+  /** (Re)arms the timer that ends the duty-cycle hold of the lane's background entries. */
+  private armDutyTimer(lane: Lane, until: number, now: number): void {
+    if (lane.dutyTimer !== undefined) this.clock.clearTimer(lane.dutyTimer);
+    lane.dutyTimer = this.clock.setTimer(() => {
+      lane.dutyTimer = undefined;
+      this.schedule();
+    }, until - now);
   }
 }
 
@@ -321,6 +392,8 @@ class Permit implements LanePermit {
   public queueMs = 0;
   public requeueMs = 0;
   public releasedMs = 0;
+  /** When the execution started on the lane; null while it never did. */
+  private startedAt: number | null = null;
   private holding = false;
   private finished = false;
   private readonly holds: Promise<unknown>[] = [];
@@ -349,6 +422,7 @@ class Permit implements LanePermit {
 
   public started(at: number): void {
     this.holding = true;
+    this.startedAt = at;
     this.queueMs = Math.max(0, Math.round(at - this.reservation.admittedAt));
   }
 
@@ -397,6 +471,12 @@ class Permit implements LanePermit {
   public finish(): void {
     if (this.finished) return;
     this.finished = true;
+    // A background call that ran holds the next background entries back by its own time (D15).
+    if (this.ticket.budgetClass === "background" && this.startedAt !== null)
+      this.scheduler.backgroundSettled(
+        this.laneState,
+        this.scheduler.now() - this.startedAt - this.releasedMs
+      );
     // A probe that ended without an answer (cancelled, or it failed before any request) frees the
     // breaker for the next entry.
     if (this.probe !== undefined) this.laneState.breaker?.settleProbe(this.probe);

@@ -42,7 +42,7 @@ import {
   workloadClassRouteKey
 } from "@app/db";
 import type { JobRecord, JsonObject, PgPool } from "@app/db";
-import { topicLimits } from "@app/domain";
+import { isBackgroundBlocked, topicLimits } from "@app/domain";
 import {
   applyGateResolution,
   applyNoDeciderFallback,
@@ -755,7 +755,8 @@ export class TopicGateService {
           signal
         );
       } catch (error) {
-        if (signal.aborted) throw error;
+        // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
+        if (signal.aborted || isBackgroundBlocked(error)) throw error;
         const key = error instanceof Error ? error.message : "";
         return { outcomes, failure: routeErrors.has(key) ? "no_decider" : (error as Error) };
       }

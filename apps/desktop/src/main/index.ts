@@ -42,6 +42,7 @@ import {
   Menu,
   nativeImage,
   net,
+  powerMonitor,
   session,
   shell,
   Tray,
@@ -59,6 +60,10 @@ import { createJobEmbeddingGenerators } from "./services/job-embedding.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
 import { AppEventBus } from "./services/app-events.js";
 import { connectJobProgress, type JobProgressPublisher } from "./services/job-progress.js";
+import {
+  createBackgroundPolicy,
+  type BackgroundPolicy
+} from "./services/gardener/background-policy.js";
 import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
 import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
@@ -209,6 +214,8 @@ let libraryResetService: LibraryResetService | null = null;
 let similarityDebugService: SimilarityDebugService | null = null;
 let topicTreeServices: TopicTreeServices | null = null;
 let soakPreparation: SoakPreparation | null = null;
+/** The Gardener's background policy (F4 T75): controls, power signals, gates and blockers. */
+let backgroundPolicy: BackgroundPolicy | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceStartupPromise: Promise<void> | null = null;
@@ -303,6 +310,28 @@ void app.whenReady().then(() => {
     onError: (error) => console.error(error instanceof Error ? error.message : String(error))
   });
   appEvents = events;
+  // The Gardener's background policy (F4 T75). `MEMORA_DEV_POWER_BLOCKS` (DEV only, the soak's
+  // activity and battery windows) is refused when it names an unknown block.
+  try {
+    backgroundPolicy = createBackgroundPolicy({
+      getPool: () => databaseService?.getPool() ?? null,
+      powerSource: powerMonitor,
+      isPackaged: app.isPackaged,
+      env: process.env,
+      wake: () => jobSupervisor?.wake("light"),
+      refreshLanes: () => aiService?.refreshLanes(),
+      routesGeneration: aiConfigGeneration,
+      logger: console
+    });
+  } catch (error) {
+    console.error(
+      `POWER override refused: ${error instanceof Error ? error.message : String(error)}`
+    );
+    if (!app.isPackaged) {
+      app.exit(1);
+      return;
+    }
+  }
   const monitoringService = new MonitoringService(
     () => databaseService?.getPool() ?? null,
     () => settingsService!.getApp()
@@ -337,7 +366,8 @@ void app.whenReady().then(() => {
     // Decision 30: a DEV cassette replay needs no Decisions key; `MEMORA_RELATIONS_DECISIONS=on`
     // (DEV only) turns the opt-in decider on for a proof run.
     ...(aiCassette ? { cassetteMode: aiCassette.mode } : {}),
-    ...decisionsDevOptions(process.env, app.isPackaged)
+    ...decisionsDevOptions(process.env, app.isPackaged),
+    ...(backgroundPolicy ? { backgroundAdmission: backgroundPolicy.admission } : {})
   });
   soakPreparation?.attach(aiService);
   localModelService = new LocalModelService({
@@ -348,7 +378,11 @@ void app.whenReady().then(() => {
     workspaceRoot,
     isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
     testModel: (localModelId) => aiService!.testLocalModel(localModelId),
-    onModelSettled: (catalogId) => void firstRunRanker?.onModelSettled(catalogId),
+    onModelSettled: (catalogId) => {
+      void firstRunRanker?.onModelSettled(catalogId);
+      // Tasks waiting for a model download or verification may run now (F4 D7).
+      void backgroundPolicy?.blockers.notify("download_settled");
+    },
     onDownload: (event) => events.publish(event),
     // F3 D13: a rebuilt runtime re-validates the ranker with its score-parity check. Golden runs
     // and AI cassettes run no live model, so they never re-validate.
@@ -588,7 +622,8 @@ void app.whenReady().then(() => {
         getPool: () => databaseService?.getPool() ?? null
       })
     },
-    topicHooks: topicTreeServices.hooks
+    topicHooks: topicTreeServices.hooks,
+    ...(backgroundPolicy ? { backgroundPolicy: backgroundPolicy.jobs } : {})
   });
   // `job.progress` (F4 D26): every state change the supervisor announces becomes one coalesced read of
   // the job counts. `relationsChanged` stays until F5; the bus carries it as `relation.created`.
@@ -669,6 +704,9 @@ void app.whenReady().then(() => {
       if (status.state === "ready") {
         await initializeKnowledgeDefaults();
         await monitoringService.recover();
+        // The Knowledge controls, the power signals and the blocker service (F4 T75); the job
+        // supervisor re-gates blocked rows before its workers start.
+        backgroundPolicy?.start();
         // DEV-only note pair verdicts (MEMORA_GOLDEN_NOTE_PAIRS, golden-note-pairs.ts): exclusive of
         // every other golden knob and checked first, so a refusal quits before a wipe or a reset can run.
         const notePairs =
@@ -1162,6 +1200,7 @@ function shutdownSteps(): ShutdownStep[] {
       run: async () => {
         await jobSupervisor?.stop();
         jobSupervisor = null;
+        backgroundPolicy?.stop();
       },
       describe: () =>
         `jobs in flight: ${jobSupervisor?.inFlightJobIds().join(", ") || "none"}; ${describeAiLanes()}`

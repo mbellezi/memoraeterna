@@ -11,6 +11,7 @@ import {
   PromptPinSchema,
   relationsConfig as defaultRelationsConfig,
   waitingForDeciderSkipReason,
+  type GardenerBlocker,
   type RelationsConfig
 } from "@app/domain";
 import {
@@ -103,6 +104,11 @@ import {
   stageRetryStages
 } from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
+import {
+  claimableTypes,
+  jobBlocker,
+  type JobBackgroundPolicy
+} from "./gardener/job-background-policy.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 import {
   JobLoop,
@@ -191,6 +197,12 @@ export interface JobSupervisorOptions {
   relationsConfig?: RelationsConfig;
   /** The daily cap of background remote relation calls; the settings counter when absent. */
   relationCallBudget?: RelationCallBudget;
+  /**
+   * The Gardener's background policy (F4 D7, T75): the kinds a global gate holds are not claimed,
+   * blocked rows are re-gated before the workers start, and a task that meets a blocker after its
+   * claim goes back to the queue with it instead of failing.
+   */
+  backgroundPolicy?: JobBackgroundPolicy;
 }
 
 /** How often an idle heavy loop looks for relation maintenance (decider waits, the daily sweep). */
@@ -518,6 +530,13 @@ export class JobSupervisor {
     } catch (error) {
       this.options.logger?.warn(normalizeWorkerError(error));
     }
+    // Every blocked row is re-gated before any worker claims (D7): a condition that ended while
+    // the app was closed holds nothing back.
+    try {
+      await this.options.backgroundPolicy?.regate();
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
+    }
     this.running = true;
     for (const loop of this.loops()) loop.start();
   }
@@ -602,6 +621,12 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
+      // An import is the user's work and never meets a background gate; other heavy jobs may.
+      const blocker =
+        job.type === "ingestion"
+          ? null
+          : jobBlocker(this.options.backgroundPolicy, job, { error, canceled: wasCanceled });
+      if (blocker) return await this.setAside(job, blocker);
       const shouldRetry =
         !wasCanceled && job.attempts < job.maxAttempts && isTransientJobFailure(error);
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
@@ -642,7 +667,11 @@ export class JobSupervisor {
       } catch {
         this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable");
       }
-    const types = this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.());
+    // Held types stay queued: the topic barrier (D23) and the Gardener's global gates (F4 D7).
+    const types = claimableTypes(
+      this.options.backgroundPolicy,
+      this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.())
+    );
     if (types.length === 0) return null;
     const pool = this.requirePool();
     const repository = createJobRepository(pool);
@@ -721,6 +750,11 @@ export class JobSupervisor {
         },
         execute
       ) ?? execute());
+      // A call that met a blocker at admission sets the task aside, even when it went on without it.
+      const admissionBlocker = jobBlocker(this.options.backgroundPolicy, job, {
+        canceled: controller.signal.aborted
+      });
+      if (admissionBlocker) return await this.setAside(job, admissionBlocker);
       const step = lightJobUpdate(job, result, controller.signal);
       let updated: JobRecord | null;
       if (step.status !== "succeeded") {
@@ -754,6 +788,11 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
+      const blocker = jobBlocker(this.options.backgroundPolicy, job, {
+        error,
+        canceled: wasCanceled
+      });
+      if (blocker) return await this.setAside(job, blocker);
       const attemptFailed = error instanceof GardenerAttemptFailure;
       const shouldRetry =
         !wasCanceled &&
@@ -811,6 +850,17 @@ export class JobSupervisor {
     } catch (error) {
       this.options.logger?.warn(normalizeWorkerError(error));
     }
+  }
+
+  /**
+   * Returns a claimed task that met a blocker to the queue (D7): no attempt burned, no failure,
+   * nothing settled as ended; it runs again when its blocker clears.
+   */
+  private async setAside(job: JobRecord, blocker: GardenerBlocker): Promise<JobRecord | null> {
+    const repository = createJobRepository(this.requirePool());
+    await this.options.backgroundPolicy!.blockTask(job, blocker);
+    this.notify();
+    return repository.findById(job.id);
   }
 
   /**
