@@ -621,7 +621,7 @@ describe.skipIf(!sidecarInstalled)("change-sets on a real PostgreSQL database", 
     expect(await exists("topic_overview_versions", (proposal as { id: string }).id)).toBe(true);
   });
 
-  it("prunes succeeded and canceled jobs past the window, never a download or a failed job", async () => {
+  it("prunes succeeded and canceled jobs past the window, never a download, a failed job or the newest of a type", async () => {
     const jobs = createJobRepository(db());
     const make = async (
       type: string,
@@ -639,7 +639,10 @@ describe.skipIf(!sidecarInstalled)("change-sets on a real PostgreSQL database", 
     const canceled = await make("topic-audit", "canceled", 40);
     const download = await make("local-model-download", "succeeded", 400);
     const failed = await make("topic-place", "failed", 400);
+    // The only Areas job: its outcome is what `latestByType` reads as final for the build.
+    const settled = await make("topic-areas", "succeeded", 40);
     const recent = await make("topic-place", "succeeded", 1);
+    const audit = await make("topic-audit", "succeeded", 1);
     const before = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     let deleted = 0;
     for (let batch = -1; batch !== 0; deleted += batch)
@@ -647,6 +650,8 @@ describe.skipIf(!sidecarInstalled)("change-sets on a real PostgreSQL database", 
     expect(deleted).toBeGreaterThanOrEqual(2);
     expect(await exists("jobs", old)).toBe(false);
     expect(await exists("jobs", canceled)).toBe(false);
-    for (const id of [download, failed, recent]) expect(await exists("jobs", id), id).toBe(true);
+    for (const id of [download, failed, settled, recent, audit])
+      expect(await exists("jobs", id), id).toBe(true);
+    expect((await jobs.latestByType("topic-areas"))?.id).toBe(settled);
   });
 });

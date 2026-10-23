@@ -16,8 +16,8 @@ import type { LightJobExecutor } from "../job-lanes.js";
  * window from each store through its own writer (topic change-sets through the topic engine's
  * repository, relation passes through the relation event log, overview writes through the
  * overview repository), and succeeded or canceled jobs past theirs. Pending reviews, the owner's
- * verdicts, human passes and download jobs are never pruned; an undo and what it undid go only
- * together. It is one job on the jobs table, queued again for the next day when it ends.
+ * verdicts, human passes, download jobs and the newest job of each type are never pruned; an undo
+ * and what it undid go only together. It is one job on the jobs table, queued again for the next day when it ends.
  */
 export const gardenerRetentionJobType = "gardener-retention";
 const dedupeKey = gardenerRetentionJobType;

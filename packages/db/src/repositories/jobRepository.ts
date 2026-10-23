@@ -903,8 +903,10 @@ export function createJobRepository(db: Queryable) {
     /**
      * Retention (3.1): deletes succeeded and canceled jobs that finished before `before`, at most
      * `limit` per call, oldest first. Kept: failed and quarantined jobs (until resolved), the
-     * `keepTypes` kinds (a model download's job owns its download row), and a job an ingestion
-     * run or a legacy run still names (its stage retry and history need it).
+     * `keepTypes` kinds (a model download's job owns its download row), a job an ingestion run or
+     * a legacy run still names (its stage retry and history need it), and the newest job of each
+     * type whatever its age: `latestByType` readers keep their answer (Areas reads its last
+     * outcome as final for a build and must not ask the model again).
      */
     async pruneFinished(input: {
       before: Date;
@@ -912,10 +914,13 @@ export function createJobRepository(db: Queryable) {
       limit?: number;
     }): Promise<number> {
       const result = await db.query(
-        `with doomed as (
-           select j.id from jobs j
+        `with newest as (
+           select type, max(created_at) as at from jobs group by type
+         ), doomed as (
+           select j.id from jobs j join newest n on n.type = j.type
             where j.status in ('succeeded', 'canceled')
               and coalesce(j.finished_at, j.updated_at) < $1
+              and j.created_at < n.at
               and j.type <> all($2::text[])
               and not exists (select 1 from ingestion_runs r where r.job_id = j.id)
               and not exists (select 1 from maintenance_runs r where r.job_id = j.id)
