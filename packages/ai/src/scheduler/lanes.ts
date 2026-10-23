@@ -4,7 +4,14 @@ import type { AiLaneRuntimeConfig } from "../runtime-config.js";
 import { initialAimd, type AimdState } from "./aimd.js";
 import type { CircuitBreaker } from "./breaker.js";
 import type { RankedEntry } from "./priority.js";
-import type { AiBudgetClass, AiPriority, LaneKey, LaneRefusal, RemoteLaneKind } from "./types.js";
+import type {
+  AiBudgetClass,
+  AiPriority,
+  LaneFailureKind,
+  LaneKey,
+  LaneRefusal,
+  RemoteLaneKind
+} from "./types.js";
 
 /** Where a routed model executes; the lane follows from it at admission. */
 export interface ExecutionTarget {
@@ -122,6 +129,8 @@ export class Lane {
   public rateLimits = 0;
   /** The circuit breaker of a remote lane (F3 D32). */
   public breaker: CircuitBreaker | null = null;
+  /** How the provider last failed and when (scheduler clock), until a response says it answers. */
+  public failure: { kind: LaneFailureKind; at: number } | null = null;
   public readonly waiting: WaitingEntry[] = [];
   /** Held slots that fail the lane's entries meanwhile; the latest one makes the error. */
   public readonly refusals: LaneRefusal[] = [];

@@ -9,6 +9,7 @@ import {
   AiProviderError,
   aiErrorRetryAfterMs,
   isTransientAiError,
+  providerFailureKind,
   toProviderNetworkError
 } from "./provider-error.js";
 import { lanePermitOf } from "./scheduler/execution.js";
@@ -523,7 +524,10 @@ export async function runRemoteCall<T>(
       const retryAfterMs = aiErrorRetryAfterMs(failure);
       if (permit) {
         if (isRateLimitFailure(failure)) permit.observeRateLimit(retryAfterMs ?? null);
-        permit.observeOutcome(isTransientAiError(failure) ? "transient" : "permanent");
+        permit.observeOutcome(
+          isTransientAiError(failure) ? "transient" : "permanent",
+          providerFailureKind(failure)
+        );
       }
       if (total.signal.aborted) throw failure;
       if (!isTransientAiError(failure) || number >= maxAttempts) throw failure;

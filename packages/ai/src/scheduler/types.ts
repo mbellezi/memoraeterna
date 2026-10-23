@@ -72,6 +72,14 @@ export type LaneAdmission = Pick<
 
 export type LaneOutcome = "ok" | "transient" | "permanent";
 
+/**
+ * How a remote provider last failed, when the failure says more than its outcome (F4 D27, the
+ * status): `unreachable` the network or a DNS name did not answer, `unauthorized` the provider
+ * refused the credentials (a permanent failure), `unavailable` any other transient failure. A
+ * failure that proves the provider answered (a rejected request) carries none.
+ */
+export type LaneFailureKind = "unreachable" | "unauthorized" | "unavailable";
+
 /** What a refusing lane knows of an entry it fails. */
 export type LaneRefusalTarget = Pick<LaneTicket, "priority" | "workloadClass" | "label">;
 
@@ -108,8 +116,12 @@ export interface LanePermit {
   holdUntil(until: Promise<unknown>, options?: { refuse?: LaneRefusal }): void;
   /** A rate limit: halves a remote lane's limit and pauses it for `retryAfterMs` when stated. */
   observeRateLimit(retryAfterMs: number | null): void;
-  /** One response's outcome: successes raise a remote lane's limit, transient failures reset. */
-  observeOutcome(outcome: LaneOutcome): void;
+  /**
+   * One response's outcome: successes raise a remote lane's limit, transient failures reset. A
+   * failed outcome names how the provider failed when it can (`failure`); an outcome without it
+   * clears what the lane remembered of the last failure, as an answer does.
+   */
+  observeOutcome(outcome: LaneOutcome, failure?: LaneFailureKind): void;
 }
 
 export interface LaneSnapshot {
@@ -128,6 +140,12 @@ export interface LaneSnapshot {
   readonly rateLimits: number;
   /** The circuit breaker of a remote lane (F3 D32); null for the local lane, which has none. */
   readonly breaker: BreakerSnapshot | null;
+  /**
+   * How the lane's provider last failed and how long ago, until a response proves it answers
+   * again; null for the local lane and after a success (F4 D27). The scheduler always sets it;
+   * it is optional so a hand-made snapshot (a fixture) need not state it.
+   */
+  readonly failure?: { readonly kind: LaneFailureKind; readonly ageMs: number } | null;
 }
 
 export interface AiScheduler {
@@ -151,6 +169,6 @@ export interface AiScheduler {
    * AIMD increase after consecutive successes (a transient failure resets the streak), and the
    * circuit breaker's count of consecutive transient failures of a remote lane.
    */
-  observeOutcome(lane: LaneKey, outcome: LaneOutcome): void;
+  observeOutcome(lane: LaneKey, outcome: LaneOutcome, failure?: LaneFailureKind): void;
   snapshot(): LaneSnapshot[];
 }

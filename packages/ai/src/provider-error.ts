@@ -1,4 +1,5 @@
 import { redactSensitiveText } from "./local-model-downloader.js";
+import type { LaneFailureKind } from "./scheduler/types.js";
 
 /**
  * Why a remote AI call failed. Only `transient` failures are retried (by the adapter, then by the job
@@ -199,6 +200,41 @@ export function isTransientAiError(error: unknown): boolean {
     current = (current as { cause?: unknown }).cause;
   }
   return false;
+}
+
+/** Transport failures that say the network, not the provider, did not answer (F4 D27). */
+const unreachableSystemCodes = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ENETDOWN",
+  "EHOSTUNREACH"
+]);
+
+/**
+ * How a failed call tells the lane its provider failed (F4 D27, the Activity status): a refused
+ * credential (401, 403), an unreachable network (DNS and routing codes), any other transient
+ * failure as the provider not answering; undefined for a failure that proves the provider answered
+ * (a rejected request, a context overflow).
+ */
+export function providerFailureKind(error: unknown): LaneFailureKind | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof AiProviderError) {
+      if (current.status === 401 || current.status === 403) return "unauthorized";
+      // A rate limit is an answer: the lane pauses for it, the provider is reachable.
+      if (current.status === 429) return undefined;
+      if (current.kind === "network" && current.code && unreachableSystemCodes.has(current.code))
+        return "unreachable";
+      return current.transient ? "unavailable" : undefined;
+    }
+    if (isTransientSystemError(current)) {
+      const code = systemErrorCode(current);
+      return code && unreachableSystemCodes.has(code) ? "unreachable" : "unavailable";
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 /** The delay a failed operation asks for before it is tried again, when the provider named one. */

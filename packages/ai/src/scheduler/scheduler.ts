@@ -12,6 +12,7 @@ import type {
   AiPriority,
   AiScheduler,
   LaneAdmission,
+  LaneFailureKind,
   LaneKey,
   LaneOutcome,
   LanePermit,
@@ -165,9 +166,9 @@ export class LaneScheduler implements AiScheduler {
     }
   }
 
-  public observeOutcome(key: LaneKey, outcome: LaneOutcome): void {
+  public observeOutcome(key: LaneKey, outcome: LaneOutcome, failure?: LaneFailureKind): void {
     const lane = this.lanes.get(key);
-    if (lane) this.record(lane, outcome);
+    if (lane) this.record(lane, outcome, undefined, failure);
   }
 
   public snapshot(): LaneSnapshot[] {
@@ -183,7 +184,10 @@ export class LaneScheduler implements AiScheduler {
         lane.pausedUntil !== null && lane.pausedUntil > now ? lane.pausedUntil - now : null,
       successStreak: lane.aimd.streak,
       rateLimits: lane.rateLimits,
-      breaker: lane.breaker?.snapshot(now) ?? null
+      breaker: lane.breaker?.snapshot(now) ?? null,
+      failure: lane.failure
+        ? { kind: lane.failure.kind, ageMs: Math.max(0, Math.round(now - lane.failure.at)) }
+        : null
     }));
   }
 
@@ -282,9 +286,23 @@ export class LaneScheduler implements AiScheduler {
     }
   }
 
-  /** One response's outcome on a lane; `probe` is the token of a half-open breaker's probe. */
-  public record(lane: Lane, outcome: LaneOutcome, probe?: number): void {
+  /**
+   * One response's outcome on a lane; `probe` is the token of a half-open breaker's probe. A failure
+   * that names how the provider failed is remembered for the status; any other response, a success
+   * or a rejected request, shows the provider answers and forgets it (F4 D27).
+   */
+  public record(lane: Lane, outcome: LaneOutcome, probe?: number, failure?: LaneFailureKind): void {
     if (!lane.adaptive) return;
+    const now = this.clock.now();
+    if (outcome !== "ok" && failure !== undefined) lane.failure = { kind: failure, at: now };
+    // As for the breaker, a call already running when the provider failed says nothing of the
+    // present: only the probe's answer, or any answer while the breaker is closed, clears it.
+    else if (
+      lane.breaker === null ||
+      probe !== undefined ||
+      lane.breaker.snapshot(now).state === "closed"
+    )
+      lane.failure = null;
     const before = lane.aimd.limit;
     lane.aimd = aimdOnOutcome(lane.aimd, outcome, this.config.lanes);
     lane.breaker?.record(outcome, this.clock.now(), probe);
@@ -463,8 +481,8 @@ class Permit implements LanePermit {
     this.scheduler.rateLimited(this.laneState, retryAfterMs);
   }
 
-  public observeOutcome(outcome: LaneOutcome): void {
-    this.scheduler.record(this.laneState, outcome, this.probe);
+  public observeOutcome(outcome: LaneOutcome, failure?: LaneFailureKind): void {
+    this.scheduler.record(this.laneState, outcome, this.probe, failure);
   }
 
   /** The execution settled: the slot goes back now, or once every hold settled. */
