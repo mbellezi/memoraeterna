@@ -63,14 +63,14 @@ Every response line echoes the `requestId` (uppercase UUID text) and has
 → { …, "kind": "result", "ok": true, "output": "…", "durationMs": 812, "inputTokens": 12, "outputTokens": 3 }
 ```
 
-### Capabilities: `cancel`, `stream`, `unload`
+### Capabilities: `cancel`, `schema`, `stream`, `unload`
 
 `health` announces what this build adds to protocol 1; a host treats a helper
 that announces nothing as an older build and kills it instead.
 
 ```jsonc
 { "protocolVersion": 1, "requestId": "…", "command": "health" }
-→ { …, "kind": "result", "ok": true, "output": "ok", "durationMs": 0, "capabilities": ["cancel", "stream", "unload"] }
+→ { …, "kind": "result", "ok": true, "output": "ok", "durationMs": 0, "capabilities": ["cancel", "schema", "stream", "unload"] }
 
 // Stops the running (or queued) request with this requestId; no answer of its own.
 { "protocolVersion": 1, "requestId": "<the request to stop>", "command": "cancel" }
@@ -94,6 +94,51 @@ that announces nothing as an older build and kills it instead.
 - The `delta` pieces concatenate to the result's `output`; the generation is
   the same with or without `stream` (the same chat input, cache and token loop
   as MLX Swift LM's `ChatSession`), so a fixed seed gives the same text.
+
+### `generate` with a `schema` (JSON-constrained decoding)
+
+```jsonc
+{ …, "command": "generate", "modelPath": "/abs/model", "prompt": "…", "parameters": { … },
+  "schema": { "type": "object", "properties": { "verdict": { "enum": ["same", "different"] } },
+              "required": ["verdict"], "additionalProperties": false } }
+→ { …, "kind": "result", "ok": true, "output": "{\"verdict\":\"same\"}", "durationMs": 640,
+    "inputTokens": 212, "outputTokens": 6, "schemaMode": "grammar",
+    "grammar": { "compileMs": 0.2, "vocabularyMs": 0, "maskMs": 1.1, "steps": 7, "cacheHits": 3,
+                 "cacheMisses": 4, "reserveSteps": 0, "deadEnds": 0, "violations": 0 } }
+// refused: the answer is generated as without a schema
+→ { …, "schemaMode": "none", "grammar": { "refusal": "thinking" | "tokenizer" | "schema" } }
+```
+
+- The `MemoraGrammar` library (pure Swift, no MLX) compiles the schema subset
+  the host's grammar emitter writes: `type` (one or several), closed objects
+  with `properties` and `required`, arrays with `items` (or `false`),
+  `prefixItems`, `minItems`, `maxItems`, strings with `minLength`/`maxLength`
+  (UTF-16 units, as Zod counts) and an ECMAScript `pattern` subset, numbers and
+  integers with inclusive or exclusive bounds, booleans, `null`, `enum`,
+  `const`, `anyOf`/`oneOf` and `{}` for any value. Anything else is refused.
+- Each step the mask allows exactly the tokens whose bytes the grammar's byte
+  automaton accepts (UTF-8 checked inside strings, partial characters kept as
+  the range they can still become), found by walking a trie of the vocabulary
+  and cached per state for the request only. End of sequence is allowed only
+  once the root value is complete, and then nothing else; a closing reserve
+  keeps the document completable within `maxTokens`. Insignificant whitespace
+  is bounded, pattern strings take no escapes, and surrogate escapes are not
+  written (the character is).
+- The mask follows the request's penalty processor and uses the same sampler.
+  Without a schema the generation is built exactly as before.
+- Refusals: `thinking` (`enableThinking` on), `tokenizer` (the model's
+  `tokenizer.json` is not a byte-level BPE vocabulary, so only the Qwen
+  writers qualify), `schema` (outside the subset). The vocabulary and its
+  trie are built by the first request with a schema and kept with the model.
+
+The grammar is tested without a model or the Metal library:
+
+```bash
+swift test --package-path native/mlx-helper --filter MemoraGrammarTests
+# its cost on a real vocabulary (compile time, mask time per token):
+MEMORA_GRAMMAR_TOKENIZER=/abs/model/tokenizer.json \
+  swift test --package-path native/mlx-helper --filter RealTokenizerTests
+```
 
 ### `embed`
 

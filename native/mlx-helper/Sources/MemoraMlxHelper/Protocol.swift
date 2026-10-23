@@ -1,12 +1,14 @@
 import Foundation
+import MemoraGrammar
 
 let protocolVersion = 1
 
 /// What this helper adds to protocol 1, announced in `health`: `cancel {requestId}` stops a running
 /// request (checked per generated token and per scoring batch), `unload {slot}` drops one slot's
-/// model, and `generate {stream: true}` emits the text as `delta` lines. A host falls back to
-/// killing the helper when a capability is missing (an older build).
-let helperCapabilities = ["cancel", "stream", "unload"]
+/// model, `generate {stream: true}` emits the text as `delta` lines, and `generate {schema}`
+/// constrains decoding to a JSON Schema (F4 D24). A host falls back to killing the helper when
+/// `cancel` or `unload` is missing (an older build), and sends no schema without `schema`.
+let helperCapabilities = ["cancel", "schema", "stream", "unload"]
 
 struct GenerationParameters: Codable {
     let maxTokens: Int
@@ -37,6 +39,8 @@ struct Request: Codable {
     let parameters: GenerationParameters?
     // generate: emit `delta` lines with the text as it is generated
     let stream: Bool?
+    // generate: the JSON Schema the answer is decoded under (a byte-level BPE tokenizer, thinking off)
+    let schema: JSONValue?
     // unload: `generate`, `embed` or `score`
     let slot: String?
     // embed
@@ -58,6 +62,27 @@ struct RequestEnvelope: Decodable {
     let protocolVersion: Int?
     let requestId: UUID?
     let command: String?
+}
+
+/// What a `generate` with a schema reports: why the schema was refused (`thinking`, `tokenizer`,
+/// `schema`; the answer then runs unconstrained), or what the grammar cost.
+struct GrammarReport: Codable {
+    var refusal: String? = nil
+    /// Schema compiled into a grammar, in this request.
+    var compileMs: Double? = nil
+    /// Vocabulary and token trie built for the model; 0 when an earlier request built them.
+    var vocabularyMs: Double? = nil
+    /// Masks computed or served while decoding.
+    var maskMs: Double? = nil
+    var steps: Int? = nil
+    var cacheHits: Int? = nil
+    var cacheMisses: Int? = nil
+    /// Steps the closing reserve narrowed (`maxTokens` close).
+    var reserveSteps: Int? = nil
+    /// Steps without a grammatical token, answered with end of sequence (none expected).
+    var deadEnds: Int? = nil
+    /// Sampled tokens the grammar refused, after which decoding ran unconstrained (none expected).
+    var violations: Int? = nil
 }
 
 struct ErrorPayload: Codable {
@@ -107,6 +132,10 @@ struct Message: Codable {
     var capabilities: [String]? = nil
     // generate with `stream`: a piece of the generated text
     var delta: String? = nil
+    // generate with `schema`: `grammar` when the answer was decoded under it, else `none`, and what
+    // the grammar cost or why it was refused
+    var schemaMode: String? = nil
+    var grammar: GrammarReport? = nil
     // embed
     var embeddings: [[Float]]? = nil
     var dimensions: Int? = nil

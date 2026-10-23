@@ -4,8 +4,10 @@ import { z } from "zod";
 import {
   AiOutputSchemaSchema,
   analyzeStrictJsonSchema,
+  grammarSchemaForContract,
   outputSchemaForContract,
   parseSingleJsonObject,
+  toGrammarJsonSchema,
   toStrictJsonSchema,
   validateItems
 } from "./structured-output.js";
@@ -123,6 +125,133 @@ describe("outputSchemaForContract (F4 D23)", () => {
     const first = outputSchemaForContract({ name: "verdict", contract });
     expect(outputSchemaForContract({ name: "verdict", contract })).toBe(first);
     expect(outputSchemaForContract({ name: "other_name", contract })?.name).toBe("other_name");
+  });
+});
+
+describe("toGrammarJsonSchema (F4 D24)", () => {
+  it("keeps patterns, lengths and bounds and closes every object", () => {
+    expect(toGrammarJsonSchema(typing, "note_relation_typing")).toEqual({
+      name: "note_relation_typing",
+      strict: false,
+      schema: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["supports", "contradicts", "extends"] },
+          direction: { type: "string", enum: ["n1_to_n2", "n2_to_n1"] },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          reason: { type: "string", minLength: 1, maxLength: 300, pattern: "^\\S" },
+          evidence: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            minItems: 1,
+            maxItems: 4
+          },
+          note: { anyOf: [{ type: "string" }, { type: "null" }] }
+        },
+        required: ["type", "direction", "confidence", "reason", "evidence", "note"],
+        additionalProperties: false
+      }
+    });
+  });
+
+  it("writes tuples as closed prefixItems with every item but trailing optional ones required", () => {
+    const contract = z.object({
+      pairs: z.array(z.tuple([z.string(), z.string().nullable()])).max(12),
+      span: z.tuple([z.number(), z.number().optional()]),
+      tail: z.tuple([z.string()], z.number())
+    });
+    const properties = toGrammarJsonSchema(contract)!.schema.properties as Record<string, unknown>;
+    expect(properties.pairs).toEqual({
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "array",
+        prefixItems: [{ type: "string" }, { anyOf: [{ type: "string" }, { type: "null" }] }],
+        items: false,
+        minItems: 2,
+        maxItems: 2
+      }
+    });
+    expect(properties.span).toMatchObject({ minItems: 1, maxItems: 2, items: false });
+    expect(properties.tail).toEqual({
+      type: "array",
+      prefixItems: [{ type: "string" }],
+      items: { type: "number" },
+      minItems: 1
+    });
+  });
+
+  it("leaves optional and defaulted members out of required and reads a preprocessed contract's input", () => {
+    const contract = z.preprocess(
+      (value) => value,
+      z
+        .object({
+          title: z.string().min(1),
+          language: z.enum(["en", "pt-BR"]).optional(),
+          aliases: z.array(z.string()).default([])
+        })
+        .superRefine(() => undefined)
+    );
+    expect(toGrammarJsonSchema(contract)!.schema).toEqual({
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1 },
+        language: { type: "string", enum: ["en", "pt-BR"] },
+        aliases: { type: "array", items: { type: "string" } }
+      },
+      required: ["title"],
+      additionalProperties: false
+    });
+  });
+
+  it("closes a non-strict object, reads oneOf as anyOf and leaves open records and unknowns to Zod", () => {
+    const contract = z.object({
+      kind: z.discriminatedUnion("k", [
+        z.object({ k: z.literal("a"), n: z.number().int().gt(0) }),
+        z.object({ k: z.literal("b") })
+      ]),
+      meta: z.record(z.string(), z.string()),
+      when: z.date(),
+      empty: z.object({}).strict()
+    });
+    const properties = toGrammarJsonSchema(contract)!.schema.properties as Record<string, unknown>;
+    expect(properties.kind).toEqual({
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            k: { type: "string", const: "a" },
+            n: { type: "integer", exclusiveMinimum: 0, maximum: Number.MAX_SAFE_INTEGER }
+          },
+          required: ["k", "n"],
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: { k: { type: "string", const: "b" } },
+          required: ["k"],
+          additionalProperties: false
+        }
+      ]
+    });
+    expect(properties.meta).toEqual({});
+    expect(properties.when).toEqual({});
+    expect(properties.empty).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    });
+  });
+
+  it("refuses a recursive contract and caches per contract and name", () => {
+    type Tree = { children: Tree[] };
+    const tree: z.ZodType<Tree> = z.lazy(() => z.object({ children: z.array(tree) }));
+    expect(toGrammarJsonSchema(tree)).toBeNull();
+    const contract = z.object({ verdict: z.enum(["same", "different"]) });
+    const first = grammarSchemaForContract({ name: "verdict", contract });
+    expect(first?.strict).toBe(false);
+    expect(grammarSchemaForContract({ name: "verdict", contract })).toBe(first);
+    expect(grammarSchemaForContract({ name: "other", contract })?.name).toBe("other");
   });
 });
 

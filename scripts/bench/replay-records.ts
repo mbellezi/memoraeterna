@@ -32,6 +32,8 @@ export const callRecordSchema = z
     schemaMode: z.string().nullable(),
     /** Whether the request carried an output schema. */
     schemaOffered: z.boolean(),
+    /** The MLX helper's grammar compile time for the call (F4 D24); null or absent without one. */
+    grammarCompileMs: z.number().nullable().optional(),
     peakHelperRssMiB: z.number().nullable(),
     /** The helper's physical-footprint peak since it started (counts GPU buffers); null when unread. */
     peakHelperFootprintMiB: z.number().nullable(),

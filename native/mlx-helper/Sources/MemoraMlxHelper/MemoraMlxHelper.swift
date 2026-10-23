@@ -4,6 +4,7 @@ import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
 import MLXVLM
+import MemoraGrammar
 import Tokenizers
 
 /// Tokenizer loader shared by every command (swift-transformers `AutoTokenizer`).
@@ -12,14 +13,17 @@ func makeTokenizerLoader() -> any TokenizerLoader {
 }
 
 /// Model used by `generate`; kept across requests and dropped after a failed generation or an
-/// `unload {slot: "generate"}`.
+/// `unload {slot: "generate"}`. Its byte-level vocabulary (or why it has none) is built by the first
+/// request with a schema and kept with the model.
 final class GenerationCache {
     var modelPath: String?
     var model: ModelContainer?
+    var vocabulary: Result<TokenVocabulary, Error>?
 
     func reset() {
         modelPath = nil
         model = nil
+        vocabulary = nil
     }
 }
 
@@ -199,11 +203,28 @@ private final class Worker {
             presencePenalty: parameters.presencePenalty,
             seed: parameters.seed
         )
+        let enableThinking = parameters.enableThinking ?? false
+        var grammar: GrammarSession?
+        var report: GrammarReport?
+        if let schema = request.schema {
+            (grammar, report) = grammarSession(
+                schema: schema, modelPath: modelPath, maxTokens: parameters.maxTokens,
+                enableThinking: enableThinking)
+        }
         let output = try await Generator.respond(
             model: model, prompt: prompt, parameters: generateParameters,
-            enableThinking: parameters.enableThinking ?? false,
+            enableThinking: enableThinking, grammar: grammar,
             stream: request.stream ?? false, requestId: requestId, cancellation: cancellation
         )
+        if let grammar, let statistics = grammar.statistics {
+            report?.maskMs = Double(statistics.maskNanoseconds) / 1e6
+            report?.steps = statistics.steps
+            report?.cacheHits = statistics.cacheHits
+            report?.cacheMisses = statistics.cacheMisses
+            report?.reserveSteps = statistics.reserveSteps
+            report?.deadEnds = statistics.deadEnds
+            report?.violations = statistics.violations
+        }
         let outputTokenCount = tokenizer.encode(text: output, addSpecialTokens: false).count
         let duration = startedAt.duration(to: .now)
         let milliseconds = Int(duration.components.seconds * 1_000)
@@ -213,8 +234,40 @@ private final class Worker {
             protocolVersion: protocolVersion, requestId: requestId,
             kind: "result", ok: true,
             output: output, durationMs: max(0, milliseconds),
-            inputTokens: inputTokenCount, outputTokens: outputTokenCount
+            inputTokens: inputTokenCount, outputTokens: outputTokenCount,
+            schemaMode: request.schema == nil ? nil : (grammar == nil ? "none" : "grammar"),
+            grammar: report
         ))
+    }
+
+    /// The grammar of a request's schema, or why there is none: thinking on (the reasoning before the
+    /// answer is free text), a tokenizer that is not byte-level BPE, or a schema outside the subset.
+    /// A refused schema leaves the generation exactly as it is without one.
+    private func grammarSession(
+        schema: MemoraGrammar.JSONValue, modelPath: String, maxTokens: Int, enableThinking: Bool
+    ) -> (GrammarSession?, GrammarReport) {
+        if enableThinking { return (nil, GrammarReport(refusal: "thinking")) }
+        var vocabularyMs = 0.0
+        if generation.vocabulary == nil {
+            let started = ContinuousClock.now
+            generation.vocabulary = Result { try loadGrammarVocabulary(modelPath: modelPath) }
+            vocabularyMs = elapsedMs(since: started)
+        }
+        guard case .success(let vocabulary) = generation.vocabulary else {
+            if case .failure(let error) = generation.vocabulary {
+                Output.log("no grammar for \(modelPath): \(error)")
+            }
+            return (nil, GrammarReport(refusal: "tokenizer", vocabularyMs: vocabularyMs))
+        }
+        let started = ContinuousClock.now
+        do {
+            let compiled = try Grammar.compile(schema)
+            let session = GrammarSession(grammar: compiled, vocabulary: vocabulary, maxTokens: maxTokens)
+            return (session, GrammarReport(compileMs: elapsedMs(since: started), vocabularyMs: vocabularyMs))
+        } catch {
+            Output.log("schema refused: \(error)")
+            return (nil, GrammarReport(refusal: "schema", vocabularyMs: vocabularyMs))
+        }
     }
 }
 
@@ -224,9 +277,13 @@ enum Generator {
     /// token iterator and text handler), with the generation task in hand: a `cancel` stops it at
     /// the next token, and with `stream` every piece of text is sent as a `delta` line. The streamed
     /// pieces concatenate to the returned text.
+    ///
+    /// With a grammar the iterator takes the request's penalty processor followed by the grammar's
+    /// mask, and the same sampler (F4 D24); without one it is built exactly as before.
     static func respond(
         model: ModelContainer, prompt: String, parameters: GenerateParameters,
-        enableThinking: Bool, stream: Bool, requestId: UUID, cancellation: CancellationRegistry
+        enableThinking: Bool, grammar: GrammarSession?, stream: Bool, requestId: UUID,
+        cancellation: CancellationRegistry
     ) async throws -> String {
         let additionalContext: [String: any Sendable] = ["enable_thinking": enableThinking]
         let output = try await model.perform { context in
@@ -237,9 +294,20 @@ enum Generator {
                     tools: nil,
                     additionalContext: additionalContext
                 ))
-            let iterator = try TokenIterator(
-                input: input, model: context.model,
-                cache: context.model.newCache(parameters: parameters), parameters: parameters)
+            let iterator: TokenIterator
+            if let grammar {
+                grammar.prepare(stopTokens: stopTokenIds(context))
+                iterator = try TokenIterator(
+                    input: input, model: context.model,
+                    cache: context.model.newCache(parameters: parameters),
+                    processor: JSONSchemaMask(penalty: parameters.processor(), session: grammar),
+                    sampler: parameters.sampler(), prefillStepSize: parameters.prefillStepSize,
+                    maxTokens: parameters.maxTokens)
+            } else {
+                iterator = try TokenIterator(
+                    input: input, model: context.model,
+                    cache: context.model.newCache(parameters: parameters), parameters: parameters)
+            }
             let (generations, task) = generateTask(
                 promptTokenCount: input.text.tokens.size,
                 modelConfiguration: context.configuration,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  mlxHelperCapabilities,
   mlxHelperMessageSchema,
   mlxHelperRequestSchema,
+  mlxHelperTextResultSchema,
   parseMlxHelperOutput
 } from "./local-runtime-protocol.js";
 
@@ -337,5 +339,69 @@ describe("cancel, unload and stream (F3 D39)", () => {
     expect(
       mlxHelperMessageSchema.parse({ ...health, capabilities: ["cancel", "future"] })
     ).toMatchObject({ capabilities: ["cancel", "future"] });
+  });
+});
+
+describe("schema (F4 D24)", () => {
+  const upper = requestId.toUpperCase();
+  const generate = {
+    protocolVersion: 1 as const,
+    requestId,
+    command: "generate" as const,
+    modelPath: "/m",
+    prompt: "p"
+  };
+  const schema = {
+    type: "object",
+    properties: { verdict: { type: "string", enum: ["same", "different"] } },
+    required: ["verdict"],
+    additionalProperties: false
+  };
+
+  it("announces the capability and takes a generate with a schema, bounded in size", () => {
+    expect(mlxHelperCapabilities).toContain("schema");
+    expect(mlxHelperRequestSchema.parse({ ...generate, schema })).toMatchObject({ schema });
+    expect(mlxHelperRequestSchema.parse(generate)).not.toHaveProperty("schema");
+    expect(() =>
+      mlxHelperRequestSchema.parse({
+        ...generate,
+        schema: { enum: Array.from({ length: 20_000 }, (_, index) => `value-${index}`) }
+      })
+    ).toThrow();
+    expect(() => mlxHelperRequestSchema.parse({ ...generate, schema: "{}" })).toThrow();
+  });
+
+  it("reads how a generate was decoded and what its grammar did or why it was refused", () => {
+    const result = {
+      protocolVersion: 1,
+      requestId: upper,
+      kind: "result",
+      ok: true,
+      output: '{"verdict":"same"}',
+      durationMs: 9
+    };
+    expect(
+      mlxHelperTextResultSchema.parse({
+        ...result,
+        schemaMode: "grammar",
+        grammar: { compileMs: 0.4, vocabularyMs: 0, maskMs: 2.5, steps: 6, cacheHits: 2 }
+      })
+    ).toMatchObject({ schemaMode: "grammar", grammar: { steps: 6 } });
+    expect(
+      mlxHelperTextResultSchema.parse({
+        ...result,
+        schemaMode: "none",
+        grammar: { refusal: "thinking" }
+      })
+    ).toMatchObject({ schemaMode: "none" });
+    expect(() => mlxHelperTextResultSchema.parse({ ...result, schemaMode: "strict" })).toThrow();
+    expect(() =>
+      mlxHelperTextResultSchema.parse({
+        ...result,
+        schemaMode: "none",
+        grammar: { refusal: "other" }
+      })
+    ).toThrow();
+    expect(() => mlxHelperTextResultSchema.parse({ ...result, grammar: { unknown: 1 } })).toThrow();
   });
 });

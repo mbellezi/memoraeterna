@@ -1,8 +1,10 @@
-import type {
-  AiCapability,
-  AiModelParameterCapabilities,
-  AiOutputSchema,
-  AiSchemaMode
+import {
+  grammarSchemaForContract,
+  type AiCapability,
+  type AiModelParameterCapabilities,
+  type AiOutputContract,
+  type AiOutputSchema,
+  type AiSchemaMode
 } from "@app/domain";
 
 import {
@@ -23,7 +25,7 @@ import {
   localRuntimeWedgedError,
   runWithLocalDeadline
 } from "./local-deadline.js";
-import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
+import type { MlxGenerationParameters, MlxGrammarReport } from "./local-runtime-protocol.js";
 import { MlxHelperError, MlxHelperHost } from "./mlx-helper-host.js";
 import { hasGeneration, localParameterCapabilities } from "./parameter-capabilities.js";
 import { requestWorkloadClass } from "./remote-execution.js";
@@ -135,8 +137,13 @@ export interface LocalExecutionResult {
   inputTokens?: number;
   outputTokens?: number;
   durationMs: number;
-  /** How the runtime constrained the answer (`grammar` for a GGUF schema grammar); `none` when it did not. */
+  /**
+   * How the runtime constrained the answer (`grammar` for a GGUF schema grammar or the MLX helper's
+   * mask); `none` when it did not.
+   */
   schemaMode?: AiSchemaMode;
+  /** What the runtime chose for the request itself (the MLX grammar's report), for the audit. */
+  requestOptions?: AiTaskResult["requestOptions"];
 }
 
 /** The vectors of a local batch, in order, with the tokens of each text when the runtime counts them. */
@@ -415,11 +422,22 @@ export class MlxAdapter implements AiModelAdapter {
     return this.host ? this.host.loadedModel("generate") === this.options.modelPath : true;
   }
 
+  /**
+   * The grammar schema of a stated contract (F4 D24): the helper decodes the answer under it. None
+   * when the running helper announced no `schema` (an older build); before the helper started, the
+   * schema is derived and the host leaves it out if the helper turns out not to take it. Whether the
+   * model's tokenizer can be masked is the helper's to say (`schemaMode` of the result).
+   */
+  public outputSchemaFor(contract: AiOutputContract): AiOutputSchema | null {
+    if (this.host?.capabilities && !this.host.supports("schema")) return null;
+    return grammarSchemaForContract(contract);
+  }
+
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
-    const result = await this.execute(this.executionInput(input, signal));
-    return this.taskResult(input, result);
+    const execution = this.executionInput(input, signal);
+    return this.taskResult(input, execution, await this.execute(execution));
   }
 
   /**
@@ -454,7 +472,7 @@ export class MlxAdapter implements AiModelAdapter {
     });
     emit(answer.end());
     onProgress({ progress: 1 });
-    return this.taskResult(input, result);
+    return this.taskResult(input, execution, result);
   }
 
   public async dispose(): Promise<void> {
@@ -462,11 +480,15 @@ export class MlxAdapter implements AiModelAdapter {
   }
 
   private executionInput(input: AiTaskRequest, signal: AbortSignal | undefined): MlxExecutionInput {
+    // With thinking on the answer follows free reasoning, so no schema is sent (F4 D24).
+    const thinking = mlxGenerationParameters(input.parameters).enableThinking === true;
     return {
       helperPath: this.options.helperPath,
       modelPath: this.options.modelPath,
       prompt: promptFromInput(input.input),
       parameters: input.parameters,
+      ...(input.outputSchema && !thinking ? { outputSchema: input.outputSchema } : {}),
+      ...(input.outputSchema && thinking ? { schemaRefusal: "thinking" as const } : {}),
       // The class deadline from execution start (F3 D31): the host cancels the request then, and
       // kills the helper only if it has not stopped within the grace period.
       timeoutMs:
@@ -475,9 +497,21 @@ export class MlxAdapter implements AiModelAdapter {
     };
   }
 
-  private taskResult(input: AiTaskRequest, result: LocalExecutionResult): AiTaskResult {
+  /** The task result; a schema left out for thinking is recorded as refused, the answer as `none`. */
+  private taskResult(
+    input: AiTaskRequest,
+    execution: MlxExecutionInput,
+    result: LocalExecutionResult
+  ): AiTaskResult {
+    const refused = execution.schemaRefusal
+      ? {
+          schemaMode: "none" as const,
+          requestOptions: { grammar: { refusal: execution.schemaRefusal } }
+        }
+      : {};
     return taskResult(input, "local-mlx", this.options.modelId, {
       ...result,
+      ...refused,
       output: typeof result.output === "string" ? stripThinkingOutput(result.output) : result.output
     });
   }
@@ -488,7 +522,8 @@ export class MlxAdapter implements AiModelAdapter {
         modelPath: input.modelPath,
         prompt: input.prompt,
         parameters: mlxGenerationParameters(input.parameters),
-        ...(input.onDelta ? { stream: true } : {})
+        ...(input.onDelta ? { stream: true } : {}),
+        ...(input.outputSchema ? { schema: input.outputSchema.schema } : {})
       },
       {
         timeoutMs: input.timeoutMs,
@@ -506,9 +541,19 @@ export class MlxAdapter implements AiModelAdapter {
       output: result.output,
       durationMs: result.durationMs,
       ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
-      ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {})
+      ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
+      // A helper that took no schema (or none was sent) wrote the answer unconstrained.
+      schemaMode: result.schemaMode === "grammar" ? "grammar" : "none",
+      ...(result.grammar ? { requestOptions: { grammar: grammarAudit(result.grammar) } } : {})
     };
   }
+}
+
+/** The grammar report as the audit stores it (`requestOptions.grammar`): its known fields only. */
+function grammarAudit(report: MlxGrammarReport): Record<string, string | number> {
+  const audit: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(report)) if (value !== undefined) audit[key] = value;
+  return audit;
 }
 
 /** A streamed generation that went silent is a local deadline outcome (`stalled`, transient). */
@@ -595,6 +640,10 @@ export interface MlxExecutionInput {
   modelPath: string;
   prompt: string;
   parameters: Record<string, unknown>;
+  /** The grammar schema the answer is decoded under (F4 D24); absent with thinking on. */
+  outputSchema?: AiOutputSchema;
+  /** Why a schema the request carried was not sent. */
+  schemaRefusal?: "thinking";
   timeoutMs: number;
   signal?: AbortSignal;
   /** Streams the generation: each piece of text as the helper writes it. */
@@ -885,6 +934,7 @@ function taskResult(
     ...(request.taskType !== "embedding" ? { schemaMode: result.schemaMode ?? "none" } : {}),
     ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
     ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
+    ...(result.requestOptions ? { requestOptions: result.requestOptions } : {}),
     costEstimate: 0
   };
 }

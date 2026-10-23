@@ -248,14 +248,25 @@ describe("summarizing a run and rendering it", () => {
         runId: "m9b4-recorded-schema-1",
         schema: { requested: true, supported: true }
       }),
-      [item({ calls: [call({ decodeTps: 18, schemaMode: "grammar", schemaOffered: true })] })]
+      [
+        item({
+          calls: [
+            call({
+              decodeTps: 18,
+              schemaMode: "grammar",
+              schemaOffered: true,
+              grammarCompileMs: 0.4
+            })
+          ]
+        })
+      ]
     );
     const text = renderReport([plain, withSchema]);
     expect(text).toContain("## With and without the output schema");
     expect(text).toContain(
       "| m9b4 | graph | 20.0 → 18.0 (0.90x) | 50.0% → 100.0% | 33.3% → 0.0% |"
     );
-    expect(text).toContain("grammar 1");
+    expect(text).toContain("grammar 1 | 0.40 |");
     expect(renderReport([plain])).not.toContain("With and without");
     expect(renderReport([withSchema])).not.toContain("With and without");
   });

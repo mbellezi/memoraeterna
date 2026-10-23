@@ -139,6 +139,26 @@ the other slots), a call's deadline or abort cancels it at the next token or sco
 the writer's text streams. An older helper without these capabilities is killed instead, once no
 MLX call runs, and a resident MLX ranker then loads again on its next call.
 
+### JSON-constrained decoding (F4 D24)
+
+A structured call states its output contract (D23); the MLX adapter derives the contract's grammar
+schema (`toGrammarJsonSchema`: the answer's input side with tuples, patterns, lengths, bounds and
+optional members, `strict: false`) and the helper decodes the answer under it when it announces
+`schema` (`native/mlx-helper/README.md`). The audit records `schema_mode` `grammar`, and the
+helper's report (compile and mask times, cache use, or the refusal) in the run's
+`parameters.requestOptions.grammar`. With thinking on (`reasoningLevel` other than `off`) no schema
+is sent; a tokenizer that is not byte-level BPE, or a schema outside the subset, makes the helper
+answer unconstrained and the run records `none` with the refusal. The answer is validated and
+repaired by Zod exactly as before. GGUF calls are unchanged (no grammar schema is routed to them).
+
+`npm run mlx:build` runs the grammar's tests (`swift test -c release --filter MemoraGrammarTests`,
+no model or Metal library) after compiling the helper. A helper built from new sources has a new
+SHA-256, so every validated ranker re-validates on the next app start (item 6 of the validation
+above) and its score parity must stay within 0.125 log-odds of its baseline on every profile (F3
+D13); the grammar does not touch `score`, so the expected difference is 0. The F3 frozen helper is
+`memora-mlx-helper@sha256:44d081e0`; the build that adds `schema` replaces it once T102's parity
+check and replay pass.
+
 ### DEV seed
 
 `MEMORA_LOCAL_MODEL_SEED_DIR` (absolute, or relative to the workspace root) names a folder of

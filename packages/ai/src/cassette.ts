@@ -453,6 +453,10 @@ export class AiCassette {
               )
           }
         : {}),
+      // The schema a runtime derives for a contract (F4 D24) is the runtime's; the key ignores it.
+      ...(adapter.outputSchemaFor
+        ? { outputSchemaFor: (contract) => adapter.outputSchemaFor!(contract) }
+        : {}),
       // Replay never loads a local model: nothing will run on it.
       ...(adapter.isLoaded ? { isLoaded: () => replaying() || adapter.isLoaded!() } : {}),
       ...(adapter.ensureLoaded

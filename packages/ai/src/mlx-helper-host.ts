@@ -84,6 +84,11 @@ export interface MlxGenerateInput {
   parameters?: MlxGenerationParameters;
   /** Ask for `delta` lines (`onDelta`); a helper without `stream` answers with the whole text only. */
   stream?: boolean;
+  /**
+   * Decode the answer under this JSON Schema (F4 D24). A helper without `schema` is not sent it and
+   * answers unconstrained, its result without `schemaMode`.
+   */
+  schema?: Record<string, unknown>;
 }
 
 /**
@@ -196,7 +201,8 @@ export class MlxHelperHost {
         modelPath: input.modelPath,
         prompt: input.prompt,
         ...(input.parameters ? { parameters: input.parameters } : {}),
-        ...(input.stream ? { stream: true } : {})
+        ...(input.stream ? { stream: true } : {}),
+        ...(input.schema ? { schema: input.schema } : {})
       },
       mlxHelperTextResultSchema,
       options
@@ -310,7 +316,13 @@ export class MlxHelperHost {
         throwIfAborted(options.signal);
         const helper = await this.ready(options.signal, request.data.command !== "health");
         try {
-          return await this.execute(helper, request.data, requestId, resultSchema, options);
+          return await this.execute(
+            helper,
+            withoutUnannounced(request.data, helper.capabilities),
+            requestId,
+            resultSchema,
+            options
+          );
         } catch (error) {
           if (attempt > 0 || !exitedAfterAnswering(helper, error)) throw error;
           // An older helper that serves one request per process exited after its last answer,
@@ -634,6 +646,21 @@ function exitedAfterAnswering(helper: HelperProcess, error: unknown): boolean {
     helper.child.exitCode === 0 &&
     helper.answers > 0
   );
+}
+
+/**
+ * The request as this helper may receive it: a schema goes only to a helper that announced `schema`
+ * (an older one would ignore it, but it is not sent what it never asked for).
+ */
+function withoutUnannounced(
+  request: HelperRequest,
+  capabilities: ReadonlySet<string> | null
+): HelperRequest {
+  if (request.command !== "generate" || !request.schema || capabilities?.has("schema"))
+    return request;
+  const sent = { ...request };
+  delete sent.schema;
+  return sent;
 }
 
 /** The model slot an inference request uses; null for the other commands. */

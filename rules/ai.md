@@ -55,9 +55,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   failures after the allowed repair. Job retries classify alike. Every runtime, local included,
   enforces a per-class deadline from execution start; a local call that ignores cancellation keeps
   its lane until the runtime is reloaded, and calls needing that lane fail meanwhile.
-- Structured output is requested with a schema where the runtime supports it and
-  is always validated with Zod. Invalid output gets a bounded repair; valid items
-  are kept and only missing ones are requested again.
+- Structured output is requested with a schema where the runtime supports it (strict remotely, a
+  decoding grammar locally, none with thinking on) and is always validated with Zod. Invalid
+  output gets a bounded repair; valid items are kept and only missing ones are requested again.
 - Model output never supplies canonical IDs. Short aliases in prompts are
   resolved by the backend to real IDs and validated before persistence.
 - Prompts are a function of content, not of IDs: aliases and the order of

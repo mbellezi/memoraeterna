@@ -49,6 +49,8 @@ export interface ContractSummary {
   errors: Record<string, number>;
   schemaModes: Record<string, number>;
   schemaOffered: number;
+  /** The MLX grammar's compile time per call, 95th percentile (F4 D24: the replay bar is 100 ms). */
+  grammarCompileMsP95: number | null;
   /** The recording's own record under the same flow: items without a repair, items clean, repairs, salvage. */
   recordedNoRepair: number;
   recordedFirstPassClean: number;
@@ -141,6 +143,10 @@ export function summarizeContract(
     errors,
     schemaModes,
     schemaOffered: calls.filter((call) => call.schemaOffered).length,
+    grammarCompileMsP95: percentile(
+      numbers(calls.map((call) => call.grammarCompileMs ?? null)),
+      95
+    ),
     recordedNoRepair: records.filter(
       (record) => record.baseline.repairCalls === 0 && record.baseline.ok
     ).length,
@@ -344,7 +350,7 @@ function renderSchemaComparison(summaries: readonly RunSummary[]): string[] {
         .map(([mode, count]) => `${mode} ${count}`)
         .join(", ");
       rows.push(
-        `| ${run.arm} | ${row.contract} | ${fixed(before.decodeTpsP50)} → ${fixed(row.decodeTpsP50)} (${fixed(ratio, 2)}x) | ${percent(share(before.noRepair, before.items))} → ${percent(share(row.noRepair, row.items))} | ${percent(share(before.repairCalls, before.calls))} → ${percent(share(row.repairCalls, row.calls))} | ${percent(share(before.finalOk, before.items))} → ${percent(share(row.finalOk, row.items))} | ${modes || "n/a"} |`
+        `| ${run.arm} | ${row.contract} | ${fixed(before.decodeTpsP50)} → ${fixed(row.decodeTpsP50)} (${fixed(ratio, 2)}x) | ${percent(share(before.noRepair, before.items))} → ${percent(share(row.noRepair, row.items))} | ${percent(share(before.repairCalls, before.calls))} → ${percent(share(row.repairCalls, row.calls))} | ${percent(share(before.finalOk, before.items))} → ${percent(share(row.finalOk, row.items))} | ${modes || "n/a"} | ${fixed(row.grammarCompileMsP95, 2)} |`
       );
     }
   }
@@ -353,8 +359,8 @@ function renderSchemaComparison(summaries: readonly RunSummary[]): string[] {
     "",
     "## With and without the output schema",
     "",
-    "| Arm | Contract | Decode p50 tok/s (plain → schema) | No repair needed | Repair share of calls | Final valid | Schema modes (schema run) |",
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Arm | Contract | Decode p50 tok/s (plain → schema) | No repair needed | Repair share of calls | Final valid | Schema modes (schema run) | Grammar compile p95 ms |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ...rows
   ];
 }

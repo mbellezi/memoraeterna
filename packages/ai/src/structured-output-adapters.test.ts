@@ -349,22 +349,34 @@ describe("local runtimes", () => {
     await expect(unconstrained.run(request())).resolves.toMatchObject({ schemaMode: "none" });
   });
 
-  it("leaves MLX as it was: no schema reaches the helper and the mode is none", async () => {
+  it("hands an MLX call the schema (F4 D24), except with thinking on, and reports the helper's mode", async () => {
     const inputs: Array<Record<string, unknown>> = [];
-    const adapter = new MlxAdapter(
-      {
-        modelId: "mlx",
-        modelPath: "/models/mlx",
-        helperPath: "/helper",
-        capabilities: [...capabilities]
-      },
-      async (input) => {
-        inputs.push(input as unknown as Record<string, unknown>);
-        return { output: answer, durationMs: 1 };
-      }
-    );
-    await expect(adapter.run(request())).resolves.toMatchObject({ schemaMode: "none" });
-    expect(inputs[0]).not.toHaveProperty("outputSchema");
+    const mlx = (schemaMode?: "grammar") =>
+      new MlxAdapter(
+        {
+          modelId: "mlx",
+          modelPath: "/models/mlx",
+          helperPath: "/helper",
+          capabilities: [...capabilities]
+        },
+        async (input) => {
+          inputs.push(input as unknown as Record<string, unknown>);
+          return { output: answer, durationMs: 1, ...(schemaMode ? { schemaMode } : {}) };
+        }
+      );
+    await expect(mlx("grammar").run(request())).resolves.toMatchObject({ schemaMode: "grammar" });
+    expect(inputs[0]!.outputSchema).toEqual(outputSchema);
+    // A helper that did not take the schema says nothing: the answer ran unconstrained.
+    await expect(mlx().run(request())).resolves.toMatchObject({ schemaMode: "none" });
+    const thinking = await mlx("grammar").run({
+      ...request(),
+      parameters: { ...request().parameters, reasoningLevel: "on" }
+    });
+    expect(inputs[2]).not.toHaveProperty("outputSchema");
+    expect(thinking).toMatchObject({
+      schemaMode: "none",
+      requestOptions: { grammar: { refusal: "thinking" } }
+    });
   });
 
   it("does not report a schema mode for an embedding", async () => {

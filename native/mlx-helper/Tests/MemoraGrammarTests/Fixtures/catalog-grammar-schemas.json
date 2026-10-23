@@ -1,0 +1,855 @@
+{
+  "atomic_notes": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "notes": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bodyMarkdown": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ideaStatement": {
+                "type": "string",
+                "minLength": 1
+              },
+              "language": {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "pt-BR",
+                  "it",
+                  "fr",
+                  "es"
+                ]
+              },
+              "evidenceChunkIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                }
+              }
+            },
+            "required": [
+              "title",
+              "bodyMarkdown",
+              "ideaStatement",
+              "evidenceChunkIds"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "notes": [
+          {
+            "title": "Memory",
+            "bodyMarkdown": "Notes **hold** one idea.\n\n- \"quoted\"",
+            "ideaStatement": "A note holds one idea.",
+            "language": "en",
+            "evidenceChunkIds": [
+              "c1",
+              "chunk:2"
+            ]
+          },
+          {
+            "title": "Memória — ação",
+            "bodyMarkdown": "Uma ideia 中文 😀.",
+            "ideaStatement": "Ideia.",
+            "evidenceChunkIds": [
+              "c3"
+            ]
+          }
+        ]
+      },
+      {
+        "notes": []
+      }
+    ],
+    "invalid": [
+      {
+        "notes": [
+          {
+            "title": "a",
+            "bodyMarkdown": "b",
+            "ideaStatement": "c",
+            "evidenceChunkIds": []
+          }
+        ]
+      },
+      {
+        "notes": [
+          {
+            "title": "a",
+            "bodyMarkdown": "b",
+            "ideaStatement": "c",
+            "language": "de",
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          }
+        ]
+      },
+      {
+        "notes": [
+          {
+            "title": "a",
+            "bodyMarkdown": "b",
+            "ideaStatement": "c",
+            "evidenceChunkIds": [
+              "c 1"
+            ]
+          }
+        ]
+      },
+      {
+        "notes": [
+          {
+            "title": "a",
+            "bodyMarkdown": "b",
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "knowledge_graph": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "identityDescription": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 600
+              },
+              "canonicalEntityId": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Person",
+                  "Organization",
+                  "Place",
+                  "Event",
+                  "Concept",
+                  "Work",
+                  "Publication",
+                  "Publisher",
+                  "Project",
+                  "Product",
+                  "FieldOfStudy",
+                  "Tag",
+                  "Collection"
+                ]
+              },
+              "canonicalName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "aliases": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "evidenceChunkIds": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                }
+              }
+            },
+            "required": [
+              "key",
+              "identityDescription",
+              "type",
+              "canonicalName",
+              "confidence",
+              "evidenceChunkIds"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "relations": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "subjectEntityKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "predicate": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z]+(?:_[a-z]+)*$"
+              },
+              "displayLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "definition": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "relationTypeId": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+              },
+              "originalPredicate": {
+                "type": "string"
+              },
+              "objectEntityKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "evidenceChunkIds": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                }
+              }
+            },
+            "required": [
+              "subjectEntityKey",
+              "predicate",
+              "displayLabel",
+              "definition",
+              "objectEntityKey",
+              "confidence",
+              "evidenceChunkIds"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "entities",
+        "relations"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "entities": [
+          {
+            "key": "e1",
+            "identityDescription": "The mathematician who wrote the first program",
+            "type": "Person",
+            "canonicalName": "Ada Lovelace",
+            "aliases": [
+              "Ada"
+            ],
+            "confidence": 0.9,
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          },
+          {
+            "key": "e2",
+            "identityDescription": "Babbage's general-purpose computer design",
+            "type": "Product",
+            "canonicalName": "Analytical Engine",
+            "description": "A mechanical computer.",
+            "confidence": 1,
+            "evidenceChunkIds": [
+              "c1",
+              "c2"
+            ]
+          }
+        ],
+        "relations": [
+          {
+            "subjectEntityKey": "e1",
+            "predicate": "wrote_about",
+            "displayLabel": "wrote about",
+            "definition": "The subject wrote about the object.",
+            "objectEntityKey": "e2",
+            "confidence": 0.75,
+            "evidenceChunkIds": [
+              "c2"
+            ]
+          }
+        ]
+      },
+      {
+        "entities": [],
+        "relations": []
+      }
+    ],
+    "invalid": [
+      {
+        "entities": [
+          {
+            "key": "e1",
+            "identityDescription": "x",
+            "type": "Animal",
+            "canonicalName": "x",
+            "confidence": 0.5,
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          }
+        ],
+        "relations": []
+      },
+      {
+        "entities": [
+          {
+            "key": "e1",
+            "identityDescription": "x",
+            "type": "Concept",
+            "canonicalName": "x",
+            "confidence": 1.5,
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          }
+        ],
+        "relations": []
+      },
+      {
+        "entities": [],
+        "relations": [
+          {
+            "subjectEntityKey": "e1",
+            "predicate": "Wrote-About",
+            "displayLabel": "x",
+            "definition": "x",
+            "objectEntityKey": "e2",
+            "confidence": 0.5,
+            "evidenceChunkIds": [
+              "c1"
+            ]
+          }
+        ]
+      },
+      {
+        "entities": []
+      }
+    ]
+  },
+  "entity_identity": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "matches": {
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ],
+            "minItems": 2,
+            "items": false,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "matches"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "matches": [
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r2",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": []
+      }
+    ],
+    "invalid": [
+      {
+        "matches": [
+          [
+            "r1"
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            "c1",
+            "c2"
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            null,
+            "c1"
+          ]
+        ]
+      }
+    ]
+  },
+  "topic_overview": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "paragraphs": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "paragraphs"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "paragraphs": [
+          {
+            "text": "Overview [E1].",
+            "citations": [
+              1,
+              "E2"
+            ]
+          },
+          {
+            "text": "More."
+          }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "paragraphs": []
+      },
+      {
+        "paragraphs": [
+          {
+            "citations": [
+              1
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "relation_typing": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "p": {
+                "type": "string",
+                "enum": [
+                  "p1",
+                  "p2",
+                  "p3",
+                  "p4",
+                  "p5",
+                  "p6",
+                  "p7",
+                  "p8",
+                  "p9",
+                  "p10",
+                  "p11",
+                  "p12",
+                  "p13",
+                  "p14",
+                  "p15",
+                  "p16",
+                  "p17",
+                  "p18",
+                  "p19",
+                  "p20",
+                  "p21",
+                  "p22",
+                  "p23",
+                  "p24"
+                ]
+              },
+              "t": {
+                "type": "string",
+                "enum": [
+                  "supports",
+                  "contradicts",
+                  "extends",
+                  "depends_on",
+                  "example_of",
+                  "clarifies",
+                  "same_as",
+                  "none"
+                ]
+              },
+              "d": {
+                "type": "string",
+                "enum": [
+                  "ab",
+                  "ba",
+                  "both",
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "p",
+              "t",
+              "d"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "pairs"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "pairs": [
+          {
+            "p": "p1",
+            "t": "supports",
+            "d": "ab"
+          },
+          {
+            "p": "p24",
+            "t": "none",
+            "d": "none"
+          }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "pairs": [
+          {
+            "p": "p25",
+            "t": "supports",
+            "d": "ab"
+          }
+        ]
+      },
+      {
+        "pairs": [
+          {
+            "p": "p1",
+            "t": "supports"
+          }
+        ]
+      },
+      {
+        "pairs": [
+          {
+            "p": "p1",
+            "t": "Supports",
+            "d": "ab"
+          }
+        ]
+      }
+    ]
+  },
+  "topic_naming": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "alias": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "language": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "alias",
+              "title",
+              "description",
+              "language"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "topics"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "topics": [
+          {
+            "alias": "t1",
+            "title": "Memory",
+            "description": "Notes about memory.",
+            "language": "en"
+          },
+          {
+            "alias": "t2",
+            "title": "Memória",
+            "description": "Notas.",
+            "aliases": [
+              "Lembrança"
+            ],
+            "language": "pt-BR"
+          }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "topics": [
+          {
+            "alias": "t1",
+            "title": "Memory"
+          }
+        ]
+      },
+      {
+        "topics": {}
+      }
+    ]
+  },
+  "topic_areas": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "areas": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "alias": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "members": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "alias",
+                  "members"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "new": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "members": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "new",
+                  "members"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "areas"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "areas": [
+          {
+            "alias": "a1",
+            "members": [
+              "n1",
+              "n2"
+            ]
+          },
+          {
+            "new": {
+              "title": "Area",
+              "description": "What it holds."
+            },
+            "members": []
+          }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "areas": [
+          {
+            "alias": "a1"
+          }
+        ]
+      },
+      {
+        "areas": [
+          {
+            "alias": "",
+            "members": []
+          }
+        ]
+      }
+    ]
+  }
+}

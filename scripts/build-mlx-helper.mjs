@@ -12,6 +12,18 @@ const buildRoot = join(packageRoot, ".build");
 const releaseRoot = join(buildRoot, "release");
 
 await run("swift", ["build", "-c", "release", "--package-path", packageRoot]);
+// The grammar of JSON-constrained decoding (F4 D24) is pure Swift: its tests run on the release
+// build, without the Metal library, before the shaders are generated.
+await run("swift", [
+  "test",
+  "-c",
+  "release",
+  "--disable-testable-imports",
+  "--filter",
+  "MemoraGrammarTests",
+  "--package-path",
+  packageRoot
+]);
 
 const mlxCheckout = join(buildRoot, "checkouts", "mlx-swift");
 const xcodeProject = join(mlxCheckout, "xcode", "MLX.xcodeproj");

@@ -142,6 +142,17 @@ describe("the cassette key and the output schema (D35, C2)", () => {
     expect(served.output).toBe(`{"verdict":"same"}`);
     expect(replay.stats()).toMatchObject({ served: 1, misses: 0 });
   });
+
+  it("leaves the schema a local runtime derives for a contract to that runtime (F4 D24)", () => {
+    const contract = { name: "pair_verdict", contract: z.object({ verdict: z.string() }) };
+    const derived = { ...outputSchema, strict: false };
+    const grammarAdapter = Object.assign(new FakeAdapter(local), {
+      outputSchemaFor: () => derived
+    });
+    const cassette = new AiCassette({ mode: "record", directory });
+    expect(cassette.wrap(grammarAdapter).outputSchemaFor?.(contract)).toBe(derived);
+    expect(cassette.wrap(new FakeAdapter(local)).outputSchemaFor).toBeUndefined();
+  });
 });
 
 describe("the local-miss replay policy (D41)", () => {

@@ -36,6 +36,7 @@ interface Step {
   inputTokens?: number;
   outputTokens?: number;
   schemaMode?: "grammar" | "none";
+  grammarCompileMs?: number;
 }
 
 function harness(script: Step[], options: { supportsSchema?: boolean } = {}) {
@@ -65,7 +66,10 @@ function harness(script: Step[], options: { supportsSchema?: boolean } = {}) {
         durationMs: wall,
         ...(step.inputTokens !== undefined ? { inputTokens: step.inputTokens } : {}),
         ...(step.outputTokens !== undefined ? { outputTokens: step.outputTokens } : {}),
-        ...(step.schemaMode ? { schemaMode: step.schemaMode } : {})
+        ...(step.schemaMode ? { schemaMode: step.schemaMode } : {}),
+        ...(step.grammarCompileMs !== undefined
+          ? { requestOptions: { grammar: { compileMs: step.grammarCompileMs } } }
+          : {})
       };
     }
   };
@@ -234,9 +238,10 @@ describe("the output schema", () => {
   });
 
   it("is sent when the runtime takes one, for a contract that has one", async () => {
-    const { environment, requests } = harness([{ output: overviewAnswer, schemaMode: "grammar" }], {
-      supportsSchema: true
-    });
+    const { environment, requests } = harness(
+      [{ output: overviewAnswer, schemaMode: "grammar", grammarCompileMs: 0.3 }],
+      { supportsSchema: true }
+    );
     const record = await replayItem(
       entryOf("structured-output", overviewBody(), overviewAnswer),
       environment,
@@ -250,7 +255,11 @@ describe("the output schema", () => {
       schema: { type: "object" },
       strict: true
     });
-    expect(record.calls[0]).toMatchObject({ schemaOffered: true, schemaMode: "grammar" });
+    expect(record.calls[0]).toMatchObject({
+      schemaOffered: true,
+      schemaMode: "grammar",
+      grammarCompileMs: 0.3
+    });
   });
 
   it("is not sent when the runtime does not announce it, and the call says so", async () => {

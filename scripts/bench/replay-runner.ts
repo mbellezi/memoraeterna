@@ -77,6 +77,14 @@ export async function recordedBaseline(
   };
 }
 
+/** The grammar compile time the MLX helper reported for a call (`requestOptions.grammar`), or null. */
+function grammarCompileMs(result: AiTaskResult): number | null {
+  const grammar = result.requestOptions?.grammar;
+  if (typeof grammar !== "object" || grammar === null || Array.isArray(grammar)) return null;
+  const value = (grammar as Record<string, unknown>).compileMs;
+  return typeof value === "number" ? value : null;
+}
+
 /** Builds the caller that sends one item's calls to the writer and logs each. */
 export function makeCaller(
   environment: RunnerEnvironment,
@@ -144,6 +152,7 @@ export function makeCaller(
         prefillTps: speed.prefillTps,
         decodeTps: speed.decodeTps,
         schemaMode: result.schemaMode ?? null,
+        grammarCompileMs: grammarCompileMs(result),
         peakHelperRssMiB: memory.peakHelperRssMiB,
         peakHelperFootprintMiB: memory.peakHelperFootprintMiB,
         peakSwapUsedMiB: memory.peakSwapUsedMiB,

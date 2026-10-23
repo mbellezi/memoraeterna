@@ -2,7 +2,9 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { toGrammarJsonSchema } from "@app/domain";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { MlxAdapter } from "./local-adapters.js";
 import type { LocalDisposeStep } from "./dispose-step.js";
@@ -779,5 +781,220 @@ readline.createInterface({ input: process.stdin }).once("line", (line) => {
     expect(adapter.isLoaded()).toBe(true);
     await host.unload("generate");
     expect(adapter.isLoaded()).toBe(false);
+  });
+});
+
+/**
+ * A stand-in for the T99 helper: it announces `capabilities` (with `schema` unless told otherwise),
+ * writes every request line it receives to `requests.ndjson`, and answers a `generate` that carries a
+ * schema with `schemaMode: "grammar"` and a grammar report, or `none` with a tokenizer refusal for
+ * the prompt "refuse". Without a schema its answer is the one of the helpers before it.
+ */
+async function createSchemaHelper(
+  capabilities: string[] = ["cancel", "schema", "stream", "unload"]
+) {
+  const root = await mkdtemp(join(tmpdir(), "memora-mlx-host-t99-"));
+  roots.push(root);
+  const helperPath = join(root, "fake-helper.mjs");
+  const logPath = join(root, "requests.ndjson");
+  await writeFile(
+    helperPath,
+    `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import readline from "node:readline";
+const send = (id, body) => process.stdout.write(JSON.stringify({
+  protocolVersion: 1, requestId: id.toUpperCase(), ...body }) + "\\n");
+for await (const line of readline.createInterface({ input: process.stdin })) {
+  appendFileSync(${JSON.stringify(logPath)}, line + "\\n");
+  const request = JSON.parse(line);
+  if (request.command === "health") {
+    send(request.requestId, { kind: "result", ok: true, output: "ok", durationMs: 0,
+      capabilities: ${JSON.stringify(capabilities)} });
+  } else if (request.command === "shutdown") {
+    process.exit(0);
+  } else if (request.command === "generate") {
+    const base = { kind: "result", ok: true, output: '{"verdict":"same"}', durationMs: 2,
+      inputTokens: 5, outputTokens: 4 };
+    if (!request.schema) send(request.requestId, base);
+    else if (request.prompt === "refuse")
+      send(request.requestId, { ...base, schemaMode: "none", grammar: { refusal: "tokenizer", vocabularyMs: 3 } });
+    else
+      send(request.requestId, { ...base, schemaMode: "grammar", grammar: { compileMs: 0.2,
+        vocabularyMs: 0, maskMs: 1.5, steps: 4, cacheHits: 1, cacheMisses: 3, reserveSteps: 0,
+        deadEnds: 0, violations: 0 } });
+  }
+}
+`
+  );
+  await chmod(helperPath, 0o755);
+  const lines = async () =>
+    (await readFile(logPath, "utf8").catch(() => "")).split("\n").filter(Boolean);
+  return {
+    helperPath,
+    lines,
+    requests: async () => (await lines()).map((line) => JSON.parse(line) as Record<string, unknown>)
+  };
+}
+
+const verdictContract = {
+  name: "verdict",
+  contract: z.object({ verdict: z.enum(["same", "different"]), note: z.string().optional() })
+};
+
+describe("MlxHelperHost and MlxAdapter with a helper that takes a schema (F4 D24)", () => {
+  it("sends a schema to a helper that announced it and reads how the answer was decoded", async () => {
+    const { helperPath, requests } = await createSchemaHelper();
+    const host = createHost(helperPath);
+    const schema = toGrammarJsonSchema(verdictContract.contract)!.schema;
+
+    const result = await host.generate({ modelPath: "/writer", prompt: "judge", schema });
+
+    expect(result).toMatchObject({ schemaMode: "grammar", grammar: { compileMs: 0.2, steps: 4 } });
+    expect((await requests()).find((request) => request.command === "generate")?.schema).toEqual(
+      schema
+    );
+  });
+
+  it("writes a generate without a schema exactly as before, and its answer has no schema mode", async () => {
+    const { helperPath, lines } = await createSchemaHelper();
+    const host = createHost(helperPath);
+
+    const result = await host.generate({
+      modelPath: "/writer",
+      prompt: "judge",
+      parameters: { maxTokens: 64, temperature: 0, seed: 7 }
+    });
+
+    const line = (await lines()).find((text) => text.includes('"command":"generate"'))!;
+    expect(line.replace(/"requestId":"[^"]+"/u, '"requestId":"ID"')).toBe(
+      '{"protocolVersion":1,"requestId":"ID","command":"generate","modelPath":"/writer",' +
+        '"prompt":"judge","parameters":{"maxTokens":64,"temperature":0,"enableThinking":false,"seed":7}}'
+    );
+    expect(result).not.toHaveProperty("schemaMode");
+    expect(result).not.toHaveProperty("grammar");
+  });
+
+  it("never sends a schema to a helper that did not announce it", async () => {
+    const { helperPath, requests } = await createSchemaHelper(["cancel", "stream", "unload"]);
+    const host = createHost(helperPath);
+
+    const result = await host.generate({
+      modelPath: "/writer",
+      prompt: "judge",
+      schema: toGrammarJsonSchema(verdictContract.contract)!.schema
+    });
+
+    expect(result).not.toHaveProperty("schemaMode");
+    expect((await requests()).find((request) => request.command === "generate")).not.toHaveProperty(
+      "schema"
+    );
+  });
+
+  it("refuses an oversized schema before it reaches the helper", async () => {
+    const { helperPath, requests } = await createSchemaHelper();
+    const host = createHost(helperPath);
+    const schema = {
+      type: "string",
+      enum: Array.from({ length: 20_000 }, (_, index) => `v${index}`)
+    };
+
+    await expect(
+      host.generate({ modelPath: "/writer", prompt: "judge", schema })
+    ).rejects.toThrow();
+    expect(await requests()).toEqual([]);
+  });
+
+  function writer(helperPath: string, host: MlxHelperHost): MlxAdapter {
+    return new MlxAdapter({
+      modelId: "local-writer",
+      modelPath: "/writer",
+      helperPath,
+      host,
+      capabilities: ["text-generation", "structured-output", "offline"]
+    });
+  }
+
+  function structured(
+    adapter: MlxAdapter,
+    input: string,
+    parameters: Record<string, unknown> = {}
+  ) {
+    return adapter.run({
+      taskType: "structured-output",
+      input,
+      requiredCapabilities: [],
+      parameters,
+      metadata: {},
+      outputSchema: adapter.outputSchemaFor(verdictContract)!
+    });
+  }
+
+  it("derives the grammar schema of a contract and records the grammar of the answer", async () => {
+    const { helperPath, requests } = await createSchemaHelper();
+    const host = createHost(helperPath);
+    const adapter = writer(helperPath, host);
+
+    expect(adapter.outputSchemaFor(verdictContract)).toEqual(
+      toGrammarJsonSchema(verdictContract.contract, "verdict")
+    );
+    const result = await structured(adapter, "judge");
+
+    expect(result.schemaMode).toBe("grammar");
+    expect(result.requestOptions).toEqual({
+      grammar: {
+        compileMs: 0.2,
+        vocabularyMs: 0,
+        maskMs: 1.5,
+        steps: 4,
+        cacheHits: 1,
+        cacheMisses: 3,
+        reserveSteps: 0,
+        deadEnds: 0,
+        violations: 0
+      }
+    });
+    expect((await requests()).find((request) => request.command === "generate")).toHaveProperty(
+      "schema"
+    );
+  });
+
+  it("records a schema the helper refused and sends none with thinking on", async () => {
+    const { helperPath, requests } = await createSchemaHelper();
+    const host = createHost(helperPath);
+    const adapter = writer(helperPath, host);
+
+    const refused = await structured(adapter, "refuse");
+    const thinking = await structured(adapter, "judge", { reasoningLevel: "on" });
+
+    expect(refused).toMatchObject({
+      schemaMode: "none",
+      requestOptions: { grammar: { refusal: "tokenizer", vocabularyMs: 3 } }
+    });
+    expect(thinking).toMatchObject({
+      schemaMode: "none",
+      requestOptions: { grammar: { refusal: "thinking" } }
+    });
+    const generates = (await requests()).filter((request) => request.command === "generate");
+    expect(generates.map((request) => "schema" in request)).toEqual([true, false]);
+  });
+
+  it("derives no schema once the shared helper turned out not to take one", async () => {
+    const { helperPath } = await createSchemaHelper(["cancel", "stream", "unload"]);
+    const host = createHost(helperPath);
+    const adapter = writer(helperPath, host);
+    expect(adapter.outputSchemaFor(verdictContract)).not.toBeNull();
+
+    await host.health();
+
+    expect(adapter.outputSchemaFor(verdictContract)).toBeNull();
+    const result = await adapter.run({
+      taskType: "structured-output",
+      input: "judge",
+      requiredCapabilities: [],
+      parameters: {},
+      metadata: {}
+    });
+    expect(result.schemaMode).toBe("none");
+    expect(result).not.toHaveProperty("requestOptions");
   });
 });

@@ -7,13 +7,15 @@ import { z } from "zod";
  *
  * Additive capabilities (F3 D39), announced by `health` in `capabilities`: `cancel` (a `cancel`
  * line names a running request by its ID and gets no answer; the request answers `cancelled`),
- * `unload` (`unload {slot}` drops one slot's model) and `stream` (`generate {stream: true}` sends
- * `delta` lines before its result). A helper that announces none is an older build: the host kills
- * it instead of cancelling or unloading.
+ * `unload` (`unload {slot}` drops one slot's model), `stream` (`generate {stream: true}` sends
+ * `delta` lines before its result) and `schema` (F4 D24: `generate {schema}` decodes the answer
+ * under a JSON Schema and its result says `schemaMode` `grammar`, or `none` with the reason in
+ * `grammar.refusal`). A helper that announces none is an older build: the host kills it instead of
+ * cancelling or unloading, and sends no schema to a helper without `schema`.
  */
 
 /** Capabilities a helper may announce in `health`. Unknown ones are kept and ignored. */
-export const mlxHelperCapabilities = ["cancel", "stream", "unload"] as const;
+export const mlxHelperCapabilities = ["cancel", "schema", "stream", "unload"] as const;
 export type MlxHelperCapability = (typeof mlxHelperCapabilities)[number];
 
 /** The helper keeps one model per command kind; `unload` names the kind. */
@@ -34,6 +36,38 @@ const generationParametersSchema = z
     presencePenalty: z.number().min(-2).max(2).optional(),
     enableThinking: z.boolean().default(false),
     seed: z.number().int().nonnegative().optional()
+  })
+  .strict();
+
+/** The largest grammar schema a `generate` carries, as JSON text (UTF-16 units). */
+const maxSchemaCharacters = 64 * 1024;
+
+/**
+ * The JSON Schema a `generate` is decoded under (capability `schema`): the subset the grammar
+ * emitter writes (`toGrammarJsonSchema`); the helper refuses anything else and generates without it.
+ */
+export const mlxGrammarSchemaSchema = z
+  .record(z.string(), z.json())
+  .refine((schema) => JSON.stringify(schema).length <= maxSchemaCharacters, {
+    message: "schema too large"
+  });
+
+/** Why a helper generated without the schema it was sent. */
+export const mlxGrammarRefusalSchema = z.enum(["thinking", "tokenizer", "schema"]);
+
+/** What a `generate` with a schema reports: the refusal, or what the grammar cost. */
+export const mlxGrammarReportSchema = z
+  .object({
+    refusal: mlxGrammarRefusalSchema.optional(),
+    compileMs: z.number().nonnegative().optional(),
+    vocabularyMs: z.number().nonnegative().optional(),
+    maskMs: z.number().nonnegative().optional(),
+    steps: z.number().int().nonnegative().optional(),
+    cacheHits: z.number().int().nonnegative().optional(),
+    cacheMisses: z.number().int().nonnegative().optional(),
+    reserveSteps: z.number().int().nonnegative().optional(),
+    deadEnds: z.number().int().nonnegative().optional(),
+    violations: z.number().int().nonnegative().optional()
   })
   .strict();
 
@@ -112,7 +146,9 @@ export const mlxHelperRequestSchema = z.discriminatedUnion("command", [
         enableThinking: false
       }),
       /** Send the text as `delta` lines while it is generated; an older helper ignores it. */
-      stream: z.boolean().optional()
+      stream: z.boolean().optional(),
+      /** Decode the answer under this JSON Schema (capability `schema`). */
+      schema: mlxGrammarSchemaSchema.optional()
     })
     .strict(),
   mlxHelperEmbedRequestSchema,
@@ -162,7 +198,10 @@ const mlxHelperDeltaSchema = z
   })
   .strict();
 
-/** The result of `health`, `shutdown`, `unload` and `generate`. */
+/**
+ * The result of `health`, `shutdown`, `unload` and `generate`. A `generate` sent a schema says how
+ * it was decoded (`schemaMode`) and what the grammar did (`grammar`); without one it has neither.
+ */
 export const mlxHelperTextResultSchema = z
   .object({
     protocolVersion: z.literal(1),
@@ -172,7 +211,9 @@ export const mlxHelperTextResultSchema = z
     output: z.string(),
     inputTokens: z.number().int().nonnegative().optional(),
     outputTokens: z.number().int().nonnegative().optional(),
-    durationMs: z.number().int().nonnegative()
+    durationMs: z.number().int().nonnegative(),
+    schemaMode: z.enum(["grammar", "none"]).optional(),
+    grammar: mlxGrammarReportSchema.optional()
   })
   .strict();
 
@@ -288,6 +329,7 @@ export type MlxHelperEmbedResult = z.infer<typeof mlxHelperEmbedResultSchema>;
 export type MlxHelperScoreResult = z.infer<typeof mlxHelperScoreResultSchema>;
 export type MlxHelperTiming = z.infer<typeof mlxHelperTimingSchema>;
 export type MlxGenerationParameters = z.input<typeof generationParametersSchema>;
+export type MlxGrammarReport = z.infer<typeof mlxGrammarReportSchema>;
 
 /** What a caller supplies for `embed`; the host adds the protocol fields. */
 export interface MlxEmbedInput {

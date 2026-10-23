@@ -1,3 +1,6 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 import {
   AtomicNoteGenerationOutputSchema,
@@ -6,7 +9,8 @@ import {
   TopicOverviewPatchOutputSchema,
   analyzeStrictJsonSchema,
   outputSchemaForContract,
-  relationTypingOutputSchema
+  relationTypingOutputSchema,
+  toGrammarJsonSchema
 } from "@app/domain";
 import type { z } from "zod";
 
@@ -89,6 +93,271 @@ const catalog: Array<{
     outcome: "strict"
   }
 ];
+
+/**
+ * The grammar of each contract (F4 D24): the schema the MLX helper's mask compiles, its name, answers
+ * Zod accepts (the grammar must let a model write them) and answers Zod refuses for their shape (the
+ * grammar must not). `native/mlx-helper/Tests/MemoraGrammarTests` reads the same cases from the
+ * fixture below, so the Swift compiler is tested on exactly what this emitter sends.
+ */
+const grammarCases: Record<string, { name: string; valid: unknown[]; invalid: unknown[] }> = {
+  "atomic notes": {
+    name: "atomic_notes",
+    valid: [
+      {
+        notes: [
+          {
+            title: "Memory",
+            bodyMarkdown: 'Notes **hold** one idea.\n\n- "quoted"',
+            ideaStatement: "A note holds one idea.",
+            language: "en",
+            evidenceChunkIds: ["c1", "chunk:2"]
+          },
+          {
+            title: "Memória — ação",
+            bodyMarkdown: "Uma ideia 中文 😀.",
+            ideaStatement: "Ideia.",
+            evidenceChunkIds: ["c3"]
+          }
+        ]
+      },
+      { notes: [] }
+    ],
+    invalid: [
+      { notes: [{ title: "a", bodyMarkdown: "b", ideaStatement: "c", evidenceChunkIds: [] }] },
+      {
+        notes: [
+          {
+            title: "a",
+            bodyMarkdown: "b",
+            ideaStatement: "c",
+            language: "de",
+            evidenceChunkIds: ["c1"]
+          }
+        ]
+      },
+      { notes: [{ title: "a", bodyMarkdown: "b", ideaStatement: "c", evidenceChunkIds: ["c 1"] }] },
+      { notes: [{ title: "a", bodyMarkdown: "b", evidenceChunkIds: ["c1"] }] }
+    ]
+  },
+  "knowledge graph": {
+    name: "knowledge_graph",
+    valid: [
+      {
+        entities: [
+          {
+            key: "e1",
+            identityDescription: "The mathematician who wrote the first program",
+            type: "Person",
+            canonicalName: "Ada Lovelace",
+            aliases: ["Ada"],
+            confidence: 0.9,
+            evidenceChunkIds: ["c1"]
+          },
+          {
+            key: "e2",
+            identityDescription: "Babbage's general-purpose computer design",
+            type: "Product",
+            canonicalName: "Analytical Engine",
+            description: "A mechanical computer.",
+            confidence: 1,
+            evidenceChunkIds: ["c1", "c2"]
+          }
+        ],
+        relations: [
+          {
+            subjectEntityKey: "e1",
+            predicate: "wrote_about",
+            displayLabel: "wrote about",
+            definition: "The subject wrote about the object.",
+            objectEntityKey: "e2",
+            confidence: 0.75,
+            evidenceChunkIds: ["c2"]
+          }
+        ]
+      },
+      { entities: [], relations: [] }
+    ],
+    invalid: [
+      {
+        entities: [
+          {
+            key: "e1",
+            identityDescription: "x",
+            type: "Animal",
+            canonicalName: "x",
+            confidence: 0.5,
+            evidenceChunkIds: ["c1"]
+          }
+        ],
+        relations: []
+      },
+      {
+        entities: [
+          {
+            key: "e1",
+            identityDescription: "x",
+            type: "Concept",
+            canonicalName: "x",
+            confidence: 1.5,
+            evidenceChunkIds: ["c1"]
+          }
+        ],
+        relations: []
+      },
+      {
+        entities: [],
+        relations: [
+          {
+            subjectEntityKey: "e1",
+            predicate: "Wrote-About",
+            displayLabel: "x",
+            definition: "x",
+            objectEntityKey: "e2",
+            confidence: 0.5,
+            evidenceChunkIds: ["c1"]
+          }
+        ]
+      },
+      { entities: [] }
+    ]
+  },
+  "confirmation (entity identity, relation type)": {
+    name: "entity_identity",
+    valid: [
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null]
+        ]
+      },
+      { matches: [] }
+    ],
+    invalid: [{ matches: [["r1"]] }, { matches: [["r1", "c1", "c2"]] }, { matches: [[null, "c1"]] }]
+  },
+  "topic overview": {
+    name: "topic_overview",
+    valid: [{ paragraphs: [{ text: "Overview [E1].", citations: [1, "E2"] }, { text: "More." }] }],
+    invalid: [{ paragraphs: [] }, { paragraphs: [{ citations: [1] }] }]
+  },
+  "relation typing": {
+    name: "relation_typing",
+    valid: [
+      {
+        pairs: [
+          { p: "p1", t: "supports", d: "ab" },
+          { p: "p24", t: "none", d: "none" }
+        ]
+      }
+    ],
+    invalid: [
+      { pairs: [{ p: "p25", t: "supports", d: "ab" }] },
+      { pairs: [{ p: "p1", t: "supports" }] },
+      { pairs: [{ p: "p1", t: "Supports", d: "ab" }] }
+    ]
+  },
+  "topic naming": {
+    name: "topic_naming",
+    valid: [
+      {
+        topics: [
+          { alias: "t1", title: "Memory", description: "Notes about memory.", language: "en" },
+          {
+            alias: "t2",
+            title: "Memória",
+            description: "Notas.",
+            aliases: ["Lembrança"],
+            language: "pt-BR"
+          }
+        ]
+      }
+    ],
+    invalid: [{ topics: [{ alias: "t1", title: "Memory" }] }, { topics: {} }]
+  },
+  "topic areas": {
+    name: "topic_areas",
+    valid: [
+      {
+        areas: [
+          { alias: "a1", members: ["n1", "n2"] },
+          { new: { title: "Area", description: "What it holds." }, members: [] }
+        ]
+      }
+    ],
+    invalid: [{ areas: [{ alias: "a1" }] }, { areas: [{ alias: "", members: [] }] }]
+  }
+};
+
+const grammarFixturePath = fileURLToPath(
+  new URL(
+    "../../../../../native/mlx-helper/Tests/MemoraGrammarTests/Fixtures/catalog-grammar-schemas.json",
+    import.meta.url
+  )
+);
+
+function grammarFixture(): unknown {
+  return JSON.parse(
+    JSON.stringify(
+      Object.fromEntries(
+        catalog.map(({ id, contract }) => {
+          const { name, valid, invalid } = grammarCases[id]!;
+          return [name, { schema: toGrammarJsonSchema(contract, name)?.schema, valid, invalid }];
+        })
+      )
+    )
+  );
+}
+
+describe("the grammar of every catalog contract (F4 D24)", () => {
+  it.each(catalog)("$id emits a closed grammar schema", ({ id, contract }) => {
+    const name = grammarCases[id]!.name;
+    const output = toGrammarJsonSchema(contract, name);
+    expect(output).toMatchObject({ name, strict: false });
+    expect(output!.schema).toMatchObject({ type: "object", additionalProperties: false });
+  });
+
+  it.each(catalog)("$id: the samples are what Zod says they are", ({ id, contract }) => {
+    for (const answer of grammarCases[id]!.valid)
+      expect(contract.safeParse(answer).success).toBe(true);
+    for (const answer of grammarCases[id]!.invalid)
+      expect(contract.safeParse(answer).success).toBe(false);
+  });
+
+  it("says what the strict schema cannot: tuples, patterns, lengths, optional members", () => {
+    const schemas = grammarFixture() as Record<string, { schema: Record<string, unknown> }>;
+    const property = (name: string, ...path: string[]) =>
+      path.reduce<unknown>(
+        (node, key) => (node as Record<string, unknown>)[key],
+        schemas[name]!.schema
+      );
+    expect(property("entity_identity", "properties", "matches", "items")).toMatchObject({
+      prefixItems: [{ type: "string" }, { anyOf: [{ type: "string" }, { type: "null" }] }],
+      items: false,
+      minItems: 2
+    });
+    expect(
+      property("knowledge_graph", "properties", "relations", "items", "properties", "predicate")
+    ).toMatchObject({ pattern: "^[a-z]+(?:_[a-z]+)*$", maxLength: 120 });
+    expect(property("atomic_notes", "properties", "notes", "items", "required")).not.toContain(
+      "language"
+    );
+    expect(property("topic_naming", "properties", "topics", "items", "required")).not.toContain(
+      "aliases"
+    );
+    expect(property("topic_areas", "properties", "areas", "items", "anyOf")).toHaveLength(2);
+    expect(
+      property("relation_typing", "properties", "pairs", "items", "properties", "p", "enum")
+    ).toHaveLength(24);
+  });
+
+  it("matches the fixture the Swift grammar tests read", () => {
+    const fixture = grammarFixture();
+    // MEMORA_WRITE_GRAMMAR_FIXTURE=1 rewrites it after a contract changed.
+    if (process.env.MEMORA_WRITE_GRAMMAR_FIXTURE === "1")
+      writeFileSync(grammarFixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+    expect(JSON.parse(readFileSync(grammarFixturePath, "utf8"))).toEqual(fixture);
+  });
+});
 
 describe("the contracts the topic tree states", () => {
   it("names the overview's contract from the schema the catalog checks", () => {
