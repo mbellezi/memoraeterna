@@ -60,6 +60,8 @@ binding decision records of F2 and F3. The measurements are dated, not rules.
   and the evidence for the placement and gate parameters of the Topic Tree Engine.
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only AI cassettes (record/replay),
   the golden runner, and the F3 soak, relation re-match, Decisions and probe runs.
+- [settings-inventory.md](settings-inventory.md) — F4 T68: every persisted setting with its reader, default, screen,
+  fate and E7 category; the 35/43 counts and the 17 matching controls verified; the dead settings; the pair-key fields.
 
 ## Archive
 
