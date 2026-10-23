@@ -84,7 +84,8 @@ import {
   buildTopicNamePrompt,
   buildTopicNameRepairPrompt,
   topicNameOperation,
-  topicNamePromptVersion
+  topicNamePromptVersion,
+  topicNamingOutputContract
 } from "./topic-prompts.js";
 import type { TopicTriggers } from "./topic-triggers.js";
 
@@ -957,6 +958,7 @@ class NamingRun {
       priority: "P3",
       contentLanguage: this.contentLanguage,
       promptVersion: topicNamePromptVersion,
+      outputContract: topicNamingOutputContract,
       attempt,
       // Attempts after the first re-ask the topics the validation refused: the audit counts them
       // as repairs (D35), like the `*_repair` operations.

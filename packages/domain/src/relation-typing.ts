@@ -65,7 +65,8 @@ export function relationTypingAliases(count: number): string[] {
 
 /**
  * The Zod contract of one answer. Every property is required, objects are closed and every string
- * is an enum, so it converts to a strict JSON Schema (T55) and holds no free-text field (X4).
+ * is an enum, so it converts to a strict JSON Schema (T55, derived per runtime from the contract the
+ * caller states, F4 D23) and holds no free-text field (X4).
  */
 export function relationTypingOutputSchema(maxPairs = relationTypingLimits.pairsPerCall) {
   const aliases = relationTypingAliases(maxPairs) as [string, ...string[]];
@@ -78,29 +79,6 @@ export function relationTypingOutputSchema(maxPairs = relationTypingLimits.pairs
       })
     )
   });
-}
-
-/** The request option a strict-schema runtime takes (`AiTaskRequest.outputSchema`, T55). */
-export interface RelationTypingWireSchema {
-  name: string;
-  schema: Record<string, unknown>;
-  strict: true;
-}
-
-/**
- * The wire form of {@link relationTypingOutputSchema}: a JSON Schema with closed objects, every
- * property required and only `type`, `enum`, `properties`, `required`, `items` and
- * `additionalProperties`, which the strict modes of Codex and OpenAI-compatible endpoints accept.
- * The answer's size and the pair ids' uniqueness are checked in code, not by the schema.
- */
-export function relationTypingWireSchema(
-  maxPairs = relationTypingLimits.pairsPerCall
-): RelationTypingWireSchema {
-  const schema: Record<string, unknown> = {
-    ...z.toJSONSchema(relationTypingOutputSchema(maxPairs))
-  };
-  delete schema.$schema;
-  return { name: "relation_typing", schema, strict: true };
 }
 
 /** One answer item that passed validation: the type and direction are consistent. */

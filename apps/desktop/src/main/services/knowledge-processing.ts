@@ -9,6 +9,7 @@ import {
   AtomicNoteGenerationOutputSchema,
   AtomicNoteRelationTypeSchema,
   KnowledgeGraphGenerationOutputSchema,
+  type AiOutputContract,
   type AtomicNoteGenerationOutput,
   type AtomicNoteRelationType,
   type KnowledgeGraphGenerationOutput,
@@ -20,6 +21,15 @@ export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v9";
 export const knowledgeGraphPromptVersion = "knowledge-graph-v8";
+/** The contracts the generative structured calls state (F4 D23); neither can be sent strictly. */
+const knowledgeGraphOutputContract: AiOutputContract = {
+  name: "knowledge_graph",
+  contract: KnowledgeGraphGenerationOutputSchema
+};
+const atomicNotesOutputContract: AiOutputContract = {
+  name: "atomic_notes",
+  contract: AtomicNoteGenerationOutputSchema
+};
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
@@ -55,6 +65,8 @@ export interface KnowledgeAiExecution {
 export interface KnowledgeCallContext {
   operation: string;
   promptVersion: string;
+  /** Set by the structured calls (graph, notes); the summaries answer free text. */
+  outputContract?: AiOutputContract;
   batchIndex: number;
   attempt: number;
   chunkIds: string[];
@@ -432,6 +444,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       {
         operation: `graph_${inputKind}`,
         promptVersion: knowledgeGraphPromptVersion,
+        outputContract: knowledgeGraphOutputContract,
         batchIndex,
         attempt: 0,
         chunkIds: [...evidenceAliases.values()]
@@ -471,6 +484,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
         {
           operation: `graph_${inputKind}_repair`,
           promptVersion: knowledgeGraphPromptVersion,
+          outputContract: knowledgeGraphOutputContract,
           batchIndex,
           attempt: 1,
           chunkIds: [...evidenceAliases.values()]
@@ -682,6 +696,7 @@ export async function generateAtomicNoteCandidates(
   const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), {
     operation: "atomic_note_generation",
     promptVersion: atomicNotePromptVersion,
+    outputContract: atomicNotesOutputContract,
     batchIndex: 0,
     attempt: 0,
     chunkIds: [...allowedChunkIds]
@@ -691,6 +706,7 @@ export async function generateAtomicNoteCandidates(
     run(buildAtomicNoteRepairPrompt(previousOutput, [...allowedChunkIds], error), {
       operation: "atomic_note_repair",
       promptVersion: atomicNotePromptVersion,
+      outputContract: atomicNotesOutputContract,
       batchIndex: 0,
       attempt: 1,
       chunkIds: [...allowedChunkIds]

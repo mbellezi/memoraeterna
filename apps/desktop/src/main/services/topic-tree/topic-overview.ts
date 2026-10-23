@@ -41,6 +41,7 @@ import {
   buildTopicOverviewRepairPrompt,
   parseTopicOverviewOutput,
   topicOverviewOperation,
+  topicOverviewOutputContract,
   topicOverviewPromptVersion,
   topicOverviewSupportInstruction
 } from "./topic-prompts.js";
@@ -327,6 +328,7 @@ export class TopicOverviewService {
         priority: "P0",
         contentLanguage: identity.language,
         promptVersion: topicOverviewPromptVersion,
+        outputContract: topicOverviewOutputContract,
         attempt: 0,
         isRepair: false,
         sourceItemIds,

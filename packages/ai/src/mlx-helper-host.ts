@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 
 import type { z } from "zod";
 
+import { runDisposeStep, type LocalDisposeListener } from "./dispose-step.js";
 import {
   mlxHelperEmbedResultSchema,
   mlxHelperHealthResultSchema,
@@ -55,6 +56,8 @@ export interface MlxHelperHostOptions {
   config?: MlxRuntimeConfigInput;
   /** The environment the helper's is derived from; defaults to `process.env`. */
   environment?: NodeJS.ProcessEnv;
+  /** Receives each step of `dispose` as it ends (F4 D23), so the quit path can log it. */
+  onDisposeStep?: LocalDisposeListener;
 }
 
 export interface MlxHelperCallOptions {
@@ -107,6 +110,10 @@ interface HelperProcess {
   capabilities: ReadonlySet<string> | null;
   /** The model each slot holds as far as the host knows: answered requests and unloads. */
   readonly loaded: Map<MlxHelperSlot, string>;
+  /** Set while `dispose` asks the helper to exit: it takes no new request and no new host waits on it. */
+  stopping: boolean;
+  /** The disposal in progress, so a second `dispose` joins it instead of asking again. */
+  disposal: Promise<void> | null;
   /** Resolves when the process has exited or failed to start. */
   readonly gone: Promise<void>;
   markGone: () => void;
@@ -235,22 +242,56 @@ export class MlxHelperHost {
   }
 
   /**
-   * Kills the helper and rejects the request it was answering and every queued one. The host
-   * stays usable: the next request spawns a fresh helper.
+   * Stops the helper and rejects the request it was answering and every queued one. The host stays
+   * usable: the next request spawns a fresh helper once this one is gone.
+   *
+   * An idle helper is sent the protocol's `shutdown` and gets `shutdownGraceMs` to exit; one that is
+   * busy, or that did not exit in time, gets SIGTERM and SIGKILL after `killGraceMs` (F4 D23). Every
+   * step is bounded and reported to `onDisposeStep`, so a quit that overran names the step. A helper
+   * that survived SIGKILL is left behind after its bound.
    */
   public async dispose(): Promise<void> {
     this.epoch += 1;
-    const current = this.current;
-    this.current = null;
-    if (!current) return;
-    this.fail(current, new MlxHelperError(runtimeFailedKey, "disposed", true, current.stderr));
-    this.kill(current);
-    await current.gone;
+    const helper = this.current;
+    if (!helper) return;
+    helper.disposal ??= this.stop(helper);
+    await helper.disposal;
+  }
+
+  private async stop(helper: HelperProcess): Promise<void> {
+    const report = this.options.onDisposeStep;
+    const idle = !helper.exited && helper.active === null;
+    this.fail(helper, new MlxHelperError(runtimeFailedKey, "disposed", true, helper.stderr));
+    if (idle) {
+      helper.stopping = true;
+      await runDisposeStep(
+        "mlx helper shutdown",
+        this.config.shutdownGraceMs,
+        async () => {
+          const requestId = randomUUID();
+          helper.child.stdin.write(
+            `${JSON.stringify({ protocolVersion: 1, requestId, command: "shutdown" })}\n`
+          );
+          await helper.gone;
+        },
+        report
+      );
+      if (helper.exited) return;
+    }
+    // The helper is busy, did not leave when asked, or was already being killed: signals.
+    helper.stopping = false;
+    this.kill(helper);
+    await runDisposeStep(
+      "mlx helper signals",
+      this.config.killGraceMs * 2,
+      () => helper.gone,
+      report
+    );
   }
 
   private running(): HelperProcess | undefined {
     const current = this.current;
-    return current && !current.exited ? current : undefined;
+    return current && !current.exited && !current.stopping ? current : undefined;
   }
 
   private call<S extends z.ZodType>(
@@ -323,9 +364,10 @@ export class MlxHelperHost {
   private async acquire(): Promise<HelperProcess> {
     for (;;) {
       const current = this.current;
-      if (current && !current.exited) return current;
+      if (current && !current.exited && !current.stopping) return current;
       if (current) {
-        this.current = null;
+        // A helper being asked to exit leaves `current` by itself; a killed one is dropped here.
+        if (!current.stopping) this.current = null;
         await current.gone;
         continue;
       }
@@ -352,6 +394,8 @@ export class MlxHelperHost {
       active: null,
       capabilities: null,
       loaded: new Map(),
+      stopping: false,
+      disposal: null,
       gone,
       markGone
     };

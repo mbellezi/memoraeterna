@@ -7,7 +7,9 @@ import {
   AiOutputSchemaSchema,
   AiSchemaModeSchema,
   AiTaskTypeSchema,
-  type AiCapability
+  type AiCapability,
+  type AiOutputContract,
+  type AiOutputSchema
 } from "@app/domain";
 
 export const aiProviderIdSchema = z.string().min(1);
@@ -56,8 +58,10 @@ export const aiTaskRequestSchema = z
     /** The calling operation, which may have its own route (`op:<operation>`). */
     operation: z.string().min(1).max(200).optional(),
     /**
-     * The JSON Schema of the answer (F3 D35), present only for a strict-compatible contract. Adapters
-     * map it to their wire format. It is kept out of the cassette key; the entry body stores it.
+     * The JSON Schema of the answer (F3 D35): the strict schema of the contract a caller stated, for a
+     * remote runtime and only for a strict-compatible contract, or the schema a local runtime derived
+     * from it (F4 D23). Adapters map it to their wire format. It is kept out of the cassette key; the
+     * entry body stores it.
      */
     outputSchema: AiOutputSchemaSchema.optional()
   })
@@ -209,6 +213,12 @@ export interface AiModelAdapter {
   isLoaded?(): boolean;
   ensureLoaded?(signal?: AbortSignal): Promise<void>;
   run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult>;
+  /**
+   * A runtime that constrains decoding by a schema (the helper's `schema` capability) derives it from
+   * the output contract a caller states (F4 D23, D24); null runs the call without one. Absent, the
+   * runtime takes no contract: a remote adapter is sent the contract's strict schema by the service.
+   */
+  outputSchemaFor?(contract: AiOutputContract): AiOutputSchema | null;
   /**
    * Embeds several texts in one execution; the vectors are those the single `run` of each text would
    * give (a runtime that cannot promise that does not offer this). Absent, the service runs the texts

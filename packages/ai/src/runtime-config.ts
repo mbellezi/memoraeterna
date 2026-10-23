@@ -27,6 +27,11 @@ export const mlxRuntimeConfigSchema = z
     /** How long a killed helper gets to exit after SIGTERM before it receives SIGKILL. */
     killGraceMs: z.number().int().min(10).max(60_000),
     /**
+     * How long an idle helper gets to exit after the protocol's `shutdown` before the host sends it
+     * signals (F4 D23). A busy helper is not asked: its request is cancelled and it is signalled.
+     */
+    shutdownGraceMs: z.number().int().min(10).max(60_000),
+    /**
      * How long a request the host cancelled (at its deadline or on an abort) may take to answer
      * before the helper is killed (F3 D31). A helper without `cancel` is killed at once.
      */
@@ -49,6 +54,7 @@ export const defaultMlxRuntimeConfig: MlxRuntimeConfig = {
   requestTimeoutMs: 10 * 60_000,
   healthTimeoutMs: 30_000,
   killGraceMs: 1_000,
+  shutdownGraceMs: 2_000,
   cancelGraceMs: 2_000,
   persistenceProbeMs: 50,
   stderrTailChars: 2_000
@@ -179,7 +185,12 @@ export const aiLaneRuntimeConfigSchema = z
          * How long a local call may take to settle after its deadline cancelled it. A GGUF call
          * still running then is abandoned and its runtime is `wedged` until it is disposed.
          */
-        graceMs: laneMilliseconds
+        graceMs: laneMilliseconds,
+        /**
+         * The longest one step of disposing a GGUF runtime may take (F4 D23): waiting for a load that
+         * was aborted, then the model, then the engine. A step over it is abandoned and logged by name.
+         */
+        disposeMs: laneMilliseconds
       })
       .strict(),
     /** Which local models stay loaded (F3 D39); the embedder and the ranker are always kept. */
@@ -248,7 +259,8 @@ export const defaultAiLaneRuntimeConfig: AiLaneRuntimeConfig = {
       answer: 300_000
     },
     tokenStallMs: 60_000,
-    graceMs: 2_000
+    graceMs: 2_000,
+    disposeMs: 2_000
   },
   residency: { generativeIdleUnloadMs: 300_000, headroomBytes: 4 * gib, loadMarginBytes: gib }
 };

@@ -16,6 +16,7 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
+import { runDisposeStep, type LocalDisposeListener } from "./dispose-step.js";
 import { embedManyDimensions, embedManyRequest } from "./embed-many.js";
 import {
   LocalDeadlineError,
@@ -68,6 +69,8 @@ export interface LocalAdapterOptions {
   parameterCapabilities?: AiModelParameterCapabilities;
   /** Local deadlines per workload class (F3 D31); the typed defaults when left out. */
   localDeadlines?: AiLocalDeadlines;
+  /** Receives each bounded step of disposing a GGUF runtime (F4 D23), so the quit can log it. */
+  onDisposeStep?: LocalDisposeListener;
 }
 
 /** The deadline of a local request: its stated class's, else its task type's class's. */
@@ -223,7 +226,14 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
       signal?: AbortSignal;
     }) => Promise<LocalEmbeddingBatch>
   ) {
-    this.runtime = execute || executeEmbedding ? null : new NodeLlamaRuntime(options.modelPath);
+    this.runtime =
+      execute || executeEmbedding
+        ? null
+        : new NodeLlamaRuntime(options.modelPath, {
+            disposeMs: (options.localDeadlines ?? defaultAiLaneRuntimeConfig.localDeadlines)
+              .disposeMs,
+            ...(options.onDisposeStep ? { onDisposeStep: options.onDisposeStep } : {})
+          });
     this.execute = execute ?? ((input) => this.runtime!.generate(input));
     this.executeEmbedding = executeEmbedding ?? ((input) => this.runtime!.embed(input));
     // Without a runtime of its own (an injected executor) the batch is the single calls in order.
@@ -631,15 +641,31 @@ export function reportGeneratedChunk(
   listener({ progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4))) });
 }
 
-class NodeLlamaRuntime {
+type NodeLlamaModule = typeof import("node-llama-cpp");
+
+export interface NodeLlamaRuntimeOptions {
+  /** The longest one step of `dispose` waits (F4 D23); the typed default when left out. */
+  disposeMs?: number;
+  onDisposeStep?: LocalDisposeListener;
+  /** Loads the engine module (tests); `node-llama-cpp` when left out. */
+  importModule?: () => Promise<NodeLlamaModule>;
+}
+
+/** The in-process GGUF engine: one model, loaded on first use, with a bounded disposal. */
+export class NodeLlamaRuntime {
   private module: typeof import("node-llama-cpp") | null = null;
   private llama: Awaited<ReturnType<(typeof import("node-llama-cpp"))["getLlama"]>> | null = null;
   private model: Awaited<
     ReturnType<Awaited<ReturnType<(typeof import("node-llama-cpp"))["getLlama"]>>["loadModel"]>
   > | null = null;
   private loading: Promise<void> | null = null;
+  /** Aborts the load in progress when the runtime is disposed. */
+  private loadAbort: AbortController | null = null;
 
-  public constructor(private readonly modelPath: string) {}
+  public constructor(
+    private readonly modelPath: string,
+    private readonly options: NodeLlamaRuntimeOptions = {}
+  ) {}
 
   public isLoaded(): boolean {
     return this.model !== null;
@@ -758,35 +784,45 @@ class NodeLlamaRuntime {
     }
   }
 
+  /**
+   * Releases the model and the engine. A load in progress is aborted first; each step (the load, the
+   * model, the engine) waits at most `disposeMs` and is reported, so a native `dispose` that does not
+   * return cannot hold the quit (F4 D23). An abandoned step is left running.
+   */
   public async dispose(): Promise<void> {
+    const disposeMs = this.options.disposeMs ?? defaultAiLaneRuntimeConfig.localDeadlines.disposeMs;
+    const listener = this.options.onDisposeStep;
     const loading = this.loading;
-    if (loading) await loading.catch(() => undefined);
+    if (loading) {
+      this.loadAbort?.abort();
+      await runDisposeStep("gguf load", disposeMs, () => loading.catch(() => undefined), listener);
+    }
     const model = this.model;
     const llama = this.llama;
     this.model = null;
     this.llama = null;
     this.module = null;
-    await model?.dispose();
-    await llama?.dispose();
+    if (model) await runDisposeStep("gguf model", disposeMs, () => model.dispose(), listener);
+    if (llama) await runDisposeStep("gguf engine", disposeMs, () => llama.dispose(), listener);
   }
 
   private async load(signal?: AbortSignal): Promise<void> {
     if (this.model) return;
     if (!this.loading) {
+      const abort = new AbortController();
+      this.loadAbort = abort;
+      const loadSignal = signal ? AbortSignal.any([signal, abort.signal]) : abort.signal;
       this.loading = (async () => {
-        const module = await import("node-llama-cpp");
+        const module = await (this.options.importModule?.() ?? import("node-llama-cpp"));
         const llama = await module.getLlama();
         let model;
         try {
-          model = await llama.loadModel({
-            modelPath: this.modelPath,
-            ...(signal ? { loadSignal: signal } : {})
-          });
+          model = await llama.loadModel({ modelPath: this.modelPath, loadSignal });
         } catch (error) {
           await llama.dispose();
           throw error;
         }
-        if (signal?.aborted) {
+        if (loadSignal.aborted) {
           await model.dispose();
           await llama.dispose();
           throw new DOMException("Local inference canceled.", "AbortError");
@@ -796,6 +832,7 @@ class NodeLlamaRuntime {
         this.model = model;
       })().finally(() => {
         this.loading = null;
+        if (this.loadAbort === abort) this.loadAbort = null;
       });
     }
     await this.loading;

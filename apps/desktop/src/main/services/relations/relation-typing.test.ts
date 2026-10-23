@@ -7,7 +7,13 @@ import {
   type RelationTypingInput,
   type RelationTypingVerdict
 } from "@app/db";
-import { relationTypingLimits, relationTypingWireSchema, type NoteRelationBand } from "@app/domain";
+import {
+  outputSchemaForContract,
+  relationTypingLimits,
+  relationTypingOutputSchema,
+  type AiOutputContract,
+  type NoteRelationBand
+} from "@app/domain";
 
 import { uuidAssignments } from "../__fixtures__/uuid-assignments.js";
 import { defaultPromptPin, withPromptPin } from "../prompt-runtime.js";
@@ -354,18 +360,29 @@ describe("typing accepted pairs", () => {
     });
   });
 
-  it("passes the strict schema and an output budget that grows with the pairs", async () => {
+  it("states its output contract in the log context and an output budget that grows with the pairs", async () => {
     const test = setup(() => extendsAb);
     await typeRelationPairs(test.deps, [pair(note("A"), note("B")), pair(note("C"), note("D"))], {
       priority: "P1"
     });
     const call = test.calls[0]!;
     expect(call.context.priority).toBe("P1");
+    // The contract left `limits` (F4 D23): the budget is all that travels beside the context.
     expect(call.limits).toEqual({
       maxOutputTokens:
-        relationTypingLimits.outputTokensBase + 2 * relationTypingLimits.outputTokensPerPair,
-      outputSchema: relationTypingWireSchema()
+        relationTypingLimits.outputTokensBase + 2 * relationTypingLimits.outputTokensPerPair
     });
+    const stated = call.context.outputContract as AiOutputContract;
+    expect(stated.name).toBe("relation_typing");
+    // The service sends a remote runtime the strict form of exactly this contract.
+    const strict = outputSchemaForContract(stated);
+    expect(strict).not.toBeNull();
+    expect(strict).toEqual(
+      outputSchemaForContract({
+        name: "relation_typing",
+        contract: relationTypingOutputSchema(relationTypingLimits.pairsPerCall)
+      })
+    );
   });
 
   it("writes a veto row for none and persists no typed outcome", async () => {
@@ -462,6 +479,8 @@ describe("validation and the one item-level re-ask", () => {
       isRepair: true,
       attempt: 1
     });
+    // The re-ask states the contract of the first ask: one answer shape (F4 D23).
+    expect(second!.context.outputContract).toBe(first!.context.outputContract);
     expect(second!.prompt).toContain("p3: d does not fit t");
     expect(second!.prompt).toContain("p4: no result");
     expect(second!.prompt).not.toContain("A one");

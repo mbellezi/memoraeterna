@@ -27,6 +27,8 @@ describe("resolveAiLaneRuntimeConfig", () => {
       answer: 300_000
     });
     expect(localDeadlineMs(config.localDeadlines, "decide")).toBe(10_000);
+    // One step of disposing a GGUF runtime waits at most 2 s (F4 D23).
+    expect(config.localDeadlines.disposeMs).toBe(2_000);
     // The generative model unloads after 5 idle minutes; 4 GiB headroom, 1 GiB load margin (D39).
     expect(config.residency).toEqual({
       generativeIdleUnloadMs: 300_000,
@@ -121,6 +123,8 @@ describe("resolveMlxRuntimeConfig", () => {
     expect(config.cacheLimitMb).toBe(1_024);
     expect(config.memoryLimitMb).toBeUndefined();
     expect(config.requestTimeoutMs).toBe(600_000);
+    // An idle helper gets 2 s to exit after `shutdown`, then SIGTERM, then SIGKILL after 1 s (F4 D23).
+    expect(config).toMatchObject({ shutdownGraceMs: 2_000, killGraceMs: 1_000 });
   });
 
   it("lets the operator variables override defaults and explicit input override both", () => {

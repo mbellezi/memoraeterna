@@ -16,6 +16,11 @@ const queue = vi.hoisted(() => {
       recoverInterrupted: async () => 0,
       findById: async (id: string) => find(id),
       reportProgress: async () => null,
+      requestCancel: async (id: string) => {
+        const job = find(id);
+        if (job) job.cancelRequestedAt = new Date();
+        return job ? { ...job } : null;
+      },
       claimNext: async (workerId: string, types?: readonly string[], lane?: JobLane) => {
         const job = jobs
           .filter(
@@ -439,6 +444,83 @@ describe("heavy and light lanes", () => {
       error: "bad",
       attempts: 2
     });
+  });
+
+  it("queues a light job again after a bare AbortError while its own signal is live (F4 D8)", async () => {
+    const execute = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException("Local inference canceled.", "AbortError"))
+      .mockResolvedValueOnce({ placed: 1 });
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({ "topic-place": { needsModel: false, execute } })
+    });
+    const place = enqueue("topic-place", "light");
+    await expect(supervisor.runLightOnce("compute")).resolves.toMatchObject({
+      status: "queued",
+      finishedAt: null
+    });
+    expect(queue.find(place.id)!.error).toBe("Local inference canceled.");
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(supervisor.runLightOnce("compute")).resolves.toMatchObject({
+      status: "succeeded",
+      attempts: 2
+    });
+  });
+
+  it("keeps a job canceled when its aborted signal ends it with an AbortError", async () => {
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({
+        "topic-place": {
+          needsModel: false,
+          execute: async (_job: JobRecord, signal: AbortSignal) => {
+            await holdAiSlot(60_000, signal);
+            return { placed: 1 };
+          }
+        }
+      })
+    });
+    const place = enqueue("topic-place", "light");
+    const running = supervisor.runLightOnce("compute");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(statusOf(place)).toBe("running");
+
+    await supervisor.requestCancel(place.id);
+    await expect(running).resolves.toMatchObject({ status: "canceled", error: null });
+    // Canceled for good: nothing is queued to run again.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(statusOf(place)).toBe("canceled");
+  });
+
+  it("cancels, and never retries, a job the quit path stops with an AbortError", async () => {
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({
+        "topic-place": {
+          needsModel: false,
+          execute: async (_job: JobRecord, signal: AbortSignal) => {
+            await holdAiSlot(60_000, signal);
+            return { placed: 1 };
+          }
+        }
+      })
+    });
+    await supervisor.start();
+    const place = enqueue("topic-place", "light");
+    supervisor.wake("light");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(statusOf(place)).toBe("running");
+
+    const stopping = supervisor.stop();
+    await vi.advanceTimersByTimeAsync(10);
+    await stopping;
+    expect(queue.find(place.id)).toMatchObject({ status: "canceled", error: null });
+    const claimsAfterStop = claims.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(claims).toHaveLength(claimsAfterStop);
+    expect(statusOf(place)).toBe("canceled");
   });
 
   it("refuses a light job type that the heavy lane already runs", () => {

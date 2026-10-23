@@ -44,11 +44,18 @@ const transientMessages = [
  * errors, and transient filesystem errors (a worker reports the error code with its message).
  * Everything else is deterministic (invalid model output after its repair, an empty document, a missing
  * model or credential, a context overflow): the job fails once and keeps its real error.
+ *
+ * A bare `AbortError` is transient (F4 D8): a local runtime aborts a batch or a load of its own, and the
+ * job that asked can run again. It says nothing about who aborted, so the callers decide cancellation
+ * first, from the job's own signal: an aborted signal is a cancel (the user's, or the quit's), never a
+ * retry, and only a live signal reaches this check (`job-supervisor.ts`, `catalog-header-refresh.ts`).
+ * It stays out of `isTransientAiError`, which adapters use to retry calls and would retry cancelled ones.
  */
 export function isTransientJobFailure(error: unknown): boolean {
   if (isTransientAiError(error)) return true;
   let current: unknown = error;
   for (let depth = 0; current instanceof Error && depth < 5; depth++) {
+    if (current.name === "AbortError") return true;
     const { code, message } = current as Error & { code?: unknown };
     if (
       typeof code === "string" &&

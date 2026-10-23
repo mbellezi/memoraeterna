@@ -75,6 +75,7 @@ import {
   buildTopicAreasRepairPrompt,
   parseTopicAreasOutput,
   topicAreasOperation,
+  topicAreasOutputContract,
   topicAreasPromptVersion
 } from "./topic-prompts.js";
 import type { TopicTreeService } from "./topic-tree-service.js";
@@ -569,6 +570,7 @@ export class TopicAreasService {
       priority: "P3",
       contentLanguage: prepared.contentLanguage,
       promptVersion: topicAreasPromptVersion,
+      outputContract: topicAreasOutputContract,
       attempt,
       // Attempt 1 is the repair of the grouping: the audit counts it (D35).
       isRepair: attempt > 0,

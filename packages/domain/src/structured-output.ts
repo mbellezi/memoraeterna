@@ -153,6 +153,34 @@ export function toStrictJsonSchema(
   return AiOutputSchemaSchema.parse({ name, schema: analysis.schema, strict: true });
 }
 
+/**
+ * The output contract a structured caller states in its log context (F4 D23): the Zod contract of
+ * the answer and the provider-facing name of its schema. The caller never states a wire schema; the
+ * AI service derives one per runtime from the contract (`outputSchemaForContract`).
+ */
+export interface AiOutputContract {
+  name: string;
+  contract: z.ZodType;
+}
+
+const strictContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema | null>>();
+
+/**
+ * The strict schema a remote runtime is sent for a stated contract (F4 D23), or null when the
+ * contract cannot be sent strictly (an optional member, a tuple, a refinement) and the call keeps
+ * its prompt-level JSON. Cached per contract object and name: callers keep one contract per shape.
+ */
+export function outputSchemaForContract(output: AiOutputContract): AiOutputSchema | null {
+  let byName = strictContractSchemas.get(output.contract);
+  if (!byName) {
+    byName = new Map();
+    strictContractSchemas.set(output.contract, byName);
+  }
+  if (!byName.has(output.name))
+    byName.set(output.name, toStrictJsonSchema(output.contract, output.name));
+  return byName.get(output.name) ?? null;
+}
+
 /** The problems of a Zod failure as short lines (`path: message`), at most `limit` of them. */
 export function validationProblems(error: z.ZodError, limit = 8): string[] {
   return error.issues

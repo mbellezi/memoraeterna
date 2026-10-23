@@ -12,10 +12,10 @@ import {
   relationTypingAnswerItems,
   relationTypingLimits,
   relationTypingOutputSchema,
-  relationTypingWireSchema,
   typingDirectionCodes,
   validateRelationTypingAnswer
 } from "./relation-typing.js";
+import { toStrictJsonSchema, type AiOutputSchema } from "./structured-output.js";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -50,8 +50,12 @@ describe("the direction codes of a type", () => {
   });
 });
 
+/** What the AI service sends a remote runtime for the contract a typing call states (F4 D23). */
+const wireSchemaOf = (maxPairs?: number): AiOutputSchema =>
+  toStrictJsonSchema(relationTypingOutputSchema(maxPairs), "relation_typing")!;
+
 describe("the wire schema", () => {
-  const { name, schema, strict } = relationTypingWireSchema();
+  const { name, schema, strict } = wireSchemaOf();
   const allowed = new Set([
     "type",
     "enum",
@@ -89,7 +93,7 @@ describe("the wire schema", () => {
     expect(props.t!.enum).toEqual([...noteRelationWriteTypes, "none"]);
     expect(props.d!.enum).toEqual(["ab", "ba", "both", "none"]);
     expect(props.p!.enum).toEqual(relationTypingAliases(24));
-    const small = relationTypingWireSchema(3).schema as {
+    const small = wireSchemaOf(3).schema as {
       properties: { pairs: { items: JsonSchema } };
     };
     expect((small.properties.pairs.items.properties as Record<string, JsonSchema>).p!.enum).toEqual(

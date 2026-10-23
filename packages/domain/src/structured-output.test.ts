@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   AiOutputSchemaSchema,
   analyzeStrictJsonSchema,
+  outputSchemaForContract,
   parseSingleJsonObject,
   toStrictJsonSchema,
   validateItems
@@ -100,6 +101,28 @@ describe("toStrictJsonSchema", () => {
 
   it("rejects a provider-facing name that could carry content", () => {
     expect(() => toStrictJsonSchema(typing, "has space")).toThrow();
+  });
+});
+
+describe("outputSchemaForContract (F4 D23)", () => {
+  it("derives the strict schema of a stated contract under its name", () => {
+    expect(outputSchemaForContract({ name: "note_relation_typing", contract: typing })).toEqual(
+      toStrictJsonSchema(typing, "note_relation_typing")
+    );
+  });
+
+  it("derives none for a contract that cannot be sent strictly, and keeps it prompt-level", () => {
+    const optional = z.object({ title: z.string(), language: z.string().optional() });
+    expect(outputSchemaForContract({ name: "optional", contract: optional })).toBeNull();
+    const tuple = z.object({ rows: z.array(z.tuple([z.string(), z.string()])) });
+    expect(outputSchemaForContract({ name: "tuple", contract: tuple })).toBeNull();
+  });
+
+  it("converts a contract once per name", () => {
+    const contract = z.object({ verdict: z.enum(["same", "different"]) }).strict();
+    const first = outputSchemaForContract({ name: "verdict", contract });
+    expect(outputSchemaForContract({ name: "verdict", contract })).toBe(first);
+    expect(outputSchemaForContract({ name: "other_name", contract })?.name).toBe("other_name");
   });
 });
 

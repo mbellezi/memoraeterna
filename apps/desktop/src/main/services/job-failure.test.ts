@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AiProviderError, ProviderUnavailableError } from "@app/ai";
+import { AiProviderError, ProviderUnavailableError, isTransientAiError } from "@app/ai";
 import {
   workerErrorMessage,
   workerFailure,
@@ -105,6 +105,25 @@ describe("job failure classification", () => {
     );
     expect(isTransientJobFailure("worker_failed")).toBe(false);
     expect(isTransientJobFailure(undefined)).toBe(false);
+  });
+
+  it("retries a bare AbortError, wrapped or not (F4 D8): the caller decides cancellation first", () => {
+    // A local runtime aborts a batch or a load of its own; nobody canceled the job.
+    expect(isTransientJobFailure(new DOMException("Local inference canceled.", "AbortError"))).toBe(
+      true
+    );
+    expect(isTransientJobFailure(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(
+      true
+    );
+    expect(
+      isTransientJobFailure(
+        new Error("stage failed", { cause: new DOMException("canceled", "AbortError") })
+      )
+    ).toBe(true);
+    // The adapters' own retries use `isTransientAiError`, which must keep refusing a cancelled call.
+    expect(isTransientAiError(new DOMException("Local inference canceled.", "AbortError"))).toBe(
+      false
+    );
   });
 
   it("looks through a wrapping error to the failure that caused it", () => {

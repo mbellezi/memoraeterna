@@ -7,7 +7,7 @@ import {
 } from "@app/domain";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { z } from "zod";
-import type { KnowledgeGraphGenerationOutput } from "@app/domain";
+import type { AiOutputContract, KnowledgeGraphGenerationOutput } from "@app/domain";
 import {
   createRelationTypeRepository,
   type CanonicalRelationType,
@@ -23,6 +23,15 @@ const pairSchema = z.tuple([z.string(), z.string().nullable()]);
 const matchSchema = z.object({ matches: z.array(pairSchema).max(12) }).strict();
 /** The contract of a confirmation answer (relation types and entity identities), for the structured-output catalog. */
 export const relationMatchOutputSchema = matchSchema;
+/** The contracts the confirmation calls state (F4 D23): the tuple keeps them prompt-level remotely. */
+const entityIdentityContract: AiOutputContract = {
+  name: "entity_identity",
+  contract: relationMatchOutputSchema
+};
+const relationIdentityContract: AiOutputContract = {
+  name: "relation_identity",
+  contract: relationMatchOutputSchema
+};
 type Candidate = {
   sourceItemIds?: string[];
   key: string;
@@ -197,6 +206,7 @@ export async function confirmMatchGroup(input: {
         attempt,
         isRepair: attempt > 0,
         promptVersion: input.promptVersion,
+        outputContract: entityIdentity ? entityIdentityContract : relationIdentityContract,
         contentLanguage: "en",
         stage: input.stage,
         operation: entityIdentity ? "entity_identity_resolution" : "relation_type_resolution",

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MlxAdapter } from "./local-adapters.js";
+import type { LocalDisposeStep } from "./dispose-step.js";
 import { MlxHelperError, MlxHelperHost } from "./mlx-helper-host.js";
 
 const roots: string[] = [];
@@ -23,7 +24,9 @@ afterEach(async () => {
  * inputs: "hang" never answers, "slow" answers after 150 ms, "env" returns the environment it
  * received, "fail" reports a helper error, "badshape" sends a message that breaks the protocol.
  */
-async function createFakeHelper(): Promise<{ helperPath: string; log: () => Promise<string[][]> }> {
+async function createFakeHelper(
+  options: { ignoreShutdown?: boolean } = {}
+): Promise<{ helperPath: string; log: () => Promise<string[][]> }> {
   const root = await mkdtemp(join(tmpdir(), "memora-mlx-host-"));
   roots.push(root);
   const helperPath = join(root, "fake-helper.mjs");
@@ -42,7 +45,7 @@ for await (const line of lines) {
   const request = JSON.parse(line);
   appendFileSync(${JSON.stringify(logPath)}, process.pid + " " + request.command + "\\n");
   const marker = request.prompt ?? request.texts?.[0] ?? request.query ?? "";
-  if (request.command === "shutdown") process.exit(0);
+  if (request.command === "shutdown" && !${options.ignoreShutdown === true}) process.exit(0);
   if (marker === "hang") continue;
   if (marker === "slow") await new Promise((resolve) => setTimeout(resolve, 150));
   if (marker === "fail") {
@@ -350,6 +353,94 @@ describe("MlxHelperHost", () => {
     await expect(queued).rejects.toMatchObject({ code: "disposed" });
     expect(isAlive(pid)).toBe(false);
     await expect(host.generate({ modelPath: "/m", prompt: "again" })).resolves.toBeDefined();
+    expect(host.spawnCount).toBe(2);
+  });
+
+  it("asks an idle helper to shut down and sends no signal when it leaves (F4 D23)", async () => {
+    const { helperPath, log } = await createFakeHelper();
+    const report: LocalDisposeStep[] = [];
+    const host = createHost(helperPath, { onDisposeStep: (step) => report.push(step) });
+    await host.health();
+    const pid = host.pid!;
+
+    await host.dispose();
+
+    expect(report).toMatchObject([
+      { step: "mlx helper shutdown", outcome: "done", boundMs: host.config.shutdownGraceMs }
+    ]);
+    expect(report[0]!.ms).toBeLessThan(host.config.shutdownGraceMs);
+    expect((await log()).map(([, command]) => command)).toEqual(["health", "shutdown"]);
+    expect(isAlive(pid)).toBe(false);
+    expect(host.pid).toBeUndefined();
+    // The next request starts a fresh helper.
+    await expect(host.generate({ modelPath: "/m", prompt: "again" })).resolves.toBeDefined();
+    expect(host.spawnCount).toBe(2);
+  });
+
+  it("signals a helper that ignores shutdown after the grace, each step under its bound", async () => {
+    const { helperPath, log } = await createFakeHelper({ ignoreShutdown: true });
+    const report: LocalDisposeStep[] = [];
+    const host = createHost(helperPath, {
+      config: { shutdownGraceMs: 150, killGraceMs: 200 },
+      onDisposeStep: (step) => report.push(step)
+    });
+    await host.health();
+    const pid = host.pid!;
+
+    await host.dispose();
+
+    expect(report.map((step) => [step.step, step.outcome])).toEqual([
+      ["mlx helper shutdown", "timeout"],
+      ["mlx helper signals", "done"]
+    ]);
+    for (const step of report) expect(step.ms).toBeLessThanOrEqual(step.boundMs + 100);
+    expect((await log()).map(([, command]) => command)).toContain("shutdown");
+    expect(isAlive(pid)).toBe(false);
+  });
+
+  it("signals a busy helper at once: no shutdown waits behind its request", async () => {
+    const { helperPath, log } = await createFakeHelper();
+    const report: LocalDisposeStep[] = [];
+    const host = createHost(helperPath, { onDisposeStep: (step) => report.push(step) });
+    await host.health();
+    const running = host.generate({ modelPath: "/m", prompt: "hang" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    await host.dispose();
+
+    await expect(running).rejects.toMatchObject({ code: "disposed" });
+    expect(report.map((step) => [step.step, step.outcome])).toEqual([
+      ["mlx helper signals", "done"]
+    ]);
+    expect((await log()).map(([, command]) => command)).not.toContain("shutdown");
+  });
+
+  it("joins a second dispose to the first and reports nothing when no helper runs", async () => {
+    const { helperPath, log } = await createFakeHelper();
+    const report: LocalDisposeStep[] = [];
+    const host = createHost(helperPath, { onDisposeStep: (step) => report.push(step) });
+    await host.dispose();
+    expect(report).toEqual([]);
+    await host.health();
+    await Promise.all([host.dispose(), host.dispose()]);
+    expect((await log()).filter(([, command]) => command === "shutdown")).toHaveLength(1);
+    expect(report).toHaveLength(1);
+  });
+
+  it("waits for a helper that is leaving before it starts the next one", async () => {
+    const { helperPath } = await createFakeHelper();
+    const host = createHost(helperPath);
+    await host.health();
+    const pid = host.pid!;
+
+    const disposing = host.dispose();
+    // A request made while the old helper leaves must not run beside it.
+    const next = host.generate({ modelPath: "/m", prompt: "next" });
+    await disposing;
+    const result = await next;
+
+    expect(isAlive(pid)).toBe(false);
+    expect(Number(result.output)).not.toBe(pid);
     expect(host.spawnCount).toBe(2);
   });
 });

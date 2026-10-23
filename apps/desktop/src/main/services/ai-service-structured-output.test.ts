@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { toStrictJsonSchema } from "@app/domain";
+import { toStrictJsonSchema, type AiOutputContract, type AiOutputSchema } from "@app/domain";
 import { z } from "zod";
 
-import { AiService } from "./ai-service.js";
+import { AiService, routedOutputSchema } from "./ai-service.js";
 
 /**
  * Structured output through the AI service (F3 D35): the schema a caller states reaches the
@@ -142,6 +142,120 @@ describe("the output schema of a call", () => {
     const { ai } = service({ schemaMode });
     await ai.runDefaultTask("structured-output", "decide");
     expect(state.record.mock.calls[0]?.[0]).toMatchObject({ schemaMode });
+  });
+});
+
+describe("the output contract of a call (F4 D23)", () => {
+  const strictContract: AiOutputContract = {
+    name: "pair_verdict",
+    contract: z.object({ verdict: z.enum(["same", "different"]) }).strict()
+  };
+  // A confirmation answer is a tuple list: it never reaches a remote provider as a schema.
+  const tupleContract: AiOutputContract = {
+    name: "pair_matches",
+    contract: z.object({ matches: z.array(z.tuple([z.string(), z.string().nullable()])) }).strict()
+  };
+
+  it("sends a remote adapter the strict schema of a contract that has one", async () => {
+    const { ai, requests } = service({ schemaMode: "strict" });
+    await ai.runDefaultTask("structured-output", "decide", { outputContract: strictContract });
+    expect(requests[0]?.outputSchema).toEqual(outputSchema);
+    expect(state.record.mock.calls[0]?.[0]).toMatchObject({ schemaMode: "strict" });
+  });
+
+  it("sends a remote adapter nothing for a contract that cannot be strict", async () => {
+    const { ai, requests } = service({ schemaMode: "none" });
+    await ai.runDefaultTask("structured-output", "decide", { outputContract: tupleContract });
+    expect(requests[0]).not.toHaveProperty("outputSchema");
+    expect(state.record.mock.calls[0]?.[0]).toMatchObject({ schemaMode: "none" });
+  });
+
+  it("keeps the contract out of the monitoring context, as the schema is", async () => {
+    const { ai, monitoring } = service();
+    await ai.runDefaultTask("structured-output", "decide", {
+      outputContract: strictContract,
+      operation: "pair_verdict"
+    });
+    const started = monitoring.start.mock.calls[0]?.[0] as { context: Record<string, unknown> };
+    expect(started.context).not.toHaveProperty("outputContract");
+    expect(started.context).toMatchObject({ operation: "pair_verdict" });
+  });
+
+  it("sends a schema the caller states itself as it is, whatever contract it also states", async () => {
+    const { ai, requests } = service();
+    const probe = toStrictJsonSchema(z.object({ ok: z.boolean() }).strict(), "probe")!;
+    await ai.runDefaultTask("structured-output", "decide", {
+      outputSchema: probe,
+      outputContract: strictContract
+    });
+    expect(requests[0]?.outputSchema).toEqual(probe);
+  });
+});
+
+describe("routedOutputSchema", () => {
+  const contract: AiOutputContract = {
+    name: "verdict",
+    contract: z.object({ verdict: z.enum(["same", "different"]) }).strict()
+  };
+  const grammar: AiOutputSchema = {
+    name: "verdict",
+    schema: { type: "object", properties: { verdict: { type: "string" } } },
+    strict: false
+  };
+  const plain = {};
+
+  it("derives the strict schema for a remote adapter and ignores the adapter's own hook", () => {
+    const hooked = { outputSchemaFor: vi.fn(() => grammar) };
+    const routed = routedOutputSchema({
+      contract,
+      taskType: "structured-output",
+      local: false,
+      adapter: hooked
+    });
+    expect(routed).toEqual(toStrictJsonSchema(contract.contract, "verdict"));
+    expect(hooked.outputSchemaFor).not.toHaveBeenCalled();
+  });
+
+  it("hands the contract to a local runtime that takes a schema, and to no other", () => {
+    const hooked = { outputSchemaFor: vi.fn(() => grammar) };
+    expect(
+      routedOutputSchema({ contract, taskType: "structured-output", local: true, adapter: hooked })
+    ).toEqual(grammar);
+    expect(hooked.outputSchemaFor).toHaveBeenCalledWith(contract);
+    expect(
+      routedOutputSchema({ contract, taskType: "structured-output", local: true, adapter: plain })
+    ).toBeUndefined();
+    // A runtime that declines the contract (thinking on, a tokenizer it cannot mask) runs without.
+    expect(
+      routedOutputSchema({
+        contract,
+        taskType: "structured-output",
+        local: true,
+        adapter: { outputSchemaFor: () => null }
+      })
+    ).toBeUndefined();
+  });
+
+  it("states nothing for a call that states no contract, and a stated schema wins", () => {
+    expect(
+      routedOutputSchema({ taskType: "structured-output", local: false, adapter: plain })
+    ).toBeUndefined();
+    const stated: AiOutputSchema = { name: "stated", schema: { type: "object" }, strict: true };
+    expect(
+      routedOutputSchema({
+        stated,
+        contract,
+        taskType: "structured-output",
+        local: true,
+        adapter: plain
+      })
+    ).toBe(stated);
+  });
+
+  it("never states a schema for an embedding", () => {
+    expect(
+      routedOutputSchema({ contract, taskType: "embedding", local: false, adapter: plain })
+    ).toBeUndefined();
   });
 });
 

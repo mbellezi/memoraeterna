@@ -4,8 +4,8 @@
 // (`rules/ai.md`); these builders only supply declared, bounded data. Prompts are a function of
 // content, never of IDs (D22): the data they receive is already in content-key order and carries
 // aliases, not IDs.
-import { topicOverviewLimits } from "@app/domain";
-import { namingPromptGroups, parseModelJson } from "@app/domain/topic-tree";
+import { TopicOverviewOutputSchema, topicOverviewLimits, type AiOutputContract } from "@app/domain";
+import { NamingItemSchema, namingPromptGroups, parseModelJson } from "@app/domain/topic-tree";
 import type { NamingCall, TopicNamingConfig } from "@app/domain/topic-tree";
 import { z } from "zod";
 
@@ -114,6 +114,24 @@ export const TopicAreasOutputSchema = z.object({
   )
 });
 export type TopicAreasOutput = z.output<typeof TopicAreasOutputSchema>;
+
+/**
+ * The contracts the topic tree's structured calls state (F4 D23). The service derives the schema each
+ * runtime is sent: the overview and the Areas grouping qualify for a strict one, the naming answer
+ * (an optional `aliases` member) stays prompt-level on a remote provider.
+ */
+export const topicNamingOutputContract: AiOutputContract = {
+  name: "topic_naming",
+  contract: z.object({ topics: z.array(NamingItemSchema) })
+};
+export const topicAreasOutputContract: AiOutputContract = {
+  name: "topic_areas",
+  contract: TopicAreasOutputSchema
+};
+export const topicOverviewOutputContract: AiOutputContract = {
+  name: "topic_overview",
+  contract: TopicOverviewOutputSchema
+};
 
 /** The shape of an Areas answer; T24 validates its meaning (every topic once, size bounds). */
 export function parseTopicAreasOutput(output: unknown): TopicAreasOutput {

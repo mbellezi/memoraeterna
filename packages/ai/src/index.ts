@@ -23,6 +23,7 @@ export * from "./cassette.js";
 export * from "./decisions/index.js";
 export * from "./active-deadline.js";
 export * from "./local-deadline.js";
+export * from "./dispose-step.js";
 export * from "./scheduler/types.js";
 export * from "./scheduler/priority.js";
 export * from "./scheduler/aimd.js";

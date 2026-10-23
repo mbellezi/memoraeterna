@@ -94,6 +94,7 @@ import {
   resolveAiLaneRuntimeConfig,
   resolveAiRuntimeConfig,
   sumTokenUsage,
+  type LocalDisposeStep,
   type MlxHelperSlot,
   type ResidencyPlan
 } from "@app/ai";
@@ -119,11 +120,13 @@ import {
   OrganizationProfileSchema,
   type OrganizationProfile,
   normalizeAiModelParameters,
+  outputSchemaForContract,
   capabilitiesForTask,
   generativeDeciderCapabilities,
   supportsTask,
   type AiCapability,
   type AiModelParameterCapabilities,
+  type AiOutputContract,
   type AiOutputSchema,
   type AiSchemaMode,
   type DecisionsStatus,
@@ -493,8 +496,14 @@ export interface AiTaskLogContext {
   /** A second call for the same items after a validation failure; operations named `*_repair` are. */
   isRepair?: boolean;
   /**
-   * The strict JSON Schema of the answer (F3 D35), only for a contract that passed the strict
-   * compatibility check. The request carries it; the monitoring context does not.
+   * The output contract of a structured call (F4 D23): the Zod contract of the answer and its name.
+   * The service derives the schema the call's runtime is sent from it (see {@link routedOutputSchema});
+   * the request carries that schema, the monitoring context neither.
+   */
+  outputContract?: AiOutputContract;
+  /**
+   * A wire schema the caller states itself (the DEV schema probe), which the service sends as it is
+   * and never derives anything for. The request carries it; the monitoring context does not.
    */
   outputSchema?: AiOutputSchema;
   onProgress?: (event: AiProgressStep) => void;
@@ -622,6 +631,8 @@ export class AiService {
    * has no `unload`, so the next idle release stops it (the next MLX call starts a fresh one).
    */
   private mlxHoldsReleasedModel = false;
+  /** The steps of the disposal in progress, in order (F4 D23); null outside `dispose`. */
+  private disposeSteps: LocalDisposeStep[] | null = null;
   /** Unloads the generative model once it has been idle for its period (F3 D39). */
   private generativeIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1689,8 +1700,14 @@ export class AiService {
     admission: PromptAdmission,
     permit: LanePermit
   ): Promise<() => Promise<DefaultAiTaskResult>> {
-    const { onProgress, onTextDelta, onProviderStart, outputSchema, ...structuredLogContext } =
-      logContext;
+    const {
+      onProgress,
+      onTextDelta,
+      onProviderStart,
+      outputSchema,
+      outputContract,
+      ...structuredLogContext
+    } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     const selection = admission.selection;
@@ -1834,6 +1851,13 @@ export class AiService {
             offlineOnly: true
           })
         : withCapabilities(configuredAdapter, requiredCapabilities);
+      const wireSchema = routedOutputSchema({
+        stated: outputSchema,
+        contract: outputContract,
+        taskType,
+        local: Boolean(selection.localModelId),
+        adapter
+      });
       const request: AiTaskRequest = {
         taskType,
         // A batch's texts travel as `embedMany`'s own argument; the request is the template of each.
@@ -1846,7 +1870,7 @@ export class AiService {
         // A stated class sets the deadlines; the operation names the caller.
         ...(logContext.workloadClass ? { workloadClass: logContext.workloadClass } : {}),
         ...requestOperation(logContext.operation),
-        ...(outputSchema ? { outputSchema } : {})
+        ...(wireSchema ? { outputSchema: wireSchema } : {})
       };
       // The adapter's signal carries the lane permit, so retry backoffs sleep off the lane.
       const execution = laneSignal(signal, permit);
@@ -2185,10 +2209,36 @@ export class AiService {
     await this.stopIdleMlxHelper(force);
   }
 
+  /**
+   * Stops the local runtimes (the quit's "AI runtime" step). Each step of their disposal is bounded
+   * and timed by its runtime (F4 D23); one line names them all, so a quit that overran shows which.
+   */
   public async dispose(): Promise<void> {
     this.clearGenerativeIdleTimer();
-    await this.releaseLocalRuntime(true);
+    const startedAt = Date.now();
+    const steps: LocalDisposeStep[] = [];
+    this.disposeSteps = steps;
+    try {
+      await this.releaseLocalRuntime(true);
+    } finally {
+      this.disposeSteps = null;
+    }
+    if (steps.length > 0)
+      this.options.logger?.info(
+        `AI runtime disposed in ${Date.now() - startedAt} ms: ${steps
+          .map((step) => `${step.step} ${step.ms}/${step.boundMs} ms ${step.outcome}`)
+          .join(", ")}`
+      );
   }
+
+  /** Keeps one step of the disposal for the quit's log; a step that overran is also an error. */
+  private recordDisposeStep = (step: LocalDisposeStep): void => {
+    this.disposeSteps?.push(step);
+    if (step.outcome !== "done")
+      this.options.logger?.error(
+        `AI runtime: ${step.step} ${step.outcome} after ${step.ms} ms (bound ${step.boundMs} ms)`
+      );
+  };
 
   /**
    * Ranks documents against a query on the validated dedicated ranker of the operation's route:
@@ -3286,7 +3336,8 @@ export class AiService {
   private mlxHelper(): MlxHelperHost {
     this.mlxHost ??= new MlxHelperHost({
       helperPath: this.resolveMlxHelperPath(),
-      config: { cancelGraceMs: this.laneConfig.localDeadlines.graceMs }
+      config: { cancelGraceMs: this.laneConfig.localDeadlines.graceMs },
+      onDisposeStep: this.recordDisposeStep
     });
     return this.mlxHost;
   }
@@ -3316,7 +3367,7 @@ export class AiService {
           helperPath: this.resolveMlxHelperPath(),
           host: this.mlxHelper()
         })
-      : new NodeLlamaCppAdapter(options);
+      : new NodeLlamaCppAdapter({ ...options, onDisposeStep: this.recordDisposeStep });
   }
 
   private async parameterCapabilitiesForProfile(
@@ -3708,6 +3759,27 @@ function rankerReadyForDecide(model: LocalModelRecord, entry: LocalModelCatalogE
     isDedicatedRanker(parseCapabilities(model.capabilities)) &&
     decideValidationForCatalogEntry(model.metadata.decideValidation, entry) !== null
   );
+}
+
+/**
+ * The schema a call's request carries (F4 D23). A wire schema the caller states itself is sent as it
+ * is. Otherwise the output contract the caller states is routed by where the call runs: a remote
+ * adapter is sent the contract's strict schema when it has one (typing and overview answers; the
+ * confirmation's tuple, optional members and refinements never reach a remote provider), and a local
+ * runtime that takes a schema derives its own from the contract (`outputSchemaFor`, the helper's
+ * `schema` capability). Every other call goes without one and is validated by Zod all the same.
+ */
+export function routedOutputSchema(input: {
+  stated?: AiOutputSchema | undefined;
+  contract?: AiOutputContract | undefined;
+  taskType: string;
+  local: boolean;
+  adapter: Pick<AiModelAdapter, "outputSchemaFor">;
+}): AiOutputSchema | undefined {
+  if (input.stated) return input.stated;
+  if (!input.contract || input.taskType === "embedding") return undefined;
+  if (!input.local) return outputSchemaForContract(input.contract) ?? undefined;
+  return input.adapter.outputSchemaFor?.(input.contract) ?? undefined;
 }
 
 function localAdapterOptions(

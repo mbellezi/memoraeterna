@@ -18,14 +18,14 @@ import {
   relationTypingAliases,
   relationTypingContractVersion,
   relationTypingLimits,
-  relationTypingWireSchema,
+  relationTypingOutputSchema,
   validateRelationTypingAnswer,
+  type AiOutputContract,
   type NoteRelationBand,
   type NoteRelationWriteType,
   type RelationTypingItem,
   type RelationTypingLimits,
-  type RelationTypingProblem,
-  type RelationTypingWireSchema
+  type RelationTypingProblem
 } from "@app/domain";
 
 import type { AiPriorityInput } from "../ai-priority.js";
@@ -344,14 +344,15 @@ export interface RelationTypingResult {
   aiTaskRunIds: string[];
 }
 
-const wireSchemas = new Map<number, RelationTypingWireSchema>();
-function wireSchemaFor(maxPairs: number): RelationTypingWireSchema {
-  let schema = wireSchemas.get(maxPairs);
-  if (!schema) {
-    schema = relationTypingWireSchema(maxPairs);
-    wireSchemas.set(maxPairs, schema);
+/** The contract a typing call states (F4 D23), one per batch size so its strict schema is built once. */
+const outputContracts = new Map<number, AiOutputContract>();
+function outputContractFor(maxPairs: number): AiOutputContract {
+  let contract = outputContracts.get(maxPairs);
+  if (!contract) {
+    contract = { name: "relation_typing", contract: relationTypingOutputSchema(maxPairs) };
+    outputContracts.set(maxPairs, contract);
   }
-  return schema;
+  return contract;
 }
 
 /**
@@ -446,7 +447,7 @@ export async function typeRelationPairs(
   }
 
   const batches = typingBatches(pending, limits.pairsPerCall);
-  const outputSchema = wireSchemaFor(limits.pairsPerCall);
+  const outputContract = outputContractFor(limits.pairsPerCall);
 
   /** Asks one batch; the reason it stopped early (cap, no route) or null when it ended normally. */
   const typeBatch = async (batch: TypingBatchItem[]): Promise<TypingUntypedReason | null> => {
@@ -472,6 +473,7 @@ export async function typeRelationPairs(
         workloadClass: "write-fast",
         priority: options.priority ?? "P2",
         promptVersion: relationTypingContractVersion,
+        outputContract,
         attempt,
         isRepair: repair,
         ...(deps.contentLanguage ? { contentLanguage: deps.contentLanguage } : {}),
@@ -479,10 +481,8 @@ export async function typeRelationPairs(
         ...(options.ingestionRunId ? { ingestionRunId: options.ingestionRunId } : {}),
         ...(options.sourceItemIds ? { sourceItemIds: options.sourceItemIds } : {})
       };
-      // The strict schema travels beside the output budget (T55 reads it from the call's limits).
       const callLimits = {
-        maxOutputTokens: limits.outputTokensBase + limits.outputTokensPerPair * remaining.length,
-        outputSchema
+        maxOutputTokens: limits.outputTokensBase + limits.outputTokensPerPair * remaining.length
       };
       result.calls += 1;
       if (repair) result.repairs += 1;
