@@ -154,6 +154,13 @@ concurrency and automatic correction.
     Decisions API decider (gpt-6-luna); if that run passes, the bar is met for the phase. The local result is
     recorded as reported, with its gap and the Local preset's limit. Each phase's decision record fixes "close" and
     the remote spend for such runs before any run; above that spend the owner decides.
+33. **F4 decisions** (2026-10-23): the Gardener, Inbox, Activity and first-run decisions D1-D38, the owner's answers
+    to Q1-Q13 (every default accepted except Q4, the matching controls go to Advanced › Matching, and Q12, the
+    Decisions ledger probe runs), the gates M, S and X, the exit and carried bars with their data and methods, decision
+    32's "close" and remote spend, the 7-day soak plan and the budget are recorded in `docs/f4-decisions.md` and bind
+    F4; where section 4 differs, they win. Its readings narrow earlier text: 4.3's states are derived from `jobs`
+    columns (D5), a P0 call still never spills to a remote lane (F5), C4's Local 24 h re-run is decision 31a's soak,
+    and the Ask box's GIN index is built only with a prefilter (D22).
 
 ## 3. The five swaps
 
@@ -714,10 +721,10 @@ source matching ≤5 AI-call seconds per source with design E's quality bar (S1)
 
 Decisions D1-D38, the owner's answers to Q1-Q13 (2026-10-23), the gates M, S and X, the exit and carried bars
 (E1-E7, C1-C4) with their data and methods, decision 32's "close" and remote spend, the 7-day soak plan and the
-budget: `docs/f4-decisions.md`; it binds F4 and, where section 4 differs, it wins. Tasks run in waves as in F3
-(separate worktrees, one owner per shared file in a fixed merge order, a proof that starts the DEV app or a local
-model takes that slot). The 7-day Hybrid soak is the calendar spine: everything it tests merges before gate S, wave 3
-runs beside it model-free, and the proofs that need the slots follow it (D1, D2).
+budget: `docs/f4-decisions.md`; it binds F4 (decision 33) and, where section 4 differs, it wins. Tasks run in waves
+as in F3 (separate worktrees, one owner per shared file in a fixed merge order, a proof that starts the DEV app or a
+local model takes that slot). The 7-day Hybrid soak is the calendar spine: everything it tests merges before gate S,
+wave 3 runs beside it model-free, and the proofs that need the slots follow it (D1, D2).
 
 Wave 0 (folded into wave 1's start when F4 began on 2026-10-23):
 - [x] T67 Decision record (`docs/f4-decisions.md`): D1-D38, Q1-Q13 with the owner's answers, gates, bars, soak plan,
