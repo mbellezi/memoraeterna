@@ -76,7 +76,8 @@ const countJobs = async (db: Queryable, where: string, values: unknown[] = []) =
   Number(
     (
       await db.query<{ open: number }>(
-        `select count(*)::int as open from jobs where status in ('queued', 'running') and ${where}`,
+        `select count(*)::int as open from jobs
+          where (status = 'running' or (status = 'queued' and blocked_class is null)) and ${where}`,
         values
       )
     ).rows[0]?.open ?? 0

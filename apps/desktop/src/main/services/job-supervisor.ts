@@ -804,11 +804,12 @@ export class JobSupervisor {
         ...(attemptFailed ? { result: error.result } : {}),
         ...(fingerprint ? { inputFingerprint: fingerprint } : {})
       };
-      // A job that failed for good counts toward its input's quarantine (D8).
-      const updated = await end(
-        update,
-        !wasCanceled && !shouldRetry ? outcomeOf("failed", jobErrorClass(error)) : undefined
-      );
+      // A retried job keeps the dedupe key its claim took (merged into a newer request that holds
+      // it now), so a request during its backoff joins it instead of queuing a second run. A job
+      // that failed for good counts toward its input's quarantine (D8).
+      const updated = shouldRetry
+        ? ((await repository.requeue(job.id, update, job.claimedDedupeKey ?? null))?.job ?? null)
+        : await end(update, !wasCanceled ? outcomeOf("failed", jobErrorClass(error)) : undefined);
       // A job that ended for good settles the work it owned (the runs a link job completes).
       if (!shouldRetry) await this.settleLight(executor, job, error, wasCanceled);
       this.notify();

@@ -147,8 +147,10 @@ export interface BlockedJobFilter {
   classes?: readonly GardenerBlockerClass[];
   reasons?: readonly string[];
   /**
-   * Only the jobs set aside with a clear time that has passed (`run_after` moved past the block
-   * time); a released job keeps its start. Without it a released job is due at once.
+   * Only the jobs set aside with a clear time that has passed (`run_after` at or after the block
+   * time, a clear time that had already passed included); a released job keeps its start. A row a
+   * gate stamped keeps its older `run_after` and is left to the gate. Without it a released job is
+   * due at once.
    */
   due?: boolean;
 }
@@ -323,6 +325,42 @@ function assertDedupeInput(input: EnqueueDedupedInput, debounce: JobDebounce): v
     maxDelayMs < delayMs
   )
     throw new Error("job_debounce_invalid");
+}
+
+/**
+ * Ends a running job that met a queued job holding its dedupe key by merging into it (D7): the
+ * queued job takes the higher priority and does the work; this one ends canceled with
+ * `result.mergedInto` and its claim's attempt given back. Null when no queued job holds the key
+ * any more (it was claimed meanwhile) or this one is not running.
+ */
+async function mergeIntoQueued(
+  db: Queryable,
+  id: string,
+  dedupeKey: string,
+  result: unknown
+): Promise<{ job: JobRecord; mergedInto: string } | null> {
+  const merged = await db.query<JobRow & { mergedInto: string }>(
+    `with dup as (
+       select id from jobs where dedupe_key = $2 and status = 'queued' and id <> $1
+       for update
+     ), raised as (
+       update jobs d set priority = greatest(d.priority, (select priority from jobs where id = $1)),
+              updated_at = now()
+         from dup where d.id = dup.id
+       returning d.id
+     )
+     update jobs j
+        set status = 'canceled', attempts = greatest(j.attempts - 1, 0),
+            result = coalesce($3::jsonb, j.result, '{}'::jsonb)
+              || jsonb_build_object('mergedInto', (select id from raised)),
+            error = null, finished_at = now(), locked_at = null, locked_by = null,
+            updated_at = now()
+      where j.id = $1 and j.status = 'running' and exists (select 1 from raised)
+     returning ${returningFrom("j")}, (select id from raised) as "mergedInto"`,
+    [id, dedupeKey, result]
+  );
+  const row = merged.rows[0];
+  return row ? { job: mapJob(row), mergedInto: row.mergedInto } : null;
 }
 
 export function createJobRepository(db: Queryable) {
@@ -824,28 +862,50 @@ export function createJobRepository(db: Queryable) {
         } catch (error) {
           if (uniqueViolation(error) !== "jobs_dedupe_queued_uidx" || !restoreKey) throw error;
         }
-        const merged = await db.query<JobRow & { mergedInto: string }>(
-          `with dup as (
-             select id from jobs where dedupe_key = $2 and status = 'queued' and id <> $1
-             for update
-           ), raised as (
-             update jobs d set priority = greatest(d.priority, (select priority from jobs where id = $1)),
-                    updated_at = now()
-               from dup where d.id = dup.id
-             returning d.id
-           )
-           update jobs j
-              set status = 'canceled', attempts = greatest(j.attempts - 1, 0),
-                  result = coalesce($3::jsonb, j.result, '{}'::jsonb)
-                    || jsonb_build_object('mergedInto', (select id from raised)),
-                  error = null, finished_at = now(), locked_at = null, locked_by = null,
-                  updated_at = now()
-            where j.id = $1 and j.status = 'running' and exists (select 1 from raised)
-           returning ${returningFrom("j")}, (select id from raised) as "mergedInto"`,
-          [id, input.dedupeKey, result]
-        );
-        const row = merged.rows[0];
-        if (row) return { job: mapJob(row), mergedInto: row.mergedInto };
+        const merged = await mergeIntoQueued(db, id, input.dedupeKey!, result);
+        if (merged) return merged;
+        // The newer job was claimed meanwhile: the key is free again (or, past two tries, dropped).
+      }
+    },
+
+    /**
+     * Queues a running job again for its next attempt after a failed one (a retry with backoff):
+     * `input` is the retry's update (`runAfter` its backoff), and the dedupe key its claim took is
+     * restored, so a request made during the backoff joins it instead of queuing a duplicate (D7:
+     * a job keeps its key while it waits). When a newer job holds the key now, this one merges
+     * into it: the newer job keeps the higher priority and does the work, this one ends canceled
+     * with `result.mergedInto`. Null when the job is not running.
+     */
+    async requeue(
+      id: string,
+      input: UpdateJobInput,
+      dedupeKey: string | null
+    ): Promise<{ job: JobRecord; mergedInto: string | null } | null> {
+      const patch = Object.entries(jobPatch({ ...input, status: "queued" })).filter(
+        ([, value]) => value !== undefined
+      );
+      for (let attempt = 1; ; attempt += 1) {
+        const restoreKey = attempt <= 2 ? dedupeKey : null;
+        const params: unknown[] = [id, restoreKey];
+        const assignments = patch.map(([column, value]) => {
+          params.push(sanitizeStoredValue(value));
+          return `"${column}" = $${params.length}`;
+        });
+        try {
+          const queued = await db.query<JobRow>(
+            `update jobs set ${[...assignments, "dedupe_key = $2", "updated_at = now()"].join(", ")}
+             where id = $1 and status = 'running'
+             returning ${returning}`,
+            params
+          );
+          const row = queued.rows[0];
+          return row ? { job: mapJob(row), mergedInto: null } : null;
+        } catch (error) {
+          if (uniqueViolation(error) !== "jobs_dedupe_queued_uidx" || !restoreKey) throw error;
+        }
+        const result = input.result === undefined ? null : sanitizeStoredValue(input.result);
+        const merged = await mergeIntoQueued(db, id, dedupeKey!, result);
+        if (merged) return merged;
         // The newer job was claimed meanwhile: the key is free again (or, past two tries, dropped).
       }
     },
@@ -888,7 +948,7 @@ export function createJobRepository(db: Queryable) {
             and ($2::text[] is null or type = any($2::text[]))
             and ($3::text[] is null or blocked_class = any($3::text[]))
             and ($4::text[] is null or blocked_reason = any($4::text[]))
-            and (not $5::boolean or (run_after <= now() and run_after > blocked_at))`,
+            and (not $5::boolean or (run_after <= now() and run_after >= blocked_at))`,
         [
           filter.ids ? [...filter.ids] : null,
           filter.types ? [...filter.types] : null,

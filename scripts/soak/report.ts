@@ -390,13 +390,15 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
           job.id,
           `${job.type} (${job.lane}) unchanged for ${Math.round(idle / 1000)} s at ${sample.at}`
         );
-      const eligible = job.status === "running" || job.runAfter <= at;
+      // A job a blocker set aside (F4 D5) waits for its blocker, not for a worker.
+      const due = job.status === "queued" && job.runAfter <= at && !job.blockedClass;
+      const eligible = job.status === "running" || due;
       if (eligible && idle > stuckLimit && !stuck.has(job.id))
         stuck.set(
           job.id,
           `${job.type} (${job.lane}, ${job.status}) unchanged for ${Math.round(idle / minute)} min at ${sample.at}`
         );
-      if (job.status === "queued" && job.runAfter <= at) {
+      if (due) {
         const since = waiting.get(job.id) ?? at;
         waiting.set(job.id, since);
         // Held up with nothing of its own kind running: the light lane's workers run one job each,
@@ -1470,7 +1472,9 @@ export function statusDigest(run: LoadedRun, report: SoakReport): string[] {
   const last = run.samples.toSorted((a, b) => toMs(a.at) - toMs(b.at)).at(-1);
   if (!last) return ["No sample yet."];
   const at = toMs(last.at);
-  const queued = last.jobs.filter((job) => job.status === "queued" && job.runAfter <= at);
+  const queued = last.jobs.filter(
+    (job) => job.status === "queued" && job.runAfter <= at && !job.blockedClass
+  );
   const oldest = queued.length ? Math.max(...queued.map((job) => at - job.updatedAt)) : 0;
   const warmEnd = toMs(run.meta.startedAt) + run.meta.warmupMs;
   const warm = run.samples.find((sample) => toMs(sample.at) >= warmEnd && sample.pageouts !== null);

@@ -523,6 +523,11 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
     });
     await jobs.create({ type: "topic-place", lane: "light" });
     expect(await countOpenLinkJobs(pool)).toBe(1);
+    // A link job a blocker set aside is not open work: the drain does not wait for it (F4 D5).
+    await jobs.markBlocked({ types: ["relation-link"] }, { class: "cap", reason: "money_80" });
+    expect(await countOpenLinkJobs(pool)).toBe(0);
+    await jobs.releaseBlocks({ types: ["relation-link"] });
+    expect(await countOpenLinkJobs(pool)).toBe(1);
     const facts = await readRunFacts(pool, since);
     expect(facts.linkJobs).toEqual([
       expect.objectContaining({

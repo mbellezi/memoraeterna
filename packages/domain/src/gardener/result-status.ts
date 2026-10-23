@@ -10,7 +10,7 @@ import type { GardenerOutcome } from "./state.js";
  * test fails on a status literal of a producer that has no row here.
  */
 export type ResultStatusState =
-  | { state: "outcome"; outcome: Exclude<GardenerOutcome, "skipped"> }
+  | { state: "outcome"; outcome: GardenerOutcome }
   | { state: "blocked"; blocker: GardenerBlocker | "by_reason" }
   | { state: "failed"; retry: boolean };
 
@@ -53,6 +53,9 @@ export const resultStatusStates: Readonly<Record<string, ResultStatusState>> = O
   dismissed: noChange,
   // A producer's own skip; `skipped` the outcome is reserved for the fingerprint skip (D9).
   skipped: noChange,
+  // The supervisor's skip of an input its quarantine holds back (D8): the job does not run and ends
+  // with the outcome `skipped`, which E3 reports apart; never done.
+  quarantined: { state: "outcome", outcome: "skipped" },
   // A generation conflict re-requested by the producer, and a space change waiting for its
   // re-embedding: the re-request inherits the clock (E3 measures the chain).
   deferred: noChange,
@@ -81,7 +84,7 @@ export const topicBlockedReasonBlockers: Readonly<Record<TopicsBlockedReason, Ga
   });
 
 export type GardenerResult =
-  | { state: "outcome"; outcome: Exclude<GardenerOutcome, "skipped">; status: string | null }
+  | { state: "outcome"; outcome: GardenerOutcome; status: string | null }
   | { state: "blocked"; blocker: GardenerBlocker; status: string; routeClass: string | null }
   | { state: "failed"; status: string; retry: boolean };
 

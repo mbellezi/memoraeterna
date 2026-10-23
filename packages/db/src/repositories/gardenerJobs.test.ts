@@ -340,6 +340,61 @@ describe.skipIf(!sidecarInstalled)("Gardener task state on a real PostgreSQL dat
     });
   });
 
+  it("releases at the next due pass a job set aside with a clear time that had passed (T74 R5)", async () => {
+    const root = randomUUID();
+    const { job } = await jobs().enqueueDeduped(place(root));
+    const claimed = await jobs().claimNext("compute", ["topic-place"], "light");
+    // A provider reset time that passed while the call was refused.
+    await jobs().setAside(job.id, {
+      blocker: { class: "cap", reason: "provider_quota" },
+      clearAt: new Date(Date.now() - 60_000),
+      dedupeKey: claimed!.claimedDedupeKey!
+    });
+    expect(await columns(job.id)).toMatchObject({ status: "queued", blocked_class: "cap" });
+    expect(await jobs().releaseBlocks({ due: true })).toBe(1);
+    expect(await columns(job.id)).toMatchObject({ status: "queued", blocked_class: null });
+    // A row a gate stamped keeps its older start: the due pass leaves it to the gate.
+    const { job: held } = await jobs().enqueueDeduped(place(randomUUID()));
+    await db().query("update jobs set run_after = now() - interval '1 minute' where id = $1", [
+      held.id
+    ]);
+    await jobs().markBlocked({ ids: [held.id] }, { class: "paused", reason: "user_pause" });
+    expect(await jobs().releaseBlocks({ due: true })).toBe(0);
+    expect(await columns(held.id)).toMatchObject({ blocked_class: "paused" });
+  });
+
+  it("queues a retried job again with its dedupe key, merging into a newer request (T74 R7)", async () => {
+    const root = randomUUID();
+    const key = `topic-place:${treeId}:${root}`;
+    const { job } = await jobs().enqueueDeduped(place(root));
+    const claimed = await jobs().claimNext("compute", ["topic-place"], "light");
+    const backoff = new Date(Date.now() + 30_000);
+    const requeued = await jobs().requeue(
+      job.id,
+      { status: "queued", error: "busy", runAfter: backoff, lockedAt: null, lockedBy: null },
+      claimed!.claimedDedupeKey!
+    );
+    expect(requeued?.mergedInto).toBeNull();
+    expect(await columns(job.id)).toMatchObject({ status: "queued", attempts: 1, dedupe_key: key });
+    // A request during the backoff joins the retried job instead of queuing a second one.
+    expect((await jobs().enqueueDeduped(place(root))).created).toBe(false);
+
+    // Claimed again; a newer request queued meanwhile holds the key, so the retry merges into it.
+    await db().query("update jobs set run_after = now() where id = $1", [job.id]);
+    const again = await jobs().claimNext("compute", ["topic-place"], "light");
+    const { job: newer } = await jobs().enqueueDeduped(place(root));
+    const merged = await jobs().requeue(
+      job.id,
+      { status: "queued", error: "busy", runAfter: backoff },
+      again!.claimedDedupeKey!
+    );
+    expect(merged?.mergedInto).toBe(newer.id);
+    expect(await columns(job.id)).toMatchObject({ status: "canceled", dedupe_key: null });
+    expect(await columns(newer.id)).toMatchObject({ status: "queued", dedupe_key: key });
+    // Not running any more: nothing to queue again.
+    expect(await jobs().requeue(job.id, { status: "queued" }, key)).toBeNull();
+  });
+
   it("raises a queued job's priority on merge and releases its blocker", async () => {
     const root = randomUUID();
     const { job } = await jobs().enqueueDeduped(place(root, { priority: 1 }));

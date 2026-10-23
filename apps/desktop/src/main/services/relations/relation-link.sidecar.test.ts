@@ -670,6 +670,17 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
       [job.id]
     );
     expect(await hasPendingRelationJobs(pool!, types)).toBe(true);
+    // Set aside by a blocker (F4 D5): it waits for its blocker, so it holds the heavy lane no more.
+    await pool!.query(
+      `update jobs set run_after = now(), blocked_class = 'cap', blocked_reason = 'money_80',
+              blocked_at = now() where id = $1`,
+      [job.id]
+    );
+    expect(await hasPendingRelationJobs(pool!, types)).toBe(false);
+    await pool!.query(
+      "update jobs set blocked_class = null, blocked_reason = null, blocked_at = null where id = $1",
+      [job.id]
+    );
     await pool!.query(`update jobs set status = 'succeeded', finished_at = now() where id = $1`, [
       job.id
     ]);

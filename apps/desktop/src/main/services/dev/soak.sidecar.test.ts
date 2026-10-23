@@ -188,13 +188,27 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
               ('ingest', 'succeeded', 'heavy', '{}'::jsonb, 1, null)`,
       [note.sourceId]
     );
+    // A task a blocker set aside, with its scope: E1 reads both (F4 D5-D7).
+    await pool!.query(
+      `insert into jobs (type, status, lane, payload, scope_key, blocked_class, blocked_reason,
+                         blocked_at, created_at)
+       values ('topic-name', 'queued', 'light', '{}'::jsonb, 'tree:t:names', 'paused',
+               'user_pause', now(), now() + interval '1 second')`
+    );
     const { jobs, counts } = await readJobs(pool!);
     expect(jobs.map((job) => [job.type, job.status, job.lane, job.sourceItemId])).toEqual([
       ["note-embedding", "running", "light", note.sourceId],
-      ["ingest", "queued", "heavy", null]
+      ["ingest", "queued", "heavy", null],
+      ["topic-name", "queued", "light", null]
     ]);
-    expect(counts).toEqual({ running: 1, queued: 1, succeeded: 1 });
+    expect(counts).toEqual({ running: 1, queued: 2, succeeded: 1 });
     expect(jobs[0]!.lockedAt).toBeGreaterThan(0);
+    expect(jobs[1]).toMatchObject({ scopeKey: null, blockedClass: null, blockedReason: null });
+    expect(jobs[2]).toMatchObject({
+      scopeKey: "tree:t:names",
+      blockedClass: "paused",
+      blockedReason: "user_pause"
+    });
 
     await pool!.query(
       `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status, started_at, finished_at,

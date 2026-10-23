@@ -196,7 +196,14 @@ const jobSample = z
     /** Epoch ms of the last change of the row (progress, claim, retry). */
     updatedAt: z.number(),
     runAfter: z.number(),
-    lockedAt: z.number().nullable()
+    lockedAt: z.number().nullable(),
+    /**
+     * The job's scope (F4 D6) and the blocker that set it aside (D5, D7); E1 reads them. Absent
+     * from samples recorded before 0060.
+     */
+    scopeKey: z.string().nullable().optional(),
+    blockedClass: z.string().nullable().optional(),
+    blockedReason: z.string().nullable().optional()
   })
   .strict();
 

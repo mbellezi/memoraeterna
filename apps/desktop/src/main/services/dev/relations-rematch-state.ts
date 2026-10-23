@@ -418,11 +418,15 @@ export async function enableCandidateRecording(db: Queryable): Promise<boolean> 
 /** The job types a run waits for: the link job of a root and the source relation jobs it queues. */
 export const drainJobTypeSql = "(type = 'relation-link' or type like 'source-relation-%')";
 
-/** Link and source-relation jobs still queued or running; the re-match job itself is not one. */
+/**
+ * Link and source-relation jobs still queued or running; the re-match job itself is not one, and
+ * neither is a queued job a blocker set aside (F4 D5: it is not queued work).
+ */
 export async function countOpenLinkJobs(db: Queryable): Promise<number> {
   const result = await db.query<{ open: number }>(
     `select count(*)::int as open from jobs
-      where status in ('queued', 'running') and ${drainJobTypeSql}`
+      where (status = 'running' or (status = 'queued' and blocked_class is null))
+        and ${drainJobTypeSql}`
   );
   return Number(result.rows[0]?.open ?? 0);
 }

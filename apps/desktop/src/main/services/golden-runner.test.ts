@@ -1306,6 +1306,7 @@ describe("golden batch waiting", () => {
     maxLiveTokens?: number | null;
   }) {
     const canceled: string[] = [];
+    const counts: string[] = [];
     let poll = 0;
     const options = {
       environment: {
@@ -1316,8 +1317,9 @@ describe("golden batch waiting", () => {
       },
       pool: {
         query: async (sql: string) => {
-          if (sql.includes("as active")) return { rows: [{ active: input.active[poll++] ?? 0 }] };
-          return { rows: [] };
+          if (!sql.includes("as active")) return { rows: [] };
+          counts.push(sql);
+          return { rows: [{ active: input.active[poll++] ?? 0 }] };
         }
       },
       cassette: {
@@ -1333,14 +1335,16 @@ describe("golden batch waiting", () => {
       log: () => undefined,
       sleep: async () => undefined
     } as unknown as GoldenRunOptions;
-    return { options, canceled, polls: () => poll };
+    return { options, canceled, counts, polls: () => poll };
   }
 
   it("settles after two polls without queued or running jobs", async () => {
-    const { options, polls } = waitOptions({ active: [2, 1, 0, 1, 0, 0] });
+    const { options, polls, counts } = waitOptions({ active: [2, 1, 0, 1, 0, 0] });
     await mkdir(join(workspace, "run"));
     expect(await waitForBatch(options, "batch", join(workspace, "run"))).toBe("settled");
     expect(polls()).toBe(6);
+    // A job a blocker set aside waits for its blocker, not for the batch (F4 D5).
+    expect(counts[0]).toContain("j.status::text = 'queued' and j.blocked_class is null");
   });
 
   it("stops a replay at its first cassette miss", async () => {

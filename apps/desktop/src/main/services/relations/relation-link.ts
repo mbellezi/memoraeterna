@@ -828,7 +828,7 @@ export class RelationLinker {
     const pool = this.deps.getPool();
     const due = await pool.query<{ rootId: string }>(
       `select payload->>'rootId' as "rootId" from jobs
-       where type = $1 and status = 'queued' and run_after <= now()
+       where type = $1 and status = 'queued' and run_after <= now() and blocked_class is null
          and payload->>'rootId' is not null and payload->>'rootId' <> $2
        order by priority desc, run_after asc, id
        limit $3`,
@@ -1241,7 +1241,8 @@ export async function hasUntypedRelations(db: Queryable): Promise<boolean> {
 /**
  * Whether a job of `types` (the `relations` worker's) is running, due, or waiting for its retry.
  * Drain mode holds the heavy lane while one is (3.11), so a link job's discovery never sees the
- * next source half ingested; a job queued for a later day (the daily cap's discovery) holds nothing.
+ * next source half ingested; a job queued for a later day (the daily cap's discovery) holds nothing,
+ * and neither does one a blocker set aside (F4 D5: it waits for its blocker, not for a worker).
  */
 export async function hasPendingRelationJobs(
   db: Queryable,
@@ -1251,7 +1252,9 @@ export async function hasPendingRelationJobs(
   const result = await db.query(
     `select 1 from jobs
      where type = any($1::text[])
-       and (status = 'running' or (status = 'queued' and (run_after <= now() or attempts > 0)))
+       and (status = 'running'
+            or (status = 'queued' and blocked_class is null
+                and (run_after <= now() or attempts > 0)))
      limit 1`,
     [[...types]]
   );

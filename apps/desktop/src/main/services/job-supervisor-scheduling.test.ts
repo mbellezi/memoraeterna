@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     retry: vi.fn(),
     claimNext: vi.fn(),
     update: vi.fn(),
+    requeue: vi.fn(),
     create: vi.fn(),
     reportProgress: vi.fn(),
     enqueueDeduped: vi.fn(),
@@ -750,6 +751,10 @@ describe("ingestion queue scheduling", () => {
       });
       mocks.jobs.claimNext.mockResolvedValue(lightJob(attempts));
       mocks.jobs.update.mockImplementation(async (id: string, input: object) => ({ id, ...input }));
+      mocks.jobs.requeue.mockImplementation(async (id: string, input: object) => ({
+        job: { id, ...input, status: "queued" },
+        mergedInto: null
+      }));
       await supervisor.runLightOnce("relations");
       return ended;
     };

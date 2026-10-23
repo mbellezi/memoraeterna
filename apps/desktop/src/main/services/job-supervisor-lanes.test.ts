@@ -35,13 +35,25 @@ const queue = vi.hoisted(() => {
             (a, b) => b.priority - a.priority || a.runAfter.getTime() - b.runAfter.getTime()
           )[0];
         if (!job) return null;
-        Object.assign(job, { status: "running", lockedBy: workerId, attempts: job.attempts + 1 });
-        return { ...job };
+        // The claim takes the dedupe key; the record names the key it held (T74).
+        const claimedDedupeKey = job.dedupeKey;
+        Object.assign(job, {
+          status: "running",
+          lockedBy: workerId,
+          attempts: job.attempts + 1,
+          dedupeKey: null
+        });
+        return { ...job, claimedDedupeKey };
       },
       update: async (id: string, input: Partial<JobRecord>) => {
         const job = find(id);
         if (job) Object.assign(job, input);
         return job ? { ...job } : null;
+      },
+      requeue: async (id: string, input: Partial<JobRecord>, dedupeKey: string | null) => {
+        const job = find(id);
+        if (job) Object.assign(job, input, { status: "queued", dedupeKey });
+        return job ? { job: { ...job }, mergedInto: null } : null;
       }
     }
   };
@@ -453,6 +465,21 @@ describe("heavy and light lanes", () => {
       error: "bad",
       attempts: 2
     });
+  });
+
+  it("keeps the dedupe key of a light job queued again for its retry (T74 review R7)", async () => {
+    const busy = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({
+        "topic-place": { needsModel: false, execute: vi.fn().mockRejectedValueOnce(busy) }
+      })
+    });
+    const place = enqueue("topic-place", "light");
+    place.dedupeKey = "topic-place:tree:root";
+    await expect(supervisor.runLightOnce("compute")).resolves.toMatchObject({ status: "queued" });
+    // A request during the backoff joins this job instead of queuing a second one.
+    expect(queue.find(place.id)!.dedupeKey).toBe("topic-place:tree:root");
   });
 
   it("queues a light job again after a bare AbortError while its own signal is live (F4 D8)", async () => {

@@ -92,7 +92,9 @@ export async function readJobs(
               payload ->> 'sourceItemId' as "sourceItemId", attempts,
               (extract(epoch from updated_at) * 1000)::float8 as "updatedAt",
               (extract(epoch from run_after) * 1000)::float8 as "runAfter",
-              (extract(epoch from locked_at) * 1000)::float8 as "lockedAt"
+              (extract(epoch from locked_at) * 1000)::float8 as "lockedAt",
+              scope_key as "scopeKey", blocked_class as "blockedClass",
+              blocked_reason as "blockedReason"
          from jobs where status in ('queued', 'running')
         order by created_at limit 400`
     ),

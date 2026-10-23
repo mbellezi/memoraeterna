@@ -1313,3 +1313,38 @@ describe("failures and files", () => {
     expect((await runSoakReport(["--help"])).code).toBe(0);
   });
 });
+
+describe("jobs a blocker set aside (F4 D5)", () => {
+  const waitingSamples = (blockedClass: string | null) =>
+    samples().map((sample) => ({
+      ...sample,
+      jobs: [
+        {
+          id: "aaaaaaaa-0000-4000-8000-000000000001",
+          type: "topic-name",
+          lane: "light",
+          status: "queued",
+          sourceItemId: null,
+          attempts: 0,
+          updatedAt: start,
+          runAfter: start,
+          lockedAt: null,
+          scopeKey: "tree:t:names",
+          blockedClass,
+          blockedReason: blockedClass ? "user_pause" : null
+        }
+      ]
+    }));
+
+  it("are neither stuck nor held up by an unrelated job: they wait for their blocker", () => {
+    const report = analyzeRun(goodRun({ samples: waitingSamples("paused") }));
+    expect(report.checks.find((check) => check.id === "jobs-stuck")?.status).toBe("pass");
+    expect(report.checks.find((check) => check.id === "jobs-blocked")?.value).toMatch(/^0 /u);
+  });
+
+  it("still flags the same job waiting due and unblocked", () => {
+    const report = analyzeRun(goodRun({ samples: waitingSamples(null) }));
+    expect(report.checks.find((check) => check.id === "jobs-stuck")?.status).toBe("fail");
+    expect(report.checks.find((check) => check.id === "jobs-blocked")?.value).toMatch(/^1 /u);
+  });
+});

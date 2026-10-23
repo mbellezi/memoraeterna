@@ -120,4 +120,17 @@ describe("the result.status table (3.1b)", () => {
     );
     expect(unmapped).toEqual([]);
   });
+
+  it("maps the statuses of the supervisor's own skips, a quarantined input never done (T74 R8)", () => {
+    const supervisor = readFileSync(
+      join(workspace, "apps/desktop/src/main/services/job-supervisor.ts"),
+      "utf8"
+    );
+    // The fingerprint skip's result: `status: skip === "quarantined" ? "quarantined" : "skipped"`.
+    const skip = /status: skip === "([a-z_]+)" \? "([a-z_]+)" : "([a-z_]+)"/u.exec(supervisor);
+    expect(skip, "the supervisor's skip result").not.toBeNull();
+    for (const status of [skip![2]!, skip![3]!])
+      expect(status in resultStatusStates, status).toBe(true);
+    expect(resultStatusStates[skip![2]!]).toEqual({ state: "outcome", outcome: "skipped" });
+  });
 });

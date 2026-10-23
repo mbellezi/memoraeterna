@@ -1431,7 +1431,8 @@ async function waitForJobs(
     }
     const active = await options.pool.query<{ active: number }>(
       `select count(*)::int as active from jobs
-       where id = any($1::uuid[]) and status::text in ('queued', 'running')`,
+       where id = any($1::uuid[])
+         and (status::text = 'running' or (status::text = 'queued' and blocked_class is null))`,
       [jobIds]
     );
     quiet = Number(active.rows[0]?.active ?? 0) === 0 ? quiet + 1 : 0;
@@ -1818,7 +1819,7 @@ export async function waitForBatch(
     }
     const active = await options.pool.query<{ active: number }>(
       `select count(*)::int as active from jobs j
-       where j.status::text in ('queued', 'running')
+       where (j.status::text = 'running' or (j.status::text = 'queued' and j.blocked_class is null))
          and (j.id in (select job_id from ingestion_runs where batch_id = $1 and job_id is not null)
               or j.payload->>'batchId' = $1::text)`,
       [batchId]
