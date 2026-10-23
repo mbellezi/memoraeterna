@@ -3,6 +3,7 @@
 // imported by the preload or the renderer; the browser-safe vocabulary is `@app/domain`'s
 // `topics.ts`.
 export * from "./areas.js";
+export * from "./audit-lints.js";
 export * from "./audit.js";
 export * from "./bootstrap.js";
 export * from "./build.js";

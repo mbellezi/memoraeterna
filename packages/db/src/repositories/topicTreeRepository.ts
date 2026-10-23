@@ -24,6 +24,7 @@ import {
   changeSetBlockers,
   compareStrings,
   invertEvents,
+  isRedirectEvent,
   itemKey,
   maxSecondaries,
   parseItemKey,
@@ -862,6 +863,18 @@ interface ApplyContext {
 function staticEventProblem(event: StructureEvent): string | null {
   switch (event.op) {
     case "topic.retire":
+      if (isRedirectEvent(event)) {
+        // A redirect re-point (F4 D19): the retirement stays, the redirect moves to another topic.
+        if (event.before.redirectTo === null || event.after.redirectTo === null) {
+          return "a redirect is re-pointed from one topic to another";
+        }
+        if (event.after.retiredAt !== event.before.retiredAt) {
+          return "a redirect re-point keeps the retirement time";
+        }
+        return event.after.redirectTo === event.topicId
+          ? "a topic cannot redirect to itself"
+          : null;
+      }
       if (event.before.retiredAt !== null || event.after.retiredAt === null) {
         return "retire must take a live topic out";
       }

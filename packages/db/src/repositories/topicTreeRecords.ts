@@ -10,6 +10,7 @@ import {
   insertPlacement,
   insertTopic,
   isLive,
+  isRedirectEvent,
   itemCentrality,
   itemKey,
   parseItemKey,
@@ -343,8 +344,9 @@ export function eventTopicRefs(event: StructureEvent): string[] {
 
 /**
  * The topics whose statistics an event can change (D7): every reference of a structure or
- * placement event. A name, a description or a management change moves no member and no child, so
- * it leaves the statistics exact and needs no recompute.
+ * placement event. A name, a description or a management change moves no member and no child, and
+ * neither does the re-pointing of a retired topic's redirect (F4 D19): they leave the statistics
+ * exact and need no recompute.
  */
 export function eventStatsRefs(event: StructureEvent): string[] {
   switch (event.op) {
@@ -352,6 +354,8 @@ export function eventStatsRefs(event: StructureEvent): string[] {
     case "topic.describe":
     case "topic.manage":
       return [];
+    case "topic.retire":
+      return isRedirectEvent(event) ? [] : eventTopicRefs(event);
     default:
       return eventTopicRefs(event);
   }

@@ -25,7 +25,7 @@ import {
   type TopicTree,
   type TopicUndoAvailability
 } from "@app/domain";
-import { StructureEventSchema } from "@app/domain/topic-tree";
+import { StructureEventSchema, isRedirectEvent } from "@app/domain/topic-tree";
 import type { StructureEvent } from "@app/domain/topic-tree";
 
 import type { PgPool } from "../client.js";
@@ -1656,6 +1656,8 @@ async function describeEvents(
         }
         break;
       case "topic.retire":
+        // A redirect re-point (F4 D19) leaves a retired topic retired: nothing leaves the tree.
+        if (isRedirectEvent(event)) break;
         addTopic(before, event.topicId, current?.title ?? null, current?.parentTitle ?? null);
         break;
       case "topic.restore":

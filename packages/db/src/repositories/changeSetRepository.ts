@@ -397,6 +397,11 @@ export function topicDiffNodes(
         sawBefore("title");
         break;
       case "topic.retire":
+        // A redirect re-point (F4 D19) leaves a retired topic retired: it is no removal.
+        if (event.before?.retiredAt != null && event.after?.retiredAt != null) {
+          mark(entry, "changed");
+          break;
+        }
         if (first("exists")) entry.existedBefore = true;
         entry.existsAfter = false;
         sawBefore("exists");

@@ -4,6 +4,8 @@ export * from "./documentRepository.js";
 export * from "./documentAssetRepository.js";
 export * from "./jobRepository.js";
 export * from "./gardenerOutcomeRepository.js";
+export * from "./gardenerFindingRepository.js";
+export * from "./auditLintRepository.js";
 export * from "./jobActivityRepository.js";
 export * from "./jobBlockerRepository.js";
 export * from "./processingTaskRepository.js";

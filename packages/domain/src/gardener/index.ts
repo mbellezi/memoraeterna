@@ -7,5 +7,6 @@ export * from "./blockers.js";
 export * from "./controls.js";
 export * from "./fingerprint.js";
 export * from "./kinds.js";
+export * from "./lints/index.js";
 export * from "./result-status.js";
 export * from "./state.js";

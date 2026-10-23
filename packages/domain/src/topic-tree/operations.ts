@@ -6,7 +6,8 @@
 // - a downward leaf split and a push-down that leave the parent, protected children and human
 //   placements alone, so protected neighbours never block the repair of an AI-managed topic;
 // - the re-parent of a mis-parented topic (D12) and the cleanup of secondaries that break I2;
-// - absorbing the movable direct items of an internal topic (readmission below it, new leaves).
+// - absorbing the movable direct items of an internal topic (readmission below it, new leaves);
+// - re-placing items of a leaf into the leaves the audit's rolling re-placement found for them.
 //
 // Like build.ts they only implement mechanics through the editor, so every change is an
 // invertible structure event; protection, freeze, budgets and acceptance are REBALANCE policy
@@ -36,7 +37,7 @@ import { dot, matrixFromRows } from "./vectors.js";
 import type { ItemVectorSource } from "./vectors.js";
 
 export type TopicOperationKind =
-  ShapeOperationKind | "sibling-merge" | "reparent" | "secondary-cleanup";
+  ShapeOperationKind | "sibling-merge" | "reparent" | "secondary-cleanup" | "replace";
 
 /** What one operation did (the ShapeOperation of build.ts with the wider kind). */
 export interface TopicOperation extends Omit<ShapeOperation, "kind"> {
@@ -486,6 +487,55 @@ export function absorbMovableItems(
     context,
     { kind: "absorb-direct", topicId, created, retired: [], movedItems: moved },
     [topicId, ...created]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Re-placement (F4 D19 (4))
+
+/** An item the audit's rolling re-placement found a better leaf for. */
+export interface MisplacedItem {
+  item: ItemKey;
+  /** The leaf PLACE would choose now. */
+  to: string;
+}
+
+/**
+ * Moves items of leaf `leafId` to the leaves the audit found for them. An item moves only while
+ * it is still where the audit saw it, placed by automation and settled, and its target is still a
+ * live leaf the policy may use (`eligible`); the others stay. Acceptance is REBALANCE's: the
+ * trial measures dQ and churn and the soft rules decide.
+ */
+export function replaceItems(
+  context: ShapeContext,
+  leafId: string,
+  moves: readonly MisplacedItem[],
+  eligible: TargetFilter = () => true
+): TopicOperation | null {
+  const { state, vectors } = context;
+  const leaf = getTopic(state, leafId);
+  if (!isLive(leaf) || leaf.parentId === null || leaf.children.length > 0) return null;
+  const touched = new Set<string>([leafId]);
+  const moved: ItemKey[] = [];
+  for (const { item, to } of moves) {
+    const primary = placementsOf(state, item).find((placement) => placement.rank === 0);
+    if (!primary || primary.topicId !== leafId) continue;
+    if (primary.management !== "ai" || primary.needsGate || primary.needsVector) continue;
+    const target = state.topics.get(to);
+    if (!target || !isLive(target) || target.children.length > 0 || target.parentId === null)
+      continue;
+    if (to === leafId || !eligible(to)) continue;
+    movePrimary(context, item, to, { needsSplitCheck: false });
+    touched.add(to);
+    moved.push(item);
+  }
+  if (moved.length === 0) return null;
+  dropSecondariesOnPath(context, moved);
+  refreshTopics(state, vectors, [...touched]);
+  return finish(
+    context,
+    { kind: "replace", topicId: leafId, created: [], retired: [], movedItems: moved.length },
+    [...touched]
   );
 }
 

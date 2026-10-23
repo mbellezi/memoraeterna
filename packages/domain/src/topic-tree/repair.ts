@@ -52,9 +52,10 @@ import {
   pushDownAround,
   refreshTopics,
   reparentTopic,
+  replaceItems,
   splitLeafDownward
 } from "./operations.js";
-import type { TopicOperation, TopicOperationKind } from "./operations.js";
+import type { MisplacedItem, TopicOperation, TopicOperationKind } from "./operations.js";
 import {
   areDuplicateLeaves,
   fanOutBand,
@@ -101,7 +102,8 @@ export const rebalanceConditions = [
   "direct-items",
   "duplicate-siblings",
   "mis-parented",
-  "deep-thin-topic"
+  "deep-thin-topic",
+  "misplaced"
 ] as const;
 export type RebalanceCondition = (typeof rebalanceConditions)[number];
 
@@ -144,6 +146,12 @@ export interface RebalanceInput {
   areaLevelReview?: boolean;
   /** Re-placement below an internal topic (PLACE, T07); without it direct items only form leaves. */
   readmit?: (item: ItemKey, from: string) => string | null;
+  /**
+   * Items of leaves that the audit's rolling re-placement (F4 D19 (4)) decided again into another
+   * leaf, by the leaf they sit in. Each leaf's moves are one soft check, "misplaced", accepted by
+   * the same rule as any soft operation.
+   */
+  misplaced?: ReadonlyMap<string, readonly MisplacedItem[]>;
   /** Ignore cooldowns, freeze and budgets (explicit settles). Acceptance and protection hold. */
   force?: boolean;
   /** Only fix hard violations. */
@@ -301,6 +309,12 @@ function softCandidates(env: Environment, id: string, depth: number): Candidate[
     if (size < config.leaf.min) {
       add("merge", "leaf-below-min", 2, (context) =>
         mergeUndersizedLeaf(context, id, env.eligibleTarget)
+      );
+    }
+    const misplaced = env.input.misplaced?.get(id);
+    if (misplaced && misplaced.length > 0) {
+      add("replace", "misplaced", 3, (context) =>
+        replaceItems(context, id, misplaced, env.eligibleTarget)
       );
     }
     for (const siblingId of getTopic(state, node.parentId as string).children) {
@@ -529,10 +543,13 @@ function shapeContext(env: Environment, editor: TopicTreeEditor): ShapeContext {
  * re-parent moves exactly those items, so at lambda >= 1 + gain no correction could ever pass.
  * Recently opened items still weigh more, and the margin (`audit.misParentMargin`), cooldown,
  * freeze, budgets, protection and the Area-level rule bound it like any soft operation.
+ * The audit's re-placement of a misplaced item (F4 D19 (4)) counts its churn once as well: the gain
+ * of one item is at most a cosine difference, never lambda, so at lambda this size no single move
+ * could pass; counted once, it passes only for an item the tree clearly holds in the wrong leaf.
  */
 export function churnWeightOf(condition: RebalanceCondition, config: TopicTreeConfig): number {
   const lambda = config.stability.churnWeight;
-  return condition === "mis-parented" && lambda > 0 ? 1 / lambda : 1;
+  return (condition === "mis-parented" || condition === "misplaced") && lambda > 0 ? 1 / lambda : 1;
 }
 
 /**

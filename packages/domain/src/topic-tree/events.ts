@@ -5,6 +5,8 @@
 //   topic.create   before null -> after record (its inverse, before record -> after null, deletes)
 //   topic.retire   <-> topic.restore           item.place <-> item.unplace
 //   topic.move, topic.rename, topic.describe, topic.manage, item.move: before and after swap
+//   topic.retire of a topic that is retired already (`isRedirectEvent`): the redirect points at
+//   another topic (F4 D19 compresses redirect chains); like a move, before and after swap
 //
 // `invertEvents` reverses a change-set; `applyEvents` is atomic (on a failed precondition the
 // applied prefix is rolled back). Statistics are derived and never part of an event: callers
@@ -198,6 +200,18 @@ export type StructureEvent =
       after: PlacementPayload;
     };
 
+/**
+ * Whether the event re-points the redirect of a topic that is retired already (`topic.retire` with
+ * a retirement time before and after): the compression of a redirect chain, A -> B -> C becoming
+ * A -> C. The topic stays retired and no other field changes, so the stored vocabulary of
+ * operations stays what it was.
+ */
+export function isRedirectEvent(event: StructureEvent): boolean {
+  return (
+    event.op === "topic.retire" && event.before.retiredAt !== null && event.after.retiredAt !== null
+  );
+}
+
 /** A failed event precondition: the state does not hold the event's `before` values. */
 export class StructureEventConflictError extends Error {
   override readonly name = "StructureEventConflictError";
@@ -320,6 +334,17 @@ function applyOne(
       case "topic.restore": {
         const node = topic(event.topicId);
         expect(node, event.before);
+        if (isRedirectEvent(event)) {
+          const target = event.after.redirectTo;
+          if (event.before.redirectTo === null || target === null)
+            return conflict("a redirect is re-pointed from one topic to another");
+          if (event.after.retiredAt !== event.before.retiredAt)
+            return conflict("a redirect re-point keeps the retirement time");
+          if (target === event.topicId) return conflict("a topic cannot redirect to itself");
+          topic(target);
+          updateTopicFields(state, event.topicId, event.after);
+          return;
+        }
         const retiring = event.op === "topic.retire";
         if (retiring !== (event.before.retiredAt === null && event.after.retiredAt !== null)) {
           conflict(
@@ -396,6 +421,8 @@ export function invertEvent(event: StructureEvent): StructureEvent {
         after: event.before
       };
     case "topic.retire":
+      // A re-point of a redirect is its own inverse, as a move is.
+      if (isRedirectEvent(event)) return { ...event, before: event.after, after: event.before };
       return {
         op: "topic.restore",
         topicId: event.topicId,
@@ -494,6 +521,8 @@ export interface TopicTreeEditor {
   ): TopicNode;
   moveTopic(id: string, parentId: string, position?: number): void;
   retireTopic(id: string, redirectTo: string | null, at: string): void;
+  /** Points the redirect of a retired topic at another topic (redirect chains, F4 D19). */
+  redirectTopic(id: string, redirectTo: string): void;
   restoreTopic(id: string): void;
   renameTopic(id: string, fields: Partial<TopicRenamePayload>): void;
   describeTopic(id: string, description: string | null): void;
@@ -547,6 +576,15 @@ export function createTopicTreeEditor(
     retireTopic(id, redirectTo, at) {
       const before = pick(topic(id), retirementFields);
       apply({ op: "topic.retire", topicId: id, before, after: { retiredAt: at, redirectTo } });
+    },
+    redirectTopic(id, redirectTo) {
+      const before = pick(topic(id), retirementFields);
+      apply({
+        op: "topic.retire",
+        topicId: id,
+        before,
+        after: { retiredAt: before.retiredAt, redirectTo }
+      });
     },
     restoreTopic(id) {
       const before = pick(topic(id), retirementFields);
