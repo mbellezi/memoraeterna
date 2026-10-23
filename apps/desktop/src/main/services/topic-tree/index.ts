@@ -1,10 +1,11 @@
 // The Topic Tree Engine services of the main process, created once by `main/index.ts`. The factory
 // builds them without Electron (injected pool, space resolver and wake-up), so scripts and tests
 // can drive the same services. Later tasks register their light-lane executors in the registry
-// below, one line each, in merge order: T16, T22a, T18, T19, T22b, T23, T24, T31, T19b.
+// below, one line each, in merge order: T16, T22a, T18, T19, T22b, T23, T24, T31, T19b, T84.
 import type { IpcMain } from "electron";
 
 import type { PgPool } from "@app/db";
+import { defaultKnowledgeControls, type GardenerAutonomy } from "@app/domain";
 import { defaultTopicTreeConfig } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
@@ -34,6 +35,7 @@ import type { TopicJobExecutor } from "./topic-jobs.js";
 import { TopicLabelService } from "./topic-labels.js";
 import { TopicNamingService } from "./topic-naming.js";
 import { TopicOverviewService } from "./topic-overview.js";
+import { TopicOverviewRefresh, topicOverviewJobType } from "./topic-overview-job.js";
 import type { TopicEngineStatus, TopicReadService } from "./topic-read-service.js";
 import { TopicSpaceChange } from "./topic-space.js";
 import type { SpaceResolver } from "./topic-space.js";
@@ -79,6 +81,11 @@ export interface TopicTreeServicesOptions {
   getContentLanguage?: () => Promise<string>;
   /** Queues MATCH for notes a person edited or accepted (F4 D16); absent, `notesToMatch` does nothing. */
   noteMatching?: NoteMatchRequests;
+  /**
+   * The Knowledge controls' autonomy (F4 D12, D13) REFRESH applies or proposes under; Auto, the
+   * default control, when absent (scripts and tests without the background policy).
+   */
+  autonomy?: () => Promise<GardenerAutonomy>;
 }
 
 export interface TopicTreeServices {
@@ -99,6 +106,8 @@ export interface TopicTreeServices {
   areas: TopicAreasService | null;
   /** The lazy overview of a Topic page (T31); null without `options.ai` and `getContentLanguage`. */
   overview: TopicOverviewService | null;
+  /** REFRESH's trigger and job (F4 T84); null without the overview service. */
+  overviewRefresh: TopicOverviewRefresh | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -256,6 +265,20 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
           ...(options.now ? { now: options.now } : {})
         })
       : null;
+  // T84: REFRESH keeps overviews current after placements change (F4 D17): every committed change
+  // requests the stale overviews on its paths; the job runs on the `model` worker (below).
+  const overviewRefresh = overview
+    ? new TopicOverviewRefresh({
+        getPool,
+        overview,
+        autonomy: options.autonomy ?? (async () => defaultKnowledgeControls.autonomy),
+        aiMode,
+        ...(options.wake ? { wake: options.wake } : {}),
+        ...(logger ? { logger } : {}),
+        ...(options.now ? { now: options.now } : {})
+      })
+    : null;
+  if (overviewRefresh) changes.subscribe(overviewRefresh.onTopicsChanged);
 
   // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
   let read: TopicReadService | null = null;
@@ -391,7 +414,12 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     changes.subscribe(gate.onTopicsChanged);
   }
   registered = new Set(Object.keys(executors));
-  const jobs = createTopicJobRegistry(executors, () => topicService.isHeld());
+  const held = () => topicService.isHeld();
+  const jobs = {
+    ...createTopicJobRegistry(executors, held),
+    // T84: REFRESH, held by the topic barrier like every topic job (D23).
+    ...(overviewRefresh ? { [topicOverviewJobType]: overviewRefresh.executor(held) } : {})
+  };
 
   const ensureActiveTree = async (): Promise<EnsureTreeResult | null> => {
     try {
@@ -422,6 +450,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     gate,
     areas,
     overview,
+    overviewRefresh,
     budget,
     aiMode,
     jobs,

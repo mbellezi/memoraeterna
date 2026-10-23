@@ -2520,6 +2520,7 @@
       "topic": "Noms de sujets, Domaines et vues d'ensemble"
     },
     "labels": {
+      "patch": "Compléter une vue d'ensemble",
       "overview": "Vue d'ensemble du sujet",
       "knowledge": "Réponse à partir des connaissances",
       "comparison": "Comparaison des sources",
@@ -2568,6 +2569,8 @@
       "instruction": "Instruction du ranker"
     },
     "variables": {
+      "overview_paragraphs": "Les paragraphes de la vue d'ensemble, conservés tels quels",
+      "cited_evidence": "Les preuves que cite la vue d'ensemble, numérotées",
       "max_paragraphs": "Nombre maximal de paragraphes",
       "topic": "Nom et description du sujet",
       "evidence": "Notes centrales avec leurs passages, numérotées",

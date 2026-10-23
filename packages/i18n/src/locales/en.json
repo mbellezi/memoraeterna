@@ -2515,6 +2515,7 @@
       "topic": "Topic names, Areas and overviews"
     },
     "labels": {
+      "patch": "Extend an overview",
       "overview": "Topic overview",
       "knowledge": "Compiled knowledge answer",
       "comparison": "Source comparison",
@@ -2563,6 +2564,8 @@
       "instruction": "Ranker instruction"
     },
     "variables": {
+      "overview_paragraphs": "The overview's paragraphs, kept as they are",
+      "cited_evidence": "The evidence the overview cites, numbered",
       "max_paragraphs": "Maximum number of paragraphs",
       "topic": "The topic's name and description",
       "evidence": "Central notes with their passages, numbered",

@@ -85,6 +85,11 @@ export interface StoredTopicOverview {
   divergences: OverviewDivergence[];
   /** Raised by every write; a proposal names the version it was made on. */
   version: number;
+  /**
+   * The text stored now is one an undo restored (F4 D10): the owner turned a write back, so a page
+   * that opens it stale does not patch it again on its own (Update still writes anew).
+   */
+  restored: boolean;
 }
 
 export interface TopicOverviewContext {
@@ -124,7 +129,8 @@ export interface SaveTopicOverviewInput {
   support: Record<string, unknown>;
   citations: Array<{
     n: number;
-    chunkId: string;
+    /** Null for a stored citation whose passage was deleted since (a patch keeps it as it was). */
+    chunkId: string | null;
     sourceSpanId: string | null;
     noteId: string | null;
     excerpt: string;
@@ -132,6 +138,15 @@ export interface SaveTopicOverviewInput {
   }>;
   /** Divergences to keep beside the prose (F4 D17); none when absent. */
   divergences?: OverviewDivergence[];
+}
+
+/** A topic REFRESH may keep current (F4 D17): it has an overview, or was opened lately. */
+export interface TopicOverviewRefreshCandidate {
+  topicId: string;
+  hasOverview: boolean;
+  /** The last open of its page and how often it was opened; null when it has no history. */
+  openedAt: Date | null;
+  openCount: number;
 }
 
 /** How a write records itself as a change-set; the defaults title it by its origin. */
@@ -260,6 +275,9 @@ export const topicOverviewSql = {
          o.prompt_revision_id as "promptRevisionId", o.provider, o.model, o.runtime,
          o.ai_task_run_id as "aiTaskRunId", o.language, o.support, o.written_at as "writtenAt",
          o.written_at::text as "writtenAtExact", o.divergences, o.version,
+         exists (select 1 from topic_overview_versions u
+                  where u.topic_id = o.topic_id and u.version = o.version
+                    and u.origin = 'undo') as restored,
          coalesce((
            select jsonb_agg(jsonb_build_object(
                     'n', c.n, 'chunkId', c.chunk_id, 'sourceSpanId', c.source_span_id,
@@ -403,7 +421,38 @@ export const topicOverviewSql = {
   /** $1 topic, $2 the writing's `written_at` (full precision), $3 support. */
   saveSupport: `update topic_overviews set support = $3::jsonb
      where topic_id = $1::uuid and written_at = $2::timestamptz
-    returning topic_id`
+    returning topic_id`,
+  /**
+   * $1 topic, $2 the version the members were read with, $3 member fingerprint, $4 member count: a
+   * REFRESH that found nothing to add records that the stored text covers the members of now. No
+   * version and no change-set: the text did not change.
+   */
+  markCurrent: `update topic_overviews set member_fingerprint = $3, member_count = $4::int
+     where topic_id = $1::uuid and version = $2::int
+    returning topic_id`,
+  /** $1 topic: the pending proposals made on a version the stored overview has moved past. */
+  supersedeProposals: `delete from topic_overview_versions v
+     where v.topic_id = $1::uuid and v.status = 'pending_review'
+       and v.base_version < coalesce(
+         (select o.version from topic_overviews o where o.topic_id = $1::uuid), 0)`,
+  /** $1 topic: every pending proposal of a topic (a newer proposal replaces them). */
+  replaceProposals: `delete from topic_overview_versions v
+     where v.topic_id = $1::uuid and v.status = 'pending_review'`,
+  /**
+   * $1 tree, $2 topics (null: every topic of the tree), $3 opened since, $4 limit: the live
+   * non-root topics REFRESH may keep current, those with an overview or opened since $3, the most
+   * recently opened first. The view history is read by its address (one row per page).
+   */
+  refreshCandidates: `select t.id as "topicId", (o.topic_id is not null) as "hasOverview",
+         v.opened_at as "openedAt", coalesce(v.open_count, 0)::int as "openCount"
+      from topics t
+      left join topic_overviews o on o.topic_id = t.id
+      left join view_history v on v.address = 'memora://topic/' || t.id::text
+     where t.tree_id = $1::uuid and t.retired_at is null and t.role <> 'root'
+       and ($2::uuid[] is null or t.id = any($2::uuid[]))
+       and (o.topic_id is not null or v.opened_at >= $3::timestamptz)
+     order by v.opened_at desc nulls last, t.id
+     limit $4::int`
 } as const;
 
 interface TopicRow extends QueryResultRow {
@@ -434,6 +483,7 @@ interface StoredRow extends QueryResultRow {
   citations: StoredOverviewCitation[];
   divergences: OverviewDivergence[] | null;
   version: number | string;
+  restored: boolean;
 }
 
 /** The live topic `id` names in the active tree, following redirects; null when there is none. */
@@ -489,7 +539,8 @@ function storedOf(row: StoredRow | undefined): StoredTopicOverview | null {
       available: citation.available === true
     })),
     divergences: row.divergences ?? [],
-    version: Number(row.version)
+    version: Number(row.version),
+    restored: row.restored === true
   };
 }
 
@@ -762,26 +813,105 @@ export function createTopicOverviewRepository(pool: PgPool) {
 
     /**
      * Records a proposal (Suggest autonomy, F4 D12, D17) on the version stored now: nothing is
-     * written to the overview until the owner applies it. A retired topic records nothing.
+     * written to the overview until the owner applies it. With `replacePending` it replaces the
+     * topic's earlier pending proposals (REFRESH keeps one proposal per topic waiting: the newest,
+     * computed on the newest version); with `expectedVersion`, a text computed from another version
+     * records nothing (`moved`). A retired topic records nothing.
      */
     async propose(
-      input: SaveTopicOverviewInput & { change?: TopicOverviewChange }
-    ): Promise<TopicOverviewProposalResult> {
+      input: SaveTopicOverviewInput & {
+        change?: TopicOverviewChange;
+        expectedVersion?: number;
+        replacePending?: boolean;
+      }
+    ): Promise<TopicOverviewProposalResult | { kind: "moved"; version: number }> {
       const change = changeOf(input.change, "patch");
-      const row = (
-        await pool.query<{ id: string; baseVersion: number | string }>(topicOverviewSql.propose, [
-          input.topicId,
-          change.origin,
-          change.titleKey,
-          JSON.stringify(change.titleParams),
-          change.risk,
-          change.jobId,
-          JSON.stringify(contentOf(input))
+      return withTransaction(pool, async (client) => {
+        const locked = (
+          await client.query<{ version: number | string }>(topicOverviewSql.lock, [input.topicId])
+        ).rows[0];
+        const current = locked ? Number(locked.version) : 0;
+        if (input.expectedVersion !== undefined && input.expectedVersion !== current)
+          return { kind: "moved" as const, version: current };
+        if (input.replacePending)
+          await client.query(topicOverviewSql.replaceProposals, [input.topicId]);
+        const row = (
+          await client.query<{ id: string; baseVersion: number | string }>(
+            topicOverviewSql.propose,
+            [
+              input.topicId,
+              change.origin,
+              change.titleKey,
+              JSON.stringify(change.titleParams),
+              change.risk,
+              change.jobId,
+              JSON.stringify(contentOf(input))
+            ]
+          )
+        ).rows[0];
+        return row
+          ? { kind: "proposed" as const, id: row.id, baseVersion: Number(row.baseVersion) }
+          : { kind: "retired" as const };
+      });
+    },
+
+    /**
+     * REFRESH found nothing to add (F4 D17): the stored text now stands for the members of now, so
+     * the page no longer reads it as stale. Nothing changes when another write moved the version.
+     */
+    async markCurrent(input: {
+      topicId: string;
+      expectedVersion: number;
+      memberFingerprint: string;
+      memberCount: number;
+    }): Promise<boolean> {
+      const result = await pool.query(topicOverviewSql.markCurrent, [
+        input.topicId,
+        input.expectedVersion,
+        input.memberFingerprint,
+        input.memberCount
+      ]);
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    /**
+     * Removes the pending proposals of a topic made on a version the stored overview has moved
+     * past (an apply would only answer `moved`); REFRESH proposes again on the version of now.
+     */
+    async supersedeProposals(topicId: string): Promise<number> {
+      const result = await pool.query(topicOverviewSql.supersedeProposals, [topicId]);
+      return result.rowCount ?? 0;
+    },
+
+    /**
+     * The topics of a tree REFRESH may keep current (F4 D17): live, not the root, with an
+     * overview or opened since `openedSince`; `topicIds` null looks at every topic of the tree.
+     */
+    async refreshCandidates(input: {
+      treeId: string;
+      topicIds: readonly string[] | null;
+      openedSince: Date;
+      limit: number;
+    }): Promise<TopicOverviewRefreshCandidate[]> {
+      const rows = (
+        await pool.query<{
+          topicId: string;
+          hasOverview: boolean;
+          openedAt: Date | string | null;
+          openCount: number | string;
+        }>(topicOverviewSql.refreshCandidates, [
+          input.treeId,
+          input.topicIds === null ? null : [...input.topicIds],
+          input.openedSince,
+          Math.max(1, Math.trunc(input.limit))
         ])
-      ).rows[0];
-      return row
-        ? { kind: "proposed", id: row.id, baseVersion: Number(row.baseVersion) }
-        : { kind: "retired" };
+      ).rows;
+      return rows.map((row) => ({
+        topicId: row.topicId,
+        hasOverview: row.hasOverview,
+        openedAt: row.openedAt === null ? null : mapTimestamp(row.openedAt),
+        openCount: Number(row.openCount)
+      }));
     },
 
     /**

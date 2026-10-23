@@ -232,6 +232,40 @@ on conflict (relation_id) do update set
   ai_task_run_id = excluded.ai_task_run_id, language = excluded.language, written_at = excluded.written_at
 returning written_at as "writtenAt"`;
 
+/**
+ * $1 opened since, $2 limit, $3 the backfill's job type: the explanation backfill's candidates (F4
+ * D18). Shown relations (D9) of the notes the owner opened since $1 that have no cached explanation
+ * (nor a cached verdict), no backfill queued or running, and no quarantined backfill; the relations
+ * of the most recently opened notes first.
+ */
+const backfillSql = `
+with opened as (
+  select v.object_id as note_id, v.opened_at from view_history v
+   where v.kind = 'note' and v.opened_at >= $1::timestamptz
+), touching as (
+  select r.id, o.opened_at from opened o
+    join atomic_note_relations r on r.source_atomic_note_id = o.note_id
+  union all
+  select r.id, o.opened_at from opened o
+    join atomic_note_relations r on r.target_atomic_note_id = o.note_id
+)
+select t.id as "relationId", max(t.opened_at) as "openedAt"
+  from touching t
+  join atomic_note_relations r on r.id = t.id
+  join atomic_notes a on a.id = r.source_atomic_note_id
+  join atomic_notes b on b.id = r.target_atomic_note_id
+ where ${shownNoteRelationSql("r", ["a", "b"])}
+   and not exists (select 1 from atomic_note_relation_explanations x where x.relation_id = r.id)
+   and not exists (select 1 from jobs j
+                    where j.type = $3 and j.status in ('queued', 'running')
+                      and j.subject_key = 'relation:' || r.id::text)
+   and not exists (select 1 from gardener_outcomes g
+                    where g.kind = $3 and g.subject_key = 'relation:' || r.id::text
+                      and g.quarantined_at is not null)
+ group by t.id
+ order by max(t.opened_at) desc, t.id
+ limit $2::int`;
+
 export interface SaveRelationExplanationInput {
   relationId: string;
   text: string;
@@ -295,6 +329,30 @@ export function createRelationExplanationRepository(db: Queryable) {
       return row ? { writtenAt: mapTimestamp(row.writtenAt) } : null;
     },
 
-    statements: { context: contextSql, save: saveSql }
+    /**
+     * The relations the explanation backfill may write next (F4 D18), at most `limit`: shown
+     * relations of notes opened since `openedSince`, with no explanation cached, none being
+     * written by a backfill job and none quarantined (see `backfillSql`).
+     */
+    async backfillCandidates(input: {
+      openedSince: Date;
+      limit: number;
+      jobType: string;
+    }): Promise<Array<{ relationId: string; openedAt: Date }>> {
+      if (input.limit <= 0) return [];
+      const rows = (
+        await db.query<{ relationId: string; openedAt: Date | string }>(backfillSql, [
+          input.openedSince,
+          Math.trunc(input.limit),
+          input.jobType
+        ])
+      ).rows;
+      return rows.map((row) => ({
+        relationId: row.relationId,
+        openedAt: mapTimestamp(row.openedAt)
+      }));
+    },
+
+    statements: { context: contextSql, save: saveSql, backfill: backfillSql }
   };
 }

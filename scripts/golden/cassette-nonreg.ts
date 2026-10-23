@@ -118,6 +118,11 @@ export const KEPT_RULES: readonly Rule[] = [
   { kind: "topic-areas", probe: "prompt", startsWith: ["Group the numbered topics"] },
   { kind: "topic-overview", probe: "prompt", startsWith: ["Write a short overview of one topic"] },
   {
+    kind: "topic-overview-patch",
+    probe: "prompt",
+    startsWith: ["Extend the short overview of one topic"]
+  },
+  {
     kind: "explanation",
     probe: "prompt",
     startsWith: ["Explain why two atomic notes are related", "Explain why two sources are related"]

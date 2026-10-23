@@ -83,10 +83,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Source relations come from typed shown note relations (applied, kept or suggested) plus
   decider-confirmed discovery pairs, never same-root pairs; each is a suggestion until the owner
   keeps it or a note relation supporting it is applied. Matching runs per source as its notes exist, no batch barrier; a failed graph stage never stops it (the run ends "graph incomplete" with that stage retryable).
-- A relation's explanation is written only when the owner opens it, never in bulk or in the
-  background, and cached for its inputs (ideas or titles, passages, type, direction, language,
-  prompt, model). An explanation that finds the notes unrelated withdraws a relation nobody
-  decided, which the owner keeps or removes on the Note page; a human verdict stays final.
+- A relation's explanation is written when the owner opens it, or by a bounded background backfill
+  for recently opened notes under autonomy and the budget, and cached for its inputs (ideas or titles,
+  passages, type, direction, language, prompt, model). One that finds the notes unrelated withdraws a
+  relation nobody decided, which the owner keeps or removes; a human verdict stays final.
 
 ## Topic tree
 
@@ -98,8 +98,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   leaf size, depth) live in typed config and are enforced by rebalancing.
 - Every structural operation is recorded in a reversible change-set. Stability controls (hysteresis,
   cooldown, churn budget) prevent thrashing. Human-created, pinned and protected nodes never move automatically.
-- A topic and its index are one node. Its page is a deterministic map of content;
-  prose overviews are written on demand with citations and a support check.
+- A topic and its index are one node. Its page is a deterministic map of content; prose overviews
+  are written on open with citations and a support check, then patched additively by REFRESH.
 - A name covers the whole topic, differs from its parent's and children's, and is in the content language.
   Without a decider, an ambiguous note becomes a new-topic candidate; it never waits at the root.
 

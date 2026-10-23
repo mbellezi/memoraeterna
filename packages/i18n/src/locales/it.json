@@ -2513,6 +2513,7 @@
       "topic": "Nomi di argomenti, Aree e panoramiche"
     },
     "labels": {
+      "patch": "Ampliare una panoramica",
       "overview": "Panoramica dell'argomento",
       "knowledge": "Risposta dal sapere compilato",
       "comparison": "Confronto delle fonti",
@@ -2561,6 +2562,8 @@
       "instruction": "Istruzione del ranker"
     },
     "variables": {
+      "overview_paragraphs": "I paragrafi della panoramica, mantenuti come sono",
+      "cited_evidence": "Le prove citate dalla panoramica, numerate",
       "max_paragraphs": "Numero massimo di paragrafi",
       "topic": "Nome e descrizione dell'argomento",
       "evidence": "Note centrali con i loro passaggi, numerate",

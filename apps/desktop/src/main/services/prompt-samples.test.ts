@@ -54,6 +54,11 @@ function model() {
         output = {
           paragraphs: [{ text: "Feedback improved delayed recall [1].", citations: [1] }]
         };
+      else if (id === "topic.overview.patch")
+        output = {
+          paragraphs: ["Spacing the practice helped as well [2]."],
+          divergences: [{ existing: "E1", new: "E2", summary: "The new study found no benefit." }]
+        };
       else if (id === "topic.areas")
         output = {
           areas: [
@@ -109,6 +114,7 @@ describe("bounded catalog sample runner", () => {
         "topic.gate.instruction",
         "topic.overview",
         "topic.overview.repair",
+        "topic.overview.patch",
         "topic.overview.support"
       ]).map((entry) => entry.id)
     ).toEqual([
@@ -117,7 +123,8 @@ describe("bounded catalog sample runner", () => {
       "topic.areas",
       "topic.areas.repair",
       "topic.overview",
-      "topic.overview.repair"
+      "topic.overview.repair",
+      "topic.overview.patch"
     ]);
     expect(() => promptSampleCases(["topic.gate.instruction"])).toThrow("prompts.errors.sample");
     expect(() => promptSampleCases(["topic.overview.support"])).toThrow("prompts.errors.sample");

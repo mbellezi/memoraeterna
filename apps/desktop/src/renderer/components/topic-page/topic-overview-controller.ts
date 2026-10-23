@@ -8,6 +8,7 @@ import {
   overviewRequested,
   overviewView,
   shouldRequestOverview,
+  staleToPatch,
   type OverviewLocal
 } from "./topic-overview-model";
 
@@ -27,7 +28,8 @@ export interface TopicOverviewSnapshot {
 /**
  * The overview section's state outside React (the page's own controller is the precedent): the
  * page tells it what it read and whether it is shown; it asks the main process only to write a
- * missing overview, to join a writing in progress or to wait once for a support verdict, and on
+ * missing overview, to patch a stale one once (F4 D17), to join a writing in progress or to wait
+ * once for a support verdict, and on
  * Write, Update, Retry and Cancel. An answer for a topic the page no longer shows, or for a
  * request a later one replaced (an Update while a verdict was awaited), is dropped.
  */
@@ -102,8 +104,11 @@ export class TopicOverviewController {
     const local = this.current();
     const view = overviewView(this.page, local);
     if (shouldRequestOverview(view, local, this.active)) {
-      // Asking again about a ready overview only waits for its support verdict.
-      this.request(this.topicId, false, view.kind === "ready");
+      // A stale overview is patched once; asking again about a current one only waits for its
+      // support verdict.
+      const patchFor =
+        staleToPatch(view, local) && view.kind === "ready" ? view.overview.writtenAt : null;
+      this.request(this.topicId, false, view.kind === "ready" && patchFor === null, patchFor);
     }
   }
 
@@ -112,11 +117,18 @@ export class TopicOverviewController {
     return local && local.topicId === this.topicId ? local : null;
   }
 
-  private request(topicId: string, force: boolean, verdict = false): void {
+  private request(
+    topicId: string,
+    force: boolean,
+    verdict = false,
+    patchFor: string | null = null
+  ): void {
     const seq = (this.latest?.seq ?? 0) + 1;
     this.latest = { topicId, seq };
     const replaced = () => this.latest?.topicId === topicId && this.latest.seq !== seq;
-    this.publish(overviewRequested(this.current() ?? overviewLocal(topicId), force, verdict));
+    this.publish(
+      overviewRequested(this.current() ?? overviewLocal(topicId), force, verdict, patchFor)
+    );
     let answer: Promise<TopicOverviewState>;
     try {
       answer = this.deps.api().overview(force ? { id: topicId, force: true } : { id: topicId });

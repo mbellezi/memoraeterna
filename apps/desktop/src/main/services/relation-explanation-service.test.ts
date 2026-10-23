@@ -1167,3 +1167,135 @@ describe("streamed explanations and the NOT_RELATED veto", () => {
     });
   });
 });
+
+describe("RelationExplanationService.backfill (F4 D18)", () => {
+  const job = "00000000-0000-4000-8000-0000000000cc";
+  const signal = () => new AbortController().signal;
+
+  /** A writer that answers when released, so a card can open while it writes. */
+  function gated(output = "n1 qualifies the recall benefit n2 reports.") {
+    let release!: () => void;
+    const released = new Promise<void>((done) => {
+      release = done;
+    });
+    const runDefaultTask = vi.fn(async (...args: unknown[]) => {
+      void args;
+      await released;
+      return execution(output);
+    });
+    const service = new RelationExplanationService({
+      getPool: () => ({}) as PgPool,
+      ai: { runDefaultTask } as never,
+      getContentLanguage: async () => "pt-BR"
+    });
+    return { service, runDefaultTask, release };
+  }
+
+  it("writes at P3 as background work of its job, streaming to no card", async () => {
+    const { service, runDefaultTask } = setup();
+    expect(await service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe("written");
+    const [, , logContext] = runDefaultTask.mock.calls[0]!;
+    expect(logContext).toMatchObject({
+      stage: "relation_explanation_backfill",
+      priority: "P3",
+      budgetClass: "background",
+      workloadClass: "write-fast",
+      jobId: job
+    });
+    expect(logContext).not.toHaveProperty("onTextDelta");
+    expect(repository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers current for a cached explanation, gone for a relation that is not listed", async () => {
+    const { service, runDefaultTask } = setup();
+    const plan = relationExplanationPlan({ ...context(), language: "pt-BR" });
+    repository.readContext.mockResolvedValue(
+      context({
+        stored: { text: "Cached.", inputHash: plan.inputHash, model: "writer-model", writtenAt }
+      })
+    );
+    expect(await service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe("current");
+    repository.readContext.mockResolvedValue(context({ listed: false }));
+    expect(await service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe("gone");
+    expect(runDefaultTask).not.toHaveBeenCalled();
+  });
+
+  it("withdraws a relation its writer finds unrelated, and leaves a kept one as it is", async () => {
+    const withdraw = vi.fn(async () => ({ noteIds: [ids.a, ids.b] }));
+    const relationsChanged = vi.fn();
+    const service = new RelationExplanationService({
+      getPool: () => ({}) as PgPool,
+      ai: { runDefaultTask: vi.fn(async () => execution("NOT_RELATED")) } as never,
+      getContentLanguage: async () => "pt-BR",
+      withdraw,
+      relationsChanged
+    });
+    expect(await service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe("vetoed");
+    expect(withdraw).toHaveBeenCalledTimes(1);
+    expect(relationsChanged).toHaveBeenCalledWith([ids.a, ids.b]);
+    repository.readContext.mockResolvedValue(context({ vetoable: false }));
+    expect(await service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe(
+      "unrelated"
+    );
+  });
+
+  it("has no writer without a route, and throws an answer still invalid after its repair", async () => {
+    const none = setup([]);
+    expect(await none.service.backfill(ids.relation, { jobId: job, signal: signal() })).toBe(
+      "no_writer"
+    );
+    const invalid = setup(["", ""]);
+    await expect(
+      invalid.service.backfill(ids.relation, { jobId: job, signal: signal() })
+    ).rejects.toThrow("notePage.explain.errors.invalid");
+  });
+
+  it("is joined by a card opened meanwhile, whose cancel never stops it", async () => {
+    const { service, runDefaultTask, release } = gated();
+    const backfill = service.backfill(ids.relation, { jobId: job, signal: signal() });
+    while (runDefaultTask.mock.calls.length === 0) await new Promise((done) => setTimeout(done, 1));
+    const card = service.explain({ relationId: ids.relation, requestId: ids.run });
+    expect(service.cancel({ relationId: ids.relation, requestId: ids.run })).toBe(true);
+    expect(service.cancel({ relationId: ids.relation })).toBe(false);
+    release();
+    expect(await backfill).toBe("written");
+    expect(textOf(await card)).toContain("qualifies");
+    expect(runDefaultTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins a card's writing in progress instead of writing twice, and stops with its job", async () => {
+    const { service, runDefaultTask, release } = gated();
+    const card = service.explain({ relationId: ids.relation });
+    while (runDefaultTask.mock.calls.length === 0) await new Promise((done) => setTimeout(done, 1));
+    const backfill = service.backfill(ids.relation, { jobId: job, signal: signal() });
+    release();
+    expect(await backfill).toBe("current");
+    await card;
+    expect(runDefaultTask).toHaveBeenCalledTimes(1);
+
+    // A card closed while the backfill waited for it: the backfill writes the explanation itself.
+    const closed = gated();
+    const card2 = closed.service.explain({ relationId: ids.relation }).catch(() => null);
+    while (closed.runDefaultTask.mock.calls.length === 0)
+      await new Promise((done) => setTimeout(done, 1));
+    const waiting = closed.service.backfill(ids.relation, { jobId: job, signal: signal() });
+    expect(closed.service.cancel({ relationId: ids.relation })).toBe(true);
+    closed.release();
+    expect(await card2).toBeNull();
+    expect(await waiting).toBe("written");
+    expect(closed.runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(closed.runDefaultTask.mock.calls[1]![2]).toMatchObject({ priority: "P3" });
+
+    const stopped = gated();
+    const controller = new AbortController();
+    const running = stopped.service.backfill(ids.relation, {
+      jobId: job,
+      signal: controller.signal
+    });
+    while (stopped.runDefaultTask.mock.calls.length === 0)
+      await new Promise((done) => setTimeout(done, 1));
+    controller.abort(new DOMException("The job was canceled.", "AbortError"));
+    stopped.release();
+    await expect(running).rejects.toThrow();
+  });
+});

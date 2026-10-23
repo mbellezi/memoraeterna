@@ -4,7 +4,13 @@
 // (`rules/ai.md`); these builders only supply declared, bounded data. Prompts are a function of
 // content, never of IDs (D22): the data they receive is already in content-key order and carries
 // aliases, not IDs.
-import { TopicOverviewOutputSchema, topicOverviewLimits, type AiOutputContract } from "@app/domain";
+import {
+  TopicOverviewOutputSchema,
+  TopicOverviewPatchOutputSchema,
+  overviewPatchCitedExcerpt,
+  topicOverviewLimits,
+  type AiOutputContract
+} from "@app/domain";
 import { NamingItemSchema, namingPromptGroups, parseModelJson } from "@app/domain/topic-tree";
 import type { NamingCall, TopicNamingConfig } from "@app/domain/topic-tree";
 import { z } from "zod";
@@ -132,6 +138,11 @@ export const topicOverviewOutputContract: AiOutputContract = {
   name: "topic_overview",
   contract: TopicOverviewOutputSchema
 };
+/** REFRESH's additive patch (F4 D17): strict, every member required. */
+export const topicOverviewPatchOutputContract: AiOutputContract = {
+  name: "topic_overview_patch",
+  contract: TopicOverviewPatchOutputSchema
+};
 
 /** The shape of an Areas answer; T24 validates its meaning (every topic once, size bounds). */
 export function parseTopicAreasOutput(output: unknown): TopicAreasOutput {
@@ -196,6 +207,53 @@ export function buildTopicOverviewRepairPrompt(prompt: string, validationErrors:
     "\n\n",
     renderPrompt("topic.overview.repair", { validation_errors: validationErrors })
   );
+}
+
+/** The version of the patch contract stored with a patched overview (with the catalog's revision). */
+export const topicOverviewPatchPromptVersion = "topic-overview-patch-v1";
+
+export interface TopicOverviewPatchPromptInput {
+  /** The library's content language as configured (`pt-BR`); the renderer writes its full name. */
+  contentLanguage: string;
+  topic: { title: string | null; description: string | null };
+  /** The stored paragraphs as stored (they stay byte-identical); their markers cite E1..Ek. */
+  paragraphs: readonly string[];
+  /** The stored citations E1..Ek in citation order: where each comes from and a short excerpt. */
+  cited: ReadonlyArray<{ source: string; excerpt: string }>;
+  /** The new evidence in evidence order (`orderOverviewCandidates`), numbered after the citations. */
+  evidence: readonly TopicOverviewPromptEvidence[];
+  /** New paragraphs asked for at most (`overviewPatchParagraphsMax`). */
+  maxParagraphs: number;
+}
+
+/**
+ * REFRESH's patch prompt (F4 D17): the topic, its stored paragraphs, the citations they make (E1..Ek)
+ * and the new evidence numbered Ek+1.. Every part is content in stored or evidence order; nothing
+ * names an ID.
+ */
+export function buildTopicOverviewPatchPrompt(input: TopicOverviewPatchPromptInput): string {
+  const k = input.cited.length;
+  return renderPrompt("topic.overview.patch", {
+    content_language: input.contentLanguage,
+    max_paragraphs: input.maxParagraphs,
+    topic: {
+      title: input.topic.title,
+      ...(input.topic.description === null ? {} : { description: input.topic.description })
+    },
+    overview_paragraphs: [...input.paragraphs],
+    cited_evidence: input.cited.map((item, index) => ({
+      n: index + 1,
+      source: item.source,
+      excerpt: overviewPatchCitedExcerpt(item.excerpt)
+    })),
+    evidence: input.evidence.map((item, index) => ({
+      n: k + index + 1,
+      title: item.title,
+      idea: item.idea,
+      source: item.source,
+      passage: item.passage
+    }))
+  });
 }
 
 /** The ranker instruction of the support check, rendered from the catalog. */

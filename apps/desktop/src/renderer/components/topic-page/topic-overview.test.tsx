@@ -17,6 +17,7 @@ import {
   overviewView,
   relativeWhen,
   shouldRequestOverview,
+  staleToPatch,
   unmarkedCitations,
   type ReadyOverview
 } from "./topic-overview-model";
@@ -122,6 +123,32 @@ describe("what the overview section shows", () => {
     expect(shouldRequestOverview(after, canceled, true)).toBe(false);
     // The person writes again: the cancel no longer holds.
     expect(overviewRequested(canceled, true).canceled).toBe(false);
+  });
+
+  it("patches a stale overview once on open (F4 D17), never twice for the same writing", () => {
+    const stale = ready({ stale: true });
+    const view = overviewView(stale, null);
+    expect(staleToPatch(view, null)).toBe(true);
+    expect(shouldRequestOverview(view, null, true)).toBe(true);
+    expect(shouldRequestOverview(view, null, false)).toBe(false);
+    // The patch shows as writing over the overview it extends.
+    const patching = overviewRequested(overviewLocal(topicId), false, false, stale.writtenAt);
+    expect(patching.patchedFor).toBe(stale.writtenAt);
+    expect(overviewView(stale, patching)).toEqual({
+      kind: "writing",
+      previous: stale,
+      updating: false
+    });
+    // It came back still stale (nothing to add, or a text the owner restored): asked no more.
+    const answered = overviewAnswered(patching, stale);
+    expect(shouldRequestOverview(overviewView(stale, answered), answered, true)).toBe(false);
+    // A new writing that is stale again is patched again; a canceled slot never asks on its own.
+    const later = ready({ stale: true, writtenAt: "2026-10-16T09:00:00.000Z" });
+    expect(shouldRequestOverview(overviewView(later, answered), answered, true)).toBe(true);
+    const canceled = { ...answered, canceled: true };
+    expect(shouldRequestOverview(overviewView(later, canceled), canceled, true)).toBe(false);
+    // A current overview asks nothing.
+    expect(staleToPatch(overviewView(ready(), null), null)).toBe(false);
   });
 
   it("does not ask when nothing can be written, and joins a writing in progress", () => {
@@ -356,6 +383,19 @@ describe("the overview controller", () => {
     controller.show(topicId, absent(true), false);
     await settle();
     expect(fake.calls).toEqual([]);
+  });
+
+  it("patches a stale overview once on open, and asks no more when it stays stale", async () => {
+    const stale = ready({ stale: true });
+    const { fake } = api([stale]);
+    const controller = new TopicOverviewController({ api: () => fake, now: () => now });
+    controller.show(topicId, stale, true);
+    await settle();
+    // One plain request (no force): the main process patches at P0 or joins REFRESH.
+    expect(fake.calls).toEqual([{ id: topicId }]);
+    controller.show(topicId, stale, true);
+    await settle();
+    expect(fake.calls).toHaveLength(1);
   });
 
   it("writes on open, then waits once for the support verdict", async () => {

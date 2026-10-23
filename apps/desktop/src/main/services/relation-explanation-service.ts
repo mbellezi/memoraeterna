@@ -9,6 +9,8 @@ import {
 import {
   RelationExplainInputSchema,
   RelationExplanationResultSchema,
+  isRelationUnrelated,
+  isRelationVeto,
   relationExplanationLimits,
   relationExplanationSentinel,
   type RelationExplainOutcome,
@@ -68,20 +70,45 @@ interface Running {
   waiters: Map<string | symbol, RelationExplanationListener | null>;
   /** The last text the writer streamed, for a card that joins the request late. */
   text: string | null;
+  /** The backfill's writing (F4 D18): a card joins it, but closing the card never stops it. */
+  background: boolean;
 }
+
+/**
+ * Who an explanation is written for: the owner who opened the relation (P0, streamed) or the
+ * backfill's job (P3, background, through the RemoteBudget; F4 D18).
+ */
+interface ExplanationCall {
+  priority: "P0" | "P3";
+  budgetClass: "interactive" | "background";
+  jobId: string | null;
+}
+
+const openCall: ExplanationCall = { priority: "P0", budgetClass: "interactive", jobId: null };
+
+/**
+ * What the backfill's writing of one relation did: `written` (an explanation is cached now),
+ * `current` (one was cached already, or a card was writing it), `vetoed` (the writer found the notes
+ * unrelated and the relation is withdrawn, for the owner to keep or remove), `unrelated` (the writer
+ * disagreed with a relation that stays), `gone` (nothing to explain: removed or not listed) or
+ * `no_writer`.
+ */
+export type RelationBackfillOutcome =
+  "written" | "current" | "vetoed" | "unrelated" | "gone" | "no_writer";
 
 const unavailableStatuses = new Set(["rejected", "archived"]);
 
 /**
- * Explanations of note relations, written on demand (docs/plan.md decision 16). Only an owner who
- * opens a relation asks for one: nothing here runs in bulk or in the background. The writer route
- * (`text-generation`, never the decision route) writes it at interactive priority and streams it
- * (F3 D22); it is cached on the relation for the inputs it was written from, so opening the relation
- * again reuses it, with no call and no stream, until either note's idea or evidence, the type, the
- * direction, the content language, the prompt revision or the writer model changes. One request per
- * relation runs at a time, and closing the card cancels it: nothing partial is cached. An
- * explanation is a derived annotation: it changes neither note, so human-protected notes are
- * explained like any other.
+ * Explanations of note relations, written when the owner opens a relation (docs/plan.md decision
+ * 16) or by the Gardener's bounded backfill (F4 D18, `relations/relation-explain-backfill.ts`),
+ * one relation per job, at P3 through the RemoteBudget. The writer route (`text-generation`, never
+ * the decision route) writes an opened one at interactive priority and streams it (F3 D22); it is
+ * cached on the relation for the inputs it was written from, so opening the relation again reuses
+ * it, with no call and no stream, until either note's idea or evidence, the type, the direction,
+ * the content language, the prompt revision or the writer model changes. One request per relation
+ * runs at a time, a card joins the backfill's, and closing the card cancels its own: nothing
+ * partial is cached. An explanation is a derived annotation: it changes neither note, so
+ * human-protected notes are explained like any other.
  *
  * A writer that answers the sentinel found the notes unrelated. The verdict is cached under the same
  * key as an explanation (a row whose text is the sentinel), so opening the relation again asks
@@ -118,9 +145,10 @@ export class RelationExplanationService {
       controller,
       waiters: new Map([[waiter, onText ?? null]]),
       text: null,
-      promise: Promise.resolve(null)
+      promise: Promise.resolve(null),
+      background: false
     };
-    run.promise = this.write(relationId, run).finally(() => {
+    run.promise = this.write(relationId, run, openCall).finally(() => {
       if (this.running.get(relationId) === run) this.running.delete(relationId);
     });
     this.running.set(relationId, run);
@@ -130,7 +158,8 @@ export class RelationExplanationService {
   /**
    * Stops the explanation being written for a relation, if any; true when one was stopped. With the
    * ID of a request, only that card stops waiting: the request goes on while another card waits for
-   * it, and a request that is not waiting changes nothing.
+   * it, and a request that is not waiting changes nothing. The backfill's writing is its job's: a
+   * card only stops waiting for it.
    */
   cancel(input: unknown): boolean {
     const { relationId, requestId } = RelationExplainInputSchema.parse(input);
@@ -138,7 +167,12 @@ export class RelationExplanationService {
     if (!current) return false;
     if (requestId !== undefined) {
       if (!current.waiters.delete(requestId)) return false;
-      if (current.waiters.size > 0) return true;
+      if (current.waiters.size > 0 || current.background) return true;
+    }
+    if (current.background) {
+      const waited = current.waiters.size > 0;
+      current.waiters.clear();
+      return waited;
     }
     this.running.delete(relationId);
     current.waiters.clear();
@@ -146,7 +180,68 @@ export class RelationExplanationService {
     return true;
   }
 
-  private async write(relationId: string, run: Running): Promise<RelationExplainOutcome | null> {
+  /**
+   * The backfill of one relation (F4 D18), for its job: at P3, as background work of the job (the
+   * RemoteBudget and the Gardener's gates hold it), never streamed. A card opened meanwhile joins
+   * it; a card's writing in progress is joined instead. A writer that finds the notes unrelated
+   * withdraws the relation exactly as on open, and the withdrawn relation waits in the Inbox for the
+   * owner to keep or remove it. A failed call throws, for the job to retry.
+   */
+  async backfill(
+    relationId: string,
+    options: { jobId: string; signal: AbortSignal }
+  ): Promise<RelationBackfillOutcome> {
+    const current = this.running.get(relationId);
+    if (current) {
+      const joined = await current.promise.then(
+        (value) => ({ ended: true as const, value }),
+        () => ({ ended: false as const })
+      );
+      if (joined.ended) return joined.value === null ? "gone" : "current";
+      // The card's writing stopped (closed or failed) and a new one may have started meanwhile.
+      if (this.running.has(relationId)) return this.backfill(relationId, options);
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort(options.signal.reason);
+    options.signal.addEventListener("abort", abort, { once: true });
+    const run: Running = {
+      controller,
+      waiters: new Map(),
+      text: null,
+      promise: Promise.resolve(null),
+      background: true
+    };
+    const wrote = { value: false };
+    const call: ExplanationCall = {
+      priority: "P3",
+      budgetClass: "background",
+      jobId: options.jobId
+    };
+    run.promise = this.write(relationId, run, call, wrote).finally(() => {
+      options.signal.removeEventListener("abort", abort);
+      if (this.running.get(relationId) === run) this.running.delete(relationId);
+    });
+    this.running.set(relationId, run);
+    let result: RelationExplainOutcome | null;
+    try {
+      result = await run.promise;
+    } catch (error) {
+      if (error instanceof Error && error.message === "errors.ai.noCompatibleModel")
+        return "no_writer";
+      throw error;
+    }
+    if (result === null) return "gone";
+    if (isRelationVeto(result)) return "vetoed";
+    if (isRelationUnrelated(result)) return "unrelated";
+    return wrote.value ? "written" : "current";
+  }
+
+  private async write(
+    relationId: string,
+    run: Running,
+    call: ExplanationCall,
+    wrote: { value: boolean } = { value: false }
+  ): Promise<RelationExplainOutcome | null> {
     const signal = run.controller.signal;
     const pool = this.options.getPool();
     if (!pool) throw new Error("objects.errors.unavailable");
@@ -185,11 +280,12 @@ export class RelationExplanationService {
       }
     });
     const logContext = {
-      stage: "relation_explanation",
+      stage: run.background ? "relation_explanation_backfill" : "relation_explanation",
       operation: relationExplanationOperation,
       workloadClass: "write-fast" as const,
-      priority: "P0" as const,
-      budgetClass: "interactive" as const,
+      priority: call.priority,
+      budgetClass: call.budgetClass,
+      ...(call.jobId ? { jobId: call.jobId } : {}),
       contentLanguage,
       promptVersion: relationExplanationPromptVersion,
       // Only sources that still exist: a knowledge note outlives its home source, and the audit of
@@ -231,12 +327,12 @@ export class RelationExplanationService {
       if (text !== null) coalescer.update(text);
     };
     try {
-      // The first call streams its text; the repair does not (the text it writes replaces the
-      // streamed one when the final text is returned).
+      // The first call streams its text to the cards (the backfill's streams to none); the repair
+      // does not (the text it writes replaces the streamed one when the final text is returned).
       let execution = await this.options.ai.runDefaultTask(
         "text-generation",
         prompt,
-        { ...logContext, onTextDelta },
+        { ...logContext, ...(run.background ? {} : { onTextDelta }) },
         deadline.signal,
         limits
       );
@@ -279,6 +375,7 @@ export class RelationExplanationService {
           text: relationExplanationSentinel,
           ...provenance
         });
+        wrote.value = verdict !== null;
         return verdict ? await this.settle(pool, context) : null;
       }
       const saved = await repository.save({
@@ -287,6 +384,7 @@ export class RelationExplanationService {
         ...provenance
       });
       if (!saved) return null;
+      wrote.value = true;
       return RelationExplanationResultSchema.parse({
         relationId,
         text: resolved,

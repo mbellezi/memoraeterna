@@ -63,7 +63,10 @@ const producers = [
   "apps/desktop/src/main/services/relations/relation-link.ts",
   "apps/desktop/src/main/services/relations/relation-match.ts",
   "apps/desktop/src/main/services/relations/composite-backfill.ts",
-  "apps/desktop/src/main/services/catalog-header-refresh.ts"
+  "apps/desktop/src/main/services/catalog-header-refresh.ts",
+  // REFRESH and the explanation backfill (T84); their computed statuses are checked in their tests.
+  "apps/desktop/src/main/services/topic-tree/topic-overview-job.ts",
+  "apps/desktop/src/main/services/relations/relation-explain-backfill.ts"
 ];
 
 /**

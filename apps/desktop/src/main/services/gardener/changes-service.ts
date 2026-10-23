@@ -59,6 +59,11 @@ export interface ChangesServiceOptions {
   relationsChanged?: (noteIds: string[]) => void;
   /** After an overview was restored or a proposal applied: its topic. */
   overviewChanged?: (topicId: string) => void;
+  /**
+   * A proposal the owner applied was made on a version written again since: REFRESH proposes it
+   * again on the version of now (F4 D17).
+   */
+  overviewMoved?: (topicId: string) => void;
   /** After any change-set changed status (Activity and Inbox read again). */
   changed?: (ref: ChangeSetRef) => void;
 }
@@ -340,6 +345,8 @@ export class ChangesService {
       case "dismissed":
         return { status: "dismissed" };
       case "moved":
+        if (summary.subjectId) this.options.overviewMoved?.(summary.subjectId);
+        return { status: "stale" };
       case "retired":
         return { status: "stale" };
       case "not_pending":

@@ -1,5 +1,10 @@
 import { aiConfigGeneration, createJobRepository } from "@app/db";
-import { backgroundBlockerOf, defaultRemoteBudgetConfig } from "@app/domain";
+import {
+  backgroundBlockerOf,
+  defaultKnowledgeControls,
+  defaultRemoteBudgetConfig,
+  relationExplainBackfillConfig
+} from "@app/domain";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import {
@@ -99,6 +104,11 @@ import {
 import { createNoteMatchRequests } from "./services/relations/relation-match.js";
 import { RelationMatchBacklog } from "./services/relations/relation-match-backlog.js";
 import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
+import {
+  explainBackfillExecutor,
+  relationExplainBackfillJobType,
+  scheduleExplainBackfillPass
+} from "./services/relations/relation-explain-backfill.js";
 import {
   navigationDirectionFromAppCommand,
   navigationDirectionFromInput,
@@ -479,7 +489,12 @@ void app.whenReady().then(() => {
     noteMatching: createNoteMatchRequests({
       getPool: () => databaseService?.getPool() ?? null,
       isRegistered: (type) => jobSupervisor?.supportsJobType(type) === true
-    })
+    }),
+    // F4 T84: REFRESH applies or proposes under the Knowledge controls' autonomy (D12).
+    autonomy: async () =>
+      backgroundPolicy
+        ? (await backgroundPolicy.controls.get()).autonomy
+        : defaultKnowledgeControls.autonomy
   });
   // `topicsChanged` stays until F5; the bus carries the same committed, coalesced change as `tree.changed`.
   topicTreeServices.changes.subscribe((change) =>
@@ -577,6 +592,8 @@ void app.whenReady().then(() => {
       getPool: () => databaseService?.getPool() ?? null,
       topics: () => topicTreeServices?.service ?? null,
       relationsChanged: announceRelationsChanged,
+      // F4 D17: a proposal applied on a moved version is proposed again by REFRESH.
+      overviewMoved: (topicId) => void topicTreeServices?.overviewRefresh?.requestTopic(topicId),
       // After an undo or a review committed: Activity, the Inbox and an open topic page read again.
       ...changeSetEventHooks(events)
     })
@@ -676,6 +693,12 @@ void app.whenReady().then(() => {
       // F4 D10: the daily retention pass over change-sets and finished jobs.
       [gardenerRetentionJobType]: retentionJobExecutor({
         getPool: () => databaseService?.getPool() ?? null
+      }),
+      // F4 D18 (T84): the explanation backfill of recently opened notes, on the `relations` worker.
+      [relationExplainBackfillJobType]: explainBackfillExecutor({
+        getPool: () => databaseService?.getPool() ?? null,
+        backfill: (relationId, options) => relationExplanationService.backfill(relationId, options),
+        wake: () => jobSupervisor?.wake("light")
       })
     },
     topicHooks: topicTreeServices.hooks,
@@ -944,6 +967,16 @@ void app.whenReady().then(() => {
             createJobRepository(databaseService!.getPool()!),
             retentionStartDelayMs
           ).catch((error: unknown) => console.error("Retention could not be scheduled", error));
+        }
+        // F4 D18: the explanation backfill's pass, a while after the start, then daily. Golden runs
+        // and AI cassettes replay what they recorded and never queue it.
+        if (!libraryQuiet && !process.env.MEMORA_GOLDEN_RUN && aiCassette === null) {
+          await scheduleExplainBackfillPass(
+            createJobRepository(databaseService!.getPool()!),
+            relationExplainBackfillConfig.startDelayMs
+          ).catch((error: unknown) =>
+            console.error("The explanation backfill could not be scheduled", error)
+          );
         }
         // DEV fake remote providers (MEMORA_FAKE_REMOTE, F3 T62): listening, and the routes that lead
         // to them in place, before any job can make a call.

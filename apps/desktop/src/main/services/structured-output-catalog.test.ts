@@ -3,6 +3,7 @@ import {
   AtomicNoteGenerationOutputSchema,
   KnowledgeGraphGenerationOutputSchema,
   TopicOverviewOutputSchema,
+  TopicOverviewPatchOutputSchema,
   analyzeStrictJsonSchema,
   outputSchemaForContract,
   relationTypingOutputSchema
@@ -13,7 +14,8 @@ import { relationMatchOutputSchema } from "./relation-type-resolution.js";
 import {
   topicAreasOutputContract,
   topicNamingOutputContract,
-  topicOverviewOutputContract
+  topicOverviewOutputContract,
+  topicOverviewPatchOutputContract
 } from "./topic-tree/topic-prompts.js";
 
 /**
@@ -63,6 +65,12 @@ const catalog: Array<{
     outcome: "strict"
   },
   {
+    id: "topic overview patch (REFRESH, F4 D17)",
+    prompts: "topic.overview.patch (repaired by topic.overview.repair)",
+    contract: TopicOverviewPatchOutputSchema,
+    outcome: "strict"
+  },
+  {
     id: "relation typing",
     prompts: "relations.type (and its re-ask)",
     contract: relationTypingOutputSchema(),
@@ -94,6 +102,10 @@ describe("the contracts the topic tree states", () => {
     });
     expect(outputSchemaForContract(topicAreasOutputContract)).toMatchObject({
       name: "topic_areas",
+      strict: true
+    });
+    expect(outputSchemaForContract(topicOverviewPatchOutputContract)).toMatchObject({
+      name: "topic_overview_patch",
       strict: true
     });
     expect(outputSchemaForContract(topicNamingOutputContract)).toBeNull();

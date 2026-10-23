@@ -57,11 +57,12 @@ import {
   parseTopicAreasOutput
 } from "./topic-tree/topic-prompts.js";
 import {
+  buildTopicOverviewPatchPrompt,
   buildTopicOverviewPrompt,
   buildTopicOverviewRepairPrompt,
   parseTopicOverviewOutput
 } from "./topic-tree/topic-prompts.js";
-import { validateOverviewOutput } from "@app/domain";
+import { validateOverviewOutput, validateOverviewPatch } from "@app/domain";
 import { withPromptPin, renderPrompt, joinPrompts, promptFingerprint } from "./prompt-runtime.js";
 import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -498,6 +499,38 @@ export function promptSampleCall(
         validate: (o) => {
           if (!validateOverviewOutput(parseTopicOverviewOutput(o), evidence.length).ok)
             throw new Error("prompts.errors.sample");
+        }
+      };
+    }
+    if (promptId === "topic.overview.patch") {
+      // REFRESH's patch (F4 D17): one stored paragraph citing E1, the chunks as new evidence E2...
+      const [first, ...rest] = chunks;
+      const evidence = (rest.length > 0 ? rest : chunks).map((chunk, index) => ({
+        title: `Recall finding ${index + 2}`,
+        idea: chunk.content,
+        source: source.title,
+        passage: chunk.content
+      }));
+      return {
+        input: buildTopicOverviewPatchPrompt({
+          contentLanguage: "en",
+          topic: {
+            title: "Retrieval practice",
+            description: "How recalling material changes memory."
+          },
+          paragraphs: ["Retrieval with feedback improved later recall [1]."],
+          cited: [{ source: source.title, excerpt: first?.content ?? source.title }],
+          evidence,
+          maxParagraphs: 3
+        }),
+        task: "structured-output",
+        validate: (o) => {
+          const patch = validateOverviewPatch(parseTopicOverviewOutput(o), {
+            existingCitations: 1,
+            newEvidence: evidence.length,
+            maxParagraphs: 3
+          });
+          if (!patch.ok) throw new Error("prompts.errors.sample");
         }
       };
     }

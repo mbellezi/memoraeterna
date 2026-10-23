@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createJobRepository,
   createLibraryResetRepository,
   createObjectLocateRepository,
   createPgPool,
+  createTopicOverviewRepository,
   createTopicTreeRepository,
   noteVectorStrategyPrefix,
   PostgresSidecarManager,
@@ -20,7 +22,14 @@ import {
   type PostgresSidecarConnection,
   type TopicLoadSpace
 } from "@app/db";
-import { overviewEvidenceTokens, topicOverviewLimits, type TopicOverviewState } from "@app/domain";
+import {
+  TopicOverviewRefreshConfigSchema,
+  overviewEvidenceTokens,
+  topicOverviewLimits,
+  topicReadLimits,
+  type GardenerAutonomy,
+  type TopicOverviewState
+} from "@app/domain";
 import {
   createRng,
   createTopicTreeEditor,
@@ -39,7 +48,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices, TopicTreeServicesOptions } from "./index.js";
 import { ItemVectorStore } from "./topic-cache.js";
+import { ChangesService } from "../gardener/changes-service.js";
 import { TopicOverviewService, topicOverviewSupportOperation } from "./topic-overview.js";
+import { TopicOverviewRefresh, topicOverviewJobType } from "./topic-overview-job.js";
 
 /**
  * The lazy overview against the real schema on a throwaway PostgreSQL sidecar, with a fake writer
@@ -76,21 +87,45 @@ interface WriterCall {
   input: string;
   context: Record<string, unknown>;
   evidence: Evidence[];
+  /** A REFRESH patch prompt (F4 D17): `evidence` is its new evidence, numbered after the citations. */
+  patch: boolean;
 }
 type Writer = (call: WriterCall, attempt: number) => unknown;
 interface RankCall {
-  input: { query: string; documents: string[]; priority?: string; operation: string };
+  input: {
+    query: string;
+    documents: string[];
+    priority?: string;
+    budgetClass?: string;
+    jobId?: string;
+    operation: string;
+  };
 }
 
-/** The evidence a prompt carries: the JSON after "Evidence:" up to a repair block. */
+/** The evidence a prompt carries: the JSON after "Evidence:" (a patch: "New evidence:") up to a repair block. */
 function evidenceOf(input: string): Evidence[] {
-  const body = input.slice(input.lastIndexOf("\nEvidence:\n") + "\nEvidence:\n".length);
+  const marker = input.includes("\nNew evidence:\n") ? "\nNew evidence:\n" : "\nEvidence:\n";
+  const body = input.slice(input.lastIndexOf(marker) + marker.length);
   const end = body.indexOf("\n\n");
   return JSON.parse(end < 0 ? body : body.slice(0, end)) as Evidence[];
 }
 
+/** The audit's lane priority of a stated priority (`P0` is 0); null when none was stated. */
+function priorityOf(priority: unknown): number | null {
+  const match = typeof priority === "string" ? /^P([0-3])$/u.exec(priority) : null;
+  return match ? Number(match[1]) : null;
+}
+
+/** The default patch: one paragraph whose sentences each cite one new item. */
+const patchInOrder: Writer = ({ evidence }) => ({
+  paragraphs: [evidence.map((item) => `${item.title} matters here [${item.n}].`).join(" ")],
+  divergences: []
+});
+
 /** The default writer: a paragraph per two evidence items, each sentence citing its own item. */
-const citeInOrder: Writer = ({ evidence }) => {
+const citeInOrder: Writer = (call, attempt) => {
+  if (call.patch) return patchInOrder(call, attempt);
+  const { evidence } = call;
   const paragraphs = [];
   for (let index = 0; index < Math.min(evidence.length, 4); index += 2) {
     const items = evidence.slice(index, index + 2);
@@ -179,7 +214,12 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
         ) => {
           if (task !== "structured-output") throw new Error(`unexpected task ${task}`);
           if (!ai.writer) return null;
-          const call: WriterCall = { input, context, evidence: evidenceOf(input) };
+          const call: WriterCall = {
+            input,
+            context,
+            evidence: evidenceOf(input),
+            patch: input.includes("\nNew evidence:\n")
+          };
           writes.push(call);
           if (gate.current) {
             const pending = gate.current;
@@ -188,10 +228,13 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
               void pending.then(done);
             });
           }
+          // The audit row records the lane priority the call stated, as the AI service does.
           const run = await pool.query<{ id: string }>(
-            `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status)
-             values ('structured-output', 'fixture', 'fixture-writer', 'remote', 1, 'succeeded')
-             returning id`
+            `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status,
+               priority)
+             values ('structured-output', 'fixture', 'fixture-writer', 'remote', 1, 'succeeded', $1)
+             returning id`,
+            [priorityOf(context.priority)]
           );
           return {
             taskType: "structured-output" as const,
@@ -215,12 +258,19 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
         const scores = input.documents.map((document) =>
           document.toLowerCase().includes(subject) ? 0.92 : 0.08
         );
+        const run = await pool.query<{ id: string }>(
+          `insert into ai_task_runs (task_type, provider, model_id, runtime, duration_ms, status,
+             priority)
+           values ('reranking', 'local', 'fixture-ranker', 'mlx', 1, 'succeeded', $1)
+           returning id`,
+          [priorityOf(input.priority)]
+        );
         return {
           logOdds: scores.map((score) => Math.log(score / (1 - score))),
           scores,
           tokenCounts: input.documents.map(() => 40),
           truncated: input.documents.map(() => false),
-          aiTaskRunId: randomUUID(),
+          aiTaskRunId: run.rows[0]!.id,
           profileId: randomUUID(),
           localModelId: randomUUID(),
           provider: "local",
@@ -494,7 +544,7 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
     }
   }, 60_000);
 
-  it("makes no call when the page is opened again, and marks a member change stale with Update", async () => {
+  it("makes no call when the page is opened again; a member change is stale and patched on open", async () => {
     const w = await world();
     try {
       ready(await w.overview.overview({ id: w.topics.A1 }));
@@ -521,14 +571,28 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       expect(stale.paragraphs).toEqual(reopened.paragraphs);
       expect(ready(await w.overview.state(w.topics.A)).stale).toBe(false);
       const before = w.writes.length;
-      // Opening again shows the stale overview without writing; Update writes a new one.
-      expect(ready(await w.overview.overview({ id: w.topics.A1 })).stale).toBe(true);
-      expect(w.writes.length).toBe(before);
-      const updated = ready(await w.overview.overview({ id: w.topics.A1, force: true }));
+      // Opening it again patches it at P0 (F4 D17): the new note is the only new evidence, the
+      // stored paragraphs stay as they are and the new one cites the next citation number.
+      const patched = ready(await w.overview.overview({ id: w.topics.A1 }));
       expect(w.writes.length).toBe(before + 1);
+      const patch = w.writes.at(-1)!;
+      expect(patch.patch).toBe(true);
+      expect(patch.context).toMatchObject({ priority: "P0", budgetClass: "interactive" });
+      expect(patch.evidence.map((item) => item.n)).toEqual([reopened.citations.length + 1]);
+      expect(patch.evidence[0]!.title).toBe(leafTitles.A2[0]);
+      expect(patched.stale).toBe(false);
+      expect(patched.paragraphs.slice(0, reopened.paragraphs.length)).toEqual(reopened.paragraphs);
+      expect(patched.paragraphs).toHaveLength(reopened.paragraphs.length + 1);
+      expect(patched.citations.map((citation) => citation.n)).toEqual([1, 2, 3, 4, 5]);
+      expect(patched.evidence).toEqual({ used: 5, total: 5 });
+      await w.overview.settled(w.topics.A1);
+      // Update writes a new one from all the evidence.
+      const updated = ready(await w.overview.overview({ id: w.topics.A1, force: true }));
+      expect(w.writes.length).toBe(before + 2);
+      expect(w.writes.at(-1)!.patch).toBe(false);
       expect(updated.stale).toBe(false);
       expect(updated.evidence.total).toBe(5);
-      expect(Date.parse(updated.writtenAt)).toBeGreaterThan(Date.parse(reopened.writtenAt));
+      expect(Date.parse(updated.writtenAt)).toBeGreaterThan(Date.parse(patched.writtenAt));
     } finally {
       w.dispose();
     }
@@ -708,6 +772,442 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       expect(gone.available).toBe(false);
       expect(gone.chunkId).toBeUndefined();
       expect(gone.excerpt).toBe(cited.excerpt);
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  // ----- REFRESH (F4 D17, T84)
+
+  /** REFRESH with no debounce, so a request is due at once. */
+  const refreshConfig = TopicOverviewRefreshConfigSchema.parse({ debounceMs: 0, debounceMaxMs: 0 });
+
+  function refresher(w: World, autonomy: { value: GardenerAutonomy } = { value: "auto" }) {
+    return new TopicOverviewRefresh({
+      getPool: () => pool,
+      overview: w.overview,
+      autonomy: async () => autonomy.value,
+      aiMode: "full",
+      config: refreshConfig,
+      logger: quiet
+    });
+  }
+
+  /** Claims the next REFRESH job like the model worker and runs it; finishes its row. */
+  async function runRefresh(refresh: TopicOverviewRefresh) {
+    const jobs = createJobRepository(pool);
+    const job = await jobs.claimNext("test-model-worker", [topicOverviewJobType], "light");
+    if (!job) throw new Error("no REFRESH job was due");
+    const executor = refresh.executor();
+    const signal = new AbortController().signal;
+    const fingerprint = await executor.fingerprint!(job, signal);
+    const result = await executor.execute(job, signal);
+    await jobs.update(job.id, { status: "succeeded", result, finishedAt: new Date() });
+    return { job, fingerprint, result };
+  }
+
+  async function treeIdOf(w: World): Promise<string> {
+    return (
+      await pool.query<{ id: string }>("select tree_id as id from topics where id = $1", [w.rootId])
+    ).rows[0]!.id;
+  }
+
+  async function moveNote(w: World, noteId: string, topicId: string): Promise<void> {
+    await w.services.service.mutate({
+      op: "placeItem",
+      item: { kind: "note", id: noteId },
+      topicId,
+      role: "primary"
+    });
+  }
+
+  async function versions(topicId: string) {
+    return (
+      await pool.query<{
+        id: string;
+        origin: string;
+        status: string;
+        risk: string;
+        baseVersion: number;
+        version: number | null;
+        jobId: string | null;
+      }>(
+        `select id, origin, status, risk, base_version as "baseVersion", version, job_id as "jobId"
+           from topic_overview_versions where topic_id = $1 order by created_at, id`,
+        [topicId]
+      )
+    ).rows;
+  }
+
+  const p0Runs = async () =>
+    Number(
+      (await pool.query<{ n: string }>("select count(*) as n from ai_task_runs where priority = 0"))
+        .rows[0]!.n
+    );
+
+  it("REFRESH: a placement change requests the stale overviews on its paths, once each", async () => {
+    const w = await world();
+    try {
+      ready(await w.overview.overview({ id: w.topics.A1 }));
+      ready(await w.overview.overview({ id: w.topics.A }));
+      await w.overview.settled(w.topics.A1);
+      await w.overview.settled(w.topics.A);
+      await pool.query(
+        `insert into view_history (kind, object_id, address, title, open_count)
+         values ('topic', $1::uuid, 'memora://topic/' || $1::text, 'Retrieval', 3)`,
+        [w.topics.A1]
+      );
+      // The factory's REFRESH hears the committed change (the placement hook).
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      w.services.changes.flush();
+      await w.services.overviewRefresh!.settled();
+      const queued = await pool.query<{
+        dedupeKey: string;
+        priority: number;
+        scopeKey: string;
+        subjectKey: string;
+        payload: { topicId: string };
+      }>(
+        `select dedupe_key as "dedupeKey", priority, scope_key as "scopeKey",
+                subject_key as "subjectKey", payload
+           from jobs where type = 'topic-overview' and status = 'queued'`
+      );
+      // A's members are the same notes (one moved inside it): only A1 is stale.
+      expect(queued.rows).toEqual([
+        {
+          dedupeKey: `topic-overview:${w.topics.A1}`,
+          priority: expect.any(Number),
+          scopeKey: `topic:${w.topics.A1}`,
+          subjectKey: `topic:${w.topics.A1}`,
+          payload: { topicId: w.topics.A1 }
+        }
+      ]);
+      const priority = queued.rows[0]!.priority;
+      expect(priority).toBeGreaterThanOrEqual(refreshConfig.priorityMin);
+      expect(priority).toBeLessThanOrEqual(refreshConfig.priorityMax);
+      expect(priority).toBeGreaterThan(refreshConfig.priorityMin);
+      // A second request joins the queued job; a topic with no overview, never opened, is not asked.
+      expect(await refresher(w).request(await treeIdOf(w), [w.topics.A1, w.topics.A2])).toBe(1);
+      expect((await pool.query("select 1 from jobs where type = 'topic-overview'")).rowCount).toBe(
+        1
+      );
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH patches at P3: the old text byte-identical, numbering continued, a version, undo", async () => {
+    const w = await world();
+    try {
+      const written = ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      const storedBefore = (
+        await pool.query<{ text: string }>(
+          "select paragraphs::text as text from topic_overviews where topic_id = $1",
+          [w.topics.A1]
+        )
+      ).rows[0]!.text;
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      const refresh = refresher(w);
+      const before = await refresh.executor().fingerprint!(
+        { payload: { topicId: w.topics.A1 } } as never,
+        new AbortController().signal
+      );
+      expect(await refresh.request(await treeIdOf(w), [w.topics.A1])).toBe(1);
+      const runsBefore = await p0Runs();
+      const writes = w.writes.length;
+      const ranks = w.ranks.length;
+      const { job, fingerprint, result } = await runRefresh(refresh);
+      expect(fingerprint).toBe(before);
+      expect(result).toMatchObject({
+        status: "applied",
+        origin: "patch",
+        paragraphs: 1,
+        divergences: 0,
+        evidence: 1,
+        version: 2,
+        risk: "low"
+      });
+      // One writer call at P3, background, for this job; the support check of the new sentence only.
+      expect(w.writes.slice(writes)).toHaveLength(1);
+      expect(w.writes.at(-1)!.context).toMatchObject({
+        stage: "topic_overview_patch",
+        priority: "P3",
+        budgetClass: "background",
+        jobId: job.id
+      });
+      const checked = w.ranks.slice(ranks);
+      expect(checked).toHaveLength(1);
+      expect(checked[0]!.input).toMatchObject({
+        priority: "P3",
+        budgetClass: "background",
+        jobId: job.id
+      });
+      // No REFRESH run records a P0 row (M7).
+      expect(await p0Runs()).toBe(runsBefore);
+
+      const patched = ready(await w.overview.state(w.topics.A1));
+      expect(patched.stale).toBe(false);
+      expect(patched.paragraphs.slice(0, written.paragraphs.length)).toEqual(written.paragraphs);
+      expect(patched.paragraphs.at(-1)!.text).toBe(`${leafTitles.A2[0]} matters here [5].`);
+      expect(patched.citations.map((citation) => citation.n)).toEqual([1, 2, 3, 4, 5]);
+      expect(patched.citations.at(-1)!.noteId).toBe(w.notes.A2[0]);
+      expect(patched.support).toEqual({
+        status: "verified",
+        unsupported: [],
+        sentences: { checked: 5, supported: 5 }
+      });
+      const storedAfter = (
+        await pool.query<{ text: string }>(
+          "select (paragraphs - (jsonb_array_length(paragraphs) - 1))::text as text from topic_overviews where topic_id = $1",
+          [w.topics.A1]
+        )
+      ).rows[0]!.text;
+      expect(storedAfter).toBe(storedBefore);
+      const [version] = await versions(w.topics.A1);
+      expect(version).toMatchObject({
+        origin: "patch",
+        status: "applied",
+        risk: "low",
+        baseVersion: 1,
+        version: 2,
+        jobId: job.id
+      });
+
+      // Undo restores the text it replaced; an open does not patch the restored text again, and
+      // the input reads as the one REFRESH already handled (its outcome cache skips it).
+      const undone = await createTopicOverviewRepository(pool).undoVersion(version!.id);
+      expect(undone).toMatchObject({ kind: "undone", version: 3 });
+      const calls = w.writes.length;
+      const restored = ready(await w.overview.overview({ id: w.topics.A1 }));
+      expect(w.writes.length).toBe(calls);
+      expect(restored.stale).toBe(true);
+      expect(restored.paragraphs).toEqual(written.paragraphs);
+      expect(
+        await refresh.executor().fingerprint!(
+          { payload: { topicId: w.topics.A1 } } as never,
+          new AbortController().signal
+        )
+      ).toBe(before);
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH keeps a Divergence beside the prose at medium risk and never rewrites it", async () => {
+    const w = await world();
+    try {
+      const written = ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      w.setWriter((call, attempt) =>
+        call.patch
+          ? {
+              paragraphs: [`${call.evidence[0]!.title} matters here [${call.evidence[0]!.n}].`],
+              divergences: [
+                { existing: "E1", new: `E${call.evidence[0]!.n}`, summary: "Sleep disagrees." }
+              ]
+            }
+          : citeInOrder(call, attempt)
+      );
+      const refresh = refresher(w);
+      await refresh.request(await treeIdOf(w), [w.topics.A1]);
+      const { result } = await runRefresh(refresh);
+      expect(result).toMatchObject({ status: "applied", divergences: 1, risk: "medium" });
+      const stored = (await createTopicOverviewRepository(pool).readContext(w.topics.A1))!.stored!;
+      expect(stored.divergences).toEqual([
+        { existing: "E1", new: "E5", summary: "Sleep disagrees." }
+      ]);
+      expect(stored.paragraphs.slice(0, written.paragraphs.length)).toEqual(written.paragraphs);
+      expect((await versions(w.topics.A1))[0]).toMatchObject({ origin: "patch", risk: "medium" });
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH under Suggest proposes one patch per topic; a proposal on a moved base is proposed again", async () => {
+    const w = await world();
+    const autonomy: { value: GardenerAutonomy } = { value: "suggest" };
+    try {
+      const written = ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      const refresh = refresher(w, autonomy);
+      const treeId = await treeIdOf(w);
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      await refresh.request(treeId, [w.topics.A1]);
+      expect((await runRefresh(refresh)).result).toMatchObject({
+        status: "pending_review",
+        origin: "patch"
+      });
+      // Nothing is written: the page still shows the stored text, stale.
+      const state = ready(await w.overview.state(w.topics.A1));
+      expect(state.paragraphs).toEqual(written.paragraphs);
+      expect(state.stale).toBe(true);
+      await moveNote(w, w.notes.A2[1]!, w.topics.A1);
+      await refresh.request(treeId, [w.topics.A1]);
+      expect((await runRefresh(refresh)).result).toMatchObject({ status: "pending_review" });
+      const pending = (await versions(w.topics.A1)).filter(
+        (row) => row.status === "pending_review"
+      );
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({ origin: "patch", baseVersion: 1 });
+
+      // The page opens it meanwhile and patches it at P0: the proposal's base moved.
+      ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      const changes = new ChangesService({
+        getPool: () => pool,
+        overviewMoved: (topicId) => void refresh.requestTopic(topicId)
+      });
+      expect(
+        await changes.review({ kind: "overview", id: pending[0]!.id, verdict: "apply" })
+      ).toEqual({ status: "stale" });
+      await new Promise((done) => setTimeout(done, 50));
+      // Proposed again on the version of now: the P0 patch already covers it, so nothing waits.
+      expect((await runRefresh(refresh)).result).toMatchObject({ status: "current" });
+      expect(
+        (await versions(w.topics.A1)).filter((row) => row.status === "pending_review")
+      ).toEqual([]);
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH and a page open join one writing; the page's Cancel never stops it", async () => {
+    const w = await world();
+    try {
+      ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      const refresh = refresher(w);
+      await refresh.request(await treeIdOf(w), [w.topics.A1]);
+      let release!: () => void;
+      w.gate.current = new Promise<void>((done) => {
+        release = done;
+      });
+      const writes = w.writes.length;
+      const job = runRefresh(refresh);
+      while (w.writes.length === writes) await new Promise((done) => setTimeout(done, 5));
+      expect(await w.overview.state(w.topics.A1)).toEqual({ status: "writing" });
+      const page = w.overview.overview({ id: w.topics.A1 });
+      expect(w.overview.cancel({ id: w.topics.A1 })).toBe(false);
+      release();
+      w.gate.current = null;
+      expect((await job).result).toMatchObject({ status: "applied" });
+      const joined = ready(await page);
+      expect(joined.citations).toHaveLength(5);
+      expect(w.writes.length).toBe(writes + 1);
+
+      // A P0 open patches first: the REFRESH queued after it finds the overview current.
+      await moveNote(w, w.notes.A2[1]!, w.topics.A1);
+      await refresh.request(await treeIdOf(w), [w.topics.A1]);
+      const opened = ready(await w.overview.overview({ id: w.topics.A1 }));
+      expect(opened.citations).toHaveLength(6);
+      expect(w.writes.at(-1)!.context).toMatchObject({ priority: "P0" });
+      const calls = w.writes.length;
+      expect((await runRefresh(refresh)).result).toMatchObject({ status: "current" });
+      expect(w.writes.length).toBe(calls);
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH marks an overview with nothing new current without a call", async () => {
+    const w = await world();
+    try {
+      const written = ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      // A note leaves A1: its members changed, no new evidence came.
+      await moveNote(w, w.notes.A1[0]!, w.topics.A2);
+      expect(ready(await w.overview.state(w.topics.A1)).stale).toBe(true);
+      const refresh = refresher(w);
+      await refresh.request(await treeIdOf(w), [w.topics.A1]);
+      const calls = w.writes.length;
+      expect((await runRefresh(refresh)).result).toMatchObject({
+        status: "no_change",
+        origin: "patch",
+        evidence: 0
+      });
+      expect(w.writes.length).toBe(calls);
+      const after = ready(await w.overview.state(w.topics.A1));
+      expect(after.stale).toBe(false);
+      expect(after.paragraphs).toEqual(written.paragraphs);
+      expect(after.writtenAt).toBe(written.writtenAt);
+      expect(await versions(w.topics.A1)).toEqual([]);
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
+  it("REFRESH proposes a rewrite of a full topic, writes a first overview of an opened one, else waits", async () => {
+    const w = await world();
+    try {
+      const refresh = refresher(w);
+      const treeId = await treeIdOf(w);
+      // A2 has no overview and was never opened: not REFRESH's.
+      expect(await refresh.request(treeId, [w.topics.A2])).toBe(0);
+      await refresh.requestTopic(w.topics.A2);
+      expect((await runRefresh(refresh)).result).toMatchObject({ status: "not_due" });
+      // Opened lately: its first overview is written in the background.
+      await pool.query(
+        `insert into view_history (kind, object_id, address, title)
+         values ('topic', $1::uuid, 'memora://topic/' || $1::text, 'Sleep')`,
+        [w.topics.A2]
+      );
+      expect(await refresh.request(treeId, [w.topics.A2])).toBe(1);
+      expect((await runRefresh(refresh)).result).toMatchObject({
+        status: "applied",
+        origin: "write",
+        changeSetId: null
+      });
+      expect(ready(await w.overview.state(w.topics.A2)).paragraphs.length).toBeGreaterThan(0);
+
+      // A full topic (the most paragraphs) is never patched: a rewrite is proposed, high risk.
+      const overviews = createTopicOverviewRepository(pool);
+      const full = (await overviews.readContext(w.topics.B1))!;
+      const evidence = await overviews.readEvidence(full.topic, { perTopic: 16, candidates: 16 });
+      await overviews.write({
+        topicId: w.topics.B1,
+        paragraphs: Array.from({ length: topicReadLimits.overviewParagraphsMax }, (_, n) => ({
+          text: `Paragraph ${n + 1} [1].`,
+          citations: [1]
+        })),
+        evidence: [],
+        memberFingerprint: "members-before",
+        memberCount: 3,
+        inputHash: "input",
+        promptRevisionId: "prompt",
+        provider: "fixture",
+        model: "fixture-writer",
+        runtime: "remote",
+        aiTaskRunId: null,
+        language: "en",
+        support: { status: "unchecked", unsupported: [] },
+        citations: [
+          {
+            n: 1,
+            chunkId: evidence[0]!.chunkId,
+            sourceSpanId: evidence[0]!.sourceSpanId,
+            noteId: evidence[0]!.noteId,
+            excerpt: "Excerpt.",
+            excerptHash: sha("Excerpt.")
+          }
+        ]
+      });
+      await refresh.request(treeId, [w.topics.B1]);
+      expect((await runRefresh(refresh)).result).toMatchObject({
+        status: "pending_review",
+        origin: "rewrite",
+        risk: "high"
+      });
+      expect(ready(await w.overview.state(w.topics.B1)).paragraphs).toHaveLength(
+        topicReadLimits.overviewParagraphsMax
+      );
+      expect((await versions(w.topics.B1)).at(-1)).toMatchObject({
+        origin: "rewrite",
+        status: "pending_review",
+        risk: "high"
+      });
     } finally {
       w.dispose();
     }

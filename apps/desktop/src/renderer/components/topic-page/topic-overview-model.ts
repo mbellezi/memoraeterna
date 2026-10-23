@@ -35,6 +35,11 @@ export interface OverviewLocal {
   canceled: boolean;
   /** The writing whose support verdict was already awaited (no second wait for it). */
   awaitedCheck: string | null;
+  /**
+   * The stale writing a patch was asked for on open (F4 D17), once: one that stays stale (nothing
+   * could be added, or the owner restored it) is shown with Update, never asked about again.
+   */
+  patchedFor: string | null;
 }
 
 /** What the section shows. */
@@ -46,19 +51,31 @@ export type OverviewView =
 
 /** The slot's state for a topic it has not asked about yet. */
 export function overviewLocal(topicId: string): OverviewLocal {
-  return { topicId, request: null, lastReady: null, canceled: false, awaitedCheck: null };
+  return {
+    topicId,
+    request: null,
+    lastReady: null,
+    canceled: false,
+    awaitedCheck: null,
+    patchedFor: null
+  };
 }
 
-/** A request starts; an Update (`force`) clears an earlier cancel. */
+/**
+ * A request starts; an Update (`force`) clears an earlier cancel. `patchFor` names the stale
+ * writing an open asks to patch.
+ */
 export function overviewRequested(
   local: OverviewLocal,
   force: boolean,
-  verdict = false
+  verdict = false,
+  patchFor: string | null = null
 ): OverviewLocal {
   return {
     ...local,
     request: { status: "requesting", force, verdict: verdict && !force },
-    canceled: local.canceled && !force
+    canceled: local.canceled && !force,
+    patchedFor: patchFor ?? local.patchedFor
   };
 }
 
@@ -147,8 +164,8 @@ export function overviewView(page: TopicOverviewState, local: OverviewLocal | nu
 /**
  * Whether the slot asks the main process now: only while shown, never twice at once, and only to
  * write a missing overview (unless the person canceled one), to join a writing in progress, or to
- * wait once for the support verdict of a writing. Opening a page whose overview is ready asks
- * nothing, and a failure waits for Retry.
+ * wait once for the support verdict of a writing. Opening a page whose overview is current asks
+ * nothing, one whose overview is stale asks once to patch it, and a failure waits for Retry.
  */
 export function shouldRequestOverview(
   view: OverviewView,
@@ -164,6 +181,7 @@ export function shouldRequestOverview(
     case "writing":
       return true;
     case "ready":
+      if (staleToPatch(view, local)) return true;
       return (
         view.overview.support.status === "checking" &&
         local?.awaitedCheck !== view.overview.writtenAt
@@ -171,6 +189,19 @@ export function shouldRequestOverview(
     case "failed":
       return false;
   }
+}
+
+/**
+ * A stale overview shown on open is patched once (F4 D17: the main process adds what the new
+ * evidence says at P0, or joins REFRESH's writing), unless the person canceled a writing here.
+ */
+export function staleToPatch(view: OverviewView, local: OverviewLocal | null): boolean {
+  return (
+    view.kind === "ready" &&
+    view.overview.stale &&
+    !local?.canceled &&
+    local?.patchedFor !== view.overview.writtenAt
+  );
 }
 
 /** The message keys the overview's states may carry; anything else reads as a generic failure. */

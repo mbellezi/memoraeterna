@@ -1,13 +1,17 @@
 import { z } from "zod";
 
-import { clipCharacters } from "./note-page.js";
+import { changeSetReadLimits, type OverviewDivergence } from "./change-sets.js";
+import { clipCharacters, withinCharacters } from "./note-page.js";
 import { TopicOverviewStateSchema, topicReadLimits } from "./topics.js";
 
 // The lazy overview of a topic (F2 T31, D16): prose written when the Topic page opens, from the
 // topic's central notes and their passages (the evidence E1..En), with every citation mapped to
-// that evidence, a support check by the ranker and a cache per member fingerprint, prompt revision
-// and content language. This module holds the contracts and the pure rules; the desktop service
-// reads the evidence, calls the writer and the ranker, and stores the result.
+// that evidence, a support check by the ranker and a cache per member fingerprint (F4 D9: the
+// prompt and the language are provenance, never staleness). REFRESH (F4 D17, T84) keeps a stale
+// overview current with additive patches: the stored text stays byte-identical and new paragraphs
+// cite only new evidence, numbered after the stored citations. This module holds the contracts and
+// the pure rules; the desktop service reads the evidence, calls the writer and the ranker, and
+// stores the result.
 
 const uuid = z.string().uuid();
 
@@ -40,7 +44,9 @@ export const topicOverviewLimits = {
   /** Sentences the support check scores at most (one ranker call each). */
   maxSupportSentences: 40,
   /** Passages one ranker call scores at most (the rank request allows 32). */
-  maxSupportDocuments: 16
+  maxSupportDocuments: 16,
+  /** Characters of a stored citation's excerpt a patch prompt shows (E1..Ek, for its Divergences). */
+  patchCitedExcerptChars: 200
 } as const;
 
 /** `topics.overview`: the overview of a topic, written now when there is none (or `force`). */
@@ -392,5 +398,378 @@ export function overviewSupportVerdict(
     status: unsupported.size === 0 ? "verified" : "partial",
     unsupported: [...unsupported].sort((a, b) => a - b),
     sentences: { checked: sentences.length, supported }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// REFRESH (F4 D17, T84): additive patches of a stale overview
+
+const int = (min: number, max: number) => z.number().int().min(min).max(max);
+const positive = (max: number) => z.number().positive().max(max);
+
+/**
+ * Typed configuration of REFRESH (`RULES.md` 1: numbers live in typed configuration). Start values
+ * are *(cal.)*: the soak and the T84 proof confirm or revise them.
+ */
+export const TopicOverviewRefreshConfigSchema = z
+  .object({
+    /** A topic is refreshed only while its subtree holds at least this many placed notes. */
+    minPlacedNotes: int(1, 100_000).default(3),
+    /** A topic without an overview is refreshed only when it was opened within this many days. */
+    openedWithinDays: int(1, 3_650).default(30),
+    /** A request waits this long after the last placement change (an import keeps moving members). */
+    debounceMs: int(0, 86_400_000).default(300_000),
+    /** ...and never longer than this after the first request. */
+    debounceMaxMs: int(0, 86_400_000).default(1_800_000),
+    /**
+     * Job priorities of REFRESH, below every other job of the model worker (they queue at 0): the
+     * order among REFRESH jobs is dirtiness × views × recency, mapped onto this range.
+     */
+    priorityMin: int(-10_000, -1).default(-100),
+    priorityMax: int(-10_000, -1).default(-1),
+    /** The open count of a topic weighs half after this many days without an open. */
+    viewHalfLifeDays: positive(3_650).default(14),
+    /** Decayed opens at which the views factor stops growing. */
+    viewsSaturation: positive(10_000).default(5),
+    /** Recency halves after this many days since the last open. */
+    recencyHalfLifeDays: positive(3_650).default(7),
+    /** Views and recency never fall below this, so an unopened stale topic still orders by dirtiness. */
+    factorFloor: z.number().min(0).max(1).default(0.05),
+    /** Topics one placement change looks at most (bounded work per change). */
+    maxTopicsPerChange: int(1, 10_000).default(200)
+  })
+  .strict()
+  .refine((config) => config.priorityMin <= config.priorityMax, {
+    message: "priorityMin must not exceed priorityMax"
+  })
+  .refine((config) => config.debounceMs <= config.debounceMaxMs, {
+    message: "debounceMs must not exceed debounceMaxMs"
+  });
+export type TopicOverviewRefreshConfig = z.infer<typeof TopicOverviewRefreshConfigSchema>;
+
+/** The start values, as typed configuration. */
+export const topicOverviewRefreshConfig: TopicOverviewRefreshConfig =
+  TopicOverviewRefreshConfigSchema.parse({});
+
+/** An evidence item as the stored overview keeps it: its note and the hash of its passage. */
+export interface OverviewEvidenceKey {
+  noteId: string;
+  contentHash: string;
+}
+
+/** A candidate of a patch: its note, its passage and the hash `contentHash` would store. */
+export interface PatchEvidenceCandidate extends OverviewEvidenceCandidate {
+  passageHash: string;
+}
+
+const evidenceKey = (noteId: string, hash: string) => `${noteId.toLowerCase()}:${hash}`;
+
+/**
+ * Dirtiness (D17): the share of the topic's current evidence candidates the stored overview was not
+ * written from (a new note, or a note whose passage changed). 1 without a stored overview, 0 without
+ * candidates.
+ */
+export function overviewDirtiness(
+  candidates: ReadonlyArray<Pick<PatchEvidenceCandidate, "noteId" | "passageHash">>,
+  stored: readonly OverviewEvidenceKey[] | null
+): number {
+  if (candidates.length === 0) return 0;
+  if (stored === null) return 1;
+  const seen = new Set(stored.map((item) => evidenceKey(item.noteId, item.contentHash)));
+  const fresh = candidates.filter((item) => !seen.has(evidenceKey(item.noteId, item.passageHash)));
+  return fresh.length / candidates.length;
+}
+
+/**
+ * How much a REFRESH matters, in [0, 1]: dirtiness × views × recency (D17). Views are the open
+ * count decayed by the age of the last open; recency halves every `recencyHalfLifeDays`. A topic
+ * never opened keeps the floor on both, so it still orders by dirtiness.
+ */
+export function topicOverviewRefreshScore(
+  input: { dirtiness: number; openCount: number; openedDaysAgo: number | null },
+  config: TopicOverviewRefreshConfig = topicOverviewRefreshConfig
+): number {
+  const dirtiness = Math.min(
+    1,
+    Math.max(0, Number.isFinite(input.dirtiness) ? input.dirtiness : 0)
+  );
+  const age =
+    input.openedDaysAgo === null || !Number.isFinite(input.openedDaysAgo)
+      ? null
+      : Math.max(0, input.openedDaysAgo);
+  const decayed =
+    age === null ? 0 : Math.max(0, input.openCount) * 0.5 ** (age / config.viewHalfLifeDays);
+  const views = Math.min(1, decayed / config.viewsSaturation);
+  const recency = age === null ? 0 : 0.5 ** (age / config.recencyHalfLifeDays);
+  return dirtiness * Math.max(views, config.factorFloor) * Math.max(recency, config.factorFloor);
+}
+
+/** The job priority of a REFRESH request: its score mapped onto the configured range. */
+export function topicOverviewRefreshPriority(
+  score: number,
+  config: TopicOverviewRefreshConfig = topicOverviewRefreshConfig
+): number {
+  const bounded = Math.min(1, Math.max(0, Number.isFinite(score) ? score : 0));
+  return config.priorityMin + Math.round(bounded * (config.priorityMax - config.priorityMin));
+}
+
+/** Paragraphs a patch may add to an overview of `existing` paragraphs (0 when it is full). */
+export function overviewPatchParagraphsMax(existing: number): number {
+  return Math.max(
+    0,
+    Math.min(topicOverviewLimits.maxParagraphs, topicReadLimits.overviewParagraphsMax - existing)
+  );
+}
+
+/** A stored citation's excerpt as the patch prompt shows it: cut at a word near the bound. */
+export function overviewPatchCitedExcerpt(excerpt: string): string {
+  const text = excerpt.replace(/\s+/gu, " ").trim();
+  const max = topicOverviewLimits.patchCitedExcerptChars;
+  if (Array.from(text).length <= max) return text;
+  const clipped = clipCharacters(text, max - 1);
+  const space = clipped.lastIndexOf(" ");
+  return `${space > max / 2 ? clipped.slice(0, space) : clipped}…`;
+}
+
+/**
+ * What the patch prompt spends before its new evidence: the stored paragraphs and the short
+ * excerpts of the citations they make, with their framing.
+ */
+export function overviewPatchBaseTokens(
+  paragraphs: ReadonlyArray<{ text: string }>,
+  citedExcerpts: readonly string[] = []
+): number {
+  const text = (value: string, framing: number) => estimateOverviewTokens(value) + framing;
+  return (
+    paragraphs.reduce((total, paragraph) => total + text(paragraph.text, 8), 0) +
+    citedExcerpts.reduce(
+      (total, excerpt) => total + text(overviewPatchCitedExcerpt(excerpt), 16),
+      0
+    )
+  );
+}
+
+/**
+ * The new evidence of a patch (D17): the candidates the stored overview was not written from, in
+ * evidence order, as whole items within the evidence budget minus the stored paragraphs and their
+ * citations' excerpts, and at most as many as citations are left. A candidate the overview already
+ * saw is never offered again.
+ */
+export function selectPatchEvidence<T extends PatchEvidenceCandidate>(
+  candidates: readonly T[],
+  stored: {
+    evidence: readonly OverviewEvidenceKey[];
+    paragraphs: ReadonlyArray<{ text: string }>;
+    /** The excerpts of the stored citations E1..Ek, in citation order. */
+    citedExcerpts: readonly string[];
+  }
+): { evidence: T[]; tokens: number; budget: number } {
+  const seen = new Set(stored.evidence.map((item) => evidenceKey(item.noteId, item.contentHash)));
+  const fresh = candidates.filter((item) => !seen.has(evidenceKey(item.noteId, item.passageHash)));
+  const budget = Math.max(
+    0,
+    topicOverviewLimits.evidenceTokenBudget -
+      overviewPatchBaseTokens(stored.paragraphs, stored.citedExcerpts)
+  );
+  const maxItems = Math.max(
+    0,
+    Math.min(
+      topicOverviewLimits.maxEvidence,
+      topicReadLimits.overviewCitationsMax - stored.citedExcerpts.length
+    )
+  );
+  if (maxItems === 0 || fresh.length === 0) return { evidence: [], tokens: 0, budget };
+  return { ...selectOverviewEvidence(fresh, { budget, maxItems }), budget };
+}
+
+/**
+ * The wire contract of a patch (`topic.overview.patch`, strict): new paragraphs whose markers cite
+ * the stored citations E1..Ek or the new evidence Ek+1.., and Divergences between a stored citation
+ * and a new item. The meaning is checked by {@link validateOverviewPatch}.
+ */
+export const TopicOverviewPatchOutputSchema = z.object({
+  paragraphs: z.array(z.string()),
+  divergences: z.array(z.object({ existing: z.string(), new: z.string(), summary: z.string() }))
+});
+export type TopicOverviewPatchOutput = z.infer<typeof TopicOverviewPatchOutputSchema>;
+
+export interface OverviewPatchNumbering {
+  /** Citations of the stored overview: E1..Ek. */
+  existingCitations: number;
+  /** New evidence items: Ek+1..Ek+m. */
+  newEvidence: number;
+  /** Paragraphs the patch may add (the prompt asked for at most this many). */
+  maxParagraphs: number;
+  /** Divergences the stored overview already keeps. */
+  existingDivergences?: number;
+}
+
+export interface ValidatedOverviewPatch {
+  /**
+   * The new paragraphs in stored numbering: a stored citation keeps its number, a new item cited
+   * first gets k+1, the next k+2, in order of first appearance (paragraphs, then Divergences).
+   */
+  paragraphs: Array<{ text: string; citations: number[] }>;
+  /** `cited[j]` is the new evidence item (1-based among the new ones) citation k+1+j stands for. */
+  cited: number[];
+  /** Divergences in stored numbering (`E<n>`), each naming a stored citation and a new one. */
+  divergences: OverviewDivergence[];
+}
+
+export type OverviewPatchValidation =
+  { ok: true; patch: ValidatedOverviewPatch } | { ok: false; errors: string[] };
+
+const divergenceRefPattern = /^\s*E?(\d{1,3})\s*$/iu;
+
+/**
+ * Checks a patch against the numbering it was written for: at most `maxParagraphs` paragraphs of
+ * plain text, each citing at least one new item, every number one of E1..Ek+m, every Divergence a
+ * stored citation and a new item with a one-sentence summary. A valid patch continues the stored
+ * numbering (D17): its new citations read k+1, k+2 in order of first use and the markers in its
+ * text follow. Zero paragraphs is a valid patch (no change). Errors are written for the repair.
+ */
+export function validateOverviewPatch(
+  output: unknown,
+  numbering: OverviewPatchNumbering
+): OverviewPatchValidation {
+  const parsed = TopicOverviewPatchOutputSchema.safeParse(output);
+  if (!parsed.success)
+    return { ok: false, errors: ["The answer is not the JSON shape asked for."] };
+  const k = numbering.existingCitations;
+  const total = k + numbering.newEvidence;
+  const errors: string[] = [];
+  const paragraphs = parsed.data.paragraphs;
+  if (paragraphs.length > numbering.maxParagraphs) {
+    errors.push(
+      `Write at most ${numbering.maxParagraphs} new paragraphs (the answer has ${paragraphs.length}).`
+    );
+  }
+  const drafts: Array<{ text: string; order: number[] }> = [];
+  paragraphs.forEach((raw, index) => {
+    const label = `New paragraph ${index + 1}`;
+    const text = raw.replace(/\s+/gu, " ").trim();
+    if (!text) {
+      errors.push(`${label} is empty.`);
+      return;
+    }
+    if (tagPattern.test(text)) errors.push(`${label} contains markup; write plain text.`);
+    if (Array.from(text).length > topicOverviewLimits.paragraphMaxChars) {
+      errors.push(`${label} is longer than ${topicOverviewLimits.paragraphMaxChars} characters.`);
+    }
+    const order: number[] = [];
+    for (const marker of text.match(markerPattern) ?? []) order.push(...markerNumbers(marker));
+    const unknown = [...new Set(order.filter((n) => n < 1 || n > total))];
+    if (unknown.length > 0) {
+      errors.push(
+        `${label} cites ${unknown.map((n) => `[${n}]`).join(", ")}, which is not in the evidence ` +
+          `(the evidence is numbered 1 to ${total}).`
+      );
+    }
+    if (!order.some((n) => n > k && n <= total)) {
+      errors.push(
+        `${label} cites no new evidence; cite the new item (${k + 1} to ${total}) it adds.`
+      );
+    }
+    drafts.push({ text, order });
+  });
+  const unique = new Map<string, { existing: number; new: number; summary: string }>();
+  parsed.data.divergences.forEach((raw, index) => {
+    const label = `Divergence ${index + 1}`;
+    const existing = Number(divergenceRefPattern.exec(raw.existing)?.[1] ?? Number.NaN);
+    const added = Number(divergenceRefPattern.exec(raw.new)?.[1] ?? Number.NaN);
+    const summary = raw.summary.replace(/\s+/gu, " ").trim();
+    if (!(existing >= 1 && existing <= k))
+      errors.push(`${label} names "${raw.existing}" as existing; use one of E1 to E${k}.`);
+    if (!(added > k && added <= total))
+      errors.push(`${label} names "${raw.new}" as new; use one of E${k + 1} to E${total}.`);
+    if (!summary) errors.push(`${label} has no summary.`);
+    else if (tagPattern.test(summary)) errors.push(`${label} contains markup; write plain text.`);
+    else if (!withinCharacters(summary, changeSetReadLimits.divergenceSummaryMax))
+      errors.push(
+        `${label} is longer than ${changeSetReadLimits.divergenceSummaryMax} characters.`
+      );
+    if (!unique.has(`${existing}:${added}`))
+      unique.set(`${existing}:${added}`, { existing, new: added, summary });
+  });
+  const divergencesLeft = changeSetReadLimits.divergencesMax - (numbering.existingDivergences ?? 0);
+  if (unique.size > Math.max(0, divergencesLeft)) {
+    errors.push(`Name at most ${Math.max(0, divergencesLeft)} divergences.`);
+  }
+  if (errors.length > 0) return { ok: false, errors };
+
+  const renumber = new Map<number, number>();
+  const cited: number[] = [];
+  const numberOf = (n: number) => {
+    if (n <= k) return n;
+    let next = renumber.get(n);
+    if (next === undefined) {
+      cited.push(n - k);
+      next = k + cited.length;
+      renumber.set(n, next);
+    }
+    return next;
+  };
+  const result = drafts.map((draft) => {
+    for (const n of draft.order) numberOf(n);
+    const text = draft.text.replace(markerPattern, (marker) => {
+      const numbers = [...new Set(markerNumbers(marker).map(numberOf))].sort((a, b) => a - b);
+      return `[${numbers.join(", ")}]`;
+    });
+    const citations = [...new Set(draft.order.map(numberOf))].sort((a, b) => a - b);
+    return { text, citations };
+  });
+  const divergences = [...unique.values()].map((divergence) => ({
+    existing: `E${divergence.existing}`,
+    new: `E${numberOf(divergence.new)}`,
+    summary: divergence.summary
+  }));
+  if (k + cited.length > topicReadLimits.overviewCitationsMax) {
+    return {
+      ok: false,
+      errors: [
+        `Cite at most ${topicReadLimits.overviewCitationsMax - k} new evidence items in all.`
+      ]
+    };
+  }
+  return { ok: true, patch: { paragraphs: result, cited, divergences } };
+}
+
+/** A stored support verdict, as the overview row keeps it (other fields are provenance). */
+export type OverviewSupportSummary = {
+  status: "verified" | "partial" | "unchecked";
+  unsupported: number[];
+  sentences?: { checked: number; supported: number };
+};
+
+/**
+ * The support of a patched overview: the stored verdict of its old paragraphs with the verdict of
+ * the new sentences (`added`, paragraph indexes counted from the first paragraph), or with the new
+ * paragraphs unchecked (`added` null: no ranker, or while the check runs). Verified only when both
+ * sides are; an unchecked side makes the whole at most partial.
+ */
+export function patchedOverviewSupport(
+  previous: OverviewSupportSummary,
+  added: OverviewSupportVerdict | null
+): OverviewSupportSummary {
+  if (added === null) {
+    return {
+      status: previous.status === "unchecked" ? "unchecked" : "partial",
+      unsupported: [...previous.unsupported],
+      ...(previous.sentences ? { sentences: { ...previous.sentences } } : {})
+    };
+  }
+  const unsupported = [...new Set([...previous.unsupported, ...added.unsupported])].sort(
+    (a, b) => a - b
+  );
+  const sentences = previous.sentences
+    ? {
+        checked: previous.sentences.checked + added.sentences.checked,
+        supported: previous.sentences.supported + added.sentences.supported
+      }
+    : { ...added.sentences };
+  return {
+    status: previous.status === "verified" && added.status === "verified" ? "verified" : "partial",
+    unsupported,
+    sentences
   };
 }

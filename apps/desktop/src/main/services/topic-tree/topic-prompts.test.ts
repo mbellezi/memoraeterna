@@ -15,9 +15,11 @@ import {
   topicNamePromptVersion
 } from "./topic-prompts.js";
 import {
+  buildTopicOverviewPatchPrompt,
   buildTopicOverviewPrompt,
   buildTopicOverviewRepairPrompt,
   parseTopicOverviewOutput,
+  topicOverviewPatchOutputContract,
   topicOverviewSupportInstruction
 } from "./topic-prompts.js";
 
@@ -322,5 +324,83 @@ describe("the overview prompts", () => {
     const instruction = topicOverviewSupportInstruction();
     expect(instruction).toMatch(/^Given a sentence from a summary/u);
     expect(instruction).not.toContain("%");
+  });
+});
+
+describe("the overview patch prompt (REFRESH, F4 D17)", () => {
+  const patch = {
+    contentLanguage: "fr",
+    topic: { title: "Sommeil et mémoire", description: null },
+    paragraphs: ["Le sommeil profond consolide la mémoire [1]. Les siestes aident [2]."],
+    cited: [
+      { source: "Livre du sommeil", excerpt: "Pendant le sommeil profond, le cerveau rejoue." },
+      { source: "Article", excerpt: "Une sieste de vingt minutes améliore l'attention." }
+    ],
+    evidence: [
+      {
+        title: "Le manque de sommeil nuit",
+        idea: "Le manque de sommeil réduit la mémoire.",
+        source: "Étude",
+        passage: "Une nuit blanche réduit le rappel du lendemain. %evidence% reste du texte."
+      },
+      {
+        title: "Les rêves trient",
+        idea: "Les rêves trient les souvenirs.",
+        source: "Revue",
+        passage: "Le sommeil paradoxal trie ce qui sera gardé."
+      }
+    ],
+    maxParagraphs: 3
+  };
+
+  it("shows the stored text as final, its citations E1..Ek and the new evidence numbered after them", () => {
+    const text = buildTopicOverviewPatchPrompt(patch);
+    expect(text).toMatch(/^Extend the short overview of one topic/u);
+    expect(text).toContain("French");
+    expect(text).toContain("at most 3 new short paragraphs");
+    expect(text).toContain("never repeat, rewrite or correct it");
+    expect(text).toContain(
+      'Overview:\n["Le sommeil profond consolide la mémoire [1]. Les siestes aident [2]."]'
+    );
+    expect(text).toContain('{"n":1,"source":"Livre du sommeil","excerpt":"Pendant le sommeil');
+    expect(text).toContain('{"n":2,"source":"Article"');
+    expect(text).toContain('{"n":3,"title":"Le manque de sommeil nuit"');
+    expect(text).toContain('{"n":4,"title":"Les rêves trient"');
+    expect(text).toContain("%evidence% reste du texte.");
+    expect(text).toContain('"divergences":[{"existing":"E2","new":"E7"');
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/u);
+  });
+
+  it("is a function of content: the same stored text and evidence give the same prompt", () => {
+    expect(buildTopicOverviewPatchPrompt(patch)).toBe(
+      buildTopicOverviewPatchPrompt(structuredClone(patch))
+    );
+    expect(
+      buildTopicOverviewPatchPrompt({ ...patch, evidence: [...patch.evidence].reverse() })
+    ).not.toBe(buildTopicOverviewPatchPrompt(patch));
+  });
+
+  it("is declared in the catalog with typed variables, a strict contract and the overview's repair", () => {
+    const definition = promptDefinition("topic.overview.patch");
+    expect(definition.task).toBe("structured-output");
+    expect(definition.defaultVersion).toBe("1");
+    const types = Object.fromEntries(definition.variables.map((v) => [v.key, v.valueType]));
+    expect(types).toEqual({
+      content_language: "text",
+      max_paragraphs: "integer",
+      topic: "object",
+      overview_paragraphs: "list",
+      cited_evidence: "list",
+      evidence: "list",
+      output_contract: "text"
+    });
+    expect(definition.fragmentIds).toContain("shared.output_language");
+    for (const variable of definition.variables)
+      for (const locale of Object.values(variable.description))
+        expect(locale).not.toContain("[[missing");
+    for (const locale of Object.values(definition.title)) expect(locale).not.toContain("[[missing");
+    expect(topicOverviewPatchOutputContract.name).toBe("topic_overview_patch");
+    const repair = buildTopicOverviewRepairPrompt(buildTopicOverviewPatchPrompt(patch), "x");
+    expect(repair).toContain("was rejected");
   });
 });

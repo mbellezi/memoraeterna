@@ -181,7 +181,9 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
       source: "Fictional recall study",
       passage: "In a fictional study, retrieval with feedback improved recall."
     }
-  ]
+  ],
+  overview_paragraphs: ["Recalling studied material with feedback improved later recall [1]."],
+  cited_evidence: [{ n: 1, title: "Retrieval with feedback", source: "Fictional recall study" }]
 };
 function variable(key: string, id: string): PromptVariable {
   const numeric = [

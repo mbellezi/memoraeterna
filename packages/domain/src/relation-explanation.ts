@@ -4,9 +4,10 @@ import { directedNoteRelationTypes } from "./knowledge.js";
 import { withinCharacters } from "./note-page.js";
 
 /**
- * Explanations of note relations are written on demand (docs/plan.md decision 16): never in bulk or
- * in the background, only when the owner opens a relation, then cached on the relation for the
- * inputs they were written from. These are the shared, browser-safe parts of that contract.
+ * Explanations of note relations are written when the owner opens a relation (docs/plan.md decision
+ * 16), or by the Gardener's bounded backfill for the shown relations of recently opened notes (F4
+ * D18), then cached on the relation for the inputs they were written from. These are the shared,
+ * browser-safe parts of that contract.
  */
 export const relationExplanationLimits = {
   /** The model writes at most this many characters (note references count as their alias). */
@@ -38,6 +39,32 @@ export const relationExplanationLimits = {
    */
   sentinelHoldCharacters: 16
 } as const;
+
+/**
+ * The explanation backfill (F4 D18): the shown relations of notes the owner opened lately that have
+ * no cached explanation, written at P3 through the RemoteBudget, a bounded number a day. Start
+ * values are *(cal.)*.
+ */
+export interface RelationExplainBackfillConfig {
+  /** Relations a local day's passes select at most (one backfill job each). */
+  readonly dailyRelations: number;
+  /** A note counts as opened lately for this many days after its last open. */
+  readonly openedWithinDays: number;
+  /** The first pass after a start waits this long, so a start never spends at once. */
+  readonly startDelayMs: number;
+  /** The next pass follows the last one after this long. */
+  readonly passEveryMs: number;
+  /** The setting that counts the day's selections: `{ day, calls, interactiveCalls }`. */
+  readonly dailySettingKey: string;
+}
+
+export const relationExplainBackfillConfig: RelationExplainBackfillConfig = Object.freeze({
+  dailyRelations: 20,
+  openedWithinDays: 7,
+  startDelayMs: 15 * 60 * 1000,
+  passEveryMs: 24 * 60 * 60 * 1000,
+  dailySettingKey: "relations.explanations.backfillDaily"
+});
 
 /**
  * The whole answer of the writer when the notes are not related as stated (prompt revision 3). It

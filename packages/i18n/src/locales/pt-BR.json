@@ -2518,6 +2518,7 @@
       "topic": "Nomes de tópicos, Áreas e visões gerais"
     },
     "labels": {
+      "patch": "Ampliar uma visão geral",
       "overview": "Visão geral do tópico",
       "knowledge": "Resposta com conhecimento compilado",
       "comparison": "Comparação de fontes",
@@ -2566,6 +2567,8 @@
       "instruction": "Instrução do ranker"
     },
     "variables": {
+      "overview_paragraphs": "Os parágrafos da visão geral, mantidos como estão",
+      "cited_evidence": "As evidências que a visão geral cita, numeradas",
       "max_paragraphs": "Número máximo de parágrafos",
       "topic": "Nome e descrição do tópico",
       "evidence": "Notas centrais com seus trechos, numeradas",
