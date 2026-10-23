@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 
 import { createTopicNamingRepository, createTopicTreeRepository } from "@app/db";
 import type { JobRecord, JsonObject, PgPool, TopicNamingRows } from "@app/db";
-import { isBackgroundBlocked, topicLimits } from "@app/domain";
+import { backgroundBlockerOf, gardenerBlockerKey, topicLimits } from "@app/domain";
 import {
   MembershipSketchSchema,
   clipIdea,
@@ -962,6 +962,7 @@ class NamingRun {
       origin: "job",
       workloadClass: "write-fast",
       priority: "P3",
+      // The Gardener's work (F4 D12, D15): its gates and the local duty cycle hold this call.
       budgetClass: "background",
       contentLanguage: this.contentLanguage,
       promptVersion: topicNamePromptVersion,
@@ -988,8 +989,17 @@ class NamingRun {
         }
       );
     } catch (error) {
-      // A background refusal (F4 D7) ends the job; the supervisor sets it aside.
-      if (this.signal.aborted || isBackgroundBlocked(error)) throw error;
+      const blocker = backgroundBlockerOf(error);
+      // Autonomy Off (F4 D12, table 3.2): no generative call; topics get provisional TF-IDF names.
+      // The refused call sent nothing, so it is no call of the job.
+      if (blocker && gardenerBlockerKey(blocker) === "paused.autonomy_off") {
+        if (attempt === 0) this.counters.calls -= 1;
+        else this.counters.repairCalls -= 1;
+        this.llm = false;
+        return "unavailable";
+      }
+      // Any other background refusal (F4 D7) ends the job; the supervisor sets it aside.
+      if (this.signal.aborted || blocker) throw error;
       this.counters.failedCalls += 1;
       this.consecutiveFailures += 1;
       if (this.consecutiveFailures >= topicNamingLimits.consecutiveFailures) this.llm = false;

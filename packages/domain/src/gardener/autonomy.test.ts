@@ -5,6 +5,7 @@ import {
   autonomyHoldsKind,
   autonomyMatrix,
   autonomyRefusesCall,
+  autonomyRunsProvisionally,
   changeDisposition,
   gardenerKindPolicies,
   gardenerKindPolicy,
@@ -22,7 +23,7 @@ const table: Record<GardenerWork, [AutonomyEffect, AutonomyEffect, AutonomyEffec
   lint: ["runs", "runs", "runs"],
   decide: ["runs", "runs", "runs"],
   rebalance_soft: ["proposes", "proposes", "applies"],
-  naming: ["none", "proposes", "applies"],
+  naming: ["provisional", "proposes", "applies"],
   areas: ["none", "proposes", "applies"],
   refresh: ["none", "proposes", "applies"],
   backfill: ["none", "runs", "runs"],
@@ -49,7 +50,6 @@ describe("autonomy matrix (spec 3.2)", () => {
       "relation-explain-backfill",
       "relation-retype",
       "topic-areas",
-      "topic-name",
       "topic-overview"
     ]);
     for (const type of heldUnderOff) expect(gardenerKindPolicy(type)?.ai).toBe("generative");
@@ -72,6 +72,17 @@ describe("autonomy matrix (spec 3.2)", () => {
       "gardener-retention"
     ])
       expect(autonomyHoldsKind(type, "off"), type).toBe(false);
+  });
+
+  it("names provisionally under Off: naming runs, its model calls are refused (table 3.2)", () => {
+    expect(autonomyHoldsKind("topic-name", "off")).toBe(false);
+    expect(autonomyRunsProvisionally("topic-name")).toBe(true);
+    expect(
+      Object.keys(gardenerKindPolicies).filter((type) => autonomyRunsProvisionally(type))
+    ).toEqual(["topic-name"]);
+    expect(autonomyRunsProvisionally("ingestion")).toBe(false);
+    expect(autonomyRefusesCall("off", { generative: true, remote: false })).toBe(true);
+    expect(changeDisposition({ work: "naming", autonomy: "off", risk: "low" })).toBe("applied");
   });
 
   it("never holds a mixed kind at claim: an import's own link job is the user's", () => {

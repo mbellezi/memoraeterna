@@ -80,7 +80,7 @@ export function createBackgroundPolicy(options: BackgroundPolicyOptions): Backgr
     },
     gate,
     signals: {
-      subscribeControls: (listener) => controls.subscribe(listener),
+      subscribeControls: (listener) => controls.subscribe((change) => listener(change.changed)),
       subscribePower: (listener) => power.subscribe(listener),
       refreshControls: () => controls.get()
     },

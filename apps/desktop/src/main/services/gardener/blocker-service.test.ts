@@ -51,8 +51,9 @@ function memoryStore(clock: { now: number }) {
         if (row.status !== "queued" || key === null || !reasons.includes(key)) continue;
         if (dueOnly && row.runAfter > clock.now) continue;
         if (exceptTypes?.includes(row.type)) continue;
+        // A paused row keeps its own run_after (a backoff or a debounce it was stamped in).
+        if (row.blocked?.class !== "paused") row.runAfter = Math.min(row.runAfter, clock.now);
         row.blocked = null;
-        row.runAfter = Math.min(row.runAfter, clock.now);
         types.add(row.type);
         cleared += 1;
       }
@@ -104,7 +105,7 @@ function setup(controls: Partial<KnowledgeControls> = {}, power?: Partial<PowerS
     power: { active: false, onBattery: false, idleMs: 3_600_000, overridden: false, ...power },
     routes: 1
   };
-  const controlListeners = new Set<() => void>();
+  const controlListeners = new Set<(changed: readonly string[]) => void>();
   const powerListeners = new Set<() => void>();
   const gate = new BackgroundGate({ controls: () => state.controls, power: () => state.power });
   const wake = vi.fn();
@@ -135,7 +136,7 @@ function setup(controls: Partial<KnowledgeControls> = {}, power?: Partial<PowerS
   });
   const setControls = async (change: Partial<KnowledgeControls>) => {
     state.controls = { ...state.controls, ...change };
-    for (const listener of controlListeners) listener();
+    for (const listener of controlListeners) listener(Object.keys(change));
     await service.reconcile();
   };
   const setPower = async (change: Partial<PowerSnapshot>) => {
@@ -173,24 +174,67 @@ describe("blocker service (D7)", () => {
 
   it("stamps the queued rows of held kinds and clears them on resume, never a running row", async () => {
     const { add, reasonOf, setControls, wake } = setup();
+    const overview = add("topic-overview");
     const name = add("topic-name");
     const place = add("topic-place");
-    const running = add("topic-name", null, { status: "running" });
+    const running = add("topic-overview", null, { status: "running" });
     const ingestion = add("ingestion");
     await setControls({ paused: true });
-    expect([name, place].map(reasonOf)).toEqual(["paused.user_pause", "paused.user_pause"]);
+    expect([overview, name, place].map(reasonOf)).toEqual([
+      "paused.user_pause",
+      "paused.user_pause",
+      "paused.user_pause"
+    ]);
     expect(reasonOf(running)).toBeNull();
     expect(reasonOf(ingestion)).toBeNull();
-    // Off under pause: pause stays the highest; resuming leaves the generative kinds held by Off.
+    // Off under pause: pause stays the highest; resuming leaves the generative kinds held by Off,
+    // while naming (provisional names under Off) and placement run.
     await setControls({ autonomy: "off" });
-    expect(reasonOf(name)).toBe("paused.user_pause");
+    expect(reasonOf(overview)).toBe("paused.user_pause");
     wake.mockClear();
     await setControls({ paused: false });
-    expect(reasonOf(name)).toBe("paused.autonomy_off");
-    expect(reasonOf(place)).toBeNull();
-    expect(wake).toHaveBeenCalledWith(["topic-name", "topic-place"]);
-    await setControls({ autonomy: "suggest" });
+    expect(reasonOf(overview)).toBe("paused.autonomy_off");
     expect(reasonOf(name)).toBeNull();
+    expect(reasonOf(place)).toBeNull();
+    expect(wake).toHaveBeenCalledWith(["topic-name", "topic-overview", "topic-place"]);
+    await setControls({ autonomy: "suggest" });
+    expect(reasonOf(overview)).toBeNull();
+  });
+
+  it("never lets a pause, autonomy or power toggle free a money-capped task; a cap change does", async () => {
+    const { add, reasonOf, service, setControls, setPower } = setup();
+    service.start();
+    const money = add("topic-overview", "cap.money_100");
+    const almost = add("relation-explain-backfill", "cap.money_80");
+    await setControls({ paused: true });
+    await setControls({ paused: false });
+    await setControls({ autonomy: "suggest", onlyIdle: true, onlyOnAc: true });
+    await setPower({ onBattery: true });
+    expect([money, almost].map(reasonOf)).toEqual(["cap.money_100", "cap.money_80"]);
+    await setControls({ onlyOnAc: false, onlyIdle: false, monthlyCapUsd: 20 });
+    expect([money, almost].map(reasonOf)).toEqual([null, null]);
+    service.stop();
+  });
+
+  it("keeps a stamped row's retry backoff when its gate lifts; an event's clear makes it due", async () => {
+    const { add, rows, clock, setControls, service } = setup();
+    // A task waits 20 min for a provider's reset (a retry backoff) when the pause stamps it.
+    const backoff = add("topic-overview", null, { runAfter: clock.now + 20 * 60_000 });
+    await setControls({ paused: true });
+    await setControls({ paused: false });
+    expect(rows.find((row) => row.id === backoff.id)).toMatchObject({
+      blocked: null,
+      runAfter: clock.now + 20 * 60_000
+    });
+    // A per-task wait for a sign-in clears early on the routes event: due at once.
+    const signin = add("topic-overview", "no_model.signin_required", {
+      runAfter: clock.now + 300_000
+    });
+    await service.notify("routes_changed");
+    expect(rows.find((row) => row.id === signin.id)).toMatchObject({
+      blocked: null,
+      runAfter: clock.now
+    });
   });
 
   it("keeps a per-task block of a gate reason while the gate still holds, and clears it after", async () => {
@@ -223,7 +267,8 @@ describe("blocker service (D7)", () => {
     const later = add("topic-name", "waiting.provider_rate_limit", {
       runAfter: clock.now + 60_000
     });
-    const due = add("topic-name", "waiting.provider_rate_limit", { runAfter: clock.now - 1 });
+    const due = add("topic-overview", "waiting.provider_rate_limit", { runAfter: clock.now - 1 });
+    const naming = add("topic-name", "waiting.provider_rate_limit", { runAfter: clock.now - 1 });
     const download = add("topic-gate", "download.model_downloading");
     const capped = add("relation-retype", "cap.subscription_daily");
     const stalePause = add("topic-place", "paused.user_pause");
@@ -240,9 +285,17 @@ describe("blocker service (D7)", () => {
     ]);
     expect(reasonOf(stillOff)).toBe("paused.autonomy_off");
     expect(reasonOf(fresh)).toBe("paused.autonomy_off");
+    // Naming runs under Off (provisional names): set free and not held again.
+    expect(reasonOf(naming)).toBeNull();
     expect(wake).toHaveBeenCalledTimes(1);
     expect(wake.mock.calls[0]![0]).toEqual(
-      expect.arrayContaining(["topic-gate", "topic-name", "topic-place", "relation-retype"])
+      expect.arrayContaining([
+        "topic-gate",
+        "topic-name",
+        "topic-overview",
+        "topic-place",
+        "relation-retype"
+      ])
     );
   });
 

@@ -135,8 +135,9 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
     ).toBe(0);
   });
 
-  it("clears exactly the rows of a reason and makes them due, keeping attempts and keys", async () => {
+  it("clears exactly the rows of a reason, keeping attempts, keys and a paused row's backoff", async () => {
     const blockers = createJobBlockerRepository(db());
+    // Stamped by the pause while it waited 10 min for a retry backoff: it still waits for it.
     const paused = await insert({
       type: "topic-name",
       blocked: ["paused", "user_pause"],
@@ -144,13 +145,14 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
       dedupeKey: "topic-name:tree",
       attempts: 1
     });
+    const pausedDue = await insert({ type: "topic-name", blocked: ["paused", "user_pause"] });
     const capped = await insert({ type: "topic-name", blocked: ["cap", "subscription_daily"] });
     const held = await insert({ type: "topic-areas", blocked: ["paused", "user_pause"] });
     const result = await blockers.clearBlocks({
       reasons: ["paused.user_pause"],
       exceptTypes: ["topic-areas"]
     });
-    expect(result).toEqual({ cleared: 1, types: ["topic-name"] });
+    expect(result).toEqual({ cleared: 2, types: ["topic-name"] });
     expect(await row(paused)).toMatchObject({
       status: "queued",
       blocked_class: null,
@@ -158,10 +160,22 @@ describe.skipIf(!sidecarInstalled)("job blockers on a real PostgreSQL database",
       blocked_at: null,
       attempts: 1,
       dedupe_key: "topic-name:tree",
-      due: true
+      due: false
     });
+    expect(await row(pausedDue)).toMatchObject({ blocked_class: null, due: true });
     expect(await row(capped)).toMatchObject({ blocked_reason: "subscription_daily" });
     expect(await row(held)).toMatchObject({ blocked_reason: "user_pause" });
+    // A per-task wait cleared by its event before its recheck time is due at once.
+    const signin = await insert({
+      type: "topic-overview",
+      blocked: ["no_model", "signin_required"],
+      runAfterSeconds: 300
+    });
+    expect(await blockers.clearBlocks({ reasons: ["no_model.signin_required"] })).toEqual({
+      cleared: 1,
+      types: ["topic-overview"]
+    });
+    expect(await row(signin)).toMatchObject({ blocked_class: null, due: true });
   });
 
   it("clears a time-bound wait only once its run_after has passed", async () => {

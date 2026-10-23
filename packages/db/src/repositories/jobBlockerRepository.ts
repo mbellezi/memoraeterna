@@ -57,7 +57,10 @@ export function createJobBlockerRepository(db: Queryable) {
      * Clears the queued rows held by one of `reasons` (D7: a clearing event clears exactly the rows
      * of its reasons) and makes them due. `dueOnly` clears only rows whose `run_after` has passed
      * (a reset time); `exceptTypes` keeps the rows of types a gate still holds by that reason.
-     * Returns the types it cleared rows of, so their workers can be woken.
+     * A `paused` row keeps its own `run_after`: a paused blocker never sets a clear time (its
+     * per-task block is due at once), and a row the gates stamped while it waited for a retry
+     * backoff or a debounce still waits for it, so a pause, an idle or a power toggle never
+     * shortens a backoff. Returns the types it cleared rows of, so their workers can be woken.
      */
     async clearBlocks(input: {
       reasons: readonly GardenerBlockerKey[];
@@ -75,7 +78,11 @@ export function createJobBlockerRepository(db: Queryable) {
       const result = await db.query<{ type: string }>(
         `update jobs
          set blocked_class = null, blocked_reason = null, blocked_at = null,
-             run_after = least(run_after, now()), updated_at = now()
+             run_after = case
+               when blocked_class = 'paused' then run_after
+               else least(run_after, now())
+             end,
+             updated_at = now()
          where status = 'queued' and blocked_class is not null
            and ${blockerKeySql} = any($1::text[]) ${filters.join(" ")}
          returning type`,

@@ -78,12 +78,23 @@ describe("background gate at claim (D7)", () => {
       "relation-explain-backfill",
       "relation-retype",
       "topic-areas",
-      "topic-name",
       "topic-overview"
     ]);
     for (const blocker of held.values())
       expect(blocker).toEqual(gardenerBlocker("paused", "autonomy_off"));
     expect(gate({ autonomy: "off" }).gate.heldKinds(["topic-place", "topic-gate"]).size).toBe(0);
+    // Naming runs under Off and names provisionally: its model call is refused at admission.
+    const off = gate({ autonomy: "off" }).gate;
+    expect(off.heldKinds(["topic-name"]).size).toBe(0);
+    expect(
+      off.admission({
+        lane: "remote:codex",
+        priority: "P3",
+        workloadClass: "write-fast",
+        budgetClass: "background",
+        label: "topic_naming"
+      })
+    ).toEqual(gardenerBlocker("paused", "autonomy_off"));
   });
 
   it("holds Gardener kinds while the user is active under only-idle, and on battery under only-AC", () => {
@@ -125,7 +136,9 @@ describe("background gate at claim (D7)", () => {
       reason: "user_pause"
     });
     const notPaused = gate({ autonomy: "off", onlyOnAc: true }, activeOnBattery).gate;
-    expect(notPaused.forKinds(["topic-name"]).get("topic-name")?.reason).toBe("autonomy_off");
+    expect(notPaused.forKinds(["topic-overview"]).get("topic-overview")?.reason).toBe(
+      "autonomy_off"
+    );
     expect(notPaused.forKinds(["topic-place"]).get("topic-place")?.reason).toBe(
       "only_ac_on_battery"
     );

@@ -89,10 +89,12 @@ export function gardenerKindPolicy(type: string): GardenerKindPolicy | null {
 
 /**
  * What a work does under an autonomy level (table 3.2): `runs` (no change-set to review, or
- * suggestions only), `applies` (with undo), `proposes` (a pending review), `waits` (held, nothing
- * lost: typing falls back to untyped meanwhile) or `none` (held; names stay provisional).
+ * suggestions only), `applies` (with undo), `proposes` (a pending review), `provisional` (runs
+ * without its generative calls, which are refused, and writes its deterministic fallback: naming
+ * under Off writes TF-IDF provisional names), `waits` (held, nothing lost: typing falls back to
+ * untyped meanwhile) or `none` (held).
  */
-export type AutonomyEffect = "runs" | "applies" | "proposes" | "waits" | "none";
+export type AutonomyEffect = "runs" | "applies" | "proposes" | "provisional" | "waits" | "none";
 
 const always: Record<GardenerAutonomy, AutonomyEffect> = {
   off: "runs",
@@ -111,7 +113,7 @@ export const autonomyMatrix: Readonly<
   derived: always,
   housekeeping: always,
   rebalance_soft: { off: "proposes", suggest: "proposes", auto: "applies" },
-  naming: { off: "none", suggest: "proposes", auto: "applies" },
+  naming: { off: "provisional", suggest: "proposes", auto: "applies" },
   areas: { off: "none", suggest: "proposes", auto: "applies" },
   refresh: { off: "none", suggest: "proposes", auto: "applies" },
   backfill: { off: "none", suggest: "runs", auto: "runs" },
@@ -124,15 +126,31 @@ export function autonomyEffect(work: GardenerWork, autonomy: GardenerAutonomy): 
 
 /**
  * Whether autonomy holds every row of a kind now: under Off, the kinds whose work does nothing
- * there and the kinds whose own calls are generative (D12; a catalog header needs its graph call).
- * Mixed kinds are never held at claim: their background calls are.
+ * there and the kinds whose own calls are generative (D12; a catalog header needs its graph call),
+ * except a kind that runs provisionally (naming writes TF-IDF names; its model calls are refused at
+ * admission). Mixed kinds are never held at claim: their background calls are.
  */
 export function autonomyHoldsKind(type: string, autonomy: GardenerAutonomy): boolean {
   const policy = gardenerKindPolicy(type);
   if (!policy || policy.budget !== "background") return false;
-  if (autonomy === "off" && policy.ai === "generative") return true;
   const effect = autonomyEffect(policy.work, autonomy);
+  if (effect === "provisional") return false;
+  if (autonomy === "off" && policy.ai === "generative") return true;
   return effect === "none" || effect === "waits";
+}
+
+/**
+ * Whether a kind runs provisionally under Off: its generative calls are refused at admission and it
+ * ends with its deterministic fallback, so a refusal under Off is its normal outcome, not a blocker
+ * that sets the task aside (D12: names stay provisional).
+ */
+export function autonomyRunsProvisionally(type: string): boolean {
+  const policy = gardenerKindPolicy(type);
+  return (
+    policy !== null &&
+    policy.budget === "background" &&
+    autonomyEffect(policy.work, "off") === "provisional"
+  );
 }
 
 /**
@@ -153,7 +171,8 @@ export type ChangeSetRiskLevel = "low" | "medium" | "high";
 /**
  * Whether a change a task would make is applied (with undo) or becomes a pending review, by its
  * work, the autonomy and its risk (D11, D12). Works that do not run under the level are proposed,
- * never applied; local deciding and placement apply in every mode.
+ * never applied; local deciding and placement apply in every mode, and a provisional fallback
+ * (naming's TF-IDF names under Off) is written as it is.
  */
 export function changeDisposition(input: {
   work: GardenerWork;
@@ -162,5 +181,7 @@ export function changeDisposition(input: {
 }): "applied" | "pending_review" {
   if (input.risk === "high") return "pending_review";
   const effect = autonomyEffect(input.work, input.autonomy);
-  return effect === "applies" || effect === "runs" ? "applied" : "pending_review";
+  return effect === "applies" || effect === "runs" || effect === "provisional"
+    ? "applied"
+    : "pending_review";
 }

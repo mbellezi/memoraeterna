@@ -145,8 +145,10 @@ export function highestGardenerBlocker<T extends Pick<GardenerBlocker, "class" |
  * in {@link gardenerBlockerClearing}.
  */
 export const gardenerClearingEvents = [
-  /** A Knowledge control changed: pause, autonomy, the idle and power options, the monthly cap. */
+  /** A Knowledge control other than the monthly cap changed: pause, autonomy, idle, power, shape. */
   "controls_changed",
+  /** The monthly remote spend cap changed (a money-capped task may fit under the new cap). */
+  "cap_changed",
   /** The user's activity or the power source changed. */
   "power_changed",
   /** The AI configuration changed: a route, a provider, a sign-in, a validated model. */
@@ -192,8 +194,8 @@ export const gardenerBlockerClearing: Readonly<
   "no_model.no_decider": clearing(["routes_changed", "download_settled"]),
   "no_model.signin_required": clearing(["routes_changed"], true),
   "no_model.space_changed": clearing(["routes_changed"], true),
-  "cap.money_80": clearing(["controls_changed", "budget_continued", "month_rollover"]),
-  "cap.money_100": clearing(["controls_changed", "month_rollover"]),
+  "cap.money_80": clearing(["cap_changed", "budget_continued", "month_rollover"]),
+  "cap.money_100": clearing(["cap_changed", "month_rollover"]),
   "cap.subscription_daily": clearing(["day_rollover"]),
   "cap.provider_quota": clearing([], true),
   "cap.feature_daily": clearing(["day_rollover"]),

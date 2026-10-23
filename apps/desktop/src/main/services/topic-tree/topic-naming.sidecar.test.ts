@@ -38,6 +38,7 @@ import {
   topicTreeConfigWith
 } from "@app/domain/topic-tree";
 import type { StructureEvent, TopicRenamePayload, TopicTreeConfig } from "@app/domain/topic-tree";
+import { BackgroundBlockedError, gardenerBlocker } from "@app/domain";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { JobSupervisor } from "../job-supervisor.js";
@@ -1418,6 +1419,49 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       ).toBe(0);
       const again = await runNaming(w);
       expect(again.result).toMatchObject({ status: "nothing_to_name" });
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("names provisionally under autonomy Off: the refused call is no call (F4 D12)", async () => {
+    const w = await world();
+    try {
+      w.setResponder(() => {
+        throw new BackgroundBlockedError(gardenerBlocker("paused", "autonomy_off"));
+      });
+      const job = await runNaming(w);
+      expect(job.status).toBe("succeeded");
+      expect(job.result).toMatchObject({
+        status: "named",
+        llmNamed: 0,
+        calls: 0,
+        repairCalls: 0,
+        failedCalls: 0
+      });
+      expect(Number(job.result?.provisional)).toBeGreaterThan(0);
+      // One refused call: the job stopped asking and named every level provisionally.
+      expect(w.calls).toHaveLength(1);
+      expect(w.calls[0]!.context).toMatchObject({ budgetClass: "background" });
+      const named = await rows(w);
+      expect(named.A1).toMatchObject({ state: "provisional", source: "tfidf" });
+      w.setResponder(null);
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("ends the job with any other background refusal, so the supervisor sets it aside", async () => {
+    const w = await world();
+    try {
+      w.setResponder(() => {
+        throw new BackgroundBlockedError(gardenerBlocker("paused", "user_pause"));
+      });
+      const job = await runNaming(w);
+      // This supervisor has no background policy: the refusal surfaces as the job's error.
+      expect(job.error).toMatch(/paused\.user_pause/u);
+      expect(Object.values(await rows(w)).every((topic) => topic.state === "unnamed")).toBe(true);
+      w.setResponder(null);
     } finally {
       await w.dispose();
     }

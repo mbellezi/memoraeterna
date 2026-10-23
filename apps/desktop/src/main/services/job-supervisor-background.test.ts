@@ -141,7 +141,19 @@ const light = (execute: (job: JobRecord) => Promise<Record<string, unknown>>) =>
 });
 const jobs: LightJobRegistry = {
   "topic-place": { needsModel: false, execute: async () => ({ placed: 1 }) },
-  "topic-name": light(async () => ({ status: "named" })),
+  // Naming as it runs under Off: its call is refused at admission and it names provisionally.
+  "topic-name": light(async (job) => {
+    const refusal = gate.admit({
+      lane: "remote:codex",
+      priority: "P3",
+      workloadClass: "write-fast",
+      budgetClass: "background",
+      label: "topic_naming",
+      jobId: job.id
+    });
+    return { status: "named", provisional: refusal ? 2 : 0, llmNamed: refusal ? 0 : 2 };
+  }),
+  "topic-overview": light(async () => ({ status: "applied" })),
   "topic-areas": light(async () => {
     throw new BackgroundBlockedError(gardenerBlocker("paused", "user_pause"));
   }),
@@ -196,20 +208,50 @@ describe("background policy in the job supervisor", () => {
 
   it("never claims a held kind: its attempts and dedupe key are untouched, and Off still places", async () => {
     controls.value = { ...controls.value, autonomy: "off" };
-    const name = enqueue("topic-name");
+    const overview = enqueue("topic-overview");
     const place = enqueue("topic-place");
     await start();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(stored(place).status).toBe("succeeded");
-    expect(stored(name)).toMatchObject({
+    expect(stored(overview)).toMatchObject({
       status: "queued",
       attempts: 0,
-      dedupeKey: "topic-name:key"
+      dedupeKey: "topic-overview:key"
     });
     controls.value = { ...controls.value, autonomy: "auto" };
     supervisor!.wake("light");
     await vi.advanceTimersByTimeAsync(10);
-    expect(stored(name).status).toBe("succeeded");
+    expect(stored(overview).status).toBe("succeeded");
+  });
+
+  it("names provisionally under Off: the refused call ends the naming job as done, not set aside", async () => {
+    controls.value = { ...controls.value, autonomy: "off" };
+    const name = enqueue("topic-name");
+    await start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(stored(name)).toMatchObject({
+      status: "succeeded",
+      result: { status: "named", provisional: 2, llmNamed: 0 }
+    });
+    expect(blocked.size).toBe(0);
+    expect(gate.takeAdmissionBlock(name.id)).toBeUndefined();
+  });
+
+  it("still sets naming aside when a pause meets its call after the claim", async () => {
+    const name = enqueue("topic-name");
+    const original = jobs["topic-name"]!.execute;
+    jobs["topic-name"]!.execute = async (job, signal) => {
+      controls.value = { ...controls.value, paused: true };
+      return original(job, signal);
+    };
+    try {
+      await start();
+      await vi.advanceTimersByTimeAsync(10);
+    } finally {
+      jobs["topic-name"]!.execute = original;
+    }
+    expect(stored(name)).toMatchObject({ status: "queued", attempts: 0, result: null });
+    expect(blocked.get(name.id)?.reason).toBe("user_pause");
   });
 
   it("holds every Gardener kind while paused, and never ingestion", async () => {

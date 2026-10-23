@@ -36,7 +36,8 @@ export interface JobBlockerStore {
 
 /** What the service listens to: the controls and the machine's activity and power. */
 export interface BlockerSignals {
-  subscribeControls(listener: () => void): () => void;
+  /** Calls the listener with the names of the controls that changed. */
+  subscribeControls(listener: (changed: readonly string[]) => void): () => void;
   subscribePower(listener: () => void): () => void;
   /** Reads the controls again when the database changed (a restore, a reset). */
   refreshControls(): Promise<unknown>;
@@ -114,7 +115,7 @@ export class BlockerService {
   public start(): void {
     if (this.timer !== undefined) return;
     this.unsubscribe = [
-      this.options.signals.subscribeControls(() => void this.notify("controls_changed")),
+      this.options.signals.subscribeControls((changed) => void this.controlsChanged(changed)),
       this.options.signals.subscribePower(() => void this.notify("power_changed"))
     ];
     this.timer = this.timers.setInterval(() => void this.tick(), this.config.blockers.tickMs);
@@ -124,6 +125,16 @@ export class BlockerService {
     if (this.timer !== undefined) this.timers.clearInterval(this.timer);
     this.timer = undefined;
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
+  }
+
+  /**
+   * The controls changed: the monthly cap clears money-capped rows (`cap_changed`); any other
+   * control clears the rows of the reasons it holds by (`controls_changed`). A pause, an autonomy
+   * or a power option toggled never sets a money-capped task free.
+   */
+  private async controlsChanged(changed: readonly string[]): Promise<void> {
+    if (changed.includes("monthlyCapUsd")) await this.notify("cap_changed");
+    if (changed.some((field) => field !== "monthlyCapUsd")) await this.notify("controls_changed");
   }
 
   /**

@@ -123,6 +123,14 @@ describe("gardener blockers", () => {
       "cap.feature_daily"
     ]);
     expect(gardenerReasonsClearedBy("month_rollover")).toEqual(["cap.money_80", "cap.money_100"]);
+    expect(gardenerReasonsClearedBy("cap_changed")).toEqual(["cap.money_80", "cap.money_100"]);
+    // A pause, autonomy or power option toggled never sets a money-capped task free.
+    expect(gardenerReasonsClearedBy("controls_changed")).toEqual([
+      "paused.user_pause",
+      "paused.autonomy_off",
+      "paused.only_idle_user_active",
+      "paused.only_ac_on_battery"
+    ]);
     expect(gardenerReasonsClearedBy("budget_continued")).toEqual(["cap.money_80"]);
     expect(gardenerReasonsClearedBy("download_settled")).toEqual([
       "no_model.model_missing",
