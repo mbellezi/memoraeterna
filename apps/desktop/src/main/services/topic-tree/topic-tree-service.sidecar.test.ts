@@ -455,9 +455,11 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     } finally {
       await supervisor.stop();
     }
+    // A finished job keeps no `locked_at`; the jobs of one scope run one at a time (F4 D6), so the
+    // order they finished in is the order they ran in.
     const order = await pool.query<{ root: string; status: string }>(
       `select payload->>'rootSourceId' as root, status from jobs
-        where type = 'topic-place' and payload->>'rootSourceId' = any($1) order by locked_at`,
+        where type = 'topic-place' and payload->>'rootSourceId' = any($1) order by finished_at`,
       [roots.map((root) => root.id)]
     );
     expect(order.rows.map((row) => row.status)).toEqual(["succeeded", "succeeded", "succeeded"]);
