@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { gardenerBlockerClasses, type GardenerBlocker, type GardenerBlockerClass } from "./blockers.js";
+import {
+  gardenerBlockerClasses,
+  type GardenerBlocker,
+  type GardenerBlockerClass
+} from "./blockers.js";
 
 /**
  * Gardener task state (F4 D5, spec 3.1). The `jobs` table keeps its five statuses; the Gardener
