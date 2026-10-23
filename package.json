@@ -70,6 +70,7 @@
     "soak:latency-fit": "tsx scripts/soak/latency-fit.ts",
     "topics:replay": "tsx scripts/topics/replay.ts",
     "topics:audit": "tsx scripts/topics/audit.ts",
+    "topics:lints": "tsx scripts/topics/audit-lints.ts",
     "topics:bench": "tsx scripts/topics/read-benchmark.ts",
     "topics:export": "tsx scripts/topics/export.ts",
     "topics:profiles": "tsx scripts/topics/env-profiles.ts",

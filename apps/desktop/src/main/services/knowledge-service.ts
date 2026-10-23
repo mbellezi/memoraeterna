@@ -1,9 +1,9 @@
 import {
-  renderPrompt,
   capturePromptPin,
   stagePromptFingerprints,
   changedPromptIdentity
 } from "./prompt-runtime.js";
+import { atomicNoteEmbeddingText } from "./note-embedding-text.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
 import {
@@ -2023,15 +2023,6 @@ const nativeEmbeddingStrategyPrefix = "native-v2:";
 interface NoteVector {
   embedding: number[];
   space: { model: string; provider: string; runtime: string; spaceKey: string };
-}
-
-/** The text a note is embedded from; its hash tells whether a stored vector is still current. */
-function atomicNoteEmbeddingText(note: AtomicNoteRecord): string {
-  return renderPrompt("embedding.content.note", {
-    note_title: note.title,
-    note_idea: note.ideaStatement,
-    note_body: note.bodyMarkdown
-  });
 }
 
 export function serializeNote(note: AtomicNoteRecord) {

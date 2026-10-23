@@ -229,6 +229,11 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     isRegistered,
     effectiveConfig: () => options.newTreeConfig?.() ?? defaultTopicTreeConfig,
     spaceChange,
+    // F4 D19 (5): the audit asks the naming job (created below) to name again the topics whose
+    // names drifted from the theme of their members.
+    requestThemeRenames: async (treeId, topicIds) => {
+      await naming?.requestThemeRenames(treeId, topicIds);
+    },
     ...(options.clusterTopics ? { clusterTopics: options.clusterTopics } : {}),
     ...(logger ? { logger } : {}),
     ...(options.now ? { now: options.now } : {})

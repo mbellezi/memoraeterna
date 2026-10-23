@@ -1079,6 +1079,46 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     }
   }, 60_000);
 
+  it("names a topic again when AUDIT found its name far from its theme, once its members changed (F4 D19)", async () => {
+    const w = await world();
+    try {
+      await runNaming(w);
+      await byHand(w, "A2", { title: "Minha escolha" });
+      const first = await rows(w);
+      const calls = w.calls.length;
+      // Nothing changed since the names were written: the request alone renames nothing, so a
+      // topic the model cannot name any better is not asked for again and again.
+      await w.services.naming!.requestThemeRenames(w.treeId, [w.topics.A1]);
+      const quiet = await runDue(w, "topic-name");
+      expect(quiet.result).toMatchObject({ status: "nothing_to_name" });
+      expect(w.calls).toHaveLength(calls);
+      // One note leaves each of A1 and A2 (a drift of 0.25, below renameDrift, which alone asks
+      // for nothing): AUDIT's request names the LLM-named one, never the one a person named.
+      await pool.query("delete from atomic_notes where id = any($1::uuid[])", [
+        [w.notes.A1![0], w.notes.A2![0]]
+      ]);
+      w.services.service.invalidate();
+      w.setResponder((call) => ({
+        topics: call.groups.flatMap((group) =>
+          group.topics.map((topic) => ({ ...item(topic), title: "Testes e recuperação" }))
+        )
+      }));
+      await w.services.naming!.requestThemeRenames(w.treeId, [w.topics.A1, w.topics.A2]);
+      const asked = await runDue(w, "topic-name");
+      expect(asked.result).toMatchObject({ status: "named", candidates: 1, llmNamed: 1 });
+      const second = await rows(w);
+      expect(second.A1?.title).toBe("Testes e recuperação");
+      expect(second.A1?.namedBy).not.toBe(first.A1?.namedBy);
+      expect(second.A2).toMatchObject({
+        title: "Minha escolha",
+        source: "human",
+        namedBy: first.A2?.namedBy
+      });
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
   it("names a topic a rebuild merged again at once, from its members and not its old title", async () => {
     const w = await world();
     try {

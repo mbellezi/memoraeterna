@@ -29,9 +29,11 @@ import type {
   PgPool,
   TopicItemInfo,
   TopicItemVectors,
+  TopicTreeRecord,
   TopicTreeSpaceInput
 } from "@app/db";
-import { topicLimits } from "@app/domain";
+import { defaultAuditLintConfig, redirectFindings, topicLimits } from "@app/domain";
+import type { AuditLintConfig, LintFinding, RedirectChain } from "@app/domain";
 import {
   applyRebuild,
   areasActive,
@@ -41,6 +43,7 @@ import {
   chapterSeedGroups,
   coldStartKind,
   compareContentKeys,
+  compressRedirects,
   createTopicTreeEditor,
   createTopicTreeState,
   decidePlacement,
@@ -66,6 +69,7 @@ import {
   pathOf,
   placeItem,
   placementRecord,
+  planRedirectCompression,
   primaryPlacement,
   rebalanceTree,
   rebuildNeedsReview,
@@ -77,6 +81,7 @@ import {
   recomputeSubtree,
   registerItem,
   rejectedRebuildBaseline,
+  replacementCandidates,
   rootSourceVectorFromState,
   rowView,
   setFrozenTopics,
@@ -84,6 +89,7 @@ import {
   smallLibraryPartition,
   smallPartitionNodes,
   structureSignals,
+  themeDrift,
   topicClusteringMaxSeedGroups,
   topicClusteringRowOrder,
   topicRecordOf,
@@ -96,6 +102,7 @@ import type {
   ChapterSeeding,
   FrozenSubtree,
   ItemKey,
+  MisplacedItem,
   PlacementContext,
   RebuildQuality,
   RebuildReason,
@@ -112,6 +119,7 @@ import type {
 import { jobTaskPayload } from "../../job-task-payload.js";
 import { detectCommunitiesLouvain } from "../../workers/topic-communities.js";
 import { WorkerSupervisor } from "../worker-supervisor.js";
+import { AuditLints } from "./topic-audit-lints.js";
 import { localDay } from "./topic-ai.js";
 import type { TopicAiMode } from "./topic-ai.js";
 import {
@@ -161,8 +169,30 @@ export interface TopicStructureJobsOptions {
   clusterTopics?: ClusterTopics;
   /** The re-embedding of a space change (D26); default: one on the same pool and resolver. */
   spaceChange?: TopicSpaceChange;
+  /** The numbers of the audit's lints (F4 D19); default: the typed configuration's start values. */
+  lints?: AuditLintConfig;
+  /**
+   * Asks the naming job to name these topics again: their names no longer match the theme of their
+   * members (theme drift, F4 D19 (5)). Absent, no rename is requested.
+   */
+  requestThemeRenames?: (treeId: string, topicIds: readonly string[]) => Promise<void>;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
+}
+
+/** What the audit hands on after its engine turn, once the tree lock is released. */
+interface AuditFollowUp {
+  tree: TopicTreeRecord;
+  /** Redirects the engine could not fix (a cycle, a missing target): findings for the Inbox. */
+  redirectFindings: LintFinding[];
+  /** Topics whose name drifted from the theme of their members: named again. */
+  themeDrifted: string[];
+}
+
+/** The days since 1970-01-01 of a local day (`YYYY-MM-DD`): the rolling re-placement's clock. */
+function dayNumber(day: string): number {
+  const [year, month, date] = day.split("-").map(Number);
+  return Math.floor(Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1) / 86_400_000);
 }
 
 /** A rebuild that moves the tree to the route's embedding space (D26). */
@@ -296,8 +326,27 @@ export class TopicStructureJobs {
    * protected hard violations), as in the replay. A whole-tree pass costs seconds at 18k notes.
    */
   private readonly dirty = new Map<string, Set<string>>();
+  /**
+   * The audit's lints that read the database (duplicate notes, broken links, stale embeddings;
+   * F4 D19), run after its engine turn.
+   */
+  private readonly auditLints: AuditLints;
+  private readonly lintConfig: AuditLintConfig;
+  /**
+   * The notes the audit's rolling re-placement found a better leaf for, by the leaf they sit in
+   * (D19 (4)): REBALANCE tries them against its acceptance rule at its next run.
+   */
+  private readonly misplaced = new Map<string, Map<string, MisplacedItem[]>>();
+  /** The local day of the last rolling re-placement per tree: it decides again once a day. */
+  private lastRolling: { treeId: string; day: string } | null = null;
 
   public constructor(private readonly options: TopicStructureJobsOptions) {
+    this.lintConfig = options.lints ?? defaultAuditLintConfig;
+    this.auditLints = new AuditLints({
+      getPool: options.getPool,
+      config: this.lintConfig,
+      ...(options.logger ? { logger: options.logger } : {})
+    });
     this.spaceChange =
       options.spaceChange ??
       new TopicSpaceChange({
@@ -1679,6 +1728,8 @@ export class TopicStructureJobs {
     const topics = [...new Set(marked)].sort();
     if (topics.length === 0) return { status: "no_change", checked: 0, areasActive: areas };
     const freshItems = await this.freshItems(tree.id, config, iso, recentItems);
+    // The notes the audit's rolling re-placement would put in another leaf (F4 D19 (4)).
+    const misplaced = this.takeMisplaced(tree.id);
     // Area-level operations wait for review once the tree had its first Areas grouping (D12, T24).
     const grouped = areas ? await repository.changeSetStatusCounts(tree.id, "areas") : null;
     const areaLevelReview = grouped !== null && grouped.applied + grouped.undone > 0;
@@ -1696,7 +1747,8 @@ export class TopicStructureJobs {
       freshItems,
       areasActive: areas,
       areaLevelReview,
-      readmit: readmitter(state, vectors, config)
+      readmit: readmitter(state, vectors, config),
+      ...(misplaced.size > 0 ? { misplaced } : {})
     });
     const engineMs = round(performance.now() - started);
     // What REBALANCE deferred stays dirty for the next run.
@@ -1720,6 +1772,10 @@ export class TopicStructureJobs {
       trials: result.trials,
       exhausted: result.exhausted,
       unresolvedHard: result.unresolvedHard.length,
+      misplacedLeaves: misplaced.size,
+      misplacedMoved: result.applied
+        .filter((operation) => operation.condition === "misplaced")
+        .reduce((total, operation) => total + operation.churn.items.length, 0),
       engineMs
     };
     let status = "no_change";
@@ -1903,9 +1959,58 @@ export class TopicStructureJobs {
   public runAudit(job: JobRecord): Promise<JsonObject> {
     const { treeId } = TopicTreePayloadSchema.parse(jobTaskPayload(job.payload));
     return timed(async () => {
-      const result = await this.options.service.runOnTree(treeId, (cache) => this.auditNow(cache));
-      return result ?? { status: "tree_inactive" };
+      let followUp: AuditFollowUp | null = null;
+      const result = await this.options.service.runOnTree(treeId, async (cache) => {
+        const audited = await this.auditNow(cache, job);
+        followUp = audited.followUp;
+        return audited.result;
+      });
+      if (result === null || followUp === null) return { status: "tree_inactive" };
+      return { ...result, lints: await this.auditFollowUp(treeId, followUp) };
     });
+  }
+
+  /**
+   * What the audit does once the engine's turn is over (F4 D19): the lints that read the database
+   * and hold no tree lock (duplicate notes, broken links, stale embeddings), the findings of
+   * redirects the engine could not fix, and the naming of topics whose names drifted from the
+   * theme of their members. Another audit follows while a scan has more notes to read.
+   */
+  private async auditFollowUp(treeId: string, followUp: AuditFollowUp): Promise<JsonObject> {
+    const summary: JsonObject = {};
+    try {
+      const resolution = await this.options.spaceResolver.resolve();
+      const report = await this.auditLints.run(
+        {
+          id: followUp.tree.id,
+          spaceKey: followUp.tree.spaceKey,
+          dimensions: followUp.tree.dimensions,
+          embeddingModel: followUp.tree.embeddingModel
+        },
+        {
+          spaceChanged: compareTreeSpace(followUp.tree, resolution).kind === "space_changed",
+          allowEmbedding: this.options.aiMode === "full"
+        }
+      );
+      summary.duplicates = report.duplicates;
+      summary.brokenLinks = report.brokenLinks;
+      summary.staleEmbeddings = report.staleEmbeddings;
+      if (report.more) {
+        await this.guard(() => this.request(topicJobTypes.audit, treeId).then(() => undefined));
+      }
+    } catch (error) {
+      this.options.logger?.warn("The audit's database lints could not run", error);
+      summary.error = error instanceof Error ? error.message.slice(0, 200) : "unknown";
+    }
+    try {
+      summary.redirects = await this.auditLints.recordRedirectFindings(followUp.redirectFindings);
+    } catch (error) {
+      this.options.logger?.warn("The audit's redirect findings could not be recorded", error);
+    }
+    if (followUp.themeDrifted.length > 0 && this.options.requestThemeRenames) {
+      await this.guard(() => this.options.requestThemeRenames!(treeId, followUp.themeDrifted));
+    }
+    return summary;
   }
 
   /**
@@ -1913,16 +2018,36 @@ export class TopicStructureJobs {
    * cached tree, the day's gauges in `topic_daily_metrics`, then what it asks for: a sweep when
    * statistics drifted, REBALANCE for hard violations and re-parent candidates (D12: they go
    * through its acceptance), and a build for a new structural configuration or a rebuild trigger.
+   * With the lints of F4 D19 that read the tree: redirect chains are compressed through the
+   * engine, the names far from the theme of their topics are listed for naming, and once a day a
+   * rolling sample of the placed notes is decided again, its candidates going to REBALANCE.
    */
-  private async auditNow(cache: TopicTreeCache): Promise<JsonObject> {
+  private async auditNow(
+    cache: TopicTreeCache,
+    job: JobRecord
+  ): Promise<{ result: JsonObject; followUp: AuditFollowUp }> {
+    // Redirect chains first: the change-set moves the generation the rest of the audit reports.
+    const redirects = planRedirectCompression(cache.state, this.lintConfig);
+    let compressed = 0;
+    if (redirects.chains.length > 0) {
+      try {
+        compressed = await this.compressRedirects(cache, redirects.chains, job);
+      } catch (error) {
+        // The chains are only tidier redirects: the rest of the audit still runs, on a fresh load.
+        this.options.service.invalidate();
+        this.options.logger?.warn("The audit could not compress the redirect chains", error);
+      }
+    }
     const { state, vectors, config, tree } = cache;
     const areas = areasActive(state);
     const started = performance.now();
     const audit = auditTopicTree(state, vectors, config, { seed: tree.seed, areasActive: areas });
+    const theme = themeDrift(state, this.lintConfig);
+    const day = localDay(this.now());
+    const replacement = this.replaceRolling(cache, day);
     const report = shapeReport(state, config, { areasActive: areas });
     const engineMs = round(performance.now() - started);
     const repository = createTopicTreeRepository(this.requirePool());
-    const day = localDay(this.now());
     const soft = Object.values(report.violations.soft).reduce((total, count) => total + count, 0);
     await repository.upsertDailyMetrics({
       treeId: tree.id,
@@ -1944,14 +2069,16 @@ export class TopicStructureJobs {
       ).length;
     }
     const reparent = audit.reparentCandidates.filter((finding) => !finding.protected).length;
-    // Topics out of their bands (hard or soft, protected ones to be proposed) and the re-parent
+    // Topics out of their bands (hard or soft, protected ones to be proposed), the re-parent
     // candidates (D12: they go through REBALANCE acceptance, which turns protected and Area-level
-    // ones into proposals) wait for REBALANCE.
+    // ones into proposals) and the leaves holding notes the rolling re-placement would put
+    // elsewhere (D19 (4)) wait for REBALANCE.
     const flagged = new Set<string>([
       ...audit.invariants.violations.flatMap((violation) =>
         violation.topicId === null || violation.topicId === state.rootId ? [] : [violation.topicId]
       ),
-      ...audit.reparentCandidates.map((finding) => finding.topicId)
+      ...audit.reparentCandidates.map((finding) => finding.topicId),
+      ...replacement.leaves
     ]);
     if (hasTopics(state) && flagged.size > 0) {
       this.markDirty(tree.id, flagged);
@@ -1971,25 +2098,145 @@ export class TopicStructureJobs {
       }
     }
     return {
-      status: "audited",
-      generation: tree.generation,
-      areasActive: areas,
-      reachability: report.reachability,
-      hardViolations: report.violations.hardCount,
-      awaitingApproval: report.violations.awaitingApproval,
-      softViolations: soft,
-      misParented: audit.misParent.findings.length,
-      reparentCandidates: reparent,
-      flaggedTopics: flagged.size,
-      driftedTopics: audit.recomputeTopics.length,
-      flagged: { ...audit.flaggedItems },
-      unsortedShare: report.unsortedShare,
-      meanDepth: report.itemDepth.mean,
-      fanOutInTarget: report.fanOut.inTarget,
-      rebuild,
-      requested,
-      engineMs
+      result: {
+        status: "audited",
+        generation: cache.tree.generation,
+        areasActive: areas,
+        reachability: report.reachability,
+        hardViolations: report.violations.hardCount,
+        awaitingApproval: report.violations.awaitingApproval,
+        softViolations: soft,
+        misParented: audit.misParent.findings.length,
+        reparentCandidates: reparent,
+        flaggedTopics: flagged.size,
+        driftedTopics: audit.recomputeTopics.length,
+        flagged: { ...audit.flaggedItems },
+        unsortedShare: report.unsortedShare,
+        meanDepth: report.itemDepth.mean,
+        fanOutInTarget: report.fanOut.inTarget,
+        rebuild,
+        requested,
+        engineMs,
+        redirects: {
+          retired:
+            redirects.report.direct +
+            redirects.report.chains.length +
+            redirects.report.deadEnds +
+            redirects.report.unresolved.length,
+          chains: redirects.report.chains.length,
+          compressed,
+          deferred: redirects.deferred,
+          deadEnds: redirects.report.deadEnds,
+          unresolved: redirects.report.unresolved.length
+        },
+        themeDrift: {
+          measured: theme.measured,
+          drifted: theme.drifted.length,
+          deferred: theme.deferred,
+          percentiles: theme.percentiles
+        },
+        replacement: replacement.summary
+      },
+      followUp: {
+        tree: cache.tree,
+        redirectFindings: redirectFindings(redirects.report),
+        themeDrifted: theme.drifted.map((entry) => entry.topicId)
+      }
     };
+  }
+
+  /**
+   * Compresses redirect chains through the engine (F4 D19 (2)): each retired topic is pointed at
+   * the live topic its chain ends at, as one `audit` change-set that can be undone. The state
+   * already holds the result; a change-set that does not commit drops the cache.
+   */
+  private async compressRedirects(
+    cache: TopicTreeCache,
+    chains: readonly RedirectChain[],
+    job: JobRecord
+  ): Promise<number> {
+    const { state, tree } = cache;
+    const events = compressRedirects(state, chains);
+    if (events.length === 0) return 0;
+    const outcome = await createTopicTreeRepository(this.requirePool()).applyChangeSet({
+      treeId: tree.id,
+      expectedGeneration: tree.generation,
+      origin: "audit",
+      titleKey: "topics.changeSets.redirects",
+      titleParams: { topics: events.length },
+      risk: "low",
+      jobId: job.id,
+      summary: {
+        redirects: events.length,
+        longest: chains.reduce((most, chain) => Math.max(most, chain.hops), 0)
+      },
+      events
+    });
+    if (outcome.kind !== "applied") {
+      this.options.service.invalidate();
+      return 0;
+    }
+    cache.tree = { ...tree, generation: outcome.generation };
+    state.generation = outcome.generation;
+    // The live topics that now carry the aliases of the shortened redirects.
+    const targets = [...new Set(chains.map((chain) => chain.to))].sort();
+    this.options.changes.record({
+      treeId: tree.id,
+      generation: outcome.generation,
+      topicIds: targets.length > topicLimits.changedTopicIdsMax ? null : targets,
+      changeSetId: outcome.changeSetId
+    });
+    return events.length;
+  }
+
+  /**
+   * The rolling re-placement (F4 D19 (4)): once a local day, a 1% window of the placed notes is
+   * decided again against the tree as it is now. The candidates wait for REBALANCE by the leaf
+   * they sit in, which it checks against its acceptance rule at its next run.
+   */
+  private replaceRolling(
+    cache: TopicTreeCache,
+    day: string
+  ): { leaves: string[]; summary: JsonObject } {
+    const { state, vectors, config, tree } = cache;
+    if (this.lastRolling?.treeId === tree.id && this.lastRolling.day === day) {
+      return { leaves: [], summary: { state: "done_today" } };
+    }
+    this.lastRolling = { treeId: tree.id, day };
+    const report = replacementCandidates(state, vectors, config, this.lintConfig, dayNumber(day));
+    const byLeaf = new Map<string, MisplacedItem[]>();
+    for (const candidate of report.candidates) {
+      const moves = byLeaf.get(candidate.from) ?? [];
+      moves.push({ item: candidate.item, to: candidate.to });
+      byLeaf.set(candidate.from, moves);
+    }
+    if (byLeaf.size > 0) this.misplaced.set(tree.id, byLeaf);
+    else this.misplaced.delete(tree.id);
+    return {
+      leaves: [...byLeaf.keys()],
+      summary: {
+        state: "decided",
+        eligible: report.eligible,
+        sampled: report.sampled,
+        candidates: report.candidates.length,
+        deferred: report.deferred
+      }
+    };
+  }
+
+  /**
+   * Lets the next audit decide the rolling sample again although it did so today (the soak
+   * harness's contention bursts, F4 T89): the product itself decides once a day.
+   */
+  public resetRollingReplacement(): void {
+    this.lastRolling = null;
+  }
+
+  /** The candidates REBALANCE tries now: taken, so a run decides them once. */
+  private takeMisplaced(treeId: string): Map<string, MisplacedItem[]> {
+    const moves = this.misplaced.get(treeId);
+    this.misplaced.delete(treeId);
+    return moves ?? new Map();
   }
 
   private now(): Date {

@@ -315,6 +315,8 @@ export class TopicNamingService {
   private readonly drops = new Map<string, DropRecord>();
   /** The last drift check per tree: when, and the tree generation it saw. */
   private readonly driftChecked = new Map<string, { at: number; generation: number | null }>();
+  /** Topics AUDIT found far from the theme of their name (F4 D19 (5)), until the next job. */
+  private readonly themeRequests = new Map<string, Set<string>>();
   /** No model route: naming falls back to provisional names until this time. */
   private routeBlockedUntil = 0;
 
@@ -388,6 +390,26 @@ export class TopicNamingService {
     }
   }
 
+  /**
+   * Asks for the topics whose name no longer matches the theme of their members (AUDIT's theme
+   * drift, F4 D19 (5), plan decision 20) to be named again. Only a topic an LLM named and
+   * automation may rename is named again, and only while its members changed since the name was
+   * written (the history the drift check reads), so a topic the model cannot name better is not
+   * asked for again and again. Human and pinned names never change. Never throws.
+   */
+  public async requestThemeRenames(treeId: string, topicIds: readonly string[]): Promise<void> {
+    if (this.options.aiMode !== "full" || topicIds.length === 0) return;
+    if (!this.options.isRegistered(topicJobTypes.name)) return;
+    const requested = this.themeRequests.get(treeId) ?? new Set<string>();
+    for (const topicId of topicIds) requested.add(topicId);
+    this.themeRequests.set(treeId, requested);
+    try {
+      await this.options.triggers.request(topicJobTypes.name, treeId);
+    } catch (error) {
+      this.options.logger?.warn("Topic naming could not be requested for theme drift", error);
+    }
+  }
+
   /** The `topicsChanged` listener: any committed change may have created topics. */
   public readonly onTopicsChanged = (event: TopicsChangedEvent): void => {
     void this.requestIfNeeded(event.treeId, event.generation);
@@ -408,7 +430,8 @@ export class TopicNamingService {
       (id) => !this.cooling(id)
     );
     const requeued = this.requeuedIn(treeId);
-    if (waiting.length === 0 && !requeued && !this.driftDue(treeId)) {
+    const themed = this.themeRequests.get(treeId) ?? new Set<string>();
+    if (waiting.length === 0 && !requeued && themed.size === 0 && !this.driftDue(treeId)) {
       return { status: "nothing_to_name", treeId };
     }
 
@@ -419,7 +442,7 @@ export class TopicNamingService {
 
     // Members drift when items arrive, leave or are replaced (REBALANCE, rebuilds, PLACE). A
     // re-queued drift rename is a candidate again only through a drift check.
-    const drifting = requeued || this.driftDue(treeId, cache.tree.generation);
+    const drifting = requeued || themed.size > 0 || this.driftDue(treeId, cache.tree.generation);
     const history = drifting ? await this.namingHistory(cache, repository) : null;
     if (drifting) {
       this.driftChecked.set(treeId, {
@@ -427,11 +450,20 @@ export class TopicNamingService {
         generation: cache.tree.generation
       });
     }
+    // The requests of AUDIT are answered by this job, whatever it finds: it asks again at its next run.
+    this.themeRequests.delete(treeId);
     const candidates = namingCandidates(cache.state, cache.config, {
       skip: new Set([...cache.state.topics.keys()].filter((id) => this.cooling(id))),
       ...(history
         ? {
-            drift: (id: string) => history.drift.get(id) ?? null,
+            drift: (id: string) => {
+              const measured = history.drift.get(id) ?? null;
+              // A topic whose name AUDIT found far from its members' theme is named again once its
+              // members have changed since the name was written, whatever the share of change.
+              return themed.has(id) && measured !== null && measured > 0
+                ? Math.max(measured, cache.config.naming.renameDrift)
+                : measured;
+            },
             staleRevision: (id: string) => history.stale.has(id)
           }
         : {})
