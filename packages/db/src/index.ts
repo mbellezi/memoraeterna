@@ -6,6 +6,7 @@ export * from "./repositories/index.js";
 export * from "./sidecar/index.js";
 
 export * from "./repositories/consultationRepository.js";
+export * as consultationPlan from "./repositories/consultationPlan.js";
 export * from "./repositories/obsidianWikiRepository.js";
 export * from "./repositories/obsidianEditorialRepository.js";
 export * from "./repositories/promptRepository.js";

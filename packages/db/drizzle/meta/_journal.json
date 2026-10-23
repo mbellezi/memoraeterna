@@ -449,6 +449,13 @@
       "when": 1792792193888,
       "tag": "0063_legacy_drop",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792794243219,
+      "tag": "0064_ask_text_vectors",
+      "breakpoints": true
     }
   ]
 }

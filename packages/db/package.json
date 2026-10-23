@@ -39,6 +39,7 @@
     "db:budget:verify": "tsx src/scripts/verify-budget-class.ts",
     "db:relation-decisions:verify": "tsx src/scripts/verify-relation-decisions.ts",
     "db:relations:verify": "tsx src/scripts/verify-relations-v2.ts",
+    "db:ask-text:verify": "tsx src/scripts/verify-ask-text.ts",
     "db:notes-active:verify": "tsx src/scripts/verify-notes-active.ts",
     "db:object-locate:verify": "tsx src/scripts/verify-object-locate.ts",
     "db:topic-overview:verify": "tsx src/scripts/verify-topic-overview.ts",

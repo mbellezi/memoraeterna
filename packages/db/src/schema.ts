@@ -428,6 +428,14 @@ export const chunks = pgTable(
     metadata: jsonb("metadata")
       .notNull()
       .default(sql`'{}'::jsonb`),
+    // Ask's text signal (F4 T79, D22): the unaccented 'simple' full-text document of the passage,
+    // stored so the candidate statement ranks it without parsing the text again. It is the document
+    // the statement built per row before (f_unaccent, migration 0053, is unaccent() pinned to one
+    // dictionary), so the ranks are the same. No index: the statement ranks every passage in scope
+    // and has no `@@` a GIN could serve.
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      (): SQL => sql`to_tsvector('simple', f_unaccent(${chunks.content}))`
+    ),
     ...timestamps
   },
   (table) => ({
@@ -1689,6 +1697,13 @@ export const atomicNotes = pgTable(
         setweight(to_tsvector('simple', f_unaccent(coalesce(${atomicNotes.ideaStatement}, ''))), 'A') ||
         setweight(to_tsvector('simple', f_unaccent(left(coalesce(${atomicNotes.bodyMarkdown}, ''), 4000))), 'B')`
     ),
+    // Ask's note signal (F4 T79, D22): the unweighted, unbounded document of idea and body that the
+    // candidate statement ranked per row before. It is not `search_tsv` (weighted, title included,
+    // body cut at 4,000 characters): reusing that one would change the order within the signal.
+    askTsv: tsvector("ask_tsv").generatedAlwaysAs(
+      (): SQL =>
+        sql`to_tsvector('simple', f_unaccent(${atomicNotes.ideaStatement} || ' ' || ${atomicNotes.bodyMarkdown}))`
+    ),
     ...timestamps
   },
   (table) => ({
@@ -1703,7 +1718,9 @@ export const atomicNotes = pgTable(
     titleTrgmIdx: index("atomic_notes_title_trgm_idx").using(
       "gin",
       sql`f_unaccent(${table.title}) gin_trgm_ops`
-    )
+    ),
+    // Ask finds the notes resting on each candidate passage through it (F4 T79).
+    evidenceChunkIdx: index("atomic_notes_evidence_chunk_id_idx").on(table.evidenceChunkId)
   })
 );
 

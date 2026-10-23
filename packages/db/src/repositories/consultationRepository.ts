@@ -45,6 +45,59 @@ const relationRanksCtes = `relation_ranks as materialized(
       group by x.chunk_id)`;
 
 /**
+ * The title signal, computed once per source in scope: an exact (unaccented, case-folded) match of
+ * the question is the best rank, else the rank of the title as a text. It depends only on a
+ * chunk's source, so asking it per chunk parsed the same title again for every passage.
+ */
+const titleRanksCte = `title_ranks as materialized(
+      select s.id,case when unaccent(lower(s.title))=unaccent(lower($2)) then 1 else ts_rank_cd(to_tsvector('simple',unaccent(s.title)),terms.q) end as rank
+      from source_items s cross join terms where s.id=any($1::uuid[]))`;
+
+/**
+ * The entity signal: the best-ranked entity mentioned in a chunk. The text of an entity (name and
+ * aliases) is ranked once per entity mentioned in scope, not once per mention of it in each chunk
+ * as the per-chunk lookup did; a chunk takes the best of its entities. Empty when only reviewed
+ * material may answer.
+ */
+const entityRanksCtes = `mention_entities as materialized(
+      select m.chunk_id,m.source_item_id,m.entity_id from entity_mentions m
+      where not $3 and m.source_item_id=any($1::uuid[])),
+    entity_text_ranks as materialized(
+      select e.id,ts_rank_cd(to_tsvector('simple',unaccent(e.canonical_name||' '||e.aliases::text)),terms.q) as rank
+      from entities e cross join terms where e.id in(select entity_id from mention_entities)),
+    entity_ranks as materialized(
+      select m.chunk_id as id,m.source_item_id,max(r.rank) as rank
+      from mention_entities m join entity_text_ranks r on r.id=m.entity_id group by m.chunk_id,m.source_item_id)`;
+
+/**
+ * The candidates statement of Ask (parameters: sources, question, reviewed only, vector hits,
+ * topic). Every signal that depends on less than the chunk (concepts, relations, titles, entities)
+ * is computed once per statement in its own CTE. The text signal reads `chunks.search_tsv` and the
+ * note signal `atomic_notes.ask_tsv` (migration 0064, stored with f_unaccent, which is unaccent()
+ * pinned to its dictionary); the query side keeps unaccent() so a question is folded as it always
+ * was. No text of a chunk or a note is parsed here: `consultationRepository.test.ts` holds the plan to it.
+ * OR lexemes preserve recall for natural questions; the exact title is a separate ranked signal.
+ */
+export const consultationCandidatesSql = `with recursive roots as(select id,id as root_id from source_items where parent_source_item_id is null union all select s.id,r.root_id from source_items s join roots r on s.parent_source_item_id=r.id),terms as(select to_tsquery('simple',coalesce(nullif(string_agg(quote_literal(word),' | '),''),'''__empty__''')) as q from (select distinct unnest(tsvector_to_array(to_tsvector('simple',unaccent($2)))) as word) words), ${topicScopeCtes("$5")}, ${conceptRanksCtes}, ${relationRanksCtes}, ${titleRanksCte}, ${entityRanksCtes}, candidates as(
+      select roots.root_id as "rootId",c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",c.chunk_index as "chunkIndex",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,
+      ts_rank_cd(c.search_tsv,terms.q) as text,
+      title_ranks.rank as title,
+      case when $3 then 0 else coalesce(concept_ranks.rank,0) end as concept,
+      coalesce((select max(ts_rank_cd(n.ask_tsv,terms.q)) from atomic_notes n where n.evidence_chunk_id=c.id and n.created_from_source_item_id=c.source_item_id and ${inTopicNotes("$5", "n.id")} and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()} and (not $3 or n.status='approved') and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (lc.id is null or lc.source_item_id<>l.source_item_id or l.source_item_id<>all($1::uuid[]) or ld.metadata->>'supersededByDocumentId' is not null))),0) as note,
+      coalesce(entity_ranks.rank,0) as entity,
+      coalesce(relation_ranks.rank,0) as relation
+      from chunks c join roots on roots.id=c.source_item_id join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id cross join terms
+      join title_ranks on title_ranks.id=c.source_item_id
+      left join concept_ranks on concept_ranks.id=c.source_item_id left join relation_ranks on relation_ranks.id=c.id
+      left join entity_ranks on entity_ranks.id=c.id and entity_ranks.source_item_id=c.source_item_id
+      where c.source_item_id=any($1::uuid[]) and ${inTopicChunks("$5", "c.id")}
+        and d.metadata->>'supersededByDocumentId' is null
+        and c.metadata->>'processingMode' is distinct from 'catalog_metadata'
+        and d.metadata->>'processingMode' is distinct from 'catalog_metadata'
+        and c.chunking_version<>'catalog-metadata-v1')
+      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId"`;
+
+/**
  * Original-passage retrieval for Ask: lexical candidates and compatible vector hits. With a topic,
  * only the passages of the topic's subtree are candidates (the sources alone are not enough: a
  * source may hold passages no note of the topic rests on).
@@ -58,27 +111,14 @@ export function createConsultationRepository(pool: Pick<PgPool, "query">) {
       vectorIds: string[] = [],
       topicId: string | null = null
     ) {
-      // OR lexemes preserve recall for natural questions; exact-title is a separate ranked signal.
       const rows = (
-        await pool.query(
-          `with recursive roots as(select id,id as root_id from source_items where parent_source_item_id is null union all select s.id,r.root_id from source_items s join roots r on s.parent_source_item_id=r.id),terms as(select to_tsquery('simple',coalesce(nullif(string_agg(quote_literal(word),' | '),''),'''__empty__''')) as q from (select distinct unnest(tsvector_to_array(to_tsvector('simple',unaccent($2)))) as word) words), ${topicScopeCtes("$5")}, ${conceptRanksCtes}, ${relationRanksCtes}, candidates as(
-      select roots.root_id as "rootId",c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",c.chunk_index as "chunkIndex",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,
-      ts_rank_cd(to_tsvector('simple',unaccent(c.content)),terms.q) as text,
-      case when unaccent(lower(s.title))=unaccent(lower($2)) then 1 else ts_rank_cd(to_tsvector('simple',unaccent(s.title)),terms.q) end as title,
-      case when $3 then 0 else coalesce(concept_ranks.rank,0) end as concept,
-      coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(n.idea_statement||' '||n.body_markdown)),terms.q)) from atomic_notes n where n.evidence_chunk_id=c.id and n.created_from_source_item_id=c.source_item_id and ${inTopicNotes("$5", "n.id")} and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()} and (not $3 or n.status='approved') and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (lc.id is null or lc.source_item_id<>l.source_item_id or l.source_item_id<>all($1::uuid[]) or ld.metadata->>'supersededByDocumentId' is not null))),0) as note,
-      case when $3 then 0 else coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(e.canonical_name||' '||e.aliases::text)),terms.q)) from entity_mentions m join entities e on e.id=m.entity_id where m.chunk_id=c.id and m.source_item_id=c.source_item_id),0) end as entity,
-      coalesce(relation_ranks.rank,0) as relation
-      from chunks c join roots on roots.id=c.source_item_id join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id cross join terms
-      left join concept_ranks on concept_ranks.id=c.source_item_id left join relation_ranks on relation_ranks.id=c.id
-      where c.source_item_id=any($1::uuid[]) and ${inTopicChunks("$5", "c.id")}
-        and d.metadata->>'supersededByDocumentId' is null
-        and c.metadata->>'processingMode' is distinct from 'catalog_metadata'
-        and d.metadata->>'processingMode' is distinct from 'catalog_metadata'
-        and c.chunking_version<>'catalog-metadata-v1')
-      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId"`,
-          [sourceIds, question, reviewedOnly, vectorIds, topicId]
-        )
+        await pool.query(consultationCandidatesSql, [
+          sourceIds,
+          question,
+          reviewedOnly,
+          vectorIds,
+          topicId
+        ])
       ).rows;
       return rows.map((r) => ({
         ...r,

@@ -110,7 +110,8 @@ describe("baseline seed", () => {
       "0060_gardener_tasks",
       "0061_ai_budget_class",
       "0062_change_set_envelope",
-      "0063_legacy_drop"
+      "0063_legacy_drop",
+      "0064_ask_text_vectors"
     ]);
   });
 
@@ -192,7 +193,8 @@ describe("baseline seed", () => {
         "0060_gardener_tasks",
         "0061_ai_budget_class",
         "0062_change_set_envelope",
-        "0063_legacy_drop"
+        "0063_legacy_drop",
+        "0064_ask_text_vectors"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
