@@ -64,7 +64,26 @@ const samples: Record<AppEvent["type"], AppEvent> = {
     topicIds: [id(5)],
     changeSetId: null
   },
-  "relation.created": { type: "relation.created", noteIds: [id(6)] }
+  "relation.created": { type: "relation.created", noteIds: [id(6)] },
+  "budget.changed": {
+    type: "budget.changed",
+    budget: {
+      month: "2026-10",
+      day: "2026-10-23",
+      money: {
+        spentUsd: 4.2,
+        reservedUsd: 0.1,
+        capUsd: 5,
+        pauseShare: 0.8,
+        continued: false,
+        state: "paused",
+        priceTableVersion: "2026-10-23.2"
+      },
+      calls: { usedCalls: 12, reservedCalls: 1, capCalls: 800, state: "open" }
+    }
+  },
+  "changes.changed": { type: "changes.changed", kind: "overview", id: id(7) },
+  "overview.changed": { type: "overview.changed", topicId: id(8) }
 };
 
 describe("the app event contract", () => {
@@ -72,7 +91,7 @@ describe("the app event contract", () => {
     expect(AppEventSchema.safeParse(event).success).toBe(true);
   });
 
-  it("covers exactly the six event types of D26", () => {
+  it("covers the six event types of D26 and the budget, change-set and overview changes", () => {
     expect(Object.keys(samples).sort()).toEqual(
       [
         "gardener.status",
@@ -80,8 +99,27 @@ describe("the app event contract", () => {
         "job.progress",
         "model.download",
         "relation.created",
-        "tree.changed"
+        "tree.changed",
+        "budget.changed",
+        "changes.changed",
+        "overview.changed"
       ].sort()
+    );
+  });
+
+  it("validates the budget's meters and a change-set's reference", () => {
+    const budget = samples["budget.changed"] as Extract<AppEvent, { type: "budget.changed" }>;
+    expect(
+      AppEventSchema.safeParse({
+        ...budget,
+        budget: { ...budget.budget, money: { ...budget.budget.money, spentUsd: -1 } }
+      }).success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "changes.changed", kind: "graph", id: id(9) }).success
+    ).toBe(false);
+    expect(AppEventSchema.safeParse({ type: "overview.changed", topicId: "t" }).success).toBe(
+      false
     );
   });
 

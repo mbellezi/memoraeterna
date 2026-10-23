@@ -60,7 +60,7 @@ import { IngestionService } from "./services/ingestion-service.js";
 import { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
 import { createJobEmbeddingGenerators } from "./services/job-embedding.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
-import { AppEventBus } from "./services/app-events.js";
+import { AppEventBus, budgetEventPublisher, changeSetEventHooks } from "./services/app-events.js";
 import { connectJobProgress, type JobProgressPublisher } from "./services/job-progress.js";
 import {
   createBackgroundPolicy,
@@ -335,6 +335,8 @@ void app.whenReady().then(() => {
     },
     gate: budgetGate,
     blockers: () => backgroundPolicy?.blockers ?? null,
+    // The Activity drawer's budget section follows the meters (`budget.changed`, D26).
+    publish: budgetEventPublisher(events),
     logger: console
   });
   // The Gardener's background policy (F4 T75). `MEMORA_DEV_POWER_BLOCKS` (DEV only, the soak's
@@ -566,7 +568,9 @@ void app.whenReady().then(() => {
     new ChangesService({
       getPool: () => databaseService?.getPool() ?? null,
       topics: () => topicTreeServices?.service ?? null,
-      relationsChanged: announceRelationsChanged
+      relationsChanged: announceRelationsChanged,
+      // After an undo or a review committed: Activity, the Inbox and an open topic page read again.
+      ...changeSetEventHooks(events)
     })
   );
   registerSourceRelationExplanationIpc(

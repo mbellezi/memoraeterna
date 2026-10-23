@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { topicLimits } from "@app/domain";
 
 import { appEventJobIdsMax, type AppEvent, type AppEventOf } from "../../shared/app-events.js";
-import { AppEventBus, appEventCoalesceMs } from "./app-events.js";
+import {
+  AppEventBus,
+  appEventCoalesceMs,
+  budgetEventPublisher,
+  changeSetEventHooks
+} from "./app-events.js";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const counts = { queued: 0, blocked: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
@@ -230,6 +235,44 @@ describe("the app event bus: coalescing", () => {
     expect(sent).toHaveLength(1);
     expect((sent[0] as AppEventOf<"gardener.status">).status.state).toBe("idle");
   });
+
+  it("keeps the newest budget meters, and one event per change-set and per overview", () => {
+    const { bus, sent } = newBus();
+    const budget = (spentUsd: number): AppEventOf<"budget.changed"> => ({
+      type: "budget.changed",
+      budget: {
+        month: "2026-10",
+        day: "2026-10-23",
+        money: {
+          spentUsd,
+          reservedUsd: 0,
+          capUsd: 5,
+          pauseShare: 0.8,
+          continued: false,
+          state: "open",
+          priceTableVersion: "v"
+        },
+        calls: { usedCalls: 0, reservedCalls: 0, capCalls: 800, state: "open" }
+      }
+    });
+    bus.publish(budget(1));
+    bus.publish(budget(2));
+    bus.publish({ type: "changes.changed", kind: "topic", id: id(1) });
+    bus.publish({ type: "changes.changed", kind: "topic", id: id(1) });
+    bus.publish({ type: "changes.changed", kind: "relation", id: id(1) });
+    bus.publish({ type: "overview.changed", topicId: id(2) });
+    bus.publish({ type: "overview.changed", topicId: id(3) });
+    vi.advanceTimersByTime(appEventCoalesceMs);
+
+    expect(sent.map((event) => event.type)).toEqual([
+      "budget.changed",
+      "changes.changed",
+      "changes.changed",
+      "overview.changed",
+      "overview.changed"
+    ]);
+    expect((sent[0] as AppEventOf<"budget.changed">).budget.money.spentUsd).toBe(2);
+  });
 });
 
 describe("the app event bus: validation, listeners and shutdown", () => {
@@ -309,5 +352,36 @@ describe("the app event bus: validation, listeners and shutdown", () => {
 
     expect(sent).toHaveLength(0);
     expect(subscriber).not.toHaveBeenCalled();
+  });
+});
+
+describe("the publishers wired in main", () => {
+  it("puts the change-set service's hooks and the budget's meters on the bus, valid", () => {
+    const invalid = vi.fn();
+    const { bus, sent } = newBus({ onInvalid: invalid });
+    const hooks = changeSetEventHooks(bus);
+    hooks.changed({ kind: "relation", id: id(10) });
+    hooks.overviewChanged(id(11));
+    budgetEventPublisher(bus)({
+      month: "2026-10",
+      day: "2026-10-23",
+      money: {
+        spentUsd: 5,
+        reservedUsd: 0,
+        capUsd: 5,
+        pauseShare: 0.8,
+        continued: true,
+        state: "exhausted",
+        priceTableVersion: "v"
+      },
+      calls: { usedCalls: 0, reservedCalls: 0, capCalls: 800, state: "open" }
+    });
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    expect(invalid).not.toHaveBeenCalled();
+    expect(sent).toEqual([
+      { type: "changes.changed", kind: "relation", id: id(10) },
+      { type: "overview.changed", topicId: id(11) },
+      expect.objectContaining({ type: "budget.changed" })
+    ]);
   });
 });

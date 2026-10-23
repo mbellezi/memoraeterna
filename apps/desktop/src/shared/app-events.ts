@@ -4,7 +4,7 @@
 // handler only ever receives a payload that matches its type. Copy never travels in an event: names
 // are stored values, everything else is a state, a count or a parameter the renderer turns into
 // text through `@app/i18n`.
-import { TopicsChangedEventSchema } from "@app/domain";
+import { BudgetSnapshotSchema, ChangeSetRefSchema, TopicsChangedEventSchema } from "@app/domain";
 import { z } from "zod";
 
 import { localModelStatusSchema, RelationsChangedEventSchema } from "./ipc.js";
@@ -143,13 +143,38 @@ export const RelationCreatedEventSchema = RelationsChangedEventSchema.extend({
   type: z.literal("relation.created")
 });
 
+/**
+ * `budget.changed`: the RemoteBudget's meters moved (a call settled or was refused, the day or
+ * month rolled over, the person continued past the pause share or changed the cap). The Activity
+ * drawer's budget section and its "needs you" item follow it (D14, spec 3.8).
+ */
+export const BudgetChangedEventSchema = z
+  .object({ type: z.literal("budget.changed"), budget: BudgetSnapshotSchema })
+  .strict();
+
+/**
+ * `changes.changed`: one change-set of a store changed status (undone, applied or dismissed after
+ * review, spec 3.4); Activity and the Inbox read it again (`changes.list`, `changes.pendingCounts`).
+ */
+export const ChangeSetChangedEventSchema = ChangeSetRefSchema.extend({
+  type: z.literal("changes.changed")
+}).strict();
+
+/** `overview.changed`: a topic's overview was written again by an undo or an applied proposal. */
+export const OverviewChangedEventSchema = z
+  .object({ type: z.literal("overview.changed"), topicId: z.string().uuid() })
+  .strict();
+
 export const AppEventSchema = z.discriminatedUnion("type", [
   JobProgressEventSchema,
   InboxChangedEventSchema,
   GardenerStatusEventSchema,
   ModelDownloadEventSchema,
   TreeChangedEventSchema,
-  RelationCreatedEventSchema
+  RelationCreatedEventSchema,
+  BudgetChangedEventSchema,
+  ChangeSetChangedEventSchema,
+  OverviewChangedEventSchema
 ]);
 
 export type AppEvent = z.infer<typeof AppEventSchema>;

@@ -3,7 +3,7 @@
 // within one window into one, and sends the result to the windows (one validated preload channel)
 // and to in-process subscribers. Nothing is sent by a timer of its own: a window opens with the
 // first event after an idle spell and closes 250 ms later.
-import { topicLimits } from "@app/domain";
+import { topicLimits, type BudgetSnapshot, type ChangeSetRef } from "@app/domain";
 
 import {
   appEventJobIdsMax,
@@ -66,6 +66,13 @@ const coalescing: { [T in AppEventType]: Coalescing<T> } = {
       };
     }
   },
+  // The newest meters; a change-set or an overview per its own id.
+  "budget.changed": latest(),
+  "changes.changed": {
+    key: (event) => `${event.kind}:${event.id}`,
+    merge: (_previous, next) => next
+  },
+  "overview.changed": { key: (event) => event.topicId, merge: (_previous, next) => next },
   "relation.created": {
     key: () => "",
     merge: (previous, next) => ({
@@ -183,4 +190,25 @@ export class AppEventBus {
       }
     }
   }
+}
+
+/**
+ * The change-set service's hooks on the bus (F4 D10, D26): a change-set that changed status after
+ * an undo or a review, and a topic overview written again by one.
+ */
+export function changeSetEventHooks(bus: Pick<AppEventBus, "publish">): {
+  changed: (ref: ChangeSetRef) => void;
+  overviewChanged: (topicId: string) => void;
+} {
+  return {
+    changed: (ref) => bus.publish({ type: "changes.changed", kind: ref.kind, id: ref.id }),
+    overviewChanged: (topicId) => bus.publish({ type: "overview.changed", topicId })
+  };
+}
+
+/** The RemoteBudget's meters on the bus after they moved (F4 D14, D26). */
+export function budgetEventPublisher(
+  bus: Pick<AppEventBus, "publish">
+): (budget: BudgetSnapshot) => void {
+  return (budget) => bus.publish({ type: "budget.changed", budget });
 }
