@@ -79,6 +79,17 @@ import type {
 } from "@app/domain";
 import type { TopicOverviewCancelInput, TopicOverviewInput, TopicOverviewState } from "@app/domain";
 import type {
+  ChangesDiff,
+  ChangesDiffInput,
+  ChangesList,
+  ChangesListInput,
+  ChangesPendingCounts,
+  ChangesReviewInput,
+  ChangesReviewResult,
+  ChangesUndoInput,
+  ChangesUndoResult
+} from "@app/domain";
+import type {
   MonitoringQuery,
   MonitoringPage,
   MonitoringDetail,
@@ -145,6 +156,11 @@ export const ipcChannels = {
   topicsOverview: "app:topics:overview",
   topicsOverviewCancel: "app:topics:overview-cancel",
   topicsChanged: "app:topics:changed",
+  changesList: "app:changes:list",
+  changesPendingCounts: "app:changes:pending-counts",
+  changesUndo: "app:changes:undo",
+  changesReview: "app:changes:review",
+  changesDiff: "app:changes:diff",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -1937,6 +1953,23 @@ export interface DesktopApi {
     cancelOverview: (input: TopicOverviewCancelInput) => Promise<boolean>;
     /** Pushed after a change-set commits, coalesced; never polled. */
     subscribeChanged: (listener: (event: TopicsChangedEvent) => void) => () => void;
+  };
+  /**
+   * Change-sets of every store (F4 D10): the topic engine's, relation passes and overview writes,
+   * read through one view; each store undoes and reviews its own exactly. Errors: `changes.errors.*`
+   * (and `topics.errors.*` from the topic engine).
+   */
+  changes: {
+    /** Newest first, by kind, status or risk; `nextCursor` continues the page. */
+    list: (input?: ChangesListInput) => Promise<ChangesList>;
+    /** Change-sets that wait for the owner, per store and risk. */
+    pendingCounts: () => Promise<ChangesPendingCounts>;
+    /** Undoes one change-set exactly, or names what blocks it. */
+    undo: (input: ChangesUndoInput) => Promise<ChangesUndoResult>;
+    /** Applies or dismisses a change-set that waits for the owner. */
+    review: (input: ChangesReviewInput) => Promise<ChangesReviewResult>;
+    /** A bounded before and after (the icicle diff and its table); null when it is gone. */
+    diff: (input: ChangesDiffInput) => Promise<ChangesDiff | null>;
   };
   /** The source search of the Ask and Obsidian scope pickers. */
   wiki: {

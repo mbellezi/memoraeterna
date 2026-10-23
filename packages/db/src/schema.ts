@@ -2058,15 +2058,35 @@ export const relationMatchRuns = pgTable(
       .default(sql`'{}'::jsonb`),
     timings: jsonb("timings")
       .notNull()
-      .default(sql`'{}'::jsonb`)
+      .default(sql`'{}'::jsonb`),
+    // A run is a change-set (F4 D10): its localized title (null: the kind's default key), its risk
+    // (D11), the owner's verdict when it waited for review, and when it was reverted.
+    titleKey: text("title_key"),
+    titleParams: jsonb("title_params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    risk: text("risk").notNull().default("low"),
+    reviewStatus: text("review_status"),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    // The job that ran the pass; no foreign key, so pruning old jobs never touches the run.
+    jobId: uuid("job_id")
   },
   (table) => ({
     rootIdx: index("relation_match_runs_root_started_idx").on(table.rootId, table.startedAt),
+    startedIdx: index("relation_match_runs_started_idx").on(table.startedAt),
     values: check(
       "relation_match_runs_values",
       sql`${table.kind} in ('match','link','type','promote','discover','review','veto','reconcile','retype')
         and (${table.outcome} is null or char_length(${table.outcome}) between 1 and 200)
         and jsonb_typeof(${table.counts}) = 'object' and jsonb_typeof(${table.timings}) = 'object'`
+    ),
+    changeSet: check(
+      "relation_match_runs_change_set",
+      sql`(${table.titleKey} is null or char_length(${table.titleKey}) between 1 and 200)
+        and jsonb_typeof(${table.titleParams}) = 'object'
+        and ${table.risk} in ('low','medium','high')
+        and (${table.reviewStatus} is null or ${table.reviewStatus} in ('pending_review','kept','dismissed'))
+        and (${table.undoneAt} is null or ${table.outcome} = 'reverted')`
     )
   })
 );
@@ -3285,6 +3305,8 @@ export const topicChangeSets = pgTable(
       table.treeId,
       table.createdAt.desc()
     ),
+    // The change-set view lists every store newest first; retention reads the oldest (F4 D10).
+    createdIdx: index("topic_change_sets_created_idx").on(table.createdAt),
     generationUidx: uniqueIndex("topic_change_sets_generation_uidx")
       .on(table.treeId, table.generation)
       .where(sql`${table.generation} is not null`),
@@ -3556,7 +3578,13 @@ export const topicOverviews = pgTable(
     support: jsonb("support")
       .notNull()
       .default(sql`'{"status":"unchecked","unsupported":[]}'::jsonb`),
-    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow()
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Divergences kept beside the prose (F4 D17): `[{existing, new, summary}]`, never merged in. */
+    divergences: jsonb("divergences")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Every write raises it; the replaced text is kept in `topic_overview_versions` (undo). */
+    version: integer("version").notNull().default(1)
   },
   (table) => ({
     shapeCheck: check(
@@ -3564,6 +3592,11 @@ export const topicOverviews = pgTable(
       sql`jsonb_typeof(${table.paragraphs}) = 'array' and jsonb_array_length(${table.paragraphs}) between 1 and 12
         and jsonb_typeof(${table.evidence}) = 'array' and jsonb_array_length(${table.evidence}) <= 40
         and jsonb_typeof(${table.support}) = 'object' and ${table.memberCount} >= 0`
+    ),
+    versionCheck: check(
+      "topic_overviews_version",
+      sql`${table.version} >= 1 and jsonb_typeof(${table.divergences}) = 'array'
+        and jsonb_array_length(${table.divergences}) <= 40`
     ),
     textCheck: check(
       "topic_overviews_text",
@@ -3606,6 +3639,125 @@ export const topicOverviewCitations = pgTable(
       "topic_overview_citations_citation",
       sql`${table.n} between 1 and 40 and char_length(${table.excerpt}) between 1 and 1200
         and char_length(${table.excerptHash}) between 1 and 200`
+    )
+  })
+);
+
+/**
+ * The change-sets of overview writes (F4 D10, D17): one row per write that replaced an overview,
+ * keeping the replaced text (`previous`) so the write can be undone exactly, and one row per
+ * proposal that waits for the owner (`proposed`, Suggest autonomy) with the version it was made
+ * on. `version` is the overview version the write produced. Only `topicOverviewRepository` writes
+ * it (D9). Job IDs are provenance without a foreign key: pruning old jobs never touches it.
+ */
+export const topicOverviewVersions = pgTable(
+  "topic_overview_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    origin: text("origin").notNull(),
+    status: text("status").notNull(),
+    titleKey: text("title_key").notNull(),
+    titleParams: jsonb("title_params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    risk: text("risk").notNull().default("low"),
+    /** The overview version the change was made on (0: there was none). */
+    baseVersion: integer("base_version").notNull(),
+    /** The version it produced; null while it is a proposal (pending or dismissed). */
+    version: integer("version"),
+    undoOf: uuid("undo_of").references((): AnyPgColumn => topicOverviewVersions.id, {
+      onDelete: "restrict"
+    }),
+    jobId: uuid("job_id"),
+    /** The overview the write replaced (paragraphs, citations, evidence, support, provenance). */
+    previous: jsonb("previous"),
+    /** A proposal's text, applied only on the owner's verdict. */
+    proposed: jsonb("proposed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    undoneAt: timestamp("undone_at", { withTimezone: true })
+  },
+  (table) => ({
+    topicCreatedIdx: index("topic_overview_versions_topic_created_idx").on(
+      table.topicId,
+      table.createdAt.desc()
+    ),
+    createdIdx: index("topic_overview_versions_created_idx").on(table.createdAt),
+    versionUidx: uniqueIndex("topic_overview_versions_version_uidx")
+      .on(table.topicId, table.version)
+      .where(sql`${table.version} is not null`),
+    undoIdx: index("topic_overview_versions_undo_idx")
+      .on(table.undoOf)
+      .where(sql`${table.undoOf} is not null`),
+    originCheck: check(
+      "topic_overview_versions_origin",
+      sql`${table.origin} in ('write','patch','rewrite','undo')
+        and (${table.origin} = 'undo') = (${table.undoOf} is not null)`
+    ),
+    statusCheck: check(
+      "topic_overview_versions_status",
+      sql`${table.status} in ('applied','undone','pending_review','dismissed')
+        and (${table.status} in ('applied','undone')) = (${table.version} is not null)
+        and (${table.status} in ('applied','undone')) = (${table.appliedAt} is not null)
+        and (${table.status} = 'undone') = (${table.undoneAt} is not null)
+        and (${table.status} <> 'pending_review' or ${table.proposed} is not null)`
+    ),
+    valuesCheck: check(
+      "topic_overview_versions_values",
+      sql`${table.risk} in ('low','medium','high') and ${table.baseVersion} >= 0
+        and (${table.version} is null or ${table.version} > ${table.baseVersion})
+        and char_length(${table.titleKey}) between 1 and 200 and jsonb_typeof(${table.titleParams}) = 'object'
+        and (${table.previous} is null or jsonb_typeof(${table.previous}) = 'object')
+        and (${table.proposed} is null or jsonb_typeof(${table.proposed}) = 'object')`
+    )
+  })
+);
+
+/**
+ * What the Gardener found or keeps for the owner (F4 D19, D29): AUDIT's duplicate notes, broken
+ * links and redirect chains, and the `backlog` and `budget` Inbox items. A finding is unique per
+ * kind and fingerprint, so finding it again updates it and a dismissal persists.
+ */
+export const gardenerFindings = pgTable(
+  "gardener_findings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    /** The objects it names (`memora://` addresses), in content order. */
+    objectRefs: jsonb("object_refs")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Message parameters and details (scalars), never copy. */
+    params: jsonb("params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    risk: text("risk").notNull().default("low"),
+    status: text("status").notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true })
+  },
+  (table) => ({
+    fingerprintUidx: uniqueIndex("gardener_findings_kind_fingerprint_uidx").on(
+      table.kind,
+      table.fingerprint
+    ),
+    openIdx: index("gardener_findings_open_idx")
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'open'`),
+    values: check(
+      "gardener_findings_values",
+      sql`${table.kind} in ('duplicate','broken_link','redirect_chain','backlog','budget')
+        and char_length(${table.fingerprint}) between 1 and 200
+        and jsonb_typeof(${table.objectRefs}) = 'array' and jsonb_array_length(${table.objectRefs}) <= 50
+        and jsonb_typeof(${table.params}) = 'object'
+        and ${table.risk} in ('low','medium','high')
+        and ${table.status} in ('open','dismissed','resolved')
+        and (${table.status} = 'open') = (${table.closedAt} is null)`
     )
   })
 );

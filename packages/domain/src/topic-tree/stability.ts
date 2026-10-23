@@ -5,6 +5,7 @@
 // Hysteresis is the band model of quality.ts; the "moved from X" hint is written by the
 // operations (ShapeContext markMoves). Protection (human and pinned topics) is not a stability
 // control: operations.ts turns anything that touches protected structure into a proposal.
+import { changeSetConfig, type ChangeSetRiskConfig } from "../change-sets.js";
 import type { TopicChangeSetRisk } from "../topics.js";
 import type { TopicTreeConfig } from "./config.js";
 import type { StructureEvent } from "./events.js";
@@ -281,9 +282,59 @@ export function eventChurn(
   return { items, weighted, recent, fresh };
 }
 
-/** Risk of a change-set from the share of items it moved (D29 lists high-risk ones for review). */
-export function changeSetRisk(movedShare: number, config: TopicTreeConfig): TopicChangeSetRisk {
-  if (movedShare > config.rebuild.reviewChurnShare) return "high";
-  if (movedShare > config.repair.softMoveShare) return "medium";
+/**
+ * What a change-set touches beyond the share of items it moves (F4 D11). Every store states the
+ * facts it knows; an absent fact is false.
+ */
+export interface ChangeSetRiskFacts {
+  /** Share of the library's items the change-set re-paths. */
+  movedShare?: number;
+  /** A rebuild: its moved share is judged against the rebuild bar instead. */
+  rebuild?: boolean;
+  /** It touches human-created, human-edited, pinned or protected content. */
+  protectedContent?: boolean;
+  /** It operates on Areas (the second level). */
+  areaLevel?: boolean;
+  /** Items a merge moves. */
+  mergedItems?: number;
+  /** A rebuild that comes with a tree-shape change. */
+  treeShape?: boolean;
+  /** An overview patch's Divergences: stored side by side, or one that would rewrite prose. */
+  divergence?: "none" | "sideBySide" | "rewrite";
+  /** It renames a topic the owner opened within `recentOpenDays`. */
+  renamesRecentlyOpened?: boolean;
+}
+
+/**
+ * Risk of a change-set (D11; D29 reviews the high ones in every autonomy mode). High: human,
+ * pinned or protected content, Area level, a merge over `mergeItemsHigh` items, a rebuild moving
+ * over `rebuildMovedShareHigh`, any other change moving over `rebuild.reviewChurnShare`, a
+ * Divergence that would rewrite prose, a tree-shape rebuild. Medium: a moved share over
+ * `repair.softMoveShare`, an overview patch with a Divergence, a rename of a topic opened lately.
+ * Low: the rest. A bare number is the moved share of a change-set that is not a rebuild.
+ */
+export function changeSetRisk(
+  facts: number | ChangeSetRiskFacts,
+  config: TopicTreeConfig,
+  risk: ChangeSetRiskConfig = changeSetConfig.risk
+): TopicChangeSetRisk {
+  const fact = typeof facts === "number" ? { movedShare: facts } : facts;
+  const moved = fact.movedShare ?? 0;
+  const highShare = fact.rebuild ? risk.rebuildMovedShareHigh : config.rebuild.reviewChurnShare;
+  if (
+    fact.protectedContent === true ||
+    fact.areaLevel === true ||
+    fact.treeShape === true ||
+    fact.divergence === "rewrite" ||
+    (fact.mergedItems ?? 0) > risk.mergeItemsHigh ||
+    moved > highShare
+  )
+    return "high";
+  if (
+    moved > config.repair.softMoveShare ||
+    fact.divergence === "sideBySide" ||
+    fact.renamesRecentlyOpened === true
+  )
+    return "medium";
   return "low";
 }

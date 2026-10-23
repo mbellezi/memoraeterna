@@ -12,12 +12,14 @@ import { topicOverviewSql } from "./topicOverviewRepository.js";
 const workspace = resolve(import.meta.dirname, "../../../..");
 const writer = "packages/db/src/repositories/topicOverviewRepository.ts";
 const probeScript = "packages/db/src/scripts/verify-topic-overview.ts";
+/** The change-set migration's verifier probes the version checks the same way (F4 T77). */
+const probeScripts = [probeScript, "packages/db/src/scripts/verify-change-sets.ts"];
 const probeMarker = "overview constraint probe";
 
 const overviewWrite =
-  /\b(?:insert\s+into|update|delete\s+from|truncate(?:\s+table)?|alter\s+table|copy)\s+(?:only\s+)?(?:public\.)?"?(topic_overviews|topic_overview_citations)"?(?![\w.])/giu;
+  /\b(?:insert\s+into|update|delete\s+from|truncate(?:\s+table)?|alter\s+table|copy)\s+(?:only\s+)?(?:public\.)?"?(topic_overviews|topic_overview_citations|topic_overview_versions)"?(?![\w.])/giu;
 const drizzleWrite =
-  /\.(?:insert|update|delete)\(\s*(?:schema\.)?(topicOverviews|topicOverviewCitations)\s*\)/gu;
+  /\.(?:insert|update|delete)\(\s*(?:schema\.)?(topicOverviews|topicOverviewCitations|topicOverviewVersions)\s*\)/gu;
 
 const isTest = (file: string): boolean =>
   /\.(test|spec)\.[cm]?[jt]sx?$/u.test(file) || /(^|\/)__fixtures__\//u.test(file);
@@ -27,7 +29,7 @@ function overviewWrites(file: string, text: string): string[] {
   for (const pattern of [overviewWrite, drizzleWrite]) {
     for (const match of text.matchAll(pattern)) {
       const window = text.slice(Math.max(0, (match.index ?? 0) - 160), match.index);
-      if (file === probeScript && window.includes(probeMarker)) continue;
+      if (probeScripts.includes(file) && window.includes(probeMarker)) continue;
       writes.push(`${file}:${text.slice(0, match.index).split("\n").length} ${match[0]}`);
     }
   }
@@ -60,6 +62,12 @@ describe("the overview tables have a single writer (D9)", () => {
     ).toHaveLength(1);
     expect(overviewWrites("a.ts", "DELETE FROM topic_overview_citations")).toHaveLength(1);
     expect(overviewWrites("a.ts", "db.insert(topicOverviews).values(row)")).toHaveLength(1);
+    // F4 D10: the versions (overview change-sets) have the same single writer.
+    expect(
+      overviewWrites("a.ts", "update topic_overview_versions set status = 'undone'")
+    ).toHaveLength(1);
+    expect(overviewWrites("a.ts", "db.delete(topicOverviewVersions)")).toHaveLength(1);
+    expect(overviewWrites("a.ts", "select * from topic_overview_versions")).toEqual([]);
     expect(overviewWrites("a.ts", "select * from topic_overviews")).toEqual([]);
     expect(
       overviewWrites(probeScript, `/* ${probeMarker} */ "insert into topic_overviews (x)"`)
@@ -109,6 +117,19 @@ describe("topic overview statements", () => {
     expect(topicOverviewSql.save).toContain(
       "where exists (select 1 from topics t where t.id = $1::uuid and t.retired_at is null)"
     );
+    expect(topicOverviewSql.propose).toContain(
+      "where exists (select 1 from topics t where t.id = $1::uuid and t.retired_at is null)"
+    );
     expect(topicOverviewSql.saveSupport).toContain("written_at = $2::timestamptz");
+  });
+
+  it("raise the version on every write and keep the replaced text whole (F4 D10)", () => {
+    expect(topicOverviewSql.save).toContain("version = topic_overviews.version + 1");
+    expect(topicOverviewSql.lock).toContain("for update");
+    for (const field of ["'citations'", "'support'", "'divergences'", "'evidence'", "'version'"])
+      expect(topicOverviewSql.snapshot).toContain(field);
+    // Retention never prunes a proposal and takes an undo pair together.
+    expect(topicOverviewSql.prunable).toContain("v.proposed is null");
+    expect(topicOverviewSql.prunable).toContain("union select u.id from topic_overview_versions u");
   });
 });

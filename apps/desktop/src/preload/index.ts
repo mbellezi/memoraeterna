@@ -76,6 +76,17 @@ import {
   TopicOverviewResultSchema
 } from "@app/domain";
 import {
+  ChangesDiffInputSchema,
+  ChangesDiffSchema,
+  ChangesListInputSchema,
+  ChangesListSchema,
+  ChangesPendingCountsSchema,
+  ChangesReviewInputSchema,
+  ChangesReviewResultSchema,
+  ChangesUndoInputSchema,
+  ChangesUndoResultSchema
+} from "@app/domain";
+import {
   monitoringQuerySchema,
   monitoringPageSchema,
   monitoringDetailSchema,
@@ -400,6 +411,26 @@ const api: DesktopApi = {
       ipcRenderer.on(ipcChannels.topicsChanged, handler);
       return () => ipcRenderer.removeListener(ipcChannels.topicsChanged, handler);
     }
+  },
+  changes: {
+    list: async (input) =>
+      ChangesListSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.changesList, ChangesListInputSchema.parse(input ?? {}))
+      ),
+    pendingCounts: async () =>
+      ChangesPendingCountsSchema.parse(await ipcRenderer.invoke(ipcChannels.changesPendingCounts)),
+    undo: async (input) =>
+      ChangesUndoResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.changesUndo, ChangesUndoInputSchema.parse(input))
+      ),
+    review: async (input) =>
+      ChangesReviewResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.changesReview, ChangesReviewInputSchema.parse(input))
+      ),
+    diff: async (input) =>
+      ChangesDiffSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.changesDiff, ChangesDiffInputSchema.parse(input))
+      )
   },
   wiki: {
     search: async (input) =>

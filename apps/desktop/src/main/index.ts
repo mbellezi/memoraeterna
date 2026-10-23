@@ -1,4 +1,4 @@
-import { aiConfigGeneration } from "@app/db";
+import { aiConfigGeneration, createJobRepository } from "@app/db";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import {
@@ -82,6 +82,14 @@ import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
 import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
+import { ChangesService } from "./services/gardener/changes-service.js";
+import { registerChangesIpc } from "./services/gardener/changes-ipc.js";
+import {
+  gardenerRetentionJobType,
+  retentionJobExecutor,
+  retentionStartDelayMs,
+  scheduleRetention
+} from "./services/gardener/retention.js";
 import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
 import {
   navigationDirectionFromAppCommand,
@@ -476,6 +484,16 @@ void app.whenReady().then(() => {
       relationsChanged: announceRelationsChanged
     })
   );
+  // F4 D10: the change-sets of every store through one view and one IPC; the topic engine, the
+  // relation event log and the overview repository each undo and review their own exactly.
+  registerChangesIpc(
+    ipcMain,
+    new ChangesService({
+      getPool: () => databaseService?.getPool() ?? null,
+      topics: () => topicTreeServices?.service ?? null,
+      relationsChanged: announceRelationsChanged
+    })
+  );
   registerSourceRelationExplanationIpc(
     ipcMain,
     new SourceRelationExplanationService({
@@ -563,7 +581,13 @@ void app.whenReady().then(() => {
         false,
         (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
       ),
-    lightJobs: topicTreeServices.jobs,
+    lightJobs: {
+      ...topicTreeServices.jobs,
+      // F4 D10: the daily retention pass over change-sets and finished jobs.
+      [gardenerRetentionJobType]: retentionJobExecutor({
+        getPool: () => databaseService?.getPool() ?? null
+      })
+    },
     topicHooks: topicTreeServices.hooks
   });
   // `job.progress` (F4 D26): every state change the supervisor announces becomes one coalesced read of
@@ -830,6 +854,13 @@ void app.whenReady().then(() => {
         const libraryQuiet = verdictOnly || rematch !== undefined;
         // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
         if (!libraryQuiet) await topicTreeServices?.start();
+        // F4 D10: retention runs a while after the start, then daily; a pass already due stays due.
+        if (!libraryQuiet) {
+          await scheduleRetention(
+            createJobRepository(databaseService!.getPool()!),
+            retentionStartDelayMs
+          ).catch((error: unknown) => console.error("Retention could not be scheduled", error));
+        }
         // DEV fake remote providers (MEMORA_FAKE_REMOTE, F3 T62): listening, and the routes that lead
         // to them in place, before any job can make a call.
         if (soakPreparation) {

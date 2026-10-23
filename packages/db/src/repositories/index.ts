@@ -29,6 +29,7 @@ export * from "./note-relation-sql.js";
 export * from "./relationTypingRepository.js";
 export * from "./relationMatchRunRepository.js";
 export * from "./relationEventRepository.js";
+export * from "./changeSetRepository.js";
 export * from "./noteMatchStateRepository.js";
 export * from "./sourceMatchStateRepository.js";
 export * from "./libraryRepository.js";

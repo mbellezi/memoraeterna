@@ -3034,5 +3034,41 @@
       "reviewScope": "Conservar confirma esta relación. Eliminar es definitivo para estas dos notas: no se volverán a sugerir entre sí.",
       "reviewFailed": "No se pudo guardar tu elección. Inténtalo de nuevo."
     }
+  },
+  "changes": {
+    "titles": {
+      "relation": {
+        "match": "Conexiones revisadas para una nota",
+        "link": "Conexiones encontradas para una fuente",
+        "type": "Tipos de conexión asignados",
+        "promote": "Conexiones entre fuentes actualizadas",
+        "discover": "Fuentes relacionadas encontradas",
+        "reconcile": "Conexiones reevaluadas",
+        "retype": "Conexiones sin tipo recibieron un tipo"
+      },
+      "relationMatched": "Conexiones revisadas para «{note}»",
+      "relationSuggested": "{n} conexiones sugeridas para «{source}»",
+      "overview": {
+        "write": "Resumen del tema reescrito",
+        "patch": "Resumen del tema ampliado",
+        "rewrite": "Reescritura del resumen del tema",
+        "undo": "Resumen del tema restaurado"
+      }
+    },
+    "blockers": {
+      "later_change": "Un cambio posterior tocó los mismos elementos. Deshaz ese primero.",
+      "item_deleted": "Algo que tocó este cambio ya no existe.",
+      "changed_since": "Algo que tocó este cambio se modificó después, por ti o por una edición.",
+      "not_applied": "Este cambio no está aplicado.",
+      "not_undoable": "Este cambio no se puede deshacer.",
+      "newer_version": "El resumen se volvió a escribir después de este cambio.",
+      "run_open": "Este cambio todavía está en curso.",
+      "conflict": "Este cambio ya no encaja en la estructura actual."
+    },
+    "errors": {
+      "notFound": "Este cambio ya no existe.",
+      "invalidCursor": "La lista cambió mientras tanto. Vuelve a cargarla.",
+      "unavailable": "Los cambios no están disponibles ahora."
+    }
   }
 }

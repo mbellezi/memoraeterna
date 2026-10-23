@@ -3025,5 +3025,41 @@
       "reviewScope": "Mantieni conferma questa relazione. Rimuovi è definitivo per queste due note: non verranno più suggerite l'una all'altra.",
       "reviewFailed": "Non è stato possibile salvare la tua scelta. Riprova."
     }
+  },
+  "changes": {
+    "titles": {
+      "relation": {
+        "match": "Collegamenti verificati per una nota",
+        "link": "Collegamenti trovati per una fonte",
+        "type": "Tipi di collegamento assegnati",
+        "promote": "Collegamenti tra fonti aggiornati",
+        "discover": "Fonti correlate trovate",
+        "reconcile": "Collegamenti rivalutati",
+        "retype": "Collegamenti senza tipo hanno ricevuto un tipo"
+      },
+      "relationMatched": "Collegamenti verificati per “{note}”",
+      "relationSuggested": "{n} collegamenti suggeriti per “{source}”",
+      "overview": {
+        "write": "Panoramica dell'argomento riscritta",
+        "patch": "Panoramica dell'argomento ampliata",
+        "rewrite": "Riscrittura della panoramica dell'argomento",
+        "undo": "Panoramica dell'argomento ripristinata"
+      }
+    },
+    "blockers": {
+      "later_change": "Una modifica successiva ha toccato gli stessi elementi. Annulla prima quella.",
+      "item_deleted": "Qualcosa toccato da questa modifica non esiste più.",
+      "changed_since": "Qualcosa toccato da questa modifica è stato cambiato in seguito, da te o da una modifica manuale.",
+      "not_applied": "Questa modifica non è applicata.",
+      "not_undoable": "Questa modifica non può essere annullata.",
+      "newer_version": "La panoramica è stata riscritta dopo questa modifica.",
+      "run_open": "Questa modifica è ancora in corso.",
+      "conflict": "Questa modifica non corrisponde più alla struttura attuale."
+    },
+    "errors": {
+      "notFound": "Questa modifica non esiste più.",
+      "invalidCursor": "L'elenco è cambiato nel frattempo. Ricaricalo.",
+      "unavailable": "Le modifiche non sono disponibili in questo momento."
+    }
   }
 }

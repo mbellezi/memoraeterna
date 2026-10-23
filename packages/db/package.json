@@ -46,7 +46,8 @@
     "db:view-history:verify": "tsx src/scripts/verify-view-history.ts",
     "db:note-page:verify": "tsx src/scripts/verify-note-page.ts",
     "db:source-relation-explanations:verify": "tsx src/scripts/verify-source-relation-explanations.ts",
-    "db:topics:verify": "tsx src/scripts/verify-topic-tree.ts"
+    "db:topics:verify": "tsx src/scripts/verify-topic-tree.ts",
+    "db:changes:verify": "tsx src/scripts/verify-change-sets.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",

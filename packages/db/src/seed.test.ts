@@ -106,7 +106,10 @@ describe("baseline seed", () => {
       "0056_relations_v2",
       "0057_ai_task_run_lanes",
       "0058_relation_retrieval_indexes",
-      "0059_relation_direction_source"
+      "0059_relation_direction_source",
+      "0060_gardener_tasks",
+      "0061_ai_budget_class",
+      "0062_change_set_envelope"
     ]);
   });
 
@@ -184,7 +187,10 @@ describe("baseline seed", () => {
         "0056_relations_v2",
         "0057_ai_task_run_lanes",
         "0058_relation_retrieval_indexes",
-        "0059_relation_direction_source"
+        "0059_relation_direction_source",
+        "0060_gardener_tasks",
+        "0061_ai_budget_class",
+        "0062_change_set_envelope"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

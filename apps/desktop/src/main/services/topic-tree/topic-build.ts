@@ -1385,7 +1385,17 @@ export class TopicStructureJobs {
       origin: "rebuild" as const,
       titleKey: plan.space ? "topics.changeSets.space" : "topics.changeSets.rebuild",
       titleParams: { items: rebuilt.churn.items.length },
-      risk: changeSetRisk(rebuilt.movedShare, plan.config),
+      // D11: a rebuild is judged against the rebuild bar; protected content and a structural
+      // configuration (tree shape) change are always reviewed.
+      risk: changeSetRisk(
+        {
+          movedShare: rebuilt.movedShare,
+          rebuild: true,
+          protectedContent: rebuilt.review.protectedTouched,
+          treeShape: reason === "config"
+        },
+        plan.config
+      ),
       jobId: job.id,
       summary,
       events

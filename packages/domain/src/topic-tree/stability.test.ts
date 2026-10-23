@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { changeSetConfig } from "../change-sets.js";
 import { topicTreeConfigWith } from "./config.js";
 import { createTopicTreeEditor } from "./events.js";
 import { fixtureDay, productTree } from "./fixtures/trees.js";
@@ -195,5 +196,42 @@ describe("churn of structure events", () => {
     expect(changeSetRisk(0.01, config)).toBe("low");
     expect(changeSetRisk(0.1, config)).toBe("medium");
     expect(changeSetRisk(0.5, config)).toBe("high");
+    // A bare share and the same share as a fact read alike (existing callers keep their risk).
+    for (const share of [0, 0.05, 0.06, 0.25, 0.26, 1])
+      expect(changeSetRisk({ movedShare: share }, config)).toBe(changeSetRisk(share, config));
+  });
+
+  it("reviews the always-reviewed set of D11 whatever the moved share", () => {
+    for (const facts of [
+      { protectedContent: true },
+      { areaLevel: true },
+      { treeShape: true },
+      { divergence: "rewrite" as const },
+      { mergedItems: changeSetConfig.risk.mergeItemsHigh + 1 },
+      { rebuild: true, movedShare: changeSetConfig.risk.rebuildMovedShareHigh + 0.01 }
+    ])
+      expect(changeSetRisk(facts, config), JSON.stringify(facts)).toBe("high");
+    // A merge at the bar and a rebuild at its bar are not high by themselves.
+    expect(changeSetRisk({ mergedItems: changeSetConfig.risk.mergeItemsHigh }, config)).toBe("low");
+    expect(
+      changeSetRisk(
+        { rebuild: true, movedShare: changeSetConfig.risk.rebuildMovedShareHigh },
+        config
+      )
+    ).toBe("medium");
+    // A rebuild is judged against its own bar, below the general one.
+    expect(changeSetRisk({ movedShare: 0.22 }, config)).toBe("medium");
+    expect(changeSetRisk({ rebuild: true, movedShare: 0.22 }, config)).toBe("high");
+  });
+
+  it("marks Divergences kept side by side and renames of recently opened topics medium", () => {
+    expect(changeSetRisk({ divergence: "sideBySide" }, config)).toBe("medium");
+    expect(changeSetRisk({ divergence: "none" }, config)).toBe("low");
+    expect(changeSetRisk({ renamesRecentlyOpened: true }, config)).toBe("medium");
+    expect(changeSetRisk({}, config)).toBe("low");
+    // The thresholds come from typed configuration.
+    expect(
+      changeSetRisk({ mergedItems: 5 }, config, { ...changeSetConfig.risk, mergeItemsHigh: 4 })
+    ).toBe("high");
   });
 });

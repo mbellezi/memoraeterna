@@ -3027,5 +3027,41 @@
       "reviewScope": "Keep confirms this relation. Remove is final for these two notes: they are not suggested to each other again.",
       "reviewFailed": "Your choice could not be saved. Try again."
     }
+  },
+  "changes": {
+    "titles": {
+      "relation": {
+        "match": "Connections checked for a note",
+        "link": "Connections found for a source",
+        "type": "Connection types set",
+        "promote": "Source connections updated",
+        "discover": "Related sources found",
+        "reconcile": "Connections re-scored",
+        "retype": "Untyped connections given a type"
+      },
+      "relationMatched": "Connections checked for “{note}”",
+      "relationSuggested": "{n} connections suggested for “{source}”",
+      "overview": {
+        "write": "Topic overview rewritten",
+        "patch": "Topic overview extended",
+        "rewrite": "Topic overview rewrite",
+        "undo": "Topic overview restored"
+      }
+    },
+    "blockers": {
+      "later_change": "A later change touched the same items. Undo that one first.",
+      "item_deleted": "Something this change touched no longer exists.",
+      "changed_since": "Something this change touched was changed since, by you or by an edit.",
+      "not_applied": "This change is not applied.",
+      "not_undoable": "This change cannot be undone.",
+      "newer_version": "The overview was written again since this change.",
+      "run_open": "This change is still in progress.",
+      "conflict": "This change no longer fits the current structure."
+    },
+    "errors": {
+      "notFound": "This change no longer exists.",
+      "invalidCursor": "The list changed meanwhile. Load it again.",
+      "unavailable": "Changes are not available right now."
+    }
   }
 }

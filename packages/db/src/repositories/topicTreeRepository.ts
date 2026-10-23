@@ -486,6 +486,34 @@ interface PgErrorLike {
 }
 
 const treeLockKey = (treeId: string): string => `topic-tree:${treeId}`;
+
+/**
+ * $1 tree, $2 cutoff, $3 limit: the change-sets retention deletes (see `pruneChangeSets`), the
+ * oldest first, with the partner of each undo pair. Undo rows are few, so they are read once.
+ */
+const pruneChangeSetsSql = `with keep as (
+    select distinct on (origin) id from topic_change_sets
+     where tree_id = $1 and status in ('applied', 'undone')
+     order by origin, created_at desc, id desc
+  ), named as (
+    select named_change_set_id as id from topics
+     where tree_id = $1 and named_change_set_id is not null
+  ), eligible as (
+    select cs.id, cs.undo_of, cs.created_at from topic_change_sets cs
+     where cs.tree_id = $1 and cs.status in ('applied', 'undone') and cs.created_at < $2::timestamptz
+       and cs.id not in (select id from keep) and cs.id not in (select id from named)
+  ), undos as (
+    select id, undo_of from topic_change_sets where tree_id = $1 and undo_of is not null
+  ), chosen as (
+    select e.id, e.undo_of from eligible e
+     where (e.undo_of is null or e.undo_of in (select id from eligible))
+       and e.id not in (select u.undo_of from undos u where u.id not in (select id from eligible))
+     order by e.created_at, e.id
+     limit $3::int
+  )
+  select id from chosen
+  union select undo_of from chosen where undo_of is not null
+  union select u.id from undos u where u.undo_of in (select id from chosen)`;
 const lifecycleLockKey = "topic-tree:lifecycle";
 
 async function advisoryLock(db: Queryable, key: string): Promise<void> {
@@ -2014,6 +2042,44 @@ export function createTopicTreeRepository(pool: PgPool) {
      */
     async analyzeTopicTables(): Promise<void> {
       await pool.query(`analyze ${topicAnalyzedTables.join(", ")}`);
+    },
+
+    /**
+     * Retention (F4 D10): in each tree, under its lock, deletes up to `limit` applied or undone
+     * change-sets made before `before`, with their events (they cascade), and answers how many
+     * went. Pending and dismissed proposals stay (the engine reads them so it never repeats a
+     * waiting proposal nor brings back a dismissed one), and so do the newest applied or undone
+     * change-set of each origin (readers ask whether a tree had an Areas grouping and which build
+     * it has) and a change-set that named a topic (its sketch measures naming drift). An undo and
+     * the change-set it undid go together, only once both are past the window (`undo_of` restricts
+     * deletes): the undo first, then the rest.
+     */
+    async pruneChangeSets(input: { before: Date; limit: number }): Promise<number> {
+      const limit = Math.max(1, Math.trunc(input.limit));
+      const trees = await pool.query<{ treeId: string }>(
+        `select distinct tree_id as "treeId" from topic_change_sets
+          where created_at < $1::timestamptz and status in ('applied', 'undone')`,
+        [input.before]
+      );
+      let deleted = 0;
+      for (const { treeId } of trees.rows) {
+        deleted += await runWriter(pool, {}, [treeLockKey(treeId)], async (writer) => {
+          const chosen = await writer.query<{ id: string }>(pruneChangeSetsSql, [
+            treeId,
+            input.before,
+            limit
+          ]);
+          const ids = chosen.rows.map((row) => row.id);
+          if (ids.length === 0) return 0;
+          await writer.query(
+            "delete from topic_change_sets where id = any($1::uuid[]) and undo_of is not null",
+            [ids]
+          );
+          await writer.query("delete from topic_change_sets where id = any($1::uuid[])", [ids]);
+          return ids.length;
+        });
+      }
+      return deleted;
     },
 
     /**

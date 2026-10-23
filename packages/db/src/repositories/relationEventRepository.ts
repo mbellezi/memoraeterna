@@ -130,6 +130,35 @@ export type RelationRevertResult =
 /** How many blockers a blocked revert names. */
 export const maxRevertBlockers = 200;
 
+/**
+ * The owner's verdict on a run that waits for review (F4 D29): `keep` leaves its relations as they
+ * stand; `dismiss` reverts it exactly, in the same transaction, and records the verdict only when
+ * the revert ran. A run that does not wait for review says so with the verdict it has.
+ */
+export type RelationRunReviewResult =
+  | { kind: "kept"; runId: string }
+  | {
+      kind: "dismissed";
+      runId: string;
+      revert: Extract<RelationRevertResult, { kind: "reverted" }> | null;
+    }
+  | { kind: "not_pending"; runId: string; reviewStatus: "kept" | "dismissed" | null }
+  | Extract<RelationRevertResult, { kind: "blocked" | "not_found" }>;
+
+/** The pass kinds that record a human verdict: never change-sets, never pruned (F4 D10). */
+export const humanRelationRunKinds = ["review", "veto"] as const;
+
+export interface RelationRevertOptions {
+  /**
+   * Runs inside the revert's transaction once the rows are back (the caller's follow-up, such as
+   * enqueueing re-promotion, I-R10): it commits with the revert or rolls it back.
+   */
+  onReverted?: (
+    client: Queryable,
+    result: Extract<RelationRevertResult, { kind: "reverted" }>
+  ) => Promise<void>;
+}
+
 const eventBatchSize = 500;
 
 interface EventRow extends QueryResultRow {
@@ -467,7 +496,8 @@ export function createRelationEventRepository(pool: PgPool) {
     }));
     await client.query(
       `update relation_match_runs
-          set outcome = $2, counts = counts || jsonb_build_object('revertedEvents', $3::int)
+          set outcome = $2, counts = counts || jsonb_build_object('revertedEvents', $3::int),
+              undone_at = clock_timestamp()
         where id = $1::uuid`,
       [runId, relationRunRevertedOutcome, events]
     );
@@ -565,6 +595,21 @@ export function createRelationEventRepository(pool: PgPool) {
       return result.rows.map(mapEvent);
     },
 
+    /** The notes at the ends of the note relations a run changed (their pages read them again). */
+    async runNoteIds(runId: string, db: Queryable = pool): Promise<string[]> {
+      if (!uuidPattern.test(runId)) return [];
+      const result = await db.query<{ id: string }>(
+        `select distinct x.id from relation_events e
+          cross join lateral (values
+            (coalesce(e.before, e.after) ->> 'source_atomic_note_id'),
+            (coalesce(e.before, e.after) ->> 'target_atomic_note_id')) as x(id)
+          where e.run_id = $1::uuid and e.relation_kind = 'note' and x.id is not null
+          order by x.id`,
+        [runId]
+      );
+      return result.rows.map((row) => row.id);
+    },
+
     /** How many events of each kind a run recorded (the counts a run finishes with). */
     async countByKind(runId: string): Promise<Partial<Record<RelationEventKind, number>>> {
       const result = await pool.query<{ kind: RelationEventKind; count: number }>(
@@ -588,9 +633,16 @@ export function createRelationEventRepository(pool: PgPool) {
      * the caller pushes `relationsChanged` and enqueues re-promotion for the `relations` it gets
      * back (I-R10).
      */
-    async revertRun(runId: string): Promise<RelationRevertResult> {
+    async revertRun(
+      runId: string,
+      options: RelationRevertOptions = {}
+    ): Promise<RelationRevertResult> {
       try {
-        return await withTransaction(pool, (client) => revert(client, runId));
+        return await withTransaction(pool, async (client) => {
+          const result = await revert(client, runId);
+          if (result.kind === "reverted") await options.onReverted?.(client, result);
+          return result;
+        });
       } catch (error) {
         if (error instanceof RevertBlocked)
           return {
@@ -601,6 +653,78 @@ export function createRelationEventRepository(pool: PgPool) {
           };
         throw error;
       }
+    },
+
+    /**
+     * Records the owner's verdict on a run that waits for review (F4 D29). `dismiss` reverts the
+     * run first (see `revertRun`): when something blocks the revert nothing changes and the
+     * blockers are answered, so a dismissed run never leaves its relations behind.
+     */
+    async reviewRun(
+      runId: string,
+      verdict: "keep" | "dismiss",
+      options: RelationRevertOptions = {}
+    ): Promise<RelationRunReviewResult> {
+      if (!uuidPattern.test(runId)) return { kind: "not_found", runId };
+      try {
+        return await withTransaction(pool, async (client): Promise<RelationRunReviewResult> => {
+          const run = (
+            await client.query<{ reviewStatus: "pending_review" | "kept" | "dismissed" | null }>(
+              `select review_status as "reviewStatus" from relation_match_runs
+                where id = $1::uuid for update`,
+              [runId]
+            )
+          ).rows[0];
+          if (!run) return { kind: "not_found", runId };
+          if (run.reviewStatus !== "pending_review")
+            return { kind: "not_pending", runId, reviewStatus: run.reviewStatus };
+          if (verdict === "keep") {
+            await client.query(
+              "update relation_match_runs set review_status = 'kept' where id = $1::uuid",
+              [runId]
+            );
+            return { kind: "kept", runId };
+          }
+          const reverted = await revert(client, runId);
+          if (reverted.kind === "not_found") return reverted;
+          if (reverted.kind === "reverted") await options.onReverted?.(client, reverted);
+          await client.query(
+            "update relation_match_runs set review_status = 'dismissed' where id = $1::uuid",
+            [runId]
+          );
+          return {
+            kind: "dismissed",
+            runId,
+            revert: reverted.kind === "reverted" ? reverted : null
+          };
+        });
+      } catch (error) {
+        if (error instanceof RevertBlocked)
+          return { kind: "blocked", runId, blockers: error.blockers, blockerCount: error.count };
+        throw error;
+      }
+    },
+
+    /**
+     * Retention (F4 D10): deletes up to `limit` finished runs started before `before`, with their
+     * events (they cascade), and answers how many went. Runs that wait for review or carry the
+     * owner's verdict (kept, dismissed: the labels F6 reads) and human review and veto runs are
+     * never pruned. A later run's revert never reads an earlier run, and a revert of a run that
+     * stays compares each relation with its own images, so pruning cannot make a revert unsafe.
+     */
+    async pruneRuns(input: { before: Date; limit: number }): Promise<number> {
+      const result = await pool.query(
+        `with doomed as (
+           select r.id from relation_match_runs r
+            where r.finished_at is not null and r.started_at < $1::timestamptz
+              and r.review_status is null and r.kind <> all($3::text[])
+            order by r.started_at
+            limit $2::int
+         )
+         delete from relation_match_runs r using doomed d where r.id = d.id`,
+        [input.before, Math.max(1, Math.trunc(input.limit)), [...humanRelationRunKinds]]
+      );
+      return result.rowCount ?? 0;
     }
   };
 }

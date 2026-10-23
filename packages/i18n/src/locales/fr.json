@@ -3032,5 +3032,41 @@
       "reviewScope": "Conserver confirme cette relation. Supprimer est définitif pour ces deux notes : elles ne seront plus suggérées l'une à l'autre.",
       "reviewFailed": "Votre choix n’a pas pu être enregistré. Réessayez."
     }
+  },
+  "changes": {
+    "titles": {
+      "relation": {
+        "match": "Liens vérifiés pour une note",
+        "link": "Liens trouvés pour une source",
+        "type": "Types de lien attribués",
+        "promote": "Liens entre sources mis à jour",
+        "discover": "Sources liées trouvées",
+        "reconcile": "Liens réévalués",
+        "retype": "Liens sans type ont reçu un type"
+      },
+      "relationMatched": "Liens vérifiés pour « {note} »",
+      "relationSuggested": "{n} liens suggérés pour « {source} »",
+      "overview": {
+        "write": "Vue d'ensemble du sujet réécrite",
+        "patch": "Vue d'ensemble du sujet complétée",
+        "rewrite": "Réécriture de la vue d'ensemble du sujet",
+        "undo": "Vue d'ensemble du sujet restaurée"
+      }
+    },
+    "blockers": {
+      "later_change": "Une modification ultérieure a touché les mêmes éléments. Annulez-la d'abord.",
+      "item_deleted": "Un élément touché par cette modification n'existe plus.",
+      "changed_since": "Un élément touché par cette modification a changé depuis, par vous ou par une édition.",
+      "not_applied": "Cette modification n'est pas appliquée.",
+      "not_undoable": "Cette modification ne peut pas être annulée.",
+      "newer_version": "La vue d'ensemble a été réécrite depuis cette modification.",
+      "run_open": "Cette modification est encore en cours.",
+      "conflict": "Cette modification ne correspond plus à la structure actuelle."
+    },
+    "errors": {
+      "notFound": "Cette modification n'existe plus.",
+      "invalidCursor": "La liste a changé entre-temps. Rechargez-la.",
+      "unavailable": "Les modifications ne sont pas disponibles pour le moment."
+    }
   }
 }
