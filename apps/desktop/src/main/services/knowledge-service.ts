@@ -162,7 +162,7 @@ export interface KnowledgeServiceOptions {
   aiService: AiService;
   /**
    * The typed relations configuration this process matches under; the shipped defaults when left out. Only
-   * a DEV run changes it (`dev/relations-dev-options.ts`: T63's helper batch of 1).
+   * a DEV run changes it (`dev/relations-dev-options.ts`: T63's helper batch of 1, C2's two neighbours).
    */
   relationsConfig?: RelationsConfig;
   /** The generative decider's output budget, the one note-matching setting left (F3 D17, T53b). */
@@ -368,6 +368,7 @@ export class KnowledgeService {
       ...(onProgress ? { onProgress } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.fence ? { fence: options.fence } : {}),
+      ...(this.options.relationsConfig ? { config: this.options.relationsConfig } : {}),
       context
     });
   }
@@ -1871,9 +1872,10 @@ export class KnowledgeService {
 
   /**
    * The link job's discovery step for one root: design E (D27) on the root, promotion and then the
-   * nearest-root discovery, each selected pair judged once under the link jobs' in-flight registry
-   * (D24, keyed by source-pair key). Its calls run at the link job's priority and each remote one
-   * is asked of the daily cap first (D26): a refused call stops the pass with
+   * nearest-root discovery, the root's undecided pairs judged in one call (F4 D21) under the link
+   * jobs' in-flight registry (D24, keyed by source-pair key). Its calls run at the link job's
+   * priority and each remote one, so one per root and its repair, is asked of the daily cap first
+   * (D26): a refused call stops the pass with
    * `errors.relations.dailyCapReached`, and the pass's saved state lets the next link job resume it.
    */
   public async discoverSourceRelations(input: RelationDiscoveryInput, signal?: AbortSignal) {
@@ -1923,6 +1925,7 @@ export class KnowledgeService {
       contentLanguage: (await this.options.getContentLanguage?.()) ?? "en",
       regenerate: input.regenerate,
       registry: input.registry,
+      ...(this.options.relationsConfig ? { config: this.options.relationsConfig } : {}),
       ...(signal ? { signal } : {}),
       context: input.context
     });

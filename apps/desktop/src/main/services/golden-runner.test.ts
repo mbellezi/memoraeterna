@@ -1517,7 +1517,7 @@ describe("golden source pair verdicts", () => {
       format: "memora-golden-source-pair-verdicts",
       state: "finished",
       mode: "verdict_only",
-      contract: "source-relations-v5"
+      contract: "source-relations-v6"
     });
     expect(verdicts.pairs.map((pair: { status: string }) => pair.status)).toEqual([
       "judged",

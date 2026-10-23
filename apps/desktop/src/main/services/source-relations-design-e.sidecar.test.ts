@@ -1406,9 +1406,13 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     });
     expect(preview.pairs.map((pair) => pair.rootId)).toEqual([n.id, x.id]);
     expect(await repository.matchStates([n.id, x.id, r.id])).toEqual(before);
-    // The input budget stops the run after the first pair: X stays planned and unjudged.
+    // One call asks about both pairs (D21); by title the works read nu (w1, s1), rho (w2, s2) and
+    // xi (w3, s3). A malformed item about rho and xi leaves X's pair open, and the input budget stops
+    // the repair: N's pair is decided, X stays planned and unjudged.
     const runDefaultTask = vi.fn(async () => ({
-      output: { relations: [] },
+      output: {
+        relations: runDefaultTask.mock.calls.length === 1 ? [["s2", "s3", "supports", "high"]] : []
+      },
       profileId: judgeRoute.profileId,
       modelId: judgeRoute.modelId,
       providerId: "openai-codex",

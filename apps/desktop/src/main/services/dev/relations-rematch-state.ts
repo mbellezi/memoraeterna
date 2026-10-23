@@ -227,13 +227,15 @@ export const backgroundFingerprint = "rematch-background";
 
 /**
  * Records the roots outside the run as already matched, so discovery sees the whole library: each
- * one in ingestion order, with its nearest earlier root by composite cosine (nothing is judged). The
- * space is the one most of these roots have a composite vector in; roots without one are not
- * matched. Resolves to the number of roots recorded.
+ * one in ingestion order, with its nearest earlier root by composite cosine (nothing is judged) and
+ * the bar discovery keeps at `neighbours` (the cosine of its k-th nearest earlier root; null with
+ * fewer). The space is the one most of these roots have a composite vector in; roots without one
+ * are not matched. Resolves to the number of roots recorded.
  */
 export async function seedBackgroundMatchState(
   db: Queryable,
-  rootIds: readonly string[]
+  rootIds: readonly string[],
+  neighbours = 1
 ): Promise<number> {
   if (rootIds.length === 0) return 0;
   let best: { dimensions: number; strategy: string; count: number } | null = null;
@@ -260,13 +262,16 @@ export async function seedBackgroundMatchState(
          from embeddings_${best.dimensions} e join source_items s on s.id = e.target_id
         where e.target_type = 'source_item' and e.strategy = $2 and e.target_id = any($1::uuid[]))
      select a.root_id as "rootId", b.root_id as "nearestRootId",
-            1 - (a.embedding <=> b.embedding) as cosine
+            1 - (a.embedding <=> k.embedding) as cosine
        from roots a
        left join lateral (
          select r.root_id, r.embedding from roots r where r.rn < a.rn
           order by a.embedding <=> r.embedding limit 1) b on true
+       left join lateral (
+         select r.embedding from roots r where r.rn < a.rn
+          order by a.embedding <=> r.embedding offset $3::int - 1 limit 1) k on true
       order by a.rn`,
-    [rootIds, best.strategy]
+    [rootIds, best.strategy, Math.max(1, Math.min(2, Math.trunc(neighbours)))]
   );
   const state = createSourceMatchStateRepository(db);
   const spaceKey = best.strategy.slice(compositeStrategyPrefix.length);

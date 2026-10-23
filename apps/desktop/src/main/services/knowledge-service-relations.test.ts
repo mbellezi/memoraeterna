@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
+import { relationsConfig } from "@app/domain";
 
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
@@ -133,5 +134,37 @@ describe("the link job's discovery step", () => {
       undefined,
       undefined
     );
+  });
+
+  it("matches under the run's typed configuration, and the shipped one without it (C2's knob)", async () => {
+    mocks.matchSources.mockResolvedValue({ persistedCount: 0 });
+    const twoNeighbours = {
+      ...relationsConfig,
+      discovery: { ...relationsConfig.discovery, neighbours: 2 }
+    };
+    const input = {
+      rootId: "root",
+      runKey: "relation-link:job",
+      regenerate: false,
+      priority: "P2" as const,
+      reserveCall: vi.fn(),
+      registry: new InFlightRegistry(),
+      context: { jobId: "job" }
+    };
+    await new KnowledgeService({
+      getPool: () => ({}) as PgPool,
+      aiService: ai as unknown as AiService,
+      userDataPath: "/tmp/test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null,
+      relationsConfig: twoNeighbours
+    }).discoverSourceRelations(input);
+    await service().matchSourceRelations(["root"], "run");
+    await service().discoverSourceRelations(input);
+    expect(mocks.matchSources.mock.calls.map(([options]) => options.config)).toEqual([
+      twoNeighbours,
+      undefined,
+      undefined
+    ]);
   });
 });

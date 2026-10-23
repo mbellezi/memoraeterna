@@ -10,6 +10,7 @@ import type { AiCassetteStats } from "@app/ai";
 import { goldenManifestSchema, type GoldenManifest } from "./golden-runner.js";
 import {
   createSourcePairReader,
+  groupSourcePairsByRoot,
   listLibraryRoots,
   maxConsecutiveCallErrors,
   maxSourcePairs,
@@ -200,6 +201,17 @@ describe("source pair list file", () => {
     expect(file.path).toBe(path);
   });
 
+  it("reads a root grouping beside the list, and a plain list as one call per pair", async () => {
+    const pairs = [{ left: "key-a", right: "key-b" }];
+    expect(await readSourcePairsFile(await write({ grouping: "root", pairs }))).toMatchObject({
+      grouping: "root",
+      pairs
+    });
+    expect(await readSourcePairsFile(await write(pairs))).toMatchObject({ grouping: "pair" });
+    for (const bad of [{ grouping: "batch", pairs }, { grouping: "root" }, { pairs, extra: 1 }])
+      await expect(readSourcePairsFile(await write(bad))).rejects.toThrow("{grouping, pairs}");
+  });
+
   it("refuses anything that is not a list of {left, right, label?}, naming the problem", async () => {
     await expect(readSourcePairsFile(join(directory, "missing.json"))).rejects.toThrow(
       "cannot read"
@@ -338,7 +350,7 @@ describe("source pair verdicts", () => {
       ["a1", "b1"],
       settings.evidenceChunksPerSource
     );
-    expect(result.contract).toBe("source-relations-v5");
+    expect(result.contract).toBe("source-relations-v6");
   });
 
   it("reports every raw item with scores, type, evidence aliases and what the floors do to it", async () => {
@@ -666,6 +678,78 @@ describe("source pair verdicts", () => {
     const written = JSON.parse(await readFile(join(directory, sourcePairVerdictsFile), "utf8"));
     expect(written).toMatchObject({ state: "finished", status: "completed", totals: { pairs: 2 } });
     expect(written.pairs).toHaveLength(2);
+  });
+});
+
+describe("source pair verdicts grouped by root (the C2 microbenchmark, D21)", () => {
+  const c1 = chunk("c1", "root-C");
+  const side = (id: string) => ({ root: { id } });
+  const covered = (left: string, right: string) => ({
+    sides: { left: side(left), right: side(right) }
+  });
+
+  it("covers the pairs greedily by the root in most of them, ties by the file's order", () => {
+    const pairs = [
+      covered("B", "A"),
+      covered("C", "D"),
+      covered("A", "C"),
+      covered("E", "F"),
+      covered("D", "E")
+    ];
+    expect(
+      groupSourcePairsByRoot(pairs).map((group) => [
+        group.root,
+        group.members.map((p) => pairs.indexOf(p))
+      ])
+    ).toEqual([
+      ["A", [0, 2]],
+      ["D", [1, 4]],
+      ["E", [3]]
+    ]);
+  });
+
+  it("asks one call per root, splits the verdict per pair and counts the call once", async () => {
+    const reader = {
+      pairNotes: vi.fn(async () => []),
+      pairChunks: vi.fn(async (_root: string, partner: string) =>
+        partner === "root-B" ? [a1, b1] : [a1, c1]
+      ),
+      existing: vi.fn(async () => [])
+    };
+    const { ai, report } = run([pair(), pair("key-a", "Work Ç", "second")], {
+      reader,
+      file: {
+        path: "/pairs.json",
+        sha256: "0".repeat(64),
+        pairs: [pair(), pair("key-a", "Work Ç", "second")],
+        grouping: "root"
+      },
+      // Works by title: A (w1), B (w2), Ç (w3); sources s1..s3 and passages c1..c3 the same.
+      outputs: [{ relations: [item(), item([1, "s3"], [6, ["c3"]], [3, 70])] }]
+    });
+    const result = await report;
+    expect(ai.calls).toHaveLength(1);
+    expect(ai.calls[0]![1]).toContain(
+      'Pairs of works to judge (root aliases):\n[["w1","w2"],["w1","w3"]]'
+    );
+    expect(ai.calls[0]![4]).toEqual({
+      maxOutputTokens: sourceDecisionMaxOutputTokens(settings, 4)
+    });
+    expect(result.grouping).toBe("root");
+    expect(result.pairs.map((entry) => [entry.index, entry.status, entry.verdict])).toEqual([
+      [0, "judged", "related"],
+      [1, "judged", "not_related"]
+    ]);
+    expect(result.pairs.map((entry) => entry.batch)).toEqual([
+      { index: 0, root: "Work A", pairs: 2, lead: true },
+      { index: 0, root: "Work A", pairs: 2, lead: false }
+    ]);
+    expect(result.pairs[0]!.attempts).toHaveLength(1);
+    expect(result.pairs[1]!.attempts).toEqual([]);
+    expect(result.pairs[1]!.items).toEqual([
+      expect.objectContaining({ from: "s1", to: "s3", toChunks: ["c3"], outcome: "below_floors" })
+    ]);
+    expect(result.totals).toMatchObject({ pairs: 2, judged: 2, calls: 1, inputTokens: 1500 });
   });
 });
 

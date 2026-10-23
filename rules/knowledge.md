@@ -71,9 +71,9 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Decisions keep each direction's raw score, AI run and time apart from calibration, keyed by the
   exact decider input of both notes and the decider; calibration maps raw scores to bands without
   deciding again. A decided direction is reused only by the decider that decided it. A ranker
-  scores both directions; a generative decider judges each unordered pair once, and its verdict
-  answers the reverse direction (the type stays with the judged direction) with no row written
-  for the reuse.
+  scores both directions; a generative decider judges each unordered pair once (pairs may share a
+  call, never a key), and its verdict answers the reverse direction (the type stays with the judged
+  direction) with no row written for the reuse.
 - Relation types use one fixed vocabulary shared by notes and sources; type and explanation are
   assigned only to accepted pairs. Shared topics, names, dates or homonyms alone never create a
   relation; it needs evidence from both endpoints and is shown only while both are current. A note

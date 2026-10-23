@@ -442,6 +442,15 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
     expect(await state.read(source.paper)).toBeNull();
     expect(await seedBackgroundMatchState(pool, [source.empty])).toBe(0);
     expect(await seedBackgroundMatchState(pool, [])).toBe(0);
+    // At two neighbours (C2) the bar is the second nearest earlier root's cosine; null with one.
+    await wipeRelationState();
+    expect(await seedBackgroundMatchState(pool, [source.book, source.memo, source.late], 2)).toBe(
+      3
+    );
+    const two = await state.listEarlier("test-space", Number.MAX_SAFE_INTEGER);
+    expect(two.map((row) => row.nearestRootId)).toEqual([null, source.book, source.memo]);
+    expect(two.slice(0, 2).map((row) => row.nearestCosine)).toEqual([null, null]);
+    expect(two[2]!.nearestCosine).toBeCloseTo(Math.cos(1.0), 3);
   });
 
   it("gives the background notes the match state a library matched at arrival holds", async () => {

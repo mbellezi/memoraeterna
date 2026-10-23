@@ -36,14 +36,16 @@ import { InFlightRegistry } from "./relations/in-flight-registry.js";
 /**
  * Source relations by design E (F3 D27, decision 17). Per root, with no batch barrier: (1) every
  * typed shown (applied or suggested, decision 29) cross-root note relation is promoted into a source
- * relation with no call; (2) discovery selects the root's nearest earlier root and its reverse neighbours on the stored
- * composite vectors; (3) each selected unordered pair is judged once with the compact, score-only
- * `source-relations-v5` verdict: at most two `[from, to, type, importance, confidence, [from
- * chunks], [to chunks]]` items per pair and no prose. Explanations are written when the owner opens
- * a relation. Promoted and judged relations alike are suggestions until the owner keeps them
- * (decision 29).
+ * relation with no call; (2) discovery selects the root's nearest earlier roots and its reverse
+ * neighbours on the stored composite vectors; (3) the selected pairs still undecided are judged in
+ * one call per root (F4 D21) with the compact, score-only `source-relations-v6` verdict: the call
+ * lists its pairs of works, and each pair answers at most two `[from, to, type, importance,
+ * confidence, [from chunks], [to chunks]]` items and no prose. Items are split per pair and each
+ * pair is decided once, under a key that leaves out what else shared its call. Explanations are
+ * written when the owner opens a relation. Promoted and judged relations alike are suggestions until
+ * the owner keeps them (decision 29).
  */
-export const sourceRelationPromptVersion = "source-relations-v5";
+export const sourceRelationPromptVersion = "source-relations-v6";
 export const sourceMatchingOperation = "source_relation_matching";
 /** Every catalog prompt the source decision is composed of: its identity is in the pair key. */
 const sourceDecisionPromptIds = [
@@ -238,13 +240,83 @@ export function orientSymmetricNotes(
   );
 }
 
+/** Two works a call judges, as root IDs (the new root and one partner). */
+export type SourceRootPair = readonly [string, string];
+
+/** A pair of works as one key, whichever order its roots come in. */
+export const sourceRootPairKey = (left: string, right: string) =>
+  JSON.stringify([left, right].toSorted(compareContent));
+
+/** What one judge call is asked about: the evidence of its pairs of works, and those pairs. */
+export type SourceDecisionRequest = Pick<SourceRelationContext, "chunks" | "notes"> & {
+  /** The pairs of works the call judges; every two roots of the evidence when absent. */
+  pairs?: ReadonlyArray<SourceRootPair>;
+};
+
 /**
- * The decision prompt: sources (s), roots (w) and chunks (c) by content order, the uncited note
- * connections as hypotheses with the chunks they rest on, and nothing else. Saved relations are not
- * listed: the decider judges the pair, and persistence merges what it already knows.
+ * The listed pairs of works as indexes into the roots' alias order: each pair from its lower alias,
+ * the pairs by their aliases (content order, never IDs). Without a list every two roots of the
+ * evidence are a pair, which is the single pair of a pair's own evidence.
+ */
+function listedRootPairs(
+  pairs: ReadonlyArray<SourceRootPair> | undefined,
+  roots: readonly string[]
+): Array<readonly [number, number]> {
+  const indexed = pairs
+    ? pairs.map(([left, right]) => [roots.indexOf(left), roots.indexOf(right)] as const)
+    : roots.flatMap((_, left) =>
+        roots.slice(left + 1).map((_, offset) => [left, left + 1 + offset] as const)
+      );
+  const unique = new Map<string, readonly [number, number]>();
+  for (const [left, right] of indexed)
+    if (left >= 0 && right >= 0 && left !== right) {
+      const pair = [Math.min(left, right), Math.max(left, right)] as const;
+      unique.set(pair.join(), pair);
+    }
+  return [...unique.values()].toSorted((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+/**
+ * The request of one call for a root and its partners (D21): the union of the pairs' evidence, each
+ * passage once, in content order; their uncited note relations, each once, grouped by partner in the
+ * partners' alias order and turned for the call's aliases; and the pairs of works.
+ */
+export function sourceBatchRequest(
+  root: string,
+  pairs: ReadonlyArray<{
+    candidate: string;
+    context: Pick<SourceRelationContext, "chunks" | "notes">;
+  }>
+): Required<SourceDecisionRequest> {
+  const chunks = orderSourceRelationChunks([
+    ...new Map(
+      pairs.flatMap((pair) => pair.context.chunks).map((chunk) => [chunk.id, chunk])
+    ).values()
+  ]);
+  const { sources, roots } = aliasOrder(chunks);
+  const byPartner = pairs.toSorted(
+    (a, b) => roots.indexOf(a.candidate) - roots.indexOf(b.candidate)
+  );
+  const notes = [
+    ...new Map(
+      byPartner.flatMap((pair) => pair.context.notes).map((note) => [note.id, note])
+    ).values()
+  ];
+  return {
+    chunks,
+    notes: orientSymmetricNotes(notes, sources),
+    pairs: byPartner.map((pair) => [root, pair.candidate] as const)
+  };
+}
+
+/**
+ * The decision prompt: the pairs of works to judge (root aliases), sources (s), roots (w) and chunks
+ * (c) by content order, the uncited note connections as hypotheses with the chunks they rest on, and
+ * nothing else. Saved relations are not listed: the decider judges the pairs, and persistence merges
+ * what it already knows.
  */
 export function sourceDecisionPrompt(
-  context: Pick<SourceRelationContext, "chunks" | "notes">,
+  context: SourceDecisionRequest,
   maxItems: number,
   includeWeakTypes: boolean,
   summaryMaxCharacters = 1200
@@ -255,6 +327,10 @@ export function sourceDecisionPrompt(
   return renderPrompt("sources.decide", {
     max_relations: maxItems,
     weak_types: includeWeakTypes ? ", mentions, related" : "",
+    candidates: listedRootPairs(context.pairs, roots).map(([left, right]) => [
+      `w${left + 1}`,
+      `w${right + 1}`
+    ]),
     sources: sources.map((id) => {
       const first = context.chunks.find((chunk) => chunk.sourceItemId === id)!;
       return {
@@ -298,51 +374,91 @@ export interface SourceDecisionParse {
   answered: boolean;
   /** Valid items in answer order; nothing in one item can invalidate another. */
   items: SourceDecisionVerdict[];
-  /** Malformed items: wrong shape, unknown aliases, evidence of another source, or one work. */
+  /**
+   * Malformed items: wrong shape, unknown aliases, evidence of another source, one work, or two
+   * works the request does not list as a pair.
+   */
   invalid: number;
   /** One of the malformed items joined two sources of the same work. */
   sameRoot: boolean;
+  /**
+   * For each malformed item, the listed pairs of works (`sourceRootPairKey`) it may have been meant
+   * for: its own pair; each pair of its work when it joins two sources of one work; none when it
+   * joins two works not listed together; every pair when its aliases cannot be read. A batched call
+   * asks again only about the pairs a malformed item may have been meant for (D21).
+   */
+  suspects: string[][];
 }
 
 /**
  * Reads a source verdict. Valid items are kept; a malformed one is counted and dropped. A symmetric
  * type answered from the higher alias reads the same from the lower one, so it is turned, never
- * refused.
+ * refused. An item must join two works the request lists as a pair (any two works when it lists
+ * none).
  */
 export function parseSourceDecision(
   output: unknown,
-  context: Pick<SourceRelationContext, "chunks">,
+  context: Pick<SourceDecisionRequest, "chunks" | "pairs">,
   attempt: 0 | 1
 ): SourceDecisionParse {
   let raw: unknown[];
   try {
     raw = decisionEnvelopeSchema.parse(parseJsonOutput(output)).relations;
   } catch {
-    return { answered: false, items: [], invalid: 0, sameRoot: false };
+    return { answered: false, items: [], invalid: 0, sameRoot: false, suspects: [] };
   }
-  const { sources } = aliasOrder(context.chunks);
+  const { sources, roots } = aliasOrder(context.chunks);
   const chunkByAlias = new Map(context.chunks.map((chunk, i) => [`c${i + 1}`, chunk]));
   const sourceByAlias = new Map(sources.map((id, i) => [`s${i + 1}`, id]));
   const rootOf = (id: string) => context.chunks.find((chunk) => chunk.sourceItemId === id)?.rootId;
+  const listed = listedRootPairs(context.pairs, roots).map(
+    ([left, right]) => [roots[left]!, roots[right]!] as const
+  );
+  const everyPair = listed.map(([left, right]) => sourceRootPairKey(left, right));
+  const listedKeys = new Set(everyPair);
+  /** The listed pairs a malformed item may have been meant for, read from its two aliases. */
+  const suspectsOf = (entry: unknown): string[] => {
+    const [fromAlias, toAlias] = Array.isArray(entry) ? (entry as unknown[]) : [];
+    const from = typeof fromAlias === "string" ? sourceByAlias.get(fromAlias) : undefined;
+    const to = typeof toAlias === "string" ? sourceByAlias.get(toAlias) : undefined;
+    const fromRoot = from && rootOf(from),
+      toRoot = to && rootOf(to);
+    if (!fromRoot || !toRoot) return everyPair;
+    if (fromRoot === toRoot)
+      return listed
+        .filter((pair) => pair.includes(fromRoot))
+        .map(([left, right]) => sourceRootPairKey(left, right));
+    const key = sourceRootPairKey(fromRoot, toRoot);
+    return listedKeys.has(key) ? [key] : [];
+  };
   const items: SourceDecisionVerdict[] = [];
+  const suspects: string[][] = [];
   let invalid = 0,
     sameRoot = false;
+  const malformed = (entry: unknown) => {
+    invalid++;
+    suspects.push(suspectsOf(entry));
+  };
   for (const entry of raw) {
     const parsed = decisionItemSchema.safeParse(entry);
     if (!parsed.success) {
-      invalid++;
+      malformed(entry);
       continue;
     }
     const [fromAlias, toAlias, type, importance, confidence, fromChunks, toChunks] = parsed.data;
     let from = sourceByAlias.get(fromAlias),
       to = sourceByAlias.get(toAlias);
     if (!from || !to || from === to) {
-      invalid++;
+      malformed(entry);
       continue;
     }
     if (rootOf(from) === rootOf(to)) {
-      invalid++;
       sameRoot = true;
+      malformed(entry);
+      continue;
+    }
+    if (!listedKeys.has(sourceRootPairKey(rootOf(from)!, rootOf(to)!))) {
+      malformed(entry);
       continue;
     }
     let fromEvidence = [...new Set(fromChunks)].map((alias) => chunkByAlias.get(alias));
@@ -351,7 +467,7 @@ export function parseSourceDecision(
       fromEvidence.some((chunk) => chunk?.sourceItemId !== from) ||
       toEvidence.some((chunk) => chunk?.sourceItemId !== to)
     ) {
-      invalid++;
+      malformed(entry);
       continue;
     }
     if (
@@ -372,7 +488,7 @@ export function parseSourceDecision(
       attempt
     });
   }
-  return { answered: true, items, invalid, sameRoot };
+  return { answered: true, items, invalid, sameRoot, suspects };
 }
 
 const verdictIdentity = (
@@ -810,10 +926,12 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
         budgetExhausted: false,
         promoted: rootPromoted
       };
+      // (3) The pair key keeps only what changes the judge (D27); it never names the other pairs
+      // that share the root's call (D21), so a pair is decided once whatever it was asked beside.
+      const pending: Array<{ candidate: string; key: string }> = [];
       for (const candidate of state.discovery?.roots ?? []) {
         signal?.throwIfAborted();
         if (!configuration) throw new Error("errors.ai.noCompatibleModel");
-        // (3) The pair key keeps only what changes the judge (D27).
         const key = hash({
           roots: [root, candidate].sort(),
           configuration,
@@ -841,24 +959,30 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
           await report();
           continue;
         }
-        // The pair is judged under the in-flight registry (D24): while another job judges it this
-        // one waits, then reads that job's decision; it judges only a pair nobody has decided.
-        const [outcome] = await registry.run(
-          [judgingKey(key)],
-          async () =>
-            (await repository.decision(key))
-              ? ("decided" as const)
-              : judgePair({
-                  pool,
+        pending.push({ candidate, key });
+      }
+      // The undecided pairs are judged together, one call for the root (D21), under the in-flight
+      // registry by pair key (D24): a pair another job is judging is waited for and then read from
+      // that job's decision; each round judges only the pairs nobody has decided.
+      const rounds = pending.length
+        ? await registry.run(
+            pending.map((pair) => judgingKey(pair.key)),
+            async (claimed) => {
+              const outcomes = new Map<string, RootPairOutcome | "decided">();
+              const undecided: typeof pending = [];
+              for (const pair of pending.filter((p) => claimed.includes(judgingKey(p.key))))
+                if (await repository.decision(pair.key)) outcomes.set(pair.key, "decided");
+                else undecided.push(pair);
+              if (undecided.length)
+                for (const [key, outcome] of await judgeRoot({
                   ai,
                   repository,
                   root,
-                  candidate,
-                  key,
+                  pairs: undecided,
                   state,
                   save,
                   settings,
-                  configuration,
+                  configuration: configuration!,
                   currentConfiguration: async () => {
                     const route = usableRoute(await judgeRoute());
                     return route ? judgeIdentity(route) : null;
@@ -867,18 +991,21 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
                   judge: config.sourceJudge,
                   ...(signal ? { signal } : {}),
                   ...(options.context ? { context: options.context } : {})
-                }),
-          signal
-        );
+                }))
+                  outcomes.set(key, outcome);
+              return outcomes;
+            },
+            signal
+          )
+        : [];
+      const outcomes = new Map(rounds.flatMap((round) => [...round]));
+      for (const { candidate, key } of pending) {
+        const outcome = outcomes.get(key);
         if (outcome === "decided") {
           state.completed.push(key);
           coverage.judgedPairs++;
           done++;
-          await save();
-          await report();
-          continue;
-        }
-        if (outcome === "no_evidence") {
+        } else if (outcome === "no_evidence") {
           // Without evidence on both sides the pair cannot be judged, so it is no candidate (and a
           // resumed run does not look at it again).
           coverage.candidatePairs--;
@@ -886,18 +1013,17 @@ export async function matchSources(options: MatchSourcesOptions): Promise<Source
           state.totalPairs--;
           if (state.discovery)
             state.discovery.roots = state.discovery.roots.filter((id) => id !== candidate);
-          await save();
-          await report();
-          continue;
-        }
-        if (outcome === "budget") {
+        } else if (outcome === "budget") {
           // Only a pair the input budget left incomplete is a failure to cover.
           state.partial = true;
           coverage.budgetExhausted = true;
-          break;
+        } else if (outcome === "judged") {
+          coverage.judgedPairs++;
+          done++;
         }
-        coverage.judgedPairs++;
-        done++;
+      }
+      if (pending.length) {
+        await save();
         await report();
       }
       state.finished = true;
@@ -947,18 +1073,147 @@ export async function promoteSourceRelations(
   return totals;
 }
 
+/** A pair of works one call judges: its key, the partner of the call's root, and its evidence. */
+export interface SourceJudgePair {
+  key: string;
+  candidate: string;
+  context: SourceRelationContext;
+}
+
+/** One call of the batched judge, as the asker hands it to its caller to make. */
+export interface SourceJudgeCall {
+  /** 0 for the root's call, 1 for the one repair that asks again about the pairs left open. */
+  attempt: 0 | 1;
+  pairs: readonly SourceJudgePair[];
+  request: Required<SourceDecisionRequest>;
+  /** The full prompt, the repair suffix included. */
+  prompt: string;
+  maxOutputTokens: number;
+}
+
+/** What the calls answered about one pair. */
+export interface SourceJudgeAnswer {
+  /** The pair's valid items, from every call that asked about it, in answer order. */
+  items: SourceDecisionVerdict[];
+  /** The last call that asked about the pair had the envelope and no malformed item that could be its. */
+  clean: boolean;
+  /** Malformed items that may have been meant for the pair, over its calls. */
+  invalid: number;
+  /** The calls that asked about it (indexes into the asker's calls), the final one last. */
+  calls: number[];
+}
+
 /**
- * Judges one pair of works once (D27): its uncited note relations as hypotheses, the evidence
- * passages, the v5 prompt, at most one repair, then one decision committed with every raw item.
- * `no_evidence`: fewer than two passages; `budget`: the input budget stopped it before an answer.
+ * The batched source judge (D21): one call asks about every pair of the root at once; items are
+ * split per pair by the two works they join. A pair is settled by a clean answer (no malformed item
+ * could be its) or once its valid items fill its allowance; the pairs left open (no envelope, or a
+ * malformed item that may have been theirs) are asked about once more, together, with the repair
+ * suffix. A pair that starts at attempt 1 (an earlier run asked about it once) gets only that repair.
+ * `call` makes the call, or returns null to stop before it (the input budget): its pairs then stay
+ * unanswered (`stopped`). Valid items of the first answer are kept beside the repair's. `settle`
+ * receives each answered pair once its answer is final, before any later call is made.
  */
-async function judgePair(input: {
-  pool: PgPool;
+export async function askSourceJudge(input: {
+  root: string;
+  pairs: readonly SourceJudgePair[];
+  startAttempt?: (pair: SourceJudgePair) => 0 | 1;
+  settings: Pick<
+    SourceRelationSettings,
+    "maxRelationsPerPair" | "maxOutputTokens" | "includeWeakTypes" | "summaryMaxCharacters"
+  >;
+  call: (call: SourceJudgeCall) => Promise<{ output: unknown } | null>;
+  settle?: (pair: SourceJudgePair, answer: SourceJudgeAnswer) => Promise<void>;
+}): Promise<{
+  answers: Map<string, SourceJudgeAnswer>;
+  stopped: string[];
+  parses: SourceDecisionParse[];
+}> {
+  const { root, settings } = input;
+  const allowance = sourceDecisionAllowance(settings);
+  const answers = new Map<string, SourceJudgeAnswer>();
+  const stopped: string[] = [];
+  const parses: SourceDecisionParse[] = [];
+  let feedback = renderPrompt("sources.validation.default");
+  const ask = async (attempt: 0 | 1, pairs: readonly SourceJudgePair[]) => {
+    const request = sourceBatchRequest(root, pairs);
+    const prompt = joinPrompts(
+      sourceDecisionPrompt(
+        request,
+        allowance,
+        settings.includeWeakTypes,
+        settings.summaryMaxCharacters
+      ),
+      attempt ? renderPrompt("sources.decide.repair", { validation_errors: feedback }) : ""
+    );
+    const execution = await input.call({
+      attempt,
+      pairs,
+      request,
+      prompt,
+      maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance * pairs.length)
+    });
+    if (!execution) {
+      stopped.push(...pairs.map((pair) => pair.key));
+      return;
+    }
+    const parsed = parseSourceDecision(execution.output, request, attempt);
+    const index = parses.push(parsed) - 1;
+    for (const pair of pairs) {
+      const key = sourceRootPairKey(root, pair.candidate);
+      const answer = answers.get(pair.key) ?? { items: [], clean: false, invalid: 0, calls: [] };
+      answer.items.push(
+        ...parsed.items.filter(
+          (item) =>
+            sourceRootPairKey(item.sourceChunks[0]!.rootId, item.targetChunks[0]!.rootId) === key
+        )
+      );
+      const invalid = parsed.suspects.filter((suspects) => suspects.includes(key)).length;
+      answer.invalid += invalid;
+      answer.clean = parsed.answered && invalid === 0;
+      answer.calls.push(index);
+      answers.set(pair.key, answer);
+    }
+    if (parsed.sameRoot) feedback = renderPrompt("sources.validation.same_root");
+  };
+  const start = input.startAttempt ?? (() => 0 as const);
+  const repair = input.pairs.filter((pair) => start(pair) === 1);
+  const first = input.pairs.filter((pair) => start(pair) === 0);
+  if (first.length) {
+    await ask(0, first);
+    for (const pair of first) {
+      const answer = answers.get(pair.key);
+      if (!answer) continue;
+      // A clean answer, or one already holding all the relations the pair may keep, is final; a
+      // final pair is settled before the repair is asked, so a failed repair cannot lose it.
+      if (!answer.clean && distinctSourceVerdicts(answer.items) < allowance) repair.push(pair);
+      else await input.settle?.(pair, answer);
+    }
+  }
+  if (repair.length) {
+    await ask(1, repair);
+    for (const pair of repair) {
+      const answer = answers.get(pair.key);
+      if (answer && !stopped.includes(pair.key)) await input.settle?.(pair, answer);
+    }
+  }
+  return { answers, stopped, parses };
+}
+
+type RootPairOutcome = "judged" | "no_evidence" | "budget";
+type JudgeExecution = NonNullable<Awaited<ReturnType<AiService["runDefaultTask"]>>>;
+
+/**
+ * Judges the undecided pairs of one root in one call (D21): each pair's uncited note relations as
+ * hypotheses and its evidence passages, the union in one v6 prompt, at most one repair for the
+ * pairs left open, then one decision per pair committed with that pair's raw items. `no_evidence`:
+ * fewer than two passages; `budget`: the input budget stopped it before an answer. A pair whose
+ * answers keep nothing valid and never settle fails the root visibly, after the others commit.
+ */
+async function judgeRoot(input: {
   ai: Pick<AiService, "runDefaultTask">;
   repository: SourceRelationReader;
   root: string;
-  candidate: string;
-  key: string;
+  pairs: ReadonlyArray<{ candidate: string; key: string }>;
   state: RootState;
   save: () => Promise<void>;
   settings: SourceRelationSettings;
@@ -968,126 +1223,146 @@ async function judgePair(input: {
   judge: RelationsConfig["sourceJudge"];
   signal?: AbortSignal;
   context?: AiTaskLogContext;
-}): Promise<"judged" | "no_evidence" | "budget"> {
-  const { ai, repository, root, candidate, key, state, save, settings, signal } = input;
-  const notes = await repository.pairNotes(root, candidate, input.judge.noteRelationsPerPair);
-  const context = await sourcePairContext(
-    repository,
-    root,
-    candidate,
-    notes,
-    settings,
-    input.judge
-  );
-  if (!context) return "no_evidence";
-  const { chunks } = context;
-  const allowance = sourceDecisionAllowance(settings);
-  const prompt = sourceDecisionPrompt(
-    context,
-    allowance,
-    settings.includeWeakTypes,
-    settings.summaryMaxCharacters
-  );
-  let validationFeedback = renderPrompt("sources.validation.default");
-  if ((state.attempts[key] ?? 0) >= 2) throw new Error("errors.sourceRelations.invalidOutput");
-  const answers: SourceDecisionParse[] = [];
-  let finalExecution: Awaited<ReturnType<typeof ai.runDefaultTask>> = null;
-  const aiTaskRunIds: string[] = [];
-  while ((state.attempts[key] ?? 0) < 2) {
-    const attempt = (state.attempts[key] ?? 0) as 0 | 1;
-    const request = joinPrompts(
-      prompt,
-      attempt
-        ? renderPrompt("sources.decide.repair", { validation_errors: validationFeedback })
-        : ""
+}): Promise<Map<string, RootPairOutcome>> {
+  const { ai, repository, root, state, save, settings, signal } = input;
+  const outcomes = new Map<string, RootPairOutcome>();
+  const pairs: SourceJudgePair[] = [];
+  for (const pair of input.pairs) {
+    const notes = await repository.pairNotes(
+      root,
+      pair.candidate,
+      input.judge.noteRelationsPerPair
     );
-    // Allow the current call to exceed the budget; stop only subsequent calls.
-    if (state.inputTokens > settings.maxInputTokens) return "budget";
-    if ((await input.currentConfiguration()) !== input.configuration)
-      throw new Error("errors.sourceRelations.configurationChanged");
-    if (!state.pairs.includes(key)) state.pairs.push(key);
-    state.attempts[key] = attempt + 1;
-    await save();
-    const execution = await ai.runDefaultTask(
-      "reranking",
-      request,
-      {
-        ...input.context,
-        operation: sourceMatchingOperation,
-        stage: "sourceMatching",
-        workloadClass: "decide",
-        priority: "P2",
-        // The link job's wrapper states its own class; an imported source's judge runs for its user.
-        budgetClass: input.context?.budgetClass ?? "user",
-        contentLanguage: input.contentLanguage,
-        promptVersion: sourceRelationPromptVersion,
-        sourceItemIds: [
-          ...new Set([root, candidate, ...chunks.map((chunk) => chunk.sourceItemId)])
-        ],
-        attempt,
-        // The second call asks again after an answer that failed validation: a repair (D35).
-        isRepair: attempt > 0
-      },
-      signal,
-      { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance) }
+    const context = await sourcePairContext(
+      repository,
+      root,
+      pair.candidate,
+      notes,
+      settings,
+      input.judge
     );
-    if (!execution) throw new Error("errors.ai.noCompatibleModel");
-    const reportedInputTokens = execution.inputTokens;
-    if (
-      typeof reportedInputTokens === "number" &&
-      Number.isSafeInteger(reportedInputTokens) &&
-      reportedInputTokens >= 0
-    ) {
-      state.inputTokens += reportedInputTokens;
-    }
-    // Persist reported usage even if validation, cancellation or persistence fails next.
-    await save();
-    const parsed = parseSourceDecision(execution.output, context, attempt);
-    answers.push(parsed);
-    finalExecution = execution;
-    if (execution.aiTaskRunId) aiTaskRunIds.push(execution.aiTaskRunId);
-    // A clean answer, or one already holding all the relations the pair may keep, is final.
-    // Otherwise one repair asks again; the valid items of the first answer are kept.
-    if (
-      (parsed.answered && parsed.invalid === 0) ||
-      distinctSourceVerdicts(answers.flatMap((answer) => answer.items)) >= allowance
-    )
-      break;
-    if (parsed.sameRoot) validationFeedback = renderPrompt("sources.validation.same_root");
+    if (context) pairs.push({ ...pair, context });
+    else outcomes.set(pair.key, "no_evidence");
   }
-  const items = answers.flatMap((answer) => answer.items);
-  const last = answers.at(-1);
-  if (!last || !finalExecution) throw new Error("errors.sourceRelations.invalidOutput");
-  // Answers that keep nothing valid and never settle fail the pair visibly: committing them would
-  // cache "no relation" for a pair the decider did not decide.
-  if (!items.length && !(last.answered && last.invalid === 0))
-    throw new Error("errors.sourceRelations.invalidOutput");
-  signal?.throwIfAborted();
-  const output = sourceRelationWrites(items, context, settings, allowance, input.judge);
-  const created = await repository.commitDecision(key, root, candidate, output.relations, {
-    promptVersion: sourceRelationPromptVersion,
-    profileId: finalExecution.profileId,
-    model: finalExecution.modelId,
-    provider: finalExecution.providerId,
-    runtime: finalExecution.runtime,
-    aiTaskRunId: finalExecution.aiTaskRunId,
-    aiTaskRunIds,
-    configuration: input.configuration,
-    inputTokens: finalExecution.inputTokens ?? null,
-    outputTokens: finalExecution.outputTokens ?? null,
-    contentLanguage: input.contentLanguage,
-    proposals: output.proposals,
-    // Raw verdicts apart from the floors: the floors can be tuned again without calls.
-    items: output.records,
-    floors: {
-      minImportance: settings.minImportance,
-      minConfidence: settings.minConfidence,
-      includeWeakTypes: settings.includeWeakTypes
-    },
-    invalidItems: answers.reduce((sum, answer) => sum + answer.invalid, 0)
+  // A pair already asked about twice in this run state is not asked again: it fails.
+  const failed = pairs.filter((pair) => (state.attempts[pair.key] ?? 0) >= 2).map((p) => p.key);
+  const asked = pairs.filter((pair) => !failed.includes(pair.key));
+  const executions: Array<{ execution: JudgeExecution; pairs: number }> = [];
+  const allowance = sourceDecisionAllowance(settings);
+  /** Commits a pair once its answer is final: one decision with that pair's own raw items. */
+  const settle = async (pair: SourceJudgePair, answer: SourceJudgeAnswer) => {
+    // Answers that keep nothing valid and never settle fail the pair visibly: committing them would
+    // cache "no relation" for a pair the decider did not decide.
+    if (!answer.items.length && !answer.clean) {
+      failed.push(pair.key);
+      return;
+    }
+    signal?.throwIfAborted();
+    const calls = answer.calls.map((index) => executions[index]!);
+    const final = calls.at(-1)!;
+    const output = sourceRelationWrites(
+      answer.items,
+      pair.context,
+      settings,
+      allowance,
+      input.judge
+    );
+    const created = await repository.commitDecision(
+      pair.key,
+      root,
+      pair.candidate,
+      output.relations,
+      {
+        promptVersion: sourceRelationPromptVersion,
+        profileId: final.execution.profileId,
+        model: final.execution.modelId,
+        provider: final.execution.providerId,
+        runtime: final.execution.runtime,
+        aiTaskRunId: final.execution.aiTaskRunId,
+        aiTaskRunIds: calls.flatMap(({ execution }) =>
+          execution.aiTaskRunId ? [execution.aiTaskRunId] : []
+        ),
+        configuration: input.configuration,
+        // The final call's usage, which every pair it judged shares (`callPairs`).
+        inputTokens: final.execution.inputTokens ?? null,
+        outputTokens: final.execution.outputTokens ?? null,
+        callPairs: final.pairs,
+        contentLanguage: input.contentLanguage,
+        proposals: output.proposals,
+        // Raw verdicts apart from the floors: the floors can be tuned again without calls.
+        items: output.records,
+        floors: {
+          minImportance: settings.minImportance,
+          minConfidence: settings.minConfidence,
+          includeWeakTypes: settings.includeWeakTypes
+        },
+        invalidItems: answer.invalid
+      }
+    );
+    state.persistedCount += created;
+    state.completed.push(pair.key);
+    await save();
+    outcomes.set(pair.key, "judged");
+  };
+  const result = await askSourceJudge({
+    root,
+    pairs: asked,
+    settle,
+    startAttempt: (pair) => ((state.attempts[pair.key] ?? 0) >= 1 ? 1 : 0),
+    settings,
+    call: async (call) => {
+      // Allow the current call to exceed the budget; stop only subsequent calls.
+      if (state.inputTokens > settings.maxInputTokens) return null;
+      if ((await input.currentConfiguration()) !== input.configuration)
+        throw new Error("errors.sourceRelations.configurationChanged");
+      for (const pair of call.pairs) {
+        if (!state.pairs.includes(pair.key)) state.pairs.push(pair.key);
+        state.attempts[pair.key] = call.attempt + 1;
+      }
+      await save();
+      const execution = await ai.runDefaultTask(
+        "reranking",
+        call.prompt,
+        {
+          ...input.context,
+          operation: sourceMatchingOperation,
+          stage: "sourceMatching",
+          workloadClass: "decide",
+          priority: "P2",
+          // The link job's wrapper states its own class; an imported source's judge runs for its user.
+          budgetClass: input.context?.budgetClass ?? "user",
+          contentLanguage: input.contentLanguage,
+          promptVersion: sourceRelationPromptVersion,
+          sourceItemIds: [
+            ...new Set([
+              root,
+              ...call.pairs.map((pair) => pair.candidate),
+              ...call.request.chunks.map((chunk) => chunk.sourceItemId)
+            ])
+          ],
+          attempt: call.attempt,
+          // The second call asks again after an answer that failed validation: a repair (D35).
+          isRepair: call.attempt > 0
+        },
+        signal,
+        { maxOutputTokens: call.maxOutputTokens }
+      );
+      if (!execution) throw new Error("errors.ai.noCompatibleModel");
+      const reportedInputTokens = execution.inputTokens;
+      if (
+        typeof reportedInputTokens === "number" &&
+        Number.isSafeInteger(reportedInputTokens) &&
+        reportedInputTokens >= 0
+      ) {
+        state.inputTokens += reportedInputTokens;
+      }
+      // Persist reported usage even if validation, cancellation or persistence fails next.
+      await save();
+      executions.push({ execution, pairs: call.pairs.length });
+      return execution;
+    }
   });
-  state.persistedCount += created;
-  state.completed.push(key);
-  await save();
-  return "judged";
+  for (const key of result.stopped) outcomes.set(key, "budget");
+  if (failed.length) throw new Error("errors.sourceRelations.invalidOutput");
+  return outcomes;
 }

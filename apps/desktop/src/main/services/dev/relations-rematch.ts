@@ -29,6 +29,8 @@
 //   MEMORA_RELATIONS_REMATCH_P0_PROBE_MS=<n>    X3's P0 probe: a query embedding at P0 every <n> ms while the run works
 //   MEMORA_RELATIONS_HELPER_BATCH=<1-64>        the MLX ranker's helper batch size for this run (T63's B1; read at the
 //                                              app's start by dev/relations-dev-options.ts, recorded in the summary)
+//   MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS=1|2   source discovery's neighbours for this run (F4 C2; read at the app's
+//                                              start by dev/relations-dev-options.ts; each root's stored plan shows it)
 //   MEMORA_RELATIONS_REMATCH_DIGEST=<sha256>:<notes>   the pinned notes digest, when the profile has none
 //   MEMORA_RELATIONS_REMATCH_OUT=<folder in .cache>    where the summary goes
 //   MEMORA_RELATIONS_REMATCH_DRAIN_MS=<n>       how long the link jobs may take to drain
@@ -72,7 +74,7 @@ import {
   type P0Probe,
   type RematchPorts
 } from "./relations-rematch-run.js";
-import { helperBatchOverride } from "./relations-dev-options.js";
+import { discoveryNeighboursOverride, helperBatchOverride } from "./relations-dev-options.js";
 import {
   clearRelationState,
   countOpenLinkJobs,
@@ -397,7 +399,14 @@ export function createRematchPorts(options: RematchPortsOptions): RematchPorts {
   return {
     deciderKey: () => knowledge.currentRelationDeciderKey(),
     clear: (input) => clearRelationState(pool, input),
-    seedBackground: (rootIds) => seedBackgroundMatchState(pool, rootIds),
+    // At the run's neighbours (C2's knob), so each background root's bar is the one discovery holds.
+    seedBackground: (rootIds) =>
+      seedBackgroundMatchState(
+        pool,
+        rootIds,
+        discoveryNeighboursOverride(options.env ?? {}, false) ??
+          relationsConfig.discovery.neighbours
+      ),
     // The matcher's own K and vector list, so the state is what it would have written at arrival.
     seedBackgroundNotes: (rootIds, deciderKey) =>
       seedBackgroundNoteState(pool, {

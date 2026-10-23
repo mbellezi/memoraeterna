@@ -306,7 +306,10 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                 // The typer asks the panel's strict relatedness question first (F3 decision 29).
                 "relations.type",
                 // The F3 bake-off's `relation` ranker instruction (the frozen calibrations' own).
-                "relations.decide.instruction"
+                "relations.decide.instruction",
+                // One judge call per root names its pairs of works (source-relations-v6, F4 D21).
+                "sources.decide",
+                "sources.validation.default"
               ].includes(row.id)
             ? "2"
             : "1",

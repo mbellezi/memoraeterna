@@ -16,6 +16,7 @@ import {
   orientSymmetricNotes,
   parseSourceDecision,
   promoteSourceRelations,
+  sourceBatchRequest,
   sourceDecisionPrompt,
   sourceJudgeRequestSettings,
   sourceRelationPromptVersion,
@@ -120,7 +121,13 @@ describe("source verdicts without prose", () => {
   });
 
   it("allows zero items and applies the floors and weak types to the raw scores", () => {
-    expect(parse([])).toEqual({ answered: true, items: [], invalid: 0, sameRoot: false });
+    expect(parse([])).toEqual({
+      answered: true,
+      items: [],
+      invalid: 0,
+      sameRoot: false,
+      suspects: []
+    });
     expect(writes([item({ 3: 85, 4: 80 })]).relations).toHaveLength(1);
     for (const overrides of [{ 3: 84 }, { 4: 79 }, { 2: "related" }, { 2: "mentions" }]) {
       const result = writes([item(overrides)]);
@@ -195,9 +202,12 @@ describe("source verdicts without prose", () => {
     expect(prompt).toContain('"key":"s1","root":"w1"');
     expect(prompt).toContain('"key":"s2","root":"w2"');
     expect(prompt).toContain('"key":"s3","root":"w1"');
-    expect(prompt).toContain("DIFFERENT roots");
+    expect(prompt).toContain("SAME root, and works not listed together as a pair");
+    expect(prompt).toContain('Pairs of works to judge (root aliases):\n[["w1","w2"]]');
     const parsed = parse([item({ 1: "s3", 6: ["c3"] }), item()], ctx);
     expect(parsed).toMatchObject({ invalid: 1, sameRoot: true });
+    // The same-root item may have been meant for the one pair of its work.
+    expect(parsed.suspects).toEqual([[JSON.stringify(["root-A", "root-B"])]]);
     expect(parsed.items).toHaveLength(1);
   });
 
@@ -341,7 +351,7 @@ describe("source verdicts without prose", () => {
       false
     );
     expect(prompt).toContain('{"relations":[["s1","s2","supports",90,85,["c1"],["c3"]]]}');
-    expect(prompt).toContain("Return ZERO to 2 items");
+    expect(prompt).toContain("return ZERO to 2 items for EACH pair");
     expect(prompt).toContain("integers from 0 to 100");
     expect(prompt).toContain("Write no ideas, explanations or other text");
     expect(prompt).toContain("durable relationship");
@@ -579,7 +589,6 @@ describe("source matching by design E (D27)", () => {
     mocks.repository.planDiscovery!.mockResolvedValue(plan(["root-B", "root-C"]));
     const ai = vi
       .fn()
-      .mockResolvedValueOnce(execution({ relations: [] }))
       .mockRejectedValueOnce(new Error("interrupted"))
       .mockResolvedValue(execution({ relations: [] }));
     await expect(run(ai, "resume")).rejects.toThrow("interrupted");
@@ -589,8 +598,10 @@ describe("source matching by design E (D27)", () => {
       total: 2
     });
     expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
-    expect(ai).toHaveBeenCalledTimes(3);
-    expect(onProgress.mock.calls[0]).toEqual([0.5, { completed: 1, total: 2 }]);
+    // One call for the root's two pairs; the resumed run asks about both again, once, as a repair.
+    expect(ai).toHaveBeenCalledTimes(2);
+    expect(ai.mock.calls[1]![2]).toMatchObject({ attempt: 1, isRepair: true });
+    expect(onProgress.mock.calls[0]).toEqual([0, { completed: 0, total: 2 }]);
     expect(onProgress.mock.calls.at(-1)).toEqual([1, { completed: 2, total: 2 }]);
   });
 
@@ -717,7 +728,12 @@ describe("source matching by design E (D27)", () => {
       const entry = pin.entries.find((e) => e.id === id)!;
       entry.fields.body = "CATALOG:" + id + "\n" + entry.fields.body;
     }
-    mocks.repository.pairChunks!.mockResolvedValue([a, { ...b, rootId: a.rootId }]);
+    // A second chapter of root A sorts before root B: s1 and s2 are two chapters of one work.
+    mocks.repository.pairChunks!.mockResolvedValue([
+      a,
+      { ...a, id: "a2", sourceItemId: "A2", title: "A2", chunkIndex: 1 },
+      b
+    ]);
     const ai = vi
       .fn()
       .mockResolvedValueOnce(execution({ relations: [item()] }))
@@ -771,17 +787,36 @@ describe("source matching by design E (D27)", () => {
     await expect(run(ai)).rejects.toThrow("interrupted");
     expect((states.get("run:root-A") as { inputTokens: number }).inputTokens).toBe(0);
   });
-  it("allows a call at the exact limit and blocks the next after actual overrun", async () => {
+  it("allows a repair at the exact limit and blocks a call after actual overrun", async () => {
     mocks.repository.planDiscovery!.mockResolvedValue(plan(["one", "two", "three"]));
-    const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2000 });
-    expect(
-      await run(ai, "limit", { ...defaultSourceRelationSettings, maxInputTokens: 2000 })
-    ).toMatchObject({
-      completed: 2,
+    const ai = vi
+      .fn()
+      .mockResolvedValueOnce({ ...execution("invalid"), inputTokens: 2000 })
+      .mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2000 });
+    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 2000 };
+    expect(await run(ai, "limit", settings)).toMatchObject({
+      completed: 3,
       total: 3,
       inputTokens: 4000,
+      partial: false,
+      coverage: { judgedPairs: 3, candidatePairs: 3, budgetExhausted: false }
+    });
+    expect(ai).toHaveBeenCalledTimes(2);
+    // A resumed run whose usage already passed the budget makes no further call.
+    const spent = {
+      ...(states.get("limit:root-A") as Record<string, unknown>),
+      inputTokens: 2001,
+      finished: false,
+      completed: [],
+      attempts: {}
+    };
+    states.set("over:root-A", spent);
+    mocks.repository.decision!.mockResolvedValue(null);
+    expect(await run(ai, "over", settings)).toMatchObject({
+      completed: 0,
+      total: 3,
       partial: true,
-      coverage: { judgedPairs: 2, candidatePairs: 3, budgetExhausted: true }
+      coverage: { judgedPairs: 0, candidatePairs: 3, budgetExhausted: true }
     });
     expect(ai).toHaveBeenCalledTimes(2);
   });
@@ -849,10 +884,10 @@ describe("source matching by design E (D27)", () => {
       minConfidence: 0.8
     };
     await run(ai, "raw", settings);
-    expect(ai.mock.calls[0]![1]).toContain("Return ZERO to 2 items");
+    expect(ai.mock.calls[0]![1]).toContain("return ZERO to 2 items for EACH pair");
     expect(ai.mock.calls[0]![2]).toMatchObject({
       operation: "source_relation_matching",
-      promptVersion: "source-relations-v5"
+      promptVersion: "source-relations-v6"
     });
     const [, , , relations, metadata] = mocks.repository.commitDecision!.mock.calls[0]!;
     expect(relations).toEqual([expect.objectContaining({ relationType: "supports" })]);
@@ -945,6 +980,191 @@ describe("source matching by design E (D27)", () => {
     } finally {
       mocks.taskDefaults = null;
     }
+  });
+
+  describe("one judge call per root (F4 D21)", () => {
+    const c: SourceRelationChunk = {
+      ...a,
+      id: "c",
+      sourceItemId: "C",
+      documentId: "cd",
+      contentHash: "ch",
+      title: "C",
+      rootId: "root-C",
+      rootTitle: "Root C"
+    };
+    /** Each pair's own evidence: root A's passage and the partner's. */
+    const twoPartners = () => {
+      mocks.repository.planDiscovery!.mockResolvedValue(plan(["root-C", "root-B"]));
+      mocks.repository.pairChunks!.mockImplementation(async (_root: string, partner: string) =>
+        partner === "root-B" ? [a, b] : [a, c]
+      );
+      mocks.repository.pairNotes!.mockImplementation(async (_root: string, partner: string) =>
+        partner === "root-B" ? [note] : []
+      );
+    };
+    const committed = () =>
+      new Map(
+        mocks.repository.commitDecision!.mock.calls.map((call) => [
+          call[2] as string,
+          { key: call[0] as string, relations: call[3] as unknown[], metadata: call[4] }
+        ])
+      );
+
+    it("asks about every undecided pair of the root in one call and splits the items per pair", async () => {
+      twoPartners();
+      const ai = vi.fn().mockResolvedValue(
+        execution({
+          relations: [
+            item(),
+            item({ 1: "s3", 6: ["c3"] }),
+            // Two partners are no listed pair: dropped, and no pair is asked about again.
+            item({ 0: "s2", 1: "s3", 5: ["c2"], 6: ["c3"] })
+          ]
+        })
+      );
+      expect(await run(ai)).toMatchObject({ completed: 2, total: 2, persistedCount: 2 });
+      expect(ai).toHaveBeenCalledTimes(1);
+      const [, prompt, callContext, , limits] = ai.mock.calls[0]!;
+      // Roots by content: A, B, C; the union of the evidence holds root A's passage once.
+      expect(prompt).toContain(
+        'Pairs of works to judge (root aliases):\n[["w1","w2"],["w1","w3"]]'
+      );
+      expect(prompt).toContain('{"key":"c3","source":"s3"');
+      expect(prompt).not.toContain('{"key":"c4"');
+      expect(callContext).toMatchObject({
+        sourceItemIds: ["root-A", "root-C", "root-B", "A", "B", "C"]
+      });
+      expect(limits).toEqual({ maxOutputTokens: Math.min(4096, 500 + 4 * 700) });
+      const decisions = committed();
+      expect(decisions.get("root-B")!.metadata).toMatchObject({
+        items: [expect.objectContaining({ from: "A", to: "B" })],
+        invalidItems: 0,
+        callPairs: 2
+      });
+      expect(decisions.get("root-C")!.metadata).toMatchObject({
+        items: [expect.objectContaining({ from: "A", to: "C" })],
+        invalidItems: 0
+      });
+      expect(decisions.get("root-B")!.key).not.toBe(decisions.get("root-C")!.key);
+    });
+
+    it("keys each pair apart from the pairs that shared its call", async () => {
+      twoPartners();
+      mocks.repository.planDiscovery!.mockResolvedValueOnce(plan(["root-B"]));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      await run(ai, "alone");
+      const alone = committed().get("root-B")!.key;
+      // Another run plans both partners: B's decision is reused, C alone is asked about.
+      await run(ai, "together");
+      expect(ai).toHaveBeenCalledTimes(2);
+      expect(ai.mock.calls[1]![1]).toContain(
+        'Pairs of works to judge (root aliases):\n[["w1","w2"]]'
+      );
+      expect(ai.mock.calls[1]![1]).toContain('"title":"C"');
+      expect(ai.mock.calls[1]![1]).not.toContain('"title":"B"');
+      expect(mocks.repository.decision).toHaveBeenCalledWith(alone);
+      expect(mocks.repository.commitDecision).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks again only about the pairs a malformed item may have been meant for, once", async () => {
+      twoPartners();
+      const ai = vi
+        .fn()
+        .mockResolvedValueOnce(
+          execution({
+            relations: [
+              item(),
+              // Root A to root C with evidence of root B: malformed, and only C's pair is open.
+              item({ 1: "s3", 6: ["c2"] })
+            ]
+          })
+        )
+        .mockResolvedValueOnce(execution({ relations: [] }));
+      expect(await run(ai)).toMatchObject({ completed: 2, total: 2, persistedCount: 1 });
+      expect(ai).toHaveBeenCalledTimes(2);
+      const repair = ai.mock.calls[1]![1] as string;
+      expect(ai.mock.calls[1]![2]).toMatchObject({ attempt: 1, isRepair: true });
+      expect(repair).toContain("The preceding answer failed validation.");
+      expect(repair).toContain('Pairs of works to judge (root aliases):\n[["w1","w2"]]');
+      expect(repair).toContain('"title":"C"');
+      expect(repair).not.toContain('"title":"B"');
+      // B's pair settled on the first answer and committed before the repair was asked.
+      expect(mocks.repository.commitDecision!.mock.calls.map((call) => call[2])).toEqual([
+        "root-B",
+        "root-C"
+      ]);
+      const decisions = committed();
+      expect(decisions.get("root-B")!.metadata).toMatchObject({ invalidItems: 0 });
+      expect(decisions.get("root-C")!.metadata).toMatchObject({
+        invalidItems: 1,
+        aiTaskRunIds: ["execution", "execution"]
+      });
+    });
+
+    it("re-asks every pair when the answer has no envelope, and fails only the pair left undecided", async () => {
+      twoPartners();
+      const ai = vi
+        .fn()
+        .mockResolvedValueOnce(execution("invalid"))
+        .mockResolvedValueOnce(
+          execution({ relations: [item(), ["s1", "s9", "supports", 90, 90, ["c1"], ["c9"]]] })
+        );
+      await expect(run(ai)).rejects.toThrow("errors.sourceRelations.invalidOutput");
+      expect(ai).toHaveBeenCalledTimes(2);
+      expect(ai.mock.calls[1]![1]).toContain('[["w1","w2"],["w1","w3"]]');
+      // B has a valid item; C has none and an unreadable item that may have been its own.
+      expect(mocks.repository.commitDecision!.mock.calls.map((call) => call[2])).toEqual([
+        "root-B"
+      ]);
+    });
+
+    it("changes the judge identity once for the batched prompt and enqueues nothing (D9)", async () => {
+      const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
+      const prompts = changedPromptIdentity([
+        "sources.decide",
+        "sources.decide.repair",
+        "sources.validation.default",
+        "sources.validation.same_root"
+      ]);
+      const identity = (version: string) =>
+        createHash("sha256")
+          .update(
+            JSON.stringify({
+              version,
+              ...(prompts ? { prompts } : {}),
+              language: "en",
+              request: sourceJudgeRequestSettings(settings, relationsConfig.sourceJudge),
+              provider: "provider",
+              model: "model",
+              runtime: "local",
+              localModel: null,
+              revision: "r1",
+              parameters: {},
+              defaults: {}
+            })
+          )
+          .digest("hex");
+      expect(sourceRelationPromptVersion).toBe("source-relations-v6");
+      const query = vi.fn();
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      await matchSources({
+        pool: { query } as unknown as PgPool,
+        ai: { runDefaultTask: ai },
+        sourceIds: ["A"],
+        runKey: "v6",
+        settings,
+        contentLanguage: "en"
+      });
+      const configuration = (states.get("v6:root-A") as { configuration: string }).configuration;
+      expect(configuration).toBe(identity("source-relations-v6"));
+      expect(configuration).not.toBe(identity("source-relations-v5"));
+      // The same content under the new identity is judged once, then reused by every later run.
+      await run(ai, "again", settings);
+      expect(ai).toHaveBeenCalledTimes(1);
+      // The matcher writes through its repository only: no job is enqueued by a prompt change.
+      expect(query).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -1069,6 +1289,43 @@ describe("source relation prompts do not depend on database IDs", () => {
     // The stored pair runs from the paper to the retrieval chapter; the prompt reads lower alias first.
     expect(prompt).toContain('"source":"s1","target":"s3","type":"contrasts"');
     expect(prompt).toContain('"evidence":["c1","c4"]');
+  });
+
+  it("aliases a root's batched pairs by content, whatever the IDs or the partners' order (D21)", () => {
+    const prompts = uuidAssignments(9).flatMap((ids, index) => {
+      const { context, ids: works } = worksFor(ids, index);
+      const memory = context.chunks.find((chunk) => chunk.rootId === works.memory)!;
+      const third: SourceRelationChunk = {
+        ...memory,
+        id: `${ids[5]}-third`,
+        sourceItemId: `${ids[6]}-third`,
+        rootId: `${ids[7]}-third`,
+        documentId: "document-attention",
+        title: "Attention",
+        rootTitle: "Attention review",
+        content: "Attention gates encoding.",
+        contentHash: "hash-attention"
+      };
+      const learning = { candidate: works.learning, context };
+      const attention = {
+        candidate: third.rootId,
+        context: { chunks: [third, memory], notes: [] }
+      };
+      return [
+        [learning, attention],
+        [attention, learning]
+      ].map((pairs) => sourceDecisionPrompt(sourceBatchRequest(works.memory, pairs), 2, false));
+    });
+    expect(prompts.length).toBeGreaterThan(2);
+    expect(new Set(prompts).size).toBe(1);
+    const prompt = prompts[0]!;
+    expect(prompt).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    // Works by title: Attention review (w1), Learning mechanisms (w2), Memory paper (w3).
+    expect(prompt).toContain('Pairs of works to judge (root aliases):\n[["w1","w3"],["w2","w3"]]');
+    expect(prompt).toContain('"key":"s1","root":"w1","title":"Attention"');
+    expect(prompt).toContain('"key":"s4","root":"w3","title":"Memory paper"');
+    // The paper's passage is listed once although both pairs cite it.
+    expect(prompt.split('"text":"Memory consolidates."').length - 1).toBe(1);
   });
 
   it("reads a symmetric relation from the lower alias and writes it in that direction", () => {
