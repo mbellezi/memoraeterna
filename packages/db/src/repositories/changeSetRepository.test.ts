@@ -10,7 +10,8 @@ import {
   ChangesDiffSchema,
   ChangeSetSummarySchema,
   changeSetReadLimits,
-  relationChangeSetKinds
+  relationChangeSetKinds,
+  TopicMessageParamsSchema
 } from "@app/domain";
 import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
 import type { StructureEvent, TopicRenamePayload } from "@app/domain/topic-tree";
@@ -20,6 +21,7 @@ import { runMigrations } from "../migrations.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
 import {
   ChangeSetCursorError,
+  changeSetMessageParams,
   createChangeSetRepository,
   decodeChangeSetCursor,
   encodeChangeSetCursor,
@@ -49,6 +51,17 @@ const workspace = resolve(import.meta.dirname, "../../../..");
 const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
 const sidecarInstalled = existsSync(join(sidecar.binDir, "postgres"));
 const uuidOf = (n: number): string => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
+
+describe("a change-set title's parameters", () => {
+  it("clip a long title to the contract's 300 UTF-16 units without splitting a character", () => {
+    const title = "📚".repeat(200);
+    const params = changeSetMessageParams({ note: title, n: 3, ok: true, gone: undefined });
+    expect(params.note).toBe("📚".repeat(150));
+    expect(params).toMatchObject({ n: 3, ok: true });
+    expect(TopicMessageParamsSchema.safeParse(params).success).toBe(true);
+    expect(changeSetMessageParams({ note: `a${"📚".repeat(200)}` }).note).toHaveLength(299);
+  });
+});
 
 describe("the topic diff", () => {
   const current = (

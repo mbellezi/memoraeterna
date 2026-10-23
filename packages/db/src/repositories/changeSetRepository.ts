@@ -193,15 +193,29 @@ export const changeSetSql = {
      order by created_at limit 1`
 } as const;
 
+/**
+ * A string clipped to `max` UTF-16 units, the unit the contract's `max` counts, without splitting a
+ * character: a title parameter of emoji never makes a whole `changes.list` page fail its schema.
+ */
+function clipUnits(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let clipped = "";
+  for (const character of text) {
+    if (clipped.length + character.length > max) break;
+    clipped += character;
+  }
+  return clipped;
+}
+
 /** Message parameters: scalars only, bounded (the stores may keep more in their params). */
-function messageParams(value: unknown): TopicMessageParams {
+export function changeSetMessageParams(value: unknown): TopicMessageParams {
   const output: TopicMessageParams = {};
   if (value && typeof value === "object" && !Array.isArray(value)) {
     for (const [key, entry] of Object.entries(value)) {
       if (key.length === 0 || key.length > 60) continue;
       if (entry === null || typeof entry === "boolean") output[key] = entry;
       else if (typeof entry === "number" && Number.isFinite(entry)) output[key] = entry;
-      else if (typeof entry === "string") output[key] = [...entry].slice(0, 300).join("");
+      else if (typeof entry === "string") output[key] = clipUnits(entry, 300);
     }
   }
   return output;
@@ -212,7 +226,7 @@ function summaryOf(row: ViewRow, undo: TopicUndoAvailability = row.undo): Change
     kind: row.kind,
     id: row.id,
     titleKey: row.titleKey,
-    titleParams: messageParams(row.titleParams),
+    titleParams: changeSetMessageParams(row.titleParams),
     risk: row.risk,
     status: row.status,
     origin: row.origin.slice(0, changeSetReadLimits.originMax),
