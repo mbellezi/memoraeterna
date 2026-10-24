@@ -332,24 +332,6 @@
       "error": "The changes could not be loaded.",
       "missing": "This change is no longer available.",
       "hidden": "{count} more are not shown.",
-      "topic": {
-        "caption": "Topics this change touches",
-        "topic": "Topic",
-        "change": "Change",
-        "root": "Whole library",
-        "changes": {
-          "added": "Added",
-          "removed": "Removed",
-          "moved": "Moved",
-          "renamed": "Renamed",
-          "changed": "Changed",
-          "items": "Items moved",
-          "context": "Unchanged"
-        },
-        "movedFrom": "from “{from}” to “{to}”",
-        "renamedFrom": "was “{from}”",
-        "itemsInOut": "Items: {in} in, {out} out"
-      },
       "relation": {
         "caption": "Connections this change touches",
         "connection": "Connection",

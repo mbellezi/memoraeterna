@@ -37,6 +37,17 @@ describe("the Inbox keys", () => {
     expect(inboxCommand(press("?", { shiftKey: true }))).toEqual({ type: "help" });
   });
 
+  it("leaves the icicle diff its own keys: only Escape and ? are the Inbox's there", () => {
+    const icicle = target({ tagName: "BUTTON", inside: ["data-icicle-diff", "button"] });
+    for (const key of ["j", "k", "a", "x", "r", "u", "Enter", " ", "ArrowDown", "Home", "End"])
+      expect(inboxCommand(press(key, { target: icicle })), key).toBeNull();
+    expect(inboxCommand(press("Escape", { target: icicle }))).toEqual({ type: "escape" });
+    expect(inboxCommand(press("?", { target: icicle, shiftKey: true }))).toEqual({ type: "help" });
+    // Outside it, a button of the detail still hears the letters.
+    const verb = target({ tagName: "BUTTON", inside: ["button"] });
+    expect(inboxCommand(press("a", { target: verb }))).toEqual({ type: "verb", verb: "apply" });
+  });
+
   it("reads a capital letter (caps lock) as the letter", () => {
     expect(inboxCommand(press("A"))).toEqual({ type: "verb", verb: "apply" });
     expect(inboxCommand(press("J"))).toEqual({ type: "move", delta: 1 });

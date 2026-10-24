@@ -332,24 +332,6 @@
       "error": "Não foi possível carregar as mudanças.",
       "missing": "Esta mudança não está mais disponível.",
       "hidden": "Mais {count} não são mostrados.",
-      "topic": {
-        "caption": "Tópicos que esta mudança toca",
-        "topic": "Tópico",
-        "change": "Mudança",
-        "root": "Biblioteca inteira",
-        "changes": {
-          "added": "Adicionado",
-          "removed": "Removido",
-          "moved": "Movido",
-          "renamed": "Renomeado",
-          "changed": "Alterado",
-          "items": "Itens movidos",
-          "context": "Sem mudança"
-        },
-        "movedFrom": "de “{from}” para “{to}”",
-        "renamedFrom": "era “{from}”",
-        "itemsInOut": "Itens: {in} entram, {out} saem"
-      },
       "relation": {
         "caption": "Conexões que esta mudança toca",
         "connection": "Conexão",

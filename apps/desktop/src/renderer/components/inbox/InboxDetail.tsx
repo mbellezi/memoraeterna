@@ -163,7 +163,14 @@ export function InboxDetail({
         </p>
       ) : null}
 
-      {item.changeSet ? <InboxDiff t={t} load={diff} onRetry={onRetryDiff} /> : null}
+      {item.changeSet ? (
+        <InboxDiff
+          t={t}
+          load={diff}
+          onRetry={onRetryDiff}
+          onOpenTopic={(id) => onOpenObject({ kind: "topic", id, title: null })}
+        />
+      ) : null}
     </section>
   );
 }

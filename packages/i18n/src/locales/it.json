@@ -332,24 +332,6 @@
       "error": "Impossibile caricare le modifiche.",
       "missing": "Questa modifica non è più disponibile.",
       "hidden": "Altri {count} non sono mostrati.",
-      "topic": {
-        "caption": "Argomenti toccati da questa modifica",
-        "topic": "Argomento",
-        "change": "Modifica",
-        "root": "Intera libreria",
-        "changes": {
-          "added": "Aggiunto",
-          "removed": "Rimosso",
-          "moved": "Spostato",
-          "renamed": "Rinominato",
-          "changed": "Modificato",
-          "items": "Elementi spostati",
-          "context": "Invariato"
-        },
-        "movedFrom": "da “{from}” a “{to}”",
-        "renamedFrom": "era “{from}”",
-        "itemsInOut": "Elementi: {in} in entrata, {out} in uscita"
-      },
       "relation": {
         "caption": "Collegamenti toccati da questa modifica",
         "connection": "Collegamento",

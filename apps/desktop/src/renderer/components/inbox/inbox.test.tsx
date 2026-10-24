@@ -152,11 +152,15 @@ describe("the Inbox screen", () => {
         load: { status: "ready", diff: topic }
       })
     );
-    expect(html).toContain("<table");
-    expect(html).toContain("Topics this change touches");
-    expect(html).toContain("from “Rest” to “Whole library”");
-    expect(html).toContain("4 in, 1 out");
-    expect(html).toContain("3 more are not shown.");
+    // T95's icicles before and after, with the Chart/Table switch to their table alternative.
+    expect(html).toContain("data-icicle-diff");
+    expect(html).toContain("Change in the topic structure");
+    expect(html).toContain("Topic tree before the change.");
+    expect(html).toContain("Topic tree after the change.");
+    expect(html).toContain(">Chart<");
+    expect(html).toContain(">Table<");
+    expect(html).toContain("3 more changed topics, deeper in the tree, are not listed.");
+    expect(html).toContain("Select a block or a row to see what changed in that topic.");
     // The change is a word, not only a colour.
     for (const word of ["Moved", "Renamed", "Added", "Unchanged"]) expect(html).toContain(word);
   });

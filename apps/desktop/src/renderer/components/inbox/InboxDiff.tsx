@@ -1,54 +1,38 @@
-import { useId } from "react";
-import { ArrowRightLeft, Layers, Minus, PenLine, Plus } from "lucide-react";
-import type { ChangesDiff, TopicDiffChange } from "@app/domain";
+import { useId, useState } from "react";
+import type { ChangesDiff } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
+import { IcicleDiffView, type IcicleDiffDisplay } from "../topic-shape/IcicleDiff";
 import { Button } from "../ui/button";
-import {
-  overviewDiffView,
-  relationDiffRows,
-  topicDiffRows,
-  type TopicDiffRow
-} from "./inbox-diff-model";
+import { overviewDiffView, relationDiffRows } from "./inbox-diff-model";
 import type { InboxDiffLoad } from "./inbox-state";
-
-/** A change as a glyph and a word; the colour only repeats it. */
-const changeMark: Record<TopicDiffChange, { icon: typeof Plus; tone: string }> = {
-  added: { icon: Plus, tone: "text-success" },
-  removed: { icon: Minus, tone: "text-danger" },
-  moved: { icon: ArrowRightLeft, tone: "text-info" },
-  renamed: { icon: PenLine, tone: "text-info" },
-  changed: { icon: PenLine, tone: "text-info" },
-  items: { icon: Layers, tone: "text-info" },
-  context: { icon: Layers, tone: "text-muted-foreground" }
-};
 
 export interface InboxDiffProps {
   t: Translator;
   load: InboxDiffLoad | undefined;
   onRetry: () => void;
+  /** Opens a topic the structural diff names (one that still exists). */
+  onOpenTopic?: ((topicId: string) => void) | undefined;
 }
 
 /**
- * What a change-set would change, read from `changes.diff`, in words and tables: the topics a
- * structural change touches, the connections a pass touched, an overview before and after with the
- * Divergences kept beside it. The structural diff is also drawn as icicles (T95) above its table;
- * this is the table alternative every drawing has.
+ * What a change-set would change, read from `changes.diff`: the topic tree before and after as
+ * icicles with their table alternative (T95's view), the connections a pass touched, an overview
+ * before and after with the Divergences kept beside it.
  */
-export function InboxDiff({ t, load, onRetry }: InboxDiffProps) {
+export function InboxDiff({ t, load, onRetry, onOpenTopic }: InboxDiffProps) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
       <h3 id={headingId} className="text-xs font-semibold text-secondary-foreground">
         {t("inbox.diff.title")}
       </h3>
-      <DiffBody t={t} load={load} onRetry={onRetry} />
+      <DiffBody t={t} load={load} onRetry={onRetry} onOpenTopic={onOpenTopic} />
     </section>
   );
 }
 
-function DiffBody({ t, load, onRetry }: InboxDiffProps) {
+function DiffBody({ t, load, onRetry, onOpenTopic }: InboxDiffProps) {
   if (!load || load.status === "loading")
     return (
       <p role="status" className="text-xs text-muted-foreground">
@@ -70,7 +54,7 @@ function DiffBody({ t, load, onRetry }: InboxDiffProps) {
         </Button>
       </div>
     );
-  return <DiffContent t={t} diff={load.diff} />;
+  return <DiffContent t={t} diff={load.diff} onOpenTopic={onOpenTopic} />;
 }
 
 function hiddenNote(t: Translator, hidden: number) {
@@ -84,15 +68,18 @@ function hiddenNote(t: Translator, hidden: number) {
   );
 }
 
-function DiffContent({ t, diff }: { t: Translator; diff: ChangesDiff }) {
+function DiffContent({
+  t,
+  diff,
+  onOpenTopic
+}: {
+  t: Translator;
+  diff: ChangesDiff;
+  onOpenTopic: ((topicId: string) => void) | undefined;
+}) {
+  // A new change-set starts on the chart with nothing selected.
   if (diff.kind === "topic")
-    return (
-      <>
-        {/* The icicle diff (T95, `IcicleDiff`) draws the two trees here, above its table alternative. */}
-        <TopicDiffTable t={t} rows={topicDiffRows(t, diff.nodes)} />
-        {hiddenNote(t, diff.hidden)}
-      </>
-    );
+    return <TopicDiff key={diff.summary.id} t={t} diff={diff} onOpenTopic={onOpenTopic} />;
   if (diff.kind === "relation") {
     const rows = relationDiffRows(t, diff.relations);
     return (
@@ -168,56 +155,31 @@ function DiffContent({ t, diff }: { t: Translator; diff: ChangesDiff }) {
 }
 
 /**
- * The table alternative of the structural diff: every topic the change touches, indented under its
- * parent, with what happened to it. A change reads as a glyph and a word.
+ * The structural diff as T95 draws it: the icicles before and after, the same topics as a table
+ * (the Chart/Table switch) and the selected topic in words. The Inbox has read the diff already, so
+ * the view is given it ready; the choice of chart or table and the selection are this pane's.
  */
-export function TopicDiffTable({ t, rows }: { t: Translator; rows: readonly TopicDiffRow[] }) {
+function TopicDiff({
+  t,
+  diff,
+  onOpenTopic
+}: {
+  t: Translator;
+  diff: Extract<ChangesDiff, { kind: "topic" }>;
+  onOpenTopic: ((topicId: string) => void) | undefined;
+}) {
+  const [display, setDisplay] = useState<IcicleDiffDisplay>("chart");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   return (
-    <table className="w-full border-collapse text-left text-xs">
-      <caption className="sr-only">{t("inbox.diff.topic.caption")}</caption>
-      <thead>
-        <tr className="text-secondary-foreground">
-          <th scope="col" className="py-1 pr-3 font-semibold">
-            {t("inbox.diff.topic.topic")}
-          </th>
-          <th scope="col" className="py-1 font-semibold">
-            {t("inbox.diff.topic.change")}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const mark = changeMark[row.change];
-          const Icon = mark.icon;
-          return (
-            <tr key={row.id} className="border-t border-border align-top">
-              <th
-                scope="row"
-                className="py-1.5 pr-3 font-normal text-foreground [overflow-wrap:anywhere]"
-                style={{ paddingLeft: `${Math.min(row.depth, 8) * 0.75}rem` }}
-              >
-                {row.name}
-              </th>
-              <td className="py-1.5">
-                <span className={cn("inline-flex items-center gap-1 font-medium", mark.tone)}>
-                  <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                  {row.changeLabel}
-                </span>
-                {row.detail ? (
-                  <span className="block text-muted-foreground [overflow-wrap:anywhere]">
-                    {row.detail}
-                  </span>
-                ) : null}
-                {row.items ? (
-                  <span className="block text-muted-foreground [overflow-wrap:anywhere]">
-                    {row.items}
-                  </span>
-                ) : null}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <IcicleDiffView
+      t={t}
+      snapshot={{ load: { status: "ready", nodes: diff.nodes, hidden: diff.hidden }, selectedId }}
+      display={display}
+      onDisplay={setDisplay}
+      onSelect={setSelectedId}
+      // The pane's own error state has the retry; a ready view has nothing to read again.
+      onRetry={() => undefined}
+      onOpenTopic={onOpenTopic}
+    />
   );
 }

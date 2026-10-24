@@ -5,7 +5,8 @@ import { isInsideDialog, isTypingTarget, type KeyTarget } from "../topics/ops/no
  * keeps, `x` dismisses or removes, `r` retries, `u` undoes the last verb and `?` shows the keys.
  * A single key is only a command when nothing is being typed, no dialog has the keyboard and no
  * modifier is held; the arrows, Home and End belong to the list alone, so a chart or a table in
- * the detail keeps its own. Duck-typed so the rules are tested without a DOM.
+ * the detail keeps its own, and no key but Escape and `?` is the Inbox's inside the icicle diff.
+ * Duck-typed so the rules are tested without a DOM.
  */
 
 export type InboxVerbCommand = "apply" | "dismiss" | "retry";
@@ -33,6 +34,8 @@ export interface InboxKeyEvent {
 /** Elements that act on Enter and Space themselves. */
 const activatable = 'button, a[href], summary, [role="button"], [role="tab"], [role="link"]';
 const listSelector = '[role="listbox"]';
+/** The icicle diff of the detail (T95): its keys are its own. */
+const icicleSelector = "[data-icicle-diff]";
 
 function closest(target: KeyTarget | EventTarget | null, selector: string): boolean {
   const element = target as KeyTarget | null;
@@ -73,6 +76,9 @@ export function inboxCommand(event: InboxKeyEvent): InboxCommand | null {
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   if (isTypingTarget(event.target) || isInsideDialog(event.target)) return null;
   const { key } = event;
+  // Inside the icicles the arrows, Home, End, Enter and Space move and select; a letter there is
+  // not the Inbox's either. Escape still goes back to the list, and `?` shows the keys.
+  if (closest(event.target, icicleSelector) && key !== "Escape" && key !== "?") return null;
   if (key === "?") return { type: "help" };
   if (key === "Escape") return event.shiftKey ? null : { type: "escape" };
   if (key === "Enter") {
