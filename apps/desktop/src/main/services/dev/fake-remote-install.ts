@@ -64,6 +64,8 @@ export interface FakeRemoteDeps {
   setAnswerRoute(profileId: string): Promise<unknown>;
   sink: SoakEventSink;
   workspaceRoot: string;
+  /** The Codex configuration of the real writer, which the reach check lets through (T89). */
+  realWriterConfigId?: string | undefined;
   logger?: Pick<Console, "info">;
 }
 
@@ -106,7 +108,7 @@ export function loadLatencyModel(spec: SoakLatencySpec, workspaceRoot: string): 
   return quantileLatency(task.quantilesMs, { minMs: spec.minMs, maxMs: spec.maxMs });
 }
 
-interface ProviderInstall {
+export interface ProviderInstall {
   displayName: string;
   provider: "openai-compatible" | "openai-codex";
   baseUrl: string;
@@ -115,9 +117,9 @@ interface ProviderInstall {
   secret: string;
 }
 
-async function installProvider(
+export async function installProvider(
   repository: ReturnType<typeof createAiConfigRepository>,
-  deps: FakeRemoteDeps,
+  deps: Pick<FakeRemoteDeps, "credentials">,
   install: ProviderInstall
 ): Promise<{ config: AiProviderConfigRecord; profile: AiProfileRecord }> {
   const existing = (await repository.listProviders()).find(
@@ -164,6 +166,11 @@ export async function startFakeRemote(
   deps: FakeRemoteDeps
 ): Promise<FakeRemoteHandle> {
   const remote = profile.remote;
+  if (!remote)
+    throw new SoakKnobRefusal(
+      "invalidPlan",
+      "This plan profile has no fake remote providers: its remote side is the real Codex writer."
+    );
   const servers: FakeProviderServer[] = [];
   const stop = async () => {
     await Promise.all(servers.splice(0).map((server) => server.stop()));
@@ -249,8 +256,13 @@ export async function startFakeRemote(
     )
       throw new Error("The fake remote routes do not lead to the fake providers.");
     // The soak must reach no real provider: a profile cloned from the owner's may still point at one.
+    // The one real configuration a soak admits is the Codex writer the real-writer knob names (T89).
     const problem = realRemoteProblem(
-      await findRealRemoteReach(deps.pool, [answer.config.id, explain.config.id])
+      await findRealRemoteReach(deps.pool, [
+        answer.config.id,
+        explain.config.id,
+        ...(deps.realWriterConfigId ? [deps.realWriterConfigId] : [])
+      ])
     );
     if (problem) throw new Error(problem);
     deps.logger?.info(

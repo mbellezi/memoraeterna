@@ -332,10 +332,13 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
       ...profile,
       remote: {
         openAiCompatible: {
-          ...profile.remote.openAiCompatible,
-          latency: fixed(profile.remote.openAiCompatible.latency)
+          ...profile.remote!.openAiCompatible,
+          latency: fixed(profile.remote!.openAiCompatible.latency)
         },
-        codexWire: { ...profile.remote.codexWire, latency: fixed(profile.remote.codexWire.latency) }
+        codexWire: {
+          ...profile.remote!.codexWire,
+          latency: fixed(profile.remote!.codexWire.latency)
+        }
       }
     };
     try {
@@ -389,12 +392,12 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
       ...profile,
       remote: {
         openAiCompatible: {
-          ...profile.remote.openAiCompatible,
-          latency: fixed(profile.remote.openAiCompatible.latency) as never
+          ...profile.remote!.openAiCompatible,
+          latency: fixed(profile.remote!.openAiCompatible.latency) as never
         },
         codexWire: {
-          ...profile.remote.codexWire,
-          latency: fixed(profile.remote.codexWire.latency) as never
+          ...profile.remote!.codexWire,
+          latency: fixed(profile.remote!.codexWire.latency) as never
         }
       }
     };

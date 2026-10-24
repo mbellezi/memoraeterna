@@ -94,7 +94,7 @@ describe("the soak plan", () => {
   it("gives the pre-soak a forced burst of every fault kind on both fakes", () => {
     const { profile } = readSoakPlan(planPath, "presoak4");
     const forced = (fake: "openAiCompatible" | "codexWire") =>
-      new Set(profile.remote[fake].faults.forced.map((entry) => entry.kind));
+      new Set(profile.remote![fake].faults.forced.map((entry) => entry.kind));
     for (const kind of [
       "rate_limit",
       "unavailable",
@@ -105,10 +105,10 @@ describe("the soak plan", () => {
       expect(forced("openAiCompatible").has(kind)).toBe(true);
       expect(forced("codexWire").has(kind)).toBe(true);
     }
-    expect(profile.remote.codexWire.faults.windows).toEqual([
+    expect(profile.remote!.codexWire.faults.windows).toEqual([
       expect.objectContaining({ kind: "outage" })
     ]);
-    expect(profile.remote.openAiCompatible.faults.windows).toEqual([
+    expect(profile.remote!.openAiCompatible.faults.windows).toEqual([
       expect.objectContaining({ kind: "slow", factor: 10 })
     ]);
   });

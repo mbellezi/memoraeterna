@@ -155,6 +155,555 @@
         "ggufAbort": { "everyMinutes": 80 }
       },
       "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 }
+    },
+    "soak7": {
+      "description": "The 7-day Hybrid soak of F4 (spec 5.4, D37): SOAK7 on a clone of ENV-G, the real Codex writer for every writer class and the judge, Decisions off, reduced intensity plus twice-daily contention bursts, zero-token fault injection in front of the Codex adapter, control and blocker windows with ground truth, the product's mid-run Codex cap, a harness token cap, one money window on a priced loopback fake. codex.expected and codex.cap are provisional until gate S re-freezes them (T91).",
+      "seed": 20261028,
+      "durationHours": 168,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": {
+          "everyMinutes": 480,
+          "offsetMinutes": 60
+        },
+        "ask": {
+          "everyMinutes": 180,
+          "offsetMinutes": 20
+        },
+        "explain": {
+          "everyMinutes": 60,
+          "offsetMinutes": 5
+        },
+        "explainBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 35,
+          "count": 5
+        },
+        "noteEdit": {
+          "everyMinutes": 180,
+          "offsetMinutes": 50
+        },
+        "sourceReimport": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 1020,
+          "days": "odd"
+        },
+        "typingFault": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 1020,
+          "days": "even"
+        },
+        "topicOpen": {
+          "everyMinutes": 120,
+          "offsetMinutes": 40
+        },
+        "contentionBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 360,
+          "reembeds": 20,
+          "edits": 6,
+          "editSpacingMinutes": 2
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": {
+          "everyMinutes": 360,
+          "jitterMinutes": 30
+        },
+        "ggufAbort": {
+          "everyMinutes": 720
+        }
+      },
+      "bounds": {
+        "connectMs": 10000,
+        "firstByteMs": 30000,
+        "stallMs": 20000
+      },
+      "f4": {
+        "codex": {
+          "expected": 3200000,
+          "cap": 4700000,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 40800,
+            "typing_fault": 40800,
+            "source_reimport": 40800,
+            "ask": 6600,
+            "explain": 1000,
+            "explain_burst": 5000,
+            "topic_open": 3167,
+            "note_edit": 3500,
+            "burst_edit": 1750,
+            "contention_burst": 0,
+            "backgroundPerHour": 4792
+          },
+          "windowTokenFactor": {
+            "usage_limit": 0,
+            "refused": 0,
+            "enotfound": 0,
+            "unauthorized": 0,
+            "autonomy_off": 0.75,
+            "autonomy_suggest": 0.85,
+            "codex_daily_cap": 0.9,
+            "money": 0.9
+          }
+        },
+        "injection": {
+          "rates": {
+            "rateLimit": 0.02,
+            "unavailable": 0.01,
+            "lateFirstByte": 0.005,
+            "stall": 0.002,
+            "malformed": 0.003,
+            "unauthorized": 0.001,
+            "contextOverflow": 0.001
+          },
+          "retryAfterSeconds": [1, 10],
+          "stallMs": 25000,
+          "lateFirstByteMs": 35000,
+          "forced": []
+        },
+        "windows": [
+          {
+            "id": "w030-usage-limit",
+            "kind": "usage_limit",
+            "startMinute": 1800,
+            "durationMinutes": 120,
+            "expect": {
+              "class": "waiting",
+              "reason": "provider_rate_limit"
+            }
+          },
+          {
+            "id": "w044-autonomy-off",
+            "kind": "autonomy_off",
+            "startMinute": 2640,
+            "durationMinutes": 120,
+            "expect": {
+              "class": "paused",
+              "reason": "autonomy_off"
+            }
+          },
+          {
+            "id": "w054-refused",
+            "kind": "refused",
+            "startMinute": 3240,
+            "durationMinutes": 15,
+            "expect": {
+              "class": "waiting",
+              "reason": "provider_unavailable"
+            }
+          },
+          {
+            "id": "w066-autonomy-suggest",
+            "kind": "autonomy_suggest",
+            "startMinute": 3960,
+            "durationMinutes": 360
+          },
+          {
+            "id": "w078-enotfound",
+            "kind": "enotfound",
+            "startMinute": 4680,
+            "durationMinutes": 20,
+            "expect": {
+              "class": "offline",
+              "reason": "network_unreachable"
+            }
+          },
+          {
+            "id": "w084-codex-daily-cap",
+            "kind": "codex_daily_cap",
+            "startMinute": 5040,
+            "durationMinutes": 720,
+            "expect": {
+              "class": "cap",
+              "reason": "subscription_daily"
+            },
+            "params": {
+              "extraCalls": 10
+            }
+          },
+          {
+            "id": "w102-unauthorized",
+            "kind": "unauthorized",
+            "startMinute": 6120,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "no_model",
+              "reason": "signin_required"
+            },
+            "settleEndMinutes": 6
+          },
+          {
+            "id": "w114-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 6840,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "no_model",
+              "reason": "no_decider"
+            }
+          },
+          {
+            "id": "w120-embedder-verifying",
+            "kind": "embedder_verifying",
+            "startMinute": 7200,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "download",
+              "reason": "model_verifying"
+            }
+          },
+          {
+            "id": "w132-only-idle",
+            "kind": "only_idle",
+            "startMinute": 7920,
+            "durationMinutes": 240,
+            "expect": {
+              "class": "paused",
+              "reason": "only_idle_user_active"
+            },
+            "params": {
+              "blockMinutes": 10
+            }
+          },
+          {
+            "id": "w140-only-ac",
+            "kind": "only_ac",
+            "startMinute": 8400,
+            "durationMinutes": 60,
+            "expect": {
+              "class": "paused",
+              "reason": "only_ac_on_battery"
+            }
+          },
+          {
+            "id": "w146-money",
+            "kind": "money",
+            "startMinute": 8760,
+            "durationMinutes": 360,
+            "params": {
+              "attempts": 8,
+              "backfillRelations": 10,
+              "continueAfterMinutes": 10,
+              "attemptEstimateUsd": 0.008
+            }
+          }
+        ],
+        "windowSeries": [
+          {
+            "idPrefix": "pause",
+            "kind": "pause",
+            "everyMinutes": 1440,
+            "offsetMinutes": 600,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          }
+        ],
+        "money": {
+          "model": "dev-fake-priced-1",
+          "inputUsdPerM": 1,
+          "outputUsdPerM": 4,
+          "latencyMs": 1200
+        },
+        "decisions": "off"
+      }
+    },
+    "soak7-gate": {
+      "description": "Gate S of F4 (T91, spec 5.4): the 7-day profile in about 5 h with every fault kind and every window once at a short duration (the mid-run cap and the money window 30 min, the harness-cap window 20 min), one contention burst and the calibration set (imports, Asks, stale topic opens and the naming after them) whose tokens re-freeze codex.expected and codex.cap.",
+      "seed": 20261027,
+      "durationHours": 5.2,
+      "warmupMinutes": 20,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": {
+          "everyMinutes": 60,
+          "offsetMinutes": 3
+        },
+        "ask": {
+          "everyMinutes": 30,
+          "offsetMinutes": 8
+        },
+        "explain": {
+          "everyMinutes": 15,
+          "offsetMinutes": 4
+        },
+        "explainBurst": {
+          "everyMinutes": 150,
+          "offsetMinutes": 12,
+          "count": 5
+        },
+        "noteEdit": {
+          "everyMinutes": 30,
+          "offsetMinutes": 14
+        },
+        "sourceReimport": {
+          "everyMinutes": 300,
+          "offsetMinutes": 40
+        },
+        "typingFault": {
+          "everyMinutes": 300,
+          "offsetMinutes": 190
+        },
+        "topicOpen": {
+          "everyMinutes": 40,
+          "offsetMinutes": 10
+        },
+        "contentionBurst": {
+          "everyMinutes": 600,
+          "offsetMinutes": 118,
+          "reembeds": 20,
+          "edits": 6,
+          "editSpacingMinutes": 2
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": {
+          "everyMinutes": 75,
+          "jitterMinutes": 10
+        },
+        "ggufAbort": {
+          "everyMinutes": 80
+        }
+      },
+      "bounds": {
+        "connectMs": 10000,
+        "firstByteMs": 30000,
+        "stallMs": 20000
+      },
+      "f4": {
+        "codex": {
+          "expected": 1230000,
+          "cap": 1500000,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 40800,
+            "typing_fault": 40800,
+            "source_reimport": 40800,
+            "ask": 6600,
+            "explain": 1000,
+            "explain_burst": 5000,
+            "topic_open": 3167,
+            "note_edit": 3500,
+            "burst_edit": 1750,
+            "contention_burst": 0,
+            "backgroundPerHour": 4792
+          },
+          "windowTokenFactor": {
+            "usage_limit": 0,
+            "refused": 0,
+            "enotfound": 0,
+            "unauthorized": 0,
+            "autonomy_off": 0.75,
+            "autonomy_suggest": 0.85,
+            "codex_daily_cap": 0.9,
+            "money": 0.9
+          }
+        },
+        "injection": {
+          "rates": {
+            "rateLimit": 0.02,
+            "unavailable": 0.01,
+            "lateFirstByte": 0.005,
+            "stall": 0.002,
+            "malformed": 0.003,
+            "unauthorized": 0.001,
+            "contextOverflow": 0.001
+          },
+          "retryAfterSeconds": [1, 10],
+          "stallMs": 25000,
+          "lateFirstByteMs": 35000,
+          "forced": [
+            {
+              "kind": "malformed",
+              "afterMinute": 3,
+              "count": 1
+            },
+            {
+              "kind": "unauthorized",
+              "afterMinute": 5,
+              "count": 1
+            },
+            {
+              "kind": "context_overflow",
+              "afterMinute": 7,
+              "count": 1
+            },
+            {
+              "kind": "rate_limit",
+              "afterMinute": 9,
+              "count": 2
+            },
+            {
+              "kind": "unavailable",
+              "afterMinute": 12,
+              "count": 3
+            },
+            {
+              "kind": "late_first_byte",
+              "afterMinute": 15,
+              "count": 3
+            },
+            {
+              "kind": "stall",
+              "afterMinute": 19,
+              "count": 3
+            }
+          ]
+        },
+        "windows": [
+          {
+            "id": "g030-usage-limit",
+            "kind": "usage_limit",
+            "startMinute": 30,
+            "durationMinutes": 15,
+            "expect": {
+              "class": "waiting",
+              "reason": "provider_rate_limit"
+            }
+          },
+          {
+            "id": "g050-autonomy-off",
+            "kind": "autonomy_off",
+            "startMinute": 50,
+            "durationMinutes": 15,
+            "expect": {
+              "class": "paused",
+              "reason": "autonomy_off"
+            }
+          },
+          {
+            "id": "g070-refused",
+            "kind": "refused",
+            "startMinute": 70,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "waiting",
+              "reason": "provider_unavailable"
+            }
+          },
+          {
+            "id": "g085-autonomy-suggest",
+            "kind": "autonomy_suggest",
+            "startMinute": 85,
+            "durationMinutes": 15
+          },
+          {
+            "id": "g105-enotfound",
+            "kind": "enotfound",
+            "startMinute": 105,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "offline",
+              "reason": "network_unreachable"
+            }
+          },
+          {
+            "id": "g120-codex-daily-cap",
+            "kind": "codex_daily_cap",
+            "startMinute": 120,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "cap",
+              "reason": "subscription_daily"
+            },
+            "params": {
+              "extraCalls": 10
+            }
+          },
+          {
+            "id": "g155-unauthorized",
+            "kind": "unauthorized",
+            "startMinute": 155,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "no_model",
+              "reason": "signin_required"
+            },
+            "settleEndMinutes": 6
+          },
+          {
+            "id": "g170-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 170,
+            "durationMinutes": 15,
+            "expect": {
+              "class": "no_model",
+              "reason": "no_decider"
+            }
+          },
+          {
+            "id": "g190-embedder-verifying",
+            "kind": "embedder_verifying",
+            "startMinute": 190,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "download",
+              "reason": "model_verifying"
+            }
+          },
+          {
+            "id": "g205-only-idle",
+            "kind": "only_idle",
+            "startMinute": 205,
+            "durationMinutes": 20,
+            "expect": {
+              "class": "paused",
+              "reason": "only_idle_user_active"
+            },
+            "params": {
+              "blockMinutes": 10
+            }
+          },
+          {
+            "id": "g230-only-ac",
+            "kind": "only_ac",
+            "startMinute": 230,
+            "durationMinutes": 15,
+            "expect": {
+              "class": "paused",
+              "reason": "only_ac_on_battery"
+            }
+          },
+          {
+            "id": "g250-money",
+            "kind": "money",
+            "startMinute": 250,
+            "durationMinutes": 30,
+            "params": {
+              "attempts": 8,
+              "backfillRelations": 10,
+              "continueAfterMinutes": 3,
+              "attemptEstimateUsd": 0.008
+            }
+          },
+          {
+            "id": "g285-harness-cap",
+            "kind": "harness_cap",
+            "startMinute": 285,
+            "durationMinutes": 20,
+            "params": {
+              "calls": 1.5
+            }
+          }
+        ],
+        "windowSeries": [],
+        "money": {
+          "model": "dev-fake-priced-1",
+          "inputUsdPerM": 1,
+          "outputUsdPerM": 4,
+          "latencyMs": 1200
+        },
+        "decisions": "off"
+      }
     }
   }
 }

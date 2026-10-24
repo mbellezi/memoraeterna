@@ -144,7 +144,7 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
     if (atMs >= total) break;
     entries.push({ atMs, kind: "gguf_abort", index });
   }
-  const outages = profile.remote.codexWire.faults.windows.filter(
+  const outages = (profile.remote?.codexWire.faults.windows ?? []).filter(
     (window) => window.kind === "outage"
   );
   for (const [index, window] of outages.entries()) {

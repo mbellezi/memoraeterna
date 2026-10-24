@@ -184,8 +184,8 @@ describe("a compressed pre-soak, from the driver to the report", () => {
       const fakes = (["compatible", "codex"] as const).map((name) => {
         const faults =
           name === "codex"
-            ? profile.remote.codexWire.faults
-            : profile.remote.openAiCompatible.faults;
+            ? profile.remote!.codexWire.faults
+            : profile.remote!.openAiCompatible.faults;
         const kind = name === "codex" ? "codex-wire" : "openai-compatible";
         const schedule = new FaultSchedule(faults, profile.seed, kind);
         const server = new FakeProviderServer({

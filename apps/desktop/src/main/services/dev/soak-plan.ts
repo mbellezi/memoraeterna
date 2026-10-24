@@ -5,6 +5,20 @@ import { fakeRemoteKnob } from "@app/ai";
 import { z } from "zod";
 
 import { faultPlanSchema } from "./fault-decorator.js";
+import { insideSoakProfiles, resolveSoakPaths, type SoakPaths } from "./soak-data-root.js";
+import { soakF4Schema } from "./soak-plan-f4.js";
+import {
+  decisionsAdmitKnobName,
+  decisionsKnobsSet,
+  readDecisionsAdmission,
+  readRealWriterKnob,
+  realWriterKnobName,
+  type DecisionsAdmission,
+  type RealWriterSettings
+} from "./soak-real-writer.js";
+import { SoakKnobRefusal, type SoakKnobRefusalCode } from "./soak-refusal.js";
+
+export { SoakKnobRefusal, type SoakKnobRefusalCode };
 
 /**
  * The soak plan (F3 T62, spec 5.9) and the two DEV knobs that read it. `scripts/soak/plan.json`
@@ -12,7 +26,9 @@ import { faultPlanSchema } from "./fault-decorator.js";
  * the fake remote providers from it and `MEMORA_SOAK` starts the driver from it, both refused when
  * packaged, together with another DEV measurement knob, and on a profile that is not a clone inside
  * `.cache/profiles/` (they write fake provider routes into the library's AI configuration, and the
- * driver imports, edits and deletes library content).
+ * driver imports, edits and deletes library content). F4 (T89) adds the 7-day Hybrid soak: a profile
+ * with an `f4` section runs the real Codex writer (`MEMORA_SOAK_REAL_WRITER`, `soak-real-writer.ts`)
+ * under a token cap, from the folder `MEMORA_SOAK_DATA_ROOT` names (`soak-data-root.ts`).
  */
 
 export const soakPlanFormat = "memora-soak-plan";
@@ -22,6 +38,8 @@ export const soakProfileKnobName = "MEMORA_SOAK_PROFILE";
 export const soakRunKnobName = "MEMORA_SOAK_RUN";
 export const defaultSoakProfile = "soak24";
 export const soakSetupKnobName = "MEMORA_SOAK_SETUP";
+/** The DEV knob that sets the source discovery neighbours of a run (`relations-dev-options.ts`, F4 C2). */
+export const discoveryNeighboursKnobName = "MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS";
 
 /** Other DEV knobs that change what a call does or own the library, which a soak would then measure. */
 export const soakConflictingKnobs = [
@@ -41,12 +59,21 @@ export const soakConflictingKnobs = [
   "MEMORA_DEV_EXPLAIN_PROBE",
   "MEMORA_TYPER_CHECK",
   "MEMORA_RELATIONS_REMATCH",
+  // Both change the relations configuration the soak measures (F3 T63's helper batch, F4 C2's
+  // discovery neighbours): a soak keeps the shipped values, and records the effective ones.
+  "MEMORA_RELATIONS_HELPER_BATCH",
+  discoveryNeighboursKnobName,
   "MEMORA_SOAK_SETUP"
 ] as const;
 
 const minutes = z.number().positive();
 const every = z
-  .object({ everyMinutes: minutes, offsetMinutes: z.number().nonnegative().default(0) })
+  .object({
+    everyMinutes: minutes,
+    offsetMinutes: z.number().nonnegative().default(0),
+    /** Only on the odd or the even days of the run (day 1 is the first 24 h); both by default. */
+    days: z.enum(["all", "odd", "even"]).default("all")
+  })
   .strict();
 
 /** What the recorded Codex durations stand in for: one task of the fit per fake. */
@@ -88,10 +115,24 @@ export const soakProfileSchema = z
         sourceReimport: every,
         /** A source whose typing fails deterministically. */
         typingFault: every,
+        /** A topic page opened (F4): its overview is written or patched at P0 when stale. */
+        topicOpen: every.optional(),
+        /**
+         * A contention burst (F4, spec 5.4): AUDIT lints, `reembeds` notes embedded again, a rolling
+         * re-placement batch and `edits` human edits across as many roots, `editSpacingMinutes` apart.
+         */
+        contentionBurst: every
+          .extend({
+            reembeds: z.number().int().nonnegative().default(20),
+            edits: z.number().int().positive().max(12).default(6),
+            editSpacingMinutes: minutes.default(2)
+          })
+          .optional(),
         /** An explanation opened this long after an outage of the Codex-wire fake ends (the probe that closes its breaker). */
         postOutageProbeSeconds: z.number().int().positive().default(35)
       })
       .strict(),
+    /** The two fake remote providers of F3's soaks; the 7-day soak has none (its writer is real). */
     remote: z
       .object({
         openAiCompatible: z.object({ latency: latencySchema, faults: faultPlanSchema }).strict(),
@@ -103,7 +144,12 @@ export const soakProfileSchema = z
           })
           .strict()
       })
-      .strict(),
+      .strict()
+      .optional(),
+    /** The folder family the run writes to: `f3/soak/<run>` or F4's `f4/soak/<run>`. */
+    runFolder: z.enum(["f3", "f4"]).default("f3"),
+    /** The real Codex writer's part of the plan (T89); a profile with it needs `MEMORA_SOAK_REAL_WRITER`. */
+    f4: soakF4Schema.optional(),
     local: z
       .object({
         /** SIGKILL of the MLX helper, every so often, plus or minus a seeded jitter. */
@@ -126,7 +172,7 @@ export const soakProfileSchema = z
   })
   .strict();
 export type SoakProfile = z.infer<typeof soakProfileSchema>;
-export type SoakLatencySpec = SoakProfile["remote"]["codexWire"]["latency"];
+export type SoakLatencySpec = z.infer<typeof latencySchema>;
 
 /**
  * The recorded duration distribution `scripts/soak/latency-fit.ts` writes: per task, the durations
@@ -166,26 +212,6 @@ export const soakPlanFileSchema = z
   .strict();
 export type SoakPlanFile = z.infer<typeof soakPlanFileSchema>;
 
-export type SoakKnobRefusalCode =
-  | "packaged"
-  | "outsideProfiles"
-  | "invalidPlan"
-  | "unknownProfile"
-  | "conflictingKnob"
-  | "needsFakeRemote"
-  | "catalogHeadersOff"
-  | "invalidValue";
-
-export class SoakKnobRefusal extends Error {
-  public constructor(
-    public readonly code: SoakKnobRefusalCode,
-    message: string
-  ) {
-    super(message);
-    this.name = "SoakKnobRefusal";
-  }
-}
-
 type Env = Readonly<Record<string, string | undefined>>;
 
 export interface SoakKnobEnvironment {
@@ -202,6 +228,12 @@ export interface SoakKnobSettings {
   profile: SoakProfile;
   /** The run directory name, from `MEMORA_SOAK_RUN` or built by the caller. */
   run: string | null;
+  /** Where the soak reads and writes: the data root `MEMORA_SOAK_DATA_ROOT` names, else the checkout's `.cache`. */
+  paths: SoakPaths;
+  /** The Codex configuration of the real writer, when `MEMORA_SOAK_REAL_WRITER` names one. */
+  realWriter: RealWriterSettings | null;
+  /** The admitted Decisions configuration (decision 32's remote check), when the dormant knob admits it. */
+  decisions: DecisionsAdmission | null;
 }
 
 /** Reads and validates a plan file; the profile must exist in it. */
@@ -233,18 +265,23 @@ export function readSoakPlan(
   return { profile, profiles: Object.keys(parsed.data.profiles) };
 }
 
-export function insideProfiles(options: SoakKnobEnvironment): boolean {
-  const profiles = resolve(options.workspaceRoot, ".cache", "profiles");
-  const inside = relative(profiles, resolve(options.userDataPath));
-  return !(inside === "" || inside.startsWith("..") || isAbsolute(inside));
+/**
+ * True when the profile folder is a folder inside `profiles/` of the soak's paths: the data root's
+ * when `env` names one, else `<workspaceRoot>/.cache/profiles/`.
+ */
+export function insideProfiles(options: SoakKnobEnvironment, env: Env = {}): boolean {
+  return insideSoakProfiles(options.userDataPath, resolveSoakPaths(env, options));
 }
 
 /**
  * Reads one of the two knobs (`MEMORA_FAKE_REMOTE` or `MEMORA_SOAK`): null when unset, the plan and
- * the profile it selects otherwise. Refused when packaged, on a profile that is not inside
- * `<workspaceRoot>/.cache/profiles/`, together with another DEV measurement knob, with the catalog-
- * header catch-up switched off (the soak keeps the product's behaviour), for a plan that is not
- * valid, and for the driver without the fake providers (a real remote route would spend quota).
+ * the profile it selects otherwise. Refused when packaged, on a profile that is not inside the
+ * soak's `profiles/` folder, together with another DEV measurement knob (the discovery neighbours
+ * and the Decisions decider's included, unless the dormant admission names the latter), with the
+ * catalog-header catch-up switched off (the soak keeps the product's behaviour), for a plan that is
+ * not valid, and for the driver without a remote side that spends nothing: the fake providers for a
+ * plan without an `f4` section (a real remote route would spend quota), or the one Codex writer the
+ * real-writer knob names for a plan with one (its token cap bounds the spend).
  */
 export function readSoakKnob(
   name: typeof fakeRemoteKnobName | typeof soakKnobName,
@@ -255,22 +292,23 @@ export function readSoakKnob(
   if (!raw) return null;
   if (options.isPackaged)
     throw new SoakKnobRefusal("packaged", `${name} is refused in packaged builds`);
-  if (!insideProfiles(options))
+  const paths = resolveSoakPaths(env, options);
+  if (!insideSoakProfiles(options.userDataPath, paths))
     throw new SoakKnobRefusal(
       "outsideProfiles",
-      `${name} only runs on a clone inside .cache/profiles/ (set MEMORA_USER_DATA_DIR)`
+      `${name} only runs on a clone inside ${paths.profilesDirectory}/ (set MEMORA_USER_DATA_DIR)`
     );
+  const realWriter = readRealWriterKnob(env, {
+    isPackaged: options.isPackaged,
+    userDataPath: options.userDataPath,
+    paths
+  });
   const conflict = soakConflictingKnobs.find((knob) => env[knob]?.trim());
   if (conflict) throw new SoakKnobRefusal("conflictingKnob", `${name} is refused with ${conflict}`);
   if (env.MEMORA_CATALOG_HEADERS?.trim().toLowerCase() === "off")
     throw new SoakKnobRefusal(
       "catalogHeadersOff",
       `${name} keeps the catalog-header catch-up on, as the product does; unset MEMORA_CATALOG_HEADERS`
-    );
-  if (name === soakKnobName && !env[fakeRemoteKnobName]?.trim())
-    throw new SoakKnobRefusal(
-      "needsFakeRemote",
-      `${soakKnobName} needs ${fakeRemoteKnobName}: the soak's remote side is the fake providers`
     );
   const root = resolve(options.workspaceRoot);
   const planPath = resolve(root, raw);
@@ -282,7 +320,46 @@ export function readSoakKnob(
     );
   const profileName = env[soakProfileKnobName]?.trim() || defaultSoakProfile;
   const { profile } = readSoakPlan(planPath, profileName);
-  return { planPath, profileName, profile, run: env[soakRunKnobName]?.trim() || null };
+  const decisions = readDecisionsAdmission(env, {
+    isPackaged: options.isPackaged,
+    realWriter,
+    profileDecisions: profile.f4?.decisions ?? "off"
+  });
+  const decisionsKnob = decisions ? undefined : decisionsKnobsSet(env)[0];
+  if (decisionsKnob)
+    throw new SoakKnobRefusal(
+      "conflictingKnob",
+      `${name} is refused with ${decisionsKnob}: the Decisions decider calls a real provider (only ${decisionsAdmitKnobName} admits it)`
+    );
+  if (name === soakKnobName) {
+    if (profile.f4) {
+      if (!realWriter)
+        throw new SoakKnobRefusal(
+          "needsRealWriter",
+          `The plan profile ${profileName} runs the real Codex writer: set ${realWriterKnobName} to its provider configuration`
+        );
+    } else {
+      if (!env[fakeRemoteKnobName]?.trim())
+        throw new SoakKnobRefusal(
+          "needsFakeRemote",
+          `${soakKnobName} needs ${fakeRemoteKnobName}: the soak's remote side is the fake providers`
+        );
+      if (realWriter)
+        throw new SoakKnobRefusal(
+          "realWriter",
+          `The plan profile ${profileName} has no f4 section: the real writer would run with no token cap`
+        );
+    }
+  }
+  return {
+    planPath,
+    profileName,
+    profile,
+    run: env[soakRunKnobName]?.trim() || null,
+    paths,
+    realWriter,
+    decisions
+  };
 }
 
 /** Whether the knob asks for the soak and may run (the job supervisor then stays under its control). */

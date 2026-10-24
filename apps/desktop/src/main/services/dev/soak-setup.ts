@@ -2,7 +2,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { bumpAiConfigGeneration, withTransaction, type PgPool } from "@app/db";
-import { aiClassIds } from "@app/domain";
+import { aiClassIds, supportsTask } from "@app/domain";
 import { z } from "zod";
 
 import {
@@ -12,8 +12,7 @@ import {
   type AiClassRouteTarget,
   type AiClassRoutes
 } from "../../../shared/ipc.js";
-import { isMeasurementProfilePath } from "../profile-reset.js";
-import { findRealRemoteReach, realRemoteProblem } from "./soak-routes.js";
+import { isSoakProfilePath, resolveSoakPaths, type SoakPaths } from "./soak-data-root.js";
 import {
   SoakKnobRefusal,
   fakeRemoteKnobName,
@@ -23,6 +22,14 @@ import {
   soakSetupKnobName,
   type SoakKnobEnvironment
 } from "./soak-plan.js";
+import {
+  decisionsKnobsSet,
+  decisionsOptInProblem,
+  readRealWriterKnob,
+  realWriterProblems,
+  type RealWriterSettings
+} from "./soak-real-writer.js";
+import { findRealRemoteReach, realRemoteProblem } from "./soak-routes.js";
 
 /**
  * The scripted setup of a soak profile (F3 T62, `MEMORA_SOAK_SETUP=1`): on a clone inside
@@ -35,6 +42,13 @@ import {
  * A real remote default profile is the one thing it changes besides the preset: a task that no route
  * names would fall to it, so it makes the profile of the `write-fast` class (a local writer) the
  * default, and says so in the file.
+ *
+ * With `MEMORA_SOAK_REAL_WRITER=<codex providerConfigId>` (F4 T89) it sets up the 7-day soak's
+ * Hybrid profile instead: the Codex configuration must exist with a sign-in, its profile becomes the
+ * default remote writer, `hybrid` is applied (embedder and ranker local; write-fast, write-quality,
+ * answer and the generative-decide routes on that profile), each class is tested with one real call
+ * (the check that the token works), and the reach check admits that one configuration and no other
+ * real provider. The Decisions decider must be off. The result goes to `<data root>/f4/soak/setup.json`.
  */
 
 export const soakSetupFormat = "memora-soak-setup";
@@ -53,22 +67,31 @@ export const soakSetupPath = (workspaceRoot: string) =>
 
 type Env = Readonly<Record<string, string | undefined>>;
 
+/** What a setup that may run is asked to do. */
+export interface SoakSetupRequest {
+  paths: SoakPaths;
+  /** The Codex configuration of the Hybrid setup; null for the Local one. */
+  realWriter: RealWriterSettings | null;
+}
+
 /**
- * True when the knob asks for the setup and may run; false when unset. Refused (thrown) when
- * packaged, for a value other than `1`, outside `<workspaceRoot>/.cache/profiles/` and beside any
- * other DEV knob.
+ * The setup the knob asks for, or null when unset. Refused (thrown) when packaged, for a value other
+ * than `1`, outside the soak's `profiles/` folder (`<workspaceRoot>/.cache/profiles/`, or the data
+ * root's), beside any other DEV knob or a Decisions knob, and for a real-writer knob that does not
+ * name a Codex configuration id.
  */
-export function readSoakSetupKnob(env: Env, options: SoakKnobEnvironment): boolean {
+export function readSoakSetup(env: Env, options: SoakKnobEnvironment): SoakSetupRequest | null {
   const raw = env[soakSetupKnobName]?.trim();
-  if (!raw) return false;
+  if (!raw) return null;
   if (options.isPackaged)
     throw new SoakKnobRefusal("packaged", `${soakSetupKnobName} is refused in packaged builds`);
   if (raw !== "1")
     throw new SoakKnobRefusal("invalidValue", `${soakSetupKnobName} must be 1 (or unset)`);
-  if (!insideProfiles(options))
+  const paths = resolveSoakPaths(env, options);
+  if (!insideProfiles(options, env))
     throw new SoakKnobRefusal(
       "outsideProfiles",
-      `${soakSetupKnobName} only runs on a clone inside .cache/profiles/ (set MEMORA_USER_DATA_DIR)`
+      `${soakSetupKnobName} only runs on a clone inside ${paths.profilesDirectory}/ (set MEMORA_USER_DATA_DIR)`
     );
   const conflict = soakSetupConflictingKnobs.find(
     (knob) => knob !== soakSetupKnobName && env[knob]?.trim()
@@ -78,7 +101,23 @@ export function readSoakSetupKnob(env: Env, options: SoakKnobEnvironment): boole
       "conflictingKnob",
       `${soakSetupKnobName} is refused with ${conflict}`
     );
-  return true;
+  const decisions = decisionsKnobsSet(env)[0];
+  if (decisions)
+    throw new SoakKnobRefusal(
+      "conflictingKnob",
+      `${soakSetupKnobName} is refused with ${decisions}: the Decisions decider calls a real provider`
+    );
+  const realWriter = readRealWriterKnob(env, {
+    isPackaged: options.isPackaged,
+    userDataPath: options.userDataPath,
+    paths
+  });
+  return { paths, realWriter };
+}
+
+/** True when the knob asks for the setup and may run; false when unset (see {@link readSoakSetup}). */
+export function readSoakSetupKnob(env: Env, options: SoakKnobEnvironment): boolean {
+  return readSoakSetup(env, options) !== null;
 }
 
 const iso = z.string().datetime();
@@ -110,7 +149,7 @@ export const soakSetupSchema = z
     problems: z.array(z.string()),
     preset: z
       .object({
-        requested: z.literal("local"),
+        requested: z.enum(["local", "hybrid"]),
         applied: z.boolean(),
         mode: z.string().nullable(),
         blocked: z.array(
@@ -130,6 +169,11 @@ export const soakSetupSchema = z
       .strict(),
     classes: z.array(routeSchema.extend({ id: z.string() })),
     judge: routeSchema.extend({ routed: z.boolean(), deciderMode: z.string().nullable() }),
+    /** The Codex writer of a Hybrid setup: its provider configuration and the profile that serves it. */
+    writer: z
+      .object({ providerConfigId: z.string(), profile: z.string().nullable() })
+      .strict()
+      .optional(),
     remote: z
       .object({
         /** Calls of the product that resolve to a real remote provider after the setup: empty when ready. */
@@ -186,6 +230,61 @@ async function setDefaultProfile(pool: PgPool, profileId: string): Promise<void>
   bumpAiConfigGeneration();
 }
 
+/** The provider configuration each profile serves (null for a local model's profile). */
+async function profileConfigOwners(
+  pool: Pick<PgPool, "query">
+): Promise<Map<string, string | null>> {
+  const result = await pool.query<{ id: string; config: string | null }>(
+    "select id, provider_config_id as config from ai_profile_sets"
+  );
+  return new Map(result.rows.map((row) => [row.id, row.config]));
+}
+
+/**
+ * The profile the Hybrid preset must choose as the remote writer: the oldest active profile of the
+ * Codex configuration that can write structured output, made the library's only default profile when
+ * it is not (the preset takes the default remote profile first). Null when there is none.
+ */
+async function chooseWriterProfile(
+  pool: PgPool,
+  writer: RealWriterSettings
+): Promise<{
+  profile: { id: string; name: string };
+  defaultProfileChanged: SoakSetupResult["remote"]["defaultProfileChanged"];
+} | null> {
+  const found = await pool.query<{
+    id: string;
+    name: string;
+    isDefault: boolean;
+    capabilities: string[];
+  }>(
+    `select id, name, is_default as "isDefault", capabilities from ai_profile_sets
+      where provider_config_id = $1 and status = 'active' and model_id is not null
+      order by created_at, id`,
+    [writer.providerConfigId]
+  );
+  const able = found.rows.filter((row) => supportsTask("structured-output", row.capabilities));
+  const profile = able.find((row) => row.isDefault) ?? able[0];
+  if (!profile) return null;
+  if (profile.isDefault) {
+    const others = await pool.query<{ count: number }>(
+      "select count(*)::int as count from ai_profile_sets where is_default and id <> $1",
+      [profile.id]
+    );
+    if ((others.rows[0]?.count ?? 0) === 0)
+      return { profile: { id: profile.id, name: profile.name }, defaultProfileChanged: null };
+  }
+  const previous = await pool.query<{ name: string }>(
+    "select name from ai_profile_sets where is_default and id <> $1 order by created_at limit 1",
+    [profile.id]
+  );
+  await setDefaultProfile(pool, profile.id);
+  return {
+    profile: { id: profile.id, name: profile.name },
+    defaultProfileChanged: { from: previous.rows[0]?.name ?? "none", to: profile.name }
+  };
+}
+
 const describeRoute = (route: AiClassRoutes["classes"][number] | AiClassRoutes["judge"]) => ({
   profile: route.profileName,
   model: route.modelId,
@@ -205,32 +304,63 @@ export async function runSoakSetup(
   options: SoakSetupOptions
 ): Promise<"off" | "refused" | SoakSetupResult["status"]> {
   const { logger } = options;
+  let request: SoakSetupRequest;
   try {
-    if (!readSoakSetupKnob(options.env, options)) return "off";
+    const read = readSoakSetup(options.env, options);
+    if (!read) return "off";
+    request = read;
     // The folder may be a link out of the profiles (the read above only compares paths).
-    if (!(await isMeasurementProfilePath(options.userDataPath, options.workspaceRoot)))
+    if (!(await isSoakProfilePath(options.userDataPath, request.paths)))
       throw new SoakKnobRefusal(
         "outsideProfiles",
-        `${soakSetupKnobName} only runs on a clone inside .cache/profiles/`
+        `${soakSetupKnobName} only runs on a clone inside ${request.paths.profilesDirectory}/`
       );
   } catch (error) {
     logger.error(`SOAK_SETUP refused: ${failureText(error)}`);
     return "refused";
   }
+  const { realWriter } = request;
+  const presetName = realWriter ? "hybrid" : "local";
 
   const problems: string[] = [];
+  // The Hybrid setup's writer must exist before anything is written, and be the profile the preset
+  // chooses for the write classes (the default remote one).
+  let writerProfile: { id: string; name: string } | null = null;
+  let defaultProfileChanged: SoakSetupResult["remote"]["defaultProfileChanged"] = null;
+  let blockedForWriter = false;
+  if (realWriter) {
+    problems.push(...(await realWriterProblems(options.pool, realWriter)));
+    const optIn = await decisionsOptInProblem(options.pool, false);
+    if (optIn) problems.push(optIn);
+    if (problems.length === 0) {
+      const prepared = await chooseWriterProfile(options.pool, realWriter);
+      if (!prepared) {
+        problems.push(
+          "The Codex configuration has no active profile that can write structured output"
+        );
+      } else {
+        writerProfile = prepared.profile;
+        defaultProfileChanged = prepared.defaultProfileChanged;
+      }
+    }
+    blockedForWriter = problems.length > 0;
+  }
   let applied: AiApplyPresetResult = {
     applied: false,
     blocked: [],
     view: await options.ai.classRoutes()
   };
-  try {
-    // The Settings button applies without tests and then tests the classes one by one.
-    applied = await options.ai.applyPreset(
-      aiApplyPresetInputSchema.parse({ preset: "local", test: false })
-    );
-  } catch (error) {
-    problems.push(`The Local preset failed: ${failureText(error)}`);
+  if (!blockedForWriter) {
+    try {
+      // The Settings button applies without tests and then tests the classes one by one.
+      applied = await options.ai.applyPreset(
+        aiApplyPresetInputSchema.parse({ preset: presetName, test: false })
+      );
+    } catch (error) {
+      problems.push(
+        `The ${presetName === "hybrid" ? "Hybrid" : "Local"} preset failed: ${failureText(error)}`
+      );
+    }
   }
   let view = applied.view;
   if (applied.applied) {
@@ -254,15 +384,31 @@ export async function runSoakSetup(
       );
   }
 
-  // No call of the product may reach a real remote provider; the soak's own fakes do not count.
-  let defaultProfileChanged: SoakSetupResult["remote"]["defaultProfileChanged"] = null;
+  // The write classes and the judge must lead to the Codex writer the knob names, no other profile.
+  if (realWriter && applied.applied) {
+    const owners = await profileConfigOwners(options.pool);
+    for (const route of [
+      ...view.classes.filter((entry) =>
+        ["write-fast", "write-quality", "answer"].includes(entry.id)
+      ),
+      { ...view.judge, id: "judge" }
+    ])
+      if (!route.profileId || owners.get(route.profileId) !== realWriter.providerConfigId)
+        problems.push(
+          `${route.id}: the Hybrid preset chose ${route.profileName ?? "no profile"}, not the Codex writer of the knob`
+        );
+  }
+
+  // No call of the product may reach a real remote provider; the soak's own fakes do not count, and
+  // a Hybrid setup admits the one Codex configuration its knob names.
   const fakeIds = (
     await options.pool.query<{ id: string }>(
       "select id from ai_provider_configs where display_name like 'DEV fake %'"
     )
   ).rows.map((row) => row.id);
-  let reach = await findRealRemoteReach(options.pool, fakeIds);
-  if (applied.applied && reach.defaultProfile && reach.reachable.length === 0) {
+  const allowed = realWriter ? [...fakeIds, realWriter.providerConfigId] : fakeIds;
+  let reach = await findRealRemoteReach(options.pool, allowed);
+  if (!realWriter && applied.applied && reach.defaultProfile && reach.reachable.length === 0) {
     const writer = view.classes.find((entry) => entry.id === "write-fast");
     if (writer?.profileId && !writer.remote) {
       await setDefaultProfile(options.pool, writer.profileId);
@@ -270,7 +416,7 @@ export async function runSoakSetup(
         from: reach.defaultProfile.name,
         to: writer.profileName ?? writer.profileId
       };
-      reach = await findRealRemoteReach(options.pool, fakeIds);
+      reach = await findRealRemoteReach(options.pool, allowed);
     }
   }
   if (applied.applied) {
@@ -293,7 +439,7 @@ export async function runSoakSetup(
     status,
     problems,
     preset: {
-      requested: "local",
+      requested: presetName,
       applied: applied.applied,
       mode: view.preset,
       blocked: applied.blocked.map((entry) => ({
@@ -309,10 +455,18 @@ export async function runSoakSetup(
       routed: view.judge.routed,
       deciderMode: view.judge.deciderMode
     },
+    ...(realWriter
+      ? {
+          writer: {
+            providerConfigId: realWriter.providerConfigId,
+            profile: writerProfile?.name ?? null
+          }
+        }
+      : {}),
     remote: { reachable: reach.reachable, defaultProfileChanged, residual: reach.residual }
   });
 
-  const target = soakSetupPath(options.workspaceRoot);
+  const target = request.paths.setupFile(realWriter ? "f4" : "f3");
   await mkdir(dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;
   await writeFile(temporary, `${JSON.stringify(result, null, 2)}\n`);
@@ -328,6 +482,10 @@ export async function runSoakSetup(
       `SOAK_SETUP class ${route.id}: ${route.profile ?? "-"} / ${route.model ?? "-"} (${where}), test ${route.test.state}${took}`
     );
   }
+  if (result.writer)
+    logger.info(
+      `SOAK_SETUP writer: Codex configuration ${result.writer.providerConfigId}, profile ${result.writer.profile ?? "-"}`
+    );
   logger.info(
     `SOAK_SETUP judge: ${result.judge.profile ?? "-"} / ${result.judge.model ?? "-"}, decider ${result.judge.deciderMode ?? "-"}, test ${result.judge.test.state}`
   );

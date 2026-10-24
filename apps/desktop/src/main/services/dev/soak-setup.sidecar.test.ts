@@ -102,6 +102,7 @@ describe.skipIf(!sidecarInstalled)("the soak profile setup on a real PostgreSQL 
       provider: "openai-codex",
       displayName: `${name} provider`,
       baseUrl: "https://chatgpt.com/backend-api/codex",
+      credentialRef: `ai:${name}`,
       metadata: { modelId: name, capabilities }
     });
     const profile = await config.createProfile({ name, isDefault });
@@ -380,4 +381,155 @@ describe.skipIf(!sidecarInstalled)("the soak profile setup on a real PostgreSQL 
     expect((await config.listTaskRoutes()).length).toBe(before);
     expect(existsSync(join(root, ".cache", "f3", "soak", "setup.json"))).toBe(false);
   }, 60_000);
+
+  describe("the Hybrid setup of the 7-day soak (F4 T89, MEMORA_SOAK_REAL_WRITER)", () => {
+    let dataRoot = "";
+    let hybridUserData = "";
+
+    beforeEach(async () => {
+      dataRoot = join(workDir, "data-root");
+      hybridUserData = join(dataRoot, "profiles", "env-soak7");
+      await mkdir(hybridUserData, { recursive: true });
+      await rm(join(dataRoot, "f4"), { recursive: true, force: true });
+    });
+
+    const configOf = async (profileId: string) =>
+      (
+        await pool.query<{ config: string }>(
+          "select provider_config_id::text as config from ai_profile_sets where id = $1",
+          [profileId]
+        )
+      ).rows[0]!.config;
+
+    const hybridOptions = (
+      ai: SoakSetupAi,
+      writerConfig: string,
+      extra: Record<string, string> = {}
+    ) => ({
+      ...options(ai, {
+        MEMORA_SOAK_SETUP: "1",
+        MEMORA_SOAK_DATA_ROOT: dataRoot,
+        MEMORA_SOAK_REAL_WRITER: writerConfig,
+        ...extra
+      }),
+      userDataPath: hybridUserData
+    });
+    const hybridFile = async () =>
+      soakSetupSchema.parse(
+        JSON.parse(await readFile(join(dataRoot, "f4", "soak", "setup.json"), "utf8"))
+      );
+
+    it("applies the Hybrid preset: local embedder and ranker, every writer class and the judge on the Codex writer, the reach check admitting only it", async () => {
+      const { writer } = await ownersLibrary();
+      await installLocalModels();
+      const opts = hybridOptions(aiService(), await configOf(writer));
+      expect(await runSoakSetup(opts)).toBe("ok");
+      const file = await hybridFile();
+      expect(file).toMatchObject({
+        status: "ok",
+        problems: [],
+        preset: { requested: "hybrid", applied: true },
+        writer: { providerConfigId: await configOf(writer), profile: "Codex writer" },
+        remote: { reachable: [], defaultProfileChanged: null }
+      });
+      expect(file.classes.map((entry) => [entry.id, entry.remote, entry.test.state])).toEqual([
+        ["embed", false, "passed"],
+        ["decide", false, "passed"],
+        ["write-fast", true, "passed"],
+        ["write-quality", true, "passed"],
+        ["answer", true, "passed"]
+      ]);
+      expect(file.judge).toMatchObject({ remote: true, routed: true, deciderMode: "ranker" });
+      // The result is the data root's, not the worktree's.
+      expect(existsSync(join(root, ".cache", "f3", "soak", "setup.json"))).toBe(false);
+      expect(opts.logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("SOAK_SETUP writer: Codex configuration")
+      );
+      expect(opts.logger.error).not.toHaveBeenCalled();
+    }, 60_000);
+
+    it("makes the Codex profile the default remote writer when another remote profile was, so the preset chooses it", async () => {
+      const { writer } = await ownersLibrary();
+      // The owner's own writer was made the default after the Codex one was set up.
+      await remote("Owner's other writer", generative, true);
+      await installLocalModels();
+      const opts = hybridOptions(aiService(), await configOf(writer));
+      expect(await runSoakSetup(opts)).toBe("ok");
+      const file = await hybridFile();
+      expect(file.remote.defaultProfileChanged).toEqual({
+        from: expect.any(String),
+        to: "Codex writer"
+      });
+      expect(file.writer?.profile).toBe("Codex writer");
+      const defaults = (await config.listProfiles()).filter((profile) => profile.isDefault);
+      expect(defaults.map((profile) => profile.id)).toEqual([writer]);
+    }, 60_000);
+
+    it("fails, and writes no preset, when the writer is not a Codex configuration with a sign-in", async () => {
+      await ownersLibrary();
+      await installLocalModels();
+      const compatible = await config.upsertProvider({
+        provider: "openai-compatible",
+        displayName: "An API key provider",
+        credentialRef: "ai:key",
+        baseUrl: "https://api.openai.com/v1",
+        metadata: { modelId: "gpt-5", capabilities: generative }
+      });
+      const ai = aiService();
+      // The legacy route mapping the service runs on first use is not the setup's doing.
+      await ai.classRoutes();
+      const before = (await config.listTaskRoutes()).length;
+      expect(await runSoakSetup(hybridOptions(ai, compatible.id))).toBe("failed");
+      const file = await hybridFile();
+      expect(file.problems.join(" ")).toContain("only a Codex (ChatGPT OAuth) one is admitted");
+      expect(file.preset.applied).toBe(false);
+      expect((await config.listTaskRoutes()).length).toBe(before);
+    }, 60_000);
+
+    it("fails and names the call when a route set by hand still reaches a second real provider", async () => {
+      const { writer } = await ownersLibrary();
+      await installLocalModels();
+      const stray = await remote("Stray provider", generative);
+      await route("op:topic_name", stray);
+      expect(await runSoakSetup(hybridOptions(aiService(), await configOf(writer)))).toBe("failed");
+      const file = await hybridFile();
+      expect(file.remote.reachable).toEqual([expect.stringContaining("Stray provider")]);
+      expect(file.problems.join(" ")).toMatch(
+        /still reaches a real remote provider.*Stray provider/su
+      );
+    }, 60_000);
+
+    it("fails while the Decisions decider is switched on in the library", async () => {
+      const { writer } = await ownersLibrary();
+      await installLocalModels();
+      await pool.query(
+        `insert into settings (key, value) values ('relations.decisions', '{"enabled": true}'::jsonb)
+         on conflict (key) do update set value = excluded.value`
+      );
+      try {
+        expect(await runSoakSetup(hybridOptions(aiService(), await configOf(writer)))).toBe(
+          "failed"
+        );
+        expect((await hybridFile()).problems.join(" ")).toContain("Decisions decider switched on");
+      } finally {
+        await pool.query("delete from settings where key = 'relations.decisions'");
+      }
+    }, 60_000);
+
+    it("is refused beside the discovery neighbours knob, a Decisions knob, and a profile outside the data root", async () => {
+      const { writer } = await ownersLibrary();
+      const writerConfig = await configOf(writer);
+      for (const extra of [
+        { MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS: "2" },
+        { MEMORA_RELATIONS_DECISIONS: "on" }
+      ]) {
+        const opts = hybridOptions(aiService(), writerConfig, extra);
+        expect(await runSoakSetup(opts)).toBe("refused");
+        expect(opts.logger.error).toHaveBeenCalledWith(expect.stringContaining("refused with"));
+      }
+      const outside = { ...hybridOptions(aiService(), writerConfig), userDataPath };
+      expect(await runSoakSetup(outside)).toBe("refused");
+      expect(existsSync(join(dataRoot, "f4", "soak", "setup.json"))).toBe(false);
+    }, 60_000);
+  });
 });
