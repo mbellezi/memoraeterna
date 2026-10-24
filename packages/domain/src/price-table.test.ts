@@ -29,6 +29,26 @@ describe("the price table (F4 D14)", () => {
     expect(tokensCostUsd(price, { inputTokens: 2_000_000, outputTokens: 50 })).toBeCloseTo(0.2, 12);
   });
 
+  it("prices gpt-6-luna on an OpenAI-compatible key as the hardware tier table's API option", () => {
+    const price = resolvePrice(defaultPriceTable, "openai-compatible", "gpt-6-luna");
+    expect(price).toMatchObject({
+      billing: "per_token",
+      known: true,
+      inputUsdPerM: 0.1,
+      outputUsdPerM: 0.5
+    });
+    // The spike's typical month: 1.52M input and 0.47M output tokens cost about US$ 0.39.
+    expect(tokensCostUsd(price, { inputTokens: 1_520_000, outputTokens: 470_000 })).toBeCloseTo(
+      0.387,
+      6
+    );
+    expect(
+      defaultPriceTable.entries.find(
+        (entry) => entry.model === "gpt-6-luna" && entry.provider === "openai-compatible"
+      )
+    ).toMatchObject({ verified: false });
+  });
+
   it("matches dated snapshots and the Gemini models/ prefix, not other models of the family", () => {
     expect(resolvePrice(defaultPriceTable, "openai-compatible", "GPT-5-2025-08-07")).toMatchObject({
       known: true,

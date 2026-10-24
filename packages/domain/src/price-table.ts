@@ -78,7 +78,7 @@ export const PriceTableSchema = z
   });
 export type PriceTable = z.infer<typeof PriceTableSchema>;
 
-export const priceTableVersion = "2026-10-23.2";
+export const priceTableVersion = "2026-10-24.1";
 
 const unverified =
   "the provider's published list price as the implementing agent knew it (T76); re-read the provider's page before relying on it";
@@ -116,6 +116,19 @@ export const defaultPriceTable: PriceTable = PriceTableSchema.parse({
       checkedAt: "2026-10-14",
       verified: false,
       source: "Decisions API published price as the F3 decider's typed limits carry it"
+    },
+    {
+      // The paid-API option of the hardware tier table (T97, decision 25): its estimate is informative.
+      provider: "openai-compatible",
+      model: "gpt-6-luna",
+      billing: "per_token",
+      inputUsdPerM: 0.1,
+      cachedInputUsdPerM: 0.01,
+      outputUsdPerM: 0.5,
+      checkedAt: "2026-10-18",
+      verified: false,
+      source:
+        "OpenAI API list price as the hardware spike read it on 2026-10-18 (docs/spikes/hardware-tiers-and-models.md 9.1); re-read the provider's page before relying on it"
     },
     ...[
       ["gpt-5", 1.25, 0.125, 10],

@@ -48,6 +48,24 @@ describe("the AI presets", () => {
     expect(machineRunsMlx(windows)).toBe(false);
   });
 
+  it("reads the machine's own architecture when the probe knows it (Rosetta, T97)", () => {
+    const translated: PresetMachine = {
+      ...mac(16),
+      arch: "x64",
+      nativeArch: "arm64",
+      translated: true
+    };
+    expect(machineRunsMlx(translated)).toBe(true);
+    expect(planAiPreset("local", translated).ok).toBe(true);
+    expect(planAiPreset("hybrid", translated).ok).toBe(true);
+    // An Intel Mac and a native arm64 Mac read the same with or without the probe's field.
+    expect(machineRunsMlx({ ...intel, nativeArch: "x64" })).toBe(false);
+    expect(machineRunsMlx({ ...mac(16), nativeArch: "arm64" })).toBe(true);
+    // Without the field `arch` stands, as before the probe existed.
+    expect(machineRunsMlx({ platform: "darwin", arch: "x64" })).toBe(false);
+    expect(machineRunsMlx({ platform: "win32", arch: "arm64", nativeArch: "arm64" })).toBe(false);
+  });
+
   it("refuses Local off Apple silicon and leaves Hybrid and Cloud available", () => {
     for (const machine of [intel, windows]) {
       expect(planAiPreset("local", machine)).toEqual({

@@ -52,13 +52,25 @@ export const largeLocalWriterMinimumMemoryBytes = 24 * 1024 ** 3;
 
 export interface PresetMachine {
   platform: string;
+  /** `process.arch` of the app. */
   arch: string;
   totalMemoryBytes: number;
+  /**
+   * The machine's own architecture when the hardware probe knows it (T97): an x64 app translated by
+   * Rosetta on Apple silicon still runs the arm64 MLX helper. Absent, `arch` stands.
+   */
+  nativeArch?: string | undefined;
+  /** The app runs translated (Rosetta). */
+  translated?: boolean | undefined;
+  /** The memory an Apple GPU may wire (the Metal working set), from the probe; absent when unknown. */
+  workingSetBytes?: number | undefined;
 }
 
 /** Whether this machine runs the MLX implementations (macOS on Apple silicon). */
-export function machineRunsMlx(machine: Pick<PresetMachine, "platform" | "arch">): boolean {
-  return machine.platform === "darwin" && machine.arch === "arm64";
+export function machineRunsMlx(
+  machine: Pick<PresetMachine, "platform" | "arch" | "nativeArch">
+): boolean {
+  return machine.platform === "darwin" && (machine.nativeArch ?? machine.arch) === "arm64";
 }
 
 /** What a class of a preset wants. */
