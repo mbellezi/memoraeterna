@@ -9,6 +9,7 @@ import { z } from "zod";
 export const appViewIds = [
   "wiki",
   "library",
+  "inbox",
   "import",
   "search",
   "review",

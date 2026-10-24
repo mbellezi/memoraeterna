@@ -24,6 +24,7 @@ import {
   ClipboardCheck,
   Database,
   FilePlus2,
+  Inbox,
   Moon,
   BookOpen,
   PanelLeftClose,
@@ -71,6 +72,8 @@ import { ReviewQueueView } from "./components/ReviewQueueView";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
 import { ActivityHost } from "./components/activity/ActivityHost";
 import type { ActivityNavigation } from "./components/activity/activity-model";
+import { InboxScreen } from "./components/inbox/InboxScreen";
+import { useInboxTotal } from "./components/inbox/use-inbox-total";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
@@ -90,6 +93,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "wiki", label: "wiki.title", icon: BookOpen },
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
+  { id: "inbox", label: "inbox.title", icon: Inbox },
   { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
   { id: "search", label: "shell.navigation.search", icon: Search },
   { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
@@ -100,7 +104,7 @@ const navItems: NavItem[] = [
 ];
 
 const emptyViews: Record<
-  Exclude<ViewId, "settings" | "review" | "debug">,
+  Exclude<ViewId, "settings" | "review" | "debug" | "inbox">,
   { title: MessageKey; empty: MessageKey }
 > = {
   wiki: { title: "wiki.title", empty: "wiki.empty" },
@@ -203,6 +207,7 @@ export function App({
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
+  const inboxTotal = useInboxTotal(databaseStatus.state === "ready" && hasLoadedAppData);
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   // The preference the startup screen of the next launch starts from; the boot defaults are not stored.
   useEffect(() => {
@@ -552,6 +557,12 @@ export function App({
     setActiveView(target.view);
   });
 
+  // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
+  const openConnectionsSettings = useStableCallback(() => {
+    selectSettingsScope("connections");
+    setActiveView("settings");
+  });
+
   const handleMenuCommand = useStableCallback((command: AppMenuCommand) =>
     applyMenuCommand(command, {
       closePanel: () => void dispatchClosePanel(),
@@ -614,7 +625,9 @@ export function App({
         ? "knowledge.review.title"
         : activeView === "debug"
           ? "debug.title"
-          : emptyViews[activeView].title;
+          : activeView === "inbox"
+            ? "inbox.title"
+            : emptyViews[activeView].title;
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
     const isFailed = databaseStatus.state === "failed";
@@ -739,16 +752,21 @@ export function App({
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeView === item.id;
+              const waiting = item.id === "inbox" ? (inboxTotal ?? 0) : 0;
+              const label =
+                waiting > 0
+                  ? `${t(item.label)}, ${t("inbox.badge", { values: { count: waiting } })}`
+                  : t(item.label);
 
               return (
                 <button
                   key={item.id}
                   type="button"
-                  aria-label={t(item.label)}
+                  aria-label={label}
                   aria-current={isActive ? "page" : undefined}
-                  title={appSettings.navigationCollapsed ? t(item.label) : undefined}
+                  title={appSettings.navigationCollapsed ? label : undefined}
                   className={cn(
-                    "flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+                    "relative flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
                     appSettings.navigationCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
                     isActive
                       ? "bg-accent-soft text-accent"
@@ -757,7 +775,20 @@ export function App({
                   onClick={() => goToView(item.id)}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {!appSettings.navigationCollapsed && t(item.label)}
+                  {!appSettings.navigationCollapsed && (
+                    <span className="min-w-0 flex-1">{t(item.label)}</span>
+                  )}
+                  {waiting > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-foreground",
+                        appSettings.navigationCollapsed && "absolute right-0.5 top-0.5 min-w-4 px-1"
+                      )}
+                    >
+                      {waiting > 99 ? "99+" : waiting}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -844,6 +875,14 @@ export function App({
               onCloseTopic={closeWikiTopic}
               onOpenLibrary={() => goToView("library")}
               onOpenSource={openAskSource}
+            />
+          </div>
+          <div hidden={activeView !== "inbox"}>
+            <InboxScreen
+              t={t}
+              active={activeView === "inbox"}
+              onNavigate={openWikiObject}
+              onOpenConnections={openConnectionsSettings}
             />
           </div>
           {activeView === "settings" ? (

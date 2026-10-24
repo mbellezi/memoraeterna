@@ -179,11 +179,12 @@ describe("compact main navigation", () => {
     expect(html).toContain('aria-expanded="false" aria-controls="app-navigation"');
     expect(html).toContain('aria-label="Library" aria-current="page" title="Library"');
     expect(html).toContain('aria-label="Settings" title="Settings"');
+    expect(html).toContain('aria-label="Inbox" title="Inbox"');
     expect(html).toContain('aria-label="Toggle theme"');
     expect(html).toContain("w-16");
     const navigation = html.slice(html.indexOf('<nav id="app-navigation"'), html.indexOf("</nav>"));
     expect(navigation).not.toContain(">Library</button>");
-    expect(navigation.match(/<button/g)).toHaveLength(9);
+    expect(navigation.match(/<button/g)).toHaveLength(10);
   });
 });
 
