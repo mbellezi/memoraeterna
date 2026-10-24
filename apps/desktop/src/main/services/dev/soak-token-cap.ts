@@ -10,7 +10,11 @@ import {
 } from "@app/ai";
 
 import { devFakeCodexModelId } from "./fake-codex-provider.js";
-import { withSoakCallContext, type SoakCallContext } from "./soak-call-context.js";
+import {
+  billableRequests,
+  withSoakCallContext,
+  type SoakCallContext
+} from "./soak-call-context.js";
 import type { SoakEventSink } from "./soak-records.js";
 
 /**
@@ -18,11 +22,14 @@ import type { SoakEventSink } from "./soak-records.js";
  * real Codex writer may use in a run, enforced by reservation. A call is admitted only if the
  * tokens spent, the tokens reserved by the calls in flight and its own estimate stay within the cap,
  * so the cap is passed by at most one call's estimation error even with two calls in flight (the
- * Codex lane's maximum). A call settles with what the provider reported (a failed attempt's usage
- * included); a call that never reached the provider (every attempt answered by the fault injector)
- * costs nothing; a call that did reach it and reported nothing (a stall) keeps its estimate as spend,
- * never zero. Reaching the cap at its hard value ends the remote leg and the run reads inconclusive;
- * a DEV command lowers the cap in the gate S window and the window restores it.
+ * Codex lane's maximum). Every request of a call after its first (a retry, a fallback) is admitted
+ * again by reservation before the fetch layer forwards it, so a retry never slips past a cap that
+ * was lowered meanwhile. A call settles with what the provider reported (a failed attempt's usage
+ * included); a request that never reached the provider (answered by the fault injector) or that the
+ * provider refused with an HTTP error costs nothing; every request the provider accepted and that
+ * reported nothing (a stall, even one a retry then answered) keeps its estimate as spend, never zero.
+ * Reaching the cap at its hard value ends the remote leg and the run reads inconclusive; a DEV
+ * command lowers the cap in the gate S window and the window restores it.
  *
  * The registry has one decorator slot (`setAiAdapterDecorator`), shared with the GGUF abort decorator
  * of the local faults, so the app installs {@link composeAdapterDecorators} of both.
@@ -46,9 +53,15 @@ export class HarnessCapRefusal extends AiProviderError {
   }
 }
 
-/** One call's tokens as a request promises them: its input at three bytes a token plus its output ceiling. */
+/**
+ * One request's tokens as it promises them: its input and the adapter's instruction (the Codex
+ * `instructions` field) at three bytes a token, plus its output ceiling.
+ */
 export function estimateCallTokens(request: AiTaskRequest): number {
-  const input = Buffer.byteLength(JSON.stringify(request.input ?? ""), "utf8");
+  const instruction = request.metadata?.applicationInstruction;
+  const input =
+    Buffer.byteLength(JSON.stringify(request.input ?? ""), "utf8") +
+    (typeof instruction === "string" ? Buffer.byteLength(instruction, "utf8") : 0);
   const maxTokens = request.parameters.maxTokens;
   const output =
     typeof maxTokens === "number" && Number.isFinite(maxTokens) && maxTokens > 0
@@ -71,6 +84,7 @@ export interface CapSnapshot {
 
 export interface CapReservation {
   readonly id: number;
+  /** The estimate of one request of the call; each request after the first reserves it again. */
   readonly estimateTokens: number;
 }
 
@@ -131,18 +145,7 @@ export class HarnessTokenCap {
   /** Reserves `estimateTokens` for a call, or throws {@link HarnessCapRefusal}. */
   public reserve(estimateTokens: number): CapReservation {
     const estimate = Math.max(0, Math.ceil(estimateTokens));
-    if (this.spent + this.reserved + estimate > this.cap) {
-      this.refusals += 1;
-      const refusal = new HarnessCapRefusal(this.cap, this.spent, this.reserved, estimate);
-      if (loggedRefusal(this.refusals))
-        this.record("refused", { estimateTokens: estimate, refusals: this.refusals });
-      if (this.cap === this.hardCap && !this.exhausted) {
-        this.exhausted = true;
-        this.record("exhausted", { estimateTokens: estimate });
-        this.options.onExhausted?.(this.snapshot());
-      }
-      throw refusal;
-    }
+    this.admit(estimate);
     const reservation: CapReservation = { id: this.nextId++, estimateTokens: estimate };
     this.open.set(reservation.id, estimate);
     this.reserved += estimate;
@@ -151,10 +154,39 @@ export class HarnessTokenCap {
     return reservation;
   }
 
+  /**
+   * Reserves one more request of an open call (a retry or a fallback) before it is sent, or throws
+   * {@link HarnessCapRefusal}: the cap admits every request, not only a call's first.
+   */
+  public extend(reservation: CapReservation): void {
+    const held = this.open.get(reservation.id);
+    if (held === undefined) return;
+    this.admit(reservation.estimateTokens);
+    this.open.set(reservation.id, held + reservation.estimateTokens);
+    this.reserved += reservation.estimateTokens;
+  }
+
+  /** Throws {@link HarnessCapRefusal} when `estimate` more would pass the cap in force. */
+  private admit(estimate: number): void {
+    if (this.spent + this.reserved + estimate <= this.cap) return;
+    this.refusals += 1;
+    const refusal = new HarnessCapRefusal(this.cap, this.spent, this.reserved, estimate);
+    if (loggedRefusal(this.refusals))
+      this.record("refused", { estimateTokens: estimate, refusals: this.refusals });
+    if (this.cap === this.hardCap && !this.exhausted) {
+      this.exhausted = true;
+      this.record("exhausted", { estimateTokens: estimate });
+      this.options.onExhausted?.(this.snapshot());
+    }
+    throw refusal;
+  }
+
   /** Releases a reservation and adds the tokens the call really used to the spend. */
   public settle(reservation: CapReservation, usedTokens: number): void {
-    if (!this.open.delete(reservation.id)) return;
-    this.reserved -= reservation.estimateTokens;
+    const held = this.open.get(reservation.id);
+    if (held === undefined) return;
+    this.open.delete(reservation.id);
+    this.reserved -= held;
     const used = Math.max(0, Math.round(usedTokens));
     this.spent += used;
     this.calls += 1;
@@ -217,7 +249,14 @@ export class HarnessTokenCap {
       call: () => Promise<T>
     ): Promise<T> => {
       const reservation = this.reserve(estimate(request));
-      const { context, outcome } = await withSoakCallContext(call);
+      // The first forwarded request is the one reserved above; each later one is admitted again.
+      let forwards = 0;
+      const { context, outcome } = await withSoakCallContext(call, {
+        beforeForward: () => {
+          forwards += 1;
+          if (forwards > 1) this.extend(reservation);
+        }
+      });
       if ("error" in outcome) {
         this.settle(reservation, tokensOfFailure(outcome.error, context, reservation));
         throw outcome.error;
@@ -258,24 +297,32 @@ export class HarnessTokenCap {
   };
 }
 
-/** What a finished call used: the provider's count, else nothing when nothing was forwarded, else its estimate. */
+/**
+ * What a finished call used: the provider's count, plus the estimate of each earlier request the
+ * provider accepted and that reported nothing (a stall a retry then answered); with no count at
+ * all, the estimate of every request the provider accepted (nothing when nothing was forwarded).
+ */
 export function tokensOfResult(
   result: AiTaskResult,
   context: SoakCallContext,
   reservation: CapReservation
 ): number {
-  const reported = (result.inputTokens ?? 0) + (result.outputTokens ?? 0);
-  if (result.inputTokens !== undefined || result.outputTokens !== undefined) return reported;
+  const billable = billableRequests(context);
+  // Failed requests that reported their usage are in the answer's count already (`retriedUsage`).
+  const unreportedRetries = result.retriedUsage ? 0 : Math.max(0, billable - 1);
+  const retries = unreportedRetries * reservation.estimateTokens;
+  if (result.inputTokens !== undefined || result.outputTokens !== undefined)
+    return (result.inputTokens ?? 0) + (result.outputTokens ?? 0) + retries;
   const total = result.tokenUsage?.totalTokens;
-  if (typeof total === "number") return total;
-  return context.forwardedRequests === 0 ? 0 : reservation.estimateTokens;
+  if (typeof total === "number") return total + retries;
+  return billable * reservation.estimateTokens;
 }
 
 /**
- * What a failed call used: the usage its failed attempts reported; nothing when no attempt reached
- * the provider, or when it answered with an HTTP error, a refused connection or a context overflow
- * (it bills no token); the estimate for a stall, a timeout, a broken stream or any other failure
- * after the request went out, since the provider may have billed what it had written.
+ * What a failed call used: the usage its failed requests reported; otherwise the estimate of each
+ * request the provider accepted (a stall, a timeout, a broken stream: the provider may have billed
+ * what it had written); nothing when no request reached the provider or the provider refused each
+ * with an HTTP error (it bills no token).
  */
 export function tokensOfFailure(
   error: unknown,
@@ -285,13 +332,7 @@ export function tokensOfFailure(
   const failed = remoteCallReport(error)?.failedUsage;
   const reported = (failed?.inputTokens ?? 0) + (failed?.outputTokens ?? 0);
   if (reported > 0) return reported;
-  if (context.forwardedRequests === 0) return 0;
-  if (
-    error instanceof AiProviderError &&
-    ["http", "network", "context_overflow"].includes(error.kind)
-  )
-    return 0;
-  return reservation.estimateTokens;
+  return billableRequests(context) * reservation.estimateTokens;
 }
 
 /** The decorators in one: each adapter goes through every decorator in order (the registry has one slot). */

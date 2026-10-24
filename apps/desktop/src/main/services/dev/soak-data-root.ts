@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -67,7 +67,7 @@ export function resolveSoakPaths(
   const root = resolve(raw);
   if (dirname(root) === root)
     throw new SoakKnobRefusal("dataRoot", `${soakDataRootKnobName} cannot be the filesystem root`);
-  if (root.split(sep).includes(".claude") && root.includes(`${sep}worktrees${sep}`))
+  if (underAgentWorktrees(root))
     throw new SoakKnobRefusal(
       "dataRoot",
       `${soakDataRootKnobName} cannot be inside .claude/worktrees/: agents prune those folders`
@@ -81,6 +81,54 @@ export function resolveSoakPaths(
   if (!directory)
     throw new SoakKnobRefusal("dataRoot", `${soakDataRootKnobName} is not an existing folder`);
   return pathsAt(root, true);
+}
+
+/** True when `path` lies under a `.claude/worktrees/` folder, which agents prune. */
+export function underAgentWorktrees(path: string): boolean {
+  const parts = resolve(path).split(sep);
+  return parts.some(
+    (part, index) =>
+      part === ".claude" && parts[index + 1] === "worktrees" && index + 2 < parts.length
+  );
+}
+
+/** The path through its symbolic links when it exists, else as resolved. */
+function realOrResolved(path: string): string {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
+  }
+}
+
+/** True when `child` is `parent` or lies inside it. */
+function within(parent: string, child: string): boolean {
+  const inside = relative(parent, child);
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+}
+
+/**
+ * Why a 7-day soak may not run from the checkout at `workspaceRoot` with these paths (D1, P10), or
+ * null when it may. It needs the absolute data root (`MEMORA_SOAK_DATA_ROOT`: the main checkout's
+ * profiles, run folders and machine-wide local-model lock; without it the run would hold no lock and
+ * write under the worktree) and runs from a worktree outside the checkout that owns that data root
+ * (where the checkout's watcher and tools would reach it), never under `.claude/worktrees/` (agents
+ * prune those) and never inside the data root.
+ */
+export function soakWorktreeProblem(workspaceRoot: string, paths: SoakPaths): string | null {
+  if (!paths.external)
+    return `The 7-day soak needs ${soakDataRootKnobName}: the main checkout's .cache, with its profiles, run folders and local-model lock`;
+  const worktree = realOrResolved(workspaceRoot);
+  const data = realOrResolved(paths.cacheRoot);
+  if (underAgentWorktrees(worktree))
+    return `The 7-day soak cannot run from ${worktree}: agents prune .claude/worktrees/ (run it from the soak worktree outside the checkout)`;
+  if (within(data, worktree))
+    return `The 7-day soak cannot run from ${worktree}: it lies inside the data root ${data}`;
+  // The checkout that owns the data root (`<checkout>/.cache`), when the data root is one's.
+  const owner = dirname(data);
+  if (existsSync(join(owner, ".git")) && within(owner, worktree))
+    return `The 7-day soak cannot run from ${worktree}: it lies inside the checkout ${owner} that owns the data root (run it from the soak worktree outside it)`;
+  return null;
 }
 
 /** True when `userDataPath` is a folder strictly inside the data root's `profiles/` (paths only). */

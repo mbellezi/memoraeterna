@@ -19,6 +19,14 @@ import { injectedTag, type InjectedExchangeKind, type SoakEventSink } from "./so
  * seed gives the same fault on the same request), and windows the driver opens and closes, which
  * answer every request of the lane (a usage limit, a refused connection, an unknown host, a
  * rejected sign-in). Requests to a server on this machine (the soak's own fakes) pass through.
+ *
+ * A malformed answer is a well-formed stream whose answer text is cut JSON, as F3's fakes answered:
+ * the call succeeds and its consumer refuses the text, which is the repair path the spec registers
+ * (a stream the adapter cannot read would end the call instead and never reach a repair).
+ *
+ * The layer also tells the harness token cap, through the call's context, which requests reached
+ * the provider and which of them it refused (an HTTP error bills nothing), and asks the cap to admit
+ * every request of a call after its first before it is forwarded (a retry is admitted again).
  */
 
 export const codexProviderName = "openai-codex";
@@ -137,6 +145,18 @@ function errorBody(message: string, type: string, code: string, extra: object = 
   return JSON.stringify({
     error: { message: `${message} (${injectedTag}, synthetic shape)`, type, code, ...extra }
   });
+}
+
+/** The answer text of a malformed exchange: JSON cut off in the middle, which no contract accepts. */
+export const malformedAnswerText = `{"items": [{"text": "cut off here (${injectedTag}, synthetic shape)`;
+
+/** A Codex Responses stream that answers {@link malformedAnswerText} and completes with no usage. */
+function malformedStream(): string {
+  const events = [
+    { type: "response.output_text.delta", delta: malformedAnswerText },
+    { type: "response.completed", response: {} }
+  ];
+  return `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`;
 }
 
 const isLoopback = (url: URL) =>
@@ -347,11 +367,8 @@ export class FetchFaultInjector {
       case "malformed": {
         if (call) call.injectedRequests += 1;
         record("malformed", { status: 200, injected: true, synthetic: true });
-        // The first event is cut in the middle of its JSON: our parser cannot read it.
-        return new Response('data: {"type":"response.output_text.delta","delta":\n\n', {
-          status: 200,
-          headers: sseHeaders
-        });
+        // A well-formed stream whose answer is cut JSON: the consumer refuses it and repairs.
+        return new Response(malformedStream(), { status: 200, headers: sseHeaders });
       }
       case "late_first_byte":
         return this.lateFirstByte(signal, call, record);
@@ -360,9 +377,12 @@ export class FetchFaultInjector {
         break;
     }
 
-    // The request goes to the provider; a planned stall wraps the answer it gets.
+    // The request goes to the provider (once the cap admitted it); a planned stall wraps the answer.
+    call?.beforeForward?.();
     if (call) call.forwardedRequests += 1;
     const response = await this.real(input, init);
+    // A refusal by the provider (an HTTP error) bills nothing.
+    if (call && !response.ok) call.refusedRequests += 1;
     if (fault?.kind !== "stall" || !response.body || !response.ok) {
       record("none", { status: response.status, injected: false, forwarded: requestBytes });
       return response;

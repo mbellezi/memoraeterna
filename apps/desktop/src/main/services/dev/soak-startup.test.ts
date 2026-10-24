@@ -158,4 +158,62 @@ describe("preparing the 7-day soak", () => {
       })
     ).toThrow(expect.objectContaining({ code: "decisions" }));
   });
+
+  it("refuses a fixed power override and an automatic quit: the windows drive the one, the other ends the run", () => {
+    const { options, env } = setup();
+    for (const knob of ["MEMORA_DEV_POWER_BLOCKS", "MEMORA_SMOKE_AUTO_QUIT_MS"])
+      expect(() => prepareSoak({ ...options, env: env({ [knob]: "1" }) })).toThrow(
+        expect.objectContaining({ code: "conflictingKnob" })
+      );
+  });
+
+  it("refuses the 7-day profile without the data root: it would hold no local-model lock and write under the worktree", () => {
+    const { worktree } = setup();
+    mkdirSync(join(worktree, ".cache", "profiles", "env-soak7"), { recursive: true });
+    expect(() =>
+      prepareSoak({
+        isPackaged: false,
+        workspaceRoot: worktree,
+        userDataPath: join(worktree, ".cache", "profiles", "env-soak7"),
+        logger: quiet,
+        env: {
+          [soakKnobName]: "scripts/soak/plan.json",
+          MEMORA_SOAK_PROFILE: "soak7",
+          [realWriterKnobName]: writerId
+        }
+      })
+    ).toThrow(
+      expect.objectContaining({
+        code: "dataRoot",
+        message: expect.stringMatching(/MEMORA_SOAK_DATA_ROOT/u)
+      })
+    );
+  });
+
+  it("refuses to run from the checkout that owns the data root, or from inside it (D1, P10)", () => {
+    // A checkout (it has .git) whose .cache is the data root; the soak started from that checkout.
+    const checkout = mkdtempSync(join(tmpdir(), "soak7-checkout-"));
+    scratch.push(checkout);
+    mkdirSync(join(checkout, ".git"));
+    mkdirSync(join(checkout, ".cache", "profiles", "env-soak7"), { recursive: true });
+    const nested = join(checkout, ".cache", "f4", "soak-tree");
+    for (const worktree of [checkout, nested]) {
+      mkdirSync(join(worktree, "scripts", "soak"), { recursive: true });
+      writeFileSync(join(worktree, "scripts", "soak", "plan.json"), readFileSync(planPath, "utf8"));
+      expect(() =>
+        prepareSoak({
+          isPackaged: false,
+          workspaceRoot: worktree,
+          userDataPath: join(checkout, ".cache", "profiles", "env-soak7"),
+          logger: quiet,
+          env: {
+            [soakKnobName]: "scripts/soak/plan.json",
+            MEMORA_SOAK_PROFILE: "soak7",
+            MEMORA_SOAK_DATA_ROOT: join(checkout, ".cache"),
+            [realWriterKnobName]: writerId
+          }
+        })
+      ).toThrow(expect.objectContaining({ code: "dataRoot" }));
+    }
+  });
 });

@@ -9,7 +9,9 @@ import {
   insideSoakProfiles,
   isSoakProfilePath,
   resolveSoakPaths,
-  soakDataRootKnobName
+  soakDataRootKnobName,
+  soakWorktreeProblem,
+  underAgentWorktrees
 } from "./soak-data-root.js";
 
 const scratch: string[] = [];
@@ -139,5 +141,42 @@ describe("the local-model lock of the data root", () => {
     writeFileSync(path, "T70 pid 3\n");
     await release();
     expect(existsSync(path)).toBe(true);
+  });
+});
+
+describe("where the 7-day soak may run from", () => {
+  it("knows the folders agents prune", () => {
+    expect(underAgentWorktrees("/x/memoraeterna/.claude/worktrees/wf_1")).toBe(true);
+    expect(underAgentWorktrees("/x/memoraeterna/.claude/worktrees/wf_1/apps")).toBe(true);
+    expect(underAgentWorktrees("/x/memoraeterna/.claude/worktrees")).toBe(false);
+    expect(underAgentWorktrees("/x/memoraeterna-f4-soak")).toBe(false);
+    expect(underAgentWorktrees("/x/claude/worktrees/a")).toBe(false);
+  });
+
+  it("is a worktree outside the checkout that owns the data root, with the data root named", () => {
+    const checkout = folder("soak-main-");
+    mkdirSync(join(checkout, ".git"));
+    mkdirSync(join(checkout, ".cache"));
+    const outside = folder("soak-tree-");
+    const paths = resolveSoakPaths(
+      { [soakDataRootKnobName]: join(checkout, ".cache") },
+      { workspaceRoot: outside, isPackaged: false }
+    );
+    expect(soakWorktreeProblem(outside, paths)).toBeNull();
+    // The main checkout itself, a worktree agents prune inside it, and a folder in the data root.
+    expect(soakWorktreeProblem(checkout, paths)).toMatch(/inside the checkout/u);
+    const pruned = join(checkout, ".claude", "worktrees", "wf_1");
+    mkdirSync(pruned, { recursive: true });
+    expect(soakWorktreeProblem(pruned, paths)).toMatch(/agents prune/u);
+    const nested = join(checkout, ".cache", "f4", "soak-tree");
+    mkdirSync(nested, { recursive: true });
+    expect(soakWorktreeProblem(nested, paths)).toMatch(/inside the data root/u);
+    // Without the knob there is no data root of the main checkout to run on.
+    expect(
+      soakWorktreeProblem(
+        outside,
+        resolveSoakPaths({}, { workspaceRoot: outside, isPackaged: false })
+      )
+    ).toMatch(/needs MEMORA_SOAK_DATA_ROOT/u);
   });
 });

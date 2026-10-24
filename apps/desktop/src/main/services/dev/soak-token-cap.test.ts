@@ -80,9 +80,13 @@ function manualAdapter(overrides: { providerId?: string; modelId?: string } = {}
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("the harness token cap", () => {
-  it("estimates a call from its input bytes and its output ceiling", () => {
+  it("estimates a call from its input bytes, the adapter's instruction and its output ceiling", () => {
     expect(estimate).toBe(101 + 900);
     expect(estimateCallTokens({ ...request(), parameters: {} })).toBe(101 + 8_192);
+    // The Codex adapter sends the instruction as its own field: 300 more bytes are 100 more tokens.
+    expect(
+      estimateCallTokens({ ...request(), metadata: { applicationInstruction: "i".repeat(300) } })
+    ).toBe(201 + 900);
   });
 
   it("admits a call only while spent, reserved and its own estimate fit the cap", () => {
@@ -186,6 +190,50 @@ describe("the harness token cap", () => {
     ).toEqual(["set", "lower", "refused", "set", "refused", "exhausted", "refused"]);
   });
 
+  it("admits every request of a call after its first again, so a retry never passes a lowered cap", async () => {
+    const { cap } = newCap(100_000);
+    const { adapter, pending } = manualAdapter();
+    const wrapped = cap.adapterDecorator(adapter);
+    const call = wrapped.run(request());
+    await tick();
+    const context = pending[0]!.context!;
+    // The fetch layer asks before each forward: the first is the call's own reservation.
+    context.beforeForward!();
+    context.forwardedRequests += 1;
+    expect(cap.snapshot().reservedTokens).toBe(estimate);
+    // The first request stalled after the provider accepted it; the cap is lowered meanwhile.
+    cap.lowerTo(cap.snapshot().spentTokens + estimate + 10);
+    let refused: unknown;
+    try {
+      context.beforeForward!();
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(HarnessCapRefusal);
+    pending[0]!.reject(refused);
+    await expect(call).rejects.toBeInstanceOf(HarnessCapRefusal);
+    // The stalled request the provider accepted is spent at its estimate; nothing stays reserved.
+    expect(cap.snapshot()).toMatchObject({ spentTokens: estimate, reservedTokens: 0 });
+  });
+
+  it("reserves a retry beside the call's first request while the cap allows it", async () => {
+    const { cap } = newCap(100_000);
+    const { adapter, pending } = manualAdapter();
+    const wrapped = cap.adapterDecorator(adapter);
+    const call = wrapped.run(request());
+    await tick();
+    const context = pending[0]!.context!;
+    context.beforeForward!();
+    context.forwardedRequests += 1;
+    context.beforeForward!();
+    context.forwardedRequests += 1;
+    expect(cap.snapshot().reservedTokens).toBe(2 * estimate);
+    // The first request stalled (accepted, nothing reported), the retry answered with its count.
+    pending[0]!.resolve(result(150, 90));
+    await call;
+    expect(cap.snapshot()).toMatchObject({ spentTokens: 240 + estimate, reservedTokens: 0 });
+  });
+
   it("tags the refusal so the report sets it aside, and makes it permanent", () => {
     const { cap } = newCap(10);
     try {
@@ -200,8 +248,12 @@ describe("the harness token cap", () => {
 
 describe("what a call settles with", () => {
   const reservation = { id: 1, estimateTokens: 1_000 };
-  const forwarded = { forwardedRequests: 1, injectedRequests: 0 };
-  const injectedOnly = { forwardedRequests: 0, injectedRequests: 3 };
+  const forwarded = { forwardedRequests: 1, refusedRequests: 0, injectedRequests: 0 };
+  const injectedOnly = { forwardedRequests: 0, refusedRequests: 0, injectedRequests: 3 };
+  // A first request the provider accepted and that stalled, then the retry that answered.
+  const stalledThenAnswered = { forwardedRequests: 2, refusedRequests: 0, injectedRequests: 0 };
+  // A first request the provider refused with an HTTP error, then the retry that answered.
+  const refusedThenAnswered = { forwardedRequests: 2, refusedRequests: 1, injectedRequests: 0 };
 
   it("uses the provider's count, a failed attempt's usage included", () => {
     expect(tokensOfResult(result(120, 30), forwarded, reservation)).toBe(150);
@@ -211,8 +263,22 @@ describe("what a call settles with", () => {
     ).toBe(77);
   });
 
+  it("adds the estimate of an earlier request the provider accepted and that reported nothing (a stall a retry answered)", () => {
+    expect(tokensOfResult(result(120, 30), stalledThenAnswered, reservation)).toBe(1_150);
+    // A refused request bills nothing; a failed request that reported its usage is in the count.
+    expect(tokensOfResult(result(120, 30), refusedThenAnswered, reservation)).toBe(150);
+    expect(
+      tokensOfResult(
+        { ...result(170, 60), retriedUsage: { inputTokens: 50, outputTokens: 30 } },
+        stalledThenAnswered,
+        reservation
+      )
+    ).toBe(230);
+  });
+
   it("keeps the estimate as spend when the provider reported nothing for a call it received", () => {
     expect(tokensOfResult(result(), forwarded, reservation)).toBe(1_000);
+    expect(tokensOfResult(result(), stalledThenAnswered, reservation)).toBe(2_000);
     expect(tokensOfResult(result(), injectedOnly, reservation)).toBe(0);
   });
 
@@ -221,14 +287,21 @@ describe("what a call settles with", () => {
     expect(tokensOfFailure(timeout, injectedOnly, reservation)).toBe(0);
   });
 
-  it("charges the estimate for a stall or a broken stream after the request went out, nothing for an HTTP error", () => {
+  it("charges the estimate of every accepted request after it went out, nothing for the ones the provider refused", () => {
     const stall = new AiProviderError("stalled", { kind: "stalled", transient: true });
     const http = new AiProviderError("429", { kind: "http", transient: true, status: 429 });
-    const network = new AiProviderError("refused", { kind: "network", transient: true });
+    const refusedOnly = { forwardedRequests: 3, refusedRequests: 3, injectedRequests: 0 };
     expect(tokensOfFailure(stall, forwarded, reservation)).toBe(1_000);
     expect(tokensOfFailure(new SyntaxError("bad sse"), forwarded, reservation)).toBe(1_000);
-    expect(tokensOfFailure(http, forwarded, reservation)).toBe(0);
-    expect(tokensOfFailure(network, forwarded, reservation)).toBe(0);
+    expect(tokensOfFailure(http, refusedOnly, reservation)).toBe(0);
+    // A stall, then two 503s from the provider: the stall's tokens are billed all the same.
+    expect(
+      tokensOfFailure(
+        http,
+        { forwardedRequests: 3, refusedRequests: 2, injectedRequests: 0 },
+        reservation
+      )
+    ).toBe(1_000);
   });
 
   it("settles through the decorator with what the fetch layer told the call's context", async () => {

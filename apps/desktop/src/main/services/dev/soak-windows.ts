@@ -46,7 +46,11 @@ export interface WindowPorts {
   };
   /** The DEV power override: alternating blocks of `active` and `idle`, or `battery`; null lifts it. */
   power: { setBlocks(blocks: readonly PowerBlockWord[] | null): void };
-  /** The product's Codex daily background call cap, overridden at run time (D14, E4(b)). */
+  /**
+   * The product's Codex daily background call cap, overridden at run time (D14, E4(b)). The budget
+   * holds background work only once the calls counted and in flight reach the cap, so the window's
+   * expectation starts at that crossing (seen at a tick), not at the window's start.
+   */
   codexDailyCap: {
     /** Calls counted and in flight today, and the budget's day (to re-apply the cap after a rollover). */
     today(): Promise<{ calls: number; day: string }>;
@@ -68,6 +72,12 @@ export interface MoneyPort {
   restoreRoute(): Promise<void>;
   spentUsd(): Promise<number>;
   monthlyCapUsd(): number;
+  /**
+   * What the budget reserves for one backfill attempt on the fake (US$): the product's planning
+   * estimate (input bytes + 1,024, plus the output ceiling) at the fake's price, for an explanation
+   * prompt of `inputBytes`. The cap is set from it, so "eight attempts" are eight of the product's.
+   */
+  attemptEstimateUsd(inputBytes: number): number;
   state(): Promise<"open" | "paused" | "exhausted">;
   continuePastPause(): Promise<void>;
   enqueueBackfill(count: number): Promise<number>;
@@ -116,8 +126,10 @@ interface Running {
   previousAutonomy?: "off" | "suggest" | "auto";
   /** only_idle / only_ac: the active block the last tick saw, as an index, or null. */
   activeBlock?: number | null;
-  /** codex_daily_cap: the day the cap was set for and the extra calls it allows. */
+  /** codex_daily_cap: the day the cap was set for, the cap in calls, and whether the count reached it. */
   capDay?: string;
+  capCalls?: number;
+  crossed?: boolean;
   money?: {
     stage: MoneyStage;
     originalCapUsd: number;
@@ -210,7 +222,12 @@ export class WindowRunner {
           const extra = window.params.extraCalls ?? 10;
           ports.codexDailyCap.set(today.calls + extra);
           state.capDay = today.day;
+          state.capCalls = today.calls + extra;
+          state.crossed = false;
           detail = { callsSoFar: today.calls, cap: today.calls + extra };
+          // The budget holds background work only once the count reaches the cap: tick() records the
+          // crossing with the window's expectation (`cap.subscription_daily`).
+          expectNow = null;
           break;
         }
         case "ranker_invalid":
@@ -268,6 +285,7 @@ export class WindowRunner {
           await ports.controls.update({ paused: false });
           break;
         case "codex_daily_cap":
+          this.closeCrossing(state);
           ports.codexDailyCap.set(null);
           break;
         case "ranker_invalid":
@@ -346,11 +364,31 @@ export class WindowRunner {
 
   private async tickDailyCap(state: Running): Promise<void> {
     const today = await this.options.ports.codexDailyCap.today();
-    if (today.day === state.capDay) return;
-    // The budget's day rolled over: the counter restarted, so the cap is set again from the new count.
-    const extra = state.window.params.extraCalls ?? 10;
-    this.options.ports.codexDailyCap.set(today.calls + extra);
-    state.capDay = today.day;
+    if (today.day !== state.capDay) {
+      // The budget's day rolled over: the counter restarted, so the budget holds nothing any more
+      // and the cap is set again from the new count.
+      this.closeCrossing(state);
+      const extra = state.window.params.extraCalls ?? 10;
+      this.options.ports.codexDailyCap.set(today.calls + extra);
+      state.capDay = today.day;
+      state.capCalls = today.calls + extra;
+      return;
+    }
+    if (state.crossed || state.capCalls === undefined || today.calls < state.capCalls) return;
+    // The calls counted and in flight reached the cap: background Codex work is held from now on.
+    state.crossed = true;
+    this.record(
+      state.window,
+      "start",
+      { calls: today.calls, cap: state.capCalls },
+      { id: `${state.window.id}#crossed` }
+    );
+  }
+
+  private closeCrossing(state: Running): void {
+    if (!state.crossed) return;
+    state.crossed = false;
+    this.record(state.window, "end", {}, { id: `${state.window.id}#crossed` });
   }
 
   // --- The money window ------------------------------------------------------------------------
@@ -361,7 +399,10 @@ export class WindowRunner {
     const fake = await money.routeToFake();
     const spent = await money.spentUsd();
     const attempts = window.params.attempts ?? 8;
-    const estimate = window.params.attemptEstimateUsd ?? 0.008;
+    // The product's own estimate of one attempt on the fake, unless the plan states one.
+    const estimate =
+      window.params.attemptEstimateUsd ??
+      money.attemptEstimateUsd(window.params.attemptInputBytes ?? 3_000);
     const original = money.monthlyCapUsd();
     const cap = Math.round((spent + attempts * estimate) * 1_000_000) / 1_000_000;
     await this.options.ports.controls.update({ monthlyCapUsd: cap });

@@ -6,8 +6,10 @@
 # Parameterized by the plan profile: the hard stop is the profile's duration plus one hour (169 h for
 # `soak7`, 25 h for `soak24`), read from scripts/soak/plan.json. Every hour it writes the run's
 # `--status` digest to <run>/status-hourly.log, prints the Soak, FAIL and REVIEW lines, creates the
-# STOP file on a FAIL line of a stop check (the driver ends the run within a minute and the app quits),
-# and at the hard stop asks for a graceful end, then ends the app. When the app is gone it gives up the
+# STOP file on a FAIL line of a stop check (the driver ends the run within a minute, lets running
+# actions settle for up to ten minutes and the app quits; an app still up after WATCH_FAIL_WAIT_SECONDS
+# is ended, so a wedged driver cannot keep spending), and at the hard stop asks for a graceful end,
+# then ends the app. When the app is gone it gives up the
 # local-model lock of the data root if the lock still names this run (the app releases it itself on a
 # clean end). Runs at background priority: a soak is measured, and so is the Mac it runs on (D2).
 #
@@ -17,7 +19,8 @@
 # reached, or the projection over the cap past drop step 5); the app gone.
 #
 # Knobs for a rehearsal: WATCH_INTERVAL_SECONDS (3600), WATCH_GRACE_HOURS (1), WATCH_STOP_WAIT_SECONDS
-# (600), WATCH_TERM_WAIT_SECONDS (60), WATCH_REPORT_FLAGS (e.g. --count-local-writer), WATCH_PLAN, and
+# (600), WATCH_FAIL_WAIT_SECONDS (1200), WATCH_TERM_WAIT_SECONDS (60), WATCH_REPORT_FLAGS (e.g.
+# --count-local-writer), WATCH_PLAN, and
 # WATCH_KILL_PATTERN (the command-line pattern of this checkout's dev server and its app that the hard
 # stop ends beside the pid; empty ends the pid only).
 set -u
@@ -30,6 +33,7 @@ PLAN=${WATCH_PLAN:-$HERE/plan.json}
 INTERVAL=${WATCH_INTERVAL_SECONDS:-3600}
 GRACE_HOURS=${WATCH_GRACE_HOURS:-1}
 STOP_WAIT=${WATCH_STOP_WAIT_SECONDS:-600}
+FAIL_WAIT=${WATCH_FAIL_WAIT_SECONDS:-1200}
 TERM_WAIT=${WATCH_TERM_WAIT_SECONDS:-60}
 FLAGS=${WATCH_REPORT_FLAGS:-}
 START=$(date +%s)
@@ -50,10 +54,29 @@ LOCK=${RUN:h:h:h}/f2/LOCAL_MODEL_BUSY
 print "watch: profile $PROFILE, hard stop after $((LIMIT / 3600)) h $(((LIMIT % 3600) / 60)) min, run $RUNNAME"
 
 release_lock() {
-  # Only a lock that still names this run is ours to remove.
-  if [[ -f $LOCK ]] && grep -q " run $RUNNAME" $LOCK 2>/dev/null; then
+  # Only a lock that still names this run (the whole name, at the end of its line) is ours to remove.
+  if [[ -f $LOCK ]] && [[ "$(head -n 1 $LOCK 2>/dev/null)" == *" run $RUNNAME" ]]; then
     rm -f $LOCK && print "watch: gave up the local-model lock of $RUNNAME"
   fi
+}
+
+end_app() {
+  # The app first (the pid), then this checkout's dev server and app by pattern; hard after a wait.
+  kill -TERM $PID 2>/dev/null
+  [[ -n $KILL_PATTERN ]] && pkill -TERM -f "$KILL_PATTERN" 2>/dev/null
+  sleep $TERM_WAIT
+  [[ -n $KILL_PATTERN ]] && pkill -KILL -f "$KILL_PATTERN" 2>/dev/null
+  kill -KILL $PID 2>/dev/null
+}
+
+wait_gone() {
+  # Waits up to $1 seconds for the app to quit by itself; true when it did.
+  local deadline=$(( $(date +%s) + $1 ))
+  while kill -0 $PID 2>/dev/null; do
+    (( $(date +%s) >= deadline )) && return 1
+    sleep 1
+  done
+  return 0
 }
 
 cd $ROOT
@@ -66,16 +89,19 @@ while kill -0 $PID 2>/dev/null; do
   if print -r -- "$out" | grep -qE "^FAIL (Calls past deadline|Jobs|Swap|P0 wait|Breaker|Helper restarts|Remote deadlines|E1 blocked|Tokens)"; then
     touch $RUN/STOP
     print "watch: FAIL on a stop check -> STOP file written"
+    # The driver ends the run and the app quits; a driver that does not is ended (D38: STOP, then
+    # the diagnosis), so a stop check always stops the spending.
+    if ! wait_gone $FAIL_WAIT; then
+      print "watch: the app did not quit $FAIL_WAIT s after STOP -> it is ended"
+      end_app
+    fi
+    break
   fi
   if (( $(date +%s) - START > LIMIT )); then
     # graceful first (the driver stops on STOP and the app quits), then the app, hard
     print "watch: hard stop reached -> STOP, then the app is ended after $STOP_WAIT s"
-    touch $RUN/STOP; sleep $STOP_WAIT
-    kill -TERM $PID 2>/dev/null
-    [[ -n $KILL_PATTERN ]] && pkill -TERM -f "$KILL_PATTERN" 2>/dev/null
-    sleep $TERM_WAIT
-    [[ -n $KILL_PATTERN ]] && pkill -KILL -f "$KILL_PATTERN" 2>/dev/null
-    kill -KILL $PID 2>/dev/null
+    touch $RUN/STOP
+    wait_gone $STOP_WAIT || end_app
     break
   fi
 done

@@ -48,7 +48,7 @@ import {
   type SoakKnobEnvironment,
   type SoakKnobSettings
 } from "./soak-plan.js";
-import { expandWindows } from "./soak-plan-f4.js";
+import { expandWindows, fetchFaultPlanSchema } from "./soak-plan-f4.js";
 import { createSoakPorts } from "./soak-ports.js";
 import { decisionsOptInProblem, realWriterProblems } from "./soak-real-writer.js";
 import { fileEventSink, soakFiles } from "./soak-records.js";
@@ -225,9 +225,15 @@ export function prepareSoak(
             )
         })
       : null;
+  // Always in front of the real writer of a 7-day profile, faults or none: it tells the cap which
+  // requests reached the provider, and admits each retry by reservation before it is forwarded.
   const injector =
-    soak && f4Plan?.injection
-      ? new FetchFaultInjector({ plan: f4Plan.injection, seed: profile.seed, sink })
+    soak && f4Plan
+      ? new FetchFaultInjector({
+          plan: f4Plan.injection ?? fetchFaultPlanSchema.parse({}),
+          seed: profile.seed,
+          sink
+        })
       : null;
   let dailyCap: number | undefined;
   let fakeDeps: Pick<FakeRemoteDeps, "pool" | "credentials" | "setAnswerRoute"> | null = null;
@@ -261,20 +267,27 @@ export function prepareSoak(
             owner: `soak:${settings.profileName}`,
             run
           });
-        const problems = await realWriterProblems(deps.pool, realWriter);
-        const optIn = await decisionsOptInProblem(deps.pool, settings.decisions !== null);
-        if (optIn) problems.push(optIn);
-        const fakeIds = (
-          await deps.pool.query<{ id: string }>(
-            "select id from ai_provider_configs where display_name like 'DEV fake %'"
-          )
-        ).rows.map((row) => row.id);
-        // Only the Codex configuration the knob names may be reached; every other real provider is refused.
-        const reachProblem = realRemoteProblem(
-          await findRealRemoteReach(deps.pool, [...fakeIds, realWriter.providerConfigId])
-        );
-        if (reachProblem) problems.push(reachProblem);
-        if (problems.length > 0) throw new Error(problems.join(" "));
+        try {
+          const problems = await realWriterProblems(deps.pool, realWriter);
+          const optIn = await decisionsOptInProblem(deps.pool, settings.decisions !== null);
+          if (optIn) problems.push(optIn);
+          const fakeIds = (
+            await deps.pool.query<{ id: string }>(
+              "select id from ai_provider_configs where display_name like 'DEV fake %'"
+            )
+          ).rows.map((row) => row.id);
+          // Only the Codex configuration the knob names may be reached; every other real provider is refused.
+          const reachProblem = realRemoteProblem(
+            await findRealRemoteReach(deps.pool, [...fakeIds, realWriter.providerConfigId])
+          );
+          if (reachProblem) problems.push(reachProblem);
+          if (problems.length > 0) throw new Error(problems.join(" "));
+        } catch (error) {
+          // A refused start quits at once (app.exit skips the quit path): the slot goes back now.
+          await releaseLock?.();
+          releaseLock = null;
+          throw error;
+        }
       }
       if (profile.remote) {
         handle = await startFakeRemote(profile, {

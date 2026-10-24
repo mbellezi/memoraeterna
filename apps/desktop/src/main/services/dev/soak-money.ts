@@ -12,6 +12,7 @@ import {
   type PriceTable
 } from "@app/domain";
 
+import { profileGenerationMaxTokens } from "../ai-task-parameters.js";
 import { explanationText } from "./fake-codex-provider.js";
 import {
   FakeProviderServer,
@@ -38,8 +39,32 @@ import type { MoneyPort } from "./soak-windows.js";
  *
  * The fake is an OpenAI-compatible server on loopback whose model has a price in the soak's price
  * table (a copy of the product's with one more entry), so its usage is priced like a paid route.
- * It answers an explanation prompt (it names the notes n1 and n2) with a valid short sentence.
+ * It answers an explanation prompt (it names the notes n1 and n2) with a valid short sentence, and
+ * bills each call what the budget reserved for it: the planning estimate counts every input byte as
+ * a token (plus 1,024) and the whole output ceiling, about sixty times what a short explanation
+ * really costs, so with a real-sized bill ten relations would never reach 80% of eight attempts'
+ * estimate. The cap is set from the same estimate ({@link attemptEstimateUsd}): it assumes the
+ * backfill runs with the profile's default output ceiling (T84: check it when the backfill merges).
  */
+
+/** Tokens the budget's planning estimate counts beyond the input bytes (`estimateAiPlanningTokens`). */
+const planningOverheadTokens = 1_024;
+
+/**
+ * One attempt's planning estimate in US$ at the fake's price: `inputBytes` of prompt plus the
+ * overhead as input tokens, and `outputTokens` (the profile's default ceiling) as output tokens.
+ */
+export function attemptEstimateUsd(
+  money: NonNullable<SoakF4Plan["money"]>,
+  inputBytes: number,
+  outputTokens = profileGenerationMaxTokens
+): number {
+  return (
+    ((Math.max(0, inputBytes) + planningOverheadTokens) * money.inputUsdPerM +
+      Math.max(0, outputTokens) * money.outputUsdPerM) /
+    1_000_000
+  );
+}
 
 export const moneyProviderName = "DEV fake priced (soak money window)";
 /**
@@ -84,7 +109,16 @@ export function pricedFakeKind(options: {
   const base = openAiCompatibleKind({
     seed: options.seed,
     latency: fixedLatency(options.latencyMs),
-    modelId: options.model
+    modelId: options.model,
+    // The bill is the planning estimate of the call: its prompt bytes plus the overhead, and the
+    // output ceiling it asked for, so an attempt spends what the budget reserved for it.
+    usage: (prompt, text, body) => ({
+      prompt_tokens: Buffer.byteLength(prompt, "utf8") + planningOverheadTokens,
+      completion_tokens:
+        typeof body.max_tokens === "number" && body.max_tokens > 0
+          ? Math.floor(body.max_tokens)
+          : Math.max(1, Math.ceil(text.length / 4))
+    })
   });
   return {
     ...base,
@@ -174,6 +208,7 @@ export function createMoneyPort(deps: MoneyPortDeps): MoneyPort & { stop(): Prom
 
     spentUsd: async () => (await deps.budget.snapshot()).money.spentUsd,
     monthlyCapUsd: () => deps.controls.current().monthlyCapUsd,
+    attemptEstimateUsd: (inputBytes) => attemptEstimateUsd(deps.money, inputBytes),
     state: async () => (await deps.budget.snapshot()).money.state,
     continuePastPause: async () => void (await deps.budget.continuePastPause()),
 

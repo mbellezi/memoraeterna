@@ -319,29 +319,34 @@ export function e1Check(run: LoadedRun): {
 // --- E2 -----------------------------------------------------------------------------------------
 
 const inputKey = (kind: string, subject: string | null) => `${kind}\u0000${subject ?? ""}`;
+/** An E2 input: (kind, subject, fingerprint), the unit a quarantine applies to (D8). */
+const fingerprintKey = (kind: string, subject: string, fingerprint: string | null | undefined) =>
+  `${kind}\u0000${subject}\u0000${fingerprint ?? ""}`;
 
 export function e2Check(run: LoadedRun, context: F4Context): Check {
   const all = jobsDoneOf(run);
-  // Failed jobs by input, and whether an injected fault explains each.
+  // Failed jobs by input, and whether an injected fault explains each. An input is a (kind,
+  // subject, fingerprint) with at least one non-skipped attempt: a job cancelled before it ran made
+  // none.
   const attempts = new Map<string, { failures: number; injectedFailures: number }>();
   for (const job of all) {
-    if (job.outcome === "skipped" || job.subjectKey === null) continue;
-    const entry = attempts.get(inputKey(job.jobType, job.subjectKey)) ?? {
-      failures: 0,
-      injectedFailures: 0
-    };
+    if (job.outcome === "skipped" || job.subjectKey === null || job.attempts === 0) continue;
+    const key = fingerprintKey(job.jobType, job.subjectKey, job.inputFingerprint);
+    const entry = attempts.get(key) ?? { failures: 0, injectedFailures: 0 };
     if (job.status === "failed") {
       entry.failures += 1;
       if (context.injectedJobs.has(job.id)) entry.injectedFailures += 1;
     }
-    attempts.set(inputKey(job.jobType, job.subjectKey), entry);
+    attempts.set(key, entry);
   }
   const quarantined = new Set<string>();
   for (const outcome of outcomesOf(run)) {
-    if (outcome.quarantinedAt) quarantined.add(inputKey(outcome.kind, outcome.subjectKey));
+    if (outcome.quarantinedAt)
+      quarantined.add(fingerprintKey(outcome.kind, outcome.subjectKey, outcome.failedFingerprint));
   }
   for (const job of all)
-    if (job.quarantinedAt && job.subjectKey) quarantined.add(inputKey(job.jobType, job.subjectKey));
+    if (job.quarantinedAt && job.subjectKey)
+      quarantined.add(fingerprintKey(job.jobType, job.subjectKey, job.inputFingerprint));
   // Inputs whose failures were all injected leave both counts.
   const excluded = (key: string) => {
     const entry = attempts.get(key);
@@ -356,10 +361,10 @@ export function e2Check(run: LoadedRun, context: F4Context): Check {
   return {
     id: "e2-quarantine",
     title: "E2 quarantine",
-    bar: "<= 1 % of distinct inputs with a non-skipped attempt (inputs whose failures were all injected are left out of both)",
+    bar: "<= 1 % of distinct (kind, subject, fingerprint) inputs with a non-skipped attempt (inputs whose failures were all injected are left out of both)",
     status: inputs.length === 0 ? "review" : rate <= 0.01 ? "pass" : "fail",
     value: `${counted.length} quarantined of ${inputs.length} input(s) = ${pct(counted.length, inputs.length)}; ${[...attempts.keys()].filter(excluded).length} injected-only input(s) left out`,
-    details: counted.slice(0, 12).map((key) => key.replace("\u0000", " "))
+    details: counted.slice(0, 12).map((key) => key.replaceAll("\u0000", " ").trimEnd())
   };
 }
 
@@ -509,6 +514,8 @@ export function e3Check(run: LoadedRun): {
 // --- E4 -----------------------------------------------------------------------------------------
 
 const callTokens = (row: TaskRunRecord) => (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
+/** The audit error of a call the RemoteBudget refused before it was sent (`RemoteBudgetRefusal`). */
+const budgetRefusal = /gardener\.blocked\.cap\./u;
 
 /** The real Codex lane's audit rows: the lane the meta names for the real writer. */
 export function codexRows(run: LoadedRun): TaskRunRecord[] {
@@ -568,32 +575,56 @@ export function e4Check(run: LoadedRun): Check {
 
   // (b) The product's mid-run Codex cap: background Codex admissions after the budget's calls are exhausted.
   const dailyCap = truths.find(
-    (truth) => truth.kind === "codex_daily_cap" && truth.phase === "start"
+    (truth) =>
+      truth.kind === "codex_daily_cap" && truth.phase === "start" && !truth.id.includes("#")
   );
   if (dailyCap) {
     const end = truths.find((truth) => truth.id === dailyCap.id && truth.phase === "end");
     const from = toMs(dailyCap.at);
     const to = end ? toMs(end.at) : runEnd(run);
-    const crossing = samples.find(
-      (s) => toMs(s.at) >= from && toMs(s.at) <= to && s.budget?.callsState === "exhausted"
-    );
-    if (crossing) {
-      const crossedAt = toMs(crossing.at);
-      const background = rows.filter(
+    // The crossing: the first sample whose budget reads exhausted, or the window's own record of it
+    // (each at the sample interval), whichever came first.
+    const crossings = [
+      ...samples
+        .filter(
+          (s) => toMs(s.at) >= from && toMs(s.at) <= to && s.budget?.callsState === "exhausted"
+        )
+        .slice(0, 1)
+        .map((s) => toMs(s.at)),
+      ...truths
+        .filter(
+          (truth) =>
+            truth.id === `${dailyCap.id}#crossed` &&
+            truth.phase === "start" &&
+            toMs(truth.at) >= from &&
+            toMs(truth.at) <= to
+        )
+        .slice(0, 1)
+        .map((truth) => toMs(truth.at))
+    ];
+    if (crossings.length > 0) {
+      const crossedAt = Math.min(...crossings);
+      // A call the budget refused was never admitted: its audit row names the refusal.
+      const admitted = rows.filter(
         (row) =>
-          row.budgetClass === "background" &&
+          !budgetRefusal.test(row.error ?? "") &&
           toMs(row.startedAt) > crossedAt &&
           toMs(row.startedAt) <= to
-      ).length;
-      const protectedCalls = rows.filter(
+      );
+      const background = admitted.filter((row) => row.budgetClass === "background").length;
+      const protectedCalls = admitted.filter(
         (row) =>
-          (row.budgetClass === "user" || row.budgetClass === "interactive" || row.priority === 0) &&
+          row.budgetClass === "user" || row.budgetClass === "interactive" || row.priority === 0
+      ).length;
+      const refused = rows.filter(
+        (row) =>
+          budgetRefusal.test(row.error ?? "") &&
           toMs(row.startedAt) > crossedAt &&
           toMs(row.startedAt) <= to
       ).length;
       statuses.push(background <= 1 ? "pass" : "fail");
       details.push(
-        `(b) the daily Codex cap was crossed at ${crossing.at}: ${background} background Codex call(s) admitted after it (bar <= 1); ${protectedCalls} P0 or user call(s) went on`
+        `(b) the daily Codex cap was crossed at ${new Date(crossedAt).toISOString()}: ${background} background Codex call(s) admitted after it (bar <= 1), ${refused} refused by the budget; ${protectedCalls} P0 or user call(s) went on`
       );
     } else {
       statuses.push("fail");

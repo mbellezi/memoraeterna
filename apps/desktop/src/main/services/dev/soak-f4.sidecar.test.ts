@@ -699,6 +699,8 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
         await expect(missing.soak.startFakes(missing.deps)).rejects.toThrow(
           /names no provider configuration/u
         );
+        // A refused start quits at once: the slot it took is given back first.
+        expect(existsSync(missing.lock)).toBe(false);
       } finally {
         await missing.cleanup();
       }

@@ -191,7 +191,8 @@ export async function readFinishedJobs(db: Db, sinceMs: number): Promise<JobDone
     `select id::text as id, type as "jobType", lane, status::text as status, outcome,
             scope_key as "scopeKey", subject_key as "subjectKey", attempts,
             created_at as "createdAt", finished_at as "finishedAt",
-            quarantined_at as "quarantinedAt", left(result ->> 'status', 60) as "resultStatus"
+            quarantined_at as "quarantinedAt", left(result ->> 'status', 60) as "resultStatus",
+            input_fingerprint as "inputFingerprint"
        from jobs
       where status in ('succeeded', 'failed', 'canceled')
         and coalesce(finished_at, updated_at) > $1

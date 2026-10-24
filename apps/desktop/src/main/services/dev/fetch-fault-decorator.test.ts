@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   FetchFaultInjector,
   FetchFaultSchedule,
-  codexProviderName
+  codexProviderName,
+  malformedAnswerText
 } from "./fetch-fault-decorator.js";
 import { withSoakCallContext } from "./soak-call-context.js";
 import { fetchFaultPlanSchema, type FetchFaultPlan } from "./soak-plan-f4.js";
@@ -145,11 +146,16 @@ describe("the per-request faults, against the real Codex adapter", () => {
     }
   });
 
-  it("gives the parser a malformed event and forwards nothing", async () => {
+  it("answers a well-formed stream whose answer is cut JSON, so the consumer refuses it and repairs; nothing is forwarded", async () => {
     const { adapter, upstream, exchanges } = layer({
       forced: [{ kind: "malformed", afterMinute: 0, count: 1 }]
     });
-    await expect(adapter.run(request)).rejects.toThrow(SyntaxError);
+    // The call itself succeeds (it is the consumer that refuses the answer: the repair path).
+    const result = await adapter.run(request);
+    expect(result.output).toBe(malformedAnswerText);
+    expect(() => JSON.parse(String(result.output))).toThrow(SyntaxError);
+    expect(result.inputTokens).toBeUndefined();
+    expect(result.outputTokens).toBeUndefined();
     expect(upstream.seen).toHaveLength(0);
     expect(exchanges()[0]).toMatchObject({ kind: "malformed", injected: true, forwardedBytes: 0 });
   });
@@ -350,6 +356,60 @@ describe("what the call's context is told", () => {
     });
     const { context, outcome } = await withSoakCallContext(() => adapter.run(request));
     expect("value" in outcome).toBe(true);
-    expect(context).toEqual({ forwardedRequests: 1, injectedRequests: 1 });
+    expect(context).toEqual({ forwardedRequests: 1, refusedRequests: 0, injectedRequests: 1 });
+  });
+
+  it("counts a request the provider refused with an HTTP error apart (it bills nothing)", async () => {
+    const sink = new MemoryEventSink();
+    let calls = 0;
+    const injector = new FetchFaultInjector({
+      plan: plan(),
+      seed: 1,
+      sink,
+      fetch: async () => {
+        calls += 1;
+        return calls === 1
+          ? new Response('{"error":{"message":"overloaded","code":"server_error"}}', {
+              status: 503,
+              headers: { "content-type": "application/json" }
+            })
+          : provider().fetchStub("https://chatgpt.com/backend-api/codex/responses", {});
+      }
+    });
+    const adapter = new OpenAiCodexAdapter({
+      accessToken: "t",
+      accountId: "a",
+      modelId: "gpt-5.6-luna",
+      capabilities: ["text-generation"],
+      fetch: injector.fetch,
+      runtime,
+      random: () => 0
+    });
+    const { context } = await withSoakCallContext(() => adapter.run(request));
+    expect(context).toEqual({ forwardedRequests: 2, refusedRequests: 1, injectedRequests: 0 });
+  });
+
+  it("asks the cap before every forwarded request, and forwards nothing when it refuses", async () => {
+    const { adapter, upstream } = layer({
+      forced: [{ kind: "rate_limit", afterMinute: 0, count: 1 }]
+    });
+    let asked = 0;
+    const { context, outcome } = await withSoakCallContext(() => adapter.run(request), {
+      beforeForward: () => {
+        asked += 1;
+      }
+    });
+    expect("value" in outcome).toBe(true);
+    // The injected 429 was never forwarded: only the retry asked.
+    expect(asked).toBe(1);
+    expect(context.forwardedRequests).toBe(1);
+    const refused = await withSoakCallContext(() => adapter.run(request), {
+      beforeForward: () => {
+        throw new Error("over the cap");
+      }
+    });
+    expect("error" in refused.outcome && String(refused.outcome.error)).toContain("over the cap");
+    expect(refused.context.forwardedRequests).toBe(0);
+    expect(upstream.seen).toHaveLength(1);
   });
 });

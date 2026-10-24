@@ -5,7 +5,12 @@ import { fakeRemoteKnob } from "@app/ai";
 import { z } from "zod";
 
 import { faultPlanSchema } from "./fault-decorator.js";
-import { insideSoakProfiles, resolveSoakPaths, type SoakPaths } from "./soak-data-root.js";
+import {
+  insideSoakProfiles,
+  resolveSoakPaths,
+  soakWorktreeProblem,
+  type SoakPaths
+} from "./soak-data-root.js";
 import { soakF4Schema } from "./soak-plan-f4.js";
 import {
   decisionsAdmitKnobName,
@@ -63,6 +68,10 @@ export const soakConflictingKnobs = [
   // discovery neighbours): a soak keeps the shipped values, and records the effective ones.
   "MEMORA_RELATIONS_HELPER_BATCH",
   discoveryNeighboursKnobName,
+  // The soak's own windows drive the power override (D15); a fixed one from the start would change
+  // the ground truth of every window. An automatic quit would end the run as "the app gone".
+  "MEMORA_DEV_POWER_BLOCKS",
+  "MEMORA_SMOKE_AUTO_QUIT_MS",
   "MEMORA_SOAK_SETUP"
 ] as const;
 
@@ -338,6 +347,9 @@ export function readSoakKnob(
           "needsRealWriter",
           `The plan profile ${profileName} runs the real Codex writer: set ${realWriterKnobName} to its provider configuration`
         );
+      // D1: from a worktree outside the checkout, on the main checkout's data root and lock.
+      const problem = soakWorktreeProblem(options.workspaceRoot, paths);
+      if (problem) throw new SoakKnobRefusal("dataRoot", problem);
     } else {
       if (!env[fakeRemoteKnobName]?.trim())
         throw new SoakKnobRefusal(

@@ -389,7 +389,7 @@
               "attempts": 8,
               "backfillRelations": 10,
               "continueAfterMinutes": 10,
-              "attemptEstimateUsd": 0.008
+              "attemptInputBytes": 3000
             }
           }
         ],
@@ -682,7 +682,7 @@
               "attempts": 8,
               "backfillRelations": 10,
               "continueAfterMinutes": 3,
-              "attemptEstimateUsd": 0.008
+              "attemptInputBytes": 3000
             }
           },
           {

@@ -40,6 +40,7 @@ function harness(money: Partial<MoneyPort> | null = null) {
         restoreRoute: async () => void calls.push("money:restore"),
         spentUsd: async () => 0.5,
         monthlyCapUsd: () => 5,
+        attemptEstimateUsd: (inputBytes) => (inputBytes + 1_024 + 16_384 * 4) / 1_000_000,
         state: async () => budgetState,
         continuePastPause: async () => {
           calls.push("money:continue");
@@ -97,7 +98,8 @@ function harness(money: Partial<MoneyPort> | null = null) {
     rollDay: (next: string, used: number) => {
       day = next;
       usedCalls = used;
-    }
+    },
+    setCalls: (used: number) => void (usedCalls = used)
   };
 }
 
@@ -129,7 +131,6 @@ describe("a window's effect and its ground truth", () => {
     ["autonomy_off", 'controls:{"autonomy":"off"}', 'controls:{"autonomy":"auto"}'],
     ["autonomy_suggest", 'controls:{"autonomy":"suggest"}', 'controls:{"autonomy":"auto"}'],
     ["pause", 'controls:{"paused":true}', 'controls:{"paused":false}'],
-    ["codex_daily_cap", "dailyCap:22", "dailyCap:null"],
     ["ranker_invalid", "hook:ranker-invalid", "hook:ranker-restore"],
     ["embedder_verifying", "hook:embedder-verifying", "hook:embedder-clear"],
     ["only_ac", "power:battery", "power:off"],
@@ -138,7 +139,6 @@ describe("a window's effect and its ground truth", () => {
     const { runner, calls, records, advance } = harness();
     const window = spec({
       kind,
-      params: kind === "codex_daily_cap" ? { extraCalls: 10 } : {},
       expect: { class: "waiting", reason: "provider_rate_limit" }
     });
     await runner.start(window);
@@ -261,10 +261,63 @@ describe("the idle window", () => {
 });
 
 describe("the mid-run Codex cap", () => {
-  it("is set again from the new count when the budget's day rolls over mid-window", async () => {
-    const { runner, calls, rollDay } = harness();
-    const window = spec({ kind: "codex_daily_cap", params: { extraCalls: 10 } });
+  const capWindow = () =>
+    spec({
+      kind: "codex_daily_cap",
+      params: { extraCalls: 10 },
+      expect: { class: "cap", reason: "subscription_daily" }
+    });
+
+  it("sets the cap to the calls so far plus ten and lifts it at the end", async () => {
+    const { runner, calls, records, advance } = harness();
+    const window = capWindow();
     await runner.start(window);
+    expect(calls).toEqual(["dailyCap:22"]);
+    advance(30 * minute);
+    await runner.end(window);
+    expect(calls.at(-1)).toBe("dailyCap:null");
+    expect(records()[0]).toMatchObject({ phase: "start", detail: { callsSoFar: 12, cap: 22 } });
+  });
+
+  it("expects cap.subscription_daily only from the crossing: the budget holds nothing before the count reaches the cap", async () => {
+    const { runner, records, advance, setCalls } = harness();
+    const window = capWindow();
+    await runner.start(window);
+    // The window's own start expects nothing: background work still runs below the cap.
+    expect(records()[0]!.expect).toBeUndefined();
+    setCalls(21);
+    advance(minute);
+    await runner.tick();
+    expect(records()).toHaveLength(1);
+    setCalls(22);
+    advance(minute);
+    await runner.tick();
+    expect(records()[1]).toMatchObject({
+      id: "w1#crossed",
+      phase: "start",
+      expect: { class: "cap", reason: "subscription_daily" },
+      detail: { calls: 22, cap: 22 }
+    });
+    expect(Date.parse(records()[1]!.settleUntil) - Date.parse(records()[1]!.at)).toBe(
+      defaultSettleMs
+    );
+    await runner.tick();
+    expect(records()).toHaveLength(2);
+    advance(30 * minute);
+    await runner.end(window);
+    expect(records().map((entry) => `${entry.id}:${entry.phase}`)).toEqual([
+      "w1:start",
+      "w1#crossed:start",
+      "w1#crossed:end",
+      "w1:end"
+    ]);
+  });
+
+  it("is set again from the new count when the budget's day rolls over mid-window, and the crossing is closed", async () => {
+    const { runner, calls, records, rollDay, setCalls } = harness();
+    const window = capWindow();
+    await runner.start(window);
+    setCalls(22);
     await runner.tick();
     expect(calls).toEqual(["dailyCap:22"]);
     rollDay("2026-10-30", 0);
@@ -272,6 +325,15 @@ describe("the mid-run Codex cap", () => {
     expect(calls).toEqual(["dailyCap:22", "dailyCap:10"]);
     await runner.tick();
     expect(calls).toHaveLength(2);
+    expect(records().map((entry) => `${entry.id}:${entry.phase}`)).toEqual([
+      "w1:start",
+      "w1#crossed:start",
+      "w1#crossed:end"
+    ]);
+    // The new day's count reaches the new cap: crossed again.
+    setCalls(10);
+    await runner.tick();
+    expect(records().at(-1)).toMatchObject({ id: "w1#crossed", phase: "start" });
   });
 });
 
@@ -339,6 +401,22 @@ describe("the money window", () => {
       phase: "end",
       detail: { reached80: true, stage: "exhausted" }
     });
+  });
+
+  it("caps the month at eight of the product's own attempt estimates when the plan states none", async () => {
+    const { runner, calls, records } = harness({});
+    await runner.start(
+      spec({
+        id: "w146",
+        kind: "money",
+        durationMinutes: 360,
+        params: { attempts: 8, backfillRelations: 10, attemptInputBytes: 3_000 }
+      })
+    );
+    // 0.5 spent + 8 x (4,024 input tokens at US$1/M + 16,384 output tokens at US$4/M).
+    const cap = Math.round((0.5 + 8 * ((3_000 + 1_024 + 16_384 * 4) / 1_000_000)) * 1e6) / 1e6;
+    expect(calls[1]).toBe(`controls:${JSON.stringify({ monthlyCapUsd: cap })}`);
+    expect(records()[0]!.detail).toMatchObject({ capUsd: cap });
   });
 
   it("says so when the budget never reached its 80% in the window", async () => {

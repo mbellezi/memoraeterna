@@ -222,7 +222,9 @@ const jobDoneRecord = z
     finishedAt: iso.nullable(),
     quarantinedAt: iso.nullable(),
     /** The `result.status` the job kept (a pending review counts as completed). */
-    resultStatus: z.string().max(60).nullable()
+    resultStatus: z.string().max(60).nullable(),
+    /** The content-only fingerprint the job ran with (E2's inputs are kind, subject and fingerprint). */
+    inputFingerprint: z.string().max(200).nullable().optional()
   })
   .strict();
 

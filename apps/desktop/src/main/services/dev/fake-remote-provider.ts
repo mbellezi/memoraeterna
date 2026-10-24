@@ -34,6 +34,15 @@ export interface OpenAiCompatibleFakeOptions {
   /** Share of the call that passes before the first answer text arrives. */
   firstByteFraction?: number;
   modelId?: string;
+  /**
+   * The usage a completion reports, from its prompt, answer and request body; by default a token
+   * for every four characters of each (the soak's priced fake bills what the budget reserved).
+   */
+  usage?: (
+    prompt: string,
+    text: string,
+    body: Record<string, unknown>
+  ) => { prompt_tokens: number; completion_tokens: number };
 }
 
 /** The first evidence handle (`e1`, `e2`, ...) a consultation prompt offers, or null. */
@@ -91,11 +100,11 @@ export function openAiCompatibleKind(options: OpenAiCompatibleFakeOptions): Fake
     const totalMs = options.latency.sample(
       seededUnit(options.seed, openAiCompatibleProvider, context.seq, "latency")
     );
-    const usage = {
+    const counted = options.usage?.(prompt, text, body) ?? {
       prompt_tokens: fakeTokens(prompt),
-      completion_tokens: fakeTokens(text),
-      total_tokens: fakeTokens(prompt) + fakeTokens(text)
+      completion_tokens: fakeTokens(text)
     };
+    const usage = { ...counted, total_tokens: counted.prompt_tokens + counted.completion_tokens };
     const id = `chatcmpl-fake-${context.seq}`;
     if (body.stream !== true) {
       return jsonReply(

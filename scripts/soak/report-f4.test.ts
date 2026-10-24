@@ -329,6 +329,7 @@ const done = (id: string, overrides: Partial<JobDoneRecord> = {}): JobDoneRecord
   finishedAt: at(hour + 5 * minute),
   quarantinedAt: null,
   resultStatus: "named",
+  inputFingerprint: "f",
   ...overrides
 });
 
@@ -388,6 +389,45 @@ describe("E2 quarantine", () => {
     expect(check.status).toBe("pass");
     expect(check.value).toContain("0 quarantined of 10");
     expect(check.value).toContain("1 injected-only");
+  });
+
+  it("counts each (kind, subject, fingerprint) as its own input, as the quarantine does (D8)", () => {
+    // One topic's name, decided again for twelve different member sets: twelve inputs, one quarantined.
+    const jobs = Array.from({ length: 12 }, (_, index) =>
+      done(`r${index}`, { subjectKey: "tree:t1", inputFingerprint: `f${index}` })
+    );
+    const failed = [
+      done("bad-1", {
+        status: "failed",
+        outcome: null,
+        subjectKey: "tree:t1",
+        inputFingerprint: "fx"
+      }),
+      done("bad-2", {
+        status: "failed",
+        outcome: null,
+        subjectKey: "tree:t1",
+        inputFingerprint: "fx",
+        quarantinedAt: at(2 * hour)
+      })
+    ];
+    const check = e2Check(runOf(30, { events: [...jobs, ...failed] }), {
+      injected: new Map(),
+      injectedJobs: new Map()
+    });
+    expect(check.value).toContain("1 quarantined of 13");
+    // A job cancelled before it ran made no attempt: it is no input.
+    const cancelled = e2Check(
+      runOf(30, {
+        events: [
+          ...jobs,
+          ...failed,
+          done("gone", { status: "canceled", outcome: null, attempts: 0 })
+        ]
+      }),
+      { injected: new Map(), injectedJobs: new Map() }
+    );
+    expect(cancelled.value).toContain("1 quarantined of 13");
   });
 
   it("is a review when no input was attempted", () => {
@@ -762,6 +802,45 @@ describe("E4 cap within one call", () => {
     expect(check.status).toBe("pass");
     const second = [...rows, codexRow(60 * minute)];
     expect(e4Check(runOf(3, { events, samples, rows: second })).status).toBe("fail");
+  });
+
+  it("(b) does not count the background calls the budget refused: they were never admitted", () => {
+    const events: SoakEvent[] = [
+      truth("w84", "start", 10 * minute, 2, undefined, "codex_daily_cap"),
+      truth(
+        "w84#crossed",
+        "start",
+        30 * minute,
+        2,
+        ["cap", "subscription_daily"],
+        "codex_daily_cap"
+      ),
+      truth("w84#crossed", "end", 100 * minute, 2, undefined, "codex_daily_cap"),
+      truth("w84", "end", 100 * minute, 2, undefined, "codex_daily_cap")
+    ];
+    const refused = (offset: number) =>
+      codexRow(offset, {
+        status: "failed",
+        error: "gardener.blocked.cap.subscription_daily",
+        inputTokens: null,
+        outputTokens: null,
+        durationMs: 3
+      });
+    const rows = [
+      codexRow(20 * minute),
+      refused(40 * minute),
+      refused(50 * minute),
+      refused(70 * minute),
+      codexRow(80 * minute, { budgetClass: "user", priority: 2 })
+    ];
+    // No sample recorded the budget: the window's own record of the crossing is the crossing.
+    const check = e4Check(runOf(3, { events, rows }));
+    expect(check.details.join(" ")).toContain("0 background Codex call(s) admitted after it");
+    expect(check.details.join(" ")).toContain("3 refused by the budget");
+    expect(check.status).toBe("pass");
+    // An admitted background call 40 minutes after the crossing, and a second: the cap leaked.
+    const leaked = [...rows, codexRow(70 * minute + 5_000), codexRow(75 * minute)];
+    expect(e4Check(runOf(3, { events, rows: leaked })).status).toBe("fail");
   });
 
   it("(c) wants both money transitions, the continue, and spend within one attempt's estimate of the cap", () => {

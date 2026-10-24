@@ -138,6 +138,17 @@ describe("the watchdog of a soak", () => {
     20_000
   );
 
+  it("ends an app that does not quit after a stop check's STOP (a wedged driver), so the spending stops", async () => {
+    const setup = rehearsal("Soak run: FAIL so far\nFAIL Tokens and cap: 4700000 tokens", 0.01);
+    const target = app();
+    const child = watch(setup, "quick", target.pid!, { WATCH_FAIL_WAIT_SECONDS: "1" });
+    const text = output(child);
+    expect(await exited(child)).toBe(0);
+    expect(existsSync(join(setup.run, "STOP"))).toBe(true);
+    expect(text()).toContain("did not quit 1 s after STOP");
+    expect(alive(target.pid!)).toBe(false);
+  }, 30_000);
+
   it("writes no STOP for a review: a lane that is not exercised, or an E5 mismatch to look at", async () => {
     const setup = rehearsal(
       "Soak run: REVIEW so far\nREVIEW E1 blocked by another: not exercised",
@@ -167,7 +178,9 @@ describe("the watchdog of a soak", () => {
   it("gives up the lock when it names the run, and leaves another holder's lock alone", async () => {
     for (const [content, kept] of [
       ["soak:soak7 pid 11 run run1\n", false],
-      ["T69 pid 12\n", true]
+      ["T69 pid 12\n", true],
+      // Another run whose name begins with this one's is not this run.
+      ["soak:soak7 pid 13 run run12\n", true]
     ] as const) {
       const setup = rehearsal("Soak run: PASS so far", 0.01);
       writeFileSync(setup.lock, content);
