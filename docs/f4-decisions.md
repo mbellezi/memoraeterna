@@ -77,6 +77,26 @@ over the text below where they differ.
 - **Wave closes bundle the app (orchestrator, 10-24).** The full check never bundles: after wave 1 electron-vite
   placed its CommonJS shims inside a comment of the worker bundle and the app did not start (fixed in 7c7d9f79, with
   a static test). Every wave close also runs `npx electron-vite build` in `apps/desktop` (section "Non-regression").
+- **C2 missed; one neighbour, the judge per pair (D21, 10-24).** C2's microbenchmark (C2G + C2C, both usable)
+  accepted 10 of LIB2's 27 panel-positive pairs (bar ≥12) with 2 panel-negatives (≤5): the batched judge (perRoot, v6)
+  typed 3 positives `similar_to` (a weak type the product drops) and left 2 under the importance/confidence floors.
+  `discovery.neighbours` stays 1, the two-neighbour S1/X3 runs are not run, and the source judge returns to `perPair`
+  (F3's v5 judge byte for byte, the configuration F3's S1 bars measured: 1.60 / 1.44 judge calls per source); `perRoot`
+  stays available by configuration.
+- **C1 (X7-REF, 10-24).** 35.9 generative calls per chapter (bar ≤40, met), yield 1.000 of F3's X7, but M = 64 merged
+  entities against the per-batch baseline's 58 (+10.3%, bar ±5%). Every one of the 8 extra merges joins a same-name,
+  same-type, same-story duplicate across batches that the per-batch code missed (same-name duplicates left: baseline 8,
+  X7B 9, X7G 2); the 2 lost merges came from a defect (three earlier same-name rows crowded the stored candidate out of
+  a later row's places), fixed in the tolerant reader (c4653240; prompts unchanged). The ±5% band reads better recall as
+  a miss: C1's M goes to the owner (recommendation: accept), and C1 runs again on the merged code (perPair judge).
+- **Proof pass-rule fixes (10-24).** GOLDN2's check compared the judge mode with a value the product never writes and
+  the harness's neighbours default overrode the caller's (fixed; GOLDN2 passes as a two-neighbour run: golden pairs 3/3).
+  MATCHP's script required "unknown" for a `same_as` relation, which correctly shows `symmetric` (fixed; both rounds
+  pass). REFRESHP's backfill pass is never queued while an AI cassette is installed, its token check added local tokens
+  and its move plan starved two topics (proof fixed; it runs again).
+- **Gate M with 0065 (10-24).** Wave 3 added `0065_divergence_findings` (T94's Divergences in the Inbox, D17); gate M
+  steps 4-6 and the smoke ran again and passed (F4 set 0060-0065: 195 ms DEV, 1.5 s soak24, 4.7 s ENV-C).
+- **Q12's probe (10-24).** 20 synthetic requests, provider-reported US$0.0019 equal to the ledger's figure: T76 done.
 
 ## Decisions
 

@@ -758,7 +758,7 @@ Wave 1 (W0 spill, foundations, the five migrations; T87, T88 and T99 start; gate
 - [x] T79 Ask stored text vectors and the candidates measurement (migration 0064; C3).
 - [x] T80 Cancel a running Ask statement; the Retry-After wait (Q2).
 - [x] T81 Event bus with job and download events (three polls removed).
-- [ ] T82 Gate M (the orchestrator): heads, backups, rehearsal, migration times.
+- [x] T82 Gate M (the orchestrator): heads, backups, rehearsal, migration times.
 
 Wave 2 (tasks, status, harnesses; C1 and C2; gate S at the end):
 - [ ] T83 MATCH on note edits and accepts.
