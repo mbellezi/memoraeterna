@@ -256,7 +256,10 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
     run.hybrid.preset !== "hybrid"
       ? `the stored setup is ${run.hybrid.preset ?? "empty"}, not hybrid`
       : wrong.length === 0 && others.length === 0
-        ? `${Object.keys(run.hybrid.routes).length} routes: embedder ${count(run.hybrid.routes, "embedder")}, ranker ${count(run.hybrid.routes, "ranker")}, writer ${count(run.hybrid.routes, "writer")}`
+        ? `${Object.keys(run.hybrid.routes).length} routes: ` +
+          (["embedder", "ranker", "writer"] as const)
+            .map((role) => `${role} ${count(run.hybrid.routes, role)}`)
+            .join(", ")
         : [
             ...wrong.map(
               ([key, role]) =>
