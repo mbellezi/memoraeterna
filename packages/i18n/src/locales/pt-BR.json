@@ -2429,6 +2429,70 @@
         "topic": "{title}, em {parent}",
         "item": "{title}, em {topic}",
         "partial": "Só uma parte desta mudança está listada."
+      },
+      "diff": {
+        "label": "Mudança na estrutura de tópicos",
+        "loading": "Carregando a mudança...",
+        "error": "Não foi possível carregar a mudança.",
+        "missing": "Esta mudança não existe mais.",
+        "unsupported": "Esta mudança não tem estrutura de tópicos para desenhar.",
+        "empty": "Esta mudança não tocou a estrutura de tópicos.",
+        "display": {
+          "label": "Gráfico ou tabela",
+          "chart": "Gráfico",
+          "table": "Tabela"
+        },
+        "side": {
+          "before": "Antes",
+          "after": "Depois"
+        },
+        "nothing": {
+          "before": "Nenhum tópico estava aqui antes da mudança.",
+          "after": "Nenhum tópico sobra aqui depois da mudança."
+        },
+        "change": {
+          "added": "Adicionado",
+          "removed": "Removido",
+          "moved": "Movido",
+          "renamed": "Renomeado",
+          "changed": "Editado",
+          "items": "Itens movidos",
+          "context": "Sem mudança"
+        },
+        "chart": {
+          "before": "Árvore de tópicos antes da mudança. Cada bloco é um botão que seleciona um tópico.",
+          "after": "Árvore de tópicos depois da mudança. Cada bloco é um botão que seleciona um tópico.",
+          "cell": "{title}, {change}, nível {level}",
+          "cellOut": "{title}, {change}, nível {level}, saíram: {items}",
+          "cellIn": "{title}, {change}, nível {level}, entraram: {items}",
+          "legend": "Tipos de mudança",
+          "legendItem": "{change}: {count}",
+          "legendWidth": "Bloco mais largo = mais itens movidos · linha = nível",
+          "legendSelected": "selecionado",
+          "legendDetached": "o tópico acima dele não está listado",
+          "pruned": "Blocos muito estreitos não são desenhados aqui. A tabela lista todos os tópicos.",
+          "hiddenOne": "Mais 1 tópico alterado, mais fundo na árvore, não está listado.",
+          "hidden": "Mais {count} tópicos alterados, mais fundo na árvore, não estão listados."
+        },
+        "table": {
+          "caption": "Tópicos que esta mudança tocou, com o lugar antes e depois",
+          "topic": "Tópico",
+          "change": "Mudança",
+          "parentBefore": "Dentro de, antes",
+          "parentAfter": "Dentro de, depois",
+          "itemsIn": "Itens que entraram",
+          "itemsOut": "Itens que saíram",
+          "was": "era {title}",
+          "top": "Topo da árvore",
+          "noneBefore": "Não existia",
+          "noneAfter": "Não existe mais"
+        },
+        "selected": {
+          "label": "Tópico selecionado",
+          "none": "Selecione um bloco ou uma linha para ver o que mudou nesse tópico.",
+          "open": "Abrir tópico"
+        },
+        "otherTopic": "outro tópico"
       }
     },
     "placeholder": {

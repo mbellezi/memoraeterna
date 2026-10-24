@@ -2426,6 +2426,70 @@
         "topic": "{title}, under {parent}",
         "item": "{title}, in {topic}",
         "partial": "Only part of this change is listed."
+      },
+      "diff": {
+        "label": "Change in the topic structure",
+        "loading": "Loading the change...",
+        "error": "The change could not be loaded.",
+        "missing": "This change no longer exists.",
+        "unsupported": "This change has no topic structure to draw.",
+        "empty": "This change did not touch the topic structure.",
+        "display": {
+          "label": "Chart or table",
+          "chart": "Chart",
+          "table": "Table"
+        },
+        "side": {
+          "before": "Before",
+          "after": "After"
+        },
+        "nothing": {
+          "before": "No topic stood here before the change.",
+          "after": "No topic is left here after the change."
+        },
+        "change": {
+          "added": "Added",
+          "removed": "Removed",
+          "moved": "Moved",
+          "renamed": "Renamed",
+          "changed": "Edited",
+          "items": "Items moved",
+          "context": "Unchanged"
+        },
+        "chart": {
+          "before": "Topic tree before the change. Each block is a button that selects a topic.",
+          "after": "Topic tree after the change. Each block is a button that selects a topic.",
+          "cell": "{title}, {change}, level {level}",
+          "cellOut": "{title}, {change}, level {level}, moved out: {items}",
+          "cellIn": "{title}, {change}, level {level}, moved in: {items}",
+          "legend": "Kinds of change",
+          "legendItem": "{change}: {count}",
+          "legendWidth": "Wider block = more items moved · row = level",
+          "legendSelected": "selected",
+          "legendDetached": "the topic above it is not listed",
+          "pruned": "Very narrow blocks are not drawn here. The table lists every topic.",
+          "hiddenOne": "1 more changed topic, deeper in the tree, is not listed.",
+          "hidden": "{count} more changed topics, deeper in the tree, are not listed."
+        },
+        "table": {
+          "caption": "Topics this change touched, with their place before and after",
+          "topic": "Topic",
+          "change": "Change",
+          "parentBefore": "Under, before",
+          "parentAfter": "Under, after",
+          "itemsIn": "Items in",
+          "itemsOut": "Items out",
+          "was": "was {title}",
+          "top": "Top of the tree",
+          "noneBefore": "Did not exist",
+          "noneAfter": "No longer exists"
+        },
+        "selected": {
+          "label": "Selected topic",
+          "none": "Select a block or a row to see what changed in that topic.",
+          "open": "Open topic"
+        },
+        "otherTopic": "another topic"
       }
     },
     "placeholder": {

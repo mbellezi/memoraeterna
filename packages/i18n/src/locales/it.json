@@ -2424,6 +2424,70 @@
         "topic": "{title}, sotto {parent}",
         "item": "{title}, in {topic}",
         "partial": "È elencata solo una parte di questa modifica."
+      },
+      "diff": {
+        "label": "Modifica della struttura degli argomenti",
+        "loading": "Caricamento della modifica...",
+        "error": "Non è stato possibile caricare la modifica.",
+        "missing": "Questa modifica non esiste più.",
+        "unsupported": "Questa modifica non ha una struttura di argomenti da disegnare.",
+        "empty": "Questa modifica non ha toccato la struttura degli argomenti.",
+        "display": {
+          "label": "Grafico o tabella",
+          "chart": "Grafico",
+          "table": "Tabella"
+        },
+        "side": {
+          "before": "Prima",
+          "after": "Dopo"
+        },
+        "nothing": {
+          "before": "Prima della modifica qui non c’era nessun argomento.",
+          "after": "Dopo la modifica qui non resta nessun argomento."
+        },
+        "change": {
+          "added": "Aggiunto",
+          "removed": "Rimosso",
+          "moved": "Spostato",
+          "renamed": "Rinominato",
+          "changed": "Modificato",
+          "items": "Elementi spostati",
+          "context": "Invariato"
+        },
+        "chart": {
+          "before": "Albero degli argomenti prima della modifica. Ogni blocco è un pulsante che seleziona un argomento.",
+          "after": "Albero degli argomenti dopo la modifica. Ogni blocco è un pulsante che seleziona un argomento.",
+          "cell": "{title}, {change}, livello {level}",
+          "cellOut": "{title}, {change}, livello {level}, usciti: {items}",
+          "cellIn": "{title}, {change}, livello {level}, entrati: {items}",
+          "legend": "Tipi di modifica",
+          "legendItem": "{change}: {count}",
+          "legendWidth": "Blocco più largo = più elementi spostati · riga = livello",
+          "legendSelected": "selezionato",
+          "legendDetached": "l’argomento sopra non è elencato",
+          "pruned": "I blocchi molto stretti non sono disegnati qui. La tabella elenca ogni argomento.",
+          "hiddenOne": "Un altro argomento modificato, più in profondità nell’albero, non è elencato.",
+          "hidden": "Altri {count} argomenti modificati, più in profondità nell’albero, non sono elencati."
+        },
+        "table": {
+          "caption": "Gli argomenti toccati da questa modifica, con il loro posto prima e dopo",
+          "topic": "Argomento",
+          "change": "Modifica",
+          "parentBefore": "Sotto, prima",
+          "parentAfter": "Sotto, dopo",
+          "itemsIn": "Elementi entrati",
+          "itemsOut": "Elementi usciti",
+          "was": "era {title}",
+          "top": "In cima all’albero",
+          "noneBefore": "Non esisteva",
+          "noneAfter": "Non esiste più"
+        },
+        "selected": {
+          "label": "Argomento selezionato",
+          "none": "Seleziona un blocco o una riga per vedere cosa è cambiato in quell’argomento.",
+          "open": "Apri argomento"
+        },
+        "otherTopic": "un altro argomento"
       }
     },
     "placeholder": {

@@ -2433,6 +2433,70 @@
         "topic": "{title}, bajo {parent}",
         "item": "{title}, en {topic}",
         "partial": "Solo se lista una parte de este cambio."
+      },
+      "diff": {
+        "label": "Cambio en la estructura de temas",
+        "loading": "Cargando el cambio...",
+        "error": "No se pudo cargar el cambio.",
+        "missing": "Este cambio ya no existe.",
+        "unsupported": "Este cambio no tiene una estructura de temas que dibujar.",
+        "empty": "Este cambio no tocó la estructura de temas.",
+        "display": {
+          "label": "Gráfico o tabla",
+          "chart": "Gráfico",
+          "table": "Tabla"
+        },
+        "side": {
+          "before": "Antes",
+          "after": "Después"
+        },
+        "nothing": {
+          "before": "Antes del cambio no había ningún tema aquí.",
+          "after": "Después del cambio no queda ningún tema aquí."
+        },
+        "change": {
+          "added": "Añadido",
+          "removed": "Eliminado",
+          "moved": "Movido",
+          "renamed": "Renombrado",
+          "changed": "Editado",
+          "items": "Elementos movidos",
+          "context": "Sin cambios"
+        },
+        "chart": {
+          "before": "Árbol de temas antes del cambio. Cada bloque es un botón que selecciona un tema.",
+          "after": "Árbol de temas después del cambio. Cada bloque es un botón que selecciona un tema.",
+          "cell": "{title}, {change}, nivel {level}",
+          "cellOut": "{title}, {change}, nivel {level}, salieron: {items}",
+          "cellIn": "{title}, {change}, nivel {level}, entraron: {items}",
+          "legend": "Tipos de cambio",
+          "legendItem": "{change}: {count}",
+          "legendWidth": "Bloque más ancho = más elementos movidos · fila = nivel",
+          "legendSelected": "seleccionado",
+          "legendDetached": "el tema que está encima no figura en la lista",
+          "pruned": "Los bloques muy estrechos no se dibujan aquí. La tabla lista todos los temas.",
+          "hiddenOne": "Otro tema cambiado, más profundo en el árbol, no está listado.",
+          "hidden": "Otros {count} temas cambiados, más profundos en el árbol, no están listados."
+        },
+        "table": {
+          "caption": "Temas que tocó este cambio, con su lugar antes y después",
+          "topic": "Tema",
+          "change": "Cambio",
+          "parentBefore": "Bajo, antes",
+          "parentAfter": "Bajo, después",
+          "itemsIn": "Elementos que entraron",
+          "itemsOut": "Elementos que salieron",
+          "was": "era {title}",
+          "top": "Cima del árbol",
+          "noneBefore": "No existía",
+          "noneAfter": "Ya no existe"
+        },
+        "selected": {
+          "label": "Tema seleccionado",
+          "none": "Selecciona un bloque o una fila para ver qué cambió en ese tema.",
+          "open": "Abrir tema"
+        },
+        "otherTopic": "otro tema"
       }
     },
     "placeholder": {

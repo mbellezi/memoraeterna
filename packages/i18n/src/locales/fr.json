@@ -2431,6 +2431,70 @@
         "topic": "{title}, sous {parent}",
         "item": "{title}, dans {topic}",
         "partial": "Seule une partie de cette modification est listée."
+      },
+      "diff": {
+        "label": "Modification de la structure des sujets",
+        "loading": "Chargement de la modification...",
+        "error": "Impossible de charger la modification.",
+        "missing": "Cette modification n’existe plus.",
+        "unsupported": "Cette modification n’a pas de structure de sujets à dessiner.",
+        "empty": "Cette modification n’a pas touché la structure des sujets.",
+        "display": {
+          "label": "Graphique ou tableau",
+          "chart": "Graphique",
+          "table": "Tableau"
+        },
+        "side": {
+          "before": "Avant",
+          "after": "Après"
+        },
+        "nothing": {
+          "before": "Aucun sujet ne se trouvait ici avant la modification.",
+          "after": "Aucun sujet ne reste ici après la modification."
+        },
+        "change": {
+          "added": "Ajouté",
+          "removed": "Supprimé",
+          "moved": "Déplacé",
+          "renamed": "Renommé",
+          "changed": "Modifié",
+          "items": "Éléments déplacés",
+          "context": "Inchangé"
+        },
+        "chart": {
+          "before": "Arbre des sujets avant la modification. Chaque bloc est un bouton qui sélectionne un sujet.",
+          "after": "Arbre des sujets après la modification. Chaque bloc est un bouton qui sélectionne un sujet.",
+          "cell": "{title}, {change}, niveau {level}",
+          "cellOut": "{title}, {change}, niveau {level}, sortis : {items}",
+          "cellIn": "{title}, {change}, niveau {level}, entrés : {items}",
+          "legend": "Types de modification",
+          "legendItem": "{change} : {count}",
+          "legendWidth": "Bloc plus large = plus d’éléments déplacés · ligne = niveau",
+          "legendSelected": "sélectionné",
+          "legendDetached": "le sujet au-dessus n’est pas listé",
+          "pruned": "Les blocs très étroits ne sont pas dessinés ici. Le tableau liste tous les sujets.",
+          "hiddenOne": "Un autre sujet modifié, plus profond dans l’arbre, n’est pas listé.",
+          "hidden": "{count} autres sujets modifiés, plus profonds dans l’arbre, ne sont pas listés."
+        },
+        "table": {
+          "caption": "Les sujets touchés par cette modification, avec leur place avant et après",
+          "topic": "Sujet",
+          "change": "Modification",
+          "parentBefore": "Sous, avant",
+          "parentAfter": "Sous, après",
+          "itemsIn": "Éléments entrés",
+          "itemsOut": "Éléments sortis",
+          "was": "était {title}",
+          "top": "Sommet de l’arbre",
+          "noneBefore": "N’existait pas",
+          "noneAfter": "N’existe plus"
+        },
+        "selected": {
+          "label": "Sujet sélectionné",
+          "none": "Sélectionnez un bloc ou une ligne pour voir ce qui a changé dans ce sujet.",
+          "open": "Ouvrir le sujet"
+        },
+        "otherTopic": "un autre sujet"
       }
     },
     "placeholder": {
