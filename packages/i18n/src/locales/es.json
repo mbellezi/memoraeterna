@@ -986,6 +986,151 @@
       "contributor": "Colaborador"
     }
   },
+  "onboarding": {
+    "skip": "Omitir la configuración",
+    "skipping": "Omitiendo…",
+    "checking": "Preparando…",
+    "steps": {
+      "label": "Pasos de la configuración",
+      "languages": "Idiomas",
+      "mode": "Configuración de la IA",
+      "source": "Primera fuente"
+    },
+    "back": "Atrás",
+    "continue": "Continuar",
+    "languages": {
+      "title": "¿Qué idiomas usas?",
+      "description": "Elige el idioma de la interfaz y el idioma en que se escriben tus temas y notas. Puedes cambiar ambos más tarde en Ajustes.",
+      "interface": "Idioma de la interfaz",
+      "content": "Idioma del contenido",
+      "contentHint": "Los nombres y los resúmenes de los temas se escriben en este idioma, sea cual sea el idioma de la fuente.",
+      "saving": "Guardando…",
+      "saveFailed": "No se pudieron guardar los idiomas. Inténtalo de nuevo."
+    },
+    "mode": {
+      "title": "¿Cómo debe trabajar la IA?",
+      "description": "Elige dónde se hace el trabajo. Puedes cambiarlo más tarde en Ajustes.",
+      "card": {
+        "title": "Este ordenador",
+        "loading": "Leyendo este ordenador…",
+        "error": "No se pudo leer este ordenador, así que no hay recomendación. Aun así puedes elegir una configuración.",
+        "retry": "Reintentar",
+        "summary": "{chip}, {memory} de memoria",
+        "summaryNoChip": "{memory} de memoria",
+        "translated": "Esta aplicación se ejecuta con Rosetta. Una versión nativa es más rápida.",
+        "recommended": "Recomendado para este ordenador",
+        "catalogError": "No se pudo leer la lista de modelos, así que no se muestran los tamaños de descarga."
+      },
+      "choices": "Elige una configuración",
+      "unavailable": "El modo Local requiere un Mac con Apple silicon.",
+      "download": "Descarga {size}",
+      "downloadNone": "Nada que descargar",
+      "downloadUnknown": "Tamaño de la descarga desconocido",
+      "costLocal": "Sin coste: se ejecuta en este ordenador.",
+      "costEstimate": "Unos {amount} al mes con una clave de API, nada extra con una suscripción de ChatGPT. Es una estimación.",
+      "costUnknown": "El coste depende del modelo con el que inicies sesión.",
+      "privacyLocal": "Nada sale de este ordenador.",
+      "privacyRemote": "Escribe un modelo en la nube, así que el texto de tus fuentes se envía al proveedor con el que inicies sesión.",
+      "writer": {
+        "title": "Inicia sesión en el modelo de escritura",
+        "description": "Un modelo en la nube escribe resúmenes, notas y nombres de temas. No se descarga ni se envía nada hasta que inicies sesión.",
+        "method": "¿Cómo inicias sesión?",
+        "codex": "Suscripción de ChatGPT",
+        "key": "Clave de API",
+        "signIn": "Iniciar sesión con ChatGPT",
+        "signingIn": "Esperando el inicio de sesión en el navegador…",
+        "signedIn": "Sesión iniciada",
+        "codexHint": "Se abre el navegador. El inicio de sesión se queda en este ordenador.",
+        "noModels": "No se listó ningún modelo. Escribe el nombre del modelo.",
+        "keyHint": "La clave se guarda en el almacenamiento seguro de este ordenador."
+      },
+      "start": "Configurar",
+      "needsWriter": "Inicia sesión en el modelo de escritura para continuar."
+    },
+    "setup": {
+      "title": "Configurando",
+      "description": "Cada parte se configura y se comprueba en orden. Las descargas continúan en segundo plano si sales.",
+      "steps": {
+        "writer": "Modelo de escritura",
+        "models": "Modelos en este ordenador",
+        "preset": "Aplicando la configuración",
+        "tests": "Comprobando cada parte"
+      },
+      "state": {
+        "pending": "En espera",
+        "running": "En curso",
+        "done": "Completado",
+        "failed": "Requiere atención",
+        "skipped": "No necesario"
+      },
+      "models": {
+        "title": "Modelos",
+        "embedder": "Modelo de búsqueda",
+        "ranker": "Clasificador de relaciones",
+        "writer": "Modelo de escritura en este ordenador",
+        "waiting": "Esperando para empezar",
+        "downloading": "Descargando",
+        "verifying": "Verificando",
+        "ready": "Listo",
+        "failed": "No se pudo instalar",
+        "progress": "{done} de {total}",
+        "eta": "faltan {minutes} min"
+      },
+      "rankerWaiting": "Las relaciones esperan al clasificador. La búsqueda y la lectura ya funcionan.",
+      "rankerFailed": "No se pudo instalar el clasificador, así que las relaciones lo esperan. Puedes volver a intentarlo en Modelos, dentro de Ajustes.",
+      "tests": {
+        "title": "Comprobaciones",
+        "waiting": "En espera",
+        "running": "Comprobando",
+        "passed": "Funciona",
+        "failed": "Falló",
+        "none": "No se usa",
+        "duration": "{ms} ms"
+      },
+      "failed": {
+        "writerNotReady": "Inicia sesión primero en el modelo de escritura.",
+        "writer": "No se pudo guardar el modelo de escritura.",
+        "models": "No se pudo instalar un modelo.",
+        "preset": "No se pudo aplicar la configuración.",
+        "tests": "No se pudieron ejecutar las comprobaciones."
+      },
+      "blocked": {
+        "modelMissing": "{model} no está instalado.",
+        "noWriter": "La configuración necesita un modelo de escritura y no hay ninguno conectado.",
+        "localUnavailable": "El modo Local requiere un Mac con Apple silicon."
+      },
+      "summaryOk": "Todo funciona.",
+      "summaryProblems": "{count} comprobaciones requieren atención. Puedes corregirlas más tarde en Ajustes.",
+      "retry": "Reintentar",
+      "continueAnyway": "Continuar sin ello"
+    },
+    "source": {
+      "title": "Añade tu primera fuente",
+      "description": "Añade un archivo, pega un texto o un enlace. Memora Eterna lo lee, lo organiza en temas y empieza a conectar ideas."
+    },
+    "estimate": {
+      "title": "Coste estimado",
+      "loading": "Estimando el coste…",
+      "error": "No se pudo estimar el coste.",
+      "retry": "Reintentar",
+      "subscription": "Sin medición: esta importación usa tu suscripción de ChatGPT, no dinero.",
+      "local": "Se ejecuta en este ordenador. Sin coste.",
+      "none": "Ningún modelo de escritura está listo, así que esta importación solo hace la fuente buscable. No se gasta nada.",
+      "noWriting": "Este plan no usa un modelo de escritura. No se gasta nada.",
+      "perToken": "Unos {amount} para esta importación.",
+      "perTokenAtLeast": "Al menos {amount} para esta importación. El archivo es mayor que la parte leída hasta ahora.",
+      "priceEstimated": "El precio de este modelo es una estimación.",
+      "unknownSize": "El tamaño de la fuente aún no se conoce, así que el coste aparece cuando se lea."
+    },
+    "live": {
+      "languages": "Paso {current} de {total}: idiomas",
+      "mode": "Paso {current} de {total}: configuración de la IA",
+      "source": "Paso {current} de {total}: primera fuente",
+      "testing": "Configurando la IA. Cada parte se comprueba en orden.",
+      "setupDone": "La configuración ha terminado. Comprobaciones que requieren atención: {count}.",
+      "setupFailed": "Una parte de la configuración requiere atención."
+    }
+  },
   "import": {
     "unspecifiedLanguage": "No especificado",
     "modes": { "manual": "Contenido manual", "file": "Archivo local" },
@@ -1196,11 +1341,11 @@
     "writerRouteMissing": "Ningún modelo de IA está listo para redactar, así que el procesamiento predeterminado hace las fuentes consultables. Configura un modelo en Ajustes para construir tu segundo cerebro.",
     "presets": {
       "import_only": {
-        "title": "Solo importar",
+        "title": "Solo guardar",
         "description": "Conserva y organiza la fuente sin IA."
       },
       "search_ready": {
-        "title": "Lista para buscar",
+        "title": "Buscable + organizado",
         "description": "Crea segmentos y embeddings para recuperacion."
       },
       "summary": { "title": "Resumen", "description": "Genera un resumen conciso con evidencias." },

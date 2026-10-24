@@ -986,6 +986,151 @@
       "contributor": "Colaborador"
     }
   },
+  "onboarding": {
+    "skip": "Pular a configuração",
+    "skipping": "Pulando…",
+    "checking": "Preparando…",
+    "steps": {
+      "label": "Etapas da configuração",
+      "languages": "Idiomas",
+      "mode": "Configuração da IA",
+      "source": "Primeira fonte"
+    },
+    "back": "Voltar",
+    "continue": "Continuar",
+    "languages": {
+      "title": "Quais idiomas você usa?",
+      "description": "Escolha o idioma da interface e o idioma em que seus tópicos e notas são escritos. Você pode mudar os dois depois, em Configurações.",
+      "interface": "Idioma da interface",
+      "content": "Idioma do conteúdo",
+      "contentHint": "Os nomes e as visões gerais dos tópicos são escritos neste idioma, qualquer que seja o idioma da fonte.",
+      "saving": "Salvando…",
+      "saveFailed": "Não foi possível salvar os idiomas. Tente de novo."
+    },
+    "mode": {
+      "title": "Como a IA deve trabalhar?",
+      "description": "Escolha onde o trabalho acontece. Você pode mudar isso depois, em Configurações.",
+      "card": {
+        "title": "Este computador",
+        "loading": "Lendo este computador…",
+        "error": "Não foi possível ler este computador, então não há recomendação. Você ainda pode escolher uma configuração.",
+        "retry": "Tentar de novo",
+        "summary": "{chip}, {memory} de memória",
+        "summaryNoChip": "{memory} de memória",
+        "translated": "Este aplicativo roda pelo Rosetta. Uma versão nativa é mais rápida.",
+        "recommended": "Recomendado para este computador",
+        "catalogError": "Não foi possível ler a lista de modelos, então os tamanhos de download não aparecem."
+      },
+      "choices": "Escolha uma configuração",
+      "unavailable": "O modo Local exige um Mac com Apple silicon.",
+      "download": "Baixa {size}",
+      "downloadNone": "Nada para baixar",
+      "downloadUnknown": "Tamanho do download desconhecido",
+      "costLocal": "Sem custo: roda neste computador.",
+      "costEstimate": "Cerca de {amount} por mês com chave de API, nada a mais com assinatura do ChatGPT. É uma estimativa.",
+      "costUnknown": "O custo depende do modelo com que você entra.",
+      "privacyLocal": "Nada sai deste computador.",
+      "privacyRemote": "Um modelo na nuvem escreve, então o texto das suas fontes é enviado ao provedor em que você entra.",
+      "writer": {
+        "title": "Entre no modelo de escrita",
+        "description": "Um modelo na nuvem escreve resumos, notas e nomes de tópicos. Nada é baixado nem enviado até você entrar.",
+        "method": "Como você entra?",
+        "codex": "Assinatura do ChatGPT",
+        "key": "Chave de API",
+        "signIn": "Entrar com o ChatGPT",
+        "signingIn": "Aguardando a autenticação no navegador…",
+        "signedIn": "Autenticado",
+        "codexHint": "Isso abre o navegador. A autenticação fica neste computador.",
+        "noModels": "Nenhum modelo foi listado. Digite o nome do modelo.",
+        "keyHint": "A chave fica guardada no armazenamento seguro deste computador."
+      },
+      "start": "Configurar",
+      "needsWriter": "Entre no modelo de escrita para continuar."
+    },
+    "setup": {
+      "title": "Configurando",
+      "description": "Cada parte é configurada e verificada em sequência. Os downloads continuam em segundo plano se você sair.",
+      "steps": {
+        "writer": "Modelo de escrita",
+        "models": "Modelos neste computador",
+        "preset": "Aplicando a configuração",
+        "tests": "Verificando cada parte"
+      },
+      "state": {
+        "pending": "Aguardando",
+        "running": "Em andamento",
+        "done": "Concluído",
+        "failed": "Precisa de atenção",
+        "skipped": "Não necessário"
+      },
+      "models": {
+        "title": "Modelos",
+        "embedder": "Modelo de busca",
+        "ranker": "Ranqueador de relações",
+        "writer": "Modelo de escrita neste computador",
+        "waiting": "Aguardando para começar",
+        "downloading": "Baixando",
+        "verifying": "Verificando",
+        "ready": "Pronto",
+        "failed": "Não foi possível instalar",
+        "progress": "{done} de {total}",
+        "eta": "faltam {minutes} min"
+      },
+      "rankerWaiting": "As relações esperam o ranqueador. A busca e a leitura já funcionam.",
+      "rankerFailed": "Não foi possível instalar o ranqueador, então as relações esperam por ele. Você pode tentar de novo em Modelos, nas Configurações.",
+      "tests": {
+        "title": "Verificações",
+        "waiting": "Aguardando",
+        "running": "Verificando",
+        "passed": "Funciona",
+        "failed": "Falhou",
+        "none": "Não usado",
+        "duration": "{ms} ms"
+      },
+      "failed": {
+        "writerNotReady": "Entre primeiro no modelo de escrita.",
+        "writer": "Não foi possível salvar o modelo de escrita.",
+        "models": "Não foi possível instalar um modelo.",
+        "preset": "Não foi possível aplicar a configuração.",
+        "tests": "Não foi possível executar as verificações."
+      },
+      "blocked": {
+        "modelMissing": "{model} não está instalado.",
+        "noWriter": "A configuração precisa de um modelo de escrita, e nenhum está conectado.",
+        "localUnavailable": "O modo Local exige um Mac com Apple silicon."
+      },
+      "summaryOk": "Tudo funciona.",
+      "summaryProblems": "{count} verificações precisam de atenção. Você pode corrigi-las depois, em Configurações.",
+      "retry": "Tentar de novo",
+      "continueAnyway": "Continuar sem isso"
+    },
+    "source": {
+      "title": "Adicione sua primeira fonte",
+      "description": "Adicione um arquivo, cole um texto ou um link. O Memora Eterna lê a fonte, organiza em tópicos e começa a conectar ideias."
+    },
+    "estimate": {
+      "title": "Custo estimado",
+      "loading": "Estimando o custo…",
+      "error": "Não foi possível estimar o custo.",
+      "retry": "Tentar de novo",
+      "subscription": "Sem medição: esta importação usa sua assinatura do ChatGPT, não dinheiro.",
+      "local": "Roda neste computador. Sem custo.",
+      "none": "Nenhum modelo de escrita está pronto, então esta importação só torna a fonte pesquisável. Nada é gasto.",
+      "noWriting": "Este plano não usa um modelo de escrita. Nada é gasto.",
+      "perToken": "Cerca de {amount} para esta importação.",
+      "perTokenAtLeast": "Pelo menos {amount} para esta importação. O arquivo é maior que a parte lida até agora.",
+      "priceEstimated": "O preço deste modelo é uma estimativa.",
+      "unknownSize": "O tamanho da fonte ainda não é conhecido, então o custo aparece depois que ela for lida."
+    },
+    "live": {
+      "languages": "Etapa {current} de {total}: idiomas",
+      "mode": "Etapa {current} de {total}: configuração da IA",
+      "source": "Etapa {current} de {total}: primeira fonte",
+      "testing": "Configurando a IA. Cada parte é verificada em sequência.",
+      "setupDone": "A configuração terminou. Verificações que precisam de atenção: {count}.",
+      "setupFailed": "Uma parte da configuração precisa de atenção."
+    }
+  },
   "import": {
     "unspecifiedLanguage": "Não especificado",
     "modes": { "manual": "Conteudo manual", "file": "Arquivo local" },
@@ -1192,11 +1337,11 @@
     "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Configurações para construir seu segundo cérebro.",
     "presets": {
       "import_only": {
-        "title": "Somente importar",
+        "title": "Só guardar",
         "description": "Preserva e organiza a fonte sem IA."
       },
       "search_ready": {
-        "title": "Pronto para busca",
+        "title": "Pesquisável + organizado",
         "description": "Cria segmentos e embeddings para recuperacao."
       },
       "summary": { "title": "Resumo", "description": "Gera um resumo conciso com evidencias." },

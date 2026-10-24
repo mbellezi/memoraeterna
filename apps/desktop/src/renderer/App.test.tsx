@@ -25,9 +25,35 @@ describe("App", () => {
     expect(html).toContain("Starting the local database");
   });
 
+  it("stands the first-run view in for the shell while the first run is checked", () => {
+    const html = renderToString(
+      <App
+        initialDatabaseStatus={{
+          state: "ready",
+          messageKey: "database.status.ready",
+          updatedAt: new Date(0).toISOString()
+        }}
+        initialSettings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        initialAppSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+      />
+    );
+
+    expect(html).toContain("Getting ready");
+    expect(html).toContain('aria-label="Setup steps"');
+    expect(html).not.toContain('id="app-navigation"');
+  });
+
   it("renders the desktop shell after the database is ready without touching Node APIs", () => {
     const html = renderToString(
       <App
+        firstRun={false}
         initialDatabaseStatus={{
           state: "ready",
           messageKey: "database.status.ready",
@@ -130,6 +156,7 @@ describe("interface language", () => {
     const shell = (language: "en" | "pt-BR" | "it" | "fr" | "es") =>
       renderToString(
         <App
+          firstRun={false}
           initialDatabaseStatus={{
             state: "ready",
             messageKey: "database.status.ready",
@@ -158,6 +185,7 @@ describe("compact main navigation", () => {
   it("renders all destinations as named icons with tooltips and retains the active destination", () => {
     const html = renderToString(
       <App
+        firstRun={false}
         initialDatabaseStatus={{
           state: "ready",
           messageKey: "database.status.ready",
@@ -200,6 +228,7 @@ describe("entry points of the removed wiki", () => {
   const shell = (language: (typeof supportedLanguageCodes)[number]) =>
     renderToString(
       <App
+        firstRun={false}
         initialDatabaseStatus={{
           state: "ready",
           messageKey: "database.status.ready",

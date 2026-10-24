@@ -66,6 +66,8 @@ import { Label } from "./ui/label";
 import { CoverImage } from "./ui/cover-image";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 import { useWriterRouteReady } from "../lib/writer-route";
+import { ImportEstimateChip } from "./onboarding/ImportEstimateChip";
+import { importChunkBasis, type ChunkBasis } from "./onboarding/import-estimate";
 
 type ImportOrigin = "manual" | "file";
 type FormValues = Record<string, string>;
@@ -265,6 +267,11 @@ export function ImportView({
         ? compileManualSubitems(manualSubitems)
         : content,
     [content, contentMode, manualSubitems, sourceType]
+  );
+  // What the plan chip prices: the size of the text, or of the file as far as its preview shows it.
+  const chunkBasis = useMemo(
+    () => importChunkBasis({ origin, content: effectiveContent, file }),
+    [origin, effectiveContent, file]
   );
   const requiresParent = ["BookChapter", "DocumentSection"].includes(sourceType);
   const parentReady = !requiresParent || Boolean(values.parentSourceItemId);
@@ -852,6 +859,7 @@ export function ImportView({
             plan={processingPlan}
             setPlan={setProcessingPlan}
             writerRouteReady={writerRouteReady}
+            chunkBasis={chunkBasis}
             t={t}
           />
         </details>
@@ -1139,6 +1147,7 @@ export function ImportView({
             plan={processingPlan}
             onPlan={setProcessingPlan}
             writerRouteReady={writerRouteReady}
+            chunkBasis={chunkBasis}
           />
         ) : null}
       </fieldset>
@@ -1960,7 +1969,8 @@ function ConfirmationStep({
   onPolicy,
   plan,
   onPlan,
-  writerRouteReady
+  writerRouteReady,
+  chunkBasis
 }: {
   t: Translator;
   descriptor: SourceDescriptor;
@@ -1972,6 +1982,7 @@ function ConfirmationStep({
   plan: ProcessingPlanRequest;
   onPlan: (value: ProcessingPlanRequest) => void;
   writerRouteReady: boolean | null;
+  chunkBasis: ChunkBasis;
 }) {
   return (
     <div className="grid gap-5">
@@ -2031,7 +2042,13 @@ function ConfirmationStep({
           {t("import.duplicate.none")}
         </p>
       )}
-      <PlanCard plan={plan} setPlan={onPlan} writerRouteReady={writerRouteReady} t={t} />
+      <PlanCard
+        plan={plan}
+        setPlan={onPlan}
+        writerRouteReady={writerRouteReady}
+        chunkBasis={chunkBasis}
+        t={t}
+      />
     </div>
   );
 }
@@ -2049,21 +2066,24 @@ function PlanCard({
   plan,
   setPlan,
   writerRouteReady,
+  chunkBasis,
   t
 }: {
   plan: ProcessingPlanRequest;
   setPlan: (plan: ProcessingPlanRequest) => void;
   writerRouteReady: boolean | null;
+  chunkBasis: ChunkBasis;
   t: Translator;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
+    <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
       <ProcessingPlanPicker
         value={plan}
         onChange={setPlan}
         writerRouteReady={writerRouteReady}
         t={t}
       />
+      <ImportEstimateChip t={t} plan={plan} basis={chunkBasis} />
     </div>
   );
 }

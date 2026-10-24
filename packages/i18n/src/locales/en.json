@@ -982,6 +982,151 @@
       "contributor": "Contributor"
     }
   },
+  "onboarding": {
+    "skip": "Skip setup",
+    "skipping": "Skipping…",
+    "checking": "Getting ready…",
+    "steps": {
+      "label": "Setup steps",
+      "languages": "Languages",
+      "mode": "AI setup",
+      "source": "First source"
+    },
+    "back": "Back",
+    "continue": "Continue",
+    "languages": {
+      "title": "Which languages do you use?",
+      "description": "Choose the language of the interface and the language your topics and notes are written in. You can change both later in Settings.",
+      "interface": "Interface language",
+      "content": "Content language",
+      "contentHint": "Topic names and overviews are written in this language, whatever language a source is in.",
+      "saving": "Saving…",
+      "saveFailed": "The languages could not be saved. Try again."
+    },
+    "mode": {
+      "title": "How should the AI work?",
+      "description": "Choose where the work happens. You can change this later in Settings.",
+      "card": {
+        "title": "This computer",
+        "loading": "Reading this computer…",
+        "error": "This computer could not be read, so there is no recommendation. You can still choose a setup.",
+        "retry": "Try again",
+        "summary": "{chip}, {memory} of memory",
+        "summaryNoChip": "{memory} of memory",
+        "translated": "This app runs through Rosetta. A native build is faster.",
+        "recommended": "Recommended for this computer",
+        "catalogError": "The model list could not be read, so download sizes are not shown."
+      },
+      "choices": "Choose a setup",
+      "unavailable": "Local needs a Mac with Apple silicon.",
+      "download": "Downloads {size}",
+      "downloadNone": "Nothing to download",
+      "downloadUnknown": "Download size not known",
+      "costLocal": "No cost: it runs on this computer.",
+      "costEstimate": "About {amount} a month with an API key, nothing extra with a ChatGPT subscription. An estimate.",
+      "costUnknown": "The cost depends on the model you sign in with.",
+      "privacyLocal": "Nothing leaves this computer.",
+      "privacyRemote": "A cloud model writes, so the text of your sources is sent to the provider you sign in with.",
+      "writer": {
+        "title": "Sign in to the writing model",
+        "description": "A cloud model writes summaries, notes and topic names. Nothing is downloaded or sent until you sign in.",
+        "method": "How do you sign in?",
+        "codex": "ChatGPT subscription",
+        "key": "API key",
+        "signIn": "Sign in with ChatGPT",
+        "signingIn": "Waiting for the sign-in in your browser…",
+        "signedIn": "Signed in",
+        "codexHint": "This opens your browser. The sign-in stays on this computer.",
+        "noModels": "No models were listed. Type the model name.",
+        "keyHint": "The key is kept in this computer's secure storage."
+      },
+      "start": "Set up",
+      "needsWriter": "Sign in to the writing model to continue."
+    },
+    "setup": {
+      "title": "Setting things up",
+      "description": "Each part is set up and checked in turn. Downloads go on in the background if you leave.",
+      "steps": {
+        "writer": "Writing model",
+        "models": "Models on this computer",
+        "preset": "Applying the setup",
+        "tests": "Checking each part"
+      },
+      "state": {
+        "pending": "Waiting",
+        "running": "In progress",
+        "done": "Done",
+        "failed": "Needs attention",
+        "skipped": "Not needed"
+      },
+      "models": {
+        "title": "Models",
+        "embedder": "Search model",
+        "ranker": "Relations ranker",
+        "writer": "Writing model on this computer",
+        "waiting": "Waiting to start",
+        "downloading": "Downloading",
+        "verifying": "Verifying",
+        "ready": "Ready",
+        "failed": "Could not be installed",
+        "progress": "{done} of {total}",
+        "eta": "{minutes} min left"
+      },
+      "rankerWaiting": "Relations wait for the ranker. Search and reading already work.",
+      "rankerFailed": "The ranker could not be installed, so relations wait for it. You can try again under Models in Settings.",
+      "tests": {
+        "title": "Checks",
+        "waiting": "Waiting",
+        "running": "Checking",
+        "passed": "Works",
+        "failed": "Failed",
+        "none": "Not used",
+        "duration": "{ms} ms"
+      },
+      "failed": {
+        "writerNotReady": "Sign in to the writing model first.",
+        "writer": "The writing model could not be saved.",
+        "models": "A model could not be installed.",
+        "preset": "The setup could not be applied.",
+        "tests": "The checks could not run."
+      },
+      "blocked": {
+        "modelMissing": "{model} is not installed.",
+        "noWriter": "The setup needs a writing model, and none is signed in.",
+        "localUnavailable": "Local needs a Mac with Apple silicon."
+      },
+      "summaryOk": "Everything works.",
+      "summaryProblems": "{count} checks need attention. You can fix them later in Settings.",
+      "retry": "Try again",
+      "continueAnyway": "Continue without it"
+    },
+    "source": {
+      "title": "Add your first source",
+      "description": "Add a file, paste text or a link. Memora Eterna reads it, files it into topics and starts connecting ideas."
+    },
+    "estimate": {
+      "title": "Estimated cost",
+      "loading": "Estimating the cost…",
+      "error": "The cost could not be estimated.",
+      "retry": "Try again",
+      "subscription": "Not metered: this import uses your ChatGPT subscription, not money.",
+      "local": "Runs on this computer. No cost.",
+      "none": "No writing model is ready, so this import only makes the source searchable. Nothing is spent.",
+      "noWriting": "This plan does not use a writing model. Nothing is spent.",
+      "perToken": "About {amount} for this import.",
+      "perTokenAtLeast": "At least {amount} for this import. The file is larger than the part read so far.",
+      "priceEstimated": "This model's price is an estimate.",
+      "unknownSize": "The size of the source is not known yet, so the cost shows once it is read."
+    },
+    "live": {
+      "languages": "Step {current} of {total}: languages",
+      "mode": "Step {current} of {total}: AI setup",
+      "source": "Step {current} of {total}: first source",
+      "testing": "Setting up the AI. Each part is checked in turn.",
+      "setupDone": "The setup is finished. Checks that need attention: {count}.",
+      "setupFailed": "A part of the setup needs attention."
+    }
+  },
   "import": {
     "unspecifiedLanguage": "Unspecified",
     "modes": { "manual": "Manual content", "file": "Local file" },
@@ -1192,11 +1337,11 @@
     "writerRouteMissing": "No AI model is ready for writing, so processing defaults to searchable. Set up a model in Settings to build your second brain.",
     "presets": {
       "import_only": {
-        "title": "Import only",
+        "title": "Just store",
         "description": "Preserve and organize the source without AI."
       },
       "search_ready": {
-        "title": "Search ready",
+        "title": "Searchable + organized",
         "description": "Create chunks and embeddings for retrieval."
       },
       "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },

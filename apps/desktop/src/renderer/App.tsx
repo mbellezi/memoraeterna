@@ -74,6 +74,7 @@ import { ActivityHost } from "./components/activity/ActivityHost";
 import type { ActivityNavigation } from "./components/activity/activity-model";
 import { InboxScreen } from "./components/inbox/InboxScreen";
 import { useInboxTotal } from "./components/inbox/use-inbox-total";
+import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
@@ -151,13 +152,16 @@ interface AppProps {
   initialAppSettings?: AppSettings;
   initialSettings?: StorageSettings;
   initialSystemInfo?: SystemInfo | null;
+  /** False in a render of the shell alone: the first-run view is not asked for. */
+  firstRun?: boolean;
 }
 
 export function App({
   initialDatabaseStatus,
   initialAppSettings,
   initialSettings,
-  initialSystemInfo = null
+  initialSystemInfo = null,
+  firstRun = true
 }: AppProps) {
   // Changes each time a link asks for a page of the removed wiki or for a topic that is gone.
   const [wikiNotice, setWikiNotice] = useState<{ token: number; kind: WikiNoticeKind } | null>(
@@ -629,6 +633,20 @@ export function App({
             ? "inbox.title"
             : emptyViews[activeView].title;
 
+  // F4 D31: the first-run view stands in for the shell while the library is empty and unrecorded.
+  const firstRunScreen = useFirstRun({
+    enabled: firstRun && databaseStatus.state === "ready" && hasLoadedAppData,
+    language: appSettings.language,
+    contentLanguage: appSettings.contentLanguage,
+    dark: isDarkMode,
+    metadataEnrichmentEnabled: appSettings.metadataEnrichmentEnabled,
+    onSettings: (saved) => {
+      lastPersistedAppSettings.current = saved;
+      setAppSettings(saved);
+    },
+    onOpenSource: openImportedSource
+  });
+
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
     const isFailed = databaseStatus.state === "failed";
     const bootMessageKey =
@@ -686,6 +704,8 @@ export function App({
       </main>
     );
   }
+
+  if (firstRunScreen) return firstRunScreen;
 
   return (
     <div

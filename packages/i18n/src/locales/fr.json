@@ -984,6 +984,151 @@
       "contributor": "Contributeur"
     }
   },
+  "onboarding": {
+    "skip": "Passer la configuration",
+    "skipping": "Passage en cours…",
+    "checking": "Préparation…",
+    "steps": {
+      "label": "Étapes de la configuration",
+      "languages": "Langues",
+      "mode": "Configuration de l'IA",
+      "source": "Première source"
+    },
+    "back": "Retour",
+    "continue": "Continuer",
+    "languages": {
+      "title": "Quelles langues utilisez-vous ?",
+      "description": "Choisissez la langue de l'interface et celle dans laquelle vos sujets et vos notes sont écrits. Vous pourrez changer les deux plus tard dans les Réglages.",
+      "interface": "Langue de l'interface",
+      "content": "Langue du contenu",
+      "contentHint": "Les noms et les aperçus des sujets sont écrits dans cette langue, quelle que soit la langue de la source.",
+      "saving": "Enregistrement…",
+      "saveFailed": "Les langues n'ont pas pu être enregistrées. Réessayez."
+    },
+    "mode": {
+      "title": "Comment l'IA doit-elle travailler ?",
+      "description": "Choisissez où le travail se fait. Vous pourrez le changer plus tard dans les Réglages.",
+      "card": {
+        "title": "Cet ordinateur",
+        "loading": "Lecture de cet ordinateur…",
+        "error": "Cet ordinateur n'a pas pu être lu, il n'y a donc pas de recommandation. Vous pouvez quand même choisir une configuration.",
+        "retry": "Réessayer",
+        "summary": "{chip}, {memory} de mémoire",
+        "summaryNoChip": "{memory} de mémoire",
+        "translated": "Cette application s'exécute via Rosetta. Une version native est plus rapide.",
+        "recommended": "Recommandé pour cet ordinateur",
+        "catalogError": "La liste des modèles n'a pas pu être lue, les tailles de téléchargement ne sont donc pas affichées."
+      },
+      "choices": "Choisissez une configuration",
+      "unavailable": "Le mode Local nécessite un Mac avec Apple silicon.",
+      "download": "Télécharge {size}",
+      "downloadNone": "Rien à télécharger",
+      "downloadUnknown": "Taille du téléchargement inconnue",
+      "costLocal": "Aucun coût : tout s'exécute sur cet ordinateur.",
+      "costEstimate": "Environ {amount} par mois avec une clé d'API, rien de plus avec un abonnement ChatGPT. C'est une estimation.",
+      "costUnknown": "Le coût dépend du modèle avec lequel vous vous connectez.",
+      "privacyLocal": "Rien ne quitte cet ordinateur.",
+      "privacyRemote": "Un modèle dans le cloud rédige, le texte de vos sources est donc envoyé au fournisseur avec lequel vous vous connectez.",
+      "writer": {
+        "title": "Connectez-vous au modèle de rédaction",
+        "description": "Un modèle dans le cloud rédige les résumés, les notes et les noms de sujets. Rien n'est téléchargé ni envoyé avant votre connexion.",
+        "method": "Comment vous connectez-vous ?",
+        "codex": "Abonnement ChatGPT",
+        "key": "Clé d'API",
+        "signIn": "Se connecter avec ChatGPT",
+        "signingIn": "En attente de la connexion dans votre navigateur…",
+        "signedIn": "Connecté",
+        "codexHint": "Cela ouvre votre navigateur. La connexion reste sur cet ordinateur.",
+        "noModels": "Aucun modèle n'a été listé. Saisissez le nom du modèle.",
+        "keyHint": "La clé est conservée dans le stockage sécurisé de cet ordinateur."
+      },
+      "start": "Configurer",
+      "needsWriter": "Connectez-vous au modèle de rédaction pour continuer."
+    },
+    "setup": {
+      "title": "Configuration en cours",
+      "description": "Chaque partie est configurée puis vérifiée à son tour. Les téléchargements continuent en arrière-plan si vous quittez.",
+      "steps": {
+        "writer": "Modèle de rédaction",
+        "models": "Modèles sur cet ordinateur",
+        "preset": "Application de la configuration",
+        "tests": "Vérification de chaque partie"
+      },
+      "state": {
+        "pending": "En attente",
+        "running": "En cours",
+        "done": "Terminé",
+        "failed": "À vérifier",
+        "skipped": "Non nécessaire"
+      },
+      "models": {
+        "title": "Modèles",
+        "embedder": "Modèle de recherche",
+        "ranker": "Classeur des relations",
+        "writer": "Modèle de rédaction sur cet ordinateur",
+        "waiting": "En attente de démarrage",
+        "downloading": "Téléchargement",
+        "verifying": "Vérification",
+        "ready": "Prêt",
+        "failed": "Installation impossible",
+        "progress": "{done} sur {total}",
+        "eta": "encore {minutes} min"
+      },
+      "rankerWaiting": "Les relations attendent le classeur. La recherche et la lecture fonctionnent déjà.",
+      "rankerFailed": "Le classeur n'a pas pu être installé, les relations l'attendent donc. Vous pouvez réessayer dans Modèles, dans les Réglages.",
+      "tests": {
+        "title": "Vérifications",
+        "waiting": "En attente",
+        "running": "Vérification",
+        "passed": "Fonctionne",
+        "failed": "Échec",
+        "none": "Non utilisé",
+        "duration": "{ms} ms"
+      },
+      "failed": {
+        "writerNotReady": "Connectez-vous d'abord au modèle de rédaction.",
+        "writer": "Le modèle de rédaction n'a pas pu être enregistré.",
+        "models": "Un modèle n'a pas pu être installé.",
+        "preset": "La configuration n'a pas pu être appliquée.",
+        "tests": "Les vérifications n'ont pas pu s'exécuter."
+      },
+      "blocked": {
+        "modelMissing": "{model} n'est pas installé.",
+        "noWriter": "La configuration a besoin d'un modèle de rédaction, et aucun n'est connecté.",
+        "localUnavailable": "Le mode Local nécessite un Mac avec Apple silicon."
+      },
+      "summaryOk": "Tout fonctionne.",
+      "summaryProblems": "{count} vérifications demandent votre attention. Vous pourrez les corriger plus tard dans les Réglages.",
+      "retry": "Réessayer",
+      "continueAnyway": "Continuer sans"
+    },
+    "source": {
+      "title": "Ajoutez votre première source",
+      "description": "Ajoutez un fichier, collez un texte ou un lien. Memora Eterna le lit, le range dans des sujets et commence à relier les idées."
+    },
+    "estimate": {
+      "title": "Coût estimé",
+      "loading": "Estimation du coût…",
+      "error": "Le coût n'a pas pu être estimé.",
+      "retry": "Réessayer",
+      "subscription": "Non mesuré : cet import utilise votre abonnement ChatGPT, pas d'argent.",
+      "local": "S'exécute sur cet ordinateur. Aucun coût.",
+      "none": "Aucun modèle de rédaction n'est prêt, cet import rend donc la source seulement consultable. Rien n'est dépensé.",
+      "noWriting": "Ce plan n'utilise pas de modèle de rédaction. Rien n'est dépensé.",
+      "perToken": "Environ {amount} pour cet import.",
+      "perTokenAtLeast": "Au moins {amount} pour cet import. Le fichier est plus grand que la partie lue jusqu'ici.",
+      "priceEstimated": "Le prix de ce modèle est une estimation.",
+      "unknownSize": "La taille de la source n'est pas encore connue, le coût s'affichera donc après sa lecture."
+    },
+    "live": {
+      "languages": "Étape {current} sur {total} : langues",
+      "mode": "Étape {current} sur {total} : configuration de l'IA",
+      "source": "Étape {current} sur {total} : première source",
+      "testing": "Configuration de l'IA. Chaque partie est vérifiée à son tour.",
+      "setupDone": "La configuration est terminée. Vérifications à examiner : {count}.",
+      "setupFailed": "Une partie de la configuration demande votre attention."
+    }
+  },
   "import": {
     "unspecifiedLanguage": "Non spécifiée",
     "modes": { "manual": "Contenu manuel", "file": "Fichier local" },
@@ -1194,11 +1339,11 @@
     "writerRouteMissing": "Aucun modèle IA n'est prêt pour la rédaction : le traitement par défaut rend donc les sources consultables. Configurez un modèle dans Paramètres pour construire votre second cerveau.",
     "presets": {
       "import_only": {
-        "title": "Importer seulement",
+        "title": "Simplement conserver",
         "description": "Conserve et organise la source sans IA."
       },
       "search_ready": {
-        "title": "Pret pour la recherche",
+        "title": "Consultable + organisé",
         "description": "Cree des segments et embeddings pour la recherche."
       },
       "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." },

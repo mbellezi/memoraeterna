@@ -130,6 +130,48 @@ describe("@app/i18n", () => {
     expect(messages.en.settings.matching.advanced.maxRerankOutputTokens).toBeTruthy();
   });
 
+  it("keeps the onboarding copy complete in every locale with the same placeholders", () => {
+    const placeholders = (text: string) =>
+      [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
+    const flat = (value: object, prefix = ""): Array<[string, string]> =>
+      Object.entries(value).flatMap(([key, child]) =>
+        typeof child === "string"
+          ? [[`${prefix}${key}`, child] as [string, string]]
+          : flat(child as object, `${prefix}${key}.`)
+      );
+    const expected = flat(messages.en.onboarding);
+    expect(expected.length).toBeGreaterThan(100);
+    for (const locale of supportedLanguageCodes) {
+      const actual = new Map(flat(messages[locale].onboarding));
+      expect([...actual.keys()].sort(), locale).toEqual(expected.map(([key]) => key).sort());
+      for (const [key, text] of expected) {
+        expect(actual.get(key), `${locale} onboarding.${key}`).toBeTruthy();
+        expect(placeholders(actual.get(key)!), `${locale} onboarding.${key}`).toEqual(
+          placeholders(text)
+        );
+      }
+    }
+  });
+
+  it("names the import presets as the plan's first run does, in every locale", () => {
+    expect(messages.en.processing.presets).toMatchObject({
+      import_only: { title: "Just store" },
+      search_ready: { title: "Searchable + organized" },
+      full_knowledge: { title: "Second brain" }
+    });
+    for (const locale of supportedLanguageCodes) {
+      const presets = messages[locale].processing.presets;
+      const titles = [
+        presets.import_only.title,
+        presets.search_ready.title,
+        presets.summary.title,
+        presets.full_knowledge.title
+      ];
+      expect(new Set(titles).size, locale).toBe(4);
+      for (const title of titles) expect(title, locale).toBeTruthy();
+    }
+  });
+
   it("exports type-safe message keys and supported locales", () => {
     const key = "settings.storage.obsidianVaultPath" satisfies MessageKey;
 
