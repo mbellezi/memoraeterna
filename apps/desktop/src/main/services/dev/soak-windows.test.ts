@@ -27,6 +27,8 @@ function spec(overrides: Record<string, unknown>): SoakWindowSpec {
 function harness(money: Partial<MoneyPort> | null = null) {
   const calls: string[] = [];
   let now = t0;
+  /** When a request first met each provider-wait window (the fetch layer's own record). */
+  const met = new Map<string, number>();
   let autonomy: "off" | "suggest" | "auto" = "auto";
   let budgetState: "open" | "paused" | "exhausted" = "open";
   let day = "2026-10-29";
@@ -56,7 +58,8 @@ function harness(money: Partial<MoneyPort> | null = null) {
   const ports: WindowPorts = {
     lane: {
       start: (id, kind, durationMs) => void calls.push(`lane:start ${id} ${kind} ${durationMs}`),
-      end: (id) => void calls.push(`lane:end ${id}`)
+      end: (id) => void calls.push(`lane:end ${id}`),
+      metAt: (id) => met.get(id) ?? null
     },
     controls: {
       update: async (change) => {
@@ -99,7 +102,9 @@ function harness(money: Partial<MoneyPort> | null = null) {
       day = next;
       usedCalls = used;
     },
-    setCalls: (used: number) => void (usedCalls = used)
+    setCalls: (used: number) => void (usedCalls = used),
+    /** A request of the lane meets window `id` now. */
+    meet: (id: string) => void met.set(id, now)
   };
 }
 
@@ -124,10 +129,6 @@ describe("the transitions of the windows", () => {
 
 describe("a window's effect and its ground truth", () => {
   it.each([
-    ["usage_limit", "lane:start w1 usage_limit 1800000", "lane:end w1"],
-    ["refused", "lane:start w1 refused 1800000", "lane:end w1"],
-    ["enotfound", "lane:start w1 enotfound 1800000", "lane:end w1"],
-    ["unauthorized", "lane:start w1 unauthorized 1800000", "lane:end w1"],
     ["autonomy_off", 'controls:{"autonomy":"off"}', 'controls:{"autonomy":"auto"}'],
     ["autonomy_suggest", 'controls:{"autonomy":"suggest"}', 'controls:{"autonomy":"auto"}'],
     ["pause", 'controls:{"paused":true}', 'controls:{"paused":false}'],
@@ -160,6 +161,59 @@ describe("a window's effect and its ground truth", () => {
     expect(end).toMatchObject({ id: "w1", phase: "end" });
     expect(end!.expect).toBeUndefined();
     expect(Date.parse(end!.settleUntil) - Date.parse(end!.at)).toBe(defaultSettleMs);
+  });
+
+  it.each(["usage_limit", "refused", "enotfound", "unauthorized"] as const)(
+    "%s expects its class only once a request met the fault, and closes that at the end",
+    async (kind) => {
+      const { runner, calls, records, advance, meet } = harness();
+      const window = spec({ kind, expect: { class: "waiting", reason: "provider_rate_limit" } });
+      await runner.start(window);
+      expect(calls).toEqual([`lane:start w1 ${kind} 1800000`]);
+      // No call met the fault yet: the status cannot name it, so nothing is expected.
+      advance(5 * minute);
+      await runner.tick();
+      expect(records()).toHaveLength(1);
+      expect(records()[0]).toMatchObject({ id: "w1", phase: "start" });
+      expect(records()[0]!.expect).toBeUndefined();
+      meet("w1");
+      advance(minute);
+      await runner.tick();
+      await runner.tick();
+      const opened = records()[1]!;
+      expect(opened).toMatchObject({
+        id: "w1#met",
+        phase: "start",
+        expect: { class: "waiting", reason: "provider_rate_limit" }
+      });
+      // The settle runs from the moment the harness saw the fault met.
+      expect(Date.parse(opened.settleUntil) - Date.parse(opened.at)).toBe(defaultSettleMs);
+      expect(records()).toHaveLength(2);
+      advance(24 * minute);
+      await runner.end(window);
+      expect(calls.at(-1)).toBe("lane:end w1");
+      expect(records().slice(2)).toMatchObject([
+        { id: "w1#met", phase: "end" },
+        { id: "w1", phase: "end", detail: { met: true } }
+      ]);
+    }
+  );
+
+  it("says so when no request met a provider-wait window: it expected nothing", async () => {
+    const { runner, records, advance } = harness();
+    const window = spec({
+      kind: "refused",
+      expect: { class: "waiting", reason: "provider_unavailable" }
+    });
+    await runner.start(window);
+    advance(15 * minute);
+    await runner.tick();
+    await runner.end(window);
+    expect(records().map((record) => [record.id, record.phase, record.expect])).toEqual([
+      ["w1", "start", undefined],
+      ["w1", "end", undefined]
+    ]);
+    expect(records()[1]).toMatchObject({ detail: { met: false } });
   });
 
   it("restores the autonomy the window found, not a fixed one", async () => {
@@ -201,13 +255,15 @@ describe("a window's effect and its ground truth", () => {
   });
 
   it("lets the sign-in window's end settle for six minutes", async () => {
-    const { runner, records, advance } = harness();
+    const { runner, records, advance, meet } = harness();
     const window = spec({ kind: "unauthorized", settleEndMinutes: 6 });
     await runner.start(window);
+    meet("w1");
+    await runner.tick();
     advance(10 * minute);
     await runner.end(window);
-    const end = records()[1]!;
-    expect(Date.parse(end.settleUntil) - Date.parse(end.at)).toBe(6 * minute);
+    for (const end of records().filter((record) => record.phase === "end"))
+      expect(Date.parse(end.settleUntil) - Date.parse(end.at)).toBe(6 * minute);
   });
 });
 

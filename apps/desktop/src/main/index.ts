@@ -1120,7 +1120,8 @@ void app.whenReady().then(() => {
                       power: backgroundPolicy.power,
                       budget: remoteBudget,
                       budgetChanged: () => budgetRelay.changed(),
-                      status: null,
+                      // The sentence E5 samples every minute (F4 D27): the app's own service.
+                      status: gardenerStatus,
                       publishModelDownload: (event) => appEvents?.publish(event),
                       credentials: new CredentialService(app.getPath("userData"))
                     }

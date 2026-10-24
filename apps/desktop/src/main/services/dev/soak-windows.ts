@@ -31,7 +31,11 @@ export interface ControlsChange {
 export type PowerBlockWord = "active" | "idle" | "battery";
 
 export interface WindowPorts {
-  /** The fetch layer of the real Codex lane: a window answers every request it sees. */
+  /**
+   * The fetch layer of the real Codex lane: a window answers every request it sees. The status can
+   * name the provider's fault only once a call met it (the lane remembers how its provider failed),
+   * so the window's expectation starts at the first request it answered (`metAt`), seen at a tick.
+   */
   lane: {
     start(
       id: string,
@@ -39,6 +43,8 @@ export interface WindowPorts {
       durationMs: number
     ): void;
     end(id: string): void;
+    /** When a request first met the window (ms), or null while none has. */
+    metAt(id: string): number | null;
   };
   controls: {
     update(change: ControlsChange): Promise<unknown>;
@@ -126,6 +132,8 @@ interface Running {
   previousAutonomy?: "off" | "suggest" | "auto";
   /** only_idle / only_ac: the active block the last tick saw, as an index, or null. */
   activeBlock?: number | null;
+  /** A provider-wait window: whether a request met it (its expectation is open from then). */
+  met?: boolean;
   /** codex_daily_cap: the day the cap was set for, the cap in calls, and whether the count reached it. */
   capDay?: string;
   capCalls?: number;
@@ -205,6 +213,10 @@ export class WindowRunner {
         case "enotfound":
         case "unauthorized":
           ports.lane.start(window.id, window.kind, durationMs);
+          // The status names the fault once a call met it: tick() records that moment with the
+          // window's expectation (`<id>#met`).
+          state.met = false;
+          expectNow = null;
           break;
         case "autonomy_off":
         case "autonomy_suggest":
@@ -275,7 +287,10 @@ export class WindowRunner {
         case "refused":
         case "enotfound":
         case "unauthorized":
+          this.closeMet(state);
           ports.lane.end(window.id);
+          // A window no call met could not be shown: the report reads it as not exercised.
+          detail = { met: state.met === true };
           break;
         case "autonomy_off":
         case "autonomy_suggest":
@@ -319,20 +334,39 @@ export class WindowRunner {
   }
 
   /**
-   * Called every sample interval: the blocks of the idle window, the day rollover of the daily cap
-   * and the money window's stages.
+   * Called every sample interval: the first request a provider-wait window met, the blocks of the
+   * idle window, the day rollover of the daily cap and the money window's stages.
    */
   public async tick(): Promise<void> {
     for (const state of [...this.running.values()]) {
       const { window } = state;
       try {
-        if (window.kind === "only_idle") this.tickBlocks(state);
+        if (state.met === false) this.tickMet(state);
+        else if (window.kind === "only_idle") this.tickBlocks(state);
         else if (window.kind === "codex_daily_cap") await this.tickDailyCap(state);
         else if (window.kind === "money") await this.tickMoney(state);
       } catch (error) {
         this.options.logger?.error(`SOAK window ${window.id} tick failed: ${failureText(error)}`);
       }
     }
+  }
+
+  /** A provider-wait window opens its expectation once the fetch layer answered a request with it. */
+  private tickMet(state: Running): void {
+    const metAt = this.options.ports.lane.metAt(state.window.id);
+    if (metAt === null) return;
+    state.met = true;
+    this.record(
+      state.window,
+      "start",
+      { metAt: new Date(metAt).toISOString() },
+      { id: `${state.window.id}#met` }
+    );
+  }
+
+  private closeMet(state: Running): void {
+    if (state.met !== true) return;
+    this.record(state.window, "end", {}, { id: `${state.window.id}#met` });
   }
 
   /** The idle window alternates `blockMinutes` of activity and of idleness, active first. */

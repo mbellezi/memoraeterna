@@ -370,7 +370,8 @@ export function prepareSoak(
               if (!injector) throw new Error("This run injects no faults in front of Codex.");
               injector.startWindow(id, kind, durationMs);
             },
-            end: (id) => injector?.endWindow(id)
+            end: (id) => injector?.endWindow(id),
+            metAt: (id) => injector?.windowMetAt(id) ?? null
           },
           controls: {
             update: (change) => f4Deps.controls.update(change),
@@ -489,7 +490,12 @@ export function prepareSoak(
           // The effective relations configuration: the knob that sets the neighbours is refused above.
           relations: {
             discoveryNeighbours: relationsConfig.discovery.neighbours,
-            judgeMode: await storedJudgeMode(deps.pool).catch(() => null)
+            judgeMode: await storedJudgeMode(deps.pool).catch(() => null),
+            // The source judge (F4 D21): typed configuration only, no knob reaches it.
+            sourceJudge: {
+              mode: relationsConfig.sourceJudge.mode,
+              maxPairsPerCall: relationsConfig.sourceJudge.maxPairsPerCall
+            }
           },
           dataRoot: paths.external ? paths.cacheRoot : null,
           ...(provider && realWriter

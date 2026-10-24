@@ -192,7 +192,13 @@ export async function readFinishedJobs(db: Db, sinceMs: number): Promise<JobDone
             scope_key as "scopeKey", subject_key as "subjectKey", attempts,
             created_at as "createdAt", finished_at as "finishedAt",
             quarantined_at as "quarantinedAt", left(result ->> 'status', 60) as "resultStatus",
-            input_fingerprint as "inputFingerprint"
+            input_fingerprint as "inputFingerprint",
+            case when status <> 'canceled' then null
+                 when result ? 'mergedInto' then 'merged'
+                 when payload ? 'sourceItemId' and not exists (
+                   select 1 from source_items s where s.id::text = jobs.payload ->> 'sourceItemId'
+                 ) then 'source_deleted'
+                 else 'requested' end as "cancelCause"
        from jobs
       where status in ('succeeded', 'failed', 'canceled')
         and coalesce(finished_at, updated_at) > $1

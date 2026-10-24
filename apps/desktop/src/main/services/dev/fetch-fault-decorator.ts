@@ -198,6 +198,8 @@ export class FetchFaultInjector {
   private sequence = 0;
   private generations = 0;
   private window: ActiveWindow | null = null;
+  /** When a request first met each window (the status can name the fault only from then). */
+  private readonly windowMet = new Map<string, number>();
   private readonly injected = new Map<string, number>();
   private readonly forwarded = new Map<string, number>();
 
@@ -224,6 +226,11 @@ export class FetchFaultInjector {
     if (this.window?.id === id) this.window = null;
   }
 
+  /** When a request of the lane first met the window, on the injector's clock; null before. */
+  public windowMetAt(id: string): number | null {
+    return this.windowMet.get(id) ?? null;
+  }
+
   /** Exchanges the layer injected, by kind. */
   public injectedCounts(): Record<string, number> {
     return Object.fromEntries(this.injected);
@@ -246,6 +253,7 @@ export class FetchFaultInjector {
     const signal = init?.signal;
     const call = currentSoakCallContext();
     const window = this.window && started < this.window.endsAtMs ? this.window : null;
+    if (window && !this.windowMet.has(window.id)) this.windowMet.set(window.id, started);
     const fault =
       window || !generation
         ? null

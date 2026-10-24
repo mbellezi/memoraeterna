@@ -8,11 +8,12 @@ import {
 import {
   PriceTableSchema,
   relationExplainBackfillJobType,
+  relationExplanationLimits,
   type BudgetSnapshot,
   type PriceTable
 } from "@app/domain";
 
-import { profileGenerationMaxTokens } from "../ai-task-parameters.js";
+import { profileGenerationMaxTokens, relationExplanationOperation } from "../ai-task-parameters.js";
 import { explanationText } from "./fake-codex-provider.js";
 import {
   FakeProviderServer,
@@ -43,21 +44,31 @@ import type { MoneyPort } from "./soak-windows.js";
  * bills each call what the budget reserved for it: the planning estimate counts every input byte as
  * a token (plus 1,024) and the whole output ceiling, about sixty times what a short explanation
  * really costs, so with a real-sized bill ten relations would never reach 80% of eight attempts'
- * estimate. The cap is set from the same estimate ({@link attemptEstimateUsd}): it assumes the
- * backfill runs with the profile's default output ceiling (T84: check it when the backfill merges).
+ * estimate. The cap is set from the same estimate ({@link attemptEstimateUsd}) with the output
+ * ceiling the backfill states ({@link backfillOutputTokens}), which the budget reserves and the
+ * fake bills.
  */
 
 /** Tokens the budget's planning estimate counts beyond the input bytes (`estimateAiPlanningTokens`). */
 const planningOverheadTokens = 1_024;
 
 /**
+ * The output ceiling of one backfill attempt (T84): the explanation states its own limit beneath
+ * the profile's default, and the budget reserves (and the fake bills) the smaller of the two.
+ */
+export const backfillOutputTokens = Math.min(
+  profileGenerationMaxTokens,
+  relationExplanationLimits.maxOutputTokens
+);
+
+/**
  * One attempt's planning estimate in US$ at the fake's price: `inputBytes` of prompt plus the
- * overhead as input tokens, and `outputTokens` (the profile's default ceiling) as output tokens.
+ * overhead as input tokens, and `outputTokens` (the backfill's ceiling) as output tokens.
  */
 export function attemptEstimateUsd(
   money: NonNullable<SoakF4Plan["money"]>,
   inputBytes: number,
-  outputTokens = profileGenerationMaxTokens
+  outputTokens = backfillOutputTokens
 ): number {
   return (
     ((Math.max(0, inputBytes) + planningOverheadTokens) * money.inputUsdPerM +
@@ -68,11 +79,11 @@ export function attemptEstimateUsd(
 
 export const moneyProviderName = "DEV fake priced (soak money window)";
 /**
- * The operations the explanation backfill may call under (user opens use the first). The backfill
- * is T84's: when it merges, check its operation name is in this list. User opens in the window go to
- * the fake too, at zero cost: an interactive call is never counted against the money cap.
+ * The operations the explanation backfill calls under: T84's backfill uses the explanation's own
+ * operation (its audit stage is `relation_explanation_backfill`). User opens in the window go to the
+ * fake too, at zero cost: an interactive call is never counted against the money cap.
  */
-export const moneyWindowOperations = ["relation_explanation", "relation_explanation_backfill"];
+export const moneyWindowOperations: readonly string[] = [relationExplanationOperation];
 
 /** The product's price table plus the fake's model, priced as a paid per-token route. */
 export function soakPriceTable(

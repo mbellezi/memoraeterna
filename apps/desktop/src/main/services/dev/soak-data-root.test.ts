@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -132,13 +140,33 @@ describe("the local-model lock of the data root", () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it("adopts a claim the orchestrator made for this owner, and gives up only what still names it", async () => {
+  it("adopts a claim the orchestrator made for this owner and run, and gives up only what still names it", async () => {
     const dataRoot = folder("soak-data-");
     const path = join(dataRoot, "f2", "LOCAL_MODEL_BUSY");
     mkdirSync(join(dataRoot, "f2"));
-    writeFileSync(path, "soak:soak7 pid 1 run waiting\n");
+    writeFileSync(path, "soak:soak7 run soak7-1\n");
     const release = await acquireSoakLock({ path, owner: "soak:soak7", run: "soak7-1", pid: 9 });
+    expect(readFileSync(path, "utf8")).toBe("soak:soak7 pid 9 run soak7-1\n");
     writeFileSync(path, "T70 pid 3\n");
+    await release();
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("refuses a lock another run of the same profile holds, and never removes it", async () => {
+    const dataRoot = folder("soak-data-");
+    const path = join(dataRoot, "f2", "LOCAL_MODEL_BUSY");
+    mkdirSync(join(dataRoot, "f2"));
+    for (const other of ["soak:soak7 pid 1 run soak7-0", "soak:soak7 pid 1 run soak7-10"]) {
+      writeFileSync(path, `${other}\n`);
+      await expect(
+        acquireSoakLock({ path, owner: "soak:soak7", run: "soak7-1", pid: 9 })
+      ).rejects.toThrow(/held by: soak:soak7 pid 1 run soak7-/u);
+      expect(readFileSync(path, "utf8")).toBe(`${other}\n`);
+    }
+    // A release of this run never removes a lock another run took meanwhile.
+    rmSync(path);
+    const release = await acquireSoakLock({ path, owner: "soak:soak7", run: "soak7-1", pid: 9 });
+    writeFileSync(path, "soak:soak7 pid 2 run soak7-2\n");
     await release();
     expect(existsSync(path)).toBe(true);
   });

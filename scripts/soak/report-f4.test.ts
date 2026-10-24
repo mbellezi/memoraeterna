@@ -52,7 +52,11 @@ function metaOf(hours: number, overrides: Partial<SoakMeta> = {}): SoakMeta {
       { provider: "openai-codex", providerConfigId: writerConfig, baseUrl: "https://chatgpt.com" }
     ],
     plan: {},
-    relations: { discoveryNeighbours: 1, judgeMode: "ranker" },
+    relations: {
+      discoveryNeighbours: 1,
+      judgeMode: "ranker",
+      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+    },
     dataRoot: "/data/.cache",
     realWriter: {
       providerConfigId: writerConfig,
@@ -462,12 +466,19 @@ describe("E3 within 24 h", () => {
     expect(failing.check.status).toBe("fail");
   });
 
-  it("counts done, no change, a pending review and a cancellation as completed; a quarantine and a failure as not", () => {
+  it("counts done, no change, a pending review and a cancel by supersession as completed; a quarantine and a failure as not", () => {
+    const canceled = (id: string, cancelCause: JobDoneRecord["cancelCause"]) =>
+      job24(id, 1, { status: "canceled", outcome: null, resultStatus: null, cancelCause });
     const events = [
       job24("done", 1),
       job24("nochange", 1, { outcome: "no_change" }),
       job24("review", 1, { outcome: "done", resultStatus: "pending_review" }),
-      job24("canceled", 1, { status: "canceled", outcome: null, resultStatus: null }),
+      // Superseded: merged into a queued duplicate (D7) or its source deleted.
+      canceled("merged", "merged"),
+      canceled("deleted", "source_deleted"),
+      // A cancel someone asked for, or one recorded without a cause, completes nothing.
+      canceled("requested", "requested"),
+      canceled("unknown", undefined),
       job24("failed", 1, { status: "failed", outcome: null, resultStatus: null }),
       job24("quarantined", 1, {
         status: "failed",
@@ -475,7 +486,28 @@ describe("E3 within 24 h", () => {
         quarantinedAt: at(created + hour)
       })
     ];
-    expect(e3Check(runOf(72, { events })).check.value).toContain("4 of 6");
+    expect(e3Check(runOf(72, { events })).check.value).toContain("5 of 9");
+  });
+
+  it("sets aside a task an injected fault or the harness cap failed (D3), and reports how many", () => {
+    const failed = (id: string) =>
+      job24(id, 1, { status: "failed", outcome: null, resultStatus: null });
+    const events = [
+      ...Array.from({ length: 19 }, (_, index) => job24(`a${index}`, 3)),
+      failed("by-401"),
+      failed("by-cap"),
+      failed("product")
+    ];
+    const injectedJobs = new Map([
+      ["by-401", "unauthorized"],
+      ["by-cap", "harness cap"]
+    ]);
+    const check = e3Check(runOf(72, { events }), { injectedJobs }).check;
+    expect(check.value).toContain("19 of 20 = 95.00 %");
+    expect(check.value).toContain("2 failed by an injected fault or the harness cap set aside");
+    expect(check.status).toBe("pass");
+    // Without the ledger every failure counts.
+    expect(e3Check(runOf(72, { events })).check.value).toContain("19 of 22");
   });
 
   it("reports skipped tasks and rows from before 0060 apart", () => {
@@ -684,6 +716,34 @@ describe("E5 status coverage", () => {
     }));
     // At minutes 11-15 the sentence still names the window: inside the six-minute settle, unchecked.
     expect(computeE5(runOf(1, { events, samples })).recoveryMismatches).toEqual([]);
+  });
+
+  it("is a review when no call met a provider-wait window: its class could not be shown", () => {
+    const unmet = [
+      truth("w54", "start", 10 * minute, 2, undefined, "refused"),
+      { ...truth("w54", "end", 25 * minute, 2, undefined, "refused"), detail: { met: false } }
+    ];
+    const samples = minutes(0, 40, () => ({ status: statusOf(undefined) }));
+    const check = e5Check(runOf(1, { events: unmet, samples }));
+    expect(computeE5(runOf(1, { events: unmet, samples })).notExercised).toEqual(["w54"]);
+    expect(check.status).toBe("review");
+    expect(check.details.join(" ")).toContain("w54: no call met its fault");
+    // Met, it is checked from that moment like any window.
+    const met = [
+      truth("w54", "start", 10 * minute, 2, undefined, "refused"),
+      truth("w54#met", "start", 14 * minute, 2, ["waiting", "provider_unavailable"], "refused"),
+      truth("w54#met", "end", 25 * minute, 2, undefined, "refused"),
+      { ...truth("w54", "end", 25 * minute, 2, undefined, "refused"), detail: { met: true } }
+    ];
+    const following = minutes(0, 40, (index) => ({
+      status:
+        index >= 14 && index < 27
+          ? statusOf("waiting", "provider_unavailable")
+          : statusOf(undefined)
+    }));
+    const result = computeE5(runOf(1, { events: met, samples: following }));
+    expect(result).toMatchObject({ notExercised: [], checked: 9, matched: 9 });
+    expect(e5Check(runOf(1, { events: met, samples: following })).status).toBe("pass");
   });
 });
 
@@ -1081,9 +1141,18 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e5: 1, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 2, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
-    expect(report.relations).toContain("judge decider mode ranker");
+    // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
+    expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
+    expect(report.relations).toContain("note decider mode ranker");
+    const older = runOf(2, {
+      samples: minutes(0, 120, () => ({})),
+      meta: { relations: { discoveryNeighbours: 1, judgeMode: null } }
+    });
+    expect(analyzeRun(older, { now: new Date("2026-11-04T00:00:00Z") }).relations).toContain(
+      "source judge not recorded"
+    );
     const text = renderReport(report);
     expect(text).toContain("Predicates evaluated:");
     expect(text).toContain("synthetic shapes");

@@ -38,9 +38,11 @@ export const predicateVersions = {
   workerStates: workerPredicateVersion,
   e1: 1,
   e2: 1,
-  e3: 1,
+  // v2: a cancel counts only as a supersession; a failure an injected fault or the cap made is apart.
+  e3: 2,
   e4: 1,
-  e5: 1,
+  // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
+  e5: 2,
   injection: 1
 } as const;
 
@@ -378,9 +380,17 @@ export interface E3Row {
   completedWithin24h: boolean;
   skippedJob: boolean;
   legacy: boolean;
+  /** Failed by an injected fault or a harness-cap refusal (D3): set aside, reported apart. */
+  setAside: boolean;
 }
 
-export function e3Check(run: LoadedRun): {
+/** A cancel that completes a task (spec 5.2 E3): superseded by a dedupe merge or a source deletion. */
+const supersededCauses = new Set(["merged", "source_deleted"]);
+
+export function e3Check(
+  run: LoadedRun,
+  context: Pick<F4Context, "injectedJobs"> = { injectedJobs: new Map() }
+): {
   check: Check;
   table: Array<Record<string, string | number>>;
 } {
@@ -423,13 +433,14 @@ export function e3Check(run: LoadedRun): {
         (job.outcome === "done" ||
           job.outcome === "no_change" ||
           job.resultStatus === "pending_review")) ||
-      job.status === "canceled";
+      (job.status === "canceled" && supersededCauses.has(job.cancelCause ?? ""));
     rows.push({
       kind: job.jobType,
       created,
       completedWithin24h: completedKind && ended - created <= day,
       skippedJob: job.outcome === "skipped",
-      legacy: job.status === "succeeded" && job.outcome === null && job.resultStatus === null
+      legacy: job.status === "succeeded" && job.outcome === null && job.resultStatus === null,
+      setAside: job.status === "failed" && context.injectedJobs.has(job.id)
     });
   }
   // Tasks still queued or running at the end that were created in the window have not completed.
@@ -441,10 +452,11 @@ export function e3Check(run: LoadedRun): {
       created: job.createdAt,
       completedWithin24h: false,
       skippedJob: false,
-      legacy: false
+      legacy: false,
+      setAside: false
     });
   }
-  const counted = rows.filter((row) => !row.skippedJob && !row.legacy);
+  const counted = rows.filter((row) => !row.skippedJob && !row.legacy && !row.setAside);
   const completed = counted.filter((row) => row.completedWithin24h).length;
   const rate = counted.length === 0 ? 1 : completed / counted.length;
   const byKind = new Map<string, { total: number; done: number }>();
@@ -495,9 +507,9 @@ export function e3Check(run: LoadedRun): {
     check: {
       id: "e3-within-24h",
       title: "E3 within 24 h",
-      bar: ">= 95 % of non-skipped tasks created in [warm-up end, end - 24 h] completed (done, no change, a pending review or canceled by supersession) within 24 h; skipped and legacy rows apart",
+      bar: ">= 95 % of non-skipped tasks created in [warm-up end, end - 24 h] completed (done, no change, a pending review or canceled by supersession: a dedupe merge or a source deletion) within 24 h; skipped and legacy rows apart, and failures an injected fault or the harness cap explains set aside (D3)",
       status: counted.length === 0 ? "review" : rate >= 0.95 ? "pass" : "fail",
-      value: `${completed} of ${counted.length} = ${pct(completed, counted.length)}; ${rows.filter((row) => row.skippedJob).length} skipped and ${rows.filter((row) => row.legacy).length} legacy apart`,
+      value: `${completed} of ${counted.length} = ${pct(completed, counted.length)}; ${rows.filter((row) => row.skippedJob).length} skipped and ${rows.filter((row) => row.legacy).length} legacy apart; ${rows.filter((row) => row.setAside).length} failed by an injected fault or the harness cap set aside`,
       details: [
         ...table
           .filter((row) => row.tasks !== row["within 24 h"])
@@ -693,6 +705,8 @@ interface Transition {
 }
 
 export interface E5Result {
+  /** Provider-wait windows no call met: the status could never name their fault. */
+  notExercised: string[];
   checked: number;
   matched: number;
   classMismatches: Array<{ at: string; window: string; expected: string; seen: string }>;
@@ -724,6 +738,9 @@ export function computeE5(run: LoadedRun): E5Result {
     record
   }));
   const result: E5Result = {
+    notExercised: truths
+      .filter((record) => record.phase === "end" && record.detail?.met === false)
+      .map((record) => record.id),
     checked: 0,
     matched: 0,
     classMismatches: [],
@@ -801,12 +818,21 @@ export function e5Check(run: LoadedRun): Check {
   return {
     id: "e5-status",
     title: "E5 status coverage",
-    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects",
-    status: noStatus ? "review" : failing ? "fail" : "pass",
+    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects (a provider-wait window from the first call that met its fault)",
+    status: noStatus
+      ? "review"
+      : failing
+        ? "fail"
+        : result.notExercised.length > 0
+          ? "review"
+          : "pass",
     value: noStatus
       ? "no status sample was recorded: the run had no status service"
       : `(i) ${result.fallbackSamples} fallback sample(s) of ${result.samplesWithBlocked} with a task set aside; (ii) ${result.matched} of ${result.checked} = ${pct(result.matched, result.checked)}, ${result.recoveryMismatches.length} recovery mismatch(es), ${result.reasonMismatches} reason difference(s) at a right class`,
     details: [
+      ...result.notExercised.map(
+        (window) => `${window}: no call met its fault, so its class was not checked (not exercised)`
+      ),
       ...result.classMismatches
         .slice(0, 10)
         .map(
@@ -999,7 +1025,10 @@ export function loadCheck(run: LoadedRun): {
 export function relationsLine(run: LoadedRun): string | null {
   const relations = run.meta.relations;
   if (!relations) return null;
-  return `Relations configuration kept by the run: source discovery neighbours ${relations.discoveryNeighbours} (the knob that sets them is refused in a soak), judge decider mode ${relations.judgeMode ?? "not stored (the routes derive it)"}.`;
+  const judge = relations.sourceJudge
+    ? `source judge ${relations.sourceJudge.mode} (at most ${relations.sourceJudge.maxPairsPerCall} pairs a call)`
+    : "source judge not recorded";
+  return `Relations configuration kept by the run: source discovery neighbours ${relations.discoveryNeighbours} (the knob that sets them is refused in a soak), ${judge}, note decider mode ${relations.judgeMode ?? "not stored (the routes derive it)"}.`;
 }
 
 // --- Gate S assertions for the real lane --------------------------------------------------------
@@ -1065,7 +1094,7 @@ export interface F4Report {
 export function f4Report(run: LoadedRun, context: F4Context): F4Report | null {
   if (!run.meta.f4) return null;
   const e1 = e1Check(run);
-  const e3 = e3Check(run);
+  const e3 = e3Check(run, context);
   const injection = injectionCheck(run);
   const tokens = tokensCheck(run);
   const load = loadCheck(run);

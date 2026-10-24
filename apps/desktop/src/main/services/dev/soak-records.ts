@@ -224,7 +224,13 @@ const jobDoneRecord = z
     /** The `result.status` the job kept (a pending review counts as completed). */
     resultStatus: z.string().max(60).nullable(),
     /** The content-only fingerprint the job ran with (E2's inputs are kind, subject and fingerprint). */
-    inputFingerprint: z.string().max(200).nullable().optional()
+    inputFingerprint: z.string().max(200).nullable().optional(),
+    /**
+     * Why a canceled job was canceled (E3 counts only a supersession as completed): `merged` into a
+     * queued duplicate (`result.mergedInto`, D7), `source_deleted` (its source is gone), else
+     * `requested`. Null on the other statuses; absent in records written before it.
+     */
+    cancelCause: z.enum(["merged", "source_deleted", "requested"]).nullable().optional()
   })
   .strict();
 
@@ -548,13 +554,21 @@ export const soakMetaSchema = z
     plan: z.unknown(),
     /**
      * The relations configuration the run kept (F4 C2): the effective source discovery neighbours
-     * (the knob that sets them is refused in a soak) and the judge's decider mode as stored (null:
-     * none stored, the routes derive it).
+     * (the knob that sets them is refused in a soak), the note decider's mode as stored (null: none
+     * stored, the routes derive it) and the source judge's mode with its pair cap (F4 D21; absent
+     * in runs recorded before it).
      */
     relations: z
       .object({
         discoveryNeighbours: z.number().int().min(1).max(2),
-        judgeMode: z.string().nullable()
+        judgeMode: z.string().nullable(),
+        sourceJudge: z
+          .object({
+            mode: z.enum(["perRoot", "perPair"]),
+            maxPairsPerCall: z.number().int().positive()
+          })
+          .strict()
+          .optional()
       })
       .strict()
       .optional(),

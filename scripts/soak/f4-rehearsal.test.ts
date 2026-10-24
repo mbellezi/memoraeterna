@@ -179,6 +179,8 @@ function sampledCap(snapshot: ReturnType<HarnessTokenCap["snapshot"]>) {
 function world(sink: SoakEventSink, capTokens: number, now: () => number) {
   const state = {
     laneWindow: false,
+    /** When the product's first call met the lane window: at once, Codex is never idle here. */
+    laneMetAt: null as number | null,
     autonomy: "auto" as "off" | "suggest" | "auto",
     idleOn: false,
     idleStartedAt: 0,
@@ -190,10 +192,12 @@ function world(sink: SoakEventSink, capTokens: number, now: () => number) {
     lane: {
       start: () => {
         state.laneWindow = true;
+        state.laneMetAt = now();
       },
       end: () => {
         state.laneWindow = false;
-      }
+      },
+      metAt: () => (state.laneWindow ? state.laneMetAt : null)
     },
     controls: {
       update: async (change) => {
@@ -377,7 +381,12 @@ describe("the 7-day driver on a virtual clock", () => {
     expect(outcome.reason).toBe("duration");
     const records = truths(sink);
     // Four windows, a start and an end each; the idle window's active blocks come on top.
-    expect(records.filter((entry) => entry.id.startsWith("w-limit")).map((e) => e.phase)).toEqual([
+    expect(records.filter((entry) => entry.id === "w-limit").map((e) => e.phase)).toEqual([
+      "start",
+      "end"
+    ]);
+    // The provider window expects its class from the first call that met it, seen at a tick.
+    expect(records.filter((entry) => entry.id === "w-limit#met").map((e) => e.phase)).toEqual([
       "start",
       "end"
     ]);
@@ -424,7 +433,7 @@ describe("the 7-day driver on a virtual clock", () => {
     const run = await loadRun(directory);
     const check = e5Check(run);
     expect(check.status).toBe("fail");
-    expect(check.details.join(" ")).toContain("w-limit expected waiting.provider_rate_limit");
+    expect(check.details.join(" ")).toContain("w-limit#met expected waiting.provider_rate_limit");
   }, 120_000);
 
   it("plays the topic opens, the bursts and their edits through the F4 ports", async () => {

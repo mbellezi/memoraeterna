@@ -7,9 +7,16 @@ import {
 } from "@app/domain";
 import { describe, expect, it } from "vitest";
 
-import { profileGenerationMaxTokens } from "../ai-task-parameters.js";
+import { relationExplanationLimits } from "@app/domain";
+import { profileGenerationMaxTokens, relationExplanationOperation } from "../ai-task-parameters.js";
 import { attemptTokenEstimate } from "../gardener/remote-budget.js";
-import { attemptEstimateUsd, pricedFakeKind, soakPriceTable } from "./soak-money.js";
+import {
+  attemptEstimateUsd,
+  backfillOutputTokens,
+  moneyWindowOperations,
+  pricedFakeKind,
+  soakPriceTable
+} from "./soak-money.js";
 
 // The money window of the 7-day soak (F4 T89, E4(c)) against the product's own estimator, price
 // table and admission rule: the cap is the spend plus eight attempts' estimate, a pass of ten
@@ -34,7 +41,7 @@ function billed(text: string): { inputTokens: number; outputTokens: number } {
       body: JSON.stringify({
         model: money.model,
         messages: [{ role: "user", content: text }],
-        max_tokens: profileGenerationMaxTokens
+        max_tokens: backfillOutputTokens
       })
     },
     { seq: 1, elapsedMs: 0 }
@@ -46,9 +53,17 @@ function billed(text: string): { inputTokens: number; outputTokens: number } {
 }
 
 describe("the money window's arithmetic", () => {
+  it("routes T84's backfill and sizes its attempts with the backfill's own output ceiling", () => {
+    // The backfill calls under the explanation's operation; the budget's estimate takes the call's
+    // limit (2,048) beneath the profile's default, so a cap sized at 16,384 would never reach 80%.
+    expect(moneyWindowOperations).toEqual([relationExplanationOperation]);
+    expect(backfillOutputTokens).toBe(relationExplanationLimits.maxOutputTokens);
+    expect(backfillOutputTokens).toBeLessThan(profileGenerationMaxTokens);
+  });
+
   it("bills each call what the budget reserved for it", () => {
     const text = prompt(2_500);
-    const reserved = attemptTokenEstimate(text, "", profileGenerationMaxTokens);
+    const reserved = attemptTokenEstimate(text, "", backfillOutputTokens);
     expect(billed(text)).toEqual(reserved);
     expect(tokensCostUsd(price, billed(text))).toBeCloseTo(tokensCostUsd(price, reserved), 12);
   });
@@ -56,7 +71,7 @@ describe("the money window's arithmetic", () => {
   it("estimates an attempt as the product does, at the fake's price", () => {
     const text = prompt(3_000);
     expect(attemptEstimateUsd(money, 3_000)).toBeCloseTo(
-      tokensCostUsd(price, attemptTokenEstimate(text, "", profileGenerationMaxTokens)),
+      tokensCostUsd(price, attemptTokenEstimate(text, "", backfillOutputTokens)),
       12
     );
   });
@@ -68,7 +83,7 @@ describe("the money window's arithmetic", () => {
       const capUsd = spentBefore + 8 * attemptEstimateUsd(money, 3_000);
       const estimateUsd = tokensCostUsd(
         price,
-        attemptTokenEstimate(prompt(bytes), "", profileGenerationMaxTokens)
+        attemptTokenEstimate(prompt(bytes), "", backfillOutputTokens)
       );
       let spentUsd = spentBefore;
       let continued = false;

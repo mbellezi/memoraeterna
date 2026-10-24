@@ -333,7 +333,11 @@ describe("the windows", () => {
   it("answers every request with a 401 while the sign-in window lasts, and recovers after it", async () => {
     const { injector, adapter, upstream } = layer();
     injector.startWindow("w102", "unauthorized", 60_000);
+    // Until a request meets the window, the status cannot name its fault.
+    expect(injector.windowMetAt("w102")).toBeNull();
     await expect(adapter.run(request)).rejects.toMatchObject({ status: 401, transient: false });
+    expect(injector.windowMetAt("w102")).toBeTypeOf("number");
+    expect(injector.windowMetAt("w30")).toBeNull();
     expect(upstream.seen).toHaveLength(0);
     injector.endWindow("w102");
     await expect(adapter.run(request)).resolves.toMatchObject({ output: "hello again world" });

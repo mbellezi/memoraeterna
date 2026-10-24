@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { BudgetSnapshot } from "@app/domain";
+import {
+  composeGardenerStatus,
+  fullGardenerCoverage,
+  type BudgetSnapshot,
+  type GardenerStatusSnapshot
+} from "@app/domain";
 
 import { createF4Ports, workerCapacity, type SoakF4PortsDeps } from "./soak-f4-ports.js";
 import { soakSampleSchema } from "./soak-records.js";
@@ -190,6 +195,32 @@ describe("the F4 sample", () => {
     expect(detail.budget).toBeNull();
     expect(detail.status).toBeNull();
     expect(detail.cap?.capTokens).toBe(4_700_000);
+  });
+
+  it("reads the status service's own snapshots (T86) as the sentence E5 compares", async () => {
+    // What GardenerStatusService.snapshot() returns: composed from the facts it reads.
+    const compose = (holds: Array<{ class: string; reason: string }>): GardenerStatusSnapshot =>
+      composeGardenerStatus({
+        nowMs: now,
+        gateHolds: holds as never,
+        tasks: [],
+        blocked: [],
+        lanes: [],
+        downloads: { downloading: false, verifying: false, loading: false, etaSeconds: null },
+        budget: null,
+        durations: {},
+        coverage: fullGardenerCoverage
+      });
+    for (const [holds, expected] of [
+      [[], { state: "idle" }],
+      [[{ class: "paused", reason: "autonomy_off" }], { class: "paused", reason: "autonomy_off" }]
+    ] as const) {
+      const snapshot = compose([...holds]);
+      const { value } = deps({ status: { snapshot: async () => snapshot } });
+      const detail = await createF4Ports(value).sampleDetail(base);
+      expect(detail.status).toMatchObject(expected);
+      expect(detail.status).not.toMatchObject({ state: "invalid" });
+    }
   });
 
   it("records a snapshot the contract does not accept as a fallback, which E5 counts", async () => {

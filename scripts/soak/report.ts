@@ -22,7 +22,13 @@ import { parseArgs } from "node:util";
 
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
 import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
-import { gateSAssertions, f4Report, predicateVersions, type F4Report } from "./report-f4.ts";
+import {
+  gateSAssertions,
+  f4Report,
+  predicateVersions,
+  relationsLine,
+  type F4Report
+} from "./report-f4.ts";
 import {
   parseNdjson,
   soakEventSchema,
@@ -1434,12 +1440,7 @@ export function analyzeRun(
 }
 
 /** The relations line of a run that records one (F3's runs do not). */
-function relationsOf(run: LoadedRun): string | null {
-  const relations = run.meta.relations;
-  return relations
-    ? `Relations configuration kept by the run: source discovery neighbours ${relations.discoveryNeighbours} (the knob that sets them is refused in a soak), judge decider mode ${relations.judgeMode ?? "not stored (the routes derive it)"}.`
-    : null;
-}
+const relationsOf = (run: LoadedRun): string | null => relationsLine(run);
 
 const cell = (value: string | number | null) =>
   String(value ?? "-")

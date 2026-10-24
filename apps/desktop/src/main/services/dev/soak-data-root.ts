@@ -159,10 +159,20 @@ export interface SoakLockOptions {
 }
 
 /**
+ * Whether a lock's first line is this run's own: `<owner> [pid N ]run <run>`, the owner and the run
+ * both exact. A claim by another run of the same profile is someone else's.
+ */
+export function isOwnSoakLock(held: string, owner: string, run: string): boolean {
+  const first = held.split("\n")[0]!.trim();
+  return first.startsWith(`${owner} `) && first.endsWith(` run ${run}`);
+}
+
+/**
  * Takes the machine-wide local-model lock of the data root for the whole run (the soak holds both
  * slots for 169 h, D2) and returns the function that gives it up. The file is created exclusively; a
- * file that names this owner is the orchestrator's own claim for this run and is adopted; any other
- * holder refuses the run. Giving the lock up removes the file only while it still names this owner.
+ * file that names this owner and this run is the orchestrator's own claim for it and is adopted; any
+ * other holder (another run of the same profile included) refuses the run. Giving the lock up removes
+ * the file only while it still names this owner and this run.
  */
 export async function acquireSoakLock(options: SoakLockOptions): Promise<() => Promise<void>> {
   const line = `${options.owner} pid ${options.pid ?? process.pid} run ${options.run}\n`;
@@ -172,7 +182,7 @@ export async function acquireSoakLock(options: SoakLockOptions): Promise<() => P
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const held = (await readFile(options.path, "utf8").catch(() => "")).trim();
-    if (!held.startsWith(`${options.owner} `))
+    if (!isOwnSoakLock(held, options.owner, options.run))
       throw new SoakKnobRefusal(
         "lock",
         `The local-model slot ${options.path} is held by: ${held.slice(0, 120) || "an unreadable lock"}`
@@ -184,6 +194,6 @@ export async function acquireSoakLock(options: SoakLockOptions): Promise<() => P
     if (released) return;
     released = true;
     const held = (await readFile(options.path, "utf8").catch(() => "")).trim();
-    if (held.startsWith(`${options.owner} `)) await rm(options.path, { force: true });
+    if (isOwnSoakLock(held, options.owner, options.run)) await rm(options.path, { force: true });
   };
 }

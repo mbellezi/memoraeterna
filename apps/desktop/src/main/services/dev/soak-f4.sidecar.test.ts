@@ -189,7 +189,28 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
     expect(done).toHaveLength(3);
     for (const job of done) jobDoneSchema.parse(job);
     expect(done.find((job) => job.jobType === "topic-audit")?.quarantinedAt).not.toBeNull();
+    expect(done.map((job) => job.cancelCause)).toEqual([null, null, null]);
     expect(await readFinishedJobs(pool, Date.now() + 60_000)).toEqual([]);
+
+    // Why a job was canceled (E3 counts a supersession only): merged, its source gone, or asked.
+    await pool.query(
+      `insert into jobs (type, status, lane, payload, attempts, finished_at, created_at, result)
+       values ('topic-overview', 'canceled', 'light', '{}'::jsonb, 0, now(), now(),
+               '{"mergedInto":"00000000-0000-4000-8000-000000000001"}'::jsonb),
+              ('relation-link', 'canceled', 'light',
+               '{"sourceItemId":"00000000-0000-4000-8000-0000000000ff"}'::jsonb, 0, now(), now(), null),
+              ('topic-name', 'canceled', 'light', '{}'::jsonb, 0, now(), now(), null)`
+    );
+    const causes = Object.fromEntries(
+      (await readFinishedJobs(pool, Date.now() - 60_000))
+        .filter((job) => job.status === "canceled")
+        .map((job) => [job.jobType, job.cancelCause])
+    );
+    expect(causes).toEqual({
+      "topic-overview": "merged",
+      "relation-link": "source_deleted",
+      "topic-name": "requested"
+    });
 
     await pool.query(
       `insert into gardener_outcomes (kind, subject_key, last_outcome, last_fingerprint,
