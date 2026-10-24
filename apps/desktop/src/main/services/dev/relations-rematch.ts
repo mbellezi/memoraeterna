@@ -72,9 +72,14 @@ import {
   runRematch,
   type CassetteFacts,
   type P0Probe,
-  type RematchPorts
+  type RematchPorts,
+  type RematchRunInput
 } from "./relations-rematch-run.js";
-import { discoveryNeighboursOverride, helperBatchOverride } from "./relations-dev-options.js";
+import {
+  discoveryNeighboursOverride,
+  helperBatchOverride,
+  relationsConfigForRun
+} from "./relations-dev-options.js";
 import {
   clearRelationState,
   countOpenLinkJobs,
@@ -144,6 +149,11 @@ export interface RematchEnvironment {
   p0ProbeMs: number | null;
   /** The helper batch size `MEMORA_RELATIONS_HELPER_BATCH` set for this run (B1), or null. */
   helperBatchSize: number | null;
+  /**
+   * The run's effective discovery neighbours (`MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS`, C2) and source
+   * judge mode, which the summary records so every C2 run states what it measured (F4 D21).
+   */
+  relations: RematchRunInput["relations"];
   digestOverride: NotesDigest | null;
   outDirectory: string | null;
   drainTimeoutMs: number;
@@ -214,8 +224,17 @@ export function readRematchEnvironment(
       `${rematchKnob}_P0_PROBE_MS must be at least 1000 ms (X3 probes every 10 s)`
     );
   let helperBatchSize: number | null;
+  let relations: RematchRunInput["relations"];
   try {
     helperBatchSize = helperBatchOverride(env, options.isPackaged);
+    const config = relationsConfigForRun(env, options.isPackaged) ?? relationsConfig;
+    relations = {
+      discoveryNeighbours: config.discovery.neighbours,
+      sourceJudge: {
+        mode: config.sourceJudge.mode,
+        maxPairsPerCall: config.sourceJudge.maxPairsPerCall
+      }
+    };
   } catch (error) {
     throw new RematchRefusal(
       "invalidValue",
@@ -242,6 +261,7 @@ export function readRematchEnvironment(
     link,
     p0ProbeMs,
     helperBatchSize,
+    relations,
     digestOverride: digest ? { sha256: digest[1]!, notes: Number(digest[2]) } : null,
     outDirectory,
     drainTimeoutMs:
@@ -646,6 +666,7 @@ export async function prepareRelationsRematch(
       lanesMode,
       link: environment.link,
       helperBatchSize: environment.helperBatchSize,
+      relations: environment.relations,
       p0Probe: probe,
       drainTimeoutMs: environment.drainTimeoutMs,
       drainPollMs: options.pollMs ?? 2_000,

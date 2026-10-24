@@ -10,6 +10,7 @@ import {
   SourceDescriptorSchema,
   SourceRelationSettingsSchema,
   processingPresetStages,
+  relationsConfig,
   type ProcessingStage,
   type SourceDescriptor
 } from "@app/domain";
@@ -47,6 +48,7 @@ import {
   type GoldenRelationsMode
 } from "./relations/link-runtime.js";
 import { readSchemaProbeCalls, runSchemaProbe } from "./schema-probe.js";
+import { relationsConfigForRun } from "./dev/relations-dev-options.js";
 import type { LibraryResetService } from "./library-reset-service.js";
 
 /**
@@ -1093,6 +1095,7 @@ async function runGolden(
   try {
     await mkdir(runDirectory, { recursive: true });
     context.settings = pickSettings(await options.settings.getApp());
+    context.relations = goldenRelationsRecord(options);
     context.atomicNoteMatchingVersion = (
       await import("./knowledge-processing.js")
     ).atomicNoteMatchingVersion;
@@ -1543,6 +1546,26 @@ interface SourcePairsRequest {
  * MEMORA_GOLDEN_SOURCE_PAIRS: asks the live source decider about the listed pairs and writes
  * `source-pair-verdicts.json` into the run directory. Persists nothing (golden-source-pairs.ts).
  */
+/**
+ * The run's effective relations configuration: the shipped one with what the DEV knobs set (C2's
+ * discovery neighbours), as the knowledge service of the same process matches under.
+ */
+function runRelationsConfig(options: Pick<GoldenRunOptions, "env" | "isPackaged">) {
+  return relationsConfigForRun(options.env ?? {}, options.isPackaged) ?? relationsConfig;
+}
+
+/** What every golden summary records of it (F4 D21): discovery neighbours and the judge mode. */
+export function goldenRelationsRecord(options: Pick<GoldenRunOptions, "env" | "isPackaged">) {
+  const config = runRelationsConfig(options);
+  return {
+    discoveryNeighbours: config.discovery.neighbours,
+    sourceJudge: {
+      mode: config.sourceJudge.mode,
+      maxPairsPerCall: config.sourceJudge.maxPairsPerCall
+    }
+  };
+}
+
 async function runSourcePairs(
   options: GoldenRunOptions,
   request: SourcePairsRequest,
@@ -1551,6 +1574,7 @@ async function runSourcePairs(
   const pairs = await import("./golden-source-pairs.js");
   const app = await options.settings.getApp();
   const report = await pairs.runSourcePairVerdicts({
+    relations: runRelationsConfig(options),
     mode: request.mode,
     file: request.file,
     manifest: request.manifest,
@@ -1585,6 +1609,7 @@ async function runSourcePairs(
       ...(report.stopReason ? { stopReason: report.stopReason } : {}),
       file: report.pairsFile,
       verdicts: path,
+      relations: report.relations,
       totals: report.totals
     }
   };

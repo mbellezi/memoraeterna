@@ -53,6 +53,7 @@ const summary = (extra: Partial<RematchSummary> = {}): RematchSummary => ({
   lanes: { mode: "serial" },
   link: "drain",
   helperBatchSize: null,
+  relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 } },
   p0Probe: null,
   profile: { name: "env-f-s1", kind: "env-f" },
   startedAt: "2026-10-17T10:00:00.000Z",
@@ -323,6 +324,13 @@ describe("the re-match report", () => {
     );
     expect(rematchFlags(timing)).toEqual([]);
     expect(renderRematchReport(summary())).toContain("| P0 probe | off |");
+    // Every C2 record states the neighbours and the judge mode it ran under (F4 D21).
+    expect(renderRematchReport(summary())).toContain(
+      "| Source matching | discovery neighbours 1, judge perRoot (at most 12 pairs a call) |"
+    );
+    expect(renderRematchReport(summary({ relations: null }))).toContain(
+      "| Source matching | not recorded (a summary written before F4) |"
+    );
     expect(rematchFlags({ ...timing, lanes: { mode: "serial" } })).toEqual([
       "The product link runtime ran with serial lanes: X3 asks for MEMORA_AI_LANES=product beside it."
     ]);

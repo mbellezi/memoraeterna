@@ -301,7 +301,9 @@ describe("the non-regression rule", () => {
       "notes.match note-decide",
       "relations.decide.instruction note-decide-ranker",
       "relations.type relation-typing",
-      "sources.decide source-judge"
+      "sources.decide source-judge",
+      // F3's per-pair judge (the judge mode `perPair`) is the same source judge.
+      "sources.decide.pair source-judge"
     ]);
     // A repair prompt is appended to the prompt it repairs, so it leaves with it.
     for (const [id, repair] of [

@@ -750,6 +750,83 @@ describe("source pair verdicts grouped by root (the C2 microbenchmark, D21)", ()
       expect.objectContaining({ from: "s1", to: "s3", toChunks: ["c3"], outcome: "below_floors" })
     ]);
     expect(result.totals).toMatchObject({ pairs: 2, judged: 2, calls: 1, inputTokens: 1500 });
+    // Every C2 record states the configuration it ran under (F4 D21).
+    expect(result.relations).toEqual({
+      discoveryNeighbours: 1,
+      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+    });
+    expect(result.contract).toBe("source-relations-v6");
+  });
+
+  it("asks F3's per-pair judge one pair a call under the mode perPair, whatever the file groups", async () => {
+    const reader = {
+      pairNotes: vi.fn(async () => []),
+      pairChunks: vi.fn(async (_root: string, partner: string) =>
+        partner === "root-B" ? [a1, b1] : [a1, c1]
+      ),
+      existing: vi.fn(async () => [])
+    };
+    const pairs = [pair(), pair("key-a", "Work Ç", "second")];
+    const { ai, report } = run(pairs, {
+      reader,
+      file: { path: "/pairs.json", sha256: "0".repeat(64), pairs, grouping: "root" },
+      relations: {
+        discovery: { neighbours: 2 },
+        sourceJudge: { ...relationsConfig.sourceJudge, mode: "perPair" }
+      },
+      outputs: [{ relations: [item()] }, { relations: [] }]
+    });
+    const result = await report;
+    expect(ai.calls).toHaveLength(2);
+    for (const call of ai.calls) {
+      expect(call[1]).not.toContain("Pairs of works to judge");
+      expect(call[1]).toContain("Return ZERO to 2 items, ordered by importance.");
+      expect(call[2]).toMatchObject({ promptVersion: "source-relations-v5" });
+    }
+    expect(result).toMatchObject({
+      grouping: "pair",
+      contract: "source-relations-v5",
+      relations: { discoveryNeighbours: 2, sourceJudge: { mode: "perPair", maxPairsPerCall: 12 } }
+    });
+    expect(result.pairs.map((entry) => [entry.status, entry.verdict])).toEqual([
+      ["judged", "related"],
+      ["judged", "not_related"]
+    ]);
+  });
+
+  it("splits a root over maxPairsPerCall into calls with their own output caps", async () => {
+    const reader = {
+      pairNotes: vi.fn(async () => []),
+      pairChunks: vi.fn(async (_root: string, partner: string) =>
+        partner === "root-B" ? [a1, b1] : [a1, c1]
+      ),
+      existing: vi.fn(async () => [])
+    };
+    const pairs = [pair(), pair("key-a", "Work Ç", "second")];
+    const { ai, report } = run(pairs, {
+      reader,
+      file: { path: "/pairs.json", sha256: "0".repeat(64), pairs, grouping: "root" },
+      relations: {
+        discovery: { neighbours: 1 },
+        sourceJudge: { ...relationsConfig.sourceJudge, maxPairsPerCall: 1 }
+      },
+      outputs: [{ relations: [item()] }, { relations: [item([1, "s2"], [6, ["c2"]])] }]
+    });
+    const result = await report;
+    expect(ai.calls).toHaveLength(2);
+    expect(ai.calls.map((call) => call[4])).toEqual([
+      { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, 2) },
+      { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, 2) }
+    ]);
+    // The lead pair reports its own call's request; each pair's items keep their call's aliases.
+    expect(result.pairs[0]!.request).toMatchObject({
+      maxOutputTokens: sourceDecisionMaxOutputTokens(settings, 2),
+      promptCharacters: ai.calls[0]![1].length
+    });
+    expect(result.pairs[1]!.items).toEqual([
+      expect.objectContaining({ from: "s1", to: "s2", toChunks: ["c2"] })
+    ]);
+    expect(result.totals).toMatchObject({ pairs: 2, judged: 2, calls: 2 });
   });
 });
 

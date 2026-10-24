@@ -2555,6 +2555,7 @@
       "validation": "Validation feedback",
       "default": "General validation",
       "same_root": "Same-work rejection",
+      "pair": "Per-pair judge",
       "guidance": "Editorial guidance",
       "advanced": "Function instructions",
       "support": "Semantic support check",

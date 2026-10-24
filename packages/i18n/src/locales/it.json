@@ -2553,6 +2553,7 @@
       "validation": "Riscontro di validazione",
       "default": "Validazione generale",
       "same_root": "Rifiuto della stessa opera",
+      "pair": "Giudice per coppia",
       "guidance": "Indicazioni editoriali",
       "advanced": "Istruzioni della funzione",
       "support": "Verifica del supporto semantico",

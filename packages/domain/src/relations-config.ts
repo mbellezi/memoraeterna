@@ -187,6 +187,10 @@ const DecisionsDeciderSchema = z
   })
   .strict();
 
+/** How the source judge asks (`sourceJudge.mode`). */
+export const SourceJudgeModeSchema = z.enum(["perRoot", "perPair"]);
+export type SourceJudgeMode = z.infer<typeof SourceJudgeModeSchema>;
+
 const RelationAiSchema = z
   .object({
     /**
@@ -225,9 +229,22 @@ export const RelationsConfigSchema = z
       .object({ neighbours: int(1, 2).default(1) })
       .strict()
       .prefault({}),
-    /** The source judge (`sources.decide` v5, D27). */
+    /** The source judge (D27; one call per root, F4 D21). */
     sourceJudge: z
       .object({
+        /**
+         * How the judge asks. `perRoot` (D21): a root's undecided pairs in one call (`sources.decide`,
+         * `source-relations-v6`); `perPair`: F3's judge, one call per pair with its own prompt
+         * (`sources.decide.pair`, `source-relations-v5`), kept so that a C2 miss restores it by this
+         * value alone. Each mode keys its own decisions (the prompt is in the judge's identity).
+         */
+        mode: SourceJudgeModeSchema.default("perRoot"),
+        /**
+         * The pairs one `perRoot` call asks about at most (cal.): a hub root's pairs are split into
+         * calls of this size in content order, each with its own output cap and repair. Never part
+         * of a pair's key (D21).
+         */
+        maxPairsPerCall: int(1, 64).default(12),
         /** Uncited note relations a judged pair's prompt lists as hypotheses (the spike's 4). */
         noteRelationsPerPair: int(0, 30).default(4),
         /** Q14: stored v5 `similar_to` verdicts are dropped as weak unless tuning recall needs them. */

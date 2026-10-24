@@ -2558,6 +2558,7 @@
       "validation": "Feedback de validação",
       "default": "Validação geral",
       "same_root": "Rejeição da mesma obra",
+      "pair": "Juiz por par",
       "guidance": "Orientação editorial",
       "advanced": "Instruções da função",
       "support": "Verificação do suporte semântico",

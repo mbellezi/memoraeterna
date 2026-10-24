@@ -1529,9 +1529,16 @@ describe("golden source pair verdicts", () => {
       kept: [{ type: "supports", importance: 90, confidence: 85 }]
     });
     const written = JSON.parse(await readFile(join(directory, "summary.json"), "utf8"));
+    // The run's effective discovery neighbours and judge mode, in the summary and the report (D21).
+    const relations = {
+      discoveryNeighbours: 1,
+      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+    };
     expect(written).toMatchObject({
-      sourcePairs: { verdicts: join(directory, "source-pair-verdicts.json") }
+      relations,
+      sourcePairs: { verdicts: join(directory, "source-pair-verdicts.json"), relations }
     });
+    expect(verdicts.relations).toEqual(relations);
     // The summary no longer lists a paused legacy automation: the runner never pauses one.
     expect(written).not.toHaveProperty("automation");
     // A golden run pins its extraction: the catalog-header refresh is off in it, and none was queued.

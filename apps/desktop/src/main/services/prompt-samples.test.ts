@@ -30,7 +30,7 @@ function model() {
       else if (id.startsWith("relations.type"))
         output = { pairs: [{ p: "p1", t: "supports", d: "ab" }] };
       else if (id.startsWith("graph.")) output = { entities: [], relations: [] };
-      else if (id === "sources.decide") output = { relations: [] };
+      else if (id === "sources.decide" || id === "sources.decide.pair") output = { relations: [] };
       else if (id === "topic.name")
         output = {
           topics: [
@@ -153,6 +153,11 @@ describe("bounded catalog sample runner", () => {
       progress.completedKeys.some((key) => key.startsWith("sources.decide.repair.same_root:"))
     ).toBe(true);
     expect(ai.calls.some((c) => c.input.includes("SAME root/work"))).toBe(true);
+    // F3's per-pair judge (the judge mode `perPair`) runs with its own repair feedback.
+    expect(
+      progress.completedKeys.some((key) => key.startsWith("sources.decide.repair.pair:"))
+    ).toBe(true);
+    expect(ai.calls.some((c) => c.id === "sources.decide.pair")).toBe(true);
     for (const id of ["diagnostics.local_generation", "diagnostics.local_embedding"])
       expect(ai.calls.some((c) => c.id === id)).toBe(true);
   });

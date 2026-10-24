@@ -255,6 +255,12 @@ export function renderRematchReport(summary: RematchSummary): string {
             : `${summary.helperBatchSize} (DEV override)`
         ],
         [
+          "Source matching",
+          summary.relations
+            ? `discovery neighbours ${summary.relations.discoveryNeighbours}, judge ${summary.relations.sourceJudge.mode} (at most ${summary.relations.sourceJudge.maxPairsPerCall} pairs a call)`
+            : "not recorded (a summary written before F4)"
+        ],
+        [
           "P0 probe",
           summary.p0Probe
             ? `every ${seconds(summary.p0Probe.intervalMs)} s: ${summary.p0Probe.calls} calls, ${summary.p0Probe.failed} failed, wall p50 ${summary.p0Probe.wallMs.p50} ms, p95 ${summary.p0Probe.wallMs.p95} ms, max ${summary.p0Probe.wallMs.max} ms (queue waits: ai_task_runs, stage rematch_p0_probe)`

@@ -46,9 +46,9 @@ export const SourceRelationCoverageSchema = z.object({
 export type SourceRelationCoverage = z.infer<typeof SourceRelationCoverageSchema>;
 
 /**
- * The compact, score-only source verdict (`source-relations-v5`, docs/plan.md decision 17): a pair
- * of works answers at most `maxItemsPerPair` items `[from, to, type, importance, confidence, [from
- * chunks], [to chunks]]`, with integer scores from 0 to 100 and no prose.
+ * The compact, score-only source verdict (`source-relations-v6`, and F3's per-pair `-v5`; docs/plan.md
+ * decision 17): a pair of works answers at most `maxItemsPerPair` items `[from, to, type, importance,
+ * confidence, [from chunks], [to chunks]]`, with integer scores from 0 to 100 and no prose.
  */
 export const sourceDecisionLimits = {
   maxItemsPerPair: 2,

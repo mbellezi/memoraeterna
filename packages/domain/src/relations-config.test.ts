@@ -47,12 +47,20 @@ describe("relations config", () => {
     expect(relationsConfig.escalation).toEqual({ enabled: false });
     expect(relationsConfig.discovery).toEqual({ neighbours: 1 });
     expect(relationsConfig.sourceJudge).toEqual({
+      // One call per root (F4 D21); `perPair` restores F3's judge by this value alone.
+      mode: "perRoot",
+      maxPairsPerCall: 12,
       noteRelationsPerPair: 4,
       keepSimilarTo: false,
       exactEvidencePairs: 10_000,
       boundedEvidenceChunks: 16
     });
     expect(RelationsConfigSchema.safeParse({ discovery: { neighbours: 3 } }).success).toBe(false);
+    expect(RelationsConfigSchema.parse({ sourceJudge: { mode: "perPair" } }).sourceJudge.mode).toBe(
+      "perPair"
+    );
+    for (const sourceJudge of [{ mode: "perCall" }, { maxPairsPerCall: 0 }])
+      expect(RelationsConfigSchema.safeParse({ sourceJudge }).success).toBe(false);
     // Parsing nothing gives the same defaults, with no calibration (every decider uncalibrated).
     expect(RelationsConfigSchema.parse({})).toEqual({ ...relationsConfig, calibrations: [] });
   });

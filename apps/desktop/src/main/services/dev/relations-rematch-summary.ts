@@ -2,6 +2,7 @@
 // run ends and `scripts/relations/rematch-report.ts` turns into the timeline and the numbers of
 // X1 and X3. Everything here is data: no database, no clock.
 import { z } from "zod";
+import { SourceJudgeModeSchema } from "@app/domain";
 
 export const rematchSummaryFormat = "memora-relations-rematch";
 
@@ -251,6 +252,20 @@ export const RematchSummarySchema = z
      */
     link: z.enum(["drain", "product"]).default("drain"),
     helperBatchSize: z.number().int().positive().nullable().default(null),
+    /**
+     * The run's effective source discovery neighbours and judge mode (F4 D21, C2): what the matcher
+     * ran under, DEV knobs included. Null in summaries written before F4.
+     */
+    relations: z
+      .object({
+        discoveryNeighbours: z.number().int().min(1).max(2),
+        sourceJudge: z
+          .object({ mode: SourceJudgeModeSchema, maxPairsPerCall: z.number().int().positive() })
+          .strict()
+      })
+      .strict()
+      .nullable()
+      .default(null),
     /** The P0 probe of X3: one query embedding every `intervalMs` while the run works; null when off. */
     p0Probe: p0ProbeSchema.nullable().default(null),
     profile: z.object({ name: z.string(), kind: z.string().nullable() }).strict(),

@@ -130,6 +130,8 @@ export interface RematchRunInput {
   link: "drain" | "product";
   /** The helper batch size a DEV override set for the ranker (B1), or null for the product's own. */
   helperBatchSize: number | null;
+  /** The effective discovery neighbours and judge mode of the run (F4 D21, C2's knob included). */
+  relations: NonNullable<RematchSummary["relations"]>;
   /** X3's P0 probe: a query embedding at P0 every `intervalMs` while the run works; null when off. */
   p0Probe: P0Probe | null;
   /** How long the link jobs may take to drain after the last release. */
@@ -480,6 +482,7 @@ function summarize(context: {
     lanes: { mode: input.lanesMode },
     link: input.link,
     helperBatchSize: input.helperBatchSize,
+    relations: input.relations,
     p0Probe: context.p0Probe,
     profile: input.profile,
     startedAt: startedAt.toISOString(),

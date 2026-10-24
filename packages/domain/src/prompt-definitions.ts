@@ -454,7 +454,9 @@ for (const definition of promptDefinitions) {
       "consultation.gaps",
       "consultation.repair"
     ],
-    "sources.decide": ["sources.validation.default", "sources.validation.same_root"]
+    "sources.decide": ["sources.validation.default", "sources.validation.same_root"],
+    // F3's per-pair judge (`source-relations-v5`), kept as the judge mode `perPair` (F4 D21).
+    "sources.decide.pair": ["sources.validation.pair", "sources.validation.same_root"]
   };
   definition.fragmentIds.push(...(additional[id] ?? []));
   if (id.endsWith(".repair") && id !== "notes.repair")

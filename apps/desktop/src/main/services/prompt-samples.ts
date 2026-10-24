@@ -34,7 +34,11 @@ import {
   buildRelationTypingRepairPrompt,
   typingBatches
 } from "./relations/relation-typing.js";
-import { sourceDecisionPrompt, parseSourceDecision } from "./source-relation-processing.js";
+import {
+  sourceDecisionPrompt,
+  sourcePairDecisionPrompt,
+  parseSourceDecision
+} from "./source-relation-processing.js";
 import {
   buildSourceRelationExplanationPrompt,
   buildSourceRelationExplanationRepairPrompt
@@ -322,7 +326,11 @@ export function promptSampleCall(
         }
       };
     }
-    if (promptId === "sources.decide" || promptId === "sources.decide.repair") {
+    if (
+      promptId === "sources.decide" ||
+      promptId === "sources.decide.pair" ||
+      promptId === "sources.decide.repair"
+    ) {
       const context = {
         chunks: chunks.map((c, i) => ({
           ...c,
@@ -338,7 +346,9 @@ export function promptSampleCall(
         })),
         notes: []
       };
-      const base = sourceDecisionPrompt(context, 2, false);
+      // F3's per-pair judge (the judge mode `perPair`) and its repair feedback.
+      const perPair = promptId === "sources.decide.pair" || variant === "pair";
+      const base = (perPair ? sourcePairDecisionPrompt : sourceDecisionPrompt)(context, 2, false);
       return {
         input:
           promptId === "sources.decide.repair"
@@ -348,7 +358,9 @@ export function promptSampleCall(
                   validation_errors: renderPrompt(
                     variant === "same_root"
                       ? "sources.validation.same_root"
-                      : "sources.validation.default"
+                      : perPair
+                        ? "sources.validation.pair"
+                        : "sources.validation.default"
                   )
                 })
               )
@@ -591,6 +603,8 @@ export function promptSampleCases(ids: string[]): SampleCase[] {
       });
     else if (id === "sources.validation.default")
       add({ id: "sources.decide.repair.default", root: "sources.decide.repair" });
+    else if (id === "sources.validation.pair")
+      add({ id: "sources.decide.repair.pair", root: "sources.decide.repair", variant: "pair" });
     else if (id === "sources.decide.repair") add({ id: "sources.decide.repair.default", root: id });
     else if (id.endsWith(".guidance") || id.endsWith(".advanced")) {
       const prefix = id.replace(/\.(guidance|advanced)$/, "");

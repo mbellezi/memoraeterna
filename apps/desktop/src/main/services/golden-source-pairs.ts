@@ -7,6 +7,7 @@ import { aiCassetteReplayedUsageKey, type AiCassetteStats } from "@app/ai";
 import {
   relationsConfig,
   sourceDecisionPassesFloors,
+  type RelationsConfig,
   type SourceRelationSettings
 } from "@app/domain";
 import { createSourceRelationRepository, type PgPool, type SourceRelationNote } from "@app/db";
@@ -21,10 +22,11 @@ import {
   parseSourceDecision,
   sourceDecisionAllowance,
   sourceDecisionMaxOutputTokens,
-  sourceDecisionPrompt,
+  sourceJudgePrompt,
+  sourceJudgePromptVersions,
+  sourceJudgeValidation,
   sourcePairContext,
   sourceMatchingOperation,
-  sourceRelationPromptVersion,
   sourceRelationWrites,
   type SourceDecisionParse,
   type SourceDecisionOutcome,
@@ -337,7 +339,17 @@ export interface SourcePairVerdictsReport {
   finishedAt: string | null;
   manifest: { name: string };
   pairsFile: { path: string; sha256: string; pairs: number };
+  /** The grouping the pairs were asked in: the file's, or `pair` under the judge mode `perPair`. */
   grouping: SourcePairGrouping;
+  /**
+   * The run's effective relations configuration (F4 D21): the judge mode and pair cap the calls
+   * were made under, and the discovery neighbours (which a pair list does not use, recorded so
+   * every C2 record states them).
+   */
+  relations: {
+    discoveryNeighbours: number;
+    sourceJudge: { mode: RelationsConfig["sourceJudge"]["mode"]; maxPairsPerCall: number };
+  };
   settings: SourceRelationSettings;
   contentLanguage: string;
   cassette: Pick<AiCassetteStats, "mode" | "directory" | "served" | "recorded" | "misses"> | null;
@@ -354,6 +366,8 @@ export interface SourcePairVerdictsInput {
   ai: Pick<AiService, "runDefaultTask">;
   settings: SourceRelationSettings;
   contentLanguage: string;
+  /** The run's typed relations configuration; the shipped one when absent. */
+  relations?: Pick<RelationsConfig, "discovery" | "sourceJudge">;
   cassette: { stats(): AiCassetteStats } | null;
   now?: () => Date;
   /** Called with the report after every pair (state `running`) and at the end (state `finished`). */
@@ -373,6 +387,8 @@ interface Judge {
   ai: Pick<AiService, "runDefaultTask">;
   settings: SourceRelationSettings;
   contentLanguage: string;
+  /** The judge part of the run's typed configuration (its mode, pair cap and note hypotheses). */
+  config: RelationsConfig["sourceJudge"];
 }
 
 /**
@@ -387,11 +403,12 @@ async function judgePair(
   sides: Record<Side, { root: SourcePairRoot; by: "manifestKey" | "title" }>
 ): Promise<SourcePairReport> {
   const { reader, ai, settings, contentLanguage } = judge;
+  const mode = judge.config.mode;
   const roots = { left: describeRoot(sides.left), right: describeRoot(sides.right) };
   const notes: SourceRelationNote[] = await reader.pairNotes(
     sides.left.root.id,
     sides.right.root.id,
-    relationsConfig.sourceJudge.noteRelationsPerPair
+    judge.config.noteRelationsPerPair
   );
   const context = await sourcePairContext(
     reader,
@@ -417,12 +434,8 @@ async function judgePair(
     sideOf(chunks.find((chunk) => chunk.sourceItemId === id)?.rootId ?? "");
   const allowance = sourceDecisionAllowance(settings);
   const maxOutputTokens = sourceDecisionMaxOutputTokens(settings, allowance);
-  const prompt = sourceDecisionPrompt(
-    context,
-    allowance,
-    settings.includeWeakTypes,
-    settings.summaryMaxCharacters
-  );
+  // The judge mode's own prompt: the batched one lists this single pair, F3's names none.
+  const prompt = sourceJudgePrompt(mode, context, allowance, settings);
   const request: NonNullable<SourcePairReport["request"]> = {
     allowance,
     maxOutputTokens,
@@ -450,7 +463,7 @@ async function judgePair(
 
   const attempts: SourcePairAttemptReport[] = [];
   const answers: SourceDecisionParse[] = [];
-  let validationFeedback = renderPrompt("sources.validation.default");
+  let validationFeedback = sourceJudgeValidation(mode);
   const sourceItemIds = [
     ...new Set([sides.left.root.id, sides.right.root.id, ...chunks.map((c) => c.sourceItemId)])
   ];
@@ -484,7 +497,7 @@ async function judgePair(
           budgetClass: "user",
           origin: "golden_source_pairs",
           contentLanguage,
-          promptVersion: sourceRelationPromptVersion,
+          promptVersion: sourceJudgePromptVersions[mode],
           sourceItemIds,
           attempt,
           // The same audit as the source judge's own calls: the second one is a repair.
@@ -652,7 +665,7 @@ async function judgeGroup(
       const notes: SourceRelationNote[] = await reader.pairNotes(
         root,
         partnerOf(member),
-        relationsConfig.sourceJudge.noteRelationsPerPair
+        judge.config.noteRelationsPerPair
       );
       const context = await sourcePairContext(reader, root, partnerOf(member), notes, settings);
       if (context)
@@ -682,7 +695,9 @@ async function judgeGroup(
     }
   }
   const attempts: SourcePairAttemptReport[] = [];
+  // Each call's request, prompt length and output cap, in the asker's call order.
   const requests: Array<Required<SourceDecisionRequest>> = [];
+  const calls: Array<{ promptCharacters: number; maxOutputTokens: number }> = [];
   let failure: unknown = null;
   let result: Awaited<ReturnType<typeof askSourceJudge>> | null = null;
   if (pairs.length)
@@ -691,6 +706,7 @@ async function judgeGroup(
         root,
         pairs,
         settings,
+        judge: judge.config,
         call: async (call) => {
           const started = Date.now();
           const execution = await ai.runDefaultTask(
@@ -701,9 +717,11 @@ async function judgeGroup(
               stage: "sourceMatching",
               workloadClass: "decide",
               priority: "P2",
+              // A DEV measurement the developer starts: audited, never refused by the budget.
+              budgetClass: "user",
               origin: "golden_source_pairs",
               contentLanguage,
-              promptVersion: sourceRelationPromptVersion,
+              promptVersion: sourceJudgePromptVersions[judge.config.mode],
               sourceItemIds: [
                 ...new Set([
                   root,
@@ -720,6 +738,10 @@ async function judgeGroup(
           if (!execution) throw new Error("errors.ai.noCompatibleModel");
           const parsed = parseSourceDecision(execution.output, call.request, call.attempt);
           requests.push(call.request);
+          calls.push({
+            promptCharacters: call.prompt.length,
+            maxOutputTokens: call.maxOutputTokens
+          });
           attempts.push({
             attempt: call.attempt,
             wallMs: Date.now() - started,
@@ -773,13 +795,9 @@ async function judgeGroup(
       lead && first
         ? {
             allowance,
-            maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance * pairs.length),
-            promptCharacters: sourceDecisionPrompt(
-              first,
-              allowance,
-              settings.includeWeakTypes,
-              settings.summaryMaxCharacters
-            ).length,
+            // The first call's own cap and prompt (a group over `maxPairsPerCall` makes more calls).
+            maxOutputTokens: calls[0]!.maxOutputTokens,
+            promptCharacters: calls[0]!.promptCharacters,
             noteRelations: first.notes.length,
             sources: aliasOrder(first.chunks).sources.map((id) => {
               const chunk = first.chunks.find((candidate) => candidate.sourceItemId === id)!;
@@ -824,7 +842,8 @@ async function judgeGroup(
       allowance
     );
     const items = answer.items.map((verdict, index): SourcePairItemReport => {
-      const alias = aliases(requests[verdict.attempt] ?? requests.at(-1)!);
+      // The call that answered the item: the pair's first call or its repair.
+      const alias = aliases(requests[answer.calls[verdict.attempt] ?? answer.calls.at(-1)!]!);
       const outcome = written.records[index]!.outcome;
       return {
         attempt: verdict.attempt,
@@ -939,12 +958,17 @@ export async function runSourcePairVerdicts(
   input: SourcePairVerdictsInput
 ): Promise<SourcePairVerdictsReport> {
   const now = input.now ?? (() => new Date());
+  const relations = input.relations ?? relationsConfig;
   const judge: Judge = {
     reader: input.reader,
     ai: input.ai,
     settings: input.settings,
-    contentLanguage: input.contentLanguage
+    contentLanguage: input.contentLanguage,
+    config: relations.sourceJudge
   };
+  // F3's per-pair judge asks about one pair a call whatever the file's grouping says.
+  const grouping: SourcePairGrouping =
+    relations.sourceJudge.mode === "perPair" ? "pair" : (input.file.grouping ?? "pair");
   const cassetteStats = () => {
     const stats = input.cassette?.stats();
     return stats
@@ -963,12 +987,19 @@ export async function runSourcePairVerdicts(
     state: "running",
     status: null,
     mode: input.mode,
-    contract: sourceRelationPromptVersion,
+    contract: sourceJudgePromptVersions[relations.sourceJudge.mode],
     startedAt: now().toISOString(),
     finishedAt: null,
     manifest: { name: input.manifest.name },
     pairsFile: { path: input.file.path, sha256: input.file.sha256, pairs: input.file.pairs.length },
-    grouping: input.file.grouping ?? "pair",
+    grouping,
+    relations: {
+      discoveryNeighbours: relations.discovery.neighbours,
+      sourceJudge: {
+        mode: relations.sourceJudge.mode,
+        maxPairsPerCall: relations.sourceJudge.maxPairsPerCall
+      }
+    },
     settings: input.settings,
     contentLanguage: input.contentLanguage,
     cassette: cassetteStats(),
@@ -1014,7 +1045,7 @@ export async function runSourcePairVerdicts(
     else judgeable.push({ base, sides: { left, right } });
   }
   const groups: Array<{ root: string | null; members: JudgeablePair[] }> =
-    input.file.grouping === "root"
+    grouping === "root"
       ? groupSourcePairsByRoot(judgeable)
       : judgeable.map((pair) => ({ root: null, members: [pair] }));
   const steps = [

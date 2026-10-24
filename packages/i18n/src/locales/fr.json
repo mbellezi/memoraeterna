@@ -2560,6 +2560,7 @@
       "validation": "Retour de validation",
       "default": "Validation générale",
       "same_root": "Rejet du même ouvrage",
+      "pair": "Juge par paire",
       "guidance": "Conseils éditoriaux",
       "advanced": "Instructions de fonction",
       "support": "Vérification du support sémantique",

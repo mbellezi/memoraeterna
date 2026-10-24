@@ -640,6 +640,7 @@ describe.skipIf(!sidecarInstalled)("the re-match harness on a real PostgreSQL da
       lanesMode: "serial",
       link: "drain",
       helperBatchSize: null,
+      relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 } },
       p0Probe: null,
       drainTimeoutMs: 60_000,
       drainPollMs: 1,

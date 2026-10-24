@@ -150,6 +150,7 @@ function input(
     lanesMode: "serial",
     link: "drain",
     helperBatchSize: null,
+    relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 } },
     p0Probe: null,
     drainTimeoutMs: 60_000,
     drainPollMs: 1_000,
@@ -218,6 +219,23 @@ describe("a re-match run", () => {
       helperBatchSize: 1
     });
     expect(RematchSummarySchema.parse(product).link).toBe("product");
+  });
+
+  it("records the discovery neighbours and the source judge mode it matched under (F4 D21)", async () => {
+    const h = harness();
+    const relations = {
+      discoveryNeighbours: 2,
+      sourceJudge: { mode: "perPair" as const, maxPairsPerCall: 12 }
+    };
+    const summary = await runRematch(
+      h.ports,
+      input(h, buildRematchPlan(library(), arrival), { relations })
+    );
+    expect(RematchSummarySchema.parse(summary).relations).toEqual(relations);
+    // A summary written before F4 reads as not recorded.
+    const older: Partial<typeof summary> = { ...summary };
+    delete older.relations;
+    expect(RematchSummarySchema.parse(older).relations).toBeNull();
   });
 
   it("probes P0 once an interval from the run's clock until the links drain, with a text no cassette holds", async () => {

@@ -611,7 +611,8 @@ void app.whenReady().then(() => {
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
     aiService,
-    // DEV only (MEMORA_RELATIONS_HELPER_BATCH, F3 T63's B1): the ranker's helper batch of this run.
+    // DEV only: the ranker's helper batch (MEMORA_RELATIONS_HELPER_BATCH, F3 T63's B1) and the source
+    // discovery neighbours (MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS, F4 C2) of this run.
     ...(devRelationsConfig ? { relationsConfig: devRelationsConfig } : {}),
     userDataPath: app.getPath("userData"),
     getStorageSettings: () => settingsService!.get(),

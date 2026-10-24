@@ -122,6 +122,7 @@ describe("the re-match knobs", () => {
       link: "drain",
       p0ProbeMs: null,
       helperBatchSize: null,
+      relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 } },
       digestOverride: { sha256: "b".repeat(64), notes: 138 },
       outDirectory: "/repo/.cache/f3/rematch/x",
       drainTimeoutMs: 60_000,
@@ -170,6 +171,20 @@ describe("the re-match knobs", () => {
         base
       )
     ).toMatchObject({ link: "product", p0ProbeMs: 10_000, helperBatchSize: 1 });
+  });
+
+  it("read the run's effective discovery neighbours (C2's knob) and source judge mode", () => {
+    expect(readRematchEnvironment(knob, base)?.relations).toEqual({
+      discoveryNeighbours: 1,
+      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+    });
+    expect(
+      readRematchEnvironment({ ...knob, MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS: "2" }, base)
+        ?.relations
+    ).toMatchObject({ discoveryNeighbours: 2 });
+    expect(() =>
+      readRematchEnvironment({ ...knob, MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS: "3" }, base)
+    ).toThrow(RematchRefusal);
   });
 
   it("refuse a value they cannot read", () => {
