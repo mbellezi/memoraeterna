@@ -59,8 +59,17 @@ const doneMessages = {
   backlog: { apply: "inbox.result.accepted", dismiss: "inbox.result.dismissed" }
 } as const satisfies Record<InboxKind, Partial<Record<InboxVerb, MessageKey>>>;
 
-export function doneMessage(kind: InboxKind, verb: InboxVerb): MessageKey {
-  const messages: Partial<Record<InboxVerb, MessageKey>> = doneMessages[kind];
+/** A Divergence is kept beside the text or its item dismissed; nothing is removed (D17). */
+const divergenceDoneMessages = {
+  apply: "inbox.result.kept",
+  dismiss: "inbox.result.dismissed"
+} as const satisfies Partial<Record<InboxVerb, MessageKey>>;
+
+export function doneMessage(kind: InboxKind, verb: InboxVerb, variant?: string): MessageKey {
+  const messages: Partial<Record<InboxVerb, MessageKey>> =
+    kind === "contradiction" && variant === "divergence"
+      ? divergenceDoneMessages
+      : doneMessages[kind];
   return messages[verb] ?? "inbox.result.dismissed";
 }
 
@@ -358,7 +367,7 @@ export class InboxController {
         .inbox.act({ kind: item.kind, id: item.id, action: verb });
       switch (result.status) {
         case "done": {
-          const message = doneMessage(item.kind, verb);
+          const message = doneMessage(item.kind, verb, item.variant);
           const params = result.queued === undefined ? {} : { count: result.queued };
           this.dispatch({ type: "actionDone", key, announcement: message, params });
           if (result.undoable)

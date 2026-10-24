@@ -1,13 +1,15 @@
 import type { QueryResultRow } from "pg";
 
-import type {
-  ChangeSetBlockerCode,
-  ChangeSetRisk,
-  OverviewChangeOrigin,
-  OverviewDivergence
+import {
+  formatObjectAddress,
+  type ChangeSetBlockerCode,
+  type ChangeSetRisk,
+  type OverviewChangeOrigin,
+  type OverviewDivergence
 } from "@app/domain";
 
 import { withTransaction, type PgPool } from "../client.js";
+import { createGardenerFindingRepository } from "./gardenerFindingRepository.js";
 import { mapTimestamp } from "./sql.js";
 import type { Queryable } from "./types.js";
 
@@ -22,6 +24,12 @@ import type { Queryable } from "./types.js";
 // `version` and keeps the replaced text, citations and provenance in `topic_overview_versions`,
 // so it can be undone exactly while no later write moved the overview on. A proposal (Suggest
 // autonomy) is stored there with the version it was made on and applied only on the owner's verdict.
+// An automatic write that keeps new Divergences beside the prose also records a `divergence`
+// finding in its transaction (D17: the Inbox, high risk), and the undo of that write resolves it.
+
+/** The finding of the Divergences an applied automatic write kept beside the prose. */
+export const overviewDivergenceFingerprint = (changeSetId: string): string =>
+  `divergence:${changeSetId}`;
 
 /** The topic an overview is for: a live topic of the active tree, redirects of retired ones followed. */
 export interface TopicOverviewTopic {
@@ -637,6 +645,11 @@ async function writeIn(
     change: Required<Omit<TopicOverviewChange, "origin">> & { origin: OverviewChangeOrigin };
     undoOf?: string | null;
     proposalId?: string;
+    /**
+     * An automatic write (not the owner's apply, not an undo): Divergences it adds reach the Inbox
+     * as a `divergence` finding, recorded in this transaction.
+     */
+    divergencesToInbox?: boolean;
   }
 ): Promise<TopicOverviewWriteResult> {
   const locked = (await db.query<{ version: number | string }>(topicOverviewSql.lock, [topicId]))
@@ -677,6 +690,19 @@ async function writeIn(
         ])
       ).rows[0]?.id ?? null;
   }
+  // A patch keeps the stored Divergences as they are and appends its own (D17): the ones past the
+  // stored count are new. A first write has no stored text to disagree with.
+  const added = (content.divergences?.length ?? 0) - (previous?.divergences?.length ?? 0);
+  if (options.divergencesToInbox && changeSetId !== null && added > 0)
+    await createGardenerFindingRepository(db).record([
+      {
+        kind: "divergence",
+        fingerprint: overviewDivergenceFingerprint(changeSetId),
+        objectRefs: [formatObjectAddress({ kind: "topic", id: topicId })],
+        params: { changeSetId, version: stored.version, divergences: added },
+        risk: "high"
+      }
+    ]);
   return {
     kind: "written",
     writtenAt: mapTimestamp(stored.writtenAt),
@@ -728,7 +754,8 @@ export function createTopicOverviewRepository(pool: PgPool) {
     return withTransaction(pool, (client) =>
       writeIn(client, input.topicId, contentOf(input), {
         ...(input.expectedVersion === undefined ? {} : { expectedVersion: input.expectedVersion }),
-        change: changeOf(input.change, "write")
+        change: changeOf(input.change, "write"),
+        divergencesToInbox: true
       })
     );
   }
@@ -984,6 +1011,10 @@ export function createTopicOverviewRepository(pool: PgPool) {
             where id = $1::uuid`,
           [id]
         );
+        // The Divergences the write kept are gone with its text: their Inbox item closes.
+        await createGardenerFindingRepository(client).resolve("divergence", [
+          overviewDivergenceFingerprint(id)
+        ]);
         return { kind: "undone", undoId: restored.changeSetId, version: restored.version };
       });
     },

@@ -14,9 +14,13 @@ import {
   createNoteMatchStateRepository,
   createPgPool,
   createRelationMatchRunRepository,
+  createSourceItemRepository,
+  createTopicOverviewRepository,
+  createTopicTreeRepository,
   resolvePostgresSidecarPaths,
   runMigrations,
-  type PgPool
+  type PgPool,
+  type SaveTopicOverviewInput
 } from "@app/db";
 import {
   InboxListSchema,
@@ -25,6 +29,7 @@ import {
   type InboxItem,
   type InboxKind
 } from "@app/domain";
+import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
 
 import type { AppEvent } from "../../../shared/app-events.js";
 import { RelationMatchBacklog } from "../relations/relation-match-backlog.js";
@@ -131,6 +136,8 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
   beforeEach(async () => {
     const db = pool!;
     for (const table of [
+      "topic_overview_versions",
+      "topic_overviews",
       "relation_events",
       "relation_match_runs",
       "atomic_note_relations",
@@ -570,6 +577,179 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
         .act({ kind: "quarantined", id: "not-an-id", action: "retry" })
         .catch((error: Error) => error.message)
     ).toBe("inbox.errors.invalidItem");
+  });
+
+  /** Two live topics, "Sleep" and "Memory", of the one active tree (built on first use). */
+  let topicIds: { sleep: string; memory: string } | null = null;
+  const seedTopics = async () => {
+    if (topicIds) return topicIds;
+    const trees = createTopicTreeRepository(pool!);
+    const rootId = randomUUID();
+    const ids = { sleep: randomUUID(), memory: randomUUID() };
+    const tree = await trees.createTree({
+      id: randomUUID(),
+      rootId,
+      spaceKey: "test:inbox:256",
+      embeddingProvider: "test",
+      embeddingModel: "test",
+      embeddingRuntime: "none",
+      dimensions: 256,
+      config: {},
+      configHash: "test",
+      seed: 1
+    });
+    const sources = createSourceItemRepository(pool!);
+    const placed = [
+      await sources.create({ type: "Book", title: "Sleep" }),
+      await sources.create({ type: "Book", title: "Memory" })
+    ];
+    await trees.bootstrapSnapshot({
+      treeId: tree.id,
+      expectedGeneration: tree.generation,
+      titleKey: "topics.changeSets.build",
+      topics: (["sleep", "memory"] as const).map((name) =>
+        topicRecord(ids[name], rootId, {
+          role: "topic",
+          title: name === "sleep" ? "Sleep" : "Memory",
+          nameState: "provisional",
+          nameSource: "tfidf",
+          nameLanguage: "en"
+        })
+      ),
+      placements: [
+        { item: itemKey("source", placed[0]!.id), placement: placementRecord(ids.sleep) },
+        { item: itemKey("source", placed[1]!.id), placement: placementRecord(ids.memory) }
+      ]
+    });
+    topicIds = ids;
+    return ids;
+  };
+
+  /** An overview of the topic with the given paragraphs and the Divergences kept beside them. */
+  const overview = (
+    topicId: string,
+    paragraphs: string[],
+    divergences: SaveTopicOverviewInput["divergences"] = []
+  ): SaveTopicOverviewInput => ({
+    topicId,
+    paragraphs: paragraphs.map((text) => ({ text, citations: [] })),
+    evidence: [],
+    memberFingerprint: `m-${paragraphs.length}`,
+    memberCount: 1,
+    inputHash: `i-${paragraphs.join("|")}`,
+    promptRevisionId: "p",
+    provider: "test",
+    model: "test",
+    runtime: "none",
+    aiTaskRunId: null,
+    language: "en",
+    support: { status: "unchecked", unsupported: [] },
+    divergences,
+    citations: []
+  });
+
+  it("lists the Divergences an automatic overview patch kept as a high-risk contradiction, with its change-set (D17)", async () => {
+    const topicId = (await seedTopics()).sleep;
+    const overviews = createTopicOverviewRepository(pool!);
+    // The first write has nothing to disagree with; the patch keeps two Divergences beside it.
+    await overviews.write(overview(topicId, ["Naps help."]));
+    const patched = await overviews.write(
+      overview(
+        topicId,
+        ["Naps help.", "Long naps can hurt."],
+        [
+          { existing: "1", new: "2", summary: "Long naps can leave a person groggy." },
+          { existing: "1", new: "3", summary: "Some sleepers lose the night after a nap." }
+        ]
+      )
+    );
+    if (patched.kind !== "written" || !patched.changeSetId) throw new Error("not written");
+    // The owner's apply of a proposal they read is not sent to the Inbox again.
+    const proposal = await overviews.propose(
+      overview(
+        topicId,
+        ["Naps help.", "Long naps can hurt.", "Short ones do not."],
+        [
+          { existing: "1", new: "2", summary: "Long naps can leave a person groggy." },
+          { existing: "1", new: "3", summary: "Some sleepers lose the night after a nap." },
+          { existing: "2", new: "4", summary: "Twenty minutes is enough." }
+        ]
+      )
+    );
+    if (proposal.kind !== "proposed") throw new Error("not proposed");
+
+    const counts = await inbox.counts();
+    expect(counts.byKind.contradiction).toBe(1);
+    expect(counts.byKind.review).toBe(1);
+    expect(counts.byRisk.high).toBe(1);
+    const listed = (await inbox.list({ kinds: ["contradiction"] })).items;
+    expect(listed).toHaveLength(1);
+    const item = listed[0]!;
+    expect(item).toMatchObject({
+      kind: "contradiction",
+      risk: "high",
+      variant: "divergence",
+      params: { divergences: 2 },
+      objects: [{ kind: "topic", id: topicId, title: "Sleep" }],
+      actions: ["apply", "dismiss"]
+    });
+    expect(item.id).toMatch(/^divergence:/u);
+    expect(item.changeSet).toMatchObject({
+      kind: "overview",
+      id: patched.changeSetId,
+      status: "applied"
+    });
+    // The Divergences are listed first: high risk.
+    expect((await inbox.list({})).items[0]).toMatchObject({ kind: "contradiction", id: item.id });
+
+    // Dismissing it can be taken back; keeping it beside the text is the last word.
+    expect(await inbox.act({ kind: "contradiction", id: item.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: true
+    });
+    expect((await inbox.counts()).byKind.contradiction).toBe(0);
+    expect(await inbox.act({ kind: "contradiction", id: item.id, action: "undo" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(await inbox.act({ kind: "contradiction", id: item.id, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(await inbox.act({ kind: "contradiction", id: item.id, action: "apply" })).toEqual({
+      status: "gone"
+    });
+    const stored = await pool!.query<{ status: string }>(
+      "select status from gardener_findings where kind = 'divergence'"
+    );
+    expect(stored.rows.map((row) => row.status)).toEqual(["resolved"]);
+    // Either verdict leaves the overview as it was.
+    expect((await overviews.readContext(topicId))?.stored?.divergences).toHaveLength(2);
+    // An ID that names no Divergence and no relation is refused.
+    await expect(
+      inbox.act({ kind: "contradiction", id: "divergence:not-a-uuid", action: "apply" })
+    ).rejects.toThrow("inbox.errors.invalidItem");
+  });
+
+  it("closes a Divergence's item when the patch that kept it is undone", async () => {
+    const topicId = (await seedTopics()).memory;
+    const overviews = createTopicOverviewRepository(pool!);
+    await overviews.write(overview(topicId, ["Spacing helps."]));
+    const patched = await overviews.write(
+      overview(
+        topicId,
+        ["Spacing helps.", "Cramming works for a day."],
+        [{ existing: "1", new: "2", summary: "Cramming helps the next day only." }]
+      )
+    );
+    if (patched.kind !== "written" || !patched.changeSetId) throw new Error("not written");
+    expect((await inbox.counts()).byKind.contradiction).toBe(1);
+    const undone = await overviews.undoVersion(patched.changeSetId);
+    expect(undone.kind).toBe("undone");
+    expect((await inbox.counts()).byKind.contradiction).toBe(0);
+    // A patch that adds no Divergence sends nothing.
+    await overviews.write(overview(topicId, ["Spacing helps.", "Sleep consolidates."]));
+    expect((await inbox.counts()).byKind.contradiction).toBe(0);
   });
 
   it("dismisses a finding for good and takes the dismissal back", async () => {

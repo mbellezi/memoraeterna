@@ -91,8 +91,10 @@ const utc = (column: string) =>
 /**
  * The open items of every database-backed kind as `(kind, id, risk, at)`; `$1` filters the kinds
  * (null: all). Each branch is the store's own predicate: pending change-sets (all three stores),
- * quarantined subjects that were not dismissed since, suggested `contradicts` relations, withdrawn
- * relations (both through the visibility module) and open findings of the Inbox's kinds.
+ * quarantined subjects that were not dismissed since, suggested `contradicts` relations and the
+ * Divergences an automatic overview patch kept (`contradiction`, D17; a Divergence's ID is
+ * `divergence:<finding id>`), withdrawn relations (both through the visibility module) and open
+ * findings of the Inbox's kinds.
  */
 const openItemsSql = `
   select 'review'::text as kind, (cs.kind || ':' || cs.id::text) as id, cs.risk::text as risk,
@@ -111,6 +113,11 @@ const openItemsSql = `
   select 'contradiction', r.id::text, 'medium', r.updated_at
     from atomic_note_relations r
    where r.relation_type = 'contradicts' and ${suggestedNoteRelationSql("r")}
+     and ($1::text[] is null or 'contradiction' = any($1::text[]))
+  union all
+  select 'contradiction', 'divergence:' || d.id::text, d.risk, d.created_at
+    from gardener_findings d
+   where d.status = 'open' and d.kind = 'divergence'
      and ($1::text[] is null or 'contradiction' = any($1::text[]))
   union all
   select 'withdrawn', w.id::text, 'low', w.updated_at

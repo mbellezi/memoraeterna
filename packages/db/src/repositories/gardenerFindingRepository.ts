@@ -12,8 +12,9 @@ import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { Queryable } from "./types.js";
 
 /**
- * What AUDIT found for the owner, and the `backlog` and `budget` Inbox items (F4 D19, D29), in
- * `gardener_findings`. A finding is unique per kind and fingerprint: finding it again updates its
+ * What AUDIT found for the owner, the `backlog` and `budget` Inbox items and the Divergences an
+ * automatic overview patch kept (`divergence`, recorded by the overview repository; F4 D17, D19,
+ * D29), in `gardener_findings`. A finding is unique per kind and fingerprint: finding it again updates its
  * row, a resolved one reopens, and a dismissed one stays dismissed (the owner's verdict persists).
  * Findings carry the addresses of the objects they name and scalar parameters, never copy.
  */

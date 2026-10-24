@@ -49,6 +49,7 @@ import {
   isUuid,
   obsidianItem,
   parseChangeSetItemId,
+  parseDivergenceItemId,
   parseQuarantineItemId,
   type ObsidianConflictRecord
 } from "./inbox-items.js";
@@ -339,6 +340,9 @@ export class InboxService {
       case "review":
         return this.changeSet(input);
       case "contradiction":
+        return parseDivergenceItemId(input.id) === null
+          ? this.relation(input)
+          : this.divergence(input);
       case "withdrawn":
         return this.relation(input);
       case "quarantined":
@@ -393,6 +397,34 @@ export class InboxService {
     if (!reviewed) return { status: "gone" };
     // A verdict is final in both directions (I-R2, I-R3): another one that stands is not ours.
     return reviewed.outcome === wanted ? { status: "done", undoable: false } : { status: "stale" };
+  }
+
+  /**
+   * The owner's verdict on the Divergences an automatic overview patch kept (D17, D29): keeping
+   * them beside the text resolves the finding, dismissing it can be taken back. Either way the
+   * overview stays as it is; undoing the patch itself is Activity's (and closes the item).
+   */
+  private async divergence(input: InboxActInput): Promise<InboxActResult> {
+    const findingId = parseDivergenceItemId(input.id);
+    if (!findingId) throw new Error(errors.invalidItem);
+    const findings = createGardenerFindingRepository(this.pool());
+    const finding = await findings.get(findingId);
+    if (!finding || finding.kind !== "divergence") return { status: "gone" };
+    if (input.action === "undo") {
+      if (finding.status !== "dismissed") return { status: "gone" };
+      return (await findings.reopen(finding.id))
+        ? { status: "done", undoable: false }
+        : { status: "gone" };
+    }
+    if (finding.status !== "open") return { status: "gone" };
+    if (input.action === "dismiss")
+      return (await findings.dismiss(finding.id))
+        ? { status: "done", undoable: true }
+        : { status: "gone" };
+    if (input.action !== "apply") return { status: "unsupported" };
+    return (await findings.resolve("divergence", [finding.fingerprint])) > 0
+      ? { status: "done", undoable: false }
+      : { status: "gone" };
   }
 
   private async quarantine(input: InboxActInput): Promise<InboxActResult> {

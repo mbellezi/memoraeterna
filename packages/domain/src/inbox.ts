@@ -68,7 +68,8 @@ export type InboxAction = z.infer<typeof InboxActionSchema>;
 export const inboxVariants = {
   review: ["topic", "relation", "overview"],
   quarantined: ["place", "rebalance", "audit", "match", "refresh", "derived", "other"],
-  contradiction: ["relation"],
+  /** A suggested `contradicts` relation, or the Divergences an automatic overview patch kept (D17). */
+  contradiction: ["relation", "divergence"],
   withdrawn: ["explainer", "typer", "unknown"],
   duplicate: ["vector", "title", "both"],
   obsidian_conflict: ["editorial", "deleted", "projection"],

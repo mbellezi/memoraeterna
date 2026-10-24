@@ -650,6 +650,10 @@ describe("the tables", () => {
     for (const kind of inboxKinds)
       for (const verb of ["apply", "dismiss", "retry"] as const)
         expect(t(doneMessage(kind, verb)), `${kind} ${verb}`).not.toMatch(/^\[\[missing/u);
+    // A Divergence kept beside the text says so; nothing was removed.
+    expect(doneMessage("contradiction", "apply", "divergence")).toBe("inbox.result.kept");
+    expect(doneMessage("contradiction", "dismiss", "divergence")).toBe("inbox.result.dismissed");
+    expect(doneMessage("contradiction", "dismiss", "relation")).toBe("inbox.result.removed");
   });
 
   it("has a sentence for every blocker", () => {

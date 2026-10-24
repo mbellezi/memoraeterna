@@ -91,6 +91,18 @@ describe("what an item says", () => {
       itemBody(createTranslator("pt-BR"), item("backlog", { params: { notes: 12345 } }))
     ).toContain("12.345");
     expect(itemBody(en, item("backlog", { variant: "other" }))).toContain("optional task");
+    // The Divergences an overview patch kept name the topic and count the points (D17).
+    const divergence = item("contradiction", {
+      variant: "divergence",
+      risk: "high",
+      params: { divergences: 1234 },
+      objects: [{ kind: "topic", id: uuid(40), title: "Sleep" }]
+    });
+    expect(itemTitle(en, divergence)).toBe("New evidence disagrees with a topic overview");
+    expect(itemBody(en, divergence)).toBe(
+      "The overview of “Sleep” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: 1,234."
+    );
+    expect(itemSubject(en, divergence)).toBe("“Sleep”");
     // Matching values that changed (T98) count the notes and the source pairs they decided.
     const settings = item("backlog", {
       params: { reason: "settings_changed", notes: 1200, pairs: 34 }
@@ -188,6 +200,10 @@ describe("verbs and time", () => {
       ["budget", "apply", "Continue"]
     ];
     for (const [kind, verb, label] of expectations) expect(verbLabel(en, kind, verb)).toBe(label);
+    // A Divergence is kept beside the text or its item dismissed: nothing is removed (D17).
+    expect(verbLabel(en, "contradiction", "apply", "divergence")).toBe("Keep");
+    expect(verbLabel(en, "contradiction", "dismiss", "divergence")).toBe("Dismiss");
+    expect(verbLabel(en, "contradiction", "dismiss", "relation")).toBe("Remove");
     for (const kind of inboxKinds)
       for (const verb of Object.keys(verbLabels[kind]) as InboxVerb[])
         for (const locale of supportedLanguageCodes)

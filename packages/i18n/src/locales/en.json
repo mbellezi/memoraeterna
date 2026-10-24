@@ -226,7 +226,9 @@
       },
       "contradiction": {
         "title": "These notes may contradict each other",
-        "body": "A suggested connection says “{first}” and “{second}” hold opposing positions. Keep it to record the contradiction, or remove it."
+        "body": "A suggested connection says “{first}” and “{second}” hold opposing positions. Keep it to record the contradiction, or remove it.",
+        "divergenceTitle": "New evidence disagrees with a topic overview",
+        "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "withdrawn": {
         "title": "A connection was withdrawn",

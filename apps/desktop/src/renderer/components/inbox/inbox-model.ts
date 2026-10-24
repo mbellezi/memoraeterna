@@ -48,9 +48,24 @@ export const verbLabels = {
   backlog: { apply: "inbox.verbs.rematch", dismiss: "inbox.verbs.dismiss" }
 } as const satisfies Record<InboxKind, Partial<Record<InboxVerb, MessageKey>>>;
 
-/** The label of a verb on an item of a kind. */
-export function verbLabel(t: Translator, kind: InboxKind, verb: InboxVerb): string {
-  const labels: Partial<Record<InboxVerb, MessageKey>> = verbLabels[kind];
+/**
+ * The verbs of a Divergence an overview patch kept (D17): keeping it beside the text, or dismissing
+ * the item. Nothing is removed from the overview, unlike a suggested `contradicts` relation.
+ */
+export const divergenceVerbLabels = {
+  apply: "inbox.verbs.keep",
+  dismiss: "inbox.verbs.dismiss"
+} as const satisfies Partial<Record<InboxVerb, MessageKey>>;
+
+/** The label of a verb on an item of a kind (and variant, where the verbs differ). */
+export function verbLabel(
+  t: Translator,
+  kind: InboxKind,
+  verb: InboxVerb,
+  variant?: string
+): string {
+  const labels: Partial<Record<InboxVerb, MessageKey>> =
+    kind === "contradiction" && variant === "divergence" ? divergenceVerbLabels : verbLabels[kind];
   return t(labels[verb] ?? "inbox.verbs.dismiss");
 }
 
@@ -130,7 +145,11 @@ export function itemTitle(t: Translator, item: InboxItem): string {
         }
       });
     case "contradiction":
-      return t("inbox.items.contradiction.title");
+      return t(
+        item.variant === "divergence"
+          ? "inbox.items.contradiction.divergenceTitle"
+          : "inbox.items.contradiction.title"
+      );
     case "withdrawn":
       return t("inbox.items.withdrawn.title");
     case "duplicate":
@@ -173,6 +192,13 @@ export function itemBody(t: Translator, item: InboxItem): string {
       return `${t("inbox.items.quarantined.body")} ${reason}`;
     }
     case "contradiction":
+      if (item.variant === "divergence")
+        return t("inbox.items.contradiction.divergenceBody", {
+          values: {
+            topic: first,
+            count: new Intl.NumberFormat(t.locale).format(finite(item.params.divergences))
+          }
+        });
       return t("inbox.items.contradiction.body", { values: { first, second } });
     case "withdrawn":
       return t(

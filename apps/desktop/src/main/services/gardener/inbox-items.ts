@@ -47,6 +47,14 @@ export function parseChangeSetItemId(id: string): { kind: ChangeSetKind; id: str
   return { kind: kind as ChangeSetKind, id: uuid.toLowerCase() };
 }
 
+/** The `divergence` finding a `contradiction` ID names (`divergence:<uuid>`), else null. */
+export function parseDivergenceItemId(id: string): string | null {
+  const [prefix, uuid, extra] = id.split(":");
+  if (prefix !== "divergence" || extra !== undefined || !uuid || !uuidPattern.test(uuid))
+    return null;
+  return uuid.toLowerCase();
+}
+
 /** The subject a `quarantined` ID names: `<task kind>|<subject key>`. */
 export function parseQuarantineItemId(id: string): { kind: string; subjectKey: string } | null {
   const bar = id.indexOf("|");
@@ -86,6 +94,12 @@ const pickVariant = <K extends InboxKind>(kind: K, wanted: unknown, fallback: st
 function noteAddress(address: string): string | null {
   const parsed = parseObjectAddress(address);
   return parsed?.kind === "note" ? parsed.id : null;
+}
+
+/** The topic an address names (`memora://topic/<id>`), else null. */
+function topicAddress(address: string): string | null {
+  const parsed = parseObjectAddress(address);
+  return parsed?.kind === "topic" ? parsed.id : null;
 }
 
 const scalar = (value: unknown): string | number | boolean | null =>
@@ -189,6 +203,31 @@ function relationItem(row: InboxRowKey, lookups: Lookups): InboxItem | null {
   };
 }
 
+/**
+ * The Divergences an automatic overview patch kept beside the prose (D17): high risk, the topic by
+ * name, and the patch's change-set so the detail shows the text before and after with them.
+ */
+function divergenceItem(row: InboxRowKey, lookups: Lookups): InboxItem | null {
+  const findingId = parseDivergenceItemId(row.id);
+  const finding = findingId ? lookups.findings.get(findingId) : undefined;
+  if (!finding || finding.kind !== "divergence" || finding.status !== "open") return null;
+  const topicId = finding.objectRefs.map(topicAddress).find((id) => id !== null) ?? null;
+  const changeSetId = finding.params.changeSetId;
+  const summary =
+    typeof changeSetId === "string" ? lookups.summaries.get(`overview:${changeSetId}`) : undefined;
+  return {
+    kind: "contradiction",
+    id: row.id,
+    risk: row.risk,
+    variant: "divergence",
+    at: row.at,
+    params: findingParams(finding, ["divergences"]),
+    objects: topicId ? [object(lookups, "topic", topicId)] : [],
+    changeSet: summary ?? null,
+    actions: ["apply", "dismiss"]
+  };
+}
+
 function findingItem(row: InboxRowKey, lookups: Lookups): InboxItem | null {
   const finding = lookups.findings.get(row.id);
   if (!finding || finding.status !== "open") return null;
@@ -254,18 +293,34 @@ export async function inboxItems(pool: PgPool, rows: readonly InboxRowKey[]): Pr
   const inbox = createInboxRepository(pool);
   const ofKind = (...kinds: InboxKind[]) => rows.filter((row) => kinds.includes(row.kind));
 
-  const changeRefs = ofKind("review").flatMap((row) => parseChangeSetItemId(row.id) ?? []);
   const subjects = ofKind("quarantined").flatMap((row) => parseQuarantineItemId(row.id) ?? []);
-  const relationIds = ofKind("contradiction", "withdrawn").map((row) => row.id);
-  const findingRows = ofKind("duplicate", "backlog", "budget");
+  const divergenceIds = ofKind("contradiction").flatMap(
+    (row) => parseDivergenceItemId(row.id) ?? []
+  );
+  const relationIds = ofKind("contradiction", "withdrawn")
+    .filter((row) => parseDivergenceItemId(row.id) === null)
+    .map((row) => row.id);
+  const findingIds = [
+    ...ofKind("duplicate", "backlog", "budget").map((row) => row.id),
+    ...divergenceIds
+  ];
   const findings = createGardenerFindingRepository(pool);
 
-  const [summaries, quarantined, relations, findingRecords] = await Promise.all([
-    createChangeSetRepository(pool).getMany(changeRefs),
+  const [quarantined, relations, findingRecords] = await Promise.all([
     inbox.quarantined(subjects),
     inbox.relations(relationIds),
-    Promise.all(findingRows.map((row) => findings.get(row.id)))
+    Promise.all(findingIds.map((id) => findings.get(id)))
   ]);
+  // The change-sets of the reviews, and of the overview patches whose Divergences wait.
+  const changeRefs = [
+    ...ofKind("review").flatMap((row) => parseChangeSetItemId(row.id) ?? []),
+    ...findingRecords.flatMap((record) =>
+      record?.kind === "divergence" && typeof record.params.changeSetId === "string"
+        ? [{ kind: "overview" as const, id: record.params.changeSetId }]
+        : []
+    )
+  ];
+  const summaries = await createChangeSetRepository(pool).getMany(changeRefs);
 
   const lookups: Lookups = {
     titles: new Map(),
@@ -297,6 +352,8 @@ export async function inboxItems(pool: PgPool, rows: readonly InboxRowKey[]): Pr
     for (const address of record?.objectRefs ?? []) {
       const id = noteAddress(address);
       if (id) notes.add(id);
+      const topic = topicAddress(address);
+      if (topic) topics.add(topic);
     }
   lookups.titles = await inbox.titles({
     notes: [...notes],
@@ -311,9 +368,11 @@ export async function inboxItems(pool: PgPool, rows: readonly InboxRowKey[]): Pr
         ? reviewItem(row, lookups)
         : row.kind === "quarantined"
           ? quarantinedItem(row, lookups)
-          : row.kind === "contradiction" || row.kind === "withdrawn"
-            ? relationItem(row, lookups)
-            : findingItem(row, lookups);
+          : row.kind === "contradiction" && parseDivergenceItemId(row.id) !== null
+            ? divergenceItem(row, lookups)
+            : row.kind === "contradiction" || row.kind === "withdrawn"
+              ? relationItem(row, lookups)
+              : findingItem(row, lookups);
     if (item) items.push(item);
   }
   return items;

@@ -226,7 +226,9 @@
       },
       "contradiction": {
         "title": "Estas notas pueden contradecirse",
-        "body": "Una conexión sugerida dice que «{first}» y «{second}» sostienen posturas opuestas. Consérvala para registrar la contradicción o elimínala."
+        "body": "Una conexión sugerida dice que «{first}» y «{second}» sostienen posturas opuestas. Consérvala para registrar la contradicción o elimínala.",
+        "divergenceTitle": "Nuevas pruebas discrepan del resumen de un tema",
+        "divergenceBody": "El resumen de «{topic}» se amplió y algunas pruebas nuevas discrepan de lo que dice. La discrepancia queda junto al texto, nunca mezclada con él. Consérvala ahí o descarta este elemento. Puntos de discrepancia: {count}."
       },
       "withdrawn": {
         "title": "Se retiró una conexión",

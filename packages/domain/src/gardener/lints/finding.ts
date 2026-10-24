@@ -8,7 +8,10 @@ import { formatObjectAddress } from "../../object-address.js";
 import type { ObjectKind } from "../../object-address.js";
 import { ChangeSetRiskSchema, GardenerFindingKindSchema } from "../../change-sets.js";
 
-/** The kinds AUDIT writes; `backlog` and `budget` come from MATCH and the RemoteBudget. */
+/**
+ * The kinds AUDIT writes; `backlog` and `budget` come from MATCH and the RemoteBudget, `divergence`
+ * from an automatic overview write (D17).
+ */
 export const lintFindingKinds = ["duplicate", "broken_link", "redirect_chain"] as const;
 export const LintFindingKindSchema = z.enum(lintFindingKinds);
 export type LintFindingKind = z.infer<typeof LintFindingKindSchema>;

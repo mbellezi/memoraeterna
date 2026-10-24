@@ -3209,8 +3209,9 @@ export const topicOverviewVersions = pgTable(
 
 /**
  * What the Gardener found or keeps for the owner (F4 D19, D29): AUDIT's duplicate notes, broken
- * links and redirect chains, and the `backlog` and `budget` Inbox items. A finding is unique per
- * kind and fingerprint, so finding it again updates it and a dismissal persists.
+ * links and redirect chains, the `backlog` and `budget` Inbox items, and the Divergences an
+ * automatic overview patch kept beside the prose (`divergence`, D17). A finding is unique per kind
+ * and fingerprint, so finding it again updates it and a dismissal persists.
  */
 export const gardenerFindings = pgTable(
   "gardener_findings",
@@ -3242,7 +3243,7 @@ export const gardenerFindings = pgTable(
       .where(sql`${table.status} = 'open'`),
     values: check(
       "gardener_findings_values",
-      sql`${table.kind} in ('duplicate','broken_link','redirect_chain','backlog','budget')
+      sql`${table.kind} in ('duplicate','broken_link','redirect_chain','backlog','budget','divergence')
         and char_length(${table.fingerprint}) between 1 and 200
         and jsonb_typeof(${table.objectRefs}) = 'array' and jsonb_array_length(${table.objectRefs}) <= 50
         and jsonb_typeof(${table.params}) = 'object'

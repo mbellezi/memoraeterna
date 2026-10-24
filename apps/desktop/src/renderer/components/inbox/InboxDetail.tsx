@@ -140,7 +140,7 @@ export function InboxDetail({
           >
             {pending && action.verb === verb
               ? t("inbox.detail.working")
-              : verbLabel(t, item.kind, verb)}
+              : verbLabel(t, item.kind, verb, item.variant)}
             {keyCarries(item, verb) ? (
               <kbd
                 aria-hidden="true"

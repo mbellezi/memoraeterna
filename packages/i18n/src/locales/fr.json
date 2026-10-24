@@ -226,7 +226,9 @@
       },
       "contradiction": {
         "title": "Ces notes se contredisent peut-être",
-        "body": "Un lien suggéré indique que « {first} » et « {second} » défendent des positions opposées. Conservez-le pour consigner la contradiction, ou supprimez-le."
+        "body": "Un lien suggéré indique que « {first} » et « {second} » défendent des positions opposées. Conservez-le pour consigner la contradiction, ou supprimez-le.",
+        "divergenceTitle": "De nouvelles preuves divergent de la vue d'ensemble d'un sujet",
+        "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
       },
       "withdrawn": {
         "title": "Un lien a été retiré",

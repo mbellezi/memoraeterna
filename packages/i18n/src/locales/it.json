@@ -226,7 +226,9 @@
       },
       "contradiction": {
         "title": "Queste note potrebbero contraddirsi",
-        "body": "Un collegamento suggerito dice che “{first}” e “{second}” sostengono posizioni opposte. Mantienilo per registrare la contraddizione, oppure rimuovilo."
+        "body": "Un collegamento suggerito dice che “{first}” e “{second}” sostengono posizioni opposte. Mantienilo per registrare la contraddizione, oppure rimuovilo.",
+        "divergenceTitle": "Nuove evidenze non concordano con la panoramica di un argomento",
+        "divergenceBody": "La panoramica di “{topic}” è stata ampliata e alcune nuove evidenze non concordano con ciò che dice. Il disaccordo resta accanto al testo, mai fuso con esso. Mantienilo lì oppure scarta questo elemento. Punti di disaccordo: {count}."
       },
       "withdrawn": {
         "title": "Un collegamento è stato ritirato",

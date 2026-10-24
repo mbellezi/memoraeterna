@@ -65,14 +65,16 @@ export type RelationRunReviewStatus = z.infer<typeof RelationRunReviewStatusSche
 
 /**
  * Kinds of `gardener_findings` (D19, D29): duplicate notes, broken `memora://` links and redirect
- * chains found by AUDIT, and the `backlog` and `budget` Inbox items, stored so a dismissal persists.
+ * chains found by AUDIT, the `backlog` and `budget` Inbox items, and the Divergences an automatic
+ * overview patch kept beside the prose (`divergence`, D17), stored so a verdict persists.
  */
 export const gardenerFindingKinds = [
   "duplicate",
   "broken_link",
   "redirect_chain",
   "backlog",
-  "budget"
+  "budget",
+  "divergence"
 ] as const;
 export const GardenerFindingKindSchema = z.enum(gardenerFindingKinds);
 export type GardenerFindingKind = z.infer<typeof GardenerFindingKindSchema>;

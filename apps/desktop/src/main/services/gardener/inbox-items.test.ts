@@ -7,6 +7,7 @@ import {
   isUuid,
   obsidianItem,
   parseChangeSetItemId,
+  parseDivergenceItemId,
   parseQuarantineItemId,
   quarantineVariant
 } from "./inbox-items.js";
@@ -20,6 +21,13 @@ describe("the IDs of Inbox items", () => {
     expect(parseChangeSetItemId(`overview:${id.toUpperCase()}`)).toEqual({ kind: "overview", id });
     for (const bad of ["", id, `memo:${id}`, `topic:${id}:x`, "topic:not-a-uuid", `topic:`])
       expect(parseChangeSetItemId(bad), bad).toBeNull();
+  });
+
+  it("reads a Divergence as its finding's UUID, and a relation's UUID as no Divergence", () => {
+    expect(parseDivergenceItemId(`divergence:${id}`)).toBe(id);
+    expect(parseDivergenceItemId(`divergence:${id.toUpperCase()}`)).toBe(id);
+    for (const bad of [id, `divergence:${id}:x`, "divergence:not-a-uuid", `overview:${id}`, ""])
+      expect(parseDivergenceItemId(bad), bad).toBeNull();
   });
 
   it("reads a quarantined subject as its task kind and subject key", () => {
