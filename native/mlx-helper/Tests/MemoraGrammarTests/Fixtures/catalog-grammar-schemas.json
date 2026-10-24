@@ -399,7 +399,7 @@
       "type": "object",
       "properties": {
         "matches": {
-          "maxItems": 12,
+          "maxItems": 24,
           "type": "array",
           "items": {
             "type": "array",
@@ -538,6 +538,87 @@
             "citations": [
               1
             ]
+          }
+        ]
+      }
+    ]
+  },
+  "topic_overview_patch": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "paragraphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "divergences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "existing": {
+                "type": "string"
+              },
+              "new": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "existing",
+              "new",
+              "summary"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "paragraphs",
+        "divergences"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "paragraphs": [
+          "A later source dates it to 1843 [E3]."
+        ],
+        "divergences": [
+          {
+            "existing": "E1",
+            "new": "E3",
+            "summary": "They give different years."
+          }
+        ]
+      },
+      {
+        "paragraphs": [],
+        "divergences": []
+      }
+    ],
+    "invalid": [
+      {
+        "paragraphs": []
+      },
+      {
+        "paragraphs": [
+          {
+            "text": "New."
+          }
+        ],
+        "divergences": []
+      },
+      {
+        "paragraphs": [],
+        "divergences": [
+          {
+            "existing": "E1",
+            "new": "E2"
           }
         ]
       }

@@ -26,7 +26,7 @@ final class CatalogTests: XCTestCase {
         let all = try cases()
         XCTAssertEqual(all.map(\.name), [
             "atomic_notes", "entity_identity", "knowledge_graph", "relation_typing", "topic_areas",
-            "topic_naming", "topic_overview",
+            "topic_naming", "topic_overview", "topic_overview_patch",
         ])
         for entry in all {
             let grammar = try Grammar.compile(entry.schema)

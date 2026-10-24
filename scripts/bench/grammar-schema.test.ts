@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { relationTypingOutputSchema } from "@app/domain";
 
 import { confirmationAnswerContract } from "./contracts/confirmation.ts";
 import { graphAnswerContract } from "./contracts/graph.ts";
@@ -13,7 +14,8 @@ describe("the replay's grammar schema source (F4 D24)", () => {
     ["graph", graphAnswerContract],
     ["confirmation", confirmationAnswerContract],
     ["topic-names", topicNamesAnswerContract],
-    ["overview", overviewAnswerContract]
+    ["overview", overviewAnswerContract],
+    ["typing", { name: "relation_typing", contract: relationTypingOutputSchema() }]
   ] as const)("sends %s its grammar schema, never a strict one", (contract, answer) => {
     const schema = schemaForContract(contract, answer);
     expect(schema).toMatchObject({ name: answer.name, strict: false });

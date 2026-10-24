@@ -240,6 +240,21 @@ const grammarCases: Record<string, { name: string; valid: unknown[]; invalid: un
     valid: [{ paragraphs: [{ text: "Overview [E1].", citations: [1, "E2"] }, { text: "More." }] }],
     invalid: [{ paragraphs: [] }, { paragraphs: [{ citations: [1] }] }]
   },
+  "topic overview patch (REFRESH, F4 D17)": {
+    name: "topic_overview_patch",
+    valid: [
+      {
+        paragraphs: ["A later source dates it to 1843 [E3]."],
+        divergences: [{ existing: "E1", new: "E3", summary: "They give different years." }]
+      },
+      { paragraphs: [], divergences: [] }
+    ],
+    invalid: [
+      { paragraphs: [] },
+      { paragraphs: [{ text: "New." }], divergences: [] },
+      { paragraphs: [], divergences: [{ existing: "E1", new: "E2" }] }
+    ]
+  },
   "relation typing": {
     name: "relation_typing",
     valid: [
