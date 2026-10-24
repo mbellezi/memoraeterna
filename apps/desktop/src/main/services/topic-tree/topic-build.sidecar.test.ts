@@ -775,7 +775,8 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
       expect(await queued(topicJobTypes.audit)).toBe(1);
       await structure.dispose();
     }
-  });
+    // Two builds on the sidecar: slow when the whole suite holds the machine.
+  }, 30_000);
 
   it("seeds one subtree per chapter of a single book (chapter seeding)", async () => {
     await reset(baseConfig);

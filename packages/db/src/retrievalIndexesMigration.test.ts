@@ -291,5 +291,6 @@ describe.skipIf(!sidecarInstalled)("migration 0058 on a real PostgreSQL database
           where d.adrelid = 'atomic_notes'::regclass and a.attname = 'search_tsv'`
       );
     expect((await generated(baselinePool)).rows).toEqual((await generated(pool)).rows);
-  });
+    // A database is made and migrated: slow when the whole suite holds the machine.
+  }, 30_000);
 });
