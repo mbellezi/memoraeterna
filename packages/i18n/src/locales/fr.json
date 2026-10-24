@@ -2524,7 +2524,9 @@
       "humanPin": "Vous avez épinglé un sujet.",
       "humanUnpin": "Vous avez désépinglé un sujet.",
       "humanPlace": "Vous avez placé une note ou une source dans un sujet.",
-      "gate": "{items} classements incertains vérifiés"
+      "gate": "{items} classements incertains vérifiés",
+      "areas": "Domaines principaux regroupés : {areas} domaines, {topics} sujets déplacés",
+      "undo": "Une modification antérieure des sujets a été annulée"
     },
     "navigator": {
       "title": "Explorer",

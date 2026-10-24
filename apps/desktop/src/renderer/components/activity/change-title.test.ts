@@ -34,9 +34,18 @@ describe("the sentence of a change-set", () => {
   });
 
   it("reads a key it does not know as a plain change, never as the key", () => {
-    expect(title("topics.changeSets.undo")).toBe("A change was made to your library.");
+    expect(title("topics.changeSets.unknown")).toBe("A change was made to your library.");
     expect(title("something.else.entirely")).toBe("A change was made to your library.");
     expect(title("toString")).toBe("A change was made to your library.");
+  });
+
+  it("words the topic engine's area regrouping and its undo, whatever the undone key", () => {
+    expect(title("topics.changeSets.areas", { areas: 7, topics: 31 })).toBe(
+      "Regrouped the top areas: 7 areas, 31 topics moved"
+    );
+    expect(title("topics.changeSets.undo", { undone: "topics.changeSets.rebalance" })).toBe(
+      "Undid an earlier change to the topics"
+    );
   });
 
   it("reads an unknown key as the plain sentence its host asks for", () => {
@@ -67,12 +76,14 @@ describe("the sentence of a change-set", () => {
       "topics.changeSets.naming",
       "topics.changeSets.humanRename",
       "topics.changeSets.gate",
+      "topics.changeSets.areas",
+      "topics.changeSets.undo",
       ...relationChangeSetKinds.map(relationRunTitleKey),
       ...overviewChangeOrigins.map((origin) => `changes.titles.overview.${origin}`),
       "changes.titles.relationMatched",
       "changes.titles.relationSuggested"
     ];
-    const params = { items: 3, topics: 2, operations: 4, note: "N", source: "S", n: 5 };
+    const params = { items: 3, topics: 2, operations: 4, note: "N", source: "S", n: 5, areas: 6 };
     for (const locale of supportedLanguageCodes) {
       const t = createTranslator(locale);
       const fallback = t("activity.done.unknownChange");

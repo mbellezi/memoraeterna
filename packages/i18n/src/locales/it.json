@@ -2517,7 +2517,9 @@
       "humanPin": "Hai fissato un argomento.",
       "humanUnpin": "Hai rimosso un argomento dai fissati.",
       "humanPlace": "Hai messo una nota o una fonte in un argomento.",
-      "gate": "{items} collocazioni incerte verificate"
+      "gate": "{items} collocazioni incerte verificate",
+      "areas": "Aree principali raggruppate di nuovo: {areas} aree, {topics} argomenti spostati",
+      "undo": "Una modifica precedente degli argomenti è stata annullata"
     },
     "navigator": {
       "title": "Esplora",

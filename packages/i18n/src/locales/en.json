@@ -2519,7 +2519,9 @@
       "humanPin": "You pinned a topic.",
       "humanUnpin": "You unpinned a topic.",
       "humanPlace": "You placed a note or source in a topic.",
-      "gate": "Checked {items} uncertain placements"
+      "gate": "Checked {items} uncertain placements",
+      "areas": "Regrouped the top areas: {areas} areas, {topics} topics moved",
+      "undo": "Undid an earlier change to the topics"
     },
     "navigator": {
       "title": "Explore",

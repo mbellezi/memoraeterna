@@ -22,6 +22,8 @@ const titleMessages = {
   "topics.changeSets.humanUnpin": "topics.changeSets.humanUnpin",
   "topics.changeSets.humanPlace": "topics.changeSets.humanPlace",
   "topics.changeSets.gate": "topics.changeSets.gate",
+  "topics.changeSets.areas": "topics.changeSets.areas",
+  "topics.changeSets.undo": "topics.changeSets.undo",
   "changes.titles.relation.match": "changes.titles.relation.match",
   "changes.titles.relation.link": "changes.titles.relation.link",
   "changes.titles.relation.type": "changes.titles.relation.type",

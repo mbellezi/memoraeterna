@@ -2526,7 +2526,9 @@
       "humanPin": "Fijaste un tema.",
       "humanUnpin": "Dejaste de fijar un tema.",
       "humanPlace": "Colocaste una nota o fuente en un tema.",
-      "gate": "{items} ubicaciones dudosas revisadas"
+      "gate": "{items} ubicaciones dudosas revisadas",
+      "areas": "Áreas principales reagrupadas: {areas} áreas, {topics} temas movidos",
+      "undo": "Se deshizo un cambio anterior de los temas"
     },
     "navigator": {
       "title": "Explorar",

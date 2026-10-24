@@ -2522,7 +2522,9 @@
       "humanPin": "Você fixou um tópico.",
       "humanUnpin": "Você desafixou um tópico.",
       "humanPlace": "Você colocou uma nota ou fonte em um tópico.",
-      "gate": "{items} posicionamentos incertos verificados"
+      "gate": "{items} posicionamentos incertos verificados",
+      "areas": "Áreas de topo reagrupadas: {areas} áreas, {topics} tópicos movidos",
+      "undo": "Uma alteração anterior dos tópicos foi desfeita"
     },
     "navigator": {
       "title": "Explorar",
