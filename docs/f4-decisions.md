@@ -105,6 +105,9 @@ over the text below where they differ.
   becomes 8.3M. (5) Q13's pre-approved restart covers one restart at the same profile up to the 6.0M soak cap, the gate S
   run D38 requires included; a second restart needs the owner. The re-freeze reads the band's top as the measured
   projection (band 1.0, orchestrator), so the soak runs at full intensity within 6.0M.
+  (6) Later on 10-24, after the first gate S recorded no sample (a harness schema bug, fixed) and spent 391k in 2 h
+  (about 2.3x the gate plan's unit costs), the owner raised the pre-soak cap to 2.7M for a full gate S rerun and let the
+  soak cap rise up to 8.0M if the re-freeze confirms the measured rate (full intensity); the F4 cap becomes about 10.8M.
 - **Q12's probe (10-24).** 20 synthetic requests, provider-reported US$0.0019 equal to the ledger's figure: T76 done.
 
 ## Decisions
