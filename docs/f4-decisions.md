@@ -101,6 +101,10 @@ over the text below where they differ.
   with a cap of 560k Codex tokens (it needs about 370k: the PLOS paper alone about 280k); the pre-soak cap stays 1.5M.
   (3) The soak's Codex cap rises to 6.0M (F4's measured use runs about 1.7x the F3-based estimates, which would put the
   7-day soak near 5.4M against the old 4.7M); gate S still re-freezes the expected spend; the F4 cap becomes 7.6M.
+  (4) Gate S (about 0.77M at the measured rate) is paid by raising the pre-soak cap from 1.5M to 2.2M; the F4 cap
+  becomes 8.3M. (5) Q13's pre-approved restart covers one restart at the same profile up to the 6.0M soak cap, the gate S
+  run D38 requires included; a second restart needs the owner. The re-freeze reads the band's top as the measured
+  projection (band 1.0, orchestrator), so the soak runs at full intensity within 6.0M.
 - **Q12's probe (10-24).** 20 synthetic requests, provider-reported US$0.0019 equal to the ledger's figure: T76 done.
 
 ## Decisions
