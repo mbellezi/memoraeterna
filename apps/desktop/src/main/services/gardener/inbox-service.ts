@@ -69,8 +69,15 @@ export interface InboxServiceOptions {
   };
   /** `relations.review`: keep or remove a suggested or withdrawn relation. */
   reviewRelation(input: RelationReviewInput): Promise<RelationReviewResult | null>;
-  /** The MATCH backlog's acceptance (F4 D16); null while the decider's service is not running. */
-  matchBacklog: () => { accept(findingId: string): Promise<MatchBacklogAcceptance> } | null;
+  /**
+   * The MATCH backlog (F4 D16): its offer is posted when the Inbox opens (a decider that changed
+   * while the app ran), its acceptance carries the owner's yes out; null while the decider's
+   * service is not running.
+   */
+  matchBacklog: () => {
+    accept(findingId: string): Promise<MatchBacklogAcceptance>;
+    offer?(): Promise<unknown>;
+  } | null;
   /** The supervisor's manual retry of a job; resolves to null when the job is gone. */
   retryJob(jobId: string): Promise<unknown>;
   /** The RemoteBudget: its meters, and the continue past the pause share (D14). */
@@ -100,6 +107,8 @@ const recountEvents = [
 const defaultRefreshDelayMs = 3_000;
 /** How long the vault's conflicts are reused by the recounts that follow a stream of events. */
 const vaultCacheMs = 10_000;
+/** How often opening the Inbox asks the MATCH backlog whether its decider changed. */
+const offerEveryMs = 60_000;
 
 const sameCounts = (a: InboxCounts | null, b: InboxCounts): boolean =>
   a !== null && JSON.stringify(a) === JSON.stringify(b);
@@ -115,6 +124,7 @@ export class InboxService {
   private again = false;
   private disposed = false;
   private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
+  private offeredAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly options: InboxServiceOptions) {}
 
@@ -159,6 +169,9 @@ export class InboxService {
     const pool = this.pool();
     const after = parsed.cursor ? parseInboxCursor(parsed.cursor) : null;
     if (parsed.cursor && !after) throw new Error(errors.invalidCursor);
+    // Opening the Inbox is when a decider that changed while the app ran offers its re-match.
+    if (!parsed.cursor && (!parsed.kinds || parsed.kinds.includes("backlog")))
+      await this.offerBacklog();
     const wantsObsidian = !parsed.kinds || parsed.kinds.includes("obsidian_conflict");
     const obsidian =
       wantsObsidian && (!parsed.risk || parsed.risk === "medium") ? await this.obsidian() : [];
@@ -221,6 +234,23 @@ export class InboxService {
     counts.byRisk.medium += conflicts;
     counts.total = inboxKinds.reduce((sum, kind) => sum + counts.byKind[kind], 0);
     return InboxCountsSchema.parse(counts);
+  }
+
+  /** Posts the MATCH backlog's offer for the decider of now, at most once a minute; never throws. */
+  private async offerBacklog(): Promise<void> {
+    const backlog = this.options.matchBacklog();
+    if (!backlog?.offer) return;
+    const now = (this.options.now ?? Date.now)();
+    if (now - this.offeredAt < offerEveryMs) return;
+    this.offeredAt = now;
+    try {
+      const offer = await backlog.offer();
+      // A new offer changes the counts: the badge and the Activity follow at once.
+      if (offer && typeof offer === "object" && "status" in offer && offer.status === "offered")
+        void this.refreshNow();
+    } catch (error) {
+      this.options.logger?.warn("The MATCH backlog could not be offered", error);
+    }
   }
 
   private async readPage(pool: PgPool, input: InboxPageInput): Promise<InboxRowsPage> {

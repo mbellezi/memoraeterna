@@ -667,6 +667,72 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     });
   });
 
+  it("posts the MATCH offer of a decider that changed while the app ran when the Inbox opens", async () => {
+    const backlog = new RelationMatchBacklog({
+      getPool: () => pool!,
+      deciderKey: async () => "decider-new",
+      spaceKey: async () => "space-1"
+    });
+    const note = await seedNote("Matched long ago");
+    await createNoteMatchStateRepository(pool!).record({
+      noteId: note.id,
+      deciderKey: "decider-old",
+      spaceKey: "space-1",
+      kthCosine: null
+    });
+    inbox.dispose();
+    inbox = build({ matchBacklog: () => backlog });
+    expect((await inbox.counts()).byKind.backlog).toBe(0);
+
+    const opened = await inbox.list({});
+    expect(opened.items.map((entry) => entry.kind)).toEqual(["backlog"]);
+    expect(opened.items[0]).toMatchObject({ variant: "match", params: { notes: 1 } });
+    // The new offer reached the badge without waiting for an event.
+    await vi.waitFor(() =>
+      expect(published.at(-1)).toMatchObject({ type: "inbox.changed", total: 1 })
+    );
+  });
+
+  it("asks the MATCH backlog at most once a minute, only for the first page that can hold it", async () => {
+    let clock = 1_000_000;
+    const offer = vi.fn<() => Promise<unknown>>(async () => ({ status: "none", notes: 0 }));
+    inbox.dispose();
+    inbox = build({ matchBacklog: () => ({ accept, offer }), now: () => clock });
+    await inbox.list({});
+    await inbox.list({});
+    expect(offer).toHaveBeenCalledTimes(1);
+    clock += 61_000;
+    await inbox.list({ kinds: ["duplicate"] });
+    expect(offer).toHaveBeenCalledTimes(1);
+    await inbox.list({ kinds: ["backlog"] });
+    expect(offer).toHaveBeenCalledTimes(2);
+    clock += 61_000;
+    await finding("duplicate", "dup:1", { reason: "title" });
+    await finding("duplicate", "dup:2", { reason: "title" });
+    const first = await inbox.list({ limit: 1 });
+    expect(offer).toHaveBeenCalledTimes(3);
+    clock += 61_000;
+    await inbox.list({ limit: 1, cursor: first.nextCursor! });
+    expect(offer).toHaveBeenCalledTimes(3);
+  });
+
+  it("lists the Inbox even when the MATCH backlog cannot be offered", async () => {
+    const warn = vi.fn();
+    inbox.dispose();
+    inbox = build({
+      matchBacklog: () => ({
+        accept,
+        offer: async () => {
+          throw new Error("no decider");
+        }
+      }),
+      logger: { warn }
+    });
+    await finding("duplicate", "dup:1", { reason: "title" });
+    expect((await inbox.list({})).items).toHaveLength(1);
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("keeps a dismissed MATCH offer dismissed, and moves a stale one out of the way", async () => {
     let decider = "decider-new";
     const backlog = new RelationMatchBacklog({
