@@ -24,8 +24,10 @@ import type {
 import {
   codexProviderId,
   codexWriterCapabilities,
+  localRefusal,
   localSetupAvailable,
   writerCapabilities,
+  type LocalRefusal,
   type OnboardingHardware
 } from "../../../shared/onboarding";
 import {
@@ -127,8 +129,8 @@ export interface OnboardingSnapshot {
     hardware: Load<OnboardingHardware>;
     catalog: Load<LocalModelView[]>;
     selected: AiPresetId;
-    /** Set when a chosen setup was refused: Local off Apple silicon. */
-    refusal: "local_requires_apple_silicon" | null;
+    /** Set when a chosen setup was refused: Local off Apple silicon, or where it does not fit. */
+    refusal: LocalRefusal | null;
     writer: WriterState;
   };
   setup: SetupState;
@@ -366,8 +368,10 @@ export class OnboardingController {
   public selectPreset(preset: AiPresetId): void {
     if (this.snapshot.phase !== "mode") return;
     const hardware = this.snapshot.mode.hardware;
-    if (preset === "local" && hardware.status === "ready" && !localSetupAvailable(hardware.value)) {
-      this.update({ mode: { ...this.snapshot.mode, refusal: "local_requires_apple_silicon" } });
+    const refusal =
+      preset === "local" && hardware.status === "ready" ? localRefusal(hardware.value) : null;
+    if (refusal) {
+      this.update({ mode: { ...this.snapshot.mode, refusal } });
       return;
     }
     this.chose = true;
@@ -485,10 +489,16 @@ export class OnboardingController {
     void this.runSetup();
   }
 
-  /** On to the first source: after the checks, or without a part that failed. */
+  /**
+   * On to the first source: after the checks, or without a part that failed. The models do not
+   * need the writer: when its failure stopped the setup before them, they are asked for now and
+   * install in the background, so the first source is still searchable and the ranker follows
+   * (decision 19).
+   */
   public continueToSource(): void {
     const { phase, setup } = this.snapshot;
     if (phase !== "testing" || (setup.status !== "done" && setup.status !== "failed")) return;
+    if (setup.steps.models === "pending") void this.requestModelsInBackground();
     this.enter("source");
   }
 
@@ -648,13 +658,28 @@ export class OnboardingController {
     });
   }
 
+  /** The models the chosen setup installs, from the tier card's reading when there is one. */
+  private setupModels(): string[] {
+    const { hardware, selected } = this.snapshot.mode;
+    return modelsToInstall(selected, hardware.status === "ready" ? hardware.value : null);
+  }
+
   /** Asks for the models the setup needs and waits for them; progress comes from `model.download`. */
   private async runModels(): Promise<void> {
-    const { hardware } = this.snapshot.mode;
-    const memory = hardware.status === "ready" ? hardware.value.memoryBytes : 0;
-    const ids = modelsToInstall(this.snapshot.mode.selected, memory);
+    const ids = this.setupModels();
     for (const catalogId of ids) await this.request(catalogId);
     await Promise.all(ids.map((catalogId) => this.waitFor(catalogId)));
+  }
+
+  /** The setup's models, asked for without waiting; a refused one shows on its row in Settings. */
+  private async requestModelsInBackground(): Promise<void> {
+    for (const catalogId of this.setupModels()) {
+      try {
+        await this.request(catalogId);
+      } catch {
+        // Nothing waits for it here: the model's row keeps the error and Settings retries it.
+      }
+    }
   }
 
   private async runPreset(): Promise<void> {

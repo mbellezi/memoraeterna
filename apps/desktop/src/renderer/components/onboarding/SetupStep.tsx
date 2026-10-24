@@ -126,7 +126,9 @@ export function SetupStep({ t, setup, actions }: SetupStepProps) {
           {setup.status === "done"
             ? failedCount === 0
               ? t("onboarding.setup.summaryOk")
-              : t("onboarding.setup.summaryProblems", { values: { count: failedCount } })
+              : failedCount === 1
+                ? t("onboarding.setup.summaryProblemsOne")
+                : t("onboarding.setup.summaryProblems", { values: { count: failedCount } })
             : null}
         </p>
         <div className="flex flex-wrap items-center justify-end gap-3">

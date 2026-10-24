@@ -1021,6 +1021,7 @@
       },
       "choices": "Scegli una configurazione",
       "unavailable": "Locale richiede un Mac con Apple silicon.",
+      "unavailableMemory": "Locale richiede più memoria di quella che ha questo computer.",
       "download": "Scarica {size}",
       "downloadNone": "Niente da scaricare",
       "downloadUnknown": "Dimensione del download sconosciuta",
@@ -1099,6 +1100,7 @@
       },
       "summaryOk": "Tutto funziona.",
       "summaryProblems": "{count} verifiche richiedono attenzione. Puoi correggerle più tardi nelle Impostazioni.",
+      "summaryProblemsOne": "1 verifica richiede attenzione. Puoi correggerla più tardi nelle Impostazioni.",
       "retry": "Riprova",
       "continueAnyway": "Continua senza"
     },

@@ -55,7 +55,10 @@ export function ImportEstimateChip({
       className="flex flex-wrap items-start gap-2 rounded-lg border border-border bg-soft px-3 py-2 text-xs text-secondary-foreground"
     >
       {state.status === "loading" ? (
-        <LoaderCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
+        <LoaderCircle
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
       ) : state.status === "error" ? (
         <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden="true" />
       ) : (

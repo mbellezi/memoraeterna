@@ -7,7 +7,7 @@ import {
   invokedSetupChannels
 } from "../../../shared/first-run-sequence";
 import { ipcChannels } from "../../../shared/ipc";
-import { windowsHardware } from "./onboarding-fixtures";
+import { smallMacHardware, windowsHardware } from "./onboarding-fixtures";
 import {
   codexWriterCapabilities,
   writerCapabilities,
@@ -200,10 +200,18 @@ describe("step 2: the tier card", () => {
     controller.selectPreset("local");
     expect(controller.getSnapshot().mode).toMatchObject({
       selected: "hybrid",
-      refusal: "local_requires_apple_silicon"
+      refusal: "no_local_writer_for_platform"
     });
     controller.selectPreset("cloud");
     expect(controller.getSnapshot().mode).toMatchObject({ selected: "cloud", refusal: null });
+  });
+
+  it("refuses Local where the tier table says its writer does not fit, and says so", async () => {
+    const { controller } = await toMode({
+      hardware: { ...smallMacHardware, recommended: "hybrid" }
+    });
+    controller.selectPreset("local");
+    expect(controller.getSnapshot().mode).toMatchObject({ selected: "hybrid", refusal: "memory" });
   });
 
   it("accepts Local on Apple silicon, also through Rosetta", async () => {
@@ -511,6 +519,30 @@ describe("step 2: the setup", () => {
     expect(recorded.calls).not.toContain(ipcChannels.localModelsDownload);
     controller.continueToSource();
     expect(controller.getSnapshot().phase).toBe("source");
+    // The embedder does not need the writer: it is still asked for, and installs in the background.
+    await settle();
+    expect(recorded.payloads[ipcChannels.localModelsDownload]).toEqual([
+      { catalogId: presetCatalogIds.embedding, acceptLicense: false }
+    ]);
+    expect(recorded.calls).not.toContain(ipcChannels.aiApplyPreset);
+  });
+
+  it("asks for nothing more when the models already ran before the part that failed", async () => {
+    const { controller, recorded } = await toMode({
+      presetAnswers: [
+        {
+          applied: false,
+          blocked: [{ route: null, reason: "no_remote_profile", catalogId: null, modelName: null }]
+        }
+      ]
+    });
+    await signInAndStart(controller);
+    expect(controller.getSnapshot().setup.failure?.step).toBe("preset");
+    controller.continueToSource();
+    await settle();
+    expect(recorded.calls.filter((call) => call === ipcChannels.localModelsDownload)).toHaveLength(
+      1
+    );
   });
 
   it("does not repeat a provider or a profile that was saved when the step is tried again", async () => {
@@ -601,9 +633,14 @@ describe("step 2: Local", () => {
     expect(controller.getSnapshot().setup.steps.writer).toBe("skipped");
   });
 
-  it("takes the smaller writer on a computer with less memory", async () => {
+  it("installs the writer the tier table names for this computer", async () => {
     const { controller, recorded } = await toMode({
-      hardware: { ...macHardware, memoryBytes: 16 * 1024 ** 3, recommended: "local" }
+      hardware: {
+        ...macHardware,
+        memoryBytes: 16 * 1024 ** 3,
+        recommended: "local",
+        local: { ...macHardware.local, writerCatalogId: presetCatalogIds.writerSmall }
+      }
     });
     controller.startSetup();
     await settle();
@@ -611,6 +648,36 @@ describe("step 2: Local", () => {
       { catalogId: presetCatalogIds.embedding, acceptLicense: false },
       { catalogId: presetCatalogIds.writerSmall, acceptLicense: false }
     ]);
+  });
+
+  it("guesses no writer when this computer could not be read: it installs the one the setup names", async () => {
+    const { controller, recorded } = await toMode({
+      hardware: "error",
+      presetAnswers: [
+        {
+          applied: false,
+          blocked: [
+            {
+              route: "write-fast",
+              reason: "model_missing",
+              catalogId: presetCatalogIds.writerLarge,
+              modelName: "Writer"
+            }
+          ]
+        },
+        { applied: true, blocked: [] }
+      ]
+    });
+    controller.selectPreset("local");
+    expect(canStartSetup(controller.getSnapshot())).toBe(true);
+    controller.startSetup();
+    await settle();
+    // Only the embedder before the setup is applied, then the one writer the main process names.
+    expect(recorded.payloads[ipcChannels.localModelsDownload]).toEqual([
+      { catalogId: presetCatalogIds.embedding, acceptLicense: false },
+      { catalogId: presetCatalogIds.writerLarge, acceptLicense: false }
+    ]);
+    expect(controller.getSnapshot().setup.status).toBe("done");
   });
 });
 

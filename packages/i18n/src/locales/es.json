@@ -1023,6 +1023,7 @@
       },
       "choices": "Elige una configuración",
       "unavailable": "El modo Local requiere un Mac con Apple silicon.",
+      "unavailableMemory": "El modo Local necesita más memoria de la que tiene este equipo.",
       "download": "Descarga {size}",
       "downloadNone": "Nada que descargar",
       "downloadUnknown": "Tamaño de la descarga desconocido",
@@ -1101,6 +1102,7 @@
       },
       "summaryOk": "Todo funciona.",
       "summaryProblems": "{count} comprobaciones requieren atención. Puedes corregirlas más tarde en Ajustes.",
+      "summaryProblemsOne": "1 comprobación requiere atención. Puedes corregirla más tarde en Ajustes.",
       "retry": "Reintentar",
       "continueAnyway": "Continuar sin ello"
     },

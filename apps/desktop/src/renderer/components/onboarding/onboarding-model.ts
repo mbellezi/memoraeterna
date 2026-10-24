@@ -2,12 +2,17 @@
 // card's options from the hardware profile and the model list, which catalog models a setup
 // installs, how a model's download reads, and the message keys of every localized part. The
 // controller holds the state; nothing here touches the preload.
-import { largeLocalWriterMinimumMemoryBytes, presetCatalogIds, type AiPresetId } from "@app/domain";
+import { presetCatalogIds, type AiPresetId } from "@app/domain";
 import { messages, type InterpolationValues, type MessageKey } from "@app/i18n";
 
 import type { AiClassRouteTarget, LocalModelView } from "../../../shared/ipc";
 import { firstRunClassTests } from "../../../shared/first-run-sequence";
-import { localSetupAvailable, type OnboardingHardware } from "../../../shared/onboarding";
+import {
+  localRefusal,
+  runsMlx,
+  type LocalRefusal,
+  type OnboardingHardware
+} from "../../../shared/onboarding";
 
 export { firstRunClassTests };
 
@@ -43,25 +48,24 @@ export function errorMessageKey(error: unknown, fallback: MessageKey): MessageKe
 
 // --- Models the setups install ---------------------------------------------------------------
 
-/** The relations ranker the first-run ranker installs on its own (decision 19). */
+/** The ranker the first-run ranker installs on its own (decision 19): MLX where it runs. */
 export function rankerCatalogId(hardware: Pick<OnboardingHardware, "platform" | "nativeArch">) {
-  return localSetupAvailable(hardware) ? presetCatalogIds.rankerMlx : presetCatalogIds.rankerGguf;
+  return runsMlx(hardware) ? presetCatalogIds.rankerMlx : presetCatalogIds.rankerGguf;
 }
 
 /**
  * The catalog models a setup needs installed before it can be applied: the embedder always (Cloud
- * falls back to it), and the Local writer for Local. The ranker is not among them: it installs on
- * its own once the embedding route exists and never blocks (decision 19). The main process names
- * what is still missing when it applies the setup, and the controller installs that too.
+ * falls back to it), and for Local the writer the tier table names. The ranker is not among them:
+ * it installs on its own once the embedding route exists and never blocks (decision 19). Without a
+ * reading of this computer no writer is guessed: the main process names the one it applies
+ * (`model_missing`), and the controller installs that, so a model nobody needs is never fetched.
  */
-export function modelsToInstall(preset: AiPresetId, memoryBytes: number): string[] {
-  if (preset !== "local") return [presetCatalogIds.embedding];
-  return [
-    presetCatalogIds.embedding,
-    memoryBytes >= largeLocalWriterMinimumMemoryBytes
-      ? presetCatalogIds.writerLarge
-      : presetCatalogIds.writerSmall
-  ];
+export function modelsToInstall(
+  preset: AiPresetId,
+  hardware: Pick<OnboardingHardware, "local"> | null
+): string[] {
+  const writer = preset === "local" ? (hardware?.local.writerCatalogId ?? null) : null;
+  return writer ? [presetCatalogIds.embedding, writer] : [presetCatalogIds.embedding];
 }
 
 export type ModelRole = "embedder" | "ranker" | "writer";
@@ -98,10 +102,19 @@ export const presetHintKeys: Record<AiPresetId, MessageKey> = {
   cloud: "settings.ai.classes.setup.cloudHint"
 };
 
+/** What the card says when Local is refused: Apple silicon, or the memory its writer needs. */
+export const localRefusalKeys: Record<LocalRefusal, MessageKey> = {
+  requires_apple_silicon: "onboarding.mode.unavailable",
+  no_local_writer_for_platform: "onboarding.mode.unavailable",
+  memory: "onboarding.mode.unavailableMemory"
+};
+
 export interface ModeOption {
   preset: AiPresetId;
-  /** False when this computer cannot run the setup (Local off Apple silicon). */
+  /** False when this computer cannot run the setup (Local off Apple silicon, or too small). */
   available: boolean;
+  /** Why Local is refused here; null for an available setup. */
+  refusal: LocalRefusal | null;
   recommended: boolean;
   /**
    * Bytes the setup still downloads (its models and the ranker that follows), or null when the
@@ -120,8 +133,9 @@ export function modeOptions(
   models: readonly LocalModelView[] | null
 ): ModeOption[] {
   return presetOrder.map((preset) => {
+    const refusal = preset === "local" && hardware ? localRefusal(hardware) : null;
     const wanted = hardware
-      ? [...modelsToInstall(preset, hardware.memoryBytes), rankerCatalogId(hardware)]
+      ? [...modelsToInstall(preset, hardware), rankerCatalogId(hardware)]
       : null;
     let downloadBytes: number | null = null;
     if (wanted && models) {
@@ -132,7 +146,8 @@ export function modeOptions(
     }
     return {
       preset,
-      available: preset !== "local" || hardware === null || localSetupAvailable(hardware),
+      available: refusal === null,
+      refusal,
       recommended: hardware ? hardware.recommended === preset : preset === "hybrid",
       downloadBytes,
       monthlyUsd:

@@ -17,6 +17,7 @@ describe("the profile the first-run harness plays", () => {
       [
         "chip",
         "estimates",
+        "local",
         "memoryBytes",
         "nativeArch",
         "platform",

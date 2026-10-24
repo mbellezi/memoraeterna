@@ -16,6 +16,7 @@ import {
 import {
   formatSize,
   formatUsd,
+  localRefusalKeys,
   modeOptions,
   presetHintKeys,
   presetNameKeys,
@@ -78,7 +79,7 @@ export function ModeStep({ t, mode, canStart, actions }: ModeStepProps) {
         ))}
         {mode.refusal ? (
           <p role="alert" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-            {t("onboarding.mode.unavailable")}
+            {t(localRefusalKeys[mode.refusal])}
           </p>
         ) : null}
       </fieldset>
@@ -229,12 +230,12 @@ function OptionRow({
         <span className="text-xs text-secondary-foreground">
           {t(presetHintKeys[option.preset])}
         </span>
-        {option.available ? (
+        {option.refusal === null ? (
           <span className="text-xs text-muted-foreground">
             {download} · {cost}
           </span>
         ) : (
-          <span className="text-xs text-warning">{t("onboarding.mode.unavailable")}</span>
+          <span className="text-xs text-warning">{t(localRefusalKeys[option.refusal])}</span>
         )}
       </span>
     </label>

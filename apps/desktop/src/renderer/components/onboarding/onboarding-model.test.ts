@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { firstRunClassTests } from "../../../shared/first-run-sequence";
 import { localSetupAvailable } from "../../../shared/onboarding";
-import { catalogRows, macHardware, windowsHardware } from "./onboarding-fixtures";
+import { catalogRows, macHardware, smallMacHardware, windowsHardware } from "./onboarding-fixtures";
 import {
   classTestNameKeys,
   defaultPreset,
@@ -48,19 +48,27 @@ describe("the failure a handler reported", () => {
 
 describe("the models a setup installs", () => {
   it("installs the embedder alone for Hybrid and Cloud", () => {
-    expect(modelsToInstall("hybrid", 48 * gib)).toEqual([presetCatalogIds.embedding]);
-    expect(modelsToInstall("cloud", 8 * gib)).toEqual([presetCatalogIds.embedding]);
+    expect(modelsToInstall("hybrid", macHardware)).toEqual([presetCatalogIds.embedding]);
+    expect(modelsToInstall("cloud", windowsHardware)).toEqual([presetCatalogIds.embedding]);
+    expect(modelsToInstall("cloud", null)).toEqual([presetCatalogIds.embedding]);
   });
 
-  it("adds the Local writer the memory allows, the larger one from 24 GiB", () => {
-    expect(modelsToInstall("local", 24 * gib)).toEqual([
+  it("adds the Local writer the tier table names, and guesses none without a reading", () => {
+    expect(modelsToInstall("local", macHardware)).toEqual([
       presetCatalogIds.embedding,
       presetCatalogIds.writerLarge
     ]);
-    expect(modelsToInstall("local", 24 * gib - 1)).toEqual([
+    const smaller = {
+      ...macHardware,
+      memoryBytes: 16 * gib,
+      local: { ...macHardware.local, writerCatalogId: presetCatalogIds.writerSmall }
+    };
+    expect(modelsToInstall("local", smaller)).toEqual([
       presetCatalogIds.embedding,
       presetCatalogIds.writerSmall
     ]);
+    // Unknown computer: the main process names the writer it applies, and only that one is fetched.
+    expect(modelsToInstall("local", null)).toEqual([presetCatalogIds.embedding]);
   });
 
   it("names the role of each model it installs and of none other", () => {
@@ -117,8 +125,19 @@ describe("the three setups on the tier card", () => {
     expect(mac.map((option) => option.remoteWriter)).toEqual([false, true, true]);
     const windows = modeOptions(windowsHardware, null);
     expect(windows.map((option) => option.available)).toEqual([false, true, true]);
-    expect(localSetupAvailable({ platform: "darwin", nativeArch: "x64" })).toBe(false);
-    expect(localSetupAvailable({ platform: "linux", nativeArch: "arm64" })).toBe(false);
+    expect(windows[0]!.refusal).toBe("no_local_writer_for_platform");
+    const local = macHardware.local;
+    expect(localSetupAvailable({ platform: "darwin", nativeArch: "x64", local })).toBe(false);
+    expect(localSetupAvailable({ platform: "linux", nativeArch: "arm64", local })).toBe(false);
+  });
+
+  it("refuses Local where the tier table says its writer does not fit, with that reason", () => {
+    const small = modeOptions(smallMacHardware, catalogRows());
+    expect(small.map((option) => option.available)).toEqual([false, true, true]);
+    expect(small.map((option) => option.refusal)).toEqual(["memory", null, null]);
+    // The MLX ranker still runs there: the other setups download it.
+    expect(rankerCatalogId(smallMacHardware)).toBe(presetCatalogIds.rankerMlx);
+    expect(small[1]!.downloadBytes).toBeCloseTo(0.6 * gib + 0.64 * gib, 0);
   });
 
   it("leads with Hybrid when the computer is not known, and with the table's pick when it is", () => {

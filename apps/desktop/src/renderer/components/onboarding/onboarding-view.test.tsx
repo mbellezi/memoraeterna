@@ -9,6 +9,7 @@ import {
   macHardware,
   recordedApi,
   settle,
+  smallMacHardware,
   windowsHardware,
   type RecordedOptions
 } from "./onboarding-fixtures";
@@ -170,6 +171,17 @@ describe("the AI step", () => {
     expect(html).toContain('role="alert"');
   });
 
+  it("shows Local as unavailable where its writer does not fit, and says it is the memory", async () => {
+    const { controller } = await atMode({ hardware: smallMacHardware });
+    let html = render(controller);
+    expect(html).toContain("Local needs more memory than this computer has.");
+    expect(html).not.toContain("Local needs a Mac with Apple silicon.");
+    controller.selectPreset("local");
+    html = render(controller);
+    expect(html).toContain('role="alert"');
+    expect(controller.getSnapshot().mode.selected).toBe("hybrid");
+  });
+
   it("tells the card could not read this computer, and keeps the setups to choose from", async () => {
     const { controller } = await atMode({ hardware: "error" });
     const html = render(controller);
@@ -238,7 +250,8 @@ describe("the setup", () => {
     expect(html).toContain("Checks");
     expect(html).toContain("Works");
     expect(html).toContain("Failed");
-    expect(html).toContain("1 checks need attention");
+    expect(html).toContain("1 check needs attention");
+    expect(html).not.toContain("1 checks");
     expect(html).toContain("Continue");
     expect(html).not.toContain("Continue without it");
   });

@@ -1019,6 +1019,7 @@
       },
       "choices": "Choose a setup",
       "unavailable": "Local needs a Mac with Apple silicon.",
+      "unavailableMemory": "Local needs more memory than this computer has.",
       "download": "Downloads {size}",
       "downloadNone": "Nothing to download",
       "downloadUnknown": "Download size not known",
@@ -1097,6 +1098,7 @@
       },
       "summaryOk": "Everything works.",
       "summaryProblems": "{count} checks need attention. You can fix them later in Settings.",
+      "summaryProblemsOne": "1 check needs attention. You can fix it later in Settings.",
       "retry": "Try again",
       "continueAnyway": "Continue without it"
     },

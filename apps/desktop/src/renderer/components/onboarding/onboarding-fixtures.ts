@@ -35,6 +35,11 @@ export const macHardware: OnboardingHardware = OnboardingHardwareSchema.parse({
   memoryBytes: 48 * gib,
   workingSetBytes: 36 * gib,
   recommended: "hybrid",
+  local: {
+    available: true,
+    unavailableReason: null,
+    writerCatalogId: presetCatalogIds.writerLarge
+  },
   estimates: [
     { preset: "local", monthlyUsd: null },
     { preset: "hybrid", monthlyUsd: 0.39 },
@@ -50,11 +55,25 @@ export const windowsHardware: OnboardingHardware = OnboardingHardwareSchema.pars
   memoryBytes: 16 * gib,
   workingSetBytes: null,
   recommended: "hybrid",
+  local: {
+    available: false,
+    unavailableReason: "no_local_writer_for_platform",
+    writerCatalogId: null
+  },
   estimates: [
     { preset: "local", monthlyUsd: null },
     { preset: "hybrid", monthlyUsd: 0.39 },
     { preset: "cloud", monthlyUsd: 0.45 }
   ]
+});
+
+/** An 8 GB Apple silicon Mac: Local runs here, but the tier table says its writer does not fit. */
+export const smallMacHardware: OnboardingHardware = OnboardingHardwareSchema.parse({
+  ...macHardware,
+  chip: "Apple M1",
+  memoryBytes: 8 * gib,
+  workingSetBytes: 5 * gib,
+  local: { available: false, unavailableReason: "memory", writerCatalogId: null }
 });
 
 const modelRow = (catalogId: string, expectedSizeBytes: number, status = "not_downloaded") =>
