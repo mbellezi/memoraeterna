@@ -7,6 +7,10 @@
  *
  *   npm run soak:report -- .cache/f3/soak/<run> [--presoak] [--explanations <file.json>]
  *
+ * A run of the 7-day Hybrid soak (F4 T89; its meta has an `f4` section) adds E1-E5, the injection
+ * ledger, the token budget and the load ledger (`report-f4.ts`), and with `--count-local-writer` the
+ * repair rate counts every structured call of the local writer (C4's re-run), not only the others.
+ *
  * Exit code 0 when every check passes, 2 when some need a person's judgement (the report says
  * which), 1 when one fails or the run cannot be read. Writes `report.md` and `report.json` into the
  * run directory (or where `--out` and `--json` say).
@@ -18,6 +22,7 @@ import { parseArgs } from "node:util";
 
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
 import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
+import { gateSAssertions, f4Report, predicateVersions, type F4Report } from "./report-f4.ts";
 import {
   parseNdjson,
   soakEventSchema,
@@ -84,6 +89,14 @@ export interface SoakReport {
     invalid: Record<string, number>;
   };
   checks: Check[];
+  /** The F4 lines of a 7-day run (E1-E5 and the ledgers); null for F3's runs. */
+  f4: F4Report | null;
+  /** The relations configuration the run kept (discovery neighbours, judge mode). */
+  relations: string | null;
+  /** The version of each rule evaluated, so a number is tied to the predicate that made it. */
+  predicates: Record<string, number>;
+  /** The repair rate counted every structured call of the local writer (C4's re-run). */
+  countedLocalWriter: boolean;
   presoak: PresoakAssertion[] | null;
   tables: {
     calls: Array<Record<string, string | number>>;
@@ -180,6 +193,11 @@ export function injectedRows(run: LoadedRun): Map<string, string> {
     const end = rowEnd(row) + grace;
     if (row.error?.includes(injectedMarker)) {
       reasons.set(row.id, "injected error");
+      continue;
+    }
+    // The harness token cap refused the call (the gate S window): the harness's doing, not the product's.
+    if (row.error?.includes("soak-harness-cap")) {
+      reasons.set(row.id, "harness cap");
       continue;
     }
     if (row.lane?.startsWith("remote:")) {
@@ -325,17 +343,25 @@ export function isUnconstrainedLocalWriterCall(row: TaskRunRecord): boolean {
   );
 }
 
-function repairsCheck(run: LoadedRun, injected: Map<string, string>): Check {
+function repairsCheck(
+  run: LoadedRun,
+  injected: Map<string, string>,
+  countLocalWriter = false
+): Check {
   const all = run.rows.filter((row) => isStructuredGenerative(row) && !injected.has(row.id));
-  const apart = all.filter(isUnconstrainedLocalWriterCall);
-  const calls = all.filter((row) => !isUnconstrainedLocalWriterCall(row));
+  // C4's re-run counts every structured call of the local writer (decision 31a set them aside in F3).
+  const apart = countLocalWriter ? [] : all.filter(isUnconstrainedLocalWriterCall);
+  const calls = countLocalWriter ? all : all.filter((row) => !isUnconstrainedLocalWriterCall(row));
+  // C4: no structured call of the local writer may run unconstrained (schema mode `none`).
+  const unconstrained = countLocalWriter ? all.filter(isUnconstrainedLocalWriterCall) : [];
   const repairs = calls.filter((row) => row.isRepair);
   const apartRepairs = apart.filter((row) => row.isRepair);
   const share = (count: number, of: number) => (of === 0 ? 0 : count / of);
   const rate = share(repairs.length, calls.length);
   const classes = [...new Set(all.map((row) => row.workloadClass ?? "?"))].sort();
   const bar = 0.02;
-  const status: CheckStatus = calls.length === 0 ? "review" : rate <= bar ? "pass" : "fail";
+  const status: CheckStatus =
+    calls.length === 0 ? "review" : rate <= bar && unconstrained.length === 0 ? "pass" : "fail";
   const pct = (value: number) => `${(value * 100).toFixed(2)} %`;
   const count = (rows: TaskRunRecord[], workloadClass?: string) => {
     const inClass =
@@ -348,10 +374,19 @@ function repairsCheck(run: LoadedRun, injected: Map<string, string>): Check {
   return {
     id: "repairs",
     title: "Repairs (D35) over non-injected structured generative calls",
-    bar: "<= 2 % of the structured calls that count; decision 31a sets aside the local MLX writer's (lane local, runtime mlx, no enforced schema mode), reported apart",
+    bar: countLocalWriter
+      ? "<= 2 % of the non-injected structured calls, every local-writer row counted (C4), and 0 local-writer structured rows in schema mode none"
+      : "<= 2 % of the structured calls that count; decision 31a sets aside the local MLX writer's (lane local, runtime mlx, no enforced schema mode), reported apart",
     status,
-    value: `${count(calls)} counted; set aside by decision 31a: ${apart.length} local writer call(s), ${apartRepairs.length} repair(s) = ${pct(share(apartRepairs.length, apart.length))} (information)`,
+    value: countLocalWriter
+      ? `${count(calls)} counted, the local writer's included; ${unconstrained.length} local-writer structured row(s) in mode none`
+      : `${count(calls)} counted; set aside by decision 31a: ${apart.length} local writer call(s), ${apartRepairs.length} repair(s) = ${pct(share(apartRepairs.length, apart.length))} (information)`,
     details: [
+      ...(unconstrained.length > 0
+        ? [
+            `${unconstrained.length} structured call(s) of the local writer ran without an enforced schema mode: C4 needs 0`
+          ]
+        : []),
       ...classes.map((workloadClass) => {
         const counted = calls.filter((row) => (row.workloadClass ?? "?") === workloadClass);
         const aside = apart.filter((row) => (row.workloadClass ?? "?") === workloadClass);
@@ -821,6 +856,27 @@ const actionProviders: Partial<Record<ActionRecord["kind"], string>> = {
   explain_burst: "codex-wire",
   post_outage_probe: "codex-wire"
 };
+/** With the real writer (F4) an Ask and an explanation go to the real Codex lane. */
+const realWriterActionProviders: Partial<Record<ActionRecord["kind"], string>> = {
+  ask: "openai-codex",
+  explain: "openai-codex",
+  explain_burst: "openai-codex",
+  post_outage_probe: "openai-codex",
+  topic_open: "openai-codex",
+  note_edit: "openai-codex",
+  burst_edit: "openai-codex",
+  article: "openai-codex",
+  typing_fault: "openai-codex",
+  source_reimport: "openai-codex"
+};
+/** Windows during which a failed action is the window's doing (the harness-cap refusal, a blocked lane). */
+const failingWindowKinds = new Set([
+  "harness_cap",
+  "usage_limit",
+  "refused",
+  "enotfound",
+  "unauthorized"
+]);
 
 /**
  * The driver's failed actions (an Ask, an explanation...) that no injected exchange explains. An
@@ -834,12 +890,24 @@ const actionProviders: Partial<Record<ActionRecord["kind"], string>> = {
 export function unexplainedActionFailures(run: LoadedRun): ActionRecord[] {
   const grace = 1_000;
   const injected = exchangesOf(run.events).filter((exchange) => exchange.injected);
+  const providers = run.meta.realWriter ? realWriterActionProviders : actionProviders;
+  // The windows that make calls fail by design, from the ground-truth records.
+  const failing: Array<[number, number]> = [];
+  const opened = new Map<string, number>();
+  for (const event of run.events) {
+    if (event.type !== "ground_truth" || !failingWindowKinds.has(event.kind)) continue;
+    if (event.phase === "start") opened.set(event.id, toMs(event.at));
+    else if (opened.has(event.id)) failing.push([opened.get(event.id)!, toMs(event.at)]);
+  }
+  for (const start of opened.values())
+    if (!failing.some(([from]) => from === start)) failing.push([start, Number.POSITIVE_INFINITY]);
   return actionsOf(run.events).filter((action) => {
     if (action.status !== "failed") return false;
-    if (action.detail.remoteCallStarted === false) return true;
-    const provider = actionProviders[action.kind];
+    const provider = providers[action.kind];
     const start = toMs(action.startedAt) - grace;
     const end = toMs(action.startedAt) + action.durationMs + grace;
+    if (failing.some(([from, to]) => from <= end && to >= start)) return false;
+    if (action.detail.remoteCallStarted === false) return true;
     return !injected.some(
       (exchange) =>
         (provider === undefined || exchange.provider === provider) &&
@@ -980,14 +1048,19 @@ function remoteDeadlinesCheck(run: LoadedRun): Check {
       exchange.closedAfterLastWriteMs >= stallMs - 1_000 &&
       exchange.closedAfterLastWriteMs <= stallMs + 3_000
   );
+  // The real writer's lane (F4): its calls run through the Codex adapter by construction.
+  const realLane = run.meta.realWriter ? `remote:${run.meta.realWriter.providerConfigId}` : null;
   const codex = exchanges.filter(
     (exchange) =>
-      exchange.provider === "codex-wire" &&
+      (exchange.provider === "codex-wire" || exchange.provider === "openai-codex") &&
       exchange.kind === "none" &&
       exchange.outcome === "completed"
   );
   const codexRows = run.rows.filter(
-    (row) => row.provider === "openai-codex" && row.lane?.startsWith("remote:")
+    (row) =>
+      row.provider === "openai-codex" &&
+      row.lane?.startsWith("remote:") &&
+      (realLane === null || row.lane === realLane || row.modelId.startsWith("dev-fake"))
   );
   const remoteRows = run.rows.filter(
     (row) => row.lane?.startsWith("remote:") && row.deadlineMs !== null
@@ -1255,7 +1328,13 @@ function callsTable(run: LoadedRun) {
 /** Analyses a loaded run into the report. */
 export function analyzeRun(
   loaded: LoadedRun,
-  options: { presoak?: boolean; explanations?: Record<string, string>; now?: Date } = {}
+  options: {
+    presoak?: boolean;
+    explanations?: Record<string, string>;
+    now?: Date;
+    /** C4's re-run: count every structured call of the local writer in the repair rate. */
+    countLocalWriter?: boolean;
+  } = {}
 ): SoakReport {
   // The collector reads the audit from a little before the run began, and a call that was running
   // when it began is no part of it: both belong to what happened before.
@@ -1268,13 +1347,14 @@ export function analyzeRun(
     )
   };
   const injected = injectedRows(run);
+  const f4 = f4Report(run, { injected, injectedJobs: injectedJobFailures(run, injected) });
   const { check: past, wedged } = pastDeadlineCheck(run);
   const swap = swapCheck(run);
   const p0 = p0Check(run);
   const audit = failureAudit(run, injected, run.meta.seed);
   const checks: Check[] = [
     past,
-    repairsCheck(run, injected),
+    repairsCheck(run, injected, options.countLocalWriter === true),
     ...jobChecks(run, options.explanations ?? {}),
     swap.check,
     p0.check,
@@ -1285,9 +1365,25 @@ export function analyzeRun(
       status: audit.check.status === "pass" && wedged.length === 0 ? "pass" : "review",
       details: [...audit.check.details, ...wedged.map((text) => `wedged: ${text}`)]
     },
-    remoteDeadlinesCheck(run)
+    remoteDeadlinesCheck(run),
+    ...(f4?.checks ?? [])
   ];
-  const presoak = options.presoak ? presoakAssertions(run) : null;
+  const presoak = options.presoak
+    ? [
+        ...presoakAssertions(run),
+        ...(f4
+          ? gateSAssertions(run).map((entry): PresoakAssertion => ({
+              kind: entry.kind,
+              provider: "openai-codex",
+              occurrences: entry.occurrences,
+              expectedOutcome: "met",
+              attempt: entry.detail,
+              call: "",
+              status: entry.status
+            }))
+          : [])
+      ]
+    : null;
   const header = run.events.length;
   const actions: Record<string, Record<string, number>> = {};
   for (const event of run.events)
@@ -1326,11 +1422,23 @@ export function analyzeRun(
       invalid: run.invalid
     },
     checks,
+    f4,
+    relations: f4?.relations ?? relationsOf(run),
+    predicates: { ...predicateVersions },
+    countedLocalWriter: options.countLocalWriter === true,
     presoak,
     tables: { calls: callsTable(run), p0: p0.table, resources: swap.resources },
     failureAudit: audit.rows,
     wedged
   };
+}
+
+/** The relations line of a run that records one (F3's runs do not). */
+function relationsOf(run: LoadedRun): string | null {
+  const relations = run.meta.relations;
+  return relations
+    ? `Relations configuration kept by the run: source discovery neighbours ${relations.discoveryNeighbours} (the knob that sets them is refused in a soak), judge decider mode ${relations.judgeMode ?? "not stored (the routes derive it)"}.`
+    : null;
 }
 
 const cell = (value: string | number | null) =>
@@ -1364,6 +1472,19 @@ export function renderReport(report: SoakReport): string {
     "",
     `**Verdict: ${mark[report.verdict] === "PASS" ? "PASS" : report.verdict === "fail" ? "FAIL" : "REVIEW"}**`,
     "",
+    ...(report.relations ? [report.relations, ""] : []),
+    ...(report.f4
+      ? [
+          `Predicates evaluated: ${Object.entries(report.predicates)
+            .map(([name, version]) => `${name} v${version}`)
+            .join(
+              ", "
+            )}. Fault bodies injected at the fetch layer are synthetic shapes built from our parser's patterns (no real usage_limit_reached body is captured), not recordings.${
+            report.countedLocalWriter ? " The repair rate counts every local-writer row (C4)." : ""
+          }`,
+          ""
+        ]
+      : []),
     `Audited calls ${report.counts.taskRuns}, events ${report.counts.events}, samples ${report.counts.samples}.` +
       (report.counts.beforeStart > 0
         ? ` ${report.counts.beforeStart} audit row(s) that started before the run were left out.`
@@ -1385,6 +1506,25 @@ export function renderReport(report: SoakReport): string {
   ];
   for (const check of report.checks.filter((entry) => entry.details.length > 0)) {
     lines.push(`### ${check.title}`, "", ...check.details.map((detail) => `- ${detail}`), "");
+  }
+  if (report.f4) {
+    lines.push(
+      "## E1 contention exposure (lane-minutes a day)",
+      "",
+      ...table(report.f4.tables.exposure),
+      "## E3 within 24 h, by kind and by blocker window",
+      "",
+      ...table(report.f4.tables.e3),
+      "## Injection ledger (Codex lane)",
+      "",
+      ...table(report.f4.tables.injection),
+      "## Codex tokens by day",
+      "",
+      ...table(report.f4.tables.tokens),
+      "## Load ledger by day",
+      "",
+      ...table(report.f4.tables.load)
+    );
   }
   if (report.presoak) {
     lines.push(
@@ -1459,7 +1599,8 @@ export async function loadRun(directory: string): Promise<LoadedRun> {
 export const soakReportUsage = `Usage: npx tsx scripts/soak/report.ts <run directory> [options]
 
   --status                Print a compact health check of a run in progress (nothing is written).
-  --presoak               Also assert that each injected fault kind ended as expected (gate P).
+  --presoak               Also assert that each injected fault kind ended as expected (gate P, gate S).
+  --count-local-writer    Count every structured call of the local writer in the repair rate (C4's re-run).
   --explanations <file>   JSON {"<job id>": "why it was not blocked by an unrelated job"} (T64r).
   --out <file.md>         Where to write the Markdown (default: <run>/report.md).
   --json <file.json>      Where to write the data (default: <run>/report.json).
@@ -1485,8 +1626,15 @@ export function statusDigest(run: LoadedRun, report: SoakReport): string[] {
   const actions = run.events.filter(
     (event) => event.type === "action" && event.status === "failed"
   );
+  const f4Lines = run.meta.f4
+    ? [
+        `Status: ${last.status ? `${last.status.state} ${last.status.class ?? "-"}.${last.status.reason ?? "-"}` : "no status sample"}; harness cap ${last.cap ? `${last.cap.spentTokens}+${last.cap.reservedTokens} of ${last.cap.capTokens} tokens, ${last.cap.refusals} refusal(s)` : "-"}; Codex calls today ${last.budget ? `${last.budget.usedCalls}/${last.budget.capCalls}` : "-"}.`,
+        `Workers: ${(last.workers ?? []).map((worker) => `${worker.worker}:${worker.state}${worker.why ? `(${worker.why})` : ""}`).join(" ") || "-"}; load ${last.load ? `${last.load.loadAverage[0]} (pressure ${last.load.memoryPressure ?? "-"})` : "-"}.`
+      ]
+    : [];
   return [
     `Latest sample ${last.at} (${(last.elapsedMs / hour).toFixed(2)} h in).`,
+    ...f4Lines,
     `Lanes: ${last.lanes.map((lane) => `${lane.lane} running ${lane.running}/${lane.limit} waiting ${Object.values(lane.waiting).reduce((a, b) => a + b, 0)}${lane.breaker && lane.breaker !== "closed" ? ` breaker ${lane.breaker}` : ""}${lane.held ? ` HELD ${lane.held}` : ""}`).join("; ")}`,
     `Jobs: ${JSON.stringify(last.jobCounts)}; oldest eligible queued job unchanged for ${Math.round(oldest / minute)} min.`,
     `Helper: ${last.helper ? `pid ${last.helper.pid} rss ${last.helper.rssMb} MB spawns ${last.helper.spawnCount}` : "not running"}; app rss ${last.appRssMb} MB; pageouts since warm-up ${pageoutMb} MB; loop lag p99 ${last.eventLoopLagP99Ms ?? "-"} ms.`,
@@ -1503,6 +1651,7 @@ export async function runSoakReport(
     options: {
       status: { type: "boolean", default: false },
       presoak: { type: "boolean", default: false },
+      "count-local-writer": { type: "boolean", default: false },
       explanations: { type: "string" },
       out: { type: "string" },
       json: { type: "string" },
@@ -1516,7 +1665,11 @@ export async function runSoakReport(
   const explanations = values.explanations
     ? (JSON.parse(await readFile(resolve(values.explanations), "utf8")) as Record<string, string>)
     : {};
-  const report = analyzeRun(run, { presoak: values.presoak, explanations });
+  const report = analyzeRun(run, {
+    presoak: values.presoak,
+    explanations,
+    countLocalWriter: values["count-local-writer"]
+  });
   if (values.status) {
     const lines = [
       `Soak ${report.run} (${report.profile}): ${report.verdict.toUpperCase()} so far`,
