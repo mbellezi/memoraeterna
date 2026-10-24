@@ -96,6 +96,11 @@ over the text below where they differ.
   and its move plan starved two topics (proof fixed; it runs again).
 - **Gate M with 0065 (10-24).** Wave 3 added `0065_divergence_findings` (T94's Divergences in the Inbox, D17); gate M
   steps 4-6 and the smoke ran again and passed (F4 set 0060-0065: 195 ms DEV, 1.5 s soak24, 4.7 s ENV-C).
+- **Owner decisions of 10-24 (afternoon).** (1) C1 is accepted: 35.9 generative calls per chapter and M = 64 against
+  58, the extra merges being correct cross-batch duplicates. (2) FRREC, the live first-run record, runs before gate S
+  with a cap of 560k Codex tokens (it needs about 370k: the PLOS paper alone about 280k); the pre-soak cap stays 1.5M.
+  (3) The soak's Codex cap rises to 6.0M (F4's measured use runs about 1.7x the F3-based estimates, which would put the
+  7-day soak near 5.4M against the old 4.7M); gate S still re-freezes the expected spend; the F4 cap becomes 7.6M.
 - **Q12's probe (10-24).** 20 synthetic requests, provider-reported US$0.0019 equal to the ledger's figure: T76 done.
 
 ## Decisions
