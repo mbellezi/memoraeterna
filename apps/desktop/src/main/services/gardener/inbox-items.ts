@@ -32,7 +32,7 @@ export interface ObsidianConflictRecord {
   /** The vault path of the file. */
   path: string;
   variant: "editorial" | "deleted" | "projection";
-  /** When it arose; unknown for a projection conflict. */
+  /** When it arose; null: the Inbox reads it from the operation or revision row. */
   at: Date | null;
 }
 

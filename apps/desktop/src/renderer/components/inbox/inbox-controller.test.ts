@@ -263,6 +263,26 @@ describe("paging", () => {
     expect(h.api.list).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps the pages the person loaded, and the selection on its item, when a change arrives", async () => {
+    const h = paged();
+    await shown(h);
+    await h.controller.loadMore();
+    h.controller.command({ type: "edge", to: "last" });
+    const selected = h.controller.getSnapshot().selectedKey;
+    expect(selected).toBe(keyOf(many[3]!));
+    const before = h.api.list.mock.calls.length;
+    h.emit(countsOf(many));
+    await settle();
+    // The refresh reads the first page and the one after it again, not the first page alone.
+    expect(h.api.list.mock.calls.slice(before).map(([input]) => input)).toEqual([
+      { limit: 2 },
+      { cursor: "2", limit: 2 }
+    ]);
+    expect(h.controller.getSnapshot().items).toHaveLength(4);
+    expect(h.controller.getSnapshot().selectedKey).toBe(selected);
+    expect(h.controller.getSnapshot().nextCursor).toBe("4");
+  });
+
   it("does not read a page twice at once, and keeps what a failed page left", async () => {
     const h = paged();
     await shown(h);

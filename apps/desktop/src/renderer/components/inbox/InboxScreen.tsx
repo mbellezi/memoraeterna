@@ -13,7 +13,7 @@ import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { navigationForAddress } from "../../lib/object-navigation";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import { InboxController } from "./inbox-controller";
-import { inboxCommand } from "./inbox-keys";
+import { inboxCommand, reclaimsFocus } from "./inbox-keys";
 import { InboxView } from "./InboxView";
 
 export interface InboxScreenProps {
@@ -40,8 +40,11 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
     controller.getSnapshot,
     controller.getSnapshot
   );
+  const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const detailRef = useRef<HTMLElement>(null);
+  /** The keyboard is on this screen: the last focus or press landed inside it. */
+  const keyboardHere = useRef(false);
   const idPrefix = `inbox-${useId().replace(/[^a-zA-Z0-9]/gu, "")}`;
   const focusPending = useRef(false);
   const opener = useObjectOpener(onNavigate);
@@ -52,6 +55,25 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
 
   useEffect(() => () => controller.dispose(), [controller]);
 
+  // Where the keyboard is, followed while the view is shown: removing the focused element (the
+  // last item decided, a reload) moves the focus to the body without an event that says so.
+  useEffect(() => {
+    if (!active) return undefined;
+    const follow = (event: Event) => {
+      const root = rootRef.current;
+      keyboardHere.current = Boolean(
+        root && event.target instanceof Node && root.contains(event.target)
+      );
+    };
+    document.addEventListener("focusin", follow);
+    document.addEventListener("pointerdown", follow);
+    return () => {
+      document.removeEventListener("focusin", follow);
+      document.removeEventListener("pointerdown", follow);
+      keyboardHere.current = false;
+    };
+  }, [active]);
+
   // The keys work as soon as the view is shown: the list takes the focus once it has items to show.
   const ready = state.load.status === "ready";
   useEffect(() => {
@@ -60,8 +82,24 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
   useEffect(() => {
     if (!active || !ready || !focusPending.current) return;
     focusPending.current = false;
-    listRef.current?.focus({ preventScroll: true });
+    (listRef.current ?? rootRef.current)?.focus({ preventScroll: true });
   }, [active, ready]);
+
+  // The element that held the focus went away with this render: the focus stays on the screen (the
+  // list, else the screen itself), so `u` after the last decision, `?` and the moves still work.
+  const listShown = ready && state.items.length > 0;
+  useEffect(() => {
+    if (
+      !reclaimsFocus({
+        active,
+        keyboardHere: keyboardHere.current,
+        focused: document.activeElement,
+        body: document.body
+      })
+    )
+      return;
+    (listRef.current ?? rootRef.current)?.focus({ preventScroll: true });
+  }, [active, listShown, state.load.status, state.selectedKey, state.undo, state.actions]);
 
   // The selected item stays in view as the keys move through a long list.
   useEffect(() => {
@@ -110,6 +148,7 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
     <InboxView
       t={t}
       state={state}
+      rootRef={rootRef}
       listRef={listRef}
       detailRef={detailRef}
       idPrefix={idPrefix}

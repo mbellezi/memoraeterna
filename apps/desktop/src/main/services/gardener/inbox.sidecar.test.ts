@@ -457,6 +457,13 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
       status: "done",
       undoable: true
     });
+    // The other verdict on one that stands is not carried out, and never reads as done.
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${kept.runId}`, action: "dismiss" })
+    ).toEqual({ status: "stale" });
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${dropped.runId}`, action: "apply" })
+    ).toEqual({ status: "stale" });
     expect(
       await inbox.act({ kind: "review", id: `relation:${randomUUID()}`, action: "apply" })
     ).toEqual({ status: "gone" });
@@ -546,9 +553,14 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     );
     expect((await inbox.counts()).byKind.quarantined).toBe(2);
 
-    // A subject whose job is gone has no place for the stamp: the mark is released.
+    // A subject whose job is gone offers no Retry that cannot run, and has no place for the
+    // stamp: the mark is released.
     const orphan = await seedQuarantine(`note:${randomUUID()}`);
     await pool!.query("delete from jobs where id = $1", [orphan.jobId]);
+    const listed = (await inbox.list({ kinds: ["quarantined"] })).items.find(
+      (entry) => entry.id === orphan.id
+    );
+    expect(listed?.actions).toEqual(["dismiss"]);
     expect(await inbox.act({ kind: "quarantined", id: orphan.id, action: "dismiss" })).toEqual({
       status: "done",
       undoable: false
@@ -814,6 +826,34 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     expect(await inbox.act({ kind: "budget", id: next.id, action: "apply" })).toEqual({
       status: "waiting"
     });
+  });
+
+  it("dates a vault conflict by its stored row, else by when it was first listed", async () => {
+    let clock = Date.parse("2026-10-24T08:00:00.000Z");
+    inbox.dispose();
+    inbox = build({ now: () => clock });
+    const revision = randomUUID();
+    await pool!.query(
+      `insert into obsidian_projection_revisions (id, memora_id, revision_id, binding_hash,
+         relative_path, content, editable_hash, generated_hash, rendered_hash, status, created_at)
+       values ($1, $2, 'r1', 'b', 'Topic.md', '', 'e', 'g', 'r', 'conflict',
+               '2026-10-20T10:00:00.123456Z')`,
+      [revision, randomUUID()]
+    );
+    const unknown = randomUUID();
+    conflicts = async () => [
+      { id: revision, path: "Topic.md", variant: "projection", at: null },
+      { id: unknown, path: "Note.md", variant: "editorial", at: null }
+    ];
+    const first = (await inbox.list({ kinds: ["obsidian_conflict"] })).items;
+    expect(first.map((entry) => [entry.id, entry.at])).toEqual([
+      [`projection:${revision}`, "2026-10-20T10:00:00.123000Z"],
+      [`editorial:${unknown}`, "2026-10-24T08:00:00.000000Z"]
+    ]);
+    // Read again later: the one without a stored time keeps its first time and its place.
+    clock += 3_600_000;
+    const again = (await inbox.list({ kinds: ["obsidian_conflict"] })).items;
+    expect(again.map((entry) => entry.at)).toEqual(first.map((entry) => entry.at));
   });
 
   it("offers no verb on an Obsidian conflict", async () => {

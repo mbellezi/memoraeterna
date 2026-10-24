@@ -83,6 +83,8 @@ export interface InboxRelationRecord {
   targetNote: { id: string; title: string };
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 const utc = (column: string) =>
   `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
@@ -196,14 +198,18 @@ export function createInboxRepository(db: Queryable) {
       return counts;
     },
 
-    /** The quarantined subjects named by these `<task kind>|<subject>` IDs. */
+    /**
+     * The quarantined subjects named by these `<task kind>|<subject>` IDs. `lastJobId` is null when
+     * the job that quarantined the subject is gone, so no Retry is offered that cannot run.
+     */
     async quarantined(
       subjects: ReadonlyArray<{ kind: string; subjectKey: string }>
     ): Promise<InboxQuarantineRecord[]> {
       if (subjects.length === 0) return [];
       const result = await db.query<InboxQuarantineRecord>(
         `select o.kind, o.subject_key as "subjectKey", o.last_error_class as "errorClass",
-                o.consecutive_failures::int as failures, o.last_job_id::text as "lastJobId",
+                o.consecutive_failures::int as failures,
+                (select j.id::text from jobs j where j.id = o.last_job_id) as "lastJobId",
                 ${utc("o.quarantined_at")} as "quarantinedAt"
            from gardener_outcomes o
           where o.quarantined_at is not null
@@ -269,6 +275,31 @@ export function createInboxRepository(db: Queryable) {
         [notes, sources, topics, inboxReadLimits.titleMax]
       );
       for (const row of result.rows) found.set(`${row.kind}:${row.id}`, row.title);
+      return found;
+    },
+
+    /**
+     * When the vault's conflicts arose (the sync service lists them without a time): an editorial
+     * operation's and a projection revision's creation, keyed `editorial:<id>` and
+     * `projection:<id>`. Read only; an ID that is not a stored row is absent.
+     */
+    async obsidianConflictTimes(ids: {
+      editorial: readonly string[];
+      projection: readonly string[];
+    }): Promise<Map<string, Date>> {
+      const editorial = ids.editorial.filter((id) => uuidPattern.test(id));
+      const projection = ids.projection.filter((id) => uuidPattern.test(id));
+      const found = new Map<string, Date>();
+      if (editorial.length + projection.length === 0) return found;
+      const result = await db.query<{ kind: string; id: string; at: string }>(
+        `select 'editorial' as kind, o.id::text as id, ${utc("o.created_at")} as at
+           from obsidian_editorial_operations o where o.id = any($1::uuid[])
+         union all
+         select 'projection', r.id::text, ${utc("r.created_at")}
+           from obsidian_projection_revisions r where r.id = any($2::uuid[])`,
+        [editorial, projection]
+      );
+      for (const row of result.rows) found.set(`${row.kind}:${row.id}`, new Date(row.at));
       return found;
     },
 

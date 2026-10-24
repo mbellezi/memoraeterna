@@ -198,6 +198,26 @@ describe("the Inbox screen", () => {
     expect(html).toContain('aria-keyshortcuts="U"');
   });
 
+  it("can hold the focus itself when the last item was decided, so U still reaches it", () => {
+    const html = view(
+      stateOf([], {
+        type: "undoable",
+        undo: {
+          key: "duplicate:x",
+          kind: "duplicate",
+          id: uuid(1),
+          verb: "dismiss",
+          message: "inbox.result.dismissed",
+          params: {},
+          status: "ready"
+        }
+      })
+    );
+    expect(html).toContain("Nothing needs you");
+    expect(html).toMatch(/^<div tabindex="-1" aria-label="Inbox" role="region"/u);
+    expect(html).toContain("or press U");
+  });
+
   it("shows the keyboard help when it is open, and says when keys do not work", () => {
     const closed = view(stateOf(everyKind));
     expect(closed).toContain('aria-expanded="false"');

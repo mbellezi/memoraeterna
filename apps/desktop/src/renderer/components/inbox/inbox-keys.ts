@@ -48,6 +48,25 @@ const letters: Readonly<Record<string, InboxCommand>> = {
   u: { type: "undo" }
 };
 
+/**
+ * Whether the screen takes the focus back after a render: the keyboard was on it and the element
+ * that held the focus went away with that render (the last item was decided, a filter or a retry
+ * reloaded the list, a verb button was disabled while it worked), which leaves the focus on the
+ * page's body, where no key reaches the screen. Focus moved anywhere else is never taken.
+ */
+export function reclaimsFocus(input: {
+  active: boolean;
+  keyboardHere: boolean;
+  focused: unknown;
+  body: unknown;
+}): boolean {
+  return (
+    input.active &&
+    input.keyboardHere &&
+    (input.focused === null || input.focused === undefined || input.focused === input.body)
+  );
+}
+
 /** What a key press asks of the Inbox, or null when it is not for it. */
 export function inboxCommand(event: InboxKeyEvent): InboxCommand | null {
   if (event.defaultPrevented) return null;

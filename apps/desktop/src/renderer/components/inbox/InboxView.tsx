@@ -17,6 +17,8 @@ export interface InboxViewProps {
   idPrefix: string;
   /** An object the detail tried to open could not be located. */
   openFailed: boolean;
+  /** The screen itself holds the focus when the list is not there (empty, loading, failed). */
+  rootRef?: Ref<HTMLDivElement>;
   listRef: Ref<HTMLUListElement>;
   detailRef: Ref<HTMLElement>;
   /** The keyboard of the whole screen (the host maps keys to the controller and moves the focus). */
@@ -51,14 +53,21 @@ const helpRows: ReadonlyArray<{ keys: readonly string[]; label: MessageKey }> = 
  * detail, an Undo for the last verb and the keyboard help. It covers loading, empty, error and
  * ready states, and every refusal stays visible as text; the controller owns the state.
  */
-export function InboxView(props: InboxViewProps) {
+export function InboxView({ rootRef, ...props }: InboxViewProps) {
   const { t, state } = props;
   const helpId = useId();
   const item = selectedItem(state);
   const counts = state.counts;
   const empty = state.load.status === "ready" && state.items.length === 0;
   return (
-    <div className="flex h-[calc(100vh-7rem)] min-h-96 flex-col gap-3" onKeyDown={props.onKey}>
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      aria-label={t("inbox.title")}
+      role="region"
+      className="flex h-[calc(100vh-7rem)] min-h-96 flex-col gap-3 outline-none"
+      onKeyDown={props.onKey}
+    >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-secondary-foreground">{t("inbox.description")}</p>
         {/* The help floats over the screen, so opening it never pushes the list out of view. */}

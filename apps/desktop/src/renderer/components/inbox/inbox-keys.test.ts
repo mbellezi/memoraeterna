@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { inboxCommand, type InboxKeyEvent } from "./inbox-keys";
+import { inboxCommand, reclaimsFocus, type InboxKeyEvent } from "./inbox-keys";
 
 /** A target that answers `closest` the way a DOM element does, for the selectors the rules ask. */
 const target = (
@@ -115,5 +115,23 @@ describe("the Inbox keys", () => {
 
   it("copes with a missing target", () => {
     expect(inboxCommand(press("j", { target: null }))).toEqual({ type: "move", delta: 1 });
+  });
+});
+
+describe("keeping the keyboard on the Inbox", () => {
+  const body = { tagName: "BODY" };
+  const list = { tagName: "UL" };
+
+  it("takes the focus back when the element that held it went away with a render", () => {
+    // The last item was decided: its list is gone and the focus fell to the body.
+    expect(reclaimsFocus({ active: true, keyboardHere: true, focused: body, body })).toBe(true);
+    expect(reclaimsFocus({ active: true, keyboardHere: true, focused: null, body })).toBe(true);
+  });
+
+  it("never takes a focus that is somewhere, elsewhere or while hidden", () => {
+    expect(reclaimsFocus({ active: true, keyboardHere: true, focused: list, body })).toBe(false);
+    // The person went to another control or pressed outside the screen.
+    expect(reclaimsFocus({ active: true, keyboardHere: false, focused: body, body })).toBe(false);
+    expect(reclaimsFocus({ active: false, keyboardHere: true, focused: body, body })).toBe(false);
   });
 });

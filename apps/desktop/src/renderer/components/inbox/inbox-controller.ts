@@ -20,6 +20,7 @@ import {
   initialInboxState,
   keyCarries,
   keyOf,
+  mergeItems,
   offers,
   reduceInbox,
   selectedItem,
@@ -42,6 +43,9 @@ export interface InboxControllerDeps {
   /** The clock ages are measured with (tests pass a fixed one). */
   now?: () => number;
 }
+
+/** Pages a refresh reads again at most to keep what the person loaded (500 items at 50 a page). */
+export const refreshPagesMax = 10;
 
 /** The sentence of a verb that was carried out, per kind (a closed table, never a composed key). */
 const doneMessages = {
@@ -186,20 +190,35 @@ export class InboxController {
     };
   }
 
-  /** Reads the first page and the counts; `silent` keeps what is on screen while it reads. */
+  /**
+   * Reads the first page and the counts; `silent` keeps what is on screen while it reads, and reads
+   * as many pages as were loaded (up to `refreshPagesMax`), so a refresh after a change elsewhere
+   * neither drops the pages the person moved into nor moves the selection off its item.
+   */
   private async load(silent: boolean): Promise<void> {
     const token = ++this.loadToken;
     const key = this.key();
+    const covered = silent && this.state.load.status === "ready" ? this.state.items.length : 0;
     if (!silent) this.dispatch({ type: "loading" });
     try {
       const { inbox } = this.deps.api();
       const [page, counts] = await Promise.all([inbox.list(this.query()), inbox.counts()]);
       if (token !== this.loadToken) return;
-      this.outcome = { key, ok: true, hasData: page.items.length > 0 };
+      let items: readonly InboxItem[] = page.items;
+      let nextCursor = page.nextCursor;
+      let pages = 1;
+      while (nextCursor && items.length < covered && pages < refreshPagesMax) {
+        const more = await inbox.list(this.query(nextCursor));
+        if (token !== this.loadToken) return;
+        items = mergeItems(items, more.items);
+        nextCursor = more.nextCursor;
+        pages += 1;
+      }
+      this.outcome = { key, ok: true, hasData: items.length > 0 };
       this.dispatch({
         type: "loaded",
-        items: page.items,
-        nextCursor: page.nextCursor,
+        items,
+        nextCursor,
         at: (this.deps.now ?? Date.now)()
       });
       this.dispatch({ type: "counts", counts });

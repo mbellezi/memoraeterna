@@ -125,6 +125,8 @@ export class InboxService {
   private disposed = false;
   private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
   private offeredAt = Number.NEGATIVE_INFINITY;
+  /** When this process first listed a vault conflict whose time is not stored. */
+  private conflictSeen = new Map<string, Date>();
 
   constructor(private readonly options: InboxServiceOptions) {}
 
@@ -174,7 +176,9 @@ export class InboxService {
       await this.offerBacklog();
     const wantsObsidian = !parsed.kinds || parsed.kinds.includes("obsidian_conflict");
     const obsidian =
-      wantsObsidian && (!parsed.risk || parsed.risk === "medium") ? await this.obsidian() : [];
+      wantsObsidian && (!parsed.risk || parsed.risk === "medium")
+        ? await this.conflictTimes(pool, await this.obsidian())
+        : [];
     const page = await this.readPage(pool, {
       kinds: parsed.kinds,
       risk: parsed.risk,
@@ -191,7 +195,7 @@ export class InboxService {
       row
     }));
     for (const record of obsidian) {
-      const item = obsidianItem(record, inboxTime(record.at ?? new Date(0)));
+      const item = obsidianItem(record, inboxTime(record.at));
       const position = {
         rank: inboxRiskRank(item.risk),
         at: item.at,
@@ -280,6 +284,43 @@ export class InboxService {
     }
   }
 
+  /**
+   * When each conflict arose, for its age and its place in the list: the stored time of its
+   * operation or revision, else the first time this process listed it (never a made-up date, which
+   * would read as decades old and sort first).
+   */
+  private async conflictTimes(
+    pool: PgPool,
+    records: readonly ObsidianConflictRecord[]
+  ): Promise<Array<ObsidianConflictRecord & { at: Date }>> {
+    const keyOf = (record: ObsidianConflictRecord) =>
+      `${record.variant === "projection" ? "projection" : "editorial"}:${record.id}`;
+    const unknown = records.filter((record) => record.at === null);
+    let stored = new Map<string, Date>();
+    if (unknown.length > 0) {
+      try {
+        stored = await createInboxRepository(pool).obsidianConflictTimes({
+          editorial: unknown.filter((r) => r.variant !== "projection").map((r) => r.id),
+          projection: unknown.filter((r) => r.variant === "projection").map((r) => r.id)
+        });
+      } catch (error) {
+        this.options.logger?.warn("The Obsidian conflicts' times could not be read", error);
+      }
+    }
+    const now = new Date((this.options.now ?? Date.now)());
+    const seen = new Map<string, Date>();
+    const timed = records.map((record) => {
+      if (record.at) return { ...record, at: record.at };
+      const key = keyOf(record);
+      const at = stored.get(key) ?? this.conflictSeen.get(key) ?? now;
+      if (!stored.has(key)) seen.set(key, at);
+      return { ...record, at };
+    });
+    // Every read lists all of the vault's conflicts, so one that is not listed is solved.
+    this.conflictSeen = seen;
+    return timed;
+  }
+
   // -------------------------------------------------------------------------
   // inbox.act
 
@@ -325,12 +366,13 @@ export class InboxService {
       const verdict = await this.options.changes.review({ ...ref, verdict: input.action });
       if (verdict.status === "blocked")
         return { status: "blocked", blockers: verdict.blockers, more: verdict.more };
-      if (verdict.status === "stale" || verdict.status === "pending_review")
+      // The status that stands answers the verdict: another one (a verdict given elsewhere, an
+      // undo since) is not this one, and the list is read again.
+      if (verdict.status !== (input.action === "apply" ? "applied" : "dismissed"))
         return { status: "stale" };
       // Applied stays undoable while its store says the undo is available.
       const undoable =
         input.action === "apply" &&
-        verdict.status === "applied" &&
         (await createChangeSetRepository(this.pool()).get(ref.kind, ref.id))?.undo === "available";
       return { status: "done", undoable };
     } catch (error) {
