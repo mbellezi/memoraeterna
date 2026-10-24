@@ -22,6 +22,7 @@ import type { IngestionService } from "../ingestion-service.js";
 import type { KnowledgeService } from "../knowledge-service.js";
 import type { RelationExplanationService } from "../relation-explanation-service.js";
 import { SoakActionFailure, type ActionDetail, type SoakPorts } from "./soak-driver.js";
+import { createF4Ports, type SoakF4PortsDeps } from "./soak-f4-ports.js";
 import type { LocalFaultController } from "./soak-local-faults.js";
 import type { SoakProfile } from "./soak-plan.js";
 import {
@@ -63,11 +64,20 @@ export type CorpusArticle = z.infer<typeof corpusArticleSchema>;
 /** Articles long enough to hold several notes and short enough to ingest in minutes. */
 const articleLength = { min: 2_500, max: 40_000 };
 
-/** The corpus in an order that depends on the seed only (a hash of the seed and the page). */
-export function readCorpus(workspaceRoot: string, seed: number): CorpusArticle[] {
+/**
+ * The corpus in an order that depends on the seed only (a hash of the seed and the page). It is read
+ * from `corpusDirectory` (the data root's, F4) or else from the checkout's `.cache`.
+ */
+export function readCorpus(
+  workspaceRoot: string,
+  seed: number,
+  corpusDirectory?: string
+): CorpusArticle[] {
   const articles: CorpusArticle[] = [];
   for (const file of ["en.jsonl", "pt.jsonl"]) {
-    const path = resolve(workspaceRoot, ".cache", "corpus", "wikipedia", file);
+    const path = corpusDirectory
+      ? resolve(corpusDirectory, file)
+      : resolve(workspaceRoot, ".cache", "corpus", "wikipedia", file);
     if (!existsSync(path)) continue;
     for (const line of readFileSync(path, "utf8").split("\n")) {
       if (line.trim() === "") continue;
@@ -147,6 +157,10 @@ async function readRssMb(pid: number): Promise<number | null> {
 export interface SoakPortsDeps {
   profile: SoakProfile;
   workspaceRoot: string;
+  /** Where the public corpus is (the data root's `corpus/wikipedia`); default: the checkout's `.cache`. */
+  corpusDirectory?: string;
+  /** F4: the 7-day profile's ports and sample (T89). */
+  f4?: SoakF4PortsDeps;
   /** The run directory. */
   directory: string;
   pool: PgPool;
@@ -166,9 +180,12 @@ export interface SoakPortsDeps {
 export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
   const { profile, directory } = deps;
   const seed = profile.seed;
-  const corpus = readCorpus(deps.workspaceRoot, seed);
+  const corpus = readCorpus(deps.workspaceRoot, seed, deps.corpusDirectory);
   if (corpus.length === 0)
-    throw new Error("The public corpus is missing: .cache/corpus/wikipedia/{en,pt}.jsonl");
+    throw new Error(
+      `The public corpus is missing: ${deps.corpusDirectory ?? ".cache/corpus/wikipedia"}/{en,pt}.jsonl`
+    );
+  const f4 = deps.f4 ? createF4Ports(deps.f4) : null;
   const articlesDirectory = join(directory, "articles");
   await mkdir(articlesDirectory, { recursive: true });
   const imported: ImportedArticle[] = [];
@@ -220,6 +237,15 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
   };
 
   return {
+    ...(f4
+      ? {
+          openTopic: f4.openTopic,
+          contentionBurst: f4.contentionBurst,
+          editBurstNote: f4.editBurstNote,
+          finishedJobs: f4.finishedJobs,
+          outcomeChanges: f4.outcomeChanges
+        }
+      : {}),
     async importArticle() {
       const next = await importNext();
       if (!next) return { exhausted: true };
@@ -379,16 +405,20 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
       const helper = deps.ai.mlxHelperStats();
       const loop = lag.count > 0 ? Math.round((lag.percentile(99) / 1e6) * 10) / 10 : null;
       lag.reset();
+      const lanes = deps.ai.laneSnapshots().map((lane) => ({
+        lane: lane.lane,
+        limit: lane.limit,
+        running: lane.running,
+        held: lane.held,
+        waiting: { ...lane.waiting },
+        rateLimits: lane.rateLimits,
+        breaker: lane.breaker?.state ?? null,
+        pausedForMs: lane.pausedForMs ?? null
+      }));
+      const detail = f4 ? await f4.sampleDetail({ jobs: jobs.jobs, lanes }) : {};
       return {
-        lanes: deps.ai.laneSnapshots().map((lane) => ({
-          lane: lane.lane,
-          limit: lane.limit,
-          running: lane.running,
-          held: lane.held,
-          waiting: { ...lane.waiting },
-          rateLimits: lane.rateLimits,
-          breaker: lane.breaker?.state ?? null
-        })),
+        ...detail,
+        lanes,
         jobs: jobs.jobs,
         jobCounts: jobs.counts,
         helper: helper

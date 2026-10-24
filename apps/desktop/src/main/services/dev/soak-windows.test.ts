@@ -1,0 +1,365 @@
+import { describe, expect, it } from "vitest";
+
+import { soakWindowSchema, type SoakWindowSpec } from "./soak-plan-f4.js";
+import { MemoryEventSink, type GroundTruthRecord } from "./soak-records.js";
+import {
+  WindowRunner,
+  defaultSettleMs,
+  settleMs,
+  windowTransitions,
+  type MoneyPort,
+  type WindowPorts
+} from "./soak-windows.js";
+
+const minute = 60_000;
+const t0 = Date.parse("2026-10-29T06:00:00Z");
+
+function spec(overrides: Record<string, unknown>): SoakWindowSpec {
+  return soakWindowSchema.parse({
+    id: "w1",
+    kind: "usage_limit",
+    startMinute: 10,
+    durationMinutes: 30,
+    ...overrides
+  });
+}
+
+function harness(money: Partial<MoneyPort> | null = null) {
+  const calls: string[] = [];
+  let now = t0;
+  let autonomy: "off" | "suggest" | "auto" = "auto";
+  let budgetState: "open" | "paused" | "exhausted" = "open";
+  let day = "2026-10-29";
+  let usedCalls = 12;
+  const moneyPort: MoneyPort | null = money
+    ? {
+        routeToFake: async () => {
+          calls.push("money:route");
+          return { baseUrl: "http://127.0.0.1:1/v1", model: "dev-fake-priced-1" };
+        },
+        restoreRoute: async () => void calls.push("money:restore"),
+        spentUsd: async () => 0.5,
+        monthlyCapUsd: () => 5,
+        state: async () => budgetState,
+        continuePastPause: async () => {
+          calls.push("money:continue");
+          budgetState = "exhausted";
+        },
+        enqueueBackfill: async (count) => {
+          calls.push(`money:backfill ${count}`);
+          return count;
+        },
+        ...money
+      }
+    : null;
+  const ports: WindowPorts = {
+    lane: {
+      start: (id, kind, durationMs) => void calls.push(`lane:start ${id} ${kind} ${durationMs}`),
+      end: (id) => void calls.push(`lane:end ${id}`)
+    },
+    controls: {
+      update: async (change) => {
+        calls.push(`controls:${JSON.stringify(change)}`);
+        if (change.autonomy) autonomy = change.autonomy;
+      },
+      autonomy: () => autonomy
+    },
+    power: { setBlocks: (blocks) => void calls.push(`power:${blocks ? blocks.join("+") : "off"}`) },
+    codexDailyCap: {
+      today: async () => ({ calls: usedCalls, day }),
+      set: (value) => void calls.push(`dailyCap:${value}`)
+    },
+    hooks: {
+      invalidateRanker: async () => void calls.push("hook:ranker-invalid"),
+      restoreRanker: async () => void calls.push("hook:ranker-restore"),
+      markEmbedderVerifying: async () => void calls.push("hook:embedder-verifying"),
+      clearEmbedderVerifying: async () => void calls.push("hook:embedder-clear")
+    },
+    harnessCap: {
+      lowerToSpentPlus: (callsCount) => {
+        calls.push(`harnessCap:lower ${callsCount}`);
+        return 123_456;
+      },
+      restore: () => void calls.push("harnessCap:restore")
+    },
+    money: moneyPort
+  };
+  const sink = new MemoryEventSink();
+  const runner = new WindowRunner({ ports, sink, clock: { now: () => now } });
+  const records = () =>
+    sink.events.filter((event): event is GroundTruthRecord => event.type === "ground_truth");
+  return {
+    runner,
+    calls,
+    records,
+    advance: (milliseconds: number) => void (now += milliseconds),
+    setBudget: (state: "open" | "paused" | "exhausted") => void (budgetState = state),
+    rollDay: (next: string, used: number) => {
+      day = next;
+      usedCalls = used;
+    }
+  };
+}
+
+describe("the transitions of the windows", () => {
+  it("are the starts and ends in time order, an end before a start that falls at the same moment", () => {
+    const a = spec({ id: "a", startMinute: 0, durationMinutes: 10 });
+    const b = spec({ id: "b", kind: "autonomy_off", startMinute: 10, durationMinutes: 5 });
+    expect(
+      windowTransitions([b, a]).map(
+        (entry) => `${entry.window.id}:${entry.phase}@${entry.atMs / minute}`
+      )
+    ).toEqual(["a:start@0", "a:end@10", "b:start@10", "b:end@15"]);
+  });
+
+  it("settle two minutes unless a window says otherwise (the sign-in window recovers by a probe every five)", () => {
+    expect(settleMs(spec({}), "start")).toBe(defaultSettleMs);
+    const signin = spec({ kind: "unauthorized", settleEndMinutes: 6 });
+    expect(settleMs(signin, "start")).toBe(2 * minute);
+    expect(settleMs(signin, "end")).toBe(6 * minute);
+  });
+});
+
+describe("a window's effect and its ground truth", () => {
+  it.each([
+    ["usage_limit", "lane:start w1 usage_limit 1800000", "lane:end w1"],
+    ["refused", "lane:start w1 refused 1800000", "lane:end w1"],
+    ["enotfound", "lane:start w1 enotfound 1800000", "lane:end w1"],
+    ["unauthorized", "lane:start w1 unauthorized 1800000", "lane:end w1"],
+    ["autonomy_off", 'controls:{"autonomy":"off"}', 'controls:{"autonomy":"auto"}'],
+    ["autonomy_suggest", 'controls:{"autonomy":"suggest"}', 'controls:{"autonomy":"auto"}'],
+    ["pause", 'controls:{"paused":true}', 'controls:{"paused":false}'],
+    ["codex_daily_cap", "dailyCap:22", "dailyCap:null"],
+    ["ranker_invalid", "hook:ranker-invalid", "hook:ranker-restore"],
+    ["embedder_verifying", "hook:embedder-verifying", "hook:embedder-clear"],
+    ["only_ac", "power:battery", "power:off"],
+    ["harness_cap", "harnessCap:lower 1.5", "harnessCap:restore"]
+  ] as const)("%s starts with its effect and ends by lifting it", async (kind, started, ended) => {
+    const { runner, calls, records, advance } = harness();
+    const window = spec({
+      kind,
+      params: kind === "codex_daily_cap" ? { extraCalls: 10 } : {},
+      expect: { class: "waiting", reason: "provider_rate_limit" }
+    });
+    await runner.start(window);
+    expect(calls.some((call) => call === started)).toBe(true);
+    expect(runner.open).toEqual(["w1"]);
+    advance(30 * minute);
+    await runner.end(window);
+    expect(calls.at(-1)).toBe(ended);
+    expect(runner.open).toEqual([]);
+    const [start, end] = records();
+    expect(start).toMatchObject({
+      id: "w1",
+      kind,
+      phase: "start",
+      expect: { class: "waiting", reason: "provider_rate_limit" }
+    });
+    // The sentence gets two minutes after the start, and the end carries no expectation of its own.
+    expect(Date.parse(start!.settleUntil) - Date.parse(start!.at)).toBe(defaultSettleMs);
+    expect(end).toMatchObject({ id: "w1", phase: "end" });
+    expect(end!.expect).toBeUndefined();
+    expect(Date.parse(end!.settleUntil) - Date.parse(end!.at)).toBe(defaultSettleMs);
+  });
+
+  it("restores the autonomy the window found, not a fixed one", async () => {
+    const { runner, calls } = harness();
+    await runner.start(spec({ id: "x", kind: "autonomy_off" }));
+    await runner.end(spec({ id: "x", kind: "autonomy_off" }));
+    expect(calls).toEqual(['controls:{"autonomy":"off"}', 'controls:{"autonomy":"auto"}']);
+    const second = harness();
+    await second.runner.start(spec({ id: "s", kind: "autonomy_suggest" }));
+    await second.runner.end(spec({ id: "s", kind: "autonomy_suggest" }));
+    expect(second.calls).toEqual([
+      'controls:{"autonomy":"suggest"}',
+      'controls:{"autonomy":"auto"}'
+    ]);
+  });
+
+  it("does nothing twice: a window already open is not started again, one never opened is not ended", async () => {
+    const { runner, calls, records } = harness();
+    const window = spec({ kind: "pause" });
+    await runner.end(window);
+    await runner.start(window);
+    await runner.start(window);
+    expect(calls).toEqual(['controls:{"paused":true}']);
+    expect(records()).toHaveLength(1);
+  });
+
+  it("records a failed start with its error and goes on, so the report sees a window that did not take effect", async () => {
+    const { runner, records } = harness();
+    const ports = (runner as unknown as { options: { ports: WindowPorts } }).options.ports;
+    ports.hooks.invalidateRanker = async () => {
+      throw new Error("the ranker row is gone");
+    };
+    await runner.start(spec({ kind: "ranker_invalid" }));
+    expect(records()[0]).toMatchObject({
+      phase: "start",
+      detail: { error: "the ranker row is gone" }
+    });
+    expect(runner.open).toEqual(["w1"]);
+  });
+
+  it("lets the sign-in window's end settle for six minutes", async () => {
+    const { runner, records, advance } = harness();
+    const window = spec({ kind: "unauthorized", settleEndMinutes: 6 });
+    await runner.start(window);
+    advance(10 * minute);
+    await runner.end(window);
+    const end = records()[1]!;
+    expect(Date.parse(end.settleUntil) - Date.parse(end.at)).toBe(6 * minute);
+  });
+});
+
+describe("the idle window", () => {
+  it("expects the sentence in each active block only, with a settle after every block's start and end", async () => {
+    const { runner, calls, records, advance } = harness();
+    const window = spec({
+      kind: "only_idle",
+      durationMinutes: 40,
+      params: { blockMinutes: 10 },
+      expect: { class: "paused", reason: "only_idle_user_active" }
+    });
+    await runner.start(window);
+    expect(calls).toEqual(['controls:{"onlyIdle":true}', "power:active+idle"]);
+    expect(records()[0]!.expect).toBeUndefined();
+    await runner.tick();
+    for (let step = 0; step < 4; step += 1) {
+      advance(10 * minute);
+      await runner.tick();
+    }
+    await runner.end(window);
+    const seen = records().map(
+      (entry) => `${entry.id}:${entry.phase}${entry.expect ? ":expect" : ""}`
+    );
+    expect(seen).toEqual([
+      "w1:start",
+      "w1#1:start:expect",
+      "w1#1:end",
+      "w1#2:start:expect",
+      "w1#2:end",
+      "w1#3:start:expect",
+      "w1#3:end",
+      "w1:end"
+    ]);
+    expect(calls.slice(-2)).toEqual(['controls:{"onlyIdle":false}', "power:off"]);
+  });
+
+  it("closes the block that is open when the window ends", async () => {
+    const { runner, records } = harness();
+    const window = spec({ kind: "only_idle", params: { blockMinutes: 10 } });
+    await runner.start(window);
+    await runner.tick();
+    await runner.end(window);
+    expect(records().map((entry) => `${entry.id}:${entry.phase}`)).toEqual([
+      "w1:start",
+      "w1#1:start",
+      "w1#1:end",
+      "w1:end"
+    ]);
+  });
+});
+
+describe("the mid-run Codex cap", () => {
+  it("is set again from the new count when the budget's day rolls over mid-window", async () => {
+    const { runner, calls, rollDay } = harness();
+    const window = spec({ kind: "codex_daily_cap", params: { extraCalls: 10 } });
+    await runner.start(window);
+    await runner.tick();
+    expect(calls).toEqual(["dailyCap:22"]);
+    rollDay("2026-10-30", 0);
+    await runner.tick();
+    expect(calls).toEqual(["dailyCap:22", "dailyCap:10"]);
+    await runner.tick();
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("the money window", () => {
+  const moneyWindow = () =>
+    spec({
+      id: "w146",
+      kind: "money",
+      durationMinutes: 360,
+      params: {
+        attempts: 8,
+        backfillRelations: 10,
+        continueAfterMinutes: 10,
+        attemptEstimateUsd: 0.01
+      }
+    });
+
+  it("routes the backfill to the priced fake, caps the month at spend plus eight attempts, and queues the pass", async () => {
+    const { runner, calls, records } = harness({});
+    await runner.start(moneyWindow());
+    expect(calls).toEqual(["money:route", 'controls:{"monthlyCapUsd":0.58}', "money:backfill 10"]);
+    expect(records()[0]).toMatchObject({
+      phase: "start",
+      detail: { fakeModel: "dev-fake-priced-1", capUsd: 0.58, relationsQueued: 10 }
+    });
+    // The window as a whole expects nothing: its two stages do.
+    expect(records()[0]!.expect).toBeUndefined();
+  });
+
+  it("expects the 80% item once the budget pauses, presses continue ten minutes later, expects the cap after it", async () => {
+    const { runner, calls, records, advance, setBudget } = harness({});
+    const window = moneyWindow();
+    await runner.start(window);
+    await runner.tick();
+    expect(records()).toHaveLength(1);
+    advance(20 * minute);
+    setBudget("paused");
+    await runner.tick();
+    expect(records()[1]).toMatchObject({
+      id: "w146#80",
+      phase: "start",
+      expect: { class: "cap", reason: "money_80" }
+    });
+    advance(9 * minute);
+    await runner.tick();
+    expect(calls).not.toContain("money:continue");
+    advance(2 * minute);
+    await runner.tick();
+    expect(calls).toContain("money:continue");
+    // The fake's budget then reaches its cap: the second stage.
+    await runner.tick();
+    expect(records().map((entry) => `${entry.id}:${entry.phase}`)).toEqual([
+      "w146:start",
+      "w146#80:start",
+      "w146#80:end",
+      "w146#100:start"
+    ]);
+    expect(records()[3]!.expect).toEqual({ class: "cap", reason: "money_100" });
+    advance(6 * 60 * minute);
+    await runner.end(window);
+    expect(calls.slice(-2)).toEqual(["money:restore", 'controls:{"monthlyCapUsd":5}']);
+    expect(records().at(-2)).toMatchObject({ id: "w146#100", phase: "end" });
+    expect(records().at(-1)).toMatchObject({
+      id: "w146",
+      phase: "end",
+      detail: { reached80: true, stage: "exhausted" }
+    });
+  });
+
+  it("says so when the budget never reached its 80% in the window", async () => {
+    const { runner, records, advance } = harness({});
+    const window = moneyWindow();
+    await runner.start(window);
+    await runner.tick();
+    advance(6 * 60 * minute);
+    await runner.end(window);
+    expect(records().at(-1)).toMatchObject({
+      phase: "end",
+      detail: { reached80: false, stage: "filling" }
+    });
+    expect(records().some((entry) => entry.expect)).toBe(false);
+  });
+
+  it("records a failed start when the harness has no priced fake", async () => {
+    const { runner, records } = harness(null);
+    await runner.start(moneyWindow());
+    expect(records()[0]!.detail).toMatchObject({
+      error: expect.stringContaining("priced loopback fake")
+    });
+  });
+});

@@ -2,6 +2,7 @@ import { aiConfigGeneration, createJobRepository } from "@app/db";
 import {
   backgroundBlockerOf,
   defaultKnowledgeControls,
+  defaultPriceTable,
   defaultRemoteBudgetConfig,
   gardenerStatusKinds,
   relationExplainBackfillConfig
@@ -111,6 +112,7 @@ import {
 import { createNoteMatchRequests } from "./services/relations/relation-match.js";
 import { RelationMatchBacklog } from "./services/relations/relation-match-backlog.js";
 import { createRouteSpaceResolver } from "./services/topic-tree/topic-space.js";
+import { immediateDebounce } from "./services/topic-tree/topic-triggers.js";
 import {
   explainBackfillExecutor,
   relationExplainBackfillJobType,
@@ -398,6 +400,11 @@ void app.whenReady().then(() => {
       backgroundPolicy?.controls.current().monthlyCapUsd ??
       defaultRemoteBudgetConfig.defaultMonthlyCapUsd,
     onChange: () => budgetRelay.changed(),
+    // The 7-day soak's DEV overrides (F4 T89): the mid-run Codex daily cap and the money window's fake.
+    ...(soakPreparation?.subscriptionDailyCalls
+      ? { subscriptionDailyCalls: soakPreparation.subscriptionDailyCalls }
+      : {}),
+    ...(soakPreparation ? { priceTable: soakPreparation.priceTable(defaultPriceTable) } : {}),
     logger: console
   });
   aiService = new AiService({
@@ -410,6 +417,8 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     logger: soakPreparation?.logger ?? console,
     ...(soakPreparation ? { honourTreatAsRemote: true } : {}),
+    // The 7-day soak's fault layer in front of the real Codex adapter (F4 T89).
+    ...(soakPreparation?.codexFetch ? { codexFetch: soakPreparation.codexFetch } : {}),
     openExternal: (url) => shell.openExternal(url),
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
@@ -1095,7 +1104,28 @@ void app.whenReady().then(() => {
               knowledge: knowledgeService!,
               consultation: consultationService,
               explanations: relationExplanationService,
-              jobs: { wake: () => jobSupervisor?.wake() }
+              jobs: { wake: () => jobSupervisor?.wake() },
+              // The 7-day profile's services (F4 T89). `status` is the Gardener's status service
+              // (T86): the soak is refused without it.
+              ...(backgroundPolicy && remoteBudget && topicTreeServices?.overview
+                ? {
+                    f4: {
+                      topicOverview: (topicId: string) =>
+                        topicTreeServices!.overview!.overview({ id: topicId }),
+                      requestAudit: (treeId: string) =>
+                        topicTreeServices!.triggers.request("topic-audit", treeId, null, {
+                          debounce: immediateDebounce
+                        }),
+                      controls: backgroundPolicy.controls,
+                      power: backgroundPolicy.power,
+                      budget: remoteBudget,
+                      budgetChanged: () => budgetRelay.changed(),
+                      status: null,
+                      publishModelDownload: (event) => appEvents?.publish(event),
+                      credentials: new CredentialService(app.getPath("userData"))
+                    }
+                  }
+                : {})
             })
             .catch((error: unknown) =>
               console.error("SOAK failed:", error instanceof Error ? error.message : String(error))

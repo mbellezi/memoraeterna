@@ -2,21 +2,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { seededUnit } from "./fake-remote-core.js";
+import { decideDrop, droppedBy, dropStepLabels, type AppliedDropStep } from "./soak-budget.js";
 import type { SoakProfile } from "./soak-plan.js";
+import { expandWindows, type SoakWindowSpec } from "./soak-plan-f4.js";
 import {
   NdjsonFile,
   soakFiles,
   soakRunFormat,
   taskRunRecordSchema,
   soakSampleSchema,
+  type JobDoneRecord,
+  type JobFailureRecord,
+  type OutcomeRecord,
   type SoakActionKind,
   type SoakEvent,
   type SoakEventSink,
   type SoakMeta,
-  type JobFailureRecord,
   type SoakSample,
   type TaskRunRecord
 } from "./soak-records.js";
+import type { CapSnapshot } from "./soak-token-cap.js";
+import { windowTransitions, type WindowRunner, type WindowTransition } from "./soak-windows.js";
 
 /**
  * The soak driver (F3 T62, spec 5.9): a timeline of the things an owner does over a day, played
@@ -61,6 +67,21 @@ export const realClock: SoakClock = {
     })
 };
 
+/** What the F4 profile adds to the driver: the windows, the token cap and the spend it projects from. */
+export interface SoakF4Runtime {
+  /** Starts and ends the windows, and ticks them every sample interval. */
+  windows: WindowRunner;
+  /** The harness token cap's snapshot (its spend is the one the drop steps project from). */
+  cap: { snapshot(): CapSnapshot };
+  /** Backfill's daily cap, lowered by drop step 3 where the app has such an override. */
+  setBackfillCap?: (calls: number) => void;
+  /** A DEV command that lowers the harness cap: its tokens, or null when none was given. */
+  readCapCommand?: () => Promise<number | null>;
+  lowerCap?: (capTokens: number) => boolean;
+  /** A call was refused at the hard cap: the remote leg is over and the run reads inconclusive. */
+  isExhausted?: () => boolean;
+}
+
 /** What the driver asks of the app. Each port reports its facts, or throws to fail its action. */
 export interface SoakPorts {
   /** A public corpus article through the real ingestion path; `exhausted` when the corpus has no more. */
@@ -87,6 +108,16 @@ export interface SoakPorts {
   failedJobs(sinceMs: number): Promise<JobFailureRecord[]>;
   /** The orchestrator asked to stop (a STOP file in the run directory). */
   stopRequested(): Promise<boolean>;
+  /** F4: a topic page opened (view history recorded, the overview written or patched at P0 when stale). */
+  openTopic?(index: number): Promise<ActionDetail>;
+  /** F4: AUDIT lints, notes embedded again and a rolling re-placement batch (the burst's local work). */
+  contentionBurst?(index: number, reembeds: number): Promise<ActionDetail>;
+  /** F4: one human edit of a note in the `rootIndex`-th root (the burst's six edits land in six roots). */
+  editBurstNote?(index: number, rootIndex: number): Promise<ActionDetail>;
+  /** F4: jobs that reached a final state since `sinceMs`, for E3. */
+  finishedJobs?(sinceMs: number): Promise<JobDoneRecord[]>;
+  /** F4: (kind, subject) outcome rows that changed since `sinceMs`, for E2. */
+  outcomeChanges?(sinceMs: number): Promise<OutcomeRecord[]>;
 }
 
 export interface TimelineEntry {
@@ -106,9 +137,10 @@ const minute = 60_000;
 export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
   const total = profile.durationHours * 60 * minute;
   const entries: TimelineEntry[] = [];
+  const dayMs = 24 * 60 * minute;
   const every = (
     kind: TimelineEntry["kind"],
-    spec: { everyMinutes: number; offsetMinutes?: number },
+    spec: { everyMinutes: number; offsetMinutes?: number; days?: "all" | "odd" | "even" },
     jitterFor?: (index: number) => number
   ) => {
     for (let index = 0; ; index++) {
@@ -117,6 +149,10 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
         index * spec.everyMinutes * minute +
         (jitterFor?.(index) ?? 0);
       if (atMs >= total) break;
+      // Day 1 is the first 24 h of the run.
+      const day = Math.floor(atMs / dayMs) + 1;
+      if ((spec.days === "odd" && day % 2 === 0) || (spec.days === "even" && day % 2 === 1))
+        continue;
       if (atMs >= 0) entries.push({ atMs: Math.round(atMs), kind, index });
     }
   };
@@ -128,6 +164,22 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
   every("note_edit", driver.noteEdit);
   every("source_reimport", driver.sourceReimport);
   every("typing_fault", driver.typingFault);
+  if (driver.topicOpen) every("topic_open", driver.topicOpen);
+  if (driver.contentionBurst) {
+    const burst = driver.contentionBurst;
+    every("contention_burst", burst);
+    // The burst's edits come one every few minutes after it, each in a root of its own.
+    for (let index = 0; ; index++) {
+      const atMs = (burst.offsetMinutes + index * burst.everyMinutes) * minute;
+      if (atMs >= total) break;
+      for (let edit = 0; edit < burst.edits; edit++)
+        entries.push({
+          atMs: Math.round(atMs + edit * burst.editSpacingMinutes * minute),
+          kind: "burst_edit",
+          index: index * burst.edits + edit
+        });
+    }
+  }
   const kill = profile.local.mlxKill;
   // The first kill comes after one period, never at the start: the helper has to be running.
   for (let index = 1; ; index++) {
@@ -163,6 +215,9 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
       "explain",
       "explain_burst",
       "post_outage_probe",
+      "topic_open",
+      "contention_burst",
+      "burst_edit",
       "mlx_kill",
       "gguf_abort"
     ].indexOf(entry.kind);
@@ -177,7 +232,7 @@ export type SoakEndReason = NonNullable<SoakMeta["endReason"]>;
 export interface SoakRunOptions {
   profile: SoakProfile;
   profileName: string;
-  /** The run directory, `.cache/f3/soak/<run>/`. */
+  /** The run directory (`.cache/f3/soak/<run>/`, F4: `<data root>/f4/soak/<run>/`). */
   directory: string;
   run: string;
   ports: SoakPorts;
@@ -185,10 +240,13 @@ export interface SoakRunOptions {
   clock?: SoakClock;
   /** Aborts the run from outside (a signal): it ends as `signal`. */
   signal?: AbortSignal;
-  meta: Pick<SoakMeta, "host" | "catalogHeader" | "bounds" | "providers">;
+  meta: Pick<SoakMeta, "host" | "catalogHeader" | "bounds" | "providers"> &
+    Partial<Pick<SoakMeta, "relations" | "dataRoot" | "realWriter" | "decisions" | "f4">>;
   logger?: Pick<Console, "info" | "error">;
   /** How long to wait for actions still running at the end. */
   settleMs?: number;
+  /** The F4 parts; required for a profile with an `f4` section. */
+  f4?: SoakF4Runtime;
 }
 
 export interface SoakOutcome {
@@ -212,6 +270,19 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   const stop = new AbortController();
   options.signal?.addEventListener("abort", () => stop.abort(), { once: true });
   let reason: SoakEndReason = "duration";
+  const f4 = options.f4;
+  if (profile.f4 && !f4)
+    throw new Error("A plan profile with an f4 section needs the F4 parts of the driver.");
+  const windowSpecs: SoakWindowSpec[] = profile.f4
+    ? expandWindows(profile.f4, durationMs / minute)
+    : [];
+  /** The drop steps applied so far (F4 spec 5.4), never reverted, and when. */
+  const applied: AppliedDropStep[] = (
+    profile.f4 ? [...Array(profile.f4.codex.dropFromHour0)] : []
+  ).map((_, at) => ({ step: at + 1, atMs: 0 }));
+  const appliedSet = () => new Set(applied.map((entry) => entry.step));
+  /** Tokens spent at the end of each completed hour, for the projection's measured ÷ planned ratio. */
+  const spentAtHour: number[] = [];
   const meta = (endedAt: number | null): SoakMeta => ({
     format: soakRunFormat,
     version: 1,
@@ -239,8 +310,13 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   const counts = { actions: 0, failed: 0, skipped: 0, samples: 0, taskRuns: 0, failedJobs: 0 };
   const seen = new Set<string>();
   const seenJobs = new Set<string>();
+  const seenFinished = new Set<string>();
+  const seenOutcomes = new Set<string>();
   let cursor = startedAtMs;
   let jobCursor = startedAtMs;
+  let finishedCursor = startedAtMs;
+  let outcomeCursor = startedAtMs;
+  let hoursChecked = 0;
 
   const iso = (ms: number) => new Date(ms).toISOString();
   const emit = (event: SoakEvent) => options.sink.append(event);
@@ -282,6 +358,82 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       }
     } catch (error) {
       logger.error(`SOAK failed-job dump failed: ${failureText(error)}`);
+    }
+    if (!f4) return;
+    try {
+      for (const job of (await ports.finishedJobs?.(finishedCursor - 2 * minute)) ?? []) {
+        if (seenFinished.has(job.id)) continue;
+        seenFinished.add(job.id);
+        finishedCursor = Math.max(finishedCursor, Date.parse(job.finishedAt ?? job.createdAt));
+        emit(job);
+      }
+      for (const outcome of (await ports.outcomeChanges?.(outcomeCursor - 2 * minute)) ?? []) {
+        const key = `${outcome.kind}\u0000${outcome.subjectKey}\u0000${outcome.at}`;
+        if (seenOutcomes.has(key)) continue;
+        seenOutcomes.add(key);
+        outcomeCursor = Math.max(outcomeCursor, Date.parse(outcome.at));
+        emit(outcome);
+      }
+    } catch (error) {
+      logger.error(`SOAK job ledger dump failed: ${failureText(error)}`);
+    }
+    try {
+      await f4.windows.tick();
+    } catch (error) {
+      logger.error(`SOAK window tick failed: ${failureText(error)}`);
+    }
+    try {
+      const command = await f4.readCapCommand?.();
+      if (command !== null && command !== undefined) f4.lowerCap?.(command);
+    } catch (error) {
+      logger.error(`SOAK cap command failed: ${failureText(error)}`);
+    }
+  };
+
+  /**
+   * The hourly check of the token budget (spec 5.4): the projection of the rest of the run from what
+   * was measured, and the next drop step when spent plus projection passes the cap.
+   */
+  const hourly = (entries: readonly TimelineEntry[]) => {
+    if (!profile.f4 || !f4) return;
+    const elapsed = clock.now() - startedAtMs;
+    const completed = Math.floor(elapsed / (60 * minute));
+    while (hoursChecked < completed) {
+      hoursChecked += 1;
+      spentAtHour.push(f4.cap.snapshot().spentTokens);
+    }
+    const spent = f4.cap.snapshot();
+    const actualByHour = spentAtHour.map((total, at) => total - (spentAtHour[at - 1] ?? 0));
+    const decision = decideDrop({
+      entries,
+      plan: profile.f4,
+      windows: windowSpecs,
+      applied,
+      nowMs: elapsed,
+      spentTokens: spent.spentTokens,
+      capTokens: spent.hardCapTokens,
+      durationMs,
+      actualByHour
+    });
+    if (decision.step !== null) {
+      applied.push({ step: decision.step, atMs: elapsed });
+      if (decision.step === 3) f4.setBackfillCap?.(10);
+      emit({
+        type: "drop_step",
+        at: iso(clock.now()),
+        step: decision.step,
+        spentTokens: spent.spentTokens,
+        projectedTokens: decision.projectedTokens,
+        capTokens: spent.hardCapTokens,
+        note: dropStepLabels[decision.step] ?? ""
+      });
+      logger.info(
+        `SOAK drop step ${decision.step} (${dropStepLabels[decision.step]}): ${spent.spentTokens} spent + ${decision.projectedTokens} projected > cap ${spent.hardCapTokens}`
+      );
+    } else if (decision.overFloor) {
+      logger.error(
+        `SOAK projection ${spent.spentTokens} + ${decision.projectedTokens} passes the cap ${spent.hardCapTokens} with every drop step taken`
+      );
     }
   };
 
@@ -354,6 +506,25 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
         case "gguf_abort":
           finish("ok", await ports.armGgufAbort());
           return;
+        case "topic_open": {
+          if (!ports.openTopic) throw new Error("This run has no topic-open port.");
+          finish("ok", await ports.openTopic(entry.index));
+          return;
+        }
+        case "contention_burst": {
+          if (!ports.contentionBurst) throw new Error("This run has no contention-burst port.");
+          finish(
+            "ok",
+            await ports.contentionBurst(entry.index, profile.driver.contentionBurst?.reembeds ?? 20)
+          );
+          return;
+        }
+        case "burst_edit": {
+          if (!ports.editBurstNote) throw new Error("This run has no burst-edit port.");
+          const edits = profile.driver.contentionBurst?.edits ?? 6;
+          finish("ok", await ports.editBurstNote(entry.index, entry.index % edits));
+          return;
+        }
       }
     } catch (error) {
       logger.error(`SOAK ${entry.kind} #${entry.index} failed: ${failureText(error)}`);
@@ -369,7 +540,24 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       void execute(entry);
       return;
     }
-    if (running.has(kind)) {
+    const dropped = droppedBy(entry, appliedSet());
+    if (dropped !== null) {
+      counts.actions += 1;
+      counts.skipped += 1;
+      emit({
+        type: "action",
+        kind,
+        index: entry.index,
+        scheduledAt: iso(startedAtMs + entry.atMs),
+        startedAt: iso(clock.now()),
+        durationMs: 0,
+        status: "skipped",
+        detail: { reason: `drop step ${dropped}` }
+      });
+      return;
+    }
+    // Edits of one burst may overlap their predecessors in a slow run: they are one action each.
+    if (kind !== "burst_edit" && running.has(kind)) {
       counts.actions += 1;
       counts.skipped += 1;
       emit({
@@ -384,18 +572,25 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       });
       return;
     }
+    const key = kind === "burst_edit" ? `${kind}#${entry.index}` : kind;
     running.set(
-      kind,
-      execute(entry).finally(() => running.delete(kind))
+      key,
+      execute(entry).finally(() => running.delete(key))
     );
   };
 
+  const actions = buildTimeline(profile);
   const collector = (async () => {
     while (!stop.signal.aborted) {
       await clock.sleep(sampleIntervalMs, stop.signal);
       if (stop.signal.aborted) break;
       await collect();
-      if (await ports.stopRequested().catch(() => false)) {
+      hourly(actions);
+      if (f4?.isExhausted?.()) {
+        // The remote leg is over: the run is reported inconclusive, not passed.
+        reason = "token_cap";
+        stop.abort();
+      } else if (await ports.stopRequested().catch(() => false)) {
         reason = "stop_file";
         stop.abort();
       }
@@ -406,11 +601,35 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
     `SOAK start: profile ${options.profileName}, ${profile.durationHours} h, seed ${profile.seed}, run ${options.run}`
   );
   await collect();
-  for (const entry of buildTimeline(profile)) {
-    await clock.sleep(startedAtMs + entry.atMs - clock.now(), stop.signal);
+  const transitions: WindowTransition[] = f4 ? windowTransitions(windowSpecs) : [];
+  const schedule = [
+    ...actions.map((entry) => ({ atMs: entry.atMs, entry, transition: null })),
+    ...transitions.map((transition) => ({ atMs: transition.atMs, entry: null, transition }))
+  ].toSorted((a, b) => a.atMs - b.atMs);
+  for (const item of schedule) {
+    await clock.sleep(startedAtMs + item.atMs - clock.now(), stop.signal);
     if (stop.signal.aborted) break;
-    dispatch(entry);
+    if (item.entry) dispatch(item.entry);
+    else if (f4 && item.transition) {
+      const { transition } = item;
+      // A window's effect is awaited, so the next transition never overtakes it.
+      await (
+        transition.phase === "start"
+          ? f4.windows.start(transition.window)
+          : f4.windows.end(transition.window)
+      ).catch((error: unknown) =>
+        logger.error(
+          `SOAK window ${transition.window.id} ${transition.phase} failed: ${failureText(error)}`
+        )
+      );
+    }
   }
+  // Windows still open when the run ends are lifted, so nothing is left switched on.
+  if (f4)
+    for (const id of f4.windows.open) {
+      const window = windowSpecs.find((entry) => entry.id === id);
+      if (window) await f4.windows.end(window).catch(() => undefined);
+    }
   if (!stop.signal.aborted) await clock.sleep(startedAtMs + durationMs - clock.now(), stop.signal);
   if (options.signal?.aborted && reason === "duration") reason = "signal";
   stop.abort();
