@@ -38,15 +38,15 @@ import { InFlightRegistry } from "./relations/in-flight-registry.js";
  * Source relations by design E (F3 D27, decision 17). Per root, with no batch barrier: (1) every
  * typed shown (applied or suggested, decision 29) cross-root note relation is promoted into a source
  * relation with no call; (2) discovery selects the root's nearest earlier roots and its reverse
- * neighbours on the stored composite vectors; (3) the selected pairs still undecided are judged in
- * one call per root (F4 D21) with the compact, score-only `source-relations-v6` verdict: the call
- * lists its pairs of works, and each pair answers at most two `[from, to, type, importance,
- * confidence, [from chunks], [to chunks]]` items and no prose. Items are split per pair and each
- * pair is decided once, under a key that leaves out what else shared its call; a hub root's pairs
- * are split into calls of at most `sourceJudge.maxPairsPerCall`. The judge mode `perPair` is F3's
- * judge instead: one call per pair with its own `source-relations-v5` prompt. Explanations are
- * written when the owner opens a relation. Promoted and judged relations alike are suggestions until
- * the owner keeps them (decision 29).
+ * neighbours on the stored composite vectors; (3) the selected pairs still undecided are judged
+ * once each with a compact, score-only verdict: at most two `[from, to, type, importance,
+ * confidence, [from chunks], [to chunks]]` items a pair and no prose. The shipped judge mode
+ * `perPair` is F3's judge, one call per pair with its own `source-relations-v5` prompt (C2 missed,
+ * F4 D21). The mode `perRoot` asks about a root's pairs in one call (`source-relations-v6`, which
+ * lists its pairs of works): items are split per pair, each decided under a key that leaves out
+ * what else shared its call, and a hub root's pairs are split into calls of at most
+ * `sourceJudge.maxPairsPerCall`. Explanations are written when the owner opens a relation. Promoted
+ * and judged relations alike are suggestions until the owner keeps them (decision 29).
  */
 export const sourceRelationPromptVersion = "source-relations-v6";
 /** The contract each judge mode answers under: F3's per-pair judge keeps its own (F4 D21). */

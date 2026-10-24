@@ -10,6 +10,7 @@ import {
   SourceRelationViewSchema,
   defaultSourceRelationSettings,
   isDirectedNoteRelationType,
+  relationsConfig,
   type NoteRelationWriteType
 } from "@app/domain";
 import {
@@ -1406,9 +1407,10 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
     });
     expect(preview.pairs.map((pair) => pair.rootId)).toEqual([n.id, x.id]);
     expect(await repository.matchStates([n.id, x.id, r.id])).toEqual(before);
-    // One call asks about both pairs (D21); by title the works read nu (w1, s1), rho (w2, s2) and
-    // xi (w3, s3). A malformed item about rho and xi leaves X's pair open, and the input budget stops
-    // the repair: N's pair is decided, X stays planned and unjudged.
+    // The batched judge (D21, by configuration) asks about both pairs in one call; by title the works
+    // read nu (w1, s1), rho (w2, s2) and xi (w3, s3). A malformed item about rho and xi leaves X's
+    // pair open, and the input budget stops the repair: N's pair is decided, X stays planned and
+    // unjudged.
     const runDefaultTask = vi.fn(async () => ({
       output: {
         relations: runDefaultTask.mock.calls.length === 1 ? [["s2", "s3", "supports", "high"]] : []
@@ -1425,7 +1427,11 @@ describe.skipIf(!sidecarInstalled)("source relations by design E on PostgreSQL",
       pool: db(),
       ai: { runDefaultTask } as never,
       sourceIds: [r.id],
-      contentLanguage: "en"
+      contentLanguage: "en",
+      config: {
+        discovery: relationsConfig.discovery,
+        sourceJudge: { ...relationsConfig.sourceJudge, mode: "perRoot" as const }
+      }
     };
     const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200_000 };
     expect(

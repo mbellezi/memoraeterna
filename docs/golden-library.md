@@ -332,8 +332,9 @@ library reads 46.8 s per note, because the benchmark matched it in four passes.
 
 ## 6. Source pair verdicts (the F3 discovery spike)
 
-`MEMORA_GOLDEN_SOURCE_PAIRS=<file>` asks the live source decider (`sources.decide`, contract
-`source-relations-v6`) about a list of pairs of works and writes every raw verdict. It is DEV only (a
+`MEMORA_GOLDEN_SOURCE_PAIRS=<file>` asks the live source decider of the run's judge mode (shipped: F3's
+`sources.decide.pair`, contract `source-relations-v5`; `perRoot`: `sources.decide`, `source-relations-v6`)
+about a list of pairs of works and writes every raw verdict. It is DEV only (a
 packaged build refuses it) and needs `MEMORA_GOLDEN_RUN`; alone it stops the app with `GOLDEN_RUN refused`.
 It persists nothing: no source relation, decision row, run state or explanation, and no library data
 changes. The only rows written are the AI audit of the calls themselves, by the AI service; the run
@@ -343,10 +344,10 @@ The file is a JSON list of `{"left": ..., "right": ..., "label": ...}`; `label` 
 top-level manifest key (`mf-f1`, `machado-a-cartomante`; a book is its container key) or the exact title of
 a root source. A pair that cannot be resolved (no such root, two roots with one title, a chapter key) is
 reported, not fatal; a pair of one root with itself is refused (`same_root`). The file may also be
-`{"grouping": "root", "pairs": [...]}` (F4 D21's microbenchmark): the pairs are covered greedily by the root
-in most of them (ties: the root the file names first) and each root's pairs are asked about in one call, as
-the matcher judges a root; each pair is still reported apart, and only the group's first pair (`batch.lead`)
-carries the calls and their usage.
+`{"grouping": "root", "pairs": [...]}` (F4 D21's microbenchmark): under the judge mode `perRoot` the pairs
+are covered greedily by the root in most of them (ties: the root the file names first) and each root's pairs
+are asked about in one call, as the matcher judges a root; each pair is still reported apart, and only the
+group's first pair (`batch.lead`) carries the calls and their usage. The shipped `perPair` asks one pair a call.
 
 Two ways to run it, chosen by the library:
 

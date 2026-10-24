@@ -19,6 +19,7 @@ import {
   promoteSourceRelations,
   sourceBatchRequest,
   sourceDecisionPrompt,
+  sourceJudgePromptVersions,
   sourceJudgeRequestSettings,
   sourceRelationPromptVersion,
   sourceRelationWrites,
@@ -460,6 +461,13 @@ describe("source matching by design E (D27)", () => {
       )
     };
   });
+  /** The batched judge (F4 D21), kept by configuration: C2 missed, so F3's per-pair judge ships. */
+  const batched = {
+    config: {
+      discovery: relationsConfig.discovery,
+      sourceJudge: { ...relationsConfig.sourceJudge, mode: "perRoot" as const }
+    }
+  };
   const run = (
     ai: Mock<(...args: any[]) => any>,
     key = "run",
@@ -607,9 +615,9 @@ describe("source matching by design E (D27)", () => {
       total: 2
     });
     expect(mocks.repository.planDiscovery).toHaveBeenCalledTimes(1);
-    // One call for the root's two pairs. It failed before any answer, so it spent no pair's first
-    // attempt: the resumed run asks about both again with the first call, not with a repair.
-    expect(ai).toHaveBeenCalledTimes(2);
+    // One call a pair (F3's judge). B's failed before any answer, so it spent no first attempt:
+    // the resumed run asks about B again with the first call, not with a repair, then about C.
+    expect(ai).toHaveBeenCalledTimes(3);
     expect(ai.mock.calls[1]![2]).toMatchObject({ attempt: 0, isRepair: false });
     expect(ai.mock.calls[1]![1]).not.toContain("The preceding answer failed validation.");
     expect(onProgress.mock.calls[0]).toEqual([0, { completed: 0, total: 2 }]);
@@ -735,7 +743,11 @@ describe("source matching by design E (D27)", () => {
 
   it("real same-root recovery composes the exact active validation suffix", async () => {
     const pin = defaultPromptPin();
-    for (const id of ["sources.decide", "sources.decide.repair", "sources.validation.same_root"]) {
+    for (const id of [
+      "sources.decide.pair",
+      "sources.decide.repair",
+      "sources.validation.same_root"
+    ]) {
       const entry = pin.entries.find((e) => e.id === id)!;
       entry.fields.body = "CATALOG:" + id + "\n" + entry.fields.body;
     }
@@ -751,7 +763,7 @@ describe("source matching by design E (D27)", () => {
       .mockResolvedValue(execution({ relations: [] }));
     await withPromptPin(pin, () => run(ai));
     expect(ai).toHaveBeenCalledTimes(2);
-    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.decide");
+    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.decide.pair");
     expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.decide.repair");
     expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.validation.same_root");
   });
@@ -805,7 +817,8 @@ describe("source matching by design E (D27)", () => {
       .mockResolvedValueOnce({ ...execution("invalid"), inputTokens: 2000 })
       .mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2000 });
     const settings = { ...defaultSourceRelationSettings, maxInputTokens: 2000 };
-    expect(await run(ai, "limit", settings)).toMatchObject({
+    // The batched judge asks about the three pairs in one call and its repair.
+    expect(await run(ai, "limit", settings, batched)).toMatchObject({
       completed: 3,
       total: 3,
       inputTokens: 4000,
@@ -823,7 +836,7 @@ describe("source matching by design E (D27)", () => {
     };
     states.set("over:root-A", spent);
     mocks.repository.decision!.mockResolvedValue(null);
-    expect(await run(ai, "over", settings)).toMatchObject({
+    expect(await run(ai, "over", settings, batched)).toMatchObject({
       completed: 0,
       total: 3,
       partial: true,
@@ -895,15 +908,15 @@ describe("source matching by design E (D27)", () => {
       minConfidence: 0.8
     };
     await run(ai, "raw", settings);
-    expect(ai.mock.calls[0]![1]).toContain("return ZERO to 2 items for EACH pair");
+    expect(ai.mock.calls[0]![1]).toContain("Return ZERO to 2 items, ordered by importance.");
     expect(ai.mock.calls[0]![2]).toMatchObject({
       operation: "source_relation_matching",
-      promptVersion: "source-relations-v6"
+      promptVersion: "source-relations-v5"
     });
     const [, , , relations, metadata] = mocks.repository.commitDecision!.mock.calls[0]!;
     expect(relations).toEqual([expect.objectContaining({ relationType: "supports" })]);
     expect(metadata).toMatchObject({
-      promptVersion: sourceRelationPromptVersion,
+      promptVersion: sourceJudgePromptVersions.perPair,
       proposals: 2,
       floors: { minImportance: 0.85, minConfidence: 0.8, includeWeakTypes: false },
       items: [
@@ -960,16 +973,17 @@ describe("source matching by design E (D27)", () => {
     const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
     const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
     await run(ai, "run", settings);
+    // F3's per-pair judge, the default: its own prompts and contract.
     const prompts = changedPromptIdentity([
-      "sources.decide",
+      "sources.decide.pair",
       "sources.decide.repair",
-      "sources.validation.default",
+      "sources.validation.pair",
       "sources.validation.same_root"
     ]);
     const identity = createHash("sha256")
       .update(
         JSON.stringify({
-          version: sourceRelationPromptVersion,
+          version: sourceJudgePromptVersions.perPair,
           ...(prompts ? { prompts } : {}),
           language: "en",
           request: sourceJudgeRequestSettings(settings, relationsConfig.sourceJudge),
@@ -993,7 +1007,7 @@ describe("source matching by design E (D27)", () => {
     }
   });
 
-  describe("one judge call per root (F4 D21)", () => {
+  describe("the batched judge, one call per root by configuration (F4 D21)", () => {
     const c: SourceRelationChunk = {
       ...a,
       id: "c",
@@ -1034,7 +1048,11 @@ describe("source matching by design E (D27)", () => {
           ]
         })
       );
-      expect(await run(ai)).toMatchObject({ completed: 2, total: 2, persistedCount: 2 });
+      expect(await run(ai, "run", undefined, batched)).toMatchObject({
+        completed: 2,
+        total: 2,
+        persistedCount: 2
+      });
       expect(ai).toHaveBeenCalledTimes(1);
       const [, prompt, callContext, , limits] = ai.mock.calls[0]!;
       // Roots by content: A, B, C; the union of the evidence holds root A's passage once.
@@ -1065,10 +1083,10 @@ describe("source matching by design E (D27)", () => {
       twoPartners();
       mocks.repository.planDiscovery!.mockResolvedValueOnce(plan(["root-B"]));
       const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
-      await run(ai, "alone");
+      await run(ai, "alone", undefined, batched);
       const alone = committed().get("root-B")!.key;
       // Another run plans both partners: B's decision is reused, C alone is asked about.
-      await run(ai, "together");
+      await run(ai, "together", undefined, batched);
       expect(ai).toHaveBeenCalledTimes(2);
       expect(ai.mock.calls[1]![1]).toContain(
         'Pairs of works to judge (root aliases):\n[["w1","w2"]]'
@@ -1093,7 +1111,11 @@ describe("source matching by design E (D27)", () => {
           })
         )
         .mockResolvedValueOnce(execution({ relations: [] }));
-      expect(await run(ai)).toMatchObject({ completed: 2, total: 2, persistedCount: 1 });
+      expect(await run(ai, "run", undefined, batched)).toMatchObject({
+        completed: 2,
+        total: 2,
+        persistedCount: 1
+      });
       expect(ai).toHaveBeenCalledTimes(2);
       const repair = ai.mock.calls[1]![1] as string;
       expect(ai.mock.calls[1]![2]).toMatchObject({ attempt: 1, isRepair: true });
@@ -1122,7 +1144,9 @@ describe("source matching by design E (D27)", () => {
         .mockResolvedValueOnce(
           execution({ relations: [item(), ["s1", "s9", "supports", 90, 90, ["c1"], ["c9"]]] })
         );
-      await expect(run(ai)).rejects.toThrow("errors.sourceRelations.invalidOutput");
+      await expect(run(ai, "run", undefined, batched)).rejects.toThrow(
+        "errors.sourceRelations.invalidOutput"
+      );
       expect(ai).toHaveBeenCalledTimes(2);
       expect(ai.mock.calls[1]![1]).toContain('[["w1","w2"],["w1","w3"]]');
       // B has a valid item; C has none and an unreadable item that may have been its own.
@@ -1151,10 +1175,7 @@ describe("source matching by design E (D27)", () => {
       mocks.repository.pairNotes!.mockResolvedValue([]);
     };
     const judgeConfig = (sourceJudge: Partial<typeof relationsConfig.sourceJudge>) => ({
-      config: {
-        discovery: relationsConfig.discovery,
-        sourceJudge: { ...relationsConfig.sourceJudge, ...sourceJudge }
-      }
+      config: { ...batched.config, sourceJudge: { ...batched.config.sourceJudge, ...sourceJudge } }
     });
 
     it("splits a hub root's pairs into calls of at most maxPairsPerCall in content order, each with its own output cap and repair", async () => {
@@ -1187,7 +1208,7 @@ describe("source matching by design E (D27)", () => {
       expect(second![4]).toEqual({ maxOutputTokens: 500 + 2 * 700 });
       expect(committed().get("root-D")!.metadata).toMatchObject({ callPairs: 1 });
       // The split names no key: a run with the shipped cap finds every pair decided.
-      await run(ai, "unsplit");
+      await run(ai, "unsplit", undefined, batched);
       expect(ai).toHaveBeenCalledTimes(3);
       expect(mocks.repository.commitDecision).toHaveBeenCalledTimes(3);
     });
@@ -1199,24 +1220,28 @@ describe("source matching by design E (D27)", () => {
         .mockResolvedValueOnce(execution("invalid"))
         .mockRejectedValueOnce(new Error("interrupted"))
         .mockResolvedValue(execution({ relations: [] }));
-      await expect(run(ai, "repair-resume")).rejects.toThrow("interrupted");
+      await expect(run(ai, "repair-resume", undefined, batched)).rejects.toThrow("interrupted");
       const attempts = (states.get("repair-resume:root-A") as { attempts: Record<string, number> })
         .attempts;
       // The first call answered (attempt 1 spent); the repair failed before its answer.
       expect(Object.values(attempts)).toEqual([1, 1]);
-      expect(await run(ai, "repair-resume")).toMatchObject({ completed: 2, total: 2 });
+      expect(await run(ai, "repair-resume", undefined, batched)).toMatchObject({
+        completed: 2,
+        total: 2
+      });
       expect(ai).toHaveBeenCalledTimes(3);
       expect(ai.mock.calls[2]![2]).toMatchObject({ attempt: 1, isRepair: true });
     });
 
-    it("restores F3's per-pair judge under the mode perPair: one v5 call a pair with F3's own prompt", async () => {
+    it("ships F3's per-pair judge (C2 missed): one v5 call a pair with F3's own prompt", async () => {
       twoPartners();
       const ai = vi
         .fn()
         .mockResolvedValueOnce(execution({ relations: [item()] }))
         .mockResolvedValueOnce(execution({ relations: [["s1", "s9"]] }))
         .mockResolvedValue(execution({ relations: [] }));
-      expect(await run(ai, "per-pair", undefined, judgeConfig({ mode: "perPair" }))).toMatchObject({
+      // The shipped configuration, with no mode stated.
+      expect(await run(ai, "per-pair")).toMatchObject({
         completed: 2,
         total: 2,
         persistedCount: 1
@@ -1252,7 +1277,7 @@ describe("source matching by design E (D27)", () => {
       );
       // Each mode keys its own decisions: the batched judge asks about the same pairs again.
       const perPair = (states.get("per-pair:root-A") as { configuration: string }).configuration;
-      await run(ai, "per-root");
+      await run(ai, "per-root", undefined, batched);
       expect((states.get("per-root:root-A") as { configuration: string }).configuration).not.toBe(
         perPair
       );
@@ -1294,13 +1319,14 @@ describe("source matching by design E (D27)", () => {
         sourceIds: ["A"],
         runKey: "v6",
         settings,
-        contentLanguage: "en"
+        contentLanguage: "en",
+        ...batched
       });
       const configuration = (states.get("v6:root-A") as { configuration: string }).configuration;
       expect(configuration).toBe(identity("source-relations-v6"));
       expect(configuration).not.toBe(identity("source-relations-v5"));
       // The same content under the new identity is judged once, then reused by every later run.
-      await run(ai, "again", settings);
+      await run(ai, "again", settings, batched);
       expect(ai).toHaveBeenCalledTimes(1);
       // The matcher writes through its repository only: no job is enqueued by a prompt change.
       expect(query).not.toHaveBeenCalled();

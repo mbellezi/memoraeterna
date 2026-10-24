@@ -1517,7 +1517,8 @@ describe("golden source pair verdicts", () => {
       format: "memora-golden-source-pair-verdicts",
       state: "finished",
       mode: "verdict_only",
-      contract: "source-relations-v6"
+      // The shipped judge: F3's per-pair one (C2 missed, F4 D21).
+      contract: "source-relations-v5"
     });
     expect(verdicts.pairs.map((pair: { status: string }) => pair.status)).toEqual([
       "judged",
@@ -1532,7 +1533,7 @@ describe("golden source pair verdicts", () => {
     // The run's effective discovery neighbours and judge mode, in the summary and the report (D21).
     const relations = {
       discoveryNeighbours: 1,
-      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+      sourceJudge: { mode: "perPair", maxPairsPerCall: 12 }
     };
     expect(written).toMatchObject({
       relations,

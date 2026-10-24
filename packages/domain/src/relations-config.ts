@@ -224,21 +224,22 @@ export const RelationsConfigSchema = z
       .object({ enabled: z.boolean().default(false) })
       .strict()
       .prefault({}),
-    /** Source discovery of design E (D27): 2 neighbours is S1's fallback. */
+    /** Source discovery of design E (D27): one neighbour, as C2 missed (F4 D21). */
     discovery: z
       .object({ neighbours: int(1, 2).default(1) })
       .strict()
       .prefault({}),
-    /** The source judge (D27; one call per root, F4 D21). */
+    /** The source judge (D27; F3's per-pair judge after C2, F4 D21). */
     sourceJudge: z
       .object({
         /**
-         * How the judge asks. `perRoot` (D21): a root's undecided pairs in one call (`sources.decide`,
-         * `source-relations-v6`); `perPair`: F3's judge, one call per pair with its own prompt
-         * (`sources.decide.pair`, `source-relations-v5`), kept so that a C2 miss restores it by this
-         * value alone. Each mode keys its own decisions (the prompt is in the judge's identity).
+         * How the judge asks. `perPair` (C2 missed, D21: one neighbour stays): F3's judge, one call
+         * per pair with its own prompt (`sources.decide.pair`, `source-relations-v5`), the judge
+         * F3's S1 bars measured. `perRoot`: a root's undecided pairs in one call (`sources.decide`,
+         * `source-relations-v6`), kept by configuration. Each mode keys its own decisions (the
+         * prompt is in the judge's identity).
          */
-        mode: SourceJudgeModeSchema.default("perRoot"),
+        mode: SourceJudgeModeSchema.default("perPair"),
         /**
          * The pairs one `perRoot` call asks about at most (cal.): a hub root's pairs are split into
          * calls of this size in content order, each with its own output cap and repair. Never part

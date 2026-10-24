@@ -122,7 +122,7 @@ describe("the re-match knobs", () => {
       link: "drain",
       p0ProbeMs: null,
       helperBatchSize: null,
-      relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 } },
+      relations: { discoveryNeighbours: 1, sourceJudge: { mode: "perPair", maxPairsPerCall: 12 } },
       digestOverride: { sha256: "b".repeat(64), notes: 138 },
       outDirectory: "/repo/.cache/f3/rematch/x",
       drainTimeoutMs: 60_000,
@@ -174,9 +174,10 @@ describe("the re-match knobs", () => {
   });
 
   it("read the run's effective discovery neighbours (C2's knob) and source judge mode", () => {
+    // One neighbour and F3's per-pair judge ship (C2 missed, F4 D21).
     expect(readRematchEnvironment(knob, base)?.relations).toEqual({
       discoveryNeighbours: 1,
-      sourceJudge: { mode: "perRoot", maxPairsPerCall: 12 }
+      sourceJudge: { mode: "perPair", maxPairsPerCall: 12 }
     });
     expect(
       readRematchEnvironment({ ...knob, MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS: "2" }, base)

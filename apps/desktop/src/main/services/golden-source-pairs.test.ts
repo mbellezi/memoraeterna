@@ -28,9 +28,9 @@ import {
 import { joinPrompts } from "./prompt-runtime.js";
 import {
   sourceDecisionMaxOutputTokens,
-  sourceDecisionPrompt,
+  sourceJudgePromptVersions,
   sourcePairContext,
-  sourceRelationPromptVersion
+  sourcePairDecisionPrompt
 } from "./source-relation-processing.js";
 
 let directory: string;
@@ -314,10 +314,16 @@ describe("source pair verdicts", () => {
       outputs: [{ relations: [item([3, 92], [4, 85])] }]
     });
     const result = await report;
-    // The request is built by the matcher's own functions from the same reads.
+    // The request is built by the matcher's own functions from the same reads, under the shipped
+    // judge: F3's per-pair one (C2 missed, F4 D21).
     const context = (await sourcePairContext(reader, "root-A", "root-B", [note], settings))!;
     const expectedPrompt = joinPrompts(
-      sourceDecisionPrompt(context, 2, settings.includeWeakTypes, settings.summaryMaxCharacters),
+      sourcePairDecisionPrompt(
+        context,
+        2,
+        settings.includeWeakTypes,
+        settings.summaryMaxCharacters
+      ),
       ""
     );
     expect(ai.calls).toHaveLength(1);
@@ -334,7 +340,7 @@ describe("source pair verdicts", () => {
       budgetClass: "user",
       origin: "golden_source_pairs",
       contentLanguage: "en",
-      promptVersion: sourceRelationPromptVersion,
+      promptVersion: sourceJudgePromptVersions.perPair,
       sourceItemIds: ["root-A", "root-B", "src-A", "src-B"],
       attempt: 0,
       isRepair: false
@@ -350,7 +356,7 @@ describe("source pair verdicts", () => {
       ["a1", "b1"],
       settings.evidenceChunksPerSource
     );
-    expect(result.contract).toBe("source-relations-v6");
+    expect(result.contract).toBe("source-relations-v5");
   });
 
   it("reports every raw item with scores, type, evidence aliases and what the floors do to it", async () => {
@@ -683,6 +689,11 @@ describe("source pair verdicts", () => {
 
 describe("source pair verdicts grouped by root (the C2 microbenchmark, D21)", () => {
   const c1 = chunk("c1", "root-C");
+  /** The batched judge, kept by configuration since C2 missed (F3's per-pair judge ships). */
+  const batched = {
+    discovery: relationsConfig.discovery,
+    sourceJudge: { ...relationsConfig.sourceJudge, mode: "perRoot" as const }
+  };
   const side = (id: string) => ({ root: { id } });
   const covered = (left: string, right: string) => ({
     sides: { left: side(left), right: side(right) }
@@ -724,6 +735,7 @@ describe("source pair verdicts grouped by root (the C2 microbenchmark, D21)", ()
         pairs: [pair(), pair("key-a", "Work Ç", "second")],
         grouping: "root"
       },
+      relations: batched,
       // Works by title: A (w1), B (w2), Ç (w3); sources s1..s3 and passages c1..c3 the same.
       outputs: [{ relations: [item(), item([1, "s3"], [6, ["c3"]], [3, 70])] }]
     });
@@ -806,10 +818,7 @@ describe("source pair verdicts grouped by root (the C2 microbenchmark, D21)", ()
     const { ai, report } = run(pairs, {
       reader,
       file: { path: "/pairs.json", sha256: "0".repeat(64), pairs, grouping: "root" },
-      relations: {
-        discovery: { neighbours: 1 },
-        sourceJudge: { ...relationsConfig.sourceJudge, maxPairsPerCall: 1 }
-      },
+      relations: { ...batched, sourceJudge: { ...batched.sourceJudge, maxPairsPerCall: 1 } },
       outputs: [{ relations: [item()] }, { relations: [item([1, "s2"], [6, ["c2"]])] }]
     });
     const result = await report;
