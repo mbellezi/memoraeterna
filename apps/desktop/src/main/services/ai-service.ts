@@ -260,6 +260,11 @@ export interface AiServiceOptions {
    * build whatever is passed; the app sets it from `MEMORA_FAKE_REMOTE` (`treatAsRemoteHonoured`).
    */
   honourTreatAsRemote?: boolean;
+  /**
+   * DEV only (the 7-day soak's fault layer, F4 T89): the `fetch` the Codex adapters take, so faults
+   * are injected in front of the real backend at zero tokens. Ignored in a packaged build.
+   */
+  codexFetch?: typeof fetch | undefined;
 
   /** The DEV cassette installed for this process: a replay needs no Decisions key (plan decision 30). */
   cassetteMode?: "record" | "replay" | undefined;
@@ -3604,6 +3609,9 @@ export class AiService {
             modelId,
             capabilities,
             ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+            ...(this.options.codexFetch && !this.options.isPackaged
+              ? { fetch: this.options.codexFetch }
+              : {}),
             ...this.runtimeOption()
           }),
           key
