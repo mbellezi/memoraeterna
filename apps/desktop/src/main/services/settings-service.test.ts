@@ -616,28 +616,37 @@ describe("matching settings v2 migration of a stored document", () => {
 
 describe("navigation layout preferences", () => {
   it("defaults legacy layouts and retains independent preferences across restart", async () => {
-    const {
-      navigationCollapsed: _collapsed,
-      wikiTreeWidth: _width,
-      ...legacy
-    } = defaultAppSettings;
+    const { navigationCollapsed: _collapsed, ...legacy } = defaultAppSettings;
     expect(
       parseSavedAppSettings({ ...legacy, language: "en", updatedAt: new Date().toISOString() })
-    ).toMatchObject({ navigationCollapsed: false, wikiTreeWidth: 320 });
+    ).toMatchObject({ navigationCollapsed: false });
     vi.stubEnv("MEMORA_DATABASE_URL", "");
     const path = await mkdtemp(join(tmpdir(), "memora-layout-settings-"));
     paths.push(path);
     const service = new SettingsService(path);
-    await service.updateApp({ navigationCollapsed: true, wikiTreeWidth: 460 });
+    await service.updateApp({ navigationCollapsed: true });
     await service.updateApp({ themeMode: "light" });
     expect(await new SettingsService(path).getApp()).toMatchObject({
       navigationCollapsed: true,
-      wikiTreeWidth: 460,
       themeMode: "light"
     });
-    await expect(service.updateApp({ wikiTreeWidth: 521 })).rejects.toThrow();
-    await expect(service.updateApp({ wikiTreeWidth: 239 })).rejects.toThrow();
-    expect((await service.getApp()).wikiTreeWidth).toBe(460);
+  });
+
+  it("drops the tree width nothing reads: stripped from a stored document, refused on update", async () => {
+    // F4 T98 (docs/settings-inventory.md section 10): `wikiTreeWidth` had no reader and no control.
+    const stored = parseSavedAppSettings({
+      ...defaultAppSettings,
+      wikiTreeWidth: 460,
+      language: "en",
+      updatedAt: new Date().toISOString()
+    });
+    expect(stored).not.toHaveProperty("wikiTreeWidth");
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-layout-width-"));
+    paths.push(path);
+    const service = new SettingsService(path);
+    await expect(service.updateApp({ wikiTreeWidth: 460 } as never)).rejects.toThrow();
+    expect(await service.getApp()).not.toHaveProperty("wikiTreeWidth");
   });
 });
 
@@ -683,5 +692,110 @@ describe("theme preference", () => {
     await service.updateApp({ themeMode: "system" });
     expect((await new SettingsService(path).getApp()).themeMode).toBe("system");
     await expect(service.updateApp({ themeMode: "auto" as never })).rejects.toThrow();
+  });
+});
+
+describe("a change of the matching values (F4 Q4)", () => {
+  type Change = {
+    before: ReturnType<typeof MatchingConfigurationSchema.parse>;
+    after: ReturnType<typeof MatchingConfigurationSchema.parse>;
+  };
+  const serviceWith = async (onMatchingValuesChanged: (change: Change) => void | Promise<void>) => {
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-matching-change-"));
+    paths.push(path);
+    return new SettingsService(path, { onMatchingValuesChanged, logger: { warn: vi.fn() } });
+  };
+
+  it("tells the listener the values before and after a save that moved one", async () => {
+    const changes: Change[] = [];
+    const service = await serviceWith((change) => void changes.push(change));
+    await service.getApp();
+    await service.updateApp({
+      sourceRelationSettings: {
+        ...recommendedMatchingConfiguration.sourceRelationSettings,
+        maxRelationsPerPair: 6
+      }
+    });
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      before: { sourceRelationSettings: { maxRelationsPerPair: 4 } },
+      after: { sourceRelationSettings: { maxRelationsPerPair: 6 } }
+    });
+  });
+
+  it("says nothing about a save that moved no matching value", async () => {
+    const changes: unknown[] = [];
+    const service = await serviceWith((change) => void changes.push(change));
+    await service.updateApp({ themeMode: "dark", navigationCollapsed: true });
+    // The same values again, and a selection of the recommended preset already selected.
+    await service.updateApp({ ...recommendedMatchingConfiguration });
+    await service.updateApp({ activeMatchingPresetId: recommendedMatchingPresetId });
+    expect(changes).toEqual([]);
+  });
+
+  it("saves the value first: the listener failing, or slow, never fails or delays the save", async () => {
+    let release: () => void = () => undefined;
+    const slow = await serviceWith(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const saved = await slow.updateApp({ relationTypeSimilarityThreshold: 0.8 });
+    expect(saved.relationTypeSimilarityThreshold).toBe(0.8);
+    release();
+    const failing = await serviceWith(() => {
+      throw new Error("the offer failed");
+    });
+    const second = await failing.updateApp({ relationTypeSimilarityThreshold: 0.7 });
+    expect(second.relationTypeSimilarityThreshold).toBe(0.7);
+    expect((await failing.getApp()).relationTypeSimilarityThreshold).toBe(0.7);
+  });
+
+  it("stores the changed value as a custom preset and leaves the calibrated set recoverable", async () => {
+    const service = await serviceWith(() => undefined);
+    const saved = await service.updateApp({ entityIdentitySimilarityThreshold: 0.8 });
+    expect(saved.activeMatchingPresetId).not.toBe(recommendedMatchingPresetId);
+    expect(saved.matchingPresets).toHaveLength(1);
+    expect(saved.matchingPresets[0]!.settings.entityIdentitySimilarityThreshold).toBe(0.8);
+    // Selecting the recommendation again restores every calibrated value.
+    const restored = await service.updateApp({
+      ...recommendedMatchingConfiguration,
+      matchingPresets: saved.matchingPresets,
+      activeMatchingPresetId: recommendedMatchingPresetId
+    });
+    expect(MatchingConfigurationSchema.parse(restored)).toEqual(recommendedMatchingConfiguration);
+    expect(restored.matchingPresets).toHaveLength(1);
+  });
+});
+
+describe("storage settings after the cut (F4 T98)", () => {
+  it("reads a stored delete policy as nothing and writes none", async () => {
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-storage-cut-"));
+    paths.push(path);
+    await writeFile(
+      join(path, "storage-settings.json"),
+      JSON.stringify({
+        obsidianVaultPath: null,
+        managedRoot: "Memora",
+        obsidianSyncEnabled: false,
+        obsidianSyncPaused: false,
+        deletionPolicy: "delete",
+        uploadCopiesEnabled: false,
+        uploadCopiesFolderPath: null,
+        updatedAt: new Date().toISOString()
+      })
+    );
+    const service = new SettingsService(path);
+    const read = await service.get();
+    expect(read).not.toHaveProperty("deletionPolicy");
+    await expect(service.update({ deletionPolicy: "archive" } as never)).rejects.toThrow();
+    const saved = await service.update({ managedRoot: "Notes" });
+    expect(saved).not.toHaveProperty("deletionPolicy");
+    expect(
+      JSON.parse(await readFile(join(path, "storage-settings.json"), "utf8"))
+    ).not.toHaveProperty("deletionPolicy");
   });
 });

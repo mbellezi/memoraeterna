@@ -246,7 +246,6 @@ describe.skipIf(!sidecarAvailable)("projecting the topic tree into a vault on Po
       managedRoot: "Memora",
       obsidianSyncEnabled: true,
       obsidianSyncPaused: false,
-      deletionPolicy: "tombstone",
       uploadCopiesEnabled: false,
       uploadCopiesFolderPath: null,
       updatedAt: new Date().toISOString()

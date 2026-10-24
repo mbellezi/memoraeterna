@@ -94,7 +94,6 @@ try {
     managedRoot: "Memora",
     obsidianSyncEnabled: true,
     obsidianSyncPaused: false,
-    deletionPolicy: "tombstone" as const,
     uploadCopiesEnabled: false,
     uploadCopiesFolderPath: null,
     updatedAt: new Date().toISOString()

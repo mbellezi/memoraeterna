@@ -18,6 +18,7 @@ import type {
   AiProfile
 } from "../../shared/ipc";
 import { DecisionsDeciderPanel } from "./DecisionsDecider";
+import { AdvancedDisclosure } from "./settings/AdvancedDisclosure";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import type { ToastTone } from "./ui/toast";
@@ -539,40 +540,42 @@ function JudgeRow(
         </div>
       ) : null}
 
-      <div className="grid gap-1 md:max-w-sm">
-        <Label htmlFor={modeId}>{t("settings.ai.classes.decider.label")}</Label>
-        <select
-          id={modeId}
-          className={selectClass}
-          value={judge.deciderMode ?? ""}
-          disabled={busy !== null}
-          aria-describedby={`${modeId}-help`}
-          onChange={(event) =>
-            props.onChooseDecider((event.target.value || null) as NoteDeciderMode | null)
-          }
-        >
-          <option value="">{t("settings.ai.classes.decider.automatic")}</option>
-          {deciderModes.map((mode) => (
-            <option key={mode} value={mode}>
-              {t(deciderKeys[mode].label)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <ul id={`${modeId}-help`} className="grid gap-1 text-xs text-muted-foreground">
-        <li className={judge.deciderMode === null ? "font-medium text-secondary-foreground" : ""}>
-          {t("settings.ai.classes.decider.automatic")}:{" "}
-          {t("settings.ai.classes.decider.automaticHelp")}
-        </li>
-        {deciderModes.map((mode) => (
-          <li
-            key={mode}
-            className={judge.deciderMode === mode ? "font-medium text-secondary-foreground" : ""}
+      <AdvancedDisclosure t={t} hint={t("settings.advanced.hint")} nested>
+        <div className="grid gap-1 md:max-w-sm">
+          <Label htmlFor={modeId}>{t("settings.ai.classes.decider.label")}</Label>
+          <select
+            id={modeId}
+            className={selectClass}
+            value={judge.deciderMode ?? ""}
+            disabled={busy !== null}
+            aria-describedby={`${modeId}-help`}
+            onChange={(event) =>
+              props.onChooseDecider((event.target.value || null) as NoteDeciderMode | null)
+            }
           >
-            {t(deciderKeys[mode].label)}: {t(deciderKeys[mode].help)}
+            <option value="">{t("settings.ai.classes.decider.automatic")}</option>
+            {deciderModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {t(deciderKeys[mode].label)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <ul id={`${modeId}-help`} className="grid gap-1 text-xs text-muted-foreground">
+          <li className={judge.deciderMode === null ? "font-medium text-secondary-foreground" : ""}>
+            {t("settings.ai.classes.decider.automatic")}:{" "}
+            {t("settings.ai.classes.decider.automaticHelp")}
           </li>
-        ))}
-      </ul>
+          {deciderModes.map((mode) => (
+            <li
+              key={mode}
+              className={judge.deciderMode === mode ? "font-medium text-secondary-foreground" : ""}
+            >
+              {t(deciderKeys[mode].label)}: {t(deciderKeys[mode].help)}
+            </li>
+          ))}
+        </ul>
+      </AdvancedDisclosure>
     </section>
   );
 }

@@ -1610,8 +1610,6 @@
         "overviewDescription": "Stato e scorciatoie",
         "personalization": "Aspetto",
         "personalizationDescription": "Interfaccia e visualizzazione",
-        "matching": "Corrispondenza",
-        "matchingDescription": "Collegamenti di conoscenza e soglie di similarità",
         "intelligence": "IA ed elaborazione",
         "intelligenceDescription": "Provider, profili e instradamento",
         "models": "Modelli locali",
@@ -1619,7 +1617,9 @@
         "connections": "Connessioni",
         "connectionsDescription": "Gateway, client e Obsidian",
         "data": "Dati e sicurezza",
-        "dataDescription": "Archiviazione, backup e ripristino"
+        "dataDescription": "Archiviazione, backup e ripristino",
+        "knowledge": "Conoscenza",
+        "knowledgeDescription": "Organizzazione automatica e suoi limiti"
       },
       "summary": {
         "interface": "Interfaccia",
@@ -1643,14 +1643,10 @@
       "storageDescription": "Scegli se conservare anche una copia esterna gestita dei file originali caricati.",
       "uploadCopiesDescription": "Conserva una seconda copia gestita di ogni file originale nella cartella seguente.",
       "dangerZone": "Zona pericolosa",
-      "deletePolicyDescriptions": {
-        "tombstone": "Conserva un record recuperabile dell'eliminazione prima di rimuovere il contenuto.",
-        "archive": "Archivia il contenuto rimosso invece di eliminarlo immediatamente.",
-        "delete": "Rimuovi definitivamente il contenuto gestito quando l'eliminazione viene sincronizzata."
-      },
       "syncDescriptions": {
         "enabled": "Proietta fonti e note gestite nel vault configurato.",
-        "paused": "Interrompi temporaneamente la sincronizzazione senza rimuoverne la configurazione."
+        "paused": "Interrompi temporaneamente la sincronizzazione senza rimuoverne la configurazione.",
+        "off": "Nulla viene proiettato nel vault."
       },
       "autoSaveHint": "Le modifiche vengono salvate automaticamente."
     },
@@ -1686,15 +1682,14 @@
       "selectObsidianVault": "Scegli cartella",
       "obsidianRootFolder": "Cartella gestita",
       "obsidianSyncEnabled": "Sincronizza con Obsidian",
-      "obsidianSyncPaused": "Metti in pausa la sincronizzazione Obsidian",
-      "obsidianDeletePolicy": "Criterio di eliminazione",
-      "deletePolicies": {
-        "tombstone": "Tombstone",
-        "archive": "Archivia",
-        "delete": "Elimina"
-      },
       "uploadedFilesPath": "Cartella dei file caricati",
-      "copyUploadedFilesEnabled": "Mantieni copie dei file caricati"
+      "copyUploadedFilesEnabled": "Mantieni copie dei file caricati",
+      "obsidianSyncModes": {
+        "off": "Disattivata",
+        "on": "Attiva",
+        "paused": "In pausa"
+      },
+      "obsidianSyncNeedsVault": "Scegli prima una cartella del vault per attivare la sincronizzazione."
     },
     "integrations": {
       "title": "Integrazioni",
@@ -1724,7 +1719,7 @@
         "recommended": "Equilibrato — consigliato",
         "recommendedHint": "Parametri di matching convalidati. Crea o duplica un preset per modificarlo. Ogni ripristino usa il valore consigliato.",
         "customHint": "Le modifiche vengono salvate in questo preset. I profili IA sono gestiti separatamente.",
-        "previous": "Impostazioni personalizzate",
+        "previous": "Personalizzato",
         "copy": "copia",
         "create": "Crea preset",
         "duplicate": "Duplica preset",
@@ -1735,13 +1730,13 @@
         "save": "Salva preset",
         "cancel": "Annulla",
         "invalidName": "Inserisci un nome da 1 a 100 caratteri.",
-        "limit": "È stato raggiunto il limite di 50 preset personalizzati."
+        "limit": "È stato raggiunto il limite di 50 preset personalizzati.",
+        "customNamed": "Personalizzato: {name}"
       },
-      "title": "Matching della conoscenza",
+      "title": "Impostazioni di corrispondenza",
       "description": "Regola come vengono abbinati entità, tipi di relazione e relazioni tra fonti. Le relazioni tra note sono decise automaticamente.",
       "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia.",
       "advanced": {
-        "title": "Matching avanzato",
         "notes": "Note atomiche",
         "canonical": "Identità di entità e tipi di relazione",
         "sources": "Evidenze delle fonti e costo",
@@ -1759,6 +1754,15 @@
         "hint": "Le modifiche valgono per le elaborazioni successive. Le relazioni esistenti sono preservate.",
         "canonicalHint": "La similarità recupera solo candidati. Il riuso di identità richiede sempre conferma IA. Una singola identità può superare il limite indicativo di caratteri e resta integra.",
         "sourcesHint": "I limiti delle evidenze bilanciano contesto e costo. I limiti di output rispettano il profilo selezionato. Riassunti e altre fasi hanno consumi separati."
+      },
+      "groupHint": "Le decisioni precedenti mantengono i valori con cui sono state prese e un nuovo valore vale solo per le nuove decisioni. Se alcune precedenti sono state prese con altri valori, ti viene offerto di rifarle dalla Posta in arrivo.",
+      "calibration": {
+        "notice": "Questi valori differiscono dall’insieme calibrato; le relazioni trovate con essi non sono state misurate.",
+        "restore": "Ripristina i valori calibrati",
+        "calibrated": "Calibrato: {value}",
+        "on": "Attivo",
+        "off": "Disattivo",
+        "count": "Valori diversi: {count}"
       }
     },
     "summarization": {
@@ -1781,13 +1785,13 @@
       "keySaved": "Chiave salvata in modo sicuro.",
       "noKey": "Nessuna chiave configurata. Le ricerche usano accesso senza chiave.",
       "keyError": "Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.",
-      "provider": "Fornitore di metadati dei libri",
       "auto": "Automatico (Open Library → Google Books)",
       "providerHint": "Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.",
       "openLibrary": "Open Library",
       "googleBooks": "Google Books",
       "title": "Arricchimento automatico dei metadati",
-      "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati."
+      "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati.",
+      "off": "Disattivato"
     },
     "reset": {
       "title": "Reimposta tutto",
@@ -2070,6 +2074,74 @@
           "xhigh": "Molto alto",
           "max": "Massimo"
         }
+      }
+    },
+    "advanced": {
+      "title": "Avanzate",
+      "hint": "Raramente necessarie. Le impostazioni predefinite vanno bene per la maggior parte delle librerie."
+    },
+    "knowledge": {
+      "title": "Organizzazione automatica",
+      "description": "La tua libreria viene tenuta in ordine in background: le note vengono collocate negli argomenti, le relazioni vengono trovate e le panoramiche restano aggiornate. Sei controlli decidono fin dove arriva da sola.",
+      "states": {
+        "loading": "Caricamento dei controlli…",
+        "error": "Non è stato possibile caricare i controlli.",
+        "retry": "Riprova",
+        "saving": "Salvataggio…",
+        "saved": "Salvato.",
+        "saveFailed": "Non è stato possibile salvare la modifica. È tornato il valore precedente."
+      },
+      "autonomy": {
+        "label": "Autonomia",
+        "options": {
+          "off": "Disattivata",
+          "suggest": "Suggerisci",
+          "auto": "Automatica"
+        },
+        "help": {
+          "off": "Nulla viene scritto dall’IA e nulla va a un servizio remoto in background. Le note vengono comunque collocate negli argomenti e i controlli che non usano l’IA continuano.",
+          "suggest": "Propone ciò che cambierebbe e attende la tua revisione nella Posta in arrivo.",
+          "auto": "Applica le modifiche e le rende tutte annullabili. Tutto ciò che tocca le tue modifiche o i contenuti fissati o protetti viene sempre rivisto prima."
+        }
+      },
+      "cap": {
+        "label": "Limite mensile di spesa remota (USD)",
+        "hint": "Il lavoro in background che usa un modello remoto a pagamento si ferma a questo importo ogni mese. I modelli in abbonamento, come Codex, non sono misurati in denaro: hanno invece un limite giornaliero di chiamate.",
+        "spent": "{spent} su {cap} spesi questo mese",
+        "invalid": "Inserisci un importo da 0 a {max}.",
+        "state": {
+          "paused": "Il lavoro remoto in background è in pausa vicino al limite. Riprendilo dal pannello Attività o alza il limite.",
+          "exhausted": "Il limite è stato raggiunto. Il lavoro remoto in background attende il mese prossimo o finché non alzi il limite."
+        }
+      },
+      "pause": {
+        "label": "Metti in pausa l’organizzazione automatica",
+        "hint": "Ferma tutto il lavoro in background finché non la disattivi. Le importazioni e le tue richieste continuano a funzionare."
+      },
+      "treeShape": {
+        "label": "Forma dell’albero degli argomenti",
+        "options": {
+          "broad": "Ampia",
+          "balanced": "Equilibrata",
+          "deep": "Profonda"
+        },
+        "help": {
+          "broad": "Meno livelli, con più argomenti in ciascuno.",
+          "balanced": "Un equilibrio tra ampiezza e profondità. Consigliata.",
+          "deep": "Più livelli, con meno argomenti in ciascuno."
+        },
+        "note": "Cambiare la forma propone una ricostruzione dell’albero. Nulla si sposta finché non la riesamini nella Posta in arrivo."
+      },
+      "onlyIdle": {
+        "label": "Solo quando il computer è inattivo",
+        "hint": "Il lavoro in background attende che tu non usi il computer per qualche minuto."
+      },
+      "onlyOnAc": {
+        "label": "Solo con alimentazione di rete",
+        "hint": "Il lavoro in background attende finché il portatile funziona a batteria."
+      },
+      "advanced": {
+        "hint": "Questi valori cambiano il modo in cui la conoscenza viene costruita in background. Le impostazioni predefinite sono state misurate: cambiale solo se sai perché."
       }
     }
   },

@@ -6,6 +6,7 @@ import {
   MatchingConfigurationSchema,
   matchingConfigurationsEqual,
   migrateMatchingSettingsV2,
+  type MatchingConfiguration,
   recommendedMatchingConfiguration,
   recommendedMatchingPresetId,
   retiredRecommendedMatchingConfiguration,
@@ -54,12 +55,24 @@ export interface SettingsRepository {
   dispose?: () => Promise<void>;
 }
 
+/** A save that moved at least one matching value (F4 Q4): the values before and after it. */
+export interface MatchingValuesChange {
+  readonly before: MatchingConfiguration;
+  readonly after: MatchingConfiguration;
+}
+
 export interface SettingsServiceOptions {
   readonly getDatabasePool?: () => Queryable | null;
   readonly requireDatabase?: boolean;
   readonly desktopLocale?: string;
   /** Where a failed rewrite of the stored settings is reported, once. */
   readonly logger?: Pick<Console, "warn">;
+  /**
+   * Told after a save moved a matching value. Saving only stores the value: it applies to new
+   * decisions, enqueues nothing and rewrites no stored decision (Q4). The listener may note the
+   * change (the backlog offer); one that fails is reported and never fails the save.
+   */
+  readonly onMatchingValuesChanged?: (change: MatchingValuesChange) => void | Promise<void>;
 }
 
 /** Writes a file whole or not at all: a reader never sees a half-written document. */
@@ -261,7 +274,6 @@ function createDbSettingsRepository(
         managedRoot: record.obsidianManagedRoot,
         obsidianSyncEnabled: record.obsidianSyncEnabled,
         obsidianSyncPaused: record.obsidianSyncPaused,
-        deletionPolicy: record.deletePolicy,
         uploadCopiesEnabled: record.uploadCopyEnabled,
         uploadCopiesFolderPath: record.uploadCopyBasePath,
         updatedAt: record.updatedAt.toISOString()
@@ -273,7 +285,6 @@ function createDbSettingsRepository(
         obsidianManagedRoot: settings.managedRoot,
         obsidianSyncEnabled: settings.obsidianSyncEnabled,
         obsidianSyncPaused: settings.obsidianSyncPaused,
-        deletePolicy: settings.deletionPolicy,
         uploadCopyEnabled: settings.uploadCopiesEnabled,
         uploadCopyBasePath: settings.uploadCopiesFolderPath
       });
@@ -282,7 +293,6 @@ function createDbSettingsRepository(
         managedRoot: record.obsidianManagedRoot,
         obsidianSyncEnabled: record.obsidianSyncEnabled,
         obsidianSyncPaused: record.obsidianSyncPaused,
-        deletionPolicy: record.deletePolicy,
         uploadCopiesEnabled: record.uploadCopyEnabled,
         uploadCopiesFolderPath: record.uploadCopyBasePath,
         updatedAt: record.updatedAt.toISOString()
@@ -380,10 +390,36 @@ export class SettingsService {
         }
       }
       const validated = appSettingsSchema.parse(next);
-      return (await this.getRepository()).saveAppSettings(validated);
+      const saved = await (await this.getRepository()).saveAppSettings(validated);
+      this.noteMatchingValues(current, saved);
+      return saved;
     });
     this.appUpdateQueue = operation.catch(() => undefined);
     return operation;
+  }
+
+  /**
+   * Tells the listener when a save moved a matching value. The save does not wait for it, and its
+   * failure is reported, never thrown.
+   */
+  private noteMatchingValues(before: AppSettings, after: AppSettings): void {
+    const listener = this.options.onMatchingValuesChanged;
+    if (!listener) return;
+    const report = (error: unknown) =>
+      (this.options.logger ?? console).warn(
+        "A change of the matching values could not be noted",
+        error instanceof Error ? error.message : String(error)
+      );
+    try {
+      const change = {
+        before: MatchingConfigurationSchema.parse(before),
+        after: MatchingConfigurationSchema.parse(after)
+      };
+      if (!matchingConfigurationsEqual(change.before, change.after))
+        void Promise.resolve(listener(change)).catch(report);
+    } catch (error) {
+      report(error);
+    }
   }
 
   public async get(): Promise<StorageSettings> {

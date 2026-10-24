@@ -5,8 +5,9 @@ import {
   recommendedMatchingConfiguration,
   recommendedMatchingPresetId
 } from "@app/domain";
-import type { MessageKey } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 import type { AppSettings, AppSettingsUpdate } from "../../shared/ipc";
+import { matchingGroupModel } from "./settings/matching-group-model";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -17,7 +18,7 @@ export function MatchingPresetControls({
 }: {
   settings: AppSettings;
   onChange: (update: AppSettingsUpdate) => void;
-  t: (key: MessageKey) => string;
+  t: Translator;
 }) {
   const [editor, setEditor] = useState<{
     mode: "create" | "duplicate" | "rename";
@@ -29,6 +30,8 @@ export function MatchingPresetControls({
     (preset) => preset.id === settings.activeMatchingPresetId
   );
   const selectedName = selected ? (selected.name ?? label("previous")) : label("recommended");
+  // A preset whose values are not the calibrated ones reads "Custom" (F4 Q4).
+  const { options } = matchingGroupModel(settings, t);
   const save = () => {
     const name = editor?.name.trim();
     if (!editor || !name || name.length > 100) {
@@ -52,12 +55,12 @@ export function MatchingPresetControls({
     setInvalid(false);
   };
   return (
-    <div className="grid min-w-0 gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+    <div className="grid min-w-0 gap-3 rounded-xl border border-border-strong bg-soft p-4">
       <label className="grid gap-2 text-sm font-medium" htmlFor="matching-preset">
         {label("title")}
         <select
           id="matching-preset"
-          className="h-10 min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+          className="h-10 min-w-0 rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground"
           value={settings.activeMatchingPresetId ?? recommendedMatchingPresetId}
           onChange={(event) => {
             const id = event.currentTarget.value;
@@ -75,15 +78,14 @@ export function MatchingPresetControls({
             setInvalid(false);
           }}
         >
-          <option value={recommendedMatchingPresetId}>{label("recommended")}</option>
-          {settings.matchingPresets.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.name ?? label("previous")}
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
             </option>
           ))}
         </select>
       </label>
-      <p className="text-xs leading-5 text-slate-600 dark:text-slate-400">
+      <p className="text-xs leading-5 text-secondary-foreground">
         {label(selected ? "customHint" : "recommendedHint")}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -143,7 +145,7 @@ export function MatchingPresetControls({
         )}
       </div>
       {settings.matchingPresets.length >= 50 && (
-        <p className="text-xs text-amber-700 dark:text-amber-300">{label("limit")}</p>
+        <p className="text-xs text-warning">{label("limit")}</p>
       )}
       {editor && (
         <form
@@ -175,7 +177,7 @@ export function MatchingPresetControls({
             />
           </label>
           {invalid && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {label("invalidName")}
             </p>
           )}

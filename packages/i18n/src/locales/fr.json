@@ -1614,8 +1614,6 @@
         "overviewDescription": "Etat et raccourcis",
         "personalization": "Apparence",
         "personalizationDescription": "Interface et affichage",
-        "matching": "Correspondance",
-        "matchingDescription": "Liens de connaissance et seuils de similarité",
         "intelligence": "IA et traitement",
         "intelligenceDescription": "Fournisseurs, profils et routage",
         "models": "Modeles locaux",
@@ -1623,7 +1621,9 @@
         "connections": "Connexions",
         "connectionsDescription": "Passerelle, clients et Obsidian",
         "data": "Donnees et securite",
-        "dataDescription": "Stockage, sauvegarde et reinitialisation"
+        "dataDescription": "Stockage, sauvegarde et reinitialisation",
+        "knowledge": "Connaissances",
+        "knowledgeDescription": "Organisation automatique et ses limites"
       },
       "summary": {
         "interface": "Interface",
@@ -1647,14 +1647,10 @@
       "storageDescription": "Choisissez si les fichiers originaux importes recoivent aussi une copie externe geree.",
       "uploadCopiesDescription": "Conservez une seconde copie geree de chaque fichier original dans le dossier ci-dessous.",
       "dangerZone": "Zone dangereuse",
-      "deletePolicyDescriptions": {
-        "tombstone": "Conservez une trace recuperable de la suppression avant de retirer le contenu.",
-        "archive": "Archivez le contenu retire au lieu de le supprimer immediatement.",
-        "delete": "Supprimez definitivement le contenu gere lorsque la suppression est synchronisee."
-      },
       "syncDescriptions": {
         "enabled": "Projetez les sources et notes gerees dans le coffre configure.",
-        "paused": "Suspendez temporairement la synchronisation sans supprimer sa configuration."
+        "paused": "Suspendez temporairement la synchronisation sans supprimer sa configuration.",
+        "off": "Rien n’est projeté dans le coffre."
       },
       "autoSaveHint": "Les modifications sont enregistrées automatiquement."
     },
@@ -1690,15 +1686,14 @@
       "selectObsidianVault": "Choisir un dossier",
       "obsidianRootFolder": "Dossier gere",
       "obsidianSyncEnabled": "Synchroniser avec Obsidian",
-      "obsidianSyncPaused": "Mettre en pause la synchronisation Obsidian",
-      "obsidianDeletePolicy": "Politique de suppression",
-      "deletePolicies": {
-        "tombstone": "Tombstone",
-        "archive": "Archiver",
-        "delete": "Supprimer"
-      },
       "uploadedFilesPath": "Dossier des fichiers importes",
-      "copyUploadedFilesEnabled": "Conserver des copies des fichiers importes"
+      "copyUploadedFilesEnabled": "Conserver des copies des fichiers importes",
+      "obsidianSyncModes": {
+        "off": "Désactivée",
+        "on": "Activée",
+        "paused": "En pause"
+      },
+      "obsidianSyncNeedsVault": "Choisissez d’abord un dossier de coffre pour activer la synchronisation."
     },
     "integrations": {
       "title": "Integrations",
@@ -1728,7 +1723,7 @@
         "recommended": "Équilibré — recommandé",
         "recommendedHint": "Paramètres de matching validés. Créez ou dupliquez un préréglage pour le modifier. Chaque réinitialisation restaure la valeur recommandée.",
         "customHint": "Les modifications sont enregistrées dans ce préréglage. Les profils IA sont gérés séparément.",
-        "previous": "Paramètres personnalisés",
+        "previous": "Personnalisé",
         "copy": "copie",
         "create": "Créer un préréglage",
         "duplicate": "Dupliquer le préréglage",
@@ -1739,13 +1734,13 @@
         "save": "Enregistrer le préréglage",
         "cancel": "Annuler",
         "invalidName": "Saisissez un nom de 1 à 100 caractères.",
-        "limit": "La limite de 50 préréglages personnalisés est atteinte."
+        "limit": "La limite de 50 préréglages personnalisés est atteinte.",
+        "customNamed": "Personnalisé : {name}"
       },
-      "title": "Correspondance des connaissances",
+      "title": "Réglages de correspondance",
       "description": "Réglez la façon dont les entités, les types de relation et les relations entre sources sont appariés. Les relations entre notes sont décidées automatiquement.",
       "savedAutomatically": "Cette valeur est appliquée automatiquement lorsqu'elle change.",
       "advanced": {
-        "title": "Matching avancé",
         "notes": "Notes atomiques",
         "canonical": "Identité des entités et types de relation",
         "sources": "Preuves des sources et coût",
@@ -1763,6 +1758,15 @@
         "hint": "Les changements s’appliquent aux traitements suivants. Les relations existantes sont conservées.",
         "canonicalHint": "La similarité récupère uniquement des candidats. La réutilisation d’identité exige une confirmation IA. Une identité peut dépasser la cible de caractères et reste entière.",
         "sourcesHint": "Les limites de preuve équilibrent contexte et coût. Les limites de sortie respectent le profil choisi. Les résumés et autres étapes ont une consommation distincte."
+      },
+      "groupHint": "Les décisions précédentes gardent les valeurs avec lesquelles elles ont été prises, et une nouvelle valeur ne vaut que pour les nouvelles décisions. Si certaines ont été prises avec d’autres valeurs, la Boîte de réception vous propose de les refaire.",
+      "calibration": {
+        "notice": "Ces valeurs diffèrent du jeu calibré ; les relations trouvées avec elles n’ont pas été mesurées.",
+        "restore": "Rétablir les valeurs calibrées",
+        "calibrated": "Calibré : {value}",
+        "on": "Activé",
+        "off": "Désactivé",
+        "count": "Valeurs différentes : {count}"
       }
     },
     "summarization": {
@@ -1785,13 +1789,13 @@
       "keySaved": "Clé enregistrée de manière sécurisée.",
       "noKey": "Aucune clé configurée. Les recherches utilisent un accès sans clé.",
       "keyError": "Impossible de lire ou enregistrer la clé de manière sécurisée. Réessayez.",
-      "provider": "Fournisseur de métadonnées des livres",
       "auto": "Automatique (Open Library → Google Books)",
       "providerHint": "Choisissez un service pour les livres. Automatique essaie Google Books si Open Library échoue ou ne trouve rien. Les articles scientifiques utilisent Crossref.",
       "openLibrary": "Open Library",
       "googleBooks": "Google Books",
       "title": "Enrichissement automatique des métadonnées",
-      "description": "Recherche les ISBN, DOI, titres et auteurs dans Open Library, Google Books et Crossref. Désactivez cette option pour empêcher toute requête de métadonnées."
+      "description": "Recherche les ISBN, DOI, titres et auteurs dans Open Library, Google Books et Crossref. Désactivez cette option pour empêcher toute requête de métadonnées.",
+      "off": "Désactivé"
     },
     "reset": {
       "title": "Tout réinitialiser",
@@ -2077,6 +2081,74 @@
           "xhigh": "Tres eleve",
           "max": "Maximum"
         }
+      }
+    },
+    "advanced": {
+      "title": "Avancé",
+      "hint": "Rarement utile. Les valeurs par défaut conviennent à la plupart des bibliothèques."
+    },
+    "knowledge": {
+      "title": "Organisation automatique",
+      "description": "Votre bibliothèque est tenue en ordre en arrière-plan : les notes sont rangées dans des sujets, les relations sont trouvées et les aperçus restent à jour. Six réglages décident jusqu’où cela va de soi-même.",
+      "states": {
+        "loading": "Chargement des réglages…",
+        "error": "Impossible de charger les réglages.",
+        "retry": "Réessayer",
+        "saving": "Enregistrement…",
+        "saved": "Enregistré.",
+        "saveFailed": "Impossible d’enregistrer la modification. L’ancienne valeur est rétablie."
+      },
+      "autonomy": {
+        "label": "Autonomie",
+        "options": {
+          "off": "Désactivée",
+          "suggest": "Suggérer",
+          "auto": "Automatique"
+        },
+        "help": {
+          "off": "Rien n’est rédigé par l’IA et rien ne part vers un service distant en arrière-plan. Les notes sont toujours rangées dans des sujets et les vérifications sans IA continuent.",
+          "suggest": "Propose ce qu’elle changerait et attend votre relecture dans la Boîte de réception.",
+          "auto": "Applique ses modifications et garde chacune annulable. Tout ce qui touche vos modifications ou un contenu épinglé ou protégé est toujours relu d’abord."
+        }
+      },
+      "cap": {
+        "label": "Plafond mensuel des dépenses distantes (USD)",
+        "hint": "Le travail en arrière-plan qui utilise un modèle distant payant s’arrête à ce montant chaque mois. Les modèles par abonnement, comme Codex, ne sont pas mesurés en argent : ils ont une limite quotidienne d’appels.",
+        "spent": "{spent} sur {cap} dépensés ce mois-ci",
+        "invalid": "Saisissez un montant de 0 à {max}.",
+        "state": {
+          "paused": "Le travail distant en arrière-plan est en pause près du plafond. Reprenez-le depuis le panneau Activité ou relevez le plafond.",
+          "exhausted": "Le plafond est atteint. Le travail distant en arrière-plan attend le mois prochain, ou que vous releviez le plafond."
+        }
+      },
+      "pause": {
+        "label": "Mettre l’organisation automatique en pause",
+        "hint": "Arrête tout le travail en arrière-plan jusqu’à ce que vous la désactiviez. Les imports et vos propres demandes continuent de fonctionner."
+      },
+      "treeShape": {
+        "label": "Forme de l’arbre des sujets",
+        "options": {
+          "broad": "Large",
+          "balanced": "Équilibrée",
+          "deep": "Profonde"
+        },
+        "help": {
+          "broad": "Moins de niveaux, avec plus de sujets sur chacun.",
+          "balanced": "Un équilibre entre largeur et profondeur. Recommandée.",
+          "deep": "Plus de niveaux, avec moins de sujets sur chacun."
+        },
+        "note": "Changer la forme propose une reconstruction de l’arbre. Rien ne bouge avant que vous ne la relisiez dans la Boîte de réception."
+      },
+      "onlyIdle": {
+        "label": "Seulement quand l’ordinateur est inactif",
+        "hint": "Le travail en arrière-plan attend que vous n’ayez pas utilisé l’ordinateur depuis quelques minutes."
+      },
+      "onlyOnAc": {
+        "label": "Seulement sur secteur",
+        "hint": "Le travail en arrière-plan attend tant que l’ordinateur portable fonctionne sur batterie."
+      },
+      "advanced": {
+        "hint": "Ces valeurs changent la façon dont les connaissances sont construites en arrière-plan. Les valeurs par défaut ont été mesurées : ne les modifiez que si vous savez pourquoi."
       }
     }
   },

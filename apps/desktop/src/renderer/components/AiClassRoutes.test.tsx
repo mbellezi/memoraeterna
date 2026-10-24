@@ -261,6 +261,17 @@ describe("Settings > AI workload classes", () => {
     expect(visible(view("en", {}, local))).not.toContain("receives your text");
   });
 
+  it("keeps the decider mode inside an Advanced disclosure (F4 D33: not counted among the visible automation)", () => {
+    const html = visible(view("en"));
+    const advanced = html.indexOf("<details");
+    expect(advanced).toBeGreaterThan(-1);
+    const mode = html.indexOf("Who decides note relations");
+    expect(mode).toBeGreaterThan(advanced);
+    expect(html.indexOf("</details>")).toBeGreaterThan(mode);
+    // The routes themselves stay in view, ahead of it.
+    expect(html.indexOf("Generative judge")).toBeLessThan(advanced);
+  });
+
   it("discloses a remote judge before the choice applies", () => {
     const html = visible(
       view(

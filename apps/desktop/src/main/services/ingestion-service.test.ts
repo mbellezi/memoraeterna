@@ -26,7 +26,6 @@ function createService(
       managedRoot: "Memora",
       obsidianSyncEnabled: false,
       obsidianSyncPaused: false,
-      deletionPolicy: "delete",
       uploadCopiesEnabled: false,
       uploadCopiesFolderPath: null,
       updatedAt: new Date(0).toISOString()

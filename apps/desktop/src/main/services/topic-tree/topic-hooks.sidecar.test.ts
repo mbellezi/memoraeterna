@@ -389,7 +389,6 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
         managedRoot: "Memora",
         obsidianSyncEnabled: false,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: false,
         uploadCopiesFolderPath: null,
         updatedAt: new Date(0).toISOString()

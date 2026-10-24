@@ -482,7 +482,6 @@ export function App({
         managedRoot: next.managedRoot,
         obsidianSyncEnabled: next.obsidianSyncEnabled,
         obsidianSyncPaused: next.obsidianSyncPaused,
-        deletionPolicy: next.deletionPolicy,
         uploadCopiesEnabled: next.uploadCopiesEnabled,
         uploadCopiesFolderPath: next.uploadCopiesFolderPath
       });

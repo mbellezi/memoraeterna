@@ -1612,8 +1612,6 @@
         "overviewDescription": "Health and shortcuts",
         "personalization": "Appearance",
         "personalizationDescription": "Interface and display",
-        "matching": "Matching",
-        "matchingDescription": "Knowledge links and similarity thresholds",
         "intelligence": "AI & processing",
         "intelligenceDescription": "Providers, profiles and routing",
         "models": "Local models",
@@ -1621,7 +1619,9 @@
         "connections": "Connections",
         "connectionsDescription": "Gateway, clients and Obsidian",
         "data": "Data & safety",
-        "dataDescription": "Storage, backup and reset"
+        "dataDescription": "Storage, backup and reset",
+        "knowledge": "Knowledge",
+        "knowledgeDescription": "Automatic organizing and its limits"
       },
       "summary": {
         "interface": "Interface",
@@ -1645,14 +1645,10 @@
       "storageDescription": "Choose whether original uploaded files also receive an external managed copy.",
       "uploadCopiesDescription": "Keep a second managed copy of every original file in the folder below.",
       "dangerZone": "Danger zone",
-      "deletePolicyDescriptions": {
-        "tombstone": "Keep a recoverable deletion record before removing content.",
-        "archive": "Move removed content aside instead of deleting it immediately.",
-        "delete": "Permanently remove managed content when deletion is synchronized."
-      },
       "syncDescriptions": {
         "enabled": "Project managed sources and notes into your configured vault.",
-        "paused": "Temporarily stop synchronization without removing its configuration."
+        "paused": "Temporarily stop synchronization without removing its configuration.",
+        "off": "Nothing is projected into the vault."
       },
       "autoSaveHint": "Changes are saved automatically."
     },
@@ -1688,15 +1684,14 @@
       "selectObsidianVault": "Choose folder",
       "obsidianRootFolder": "Managed folder",
       "obsidianSyncEnabled": "Sync with Obsidian",
-      "obsidianSyncPaused": "Pause Obsidian sync",
-      "obsidianDeletePolicy": "Delete policy",
-      "deletePolicies": {
-        "tombstone": "Tombstone",
-        "archive": "Archive",
-        "delete": "Delete"
-      },
       "uploadedFilesPath": "Uploaded files folder",
-      "copyUploadedFilesEnabled": "Keep copies of uploaded files"
+      "copyUploadedFilesEnabled": "Keep copies of uploaded files",
+      "obsidianSyncModes": {
+        "off": "Off",
+        "on": "On",
+        "paused": "Paused"
+      },
+      "obsidianSyncNeedsVault": "Choose a vault folder first to turn sync on."
     },
     "integrations": {
       "title": "Integrations",
@@ -1726,7 +1721,7 @@
         "recommended": "Balanced — recommended",
         "recommendedHint": "Validated matching settings. Create or duplicate a preset to edit it. Every reset restores its recommended value.",
         "customHint": "Changes are saved to this preset. AI profiles are managed separately.",
-        "previous": "Custom settings",
+        "previous": "Custom",
         "copy": "copy",
         "create": "Create preset",
         "duplicate": "Duplicate preset",
@@ -1737,13 +1732,13 @@
         "save": "Save preset",
         "cancel": "Cancel",
         "invalidName": "Enter a name with 1 to 100 characters.",
-        "limit": "The limit of 50 custom presets has been reached."
+        "limit": "The limit of 50 custom presets has been reached.",
+        "customNamed": "Custom: {name}"
       },
-      "title": "Knowledge matching",
+      "title": "Matching settings",
       "description": "Tune how entities, relation types and source relations are matched. Relations between notes are decided automatically.",
       "savedAutomatically": "This value is applied automatically when changed.",
       "advanced": {
-        "title": "Advanced matching",
         "notes": "Atomic notes",
         "canonical": "Entity and relation-type identity",
         "sources": "Source evidence and cost",
@@ -1761,6 +1756,15 @@
         "hint": "Changes apply to subsequent processing. Existing relations are preserved.",
         "canonicalHint": "Similarity only retrieves candidates. Identity reuse always requires AI confirmation. A single identity may exceed the character target and is kept intact.",
         "sourcesHint": "Evidence limits balance context and cost. Output limits also respect the selected profile. Summary preparation and other stages have separate usage."
+      },
+      "groupHint": "Earlier decisions keep the values they were made with, and a new value applies to new decisions only. If some earlier ones were made with other values, you are offered to match them again in the Inbox.",
+      "calibration": {
+        "notice": "These values differ from the calibrated set; relations found with them were not measured.",
+        "restore": "Restore calibrated values",
+        "calibrated": "Calibrated: {value}",
+        "on": "On",
+        "off": "Off",
+        "count": "Values that differ: {count}"
       }
     },
     "summarization": {
@@ -1783,13 +1787,13 @@
       "keySaved": "Key saved securely.",
       "noKey": "No key configured. Searches use unauthenticated access.",
       "keyError": "Could not access or save the key securely. Try again.",
-      "provider": "Book metadata provider",
       "auto": "Automatic (Open Library → Google Books)",
       "providerHint": "Select a service for books. Automatic tries Google Books if Open Library fails or finds nothing. Academic articles use Crossref.",
       "openLibrary": "Open Library",
       "googleBooks": "Google Books",
       "title": "Automatic metadata enrichment",
-      "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests."
+      "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests.",
+      "off": "Off"
     },
     "reset": {
       "title": "Reset everything",
@@ -2072,6 +2076,74 @@
           "xhigh": "Extra high",
           "max": "Maximum"
         }
+      }
+    },
+    "advanced": {
+      "title": "Advanced",
+      "hint": "Rarely needed. The defaults work for most libraries."
+    },
+    "knowledge": {
+      "title": "Automatic organizing",
+      "description": "Your library is kept in order in the background: notes are placed in topics, relations are found and overviews stay current. Six controls decide how far this goes on its own.",
+      "states": {
+        "loading": "Loading the controls…",
+        "error": "The controls could not be loaded.",
+        "retry": "Try again",
+        "saving": "Saving…",
+        "saved": "Saved.",
+        "saveFailed": "The change could not be saved. The previous value is back."
+      },
+      "autonomy": {
+        "label": "Autonomy",
+        "options": {
+          "off": "Off",
+          "suggest": "Suggest",
+          "auto": "Automatic"
+        },
+        "help": {
+          "off": "Nothing is written by AI and nothing goes to a remote service in the background. Notes are still placed in topics, and checks that need no AI keep running.",
+          "suggest": "Proposes what it would change and waits for your review in the Inbox.",
+          "auto": "Applies its changes and keeps each one undoable. Anything that touches your own edits, pinned or protected content is always reviewed first."
+        }
+      },
+      "cap": {
+        "label": "Monthly cap for remote spending (USD)",
+        "hint": "Background work that uses a paid remote model stops at this amount each month. Subscription models such as Codex are not metered in money; they have a daily limit of calls instead.",
+        "spent": "{spent} of {cap} spent this month",
+        "invalid": "Enter an amount from 0 to {max}.",
+        "state": {
+          "paused": "Remote background work is paused near the cap. Continue it from the Activity panel, or raise the cap.",
+          "exhausted": "The cap is reached. Remote background work waits until next month, or until you raise the cap."
+        }
+      },
+      "pause": {
+        "label": "Pause automatic organizing",
+        "hint": "Stops all background work until you turn this off. Imports and your own requests keep working."
+      },
+      "treeShape": {
+        "label": "Shape of the topic tree",
+        "options": {
+          "broad": "Broad",
+          "balanced": "Balanced",
+          "deep": "Deep"
+        },
+        "help": {
+          "broad": "Fewer levels, with more topics on each.",
+          "balanced": "A balance of breadth and depth. Recommended.",
+          "deep": "More levels, with fewer topics on each."
+        },
+        "note": "Changing the shape proposes a rebuild of the tree. Nothing moves until you review it in the Inbox."
+      },
+      "onlyIdle": {
+        "label": "Only when the computer is idle",
+        "hint": "Background work waits until you have not used the computer for a few minutes."
+      },
+      "onlyOnAc": {
+        "label": "Only on AC power",
+        "hint": "Background work waits while the laptop runs on battery."
+      },
+      "advanced": {
+        "hint": "These values change how knowledge is built in the background. The defaults were measured; change them only when you know why."
       }
     }
   },

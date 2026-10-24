@@ -96,7 +96,6 @@ describe.skipIf(!sidecarAvailable)("backup verification on the PostgreSQL sideca
         managedRoot: "Memora",
         obsidianSyncEnabled: false,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: false,
         uploadCopiesFolderPath: null,
         updatedAt: new Date().toISOString()

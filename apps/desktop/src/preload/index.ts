@@ -35,7 +35,9 @@ import {
   HardwareProfileInputSchema,
   HardwareProfileResultSchema,
   ImportEstimateInputSchema,
-  ImportEstimateSchema
+  ImportEstimateSchema,
+  KnowledgeControlsSchema,
+  KnowledgeControlsUpdateSchema
 } from "@app/domain";
 import {
   ObjectLocateInputSchema,
@@ -264,6 +266,17 @@ const api: DesktopApi = {
         .parse(
           await ipcRenderer.invoke(ipcChannels.consultationCancel, z.string().uuid().parse(id))
         )
+  },
+  knowledgeControls: {
+    get: async () =>
+      KnowledgeControlsSchema.parse(await ipcRenderer.invoke(ipcChannels.knowledgeControlsGet)),
+    update: async (change) =>
+      KnowledgeControlsSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.knowledgeControlsUpdate,
+          KnowledgeControlsUpdateSchema.parse(change)
+        )
+      )
   },
   budget: {
     estimateImport: async (input) =>

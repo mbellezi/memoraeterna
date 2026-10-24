@@ -11,7 +11,6 @@ const settings = {
   managedRoot: "Memora",
   obsidianSyncEnabled: true,
   obsidianSyncPaused: false,
-  deletionPolicy: "delete" as const,
   uploadCopiesEnabled: false,
   uploadCopiesFolderPath: null,
   updatedAt: new Date(0).toISOString()

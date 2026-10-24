@@ -101,7 +101,6 @@ describe.skipIf(process.platform === "win32")("BackupService", () => {
         managedRoot: "Memora",
         obsidianSyncEnabled: true,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: true,
         uploadCopiesFolderPath: uploads,
         updatedAt: new Date().toISOString()

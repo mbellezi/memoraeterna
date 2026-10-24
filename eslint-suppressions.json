@@ -162,7 +162,7 @@
   },
   "apps/desktop/src/main/services/settings-service.test.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 7
+      "count": 6
     }
   },
   "apps/desktop/src/main/services/source-deletion-service.ts": {
@@ -192,11 +192,6 @@
     },
     "react-hooks/refs": {
       "count": 2
-    }
-  },
-  "apps/desktop/src/renderer/components/AdvancedMatchingSettings.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
     }
   },
   "apps/desktop/src/renderer/components/AiSettingsView.tsx": {
@@ -302,11 +297,6 @@
     }
   },
   "apps/desktop/src/renderer/components/ReviewQueueView.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/components/SettingsView.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
     }

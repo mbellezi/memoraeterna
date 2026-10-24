@@ -120,7 +120,6 @@ describe.skipIf(!sidecarAvailable)("retiring the old wiki files on PostgreSQL", 
         managedRoot: "Memora",
         obsidianSyncEnabled: true,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: false,
         uploadCopiesFolderPath: null,
         updatedAt: new Date().toISOString()

@@ -49,7 +49,6 @@ describe("SourceDeletionService", () => {
         managedRoot: "Memora",
         obsidianSyncEnabled: true,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: true,
         uploadCopiesFolderPath: uploads,
         updatedAt: new Date(0).toISOString()
@@ -123,7 +122,6 @@ describe("SourceDeletionService", () => {
         managedRoot: "Memora",
         obsidianSyncEnabled: false,
         obsidianSyncPaused: false,
-        deletionPolicy: "tombstone",
         uploadCopiesEnabled: false,
         uploadCopiesFolderPath: null,
         updatedAt: new Date(0).toISOString()

@@ -392,3 +392,34 @@ not; (3) pair keys equal before and after on a fixture (`sourceJudgeRequestSetti
 - Zod against recommended: `SourceRelationSettingsSchema.parse({})`, `CanonicalMatchingSettingsSchema.parse({})` and
   `AtomicNoteMatchingSettingsSchema.parse({})` against `recommendedMatchingConfiguration`.
 - Copy counts: leaf keys of `packages/i18n/src/locales/en.json` under each prefix (total 2,456; `settings` 364).
+
+## 14. After T98 (what was built)
+
+`settingsRegistry` (`apps/desktop/src/shared/settings-registry.ts`) lists every persisted setting with its store,
+E7 category, placement, scope, control and reader; `settings-registry.test.ts` (E7 count, a reader for every stored
+key, the dead keys gone) and `settings-scopes.test.tsx` (each control rendered by its scope, inside a `<details>`
+exactly when placed in `advanced`) keep it true. A setting added without a row fails them.
+
+- **Scopes.** `matching` left `SettingsScope`; `knowledge` took its place. Settings › Knowledge holds the six controls
+  (autonomy, monthly cap, pause, tree shape, only idle, only on AC power) and one Advanced disclosure with the Matching
+  settings group (17 controls and the preset list, Q4), the summary minimum words and the two graph limits (placement
+  `advanced`, scope `knowledge`: the inventory's alternative in section 2). Intelligence has an Advanced disclosure
+  with keep-embedders-loaded and the decider mode; Personalization's Advanced holds the graph wheel zoom; Connections'
+  holds the managed folder. E7 reads 6.
+- **Dropped.** `app.preferences.wikiTreeWidth` and `storage_settings.deletionPolicy` (control, schema members,
+  `deletionPolicySchema`, the copy in five locales; the column stays and the repository writes its default). The
+  Obsidian sync metadata no longer records a delete policy.
+- **Merged.** Obsidian enabled + paused: one Off/On/Paused select (storage unchanged). Online lookup + provider: one
+  select (Off, Automatic, Open Library, Google Books; the provider is kept while Off). Not merged: upload copies and
+  their folder (not in D33's list; F5).
+- **Matching values (Q4).** The group shows a notice and "Restore calibrated values" while any value differs from
+  `recommended-v2`, each differing control shows "Calibrated: x" in text, and the preset selector reads "Custom". A
+  save stores the value only. `relation-match-values.ts` keeps the history of the values that shape a stored decision
+  (the generative decider's output budget; the six request-shaping source-judge values), and `RelationMatchBacklog`
+  posts one `backlog` finding (`reason: settings_changed`) with the notes and source pairs decided under other values;
+  accepting queues those notes' MATCH jobs and the discovery of those roots at P3. The thresholds, the identity limits,
+  the floors and the input budget open no period: they apply to new decisions only.
+- **Tree shape (D13).** The shape the controls hold is the topic tree's structural configuration
+  (`topicTreeConfigForPreset`; Balanced is the engine's own, so nothing changes for a library never touched). A new
+  shape proposes a rebuild for review (`reviewConfigChanges`), carries the configuration in the proposal's summary and
+  moves the tree to it when applied; a shape that moves nothing is recorded, not proposed.

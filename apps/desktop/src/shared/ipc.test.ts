@@ -167,10 +167,27 @@ describe("desktop IPC contracts", () => {
         ...defaultStorageSettings,
         updatedAt: new Date(0).toISOString()
       })
-    ).toMatchObject({
-      managedRoot: "Memora",
-      deletionPolicy: "tombstone"
+    ).toMatchObject({ managedRoot: "Memora" });
+  });
+
+  it("strips the settings F4 T98 dropped from a stored document and refuses them on update", () => {
+    // `deletionPolicy` changed nothing (its only read copied it into metadata no code reads) and
+    // `wikiTreeWidth` had no reader: both leave the read schema's output and the strict updates.
+    const storage = storageSettingsSchema.parse({
+      ...defaultStorageSettings,
+      deletionPolicy: "delete",
+      updatedAt: new Date(0).toISOString()
     });
+    expect(storage).not.toHaveProperty("deletionPolicy");
+    expect(() => storageSettingsUpdateSchema.parse({ deletionPolicy: "delete" })).toThrow();
+    const app = appSettingsSchema.parse({
+      ...defaultAppSettings,
+      language: "en",
+      wikiTreeWidth: 460,
+      updatedAt: new Date(0).toISOString()
+    });
+    expect(app).not.toHaveProperty("wikiTreeWidth");
+    expect(() => appSettingsUpdateSchema.parse({ wikiTreeWidth: 460 })).toThrow();
   });
 
   it("validates phase 2 ingestion and search payloads", () => {

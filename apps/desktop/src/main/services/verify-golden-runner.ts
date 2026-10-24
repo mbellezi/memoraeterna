@@ -86,7 +86,6 @@ const storageSettings = async () => ({
   managedRoot: "Memora",
   obsidianSyncEnabled: false,
   obsidianSyncPaused: false,
-  deletionPolicy: "tombstone" as const,
   uploadCopiesEnabled: false,
   uploadCopiesFolderPath: null,
   updatedAt: new Date().toISOString()

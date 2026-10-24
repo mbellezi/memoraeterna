@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
+import { CalibratedValue } from "./settings/CalibratedValue";
 
 const adjustmentKeys = new Set([
   "ArrowLeft",
@@ -18,6 +19,7 @@ export function MatchingSlider({
   value,
   defaultValue,
   resetLabel,
+  calibratedText,
   onCommit
 }: {
   id: string;
@@ -25,6 +27,8 @@ export function MatchingSlider({
   value: number;
   defaultValue: number;
   resetLabel: string;
+  /** "Calibrated: 0.92", set while the value is not the calibrated one (F4 Q4): text, not colour. */
+  calibratedText?: string | undefined;
   onCommit: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -52,14 +56,14 @@ export function MatchingSlider({
         {label}
       </label>
       <div className="flex items-center justify-end gap-3">
-        <output htmlFor={id} className="font-bold tabular-nums text-amber-700 dark:text-amber-300">
+        <output htmlFor={id} className="font-bold tabular-nums text-foreground">
           {draft.toFixed(2)}
         </output>
         <button
           type="button"
           title={resetLabel}
           aria-label={`${label}: ${resetLabel}`}
-          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline-2 dark:hover:bg-slate-800"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
           onClick={() => {
             dirty.current = false;
             setDraft(defaultValue);
@@ -77,7 +81,7 @@ export function MatchingSlider({
         step={0.01}
         value={draft}
         aria-label={label}
-        className="w-full accent-amber-600"
+        className="w-full accent-accent"
         onChange={(event) => {
           dirty.current = true;
           setDraft(Number(event.currentTarget.value));
@@ -102,6 +106,7 @@ export function MatchingSlider({
           else commit(Number(event.currentTarget.value));
         }}
       />
+      {calibratedText ? <CalibratedValue text={calibratedText} /> : null}
     </div>
   );
 }

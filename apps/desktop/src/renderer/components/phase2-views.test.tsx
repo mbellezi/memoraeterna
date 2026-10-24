@@ -476,10 +476,10 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain('value="1"');
   });
 
-  it("renders the configurable minimum word count for summaries", () => {
+  it("renders the configurable minimum word count for summaries inside Knowledge › Advanced", () => {
     const html = renderToString(
       <SettingsView
-        activeScope="personalization"
+        activeScope="knowledge"
         appSettings={appSettingsSchema.parse({
           ...defaultAppSettings,
           language: "en",
@@ -510,10 +510,10 @@ describe("phase 2 renderer views", () => {
     expect(html).not.toContain('id="googleBooksApiKey"');
   });
 
-  it("groups all matching thresholds as sliders in their own dashboard", () => {
+  it("groups all matching thresholds as sliders in Knowledge › Advanced › Matching settings", () => {
     const html = renderToString(
       <SettingsView
-        activeScope="matching"
+        activeScope="knowledge"
         appSettings={appSettingsSchema.parse({
           ...defaultAppSettings,
           language: "en",
@@ -539,7 +539,7 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain('id="entityIdentitySimilarityThreshold"');
     expect(html).toContain('id="sourceRelations-minImportance"');
     expect(html).toContain('id="sourceRelations-minConfidence"');
-    expect(html).toContain("Advanced matching");
+    expect(html).toContain("Matching settings");
     expect(html).toContain("AI output token limit per note");
     expect(html).toContain("Characters per evidence passage");
     // Note relations are decided by the calibrated ranker: nothing left to tune for them.
@@ -556,7 +556,6 @@ describe("phase 2 renderer views", () => {
       "AI share of the final score"
     ])
       expect(html).not.toContain(removed);
-    expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 
   it("groups catalog settings and Google Books credentials in External Services", () => {

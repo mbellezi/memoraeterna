@@ -1,19 +1,13 @@
 import { PromptsSettingsView } from "./PromptsSettingsView";
 import { ObsidianWikiCard } from "./ObsidianWikiCard";
-import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
-import { MatchingPresetControls } from "./MatchingPresetControls";
-import { MatchingResetButton } from "./MatchingResetButton";
-import { AdvancedMatchingSettings } from "./AdvancedMatchingSettings";
 import { RelationLabelsCard, ContentLanguageSelect } from "./RelationLabelsCard";
 import { useEffect, useState } from "react";
 import {
-  Archive,
   Bot,
   ChevronRight,
   CircleGauge,
   Cpu,
   DatabaseBackup,
-  FileX,
   HardDrive,
   FolderOpen,
   Globe,
@@ -27,19 +21,34 @@ import {
   ServerCog,
   ShieldCheck,
   Sparkles,
+  Sprout,
   Sun,
   Trash2
 } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { AppSettings, AppSettingsUpdate, StorageSettings, ThemeMode } from "../../shared/ipc";
-import { appLanguageCodes, defaultAppSettings } from "../../shared/ipc";
+import { appLanguageCodes } from "../../shared/ipc";
+import type { SettingsScope } from "../../shared/settings-registry";
 import { cn } from "../lib/cn";
 import { AiSettingsView } from "./AiSettingsView";
 import { BackupView } from "./BackupView";
 import { IntegrationGatewaySettings } from "./IntegrationGatewaySettings";
 import { LocalModelsView } from "./LocalModelsView";
 import { ObsidianSyncStatusCard } from "./ObsidianSyncStatusCard";
-import { MatchingSlider } from "./MatchingSlider";
+import { AdvancedDisclosure } from "./settings/AdvancedDisclosure";
+import { KnowledgeControlsPanel } from "./settings/KnowledgeControls";
+import { MatchingSettingsGroup } from "./settings/MatchingSettingsGroup";
+import { matchingGroupModel } from "./settings/matching-group-model";
+import {
+  bookLookupModeOf,
+  bookLookupModes,
+  bookLookupPatch,
+  obsidianSyncModeOf,
+  obsidianSyncModePatch,
+  obsidianSyncModes,
+  type BookLookupMode,
+  type ObsidianSyncMode
+} from "./settings/merged-controls";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -60,42 +69,7 @@ interface SettingsViewProps {
   onReset?: () => Promise<void>;
 }
 
-export type SettingsScope =
-  | "prompts"
-  | "overview"
-  | "personalization"
-  | "matching"
-  | "intelligence"
-  | "models"
-  | "external-services"
-  | "connections"
-  | "data";
-
-const deletionPolicies: Array<{
-  policy: StorageSettings["deletionPolicy"];
-  icon: typeof FileX;
-  label: MessageKey;
-  description: MessageKey;
-}> = [
-  {
-    policy: "tombstone",
-    icon: FileX,
-    label: "settings.storage.deletePolicies.tombstone",
-    description: "settings.dashboard.deletePolicyDescriptions.tombstone"
-  },
-  {
-    policy: "archive",
-    icon: Archive,
-    label: "settings.storage.deletePolicies.archive",
-    description: "settings.dashboard.deletePolicyDescriptions.archive"
-  },
-  {
-    policy: "delete",
-    icon: Trash2,
-    label: "settings.storage.deletePolicies.delete",
-    description: "settings.dashboard.deletePolicyDescriptions.delete"
-  }
-];
+export type { SettingsScope };
 
 const themeModes: Array<{
   mode: ThemeMode;
@@ -140,10 +114,10 @@ const scopes: Array<{
     iconStyle: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"
   },
   {
-    id: "matching",
-    icon: Network,
-    label: "settings.dashboard.navigation.matching",
-    description: "settings.dashboard.navigation.matchingDescription",
+    id: "knowledge",
+    icon: Sprout,
+    label: "settings.dashboard.navigation.knowledge",
+    description: "settings.dashboard.navigation.knowledgeDescription",
     accent: "from-amber-500/20 via-orange-500/10 to-transparent",
     iconStyle: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
   },
@@ -280,15 +254,18 @@ export function SettingsView({
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
-  const activeMatchingPreset = appSettings.matchingPresets.find(
-    (preset) => preset.id === appSettings.activeMatchingPresetId
-  );
-  const activeMatchingPresetName = activeMatchingPreset
-    ? (activeMatchingPreset.name ?? t("settings.matching.presets.previous"))
-    : t("settings.matching.presets.recommended");
+  // The header tile names the matching preset; away from the calibrated set it reads "Custom".
+  const matchingModel = matchingGroupModel(appSettings, t as Translator);
+  const activeMatchingPresetName =
+    matchingModel.options.find((option) => option.id === matchingModel.selectedPresetId)?.label ??
+    t("settings.matching.presets.recommended");
 
   function update<K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) {
     onChange({ ...settings, [key]: value });
+  }
+
+  function updateMany(patch: Partial<StorageSettings>) {
+    onChange({ ...settings, ...patch });
   }
 
   async function resetLibrary() {
@@ -380,12 +357,6 @@ export function SettingsView({
             <ScopeHeader scope={activeScopeDefinition} t={t} />
             <div className="grid gap-5 xl:grid-cols-2">
               <AppearanceCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-              <SummarizationCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-              <KnowledgeGraphLimitsCard
-                appSettings={appSettings}
-                t={t}
-                onChange={onAppSettingsChange}
-              />
             </div>
           </div>
         ) : null}
@@ -393,22 +364,40 @@ export function SettingsView({
         {activeScope === "prompts" ? (
           <PromptsSettingsView t={t as Translator} language={appSettings.language} />
         ) : null}
-        {activeScope === "matching" ? (
+
+        {activeScope === "knowledge" ? (
           <div className="grid gap-5">
             <ScopeHeader scope={activeScopeDefinition} t={t} />
-            <MatchingCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+            <KnowledgeControlsPanel t={t as Translator} />
+            <AdvancedDisclosure t={t} hint={t("settings.knowledge.advanced.hint")}>
+              <MatchingSettingsGroup
+                appSettings={appSettings}
+                t={t as Translator}
+                onChange={onAppSettingsChange}
+              />
+              <div className="grid gap-5 xl:grid-cols-2">
+                <SummarizationCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+                <KnowledgeGraphLimitsCard
+                  appSettings={appSettings}
+                  t={t}
+                  onChange={onAppSettingsChange}
+                />
+              </div>
+            </AdvancedDisclosure>
           </div>
         ) : null}
 
         {activeScope === "intelligence" ? (
           <div className="grid gap-5">
             <ScopeHeader scope={activeScopeDefinition} t={t} />
-            <LocalEmbeddingRuntimeCard
-              appSettings={appSettings}
-              t={t}
-              onChange={onAppSettingsChange}
-            />
             <AiSettingsView t={t} interfaceLanguage={appSettings.language} onToast={onToast} />
+            <AdvancedDisclosure t={t} hint={t("settings.advanced.hint")}>
+              <LocalEmbeddingRuntimeCard
+                appSettings={appSettings}
+                t={t}
+                onChange={onAppSettingsChange}
+              />
+            </AdvancedDisclosure>
           </div>
         ) : null}
 
@@ -435,6 +424,7 @@ export function SettingsView({
               isSaving={isSaving}
               t={t}
               onUpdate={update}
+              onUpdateMany={updateMany}
               onSelectVault={onSelectObsidianVault}
             />
             <ObsidianWikiCard t={t} />
@@ -479,16 +469,16 @@ function LocalEmbeddingRuntimeCard({
   onChange: SettingsViewProps["onAppSettingsChange"];
 }) {
   return (
-    <section className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <section className="flex items-start justify-between gap-4 rounded-xl border border-border bg-surface p-4">
       <div className="flex min-w-0 items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-soft text-accent">
           <Cpu className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
           <Label htmlFor="keepLocalEmbeddingModelsLoaded">
             {t("settings.ai.keepLocalEmbeddingModelsLoaded")}
           </Label>
-          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+          <p className="mt-1 text-sm leading-5 text-secondary-foreground">
             {t("settings.ai.keepLocalEmbeddingModelsLoadedDescription")}
           </p>
         </div>
@@ -704,254 +694,48 @@ function AppearanceCard({
           ))}
         </div>
       </div>
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="graphWheelZoomSensitivity">
-            {t("settings.appearance.graphWheelZoomSensitivity")}
-          </Label>
-          <output className="text-sm font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-            {appSettings.graphWheelZoomSensitivity.toLocaleString(appSettings.language, {
-              maximumFractionDigits: 2
-            })}
-            ×
-          </output>
-        </div>
-        <input
-          id="graphWheelZoomSensitivity"
-          type="range"
-          min="0.5"
-          max="1.5"
-          step="0.05"
-          value={appSettings.graphWheelZoomSensitivity}
-          aria-describedby="graphWheelZoomSensitivityDescription"
-          className="h-2 w-full cursor-pointer accent-violet-600"
-          onChange={(event) =>
-            onChange({ graphWheelZoomSensitivity: event.currentTarget.valueAsNumber })
-          }
-        />
-        <div
-          className="flex justify-between text-xs text-slate-500 dark:text-slate-400"
-          aria-hidden="true"
-        >
-          <span>{t("settings.appearance.zoomSensitivitySlower")}</span>
-          <span>{t("settings.appearance.zoomSensitivityFaster")}</span>
-        </div>
-        <p
-          id="graphWheelZoomSensitivityDescription"
-          className="text-xs leading-5 text-slate-500 dark:text-slate-400"
-        >
-          {t("settings.appearance.graphWheelZoomSensitivityDescription")}
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function MatchingCard({
-  appSettings,
-  t,
-  onChange: saveSettings
-}: {
-  appSettings: AppSettings;
-  t: SettingsViewProps["t"];
-  onChange: SettingsViewProps["onAppSettingsChange"];
-}) {
-  const isRecommended = appSettings.activeMatchingPresetId === recommendedMatchingPresetId;
-  const onChange = (update: AppSettingsUpdate) => {
-    if (isRecommended) return;
-    const configuration = MatchingConfigurationSchema.parse({ ...appSettings, ...update });
-    saveSettings({
-      ...configuration,
-      activeMatchingPresetId: appSettings.activeMatchingPresetId,
-      matchingPresets: appSettings.matchingPresets.map((preset) =>
-        preset.id === appSettings.activeMatchingPresetId
-          ? { ...preset, settings: configuration }
-          : preset
-      )
-    });
-  };
-  return (
-    <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            <Network className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h3 className="font-semibold text-slate-950 dark:text-white">
-              {t("settings.matching.title")}
-            </h3>
-            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
-              {t("settings.matching.description")}
-            </p>
-          </div>
-        </div>
-      </div>
-      <MatchingPresetControls settings={appSettings} onChange={saveSettings} t={t} />
-      <fieldset
-        key={appSettings.activeMatchingPresetId}
-        disabled={isRecommended}
-        className="grid min-w-0 gap-5"
-      >
+      <AdvancedDisclosure t={t} hint={t("settings.advanced.hint")} nested>
         <div className="grid gap-2">
-          <MatchingSlider
-            id="relationTypeSimilarityThreshold"
-            label={t("relationTypes.threshold")}
-            defaultValue={defaultAppSettings.relationTypeSimilarityThreshold}
-            resetLabel={t("settings.matching.resetDefault")}
-            value={appSettings.relationTypeSimilarityThreshold}
-            onCommit={(value) => onChange({ relationTypeSimilarityThreshold: value })}
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="graphWheelZoomSensitivity">
+              {t("settings.appearance.graphWheelZoomSensitivity")}
+            </Label>
+            <output className="text-sm font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+              {appSettings.graphWheelZoomSensitivity.toLocaleString(appSettings.language, {
+                maximumFractionDigits: 2
+              })}
+              ×
+            </output>
+          </div>
+          <input
+            id="graphWheelZoomSensitivity"
+            type="range"
+            min="0.5"
+            max="1.5"
+            step="0.05"
+            value={appSettings.graphWheelZoomSensitivity}
+            aria-describedby="graphWheelZoomSensitivityDescription"
+            className="h-2 w-full cursor-pointer accent-violet-600"
+            onChange={(event) =>
+              onChange({ graphWheelZoomSensitivity: event.currentTarget.valueAsNumber })
+            }
           />
-          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t("relationTypes.thresholdHint")}
+          <div
+            className="flex justify-between text-xs text-slate-500 dark:text-slate-400"
+            aria-hidden="true"
+          >
+            <span>{t("settings.appearance.zoomSensitivitySlower")}</span>
+            <span>{t("settings.appearance.zoomSensitivityFaster")}</span>
+          </div>
+          <p
+            id="graphWheelZoomSensitivityDescription"
+            className="text-xs leading-5 text-slate-500 dark:text-slate-400"
+          >
+            {t("settings.appearance.graphWheelZoomSensitivityDescription")}
           </p>
         </div>
-        <div className="grid gap-2">
-          <MatchingSlider
-            id="entityIdentitySimilarityThreshold"
-            label={t("entityIdentity.threshold")}
-            defaultValue={defaultAppSettings.entityIdentitySimilarityThreshold}
-            resetLabel={t("settings.matching.resetDefault")}
-            value={appSettings.entityIdentitySimilarityThreshold}
-            onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })}
-          />
-          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t("entityIdentity.hint")}
-          </p>
-        </div>
-        <AdvancedMatchingSettings settings={appSettings} onChange={onChange} t={t} />
-        <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <div>
-            <h3 className="font-semibold">{t("sourceRelations.title")}</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {t("sourceRelations.budgetHint")}
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {(
-              [
-                ["maxRelationsPerPair", 1, 20],
-                ["maxInputTokens", 2000, 200000]
-              ] as const
-            ).map(([key, min, max]) => (
-              <label key={key} className="grid gap-1 text-xs">
-                <span className="flex items-center justify-between gap-2">
-                  {t(`sourceRelations.${key}`)}
-                  <MatchingResetButton
-                    label={`${t(`sourceRelations.${key}`)}: ${t("settings.matching.resetDefault")}`}
-                    onReset={() =>
-                      onChange({
-                        sourceRelationSettings: {
-                          ...appSettings.sourceRelationSettings,
-                          [key]: defaultAppSettings.sourceRelationSettings[key]
-                        }
-                      })
-                    }
-                  />
-                </span>
-                <SourceRelationLimitInput
-                  min={min}
-                  max={max}
-                  value={appSettings.sourceRelationSettings[key]}
-                  onCommit={(value) =>
-                    onChange({
-                      sourceRelationSettings: {
-                        ...appSettings.sourceRelationSettings,
-                        [key]: value
-                      }
-                    })
-                  }
-                />
-              </label>
-            ))}
-          </div>
-          {(["minImportance", "minConfidence"] as const).map((key) => (
-            <MatchingSlider
-              key={key}
-              id={`sourceRelations-${key}`}
-              label={t(`sourceRelations.${key}`)}
-              value={appSettings.sourceRelationSettings[key]}
-              defaultValue={defaultAppSettings.sourceRelationSettings[key]}
-              resetLabel={t("settings.matching.resetDefault")}
-              onCommit={(value) =>
-                onChange({
-                  sourceRelationSettings: { ...appSettings.sourceRelationSettings, [key]: value }
-                })
-              }
-            />
-          ))}
-          <label className="flex items-center justify-between gap-3 text-sm">
-            {t("sourceRelations.includeWeakTypes")}
-            <span className="flex items-center gap-2">
-              <MatchingResetButton
-                label={`${t("sourceRelations.includeWeakTypes")}: ${t("settings.matching.resetDefault")}`}
-                onReset={() =>
-                  onChange({
-                    sourceRelationSettings: {
-                      ...appSettings.sourceRelationSettings,
-                      includeWeakTypes: defaultAppSettings.sourceRelationSettings.includeWeakTypes
-                    }
-                  })
-                }
-              />
-              <Switch
-                checked={appSettings.sourceRelationSettings.includeWeakTypes}
-                onChange={(event) =>
-                  onChange({
-                    sourceRelationSettings: {
-                      ...appSettings.sourceRelationSettings,
-                      includeWeakTypes: event.target.checked
-                    }
-                  })
-                }
-              />
-            </span>
-          </label>
-        </div>
-      </fieldset>
+      </AdvancedDisclosure>
     </section>
-  );
-}
-
-function SourceRelationLimitInput({
-  value,
-  min,
-  max,
-  onCommit
-}: {
-  value: number;
-  min: number;
-  max: number;
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  const commit = () => {
-    const number = Number(draft);
-    const next =
-      draft.trim() && Number.isFinite(number)
-        ? Math.max(min, Math.min(max, Math.floor(number)))
-        : value;
-    setDraft(String(next));
-    if (next !== value) onCommit(next);
-  };
-  return (
-    <Input
-      type="number"
-      min={min}
-      max={max}
-      step={1}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        else if (event.key === "Escape") {
-          event.preventDefault();
-          setDraft(String(value));
-        }
-      }}
-    />
   );
 }
 
@@ -964,45 +748,35 @@ function ExternalServicesCard({
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
 }) {
+  const modeLabels: Record<BookLookupMode, MessageKey> = {
+    off: "settings.metadataEnrichment.off",
+    auto: "settings.metadataEnrichment.auto",
+    "open-library": "settings.metadataEnrichment.openLibrary",
+    "google-books": "settings.metadataEnrichment.googleBooks"
+  };
   return (
     <section className="grid min-w-0 gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex min-w-0 items-start justify-between gap-4">
-        <div className="grid min-w-0 flex-1 gap-1">
-          <Label htmlFor="metadataEnrichmentEnabled">
-            {t("settings.metadataEnrichment.title")}
-          </Label>
-          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t("settings.metadataEnrichment.description")}
-          </p>
-          <Label htmlFor="bookMetadataProvider" className="mt-3">
-            {t("settings.metadataEnrichment.provider")}
-          </Label>
-          <select
-            id="bookMetadataProvider"
-            value={appSettings.bookMetadataProvider}
-            disabled={!appSettings.metadataEnrichmentEnabled}
-            onChange={(event) =>
-              onChange({
-                bookMetadataProvider: event.target.value as AppSettings["bookMetadataProvider"]
-              })
-            }
-            className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
-          >
-            <option value="auto">{t("settings.metadataEnrichment.auto")}</option>
-            <option value="open-library">{t("settings.metadataEnrichment.openLibrary")}</option>
-            <option value="google-books">{t("settings.metadataEnrichment.googleBooks")}</option>
-          </select>
-          <p className="text-xs leading-5 text-slate-500">
-            {t("settings.metadataEnrichment.providerHint")}
-          </p>
-          <GoogleBooksKeySettings t={t} />
-        </div>
-        <Switch
-          id="metadataEnrichmentEnabled"
-          checked={appSettings.metadataEnrichmentEnabled}
-          aria-label={t("settings.metadataEnrichment.title")}
-          onChange={(event) => onChange({ metadataEnrichmentEnabled: event.target.checked })}
-        />
+      <div className="grid min-w-0 gap-1">
+        <Label htmlFor="bookMetadataProvider">{t("settings.metadataEnrichment.title")}</Label>
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+          {t("settings.metadataEnrichment.description")}
+        </p>
+        <select
+          id="bookMetadataProvider"
+          value={bookLookupModeOf(appSettings)}
+          onChange={(event) => onChange(bookLookupPatch(event.target.value as BookLookupMode))}
+          className="mt-2 h-9 min-w-0 w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-foreground"
+        >
+          {bookLookupModes.map((mode) => (
+            <option key={mode} value={mode}>
+              {t(modeLabels[mode])}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs leading-5 text-slate-500">
+          {t("settings.metadataEnrichment.providerHint")}
+        </p>
+        <GoogleBooksKeySettings t={t} />
       </div>
     </section>
   );
@@ -1140,14 +914,28 @@ function ObsidianCard({
   isSaving,
   t,
   onUpdate,
+  onUpdateMany,
   onSelectVault
 }: {
   settings: StorageSettings;
   isSaving: boolean;
   t: SettingsViewProps["t"];
   onUpdate: <K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) => void;
+  onUpdateMany: (patch: Partial<StorageSettings>) => void;
   onSelectVault: () => Promise<void>;
 }) {
+  const syncMode = obsidianSyncModeOf(settings);
+  const hasVault = Boolean(settings.obsidianVaultPath?.trim());
+  const modeLabels: Record<ObsidianSyncMode, MessageKey> = {
+    off: "settings.storage.obsidianSyncModes.off",
+    on: "settings.storage.obsidianSyncModes.on",
+    paused: "settings.storage.obsidianSyncModes.paused"
+  };
+  const modeHints: Record<ObsidianSyncMode, MessageKey> = {
+    off: "settings.dashboard.syncDescriptions.off",
+    on: "settings.dashboard.syncDescriptions.enabled",
+    paused: "settings.dashboard.syncDescriptions.paused"
+  };
   return (
     <section className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1179,28 +967,56 @@ function ObsidianCard({
           )}
         </span>
       </div>
-      <div className="grid min-w-0 gap-4 md:grid-cols-2">
-        <div className="grid min-w-0 gap-2">
-          <Label htmlFor="obsidianVaultPath">{t("settings.storage.obsidianVaultPath")}</Label>
-          <div className="flex min-w-0 flex-wrap gap-2">
-            <Input
-              className="min-w-0 flex-1 basis-48"
-              id="obsidianVaultPath"
-              value={settings.obsidianVaultPath ?? ""}
-              onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
-            />
-            <Button
-              type="button"
-              className="shrink-0 whitespace-nowrap"
-              disabled={isSaving}
-              onClick={() => void onSelectVault()}
-            >
-              <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {t("settings.storage.selectObsidianVault")}
-            </Button>
-          </div>
+      <div className="grid min-w-0 gap-2">
+        <Label htmlFor="obsidianVaultPath">{t("settings.storage.obsidianVaultPath")}</Label>
+        <div className="flex min-w-0 flex-wrap gap-2">
+          <Input
+            className="min-w-0 flex-1 basis-48"
+            id="obsidianVaultPath"
+            value={settings.obsidianVaultPath ?? ""}
+            onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
+          />
+          <Button
+            type="button"
+            className="shrink-0 whitespace-nowrap"
+            disabled={isSaving}
+            onClick={() => void onSelectVault()}
+          >
+            <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {t("settings.storage.selectObsidianVault")}
+          </Button>
         </div>
-        <div className="grid gap-2">
+      </div>
+      <div className="grid gap-1 md:max-w-sm">
+        <Label htmlFor="obsidianSyncMode">{t("settings.storage.obsidianSyncEnabled")}</Label>
+        <select
+          id="obsidianSyncMode"
+          className="h-9 min-w-0 w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-foreground"
+          value={syncMode}
+          aria-describedby="obsidianSyncMode-hint"
+          onChange={(event) =>
+            onUpdateMany(obsidianSyncModePatch(event.target.value as ObsidianSyncMode))
+          }
+        >
+          {obsidianSyncModes.map((mode) => (
+            <option
+              key={mode}
+              value={mode}
+              disabled={mode !== "off" && !hasVault && mode !== syncMode}
+            >
+              {t(modeLabels[mode])}
+            </option>
+          ))}
+        </select>
+        <p id="obsidianSyncMode-hint" className="text-xs leading-5 text-muted-foreground">
+          {t(modeHints[syncMode])}
+          {!hasVault && syncMode === "off"
+            ? ` ${t("settings.storage.obsidianSyncNeedsVault")}`
+            : ""}
+        </p>
+      </div>
+      <AdvancedDisclosure t={t} hint={t("settings.advanced.hint")} nested>
+        <div className="grid gap-2 md:max-w-sm">
           <Label htmlFor="managedRoot">{t("settings.storage.obsidianRootFolder")}</Label>
           <Input
             id="managedRoot"
@@ -1208,53 +1024,7 @@ function ObsidianCard({
             onChange={(event) => onUpdate("managedRoot", event.target.value)}
           />
         </div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <ToggleCard
-          checked={settings.obsidianSyncEnabled}
-          label={t("settings.storage.obsidianSyncEnabled")}
-          description={t("settings.dashboard.syncDescriptions.enabled")}
-          onChange={(checked) => onUpdate("obsidianSyncEnabled", checked)}
-        />
-        <ToggleCard
-          checked={settings.obsidianSyncPaused}
-          label={t("settings.storage.obsidianSyncPaused")}
-          description={t("settings.dashboard.syncDescriptions.paused")}
-          onChange={(checked) => onUpdate("obsidianSyncPaused", checked)}
-        />
-      </div>
-      <div className="grid gap-3">
-        <Label>{t("settings.storage.obsidianDeletePolicy")}</Label>
-        <div className="grid gap-2 md:grid-cols-3">
-          {deletionPolicies.map(({ policy, icon: Icon, label, description }) => (
-            <button
-              key={policy}
-              type="button"
-              aria-pressed={settings.deletionPolicy === policy}
-              className={cn(
-                "flex min-h-24 items-start gap-3 rounded-xl border p-3 text-left transition",
-                settings.deletionPolicy === policy
-                  ? "border-cyan-500 bg-cyan-50 ring-4 ring-cyan-100 dark:bg-cyan-950/50 dark:ring-cyan-950"
-                  : "border-slate-200 bg-slate-50 hover:border-cyan-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-800"
-              )}
-              onClick={() => onUpdate("deletionPolicy", policy)}
-            >
-              <Icon
-                className="mt-0.5 h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300"
-                aria-hidden="true"
-              />
-              <span>
-                <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {t(label)}
-                </span>
-                <span className="mt-1 block text-xs leading-4 text-slate-500">
-                  {t(description)}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+      </AdvancedDisclosure>
     </section>
   );
 }
@@ -1284,6 +1054,7 @@ function StorageCard({
         </div>
       </div>
       <ToggleCard
+        id="uploadCopiesEnabled"
         checked={settings.uploadCopiesEnabled}
         label={t("settings.storage.copyUploadedFilesEnabled")}
         description={t("settings.dashboard.uploadCopiesDescription")}
@@ -1351,11 +1122,13 @@ function ResetCard({
 }
 
 function ToggleCard({
+  id,
   checked,
   label,
   description,
   onChange
 }: {
+  id?: string;
   checked: boolean;
   label: string;
   description: string;
@@ -1370,7 +1143,7 @@ function ToggleCard({
           : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
       )}
     >
-      <Switch checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <Switch id={id} checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
         <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
           {label}

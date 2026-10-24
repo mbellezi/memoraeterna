@@ -1,5 +1,7 @@
 import { aiConfigGeneration, createJobRepository } from "@app/db";
+import { topicTreeConfigForPreset } from "@app/domain/topic-tree";
 import {
+  MatchingConfigurationSchema,
   backgroundBlockerOf,
   defaultKnowledgeControls,
   defaultPriceTable,
@@ -31,6 +33,7 @@ import { HardwareService } from "./services/hardware/hardware-service.js";
 import { registerHardwareIpc } from "./services/hardware/ipc.js";
 import { registerOnboardingIpc } from "./services/onboarding/onboarding-ipc.js";
 import { OnboardingService, pgOnboardingStore } from "./services/onboarding/onboarding-service.js";
+import { registerKnowledgeControlsIpc } from "./services/gardener/knowledge-controls-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -296,7 +299,12 @@ void app.whenReady().then(() => {
   settingsService = new SettingsService(app.getPath("userData"), {
     getDatabasePool: () => databaseService?.getPool() ?? null,
     requireDatabase: true,
-    desktopLocale: app.getLocale()
+    desktopLocale: app.getLocale(),
+    // F4 Q4: a saved matching value applies to new decisions only; the earlier ones are offered
+    // for re-matching in the Inbox (nothing is queued, nothing stored is rewritten).
+    onMatchingValuesChanged: async (change) => {
+      await relationMatchBacklog?.offerSettings({ before: change.before });
+    }
   });
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
   const aiCassette = installDevelopmentAiCassette(workspaceRoot);
@@ -522,7 +530,15 @@ void app.whenReady().then(() => {
     autonomy: async () =>
       backgroundPolicy
         ? (await backgroundPolicy.controls.get()).autonomy
-        : defaultKnowledgeControls.autonomy
+        : defaultKnowledgeControls.autonomy,
+    // F4 D13: the tree is built to the shape the person chose (Balanced, the default, is the
+    // engine's own configuration). A new shape differs structurally from the stored tree, so the
+    // build proposes a rebuild, always for review.
+    newTreeConfig: () =>
+      topicTreeConfigForPreset(
+        backgroundPolicy?.controls.current().treeShape ?? defaultKnowledgeControls.treeShape
+      ),
+    reviewConfigChanges: true
   });
   // `topicsChanged` stays until F5; the bus carries the same committed, coalesced change as `tree.changed`.
   topicTreeServices.changes.subscribe((change) =>
@@ -748,6 +764,8 @@ void app.whenReady().then(() => {
     getPool: () => databaseService!.getPool()!,
     deciderKey: () => knowledgeService!.currentRelationDeciderKey(),
     spaceKey: () => aiService!.embeddingRouteSpaceKey(),
+    // F4 Q4: the matching values in force, for the offer that follows a change of them.
+    matchingValues: async () => MatchingConfigurationSchema.parse(await settingsService!.getApp()),
     wake: () => jobSupervisor?.wake("light")
   });
   // The Gardener's status (F4 D27): composed from the gates, the blocked and waiting tasks, the AI
@@ -828,6 +846,10 @@ void app.whenReady().then(() => {
       store: pgOnboardingStore(() => databaseService?.getPool() ?? null)
     })
   );
+  // The six Knowledge controls (T98); a new tree shape proposes a rebuild for review (D13).
+  registerKnowledgeControlsIpc(ipcMain, () => backgroundPolicy?.controls ?? null, {
+    treeShapeChanged: () => void topicTreeServices?.shapeChanged()
+  });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
@@ -899,6 +921,9 @@ void app.whenReady().then(() => {
         // The Knowledge controls, the power signals and the blocker service (F4 T75); the job
         // supervisor re-gates blocked rows before its workers start.
         backgroundPolicy?.start();
+        // The tree is planned to the stored shape (D13): the controls are read before the topic
+        // jobs can plan a build (the read `start` began is awaited; a failure keeps the defaults).
+        await backgroundPolicy?.controls.get().catch(() => undefined);
         gardenerStatus?.start();
         // DEV-only note pair verdicts (MEMORA_GOLDEN_NOTE_PAIRS, golden-note-pairs.ts): exclusive of
         // every other golden knob and checked first, so a refusal quits before a wipe or a reset can run.
@@ -1137,6 +1162,12 @@ void app.whenReady().then(() => {
           });
         // F4 D29: the Inbox follows the stores' events and the budget once the library is up.
         if (!libraryQuiet) inboxService?.start();
+        // F4 Q4: the first sight of the matching values opens their history; a change made while the
+        // app was closed is offered like one made in Settings. Nothing is queued either way.
+        if (!libraryQuiet)
+          void relationMatchBacklog?.offerSettings().catch((error: unknown) => {
+            console.warn("The matching values could not be noted", error);
+          });
         // DEV soak profile setup (MEMORA_SOAK_SETUP=1, F3 T62): the models are up, no job has started.
         // The Local preset, the checks and `.cache/f3/soak/setup.json`, then quit.
         if (soakSetup) {

@@ -412,7 +412,6 @@ export class ObsidianSyncService {
       deletedAt,
       metadata: {
         ...record.metadata,
-        deletePolicy: settings.deletionPolicy,
         tombstonedAt: deletedAt.toISOString()
       }
     });

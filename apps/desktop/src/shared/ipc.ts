@@ -11,6 +11,8 @@ import type {
   HardwareProfileResult,
   ImportEstimate,
   ImportEstimateInput,
+  KnowledgeControls,
+  KnowledgeControlsUpdate,
   NoteDeciderMode,
   PromptCommand
 } from "@app/domain";
@@ -140,6 +142,9 @@ export const ipcChannels = {
   appEvents: "app:events",
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
+  /** F4 D13: the six Knowledge controls (Settings › Knowledge, T98): read, and change any subset. */
+  knowledgeControlsGet: "app:knowledge:controls:get",
+  knowledgeControlsUpdate: "app:knowledge:controls:update",
   /** F4 D14: the import plan chip's estimate (T76). */
   budgetEstimateImport: "app:budget:estimateImport",
   /** F4 D14: the budget's meters, and the Activity's "continue" past the pause share. */
@@ -341,7 +346,6 @@ export const databaseStatusSchema = z.object({
   error: z.string().optional()
 });
 
-export const deletionPolicySchema = z.enum(["tombstone", "archive", "delete"]);
 /** "system" follows the OS appearance live; "light" and "dark" are explicit choices that always win. */
 export const themeModeSchema = z.enum(["system", "light", "dark"]);
 export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
@@ -407,7 +411,6 @@ export const appSettingsSchema = z.object({
   themeMode: themeModeSchema,
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).default(1),
   navigationCollapsed: z.boolean().default(false),
-  wikiTreeWidth: z.number().int().min(240).max(520).default(320),
   debugMode: z.boolean().default(false),
   debugFullCapture: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
@@ -440,7 +443,6 @@ export const appSettingsUpdateSchema = z
     themeMode: themeModeSchema.optional(),
     graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
     navigationCollapsed: z.boolean().optional(),
-    wikiTreeWidth: z.number().int().min(240).max(520).optional(),
     debugMode: z.boolean().optional(),
     debugFullCapture: z.boolean().optional(),
     metadataEnrichmentEnabled: z.boolean().optional(),
@@ -462,7 +464,6 @@ export const storageSettingsSchema = z.object({
   managedRoot: z.string().min(1),
   obsidianSyncEnabled: z.boolean(),
   obsidianSyncPaused: z.boolean(),
-  deletionPolicy: deletionPolicySchema,
   uploadCopiesEnabled: z.boolean(),
   uploadCopiesFolderPath: z.string().nullable(),
   updatedAt: z.string().datetime()
@@ -1774,7 +1775,6 @@ export const integrationClientSchema = z
   })
   .strict();
 
-export type DeletionPolicy = z.infer<typeof deletionPolicySchema>;
 export type DatabaseLifecycleState = z.infer<typeof databaseLifecycleStateSchema>;
 export type DatabaseStatus = z.infer<typeof databaseStatusSchema>;
 export type DatabaseStatusMessageKey = z.infer<typeof databaseStatusMessageKeySchema>;
@@ -1861,7 +1861,6 @@ export const defaultAppSettings = {
   themeMode: "system",
   graphWheelZoomSensitivity: 1,
   navigationCollapsed: false,
-  wikiTreeWidth: 320,
   debugMode: false,
   debugFullCapture: false,
   metadataEnrichmentEnabled: true,
@@ -1880,7 +1879,6 @@ export const defaultStorageSettings = {
   managedRoot: "Memora",
   obsidianSyncEnabled: false,
   obsidianSyncPaused: false,
-  deletionPolicy: "tombstone",
   uploadCopiesEnabled: false,
   uploadCopiesFolderPath: null
 } satisfies StorageSettingsUpdate;
@@ -1895,6 +1893,16 @@ export interface DesktopApi {
     ask: (input: ConsultationInput) => Promise<ConsultationResult>;
     /** Ends the Ask and stops the statement it has running. */
     cancel: (id: string) => Promise<null>;
+  };
+  /** The six Knowledge controls (F4 D13, Settings › Knowledge). */
+  knowledgeControls: {
+    /** The controls as stored, every field with its default (autonomy, cap, pause, shape, power). */
+    get: () => Promise<KnowledgeControls>;
+    /**
+     * Changes any subset and answers the controls after it. A change of the tree shape proposes a
+     * rebuild for review (never applied by itself); the others take effect on the next claim.
+     */
+    update: (change: KnowledgeControlsUpdate) => Promise<KnowledgeControls>;
   };
   budget: {
     /** What an import plan of this many chunks would cost on the writer's route (F4 D14). */
