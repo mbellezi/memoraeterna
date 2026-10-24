@@ -8,13 +8,12 @@
 // where the sign-in leaves it (the AI service holds it until the provider is saved) and invokes
 // everything after it as the screen does. A failed class test never stops the setup (the product's
 // rule: a failure never blocks); the verdict reads the tests.
-import type { AiPresetId, OnboardingState } from "@app/domain";
+import type { AiPresetId, HardwareProfileResult, OnboardingState } from "@app/domain";
 
 import type { AiService } from "../ai-service.js";
 import type { OpenAiCodexCredential } from "../openai-codex-oauth.js";
 import { ipcChannels } from "../../../shared/ipc.js";
-import { localSetupAvailable } from "../../../shared/onboarding.js";
-import type { OnboardingHardware } from "../../../shared/onboarding.js";
+import { localSetupAvailable, onboardingHardwareOf } from "../../../shared/onboarding.js";
 import type {
   AiApplyPresetResult,
   AiClassRoutes,
@@ -97,7 +96,10 @@ export async function runHybridSetup(input: SetupInput): Promise<SetupFacts> {
   marks.mark("setup.languages");
 
   // 2. The tier card: this computer and what each setup would download, before anything is fetched.
-  const hardware = await working(() => ipc.invoke<OnboardingHardware>(ipcChannels.hardwareProfile));
+  // T97's answer, read as the tier card reads it in the renderer.
+  const hardware = onboardingHardwareOf(
+    await working(() => ipc.invoke<HardwareProfileResult>(ipcChannels.hardwareProfile))
+  );
   await working(() => ipc.invoke(ipcChannels.localModelsList));
   marks.mark("setup.card");
 

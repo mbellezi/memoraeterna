@@ -86,6 +86,7 @@ describe("App", () => {
   it("shows the Activity pill in the header, and no modal stands over a model loading", () => {
     const html = renderToString(
       <App
+        firstRun={false}
         initialDatabaseStatus={{
           state: "ready",
           messageKey: "database.status.ready",

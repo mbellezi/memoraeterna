@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createTranslator, type LanguageCode, type MessageKey } from "@app/i18n";
 
-import type { AppSettings } from "../../../shared/ipc";
+import type { AppSettings, DesktopApi } from "../../../shared/ipc";
+import { onboardingHardwareOf } from "../../../shared/onboarding";
 import { ImportView } from "../ImportView";
-import { OnboardingController } from "./onboarding-controller";
+import { OnboardingController, type OnboardingApi } from "./onboarding-controller";
 import { OnboardingView } from "./OnboardingView";
 
 export interface FirstRunOptions {
@@ -20,6 +21,21 @@ export interface FirstRunOptions {
 }
 
 /**
+ * What the first run calls of the preload: the app's API, with T97's `hardware.profile` answer read
+ * as the tier card's facts (the one place the two shapes meet).
+ */
+export function onboardingApiOf(app: DesktopApi): OnboardingApi {
+  return {
+    onAppEvent: (type, handler) => app.onAppEvent(type, handler),
+    onboarding: app.onboarding,
+    settings: app.settings,
+    hardware: { profile: async () => onboardingHardwareOf(await app.hardware.profile()) },
+    localModels: app.localModels,
+    ai: app.ai
+  };
+}
+
+/**
  * The first-run branch of the app (F4 D31): the screen to show instead of the shell while the
  * first run is being checked or is due, and `null` when the shell shows (it is not due, it was
  * finished or skipped, or the question failed, which never hides the app).
@@ -29,7 +45,7 @@ export function useFirstRun(options: FirstRunOptions): ReactNode {
   const [controller] = useState(
     () =>
       new OnboardingController({
-        api: () => window.app,
+        api: () => onboardingApiOf(window.app),
         initial: () => ({ language: "en", contentLanguage: "en" }),
         names: () => ({ profile: "", codexProvider: "" })
       })

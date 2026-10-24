@@ -13,7 +13,6 @@ import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
 import { appMenuCommandSchema } from "../shared/app-menu.js";
 import { createAppEventDispatcher } from "../shared/app-events.js";
 import { OnboardingFinishInputSchema, OnboardingStateSchema } from "@app/domain";
-import { OnboardingHardwareSchema } from "../shared/onboarding.js";
 import {
   viewHistoryEntrySchema,
   viewHistoryListInputSchema,
@@ -586,11 +585,6 @@ const api: DesktopApi = {
           OnboardingFinishInputSchema.parse(input)
         )
       );
-    }
-  },
-  hardware: {
-    async profile() {
-      return OnboardingHardwareSchema.parse(await ipcRenderer.invoke(ipcChannels.hardwareProfile));
     }
   },
   settings: {

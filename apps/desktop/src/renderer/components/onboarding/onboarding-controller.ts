@@ -50,7 +50,8 @@ export interface OnboardingApi {
   onAppEvent: DesktopApi["onAppEvent"];
   onboarding: Pick<DesktopApi["onboarding"], "state" | "finish">;
   settings: Pick<DesktopApi["settings"], "updateApp">;
-  hardware: Pick<DesktopApi["hardware"], "profile">;
+  /** The tier card's reading of `hardware.profile` (`onboardingHardwareOf` of T97's answer). */
+  hardware: { profile: () => Promise<OnboardingHardware> };
   localModels: Pick<DesktopApi["localModels"], "list" | "download">;
   ai: Pick<
     DesktopApi["ai"],
