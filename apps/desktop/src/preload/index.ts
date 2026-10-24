@@ -30,6 +30,8 @@ import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 import {
   BudgetSnapshotSchema,
   GardenerStatusSnapshotSchema,
+  HardwareProfileInputSchema,
+  HardwareProfileResultSchema,
   ImportEstimateInputSchema,
   ImportEstimateSchema
 } from "@app/domain";
@@ -278,6 +280,15 @@ const api: DesktopApi = {
     status: async () =>
       GardenerStatusSnapshotSchema.parse(await ipcRenderer.invoke(ipcChannels.gardenerStatus)),
     resume: async () => z.null().parse(await ipcRenderer.invoke(ipcChannels.gardenerResume))
+  },
+  hardware: {
+    profile: async (input) =>
+      HardwareProfileResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.hardwareProfile,
+          ...(input === undefined ? [] : [HardwareProfileInputSchema.parse(input)])
+        )
+      )
   },
   prompts: {
     command: async (input) =>

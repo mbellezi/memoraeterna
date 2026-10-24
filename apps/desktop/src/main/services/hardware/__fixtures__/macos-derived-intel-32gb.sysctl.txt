@@ -1,0 +1,4 @@
+machdep.cpu.brand_string: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
+hw.memsize: 34359738368
+hw.logicalcpu: 16
+hw.physicalcpu: 8

@@ -1,0 +1,32 @@
+{
+  "SPDisplaysDataType": [
+    {
+      "_name": "Apple M4 Max",
+      "spdisplays_mtlgpufamilysupport": "spdisplays_metal4",
+      "spdisplays_ndrvs": [
+        {
+          "_name": "SYNTHETIC DISPLAY",
+          "_spdisplays_display-product-id": "0000",
+          "_spdisplays_display-serial-number": "SYNTHETIC-SERIAL-0001",
+          "_spdisplays_display-vendor-id": "0000",
+          "_spdisplays_display-week": "0",
+          "_spdisplays_display-year": "2024",
+          "_spdisplays_displayID": "1",
+          "_spdisplays_pixels": "3024 x 1964",
+          "_spdisplays_resolution": "1512 x 982 @ 120.00Hz",
+          "spdisplays_main": "spdisplays_yes",
+          "spdisplays_mirror": "spdisplays_off",
+          "spdisplays_online": "spdisplays_yes",
+          "spdisplays_pixelresolution": "spdisplays_3024x1964Retina",
+          "spdisplays_resolution": "1512 x 982 @ 120.00Hz",
+          "spdisplays_rotation": "spdisplays_supported"
+        }
+      ],
+      "spdisplays_vendor": "sppci_vendor_Apple",
+      "sppci_bus": "spdisplays_builtin",
+      "sppci_cores": "40",
+      "sppci_device_type": "spdisplays_gpu",
+      "sppci_model": "Apple M4 Max"
+    }
+  ]
+}

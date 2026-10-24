@@ -7,6 +7,8 @@ export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutA
 import type {
   BudgetSnapshot,
   GardenerStatusSnapshot,
+  HardwareProfileInput,
+  HardwareProfileResult,
   ImportEstimate,
   ImportEstimateInput,
   NoteDeciderMode,
@@ -145,6 +147,8 @@ export const ipcChannels = {
   gardenerStatus: "app:gardener:status",
   /** F4 T93: the Activity's "Resume" lifts the person's pause of the Gardener (`knowledge.controls.v1`). */
   gardenerResume: "app:gardener:resume",
+  /** F4 D32: the machine's hardware profile and the setup recommended for it (T97). */
+  hardwareProfile: "app:hardware:profile",
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
@@ -1908,6 +1912,15 @@ export interface DesktopApi {
      * a `gardener.status` event; nothing else about the controls changes.
      */
     resume: () => Promise<null>;
+  };
+  hardware: {
+    /**
+     * This machine's hardware profile (an allowlist: platform, architecture, Rosetta, CPU, memory,
+     * GPU, Apple working set, NPU), the free disk space now, and the setup recommended for it with
+     * the informative price of each preset (F4 D32; decisions 25 and 26: only today's models).
+     * `{ refresh: true }` probes again ("Re-detect"). The profile never leaves the device.
+     */
+    profile: (input?: HardwareProfileInput) => Promise<HardwareProfileResult>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   objects: {

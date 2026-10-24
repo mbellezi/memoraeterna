@@ -1,0 +1,7 @@
+machdep.cpu.brand_string: Apple M4 Max
+hw.memsize: 68719476736
+hw.optional.arm64: 1
+sysctl.proc_translated: 0
+iogpu.wired_limit_mb: 0
+hw.logicalcpu: 16
+hw.physicalcpu: 16

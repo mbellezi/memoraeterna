@@ -1,0 +1,21 @@
+{
+  "SPDisplaysDataType": [
+    {
+      "_name": "Apple M3",
+      "spdisplays_mtlgpufamilysupport": "spdisplays_metal4",
+      "spdisplays_ndrvs": [
+        {
+          "_name": "SYNTHETIC DISPLAY",
+          "_spdisplays_display-serial-number": "SYNTHETIC-SERIAL-0002",
+          "_spdisplays_displayID": "1",
+          "spdisplays_main": "spdisplays_yes"
+        }
+      ],
+      "spdisplays_vendor": "sppci_vendor_Apple",
+      "sppci_bus": "spdisplays_builtin",
+      "sppci_cores": "10",
+      "sppci_device_type": "spdisplays_gpu",
+      "sppci_model": "Apple M3"
+    }
+  ]
+}

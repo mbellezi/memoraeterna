@@ -27,6 +27,8 @@ import {
   gardenerStatusStoreOf
 } from "./services/gardener/status-service.js";
 import { registerGardenerStatusIpc } from "./services/gardener/status-ipc.js";
+import { HardwareService } from "./services/hardware/hardware-service.js";
+import { registerHardwareIpc } from "./services/hardware/ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -811,6 +813,12 @@ void app.whenReady().then(() => {
     logger: console
   });
   registerInboxIpc(ipcMain, inboxService);
+  // The hardware profile and the setup recommended for it (F4 D32, T97): probed on the first read,
+  // cached under userData/hardware, informative only (decision 26).
+  registerHardwareIpc(
+    ipcMain,
+    new HardwareService({ userDataPath: app.getPath("userData"), logger: console })
+  );
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,

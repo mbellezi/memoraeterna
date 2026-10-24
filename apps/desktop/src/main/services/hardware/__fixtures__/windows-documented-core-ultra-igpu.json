@@ -1,0 +1,14 @@
+{
+  "cpu": {
+    "Name": "Intel(R) Core(TM) Ultra 7 155H",
+    "NumberOfCores": 16,
+    "NumberOfLogicalProcessors": 22
+  },
+  "gpus": {
+    "Name": "Intel(R) Arc(TM) Graphics",
+    "AdapterRAM": 2147479552,
+    "DriverVersion": "32.0.101.6078"
+  },
+  "npus": { "Name": "Intel(R) AI Boost" },
+  "vram": []
+}

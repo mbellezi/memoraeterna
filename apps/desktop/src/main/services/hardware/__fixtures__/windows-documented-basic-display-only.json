@@ -1,0 +1,13 @@
+{
+  "cpu": {
+    "Name": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+    "NumberOfCores": 4,
+    "NumberOfLogicalProcessors": 8
+  },
+  "gpus": [
+    { "Name": "Microsoft Basic Display Adapter", "AdapterRAM": 0, "DriverVersion": "10.0.26100.1" },
+    { "Name": "Microsoft Remote Display Adapter", "AdapterRAM": 0, "DriverVersion": "10.0.26100.1" }
+  ],
+  "npus": [],
+  "vram": []
+}

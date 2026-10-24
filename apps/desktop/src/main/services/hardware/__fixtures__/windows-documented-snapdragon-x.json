@@ -1,0 +1,16 @@
+{
+  "cpu": {
+    "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+    "NumberOfCores": 12,
+    "NumberOfLogicalProcessors": 12
+  },
+  "gpus": [
+    {
+      "Name": "Qualcomm(R) Adreno(TM) X1-85 GPU",
+      "AdapterRAM": 2147479552,
+      "DriverVersion": "31.0.99.0"
+    }
+  ],
+  "npus": [{ "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Hexagon(TM) NPU" }],
+  "vram": []
+}
