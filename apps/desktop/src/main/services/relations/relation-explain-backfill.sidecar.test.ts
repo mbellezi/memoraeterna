@@ -265,8 +265,9 @@ describe.skipIf(!sidecarInstalled)("the explanation backfill on a real PostgreSQ
       backfill: async () => "written",
       now: () => now
     });
+    // As a worker claims it: the claim keeps the dropped dedupe key beside the task (T74).
     const result = await executor.execute(
-      { ...job, payload: { pass: true } },
+      { ...job, payload: { pass: true, claimedDedupeKey: relationExplainBackfillPassKey } },
       new AbortController().signal
     );
     expect(result).toEqual({ status: "completed", remaining: 20, queued: 0 });

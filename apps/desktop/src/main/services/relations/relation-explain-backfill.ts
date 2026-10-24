@@ -25,6 +25,7 @@ import {
 } from "@app/domain";
 import { z } from "zod";
 
+import { jobTaskPayload } from "../../job-task-payload.js";
 import type { LightJobExecutor } from "../job-lanes.js";
 import type { RelationBackfillOutcome } from "../relation-explanation-service.js";
 import { createRelationCallBudget } from "./relation-call-budget.js";
@@ -167,7 +168,8 @@ export function explainBackfillExecutor(options: ExplainBackfillExecutorOptions)
      * ideas and both passages. The writer, the prompt and the language are provenance.
      */
     async fingerprint(job) {
-      const parsed = RelationExplainBackfillPayloadSchema.safeParse(job.payload);
+      // The task's arguments, without the envelope a claim adds (`claimedDedupeKey`, T74).
+      const parsed = RelationExplainBackfillPayloadSchema.safeParse(jobTaskPayload(job.payload));
       if (!parsed.success || !("relationId" in parsed.data)) return null;
       const context = await createRelationExplanationRepository(pool()).readContext(
         parsed.data.relationId
@@ -190,7 +192,7 @@ export function explainBackfillExecutor(options: ExplainBackfillExecutorOptions)
       );
     },
     async execute(job, signal): Promise<JsonObject> {
-      const payload = RelationExplainBackfillPayloadSchema.parse(job.payload);
+      const payload = RelationExplainBackfillPayloadSchema.parse(jobTaskPayload(job.payload));
       if ("pass" in payload) {
         const report = await runExplainBackfillPass(pool(), {
           now: options.now?.() ?? new Date(),

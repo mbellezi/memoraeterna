@@ -31,6 +31,7 @@ import {
 } from "@app/domain";
 import { z } from "zod";
 
+import { jobTaskPayload } from "../../job-task-payload.js";
 import type { LightJobExecutor } from "../job-lanes.js";
 import type { TopicAiMode } from "./topic-ai.js";
 import type { OverviewRefreshResult, TopicOverviewService } from "./topic-overview.js";
@@ -167,7 +168,8 @@ export class TopicOverviewRefresh {
    * Null when the topic is gone (the job then runs and ends as stale).
    */
   private async fingerprint(job: JobRecord): Promise<string | null> {
-    const parsed = TopicOverviewJobPayloadSchema.safeParse(job.payload);
+    // The task's arguments, without the envelope a claim adds (`claimedDedupeKey`, T74).
+    const parsed = TopicOverviewJobPayloadSchema.safeParse(jobTaskPayload(job.payload));
     const pool = this.options.getPool();
     if (!parsed.success || !pool) return null;
     const context = await createTopicOverviewRepository(pool).readContext(parsed.data.topicId);
@@ -186,7 +188,7 @@ export class TopicOverviewRefresh {
   }
 
   private async execute(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
-    const { topicId } = TopicOverviewJobPayloadSchema.parse(job.payload);
+    const { topicId } = TopicOverviewJobPayloadSchema.parse(jobTaskPayload(job.payload));
     const result = await this.options.overview.refresh({
       topicId,
       jobId: job.id,

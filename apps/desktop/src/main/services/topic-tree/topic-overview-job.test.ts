@@ -23,7 +23,26 @@ describe("the topic-overview job", () => {
     expect(resultStatusStates.current).toEqual({ state: "outcome", outcome: "no_change" });
     expect(resultStatusStates.deferred).toEqual({ state: "outcome", outcome: "no_change" });
     expect(resultStatusStates.no_route).toMatchObject({ state: "blocked" });
-    expect(resultStatusStates.invalid).toEqual({ state: "failed", retry: false });
+    // An invalid answer is a failed attempt with backoff (spec 3.1b, T74's R4).
+    expect(resultStatusStates.invalid).toEqual({ state: "failed", retry: true });
+  });
+
+  it("reads its topic from a claimed payload, whose dedupe key the claim keeps beside it (T74)", async () => {
+    const refresh = vi.fn(async () => ({ status: "current" as const }));
+    const executor = new TopicOverviewRefresh({
+      getPool: () => null,
+      overview: { refresh } as never,
+      autonomy: async () => "auto",
+      aiMode: "full"
+    }).executor();
+    await executor.execute(
+      {
+        id: "00000000-0000-4000-8000-0000000000b1",
+        payload: { topicId, claimedDedupeKey: `topic-overview:${topicId}` }
+      } as never,
+      new AbortController().signal
+    );
+    expect(refresh).toHaveBeenCalledWith(expect.objectContaining({ topicId }));
   });
 
   it("is one deduped request per topic, scoped to the topic, a background generative task", () => {
