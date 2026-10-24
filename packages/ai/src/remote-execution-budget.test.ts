@@ -151,9 +151,58 @@ describe("the attempt admission of a remote call", () => {
     );
     expect(value).toBe("ok");
     expect(failed).toEqual([
-      { attempt: 1, usage: {}, unreported: false },
-      { attempt: 2, usage: {}, unreported: true },
-      { attempt: 3, usage: { inputTokens: 10, outputTokens: 2 }, unreported: false }
+      { attempt: 1, usage: {}, unreported: false, unsent: false },
+      { attempt: 2, usage: {}, unreported: true, unsent: false },
+      { attempt: 3, usage: { inputTokens: 10, outputTokens: 2 }, unreported: false, unsent: false }
+    ]);
+  });
+
+  it("tells which failed attempts never reached the provider: their connection failed (F4 D7)", async () => {
+    const failed: FailedRemoteAttempt[] = [];
+    const transport = (code: string) =>
+      (async () => {
+        throw new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+      }) as typeof fetch;
+    const respond = (status: number) =>
+      (async () => new Response("{}", { status })) as typeof fetch;
+    let number = 0;
+    const value = await runRemoteCall(
+      {
+        config: resolveAiRuntimeConfig({
+          retry: { baseDelayMs: 1, maxDelayMs: 1, maxAttempts: 5 }
+        }),
+        random: () => 0
+      },
+      {
+        streaming: false,
+        taskType: "summarization",
+        beforeAttempt: () => undefined,
+        afterFailedAttempt: (attempt) => failed.push(attempt)
+      },
+      async (call) => {
+        number += 1;
+        // DNS, then a refused connection: nothing was sent.
+        if (number === 1) return call.fetch(transport("ENOTFOUND"), "https://api.example.test", {});
+        if (number === 2)
+          return call.fetch(transport("ECONNREFUSED"), "https://api.example.test", {});
+        // A reset may come after the request was sent.
+        if (number === 3)
+          return call.fetch(transport("ECONNRESET"), "https://api.example.test", {});
+        if (number === 4) {
+          // Answered with an error status, then a fallback request that could not connect: the
+          // provider saw the first one.
+          await call.fetch(respond(503), "https://api.example.test", {});
+          return call.fetch(transport("ECONNREFUSED"), "https://api.example.test", {});
+        }
+        return "ok";
+      }
+    );
+    expect(value).toBe("ok");
+    expect(failed.map((attempt) => [attempt.attempt, attempt.unsent])).toEqual([
+      [1, true],
+      [2, true],
+      [3, false],
+      [4, false]
     ]);
   });
 

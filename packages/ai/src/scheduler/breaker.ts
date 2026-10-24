@@ -61,11 +61,11 @@ export interface BreakerSnapshot {
 
 /**
  * The error of an entry a breaker fails fast. A transient provider error, so a job waits for the
- * provider instead of failing (F4 D7), and `retryAfterMs` says how long the breaker stays shut so
- * the job does not come back sooner. `breaker` says whether the open period runs (`open`: the next
- * entry after it probes) or a probe is out (`half_open`: its answer decides); `failure` is how the
- * lane's provider last failed (F4 D27), so an unreachable network is told from a provider that does
- * not answer.
+ * probe's answer instead of failing (F4 D7); `retryAfterMs` says how long the breaker stays shut,
+ * so a retry does not come back sooner. `breaker` says whether the open period runs (`open`: the
+ * next entry after it probes) or a probe is out (`half_open`: its answer decides); `failure` is how
+ * the lane's provider last failed (F4 D27), so an unreachable network is told from a provider that
+ * does not answer.
  */
 export class ProviderUnavailableError extends AiProviderError {
   public readonly lane: LaneKey;

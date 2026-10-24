@@ -302,10 +302,15 @@ describe.skipIf(!sidecarInstalled)("a provider outage through the job supervisor
         blockedReason: "network_unreachable",
         outcome: null
       });
-      // Back within about the breaker's open period: the next probe.
       expect(row.runAfterMs).toBeGreaterThan(started);
-      expect(row.runAfterMs).toBeLessThanOrEqual(Date.now() + 31_000);
     }
+    // The four whose own call failed come back within about the breaker's open period, as the next
+    // probe; the sixteen it refused sent nothing and wait for the probe's answer (`network_back`)
+    // or the recheck, so the outage costs one look per probe, not one per waiting task.
+    const probeBy = Date.now() + 31_000;
+    expect(outage.filter((row) => row.runAfterMs <= probeBy)).toHaveLength(4);
+    for (const row of outage.filter((row) => row.runAfterMs > probeBy))
+      expect(row.runAfterMs).toBeGreaterThan(Date.now() + 60_000);
     expect(outage.map((row) => row.dedupeKey).sort()).toEqual(
       relationIds.map((id) => relationExplainBackfillDedupeKey(id)).sort()
     );
@@ -380,6 +385,10 @@ describe.skipIf(!sidecarInstalled)("a provider outage through the job supervisor
     expect(transitions.map((t) => t.to)).toEqual(["open", "half_open", "open"]);
     for (const row of await outageRows())
       expect(row).toMatchObject({ status: "queued", attempts: 0, blockedClass: "offline" });
+    // Only the one that probed comes back soon, as the next probe: the outage's looks stay one per
+    // probe however many tasks wait.
+    const soon = Date.now() + 31_000;
+    expect((await outageRows()).filter((row) => row.runAfterMs <= soon)).toHaveLength(1);
 
     // --- The network is back: the next probe is answered and the breaker closes ----------------
     provider.up = true;

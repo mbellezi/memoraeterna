@@ -1,6 +1,7 @@
 import {
   AiProviderError,
   ProviderUnavailableError,
+  isConnectFailure,
   isTransientAiError,
   providerFailureKind
 } from "@app/ai";
@@ -84,15 +85,17 @@ export function isTransientJobFailure(error: unknown): boolean {
 
 /**
  * The blocker of a job whose AI call met a provider outage (F4 D7): the remote lane's circuit
- * breaker failed it fast (`ProviderUnavailableError`), or it failed in transport after the call's
- * own retries (DNS, a refused or reset connection: an `AiProviderError` of kind `network`). Such a
- * job waits, its attempt and dedupe key kept, instead of failing: `offline.network_unreachable`
- * when the network did not answer (the lane's memory of how its provider failed, F4 D27), else
- * `waiting.provider_unavailable`. It comes back when the breaker's open period ends, after
- * `providerProbeMs` when its own call reached the network (it is then the probe), or, refused while
- * another call probes, at that probe's answer (`network_back`) or the blocker recheck. Answers keep
- * their paths: 5xx, 429, deadlines and stalls back off; 4xx and invalid output fail. Null for any
- * other error, a database's refused connection included (it is no provider error).
+ * breaker failed it fast (`ProviderUnavailableError`), or its connection failed after the call's
+ * own retries (DNS, routing, a refused connection: {@link isConnectFailure}), so nothing reached
+ * the provider. Such a job waits, its attempt and dedupe key kept, instead of failing:
+ * `offline.network_unreachable` when the network did not answer (the lane's memory of how its
+ * provider failed, F4 D27), else `waiting.provider_unavailable`. A job whose own call failed comes
+ * back after `providerProbeMs`, as the next probe; a refused one sent nothing and waits for the
+ * probe's answer (`network_back`) or the blocker recheck, so a long outage costs one look per
+ * probe, not one per waiting task. Answers keep their paths: 5xx, 429, deadlines and stalls back
+ * off, and so does a reset or a cut stream (the request may have been sent, and a request that
+ * always breaks the connection must still run out of attempts); 4xx and invalid output fail. Null
+ * for any other error, a database's refused connection included (it is no provider error).
  */
 export function providerOutageBlocker(
   error: unknown,
@@ -101,15 +104,12 @@ export function providerOutageBlocker(
 ): GardenerBlocker | null {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
-    if (current instanceof ProviderUnavailableError) {
-      const clearsAt =
-        current.breaker === "open" ? now + Math.max(current.retryAfterMs ?? 0, 1_000) : null;
+    if (current instanceof ProviderUnavailableError)
       return current.failure === "unreachable"
-        ? gardenerBlocker("offline", "network_unreachable", { clearsAt })
-        : gardenerBlocker("waiting", "provider_unavailable", { clearsAt });
-    }
+        ? gardenerBlocker("offline", "network_unreachable", { clearsAt: null })
+        : gardenerBlocker("waiting", "provider_unavailable", { clearsAt: null });
     if (current instanceof AiProviderError) {
-      if (current.kind !== "network" || !current.transient) return null;
+      if (!isConnectFailure(current)) return null;
       const clearsAt = now + config.providerProbeMs;
       return providerFailureKind(current) === "unreachable"
         ? gardenerBlocker("offline", "network_unreachable", { clearsAt })

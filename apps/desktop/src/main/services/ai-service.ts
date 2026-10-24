@@ -2245,7 +2245,9 @@ export class AiService {
       durationMs: 0,
       ...queueAndAttempt(admission, context),
       ...lane({ error }),
-      ...budgetAudit(context, undefined, {}),
+      // Nothing was sent, so it cost nothing: without an estimate the monthly ledger would price
+      // the row at its output budget (F4 D14), once per refusal of a long outage (D7).
+      ...budgetAudit(context, nothingSent, {}),
       status: signal?.aborted ? "canceled" : "failed",
       error: redactSensitiveText(error),
       sourceItemIds: taskSourceItemIds(context)
@@ -4006,6 +4008,9 @@ function localModelTestClass(model: LocalModelRecord): AiWorkloadClass {
     ? "embed"
     : "answer";
 }
+
+/** The budget of a call that never started: no attempt was reserved or sent. */
+const nothingSent: Pick<RemoteBudgetTicket, "auditEstimateUsd"> = { auditEstimateUsd: () => 0 };
 
 /**
  * The RemoteBudget's audit of one call (0061): who it spent for, the job it ran for, and on a priced

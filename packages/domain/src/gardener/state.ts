@@ -82,7 +82,7 @@ export function gardenerStateOf(job: GardenerStateInput): GardenerState {
  * by the `gardener-retention` job. `blockRecheckMs`: a job set aside with no known clear time is
  * looked at again after it, so a missed clearing event never leaves it waiting for good.
  * `releaseDueBlocksEveryMs`: how often a worker releases the set-aside jobs whose clear time passed.
- * `providerProbeMs`: a job whose call failed in transport (an unreachable network, a refused
+ * `providerProbeMs`: a job whose connection to its provider failed (DNS, routing, a refused
  * connection) is set aside this long, about a remote lane's open period, so it comes back as the
  * probe that tells the provider is up again.
  */

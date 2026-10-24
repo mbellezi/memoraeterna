@@ -144,13 +144,16 @@ describe("provider outage (F4 D7): a wait, not a failure", () => {
   const transport = (code: string) =>
     toProviderNetworkError(Object.assign(new Error(`connect ${code}`), { code }));
 
-  it("sets aside a call the open breaker refused, until the probe may go", () => {
-    expect(
-      providerOutageBlocker(
-        new ProviderUnavailableError("remote:codex", 12_000, { failure: "unreachable" }),
-        now
-      )
-    ).toEqual({ class: "offline", reason: "network_unreachable", clearsAt: now + 12_000 });
+  it("sets aside a call the breaker refused until the probe answers or the recheck", () => {
+    // Nothing was sent: it waits for `network_back`, open period running or probe out alike, so a
+    // long outage costs one look per probe, not one per waiting task.
+    for (const breaker of ["open", "half_open"] as const)
+      expect(
+        providerOutageBlocker(
+          new ProviderUnavailableError("remote:codex", 12_000, { breaker, failure: "unreachable" }),
+          now
+        )
+      ).toEqual({ class: "offline", reason: "network_unreachable", clearsAt: null });
     // A provider that does not answer (refused, 5xx before the breaker opened): waiting for it.
     expect(
       providerOutageBlocker(
@@ -159,30 +162,34 @@ describe("provider outage (F4 D7): a wait, not a failure", () => {
         }),
         now
       )
-    ).toEqual({ class: "waiting", reason: "provider_unavailable", clearsAt: now + 1_000 });
-    // Refused while the probe is out: the probe's answer (network_back) or the recheck decides.
-    expect(
-      providerOutageBlocker(
-        new ProviderUnavailableError("remote:codex", 30_000, { breaker: "half_open" }),
-        now
-      )
     ).toEqual({ class: "waiting", reason: "provider_unavailable", clearsAt: null });
   });
 
-  it("sets aside a call that failed in transport, as the next probe", () => {
+  it("sets aside a call whose connection failed, as the next probe", () => {
     for (const code of ["ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "ENETDOWN", "EHOSTUNREACH"])
       expect(providerOutageBlocker(transport(code), now)).toEqual({
         class: "offline",
         reason: "network_unreachable",
         clearsAt: now + 30_000
       });
-    for (const code of ["ECONNREFUSED", "ECONNRESET", "UND_ERR_SOCKET"])
+    for (const code of ["ECONNREFUSED", "UND_ERR_CONNECT_TIMEOUT"])
       expect(providerOutageBlocker(transport(code), now, { providerProbeMs: 5_000 })).toEqual({
         class: "waiting",
         reason: "provider_unavailable",
         clearsAt: now + 5_000
       });
     expect(isProviderOutage(new Error("job failed", { cause: transport("ENOTFOUND") }))).toBe(true);
+  });
+
+  it("backs off a reset or a cut stream: the request may have been sent, again and again", () => {
+    // A request that always breaks its connection must run out of attempts, not wait for good.
+    for (const code of ["ECONNRESET", "EPIPE", "ECONNABORTED", "ETIMEDOUT", "UND_ERR_SOCKET"]) {
+      expect(isProviderOutage(transport(code))).toBe(false);
+      expect(isTransientJobFailure(transport(code))).toBe(true);
+    }
+    const cut = toProviderNetworkError(new TypeError("terminated"));
+    expect(isProviderOutage(cut)).toBe(false);
+    expect(isTransientJobFailure(cut)).toBe(true);
   });
 
   it("keeps answers on their paths: backoff for 5xx, 429 and deadlines, failure for 4xx", () => {

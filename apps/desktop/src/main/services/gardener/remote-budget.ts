@@ -110,9 +110,11 @@ export interface RemoteBudgetTicket {
   admitAttempt(attempt: number): Promise<void>;
   /**
    * Notes an attempt that failed: one the provider accepted without reporting its usage may have been
-   * billed, so its reservation stays as spend even when a later attempt reports its own usage.
+   * billed, so its reservation stays as spend even when a later attempt reports its own usage; one
+   * that never reached the provider (`unsent`: its connection failed) gives its reservation back, a
+   * call of the daily cap or its US$ estimate, so the probes of a long outage spend nothing.
    */
-  attemptFailed(failed: { attempt: number; unreported: boolean }): void;
+  attemptFailed(failed: { attempt: number; unreported: boolean; unsent?: boolean }): void;
   /**
    * What the audit row stores as `budget_estimate_usd` for the usage it records (0061), the US$ the
    * monthly ledger counts beyond the reported token counts: every admitted attempt's estimate when
@@ -256,8 +258,19 @@ export class RemoteBudget {
         return subscription ? null : state.reservedUsd;
       },
       attemptFailed: (failed) => {
-        // Every attempt that ran was admitted first, so its estimate is part of the reservation.
-        if (subscription || state.settled || !failed.unreported) return;
+        if (state.settled) return;
+        // Every attempt that ran was admitted first, so its estimate is part of the reservation; an
+        // attempt that sent nothing gives it back (D14 meters what reaches the provider).
+        if (failed.unsent) {
+          if (subscription) state.reservedCalls = Math.max(0, state.reservedCalls - 1);
+          else {
+            const left = state.reservedUsd - attemptUsd;
+            state.reservedUsd = left > 1e-12 ? left : 0;
+            state.unreportedUsd = Math.min(state.unreportedUsd, state.reservedUsd);
+          }
+          return;
+        }
+        if (subscription || !failed.unreported) return;
         state.unreportedUsd = Math.min(state.reservedUsd, state.unreportedUsd + attemptUsd);
       },
       auditEstimateUsd: (usage) =>

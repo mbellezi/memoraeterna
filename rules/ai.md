@@ -43,7 +43,7 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   admitted first, background classes age so none starves, no call preempts a running one, a retry
   backoff never holds a lane, and a caller's timeout excludes its wait for a lane. A remote lane
   whose provider keeps failing transiently fails new calls fast until a probe succeeds (a job that
-  meets this or a network failure waits, attempt kept); running calls and other lanes are untouched.
+  meets this or cannot connect waits, attempt kept); running calls and other lanes are untouched.
 - Remote generation streams, so remote calls have deadlines from execution start (connect, first
   byte, stalled stream, total). Only progress (answer text, or reasoning text before it) keeps a
   stream alive, not bytes or lifecycle events, and unless high-reasoning or local a request must

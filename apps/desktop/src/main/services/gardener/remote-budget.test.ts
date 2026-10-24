@@ -191,6 +191,28 @@ describe("the RemoteBudget's money meter", () => {
     expect(codex.auditEstimateUsd(usage)).toBeNull();
   });
 
+  it("counts nothing for attempts that never reached the provider (F4 D7)", async () => {
+    const { service } = budget({ cap: 100 });
+    // Every attempt failed to connect: no usage, and nothing reserved is left to count.
+    const probe = await service.open(call());
+    for (const attempt of [1, 2, 3]) {
+      await probe.admitAttempt(attempt);
+      probe.attemptFailed({ attempt, unreported: false, unsent: true });
+    }
+    expect((await service.snapshot()).money.reservedUsd).toBe(0);
+    expect(probe.auditEstimateUsd({})).toBe(0);
+    await probe.settle({});
+    expect((await service.snapshot()).money).toMatchObject({ spentUsd: 0, reservedUsd: 0 });
+    // One unsent attempt, then one the provider answered without usage: that one stays as spend.
+    const mixed = await service.open(call());
+    await mixed.admitAttempt(1);
+    mixed.attemptFailed({ attempt: 1, unreported: false, unsent: true });
+    await mixed.admitAttempt(2);
+    expect(mixed.auditEstimateUsd({})).toBeCloseTo(1, 12);
+    await mixed.settle({});
+    expect((await service.snapshot()).money.spentUsd).toBeCloseTo(1, 12);
+  });
+
   it("pauses past the pause share until the person continues, then stops at the cap", async () => {
     const { service, db } = budget({ cap: 5, ledger: [{ inputTokens: 0, outputTokens: 300_000 }] });
     // Spent 3 of 5: one more dollar reaches 4 (80%), a second would pass it.
@@ -355,6 +377,28 @@ describe("the RemoteBudget's call meter (subscription routes)", () => {
     expect(snapshot.money.spentUsd).toBe(0);
     // A P0 Codex call is admitted past the cap.
     await (await service.open(codex({ priority: 0 }))).admitAttempt(1);
+  });
+
+  it("gives back the call of an attempt that never reached the provider (F4 D7)", async () => {
+    // A long outage's probe: its connection fails at each attempt; nothing is sent, nothing used.
+    const { service, db } = budget({ calls: 2 });
+    const probe = await service.open(codex());
+    for (const attempt of [1, 2, 3]) {
+      await probe.admitAttempt(attempt);
+      probe.attemptFailed({ attempt, unreported: false, unsent: true });
+    }
+    expect((await service.snapshot()).calls).toMatchObject({ usedCalls: 0, reservedCalls: 0 });
+    await probe.settle({});
+    expect((await service.snapshot()).calls).toMatchObject({ usedCalls: 0, reservedCalls: 0 });
+    // A sent attempt still counts, even when its call failed afterwards.
+    const sent = await service.open(codex());
+    await sent.admitAttempt(1);
+    sent.attemptFailed({ attempt: 1, unreported: false, unsent: true });
+    await sent.admitAttempt(2);
+    sent.attemptFailed({ attempt: 2, unreported: false });
+    await sent.settle({});
+    expect(db.settings.get(subscriptionDailyCallsSettingKey)).toMatchObject({ calls: 1 });
+    expect((await service.snapshot()).calls).toMatchObject({ usedCalls: 1, reservedCalls: 0 });
   });
 
   it("starts each local day from the stored count of that day only", async () => {

@@ -201,7 +201,9 @@ describe("the circuit breaker of a remote lane on the AI service", () => {
       durationMs: 0,
       retryWaitMs: 0,
       requeueMs: 0,
-      provider: "openai-codex"
+      provider: "openai-codex",
+      // Nothing was sent: the monthly ledger counts it as nothing, not at its output budget.
+      budgetEstimateUsd: 0
     });
     expect(logger.info).toHaveBeenCalledWith(
       `AI lane ${codexLane}: circuit breaker closed -> open (failures)`

@@ -4,6 +4,7 @@ import {
   AiProviderError,
   aiErrorRetryAfterMs,
   classifyHttpFailure,
+  isConnectFailure,
   isTransientAiError,
   providerHttpError,
   providerStreamError,
@@ -208,5 +209,35 @@ describe("transient error detection", () => {
     expect(wrapped).toMatchObject({ kind: "network", transient: true, code: "ECONNRESET" });
     const invalid = new TypeError("Invalid URL");
     expect(toProviderNetworkError(invalid)).toBe(invalid);
+  });
+
+  it("tells a connection that never existed from one that broke after the request (F4 D7, D14)", () => {
+    const failed = (code: string) =>
+      new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+    for (const code of [
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "ENETUNREACH",
+      "ENETDOWN",
+      "EHOSTUNREACH",
+      "ECONNREFUSED",
+      "UND_ERR_CONNECT_TIMEOUT"
+    ]) {
+      expect(isConnectFailure(failed(code))).toBe(true);
+      expect(isConnectFailure(toProviderNetworkError(failed(code)))).toBe(true);
+    }
+    // The request may have been sent: a reset, a closed socket, a cut stream, a read timeout.
+    for (const code of ["ECONNRESET", "EPIPE", "ECONNABORTED", "ETIMEDOUT", "UND_ERR_SOCKET"])
+      expect(isConnectFailure(toProviderNetworkError(failed(code)))).toBe(false);
+    expect(isConnectFailure(toProviderNetworkError(new TypeError("terminated")))).toBe(false);
+    // An answer, a deadline or another error is no connection failure.
+    expect(
+      isConnectFailure(new AiProviderError("busy", { kind: "http", transient: true, status: 503 }))
+    ).toBe(false);
+    expect(
+      isConnectFailure(new AiProviderError("late", { kind: "timeout", transient: true }))
+    ).toBe(false);
+    expect(isConnectFailure(new Error("job failed"))).toBe(false);
+    expect(isConnectFailure(undefined)).toBe(false);
   });
 });

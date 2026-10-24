@@ -237,6 +237,33 @@ export function providerFailureKind(error: unknown): LaneFailureKind | undefined
   return undefined;
 }
 
+/**
+ * Transport failures before a connection existed: DNS and routing, a refused connection, the HTTP
+ * client's connect deadline. None of the request reached the provider.
+ */
+const connectFailureCodes = new Set([
+  ...unreachableSystemCodes,
+  "ECONNREFUSED",
+  "UND_ERR_CONNECT_TIMEOUT"
+]);
+
+/**
+ * Whether a call failed before it reached its provider (F4 D7, D14): a transport failure while
+ * connecting, so nothing was sent and nothing can be billed. A reset, a closed socket or a cut
+ * stream may come after the request was sent (and again for the same request), so it is not one.
+ */
+export function isConnectFailure(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof AiProviderError)
+      return current.kind === "network" && connectFailureCodes.has(current.code ?? "");
+    if (isTransientSystemError(current))
+      return connectFailureCodes.has(systemErrorCode(current) ?? "");
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** The delay a failed operation asks for before it is tried again, when the provider named one. */
 export function aiErrorRetryAfterMs(error: unknown): number | undefined {
   for (let depth = 0; depth < 5 && error !== undefined && error !== null; depth++) {

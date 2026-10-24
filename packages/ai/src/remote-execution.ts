@@ -8,6 +8,7 @@ import type { AiTaskRequest, AiTaskResult, AiWorkloadClass } from "./contracts.j
 import {
   AiProviderError,
   aiErrorRetryAfterMs,
+  isConnectFailure,
   isTransientAiError,
   providerFailureKind,
   toProviderNetworkError
@@ -301,7 +302,9 @@ export type RemoteAttemptAdmission = (attempt: number) => void | Promise<void>;
  * even though it failed, such as a stream that stalled after its deltas: when the provider did not
  * report both of its token counts it is `unreported`, and the RemoteBudget keeps its reservation as
  * spend instead of counting it as zero. An attempt the provider answered with an error status, or
- * that never got an answer, was not accepted.
+ * that never got an answer, was not accepted. An attempt whose connection failed before any of its
+ * requests got an answer (DNS, routing, a refused connection) is `unsent`: nothing reached the
+ * provider, so the RemoteBudget gives its reservation back (a long outage's probes cost nothing).
  */
 export interface FailedRemoteAttempt {
   /** Counts from 1, as {@link RemoteAttemptAdmission}'s `attempt`. */
@@ -310,6 +313,8 @@ export interface FailedRemoteAttempt {
   usage: PartialTokenUsage;
   /** The provider accepted the attempt and did not report both of its token counts. */
   unreported: boolean;
+  /** None of its requests reached the provider: the connection failed first. */
+  unsent: boolean;
 }
 
 export type RemoteAttemptObserver = (failed: FailedRemoteAttempt) => void;
@@ -515,7 +520,8 @@ export async function runRemoteCall<T>(
           usage: { ...call.usage },
           unreported:
             call.accepted &&
-            (call.usage.inputTokens === undefined || call.usage.outputTokens === undefined)
+            (call.usage.inputTokens === undefined || call.usage.outputTokens === undefined),
+          unsent: !call.answered && isConnectFailure(failure)
         });
       } finally {
         call.dispose();
@@ -596,6 +602,8 @@ export class RemoteAttempt {
   public wireOptions: RemoteRequestOptions | undefined;
   /** The provider accepted one of its requests (a 2xx response): it may bill it even if it fails. */
   public accepted = false;
+  /** The provider answered one of its requests with a response of any status. */
+  public answered = false;
   private readonly controller = new AbortController();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private answerTimer: ReturnType<typeof setTimeout> | undefined;
@@ -622,6 +630,7 @@ export class RemoteAttempt {
     const timed = this.options.streaming && !this.options.local;
     if (timed) this.arm("connect", this.options.connectMs);
     const response = await this.guard(fetchImplementation(input, { ...init, signal: this.signal }));
+    this.answered = true;
     if (response.ok) this.accepted = true;
     if (timed) this.arm("firstByte", this.options.firstByteMs);
     else this.disarm();
