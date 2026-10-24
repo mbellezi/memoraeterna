@@ -60,6 +60,11 @@ export interface TopicTreeServicesOptions {
   changesDelayMs?: number;
   /** The configuration of a new tree (default: the engine's start values); tests shrink it. */
   newTreeConfig?: () => TopicTreeConfig;
+  /**
+   * A rebuild for a changed structural configuration (the tree shape control, F4 D13) is proposed
+   * for review, not applied (D11). Default off: the engine's tests change the configuration freely.
+   */
+  reviewConfigChanges?: boolean;
   /** Clusters builds (default: the clustering worker thread); scripts and tests run it in process. */
   clusterTopics?: ClusterTopics;
   /**
@@ -118,6 +123,11 @@ export interface TopicTreeServices {
   spaceChange: TopicSpaceChange;
   /** Startup: ensures the active tree (D39) and enqueues the sweep. Never throws. */
   start(): Promise<void>;
+  /**
+   * The tree shape control changed (F4 D13): the active tree's build reads the structural
+   * configuration again and proposes a rebuild for review. Never throws.
+   */
+  shapeChanged(): Promise<void>;
   /** After a library reset's defaults: an empty active tree again (D39). Never throws. */
   ensureActiveTree(): Promise<EnsureTreeResult | null>;
   holdTopicJobs(): void;
@@ -228,6 +238,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     aiMode,
     isRegistered,
     effectiveConfig: () => options.newTreeConfig?.() ?? defaultTopicTreeConfig,
+    ...(options.reviewConfigChanges ? { reviewConfigChanges: true } : {}),
     spaceChange,
     // F4 D19 (5): the audit asks the naming job (created below) to name again the topics whose
     // names drifted from the theme of their members.
@@ -477,6 +488,14 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       // Topics an earlier run left without a name, and Areas a build left ungrouped (never throw).
       await naming?.requestIfNeeded(treeId);
       await areas?.requestIfNeeded(treeId);
+    },
+    async shapeChanged() {
+      try {
+        const ensured = await ensureActiveTree();
+        if (ensured?.kind === "ready") await structure.configChanged(ensured.tree.id);
+      } catch (error) {
+        logger?.error("The tree shape change could not be handed to the build", error);
+      }
     },
     ensureActiveTree,
     holdTopicJobs: () => topicService.holdTopicJobs(),

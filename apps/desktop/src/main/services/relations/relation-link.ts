@@ -176,6 +176,14 @@ export function isInteractiveRun(run: Pick<IngestionRunRecord, "trigger">): bool
 }
 
 /**
+ * A link job an accepted backlog queued (F4 Q4) and no import parked for: it runs at P3, behind
+ * every ordinary job. A job an import parked for keeps the import's priority.
+ */
+export function isBacklogLink(job: Pick<JobRecord, "payload">, runs: readonly unknown[]): boolean {
+  return job.payload.backlog === true && runs.length === 0;
+}
+
+/**
  * Who a link job spends for (F4 D14): the imports whose runs parked for it (`user`, counted and
  * never refused); a job with no parked run (a re-match's carried notes, a discovery the daily cap
  * deferred) is background work, metered and refused at the remote caps.
@@ -262,6 +270,8 @@ export async function enqueueRelationLink(
     batchId?: string | null;
     interactive?: boolean;
     discovery?: { regenerate: boolean; notBefore: Date };
+    /** An accepted backlog's discovery (F4 Q4): behind every ordinary job, at P3. */
+    backlog?: boolean;
   }
 ): Promise<JobRecord> {
   const discovery = input.discovery
@@ -279,9 +289,10 @@ export async function enqueueRelationLink(
       rootId: input.rootId,
       sourceItemId: input.rootId,
       ...(input.batchId ? { batchId: input.batchId } : {}),
+      ...(input.backlog ? { backlog: true } : {}),
       ...discovery
     },
-    priority: input.interactive ? 1 : 0,
+    priority: input.interactive ? 1 : input.backlog ? -1 : 0,
     debounce: delayMs > 0 ? { delayMs, maxDelayMs: delayMs } : immediateJobDebounce,
     maxAttempts: 3
   });
@@ -670,7 +681,7 @@ export class RelationLinker {
     const runs = await runRepository.listLinkingRuns(rootId);
     const runtime = this.runtime();
     const interactive = runs.some(isInteractiveRun);
-    const priority: AiPriorityInput = interactive ? "P1" : "P2";
+    const priority: AiPriorityInput = interactive ? "P1" : isBacklogLink(job, runs) ? "P3" : "P2";
     const budgetClass = linkJobBudgetClass(runs);
     const roots = new Map<string, string>();
     // Drain mode types each run's pairs by themselves, in decide order: a prompt never depends on
@@ -1171,7 +1182,8 @@ export class RelationLinker {
       )
     )
       return deferred("records_pending");
-    const priority: AiPriorityInput = input.interactive ? "P1" : "P2";
+    const backlog = isBacklogLink(input.job, input.runs);
+    const priority: AiPriorityInput = input.interactive ? "P1" : backlog ? "P3" : "P2";
     const regenerate =
       input.job.payload.regenerate === true ||
       input.runs.some((run) => run.previousArtifactPolicy === "regenerate_selected");
@@ -1180,7 +1192,8 @@ export class RelationLinker {
       const notBefore = nextLocalDay(new Date());
       await enqueueRelationLink(pool, {
         rootId: input.rootId,
-        discovery: { regenerate, notBefore }
+        discovery: { regenerate, notBefore },
+        ...(backlog ? { backlog } : {})
       });
       return {
         summary: { status: "deferred", reason: "daily_cap", retryAfter: notBefore.toISOString() }

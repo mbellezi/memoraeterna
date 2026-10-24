@@ -925,6 +925,10 @@ export class TopicTreeService {
       );
       if (outcome.kind === "applied") {
         await this.afterHumanCommit(cache, outcome, settled.changedTopicIds);
+        // A rebuild proposed for a new tree shape moved the tree's configuration with it: the cache
+        // reads the tree again, or the next audit would ask for the same rebuild (F4 D13).
+        if ((await repository.activeTree())?.configHash !== cache.tree.configHash)
+          this.cache = null;
         return { status: "applied" };
       }
       this.cache = null;

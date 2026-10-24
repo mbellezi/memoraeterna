@@ -24,6 +24,7 @@ export * from "./source-discovery.js";
 
 export * from "./matching-settings.js";
 export * from "./matching-presets.js";
+export * from "./matching-calibration.js";
 export * from "./matching-settings-migration.js";
 export * from "./wiki.js";
 

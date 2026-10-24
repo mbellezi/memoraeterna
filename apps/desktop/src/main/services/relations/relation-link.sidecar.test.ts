@@ -654,6 +654,49 @@ describe.skipIf(!sidecarInstalled)("the link job on a real PostgreSQL database",
     expect(queued.rows).toEqual([{ due: true }]);
   });
 
+  it("runs the discovery an accepted backlog queued at the lowest priority, and keeps it so when the cap defers it (F4 Q4)", async () => {
+    const a = await seedSource("Backlog root");
+    const queuedJob = await enqueueRelationLink(pool!, {
+      rootId: a.sourceId,
+      backlog: true,
+      discovery: { regenerate: false, notBefore: new Date() }
+    });
+    expect(queuedJob.priority).toBe(-1);
+    expect(queuedJob.payload).toEqual({
+      rootId: a.sourceId,
+      sourceItemId: a.sourceId,
+      backlog: true,
+      discover: true
+    });
+    const run = linker();
+    const result = await run.instance.link(await claim(a.sourceId), signal());
+    // No import parked for it: background work at P3, behind everything, judging under the values in force.
+    expect(run.discovered).toEqual([
+      expect.objectContaining({ rootId: a.sourceId, regenerate: false, priority: "P3" })
+    ]);
+    expect(result).toMatchObject({ runs: 0, priority: "P3", discovery: { status: "completed" } });
+
+    // At the day's cap it waits for the next day, still a backlog's job at the lowest priority.
+    await enqueueRelationLink(pool!, {
+      rootId: a.sourceId,
+      backlog: true,
+      discovery: { regenerate: false, notBefore: new Date() }
+    });
+    const capped = linker({ cap: 0 });
+    await capped.instance.link(await claim(a.sourceId), signal());
+    const waiting = await pool!.query<{ payload: unknown; priority: number }>(
+      `select payload, priority from jobs where type = 'relation-link' and status = 'queued'
+         and payload->>'rootId' = $1`,
+      [a.sourceId]
+    );
+    expect(waiting.rows).toEqual([
+      {
+        payload: { rootId: a.sourceId, sourceItemId: a.sourceId, backlog: true, discover: true },
+        priority: -1
+      }
+    ]);
+  });
+
   it("tells drain mode when relation work is still to run, but not work queued for a later day", async () => {
     const types = ["relation-link", "relation-retype"];
     const a = await seedSource("Omega");

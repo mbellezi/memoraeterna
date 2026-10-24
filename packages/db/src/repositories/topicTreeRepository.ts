@@ -1527,6 +1527,19 @@ async function commitChangeSet(db: Queryable, input: CommitInput): Promise<Appli
   };
 }
 
+/** The structural configuration a pending rebuild proposal carries in its summary, or undefined. */
+function proposedTreeConfig(
+  summary: Record<string, unknown> | null
+): { config: Record<string, unknown>; configHash: string } | undefined {
+  const carried = summary?.treeConfig;
+  if (!carried || typeof carried !== "object") return undefined;
+  const { config, configHash } = carried as { config?: unknown; configHash?: unknown };
+  if (typeof configHash !== "string" || configHash.length === 0 || configHash.length > 200)
+    return undefined;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return undefined;
+  return { config: config as Record<string, unknown>, configHash };
+}
+
 /** The tree conflict that stops a writer before any change, or null. */
 function treeConflict(
   tree: TopicTreeRecord,
@@ -2342,8 +2355,11 @@ export function createTopicTreeRepository(pool: PgPool) {
         runWriter(pool, options, [treeLockKey(input.treeId)], async (writer) => {
           const tree = await requireTree(writer, input.treeId);
           const row = (
-            await writer.query<{ status: TopicChangeSetStatus }>(
-              "select status from topic_change_sets where id = $1 and tree_id = $2 for update",
+            await writer.query<{
+              status: TopicChangeSetStatus;
+              summary: Record<string, unknown> | null;
+            }>(
+              "select status, summary from topic_change_sets where id = $1 and tree_id = $2 for update",
               [input.changeSetId, tree.id]
             )
           ).rows[0];
@@ -2370,7 +2386,10 @@ export function createTopicTreeRepository(pool: PgPool) {
             changeSet: { pendingId: input.changeSetId },
             events,
             stats: input.stats ?? [],
-            clock: input.clock
+            clock: input.clock,
+            // A rebuild proposed for a new structural configuration (the tree shape) moves the tree
+            // to it when it is applied: it carries the configuration it was made for (F4 D13).
+            treeConfig: proposedTreeConfig(row.summary)
           });
         })
       );

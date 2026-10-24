@@ -3,11 +3,35 @@
 // itself (decisions are provenance); it posts one `backlog` finding of the Inbox, unique per
 // decider, and the owner's acceptance queues the affected notes' MATCH jobs at the lowest priority.
 // A dismissal keeps every stored decision and is not asked again for that decider.
+//
+// A change of the matching values (F4 Q4) is offered the same way, as the `settings_changed`
+// reason of the same task: saving a value enqueues nothing and rewrites no decision; the notes and
+// source pairs decided while other values were in force are counted, and the owner's acceptance
+// queues them at the lowest priority (the notes' MATCH jobs, and the discovery of the roots whose
+// pairs were judged, which judges them again under the values in force).
 import { sha256 } from "@app/conversion";
-import { createRelationMatchBacklogRepository, immediateJobDebounce, type PgPool } from "@app/db";
-import { relationsConfig as defaultRelationsConfig, type RelationsConfig } from "@app/domain";
+import {
+  createRelationMatchBacklogRepository,
+  createSettingsRepository,
+  immediateJobDebounce,
+  type MatchBacklogReason,
+  type PgPool
+} from "@app/db";
+import {
+  relationsConfig as defaultRelationsConfig,
+  type MatchingConfiguration,
+  type RelationsConfig
+} from "@app/domain";
 
+import { enqueueRelationLink } from "./relation-link.js";
 import { enqueueMatchJob } from "./relation-match.js";
+import {
+  matchValueHashes,
+  matchValuesHistorySettingKey,
+  otherValueRanges,
+  recordMatchValues,
+  type MatchValuesHistory
+} from "./relation-match-values.js";
 
 export interface RelationMatchBacklogDeps {
   getPool: () => PgPool;
@@ -15,8 +39,11 @@ export interface RelationMatchBacklogDeps {
   deciderKey: () => Promise<string | null>;
   /** The embedding space the route writes to; notes matched in another space re-embed first. */
   spaceKey?: () => Promise<string | null>;
+  /** The matching values in force (F4 Q4); absent, a change of values offers nothing. */
+  matchingValues?: () => Promise<MatchingConfiguration>;
   config?: RelationsConfig;
   wake?: () => void;
+  now?: () => Date;
 }
 
 export type MatchBacklogOffer =
@@ -28,6 +55,14 @@ export type MatchBacklogOffer =
   | { status: "offered" | "updated"; notes: number; findingId: string }
   /** The owner dismissed (or accepted) the offer for this decider: it stays closed. */
   | { status: "closed"; notes: number };
+
+export type MatchSettingsOffer =
+  /** Nothing was decided under other matching values: nothing is offered. */
+  | { status: "none"; notes: 0; pairs: 0 }
+  /** The offer for the values in force is a new Inbox item, or its counts were updated. */
+  | { status: "offered" | "updated"; notes: number; pairs: number; findingId: string }
+  /** The owner dismissed (or accepted) the offer for these values: it stays closed. */
+  | { status: "closed"; notes: number; pairs: number };
 
 export type MatchBacklogAcceptance =
   | { status: "queued"; queued: number }
@@ -41,11 +76,25 @@ export const matchBacklogFingerprint = (deciderKey: string) =>
   `match:${sha256(deciderKey).slice(0, 40)}`;
 
 /**
+ * The finding fingerprint of the matching values in force: one offer per change of values, from
+ * the moment they came into force, so a dismissal persists and a later change is offered anew.
+ */
+export const matchSettingsFingerprint = (history: MatchValuesHistory) => {
+  const current = history.periods.at(-1)!;
+  return `settings:${sha256(`${current.from ?? "start"}|${current.note}|${current.pair}`).slice(0, 40)}`;
+};
+
+const reasonOf = (params: Record<string, unknown>): MatchBacklogReason =>
+  params.reason === "settings_changed" ? "settings_changed" : "decider_changed";
+
+/**
  * The optional re-match a decider change offers (F4 D9, D16): "n notes were matched by another
  * model". Nothing is queued until the owner accepts; a dismissal keeps every stored decision.
  */
 export class RelationMatchBacklog {
   private readonly config: RelationsConfig;
+  /** Offers of values run one at a time: each reads the history the last one wrote. */
+  private settingsTurn: Promise<unknown> = Promise.resolve();
 
   public constructor(private readonly deps: RelationMatchBacklogDeps) {
     this.config = deps.config ?? defaultRelationsConfig;
@@ -94,6 +143,74 @@ export class RelationMatchBacklog {
   }
 
   /**
+   * Notes the matching values in force and, when they changed since last seen, counts the notes and
+   * source pairs decided while other values were in force and posts (or updates) the `backlog`
+   * finding of the Inbox. Nothing is queued and no stored decision, relation or key is touched:
+   * a saved value applies to new decisions only. Called after a save (with the values it replaced,
+   * which open the history when it has none) and at start for a change made while the app was
+   * closed (the first sight of the values opens the history and offers nothing).
+   */
+  public offerSettings(
+    options: { before?: MatchingConfiguration } = {}
+  ): Promise<MatchSettingsOffer> {
+    const turn = this.settingsTurn.then(() => this.offerSettingsNow(options.before));
+    this.settingsTurn = turn.catch(() => undefined);
+    return turn;
+  }
+
+  private async offerSettingsNow(before?: MatchingConfiguration): Promise<MatchSettingsOffer> {
+    const none = { status: "none", notes: 0, pairs: 0 } as const;
+    if (!this.deps.matchingValues) return none;
+    const pool = this.deps.getPool();
+    const history = await this.recordedValues(pool, before);
+    const repository = createRelationMatchBacklogRepository(pool);
+    const spaceKey = (await this.deps.spaceKey?.()) ?? null;
+    const notes = await repository.countDecidedIn({
+      ranges: otherValueRanges(history, "note"),
+      spaceKey
+    });
+    const pairs = await repository.countPairsDecidedIn(otherValueRanges(history, "pair"));
+    if (notes + pairs === 0) {
+      await repository.resolveOpen(null, "settings_changed");
+      return none;
+    }
+    const fingerprint = matchSettingsFingerprint(history);
+    await repository.resolveOpen(fingerprint, "settings_changed");
+    const offered = await repository.offer({
+      fingerprint,
+      params: { task: "match", reason: "settings_changed", notes, pairs }
+    });
+    if (!offered) return { status: "closed", notes, pairs };
+    return {
+      status: offered.created ? "offered" : "updated",
+      notes,
+      pairs,
+      findingId: offered.finding.id
+    };
+  }
+
+  /**
+   * The history of the matching values with the ones in force recorded (written when it moved).
+   * A history that does not exist yet starts from `before` when a save names the values it replaced.
+   */
+  private async recordedValues(
+    pool: PgPool,
+    before?: MatchingConfiguration
+  ): Promise<MatchValuesHistory> {
+    const settings = createSettingsRepository(pool);
+    const now = this.deps.now?.() ?? new Date();
+    const hashesOf = (values: MatchingConfiguration) =>
+      matchValueHashes(values, this.config.sourceJudge);
+    let stored = await settings.get(matchValuesHistorySettingKey);
+    const started = stored !== null;
+    if (!started && before) stored = recordMatchValues(null, hashesOf(before), now).history;
+    const recorded = recordMatchValues(stored, hashesOf(await this.deps.matchingValues!()), now);
+    if (recorded.changed || !started)
+      await settings.set(matchValuesHistorySettingKey, recorded.history);
+    return recorded.history;
+  }
+
+  /**
    * The owner accepted the offer: the affected notes are queued at the lowest priority, a page at
    * a time, one job per note (a note already queued is not queued twice), then the finding is
    * resolved. Interrupted, the finding stays open and accepting again queues what is left.
@@ -103,6 +220,8 @@ export class RelationMatchBacklog {
     const repository = createRelationMatchBacklogRepository(pool);
     const finding = await repository.find(findingId);
     if (!finding || finding.status !== "open") return { status: "closed" };
+    if (reasonOf(finding.params) === "settings_changed")
+      return this.acceptSettings(finding.id, finding.fingerprint);
     const deciderKey = await this.currentDeciderKey();
     if (!deciderKey) return { status: "waiting" };
     if (finding.fingerprint !== matchBacklogFingerprint(deciderKey)) {
@@ -130,5 +249,76 @@ export class RelationMatchBacklog {
     await repository.resolve(finding.id);
     if (queued > 0) this.deps.wake?.();
     return { status: "queued", queued };
+  }
+
+  /**
+   * Accepting an offer of changed matching values: the notes decided under other values get a
+   * MATCH job and the roots that judged pairs under other values get a discovery job, both at the
+   * lowest priority (the link job runs as background work: refused at the caps, behind everything).
+   * The pairs themselves are judged again by that discovery, under the values in force; a pair
+   * decided under the same values is found decided and not judged twice.
+   */
+  private async acceptSettings(
+    findingId: string,
+    fingerprint: string
+  ): Promise<MatchBacklogAcceptance> {
+    const pool = this.deps.getPool();
+    const repository = createRelationMatchBacklogRepository(pool);
+    const history = await this.settingsTurnRecorded(pool);
+    if (!history || fingerprint !== matchSettingsFingerprint(history)) {
+      await repository.resolve(findingId);
+      return { status: "stale" };
+    }
+    const spaceKey = (await this.deps.spaceKey?.()) ?? null;
+    const debounce = immediateJobDebounce;
+    const pageSize = this.config.match.backlogPageSize;
+    let queued = 0;
+    const noteRanges = otherValueRanges(history, "note");
+    for (let after: string | null = null; ;) {
+      const page = await repository.listDecidedIn({
+        ranges: noteRanges,
+        spaceKey,
+        afterNoteId: after,
+        limit: pageSize
+      });
+      for (const { noteId, rootId } of page) {
+        await enqueueMatchJob(pool, { noteId, rootId, backlog: true, debounce });
+        queued += 1;
+      }
+      const last = page.at(-1);
+      if (!last || page.length < pageSize) break;
+      after = last.noteId;
+    }
+    const pairRanges = otherValueRanges(history, "pair");
+    const notBefore = this.deps.now?.() ?? new Date();
+    for (let after: string | null = null; ;) {
+      const page = await repository.listPairRootsDecidedIn({
+        ranges: pairRanges,
+        afterRootId: after,
+        limit: pageSize
+      });
+      for (const rootId of page) {
+        await enqueueRelationLink(pool, {
+          rootId,
+          backlog: true,
+          discovery: { regenerate: false, notBefore }
+        });
+        queued += 1;
+      }
+      const last = page.at(-1);
+      if (last === undefined || page.length < pageSize) break;
+      after = last;
+    }
+    await repository.resolve(findingId);
+    if (queued > 0) this.deps.wake?.();
+    return { status: "queued", queued };
+  }
+
+  /** The history with the values in force recorded; null when the values cannot be read. */
+  private async settingsTurnRecorded(pool: PgPool): Promise<MatchValuesHistory | null> {
+    if (!this.deps.matchingValues) return null;
+    const turn = this.settingsTurn.then(() => this.recordedValues(pool));
+    this.settingsTurn = turn.catch(() => undefined);
+    return turn;
   }
 }

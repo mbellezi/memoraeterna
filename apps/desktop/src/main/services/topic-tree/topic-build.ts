@@ -165,6 +165,13 @@ export interface TopicStructureJobsOptions {
   isRegistered: (type: string) => boolean;
   /** The configuration the active tree should have now; a new structural hash rebuilds it (D39). */
   effectiveConfig: () => TopicTreeConfig;
+  /**
+   * A rebuild for a new structural configuration (the tree shape the person chose, F4 D13) waits
+   * for review instead of being applied: a tree-shape rebuild is always reviewed (D11). The
+   * product turns this on; the engine's own tests and scripts, which change the configuration to
+   * exercise the rebuild, leave it off.
+   */
+  reviewConfigChanges?: boolean;
   /** Default: the clustering worker thread of a supervisor of its own. */
   clusterTopics?: ClusterTopics;
   /** The re-embedding of a space change (D26); default: one on the same pool and resolver. */
@@ -461,6 +468,17 @@ export class TopicStructureJobs {
    * build re-embeds the library (local route) or waits for it, then moves the tree.
    */
   public spaceChanged(treeId: string): Promise<void> {
+    return this.guard(() =>
+      this.request(topicJobTypes.build, treeId, { immediate: true }).then(() => undefined)
+    );
+  }
+
+  /**
+   * The structural configuration the tree is built under moved (the tree shape control, F4 D13): the
+   * build compares its hash with the tree's and proposes a rebuild for review. It is never applied
+   * by itself, and a proposal that already waits blocks a second one.
+   */
+  public configChanged(treeId: string): Promise<void> {
     return this.guard(() =>
       this.request(topicJobTypes.build, treeId, { immediate: true }).then(() => undefined)
     );
@@ -1408,10 +1426,16 @@ export class TopicStructureJobs {
       }
     }
     const events = [...rebuilt.events, ...editor.events];
+    // A rebuild for a new structural configuration that moves nothing has nothing to review: it is
+    // applied, which records the configuration (a proposal with no events would never be stored,
+    // and the tree would be rebuilt again for the same configuration at every audit).
+    const reviewedConfig =
+      reason === "config" && this.options.reviewConfigChanges === true && events.length > 0;
     const review =
       reason === "space"
         ? rebuilt.review.protectedTouched
-        : rebuildNeedsReview(reason, rebuilt.review, isYoungLibrary(youngNotes, plan.config));
+        : reviewedConfig ||
+          rebuildNeedsReview(reason, rebuilt.review, isYoungLibrary(youngNotes, plan.config));
     const report = shapeReport(state, plan.config, { areasActive: areasActive(state) });
     const summary = {
       ...this.buildSummary(plan, partition, state, report),
@@ -1425,7 +1449,16 @@ export class TopicStructureJobs {
       establishedShare: rebuilt.establishedShare,
       exactMatching: rebuilt.plan.exact,
       review: { ...rebuilt.review, required: review },
-      ...(plan.space ? { from: plan.space.from, spaceKey: plan.space.treeSpace.spaceKey } : {})
+      ...(plan.space ? { from: plan.space.from, spaceKey: plan.space.treeSpace.spaceKey } : {}),
+      // A proposal carries the configuration it was made for: applying it moves the tree to it.
+      ...(review && plan.configChanged
+        ? {
+            treeConfig: {
+              config: JSON.parse(JSON.stringify(plan.config)) as Record<string, unknown>,
+              configHash: plan.configHash
+            }
+          }
+        : {})
     };
     const repository = createTopicTreeRepository(this.requirePool());
     const meta = {
