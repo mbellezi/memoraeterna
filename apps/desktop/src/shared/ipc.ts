@@ -31,6 +31,8 @@ import {
   type ObsidianEditReceipt
 } from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
+import type { OnboardingFinishInput, OnboardingState } from "@app/domain";
+import type { OnboardingHardware } from "./onboarding.js";
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
@@ -196,6 +198,9 @@ export const ipcChannels = {
   viewHistoryChanged: "app:view-history:changed",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
+  onboardingState: "app:onboarding:state",
+  onboardingFinish: "app:onboarding:finish",
+  hardwareProfile: "app:hardware:profile",
   googleBooksKeyStatus: "app:settings:google-books-key:status",
   googleBooksKeyUpdate: "app:settings:google-books-key:update",
   appSettingsGet: "app:settings:app:get",
@@ -2064,6 +2069,16 @@ export interface DesktopApi {
   database: {
     getStatus: () => Promise<DatabaseStatus>;
     start: () => Promise<DatabaseStatus>;
+  };
+  /** The first run (F4 D31): whether its full-window view is due, and how it ended. */
+  onboarding: {
+    state: () => Promise<OnboardingState>;
+    /** Records that the three steps were finished or skipped; the first record stays. */
+    finish: (input: OnboardingFinishInput) => Promise<OnboardingState>;
+  };
+  /** This computer as the first run's tier card reads it (the probe and the tier table: T97). */
+  hardware: {
+    profile: () => Promise<OnboardingHardware>;
   };
   settings: {
     getGoogleBooksKeyStatus: () => Promise<{ configured: boolean }>;

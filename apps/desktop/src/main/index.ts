@@ -29,6 +29,8 @@ import {
 import { registerGardenerStatusIpc } from "./services/gardener/status-ipc.js";
 import { HardwareService } from "./services/hardware/hardware-service.js";
 import { registerHardwareIpc } from "./services/hardware/ipc.js";
+import { registerOnboardingIpc } from "./services/onboarding/onboarding-ipc.js";
+import { OnboardingService, pgOnboardingStore } from "./services/onboarding/onboarding-service.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -818,6 +820,13 @@ void app.whenReady().then(() => {
   registerHardwareIpc(
     ipcMain,
     new HardwareService({ userDataPath: app.getPath("userData"), logger: console })
+  );
+  // F4 D31: whether the first-run view is due (an empty library and no record), and how it ended.
+  registerOnboardingIpc(
+    ipcMain,
+    new OnboardingService({
+      store: pgOnboardingStore(() => databaseService?.getPool() ?? null)
+    })
   );
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
