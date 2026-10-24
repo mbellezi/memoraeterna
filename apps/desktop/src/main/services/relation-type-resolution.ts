@@ -66,9 +66,34 @@ export function compareConfirmationCandidates(
   );
 }
 
+/**
+ * Names a row's candidates, in order. A candidate in `rowKeys` (an earlier row's provisional identity,
+ * F4 D20) takes that row's key, so a call never lists a candidate that reads exactly like one of its
+ * rows; any other takes `c<n>`, numbered in `keys` by first appearance. The pinned path passes no row
+ * keys and keeps its recorded aliases.
+ */
+export function aliasCandidates<T extends { key: string }>(
+  candidates: readonly T[],
+  keys: Map<string, string>,
+  rowKeys: ReadonlyMap<string, string>
+): T[] {
+  return candidates.map((candidate) => {
+    const row = rowKeys.get(candidate.key);
+    if (row) return { ...candidate, key: row };
+    if (!keys.has(candidate.key)) keys.set(candidate.key, `c${keys.size + 1}`);
+    return { ...candidate, key: keys.get(candidate.key)! };
+  });
+}
+
 export function buildRelationMatchPrompt(rows: RelationMatchRow[], entityIdentity = false): string {
+  // A candidate named by a row of this call is that row's own line, so the candidate list omits it.
+  const asked = new Set(rows.map((row) => row.key));
   const candidates = new Map(
-    rows.flatMap((row) => row.candidates.map((candidate) => [candidate.key, candidate] as const))
+    rows.flatMap((row) =>
+      row.candidates
+        .filter((candidate) => !asked.has(candidate.key))
+        .map((candidate) => [candidate.key, candidate] as const)
+    )
   );
   return renderPrompt(entityIdentity ? "graph.entity_identity" : "graph.relation_identity", {
     candidates: {
@@ -164,9 +189,9 @@ export interface ConfirmedMatch {
 
 /**
  * Whether a call asking `rows` would show one of them a candidate that reads exactly like it but is not
- * one of its own: its provisional identity, listed by a later row of the same source group (F4 D20).
- * Writers often map such a row to its twin, an answer the row may not give, so a repair that shows the
- * twin again fails the same way.
+ * one of its own: its provisional identity, listed by a later row of the same source group (F4 D20),
+ * by the row's own key since `aliasCandidates`. Writers often map such a row to its twin, an answer
+ * the row may not give, so a repair keeps the two rows apart.
  */
 export function showsTwin(rows: readonly RelationMatchRow[]): boolean {
   const shown = new Map(
@@ -473,6 +498,8 @@ export function createRelationTypeResolver(
         const embedded: Array<Predicate & { vector: RelationTypeVector }> = [];
         const candidatesByRow = new Map<string, Candidate[]>();
         let candidateKeys = new Map<string, string>();
+        // Unpinned, an earlier row's provisional identity is named by its row key (`aliasCandidates`).
+        const rowKeys = new Map<string, string>();
         const rows: RelationMatchRow[] = [];
         for (const relation of window) {
           if (!exact.has(relation.predicate)) {
@@ -500,13 +527,13 @@ export function createRelationTypeResolver(
                 });
             }
             const keys = new Map(candidateKeys);
-            const selected = candidates
-              .sort(compareConfirmationCandidates)
-              .slice(0, settings.relationTypeCandidateLimit)
-              .map((candidate) => {
-                if (!keys.has(candidate.key)) keys.set(candidate.key, `c${keys.size + 1}`);
-                return { ...candidate, key: keys.get(candidate.key)! };
-              });
+            const selected = aliasCandidates(
+              candidates
+                .sort(compareConfirmationCandidates)
+                .slice(0, settings.relationTypeCandidateLimit),
+              keys,
+              rowKeys
+            );
             const row: RelationMatchRow = {
               key: `r${unknown.length + 1}`,
               predicate: relation.predicate,
@@ -523,7 +550,10 @@ export function createRelationTypeResolver(
             candidatesByRow.set(row.key, selected);
             unknown.push(relation);
             embedded.push({ ...relation, vector });
-            if (selected.length) rows.push(row);
+            if (selected.length) {
+              rows.push(row);
+              if (!pinned) rowKeys.set(`new:${relation.predicate}`, row.key);
+            }
           }
           size += 1;
         }

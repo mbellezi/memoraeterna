@@ -17,6 +17,7 @@ import {
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import {
+  aliasCandidates,
   compareConfirmationCandidates,
   confirmRowsInGroups,
   identityGroupCloses,
@@ -134,6 +135,8 @@ export function createEntityIdentityResolver(
         const embedded: Array<{ member: Member; vector: RelationTypeVector }> = [];
         const candidatesByRow = new Map<string, Candidate[]>();
         let candidateKeys = new Map<string, string>();
+        // Unpinned, an earlier row's provisional identity is named by its row key (`aliasCandidates`).
+        const rowKeys = new Map<string, string>();
         const rows: RelationMatchRow[] = [];
         for (const member of window) {
           if (!cached.has(member.fingerprint) && !firstByFingerprint.has(member.fingerprint)) {
@@ -185,13 +188,13 @@ export function createEntityIdentityResolver(
                 });
             }
             const keys = new Map(candidateKeys);
-            const selected = candidates
-              .sort(compareConfirmationCandidates)
-              .slice(0, settings.entityCandidateLimit)
-              .map((candidate) => {
-                if (!keys.has(candidate.key)) keys.set(candidate.key, `c${keys.size + 1}`);
-                return { ...candidate, key: keys.get(candidate.key)! };
-              });
+            const selected = aliasCandidates(
+              candidates
+                .sort(compareConfirmationCandidates)
+                .slice(0, settings.entityCandidateLimit),
+              keys,
+              rowKeys
+            );
             const row: RelationMatchRow = {
               key: `r${unknown.length + 1}`,
               predicate: `${entity.type}: ${entity.canonicalName}`,
@@ -209,7 +212,10 @@ export function createEntityIdentityResolver(
             unknown.push(member);
             firstByFingerprint.set(member.fingerprint, member);
             embedded.push({ member, vector });
-            if (selected.length) rows.push(row);
+            if (selected.length) {
+              rows.push(row);
+              if (!pinned) rowKeys.set(`new:${member.ref}`, row.key);
+            }
           }
           size += 1;
         }

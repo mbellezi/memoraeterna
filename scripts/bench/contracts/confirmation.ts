@@ -39,7 +39,13 @@ function parseRows(json: string): RelationMatchRow[] | null {
     return null;
   }
   if (!Array.isArray(block.relations) || !Array.isArray(block.candidates)) return null;
-  const candidates = new Map(block.candidates.map((candidate) => [candidate[0], candidate]));
+  // A candidate named by a row's key is that row's provisional identity: its own line (F4 D20).
+  const candidates = new Map<string, readonly [string, string, string]>([
+    ...block.relations.map(
+      ([key, predicate, definition]) => [key, [key, predicate, definition]] as const
+    ),
+    ...block.candidates.map((candidate) => [candidate[0], candidate] as const)
+  ]);
   const rows: RelationMatchRow[] = [];
   for (const [key, predicate, definition, candidateKeys] of block.relations) {
     const row: RelationMatchRow = { key, predicate, definition, candidates: [] };

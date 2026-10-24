@@ -414,57 +414,166 @@ describe("entity identity grouped per source (F4 D20)", () => {
     expect(ai.generative().map((prompt) => rowsOf(prompt).length)).toEqual([10, 10, 10]);
   });
 
-  it("settles a recurring entity whose writer chooses a row's own twin whenever one is shown", async () => {
-    // FRREC (10-24): one person in every batch of a source, stored before. The rows of batches 0 and 1
-    // meet their provisional identities, listed by the later rows, and the writer names them.
-    fake.state.entities.push({
-      id: "00000000-0000-4000-8000-2000000000ee",
-      type: "Person",
-      canonicalName: "Ebbinghaus",
-      aliases: [],
-      identityDescription: "Ebbinghaus, stored before."
-    });
-    const batches: KnowledgeGraphGenerationOutput[] = [0, 1, 2].map((batch) => ({
-      entities: [
-        {
-          ...person("e1", "Ebbinghaus", batch),
-          identityDescription: `Ebbinghaus, as batch ${batch} describes him.`
-        }
-      ],
-      relations: []
-    }));
+  describe("a recurring entity (FRREC 10-24)", () => {
+    // One person in every batch of a source, stored before: each later row lists the earlier rows'
+    // provisional identities, which read exactly like those rows.
     type Payload = { relations: Row[]; candidates: Array<[string, string, string]> };
     const payloadOf = (prompt: string) =>
       JSON.parse(prompt.split("\n").find((line) => line.startsWith('{"relations"'))!) as Payload;
-    const ai = writer();
-    const embedOrAnswer = ai.runDefaultTask.getMockImplementation()!;
-    ai.runDefaultTask.mockImplementation(async (task: string, input: string) => {
-      if (task === "embedding") return embedOrAnswer(task, input);
-      const payload = payloadOf(input);
-      const matches = payload.relations.map(([key, predicate, definition, own]) => {
-        const twin = payload.candidates.find(
-          ([candidate, text, meaning]) =>
-            !own.includes(candidate) && text === predicate && meaning === definition
-        );
-        return [key, twin ? twin[0] : (own[0] ?? null)];
+    const recurring = (): KnowledgeGraphGenerationOutput[] => {
+      fake.state.entities.push({
+        id: "00000000-0000-4000-8000-2000000000ee",
+        type: "Person",
+        canonicalName: "Ebbinghaus",
+        aliases: [],
+        identityDescription: "Ebbinghaus, stored before."
       });
-      return { output: { matches }, aiTaskRunId: `call-${matches.length}` } as never;
+      return [0, 1, 2].map((batch) => ({
+        entities: [
+          {
+            ...person("e1", "Ebbinghaus", batch),
+            identityDescription: `Ebbinghaus, as batch ${batch} describes him.`
+          }
+        ],
+        relations: []
+      }));
+    };
+    /** A writer that names, for each row, a key of the call that reads exactly like the row. */
+    const selfMatching = (lookAt: "candidates" | "everything") => {
+      const ai = writer();
+      const embedOrAnswer = ai.runDefaultTask.getMockImplementation()!;
+      ai.runDefaultTask.mockImplementation(async (task: string, input: string) => {
+        if (task === "embedding") return embedOrAnswer(task, input);
+        const payload = payloadOf(input);
+        const lines = new Map<string, readonly string[]>(
+          payload.candidates.map((candidate) => [candidate[0], candidate])
+        );
+        if (lookAt === "everything")
+          for (const [key, predicate, definition] of payload.relations)
+            if (payload.relations.some(([other, , , own]) => other !== key && own.includes(key)))
+              lines.set(key, [key, predicate, definition]);
+        const matches = payload.relations.map(([key, predicate, definition, own]) => {
+          const twin = [...lines.values()].find(
+            ([candidate, text, meaning]) =>
+              !own.includes(candidate!) && text === predicate && meaning === definition
+          );
+          return [key, twin ? twin[0] : (own[0] ?? null)];
+        });
+        return { output: { matches }, aiTaskRunId: `call-${matches.length}` } as never;
+      });
+      return ai;
+    };
+    const resolve = (ai: ReturnType<typeof writer>, pinned = false) =>
+      createEntityIdentityResolver({
+        ...base,
+        ai,
+        pinned,
+        settings: settings(),
+        group: identityGroupFor("remote", settings())
+      })(recurring());
+    const stored = "00000000-0000-4000-8000-2000000000ee";
+
+    it("names an earlier row's provisional identity by its row key, so no call shows a twin", async () => {
+      const ai = selfMatching("candidates");
+      const resolved = await resolve(ai);
+      const [prompt, ...others] = ai.generative();
+      expect(others).toEqual([]);
+      expect(payloadOf(prompt!)).toEqual({
+        relations: [
+          ["r1", "Person: Ebbinghaus", "Ebbinghaus, as batch 0 describes him.", ["c1"]],
+          ["r2", "Person: Ebbinghaus", "Ebbinghaus, as batch 1 describes him.", ["c1", "r1"]],
+          ["r3", "Person: Ebbinghaus", "Ebbinghaus, as batch 2 describes him.", ["c1", "r1", "r2"]]
+        ],
+        candidates: [["c1", "Person: Ebbinghaus", "Ebbinghaus, stored before."]]
+      });
+      expect(resolved.map((batch) => batch.entities[0]!.canonicalEntityId)).toEqual([
+        stored,
+        stored,
+        stored
+      ]);
     });
-    const resolved = await createEntityIdentityResolver({
-      ...base,
-      ai,
-      settings: settings(),
-      group: identityGroupFor("remote", settings())
-    })(batches);
-    // The group, then a repair per row that chose its twin, each without it.
-    expect(
-      ai.generative().map((prompt) => payloadOf(prompt).relations.map(([key]) => key))
-    ).toEqual([["r1", "r2", "r3"], ["r1"], ["r2"]]);
-    expect(resolved.map((batch) => batch.entities[0]!.canonicalEntityId)).toEqual([
-      "00000000-0000-4000-8000-2000000000ee",
-      "00000000-0000-4000-8000-2000000000ee",
-      "00000000-0000-4000-8000-2000000000ee"
-    ]);
+
+    it("resolves a row that names an earlier row's key to that row's identity", async () => {
+      const ai = writer((row) => row[3].at(-1) ?? null);
+      const resolved = await resolve(ai);
+      expect(ai.generative()).toHaveLength(1);
+      const decisions = fake.entities.commit.mock.calls[0]![0];
+      expect(decisions.map((decision) => decision.target)).toEqual([
+        { id: stored },
+        { key: "b0:e1" },
+        { key: "b1:e1" }
+      ]);
+      expect(new Set(resolved.map((batch) => batch.entities[0]!.canonicalEntityId))).toEqual(
+        new Set([stored])
+      );
+    });
+
+    it("repairs rows that name their own key in calls that keep each from it", async () => {
+      // r1 and r2 answer with their own keys, which the later rows list: the repair asks them apart.
+      const ai = selfMatching("everything");
+      const resolved = await resolve(ai);
+      const prompts = ai.generative();
+      expect(prompts.map((prompt) => payloadOf(prompt).relations.map(([key]) => key))).toEqual([
+        ["r1", "r2", "r3"],
+        ["r1"],
+        ["r2"]
+      ]);
+      // Alone, r2 still meets r1's identity, listed with its text since r1 is not asked.
+      expect(payloadOf(prompts[2]!).candidates).toEqual([
+        ["c1", "Person: Ebbinghaus", "Ebbinghaus, stored before."],
+        ["r1", "Person: Ebbinghaus", "Ebbinghaus, as batch 0 describes him."]
+      ]);
+      expect(resolved.map((batch) => batch.entities[0]!.canonicalEntityId)).toEqual([
+        stored,
+        stored,
+        stored
+      ]);
+    });
+
+    it("keeps the recorded aliases on the pinned path", async () => {
+      // Two mentions in one batch: pinned, the later row lists the earlier one's identity as c2, as
+      // every recording did; unpinned, by its row key.
+      const [first, second] = recurring();
+      const batch = {
+        entities: [first!.entities[0]!, { ...second!.entities[0]!, key: "e2" }],
+        relations: []
+      };
+      const asked = async (pinned: boolean) => {
+        // Each run starts from the stored person alone.
+        fake.state.keys.clear();
+        fake.state.entities.length = 1;
+        const ai = writer();
+        await createEntityIdentityResolver({
+          ...base,
+          ai,
+          pinned,
+          settings: settings(),
+          group: identityGroupFor("remote", settings())
+        })([batch]);
+        return ai.generative().map((prompt) => payloadOf(prompt));
+      };
+      const stored = ["c1", "Person: Ebbinghaus", "Ebbinghaus, stored before."];
+      const r1 = ["r1", "Person: Ebbinghaus", "Ebbinghaus, as batch 0 describes him."];
+      const r2 = ["r2", "Person: Ebbinghaus", "Ebbinghaus, as batch 1 describes him."];
+      expect(await asked(true)).toEqual([
+        {
+          relations: [
+            [...r1, ["c1"]],
+            [...r2, ["c1", "c2"]]
+          ],
+          candidates: [stored, ["c2", ...r1.slice(1)]]
+        }
+      ]);
+      expect(await asked(false)).toEqual([
+        {
+          relations: [
+            [...r1, ["c1"]],
+            [...r2, ["c1", "r1"]]
+          ],
+          candidates: [stored]
+        }
+      ]);
+    });
   });
 
   it("decides a repeated fingerprint once and keeps what a stored checkpoint already resolved", async () => {
@@ -522,6 +631,47 @@ describe("relation types grouped per source (F4 D20)", () => {
     );
     expect(resolved[1]!.relations[1]!.relationTypeId).toBe(
       resolved[0]!.relations[0]!.relationTypeId
+    );
+  });
+
+  it("names an earlier row's new predicate by its row key", async () => {
+    // `hired_by` embeds like `employed_by`, so its row lists that row's provisional type; the writer
+    // makes `employed_by` a new type and folds `hired_by` into it.
+    const ai = writer((row) => (row[0] === "r1" ? null : (row[3][0] ?? null)));
+    const embedOrAnswer = ai.runDefaultTask.getMockImplementation()!;
+    ai.runDefaultTask.mockImplementation(async (task: string, input: string) =>
+      embedOrAnswer(
+        task,
+        task === "embedding" ? input.replaceAll("hired by", "employed by") : input
+      )
+    );
+    const resolved = await createRelationTypeResolver({
+      ...base,
+      ai,
+      settings: settings(),
+      group: identityGroupFor("remote", settings())
+    })([
+      { entities: [], relations: [relation("employed_by", 0)] },
+      { entities: [], relations: [relation("hired_by", 1)] }
+    ]);
+    const [prompt, ...others] = ai.generative();
+    expect(others).toEqual([]);
+    const payload = JSON.parse(prompt!.split("\n").at(-1)!) as {
+      relations: Row[];
+      candidates: string[][];
+    };
+    expect(payload.relations.map(([key, , , own]) => [key, own])).toEqual([
+      ["r1", ["c1"]],
+      ["r2", ["r1", "c1"]]
+    ]);
+    expect(payload.candidates.map(([key, predicate]) => [key, predicate])).toEqual([
+      ["c1", "works_at"]
+    ]);
+    expect(resolved[1]!.relations[0]!.relationTypeId).toBe(
+      resolved[0]!.relations[0]!.relationTypeId
+    );
+    expect(resolved[0]!.relations[0]!.relationTypeId).not.toBe(
+      "00000000-0000-4000-8000-3000000000aa"
     );
   });
 

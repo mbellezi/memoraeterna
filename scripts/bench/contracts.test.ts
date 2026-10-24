@@ -12,6 +12,7 @@ import {
   buildAtomicNoteGenerationPrompt
 } from "../../apps/desktop/src/main/services/knowledge-processing.js";
 import { renderPrompt } from "../../apps/desktop/src/main/services/prompt-runtime.js";
+import { buildRelationMatchPrompt } from "../../apps/desktop/src/main/services/relation-type-resolution.js";
 import {
   chunkIds,
   confirmationBody,
@@ -347,6 +348,42 @@ describe("the confirmation flow", () => {
     expect(calls[1]!.prompt).not.toContain('["r1","Concept');
     expect(calls[1]!.prompt.endsWith(renderPrompt("graph.entity_identity.repair"))).toBe(true);
     expect(outcome.digest).toEqual({ decisions: { r1: "c1", r2: "c2" } });
+  });
+
+  it("rebuilds a call whose later row names an earlier row by its key (F4 D20)", async () => {
+    const body = buildRelationMatchPrompt(
+      [
+        {
+          key: "r1",
+          predicate: "Person: Ada",
+          definition: "Ada, from batch 0.",
+          candidates: [{ key: "c1", predicate: "Person: Ada", definition: "Stored." }]
+        },
+        {
+          key: "r2",
+          predicate: "Person: Ada",
+          definition: "Ada, from batch 1.",
+          candidates: [
+            { key: "r1", predicate: "Person: Ada", definition: "Ada, from batch 0." },
+            { key: "c1", predicate: "Person: Ada", definition: "Stored." }
+          ]
+        }
+      ],
+      true
+    );
+    const item = itemOf("knowledge-graph-generation", body);
+    expect(item.current).toBe(body);
+    const { caller } = scripted([
+      JSON.stringify({
+        matches: [
+          ["r1", "c1"],
+          ["r2", "r1"]
+        ]
+      })
+    ]);
+    expect((await item.run(caller, "recorded")).digest).toEqual({
+      decisions: { r1: "c1", r2: "r1" }
+    });
   });
 
   it("fails when a row is still undecided after the repair", async () => {

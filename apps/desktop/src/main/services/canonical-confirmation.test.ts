@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { joinPrompts, renderPrompt } from "./prompt-runtime.js";
 import {
+  aliasCandidates,
   buildRelationMatchPrompt,
   confirmMatchGroup,
   parseRelationMatchesTolerant,
@@ -62,6 +63,72 @@ describe("repairCalls", () => {
       repairCalls([recurring[0]!, rows[1]!, recurring[1]!]).map((call) => call.length)
     ).toEqual([2, 1]);
     expect(repairCalls([])).toEqual([]);
+  });
+});
+
+describe("aliasCandidates", () => {
+  it("names an earlier row's identity by its row key and numbers the others by first appearance", () => {
+    const keys = new Map([["id:a", "c1"]]);
+    const named = aliasCandidates(
+      [{ key: "new:b0:e1" }, { key: "id:b" }, { key: "id:a" }],
+      keys,
+      new Map([["new:b0:e1", "r1"]])
+    );
+    expect(named.map((candidate) => candidate.key)).toEqual(["r1", "c2", "c1"]);
+    expect([...keys]).toEqual([
+      ["id:a", "c1"],
+      ["id:b", "c2"]
+    ]);
+    // The pinned path passes no row keys: every candidate keeps a recorded `c<n>` alias.
+    expect(
+      aliasCandidates([{ key: "new:b0:e1" }], new Map(), new Map()).map(({ key }) => key)
+    ).toEqual(["c1"]);
+  });
+});
+
+describe("buildRelationMatchPrompt", () => {
+  // r2 lists r1's provisional identity by r1's key.
+  const first: RelationMatchRow = {
+    key: "r1",
+    predicate: "Person: Ada",
+    definition: "Ada, from batch 0.",
+    candidates: [{ key: "c1", predicate: "Person: Ada", definition: "Stored." }]
+  };
+  const later: RelationMatchRow = {
+    key: "r2",
+    predicate: "Person: Ada",
+    definition: "Ada, from batch 1.",
+    candidates: [
+      { key: "r1", predicate: first.predicate, definition: first.definition },
+      first.candidates[0]!
+    ]
+  };
+  const payloadOf = (asked: RelationMatchRow[]) =>
+    JSON.parse(buildRelationMatchPrompt(asked, true).split("\n").at(-1)!) as {
+      relations: unknown[];
+      candidates: unknown[];
+    };
+
+  it("lists a candidate named by a row only when that row is not asked", () => {
+    expect(payloadOf([first, later])).toEqual({
+      relations: [
+        ["r1", "Person: Ada", "Ada, from batch 0.", ["c1"]],
+        ["r2", "Person: Ada", "Ada, from batch 1.", ["r1", "c1"]]
+      ],
+      candidates: [["c1", "Person: Ada", "Stored."]]
+    });
+    expect(payloadOf([later]).candidates).toEqual([
+      ["r1", "Person: Ada", "Ada, from batch 0."],
+      ["c1", "Person: Ada", "Stored."]
+    ]);
+  });
+
+  it("still keeps such rows apart in a repair", () => {
+    expect(showsTwin([first, later])).toBe(true);
+    expect(repairCalls([first, later]).map((call) => call.map((item) => item.key))).toEqual([
+      ["r1"],
+      ["r2"]
+    ]);
   });
 });
 
