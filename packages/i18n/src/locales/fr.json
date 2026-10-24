@@ -336,7 +336,6 @@
         "caption": "Sujets touchés par cette modification",
         "topic": "Sujet",
         "change": "Modification",
-        "items": "Éléments",
         "root": "Toute la bibliothèque",
         "changes": {
           "added": "Ajouté",
@@ -349,7 +348,7 @@
         },
         "movedFrom": "de « {from} » vers « {to} »",
         "renamedFrom": "s'appelait « {from} »",
-        "itemsInOut": "{in} entrent, {out} sortent"
+        "itemsInOut": "Éléments : {in} entrent, {out} sortent"
       },
       "relation": {
         "caption": "Liens touchés par cette modification",

@@ -30,7 +30,7 @@ describe("the topic diff as rows", () => {
   });
 
   it("counts the placements moved in and out for the language", () => {
-    expect(rows[1]?.items).toBe("4 in, 1 out");
+    expect(rows[1]?.items).toBe("Items: 4 in, 1 out");
     expect(rows[0]?.items).toBeNull();
     expect(
       topicDiffRows(createTranslator("pt-BR"), [{ ...diff.nodes[1]!, itemsIn: 1234 }])[0]?.items

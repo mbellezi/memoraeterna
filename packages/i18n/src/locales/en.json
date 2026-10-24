@@ -336,7 +336,6 @@
         "caption": "Topics this change touches",
         "topic": "Topic",
         "change": "Change",
-        "items": "Items",
         "root": "Whole library",
         "changes": {
           "added": "Added",
@@ -349,7 +348,7 @@
         },
         "movedFrom": "from “{from}” to “{to}”",
         "renamedFrom": "was “{from}”",
-        "itemsInOut": "{in} in, {out} out"
+        "itemsInOut": "Items: {in} in, {out} out"
       },
       "relation": {
         "caption": "Connections this change touches",

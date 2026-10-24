@@ -336,7 +336,6 @@
         "caption": "Temas que toca este cambio",
         "topic": "Tema",
         "change": "Cambio",
-        "items": "Elementos",
         "root": "Toda la biblioteca",
         "changes": {
           "added": "Añadido",
@@ -349,7 +348,7 @@
         },
         "movedFrom": "de «{from}» a «{to}»",
         "renamedFrom": "antes «{from}»",
-        "itemsInOut": "{in} entran, {out} salen"
+        "itemsInOut": "Elementos: {in} entran, {out} salen"
       },
       "relation": {
         "caption": "Conexiones que toca este cambio",

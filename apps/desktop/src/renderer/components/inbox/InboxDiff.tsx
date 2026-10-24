@@ -180,11 +180,8 @@ export function TopicDiffTable({ t, rows }: { t: Translator; rows: readonly Topi
           <th scope="col" className="py-1 pr-3 font-semibold">
             {t("inbox.diff.topic.topic")}
           </th>
-          <th scope="col" className="py-1 pr-3 font-semibold">
-            {t("inbox.diff.topic.change")}
-          </th>
           <th scope="col" className="py-1 font-semibold">
-            {t("inbox.diff.topic.items")}
+            {t("inbox.diff.topic.change")}
           </th>
         </tr>
       </thead>
@@ -201,7 +198,7 @@ export function TopicDiffTable({ t, rows }: { t: Translator; rows: readonly Topi
               >
                 {row.name}
               </th>
-              <td className="py-1.5 pr-3">
+              <td className="py-1.5">
                 <span className={cn("inline-flex items-center gap-1 font-medium", mark.tone)}>
                   <Icon className="size-3.5 shrink-0" aria-hidden="true" />
                   {row.changeLabel}
@@ -211,8 +208,12 @@ export function TopicDiffTable({ t, rows }: { t: Translator; rows: readonly Topi
                     {row.detail}
                   </span>
                 ) : null}
+                {row.items ? (
+                  <span className="block text-muted-foreground [overflow-wrap:anywhere]">
+                    {row.items}
+                  </span>
+                ) : null}
               </td>
-              <td className="py-1.5 text-muted-foreground">{row.items ?? ""}</td>
             </tr>
           );
         })}

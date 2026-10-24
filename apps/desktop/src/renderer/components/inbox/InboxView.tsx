@@ -61,49 +61,51 @@ export function InboxView(props: InboxViewProps) {
     <div className="flex h-[calc(100vh-7rem)] min-h-96 flex-col gap-3" onKeyDown={props.onKey}>
       <header className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-secondary-foreground">{t("inbox.description")}</p>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-expanded={state.helpOpen}
-          aria-controls={helpId}
-          aria-keyshortcuts="?"
-          onClick={props.onToggleHelp}
-        >
-          <Keyboard aria-hidden="true" />
-          {t("inbox.keys.toggle")}
-        </Button>
+        {/* The help floats over the screen, so opening it never pushes the list out of view. */}
+        <div className="relative">
+          <Button
+            type="button"
+            variant="ghost"
+            aria-expanded={state.helpOpen}
+            aria-controls={helpId}
+            aria-keyshortcuts="?"
+            onClick={props.onToggleHelp}
+          >
+            <Keyboard aria-hidden="true" />
+            {t("inbox.keys.toggle")}
+          </Button>
+          {state.helpOpen ? (
+            <section
+              id={helpId}
+              aria-label={t("inbox.keys.title")}
+              className="absolute right-0 top-full z-20 mt-1 flex w-80 max-w-[calc(100vw-3rem)] flex-col gap-2 rounded-lg border border-border-strong bg-surface p-3 shadow-lg"
+            >
+              <h2 className="text-xs font-semibold text-secondary-foreground">
+                {t("inbox.keys.title")}
+              </h2>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-foreground">
+                {helpRows.map((row) => (
+                  <div key={row.label} className="contents">
+                    <dt className="flex gap-1">
+                      {row.keys.map((key) => (
+                        <kbd
+                          key={key}
+                          className="rounded-sm border border-border-strong bg-soft px-1.5 font-sans font-medium"
+                        >
+                          {key}
+                        </kbd>
+                      ))}
+                    </dt>
+                    <dd>{t(row.label)}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-xs text-muted-foreground">{t("inbox.keys.note")}</p>
+              <p className="text-xs text-muted-foreground">{t("inbox.keys.money")}</p>
+            </section>
+          ) : null}
+        </div>
       </header>
-
-      {state.helpOpen ? (
-        <section
-          id={helpId}
-          aria-label={t("inbox.keys.title")}
-          className="flex flex-col gap-2 rounded-lg border border-border bg-soft p-3"
-        >
-          <h2 className="text-xs font-semibold text-secondary-foreground">
-            {t("inbox.keys.title")}
-          </h2>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-foreground">
-            {helpRows.map((row) => (
-              <div key={row.label} className="contents">
-                <dt className="flex gap-1">
-                  {row.keys.map((key) => (
-                    <kbd
-                      key={key}
-                      className="rounded-sm border border-border-strong bg-surface px-1.5 font-sans font-medium"
-                    >
-                      {key}
-                    </kbd>
-                  ))}
-                </dt>
-                <dd>{t(row.label)}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="text-xs text-muted-foreground">{t("inbox.keys.note")}</p>
-          <p className="text-xs text-muted-foreground">{t("inbox.keys.money")}</p>
-        </section>
-      ) : null}
 
       <div
         role="group"
@@ -195,7 +197,7 @@ export function InboxView(props: InboxViewProps) {
           )}
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)] gap-4">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] gap-4">
           <InboxList
             t={t}
             items={state.items}

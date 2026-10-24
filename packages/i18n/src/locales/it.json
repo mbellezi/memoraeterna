@@ -336,7 +336,6 @@
         "caption": "Argomenti toccati da questa modifica",
         "topic": "Argomento",
         "change": "Modifica",
-        "items": "Elementi",
         "root": "Intera libreria",
         "changes": {
           "added": "Aggiunto",
@@ -349,7 +348,7 @@
         },
         "movedFrom": "da “{from}” a “{to}”",
         "renamedFrom": "era “{from}”",
-        "itemsInOut": "{in} in entrata, {out} in uscita"
+        "itemsInOut": "Elementi: {in} in entrata, {out} in uscita"
       },
       "relation": {
         "caption": "Collegamenti toccati da questa modifica",
