@@ -400,6 +400,7 @@ export function prepareSoak(
           },
           hooks: createSoakHooks({
             pool: deps.pool,
+            isPackaged: options.isPackaged,
             ...(f4Deps.publishModelDownload
               ? { publishModelDownload: f4Deps.publishModelDownload }
               : {}),

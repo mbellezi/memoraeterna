@@ -11,6 +11,7 @@ import {
   plannedTokensByHour,
   projectSpend
 } from "./soak-budget.js";
+import { discoveryNeighboursKnob, helperBatchKnob } from "./relations-dev-options.js";
 import { buildTimeline, type TimelineEntry } from "./soak-driver.js";
 import {
   SoakKnobRefusal,
@@ -317,6 +318,9 @@ describe("the knobs of the 7-day soak", () => {
     const { options, env } = setup();
     expect(soakConflictingKnobs).toContain("MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS");
     expect(discoveryNeighboursKnobName).toBe("MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS");
+    // The very knobs the relations configuration of a DEV run reads (T88's C2 knob, T63's B1).
+    expect(discoveryNeighboursKnobName).toBe(discoveryNeighboursKnob);
+    expect(soakConflictingKnobs).toContain(helperBatchKnob);
     for (const knob of [discoveryNeighboursKnobName, "MEMORA_RELATIONS_HELPER_BATCH"])
       for (const value of ["1", "2"])
         expect(() => readSoakKnob(soakKnobName, env({ [knob]: value }), options), knob).toThrow(

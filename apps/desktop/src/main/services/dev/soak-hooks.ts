@@ -25,6 +25,8 @@ import type { WindowPorts } from "./soak-windows.js";
 
 export interface SoakHooksDeps {
   pool: PgPool;
+  /** A packaged build never takes them: they write the AI configuration tables. */
+  isPackaged: boolean;
   /** Publishes a `model.download` event (the app event bus); absent in tests. */
   publishModelDownload?: (event: ModelDownloadEvent) => void;
   logger?: Pick<Console, "info" | "error">;
@@ -45,7 +47,9 @@ interface EmbedderSnapshot {
   expectedSizeBytes: number;
 }
 
-export function createSoakHooks(deps: SoakHooksDeps): WindowPorts["hooks"] {
+export function createSoakHooks(options: SoakHooksDeps): WindowPorts["hooks"] {
+  if (options.isPackaged) throw new Error("The soak's DEV hooks never run in a packaged build.");
+  const deps = options;
   const { pool } = deps;
   let ranker: RankerSnapshot | null = null;
   let embedder: EmbedderSnapshot | null = null;

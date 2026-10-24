@@ -47,7 +47,11 @@ const sqlWrite = new RegExp(
  * DEV knob and outside a clone under `.cache/profiles/`, and it bumps the configuration generation
  * itself, so the hot path's cache is dropped like after any other write.
  */
-const devOnlyWriters = ["apps/desktop/src/main/services/dev/soak-setup.ts"];
+const devOnlyWriters = [
+  // The 7-day soak's ranker window takes the reranking capability away and back (F4 T89).
+  "apps/desktop/src/main/services/dev/soak-hooks.ts",
+  "apps/desktop/src/main/services/dev/soak-setup.ts"
+];
 
 describe("who writes the AI configuration tables", () => {
   it("only the two repositories do, and a DEV-only soak setup, outside migrations, the baseline and the proof scripts", () => {

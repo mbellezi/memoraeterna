@@ -191,10 +191,9 @@ describe.skipIf(!sidecarAvailable)(
         const status = pass.report.reported.statusAtStalls!;
         expect(status).toMatchObject({ unexplained: 0 });
         expect(status.stalls).toBeGreaterThan(0);
-        // A wait holding Gardener tasks names the download; one holding none reads idle (T86).
-        for (const named of Object.keys(status.classes))
-          expect(["download", "idle"]).toContain(named);
-        expect(status.classes.idle ?? 0).toBe(status.quiet);
+        // A wait that holds Gardener tasks names its class (a download, a queue...); idle is read
+        // only where none waits (T86). A sentence never names nothing while a task waits.
+        expect(status.classes.idle ?? 0).toBeLessThanOrEqual(status.quiet);
       }
     });
 

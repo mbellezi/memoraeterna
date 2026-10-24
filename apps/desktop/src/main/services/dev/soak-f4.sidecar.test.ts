@@ -427,7 +427,11 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
 
     it("takes a ranker's validation and capability away and puts them back, the profile's included", async () => {
       const { ranker, profile } = await installModels();
-      const hooks = createSoakHooks({ pool, logger: { info: vi.fn(), error: vi.fn() } });
+      const hooks = createSoakHooks({
+        pool,
+        isPackaged: false,
+        logger: { info: vi.fn(), error: vi.fn() }
+      });
       await hooks.invalidateRanker();
       const invalid = (
         await pool.query<{ metadata: Record<string, unknown>; capabilities: string[] }>(
@@ -467,7 +471,7 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
     });
 
     it("refuses to invalidate a ranker that is not installed", async () => {
-      const hooks = createSoakHooks({ pool });
+      const hooks = createSoakHooks({ pool, isPackaged: false });
       await expect(hooks.invalidateRanker()).rejects.toThrow(/no validated ranker/u);
     });
 
@@ -476,8 +480,10 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       const published: unknown[] = [];
       const hooks = createSoakHooks({
         pool,
+        isPackaged: false,
         publishModelDownload: (event) => published.push(event)
       });
+      expect(() => createSoakHooks({ pool, isPackaged: true })).toThrow(/packaged/u);
       await hooks.markEmbedderVerifying();
       expect(
         (
