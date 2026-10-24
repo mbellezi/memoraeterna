@@ -248,7 +248,10 @@ describe("matching settings v2 migration", () => {
         "source-relation-processing.ts",
         "source-relations.ts",
         "matching-presets.ts",
-        "SettingsView.tsx"
+        // Settings › Knowledge › Advanced › Matching (T98): its control, registry row and calibration.
+        "MatchingSettingsGroup.tsx",
+        "settings-registry.ts",
+        "matching-calibration.ts"
       ]
     };
     const found: string[] = [];
