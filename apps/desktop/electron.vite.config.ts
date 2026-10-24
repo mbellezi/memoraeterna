@@ -98,6 +98,7 @@ export default defineConfig({
       alias: {
         "@app/i18n": i18nPackage,
         "@app/domain": domainPackage,
+        "@app/integration-contracts": integrationContractsPackage,
         "@desktop": srcDir
       }
     }

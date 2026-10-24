@@ -42,7 +42,7 @@ const stopJobs = app.onAppEvent("job.progress", (event) => received.push(event.t
 const stopDownloads = app.onAppEvent("model.download", (event) => received.push(event.type));
 assert.equal(wires.get("app:events").length, 1);
 const deliver = (payload) => wires.get("app:events").forEach((handler) => handler({}, payload));
-const counts = { queued: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
+const counts = { queued: 0, blocked: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
 deliver({ type: "job.progress", lanes: "not counts" });
 deliver({ type: "nothing.here" });
 deliver({
