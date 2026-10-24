@@ -576,6 +576,78 @@ describe("entity identity grouped per source (F4 D20)", () => {
     });
   });
 
+  it("keeps an entity that recurs in more batches than its candidate places as one (X7G 10-24)", async () => {
+    // Camilo in four batches, stored before: the earlier rows read closer to the fourth than the
+    // stored entity does, so they take its three places and the stored Camilo is not its own.
+    const stored = "00000000-0000-4000-8000-2000000000dd";
+    fake.state.entities.push({
+      id: stored,
+      type: "Person",
+      canonicalName: "Camilo",
+      aliases: [],
+      identityDescription: "Camilo, stored before."
+    });
+    const batches = [0, 1, 2, 3].map((batch) => ({
+      entities: [
+        { ...person("e1", "Camilo", batch), identityDescription: `Camilo in batch ${batch}.` }
+      ],
+      relations: []
+    }));
+    type Payload = { relations: Row[]; candidates: Array<[string, string, string]> };
+    const payloadOf = (prompt: string) =>
+      JSON.parse(prompt.split("\n").find((line) => line.startsWith('{"relations"'))!) as Payload;
+    const ai = writer();
+    ai.runDefaultTask.mockImplementation(async (task: string, input: string) => {
+      const run = {
+        providerId: "test",
+        modelId: "model",
+        runtime: "remote" as const,
+        durationMs: 1,
+        aiTaskRunId: "00000000-0000-4000-8000-0000000000ff",
+        profileId: "00000000-0000-4000-8000-0000000000fe",
+        outputLanguage: "en"
+      };
+      if (task === "embedding") {
+        // The four extracted rows read alike; the stored entity lies elsewhere (score 0.95).
+        const vector = Array<number>(256).fill(0);
+        vector[input.includes("batch") ? 0 : 1] = 1;
+        const embedding: DefaultAiTaskResult = {
+          ...run,
+          taskType: "embedding",
+          output: vector,
+          embeddingSpaceKey: "space"
+        };
+        return embedding;
+      }
+      // Codex's answer: the stored Camilo for every row, whenever the call lists it.
+      const payload = payloadOf(input);
+      const listed = payload.candidates.some(([key]) => key === "c1");
+      const matches = payload.relations.map(([key]) => [key, listed ? "c1" : null]);
+      return { ...run, output: { matches } } as never;
+    });
+    const resolved = await createEntityIdentityResolver({
+      ...base,
+      ai,
+      settings: settings(),
+      group: identityGroupFor("remote", settings())
+    })(batches);
+    const [prompt, ...repairs] = ai.generative();
+    expect(payloadOf(prompt!).relations.at(-1)).toEqual([
+      "r4",
+      "Person: Camilo",
+      "Camilo in batch 3.",
+      ["r1", "r2", "r3"]
+    ]);
+    // Before, r4's c1 was refused and its repair, which lists no stored candidate, made a new one.
+    expect(repairs).toEqual([]);
+    expect(resolved.map((batch) => batch.entities[0]!.canonicalEntityId)).toEqual([
+      stored,
+      stored,
+      stored,
+      stored
+    ]);
+  });
+
   it("decides a repeated fingerprint once and keeps what a stored checkpoint already resolved", async () => {
     const stored = "00000000-0000-4000-8000-0000000000cc";
     const batches: KnowledgeGraphGenerationOutput[] = [

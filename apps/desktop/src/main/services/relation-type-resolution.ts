@@ -141,10 +141,37 @@ export interface TolerantRelationMatches {
 }
 
 /**
+ * Whether the row-key candidate `start` (a row of this call) resolves to `target` through the
+ * answers decided so far: its answer, or the answer of the row its answer names, and so on.
+ */
+function resolvesTo(
+  start: string,
+  target: string,
+  answered: ReadonlyMap<string, string | null>,
+  rowKeys: ReadonlySet<string>
+): boolean {
+  const seen = new Set<string>();
+  let current: string | null | undefined = start;
+  while (current !== null && current !== undefined && rowKeys.has(current) && !seen.has(current)) {
+    seen.add(current);
+    current = answered.get(current);
+    if (current === target) return true;
+  }
+  return false;
+}
+
+/**
  * Reads a confirmation answer row by row (F3 D35). The answer may carry a stray character or repeat
  * its object (`parseSingleJsonObject`); a pair that names an unknown row or a candidate the row does
  * not have, or a row answered twice differently, leaves that row missing and the rest decided. An
  * answer with no `matches` list decides nothing. The strict reader above stays for pinned runs.
+ *
+ * One exception (F4 D20): a later row lists earlier rows of its group as row-key candidates, and
+ * when they fill its candidate cap, the stored candidate they resolve to is not its own, so a writer
+ * that sees it listed for the earlier rows names it for the later row too (X7G 10-24: Camilo and Jim
+ * kept a second entity after the repair, which shows no stored candidate). Such a pair is read
+ * through the row's own row-key candidates: when one of them resolves to the named candidate in the
+ * same answer, the row takes that candidate of its own, which is the same identity.
  */
 export function parseRelationMatchesTolerant(
   output: unknown,
@@ -166,16 +193,41 @@ export function parseRelationMatchesTolerant(
   }
   const answered = new Map<string, string | null>();
   const conflicting = new Set<string>();
+  // Pairs that name a candidate the row does not have, read below through its row-key candidates.
+  const outside = new Map<string, string>();
+  const outsideConflicting = new Set<string>();
   for (const pair of pairs) {
     const parsed = pairSchema.safeParse(pair);
     if (!parsed.success) continue;
     const [key, candidate] = parsed.data;
     const candidates = allowed.get(key);
-    if (!candidates || (candidate !== null && !candidates.has(candidate))) continue;
+    if (!candidates) continue;
+    if (candidate !== null && !candidates.has(candidate)) {
+      if (outside.has(key) && outside.get(key) !== candidate) outsideConflicting.add(key);
+      else outside.set(key, candidate);
+      continue;
+    }
     if (answered.has(key) && answered.get(key) !== candidate) conflicting.add(key);
     else answered.set(key, candidate);
   }
   for (const key of conflicting) answered.delete(key);
+  for (const key of outsideConflicting) outside.delete(key);
+  const rowKeys = new Set(allowed.keys());
+  // A row read through another row read so: repeat until no row is added (at most one per row).
+  for (let added = true; added;) {
+    added = false;
+    for (const row of rows) {
+      const target = outside.get(row.key);
+      if (target === undefined || answered.has(row.key) || conflicting.has(row.key)) continue;
+      const own = row.candidates.find(
+        (candidate) =>
+          rowKeys.has(candidate.key) && resolvesTo(candidate.key, target, answered, rowKeys)
+      );
+      if (!own) continue;
+      answered.set(row.key, own.key);
+      added = true;
+    }
+  }
   return {
     decided: answered,
     missing: rows.filter((row) => !answered.has(row.key))

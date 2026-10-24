@@ -172,6 +172,69 @@ describe("parseRelationMatchesTolerant", () => {
     expect([...result.decided]).toEqual([["r2", "c3"]]);
   });
 
+  // X7G (10-24) in short: three earlier Camilo rows fill a later row's three candidate places, so
+  // the stored Camilo c1 they all chose is not the later row's own; Codex named c1 for it too.
+  const camilo = [
+    row("r14", ["c1"]),
+    row("r17", ["c1", "r14"]),
+    row("r24", ["r17", "r14", "c1"]),
+    row("r42", ["r24", "r17", "r14"])
+  ];
+
+  it("reads a row that names what its earlier rows resolve to as one of those rows", () => {
+    const result = parseRelationMatchesTolerant(
+      '{"matches":[["r14","c1"],["r17","c1"],["r24","c1"],["r42","c1"]]}',
+      camilo
+    );
+    expect([...result.decided]).toEqual([
+      ["r14", "c1"],
+      ["r17", "c1"],
+      ["r24", "c1"],
+      ["r42", "r24"]
+    ]);
+    expect(result.missing).toEqual([]);
+  });
+
+  it("follows earlier rows that answered with a row, and rows read the same way", () => {
+    const chain = [row("r1", ["c1"]), row("r2", ["r1"]), row("r3", ["r2"]), row("r4", ["r3"])];
+    const result = parseRelationMatchesTolerant(
+      // r2 names r1 (its own); r3 and r4 name c1, which neither has.
+      '{"matches":[["r4","c1"],["r3","c1"],["r2","r1"],["r1","c1"]]}',
+      chain
+    );
+    expect([...result.decided].sort()).toEqual([
+      ["r1", "c1"],
+      ["r2", "r1"],
+      ["r3", "r2"],
+      ["r4", "r3"]
+    ]);
+  });
+
+  it("leaves such a row missing when its earlier rows chose otherwise or it is ambiguous", () => {
+    // r42's earlier rows resolve to a new identity (r24 to r17 to r14 to null), not to c1.
+    const other = parseRelationMatchesTolerant(
+      '{"matches":[["r14",null],["r17","r14"],["r24","r17"],["r42","c1"]]}',
+      camilo
+    );
+    expect(other.decided.get("r24")).toBe("r17");
+    expect(other.missing.map((item) => item.key)).toEqual(["r42"]);
+    // A row that names two different outside candidates, or a candidate no row of the call lists
+    // under a row key of its own, stays missing.
+    const twice = parseRelationMatchesTolerant(
+      '{"matches":[["r14","c1"],["r17","c1"],["r24","c1"],["r42","c1"],["r42","c9"]]}',
+      camilo
+    );
+    expect(twice.missing.map((item) => item.key)).toEqual(["r42"]);
+    const noRowKeys = parseRelationMatchesTolerant('{"matches":[["r1","c3"]]}', rows);
+    expect(noRowKeys.missing.map((item) => item.key)).toEqual(["r1", "r2", "r3"]);
+    // A valid answer of the row wins over one outside its candidates.
+    const valid = parseRelationMatchesTolerant(
+      '{"matches":[["r14","c1"],["r17","c1"],["r24","c1"],["r42","c1"],["r42",null]]}',
+      camilo
+    );
+    expect(valid.decided.get("r42")).toBeNull();
+  });
+
   it("decides nothing for an answer that has no matches list or no object", () => {
     for (const output of ["", "not json", '{"other":1}', "[]", `${answer} {"matches":[]}`, null]) {
       const result = parseRelationMatchesTolerant(output, rows);
@@ -238,6 +301,29 @@ describe("confirmMatchGroup", () => {
     expect(decisions.get("r1")?.aiTaskRunId).toBe("run-0");
     expect(decisions.get("r2")?.aiTaskRunId).toBe("run-1");
     expect(decisions.get("r3")).toEqual({ candidate: null, aiTaskRunId: "run-1" });
+  });
+
+  it("needs no repair when a row names the stored candidate its earlier rows chose", async () => {
+    // X7G's A Cartomante call: r42's places held three earlier Camilo rows, and Codex named c1.
+    const group = [
+      row("r14", ["c1"]),
+      row("r17", ["c1", "r14"]),
+      row("r24", ["r17", "r14", "c1"]),
+      row("r42", ["r24", "r17", "r14"])
+    ];
+    const ai = run('{"matches":[["r14","c1"],["r17","c1"],["r24","c1"],["r42","c1"]]}');
+    const decisions = await confirmMatchGroup({
+      ai: ai as never,
+      group,
+      entityIdentity: true,
+      context: { sourceItemId: "source-1" },
+      promptVersion: "version",
+      stage: "entity_identity_resolution",
+      pinned: false,
+      invalidOutputError: "errors.entityIdentity.invalidOutput"
+    });
+    expect(ai.runDefaultTask).toHaveBeenCalledTimes(1);
+    expect(decisions.get("r42")).toEqual({ candidate: "r24", aiTaskRunId: "run-0" });
   });
 
   it("fails with the entity code when a row is still undecided after the one repair", async () => {
