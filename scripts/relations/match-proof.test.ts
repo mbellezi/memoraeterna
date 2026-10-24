@@ -123,6 +123,24 @@ describe("the verdict", () => {
     expect(verdict.ok).toBe(true);
   });
 
+  it("counts a suggestion of a type that reads both ways as one with no direction (MATCHP 10-24)", () => {
+    // MATCHP's 21 relations: 20 directed suggestions shown with no arrow, one same_as (symmetric).
+    const verdict = proofVerdict(
+      plan,
+      report({
+        relations: [
+          { band: "suggest", relationType: "extends", directionSource: "typer", shown: "unknown" },
+          { band: "suggest", relationType: "same_as", directionSource: null, shown: "symmetric" }
+        ]
+      }),
+      { requested: false }
+    );
+    expect(failed(verdict)).toEqual([]);
+    expect(verdict.checks.find((check) => check.name.startsWith("the relations"))?.detail).toBe(
+      '2 relations (band/direction source/shown): {"suggest/typer/unknown":1,"suggest/none/symmetric":1}'
+    );
+  });
+
   it("wants a skipped second job per note once the request was made", () => {
     const requested = report({
       matchJobs: [
@@ -190,7 +208,8 @@ describe("the verdict", () => {
     ).toEqual(["every planned note keeps the hash of the text it was matched with"]);
     for (const relation of [
       { band: "apply", relationType: "supports", directionSource: "typer", shown: "unknown" },
-      { band: "suggest", relationType: "supports", directionSource: "decider", shown: "lo_to_hi" }
+      { band: "suggest", relationType: "supports", directionSource: "decider", shown: "lo_to_hi" },
+      { band: "suggest", relationType: "extends", directionSource: "typer", shown: "hi_to_lo" }
     ])
       expect(
         failed(proofVerdict(plan, report({ relations: [relation] }), { requested: false }))

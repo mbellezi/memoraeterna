@@ -290,19 +290,24 @@ export function proofVerdict(
     report.states.every((state) => state.hasHash),
     `${report.states.filter((state) => state.hasHash).length}/${report.states.length}`
   );
+  // Decisions 29 and 31b: suggestions only, and no arrow shown. A directed type shows `unknown` (the
+  // typer's guess is the audit record); a type that reads both ways shows `symmetric`.
+  const arrow = (shown: string) => shown === "lo_to_hi" || shown === "hi_to_lo";
+  const relationKey = (relation: ProofReport["relations"][number]) =>
+    `${relation.band}/${relation.directionSource ?? "none"}/${relation.shown}`;
   check(
     "the relations MATCH left are suggestions with no direction of a decider's",
     report.relations.every(
-      (relation) => relation.band === "suggest" && relation.directionSource !== "decider"
-    ) && report.relations.every((relation) => relation.shown === "unknown"),
-    `${report.relations.length} relations: ${JSON.stringify(
+      (relation) =>
+        relation.band === "suggest" &&
+        relation.directionSource !== "decider" &&
+        !arrow(relation.shown)
+    ),
+    `${report.relations.length} relations (band/direction source/shown): ${JSON.stringify(
       Object.fromEntries(
         report.relations.map((relation) => [
-          `${relation.band}/${relation.directionSource ?? "none"}`,
-          report.relations.filter(
-            (other) =>
-              other.band === relation.band && other.directionSource === relation.directionSource
-          ).length
+          relationKey(relation),
+          report.relations.filter((other) => relationKey(other) === relationKey(relation)).length
         ])
       )
     )}`
