@@ -37,6 +37,7 @@ import {
   topicOverviewLimits,
   topicOverviewMessageKeys,
   topicOverviewRefreshConfig,
+  topicReadLimits,
   validateOverviewOutput,
   validateOverviewPatch,
   type ChangeSetRisk,
@@ -231,11 +232,16 @@ function citationOf(item: EvidenceItem, n: number) {
   };
 }
 
-/** A stored overview's citations numbered 1..k with nothing missing: a patch continues them. */
+/**
+ * A stored overview's citations numbered 1..k with nothing missing, and room left for a paragraph,
+ * a citation and an evidence item: a patch continues them. A full one gets a rewrite proposal.
+ */
 function patchable(stored: StoredTopicOverview): boolean {
   return (
     stored.citations.every((citation, index) => citation.n === index + 1) &&
-    overviewPatchParagraphsMax(stored.paragraphs.length) > 0
+    overviewPatchParagraphsMax(stored.paragraphs.length) > 0 &&
+    stored.citations.length < topicReadLimits.overviewCitationsMax &&
+    stored.evidence.length < topicOverviewLimits.storedEvidenceMax
   );
 }
 
@@ -821,8 +827,8 @@ export class TopicOverviewService {
    * An additive patch of a stored overview (D17): the new evidence the stored overview was not
    * written from, after its paragraphs and their citations; the stored text stays byte-identical,
    * the new paragraphs and Divergences follow it in continued numbering. `nothing` when there is no
-   * new evidence that fits, or the writer adds no paragraph. Written in the stored overview's
-   * language, so the text stays in one language (a language change is Update's).
+   * new evidence that fits, or the writer adds neither a paragraph nor a Divergence. Written in the
+   * stored overview's language, so the text stays in one language (a language change is Update's).
    */
   private async composePatch(
     context: TopicOverviewContext,
@@ -877,8 +883,10 @@ export class TopicOverviewService {
     });
     if (answer.kind !== "valid") return answer;
     const { execution, value: patch } = answer;
-    // Zero new paragraphs is no change (D17), whatever else the answer holds.
-    if (patch.paragraphs.length === 0) return { kind: "nothing", evidence: evidence.length };
+    // Zero new paragraphs and no Divergence is no change (D17). A Divergence alone is still kept
+    // beside the unchanged text, for review (R8): a contradiction is never dropped.
+    if (patch.paragraphs.length === 0 && patch.divergences.length === 0)
+      return { kind: "nothing", evidence: evidence.length };
     const cited = patch.cited.map((number) => evidence[number - 1] as EvidenceItem);
     const byChunk = new Map(candidates.map((item) => [item.chunkId, item.passage]));
     const passages = new Map<number, string>();
@@ -912,7 +920,11 @@ export class TopicOverviewService {
           runtime: execution.runtime,
           aiTaskRunId: execution.aiTaskRunId,
           language: stored.language,
-          support: patchedOverviewSupport(supportOf(stored.support), null),
+          // No new sentence keeps the stored verdict; new ones are unchecked until their check.
+          support:
+            patch.paragraphs.length === 0
+              ? stored.support
+              : patchedOverviewSupport(supportOf(stored.support), null),
           citations: [
             ...stored.citations.map((citation) => ({
               n: citation.n,

@@ -455,6 +455,24 @@ describe("rank on a validated dedicated ranker", () => {
     expect(run.queueMs).toBeGreaterThanOrEqual(0);
     expect(run.inputHash).toMatch(/^[a-f0-9]{64}$/u);
     expect(result.aiTaskRunId).toBe(await db.recordTaskRun.mock.results[0]!.value);
+    // Without a job or a budget class, the row names neither.
+    expect(run).not.toHaveProperty("jobId");
+    expect(run).not.toHaveProperty("budgetClass");
+  });
+
+  it("audits a background job's call with its priority, budget class and job (F4 M7)", async () => {
+    addRanker("mlx", { route: true });
+    const { ai } = service();
+    const jobId = crypto.randomUUID();
+
+    await ai.rank({ ...gateInput, priority: "P3", budgetClass: "background", jobId });
+
+    expect(db.recordTaskRun.mock.calls[0]![0]).toMatchObject({
+      taskType: "reranking",
+      priority: 3,
+      budgetClass: "background",
+      jobId
+    });
   });
 
   it("is never run by the reranking route of note matching, and matching never reaches the ranker", async () => {

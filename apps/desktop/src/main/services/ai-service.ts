@@ -2682,7 +2682,10 @@ export class AiService {
   }
 
   private async executeRank(
-    input: Pick<AiRankInput, "operation" | "priority" | "sourceIds" | "jobId" | "stage">,
+    input: Pick<
+      AiRankInput,
+      "operation" | "priority" | "budgetClass" | "sourceIds" | "jobId" | "stage"
+    >,
     wire: RankWire,
     compositions: PromptCompositionSnapshot[],
     purpose: RankPurpose,
@@ -2727,7 +2730,11 @@ export class AiService {
       promptCompositions: compositions,
       inputHash: sha256(taskInput),
       queueMs,
-      sourceItemIds
+      sourceItemIds,
+      // Who the call was for and its job, as the writer calls record them (F4 D14, M7): a
+      // background job's support check is attributable to that job.
+      ...(input.budgetClass ? { budgetClass: input.budgetClass } : {}),
+      ...(input.jobId ? { jobId: input.jobId } : {})
     };
     if (input.jobId) {
       try {

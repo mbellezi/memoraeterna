@@ -197,7 +197,14 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
     dispose(): void;
   }
 
+  /**
+   * The REFRESH requests the last world's placement changes started (the factory's listener): they
+   * end before the next reset, which would otherwise race their reads and enqueues.
+   */
+  let lastRefresh: Promise<void> = Promise.resolve();
+
   async function world(options: { longB1?: number } = {}): Promise<World> {
+    await lastRefresh;
     await createLibraryResetRepository(pool).reset();
     const writes: WriterCall[] = [];
     const ranks: RankCall[] = [];
@@ -445,6 +452,7 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       dispose: () => {
         overview.dispose();
         services.dispose();
+        lastRefresh = services.overviewRefresh?.settled() ?? Promise.resolve();
       }
     };
   }
@@ -1025,6 +1033,55 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
     }
   }, 60_000);
 
+  it("REFRESH keeps a Divergence that comes with no new paragraph: the text and its support unchanged", async () => {
+    const w = await world();
+    try {
+      ready(await w.overview.overview({ id: w.topics.A1 }));
+      await w.overview.settled(w.topics.A1);
+      const before = (await createTopicOverviewRepository(pool).readContext(w.topics.A1))!.stored!;
+      await moveNote(w, w.notes.A2[0]!, w.topics.A1);
+      w.setWriter((call, attempt) =>
+        call.patch
+          ? {
+              paragraphs: [],
+              divergences: [
+                { existing: "E2", new: `E${call.evidence[0]!.n}`, summary: "Sleep disagrees." }
+              ]
+            }
+          : citeInOrder(call, attempt)
+      );
+      const refresh = refresher(w);
+      await refresh.request(await treeIdOf(w), [w.topics.A1]);
+      const ranks = w.ranks.length;
+      const { result } = await runRefresh(refresh);
+      expect(result).toMatchObject({
+        status: "applied",
+        origin: "patch",
+        paragraphs: 0,
+        divergences: 1,
+        risk: "medium"
+      });
+      // No new sentence: nothing to check.
+      expect(w.ranks.length).toBe(ranks);
+      const after = (await createTopicOverviewRepository(pool).readContext(w.topics.A1))!.stored!;
+      expect(after.paragraphs).toEqual(before.paragraphs);
+      expect(after.support).toEqual(before.support);
+      expect(after.divergences).toEqual([
+        { existing: "E2", new: "E5", summary: "Sleep disagrees." }
+      ]);
+      expect(after.citations.map((citation) => citation.n)).toEqual([1, 2, 3, 4, 5]);
+      expect(after.citations.at(-1)!.noteId).toBe(w.notes.A2[0]);
+      expect(after.memberFingerprint).not.toBe(before.memberFingerprint);
+      expect((await versions(w.topics.A1))[0]).toMatchObject({
+        origin: "patch",
+        status: "applied",
+        risk: "medium"
+      });
+    } finally {
+      w.dispose();
+    }
+  }, 60_000);
+
   it("REFRESH under Suggest proposes one patch per topic; a proposal on a moved base is proposed again", async () => {
     const w = await world();
     const autonomy: { value: GardenerAutonomy } = { value: "suggest" };
@@ -1208,6 +1265,57 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
         status: "pending_review",
         risk: "high"
       });
+
+      // An overview whose stored evidence is full (the row keeps at most 40 items) has no room for
+      // a patch either: REFRESH proposes a rewrite instead of a write the row would refuse, and an
+      // open shows it as it is.
+      const parent = (await overviews.readContext(w.topics.A))!;
+      const parentEvidence = await overviews.readEvidence(parent.topic, {
+        perTopic: 16,
+        candidates: 16
+      });
+      await overviews.write({
+        topicId: w.topics.A,
+        paragraphs: [{ text: "Paragraph one [1].", citations: [1] }],
+        evidence: Array.from({ length: topicOverviewLimits.storedEvidenceMax }, (_, n) => ({
+          noteId: randomUUID(),
+          chunkId: randomUUID(),
+          sourceSpanId: null,
+          sourceId: null,
+          contentHash: sha(`seen ${n}`)
+        })),
+        memberFingerprint: "members-before",
+        memberCount: 3,
+        inputHash: "input",
+        promptRevisionId: "prompt",
+        provider: "fixture",
+        model: "fixture-writer",
+        runtime: "remote",
+        aiTaskRunId: null,
+        language: "en",
+        support: { status: "unchecked", unsupported: [] },
+        citations: [
+          {
+            n: 1,
+            chunkId: parentEvidence[0]!.chunkId,
+            sourceSpanId: parentEvidence[0]!.sourceSpanId,
+            noteId: parentEvidence[0]!.noteId,
+            excerpt: "Excerpt.",
+            excerptHash: sha("Excerpt.")
+          }
+        ]
+      });
+      const calls = w.writes.length;
+      const opened = ready(await w.overview.overview({ id: w.topics.A }));
+      expect(opened.stale).toBe(true);
+      expect(w.writes.length).toBe(calls);
+      await refresh.request(treeId, [w.topics.A]);
+      expect((await runRefresh(refresh)).result).toMatchObject({
+        status: "pending_review",
+        origin: "rewrite",
+        risk: "high"
+      });
+      expect(w.writes.at(-1)!.patch).toBe(false);
     } finally {
       w.dispose();
     }

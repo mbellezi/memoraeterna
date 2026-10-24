@@ -46,7 +46,12 @@ export const topicOverviewLimits = {
   /** Passages one ranker call scores at most (the rank request allows 32). */
   maxSupportDocuments: 16,
   /** Characters of a stored citation's excerpt a patch prompt shows (E1..Ek, for its Divergences). */
-  patchCitedExcerptChars: 200
+  patchCitedExcerptChars: 200,
+  /**
+   * Evidence items a stored overview keeps at most (`topic_overviews_shape`): a patch appends the
+   * new evidence it offered, so it never offers more than the room left.
+   */
+  storedEvidenceMax: 40
 } as const;
 
 /** `topics.overview`: the overview of a topic, written now when there is none (or `force`). */
@@ -552,7 +557,8 @@ export function overviewPatchBaseTokens(
 /**
  * The new evidence of a patch (D17): the candidates the stored overview was not written from, in
  * evidence order, as whole items within the evidence budget minus the stored paragraphs and their
- * citations' excerpts, and at most as many as citations are left. A candidate the overview already
+ * citations' excerpts, and at most as many as citations and stored evidence have room left (the
+ * patched row keeps the stored evidence and every item offered). A candidate the overview already
  * saw is never offered again.
  */
 export function selectPatchEvidence<T extends PatchEvidenceCandidate>(
@@ -575,7 +581,8 @@ export function selectPatchEvidence<T extends PatchEvidenceCandidate>(
     0,
     Math.min(
       topicOverviewLimits.maxEvidence,
-      topicReadLimits.overviewCitationsMax - stored.citedExcerpts.length
+      topicReadLimits.overviewCitationsMax - stored.citedExcerpts.length,
+      topicOverviewLimits.storedEvidenceMax - stored.evidence.length
     )
   );
   if (maxItems === 0 || fresh.length === 0) return { evidence: [], tokens: 0, budget };

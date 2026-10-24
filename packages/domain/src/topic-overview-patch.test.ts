@@ -132,6 +132,20 @@ describe("the new evidence of a patch", () => {
     expect(selectPatchEvidence([candidate(9)], full).evidence).toEqual([]);
   });
 
+  it("never offers more evidence than the stored row has room for (it keeps every item offered)", () => {
+    const seen = (count: number) =>
+      Array.from({ length: count }, (_, n) => ({ noteId: id(100 + n), contentHash: `seen-${n}` }));
+    const fresh = Array.from({ length: 12 }, (_, n) => candidate(n + 1));
+    const nearlyFull = { ...stored, evidence: seen(topicOverviewLimits.storedEvidenceMax - 3) };
+    const { evidence } = selectPatchEvidence(fresh, nearlyFull);
+    expect(evidence).toHaveLength(3);
+    expect(nearlyFull.evidence.length + evidence.length).toBe(
+      topicOverviewLimits.storedEvidenceMax
+    );
+    const full = { ...stored, evidence: seen(topicOverviewLimits.storedEvidenceMax) };
+    expect(selectPatchEvidence(fresh, full).evidence).toEqual([]);
+  });
+
   it("asks a full topic for nothing, others for at most the paragraph limit", () => {
     expect(overviewPatchParagraphsMax(0)).toBe(topicOverviewLimits.maxParagraphs);
     expect(overviewPatchParagraphsMax(9)).toBe(3);
