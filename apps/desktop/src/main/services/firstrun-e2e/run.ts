@@ -28,7 +28,7 @@ import {
   runMigrations
 } from "@app/db";
 import type { PgPool } from "@app/db";
-import type { TopicsStatus } from "@app/domain";
+import { gardenerStatusKinds, type TopicsStatus } from "@app/domain";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
 import { registerIpcHandlers } from "../../ipc.js";
@@ -45,6 +45,11 @@ import { setExtractionPin } from "../extraction-pin.js";
 import { FirstRunRanker, settingsFirstRunRankerStore } from "../first-run-ranker.js";
 import { createBackgroundPolicy } from "../gardener/background-policy.js";
 import type { BackgroundPolicy } from "../gardener/background-policy.js";
+import {
+  GardenerStatusService,
+  distinctHolds,
+  gardenerStatusStoreOf
+} from "../gardener/status-service.js";
 import { goldenManifestSchema, selectGoldenSources, verifyGoldenFile } from "../golden-runner.js";
 import { HierarchicalIngestionService } from "../hierarchical-ingestion-service.js";
 import { IngestionService } from "../ingestion-service.js";
@@ -79,6 +84,7 @@ import {
   readFirstSourceConnection,
   readHybridRoutes,
   readModelFacts,
+  heldGardenerTasks,
   readPipelineBusy,
   readRelationFacts,
   readSourceFacts,
@@ -145,8 +151,8 @@ export interface RunDeps {
   /** The self-test's simulated install takes this long (default 300 ms). */
   syntheticInstallMs?: number;
   /**
-   * The Gardener's status (T86, `GardenerStatusService.snapshot()`), read while a download holds
-   * everything up: with it the run proves the status says why. Left out, the check is not made.
+   * The Gardener's status, read while a download holds everything up: the run proves the status says
+   * why. The product's own `GardenerStatusService` (T86) over the pass's services when left out.
    */
   status?: { snapshot(): Promise<StatusReading> };
   now?: () => Date;
@@ -380,6 +386,7 @@ async function runPass(
   let models: LocalModelService | null = null;
   let policy: BackgroundPolicy | null = null;
   let bus: AppEventBus | null = null;
+  let gardenerStatus: GardenerStatusService | null = null;
   let firstRunRanker: FirstRunRanker | null = null;
   let sampler: ReturnType<typeof startSampler> | null = null;
   let keep = config.keep;
@@ -627,10 +634,40 @@ async function runPass(
     );
     registerPromptIpc(ipc.main, prompts);
 
+    // The Gardener's status as the app composes it (F4 D27, T86): gates, tasks, lanes, downloads.
+    const backgroundPolicy = policy;
+    const eventBus = bus;
+    gardenerStatus = new GardenerStatusService({
+      store: () => gardenerStatusStoreOf(db),
+      gateHolds: () => distinctHolds(backgroundPolicy.gate.forKinds(gardenerStatusKinds)),
+      // No RemoteBudget runs here: the first run meters no money.
+      budget: async () => null,
+      lanes: () => service.laneSnapshots(),
+      models: async () => localModels.listStatuses(),
+      publish: (event) => eventBus.publish(event),
+      events: eventBus,
+      signals: [
+        (listener) => backgroundPolicy.controls.subscribe(() => listener()),
+        (listener) => backgroundPolicy.power.subscribe(() => listener())
+      ],
+      logger: quietLogger
+    });
+    const productStatus = gardenerStatus;
+    const status: { snapshot(): Promise<StatusReading> } = deps.status ?? {
+      snapshot: async () => {
+        const snapshot = await productStatus.snapshot();
+        return {
+          state: snapshot.state,
+          ...(snapshot.class ? { class: snapshot.class, reason: snapshot.reason } : {})
+        };
+      }
+    };
+
     // The app starts on an empty database: prompts, the policy, the topic engine, the local models
     // (a first-run ranker an earlier start left is finished), and the job queues.
     await prompts.initialize();
     policy.start();
+    gardenerStatus.start();
     await topics.start();
     await Promise.all([
       localModels.start().then(() => firstRunRanker?.ensure()),
@@ -647,12 +684,20 @@ async function runPass(
       read: async () => {
         const downloading = trace.downloading();
         const idle = !busy.active && !(await readPipelineBusy(db));
-        // The status is read only where it matters: a download holds everything up.
-        const status =
-          deps.status && downloading && idle
-            ? await deps.status.snapshot().catch(() => undefined)
+        // The status is read only where it matters: a download holds everything up. The Gardener's
+        // tasks that wait then tell whether its sentence must name a class.
+        const reading =
+          downloading && idle
+            ? await Promise.all([
+                status.snapshot(),
+                heldGardenerTasks(db, gardenerStatusKinds)
+              ]).catch(() => undefined)
             : undefined;
-        return { downloading, busy: !idle, ...(status ? { status } : {}) };
+        return {
+          downloading,
+          busy: !idle,
+          ...(reading ? { status: { ...reading[0], held: reading[1] } } : {})
+        };
       }
     });
 
@@ -967,9 +1012,7 @@ async function runPass(
       relations,
       sourceFacts,
       blockedJobs,
-      statusAtStalls: deps.status
-        ? statusAtStalls(samples.filter((sample) => sample.atMs <= (t1Ms ?? endMs)))
-        : null,
+      statusAtStalls: statusAtStalls(samples.filter((sample) => sample.atMs <= (t1Ms ?? endMs))),
       stoodIn: outcome.stood,
       stoppedBy: outcome.stoppedBy,
       errors,
@@ -1072,6 +1115,7 @@ async function runPass(
     };
   } finally {
     await sampler?.stop().catch(() => undefined);
+    gardenerStatus?.stop();
     setAiAdapterDecorator(null);
     setExtractionPin(false);
     holdCatalogHeaderRefresh(null);

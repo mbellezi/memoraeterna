@@ -366,7 +366,7 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
     const status = run.statusAtStalls;
     check(
       "status",
-      "While the run waited for a download, the status said why (never idle)",
+      "While the run waited for a download, a Gardener task that waited always had a sentence naming why (E5 (i))",
       status.unexplained === 0,
       status.stalls === 0
         ? "no moment of waiting was read"
@@ -374,7 +374,9 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
             .map(([name, n]) => `${name} ${n}`)
             .join(
               ", "
-            )}${status.unexplained > 0 ? `; ${status.unexplained} said nothing was wrong` : ""}`
+            )}${status.quiet > 0 ? `; ${status.quiet} with no Gardener task waiting` : ""}${
+            status.unexplained > 0 ? `; ${status.unexplained} said nothing was wrong` : ""
+          }`
     );
   }
   // With the ranker validated before the topics are released, no note should wait for the gate.

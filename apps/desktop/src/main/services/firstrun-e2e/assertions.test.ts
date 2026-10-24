@@ -324,14 +324,27 @@ describe("the first-run verdict", () => {
   it("checks that the status said why while the run waited for a download, when a status is wired", () => {
     const said = evaluateFirstRun(
       store(),
-      run({ statusAtStalls: { stalls: 12, unexplained: 0, classes: { download: 9, no_model: 3 } } })
+      run({
+        statusAtStalls: {
+          stalls: 14,
+          unexplained: 0,
+          quiet: 2,
+          classes: { download: 9, no_model: 3, idle: 2 }
+        }
+      })
     );
     expect(failing(said.checks)).toEqual([]);
     expect(said.checks.map((check) => check.id)).toContain("status");
     expect(said.checks.find((check) => check.id === "status")!.detail).toContain("download 9");
+    // An idle sentence while no Gardener task waits is the product's right answer (T86).
+    expect(said.checks.find((check) => check.id === "status")!.detail).toContain(
+      "2 with no Gardener task waiting"
+    );
     const silent = evaluateFirstRun(
       store(),
-      run({ statusAtStalls: { stalls: 12, unexplained: 2, classes: { download: 10, idle: 2 } } })
+      run({
+        statusAtStalls: { stalls: 12, unexplained: 2, quiet: 0, classes: { download: 10, idle: 2 } }
+      })
     );
     expect(failing(silent.checks)).toEqual(["status"]);
     expect(silent.checks.find((check) => check.id === "status")!.detail).toContain(
@@ -342,7 +355,7 @@ describe("the first-run verdict", () => {
       failing(
         evaluateFirstRun(
           store(),
-          run({ statusAtStalls: { stalls: 0, unexplained: 0, classes: {} } })
+          run({ statusAtStalls: { stalls: 0, unexplained: 0, quiet: 0, classes: {} } })
         ).checks
       )
     ).toEqual([]);

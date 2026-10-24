@@ -190,21 +190,26 @@ describe("the status while the run waited for a download", () => {
       ...(status ? { status } : {})
     });
     const samples: PipelineSample[] = [
-      wait({ state: "blocked", class: "download", reason: "model_downloading" }),
+      wait({ state: "blocked", class: "download", reason: "model_downloading", held: 3 }),
       wait({ state: "blocked", class: "download", reason: "model_downloading" }),
       wait({ state: "blocked", class: "no_model", reason: "no_decider" }),
+      // A task waits and the sentence names no class: unexplained (E5 (i)).
       wait({ state: "idle" }),
+      wait({ state: "running", held: 2 }),
+      // Nothing of the Gardener's waits: idle is the right sentence (T86), and it is counted apart.
+      wait({ state: "idle", held: 0 }),
       // Not a wait: the pipeline was busy, or nothing was downloading, or no status was read.
       { atMs: 1, phase: "user", downloading: true, busy: true, status: { state: "running" } },
       { atMs: 2, phase: "user", downloading: false, busy: false, status: { state: "idle" } },
       wait(undefined)
     ];
     expect(statusAtStalls(samples)).toEqual({
-      stalls: 4,
-      unexplained: 1,
-      classes: { download: 2, no_model: 1, idle: 1 }
+      stalls: 6,
+      unexplained: 2,
+      quiet: 1,
+      classes: { download: 2, no_model: 1, idle: 2, running: 1 }
     });
-    expect(statusAtStalls([])).toEqual({ stalls: 0, unexplained: 0, classes: {} });
+    expect(statusAtStalls([])).toEqual({ stalls: 0, unexplained: 0, quiet: 0, classes: {} });
   });
 });
 

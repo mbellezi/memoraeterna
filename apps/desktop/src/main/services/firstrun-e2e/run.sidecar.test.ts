@@ -66,10 +66,7 @@ describe.skipIf(!sidecarAvailable)(
       pollIntervalMs: 20,
       quietPolls: 5,
       syntheticInstallMs: 200,
-      // T86's status service stands in: it names the download while the run waits for one.
-      status: {
-        snapshot: async () => ({ state: "blocked", class: "download", reason: "model_downloading" })
-      },
+      // No status port: the pass reads the product's own GardenerStatusService (T86).
       clusterTopics: clusterInProcess,
       newTreeConfig: () => topicTreeConfigWith({ jobs: { debounceMs: 0, debounceCapMs: 0 } })
     });
@@ -187,13 +184,17 @@ describe.skipIf(!sidecarAvailable)(
       }
     });
 
-    it("reads the status while the run waits for a download, and it says why", () => {
+    it("reads the product's status while the run waits for a download, and it says why", () => {
       for (const pass of passes) {
         const check = pass.report.checks.find((entry) => entry.id === "status")!;
         expect(check.passed, check.detail).toBe(true);
-        expect(pass.report.reported.statusAtStalls).toMatchObject({ unexplained: 0 });
-        expect(pass.report.reported.statusAtStalls!.stalls).toBeGreaterThan(0);
-        expect(Object.keys(pass.report.reported.statusAtStalls!.classes)).toEqual(["download"]);
+        const status = pass.report.reported.statusAtStalls!;
+        expect(status).toMatchObject({ unexplained: 0 });
+        expect(status.stalls).toBeGreaterThan(0);
+        // A wait holding Gardener tasks names the download; one holding none reads idle (T86).
+        for (const named of Object.keys(status.classes))
+          expect(["download", "idle"]).toContain(named);
+        expect(status.classes.idle ?? 0).toBe(status.quiet);
       }
     });
 

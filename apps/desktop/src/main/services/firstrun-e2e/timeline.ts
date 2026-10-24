@@ -171,30 +171,39 @@ export interface StatusReading {
   state: string;
   class?: string | undefined;
   reason?: string | undefined;
+  /**
+   * The Gardener's tasks that waited at that moment (queued, set aside or due later). A status read
+   * without the count is held to the stricter rule: it must name a class.
+   */
+  held?: number;
 }
 
 export interface StatusAtStalls {
   /** Samples where a download held everything up and the status was read. */
   stalls: number;
-  /** Of those, the ones where the status said nothing was wrong (`idle` or `running`). */
+  /** Of those, the ones where a Gardener task waited and the sentence named no class (E5 (i)). */
   unexplained: number;
-  /** The blocker classes the status named, with how often. */
+  /** Of those, the ones where no Gardener task waited: `idle` is the right sentence there (T86). */
+  quiet: number;
+  /** The blocker classes the status named, with how often (`idle` or `running` when none). */
   classes: Record<string, number>;
 }
 
 /**
- * What the status said while the run waited for a download (E5 on the first run): every such moment
- * needs a sentence that says why, so a status that read `idle` or `running` there is unexplained.
+ * What the status said while the run waited for a download (E5 (i) on the first run): a moment at
+ * which a Gardener task waits needs a sentence that names why, so one without a class there is
+ * unexplained. With nothing waiting, the product says the Gardener is idle (T86: a download explains
+ * only the work it holds up), which is right.
  */
 export function statusAtStalls(samples: readonly PipelineSample[]): StatusAtStalls {
-  const result: StatusAtStalls = { stalls: 0, unexplained: 0, classes: {} };
+  const result: StatusAtStalls = { stalls: 0, unexplained: 0, quiet: 0, classes: {} };
   for (const sample of samples) {
     if (!sample.downloading || sample.busy || !sample.status) continue;
     result.stalls += 1;
     const named = sample.status.class ?? sample.status.state;
     result.classes[named] = (result.classes[named] ?? 0) + 1;
-    if (sample.status.state === "idle" || sample.status.state === "running")
-      result.unexplained += 1;
+    if (sample.status.held === 0) result.quiet += 1;
+    else if (!sample.status.class) result.unexplained += 1;
   }
   return result;
 }

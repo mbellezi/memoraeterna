@@ -256,6 +256,18 @@ export async function readPipelineBusy(pool: PgPool): Promise<boolean> {
   return Number(row?.n ?? 0) > 0;
 }
 
+/**
+ * The Gardener's tasks that wait at a moment nothing runs (E5 (i) on the first run): queued, whether
+ * a blocker set them aside or they are due later. Such a task needs a sentence that names why.
+ */
+export async function heldGardenerTasks(pool: PgPool, kinds: readonly string[]): Promise<number> {
+  const result = await pool.query<{ n: number }>(
+    `select count(*)::int as n from jobs where status::text = 'queued' and type::text = any($1::text[])`,
+    [[...kinds]]
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
 /** Queued or running jobs: the topic ones (the light lane) or everything else (the heavy work). */
 export async function activeJobs(pool: PgPool, topic: boolean): Promise<number> {
   const result = await pool.query<{ n: number }>(
@@ -268,7 +280,7 @@ export async function activeJobs(pool: PgPool, topic: boolean): Promise<number> 
   return Number(result.rows[0]?.n ?? 0);
 }
 
-/** Ingestion runs that have not ended: the import's heavy work is over only when none is left. */
+/** Ingestion runs that have not ended: the heavy work of the imports is over only when none is left. */
 export async function unfinishedRuns(pool: PgPool): Promise<number> {
   const result = await pool.query<{ n: number }>(
     "select count(*)::int as n from ingestion_runs where status::text in ('pending', 'running')"
