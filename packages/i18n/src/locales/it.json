@@ -148,6 +148,235 @@
       "failed": "Non ha funzionato. Riprova."
     }
   },
+  "inbox": {
+    "title": "Posta in arrivo",
+    "description": "Ciò che richiede il tuo giudizio, il più importante per primo.",
+    "badge": "{count} in attesa",
+    "states": {
+      "loading": "Caricamento della posta in arrivo...",
+      "error": "Impossibile caricare la posta in arrivo.",
+      "empty": {
+        "title": "Niente richiede la tua attenzione",
+        "body": "La tua libreria si organizza da sola. Quando qualcosa richiede il tuo giudizio, comparirà qui."
+      },
+      "emptyFiltered": "Nessun elemento corrisponde a questo filtro.",
+      "loadMore": "Carica altri",
+      "loadingMore": "Caricamento di altri...",
+      "moreFailed": "Impossibile caricare altri elementi."
+    },
+    "filters": {
+      "label": "Filtra la posta in arrivo",
+      "all": "Tutto",
+      "chip": "{kind}: {count}",
+      "risk": {
+        "label": "Rischio",
+        "any": "Qualsiasi rischio"
+      }
+    },
+    "kinds": {
+      "review": "Da rivedere",
+      "quarantined": "Attività non riuscite",
+      "contradiction": "Contraddizioni",
+      "withdrawn": "Collegamenti ritirati",
+      "duplicate": "Duplicati",
+      "obsidianConflict": "Conflitti di Obsidian",
+      "budget": "Limite di spesa",
+      "backlog": "Nuovo abbinamento facoltativo"
+    },
+    "risk": {
+      "high": "Rischio alto",
+      "medium": "Rischio medio",
+      "low": "Rischio basso"
+    },
+    "list": {
+      "label": "Elementi in attesa di te"
+    },
+    "age": {
+      "now": "adesso"
+    },
+    "items": {
+      "review": {
+        "title": "Una modifica attende la tua revisione",
+        "variant": {
+          "topic": "Struttura degli argomenti",
+          "relation": "Collegamenti",
+          "overview": "Panoramica di un argomento"
+        },
+        "body": "Nulla viene applicato finché non decidi. Guarda sotto cosa cambierebbe, poi applica o scarta."
+      },
+      "quarantined": {
+        "title": "{task} continua a non riuscire",
+        "task": {
+          "place": "Inserimento delle note negli argomenti",
+          "rebalance": "Riorganizzazione degli argomenti",
+          "audit": "Controllo della libreria",
+          "match": "Ricerca di collegamenti",
+          "refresh": "Aggiornamento della panoramica di un argomento",
+          "derived": "Aggiornamento dei dati di ricerca",
+          "other": "Un'attività in background"
+        },
+        "body": "È fallita due volte con lo stesso input, quindi non verrà rieseguita da sola finché quell'input non cambia.",
+        "reason": "Cosa è andato storto: {reason}.",
+        "reasons": {
+          "invalidOutput": "la risposta del modello non era utilizzabile",
+          "callFailed": "il modello non era raggiungibile o ha rifiutato la richiesta",
+          "invalid": "la richiesta non era valida",
+          "unknown": "un problema imprevisto"
+        }
+      },
+      "contradiction": {
+        "title": "Queste note potrebbero contraddirsi",
+        "body": "Un collegamento suggerito dice che “{first}” e “{second}” sostengono posizioni opposte. Mantienilo per registrare la contraddizione, oppure rimuovilo."
+      },
+      "withdrawn": {
+        "title": "Un collegamento è stato ritirato",
+        "body": {
+          "explainer": "La sua spiegazione ha concluso che “{first}” e “{second}” non sono collegate. Mantieni il collegamento per ripristinarlo, oppure rimuovilo definitivamente.",
+          "typer": "La classificazione del collegamento tra “{first}” e “{second}” non ha trovato alcuna relazione. Mantienilo per ripristinarlo, oppure rimuovilo definitivamente.",
+          "unknown": "Il collegamento tra “{first}” e “{second}” è stato ritirato automaticamente. Mantienilo per ripristinarlo, oppure rimuovilo definitivamente."
+        }
+      },
+      "duplicate": {
+        "title": "Possibili note duplicate",
+        "body": {
+          "vector": "“{first}” e “{second}” dicono quasi la stessa cosa.",
+          "title": "“{first}” e “{second}” hanno lo stesso titolo.",
+          "both": "“{first}” e “{second}” hanno lo stesso titolo e dicono quasi la stessa cosa."
+        },
+        "hint": "Nulla viene unito o rimosso. Scarta se non sono duplicati."
+      },
+      "obsidianConflict": {
+        "title": "Un file del vault richiede la tua decisione",
+        "body": {
+          "editorial": "“{path}” è stato modificato in Obsidian e nell'app.",
+          "deleted": "“{path}” è stato eliminato in Obsidian ma modificato nell'app.",
+          "projection": "“{path}” è stato generato dall'app e modificato nel vault."
+        },
+        "where": "Risolvilo in Impostazioni, sotto Connessioni."
+      },
+      "budget": {
+        "title": {
+          "money80": "Il lavoro IA in background è in pausa vicino al limite del mese",
+          "money100": "Il limite del mese per il lavoro IA in background è stato raggiunto"
+        },
+        "body": "{spent} di {cap} usati questo mese.",
+        "hint": {
+          "money80": "Continua per lasciare che il lavoro in background arrivi fino al limite, oppure alza il limite in Impostazioni.",
+          "money100": "Il lavoro in background riprende il mese prossimo, o quando alzi il limite in Impostazioni."
+        }
+      },
+      "backlog": {
+        "title": "Abbinare di nuovo le note con il modello attuale?",
+        "body": "{count} note sono state abbinate da un altro modello. Nulla cambia se non accetti.",
+        "bodyOther": "Un'attività facoltativa attende la tua decisione."
+      }
+    },
+    "detail": {
+      "empty": "Seleziona un elemento per vedere di cosa si tratta.",
+      "involves": "Riguarda",
+      "open": "Apri “{name}”",
+      "openSettings": "Apri Connessioni in Impostazioni",
+      "unnamed": "Senza titolo",
+      "working": "In corso...",
+      "connection": "Collegamento: {type}",
+      "openFailed": "Impossibile aprirlo. Potrebbe essere stato rimosso."
+    },
+    "verbs": {
+      "apply": "Applica",
+      "dismiss": "Scarta",
+      "keep": "Mantieni",
+      "remove": "Rimuovi",
+      "retry": "Riprova",
+      "notDuplicate": "Non è un duplicato",
+      "rematch": "Abbina di nuovo",
+      "continue": "Continua"
+    },
+    "undo": {
+      "action": "Annulla",
+      "hint": "oppure premi U",
+      "hide": "Nascondi"
+    },
+    "keys": {
+      "toggle": "Scorciatoie da tastiera",
+      "title": "Scorciatoie da tastiera",
+      "move": "Elemento successivo o precedente",
+      "open": "Vai ai dettagli",
+      "apply": "Applica o mantieni",
+      "dismiss": "Scarta o rimuovi",
+      "retry": "Riprova",
+      "undo": "Annulla l'ultima decisione",
+      "help": "Mostra o nascondi questo aiuto",
+      "note": "Questi tasti funzionano mentre la lista o i dettagli hanno il focus, mai mentre scrivi o in una finestra di dialogo.",
+      "money": "Continuare oltre il limite di spesa è un pulsante, mai un tasto."
+    },
+    "result": {
+      "applied": "Applicato.",
+      "dismissed": "Scartato.",
+      "kept": "Mantenuto.",
+      "removed": "Rimosso.",
+      "retried": "In coda per essere rieseguita.",
+      "continued": "Il lavoro in background continua questo mese.",
+      "accepted": "Note in coda per essere abbinate di nuovo: {count}.",
+      "stale": "Questo elemento è cambiato. La lista è stata aggiornata.",
+      "waiting": "Non può essere eseguito adesso. Riprova più tardi.",
+      "gone": "Quell'elemento è già stato gestito.",
+      "unsupported": "Non è possibile per questo elemento.",
+      "blocked": "Non è stato possibile farlo adesso.",
+      "failed": "Non ha funzionato. Riprova.",
+      "undone": "Annullato.",
+      "undoUnavailable": "Non può più essere annullato."
+    },
+    "diff": {
+      "title": "Cosa cambierebbe",
+      "loading": "Caricamento delle modifiche...",
+      "error": "Impossibile caricare le modifiche.",
+      "missing": "Questa modifica non è più disponibile.",
+      "hidden": "Altri {count} non sono mostrati.",
+      "topic": {
+        "caption": "Argomenti toccati da questa modifica",
+        "topic": "Argomento",
+        "change": "Modifica",
+        "items": "Elementi",
+        "root": "Intera libreria",
+        "changes": {
+          "added": "Aggiunto",
+          "removed": "Rimosso",
+          "moved": "Spostato",
+          "renamed": "Rinominato",
+          "changed": "Modificato",
+          "items": "Elementi spostati",
+          "context": "Invariato"
+        },
+        "movedFrom": "da “{from}” a “{to}”",
+        "renamedFrom": "era “{from}”",
+        "itemsInOut": "{in} in entrata, {out} in uscita"
+      },
+      "relation": {
+        "caption": "Collegamenti toccati da questa modifica",
+        "connection": "Collegamento",
+        "change": "Modifica",
+        "untyped": "Ancora senza tipo",
+        "between": "“{from}” e “{to}”",
+        "changes": {
+          "created": "Creato",
+          "removed": "Rimosso",
+          "changed": "Modificato"
+        }
+      },
+      "overview": {
+        "before": "Prima",
+        "after": "Dopo",
+        "empty": "Ancora nessuna panoramica",
+        "divergences": "Dove le nuove evidenze non concordano",
+        "divergence": "Paragrafi {existing} e {new}: {summary}"
+      }
+    },
+    "errors": {
+      "invalidCursor": "Nel frattempo la lista è cambiata. Caricala di nuovo.",
+      "invalidItem": "Questo elemento non è valido.",
+      "unavailable": "La posta in arrivo non è disponibile in questo momento."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti.",

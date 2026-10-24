@@ -148,6 +148,235 @@
       "failed": "Não funcionou. Tente novamente."
     }
   },
+  "inbox": {
+    "title": "Caixa de entrada",
+    "description": "O que precisa do seu julgamento, o mais importante primeiro.",
+    "badge": "{count} aguardando",
+    "states": {
+      "loading": "Carregando sua caixa de entrada...",
+      "error": "Não foi possível carregar sua caixa de entrada.",
+      "empty": {
+        "title": "Nada precisa de você",
+        "body": "Sua biblioteca se organiza sozinha. Quando algo precisar do seu julgamento, aparecerá aqui."
+      },
+      "emptyFiltered": "Nada corresponde a este filtro.",
+      "loadMore": "Carregar mais",
+      "loadingMore": "Carregando mais...",
+      "moreFailed": "Não foi possível carregar mais itens."
+    },
+    "filters": {
+      "label": "Filtrar a caixa de entrada",
+      "all": "Tudo",
+      "chip": "{kind}: {count}",
+      "risk": {
+        "label": "Risco",
+        "any": "Qualquer risco"
+      }
+    },
+    "kinds": {
+      "review": "Para revisar",
+      "quarantined": "Tarefas com falha",
+      "contradiction": "Contradições",
+      "withdrawn": "Conexões retiradas",
+      "duplicate": "Duplicatas",
+      "obsidianConflict": "Conflitos do Obsidian",
+      "budget": "Limite de gastos",
+      "backlog": "Nova correspondência opcional"
+    },
+    "risk": {
+      "high": "Risco alto",
+      "medium": "Risco médio",
+      "low": "Risco baixo"
+    },
+    "list": {
+      "label": "Itens aguardando você"
+    },
+    "age": {
+      "now": "agora mesmo"
+    },
+    "items": {
+      "review": {
+        "title": "Uma mudança aguarda sua revisão",
+        "variant": {
+          "topic": "Estrutura de tópicos",
+          "relation": "Conexões",
+          "overview": "Visão geral de um tópico"
+        },
+        "body": "Nada é aplicado até você decidir. Veja abaixo o que mudaria e então aplique ou descarte."
+      },
+      "quarantined": {
+        "title": "{task} continua falhando",
+        "task": {
+          "place": "Colocar notas em tópicos",
+          "rebalance": "Reorganizar tópicos",
+          "audit": "Verificar sua biblioteca",
+          "match": "Encontrar conexões",
+          "refresh": "Atualizar a visão geral de um tópico",
+          "derived": "Atualizar dados de busca",
+          "other": "Uma tarefa em segundo plano"
+        },
+        "body": "Falhou duas vezes com a mesma entrada, então não rodará de novo sozinha até que essa entrada mude.",
+        "reason": "O que deu errado: {reason}.",
+        "reasons": {
+          "invalidOutput": "a resposta do modelo não pôde ser usada",
+          "callFailed": "o modelo não pôde ser acessado ou recusou o pedido",
+          "invalid": "o pedido não era válido",
+          "unknown": "um problema inesperado"
+        }
+      },
+      "contradiction": {
+        "title": "Estas notas podem se contradizer",
+        "body": "Uma conexão sugerida diz que “{first}” e “{second}” têm posições opostas. Mantenha-a para registrar a contradição ou remova-a."
+      },
+      "withdrawn": {
+        "title": "Uma conexão foi retirada",
+        "body": {
+          "explainer": "Sua explicação concluiu que “{first}” e “{second}” não estão relacionadas. Mantenha a conexão para restaurá-la ou remova-a de vez.",
+          "typer": "Tipar a conexão entre “{first}” e “{second}” não encontrou relação. Mantenha-a para restaurá-la ou remova-a de vez.",
+          "unknown": "A conexão entre “{first}” e “{second}” foi retirada automaticamente. Mantenha-a para restaurá-la ou remova-a de vez."
+        }
+      },
+      "duplicate": {
+        "title": "Possíveis notas duplicadas",
+        "body": {
+          "vector": "“{first}” e “{second}” dizem quase a mesma coisa.",
+          "title": "“{first}” e “{second}” têm o mesmo título.",
+          "both": "“{first}” e “{second}” têm o mesmo título e dizem quase a mesma coisa."
+        },
+        "hint": "Nada é mesclado nem removido. Descarte se não forem duplicatas."
+      },
+      "obsidianConflict": {
+        "title": "Um arquivo do cofre precisa da sua decisão",
+        "body": {
+          "editorial": "“{path}” foi alterado no Obsidian e no app.",
+          "deleted": "“{path}” foi excluído no Obsidian, mas alterado no app.",
+          "projection": "“{path}” foi gerado pelo app e editado no cofre."
+        },
+        "where": "Resolva em Configurações, em Conexões."
+      },
+      "budget": {
+        "title": {
+          "money80": "O trabalho de IA em segundo plano está pausado perto do limite do mês",
+          "money100": "O limite do mês para o trabalho de IA em segundo plano foi atingido"
+        },
+        "body": "{spent} de {cap} usados neste mês.",
+        "hint": {
+          "money80": "Continue para deixar o trabalho em segundo plano rodar até o limite ou aumente o limite em Configurações.",
+          "money100": "O trabalho em segundo plano volta no próximo mês ou quando você aumentar o limite em Configurações."
+        }
+      },
+      "backlog": {
+        "title": "Comparar as notas de novo com o modelo atual?",
+        "body": "{count} notas foram comparadas por outro modelo. Nada muda a menos que você aceite.",
+        "bodyOther": "Uma tarefa opcional aguarda sua decisão."
+      }
+    },
+    "detail": {
+      "empty": "Selecione um item para ver do que se trata.",
+      "involves": "Envolve",
+      "open": "Abrir “{name}”",
+      "openSettings": "Abrir Conexões nas Configurações",
+      "unnamed": "Sem título",
+      "working": "Trabalhando...",
+      "connection": "Conexão: {type}",
+      "openFailed": "Não foi possível abrir isso. Talvez tenha sido removido."
+    },
+    "verbs": {
+      "apply": "Aplicar",
+      "dismiss": "Descartar",
+      "keep": "Manter",
+      "remove": "Remover",
+      "retry": "Tentar de novo",
+      "notDuplicate": "Não é duplicata",
+      "rematch": "Comparar de novo",
+      "continue": "Continuar"
+    },
+    "undo": {
+      "action": "Desfazer",
+      "hint": "ou pressione U",
+      "hide": "Ocultar"
+    },
+    "keys": {
+      "toggle": "Atalhos de teclado",
+      "title": "Atalhos de teclado",
+      "move": "Próximo item ou anterior",
+      "open": "Ir para os detalhes",
+      "apply": "Aplicar ou manter",
+      "dismiss": "Descartar ou remover",
+      "retry": "Tentar de novo",
+      "undo": "Desfazer a última decisão",
+      "help": "Mostrar ou ocultar esta ajuda",
+      "note": "Estas teclas funcionam enquanto a lista ou os detalhes têm o foco, nunca enquanto você digita ou em um diálogo.",
+      "money": "Continuar além do limite de gastos é um botão, nunca uma tecla."
+    },
+    "result": {
+      "applied": "Aplicado.",
+      "dismissed": "Descartado.",
+      "kept": "Mantido.",
+      "removed": "Removido.",
+      "retried": "Na fila para rodar de novo.",
+      "continued": "O trabalho em segundo plano continua neste mês.",
+      "accepted": "Notas na fila para serem comparadas de novo: {count}.",
+      "stale": "Este item mudou. A lista foi atualizada.",
+      "waiting": "Isso não pode rodar agora. Tente de novo mais tarde.",
+      "gone": "Esse item já foi tratado.",
+      "unsupported": "Isso não é possível para este item.",
+      "blocked": "Não foi possível fazer isso agora.",
+      "failed": "Isso não funcionou. Tente de novo.",
+      "undone": "Desfeito.",
+      "undoUnavailable": "Isso não pode mais ser desfeito."
+    },
+    "diff": {
+      "title": "O que mudaria",
+      "loading": "Carregando as mudanças...",
+      "error": "Não foi possível carregar as mudanças.",
+      "missing": "Esta mudança não está mais disponível.",
+      "hidden": "Mais {count} não são mostrados.",
+      "topic": {
+        "caption": "Tópicos que esta mudança toca",
+        "topic": "Tópico",
+        "change": "Mudança",
+        "items": "Itens",
+        "root": "Biblioteca inteira",
+        "changes": {
+          "added": "Adicionado",
+          "removed": "Removido",
+          "moved": "Movido",
+          "renamed": "Renomeado",
+          "changed": "Alterado",
+          "items": "Itens movidos",
+          "context": "Sem mudança"
+        },
+        "movedFrom": "de “{from}” para “{to}”",
+        "renamedFrom": "era “{from}”",
+        "itemsInOut": "{in} entram, {out} saem"
+      },
+      "relation": {
+        "caption": "Conexões que esta mudança toca",
+        "connection": "Conexão",
+        "change": "Mudança",
+        "untyped": "Sem tipo ainda",
+        "between": "“{from}” e “{to}”",
+        "changes": {
+          "created": "Criada",
+          "removed": "Removida",
+          "changed": "Alterada"
+        }
+      },
+      "overview": {
+        "before": "Antes",
+        "after": "Depois",
+        "empty": "Ainda sem visão geral",
+        "divergences": "Onde as novas evidências discordam",
+        "divergence": "Parágrafos {existing} e {new}: {summary}"
+      }
+    },
+    "errors": {
+      "invalidCursor": "A lista mudou enquanto isso. Carregue-a de novo.",
+      "invalidItem": "Este item não é válido.",
+      "unavailable": "A caixa de entrada não está disponível agora."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Não foi possível selecionar trechos originais relevantes para esta solicitação. Ajuste a pergunta ou o escopo de fontes.",
