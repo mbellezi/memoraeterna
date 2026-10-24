@@ -422,4 +422,5 @@ exactly when placed in `advanced`) keep it true. A setting added without a row f
 - **Tree shape (D13).** The shape the controls hold is the topic tree's structural configuration
   (`topicTreeConfigForPreset`; Balanced is the engine's own, so nothing changes for a library never touched). A new
   shape proposes a rebuild for review (`reviewConfigChanges`), carries the configuration in the proposal's summary and
-  moves the tree to it when applied; a shape that moves nothing is recorded, not proposed.
+  moves the tree to it when applied; a shape that moves nothing is recorded, not proposed. A dismissed shape is not
+  proposed again until another shape is; the tree keeps its own configuration and its rebuild triggers.

@@ -367,4 +367,37 @@ describe.skipIf(!sidecarAvailable)("the tree shape control on the PostgreSQL sid
     expect(results.every((result) => result.status !== "pending_review")).toBe(true);
     expect(await pending()).toHaveLength(0);
   });
+
+  it("keeps rebuilding a growing library while a dismissed shape is held", async () => {
+    // The tree back on Balanced (its structure moves nothing), then Broad proposed and dismissed.
+    await chooseShape("balanced");
+    expect(buildResults(await drain())[0]).toMatchObject({ status: "applied", reason: "config" });
+    const balanced = await activeTree();
+    await chooseShape("broad");
+    expect(buildResults(await drain())[0]).toMatchObject({ status: "pending_review" });
+    const [proposal] = await pending();
+    await services.service.review({ changeSetId: proposal!.id, decision: "dismiss" });
+    // The library has more than doubled since the tree was last built (its baseline says 150).
+    const built = await pool.query<{ id: string }>(
+      `update topic_change_sets set summary = jsonb_set(summary, '{notes}', '150')
+        where id = (select id from topic_change_sets
+                     where tree_id = $1 and origin in ('build', 'rebuild') and status = 'applied'
+                     order by created_at desc, id desc limit 1)
+        returning id`,
+      [balanced.id]
+    );
+    expect(built.rows).toHaveLength(1);
+    await services.shapeChanged();
+    // The trigger still rebuilds, on the tree's own configuration; the dismissed shape stays so.
+    expect(buildResults(await drain())[0]).toMatchObject({ reason: "doubling" });
+    expect((await activeTree()).configHash).toBe(balanced.configHash);
+    await services.shapeChanged();
+    const after = buildResults(await drain());
+    expect(after.every((result) => result.reason !== "config")).toBe(true);
+    const proposals = await pool.query(
+      `select 1 from topic_change_sets
+        where status = 'pending_review' and summary ->> 'reason' = 'config'`
+    );
+    expect(proposals.rows).toHaveLength(0);
+  });
 });

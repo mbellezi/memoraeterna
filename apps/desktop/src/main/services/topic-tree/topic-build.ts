@@ -29,6 +29,7 @@ import type {
   PgPool,
   TopicItemInfo,
   TopicItemVectors,
+  TopicStructureBuild,
   TopicTreeRecord,
   TopicTreeSpaceInput
 } from "@app/db";
@@ -289,6 +290,13 @@ function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
 }
 
 /**
+ * A proposal of a new structural configuration the owner dismissed (a tree shape, F4 D13): the
+ * tree never took it, so it is no baseline for the rebuild triggers.
+ */
+const isDismissedConfig = (build: TopicStructureBuild | null): boolean =>
+  build?.status === "dismissed" && build.summary.reason === "config";
+
+/**
  * The trigger baseline a build or rebuild change-set records in its summary; a rejected trigger
  * rebuild (a `dismissed` rebuild record) also carries the PLACE decisions and waiting items it saw.
  */
@@ -408,7 +416,7 @@ export class TopicStructureJobs {
   private async rebuildIfTriggered(treeId: string): Promise<void> {
     const latest = await createTopicTreeRepository(this.requirePool()).latestStructureBuild(treeId);
     if (!latest || latest.status === "pending_review") return;
-    const baseline = baselineOf(latest.summary);
+    const baseline = await this.triggerBaseline(treeId, latest);
     if (!baseline) return;
     const trigger = await this.options.service.runOnTree(treeId, async (cache) =>
       hasTopics(cache.state)
@@ -601,9 +609,28 @@ export class TopicStructureJobs {
   }
 
   /**
+   * What the rebuild triggers compare the tree with: its last build, past a dismissed proposal of
+   * a new configuration (a tree that never was).
+   */
+  private async triggerBaseline(
+    treeId: string,
+    latest: TopicStructureBuild | null
+  ): Promise<BuildBaseline | null> {
+    if (!isDismissedConfig(latest)) return baselineOf(latest?.summary);
+    const built = await createTopicTreeRepository(this.requirePool()).latestStructureBuild(
+      treeId,
+      undefined,
+      { tree: true }
+    );
+    return baselineOf(built?.summary);
+  }
+
+  /**
    * Whether a tree with topics is rebuilt now: a new structural configuration (D39), else one of
    * the rebuild triggers against the last build. A proposal that waits for review blocks both; a
-   * dismissed configuration rebuild is not proposed again for the same configuration.
+   * dismissed configuration rebuild is not proposed again for the same configuration. The tree
+   * then keeps its own configuration, and its rebuild triggers still apply: a dismissed tree shape
+   * (F4 D13) never stops a growing library from being rebuilt.
    */
   private async rebuildDecision(
     cache: TopicTreeCache,
@@ -616,16 +643,23 @@ export class TopicStructureJobs {
     const repository = createTopicTreeRepository(this.requirePool());
     const latest = await repository.latestStructureBuild(cache.tree.id);
     if (latest?.status === "pending_review") return { skip: "review_pending" };
+    let dismissed = false;
     if (hash !== cache.tree.configHash) {
-      if (latest?.status === "dismissed" && latest.summary.configHash === hash) {
-        return { skip: "dismissed" };
-      }
-      return { reason: "config", config: effective, configHash: hash, changed: true };
+      // The last proposal of a new configuration, even with trigger rebuilds after it: one the
+      // owner dismissed for this configuration stays dismissed until another one is proposed.
+      const proposal =
+        latest?.summary.reason === "config"
+          ? latest
+          : await repository.latestStructureBuild(cache.tree.id, undefined, { reason: "config" });
+      dismissed = proposal?.status === "dismissed" && proposal.summary.configHash === hash;
+      if (!dismissed)
+        return { reason: "config", config: effective, configHash: hash, changed: true };
     }
-    const baseline = baselineOf(latest?.summary);
-    if (!baseline) return { skip: "no_change" };
+    const idle = { skip: dismissed ? "dismissed" : "no_change" };
+    const baseline = await this.triggerBaseline(cache.tree.id, latest);
+    if (!baseline) return idle;
     const trigger = rebuildTrigger(structureSignals(cache.state), baseline, cache.config);
-    if (!trigger) return { skip: "no_change" };
+    if (!trigger) return idle;
     return {
       reason: trigger,
       config: cache.config,

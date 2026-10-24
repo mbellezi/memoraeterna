@@ -1947,10 +1947,15 @@ export function createTopicTreeRepository(pool: PgPool) {
       });
     },
 
-    /** The latest build or rebuild change-set of a tree, whatever its status; null before any. */
+    /**
+     * The latest build or rebuild change-set of a tree, whatever its status; null before any.
+     * `reason` keeps the builds made for that reason (`config`: a new structural configuration);
+     * `tree` leaves out the dismissed proposals of a new configuration, a tree that never was.
+     */
     async latestStructureBuild(
       treeId: string,
-      db: Queryable = pool
+      db: Queryable = pool,
+      filter: { reason?: string; tree?: boolean } = {}
     ): Promise<TopicStructureBuild | null> {
       const result = await db.query<{
         id: string;
@@ -1961,8 +1966,11 @@ export function createTopicTreeRepository(pool: PgPool) {
       }>(
         `select id, origin, status, summary, created_at as "createdAt" from topic_change_sets
           where tree_id = $1 and origin in ('build', 'rebuild')
+            and ($2::text is null or summary ->> 'reason' = $2)
+            and (not $3::boolean
+                 or not (status = 'dismissed' and coalesce(summary ->> 'reason', '') = 'config'))
           order by created_at desc, id desc limit 1`,
-        [treeId]
+        [treeId, filter.reason ?? null, filter.tree === true]
       );
       const row = result.rows[0];
       if (!row) return null;
