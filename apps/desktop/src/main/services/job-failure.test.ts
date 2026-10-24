@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { AiProviderError, ProviderUnavailableError, isTransientAiError } from "@app/ai";
+import {
+  AiProviderError,
+  ProviderUnavailableError,
+  isTransientAiError,
+  toProviderNetworkError
+} from "@app/ai";
 import {
   workerErrorMessage,
   workerFailure,
   workerMessageSchema
 } from "../workers/worker-contracts.js";
-import { isTransientJobFailure } from "./job-failure.js";
+import { isProviderOutage, isTransientJobFailure, providerOutageBlocker } from "./job-failure.js";
 
 describe("job failure classification", () => {
   it("retries provider timeouts, rate limits, server errors, network failures and stalls", () => {
@@ -131,5 +136,75 @@ describe("job failure classification", () => {
     const invalid = new AiProviderError("bad", { kind: "http", transient: false, status: 400 });
     expect(isTransientJobFailure(new Error("stage failed", { cause: busy }))).toBe(true);
     expect(isTransientJobFailure(new Error("stage failed", { cause: invalid }))).toBe(false);
+  });
+});
+
+describe("provider outage (F4 D7): a wait, not a failure", () => {
+  const now = 1_000_000;
+  const transport = (code: string) =>
+    toProviderNetworkError(Object.assign(new Error(`connect ${code}`), { code }));
+
+  it("sets aside a call the open breaker refused, until the probe may go", () => {
+    expect(
+      providerOutageBlocker(
+        new ProviderUnavailableError("remote:codex", 12_000, { failure: "unreachable" }),
+        now
+      )
+    ).toEqual({ class: "offline", reason: "network_unreachable", clearsAt: now + 12_000 });
+    // A provider that does not answer (refused, 5xx before the breaker opened): waiting for it.
+    expect(
+      providerOutageBlocker(
+        new Error("stage failed", {
+          cause: new ProviderUnavailableError("remote:codex", 0, { failure: "unavailable" })
+        }),
+        now
+      )
+    ).toEqual({ class: "waiting", reason: "provider_unavailable", clearsAt: now + 1_000 });
+    // Refused while the probe is out: the probe's answer (network_back) or the recheck decides.
+    expect(
+      providerOutageBlocker(
+        new ProviderUnavailableError("remote:codex", 30_000, { breaker: "half_open" }),
+        now
+      )
+    ).toEqual({ class: "waiting", reason: "provider_unavailable", clearsAt: null });
+  });
+
+  it("sets aside a call that failed in transport, as the next probe", () => {
+    for (const code of ["ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "ENETDOWN", "EHOSTUNREACH"])
+      expect(providerOutageBlocker(transport(code), now)).toEqual({
+        class: "offline",
+        reason: "network_unreachable",
+        clearsAt: now + 30_000
+      });
+    for (const code of ["ECONNREFUSED", "ECONNRESET", "UND_ERR_SOCKET"])
+      expect(providerOutageBlocker(transport(code), now, { providerProbeMs: 5_000 })).toEqual({
+        class: "waiting",
+        reason: "provider_unavailable",
+        clearsAt: now + 5_000
+      });
+    expect(isProviderOutage(new Error("job failed", { cause: transport("ENOTFOUND") }))).toBe(true);
+  });
+
+  it("keeps answers on their paths: backoff for 5xx, 429 and deadlines, failure for 4xx", () => {
+    for (const status of [429, 500, 503])
+      expect(
+        isProviderOutage(new AiProviderError("busy", { kind: "http", transient: true, status }))
+      ).toBe(false);
+    for (const status of [400, 401, 403, 404, 413])
+      expect(
+        isProviderOutage(
+          new AiProviderError("rejected", { kind: "http", transient: false, status })
+        )
+      ).toBe(false);
+    for (const kind of ["timeout", "stalled", "stream", "context_overflow"] as const)
+      expect(isProviderOutage(new AiProviderError(kind, { kind, transient: true }))).toBe(false);
+    expect(isProviderOutage(new Error("knowledge_graph_output_invalid:schema_validation"))).toBe(
+      false
+    );
+    // A database that refused its connection is no provider outage: it backs off as before.
+    expect(
+      isProviderOutage(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }))
+    ).toBe(false);
+    expect(isProviderOutage(undefined)).toBe(false);
   });
 });

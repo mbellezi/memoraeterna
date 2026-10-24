@@ -459,6 +459,10 @@ void app.whenReady().then(() => {
     onBudgetRefusal: (jobId, refusal) => {
       const blocker = backgroundBlockerOf(refusal);
       if (blocker) backgroundPolicy?.gate.noteRefusal(jobId, blocker);
+    },
+    // A probe answered: the tasks a provider outage set aside run again (D7, `network_back`).
+    onBreakerTransition: (_lane, transition) => {
+      if (transition.to === "closed") void backgroundPolicy?.blockers.notify("network_back");
     }
   });
   soakPreparation?.attach(aiService);

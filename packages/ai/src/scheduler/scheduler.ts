@@ -102,7 +102,12 @@ export class LaneScheduler implements AiScheduler {
     // An open breaker fails the entry at once; a half-open one lets exactly one entry probe.
     const admission = lane.breaker?.admit(this.clock.now());
     if (admission?.kind === "refuse")
-      return Promise.reject(new ProviderUnavailableError(lane.key, admission.retryAfterMs));
+      return Promise.reject(
+        new ProviderUnavailableError(lane.key, admission.retryAfterMs, {
+          breaker: admission.state,
+          failure: lane.failure?.kind
+        })
+      );
     const reservation = ticket.reservation ?? this.reserve();
     return new Promise<T>((resolve, reject) => {
       const permit = new Permit(
@@ -338,7 +343,12 @@ export class LaneScheduler implements AiScheduler {
       const failed = lane.waiting.filter((entry) => entry.fresh);
       for (const entry of failed) {
         lane.remove(entry);
-        entry.refuse(new ProviderUnavailableError(lane.key, this.config.breaker.openMs));
+        entry.refuse(
+          new ProviderUnavailableError(lane.key, this.config.breaker.openMs, {
+            breaker: "open",
+            failure: lane.failure?.kind
+          })
+        );
       }
       lane.breaker?.countRefused(failed.length);
     }

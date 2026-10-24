@@ -409,6 +409,31 @@ describe("a non-running task always has a reason (E5)", () => {
       )
     ).toMatchObject({ state: "idle" });
   });
+
+  it("names an import a provider outage set aside, as it names a Gardener task (D7)", () => {
+    for (const key of ["offline.network_unreachable", "waiting.provider_unavailable"] as const)
+      expect(
+        composeGardenerStatus(facts({ blocked: [blocked("ingestion", key, { count: 2 })] }))
+      ).toMatchObject({
+        state: "blocked",
+        class: key.split(".")[0],
+        reason: key.split(".")[1]
+      });
+    // The lane's own memory says the same while the import waits: the network did not answer.
+    expect(
+      composeGardenerStatus(
+        facts({
+          blocked: [blocked("ingestion", "offline.network_unreachable")],
+          lanes: [
+            lane({
+              breaker: { state: "open", reopensInMs: 20_000 },
+              failure: { kind: "unreachable", ageMs: 1_000 }
+            })
+          ]
+        })
+      )
+    ).toMatchObject({ state: "blocked", class: "offline", reason: "network_unreachable" });
+  });
 });
 
 describe("blocked tasks", () => {

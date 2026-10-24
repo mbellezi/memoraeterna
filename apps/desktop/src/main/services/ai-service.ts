@@ -228,6 +228,12 @@ export interface AiServiceOptions {
    */
   backgroundAdmission?: Pick<AiSchedulerHooks, "admit" | "backgroundDutyCycle">;
   /**
+   * Hears a remote lane's circuit breaker move (F3 D32), after its log line: once it closes, the
+   * background policy frees the tasks a provider outage set aside (F4 D7, `network_back`). It
+   * applies to the scheduler the service creates, not to an injected one.
+   */
+  onBreakerTransition?: AiSchedulerHooks["onBreakerTransition"];
+  /**
    * The MLX helper every MLX adapter shares: one helper process holds at most one generative, one
    * embedding and one ranker model (D18). Created on first use when left out; proofs inject one.
    */
@@ -698,8 +704,11 @@ export class AiService {
       options.scheduler ??
       createAiScheduler(this.laneConfig, undefined, {
         // A breaker moving is the one lane event worth a line: it explains the calls that fail fast.
-        onBreakerTransition: (lane, { from, to, reason }) =>
-          options.logger?.info(`AI lane ${lane}: circuit breaker ${from} -> ${to} (${reason})`),
+        onBreakerTransition: (lane, transition) => {
+          const { from, to, reason } = transition;
+          options.logger?.info(`AI lane ${lane}: circuit breaker ${from} -> ${to} (${reason})`);
+          options.onBreakerTransition?.(lane, transition);
+        },
         ...options.backgroundAdmission
       });
   }

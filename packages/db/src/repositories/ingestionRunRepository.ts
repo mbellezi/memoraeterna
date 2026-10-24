@@ -674,6 +674,44 @@ export function createIngestionRunRepository(db: Queryable) {
       return row ? mapIngestionRun(row) : null;
     },
 
+    /**
+     * Sets a running run aside while its job waits for a blocker (a provider outage, F4 D7): the
+     * run and its current stage are `pending` again, the stage's open attempt ends, and every
+     * checkpoint stays, so the next attempt resumes the stage where it stopped. Null when the run
+     * is not running.
+     */
+    async setAside(id: string): Promise<IngestionRunRecord | null> {
+      await db.query(
+        `update ingestion_run_stages stage set status = 'pending', error = null,
+           ended_at = ${attemptEndAssignment("stage")}, updated_at = now()
+         from ingestion_runs run
+         where run.id = $1 and run.status = 'running' and stage.ingestion_run_id = run.id
+           and stage.stage = run.current_stage and stage.status = 'running'`,
+        [id]
+      );
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set status = 'pending', error = null,
+             stages_checkpoint = case
+               when stages_checkpoint -> current_stage ->> 'status' = 'running' then
+                 jsonb_set(
+                   stages_checkpoint,
+                   array[current_stage],
+                   (stages_checkpoint -> current_stage)
+                     || jsonb_build_object('status', 'pending', 'setAsideAt', now()),
+                   true
+                 )
+               else stages_checkpoint
+             end,
+             updated_at = now()
+         where id = $1 and status = 'running'
+         returning ${returning}`,
+        [id]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
     async failStage(id: string, stage: string, error: string, canceled = false): Promise<void> {
       const status = canceled ? "canceled" : "failed";
       await db.query(

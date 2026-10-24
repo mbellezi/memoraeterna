@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ProviderUnavailableError } from "@app/ai";
 import {
   closePgPool,
+  createJobBlockerRepository,
   createJobRepository,
   createLibraryResetRepository,
   createPgPool,
@@ -849,6 +851,41 @@ describe.skipIf(!sidecarAvailable)("topic Areas on the PostgreSQL sidecar", () =
         answer: "second",
         reason: "unreadable"
       });
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("waits for the provider in an outage: set aside, its attempt and daily call given back (F4 D7)", async () => {
+    const budget = { calls: 0 };
+    const w = await world({ layout: "grouped", budgetCalls: budget });
+    try {
+      const before = topicTreeRecordsDump(await records(w));
+      // The remote lane's breaker is open: the call is failed fast, nothing reaches the provider.
+      w.setAnswer(() => {
+        throw new ProviderUnavailableError("remote:codex", 20_000);
+      });
+      const waiting = await runAreas(w);
+      expect(waiting).toMatchObject({
+        status: "queued",
+        attempts: 0,
+        blockedClass: "waiting",
+        blockedReason: "provider_unavailable",
+        outcome: null
+      });
+      expect(waiting.dedupeKey).not.toBeNull();
+      // Not a failed attempt (no `call_failed`), nothing written, and the day's unit came back.
+      expect(waiting.result).toBeNull();
+      expect(budget.calls).toBe(0);
+      expect(topicTreeRecordsDump(await records(w))).toBe(before);
+
+      // The breaker closes (`network_back`): the same job runs and groups.
+      w.setAnswer((prompt) => trueGrouping(prompt));
+      await createJobBlockerRepository(pool).clearBlocks({
+        reasons: ["waiting.provider_unavailable"]
+      });
+      const ran = await runQueued(w, "topic-areas");
+      expect(ran).toMatchObject({ id: waiting.id, status: "succeeded", attempts: 1 });
     } finally {
       await w.dispose();
     }

@@ -66,6 +66,7 @@ import type {
 
 import { jobTaskPayload } from "../../job-task-payload.js";
 import type { AiService, AiTaskLogContext } from "../ai-service.js";
+import { isProviderOutage } from "../job-failure.js";
 import { localDay } from "./topic-ai.js";
 import type { TopicAiBudget, TopicAiMode } from "./topic-ai.js";
 import type { TopicTreeCache } from "./topic-cache.js";
@@ -596,10 +597,11 @@ export class TopicAreasService {
         }
       );
     } catch (error) {
-      // A background refusal (F4 D7) ends the job; the supervisor sets it aside. The refused call
-      // sent nothing, so its unit of the daily cap goes back (D14).
-      if (isBackgroundBlocked(error)) await this.options.budget.release(1, route);
-      if (signal.aborted || isBackgroundBlocked(error)) throw error;
+      // A background refusal or a provider outage (F4 D7) ends the job; the supervisor sets it
+      // aside. Neither call reached the provider, so its unit of the daily cap goes back (D14).
+      const setAside = isBackgroundBlocked(error) || isProviderOutage(error);
+      if (setAside) await this.options.budget.release(1, route);
+      if (signal.aborted || setAside) throw error;
       this.options.logger?.warn("The topic Areas call failed", error);
       return {
         kind: "stopped",

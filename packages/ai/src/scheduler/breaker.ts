@@ -1,6 +1,6 @@
 import { AiProviderError } from "../provider-error.js";
 import type { AiLaneRuntimeConfig } from "../runtime-config.js";
-import type { LaneKey, LaneOutcome } from "./types.js";
+import type { LaneFailureKind, LaneKey, LaneOutcome } from "./types.js";
 
 /**
  * The circuit breaker of one remote lane (F3 D32). `closed` counts consecutive transient failures;
@@ -38,7 +38,15 @@ export type BreakerAdmission =
   | { readonly kind: "admit" }
   /** The entry is the one probe of a half-open breaker; its outcomes carry `token`. */
   | { readonly kind: "probe"; readonly token: number }
-  | { readonly kind: "refuse"; readonly retryAfterMs: number };
+  /**
+   * The entry is failed fast: `open` while the open period runs (`retryAfterMs` = until the next
+   * entry may probe), `half_open` while the probe is out (its answer decides).
+   */
+  | {
+      readonly kind: "refuse";
+      readonly retryAfterMs: number;
+      readonly state: "open" | "half_open";
+    };
 
 export interface BreakerSnapshot {
   readonly state: BreakerState;
@@ -52,13 +60,23 @@ export interface BreakerSnapshot {
 }
 
 /**
- * The error of an entry a breaker fails fast. A transient provider error, so a job retries it, and
- * `retryAfterMs` says how long the breaker stays shut so the job does not retry sooner.
+ * The error of an entry a breaker fails fast. A transient provider error, so a job waits for the
+ * provider instead of failing (F4 D7), and `retryAfterMs` says how long the breaker stays shut so
+ * the job does not come back sooner. `breaker` says whether the open period runs (`open`: the next
+ * entry after it probes) or a probe is out (`half_open`: its answer decides); `failure` is how the
+ * lane's provider last failed (F4 D27), so an unreachable network is told from a provider that does
+ * not answer.
  */
 export class ProviderUnavailableError extends AiProviderError {
   public readonly lane: LaneKey;
+  public readonly breaker: "open" | "half_open";
+  public readonly failure: LaneFailureKind | undefined;
 
-  public constructor(lane: LaneKey, retryAfterMs: number) {
+  public constructor(
+    lane: LaneKey,
+    retryAfterMs: number,
+    detail: { breaker?: "open" | "half_open"; failure?: LaneFailureKind | undefined } = {}
+  ) {
     super("errors.ai.providerUnavailable", {
       kind: "network",
       transient: true,
@@ -67,6 +85,8 @@ export class ProviderUnavailableError extends AiProviderError {
     });
     this.name = "ProviderUnavailableError";
     this.lane = lane;
+    this.breaker = detail.breaker ?? "open";
+    this.failure = detail.failure;
   }
 }
 
@@ -95,8 +115,9 @@ export class CircuitBreaker {
     }
     this.refused += 1;
     // While a probe is out, the wait is at most one more open period (it reopens on a failure).
-    const retryAfterMs = this.state === "open" ? this.openUntil - now : this.config.openMs;
-    return { kind: "refuse", retryAfterMs };
+    if (this.state === "open")
+      return { kind: "refuse", retryAfterMs: this.openUntil - now, state: "open" };
+    return { kind: "refuse", retryAfterMs: this.config.openMs, state: "half_open" };
   }
 
   /** Counts entries the scheduler failed fast that were already waiting when the breaker opened. */

@@ -104,7 +104,7 @@ import {
   manualRetryStages,
   stageRetryStages
 } from "./job-retry.js";
-import { isTransientJobFailure } from "./job-failure.js";
+import { isTransientJobFailure, providerOutageBlocker } from "./job-failure.js";
 import {
   claimableTypes,
   jobBlocker,
@@ -635,12 +635,20 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
-      // An import is the user's work and never meets a background gate; other heavy jobs may.
+      // A provider outage is a wait, not a failure (F4 D7): the job is set aside, its attempt kept.
+      const outage = wasCanceled ? null : providerOutageBlocker(error);
+      // An import is the user's work and never meets a background gate; other heavy jobs may. An
+      // import waits for the provider without a clear time: the breaker's close (`network_back`)
+      // or the blocker recheck sets it free, so each look does not leave one more stage row.
       const blocker =
         job.type === "ingestion"
-          ? null
-          : jobBlocker(this.options.backgroundPolicy, job, { error, canceled: wasCanceled });
-      if (blocker) return await this.setAside(job, blocker);
+          ? outage && withoutClearTime(outage)
+          : (jobBlocker(this.options.backgroundPolicy, job, { error, canceled: wasCanceled }) ??
+            outage);
+      if (blocker) {
+        if (job.type === "ingestion") await this.setIngestionAside(job);
+        return await this.setAside(job, blocker);
+      }
       const shouldRetry =
         !wasCanceled && job.attempts < job.maxAttempts && isTransientJobFailure(error);
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
@@ -802,10 +810,10 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
-      const blocker = jobBlocker(this.options.backgroundPolicy, job, {
-        error,
-        canceled: wasCanceled
-      });
+      // A background refusal, else a provider outage (F4 D7): set aside, its attempt kept.
+      const blocker =
+        jobBlocker(this.options.backgroundPolicy, job, { error, canceled: wasCanceled }) ??
+        (wasCanceled ? null : providerOutageBlocker(error));
       if (blocker) return await this.setAside(job, blocker);
       const attemptFailed = error instanceof GardenerAttemptFailure;
       const shouldRetry =
@@ -869,13 +877,41 @@ export class JobSupervisor {
 
   /**
    * Returns a claimed task that met a blocker to the queue (D7): no attempt burned, no failure,
-   * nothing settled as ended; it runs again when its blocker clears.
+   * nothing settled as ended; it runs again when its blocker clears. Without a background policy
+   * (a provider outage needs none) the job repository sets it aside, due at the blocker's clear
+   * time or the task model's recheck.
    */
   private async setAside(job: JobRecord, blocker: GardenerBlocker): Promise<JobRecord | null> {
     const repository = createJobRepository(this.requirePool());
-    await this.options.backgroundPolicy!.blockTask(job, blocker);
+    const policy = this.options.backgroundPolicy;
+    if (policy) await policy.blockTask(job, blocker);
+    else {
+      const now = new Date();
+      await repository.setAside(job.id, {
+        blocker,
+        clearAt:
+          typeof blocker.clearsAt === "number" && blocker.clearsAt > now.getTime()
+            ? new Date(blocker.clearsAt)
+            : blockerClearAt(blocker, now),
+        dedupeKey: job.claimedDedupeKey ?? null
+      });
+    }
     this.notify();
     return repository.findById(job.id);
+  }
+
+  /**
+   * An import set aside for a provider outage waits as a run to resume, not a failed one: the run
+   * and its current stage are pending again (the checkpoints kept), so the Jobs screen and the
+   * batch show it waiting, and its next attempt resumes where it stopped.
+   */
+  private async setIngestionAside(job: JobRecord): Promise<void> {
+    const ingestionRunId = optionalString(job.payload.ingestionRunId);
+    if (!ingestionRunId) return;
+    const pool = this.requirePool();
+    await createIngestionRunRepository(pool).setAside(ingestionRunId);
+    const batchId = optionalString(job.payload.batchId);
+    if (batchId) await createHierarchicalIngestionRepository(pool).refreshBatch(batchId);
   }
 
   /**
@@ -1574,10 +1610,14 @@ export class JobSupervisor {
             )
           : { configured: false, generated: false, projected: false };
       } catch (error) {
-        // A graph that failed for good ends this stage only (D25, R25). Cancellation and a failure
-        // the job's own retry can still mend (a provider outage, a first local deadline) take the
-        // job's path, so the graph comes back before matching runs.
-        if (signal.aborted || (job.attempts < job.maxAttempts && isTransientJobFailure(error)))
+        // A graph that failed for good ends this stage only (D25, R25). Cancellation, a provider
+        // outage (the job waits for it, F4 D7) and a failure the job's own retry can still mend (a
+        // first local deadline) take the job's path, so the graph comes back before matching runs.
+        if (
+          signal.aborted ||
+          providerOutageBlocker(error) !== null ||
+          (job.attempts < job.maxAttempts && isTransientJobFailure(error))
+        )
           throw error;
         // Matching runs with the graph signal absent; the stage stays failed and retryable, and
         // the run ends `succeeded` with its graph incomplete.
@@ -2011,6 +2051,11 @@ function finishedJob(job: JobRecord, result: JsonObject, signal: AbortSignal): U
     lockedBy: null,
     finishedAt: new Date()
   };
+}
+
+/** The blocker without its clear time: the recheck and its clearing event decide. */
+function withoutClearTime(blocker: GardenerBlocker): GardenerBlocker {
+  return { ...blocker, clearsAt: null };
 }
 
 /** The update after a failure: canceled, queued again after a growing backoff, or failed. */

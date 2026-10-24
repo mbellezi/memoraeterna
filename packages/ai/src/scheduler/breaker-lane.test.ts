@@ -206,6 +206,36 @@ describe("circuit breaker on a remote lane", () => {
     expect(transitions.map(([, t]) => t.reason)).toEqual(["failures", "elapsed", "probe_answered"]);
   });
 
+  it("says in each refusal whether the probe is out and how the provider last failed (F4 D7)", async () => {
+    const { scheduler, advance } = setup({ lanes: { codexMax: 1 } });
+    // An unreachable network: the lane remembers it (F4 D27) when the breaker opens.
+    const running = held(scheduler, codex);
+    await running.started;
+    const waiting = scheduler.run(ticket(codex), async () => "never").catch((error) => error);
+    for (let index = 0; index < 5; index++)
+      scheduler.observeOutcome(codex, "transient", "unreachable");
+    // The entry waiting when the breaker opened is refused with what the lane knows.
+    expect(await waiting).toMatchObject({ breaker: "open", failure: "unreachable" });
+    await expect(answering(scheduler, codex, "ok")).rejects.toMatchObject({
+      breaker: "open",
+      failure: "unreachable",
+      retryAfterMs: 30_000
+    });
+    running.finish();
+    await running.result;
+    await advance(30_000);
+    // Half-open: the probe is out, so the next entry waits for its answer.
+    const probe = held(scheduler, codex);
+    await probe.started;
+    await expect(answering(scheduler, codex, "ok")).rejects.toMatchObject({
+      breaker: "half_open",
+      failure: "unreachable",
+      retryAfterMs: 30_000
+    });
+    probe.finish();
+    await probe.result;
+  });
+
   it("opens again for another period when the probe fails", async () => {
     const { scheduler, advance } = setup();
     await failTimes(scheduler, codex, 5);

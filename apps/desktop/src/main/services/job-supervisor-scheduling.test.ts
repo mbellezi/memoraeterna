@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AiProviderError } from "@app/ai";
+import { AiProviderError, toProviderNetworkError } from "@app/ai";
 import type { JobRecord, PgPool } from "@app/db";
 import { JobSupervisor } from "./job-supervisor.js";
 import type { KnowledgeService } from "./knowledge-service.js";
@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     reportProgress: vi.fn(),
     enqueueDeduped: vi.fn(),
     activeIdsForBatch: vi.fn(),
-    requestCancel: vi.fn()
+    requestCancel: vi.fn(),
+    setAside: vi.fn()
   },
   runs: {
     recoverInterrupted: vi.fn(),
@@ -38,7 +39,8 @@ const mocks = vi.hoisted(() => ({
     countIncompleteBatchStage: vi.fn(),
     listLinkingSourceItems: vi.fn(),
     listSkippedMatching: vi.fn(),
-    reopenStages: vi.fn()
+    reopenStages: vi.fn(),
+    setAside: vi.fn()
   },
   hierarchy: { refreshBatch: vi.fn() },
   documents: { findById: vi.fn() },
@@ -562,6 +564,46 @@ describe("ingestion queue scheduling", () => {
         expect(job).toMatchObject({ status: "succeeded" });
         expect(mocks.runs.failStage).toHaveBeenCalledWith("run", "knowledgeGraph", "busy");
         expect(matchAtomicNotes).toHaveBeenCalledOnce();
+      });
+
+      it("waits for a provider outage instead, even on the job's last attempt (F4 D7)", async () => {
+        const matchAtomicNotes = matching();
+        const outage = toProviderNetworkError(
+          Object.assign(new Error("getaddrinfo ENOTFOUND chatgpt.com"), { code: "ENOTFOUND" })
+        );
+        mocks.jobs.setAside.mockResolvedValue({ job: { id: "job" }, mergedInto: null });
+        mocks.jobs.findById.mockResolvedValue({
+          id: "job",
+          type: "ingestion",
+          status: "queued",
+          attempts: 2,
+          blockedClass: "offline",
+          blockedReason: "network_unreachable"
+        });
+        const { job } = await ingest(
+          { generateKnowledgeGraph: vi.fn().mockRejectedValue(outage), matchAtomicNotes },
+          graphRun(),
+          {},
+          3
+        );
+        expect(job).toMatchObject({ status: "queued", blockedClass: "offline" });
+        // An import waits without a clear time: the breaker's close or the recheck frees it.
+        expect(mocks.jobs.setAside).toHaveBeenCalledWith(
+          "job",
+          expect.objectContaining({
+            blocker: { class: "offline", reason: "network_unreachable", clearsAt: null }
+          })
+        );
+        // The run waits to resume, pending; neither it nor its graph stage is failed.
+        expect(mocks.runs.setAside).toHaveBeenCalledWith("run");
+        expect(mocks.hierarchy.refreshBatch).toHaveBeenCalledWith("batch");
+        expect(mocks.runs.failStage).not.toHaveBeenCalled();
+        expect(mocks.runs.fail).not.toHaveBeenCalled();
+        expect(mocks.jobs.update).not.toHaveBeenCalledWith(
+          "job",
+          expect.objectContaining({ status: "failed" })
+        );
+        expect(matchAtomicNotes).not.toHaveBeenCalled();
       });
 
       it("never turns a cancellation into a failed stage", async () => {

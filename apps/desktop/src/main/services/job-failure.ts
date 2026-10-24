@@ -1,4 +1,15 @@
-import { isTransientAiError } from "@app/ai";
+import {
+  AiProviderError,
+  ProviderUnavailableError,
+  isTransientAiError,
+  providerFailureKind
+} from "@app/ai";
+import {
+  gardenerBlocker,
+  gardenerTaskConfig,
+  type GardenerBlocker,
+  type GardenerTaskConfig
+} from "@app/domain";
 
 /** PostgreSQL connection, shutdown, serialization and lock errors that a later attempt can outlive. */
 const transientDatabaseCodes = new Set([
@@ -69,4 +80,47 @@ export function isTransientJobFailure(error: unknown): boolean {
     current = current.cause;
   }
   return false;
+}
+
+/**
+ * The blocker of a job whose AI call met a provider outage (F4 D7): the remote lane's circuit
+ * breaker failed it fast (`ProviderUnavailableError`), or it failed in transport after the call's
+ * own retries (DNS, a refused or reset connection: an `AiProviderError` of kind `network`). Such a
+ * job waits, its attempt and dedupe key kept, instead of failing: `offline.network_unreachable`
+ * when the network did not answer (the lane's memory of how its provider failed, F4 D27), else
+ * `waiting.provider_unavailable`. It comes back when the breaker's open period ends, after
+ * `providerProbeMs` when its own call reached the network (it is then the probe), or, refused while
+ * another call probes, at that probe's answer (`network_back`) or the blocker recheck. Answers keep
+ * their paths: 5xx, 429, deadlines and stalls back off; 4xx and invalid output fail. Null for any
+ * other error, a database's refused connection included (it is no provider error).
+ */
+export function providerOutageBlocker(
+  error: unknown,
+  now: number = Date.now(),
+  config: Pick<GardenerTaskConfig, "providerProbeMs"> = gardenerTaskConfig
+): GardenerBlocker | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof ProviderUnavailableError) {
+      const clearsAt =
+        current.breaker === "open" ? now + Math.max(current.retryAfterMs ?? 0, 1_000) : null;
+      return current.failure === "unreachable"
+        ? gardenerBlocker("offline", "network_unreachable", { clearsAt })
+        : gardenerBlocker("waiting", "provider_unavailable", { clearsAt });
+    }
+    if (current instanceof AiProviderError) {
+      if (current.kind !== "network" || !current.transient) return null;
+      const clearsAt = now + config.providerProbeMs;
+      return providerFailureKind(current) === "unreachable"
+        ? gardenerBlocker("offline", "network_unreachable", { clearsAt })
+        : gardenerBlocker("waiting", "provider_unavailable", { clearsAt });
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** Whether an error is a provider outage a job waits for ({@link providerOutageBlocker}). */
+export function isProviderOutage(error: unknown): boolean {
+  return providerOutageBlocker(error) !== null;
 }

@@ -198,12 +198,16 @@ describe("Gardener states and blockers (D5, D7)", () => {
     expect(gardenerTaskConfig).toEqual({
       quarantineAfterFailedJobs: 2,
       blockRecheckMs: 600_000,
-      releaseDueBlocksEveryMs: 30_000
+      releaseDueBlocksEveryMs: 30_000,
+      providerProbeMs: 30_000
     });
     expect(Object.isFrozen(gardenerTaskConfig)).toBe(true);
     expect(
       GardenerTaskConfigSchema.safeParse({ ...gardenerTaskConfig, quarantineAfterFailedJobs: 0 })
         .success
+    ).toBe(false);
+    expect(
+      GardenerTaskConfigSchema.safeParse({ ...gardenerTaskConfig, providerProbeMs: 999 }).success
     ).toBe(false);
   });
 });

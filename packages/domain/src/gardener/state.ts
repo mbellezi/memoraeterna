@@ -82,6 +82,9 @@ export function gardenerStateOf(job: GardenerStateInput): GardenerState {
  * by the `gardener-retention` job. `blockRecheckMs`: a job set aside with no known clear time is
  * looked at again after it, so a missed clearing event never leaves it waiting for good.
  * `releaseDueBlocksEveryMs`: how often a worker releases the set-aside jobs whose clear time passed.
+ * `providerProbeMs`: a job whose call failed in transport (an unreachable network, a refused
+ * connection) is set aside this long, about a remote lane's open period, so it comes back as the
+ * probe that tells the provider is up again.
  */
 export const GardenerTaskConfigSchema = z
   .object({
@@ -91,7 +94,8 @@ export const GardenerTaskConfigSchema = z
       .int()
       .min(1_000)
       .max(24 * 3_600_000),
-    releaseDueBlocksEveryMs: z.number().int().min(1_000).max(600_000)
+    releaseDueBlocksEveryMs: z.number().int().min(1_000).max(600_000),
+    providerProbeMs: z.number().int().min(1_000).max(600_000)
   })
   .strict();
 export type GardenerTaskConfig = z.infer<typeof GardenerTaskConfigSchema>;
@@ -100,7 +104,8 @@ export const gardenerTaskConfig: Readonly<GardenerTaskConfig> = Object.freeze(
   GardenerTaskConfigSchema.parse({
     quarantineAfterFailedJobs: 2,
     blockRecheckMs: 600_000,
-    releaseDueBlocksEveryMs: 30_000
+    releaseDueBlocksEveryMs: 30_000,
+    providerProbeMs: 30_000
   })
 );
 

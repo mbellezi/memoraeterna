@@ -53,9 +53,13 @@ describe("circuit breaker state machine (F3 D32)", () => {
   it("fails entries fast with the time left while open, and counts them", () => {
     const { breaker: instance } = breaker();
     open(instance, 1_000);
-    expect(instance.admit(1_000)).toEqual({ kind: "refuse", retryAfterMs: 30_000 });
-    expect(instance.admit(11_000)).toEqual({ kind: "refuse", retryAfterMs: 20_000 });
-    expect(instance.admit(30_999)).toEqual({ kind: "refuse", retryAfterMs: 1 });
+    expect(instance.admit(1_000)).toEqual({ kind: "refuse", retryAfterMs: 30_000, state: "open" });
+    expect(instance.admit(11_000)).toEqual({
+      kind: "refuse",
+      retryAfterMs: 20_000,
+      state: "open"
+    });
+    expect(instance.admit(30_999)).toEqual({ kind: "refuse", retryAfterMs: 1, state: "open" });
     expect(instance.snapshot(30_999)).toMatchObject({
       state: "open",
       reopensInMs: 1,
@@ -77,7 +81,12 @@ describe("circuit breaker state machine (F3 D32)", () => {
     });
     const first = instance.admit(40_000);
     expect(first).toEqual({ kind: "probe", token: expect.any(Number) });
-    expect(instance.admit(40_001)).toEqual({ kind: "refuse", retryAfterMs: 30_000 });
+    // While the probe is out, an entry waits for its answer: at most one more open period.
+    expect(instance.admit(40_001)).toEqual({
+      kind: "refuse",
+      retryAfterMs: 30_000,
+      state: "half_open"
+    });
     expect(instance.snapshot(40_001)).toMatchObject({ state: "half_open", reopensInMs: null });
   });
 
@@ -113,7 +122,11 @@ describe("circuit breaker state machine (F3 D32)", () => {
       reason: "probe_failed",
       at: 32_000
     });
-    expect(instance.admit(40_000)).toEqual({ kind: "refuse", retryAfterMs: 22_000 });
+    expect(instance.admit(40_000)).toEqual({
+      kind: "refuse",
+      retryAfterMs: 22_000,
+      state: "open"
+    });
     expect(instance.snapshot(62_000)).toMatchObject({ state: "half_open", opened: 2 });
     expect(instance.admit(62_000)).toEqual({ kind: "probe", token: expect.any(Number) });
   });
@@ -155,18 +168,26 @@ describe("circuit breaker state machine (F3 D32)", () => {
   it("follows a configured threshold and open period", () => {
     const { breaker: instance } = breaker({ failureThreshold: 2, openMs: 1_000 });
     open(instance, 0, 2);
-    expect(instance.admit(10)).toEqual({ kind: "refuse", retryAfterMs: 990 });
+    expect(instance.admit(10)).toEqual({ kind: "refuse", retryAfterMs: 990, state: "open" });
     expect(instance.admit(1_000).kind).toBe("probe");
   });
 });
 
 describe("provider unavailable error", () => {
-  it("is a transient provider error carrying the wait, so jobs retry it after the breaker is shut", () => {
+  it("is a transient provider error carrying the wait, so a job waits for the breaker to let it by", () => {
     const error = new ProviderUnavailableError("remote:codex", 20_000.4);
     expect(error.message).toBe("errors.ai.providerUnavailable");
     expect(error.lane).toBe("remote:codex");
     expect(isTransientAiError(error)).toBe(true);
     expect(aiErrorRetryAfterMs(error)).toBe(20_001);
     expect(new ProviderUnavailableError("remote:codex", -5).retryAfterMs).toBe(0);
+    // Without a detail, it says the open period runs and names no failure.
+    expect(error).toMatchObject({ breaker: "open", failure: undefined });
+    expect(
+      new ProviderUnavailableError("remote:codex", 1_000, {
+        breaker: "half_open",
+        failure: "unreachable"
+      })
+    ).toMatchObject({ breaker: "half_open", failure: "unreachable" });
   });
 });

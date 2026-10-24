@@ -389,6 +389,12 @@ function routeClassOf(types: readonly string[]): string {
   return "embed";
 }
 
+/** The reasons a provider outage sets any job aside by, not only a Gardener task (D7). */
+const providerWaitReasons: ReadonlySet<GardenerBlockerKey> = new Set([
+  "waiting.provider_unavailable",
+  "offline.network_unreachable"
+]);
+
 /** The key of a stored blocker; one this version does not know waits like an unexplained queue wait. */
 const keyOf = (blockerClass: string, reason: string): GardenerBlockerKey => {
   const key = `${blockerClass}.${reason}`;
@@ -431,8 +437,12 @@ export function composeGardenerStatus(
 ): GardenerStatusSnapshot {
   const { nowMs } = facts;
   const gardenerTasks = facts.tasks.filter((task) => gardenerTaskKind(task.type)?.gardener);
+  // Gardener tasks, and any job a provider outage set aside: an import waits for it too (D7).
   const gardenerBlocked = facts.blocked.filter(
-    (group) => gardenerTaskKind(group.type)?.gardener && group.count > 0
+    (group) =>
+      group.count > 0 &&
+      (gardenerTaskKind(group.type)?.gardener ||
+        providerWaitReasons.has(keyOf(group.blockerClass, group.reason)))
   );
   const running = gardenerTasks.reduce((sum, task) => sum + task.running, 0);
   const waitingTasks = gardenerTasks.reduce(
