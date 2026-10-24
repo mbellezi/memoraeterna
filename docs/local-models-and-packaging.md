@@ -143,10 +143,18 @@ MLX call runs, and a resident MLX ranker then loads again on its next call.
 
 `MEMORA_LOCAL_MODEL_SEED_DIR` (absolute, or relative to the workspace root) names a folder of
 artifacts already fetched into `.cache/models` (`scripts/spikes/models.json`). For a catalog entry
-with a seed folder (`qwen3-reranker-0.6b-mlx`, `qwen3-reranker-0.6b-q8_0-gguf`), a pinned file
+with a seed folder (`qwen3-reranker-0.6b-mlx`, `qwen3-reranker-0.6b-q8_0-gguf`, and the first-run
+embedder `qwen3-embedding-0.6b-q8_0-gguf`), a pinned file
 found there with the declared size is cloned into the managed directory instead of downloaded and
 verified against its SHA-256 like any download. A seeded file whose bytes differ from the pin fails
 the install; it never falls back to the network. Packaged builds refuse the variable.
+
+The first-run end-to-end test (`npm run firstrun:e2e`, F4 T90, exit criterion E6) replays a clean Hybrid
+install on the seed: both first-run models (the embedder and the ranker) are installed from this folder
+with the real size and SHA-256 checks, the ranker's artifact checks and decide validation run, and the
+network is closed. The live record of the same test downloads both models for real into a scratch
+profile; `--copy-models-to <seed>` copies the downloaded files into the seed folders before the scratch
+profile is deleted (by hand: `local-models/<catalog id>/<file>` into `<seed>/<seed folder>/<file>`).
 
 ### DEV install at startup (F2 T22c)
 

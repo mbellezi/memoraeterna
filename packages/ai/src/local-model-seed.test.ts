@@ -52,6 +52,13 @@ describe("the DEV model seed folder", () => {
     const ids = new Set(localModelCatalog.map((entry) => entry.id));
     for (const id of Object.keys(localModelSeedDirectories)) expect(ids.has(id)).toBe(true);
   });
+
+  it("seeds both models of the first run: the embedder and the ranker", () => {
+    expect(localModelSeedDirectories["gguf-qwen3-embedding-0.6b-q8-0"]).toBe(
+      "qwen3-embedding-0.6b-q8_0-gguf"
+    );
+    expect(localModelSeedDirectories["mlx-qwen3-reranker-0.6b"]).toBeDefined();
+  });
 });
 
 describe("downloading with a seed folder", () => {

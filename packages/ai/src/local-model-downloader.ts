@@ -180,7 +180,10 @@ export async function verifyLocalModelFiles(
  */
 export const localModelSeedDirectories: Readonly<Record<string, string>> = {
   "mlx-qwen3-reranker-0.6b": "qwen3-reranker-0.6b-mlx",
-  "gguf-qwen3-reranker-0.6b-q8-0": "qwen3-reranker-0.6b-q8_0-gguf"
+  "gguf-qwen3-reranker-0.6b-q8-0": "qwen3-reranker-0.6b-q8_0-gguf",
+  // The first run's embedder (F4 T90): the seeded replay of the first-run end-to-end test installs it
+  // with the same size and SHA-256 checks as a download.
+  "gguf-qwen3-embedding-0.6b-q8-0": "qwen3-embedding-0.6b-q8_0-gguf"
 };
 
 export type LocalModelSeedErrorCode =
