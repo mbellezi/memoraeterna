@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -188,7 +188,7 @@ describe("the 7-day profile of the plan", () => {
 describe("the gate S profile", () => {
   const { profile } = readSoakPlan(planPath, "soak7-gate");
 
-  it("plays every window kind once and the harness-cap window of 20 minutes, in about five hours", () => {
+  it("plays every window kind once, the harness-cap window of 20 minutes and the daily pause, in about five and a half hours", () => {
     const windows = expandWindows(profile.f4!, profile.durationHours * 60);
     expect(new Set(windows.map((window) => window.kind))).toEqual(
       new Set([
@@ -204,6 +204,7 @@ describe("the gate S profile", () => {
         "only_idle",
         "only_ac",
         "money",
+        "pause",
         "harness_cap"
       ])
     );
@@ -341,6 +342,46 @@ describe("the knobs of the 7-day soak", () => {
         options
       )
     ).toThrow(expect.objectContaining({ code: "decisions" }));
+  });
+
+  it("admit the Decisions decider only for a plan profile that says so, with the owner-only key file and a daily cap of at most US$0.50", () => {
+    const { options, env, worktree, dataRoot } = setup();
+    // C4's remote check: a profile of the plan that names the admission.
+    const plan = JSON.parse(readFileSync(planPath, "utf8"));
+    plan.profiles.soak7.f4.decisions = "admitted";
+    writeFileSync(join(worktree, "scripts", "soak", "plan.json"), JSON.stringify(plan));
+    const keyFile = join(dataRoot, "decisions-key");
+    writeFileSync(keyFile, "synthetic-key-for-the-test\n", { mode: 0o600 });
+    chmodSync(keyFile, 0o600);
+    const admitted = (extra: Record<string, string> = {}) =>
+      env({
+        [decisionsAdmitKnobName]: "1",
+        MEMORA_RELATIONS_DECISIONS: "on",
+        MEMORA_RELATIONS_DECISIONS_KEY_FILE: keyFile,
+        MEMORA_RELATIONS_DECISIONS_CAP_USD: "0.50",
+        ...extra
+      });
+    expect(readSoakKnob(soakKnobName, admitted(), options)!.decisions).toEqual({ capUsd: 0.5 });
+    // Each condition on its own: a cap above the ceiling, a relative key path, the opt-in knob off.
+    for (const extra of [
+      { MEMORA_RELATIONS_DECISIONS_CAP_USD: "0.9" },
+      { MEMORA_RELATIONS_DECISIONS_KEY_FILE: "key" },
+      { MEMORA_RELATIONS_DECISIONS: "off" }
+    ])
+      expect(
+        () => readSoakKnob(soakKnobName, admitted(extra), options),
+        JSON.stringify(extra)
+      ).toThrow(expect.objectContaining({ code: "decisions" }));
+    // A key file others can read.
+    chmodSync(keyFile, 0o644);
+    expect(() => readSoakKnob(soakKnobName, admitted(), options)).toThrow(
+      expect.objectContaining({ code: "decisions" })
+    );
+    chmodSync(keyFile, 0o600);
+    // Without the real writer the admission has nothing to admit.
+    const noWriter = admitted();
+    delete (noWriter as Record<string, string | undefined>)[realWriterKnobName];
+    expect(() => readSoakKnob(soakKnobName, noWriter, options)).toThrow(SoakKnobRefusal);
   });
 
   it("are refused when packaged", () => {

@@ -163,6 +163,18 @@ function profileWith(cap: number) {
   });
 }
 
+/** The cap fields a minute sample records (the snapshot's hard cap stays in the cap itself). */
+function sampledCap(snapshot: ReturnType<HarnessTokenCap["snapshot"]>) {
+  return {
+    capTokens: snapshot.capTokens,
+    spentTokens: snapshot.spentTokens,
+    reservedTokens: snapshot.reservedTokens,
+    calls: snapshot.calls,
+    refusals: snapshot.refusals,
+    largestCallTokens: snapshot.largestCallTokens
+  };
+}
+
 /** The product as the harness hopes to find it: a sentence that says what each window makes true. */
 function world(sink: SoakEventSink, capTokens: number, now: () => number) {
   const state = {
@@ -264,9 +276,7 @@ function portsFor(w: ReturnType<typeof world>, extra: Partial<SoakPorts> = {}): 
       eventLoopLagP99Ms: 1,
       dbPool: { total: 1, idle: 1, waiting: 0 },
       status: w.status(),
-      cap: {
-        ...(({ hardCapTokens: _hard, ...rest }) => rest)(w.cap.snapshot())
-      }
+      cap: sampledCap(w.cap.snapshot())
     }),
     taskRuns: async () => [],
     failedJobs: async () => [],

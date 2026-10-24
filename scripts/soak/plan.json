@@ -416,9 +416,9 @@
       }
     },
     "soak7-gate": {
-      "description": "Gate S of F4 (T91, spec 5.4): the 7-day profile in about 5 h with every fault kind and every window once at a short duration (the mid-run cap and the money window 30 min, the harness-cap window 20 min), one contention burst and the calibration set (imports, Asks, stale topic opens and the naming after them) whose tokens re-freeze codex.expected and codex.cap.",
+      "description": "Gate S of F4 (T91, spec 5.4): the 7-day profile in about 5.4 h with every fault kind and every window once at a short duration (the mid-run cap and the money window 30 min, the harness-cap window 20 min, the daily pause 10 min), one contention burst and the calibration set (imports, Asks, stale topic opens and the naming after them) whose tokens re-freeze codex.expected and codex.cap.",
       "seed": 20261027,
-      "durationHours": 5.2,
+      "durationHours": 5.4,
       "warmupMinutes": 20,
       "sampleEveryMinutes": 1,
       "runFolder": "f4",
@@ -692,6 +692,16 @@
             "durationMinutes": 20,
             "params": {
               "calls": 1.5
+            }
+          },
+          {
+            "id": "g310-pause",
+            "kind": "pause",
+            "startMinute": 310,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
             }
           }
         ],
