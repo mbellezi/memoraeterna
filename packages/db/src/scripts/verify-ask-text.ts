@@ -140,7 +140,14 @@ async function tableSizes(db: PgPool): Promise<Record<string, number>> {
 }
 
 async function verifyState(db: PgPool, label: string) {
-  assert.equal(await historyCount(db), (await readJournal(migrationsFolder)).entries.length, label);
+  // 0064 is recorded; later migrations (0065 on) may follow it, and none is missing before it.
+  const journal = await readJournal(migrationsFolder);
+  const through = journal.entries.findIndex((entry) => entry.tag === askTextTag) + 1;
+  const recorded = await historyCount(db);
+  assert.ok(
+    recorded >= through && recorded <= journal.entries.length,
+    `${label}: ${recorded} migrations recorded, ${through} through ${askTextTag}`
+  );
   // 1. Both columns are stored, generated, tsvector, never null.
   for (const [table, column] of [
     ["chunks", "search_tsv"],
@@ -235,10 +242,17 @@ async function verifyState(db: PgPool, label: string) {
     `${label}: no content to_tsvector( in the plan`
   );
   assert.deepEqual(storedVectorReads(plan[0]!.Plan), { passages: true, notes: true });
-  // 6. A second run has nothing to apply.
-  const before = await historyCount(db);
+  // 6. A second run does not apply 0064 again: only the migrations after it, if any, run.
   await runMigrations(db, migrationsFolder);
-  assert.equal(await historyCount(db), before, `${label}: nothing left to apply`);
+  assert.equal(await historyCount(db), journal.entries.length, `${label}: nothing left to apply`);
+  const hash = createHash("sha256")
+    .update(await readFile(join(migrationsFolder, `${askTextTag}.sql`), "utf8"))
+    .digest("hex");
+  const recordedOnce = await db.query(
+    "select 1 from drizzle.__drizzle_migrations where hash = $1",
+    [hash]
+  );
+  assert.equal(recordedOnce.rowCount, 1, `${label}: ${askTextTag} is recorded once`);
   return {
     chunks: rows.chunks,
     notes: rows.notes,
@@ -436,8 +450,7 @@ export async function verifyExistingDatabase(
       throw new Error(
         `The database has ${head} migrations; this code knows ${journal.entries.length}.`
       );
-    const alreadyApplied =
-      (await hasColumn(db, "chunks", "search_tsv")) && head === journal.entries.length;
+    const alreadyApplied = (await hasColumn(db, "chunks", "search_tsv")) && head > position;
     let earlier: { migrations: number; ms: number } | null = null;
     let applied: { steps: Step[]; ms: number } | null = null;
     const sizesBefore = await tableSizes(db);
