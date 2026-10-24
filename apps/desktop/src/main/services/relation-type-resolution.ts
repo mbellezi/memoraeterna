@@ -163,11 +163,51 @@ export interface ConfirmedMatch {
 }
 
 /**
+ * Whether a call asking `rows` would show one of them a candidate that reads exactly like it but is not
+ * one of its own: its provisional identity, listed by a later row of the same source group (F4 D20).
+ * Writers often map such a row to its twin, an answer the row may not give, so a repair that shows the
+ * twin again fails the same way.
+ */
+export function showsTwin(rows: readonly RelationMatchRow[]): boolean {
+  const shown = new Map(
+    rows.flatMap((row) => row.candidates.map((candidate) => [candidate.key, candidate] as const))
+  );
+  return rows.some((row) => {
+    const own = new Set(row.candidates.map((candidate) => candidate.key));
+    return [...shown.values()].some(
+      (candidate) =>
+        !own.has(candidate.key) &&
+        candidate.predicate === row.predicate &&
+        candidate.definition === row.definition
+    );
+  });
+}
+
+/**
+ * The calls of an unpinned repair: the rows still undecided, in order, split only where a call would
+ * show a row its twin. A row alone never meets one, so with no twin the repair stays one call.
+ */
+export function repairCalls(rows: readonly RelationMatchRow[]): RelationMatchRow[][] {
+  const calls: RelationMatchRow[][] = [];
+  let current: RelationMatchRow[] = [];
+  for (const row of rows) {
+    if (current.length && showsTwin([...current, row])) {
+      calls.push(current);
+      current = [];
+    }
+    current.push(row);
+  }
+  if (current.length) calls.push(current);
+  return calls;
+}
+
+/**
  * Asks the model which candidate of each row is the same thing, for one group of rows (relation types
  * and entity identities share it). Unpinned, a first answer that decides only some rows keeps them and
- * the one repair asks about the others only; the group fails when a row is still undecided after it,
- * with the error code the caller names. Pinned, the recording-era path runs: strict reading, and the
- * whole group asked again, so each recorded repair replays.
+ * the one repair asks about the others only, in calls that never show a row its twin (`repairCalls`);
+ * the group fails when a row is still undecided after it, with the error code the caller names.
+ * Pinned, the recording-era path runs: strict reading, and the whole group asked again, so each
+ * recorded repair replays.
  */
 export async function confirmMatchGroup(input: {
   ai: Pick<AiService, "runDefaultTask">;
@@ -194,12 +234,8 @@ export async function confirmMatchGroup(input: {
       )
     ])
   ];
-  const decisions = new Map<string, ConfirmedMatch>();
-  let pending = group;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const ask = async (asked: RelationMatchRow[], attempt: number) => {
     input.signal?.throwIfAborted();
-    // The first attempt asks the whole group; an unpinned repair asks about the rows still missing.
-    const asked = input.pinned || attempt === 0 ? group : pending;
     const execution = await input.ai.runDefaultTask(
       "knowledge-graph-generation",
       joinPrompts(buildRelationMatchPrompt(asked, entityIdentity), attempt ? repairPrompt() : ""),
@@ -221,7 +257,12 @@ export async function confirmMatchGroup(input: {
       input.signal
     );
     if (!execution) throw new Error("errors.ai.noCompatibleModel");
-    if (input.pinned) {
+    return execution;
+  };
+  const decisions = new Map<string, ConfirmedMatch>();
+  if (input.pinned) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const execution = await ask(group, attempt);
       try {
         for (const [key, candidate] of parseRelationMatches(execution.output, group))
           decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
@@ -231,12 +272,18 @@ export async function confirmMatchGroup(input: {
         continue;
       }
     }
-    const answer = parseRelationMatchesTolerant(execution.output, asked);
-    for (const [key, candidate] of answer.decided)
-      decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
-    pending = pending.filter((row) => !decisions.has(row.key));
-    if (pending.length === 0) return decisions;
+    throw new Error(input.invalidOutputError);
   }
+  const decide = async (asked: RelationMatchRow[], attempt: number) => {
+    const execution = await ask(asked, attempt);
+    for (const [key, candidate] of parseRelationMatchesTolerant(execution.output, asked).decided)
+      decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
+  };
+  // The first attempt asks the whole group; the repair asks about the rows still missing.
+  await decide(group, 0);
+  for (const asked of repairCalls(group.filter((row) => !decisions.has(row.key))))
+    await decide(asked, 1);
+  if (group.every((row) => decisions.has(row.key))) return decisions;
   throw new Error(input.invalidOutputError);
 }
 

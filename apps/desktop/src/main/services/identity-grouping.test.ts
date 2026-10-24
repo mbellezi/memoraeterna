@@ -414,6 +414,59 @@ describe("entity identity grouped per source (F4 D20)", () => {
     expect(ai.generative().map((prompt) => rowsOf(prompt).length)).toEqual([10, 10, 10]);
   });
 
+  it("settles a recurring entity whose writer chooses a row's own twin whenever one is shown", async () => {
+    // FRREC (10-24): one person in every batch of a source, stored before. The rows of batches 0 and 1
+    // meet their provisional identities, listed by the later rows, and the writer names them.
+    fake.state.entities.push({
+      id: "00000000-0000-4000-8000-2000000000ee",
+      type: "Person",
+      canonicalName: "Ebbinghaus",
+      aliases: [],
+      identityDescription: "Ebbinghaus, stored before."
+    });
+    const batches: KnowledgeGraphGenerationOutput[] = [0, 1, 2].map((batch) => ({
+      entities: [
+        {
+          ...person("e1", "Ebbinghaus", batch),
+          identityDescription: `Ebbinghaus, as batch ${batch} describes him.`
+        }
+      ],
+      relations: []
+    }));
+    type Payload = { relations: Row[]; candidates: Array<[string, string, string]> };
+    const payloadOf = (prompt: string) =>
+      JSON.parse(prompt.split("\n").find((line) => line.startsWith('{"relations"'))!) as Payload;
+    const ai = writer();
+    const embedOrAnswer = ai.runDefaultTask.getMockImplementation()!;
+    ai.runDefaultTask.mockImplementation(async (task: string, input: string) => {
+      if (task === "embedding") return embedOrAnswer(task, input);
+      const payload = payloadOf(input);
+      const matches = payload.relations.map(([key, predicate, definition, own]) => {
+        const twin = payload.candidates.find(
+          ([candidate, text, meaning]) =>
+            !own.includes(candidate) && text === predicate && meaning === definition
+        );
+        return [key, twin ? twin[0] : (own[0] ?? null)];
+      });
+      return { output: { matches }, aiTaskRunId: `call-${matches.length}` } as never;
+    });
+    const resolved = await createEntityIdentityResolver({
+      ...base,
+      ai,
+      settings: settings(),
+      group: identityGroupFor("remote", settings())
+    })(batches);
+    // The group, then a repair per row that chose its twin, each without it.
+    expect(
+      ai.generative().map((prompt) => payloadOf(prompt).relations.map(([key]) => key))
+    ).toEqual([["r1", "r2", "r3"], ["r1"], ["r2"]]);
+    expect(resolved.map((batch) => batch.entities[0]!.canonicalEntityId)).toEqual([
+      "00000000-0000-4000-8000-2000000000ee",
+      "00000000-0000-4000-8000-2000000000ee",
+      "00000000-0000-4000-8000-2000000000ee"
+    ]);
+  });
+
   it("decides a repeated fingerprint once and keeps what a stored checkpoint already resolved", async () => {
     const stored = "00000000-0000-4000-8000-0000000000cc";
     const batches: KnowledgeGraphGenerationOutput[] = [
