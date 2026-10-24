@@ -517,8 +517,16 @@ describe("source matching by design E (D27)", () => {
     expect(ai.mock.calls[0]![2]).toMatchObject({
       operation: "source_relation_matching",
       workloadClass: "decide",
-      priority: "P2"
+      priority: "P2",
+      // An imported source's batched judge spends for its user (F4 D14).
+      budgetClass: "user"
     });
+  });
+
+  it("spends the batched judge's call for the budget class its link job states (F4 D14)", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    await run(ai, "run", undefined, { context: { jobId: "job", budgetClass: "background" } });
+    expect(ai.mock.calls[0]![2]).toMatchObject({ jobId: "job", budgetClass: "background" });
   });
 
   it("keeps promotion and fails visibly before planning when no generative judge is routed", async () => {

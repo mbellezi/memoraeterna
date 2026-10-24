@@ -147,6 +147,7 @@ describe("the link job's discovery step", () => {
       runKey: "relation-link:job",
       regenerate: false,
       priority: "P2" as const,
+      budgetClass: "user" as const,
       reserveCall: vi.fn(),
       registry: new InFlightRegistry(),
       context: { jobId: "job" }
