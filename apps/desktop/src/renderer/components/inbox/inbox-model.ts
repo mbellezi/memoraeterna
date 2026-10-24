@@ -1,13 +1,14 @@
 import {
   inboxKinds,
   type ChangeSetRisk,
-  type ChangeSetSummary,
   type InboxItem,
   type InboxKind,
   type InboxObject,
   type InboxVerb
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+
+import { changeSetTitle } from "../activity/change-title";
 
 /**
  * How the Inbox words what the stores hold. Every sentence is a fixed message key chosen from a
@@ -77,73 +78,6 @@ const finite = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
 // ---------------------------------------------------------------------------
-// Change-set titles
-
-/**
- * The titles a change-set can carry, as the stores write them (`titleKey` is stored text, so it is
- * looked up in this closed table and never used as a key itself).
- */
-const changeSetTitles = {
-  "topics.changeSets.place": "topics.changeSets.place",
-  "topics.changeSets.build": "topics.changeSets.build",
-  "topics.changeSets.rebuild": "topics.changeSets.rebuild",
-  "topics.changeSets.space": "topics.changeSets.space",
-  "topics.changeSets.rebalance": "topics.changeSets.rebalance",
-  "topics.changeSets.proposal": "topics.changeSets.proposal",
-  "topics.changeSets.redirects": "topics.changeSets.redirects",
-  "topics.changeSets.naming": "topics.changeSets.naming",
-  "topics.changeSets.humanRename": "topics.changeSets.humanRename",
-  "topics.changeSets.humanMove": "topics.changeSets.humanMove",
-  "topics.changeSets.humanCreate": "topics.changeSets.humanCreate",
-  "topics.changeSets.humanPin": "topics.changeSets.humanPin",
-  "topics.changeSets.humanUnpin": "topics.changeSets.humanUnpin",
-  "topics.changeSets.humanPlace": "topics.changeSets.humanPlace",
-  "topics.changeSets.gate": "topics.changeSets.gate",
-  "changes.titles.relation.match": "changes.titles.relation.match",
-  "changes.titles.relation.link": "changes.titles.relation.link",
-  "changes.titles.relation.type": "changes.titles.relation.type",
-  "changes.titles.relation.promote": "changes.titles.relation.promote",
-  "changes.titles.relation.discover": "changes.titles.relation.discover",
-  "changes.titles.relation.reconcile": "changes.titles.relation.reconcile",
-  "changes.titles.relation.retype": "changes.titles.relation.retype",
-  "changes.titles.relationMatched": "changes.titles.relationMatched",
-  "changes.titles.relationSuggested": "changes.titles.relationSuggested",
-  "changes.titles.overview.write": "changes.titles.overview.write",
-  "changes.titles.overview.patch": "changes.titles.overview.patch",
-  "changes.titles.overview.rewrite": "changes.titles.overview.rewrite",
-  "changes.titles.overview.undo": "changes.titles.overview.undo"
-} as const satisfies Record<string, MessageKey>;
-
-type ChangeSetTitleKey = keyof typeof changeSetTitles;
-const isChangeSetTitleKey = (value: string): value is ChangeSetTitleKey =>
-  Object.hasOwn(changeSetTitles, value);
-
-/** The parameters a message names, as `{name}` tokens. */
-const parameterTokens = /\{([A-Za-z0-9_.-]+)\}/gu;
-
-/**
- * The sentence of a change-set ("Topic overview extended"): its stored key looked up in the closed
- * table, its parameters formatted for the locale (numbers) or kept as stored (names). A key the
- * table does not know, or a title with a parameter missing, reads as the plain review sentence.
- */
-export function changeSetTitle(
-  t: Translator,
-  change: Pick<ChangeSetSummary, "titleKey" | "titleParams">
-): string {
-  if (!isChangeSetTitleKey(change.titleKey)) return t("inbox.items.review.title");
-  const numbers = new Intl.NumberFormat(t.locale);
-  const values: Record<string, string | number> = {};
-  for (const [name, value] of Object.entries(change.titleParams)) {
-    if (typeof value === "number") values[name] = numbers.format(value);
-    else if (typeof value === "string") values[name] = value;
-  }
-  const key = changeSetTitles[change.titleKey];
-  const needed = [...t(key).matchAll(parameterTokens)].map((match) => match[1]!);
-  if (needed.some((name) => !Object.hasOwn(values, name))) return t("inbox.items.review.title");
-  return t(key, { values });
-}
-
-// ---------------------------------------------------------------------------
 // Sentences
 
 const quarantineTasks = {
@@ -186,7 +120,9 @@ export function reviewVariantLabel(t: Translator, variant: string): string | nul
 export function itemTitle(t: Translator, item: InboxItem): string {
   switch (item.kind) {
     case "review":
-      return item.changeSet ? changeSetTitle(t, item.changeSet) : t("inbox.items.review.title");
+      return item.changeSet
+        ? changeSetTitle(t, item.changeSet, "inbox.items.review.title")
+        : t("inbox.items.review.title");
     case "quarantined":
       return t("inbox.items.quarantined.title", {
         values: {

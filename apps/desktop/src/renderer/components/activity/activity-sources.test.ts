@@ -42,7 +42,14 @@ describe("Activity styles and copy", () => {
       [...controller.matchAll(/\bapp\.(\w+(?:\.\w+)?)/g)].map((match) => match[1])
     );
     expect([...used].sort()).toEqual(
-      ["ai.subscribeLocalEmbeddingLoadStatus", "budget", "changes", "gardener", "onAppEvent"].sort()
+      [
+        "ai.subscribeLocalEmbeddingLoadStatus",
+        "budget",
+        "changes",
+        "gardener",
+        "inbox",
+        "onAppEvent"
+      ].sort()
     );
   });
 });

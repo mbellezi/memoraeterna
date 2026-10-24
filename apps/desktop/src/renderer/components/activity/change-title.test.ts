@@ -39,6 +39,12 @@ describe("the sentence of a change-set", () => {
     expect(title("toString")).toBe("A change was made to your library.");
   });
 
+  it("reads an unknown key as the plain sentence its host asks for", () => {
+    expect(
+      changeSetTitle(en, { titleKey: "nope", titleParams: {} }, "inbox.items.review.title")
+    ).toBe(en("inbox.items.review.title"));
+  });
+
   it("reads a title with a parameter missing as a plain change, never with a bare {name}", () => {
     expect(title("topics.changeSets.place")).toBe("A change was made to your library.");
     expect(title("topics.changeSets.place", { items: null })).toBe(

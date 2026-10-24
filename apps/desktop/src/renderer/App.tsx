@@ -554,11 +554,12 @@ export function App({
     if (view === "settings") selectSettingsScope("overview");
     setActiveView(view);
   });
-  // What an Activity action leads to: a place in Settings.
+  // What an Activity action leads to: a place in Settings, or the Inbox.
   const openFromActivity = useStableCallback((target: ActivityNavigation) => {
     selectSettingsScope(target.scope);
     setActiveView(target.view);
   });
+  const openInbox = useStableCallback(() => goToView("inbox"));
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
   const openConnectionsSettings = useStableCallback(() => {
@@ -849,7 +850,7 @@ export function App({
         <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background px-5">
           <h1 className="shrink-0 text-base font-medium text-foreground">{t(pageTitle)}</h1>
           <div className="ml-auto flex min-w-0 justify-end">
-            <ActivityHost t={t} onNavigate={openFromActivity} />
+            <ActivityHost t={t} onNavigate={openFromActivity} onOpenInbox={openInbox} />
           </div>
         </header>
         <div

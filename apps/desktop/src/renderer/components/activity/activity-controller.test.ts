@@ -15,6 +15,7 @@ import {
   fixtureNow,
   idleStatus,
   inboxChanged,
+  inboxCounts,
   jobProgress,
   money80Status,
   pausedStatus,
@@ -54,14 +55,12 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
     },
     changes: {
       list: vi.fn(async () => list()),
-      pendingCounts: vi.fn(async () => ({
-        total: 0,
-        byKind: { topic: 0, relation: 0, overview: 0 },
-        byRisk: { low: 0, medium: 0, high: 0 }
-      })),
       undo: vi.fn(
         async () => ({ status: "undone", kind: "topic", id: changeSet(1).id }) as ChangesUndoResult
       )
+    },
+    inbox: {
+      counts: vi.fn(async () => inboxCounts(0))
     },
     onAppEvent: vi.fn(<T extends AppEventType>(type: T, handler: AppEventHandler<T>) => {
       const set = handlers.get(type) ?? new Set();
@@ -81,9 +80,9 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
     budget: { snapshot: ReturnType<typeof vi.fn>; continue: ReturnType<typeof vi.fn> };
     changes: {
       list: ReturnType<typeof vi.fn>;
-      pendingCounts: ReturnType<typeof vi.fn>;
       undo: ReturnType<typeof vi.fn>;
     };
+    inbox: { counts: ReturnType<typeof vi.fn> };
   };
   const navigate = vi.fn();
   const controller = new ActivityController({
@@ -175,8 +174,8 @@ describe("the pill's status", () => {
     const { controller, api, listeners } = setup();
     controller.start();
     controller.start();
-    expect(api.onAppEvent).toHaveBeenCalledTimes(3);
-    expect(listeners()).toBe(3);
+    expect(api.onAppEvent).toHaveBeenCalledTimes(2);
+    expect(listeners()).toBe(2);
     controller.stop();
     expect(listeners()).toBe(0);
   });
@@ -222,43 +221,49 @@ describe("the embedder loading", () => {
 });
 
 describe("the Inbox count", () => {
-  const counts = (total: number) => ({
-    total,
-    byKind: { topic: total, relation: 0, overview: 0 },
-    byRisk: { low: total, medium: 0, high: 0 }
-  });
-
-  it("starts from the change-sets that wait for review, and is unknown until read", async () => {
+  it("starts from the Inbox's own count of every kind, and is unknown until read", async () => {
     const { controller, api } = setup();
-    api.changes.pendingCounts.mockResolvedValue(counts(2));
+    api.inbox.counts.mockResolvedValue(inboxCounts(2));
     expect(controller.getSnapshot().inboxTotal).toBeNull();
     controller.start();
     await flush();
+    expect(api.inbox.counts).toHaveBeenCalledOnce();
     expect(controller.getSnapshot().inboxTotal).toBe(2);
   });
 
-  it("moves with a reviewed change-set until the Inbox publishes its own count, then follows that", async () => {
+  it("follows the count the Inbox publishes, and stops reading it once one arrived", async () => {
     const { controller, api, emit } = setup();
-    api.changes.pendingCounts.mockResolvedValue(counts(2));
+    api.inbox.counts.mockResolvedValue(inboxCounts(2));
     controller.start();
     await flush();
-    api.changes.pendingCounts.mockResolvedValue(counts(1));
-    emit({ type: "changes.changed", kind: "topic", id: changeSet(1).id });
+    controller.setOpen(true);
     await flush();
-    expect(controller.getSnapshot().inboxTotal).toBe(1);
+    expect(api.inbox.counts).toHaveBeenCalledTimes(2);
+    controller.setOpen(false);
     emit(inboxChanged(7));
     expect(controller.getSnapshot().inboxTotal).toBe(7);
-    const reads = api.changes.pendingCounts.mock.calls.length;
+    // A reviewed change-set moves the count through the Inbox's own event, never a read here.
     emit({ type: "changes.changed", kind: "topic", id: changeSet(2).id });
     controller.setOpen(true);
     await flush();
-    expect(api.changes.pendingCounts).toHaveBeenCalledTimes(reads);
+    expect(api.inbox.counts).toHaveBeenCalledTimes(2);
     expect(controller.getSnapshot().inboxTotal).toBe(7);
+  });
+
+  it("drops a read that an event overtook", async () => {
+    const { controller, api, emit } = setup();
+    const read = deferred<ReturnType<typeof inboxCounts>>();
+    api.inbox.counts.mockReturnValue(read.promise);
+    controller.start();
+    emit(inboxChanged(4));
+    read.resolve(inboxCounts(9));
+    await flush();
+    expect(controller.getSnapshot().inboxTotal).toBe(4);
   });
 
   it("shows no count when it cannot be read", async () => {
     const { controller, api } = setup();
-    api.changes.pendingCounts.mockRejectedValue(new Error("down"));
+    api.inbox.counts.mockRejectedValue(new Error("down"));
     controller.start();
     await flush();
     expect(controller.getSnapshot().inboxTotal).toBeNull();

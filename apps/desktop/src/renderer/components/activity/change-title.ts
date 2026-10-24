@@ -47,13 +47,15 @@ const parameterTokens = /\{([A-Za-z0-9_.-]+)\}/gu;
 /**
  * The sentence of one change-set ("Placed 12 items in topics"): its stored key looked up in the
  * closed table, its parameters formatted for the locale (numbers) or kept as stored (names). A key
- * the table does not know, or a title with a parameter missing, reads as a plain change.
+ * the table does not know, or a title with a parameter missing, reads as `fallback`: a plain change
+ * in Activity, a plain review in the Inbox.
  */
 export function changeSetTitle(
   t: Translator,
-  change: Pick<ChangeSetSummary, "titleKey" | "titleParams">
+  change: Pick<ChangeSetSummary, "titleKey" | "titleParams">,
+  fallback: MessageKey = "activity.done.unknownChange"
 ): string {
-  if (!isTitleKey(change.titleKey)) return t("activity.done.unknownChange");
+  if (!isTitleKey(change.titleKey)) return t(fallback);
   const numbers = new Intl.NumberFormat(t.locale);
   const values: Record<string, string | number> = {};
   for (const [name, value] of Object.entries(change.titleParams)) {
@@ -63,6 +65,6 @@ export function changeSetTitle(
   const key = titleMessages[change.titleKey];
   // A title whose parameters were not all stored would show a bare `{name}`: it reads as a plain change.
   const needed = [...t(key).matchAll(parameterTokens)].map((match) => match[1]!);
-  if (needed.some((name) => !Object.hasOwn(values, name))) return t("activity.done.unknownChange");
+  if (needed.some((name) => !Object.hasOwn(values, name))) return t(fallback);
   return t(key, { values });
 }

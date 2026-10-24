@@ -132,7 +132,15 @@ export function ActivityHost({ t, onNavigate, onOpenInbox }: ActivityHostProps) 
           onAction={(action) => void controller.runAction(action)}
           onUndo={(change) => void controller.undo(change)}
           onKeyDown={closeOnEscape}
-          {...(onOpenInbox ? { onOpenInbox } : {})}
+          {...(onOpenInbox
+            ? {
+                // The Inbox opens in place of the page; the drawer closes as for any other place.
+                onOpenInbox: () => {
+                  onOpenInbox();
+                  controller.setOpen(false);
+                }
+              }
+            : {})}
         />
       ) : null}
       <div role="status" aria-live="polite" className="sr-only">

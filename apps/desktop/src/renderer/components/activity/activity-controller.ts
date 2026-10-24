@@ -26,7 +26,9 @@ import {
 export interface ActivityApi {
   gardener: Pick<DesktopApi["gardener"], "status" | "resume">;
   budget: Pick<DesktopApi["budget"], "snapshot" | "continue">;
-  changes: Pick<DesktopApi["changes"], "list" | "pendingCounts" | "undo">;
+  changes: Pick<DesktopApi["changes"], "list" | "undo">;
+  /** The Inbox's own count of every kind that waits for the person (`inbox.changed` follows it). */
+  inbox: Pick<DesktopApi["inbox"], "counts">;
   onAppEvent: DesktopApi["onAppEvent"];
   /** The local embedder loading into memory (the signal the blocking dialog used to follow). */
   subscribeEmbeddingLoad: (listener: (status: LocalEmbeddingLoadStatus) => void) => () => void;
@@ -37,6 +39,7 @@ export function activityApiOf(app: DesktopApi): ActivityApi {
     gardener: app.gardener,
     budget: app.budget,
     changes: app.changes,
+    inbox: app.inbox,
     onAppEvent: (type, handler) => app.onAppEvent(type, handler),
     subscribeEmbeddingLoad: (listener) => app.ai.subscribeLocalEmbeddingLoadStatus(listener)
   };
@@ -94,7 +97,7 @@ export class ActivityController {
   private budgetToken = 0;
   private doneToken = 0;
   private inboxToken = 0;
-  /** The Inbox count came from `inbox.changed`, which covers every kind of review. */
+  /** The Inbox count came from `inbox.changed`, which is newer than any read in flight. */
   private inboxFromEvents = false;
   private loadingModelId: string | null = null;
   private announcementId = 0;
@@ -127,10 +130,6 @@ export class ActivityController {
         this.inboxFromEvents = true;
         this.inboxToken += 1;
         this.update({ inboxTotal: event.total });
-      }),
-      // Until the Inbox publishes its own count, a change-set that was reviewed moves the badge.
-      api.onAppEvent("changes.changed", () => {
-        if (!this.inboxFromEvents) this.loadInbox();
       }),
       api.subscribeEmbeddingLoad((status) => {
         if (status.state === "loading") {
@@ -264,7 +263,7 @@ export class ActivityController {
     const token = ++this.inboxToken;
     this.deps
       .api()
-      .changes.pendingCounts()
+      .inbox.counts()
       .then((counts) => {
         if (token === this.inboxToken && !this.inboxFromEvents)
           this.update({ inboxTotal: counts.total });

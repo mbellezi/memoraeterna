@@ -6,7 +6,6 @@ import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 import { item, summary, uuid } from "./inbox-fixtures";
 import {
   ageText,
-  changeSetTitle,
   itemBody,
   itemHint,
   itemSubject,
@@ -129,28 +128,26 @@ describe("what an item says", () => {
 });
 
 describe("a change-set's title", () => {
+  // The closed table is Activity's (`activity/change-title.ts`, tested there); the Inbox reads it
+  // with its own plain sentence for a key it does not know.
+  const review = (titleKey: string, titleParams: Record<string, number> = {}) =>
+    item("review", { changeSet: summary({ titleKey, titleParams }) });
+
   it("looks the stored key up in the closed table and fills its parameters", () => {
-    expect(
-      changeSetTitle(en, { titleKey: "topics.changeSets.place", titleParams: { items: 12 } })
-    ).toBe("Placed 12 items in topics");
-    expect(changeSetTitle(en, { titleKey: "changes.titles.overview.patch", titleParams: {} })).toBe(
-      "Topic overview extended"
+    expect(itemTitle(en, review("topics.changeSets.place", { items: 12 }))).toBe(
+      "Placed 12 items in topics"
     );
+    expect(itemTitle(en, review("changes.titles.overview.patch"))).toBe("Topic overview extended");
     expect(
-      changeSetTitle(createTranslator("pt-BR"), {
-        titleKey: "topics.changeSets.place",
-        titleParams: { items: 1234 }
-      })
+      itemTitle(createTranslator("pt-BR"), review("topics.changeSets.place", { items: 1234 }))
     ).toContain("1.234");
   });
 
-  it("reads a key the table does not know, or a title with a parameter missing, as a plain change", () => {
+  it("reads a key the table does not know, or a title with a parameter missing, as a plain review", () => {
     const plain = en("inbox.items.review.title");
-    expect(changeSetTitle(en, { titleKey: "not.a.key", titleParams: {} })).toBe(plain);
-    expect(changeSetTitle(en, { titleKey: "__proto__", titleParams: {} })).toBe(plain);
-    expect(changeSetTitle(en, { titleKey: "topics.changeSets.place", titleParams: {} })).toBe(
-      plain
-    );
+    expect(itemTitle(en, review("not.a.key"))).toBe(plain);
+    expect(itemTitle(en, review("__proto__"))).toBe(plain);
+    expect(itemTitle(en, review("topics.changeSets.place"))).toBe(plain);
     expect(itemTitle(en, item("review", { changeSet: null }))).toBe(plain);
   });
 

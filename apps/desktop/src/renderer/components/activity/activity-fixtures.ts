@@ -3,7 +3,8 @@ import {
   GardenerStatusSnapshotSchema,
   type BudgetSnapshot,
   type ChangeSetSummary,
-  type GardenerStatusSnapshot
+  type GardenerStatusSnapshot,
+  type InboxCounts
 } from "@app/domain";
 
 import type { AppEventOf } from "../../../shared/app-events";
@@ -139,9 +140,8 @@ export const jobProgress = (
   };
 };
 
-/** An `inbox.changed` event with `total` reviews, all low risk. */
-export const inboxChanged = (total: number): AppEventOf<"inbox.changed"> => ({
-  type: "inbox.changed",
+/** The Inbox's counts (`inbox.counts`) with `total` reviews, all low risk. */
+export const inboxCounts = (total: number): InboxCounts => ({
   total,
   byKind: {
     review: total,
@@ -154,6 +154,12 @@ export const inboxChanged = (total: number): AppEventOf<"inbox.changed"> => ({
     backlog: 0
   },
   byRisk: { low: total, medium: 0, high: 0 }
+});
+
+/** An `inbox.changed` event with `total` reviews, all low risk. */
+export const inboxChanged = (total: number): AppEventOf<"inbox.changed"> => ({
+  type: "inbox.changed",
+  ...inboxCounts(total)
 });
 
 /** A snapshot with the given parts, the clock fixed. */
