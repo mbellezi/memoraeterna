@@ -143,6 +143,8 @@ function run(overrides: Partial<FirstRunFacts> = {}): FirstRunFacts {
       maxLiveTokens: null
     },
     setup: {
+      onboarding: { show: true, libraryEmpty: true },
+      card: { recommended: "hybrid", localAvailable: true },
       writer: {} as never,
       preset: { applied: true, blocked: [] },
       tests: ["embed", "write-fast", "write-quality", "answer", "judge"].map((route) => ({

@@ -58,6 +58,8 @@ import { JobSupervisor } from "../job-supervisor.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import type { LocalModelService } from "../local-model-service.js";
 import { PromptService } from "../prompt-service.js";
+import { registerOnboardingIpc } from "../onboarding/onboarding-ipc.js";
+import { OnboardingService, pgOnboardingStore } from "../onboarding/onboarding-service.js";
 import { registerPromptIpc } from "../prompt-ipc.js";
 import { SearchService } from "../search-service.js";
 import { SettingsService } from "../settings-service.js";
@@ -91,6 +93,7 @@ import {
   unfinishedRuns
 } from "./facts.js";
 import type { FirstSourceConnection } from "./facts.js";
+import { recordedHardwareProfile } from "./hardware.js";
 import {
   assertModelsSeeded,
   copyModelsToSeed,
@@ -633,6 +636,10 @@ async function runPass(
       {} as never
     );
     registerPromptIpc(ipc.main, prompts);
+    // The first-run view's two reads (F4 D31): the stored state on the empty database, for real, and a
+    // recorded profile of this computer for the tier card.
+    registerOnboardingIpc(ipc.main, new OnboardingService({ store: pgOnboardingStore(() => db) }));
+    ipc.main.handle(ipcChannels.hardwareProfile, async () => recordedHardwareProfile);
 
     // The Gardener's status as the app composes it (F4 D27, T86): gates, tasks, lanes, downloads.
     const backgroundPolicy = policy;

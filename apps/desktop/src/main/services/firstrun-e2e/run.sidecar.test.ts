@@ -143,11 +143,18 @@ describe.skipIf(!sidecarAvailable)(
             "app:ai:profiles:create x1",
             "app:ai:profiles:update x1",
             "app:ai:providers:save x1",
+            "app:hardware:profile x1",
             "app:local-models:download x1",
             "app:local-models:list x1",
+            "app:onboarding:state x1",
             "app:settings:app:update x1"
           ].sort()
         );
+        // The view was due on the empty profile, and the tier card read the recorded Mac.
+        expect(pass.report.reported.setup).toMatchObject({
+          onboarding: { show: true, libraryEmpty: true },
+          card: { recommended: "hybrid", localAvailable: true }
+        });
         expect(ipc.phases.user!.every((entry) => entry.class === "product")).toBe(true);
         expect(pass.report.checks.find((check) => check.id === "sequence")?.detail).toBe(
           `${invokedSetupChannels("codex").length} calls`

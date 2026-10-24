@@ -5,17 +5,23 @@ import { ipcChannels } from "../../../shared/ipc.js";
 import { channelClass } from "../topics-e2e/ipc-counters.js";
 import { firstRunClassTests, hybridSetupSequence, invokedSetupChannels } from "./sequence.js";
 import { SequencedIpc } from "./sequenced-ipc.js";
+import { codexWriterCapabilities, writerCapabilities } from "../../../shared/onboarding.js";
+import { generationCapabilities } from "../topics-e2e/config.js";
+import { codexCapabilities } from "./config.js";
+import { hybridSetupSequence as sharedSequence } from "../../../shared/first-run-sequence.js";
 
 describe("the IPC sequence of the first run in Hybrid", () => {
-  it("is the onboarding's second step in order: languages, writer, models, preset, tests", () => {
+  it("is the onboarding up to its third step in order: state, languages, card, writer, models, preset, tests", () => {
     const steps = hybridSetupSequence("codex").map((call) => call.step);
     expect(steps).toEqual([
+      "state",
       "languages",
+      "card",
+      "card",
       "writer",
       "writer",
       "writer",
       "writer",
-      "models",
       "models",
       "preset",
       "tests",
@@ -25,18 +31,31 @@ describe("the IPC sequence of the first run in Hybrid", () => {
       "tests"
     ]);
     expect(invokedSetupChannels("codex")).toEqual([
+      ipcChannels.onboardingState,
       ipcChannels.appSettingsUpdate,
+      ipcChannels.hardwareProfile,
+      ipcChannels.localModelsList,
       ipcChannels.aiProvidersSave,
       ipcChannels.aiProfilesCreate,
       ipcChannels.aiProfilesUpdate,
-      ipcChannels.localModelsList,
       ipcChannels.localModelsDownload,
       ipcChannels.aiApplyPreset,
       ...firstRunClassTests.map(() => ipcChannels.aiTestClassRoute)
     ]);
   });
 
-  it("signs in to the writer before anything else of the mode, and applies the preset before its tests", () => {
+  it("asks whether the view is due before anything, and reads the tier card before the writer signs in", () => {
+    const channels = hybridSetupSequence("codex").map((call) => call.channel);
+    const index = (channel: string) => channels.indexOf(channel);
+    expect(index(ipcChannels.onboardingState)).toBe(0);
+    expect(index(ipcChannels.appSettingsUpdate)).toBe(1);
+    expect(index(ipcChannels.hardwareProfile)).toBeLessThan(index(ipcChannels.localModelsList));
+    expect(index(ipcChannels.localModelsList)).toBeLessThan(
+      index(ipcChannels.aiOpenAiCodexConnect)
+    );
+  });
+
+  it("signs in to the writer before anything of the mode is fetched, and applies the preset before its tests", () => {
     const channels = hybridSetupSequence("codex").map((call) => call.channel);
     const index = (channel: string) => channels.indexOf(channel);
     expect(index(ipcChannels.aiProvidersSave)).toBeLessThan(index(ipcChannels.localModelsDownload));
@@ -67,9 +86,20 @@ describe("the IPC sequence of the first run in Hybrid", () => {
     expect([...firstRunClassTests].toSorted()).toEqual(expected);
   });
 
-  it("sits in the setup phase of the counters: every call but the languages is a Settings call", () => {
-    const classes = invokedSetupChannels("codex").map((channel) => channelClass(channel));
-    expect(classes.every((klass) => klass === "settings")).toBe(true);
+  it("sits in the setup phase of the counters: only the two first-run reads are not Settings calls", () => {
+    const productCalls = invokedSetupChannels("codex").filter(
+      (channel) => channelClass(channel) === "product"
+    );
+    expect(productCalls).toEqual([ipcChannels.onboardingState, ipcChannels.hardwareProfile]);
+  });
+
+  it("is one fixture for the harness and the renderer: the harness path re-exports it", () => {
+    expect(hybridSetupSequence).toBe(sharedSequence);
+  });
+
+  it("saves the writer with the capabilities the screen gives it, which are the ones Settings gives", () => {
+    expect([...writerCapabilities]).toEqual([...generationCapabilities]);
+    expect([...codexWriterCapabilities]).toEqual([...codexCapabilities]);
   });
 });
 
