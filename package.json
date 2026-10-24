@@ -77,6 +77,7 @@
     "topics:rating": "tsx scripts/topics/rating-page.ts",
     "topics:report": "tsx scripts/topics/report.ts",
     "topics:e2e": "tsx apps/desktop/src/main/services/verify-topics-e2e.ts",
+    "firstrun:e2e": "tsx apps/desktop/src/main/services/firstrun-e2e/cli.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast",
