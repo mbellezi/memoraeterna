@@ -399,7 +399,13 @@ const sampleDetail = {
     .nullable()
     .optional(),
   power: z
-    .object({ active: z.boolean(), onBattery: z.boolean(), overridden: z.boolean() })
+    .object({
+      active: z.boolean(),
+      onBattery: z.boolean(),
+      overridden: z.boolean(),
+      /** PowerSignals' reading carries the idle time too (T75); the sample keeps it. */
+      idleMs: z.number().nonnegative().optional()
+    })
     .strict()
     .nullable()
     .optional(),

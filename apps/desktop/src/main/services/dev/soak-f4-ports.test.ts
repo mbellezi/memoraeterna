@@ -74,7 +74,10 @@ function deps(overrides: Partial<SoakF4PortsDeps> = {}, rows: Record<string, unk
         monthlyCapUsd: 5
       })
     },
-    power: { snapshot: () => ({ active: false, onBattery: false, overridden: true }) },
+    // The real PowerSignals reading (T75) carries idleMs too: the strict sample schema must accept it.
+    power: {
+      snapshot: () => ({ active: false, onBattery: false, overridden: true, idleMs: 120_000 })
+    },
     budget: { snapshot: async () => budget },
     cap: {
       snapshot: () => ({
@@ -159,7 +162,12 @@ describe("the F4 sample", () => {
       capCalls: 800
     });
     expect(detail.controls).toMatchObject({ autonomy: "auto", monthlyCapUsd: 5 });
-    expect(detail.power).toEqual({ active: false, onBattery: false, overridden: true });
+    expect(detail.power).toEqual({
+      active: false,
+      onBattery: false,
+      overridden: true,
+      idleMs: 120_000
+    });
     expect(detail.lockWaits).toEqual({ waiting: 1, longestMs: 4_000 });
     expect(detail.load?.loadAverage).toEqual([1, 2, 3]);
   });
