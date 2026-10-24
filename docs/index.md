@@ -23,8 +23,8 @@ conflicts with a rule, follow the rule and fix the document.
 
 ## Measurements and decision records
 
-Evidence gathered in phases F0-F3 that the plan's decisions rest on, and the
-binding decision records of F2 and F3. The measurements are dated, not rules.
+Evidence gathered in phases F0-F4 that the plan's decisions rest on, and the
+binding decision records of F2, F3 and F4. The measurements are dated, not rules.
 
 - [kpi-baseline.md](kpi-baseline.md) — the baseline of `npm run kpi` on restored
   library backups; the numbers the refactoring must beat.
@@ -59,7 +59,9 @@ binding decision records of F2 and F3. The measurements are dated, not rules.
 - [topic-placement-calibration.md](topic-placement-calibration.md) — F2 T29a: the registered rules
   and the evidence for the placement and gate parameters of the Topic Tree Engine.
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only AI cassettes (record/replay),
-  the golden runner, and the F3 soak, relation re-match, Decisions and probe runs.
+  the golden runner, the F3 and F4 soaks, relation re-match, Decisions and probe runs, and the F4 writer benchmark.
+- [f4-decisions.md](f4-decisions.md) — the binding F4 decisions (D1-D38), owner answers Q1-Q13 and the later owner
+  decisions, gates M, S and X, the exit and carried bars (E1-E7, C1-C4), the 7-day soak plan and the budget.
 - [settings-inventory.md](settings-inventory.md) — F4 T68: every persisted setting with its reader, default, screen,
   fate and E7 category; the 35/43 counts and the 17 matching controls verified; the dead settings; the pair-key fields.
 

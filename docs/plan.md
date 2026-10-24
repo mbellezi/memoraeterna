@@ -284,16 +284,17 @@ pooling; for MLX, the config and architecture) and a relevant-vs-irrelevant smok
 
 Built on the existing `jobs` table (priority, `run_after`, attempts, SKIP LOCKED) plus `dedupe_key` and
 `lane` (heavy: ingestion; light: Gardener and Obsidian, with a `compute` worker for work without model calls
-and a `model` worker, so placement never waits for a model), with per-source exclusion instead of global
-"any job / any AI call" blocks.
+and a `model` worker, so placement never waits for a model), with per-scope exclusion (a root, a topic, a tree's
+structure or names: one running task per scope, `docs/f4-decisions.md` D6) instead of global "any job / any AI
+call" blocks.
 
 | Task | Trigger | Work |
 | --- | --- | --- |
 | PLACE | note created/edited/accepted, source chunked (debounced) | place in tree, update stats |
-| MATCH | per source, as soon as its notes exist | Relations v2 |
+| MATCH | per source, as soon as its notes exist; a note again after a human edit or an accept | Relations v2 (suggestions) |
 | REBALANCE | hard violation (fast) or soft violation after subtree quiet | split, merge, push-down, collapse, re-parent, naming |
-| REFRESH | dirty pages, priority = dirtiness × views × recency; P0 when opened | additive overview patches with citations, "Divergences" side by side, explanation backfill |
-| AUDIT | after enough time and changes | deterministic lint: reachability, invariants, duplicates, broken links/redirects, stale embeddings, rolling re-placement |
+| REFRESH | dirty pages, priority = dirtiness × views × recency; P0 when opened | additive overview patches with citations, "Divergences" side by side, explanation backfill for recently opened notes |
+| AUDIT | after enough time and changes | deterministic lint: reachability, invariants, duplicates, broken links/redirects, stale embeddings, rolling re-placement, theme-drift renames |
 
 - **States:** queued → running → done | no_change | failed (retryable with backoff; quarantined after a few
   attempts, shown in the Inbox with an action) | blocked (no model, cap, paused, offline, downloading) |
@@ -304,21 +305,27 @@ and a `model` worker, so placement never waits for a model), with per-source exc
 - **Freshness by content only:** fingerprints use chunk, note and member hashes. Model, prompt and settings
   are provenance; changing a model offers an optional backlog. Saving settings never invalidates coverage.
 - **Change-sets:** every applied task yields a localized, deterministic title, affected objects, risk level
-  and an undo handle (retained ~90 days).
-- **Inbox:** a read-only view over pending-review change-sets, quarantined tasks, contradictions,
-  NOT_RELATED vetoes, duplicates and Obsidian conflicts; each decision becomes a calibration label.
+  and an undo handle kept for the retention window (90 days; pending reviews are never pruned). One read model
+  unions the topic change-sets, relation runs and overview versions; each store undoes its own (F4 D10).
+- **Inbox:** a read model over pending-review change-sets, quarantined tasks, contradictions, NOT_RELATED
+  vetoes, duplicates, Obsidian conflicts, budget items and backlog offers, worked from the keyboard; each verb
+  goes through its store's writer and each decision becomes a calibration label.
 - **Controls (three):** autonomy (Off: no generative or remote background work, deterministic placement
   still runs; Suggest; Auto with undo, the default), monthly remote spend cap, pause. Plus the tree-shape
   preference and "only idle" / "only on AC power" options. Always reviewed regardless of autonomy: changes
   touching human, pinned or protected structure or text; large merges; Area-level changes; rebuilds moving a
-  large share of items; contradictions that would rewrite prose.
-- **Money cap semantics:** remote background spend = recorded tokens × versioned price table; unknown price
-  uses a conservative estimate, never zero. At ~80% remote background work pauses (P0 continues); at 100%
-  background continues local-only. Subscription routes without per-token price (Codex OAuth) are outside the
-  money cap and bounded by lane concurrency and a daily call cap. User-started imports show their estimate
-  in the plan chip and do not consume the background cap. In Hybrid without a local writer, generative
-  background work waits at the cap while placement and deciding continue locally; Activity says so. Local
-  work has no money cap, only a duty cycle (lower while the user is active).
+  large share of items; contradictions that would rewrite prose. F4 puts these six controls in Settings ›
+  Knowledge and the matching controls in Advanced › Matching (`docs/f4-decisions.md` D13, D33, Q4).
+- **Money cap semantics:** remote background spend = recorded tokens × versioned price table; unknown price uses a
+  conservative estimate, never zero; every background attempt reserves before it is sent, so a cap is passed by at
+  most one attempt's estimation error. At 80% remote background work pauses until the user continues it from
+  Activity (P0 continues); at 100% background continues local-only. Subscription routes without per-token price
+  (Codex OAuth) are outside the money cap and bounded by lane concurrency and a daily background call cap.
+  User-started imports show their estimate in the plan chip and do not consume the background cap. In Hybrid
+  without a local writer, generative background work waits at the cap while placement and deciding continue
+  locally; Activity says so. Local work has no money cap, only a duty cycle (lower while the user is active). The
+  duty cycle, "only idle" and "only on AC" key on the budget class, never on priority (P2 also carries user
+  imports).
 - **Status:** one sentence with ETA and an action ("why isn't it running?"); blocker precedence paused > no
   model > cap > download > waiting > offline; shows coverage and ETA, never call counts.
 
@@ -337,8 +344,9 @@ and a `model` worker, so placement never waits for a model), with per-source exc
   **Retries** in adapters: backoff with jitter for 408, 425, 429, 5xx, network and stalls, honoring
   `Retry-After`; never for 400/401/403/404/413, context overflow or schema failure after repair.
 - **Schema output** via Zod JSON Schema: OpenAI `json_schema` strict, Gemini `responseJsonSchema`, Codex
-  `text.format`, node-llama-cpp grammar; MLX keeps one repair. Valid items are kept; only missing ones are
-  re-requested once.
+  `text.format`, node-llama-cpp grammar. Each catalog caller states its output contract and the service derives
+  what the runtime is sent (F4 D23); MLX gets JSON-constrained decoding over a schema subset in the helper
+  (decision 31a, F4 D24, T99) and keeps one repair. Valid items are kept; only missing ones are re-requested once.
 - **Workload classes:** `embed`, `decide`, `write-fast`, `write-quality`, `answer`, seeded from a Local /
   Hybrid / Cloud preset at first run and tested with one call each. `decide` accepts only validated
   rerankers or explicitly chosen deciders. Local mode needs MLX for generation, so it is macOS arm64 only;
@@ -358,15 +366,18 @@ and a `model` worker, so placement never waits for a model), with per-source exc
 - **Read model:** read-only views `knowledge_objects` and `knowledge_links`, plus `current_notes` /
   `current_relations` for currentness predicates. Canonical tables stay authoritative; materialize only if
   EXPLAIN gates fail.
-- **Indexes:** immutable `f_unaccent` wrapper, per-row `ts_config`, generated `search_tsv` with GIN on
-  chunks, notes and wiki sections; trigram on titles; partial HNSW per target type; materialized
-  `root_source_id`; drop unused indexes.
+- **Indexes:** immutable `f_unaccent` wrapper; stored generated text vectors for Ask on chunks (`search_tsv`)
+  and notes (`ask_tsv`), `simple` config, a GIN only beside a prefilter (F4 D22); per-row `ts_config`,
+  `search_tsv` on wiki sections and a materialized `root_source_id` in F5; trigram on titles; partial HNSW per
+  target type; drop unused indexes.
 - **IPC (Zod-validated):** `objects.get`, `objects.resolveMany`, `objects.locate` (primary path, "also in",
   citing pages), `objects.backlinks`, `objects.neighborhood` (DOI-ranked, bounded), and `search.omni` (FTS +
   trigram + ANN per kind, RRF across kinds) replacing the 3-4 current searches.
-- **Push events:** a typed in-process event bus emitted after commit, coalesced and sent on one
-  Zod-validated preload channel (`object.changed`, `tree.changed`, `relation.created`, `job.progress`,
-  `inbox.changed`, `gardener.status`). It replaces the ~17 IPC pollers.
+- **Push events:** a typed in-process event bus (`AppEventBus`) emitted after commit, coalesced and sent on one
+  Zod-validated preload channel (`appEvents`): `job.progress`, `inbox.changed`, `gardener.status`,
+  `model.download`, `budget.changed`, `changes.changed`, `overview.changed` and `consultation.status` since F4;
+  `tree.changed` and `relation.created` bridged from their old channels until F5; `object.changed` in F5. It
+  replaces the renderer's pollers (the ~17 are 9 `setInterval`s, 8 of them polling: F4 removed 3, F5 the rest).
 - **State stores:** persisted Ask answers and Questions; a local, non-telemetry view history (recents, pins,
   resurfacing schedule) that feeds REFRESH priority, the freeze and churn weighting; optional opt-in usage
   telemetry stays separate.
@@ -724,53 +735,54 @@ Decisions D1-D38, the owner's answers to Q1-Q13 (2026-10-23), the gates M, S and
 budget: `docs/f4-decisions.md`; it binds F4 (decision 33) and, where section 4 differs, it wins. Tasks run in waves
 as in F3 (separate worktrees, one owner per shared file in a fixed merge order, a proof that starts the DEV app or a
 local model takes that slot). The 7-day Hybrid soak is the calendar spine: everything it tests merges before gate S,
-wave 3 runs beside it model-free, and the proofs that need the slots follow it (D1, D2).
+wave 3 too (owner, 2026-10-24; T99 joins if its proofs pass first), and the proofs that need the slots follow it
+(D1, D2).
 
 Wave 0 (folded into wave 1's start when F4 began on 2026-10-23):
 - [x] T67 Decision record (`docs/f4-decisions.md`): D1-D38, Q1-Q13 with the owner's answers, gates, bars, soak plan,
       budget, decision 32's pre-registration, these task boxes.
-- [ ] T72 F3 follow-ups: catalog callers state their output contract (strict for remote typing and overview), a bare
+- [x] T72 F3 follow-ups: catalog callers state their output contract (strict for remote typing and overview), a bare
       AbortError with a live job is transient, the MLX helper's protocol shutdown.
 
 Wave 1 (W0 spill, foundations, the five migrations; T87, T88 and T99 start; gate M at the end):
-- [ ] T68 Settings inventory (decision 24, `docs/settings-inventory.md`): reader, default, fate; the dead ones marked.
+- [x] T68 Settings inventory (decision 24, `docs/settings-inventory.md`): reader, default, fate; the dead ones marked.
 - [ ] T69 Prompt-replay harness and the record-only local-writer benchmark (decisions 25, 26).
 - [ ] T70 Runtime-upgrade spike (mlx-swift-lm 3.32.3, node-llama-cpp 3.22.2), record only.
-- [ ] T71 $0 pre-checks: the two-neighbour replay and the merged-entity statistic (C1's baseline).
+- [x] T71 $0 pre-checks: the two-neighbour replay and the merged-entity statistic (C1's baseline).
 - [ ] T73 Delete the test models and the benchmark transients.
-- [ ] T74 Gardener task state, scope exclusion, outcome cache and quarantine (migration 0060).
-- [ ] T75 Background policy: controls, gates, blockers, duty cycle, power signals.
+- [x] T74 Gardener task state, scope exclusion, outcome cache and quarantine (migration 0060).
+- [x] T75 Background policy: controls, gates, blockers, duty cycle, power signals.
 - [ ] T76 RemoteBudget and the price table (migration 0061); the Decisions ledger probe (Q12).
-- [ ] T77 Change-set read model, risk, retention and the changes IPC (migration 0062).
-- [ ] T78 Drop the legacy tables, their fence and guards (migration 0063, after T82's backups).
-- [ ] T79 Ask stored text vectors and the candidates measurement (migration 0064; C3).
-- [ ] T80 Cancel a running Ask statement; the Retry-After wait (Q2).
-- [ ] T81 Event bus with job and download events (three polls removed).
+- [x] T77 Change-set read model, risk, retention and the changes IPC (migration 0062).
+- [x] T78 Drop the legacy tables, their fence and guards (migration 0063, after T82's backups).
+- [x] T79 Ask stored text vectors and the candidates measurement (migration 0064; C3).
+- [x] T80 Cancel a running Ask statement; the Retry-After wait (Q2).
+- [x] T81 Event bus with job and download events (three polls removed).
 - [ ] T82 Gate M (the orchestrator): heads, backups, rehearsal, migration times.
 
 Wave 2 (tasks, status, harnesses; C1 and C2; gate S at the end):
 - [ ] T83 MATCH on note edits and accepts.
 - [ ] T84 REFRESH: additive overview patches with Divergences and versions; explanation backfill.
 - [ ] T85 AUDIT extensions: duplicates, broken links, stale embeddings, rolling re-placement, theme drift.
-- [ ] T86 Status service and sentence.
+- [x] T86 Status service and sentence.
 - [ ] T87 Entity identity grouped per source and raw-batch checkpoints (C1, X7 ≤40).
 - [ ] T88 Batched source judge and two neighbours (C2, S1 and X3).
-- [ ] T89 The 7-day soak harness (real Codex writer knob, token cap, zero-token faults, ground truth).
+- [x] T89 The 7-day soak harness (real Codex writer knob, token cap, zero-token faults, ground truth).
 - [ ] T90 First-run Hybrid e2e harness and the live clean-install record (E6).
 - [ ] T91 Gate S, 5 h pre-soak with calibration (the orchestrator).
 
 The soak (from 2026-10-28):
 - [ ] T92 The 7-day Hybrid soak with the real Codex writer under a token cap (the orchestrator).
 
-Wave 3 (during the soak; model-free, background QoS):
-- [ ] T93 Activity pill and drawer.
-- [ ] T94 Inbox with the keyboard flow.
-- [ ] T95 Icicle diff.
-- [ ] T96 Three-step onboarding.
-- [ ] T97 Hardware probe and tier table (decision 25).
-- [ ] T98 Settings › Knowledge and the cut; matching to Advanced › Matching (Q4).
+Wave 3 (merges before gate S, owner 2026-10-24; T99 before the soak only if its proofs pass first):
+- [x] T93 Activity pill and drawer.
+- [x] T94 Inbox with the keyboard flow.
+- [x] T95 Icicle diff.
+- [x] T96 Three-step onboarding.
+- [x] T97 Hardware probe and tier table (decision 25).
+- [x] T98 Settings › Knowledge and the cut; matching to Advanced › Matching (Q4).
 - [ ] T99 JSON-constrained decoding in the MLX helper (decision 31a).
-- [ ] T100 Rules, stack and docs sync.
+- [x] T100 Rules, stack and docs sync.
 
 Wave 4 (after the soak; C4 and E6):
 - [ ] T101 Soak report and failure audit (E1-E5).

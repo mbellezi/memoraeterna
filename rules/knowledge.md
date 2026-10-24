@@ -53,12 +53,11 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Atomic notes use validated structured output and link to their source, chunks and SourceSpans.
   They are active at birth with an AI-provenance badge (review is optional) and are embedded when
   created, so matching never meets a note without a vector. Human edits protect a note and
-  invalidate its embedding and dependents; one embedding job rebuilds it, never generative AI.
-  Approval invalidates no embedding, decision, explanation or evidence.
+  invalidate its embedding and dependents; one embedding job rebuilds it (never generative AI), then MATCH
+  decides its relations again. Approval invalidates no embedding, decision, explanation or evidence.
 - Repeated derivations of the same passage are not independent corroboration.
-- Entities and semantic relations are canonical in SQL with evidence. Names are
-  retrieval signals, never identity; identity reuse needs conservative
-  confirmation and ambiguity creates a new entity. Graph extraction runs once per
+- Entities and semantic relations are canonical in SQL with evidence. Names are retrieval signals, never identity;
+  identity reuse needs conservative confirmation and ambiguity creates a new entity. Graph extraction runs once per
   source over its chunks, for entities and relations; old claims are read-only.
 - Human accept or reject of a relation survives reruns, in both directions.
 
@@ -90,14 +89,13 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Topic tree
 
-- The Topic Tree Engine owns AI-managed structure and is the single writer of AI
-  topic parents. Placement is deterministic on embeddings; a decider is consulted
-  only for ambiguous cases; LLMs name topics in the content language and write prose.
+- The Topic Tree Engine owns AI-managed structure and is the single writer of AI topic parents. Placement is
+  deterministic on embeddings; a decider is consulted only for ambiguous cases; LLMs name topics and write prose.
 - Every current note and root source is reachable from the root with one primary
   parent and a few secondary placements, and no cycles. Shape targets (fan-out,
   leaf size, depth) live in typed config and are enforced by rebalancing.
-- Every structural operation is recorded in a reversible change-set. Stability controls (hysteresis,
-  cooldown, churn budget) prevent thrashing. Human-created, pinned and protected nodes never move automatically.
+- Every structural operation is recorded in a change-set, reversible within its retention window. Hysteresis,
+  cooldown and a churn budget prevent thrashing. Human-created, pinned and protected nodes never move automatically.
 - A topic and its index are one node. Its page is a deterministic map of content; prose overviews
   are written on open with citations and a support check, then patched additively by REFRESH.
 - A name covers the whole topic, differs from its parent's and children's, and is in the content language.
@@ -113,8 +111,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Background maintenance (Gardener)
 
-- Maintenance runs as event- and threshold-driven tasks on the jobs table, never as calendar routines. One
-  failed, rejected or waiting item never blocks others; a waiting task names its blocker, a failing input is quarantined.
+- Maintenance runs as event- and threshold-driven tasks on the jobs table, one running task per scope, never as
+  calendar routines. One failed, rejected or waiting item never blocks others; a waiting task names its blocker,
+  and a failing input is quarantined until it changes or the owner retries it.
 - Freshness depends only on content fingerprints (an unchanged input is skipped); saving settings or changing a model never invalidates coverage.
-- Every applied change is a change-set with undo. Changes that touch human, pinned or protected content go to the
-  Inbox for approval.
+- Every applied change is a change-set with undo. Placement, hard repairs and deterministic lints run in every
+  autonomy mode; Off starts no generative or remote background work, Suggest proposes what Auto would apply, and
+  no control holds work the user starts. Changes to human, pinned or protected content go to the Inbox for approval.

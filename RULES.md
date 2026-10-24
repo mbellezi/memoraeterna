@@ -29,7 +29,7 @@ This is the small contract that applies to every repository task. Read it with
   reprocessing. Derived knowledge keeps its provenance to exact sources and
   spans.
 - Automation on AI-managed content is automatic but reversible: every automatic
-  change is recorded in a change-set that can be undone (target F2-F4).
+  change is recorded in a change-set that can be undone for its retention window.
 - Human-created, human-edited, pinned or protected content is never changed by
   automation without explicit approval.
 - Validate data with Zod whenever it crosses a process, worker, integration or

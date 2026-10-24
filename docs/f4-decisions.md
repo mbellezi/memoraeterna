@@ -18,6 +18,65 @@ where it and this file differ, this file wins. Days are UTC calendar days unless
 - **Decision 32** (plan section 2): local models first, a remote run as the last check; F4's "close" and remote spend
   are pre-registered in section "Decision 32 in F4".
 - **Moved to F5:** parallel calls inside one import on remote routes (plan F5 box).
+- **2026-10-24:** wave 3 (and T99 if its proofs pass first) merges before gate S and the soak; a Gemma 4 12B arm
+  joins the record-only benchmark. Both are in section "Amendments after the start".
+
+## Amendments after the start (2026-10-23/24)
+
+Recorded in the orchestrator's run log as they happened. Each amends the decision, bar or line it names and wins
+over the text below where they differ.
+
+- **Wave 3 and T99 before the soak (owner, 10-24 about 04:45 UTC).** Gate S and the 7-day soak wait for wave 3
+  (T93-T98), so the soak runs the code with W3 merged and D1 needs no soak-subject proof for W3's main-process parts;
+  W3 closes before gate S with its own full check (no longer at W4's close), and T100 follows it. T99 (the
+  MLX mask) joins before the soak if its proofs pass first: the release helper build, ranker parity on every
+  profile and C4's replay bars, since the soak's MLX ranker runs on that helper (a new helper hash in D1's
+  record); otherwise it merges after the soak with D1's behaviour-neutral proof.
+- **A Gemma 4 12B arm (owner, 10-24; D25).** `mlx-community/gemma-4-12B-it-4bit` @ `73bcf090` (6,773,372,848 B,
+  sha256 verified), in `.cache/models/gemma-4-12b-it-4bit-mlx`, is a fifth arm of the record-only benchmark
+  (decision 26: no catalog entry, preset, default or merge). It runs after the critical-path proofs and before the
+  soak only if the slots leave a gap before gate S; otherwise after the soak, since no local inference runs during it.
+- **T72's proof bar (orchestrator, pre-registered 10-23 before any run).** The card's "typing agreement ≥95%
+  against the recorded M2 answers" measures the typer's own noise, not the schema change: F3's S0 and S2, two live
+  runs of one typer, agree on type and direction on 59.8% of 97 pairs from byte-identical prompts (61.6% of the 263
+  common pairs, 64.6% on type alone). The bar is instead: every write-fast structured row `strict`; agreement with
+  S0 on type and direction at least the S0-vs-S2 floor minus 5 points, type-only beside it; 0 schema failures and 0
+  repairs on the typing rows. T72PJ (the 43 typing calls live, 98,648 Codex tokens against the 67k budgeted) passed:
+  `strict` 43/43, 62.7% (165/263) against the floor's 61.6%, 0 failed, 0 repairs. The quit proof passed on X7B's
+  exit (disposed in 54 ms, every step under its bound; the MLX writer was not loaded, only the ranker).
+- **Identity twins (T87, D20).** Grouped per source, a later row listed an earlier row's provisional identity as a
+  candidate whose text is that row's own, so a call showed the earlier row its "twin". Codex matched the twin for 8
+  of 19 such rows over the recordings (no other invalid identity answer in 1,411 rows), and the one repair asked
+  the pending rows together, so in FRREC the PLOS source's knowledge-graph stage failed with
+  `errors.entityIdentity.invalidOutput` (extraction kept). Fix 1 (649d0b94): the repair splits the undecided rows
+  wherever a call would show a row its twin; correct, but every twin repaired is a call (C1 would land at 40.0-41.6
+  per chapter on X7-REF, about one repair per source on golden-small, near the soak's 2% repair bar). Fix 2 (11b4dfe1):
+  unpinned, an earlier row's identity is named by its row key and a call lists no candidate that is one of its own
+  rows' lines, so no identity call shows a twin. The pinned path, the identity templates and the stored
+  `entity_identity_keys` are unchanged; grouped prompts differ, so the cassettes recorded with grouping miss. Both
+  fixes are in `refactoring` (11b4dfe1).
+- **Re-records (E6REC, FRREC).** After T87 the `e2e-plos-f3` replay missed one call (bisected to T87's per-source
+  identity), and after fix 2 the cassettes recorded before it miss at the new prompts. The E6 replay is recorded
+  again as `e2e-plos-f4` (label E6REC), which gate S and section "Non-regression" read in place of `e2e-plos-f3`.
+  FRREC, T90's live clean-install record `firstrun-hybrid-f4` (10-24 06:05-06:16 UTC, real Codex), failed on the
+  twin defect: both downloads succeeded (D = 0:18 on the critical path; the status explained 36 of 36 waits), then
+  it stopped at its 150k live-token cap after about 10 min (471 calls) with no topic tree yet. It is recorded again
+  after W3 merges (T96 extends its setup sequence).
+- **Codex use runs above the F3-based estimates (C2, E6).** C2's first microbenchmark run (C2MB, 10-24) is void: its
+  live judge (C2G) reached its 18k cap at 21k with 13 of 14 pairs judged. A complete FRREC needs about 370k tokens
+  (the PLOS source alone about 280k) against the 100k budgeted. So every live label runs under its own cap
+  (`F4_CAP`, 2 to 2.5 times its estimate) and a capped run resumes on its cassette copy (recorded calls are served
+  at no cost); the microbenchmark runs first, and S1 and X3 at two neighbours only if it passes (D21; about 0.6M
+  saved otherwise); FRREC's cap and sources go to the owner before it runs again. Codex spent so far: 284,549
+  tokens after C2MB (pre-soak cap 1.5M, Q1).
+- **T74's open items (orchestrator, 10-23; D8, D9).** A null fingerprint never adds up toward quarantine; an
+  invalid model answer (`invalid`, `invalid_output`) is retried with backoff (spec 3.1b); a recovered job keeps its
+  dedupe key.
+- **Gate M's largest profile.** ENV-C, not `env-soak24`, is the largest profile in every table (gate M, 10-24), so
+  runbook step 5's bound for chunks is ENV-C as well.
+- **Wave closes bundle the app (orchestrator, 10-24).** The full check never bundles: after wave 1 electron-vite
+  placed its CommonJS shims inside a comment of the worker bundle and the app did not start (fixed in 7c7d9f79, with
+  a static test). Every wave close also runs `npx electron-vite build` in `apps/desktop` (section "Non-regression").
 
 ## Decisions
 
@@ -253,7 +312,7 @@ its 25 h touch only two). Above either, the owner decides. A rate over 3.0% is n
 | Gate | When | Passes if | If it fails |
 | --- | --- | --- | --- |
 | **M. Migration safety** | T82, after T74, T76-T79 merge (about 10-25) | The runbook below: heads recorded; backups restore with equal counts; every verify script passes on the DEV clone (paused, remote blocked), ENV-C and `env-soak24` clones; each profile migrates from its head (0059 where due, then 0060-0064) in **≤15 s**, rewrites and indexes timed apart | Fix the migration or D34's fallbacks; nothing changes on a real profile |
-| **S. Pre-soak** | T91, about 10-27 | The soak's gate S (section "The 7-day soak"); C1 and C2 measured with T87 and T88 merged (the soak runs their code); the `e2e-plos-f3` and golden non-regression replays green | Fix and re-run gate S; the soak never starts on a failing pre-soak; if C1 or C2 is not ready the start waits (latest 11-02) |
+| **S. Pre-soak** | T91, about 10-27 | The soak's gate S (section "The 7-day soak"); C1 and C2 measured with T87 and T88 merged (the soak runs their code); the `e2e-plos-f4` (E6REC) and golden non-regression replays green | Fix and re-run gate S; the soak never starts on a failing pre-soak; if C1 or C2 is not ready the start waits (latest 11-02) |
 | **X. Exit** | T105, about 11-06 | E1-E7 and C1-C4 (Measurement), C4 possibly under decision 32; every F4 box ticked; the soak-subject diff proven (D1); the non-regression list green | Stop the line (plan section 8); a soak failure follows D38 |
 
 **Gate M runbook (T82, the orchestrator).** Steps 2-3 run first, before any F4 migration reaches a profile (the cold
@@ -316,15 +375,16 @@ the line stops until answered. A close miss takes decision 32's remote check.
 
 ### Non-regression and reported values
 
-At the W1, W2 and W4 closes the orchestrator runs the full `npm run check`, `phase4:e2e`, `topics:e2e --synthetic`,
-`db:seed:verify` and the stage verifiers (per change only `check:changed`); W3 closes during the soak, so its full
-check runs at W4's close (D2). Before gate S also: the `e2e-plos-f3` replay (0 misses), the `golden-small-f2`
-non-regression replay (G1 digests unchanged), `db:topics:verify`, `notes.page`/`objects.locate` p95 on SEED30K
-(≤5/≤50 ms), Ask during an import (0 timeouts), the 200-link page (≤2 IPC calls per cycle), an explanation's second
-open (0 calls), the topic tree untouched by the cut (0 roots moved), ranker parity on every profile after any helper
-rebuild. **Reported, not gating:** queue waits per lane, blocker minutes per class, overview patch acceptance in Suggest
-windows, backfill vetoes, identity catalog retries, the benchmark record, the Windows probe's fixture coverage. Gate X
-ticks a box only with its measurement's file under `.cache/f4/` and its line in `docs/kpi-f4.md`.
+At the W1, W2, W3 and W4 closes the orchestrator runs the full `npm run check`, `npx electron-vite build` in
+`apps/desktop`, `phase4:e2e`, `topics:e2e --synthetic`, `db:seed:verify` and the stage verifiers (per change only
+`check:changed`); W3 closes before gate S (owner, 10-24). Before gate S also: the `e2e-plos-f4` replay (0 misses), the
+`golden-small-f2` non-regression replay (G1 digests unchanged), `db:topics:verify`, `notes.page`/`objects.locate` p95
+on SEED30K (≤5/≤50 ms), Ask during an import (0 timeouts), the 200-link page (≤2 IPC calls per cycle), an
+explanation's second open (0 calls), the topic tree untouched by the cut (0 roots moved), ranker parity on every
+profile after any helper rebuild. **Reported, not gating:** queue waits per lane, blocker minutes per class, overview
+patch acceptance in Suggest windows, backfill vetoes, identity catalog retries, the benchmark record, the Windows
+probe's fixture coverage. Gate X ticks a box only with its measurement's file under `.cache/f4/` and its line in
+`docs/kpi-f4.md`.
 
 ## The 7-day soak (T89 harness, T91 gate S, T92 run, T101 report)
 
@@ -495,7 +555,7 @@ tokens [I, T88 measures it].
 | 1 | Fri 10-23 → Sun 10-25 | T68-T71, T73 (W0 spill), T74-T82; T87, T88, T99 start | **gate M** (T82); the benchmark if the slots allowed |
 | 2 | Sat 10-24 → Tue 10-27 | T83-T91 | C1, C2 measured; **gate S** (T91); tag `f4-soak-start` |
 | Soak | Wed 10-28 00:00 → Wed 11-04 00:30 | T92 | soak ends |
-| 3 | Wed 10-28 → Mon 11-02 | T93-T100, model-free at background QoS | UI and decoder merged |
+| 3 | before gate S (owner, 10-24) | T93-T98, T100; T99 if its proofs pass first, else after the soak | UI merged before the soak |
 | 4 | Wed 11-04 → Fri 11-06 | T101-T104; W3's full check | C4 and E6 measured |
 | 5 | Fri 11-06 | T105 | **gate X**, phase close |
 

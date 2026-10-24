@@ -607,7 +607,7 @@ content).
 | `MEMORA_SOAK_SETUP=1` | Prepares the clone, then quits (below); refused beside any other DEV knob. |
 | `MEMORA_FAKE_REMOTE=scripts/soak/plan.json` | Starts the fake providers and routes `class:answer` and `op:relation_explanation` to them. |
 | `MEMORA_SOAK=scripts/soak/plan.json` | Starts the driver (needs `MEMORA_FAKE_REMOTE` and the same plan). |
-| `MEMORA_SOAK_PROFILE=soak24\|presoak4` | The plan profile (default `soak24`); `presoak4` is gate P's 4 h run. |
+| `MEMORA_SOAK_PROFILE=soak24\|presoak4\|soak7\|soak7-gate` | The plan profile (default `soak24`); `presoak4` is gate P's 4 h run; F4's two below. |
 | `MEMORA_SOAK_RUN=<name>` | The run folder `.cache/f3/soak/<name>/` (default `<profile>-<timestamp>`). |
 
 **Profile setup** (`MEMORA_SOAK_SETUP=1`, `dev/soak-setup.ts`). On the clone, with no job, gateway or vault sync started,
@@ -667,6 +667,31 @@ a stall that the client left at the stall bound, a first byte that the client le
 and the call (its audit row's `deadline_outcome` and error class). Exit code 0 passes, 2 needs a person (the
 report says which line), 1 fails.
 
+### The 7-day Hybrid soak and gate S (F4 T89)
+
+F4's soak (`docs/f4-decisions.md`, section "The 7-day soak") runs the Hybrid preset with the real Codex writer
+for every writer class and the judge, under a token cap; the rest of this section still holds. The plan profiles
+`soak7` (168 h) and `soak7-gate` (gate S, about 5.4 h) carry an `f4` section: `codex.expected` and `codex.cap`
+(the driver refuses to run without them; gate S re-freezes them), the zero-token faults in front of the Codex
+adapter, the windows of known ground truth, the money window and the Decisions admission (`off`). Their runs
+write to `f4/soak/<run>/` under the data root.
+
+| Knob | Meaning |
+| --- | --- |
+| `MEMORA_SOAK_REAL_WRITER=<codex providerConfigId>` | Admits exactly that Codex OAuth configuration as a real provider (the knobs' need for the fakes, the setup's reach check, the fakes' installation); every other real provider is still refused. With `MEMORA_SOAK_SETUP=1` the setup applies `hybrid` instead of `local` and tests each class with one real call (the token check). Honoured only unpackaged, on a profile under the data root's `profiles/`. |
+| `MEMORA_SOAK_DATA_ROOT=<absolute folder>` | The `.cache` that holds the profiles, the corpus, the run folders and the local-model lock (the main checkout's), so the soak runs from a worktree outside the checkout on a frozen branch (D1). Without it everything is `<workspace>/.cache`. |
+| `MEMORA_SOAK_ADMIT_DECISIONS=1` | Admits the opt-in Decisions decider for one run (decision 32's remote check): it needs the real writer, a plan profile that allows Decisions, `MEMORA_RELATIONS_DECISIONS=on`, a key file only its owner can read and a stated cap of at most the product's US$0.50 a day. Off by default; `soak7` says `off`. |
+
+A soak refuses `MEMORA_DEV_POWER_BLOCKS` and `MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS` (its windows drive the
+power override, and it keeps the shipped relations values). Outside a soak, `MEMORA_DEV_POWER_BLOCKS=<word>,...`
+(F4 T75, ignored when packaged) replaces the machine's activity and power readings for the Gardener's duty cycle,
+"only idle" and "only on AC" with 10-minute blocks from the start, repeated (`idle`, `active`, `battery`,
+`battery-active` or `real`); an unknown word stops the start. On a run whose meta has an `f4` section,
+`npm run soak:report` adds E1-E5 with their exposure, the injection ledger with its 0-bytes check, the token
+budget and the load ledger; `--count-local-writer` counts every structured call of the local writer in the repair
+rate (C4's re-run). `zsh scripts/soak/watch-soak.sh <plan profile> <run directory> <app pid>` is the hourly
+watchdog: it creates `STOP` on a stop check's FAIL line and ends the run at the profile's duration plus one hour.
+
 ## 9. Relation re-match runs and the F3 DEV probes (T52b, T63)
 
 `MEMORA_RELATIONS_REMATCH` (`apps/desktop/src/main/services/dev/relations-rematch.ts`) matches again the notes a
@@ -704,6 +729,7 @@ Start every sample from a fresh clone of a base whose ranker validation names th
 | `MEMORA_RELATIONS_REMATCH_LINK=drain\|product` | `drain` (the default, quality samples): one link job at a time, first in first out, no coalescing and no daily counting. `product` (X3's timing runs, with `MEMORA_AI_LANES=product`): the app's own link pool, small-source coalescing and daily call counter. |
 | `MEMORA_RELATIONS_REMATCH_P0_PROBE_MS=<n>` | X3's P0 probe: one query embedding at P0 every `n` ms (at least 1,000) while the run works. |
 | `MEMORA_RELATIONS_HELPER_BATCH=<1-64>` | The MLX ranker's helper batch for this DEV start (B1 runs batch 1 against the product's 16), recorded in the summary. The rank request carries it in its parameters, so it changes the cassette key. |
+| `MEMORA_RELATIONS_DISCOVERY_NEIGHBOURS=1\|2` | Source discovery's neighbours for this DEV start (F4 C2 runs two before D21's rule may change the shipped value), recorded in the summary; any other value stops the start. |
 | `MEMORA_RELATIONS_REMATCH_DIGEST=<sha256>:<notes>` | The pinned notes digest, for a profile whose kind has none recorded. |
 | `MEMORA_RELATIONS_REMATCH_OUT=<folder in .cache>` | Where `summary.json` goes (default `.cache/f3/rematch/<run>/`). |
 | `MEMORA_RELATIONS_REMATCH_DRAIN_MS=<n>` | How long the link jobs may take to drain (default 2 h). |
@@ -783,6 +809,16 @@ read it as a Decisions sample.
 
 All three are refused when packaged. The lane and explanation probes are also refused with a cassette or with
 another measurement run.
+
+## 10. The local-writer benchmark (F4 T69, record only)
+
+`npm run bench:writer -- plan|run` replays the generative calls of a golden cassette (default `golden-small-f2`)
+on a local writer through the product's adapter, validation, salvage and repair, and records per item the first
+answer's validity, repairs, salvage, tok/s, time to first text, memory, swap and the yield against the recorded
+answer (decisions 25 and 26: nothing is adopted). `plan` runs no inference; `run --arm <arm>` replays one arm,
+holds the data root's `LOCAL_MODEL_BUSY` for the whole run and can resume. `--data-root` (or
+`MEMORA_BENCH_DATA_ROOT`) names the `.cache` it reads and writes (default `<cwd>/.cache`).
+`npm run bench:writer-report -- <run dir>...` writes the tables per arm and contract.
 
 ## After a run
 

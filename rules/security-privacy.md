@@ -49,8 +49,8 @@ retention, licensing, or adding dependencies and model artifacts.
   stops requests already admitted; the cap holds across plans admitted together.
 - Automatic background spending obeys the user's monthly remote cap: recorded usage times a
   versioned price table (an unknown price estimated conservatively, never as zero), each attempt
-  reserved before it is sent. Work the user starts is counted and shows its estimate first; at the
-  cap background work goes local-only or waits with the reason shown. Subscription routes (Codex)
+  reserved before it is sent. Work the user starts stays outside the cap and shows its estimate first;
+  at the cap background work goes local-only or waits with the reason shown. Subscription routes (Codex)
   have a daily background call cap instead; the relation, topic, header and Decisions caps remain.
 
 ## Logs, monitoring and telemetry
