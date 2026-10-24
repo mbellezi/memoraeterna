@@ -144,9 +144,15 @@ export function itemTitle(t: Translator, item: InboxItem): string {
           : "inbox.items.budget.title.money80"
       );
     case "backlog":
-      return t("inbox.items.backlog.title");
+      return t(
+        settingsBacklog(item) ? "inbox.items.backlog.titleSettings" : "inbox.items.backlog.title"
+      );
   }
 }
+
+/** A MATCH backlog offered because the matching values changed (F4 Q4, T98), not the decider. */
+const settingsBacklog = (item: InboxItem): boolean =>
+  item.variant === "match" && item.params.reason === "settings_changed";
 
 function money(t: Translator, value: unknown): string {
   return new Intl.NumberFormat(t.locale, { style: "currency", currency: "USD" }).format(
@@ -199,12 +205,21 @@ export function itemBody(t: Translator, item: InboxItem): string {
       return t("inbox.items.budget.body", {
         values: { spent: money(t, item.params.spentUsd), cap: money(t, item.params.capUsd) }
       });
-    case "backlog":
+    case "backlog": {
+      const numbers = new Intl.NumberFormat(t.locale);
+      if (settingsBacklog(item))
+        return t("inbox.items.backlog.bodySettings", {
+          values: {
+            notes: numbers.format(finite(item.params.notes)),
+            pairs: numbers.format(finite(item.params.pairs))
+          }
+        });
       return item.variant === "match"
         ? t("inbox.items.backlog.body", {
-            values: { count: new Intl.NumberFormat(t.locale).format(finite(item.params.notes)) }
+            values: { count: numbers.format(finite(item.params.notes)) }
           })
         : t("inbox.items.backlog.bodyOther");
+    }
   }
 }
 

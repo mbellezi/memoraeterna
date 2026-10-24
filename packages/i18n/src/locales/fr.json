@@ -268,6 +268,8 @@
       "backlog": {
         "title": "Apparier de nouveau les notes avec le modèle actuel ?",
         "body": "{count} notes ont été appariées par un autre modèle. Rien ne change si vous n'acceptez pas.",
+        "titleSettings": "Apparier de nouveau les notes avec les réglages de correspondance actuels ?",
+        "bodySettings": "{notes} notes et {pairs} paires de sources ont été appariées avec d'autres réglages de correspondance. Rien ne change si vous n'acceptez pas.",
         "bodyOther": "Une tâche facultative attend votre décision."
       }
     },

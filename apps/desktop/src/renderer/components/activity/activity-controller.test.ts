@@ -1,5 +1,10 @@
 import type { AppEventHandler, AppEventOf, AppEventType } from "../../../shared/app-events";
-import type { ChangesList, ChangesUndoResult } from "@app/domain";
+import {
+  defaultKnowledgeControls,
+  type ChangesList,
+  type ChangesUndoResult,
+  type KnowledgeControls
+} from "@app/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -46,8 +51,10 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
   let embeddingListener: ((status: { state: string; modelId: string }) => void) | null = null;
   const api = {
     gardener: {
-      status: vi.fn(async () => idleStatus),
-      resume: vi.fn(async () => null)
+      status: vi.fn(async () => idleStatus)
+    },
+    knowledgeControls: {
+      update: vi.fn(async () => ({ ...defaultKnowledgeControls, paused: false }))
     },
     budget: {
       snapshot: vi.fn(async () => budgetSnapshot()),
@@ -76,7 +83,8 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
     }),
     ...overrides
   } as unknown as ActivityApi & {
-    gardener: { status: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn> };
+    gardener: { status: ReturnType<typeof vi.fn> };
+    knowledgeControls: { update: ReturnType<typeof vi.fn> };
     budget: { snapshot: ReturnType<typeof vi.fn>; continue: ReturnType<typeof vi.fn> };
     changes: {
       list: ReturnType<typeof vi.fn>;
@@ -519,6 +527,11 @@ describe("actions", () => {
     expect(controller.getSnapshot().open).toBe(false);
     await controller.runAction("sign_in");
     expect(navigate).toHaveBeenLastCalledWith({ view: "settings", scope: "intelligence" });
+    // The Gardener's controls and its monthly limit are in Settings › Knowledge (T98).
+    await controller.runAction("open_controls");
+    expect(navigate).toHaveBeenLastCalledWith({ view: "settings", scope: "knowledge" });
+    await controller.runAction("raise_budget");
+    expect(navigate).toHaveBeenLastCalledWith({ view: "settings", scope: "knowledge" });
   });
 
   it("resumes the Gardener and lets the pushed status say the rest", async () => {
@@ -529,7 +542,8 @@ describe("actions", () => {
     const running = controller.runAction("resume");
     expect(controller.getSnapshot().statusAction).toEqual({ action: "resume", status: "pending" });
     await running;
-    expect(api.gardener.resume).toHaveBeenCalledOnce();
+    // The pause is a Knowledge control: Resume changes that one control and nothing else.
+    expect(api.knowledgeControls.update).toHaveBeenCalledExactlyOnceWith({ paused: false });
     expect(controller.getSnapshot().statusAction).toBeNull();
     expect(controller.getSnapshot().announcement).toMatchObject({
       key: "activity.actions.resumed"
@@ -555,7 +569,9 @@ describe("actions", () => {
 
   it("keeps a failed action visible, and lets it be tried again", async () => {
     const { controller, api } = setup();
-    api.gardener.resume.mockRejectedValueOnce(new Error("errors.database.notReady"));
+    api.knowledgeControls.update.mockRejectedValueOnce(
+      new Error("errors.common.missingConfiguration")
+    );
     await controller.runAction("resume");
     expect(controller.getSnapshot().statusAction).toEqual({ action: "resume", status: "failed" });
     expect(controller.getSnapshot().announcement).toMatchObject({ key: "activity.actions.failed" });
@@ -564,13 +580,13 @@ describe("actions", () => {
   });
 
   it("runs one action at a time", async () => {
-    const gate = deferred<null>();
+    const gate = deferred<KnowledgeControls>();
     const { controller, api } = setup();
-    api.gardener.resume.mockReturnValueOnce(gate.promise);
+    api.knowledgeControls.update.mockReturnValueOnce(gate.promise);
     const first = controller.runAction("resume");
     await controller.runAction("continue_budget");
     expect(api.budget.continue).not.toHaveBeenCalled();
-    gate.resolve(null);
+    gate.resolve(defaultKnowledgeControls);
     await first;
   });
 });

@@ -151,7 +151,8 @@ describe("no stored setting lacks a reader", () => {
     };
     const spelled = new Set<string>();
     for (const path of productionSources())
-      for (const match of read(path).matchAll(/"([a-z][A-Za-z-]*(?:\.[A-Za-z0-9-]+)+\.v\d)"/gu))
+      // One segment or more before the version: `onboarding.v1` as well as `knowledge.controls.v1`.
+      for (const match of read(path).matchAll(/"([a-z][A-Za-z-]*(?:\.[A-Za-z0-9-]+)*\.v\d)"/gu))
         spelled.add(match[1]!);
     const missing = [...spelled].filter((key) => !known.has(key)).sort();
     expect(missing).toEqual([]);

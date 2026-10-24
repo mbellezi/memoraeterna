@@ -210,7 +210,8 @@ function findingItem(row: InboxRowKey, lookups: Lookups): InboxItem | null {
       ...base,
       kind: "backlog",
       variant,
-      params: findingParams(finding, ["notes"]),
+      // `reason` tells a decider's offer from one for changed matching values (T98), which counts pairs too.
+      params: findingParams(finding, ["notes", "pairs", "reason"]),
       objects: [],
       actions: variant === "match" ? ["apply", "dismiss"] : ["dismiss"]
     };

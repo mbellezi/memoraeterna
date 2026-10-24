@@ -28,6 +28,7 @@ function everyItem(): InboxItem[] {
   for (const kind of inboxKinds)
     for (const variant of inboxVariants[kind]) items.push(item(kind, { variant }));
   items.push(item("backlog", { variant: "other", params: {} }));
+  items.push(item("backlog", { params: { reason: "settings_changed", notes: 3, pairs: 2 } }));
   items.push(item("budget", { variant: "money_100" }));
   return items;
 }
@@ -90,6 +91,17 @@ describe("what an item says", () => {
       itemBody(createTranslator("pt-BR"), item("backlog", { params: { notes: 12345 } }))
     ).toContain("12.345");
     expect(itemBody(en, item("backlog", { variant: "other" }))).toContain("optional task");
+    // Matching values that changed (T98) count the notes and the source pairs they decided.
+    const settings = item("backlog", {
+      params: { reason: "settings_changed", notes: 1200, pairs: 34 }
+    });
+    expect(itemTitle(en, settings)).toBe("Match notes again with the current matching settings?");
+    expect(itemBody(en, settings)).toBe(
+      "1,200 notes and 34 source pairs were matched with other matching settings. Nothing changes unless you accept."
+    );
+    expect(
+      itemTitle(en, item("backlog", { params: { reason: "decider_changed", notes: 2 } }))
+    ).toBe("Match notes again with the current model?");
     expect(itemBody(en, item("obsidian_conflict"))).toContain("“Notes/Sleep.md”");
     expect(itemBody(en, item("obsidian_conflict", { variant: "deleted" }))).toContain("deleted");
     expect(itemBody(en, item("obsidian_conflict", { variant: "projection" }))).toContain(

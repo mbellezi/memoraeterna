@@ -135,14 +135,14 @@ export interface ActivityNavigation {
 }
 
 /**
- * What each action does. The Gardener's controls (pause, autonomy, the monthly limit) have no
- * Settings scope of their own yet; Settings › Knowledge (T98) points them there.
+ * What each action does. The Gardener's controls (pause, autonomy, the monthly limit) live in
+ * Settings › Knowledge (T98); Resume changes the pause there through the same writer.
  */
 export const actionEffects = {
   resume: { kind: "resume" },
   continue_budget: { kind: "continueBudget" },
-  open_controls: { kind: "navigate", to: { view: "settings", scope: "overview" } },
-  raise_budget: { kind: "navigate", to: { view: "settings", scope: "overview" } },
+  open_controls: { kind: "navigate", to: { view: "settings", scope: "knowledge" } },
+  raise_budget: { kind: "navigate", to: { view: "settings", scope: "knowledge" } },
   open_ai_settings: { kind: "navigate", to: { view: "settings", scope: "intelligence" } },
   sign_in: { kind: "navigate", to: { view: "settings", scope: "intelligence" } },
   open_local_models: { kind: "navigate", to: { view: "settings", scope: "models" } }

@@ -790,13 +790,7 @@ void app.whenReady().then(() => {
       : [],
     logger: console
   });
-  registerGardenerStatusIpc(ipcMain, gardenerStatus, {
-    // The Activity's "Resume": the pause is a Knowledge control, and the status follows its change.
-    resume: async () => {
-      if (!backgroundPolicy) throw new Error("errors.database.notReady");
-      await backgroundPolicy.controls.update({ paused: false });
-    }
-  });
+  registerGardenerStatusIpc(ipcMain, gardenerStatus);
   // The Inbox (F4 D29, T94): the open items of every store in one list, each verb carried out by the
   // store's own writer; its counts are pushed as `inbox.changed`.
   inboxService = new InboxService({

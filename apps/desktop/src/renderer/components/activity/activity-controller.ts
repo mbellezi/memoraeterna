@@ -24,7 +24,9 @@ import {
 
 /** The part of the preload API the Activity reads and acts through. */
 export interface ActivityApi {
-  gardener: Pick<DesktopApi["gardener"], "status" | "resume">;
+  gardener: Pick<DesktopApi["gardener"], "status">;
+  /** "Resume" lifts the person's pause through the Knowledge controls (T98's validated writer). */
+  knowledgeControls: Pick<DesktopApi["knowledgeControls"], "update">;
   budget: Pick<DesktopApi["budget"], "snapshot" | "continue">;
   changes: Pick<DesktopApi["changes"], "list" | "undo">;
   /** The Inbox's own count of every kind that waits for the person (`inbox.changed` follows it). */
@@ -37,6 +39,7 @@ export interface ActivityApi {
 export function activityApiOf(app: DesktopApi): ActivityApi {
   return {
     gardener: app.gardener,
+    knowledgeControls: app.knowledgeControls,
     budget: app.budget,
     changes: app.changes,
     inbox: app.inbox,
@@ -193,7 +196,7 @@ export class ActivityController {
     const api = this.deps.api();
     try {
       if (effect.kind === "resume") {
-        await api.gardener.resume();
+        await api.knowledgeControls.update({ paused: false });
         this.announce("activity.actions.resumed");
       } else {
         const budget = await api.budget.continue();

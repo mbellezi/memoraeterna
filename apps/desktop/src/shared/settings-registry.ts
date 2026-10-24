@@ -523,6 +523,12 @@ export const settingsRegistry: readonly SettingEntry[] = [
     "relations.match.valuesHistory.v1",
     "settings",
     `${main}/services/relations/relation-match-values.ts`
+  ),
+  internal(
+    "onboarding.v1",
+    "settings",
+    `${main}/services/onboarding/onboarding-service.ts`,
+    "packages/domain/src/onboarding.ts"
   )
 ];
 

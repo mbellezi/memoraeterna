@@ -177,7 +177,7 @@ export function isInteractiveRun(run: Pick<IngestionRunRecord, "trigger">): bool
 
 /**
  * A link job an accepted backlog queued (F4 Q4) and no import parked for: it runs at P3, behind
- * every ordinary job. A job an import parked for keeps the import's priority.
+ * every ordinary job. A job an import parked for keeps the priority of that import.
  */
 export function isBacklogLink(job: Pick<JobRecord, "payload">, runs: readonly unknown[]): boolean {
   return job.payload.backlog === true && runs.length === 0;

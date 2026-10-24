@@ -268,6 +268,8 @@
       "backlog": {
         "title": "¿Comparar de nuevo las notas con el modelo actual?",
         "body": "{count} notas se compararon con otro modelo. No cambia nada a menos que aceptes.",
+        "titleSettings": "¿Comparar de nuevo las notas con los ajustes de coincidencia actuales?",
+        "bodySettings": "{notes} notas y {pairs} pares de fuentes se compararon con otros ajustes de coincidencia. No cambia nada a menos que aceptes.",
         "bodyOther": "Una tarea opcional espera tu decisión."
       }
     },

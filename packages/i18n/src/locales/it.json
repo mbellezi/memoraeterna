@@ -268,6 +268,8 @@
       "backlog": {
         "title": "Abbinare di nuovo le note con il modello attuale?",
         "body": "{count} note sono state abbinate da un altro modello. Nulla cambia se non accetti.",
+        "titleSettings": "Abbinare di nuovo le note con le impostazioni di corrispondenza attuali?",
+        "bodySettings": "{notes} note e {pairs} coppie di fonti sono state abbinate con altre impostazioni di corrispondenza. Nulla cambia se non accetti.",
         "bodyOther": "Un'attività facoltativa attende la tua decisione."
       }
     },

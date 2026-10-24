@@ -48,6 +48,7 @@ describe("Activity styles and copy", () => {
         "changes",
         "gardener",
         "inbox",
+        "knowledgeControls",
         "onAppEvent"
       ].sort()
     );
