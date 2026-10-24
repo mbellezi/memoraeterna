@@ -35,6 +35,37 @@ const relationIdentityContract: AiOutputContract = {
   name: "relation_identity",
   contract: relationMatchOutputSchema
 };
+
+/**
+ * The confirmation answer narrowed to one call's rows (F4 D24): every row once, in the order asked,
+ * with its own key and one of its own candidates or null. Every answer it takes, both readers below
+ * take whole; it is only a decoding grammar, never the validator.
+ */
+export function relationMatchCallSchema(rows: readonly RelationMatchRow[]): z.ZodType {
+  const pairs = rows.map((row) => {
+    const keys = [...new Set(row.candidates.map((candidate) => candidate.key))];
+    const candidate = keys.length ? z.enum(keys as [string, ...string[]]).nullable() : z.null();
+    return z.tuple([z.literal(row.key), candidate]);
+  });
+  const [first, ...rest] = pairs;
+  return z.object({ matches: first ? z.tuple([first, ...rest]) : z.tuple([]) }).strict();
+}
+
+/**
+ * The contract one confirmation call states: unpinned, with the call's own schema for a runtime that
+ * constrains decoding (`callContract`, which a remote runtime never reads). The pinned path asks as
+ * it was recorded, with the static contract alone.
+ */
+export function confirmationOutputContract(
+  rows: readonly RelationMatchRow[],
+  entityIdentity: boolean,
+  pinned: boolean
+): AiOutputContract {
+  const contract = entityIdentity ? entityIdentityContract : relationIdentityContract;
+  return pinned || rows.length === 0
+    ? contract
+    : { ...contract, callContract: relationMatchCallSchema(rows) };
+}
 type Candidate = {
   sourceItemIds?: string[];
   key: string;
@@ -322,7 +353,7 @@ export async function confirmMatchGroup(input: {
         attempt,
         isRepair: attempt > 0,
         promptVersion: input.promptVersion,
-        outputContract: entityIdentity ? entityIdentityContract : relationIdentityContract,
+        outputContract: confirmationOutputContract(asked, entityIdentity, input.pinned),
         contentLanguage: "en",
         stage: input.stage,
         operation: entityIdentity ? "entity_identity_resolution" : "relation_type_resolution",

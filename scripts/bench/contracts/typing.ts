@@ -6,6 +6,7 @@
  * up to `attemptsPerBatch` times. The batch is put back from the `relation_pairs` JSON the prompt shows.
  */
 import {
+  relationTypingCallSchema,
   relationTypingLimits,
   relationTypingOutputSchema,
   validateRelationTypingAnswer,
@@ -159,7 +160,11 @@ export function prepareTyping(
                 attempt,
                 isRepair: repair,
                 maxOutputTokens: limitFor(remaining.length),
-                answerContract
+                // The pairs this call asks, as the product's typer states them (F4 D24).
+                answerContract: {
+                  ...answerContract,
+                  callContract: relationTypingCallSchema(remaining.map((item) => item.alias))
+                }
               });
             } catch (error) {
               // A failed call costs the attempt and the next one asks the first prompt again.

@@ -51,7 +51,7 @@ import {
   type SchemaSource
 } from "./contracts/index.ts";
 import { arms, customArm, type ArmSpec } from "./replay-arms.ts";
-import { readCassette } from "./replay-cassette.ts";
+import { readCassette, type RecordedCall } from "./replay-cassette.ts";
 import { systemMemoryProbe, type MemoryProbe } from "./replay-metrics.ts";
 import {
   manifestSchema,
@@ -76,6 +76,11 @@ export interface Options {
   command: "plan" | "run";
   dataRoot: string;
   cassette: string;
+  /**
+   * Cassettes read after the first (`--cassette` given again): their calls join the first's, a key
+   * already read counting once, so overlapping recordings replay each call once.
+   */
+  moreCassettes?: string[];
   contracts: ContractId[];
   limit: number | null;
   perContract: number | null;
@@ -99,8 +104,8 @@ export interface Options {
 }
 
 export const usage = `Usage:
-  writer-replay.ts plan [--data-root <.cache>] [--cassette <dir>] [--contracts a,b] [--prompts recorded|current] [--arm <id>] [--out <file>]
-  writer-replay.ts run  --arm m4b|m9b4|q36-35b-a3b|gemma4-26b-a4b|custom [--data-root <.cache>] [--cassette <dir>]
+  writer-replay.ts plan [--data-root <.cache>] [--cassette <dir>]... [--contracts a,b] [--prompts recorded|current] [--arm <id>] [--out <file>]
+  writer-replay.ts run  --arm m4b|m9b4|q36-35b-a3b|gemma4-26b-a4b|custom [--data-root <.cache>] [--cassette <dir>]...
         [--model-dir <dir>] [--runtime mlx|gguf --label <text>]   (custom arm)
         [--helper-path <file>] [--contracts a,b] [--limit N] [--per-contract N] [--prompts recorded|current]
         [--schema] [--schema-module <file>] [--seed N] [--param key=value]... [--run-id <id>] [--resume]
@@ -123,7 +128,7 @@ export function parseOptions(
     allowPositionals: true,
     options: {
       "data-root": { type: "string" },
-      cassette: { type: "string" },
+      cassette: { type: "string", multiple: true },
       contracts: { type: "string" },
       limit: { type: "string" },
       "per-contract": { type: "string" },
@@ -179,7 +184,10 @@ export function parseOptions(
   return {
     command,
     dataRoot,
-    cassette: resolve(values.cassette ?? join(dataRoot, "golden", "cassettes", "golden-small-f2")),
+    cassette: resolve(
+      values.cassette?.[0] ?? join(dataRoot, "golden", "cassettes", "golden-small-f2")
+    ),
+    moreCassettes: (values.cassette ?? []).slice(1).map((directory) => resolve(directory)),
     contracts,
     limit: integer("limit", values.limit),
     perContract: integer("per-contract", values["per-contract"]),
@@ -232,14 +240,29 @@ const bump = (counts: Record<string, number>, key: string) => {
   counts[key] = (counts[key] ?? 0) + 1;
 };
 
-/** Reads the cassette and classifies every writer call; the entries are the ones this run replays. */
+/** The cassettes a run reads, in order. */
+export function cassettesOf(options: Pick<Options, "cassette" | "moreCassettes">): string[] {
+  return [options.cassette, ...(options.moreCassettes ?? [])];
+}
+
+/**
+ * Reads the cassettes and classifies every writer call; the entries are the ones this run replays. A
+ * call whose key an earlier cassette already held is read once (recordings of one corpus overlap).
+ */
 export async function loadEntries(
-  options: Pick<Options, "cassette" | "contracts" | "limit" | "perContract">
+  options: Pick<Options, "cassette" | "moreCassettes" | "contracts" | "limit" | "perContract">
 ): Promise<LoadedEntries> {
-  const calls = await readCassette(options.cassette, {
-    taskTypes: writerTaskTypes,
-    runtime: "remote"
-  });
+  const seen = new Set<string>();
+  const calls: RecordedCall[] = [];
+  for (const directory of cassettesOf(options))
+    for (const call of await readCassette(directory, {
+      taskTypes: writerTaskTypes,
+      runtime: "remote"
+    })) {
+      if (seen.has(call.key)) continue;
+      seen.add(call.key);
+      calls.push(call);
+    }
   const census: Census = {
     calls: calls.length,
     items: {},
@@ -294,6 +317,7 @@ export interface RecordedBaselineRow {
 }
 
 export interface Plan {
+  /** The cassettes read, joined by `, `. */
   cassette: string;
   promptSource: PromptSource;
   census: Census;
@@ -321,7 +345,7 @@ export function projectHours(
 export async function buildPlan(
   options: Pick<
     Options,
-    "cassette" | "contracts" | "limit" | "perContract" | "promptSource" | "arm"
+    "cassette" | "moreCassettes" | "contracts" | "limit" | "perContract" | "promptSource" | "arm"
   >
 ): Promise<Plan> {
   const { entries, census } = await loadEntries(options);
@@ -354,7 +378,7 @@ export async function buildPlan(
     ? [arms[options.arm]].filter((arm) => arm !== undefined)
     : Object.values(arms);
   return {
-    cassette: options.cassette,
+    cassette: cassettesOf(options).join(", "),
     promptSource: options.promptSource,
     census,
     selected,
@@ -528,6 +552,11 @@ export function defaultDependencies(lock: string, owner: string): Dependencies {
   };
 }
 
+/** The schema source a run names in its manifest: the module's path as given, null for the default. */
+function schemaModuleOf(options: Pick<Options, "schema" | "schemaModule">): string | null {
+  return options.schema ? options.schemaModule : null;
+}
+
 /** The default schema source: a strict schema for a contract that has one (today the overview's). */
 export const defaultSchemaSource: SchemaSource = (_contract, answer) =>
   toStrictJsonSchema(answer.contract, answer.name);
@@ -623,7 +652,17 @@ export async function runCommand(options: Options, deps: Dependencies): Promise<
       ["prompts", earlier.selection.promptSource, options.promptSource],
       ["schema", earlier.schema.requested, options.schema],
       ["seed", earlier.seed, options.seed],
-      ["cassette", earlier.cassette.directory, options.cassette]
+      [
+        "cassette",
+        [earlier.cassette.directory, ...(earlier.cassette.more ?? [])].join("\n"),
+        cassettesOf(options).join("\n")
+      ],
+      // A manifest written before the field names no module and is not held to one.
+      [
+        "schema module",
+        earlier.schema.module === undefined ? schemaModuleOf(options) : earlier.schema.module,
+        schemaModuleOf(options)
+      ]
     ].filter(([, before, now]) => before !== now);
     if (changed.length > 0)
       throw new Error(
@@ -671,7 +710,11 @@ export async function runCommand(options: Options, deps: Dependencies): Promise<
           sha256: writer.helperSha256,
           capabilities: writer.capabilities
         },
-        cassette: { directory: options.cassette, items: entries.length },
+        cassette: {
+          directory: options.cassette,
+          ...(options.moreCassettes?.length ? { more: options.moreCassettes } : {}),
+          items: entries.length
+        },
         selection: {
           contracts: options.contracts,
           limit: options.limit,
@@ -679,7 +722,11 @@ export async function runCommand(options: Options, deps: Dependencies): Promise<
         },
         parameters: { ...arm.parameters, ...options.params },
         seed: options.seed,
-        schema: { requested: options.schema, supported: writer.supportsSchema() },
+        schema: {
+          requested: options.schema,
+          supported: writer.supportsSchema(),
+          module: schemaModuleOf(options)
+        },
         machine,
         warmup,
         swapBeforeMiB: swapBefore,

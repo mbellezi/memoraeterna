@@ -4,8 +4,7 @@
  * it is taken apart and put back together, and how the product's own validation and repair run on a
  * local writer's answer.
  */
-import type { AiOutputSchema } from "@app/domain";
-import type { z } from "zod";
+import type { AiOutputContract, AiOutputSchema } from "@app/domain";
 
 export const contractIds = [
   "summary",
@@ -36,8 +35,11 @@ export interface ReplayCall {
   isRepair: boolean;
   /** The caller's output allowance (`limits.maxOutputTokens` of `runDefaultTask`). */
   maxOutputTokens?: number;
-  /** The Zod contract of the answer, which a schema source may turn into an output schema. */
-  answerContract?: { name: string; contract: z.ZodType };
+  /**
+   * The Zod contract of the answer, which a schema source may turn into an output schema; with the
+   * call's own narrowed contract (`callContract`) when the product's caller states one (F4 D24).
+   */
+  answerContract?: AiOutputContract;
 }
 
 /** What the writer answered and what the call took; the harness fills the measurements. */
@@ -101,7 +103,7 @@ export interface PreparedItem {
   /** Compares a local final digest with the recorded one. */
   compare(local: Digest, recorded: Digest): YieldMetrics;
   /** The strict or grammar schema source asks for this contract's answer, when it has one. */
-  answerContract: { name: string; contract: z.ZodType } | null;
+  answerContract: AiOutputContract | null;
 }
 
 export type Prepared =
@@ -114,5 +116,5 @@ export type Prepared =
 /** Turns a Zod contract into the output schema a request carries; null when it has none. */
 export type SchemaSource = (
   contract: ContractId,
-  answer: { name: string; contract: z.ZodType }
+  answer: AiOutputContract
 ) => AiOutputSchema | null;

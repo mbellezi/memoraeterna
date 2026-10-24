@@ -1,0 +1,1877 @@
+{
+  "entity_identity_call": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "matches": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r1"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "c1",
+                        "c2"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r2"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "c3"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r3"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "c4"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r4"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            }
+          ],
+          "minItems": 4,
+          "items": false,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "matches"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "matches": [
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            null
+          ],
+          [
+            "r2",
+            "c3"
+          ],
+          [
+            "r3",
+            "c4"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "matches": [
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r2",
+            null
+          ],
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            "c3"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            "c9"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r1",
+            "c2"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            "c1"
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r9",
+            "c1"
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            "r1"
+          ],
+          [
+            "r4",
+            null
+          ]
+        ]
+      }
+    ]
+  },
+  "relation_identity_call_largest": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "matches": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r1"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "c1",
+                        "c2",
+                        "c3",
+                        "c4",
+                        "c5",
+                        "c6",
+                        "c7",
+                        "c8",
+                        "c9",
+                        "c10",
+                        "c11",
+                        "c12",
+                        "c13",
+                        "c14",
+                        "c15",
+                        "c16",
+                        "c17",
+                        "c18",
+                        "c19",
+                        "c20"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r2"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "c22",
+                        "c23",
+                        "c24",
+                        "c25",
+                        "c26",
+                        "c27",
+                        "c28",
+                        "c29",
+                        "c30",
+                        "c31",
+                        "c32",
+                        "c33",
+                        "c34",
+                        "c35",
+                        "c36",
+                        "c37",
+                        "c38",
+                        "c39",
+                        "c40"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r3"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "c43",
+                        "c44",
+                        "c45",
+                        "c46",
+                        "c47",
+                        "c48",
+                        "c49",
+                        "c50",
+                        "c51",
+                        "c52",
+                        "c53",
+                        "c54",
+                        "c55",
+                        "c56",
+                        "c57",
+                        "c58",
+                        "c59",
+                        "c60"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r4"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "c64",
+                        "c65",
+                        "c66",
+                        "c67",
+                        "c68",
+                        "c69",
+                        "c70",
+                        "c71",
+                        "c72",
+                        "c73",
+                        "c74",
+                        "c75",
+                        "c76",
+                        "c77",
+                        "c78",
+                        "c79",
+                        "c80"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r5"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "c85",
+                        "c86",
+                        "c87",
+                        "c88",
+                        "c89",
+                        "c90",
+                        "c91",
+                        "c92",
+                        "c93",
+                        "c94",
+                        "c95",
+                        "c96",
+                        "c97",
+                        "c98",
+                        "c99",
+                        "c100"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r6"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "c106",
+                        "c107",
+                        "c108",
+                        "c109",
+                        "c110",
+                        "c111",
+                        "c112",
+                        "c113",
+                        "c114",
+                        "c115",
+                        "c116",
+                        "c117",
+                        "c118",
+                        "c119",
+                        "c120"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r7"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "c127",
+                        "c128",
+                        "c129",
+                        "c130",
+                        "c131",
+                        "c132",
+                        "c133",
+                        "c134",
+                        "c135",
+                        "c136",
+                        "c137",
+                        "c138",
+                        "c139",
+                        "c140"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r8"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "c148",
+                        "c149",
+                        "c150",
+                        "c151",
+                        "c152",
+                        "c153",
+                        "c154",
+                        "c155",
+                        "c156",
+                        "c157",
+                        "c158",
+                        "c159",
+                        "c160"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r9"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "c169",
+                        "c170",
+                        "c171",
+                        "c172",
+                        "c173",
+                        "c174",
+                        "c175",
+                        "c176",
+                        "c177",
+                        "c178",
+                        "c179",
+                        "c180"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r10"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "c190",
+                        "c191",
+                        "c192",
+                        "c193",
+                        "c194",
+                        "c195",
+                        "c196",
+                        "c197",
+                        "c198",
+                        "c199",
+                        "c200"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r11"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "c211",
+                        "c212",
+                        "c213",
+                        "c214",
+                        "c215",
+                        "c216",
+                        "c217",
+                        "c218",
+                        "c219",
+                        "c220"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r12"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "c232",
+                        "c233",
+                        "c234",
+                        "c235",
+                        "c236",
+                        "c237",
+                        "c238",
+                        "c239",
+                        "c240"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r13"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "c253",
+                        "c254",
+                        "c255",
+                        "c256",
+                        "c257",
+                        "c258",
+                        "c259",
+                        "c260"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r14"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "c274",
+                        "c275",
+                        "c276",
+                        "c277",
+                        "c278",
+                        "c279",
+                        "c280"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r15"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "c295",
+                        "c296",
+                        "c297",
+                        "c298",
+                        "c299",
+                        "c300"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r16"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "c316",
+                        "c317",
+                        "c318",
+                        "c319",
+                        "c320"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r17"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "c337",
+                        "c338",
+                        "c339",
+                        "c340"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r18"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "c358",
+                        "c359",
+                        "c360"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r19"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "c379",
+                        "c380"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r20"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "r19",
+                        "c400"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r21"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "r19",
+                        "r20"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r22"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "r19",
+                        "r20"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r23"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "r19",
+                        "r20"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "r24"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "r1",
+                        "r2",
+                        "r3",
+                        "r4",
+                        "r5",
+                        "r6",
+                        "r7",
+                        "r8",
+                        "r9",
+                        "r10",
+                        "r11",
+                        "r12",
+                        "r13",
+                        "r14",
+                        "r15",
+                        "r16",
+                        "r17",
+                        "r18",
+                        "r19",
+                        "r20"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "items": false,
+              "maxItems": 2
+            }
+          ],
+          "minItems": 24,
+          "items": false,
+          "maxItems": 24
+        }
+      },
+      "required": [
+        "matches"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "matches": [
+          [
+            "r1",
+            null
+          ],
+          [
+            "r2",
+            "c22"
+          ],
+          [
+            "r3",
+            "c43"
+          ],
+          [
+            "r4",
+            null
+          ],
+          [
+            "r5",
+            "c85"
+          ],
+          [
+            "r6",
+            "c106"
+          ],
+          [
+            "r7",
+            null
+          ],
+          [
+            "r8",
+            "c148"
+          ],
+          [
+            "r9",
+            "c169"
+          ],
+          [
+            "r10",
+            null
+          ],
+          [
+            "r11",
+            "c211"
+          ],
+          [
+            "r12",
+            "c232"
+          ],
+          [
+            "r13",
+            null
+          ],
+          [
+            "r14",
+            "c274"
+          ],
+          [
+            "r15",
+            "c295"
+          ],
+          [
+            "r16",
+            null
+          ],
+          [
+            "r17",
+            "c337"
+          ],
+          [
+            "r18",
+            "c358"
+          ],
+          [
+            "r19",
+            null
+          ],
+          [
+            "r20",
+            "c400"
+          ],
+          [
+            "r21",
+            "r1"
+          ],
+          [
+            "r22",
+            null
+          ],
+          [
+            "r23",
+            "r3"
+          ],
+          [
+            "r24",
+            "r4"
+          ]
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "matches": [
+          [
+            "r1",
+            null
+          ],
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            null
+          ],
+          [
+            "r4",
+            null
+          ],
+          [
+            "r5",
+            null
+          ],
+          [
+            "r6",
+            "c140"
+          ],
+          [
+            "r7",
+            null
+          ],
+          [
+            "r8",
+            null
+          ],
+          [
+            "r9",
+            null
+          ],
+          [
+            "r10",
+            null
+          ],
+          [
+            "r11",
+            null
+          ],
+          [
+            "r12",
+            null
+          ],
+          [
+            "r13",
+            null
+          ],
+          [
+            "r14",
+            null
+          ],
+          [
+            "r15",
+            null
+          ],
+          [
+            "r16",
+            null
+          ],
+          [
+            "r17",
+            null
+          ],
+          [
+            "r18",
+            null
+          ],
+          [
+            "r19",
+            null
+          ],
+          [
+            "r20",
+            null
+          ],
+          [
+            "r21",
+            null
+          ],
+          [
+            "r22",
+            null
+          ],
+          [
+            "r23",
+            null
+          ],
+          [
+            "r24",
+            null
+          ]
+        ]
+      },
+      {
+        "matches": [
+          [
+            "r2",
+            null
+          ],
+          [
+            "r3",
+            null
+          ],
+          [
+            "r4",
+            null
+          ],
+          [
+            "r5",
+            null
+          ],
+          [
+            "r6",
+            null
+          ],
+          [
+            "r7",
+            null
+          ],
+          [
+            "r8",
+            null
+          ],
+          [
+            "r9",
+            null
+          ],
+          [
+            "r10",
+            null
+          ],
+          [
+            "r11",
+            null
+          ],
+          [
+            "r12",
+            null
+          ],
+          [
+            "r13",
+            null
+          ],
+          [
+            "r14",
+            null
+          ],
+          [
+            "r15",
+            null
+          ],
+          [
+            "r16",
+            null
+          ],
+          [
+            "r17",
+            null
+          ],
+          [
+            "r18",
+            null
+          ],
+          [
+            "r19",
+            null
+          ],
+          [
+            "r20",
+            null
+          ],
+          [
+            "r21",
+            null
+          ],
+          [
+            "r22",
+            null
+          ],
+          [
+            "r23",
+            null
+          ],
+          [
+            "r24",
+            null
+          ]
+        ]
+      }
+    ]
+  },
+  "relation_typing_call": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "object",
+              "properties": {
+                "p": {
+                  "type": "string",
+                  "const": "p3"
+                },
+                "t": {
+                  "type": "string",
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "extends",
+                    "depends_on",
+                    "example_of",
+                    "clarifies",
+                    "same_as",
+                    "none"
+                  ]
+                },
+                "d": {
+                  "type": "string",
+                  "enum": [
+                    "ab",
+                    "ba",
+                    "both",
+                    "none"
+                  ]
+                }
+              },
+              "required": [
+                "p",
+                "t",
+                "d"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "p": {
+                  "type": "string",
+                  "const": "p7"
+                },
+                "t": {
+                  "type": "string",
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "extends",
+                    "depends_on",
+                    "example_of",
+                    "clarifies",
+                    "same_as",
+                    "none"
+                  ]
+                },
+                "d": {
+                  "type": "string",
+                  "enum": [
+                    "ab",
+                    "ba",
+                    "both",
+                    "none"
+                  ]
+                }
+              },
+              "required": [
+                "p",
+                "t",
+                "d"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "p": {
+                  "type": "string",
+                  "const": "p12"
+                },
+                "t": {
+                  "type": "string",
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "extends",
+                    "depends_on",
+                    "example_of",
+                    "clarifies",
+                    "same_as",
+                    "none"
+                  ]
+                },
+                "d": {
+                  "type": "string",
+                  "enum": [
+                    "ab",
+                    "ba",
+                    "both",
+                    "none"
+                  ]
+                }
+              },
+              "required": [
+                "p",
+                "t",
+                "d"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "minItems": 3,
+          "items": false,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "pairs"
+      ],
+      "additionalProperties": false
+    },
+    "valid": [
+      {
+        "pairs": [
+          {
+            "p": "p3",
+            "t": "supports",
+            "d": "ab"
+          },
+          {
+            "d": "both",
+            "p": "p7",
+            "t": "same_as"
+          },
+          {
+            "p": "p12",
+            "t": "none",
+            "d": "none"
+          }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "pairs": [
+          {
+            "p": "p3",
+            "t": "supports",
+            "d": "ab"
+          },
+          {
+            "p": "p12",
+            "t": "none",
+            "d": "none"
+          }
+        ]
+      },
+      {
+        "pairs": [
+          {
+            "p": "p1",
+            "t": "supports",
+            "d": "ab"
+          },
+          {
+            "p": "p7",
+            "t": "same_as",
+            "d": "both"
+          },
+          {
+            "p": "p12",
+            "t": "none",
+            "d": "none"
+          }
+        ]
+      },
+      {
+        "pairs": [
+          {
+            "p": "p7",
+            "t": "same_as",
+            "d": "both"
+          },
+          {
+            "p": "p3",
+            "t": "supports",
+            "d": "ab"
+          },
+          {
+            "p": "p12",
+            "t": "none",
+            "d": "none"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,6 +16,7 @@ import {
 import {
   NoteRelationBandSchema,
   relationTypingAliases,
+  relationTypingCallSchema,
   relationTypingContractVersion,
   relationTypingLimits,
   relationTypingOutputSchema,
@@ -362,6 +363,20 @@ function outputContractFor(maxPairs: number): AiOutputContract {
 }
 
 /**
+ * The contract one typing call states: the batch-size contract (a remote runtime's strict schema,
+ * unchanged) with the call's own pairs as the `callContract` a runtime that constrains decoding reads.
+ */
+export function typingCallOutputContract(
+  maxPairs: number,
+  asked: readonly TypingBatchItem[]
+): AiOutputContract {
+  return {
+    ...outputContractFor(maxPairs),
+    callContract: relationTypingCallSchema(asked.map((item) => item.alias))
+  };
+}
+
+/**
  * Types accepted pairs. Cached verdicts (typed or vetoed) are reused with no call; the others go to
  * the writer in batches of `limits.pairsPerCall`, in content order, one batch at a time. A batch
  * whose answer misses or spoils some items gets one re-ask for those items only; a call that fails
@@ -453,7 +468,6 @@ export async function typeRelationPairs(
   }
 
   const batches = typingBatches(pending, limits.pairsPerCall);
-  const outputContract = outputContractFor(limits.pairsPerCall);
 
   /** Asks one batch; the reason it stopped early (cap, no route) or null when it ended normally. */
   const typeBatch = async (batch: TypingBatchItem[]): Promise<TypingUntypedReason | null> => {
@@ -480,7 +494,7 @@ export async function typeRelationPairs(
         priority: options.priority ?? "P2",
         budgetClass: options.budgetClass ?? "user",
         promptVersion: relationTypingContractVersion,
-        outputContract,
+        outputContract: typingCallOutputContract(limits.pairsPerCall, remaining),
         attempt,
         isRepair: repair,
         ...(deps.contentLanguage ? { contentLanguage: deps.contentLanguage } : {}),

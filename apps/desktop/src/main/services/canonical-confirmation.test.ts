@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { outputSchemaForContract, type AiOutputContract } from "@app/domain";
 
 import { joinPrompts, renderPrompt } from "./prompt-runtime.js";
 import {
   aliasCandidates,
   buildRelationMatchPrompt,
+  confirmationOutputContract,
   confirmMatchGroup,
+  parseRelationMatches,
   parseRelationMatchesTolerant,
+  relationMatchCallSchema,
+  relationMatchOutputSchema,
   repairCalls,
   showsTwin,
   type RelationMatchRow
@@ -244,6 +249,62 @@ describe("parseRelationMatchesTolerant", () => {
   });
 });
 
+describe("the schema of one confirmation call (F4 D24)", () => {
+  // r3 lists r1 (an earlier row's provisional identity, F4 D20); r4 has no candidate.
+  const call = [row("r1", ["c1", "c2"]), row("r2", ["c3"]), row("r3", ["r1", "c4"]), row("r4", [])];
+  const schema = relationMatchCallSchema(call);
+
+  it("takes each row once, in the order asked, with one of its own candidates or null", () => {
+    const valid = [
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r1", null],
+          ["r2", "c3"],
+          ["r3", "c4"],
+          ["r4", null]
+        ]
+      }
+    ];
+    for (const answer of valid) {
+      expect(schema.safeParse(answer).success).toBe(true);
+      // Whatever the call's schema takes, the static contract and both readers take whole.
+      expect(relationMatchOutputSchema.safeParse(answer).success).toBe(true);
+      expect(parseRelationMatches(answer, call).size).toBe(call.length);
+      expect(parseRelationMatchesTolerant(answer, call).missing).toEqual([]);
+    }
+    const [first] = valid;
+    for (const answer of [
+      { matches: first!.matches.slice(0, 3) },
+      { matches: [...first!.matches, ["r4", null]] },
+      { matches: [first!.matches[1], first!.matches[0], ...first!.matches.slice(2)] },
+      { matches: [["r1", "c3"], ...first!.matches.slice(1)] },
+      { matches: [["r1", "c9"], ...first!.matches.slice(1)] },
+      { matches: [["r9", "c1"], ...first!.matches.slice(1)] },
+      { matches: [...first!.matches.slice(0, 3), ["r4", "c1"]] }
+    ])
+      expect(schema.safeParse(answer).success).toBe(false);
+  });
+
+  it("is stated per call unpinned, never read for a remote schema, and left out pinned", () => {
+    const stated = confirmationOutputContract(call, true, false);
+    expect(stated).toMatchObject({ name: "entity_identity", contract: relationMatchOutputSchema });
+    expect(stated.callContract).toBeDefined();
+    expect(confirmationOutputContract(call, false, false).name).toBe("relation_identity");
+    // Remotely the call's schema changes nothing: the tuple keeps the call prompt-level.
+    expect(outputSchemaForContract(stated)).toBeNull();
+    const pinned: AiOutputContract = confirmationOutputContract(call, true, true);
+    expect(pinned).toEqual({ name: "entity_identity", contract: relationMatchOutputSchema });
+  });
+});
+
 describe("confirmMatchGroup", () => {
   const run = (...outputs: unknown[]) => {
     const ai = {
@@ -297,6 +358,25 @@ describe("confirmMatchGroup", () => {
       stage: "entity_identity_resolution"
     });
     expect(first![2]).toMatchObject({ attempt: 0, isRepair: false });
+    // Each call states the schema of its own rows: the repair's covers r2 and r3 only.
+    const callSchema = (call: [string, string, Record<string, unknown>]) =>
+      (call[2].outputContract as AiOutputContract).callContract!;
+    expect(
+      callSchema(first!).safeParse({
+        matches: [
+          ["r2", "c3"],
+          ["r3", null]
+        ]
+      }).success
+    ).toBe(false);
+    expect(
+      callSchema(second!).safeParse({
+        matches: [
+          ["r2", "c3"],
+          ["r3", null]
+        ]
+      }).success
+    ).toBe(true);
     // Each decision keeps the run that made it.
     expect(decisions.get("r1")?.aiTaskRunId).toBe("run-0");
     expect(decisions.get("r2")?.aiTaskRunId).toBe("run-1");

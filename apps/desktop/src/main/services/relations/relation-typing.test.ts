@@ -479,8 +479,25 @@ describe("validation and the one item-level re-ask", () => {
       isRepair: true,
       attempt: 1
     });
-    // The re-ask states the contract of the first ask: one answer shape (F4 D23).
-    expect(second!.context.outputContract).toBe(first!.context.outputContract);
+    // The re-ask states the contract of the first ask: one answer shape remotely (F4 D23), and a
+    // call contract of its own pairs for a runtime that constrains decoding (D24).
+    const [stated, restated] = [first, second].map(
+      (call) => call!.context.outputContract as AiOutputContract
+    );
+    expect(restated!.contract).toBe(stated!.contract);
+    expect(outputSchemaForContract(restated!)).toBe(outputSchemaForContract(stated!));
+    expect(restated!.callContract).toBeDefined();
+    expect(
+      restated!.callContract!.safeParse({
+        pairs: [
+          { p: "p3", t: "supports", d: "ba" },
+          { p: "p4", t: "extends", d: "ab" }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      restated!.callContract!.safeParse({ pairs: [{ p: "p1", t: "extends", d: "ab" }] }).success
+    ).toBe(false);
     expect(second!.prompt).toContain("p3: d does not fit t");
     expect(second!.prompt).toContain("p4: no result");
     expect(second!.prompt).not.toContain("A one");

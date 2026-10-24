@@ -350,6 +350,39 @@ describe("the confirmation flow", () => {
     expect(outcome.digest).toEqual({ decisions: { r1: "c1", r2: "c2" } });
   });
 
+  it("hands each call the product's own call contract beside the static one (F4 D24)", async () => {
+    const item = itemOf("knowledge-graph-generation", confirmationBody());
+    const { caller, calls } = scripted([
+      JSON.stringify({ matches: [["r1", "c1"]] }),
+      JSON.stringify({ matches: [["r2", "c2"]] })
+    ]);
+    await item.run(caller, "recorded");
+    expect(calls.map((call) => call.answerContract?.name)).toEqual([
+      "confirmation",
+      "confirmation"
+    ]);
+    const [first, repair] = calls.map((call) => call.answerContract!.callContract!);
+    // The first ask covers both rows in order; the repair only the row it asks.
+    expect(
+      first!.safeParse({
+        matches: [
+          ["r1", "c1"],
+          ["r2", null]
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      first!.safeParse({
+        matches: [
+          ["r2", null],
+          ["r1", "c1"]
+        ]
+      }).success
+    ).toBe(false);
+    expect(repair!.safeParse({ matches: [["r2", "c2"]] }).success).toBe(true);
+    expect(repair!.safeParse({ matches: [["r1", "c1"]] }).success).toBe(false);
+  });
+
   it("rebuilds a call whose later row names an earlier row by its key (F4 D20)", async () => {
     const body = buildRelationMatchPrompt(
       [
@@ -588,6 +621,24 @@ describe("the typing flow", () => {
     expect(calls[1]!.prompt).toContain('PAIRS:\n[{"p":"p2"');
     expect(calls[1]!.prompt).not.toContain('{"p":"p1","a"');
     expect(outcome).toMatchObject({ ok: true });
+  });
+
+  it("hands each call the contract of the pairs it asks (F4 D24)", async () => {
+    const item = itemOf("structured-output", typingBody());
+    const first = JSON.stringify({ pairs: [{ p: "p1", t: "contradicts", d: "both" }] });
+    const second = JSON.stringify({ pairs: [{ p: "p2", t: "none", d: "none" }] });
+    const { caller, calls } = scripted([first, second]);
+    await item.run(caller, "recorded");
+    const [ask, reask] = calls.map((call) => call.answerContract!.callContract!);
+    const both = {
+      pairs: [
+        { p: "p1", t: "contradicts", d: "both" },
+        { p: "p2", t: "none", d: "none" }
+      ]
+    };
+    expect(ask!.safeParse(both).success).toBe(true);
+    expect(reask!.safeParse(both).success).toBe(false);
+    expect(reask!.safeParse({ pairs: [{ p: "p2", t: "none", d: "none" }] }).success).toBe(true);
   });
 
   it("counts a failed call as an attempt and asks the first prompt again", async () => {

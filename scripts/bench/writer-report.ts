@@ -3,9 +3,11 @@
  * left and writes the tables of `docs/spikes/local-writer-benchmark.md` — validity of the first answer,
  * repairs, salvage, speed, memory, swap and the yield against the recorded Codex answer, per arm and per
  * contract, with the recording's own first-pass record beside them. Bars are the spike's section 7.4
- * proposals, shown to read the numbers against; nothing here adopts a model (decision 26).
+ * proposals, shown to read the numbers against; nothing here adopts a model (decision 26). With
+ * `--baseline <run dir>` each run is also set against that run on the items both hold (the per-call
+ * grammar of F4 D24 against T99's static one).
  *
- *   npx tsx scripts/bench/writer-report.ts <run dir>... [--format md|json] [--out <file>]
+ *   npx tsx scripts/bench/writer-report.ts <run dir>... [--baseline <run dir>] [--format md|json] [--out <file>]
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -365,22 +367,113 @@ function renderSchemaComparison(summaries: readonly RunSummary[]): string[] {
   ];
 }
 
+/** A run as the report reads it. */
+export interface ReadRun {
+  manifest: RunManifest;
+  records: ItemRecord[];
+}
+
+/** The run's summary and the baseline's, restricted to the items both hold. */
+export interface BaselineComparison {
+  runId: string;
+  baselineRunId: string;
+  sharedItems: number;
+  baseline: RunSummary;
+  run: RunSummary;
+}
+
+/**
+ * Each run against the baseline on the items both hold (by cassette key): a run of some contracts
+ * against a run of all, or of other cassettes, compares like for like. The baseline itself is skipped.
+ */
+export function compareWithBaseline(
+  baseline: ReadRun,
+  runs: readonly ReadRun[]
+): BaselineComparison[] {
+  return runs
+    .filter((run) => run.manifest.runId !== baseline.manifest.runId)
+    .map((run) => {
+      const keys = new Set(run.records.map((record) => record.key));
+      const shared = new Set(
+        baseline.records.filter((record) => keys.has(record.key)).map((record) => record.key)
+      );
+      const only = (records: readonly ItemRecord[]) =>
+        records.filter((record) => shared.has(record.key));
+      return {
+        runId: run.manifest.runId,
+        baselineRunId: baseline.manifest.runId,
+        sharedItems: shared.size,
+        baseline: summarizeRun(baseline.manifest, only(baseline.records)),
+        run: summarizeRun(run.manifest, only(run.records))
+      };
+    });
+}
+
+/** The comparisons as a Markdown table: baseline → run on each contract the run holds. */
+export function renderBaselineComparison(comparisons: readonly BaselineComparison[]): string[] {
+  const rows: string[] = [];
+  for (const comparison of comparisons)
+    for (const row of [...comparison.run.byContract, comparison.run.overall]) {
+      const before =
+        row.contract === "all"
+          ? comparison.baseline.overall
+          : comparison.baseline.byContract.find((candidate) => candidate.contract === row.contract);
+      if (!before) continue;
+      const repairShare = share(row.repairCalls, row.calls);
+      const modes = Object.entries(row.schemaModes)
+        .map(([mode, count]) => `${mode} ${count}`)
+        .join(", ");
+      const yields = Object.keys(row.yield)
+        .map((name) => {
+          const format = (value: number | undefined) =>
+            value === undefined ? "n/a" : /Ratio$/u.test(name) ? value.toFixed(2) : percent(value);
+          return `${name} ${format(before.yield[name])} → ${format(row.yield[name])}`;
+        })
+        .join("; ");
+      rows.push(
+        `| ${comparison.baselineRunId} → ${comparison.runId} | ${row.contract} | ${row.items} | ${percent(share(before.noRepair, before.items))} → ${percent(share(row.noRepair, row.items))} | ${percent(share(before.repairCalls, before.calls))} → ${percent(repairShare)}${barMark(repairShare === null ? null : repairShare <= spikeBars.repairCallShare)} | ${percent(share(before.finalOk, before.items))} → ${percent(share(row.finalOk, row.items))} | ${modes || "n/a"} | ${fixed(before.grammarCompileMsP95, 2)} → ${fixed(row.grammarCompileMsP95, 2)} | ${fixed(before.decodeTpsP50)} → ${fixed(row.decodeTpsP50)} | ${yields || "n/a"} |`
+      );
+    }
+  if (rows.length === 0) return [];
+  return [
+    "",
+    "## Against the baseline run (the items both hold)",
+    "",
+    "| Baseline → run | Contract | Items | No repair needed | Repair share of calls | Final valid | Schema modes (run) | Grammar compile p95 ms | Decode p50 tok/s | Yield |",
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows
+  ];
+}
+
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { format: { type: "string", default: "md" }, out: { type: "string" } }
+    options: {
+      format: { type: "string", default: "md" },
+      out: { type: "string" },
+      baseline: { type: "string" }
+    }
   });
   if (positionals.length === 0 || !["md", "json"].includes(values.format ?? "md")) {
-    console.error("Usage: writer-report.ts <run dir>... [--format md|json] [--out <file>]");
+    console.error(
+      "Usage: writer-report.ts <run dir>... [--baseline <run dir>] [--format md|json] [--out <file>]"
+    );
     process.exit(2);
   }
+  const runs: ReadRun[] = [];
   const summaries: RunSummary[] = [];
   for (const directory of positionals) {
-    const { manifest, records } = await readRun(resolve(directory));
-    summaries.push(summarizeRun(manifest, records));
+    const run = await readRun(resolve(directory));
+    runs.push(run);
+    summaries.push(summarizeRun(run.manifest, run.records));
   }
+  const comparisons = values.baseline
+    ? compareWithBaseline(await readRun(resolve(values.baseline)), runs)
+    : [];
   const text =
-    values.format === "json" ? `${JSON.stringify(summaries, null, 2)}\n` : renderReport(summaries);
+    values.format === "json"
+      ? `${JSON.stringify(values.baseline ? { runs: summaries, comparisons } : summaries, null, 2)}\n`
+      : `${renderReport(summaries)}${renderBaselineComparison(comparisons).join("\n")}${comparisons.length ? "\n" : ""}`;
   if (values.out) {
     await mkdir(dirname(resolve(values.out)), { recursive: true });
     await writeFile(resolve(values.out), text);

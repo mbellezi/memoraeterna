@@ -10,12 +10,17 @@ import {
   RelationTypingLimitsSchema,
   relationTypingAliases,
   relationTypingAnswerItems,
+  relationTypingCallSchema,
   relationTypingLimits,
   relationTypingOutputSchema,
   typingDirectionCodes,
   validateRelationTypingAnswer
 } from "./relation-typing.js";
-import { toStrictJsonSchema, type AiOutputSchema } from "./structured-output.js";
+import {
+  toGrammarJsonSchema,
+  toStrictJsonSchema,
+  type AiOutputSchema
+} from "./structured-output.js";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -198,5 +203,46 @@ describe("an answer", () => {
     const { accepted, problems } = validateRelationTypingAnswer("sorry", ["p1", "p2"]);
     expect(accepted.size).toBe(0);
     expect(Object.fromEntries(problems)).toEqual({ p1: "missing", p2: "missing" });
+  });
+});
+
+describe("the answer of one call (the grammar's call contract, F4 D24)", () => {
+  const asked = ["p3", "p7"];
+  const contract = relationTypingCallSchema(asked);
+
+  it("takes each asked pair once, in the order asked, under its own id", () => {
+    const answer = {
+      pairs: [
+        { p: "p3", t: "extends", d: "ab" },
+        { p: "p7", t: "none", d: "none" }
+      ]
+    };
+    expect(contract.safeParse(answer).success).toBe(true);
+    // Whatever the call contract takes, the batch contract and the validator take too.
+    expect(relationTypingOutputSchema().safeParse(answer).success).toBe(true);
+    const { accepted, problems } = validateRelationTypingAnswer(answer, asked);
+    expect([...accepted.keys()]).toEqual(asked);
+    expect(problems.size).toBe(0);
+    for (const wrong of [
+      { pairs: [{ p: "p3", t: "extends", d: "ab" }] },
+      { pairs: [...answer.pairs].reverse() },
+      { pairs: [answer.pairs[0], { p: "p1", t: "none", d: "none" }] },
+      { pairs: [...answer.pairs, answer.pairs[1]] }
+    ])
+      expect(contract.safeParse(wrong).success).toBe(false);
+  });
+
+  it("emits a closed tuple of closed items whose ids are constants", () => {
+    const schema = toGrammarJsonSchema(contract, "relation_typing")!.schema as JsonSchema;
+    const pairs = (schema.properties as Record<string, JsonSchema>).pairs!;
+    expect(pairs).toMatchObject({ items: false, minItems: 2, maxItems: 2 });
+    expect(
+      (pairs.prefixItems as JsonSchema[]).map(
+        (item) => (item.properties as Record<string, JsonSchema>).p
+      )
+    ).toEqual([
+      { type: "string", const: "p3" },
+      { type: "string", const: "p7" }
+    ]);
   });
 });

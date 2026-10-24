@@ -253,6 +253,28 @@ describe("toGrammarJsonSchema (F4 D24)", () => {
     expect(grammarSchemaForContract({ name: "verdict", contract })).toBe(first);
     expect(grammarSchemaForContract({ name: "other", contract })?.name).toBe("other");
   });
+
+  it("sends a stated call contract's grammar, under the contract's name, and falls back when it is too large", () => {
+    const contract = z.object({ pick: z.string() }).strict();
+    const callContract = z.object({ pick: z.enum(["a", "b"]) }).strict();
+    expect(grammarSchemaForContract({ name: "pick", contract, callContract })).toEqual(
+      toGrammarJsonSchema(callContract, "pick")
+    );
+    const huge = z
+      .object({ pick: z.enum(Array.from({ length: 20_000 }, (_, i) => `alias-${i}`)) })
+      .strict();
+    expect(grammarSchemaForContract({ name: "pick", contract, callContract: huge })).toBe(
+      grammarSchemaForContract({ name: "pick", contract })
+    );
+  });
+
+  it("never reads a call contract for the strict schema of a remote runtime", () => {
+    const contract = z.object({ pick: z.string() }).strict();
+    const callContract = z.object({ pick: z.enum(["a"]) }).strict();
+    expect(outputSchemaForContract({ name: "pick", contract, callContract })).toBe(
+      outputSchemaForContract({ name: "pick", contract })
+    );
+  });
 });
 
 describe("validateItems", () => {

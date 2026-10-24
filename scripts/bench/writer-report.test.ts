@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CallRecord, ItemRecord, RunManifest } from "./replay-records.ts";
 import {
+  compareWithBaseline,
   readRun,
+  renderBaselineComparison,
   renderReport,
   spikeBars,
   summarizeContract,
@@ -312,5 +314,67 @@ describe("reading a run folder", () => {
 
   it("refuses a folder with no manifest", async () => {
     await expect(readRun(directory)).rejects.toThrow();
+  });
+});
+
+describe("a run against a baseline run (F4 D24)", () => {
+  const key = (n: number) => String(n).padStart(64, "0");
+  const confirmation = (n: number, repaired: boolean, agreement: number) =>
+    item({
+      key: key(n),
+      contract: "confirmation",
+      operation: "entity_identity_resolution",
+      firstPassClean: !repaired,
+      repairCalls: repaired ? 1 : 0,
+      calls: repaired
+        ? [
+            call({ schemaMode: "grammar" }),
+            call({ attempt: 1, isRepair: true, schemaMode: "grammar" })
+          ]
+        : [call({ schemaMode: "grammar", grammarCompileMs: 0.5 })],
+      yield: { agreement, overMergeRate: 0.1 }
+    });
+  // T99's run holds every contract; the per-call run only the confirmation items, one of them new.
+  const baseline = {
+    manifest: manifest({ runId: "m9b4-current-t99-schema" }),
+    records: [
+      confirmation(1, true, 0.5),
+      confirmation(2, false, 1),
+      confirmation(3, true, 0.5),
+      item({ key: key(9) })
+    ]
+  };
+  const run = {
+    manifest: manifest({ runId: "m9b4-current-percall-schema" }),
+    records: [
+      confirmation(1, false, 1),
+      confirmation(2, false, 1),
+      confirmation(3, false, 0.5),
+      confirmation(4, false, 1)
+    ]
+  };
+
+  it("compares the items both runs hold, contract by contract", () => {
+    const [comparison] = compareWithBaseline(baseline, [baseline, run]);
+    expect(comparison).toMatchObject({
+      runId: "m9b4-current-percall-schema",
+      baselineRunId: "m9b4-current-t99-schema",
+      sharedItems: 3
+    });
+    const before = comparison!.baseline.byContract;
+    const after = comparison!.run.byContract;
+    expect(before.map((row) => row.contract)).toEqual(["confirmation"]);
+    expect([before[0]!.repairCalls, after[0]!.repairCalls]).toEqual([2, 0]);
+    expect(after[0]!.items).toBe(3);
+  });
+
+  it("renders the comparison with the repair bar and the yield, baseline to run", () => {
+    const text = renderBaselineComparison(compareWithBaseline(baseline, [run])).join("\n");
+    expect(text).toContain("## Against the baseline run (the items both hold)");
+    expect(text).toContain(
+      "| m9b4-current-t99-schema → m9b4-current-percall-schema | confirmation | 3 | 33.3% → 100.0% | 40.0% → 0.0% (meets bar) |"
+    );
+    expect(text).toContain("agreement 66.7% → 83.3%");
+    expect(renderBaselineComparison([])).toEqual([]);
   });
 });

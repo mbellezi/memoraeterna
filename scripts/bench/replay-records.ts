@@ -117,7 +117,14 @@ export const manifestSchema = z
         capabilities: z.array(z.string())
       })
       .strict(),
-    cassette: z.object({ directory: z.string(), items: z.number().int() }).strict(),
+    cassette: z
+      .object({
+        directory: z.string(),
+        /** Cassettes read after the first, each call once (absent when one was read). */
+        more: z.array(z.string()).optional(),
+        items: z.number().int()
+      })
+      .strict(),
     selection: z
       .object({
         contracts: z.array(z.enum(contractIds)),
@@ -127,7 +134,14 @@ export const manifestSchema = z
       .strict(),
     parameters: z.record(z.string(), z.unknown()),
     seed: z.number().int().nullable(),
-    schema: z.object({ requested: z.boolean(), supported: z.boolean() }).strict(),
+    schema: z
+      .object({
+        requested: z.boolean(),
+        supported: z.boolean(),
+        /** The `--schema-module` the run used; null for the default source, absent before F4 D24's. */
+        module: z.string().nullable().optional()
+      })
+      .strict(),
     machine: z.record(z.string(), z.string().nullable()),
     warmup: z.object({ loadMs: z.number().nullable(), warmMs: z.number().nullable() }).strict(),
     swapBeforeMiB: z.number().nullable(),

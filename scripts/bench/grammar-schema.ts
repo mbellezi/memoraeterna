@@ -1,6 +1,7 @@
 /**
- * The schema source of T102's replay (F4 D24): every contract's grammar schema, as the MLX adapter
- * derives it in the product (`toGrammarJsonSchema`), for a helper that announces `schema`.
+ * The schema source of T102's replay (F4 D24): every contract's grammar schema, as T99's MLX adapter
+ * derived it (`toGrammarJsonSchema` of the contract), for a helper that announces `schema`. It reads
+ * no call contract, so it reproduces T99's runs; `grammar-schema-per-call.ts` is today's product.
  *
  *   npm run bench:writer -- run --arm m9b4 --schema --schema-module scripts/bench/grammar-schema.ts
  */

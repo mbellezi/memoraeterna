@@ -81,6 +81,23 @@ export function relationTypingOutputSchema(maxPairs = relationTypingLimits.pairs
   });
 }
 
+/**
+ * The answer narrowed to one call (the `callContract` a runtime that constrains decoding reads, F4
+ * D24): each pair the call asks about once, in the order asked, under its own id. Remote calls keep
+ * the batch-size contract above; the answer is still read by `validateRelationTypingAnswer`.
+ */
+export function relationTypingCallSchema(aliases: readonly string[]): z.ZodType {
+  const items = aliases.map((alias) =>
+    z.strictObject({
+      p: z.literal(alias),
+      t: NoteRelationTypingSchema,
+      d: RelationTypingDirectionCodeSchema
+    })
+  );
+  const [first, ...rest] = items;
+  return z.strictObject({ pairs: first ? z.tuple([first, ...rest]) : z.tuple([]) });
+}
+
 /** One answer item that passed validation: the type and direction are consistent. */
 export interface RelationTypingItem {
   alias: string;

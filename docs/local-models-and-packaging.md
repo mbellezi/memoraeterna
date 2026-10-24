@@ -151,6 +151,15 @@ is sent; a tokenizer that is not byte-level BPE, or a schema outside the subset,
 answer unconstrained and the run records `none` with the refusal. The answer is validated and
 repaired by Zod exactly as before. GGUF calls are unchanged (no grammar schema is routed to them).
 
+A caller whose answer names its own aliases also states the call's narrowed contract
+(`AiOutputContract.callContract`): an identity confirmation's rows, each once in the order asked with
+its own key and one of its own candidates or null (`relationMatchCallSchema`), and a typing call's
+pairs, each once under its own id (`relationTypingCallSchema`). The MLX adapter sends that grammar
+instead of the static one (the static one when it is too large; the pinned path states none), so
+T99's replay failures (rows left out, a candidate of another row, a row that does not exist) cannot
+be written. A remote runtime never reads it: its strict schema, or none for identity's tuple, comes
+from the static contract, and its requests are byte-identical (`call-output-schema.test.ts`).
+
 `npm run mlx:build` runs the grammar's tests (`swift test -c release --filter MemoraGrammarTests`,
 no model or Metal library) after compiling the helper. A helper built from new sources has a new
 SHA-256, so every validated ranker re-validates on the next app start (item 6 of the validation

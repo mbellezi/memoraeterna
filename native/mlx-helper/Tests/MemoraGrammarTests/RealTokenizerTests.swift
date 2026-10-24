@@ -6,8 +6,8 @@ import MemoraGrammar
 /// What the grammar costs on a real vocabulary, without a model: `MEMORA_GRAMMAR_TOKENIZER` names a
 /// byte-level `tokenizer.json` (the Qwen writer's). Skipped otherwise. Prints the vocabulary load,
 /// the compile time per call (schema plus masker, p50 and p95) and the mask time per token while
-/// writing each catalog contract's valid answers, the inputs of the replay bars (compile ≤100 ms
-/// p95; decode ≥0.85× the unconstrained tok/s is measured with the model).
+/// writing each catalog contract's and each single call's valid answers, the inputs of the replay
+/// bars (compile ≤100 ms p95; decode ≥0.85× the unconstrained tok/s is measured with the model).
 final class RealTokenizerTests: XCTestCase {
     func testCompileAndMaskCostOnARealTokenizer() throws {
         guard let path = ProcessInfo.processInfo.environment["MEMORA_GRAMMAR_TOKENIZER"] else {
@@ -27,7 +27,10 @@ final class RealTokenizerTests: XCTestCase {
             vocabulary.size, vocabulary.maxTokenBytes, loadMs))
 
         var allCompile: [Double] = []
-        for (name, entry) in try catalogSchemas().sorted(by: { $0.key < $1.key }) {
+        // The catalog contracts, then the single calls' grammars (the confirmation and typing calls).
+        let schemas = try catalogSchemas().sorted(by: { $0.key < $1.key })
+            + callSchemas().sorted(by: { $0.key < $1.key })
+        for (name, entry) in schemas {
             guard let schema = entry["schema"], case .array(let valid) = entry["valid"] ?? .null else {
                 return XCTFail(name)
             }

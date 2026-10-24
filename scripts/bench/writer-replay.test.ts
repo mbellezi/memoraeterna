@@ -221,6 +221,40 @@ describe("the entries of a cassette", () => {
     expect(text).toContain("m9b4:");
   });
 
+  it("reads further cassettes after the first, each recorded call once", async () => {
+    const calls = everyContract();
+    const first = join(root, "golden", "cassettes", "first");
+    const second = join(root, "golden", "cassettes", "second");
+    await writeCassette(first, calls);
+    // The second recording holds two of the first's calls again and one of its own.
+    await writeCassette(second, [
+      calls[0]!,
+      calls[3]!,
+      recorded({
+        taskType: "knowledge-graph-generation",
+        body: confirmationBody(false),
+        output: "{}"
+      })
+    ]);
+    const { entries, census } = await loadEntries({
+      cassette: first,
+      moreCassettes: [second],
+      contracts: ["confirmation"],
+      limit: null,
+      perContract: null
+    });
+    expect(census.calls).toBe(8);
+    expect(entries.map((entry) => entry.item.operation)).toEqual([
+      "entity_identity_resolution",
+      "relation_type_resolution"
+    ]);
+    expect(parseOptions(["plan", "--cassette", first, "--cassette", second])).toMatchObject({
+      cassette: first,
+      moreCassettes: [second]
+    });
+    expect(parseOptions(["plan", "--data-root", "/data/.cache"]).moreCassettes).toEqual([]);
+  });
+
   it("projects hours from the recorded tokens and an arm's assumed rates", async () => {
     const { entries } = await loadEntries({
       cassette: await cassette(),
@@ -498,7 +532,23 @@ describe("running an arm", () => {
     const manifest = manifestSchema.parse(
       JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8"))
     );
-    expect(manifest.schema).toEqual({ requested: true, supported: true });
+    expect(manifest.schema).toEqual({ requested: true, supported: true, module: null });
+  });
+
+  it("names the schema module in the manifest and resumes only with the same one", async () => {
+    const module = join(root, "emitter.mjs");
+    await writeFile(module, "export function schemaForContract() { return null; }");
+    const options = await setup({ schema: true, schemaModule: module, warmup: false });
+    const result = await runCommand(options, harness({ supportsSchema: true }).deps);
+    const manifest = manifestSchema.parse(
+      JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8"))
+    );
+    expect(manifest.schema.module).toBe(module);
+    const other = join(root, "other.mjs");
+    await writeFile(other, "export function schemaForContract() { return null; }");
+    await expect(
+      runCommand({ ...options, resume: true, schemaModule: other }, harness().deps)
+    ).rejects.toThrow(/schema module/u);
   });
 
   it("takes the schema from a module, so a grammar emitter plugs in without a code change", async () => {

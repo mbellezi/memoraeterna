@@ -70,8 +70,14 @@ export function defaultTaskService(
     limits?: { maxOutputTokens: number }
   ) => {
     const attempt = context.attempt ?? 0;
+    // The call's own contract, as the product's caller states it for a runtime that constrains
+    // decoding (F4 D24); the name and the static contract stay the harness's.
+    const callContract = context.outputContract?.callContract;
     const result = await caller({
       ...fixed,
+      ...(fixed.answerContract && callContract
+        ? { answerContract: { ...fixed.answerContract, callContract } }
+        : {}),
       taskType: taskType as ReplayTaskType,
       prompt: swap(prompt, attempt),
       language: context.contentLanguage ?? fixed.language,

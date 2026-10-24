@@ -161,6 +161,13 @@ export function toStrictJsonSchema(
 export interface AiOutputContract {
   name: string;
   contract: z.ZodType;
+  /**
+   * The same answer narrowed to this call's own data (its row and candidate aliases), for a runtime
+   * that constrains decoding (`grammarSchemaForContract`). Every answer it accepts, `contract` and
+   * the caller's parser accept too. A remote runtime never reads it: its strict schema, or none, is
+   * derived from `contract` alone, so stating it changes nothing a remote provider is sent.
+   */
+  callContract?: z.ZodType;
 }
 
 const strictContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema | null>>();
@@ -169,6 +176,7 @@ const strictContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema 
  * The strict schema a remote runtime is sent for a stated contract (F4 D23), or null when the
  * contract cannot be sent strictly (an optional member, a tuple, a refinement) and the call keeps
  * its prompt-level JSON. Cached per contract object and name: callers keep one contract per shape.
+ * A stated `callContract` is never read here.
  */
 export function outputSchemaForContract(output: AiOutputContract): AiOutputSchema | null {
   let byName = strictContractSchemas.get(output.contract);
@@ -310,10 +318,16 @@ function grammarSubset(node: unknown): unknown {
 const grammarContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema | null>>();
 
 /**
- * The grammar schema a runtime that constrains decoding is sent for a stated contract (F4 D24),
- * cached per contract object and name like `outputSchemaForContract`.
+ * The grammar schema a runtime that constrains decoding is sent for a stated contract (F4 D24): the
+ * call's own contract when the caller states one (built per call, so not cached), else the
+ * contract's, cached per contract object and name like `outputSchemaForContract`. A call contract
+ * the emitter cannot send (too large) falls back to the contract's grammar.
  */
 export function grammarSchemaForContract(output: AiOutputContract): AiOutputSchema | null {
+  if (output.callContract) {
+    const narrowed = toGrammarJsonSchema(output.callContract, output.name);
+    if (narrowed) return narrowed;
+  }
   let byName = grammarContractSchemas.get(output.contract);
   if (!byName) {
     byName = new Map();

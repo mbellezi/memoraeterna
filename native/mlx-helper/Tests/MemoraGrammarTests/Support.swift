@@ -126,11 +126,21 @@ func acceptsBytes(_ schema: String, _ bytes: [UInt8]) throws -> Bool {
 /// The schemas the host's grammar emitter sends for the catalog contracts (`toGrammarJsonSchema`),
 /// checked in by the desktop's catalog test.
 func catalogSchemas() throws -> [String: JSONValue] {
+    try fixtureSchemas("catalog-grammar-schemas.json")
+}
+
+/// The schemas of single calls (the confirmation and typing contracts narrowed to one call's rows or
+/// pairs), checked in by the same test.
+func callSchemas() throws -> [String: JSONValue] {
+    try fixtureSchemas("call-grammar-schemas.json")
+}
+
+private func fixtureSchemas(_ file: String) throws -> [String: JSONValue] {
     let url = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
-        .appendingPathComponent("Fixtures/catalog-grammar-schemas.json")
+        .appendingPathComponent("Fixtures/\(file)")
     guard case .object(let schemas) = try JSONValue.parse(try Data(contentsOf: url)) else {
-        throw GrammarError.unsupported("fixture")
+        throw GrammarError.unsupported("fixture \(file)")
     }
     return schemas
 }

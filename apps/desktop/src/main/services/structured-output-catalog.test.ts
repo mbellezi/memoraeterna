@@ -8,13 +8,20 @@ import {
   TopicOverviewOutputSchema,
   TopicOverviewPatchOutputSchema,
   analyzeStrictJsonSchema,
+  grammarSchemaMaxCharacters,
+  maxIdentityGroupRows,
   outputSchemaForContract,
+  relationTypingCallSchema,
   relationTypingOutputSchema,
   toGrammarJsonSchema
 } from "@app/domain";
 import type { z } from "zod";
 
-import { relationMatchOutputSchema } from "./relation-type-resolution.js";
+import {
+  relationMatchCallSchema,
+  relationMatchOutputSchema,
+  type RelationMatchRow
+} from "./relation-type-resolution.js";
 import {
   topicAreasOutputContract,
   topicNamingOutputContract,
@@ -371,6 +378,230 @@ describe("the grammar of every catalog contract (F4 D24)", () => {
     if (process.env.MEMORA_WRITE_GRAMMAR_FIXTURE === "1")
       writeFileSync(grammarFixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
     expect(JSON.parse(readFileSync(grammarFixturePath, "utf8"))).toEqual(fixture);
+  });
+});
+
+/**
+ * The grammars of one call (F4 D24, after T99's replay): the confirmation and typing contracts
+ * narrowed to a call's own rows or pairs, which a runtime that constrains decoding is sent instead of
+ * the static grammar. The Swift tests read them from their own fixture (`CallGrammarTests`).
+ */
+const callRow = (key: string, candidates: string[]): RelationMatchRow => ({
+  key,
+  predicate: key,
+  definition: key,
+  candidates: candidates.map((candidate) => ({
+    key: candidate,
+    predicate: candidate,
+    definition: candidate
+  }))
+});
+// The largest call: the row cap, each row at the settings' largest candidate list (20).
+const largestCall = Array.from({ length: maxIdentityGroupRows }, (_, row) =>
+  callRow(
+    `r${row + 1}`,
+    Array.from({ length: 20 }, (_, candidate) =>
+      candidate < row ? `r${candidate + 1}` : `c${row * 20 + candidate + 1}`
+    )
+  )
+);
+const callGrammarCases: Record<
+  string,
+  { name: string; contract: z.ZodType; valid: unknown[]; invalid: unknown[] }
+> = {
+  entity_identity_call: {
+    name: "entity_identity",
+    contract: relationMatchCallSchema([
+      callRow("r1", ["c1", "c2"]),
+      callRow("r2", ["c3"]),
+      callRow("r3", ["r1", "c4"]),
+      callRow("r4", [])
+    ]),
+    valid: [
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r1", null],
+          ["r2", "c3"],
+          ["r3", "c4"],
+          ["r4", null]
+        ]
+      }
+    ],
+    invalid: [
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null],
+          ["r3", "r1"]
+        ]
+      },
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r2", null],
+          ["r1", "c2"],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r1", "c3"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r1", "c9"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      },
+      {
+        matches: [
+          ["r1", "c2"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", "c1"]
+        ]
+      },
+      {
+        matches: [
+          ["r9", "c1"],
+          ["r2", null],
+          ["r3", "r1"],
+          ["r4", null]
+        ]
+      }
+    ]
+  },
+  relation_identity_call_largest: {
+    name: "relation_identity",
+    contract: relationMatchCallSchema(largestCall),
+    valid: [
+      {
+        matches: largestCall.map((row, index) => [
+          row.key,
+          index % 3 === 0 ? null : row.candidates[index % 20]!.key
+        ])
+      }
+    ],
+    invalid: [
+      {
+        matches: largestCall.map((row, index) => [
+          row.key,
+          index === 5 ? largestCall[6]!.candidates[19]!.key : null
+        ])
+      },
+      { matches: largestCall.slice(1).map((row) => [row.key, null]) }
+    ]
+  },
+  relation_typing_call: {
+    name: "relation_typing",
+    contract: relationTypingCallSchema(["p3", "p7", "p12"]),
+    valid: [
+      {
+        pairs: [
+          { p: "p3", t: "supports", d: "ab" },
+          { d: "both", p: "p7", t: "same_as" },
+          { p: "p12", t: "none", d: "none" }
+        ]
+      }
+    ],
+    invalid: [
+      {
+        pairs: [
+          { p: "p3", t: "supports", d: "ab" },
+          { p: "p12", t: "none", d: "none" }
+        ]
+      },
+      {
+        pairs: [
+          { p: "p1", t: "supports", d: "ab" },
+          { p: "p7", t: "same_as", d: "both" },
+          { p: "p12", t: "none", d: "none" }
+        ]
+      },
+      {
+        pairs: [
+          { p: "p7", t: "same_as", d: "both" },
+          { p: "p3", t: "supports", d: "ab" },
+          { p: "p12", t: "none", d: "none" }
+        ]
+      }
+    ]
+  }
+};
+
+const callGrammarFixturePath = fileURLToPath(
+  new URL(
+    "../../../../../native/mlx-helper/Tests/MemoraGrammarTests/Fixtures/call-grammar-schemas.json",
+    import.meta.url
+  )
+);
+
+function callGrammarFixture(): unknown {
+  return JSON.parse(
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(callGrammarCases).map(([id, { name, contract, valid, invalid }]) => [
+          id,
+          { schema: toGrammarJsonSchema(contract, name)?.schema, valid, invalid }
+        ])
+      )
+    )
+  );
+}
+
+describe("the grammar of one call (F4 D24)", () => {
+  it.each(Object.entries(callGrammarCases))(
+    "%s emits, within the size the emitter sends",
+    (_id, { name, contract }) => {
+      const output = toGrammarJsonSchema(contract, name);
+      expect(output).toMatchObject({ name, strict: false });
+      expect(JSON.stringify(output!.schema).length).toBeLessThan(grammarSchemaMaxCharacters);
+    }
+  );
+
+  it.each(Object.entries(callGrammarCases))(
+    "%s: the samples are what Zod says they are, and the static contract takes the valid ones",
+    (id, { contract, valid, invalid }) => {
+      const wide = id.startsWith("relation_typing")
+        ? relationTypingOutputSchema()
+        : relationMatchOutputSchema;
+      for (const answer of valid) {
+        expect(contract.safeParse(answer).success).toBe(true);
+        expect(wide.safeParse(answer).success).toBe(true);
+      }
+      for (const answer of invalid) expect(contract.safeParse(answer).success).toBe(false);
+    }
+  );
+
+  it("matches the fixture the Swift grammar tests read", () => {
+    const fixture = callGrammarFixture();
+    // MEMORA_WRITE_GRAMMAR_FIXTURE=1 rewrites it after a contract changed.
+    if (process.env.MEMORA_WRITE_GRAMMAR_FIXTURE === "1")
+      writeFileSync(callGrammarFixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+    expect(JSON.parse(readFileSync(callGrammarFixturePath, "utf8"))).toEqual(fixture);
   });
 });
 
