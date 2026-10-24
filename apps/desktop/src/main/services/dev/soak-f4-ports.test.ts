@@ -43,6 +43,7 @@ function deps(overrides: Partial<SoakF4PortsDeps> = {}, rows: Record<string, unk
   const calls = {
     overview: [] as string[],
     views: [] as unknown[],
+    noteViews: [] as unknown[],
     audits: [] as string[],
     wakes: 0
   };
@@ -52,6 +53,7 @@ function deps(overrides: Partial<SoakF4PortsDeps> = {}, rows: Record<string, unk
     knowledge: { reviewNote: vi.fn(async () => ({ id: "n" })) } as never,
     topicOverview: async (id) => (calls.overview.push(id), { status: "ready" }),
     recordTopicView: async (input) => void calls.views.push(input),
+    recordNoteView: async (input) => void calls.noteViews.push(input),
     requestAudit: async (treeId) => void calls.audits.push(treeId),
     jobs: { wake: () => void (calls.wakes += 1) },
     status: {
@@ -240,6 +242,27 @@ describe("the F4 actions", () => {
     expect(calls.views).toEqual([{ id: "topic-1", title: "Memory" }]);
     expect(calls.overview).toEqual(["topic-1"]);
     expect(detail).toMatchObject({ outcome: "opened", hadOverview: false, status: "ready" });
+  });
+
+  it("records the Note page each explanation is opened from, once a note (T84's backfill reads it)", async () => {
+    const { value, calls, pool } = deps(
+      {},
+      {
+        default: [
+          { id: "11111111-1111-4111-8111-111111111111", title: "Recall" },
+          { id: "22222222-2222-4222-8222-222222222222", title: "x".repeat(400) }
+        ]
+      }
+    );
+    expect(await createF4Ports(value).openNotePages(["r1", "r2", "r3"])).toBe(2);
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining("source_atomic_note_id"), [
+      ["r1", "r2", "r3"]
+    ]);
+    expect(calls.noteViews).toEqual([
+      { id: "11111111-1111-4111-8111-111111111111", title: "Recall" },
+      { id: "22222222-2222-4222-8222-222222222222", title: "x".repeat(300) }
+    ]);
+    expect(await createF4Ports(value).openNotePages([])).toBe(0);
   });
 
   it("opens nothing when no topic has enough notes, and fails the action with the facts when the overview fails", async () => {

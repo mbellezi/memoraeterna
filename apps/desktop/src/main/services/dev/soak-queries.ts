@@ -39,6 +39,28 @@ export async function pickRelationsToExplain(
   return result.rows;
 }
 
+/**
+ * The Note page each relation is opened from (F4 T84): its source note, once per note, in the
+ * order of the relations given. The page records that note in the view history, which the
+ * explanation backfill's daily pass reads.
+ */
+export async function relationSourceNotes(
+  db: Db,
+  relationIds: readonly string[]
+): Promise<Array<{ id: string; title: string }>> {
+  if (relationIds.length === 0) return [];
+  const result = await db.query<{ id: string; title: string }>(
+    `select a.id::text as id, a.title
+       from atomic_note_relations r
+       join atomic_notes a on a.id = r.source_atomic_note_id
+      where r.id = any($1::uuid[])
+      group by a.id, a.title
+      order by min(array_position($1::uuid[], r.id))`,
+    [relationIds]
+  );
+  return result.rows;
+}
+
 /** Forgets stored explanations, so opening the relation again asks the writer (a DEV clone only). */
 export async function forgetExplanations(db: Db, relationIds: readonly string[]): Promise<number> {
   if (relationIds.length === 0) return 0;

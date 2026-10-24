@@ -311,6 +311,12 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
       const recycled = picked.filter((entry) => entry.explained).map((entry) => entry.id);
       // Fewer fresh relations than opens: forget the oldest answers so each open asks the writer.
       await forgetExplanations(deps.pool, recycled);
+      // F4: the Note page the cards are opened from records its view first, as the page does; the
+      // explanation backfill (T84) selects the shown relations of the notes opened lately. A view
+      // that cannot be recorded never stops the opens (null: not recorded).
+      const notePages = f4
+        ? await f4.openNotePages(picked.map((entry) => entry.id)).catch(() => null)
+        : undefined;
       const outcomes = await Promise.all(
         picked.map(async ({ id }) => {
           try {
@@ -335,7 +341,8 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
         vetoed: tally("vetoed"),
         unrelated: tally("unrelated"),
         none: tally("none"),
-        failed: tally("failed")
+        failed: tally("failed"),
+        ...(notePages === undefined ? {} : { notePages })
       };
     },
 

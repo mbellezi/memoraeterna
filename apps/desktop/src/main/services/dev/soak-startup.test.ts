@@ -77,6 +77,8 @@ describe("preparing the 7-day soak", () => {
     expect(prepared.subscriptionDailyCalls?.()).toBe(
       defaultRemoteBudgetConfig.subscriptionDailyCalls
     );
+    // The backfill keeps its typed allowance until drop step 3 lowers it.
+    expect(prepared.backfillDailyRelations?.()).toBeNull();
     // The money window's fake is priced in the soak's copy of the table, not in the product's.
     const table = prepared.priceTable(defaultPriceTable);
     expect(table.entries.some((entry) => entry.model === "dev-fake-priced-1")).toBe(true);
@@ -126,6 +128,7 @@ describe("preparing the 7-day soak", () => {
     })!;
     expect(prepared.codexFetch).toBeUndefined();
     expect(prepared.subscriptionDailyCalls).toBeUndefined();
+    expect(prepared.backfillDailyRelations).toBeUndefined();
     expect(prepared.priceTable(defaultPriceTable)).toBe(defaultPriceTable);
     expect(prepared.directory).toBe(
       join(worktree, ".cache", "f3", "soak", "soak24-20261018T100000")

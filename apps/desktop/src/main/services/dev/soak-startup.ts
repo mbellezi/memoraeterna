@@ -93,6 +93,11 @@ export interface SoakPreparation {
    * otherwise. Pass it as the RemoteBudget's `subscriptionDailyCalls` option.
    */
   readonly subscriptionDailyCalls: (() => number) | undefined;
+  /**
+   * The explanation backfill's daily allowance once drop step 3 lowered it (20 to 10; null before),
+   * in the 7-day soak; undefined otherwise. Pass it as the backfill executor's `dailyRelations`.
+   */
+  readonly backfillDailyRelations: (() => number | null) | undefined;
   /** The price table with the money window's fake in it; the base table when the run has none. */
   priceTable(base: PriceTable): PriceTable;
   startFakes(deps: Pick<FakeRemoteDeps, "pool" | "credentials" | "setAnswerRoute">): Promise<void>;
@@ -236,6 +241,8 @@ export function prepareSoak(
         })
       : null;
   let dailyCap: number | undefined;
+  // Drop step 3 (spec 5.4): the explanation backfill's daily allowance, lowered from 20 to 10.
+  let backfillCap: number | null = null;
   let fakeDeps: Pick<FakeRemoteDeps, "pool" | "credentials" | "setAnswerRoute"> | null = null;
 
   return {
@@ -247,6 +254,7 @@ export function prepareSoak(
     subscriptionDailyCalls: f4Plan
       ? () => dailyCap ?? defaultRemoteBudgetConfig.subscriptionDailyCalls
       : undefined,
+    backfillDailyRelations: f4Plan ? () => backfillCap : undefined,
     priceTable: (base) => (soak && f4Plan?.money ? soakPriceTable(base, f4Plan.money) : base),
     installAdapterDecorator() {
       if (soak)
@@ -335,6 +343,8 @@ export function prepareSoak(
                 topicOverview: (topicId: string) => f4Deps.topicOverview(topicId),
                 recordTopicView: (input: { id: string; title: string }) =>
                   views.record({ kind: "topic", id: input.id, title: input.title }),
+                recordNoteView: (input: { id: string; title: string }) =>
+                  views.record({ kind: "note", id: input.id, title: input.title }),
                 requestAudit: (treeId: string) => f4Deps.requestAudit(treeId),
                 jobs: deps.jobs,
                 status: f4Deps.status,
@@ -420,6 +430,10 @@ export function prepareSoak(
             logger: console_
           }),
           cap,
+          // Drop step 3 lowers the backfill's allowance; the executor reads it at its next pass.
+          setBackfillCap: (calls) => {
+            backfillCap = calls;
+          },
           lowerCap: (capTokens) => cap.lowerTo(capTokens, { command: "LOWER_CAP file" }),
           isExhausted: () => cap.isExhausted,
           // The DEV command that lowers the harness cap: a file named LOWER_CAP in the run folder

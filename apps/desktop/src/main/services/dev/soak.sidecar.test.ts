@@ -12,7 +12,9 @@ import {
   createAiConfigRepository,
   createAtomicNoteRelationRepository,
   createPgPool,
+  createRelationExplanationRepository,
   createRelationMatchRunRepository,
+  createViewHistoryRepository,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool
@@ -29,7 +31,8 @@ import {
   pickRelationsToExplain,
   readFailedJobs,
   readJobs,
-  readTaskRuns
+  readTaskRuns,
+  relationSourceNotes
 } from "./soak-queries.js";
 import { MemoryEventSink, jobFailureSchema, taskRunRecordSchema } from "./soak-records.js";
 
@@ -158,6 +161,37 @@ describe.skipIf(!sidecarInstalled)("the soak on a real PostgreSQL database", () 
     expect(
       (await pickRelationsToExplain(pool!, 5, 20261021)).every((entry) => !entry.explained)
     ).toBe(true);
+  });
+
+  it("names the Note page a relation is opened from, which the explanation backfill then selects (T84)", async () => {
+    await pool!.query("delete from view_history");
+    const fresh = await seedRelation(["Interleaving", "Testing"]);
+    const other = await seedRelation(["Elaboration", "Imagery"]);
+    const source = (
+      await pool!.query<{ id: string; title: string }>(
+        `select a.id::text as id, a.title from atomic_note_relations r
+           join atomic_notes a on a.id = r.source_atomic_note_id where r.id = $1`,
+        [fresh]
+      )
+    ).rows[0]!;
+    // Once a note, in the order of the relations given.
+    expect(await relationSourceNotes(pool!, [fresh, fresh])).toEqual([source]);
+    expect((await relationSourceNotes(pool!, [other, fresh])).at(-1)).toEqual(source);
+    expect(await relationSourceNotes(pool!, [])).toEqual([]);
+    // The page's view makes the relation a backfill candidate; a relation of no opened note is not.
+    const candidates = () =>
+      createRelationExplanationRepository(pool!).backfillCandidates({
+        openedSince: new Date(Date.now() - 60_000),
+        limit: 20,
+        jobType: "relation-explain-backfill"
+      });
+    expect(await candidates()).toEqual([]);
+    await createViewHistoryRepository(pool!).record({
+      kind: "note",
+      objectId: source.id,
+      title: source.title
+    });
+    expect((await candidates()).map((candidate) => candidate.relationId)).toEqual([fresh]);
   });
 
   it("picks a note nobody edited, a title to ask about, and reads jobs and audited calls", async () => {

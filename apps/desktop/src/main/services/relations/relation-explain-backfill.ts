@@ -151,6 +151,11 @@ export interface ExplainBackfillExecutorOptions {
   wake?: () => void;
   now?: () => Date;
   config?: RelationExplainBackfillConfig;
+  /**
+   * The day's allowance while a DEV override lowers it (the 7-day soak's drop step 3, 20 to 10,
+   * F4 T89); the configuration's `dailyRelations` when absent or null.
+   */
+  dailyRelations?: () => number | null;
 }
 
 /** The `relation-explain-backfill` light job, on the `relations` worker. */
@@ -194,11 +199,12 @@ export function explainBackfillExecutor(options: ExplainBackfillExecutorOptions)
     async execute(job, signal): Promise<JsonObject> {
       const payload = RelationExplainBackfillPayloadSchema.parse(jobTaskPayload(job.payload));
       if ("pass" in payload) {
+        const config = options.config ?? relationExplainBackfillConfig;
+        const lowered = options.dailyRelations?.() ?? null;
         const report = await runExplainBackfillPass(pool(), {
           now: options.now?.() ?? new Date(),
-          ...(options.config ? { config: options.config } : {})
+          config: lowered === null ? config : { ...config, dailyRelations: lowered }
         });
-        const config = options.config ?? relationExplainBackfillConfig;
         await scheduleExplainBackfillPass(createJobRepository(pool()), config.passEveryMs);
         if (report.queued > 0) options.wake?.();
         return { status: "completed", remaining: report.remaining, queued: report.queued };

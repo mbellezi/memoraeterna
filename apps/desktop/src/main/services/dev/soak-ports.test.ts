@@ -24,7 +24,8 @@ const queries = vi.hoisted(() => ({
   pickQuestionTitle: vi.fn(),
   readFailedJobs: vi.fn(),
   readJobs: vi.fn(),
-  readTaskRuns: vi.fn()
+  readTaskRuns: vi.fn(),
+  relationSourceNotes: vi.fn()
 }));
 vi.mock("./soak-queries.js", () => queries);
 
@@ -298,6 +299,37 @@ describe("the ports", () => {
       failed: 1
     });
     expect(explain.mock.calls.every(([input]) => typeof input.requestId === "string")).toBe(true);
+  });
+
+  it("records the Note pages first under F4, so the explanation backfill (T84) has notes opened lately", async () => {
+    queries.pickRelationsToExplain.mockResolvedValue([
+      { id: "r1", explained: false },
+      { id: "r2", explained: false }
+    ]);
+    queries.relationSourceNotes.mockResolvedValue([{ id: "n1", title: "Recall" }]);
+    const order: string[] = [];
+    const recordNoteView = vi.fn(
+      async (input: { id: string }) => void order.push(`view ${input.id}`)
+    );
+    const { deps: d } = deps({
+      f4: { pool: {}, seed: 1, recordNoteView } as never,
+      explanations: {
+        explain: vi.fn(async (input: { relationId: string }) => {
+          order.push(`explain ${input.relationId}`);
+          return { relationId: input.relationId, text: "t" };
+        })
+      } as never
+    });
+    const detail = await (await createSoakPorts(d)).explain(2, 0);
+    expect(queries.relationSourceNotes).toHaveBeenCalledWith({}, ["r1", "r2"]);
+    expect(order).toEqual(["view n1", "explain r1", "explain r2"]);
+    expect(detail).toMatchObject({ opened: 2, explained: 2, notePages: 1 });
+    // A view that cannot be recorded never stops the opens.
+    queries.relationSourceNotes.mockRejectedValueOnce(new Error("pool closed"));
+    expect(await (await createSoakPorts(d)).explain(2, 1)).toMatchObject({
+      explained: 2,
+      notePages: null
+    });
   });
 
   it("edits a note at the revision it read, and says when there is none", async () => {

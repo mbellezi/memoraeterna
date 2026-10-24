@@ -719,7 +719,11 @@ void app.whenReady().then(() => {
       [relationExplainBackfillJobType]: explainBackfillExecutor({
         getPool: () => databaseService?.getPool() ?? null,
         backfill: (relationId, options) => relationExplanationService.backfill(relationId, options),
-        wake: () => jobSupervisor?.wake("light")
+        wake: () => jobSupervisor?.wake("light"),
+        // The 7-day soak's drop step 3 lowers the day's allowance (DEV, F4 T89).
+        ...(soakPreparation?.backfillDailyRelations
+          ? { dailyRelations: soakPreparation.backfillDailyRelations }
+          : {})
       })
     },
     topicHooks: topicTreeServices.hooks,

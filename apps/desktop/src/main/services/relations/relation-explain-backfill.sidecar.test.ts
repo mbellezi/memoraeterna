@@ -271,6 +271,16 @@ describe.skipIf(!sidecarInstalled)("the explanation backfill on a real PostgreSQ
       new AbortController().signal
     );
     expect(result).toEqual({ status: "completed", remaining: 20, queued: 0 });
+    // A DEV override (the soak's drop step 3) lowers the day's allowance for the next pass.
+    const lowered = explainBackfillExecutor({
+      getPool: () => pool!,
+      backfill: async () => "written",
+      now: () => now,
+      dailyRelations: () => 10
+    });
+    expect(
+      await lowered.execute({ ...job, payload: { pass: true } }, new AbortController().signal)
+    ).toEqual({ status: "completed", remaining: 10, queued: 0 });
     const next = await pool!.query<{ runAfter: Date }>(
       `select run_after as "runAfter" from jobs where dedupe_key = $1 and status = 'queued'`,
       [relationExplainBackfillPassKey]

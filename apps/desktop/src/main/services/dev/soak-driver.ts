@@ -73,7 +73,7 @@ export interface SoakF4Runtime {
   windows: WindowRunner;
   /** The harness token cap's snapshot (its spend is the one the drop steps project from). */
   cap: { snapshot(): CapSnapshot };
-  /** Backfill's daily cap, lowered by drop step 3 where the app has such an override. */
+  /** The explanation backfill's daily allowance, lowered by drop step 3 (read at its next pass). */
   setBackfillCap?: (calls: number) => void;
   /** A DEV command that lowers the harness cap: its tokens, or null when none was given. */
   readCapCommand?: () => Promise<number | null>;

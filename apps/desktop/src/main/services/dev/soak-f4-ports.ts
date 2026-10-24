@@ -11,7 +11,8 @@ import {
   pickTopicToOpen,
   readFinishedJobs,
   readLockWaits,
-  readOutcomeChanges
+  readOutcomeChanges,
+  relationSourceNotes
 } from "./soak-queries.js";
 import type { SoakSample } from "./soak-records.js";
 import type { CapSnapshot } from "./soak-token-cap.js";
@@ -19,7 +20,8 @@ import { deriveWorkerStates } from "./soak-workers.js";
 
 /**
  * The F4 part of the soak driver's ports (T89): the actions the 7-day profile adds (a topic page
- * opened, a contention burst with its six edits) and what the collector reads beside F3's sample
+ * opened, a contention burst with its six edits, the Note page an explanation is opened from) and
+ * what the collector reads beside F3's sample
  * (the status sentence, each worker's state, the harness cap, the budget's meters, the controls,
  * the power reading, locks being waited on, the machine's load), and the job and outcome ledgers
  * E2 and E3 are computed from. Nothing here reaches around a service: a topic is opened through the
@@ -35,6 +37,11 @@ export interface SoakF4PortsDeps {
   topicOverview(topicId: string): Promise<unknown>;
   /** The view history entry a page open records (`REFRESH` reads the open count). */
   recordTopicView(input: { id: string; title: string }): Promise<unknown>;
+  /**
+   * The view history entry a Note page records before its relation cards show (T84: the
+   * explanation backfill's daily pass reads the notes opened in the last days).
+   */
+  recordNoteView(input: { id: string; title: string }): Promise<unknown>;
   /** Asks the topic engine for an audit pass of the tree now. */
   requestAudit(treeId: string): Promise<unknown>;
   jobs: { wake(): void };
@@ -73,6 +80,11 @@ type F4Ports = Pick<
 > & {
   /** What the sample holds beyond F3's, from the jobs and lanes it already read. */
   sampleDetail(base: Pick<SoakSample, "jobs" | "lanes">): Promise<Partial<SoakSample>>;
+  /**
+   * The Note pages an explanation open starts from: each relation's source note recorded once in
+   * the view history, as the page records it. Returns how many notes were recorded.
+   */
+  openNotePages(relationIds: readonly string[]): Promise<number>;
 };
 
 export function createF4Ports(deps: SoakF4PortsDeps): F4Ports {
@@ -100,6 +112,13 @@ export function createF4Ports(deps: SoakF4PortsDeps): F4Ports {
           { cause: error }
         );
       }
+    },
+
+    async openNotePages(relationIds) {
+      const notes = await relationSourceNotes(pool, relationIds);
+      for (const note of notes)
+        await deps.recordNoteView({ id: note.id, title: note.title.slice(0, 300) });
+      return notes.length;
     },
 
     async contentionBurst(index, reembeds): Promise<ActionDetail> {

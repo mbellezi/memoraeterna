@@ -311,6 +311,8 @@ async function play(options: {
     flush: () => file.flush()
   };
   const w = world(sink, options.cap, () => clock.now());
+  // The allowances drop step 3 gives the explanation backfill.
+  const backfillCaps: number[] = [];
   const f4: SoakF4Runtime = {
     windows: new WindowRunner({
       ports: w.windowPorts,
@@ -319,6 +321,7 @@ async function play(options: {
       logger: { info: () => undefined, error: (...a: unknown[]) => console.error(...a) }
     }),
     cap: w.cap,
+    setBackfillCap: (calls) => void backfillCaps.push(calls),
     isExhausted: () => w.cap.isExhausted
   };
   const overrides = options.ports?.(w) ?? {};
@@ -369,7 +372,7 @@ async function play(options: {
   // The run ends with its duration unless something ends it sooner.
   await clock.advance(Math.max(options.minutes, 181) * minute);
   const outcome = await done;
-  return { directory, sink, w, outcome, clock };
+  return { directory, sink, w, outcome, clock, backfillCaps };
 }
 
 const truths = (sink: MemoryEventSink) =>
@@ -497,7 +500,7 @@ describe("the 7-day driver on a virtual clock", () => {
   }, 120_000);
 
   it("takes the drop steps at the hourly checks, one at a time, and never reverts them", async () => {
-    const { sink } = await play({
+    const { sink, backfillCaps } = await play({
       cap: 400_000,
       minutes: 181,
       mutate: (world, now) => {
@@ -513,6 +516,8 @@ describe("the 7-day driver on a virtual clock", () => {
     expect(drops.map((event) => event.type === "drop_step" && event.step)).toEqual(
       [1, 2, 3, 4, 5].slice(0, drops.length)
     );
+    // Step 3 lowers the explanation backfill's daily allowance from 20 to 10, once.
+    expect(backfillCaps).toEqual(drops.length >= 3 ? [10] : []);
     const skipped = sink.events.filter(
       (event) => event.type === "action" && event.status === "skipped"
     );
