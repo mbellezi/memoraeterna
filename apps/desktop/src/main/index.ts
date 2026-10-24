@@ -768,7 +768,13 @@ void app.whenReady().then(() => {
       : [],
     logger: console
   });
-  registerGardenerStatusIpc(ipcMain, gardenerStatus);
+  registerGardenerStatusIpc(ipcMain, gardenerStatus, {
+    // The Activity's "Resume": the pause is a Knowledge control, and the status follows its change.
+    resume: async () => {
+      if (!backgroundPolicy) throw new Error("errors.database.notReady");
+      await backgroundPolicy.controls.update({ paused: false });
+    }
+  });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,

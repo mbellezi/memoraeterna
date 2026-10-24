@@ -84,6 +84,70 @@
       }
     }
   },
+  "activity": {
+    "title": "Activity",
+    "pill": {
+      "label": "Activity: {status}",
+      "loading": "Checking what is happening...",
+      "unavailable": "Activity is not available right now.",
+      "badge": "{count} waiting for your review"
+    },
+    "drawer": {
+      "close": "Close activity",
+      "loadFailed": "Activity could not be loaded."
+    },
+    "sections": {
+      "now": "Now",
+      "waiting": "Waiting",
+      "needsYou": "Needs you",
+      "done": "Done",
+      "budget": "Budget"
+    },
+    "now": {
+      "nothing": "Nothing is running right now.",
+      "running": "Running",
+      "waiting": "Waiting",
+      "onHold": "On hold",
+      "coverage": {
+        "placed": "Notes placed in topics",
+        "matched": "Connections checked",
+        "overviewsFresh": "Topic overviews up to date"
+      }
+    },
+    "waiting": {
+      "empty": "Nothing is waiting."
+    },
+    "needsYou": {
+      "empty": "Nothing needs your attention.",
+      "inbox": "Waiting for your review: {count}",
+      "openInbox": "Open Inbox"
+    },
+    "done": {
+      "empty": "Nothing was changed automatically yet.",
+      "loadFailed": "Recent changes could not be loaded.",
+      "undo": "Undo",
+      "undoing": "Undoing...",
+      "undone": "Change undone.",
+      "undoFailed": "The change could not be undone. Try again.",
+      "undoBlocked": "It cannot be undone now: a later change depends on it.",
+      "unknownChange": "A change was made to your library."
+    },
+    "budget": {
+      "loadFailed": "The spending meters could not be loaded.",
+      "state": {
+        "open": "Under the limit",
+        "paused": "Paused near the limit",
+        "exhausted": "Limit reached"
+      },
+      "subscription": "Your AI subscription is not metered in money.",
+      "allowance": "Today’s background allowance: {share} used."
+    },
+    "actions": {
+      "resumed": "Automatic organizing resumed.",
+      "continued": "Background AI work continues this month.",
+      "failed": "That did not work. Try again."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No relevant original passages could be selected for this request. Adjust the question or source scope.",
@@ -978,10 +1042,6 @@
     "placeholder": "Search sources and evidence",
     "action": "Search",
     "empty": "No matching evidence yet.",
-    "localEmbeddingLoading": {
-      "title": "Loading local embedding model",
-      "description": "Preparing the model in memory. Search will continue automatically when it is ready."
-    },
     "scope": "Search within",
     "scopeAll": "Entire library",
     "page": "Page",

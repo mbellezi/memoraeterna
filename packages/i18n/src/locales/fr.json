@@ -84,6 +84,70 @@
       }
     }
   },
+  "activity": {
+    "title": "Activité",
+    "pill": {
+      "label": "Activité : {status}",
+      "loading": "Vérification de ce qui se passe...",
+      "unavailable": "L’activité n’est pas disponible pour le moment.",
+      "badge": "{count} en attente de votre relecture"
+    },
+    "drawer": {
+      "close": "Fermer l’activité",
+      "loadFailed": "Impossible de charger l’activité."
+    },
+    "sections": {
+      "now": "En ce moment",
+      "waiting": "En attente",
+      "needsYou": "Vous concerne",
+      "done": "Terminé",
+      "budget": "Budget"
+    },
+    "now": {
+      "nothing": "Rien n’est en cours pour le moment.",
+      "running": "En cours",
+      "waiting": "En attente",
+      "onHold": "En suspens",
+      "coverage": {
+        "placed": "Notes classées dans les sujets",
+        "matched": "Liens vérifiés",
+        "overviewsFresh": "Vues d’ensemble des sujets à jour"
+      }
+    },
+    "waiting": {
+      "empty": "Rien n’est en attente."
+    },
+    "needsYou": {
+      "empty": "Rien ne demande votre attention.",
+      "inbox": "En attente de votre relecture : {count}",
+      "openInbox": "Ouvrir la boîte de réception"
+    },
+    "done": {
+      "empty": "Rien n’a encore été modifié automatiquement.",
+      "loadFailed": "Impossible de charger les modifications récentes.",
+      "undo": "Annuler",
+      "undoing": "Annulation...",
+      "undone": "Modification annulée.",
+      "undoFailed": "Impossible d’annuler la modification. Réessayez.",
+      "undoBlocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
+      "unknownChange": "Une modification a été apportée à votre bibliothèque."
+    },
+    "budget": {
+      "loadFailed": "Impossible de charger les compteurs de dépenses.",
+      "state": {
+        "open": "Sous la limite",
+        "paused": "En pause près de la limite",
+        "exhausted": "Limite atteinte"
+      },
+      "subscription": "Votre abonnement IA n’est pas facturé à l’usage.",
+      "allowance": "Quota d’aujourd’hui pour le travail en arrière-plan : {share} utilisé."
+    },
+    "actions": {
+      "resumed": "L’organisation automatique a repris.",
+      "continued": "Le travail d’IA en arrière-plan continue ce mois-ci.",
+      "failed": "Cela n’a pas fonctionné. Réessayez."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Aucun passage original pertinent n’a pu être sélectionné pour cette demande. Ajustez la question ou le périmètre des sources.",
@@ -980,10 +1044,6 @@
     "placeholder": "Rechercher des sources et preuves",
     "action": "Rechercher",
     "empty": "Aucune preuve correspondante.",
-    "localEmbeddingLoading": {
-      "title": "Chargement du modele d'embedding local",
-      "description": "Preparation du modele en memoire. La recherche continuera automatiquement lorsqu'il sera pret."
-    },
     "scope": "Rechercher dans",
     "scopeAll": "Toute la bibliotheque",
     "page": "Page",

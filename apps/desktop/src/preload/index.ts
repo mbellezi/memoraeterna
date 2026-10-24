@@ -269,7 +269,8 @@ const api: DesktopApi = {
   },
   gardener: {
     status: async () =>
-      GardenerStatusSnapshotSchema.parse(await ipcRenderer.invoke(ipcChannels.gardenerStatus))
+      GardenerStatusSnapshotSchema.parse(await ipcRenderer.invoke(ipcChannels.gardenerStatus)),
+    resume: async () => z.null().parse(await ipcRenderer.invoke(ipcChannels.gardenerResume))
   },
   prompts: {
     command: async (input) =>

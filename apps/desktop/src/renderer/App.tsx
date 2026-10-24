@@ -45,7 +45,6 @@ import type {
   AppSettings,
   AppSettingsUpdate,
   DatabaseStatus,
-  LocalEmbeddingLoadStatus,
   KnowledgeGraphDashboardMode,
   StorageSettings,
   SystemInfo
@@ -70,7 +69,8 @@ import { LibraryView, type LibraryExternalTarget } from "./components/LibraryVie
 import type { OpenableNavigation } from "./components/WhereIsThis";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
-import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog";
+import { ActivityHost } from "./components/activity/ActivityHost";
+import type { ActivityNavigation } from "./components/activity/activity-model";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
@@ -189,8 +189,6 @@ export function App({
   const knowledgeGraphViewStates = useRef<
     Partial<Record<KnowledgeGraphDashboardMode, KnowledgeGraphViewState>>
   >({});
-  const [localEmbeddingLoadStatus, setLocalEmbeddingLoadStatus] =
-    useState<LocalEmbeddingLoadStatus | null>(null);
   const libraryTargetToken = useRef(0);
   const activeViewRef = useRef(activeView);
   const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
@@ -321,16 +319,6 @@ export function App({
         if (activeViewRef.current !== "library") return false;
         if (direction === "back") window.history.back();
         else window.history.forward();
-      }),
-    []
-  );
-
-  useEffect(
-    () =>
-      window.app.ai.subscribeLocalEmbeddingLoadStatus((status) => {
-        setLocalEmbeddingLoadStatus((current) =>
-          status.state === "loading" ? status : current?.modelId === status.modelId ? null : current
-        );
       }),
     []
   );
@@ -557,6 +545,11 @@ export function App({
   const goToView = useStableCallback((view: ViewId) => {
     if (view === "settings") selectSettingsScope("overview");
     setActiveView(view);
+  });
+  // What an Activity action leads to: a place in Settings.
+  const openFromActivity = useStableCallback((target: ActivityNavigation) => {
+    selectSettingsScope(target.scope);
+    setActiveView(target.view);
   });
 
   const handleMenuCommand = useStableCallback((command: AppMenuCommand) =>
@@ -803,8 +796,11 @@ export function App({
       </aside>
 
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center border-b border-border bg-background px-5">
-          <h1 className="text-base font-medium text-foreground">{t(pageTitle)}</h1>
+        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background px-5">
+          <h1 className="shrink-0 text-base font-medium text-foreground">{t(pageTitle)}</h1>
+          <div className="ml-auto flex min-w-0 justify-end">
+            <ActivityHost t={t} onNavigate={openFromActivity} />
+          </div>
         </header>
         <div
           ref={scrollContainerRef}
@@ -936,7 +932,6 @@ export function App({
         dismissLabel={t("shell.toasts.dismiss")}
         onDismiss={dismissToast}
       />
-      <LocalEmbeddingLoadDialog status={localEmbeddingLoadStatus} t={t} />
       <TopicNoticeHost t={t} />
     </div>
   );

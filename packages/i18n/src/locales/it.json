@@ -84,6 +84,70 @@
       }
     }
   },
+  "activity": {
+    "title": "Attività",
+    "pill": {
+      "label": "Attività: {status}",
+      "loading": "Controllo di cosa sta succedendo...",
+      "unavailable": "L’attività non è disponibile al momento.",
+      "badge": "{count} in attesa della tua revisione"
+    },
+    "drawer": {
+      "close": "Chiudi attività",
+      "loadFailed": "Impossibile caricare l’attività."
+    },
+    "sections": {
+      "now": "Adesso",
+      "waiting": "In attesa",
+      "needsYou": "Serve il tuo intervento",
+      "done": "Completato",
+      "budget": "Budget"
+    },
+    "now": {
+      "nothing": "Al momento non è in corso nulla.",
+      "running": "In corso",
+      "waiting": "In attesa",
+      "onHold": "In sospeso",
+      "coverage": {
+        "placed": "Note collocate negli argomenti",
+        "matched": "Collegamenti verificati",
+        "overviewsFresh": "Panoramiche degli argomenti aggiornate"
+      }
+    },
+    "waiting": {
+      "empty": "Nulla è in attesa."
+    },
+    "needsYou": {
+      "empty": "Nulla richiede la tua attenzione.",
+      "inbox": "In attesa della tua revisione: {count}",
+      "openInbox": "Apri la posta in arrivo"
+    },
+    "done": {
+      "empty": "Non è ancora stato modificato nulla in automatico.",
+      "loadFailed": "Impossibile caricare le modifiche recenti.",
+      "undo": "Annulla",
+      "undoing": "Annullamento...",
+      "undone": "Modifica annullata.",
+      "undoFailed": "Impossibile annullare la modifica. Riprova.",
+      "undoBlocked": "Non si può annullare ora: una modifica successiva ne dipende.",
+      "unknownChange": "È stata apportata una modifica alla tua libreria."
+    },
+    "budget": {
+      "loadFailed": "Impossibile caricare i contatori di spesa.",
+      "state": {
+        "open": "Entro il limite",
+        "paused": "In pausa vicino al limite",
+        "exhausted": "Limite raggiunto"
+      },
+      "subscription": "Il tuo abbonamento IA non è misurato in denaro.",
+      "allowance": "Quota di oggi per il lavoro in background: {share} usata."
+    },
+    "actions": {
+      "resumed": "Organizzazione automatica ripresa.",
+      "continued": "Il lavoro di IA in background continua questo mese.",
+      "failed": "Non ha funzionato. Riprova."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti.",
@@ -976,10 +1040,6 @@
     "placeholder": "Cerca fonti ed evidenze",
     "action": "Cerca",
     "empty": "Nessuna evidenza corrispondente.",
-    "localEmbeddingLoading": {
-      "title": "Caricamento del modello di embedding locale",
-      "description": "Preparazione del modello in memoria. La ricerca continuera automaticamente quando sara pronto."
-    },
     "scope": "Cerca in",
     "scopeAll": "Intera libreria",
     "page": "Pagina",

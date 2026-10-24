@@ -19,7 +19,6 @@ import {
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchResultCard, SearchView } from "./SearchView";
-import { LocalEmbeddingLoadDialog } from "./LocalEmbeddingLoadDialog";
 import {
   breadcrumbChain,
   childrenOf,
@@ -144,21 +143,6 @@ describe("phase 2 renderer views", () => {
 
     expect(html).toContain("Organização");
     expect(html).not.toContain(">Organization<");
-  });
-
-  it("renders an animated modal while a local embedding model is loading", () => {
-    const html = renderToString(
-      <LocalEmbeddingLoadDialog
-        status={{ state: "loading", modelId: "embeddinggemma-test" }}
-        t={t}
-      />
-    );
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain("Loading local embedding model");
-    expect(html).toContain("embeddinggemma-test");
-    expect(html).toContain("animate-spin");
-    expect(renderToString(<LocalEmbeddingLoadDialog status={null} t={t} />)).toBe("");
   });
 
   it("reports remote model connection test results", async () => {

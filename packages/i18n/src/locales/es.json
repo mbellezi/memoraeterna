@@ -84,6 +84,70 @@
       }
     }
   },
+  "activity": {
+    "title": "Actividad",
+    "pill": {
+      "label": "Actividad: {status}",
+      "loading": "Comprobando qué está pasando...",
+      "unavailable": "La actividad no está disponible en este momento.",
+      "badge": "{count} esperando tu revisión"
+    },
+    "drawer": {
+      "close": "Cerrar actividad",
+      "loadFailed": "No se pudo cargar la actividad."
+    },
+    "sections": {
+      "now": "Ahora",
+      "waiting": "En espera",
+      "needsYou": "Necesita tu atención",
+      "done": "Hecho",
+      "budget": "Presupuesto"
+    },
+    "now": {
+      "nothing": "No hay nada en curso ahora mismo.",
+      "running": "En curso",
+      "waiting": "En espera",
+      "onHold": "En suspenso",
+      "coverage": {
+        "placed": "Notas ubicadas en temas",
+        "matched": "Conexiones comprobadas",
+        "overviewsFresh": "Visiones generales de temas al día"
+      }
+    },
+    "waiting": {
+      "empty": "No hay nada en espera."
+    },
+    "needsYou": {
+      "empty": "Nada requiere tu atención.",
+      "inbox": "Esperando tu revisión: {count}",
+      "openInbox": "Abrir la bandeja de entrada"
+    },
+    "done": {
+      "empty": "Todavía no se ha cambiado nada automáticamente.",
+      "loadFailed": "No se pudieron cargar los cambios recientes.",
+      "undo": "Deshacer",
+      "undoing": "Deshaciendo...",
+      "undone": "Cambio deshecho.",
+      "undoFailed": "No se pudo deshacer el cambio. Inténtalo de nuevo.",
+      "undoBlocked": "No se puede deshacer ahora: un cambio posterior depende de él.",
+      "unknownChange": "Se hizo un cambio en tu biblioteca."
+    },
+    "budget": {
+      "loadFailed": "No se pudieron cargar los medidores de gasto.",
+      "state": {
+        "open": "Por debajo del límite",
+        "paused": "En pausa cerca del límite",
+        "exhausted": "Límite alcanzado"
+      },
+      "subscription": "Tu suscripción de IA no se mide en dinero.",
+      "allowance": "Cuota de hoy para el trabajo en segundo plano: {share} usada."
+    },
+    "actions": {
+      "resumed": "La organización automática se reanudó.",
+      "continued": "El trabajo de IA en segundo plano continúa este mes.",
+      "failed": "No funcionó. Inténtalo de nuevo."
+    }
+  },
   "consultation": {
     "errors": {
       "noRelevantEvidence": "No se pudieron seleccionar pasajes originales relevantes para esta solicitud. Ajusta la pregunta o el ámbito de las fuentes.",
@@ -982,10 +1046,6 @@
     "placeholder": "Buscar fuentes y evidencias",
     "action": "Buscar",
     "empty": "No hay evidencias coincidentes.",
-    "localEmbeddingLoading": {
-      "title": "Cargando el modelo de embedding local",
-      "description": "Preparando el modelo en memoria. La busqueda continuara automaticamente cuando este listo."
-    },
     "scope": "Buscar dentro de",
     "scopeAll": "Toda la biblioteca",
     "page": "Pagina",

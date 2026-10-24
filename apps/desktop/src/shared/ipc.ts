@@ -136,6 +136,8 @@ export const ipcChannels = {
   budgetContinue: "app:budget:continue",
   /** F4 D27: the Gardener's status now (what it does or why it does not; also pushed as `gardener.status`). */
   gardenerStatus: "app:gardener:status",
+  /** F4 T93: the Activity's "Resume" lifts the person's pause of the Gardener (`knowledge.controls.v1`). */
+  gardenerResume: "app:gardener:resume",
   promptCommand: "app:prompts:command",
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
@@ -1890,6 +1892,11 @@ export interface DesktopApi {
      * `statusSentence()` from `@app/domain` renders it for a locale.
      */
     status: () => Promise<GardenerStatusSnapshot>;
+    /**
+     * Lifts the person's pause of the Gardener (the Activity's "Resume"). The new status follows as
+     * a `gardener.status` event; nothing else about the controls changes.
+     */
+    resume: () => Promise<null>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
   objects: {

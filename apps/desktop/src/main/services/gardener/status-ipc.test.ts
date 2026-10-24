@@ -37,6 +37,47 @@ describe("the Gardener status over IPC (F4 D27)", () => {
     expect(service.snapshot).not.toHaveBeenCalled();
   });
 
+  describe("resume (the Activity's one action on the controls)", () => {
+    function registerWithResume(resume: () => Promise<void>) {
+      const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+      const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
+      registerGardenerStatusIpc(
+        ipc as unknown as IpcMain,
+        { snapshot: async () => status as never },
+        { resume }
+      );
+      return {
+        handlers,
+        call: (...args: unknown[]) => handlers.get(ipcChannels.gardenerResume)!({}, ...args)
+      };
+    }
+
+    it("registers its channel only when the host can resume, and answers null", async () => {
+      expect(register(status).channels).not.toContain(ipcChannels.gardenerResume);
+      const resume = vi.fn(async () => undefined);
+      const { handlers, call } = registerWithResume(resume);
+      expect([...handlers.keys()].sort()).toEqual(
+        [ipcChannels.gardenerResume, ipcChannels.gardenerStatus].sort()
+      );
+      await expect(call()).resolves.toBeNull();
+      expect(resume).toHaveBeenCalledOnce();
+    });
+
+    it("takes no argument", async () => {
+      const resume = vi.fn(async () => undefined);
+      const { call } = registerWithResume(resume);
+      await expect(call({ paused: false })).rejects.toThrow();
+      expect(resume).not.toHaveBeenCalled();
+    });
+
+    it("lets a failure reach the renderer, which keeps the action retryable", async () => {
+      const { call } = registerWithResume(async () => {
+        throw new Error("errors.database.notReady");
+      });
+      await expect(call()).rejects.toThrow("errors.database.notReady");
+    });
+  });
+
   it("never hands the renderer a snapshot outside its contract", async () => {
     await expect(register({ ...status, class: "cap" }).call()).rejects.toThrow();
     await expect(register({ ...status, state: "sleeping" }).call()).rejects.toThrow();

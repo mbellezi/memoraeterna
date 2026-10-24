@@ -56,6 +56,32 @@ describe("App", () => {
     expect(html).toContain("overflow-y-auto overscroll-contain");
     expect(html).toContain("overflow-auto overscroll-contain");
   });
+
+  it("shows the Activity pill in the header, and no modal stands over a model loading", () => {
+    const html = renderToString(
+      <App
+        initialDatabaseStatus={{
+          state: "ready",
+          messageKey: "database.status.ready",
+          updatedAt: new Date(0).toISOString()
+        }}
+        initialSettings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        initialAppSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        initialSystemInfo={null}
+      />
+    );
+    const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
+    expect(header).toContain("Checking what is happening...");
+    expect(header).toContain('aria-expanded="false"');
+    expect(html).not.toContain('aria-modal="true"');
+  });
 });
 
 describe("startup theme", () => {
