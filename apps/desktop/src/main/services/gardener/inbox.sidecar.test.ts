@@ -1,0 +1,797 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  PostgresSidecarManager,
+  closePgPool,
+  createAtomicNoteRelationRepository,
+  createGardenerFindingRepository,
+  createNoteMatchStateRepository,
+  createPgPool,
+  createRelationMatchRunRepository,
+  resolvePostgresSidecarPaths,
+  runMigrations,
+  type PgPool
+} from "@app/db";
+import {
+  InboxListSchema,
+  inboxKinds,
+  type BudgetSnapshot,
+  type InboxItem,
+  type InboxKind
+} from "@app/domain";
+
+import type { AppEvent } from "../../../shared/app-events.js";
+import { RelationMatchBacklog } from "../relations/relation-match-backlog.js";
+import { RelationReviewService } from "../relation-review-service.js";
+import { ChangesService } from "./changes-service.js";
+import { InboxService, type InboxServiceOptions } from "./inbox-service.js";
+
+// F4 D29 on a real PostgreSQL database: one ordered listing of what waits for the owner across
+// the stores, its counts, and every verb carried out through the store's own writer.
+const workspace = resolve(import.meta.dirname, "../../../../../..");
+const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
+const sidecarInstalled = existsSync(join(sidecar.binDir, "postgres"));
+
+const snapshot = (
+  state: "open" | "paused" | "exhausted",
+  options: { month?: string; continued?: boolean } = {}
+): BudgetSnapshot => ({
+  month: options.month ?? "2026-10",
+  day: "2026-10-24",
+  money: {
+    spentUsd: state === "open" ? 1 : 4.123,
+    reservedUsd: 0,
+    capUsd: 5,
+    pauseShare: 0.8,
+    continued: options.continued ?? false,
+    state,
+    priceTableVersion: "test"
+  },
+  calls: { usedCalls: 0, reservedCalls: 0, capCalls: 800, state: "open" }
+});
+
+describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", () => {
+  let workDir = "";
+  let manager: PostgresSidecarManager | undefined;
+  let pool: PgPool | undefined;
+  const published: AppEvent[] = [];
+  const handlers = new Map<string, Array<(event: AppEvent) => void>>();
+  const retryJob = vi.fn<(jobId: string) => Promise<unknown>>();
+  const accept = vi.fn();
+  const budget = {
+    snapshot: vi.fn<() => Promise<BudgetSnapshot>>(),
+    continue: vi.fn<() => Promise<BudgetSnapshot>>()
+  };
+  let conflicts: NonNullable<InboxServiceOptions["obsidianConflicts"]> = async () => [];
+  const relationsChanged = vi.fn();
+
+  const build = (overrides: Partial<InboxServiceOptions> = {}) =>
+    new InboxService({
+      getPool: () => pool ?? null,
+      changes: new ChangesService({ getPool: () => pool ?? null, relationsChanged }),
+      reviewRelation: (input) =>
+        new RelationReviewService({ getPool: () => pool ?? null, relationsChanged }).review(input),
+      matchBacklog: () => ({ accept }),
+      retryJob,
+      budget,
+      obsidianConflicts: () => conflicts(),
+      events: {
+        publish: (event) => published.push(event),
+        subscribe: (type, handler) => {
+          const list = handlers.get(type) ?? [];
+          list.push(handler as (event: AppEvent) => void);
+          handlers.set(type, list);
+          return () => undefined;
+        }
+      },
+      refreshDelayMs: 5,
+      ...overrides
+    });
+  let inbox = build();
+
+  beforeAll(async () => {
+    workDir = await mkdtemp(join(tmpdir(), "memora-inbox-"));
+    let connection: Awaited<ReturnType<PostgresSidecarManager["start"]>> | undefined;
+    for (let attempt = 1; !connection; attempt += 1) {
+      manager = new PostgresSidecarManager({
+        binDir: sidecar.binDir,
+        dataDir: join(workDir, `data-${attempt}`),
+        database: "memora_inbox_test",
+        user: "memora_inbox_test",
+        password: `inbox-${randomUUID()}`,
+        startupTimeoutMs: 30_000,
+        shutdownTimeoutMs: 10_000
+      });
+      try {
+        connection = await manager.start();
+      } catch (error) {
+        await manager.stop().catch(() => undefined);
+        if (attempt >= 3) throw error;
+      }
+    }
+    pool = createPgPool({ connectionString: connection.connectionString, max: 4 });
+    await runMigrations(pool, join(workspace, "packages/db/drizzle"), {
+      seedFolder: join(workspace, "packages/db/seed")
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    inbox.dispose();
+    if (pool) await closePgPool(pool);
+    await manager?.stop().catch(() => undefined);
+    if (workDir) await rm(workDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    const db = pool!;
+    for (const table of [
+      "relation_events",
+      "relation_match_runs",
+      "atomic_note_relations",
+      "gardener_findings",
+      "gardener_outcomes",
+      "note_match_state",
+      "jobs"
+    ])
+      await db.query(`delete from ${table}`);
+    published.length = 0;
+    handlers.clear();
+    retryJob.mockReset();
+    accept.mockReset();
+    budget.snapshot.mockReset();
+    budget.continue.mockReset();
+    relationsChanged.mockReset();
+    conflicts = async () => [];
+    inbox.dispose();
+    inbox = build();
+  });
+
+  /** A source with a chunk, and a note on it with current evidence. */
+  const seedNote = async (title: string) => {
+    const db = pool!;
+    const sourceId = randomUUID(),
+      documentId = randomUUID(),
+      chunkId = randomUUID(),
+      id = randomUUID();
+    await db.query(`insert into source_items (id, type, title) values ($1, 'PersonalNote', $2)`, [
+      sourceId,
+      title
+    ]);
+    await db.query(
+      `insert into documents (id, source_item_id, title, canonical_markdown, content_hash)
+       values ($1, $2, $3, 'seed', $4)`,
+      [documentId, sourceId, title, `hash-${documentId}`]
+    );
+    await db.query(
+      `insert into chunks (id, document_id, source_item_id, chunk_index, content, content_hash)
+       values ($1, $2, $3, 0, $4, $5)`,
+      [chunkId, documentId, sourceId, `${title} passage.`, `chunk-${chunkId}`]
+    );
+    await db.query(
+      `insert into atomic_notes (id, title, body_markdown, idea_statement, status,
+         supersession_status, ownership, created_from_source_item_id, owning_source_item_id,
+         evidence_chunk_id, generation_provider, generation_model, generation_runtime,
+         generation_prompt_version, generation_key)
+       values ($1, $2, $3, $4, 'pending_review', 'current', 'source', $5, $5, $6, 'seed', 'seed',
+               'local', 'seed', $7)`,
+      [id, title, `${title} body.`, `${title} idea.`, sourceId, chunkId, `key-${id}`]
+    );
+    return { id, sourceId };
+  };
+
+  /** A finished pass that suggested one typed relation; it waits for review when asked. */
+  const seedPass = async (pendingReview: boolean) => {
+    const notes = [await seedNote("Retrieval"), await seedNote("Feedback")].sort((a, b) =>
+      a.id < b.id ? -1 : 1
+    );
+    const runs = createRelationMatchRunRepository(pool!);
+    const run = await runs.start({ kind: "match", pendingReview });
+    const written = await createAtomicNoteRelationRepository(pool!).upsert({
+      loAtomicNoteId: notes[0]!.id,
+      hiAtomicNoteId: notes[1]!.id,
+      direction: "lo_to_hi",
+      relationType: "supports",
+      band: "suggest",
+      probability: 0.6,
+      finalScore: 0.6,
+      explanation: "knowledge.relations.explanations.reranked",
+      runId: run.id
+    });
+    await runs.finish(run.id, { outcome: "completed" });
+    return { runId: run.id, relationId: written.relation.id, notes };
+  };
+
+  /** A suggested `contradicts` relation, or a withdrawn one when `vetoed`. */
+  const seedRelation = async (kind: "contradicts" | "supports", vetoed = false) => {
+    const notes = [await seedNote("Alpha"), await seedNote("Beta")].sort((a, b) =>
+      a.id < b.id ? -1 : 1
+    );
+    const runs = createRelationMatchRunRepository(pool!);
+    const run = await runs.start({ kind: "match" });
+    const relations = createAtomicNoteRelationRepository(pool!);
+    const written = await relations.upsert({
+      loAtomicNoteId: notes[0]!.id,
+      hiAtomicNoteId: notes[1]!.id,
+      direction: kind === "contradicts" ? "symmetric" : "lo_to_hi",
+      relationType: kind,
+      band: "suggest",
+      probability: 0.6,
+      finalScore: 0.6,
+      explanation: "knowledge.relations.explanations.reranked",
+      runId: run.id
+    });
+    if (vetoed) await relations.veto(written.relation.id, "explainer", run.id);
+    return { id: written.relation.id, notes };
+  };
+
+  /** A subject that failed twice on one input: its job, and the outcome that quarantined it. */
+  const seedQuarantine = async (subjectKey: string, minutesAgo = 10) => {
+    const db = pool!;
+    const jobId = randomUUID();
+    await db.query(
+      `insert into jobs (id, type, status, lane, payload, attempts, max_attempts, error, finished_at,
+         subject_key)
+       values ($1, 'topic-overview', 'failed', 'light', '{}'::jsonb, 6, 6, 'boom', now(), $2)`,
+      [jobId, subjectKey]
+    );
+    await db.query(
+      `insert into gardener_outcomes (kind, subject_key, last_outcome, failed_fingerprint,
+         consecutive_failures, last_error_class, last_job_id, quarantined_at)
+       values ('topic-overview', $1, 'failed', 'fp', 2, 'invalid_output', $2,
+               now() - make_interval(mins => $3))`,
+      [subjectKey, jobId, minutesAgo]
+    );
+    return { jobId, id: `topic-overview|${subjectKey}` };
+  };
+
+  const finding = (
+    kind: "duplicate" | "backlog" | "budget",
+    fingerprint: string,
+    params: Record<string, string | number> = {},
+    refs: string[] = [],
+    risk: "low" | "medium" | "high" = "low"
+  ) =>
+    createGardenerFindingRepository(pool!).record([
+      { kind, fingerprint, objectRefs: refs, params, risk }
+    ]);
+
+  const openFindingId = async (kind: string) =>
+    (
+      await pool!.query<{ id: string }>(
+        "select id from gardener_findings where kind = $1 and status = 'open'",
+        [kind]
+      )
+    ).rows[0]!.id;
+
+  const idsOf = (items: readonly InboxItem[]) => items.map((item) => `${item.kind}:${item.id}`);
+
+  it("lists nothing and counts zero for an empty library", async () => {
+    expect(await inbox.list({})).toEqual({ items: [], nextCursor: null });
+    const counts = await inbox.counts();
+    expect(counts.total).toBe(0);
+    expect(Object.keys(counts.byKind).sort()).toEqual([...inboxKinds].sort());
+  });
+
+  it("lists every kind by risk then age, names the objects by title and offers each kind's verbs", async () => {
+    const pass = await seedPass(true);
+    const contradiction = await seedRelation("contradicts");
+    const withdrawn = await seedRelation("supports", true);
+    const subject = await seedNote("Subject");
+    const quarantine = await seedQuarantine(`note:${subject.id}`);
+    const [noteA, noteB] = [await seedNote("Nap"), await seedNote("Sleep")];
+    await finding("duplicate", "dup:1", { reason: "vector", cosine: 0.98 }, [
+      `memora://note/${noteA.id}`,
+      `memora://note/${noteB.id}`
+    ]);
+    await finding("backlog", "match:abc", { task: "match", reason: "decider_changed", notes: 12 });
+    await finding(
+      "budget",
+      "money_100:2026-10",
+      { month: "2026-10", spentUsd: 5, capUsd: 5 },
+      [],
+      "high"
+    );
+    conflicts = async () => [
+      {
+        id: randomUUID(),
+        path: "Notes/a.md",
+        variant: "editorial",
+        at: new Date("2026-10-01T00:00:00Z")
+      }
+    ];
+
+    const list = await inbox.list({});
+    InboxListSchema.parse(list);
+    expect(list.nextCursor).toBeNull();
+    const byKind = new Map<InboxKind, InboxItem>(list.items.map((item) => [item.kind, item]));
+    expect([...byKind.keys()].sort()).toEqual([...inboxKinds].sort());
+
+    // High risk first (the budget), then medium by age, then low by age.
+    expect(list.items[0]).toMatchObject({ kind: "budget", risk: "high", variant: "money_100" });
+    const risks = list.items.map((item) => item.risk);
+    expect(risks).toEqual(
+      [...risks].sort((a, b) => "high medium low".indexOf(a) - "high medium low".indexOf(b))
+    );
+
+    expect(byKind.get("review")).toMatchObject({
+      id: `relation:${pass.runId}`,
+      variant: "relation",
+      actions: ["apply", "dismiss"],
+      changeSet: { kind: "relation", status: "pending_review" }
+    });
+    expect(byKind.get("contradiction")).toMatchObject({
+      id: contradiction.id,
+      variant: "relation",
+      params: { relationType: "contradicts" },
+      actions: ["apply", "dismiss"]
+    });
+    expect(
+      byKind
+        .get("contradiction")!
+        .objects.map((object) => object.title)
+        .sort()
+    ).toEqual(["Alpha", "Beta"]);
+    expect(byKind.get("withdrawn")).toMatchObject({
+      id: withdrawn.id,
+      variant: "explainer",
+      actions: ["apply", "dismiss"]
+    });
+    expect(byKind.get("quarantined")).toMatchObject({
+      id: quarantine.id,
+      variant: "refresh",
+      params: { errorClass: "invalid_output", failures: 2 },
+      actions: ["retry", "dismiss"],
+      objects: [{ kind: "note", id: subject.id, title: "Subject" }]
+    });
+    expect(byKind.get("duplicate")).toMatchObject({
+      variant: "vector",
+      params: { cosine: 0.98 },
+      actions: ["dismiss"]
+    });
+    expect(byKind.get("duplicate")!.objects.map((object) => object.title)).toEqual([
+      "Nap",
+      "Sleep"
+    ]);
+    expect(byKind.get("backlog")).toMatchObject({
+      variant: "match",
+      params: { notes: 12 },
+      actions: ["apply", "dismiss"]
+    });
+    expect(byKind.get("obsidian_conflict")).toMatchObject({
+      variant: "editorial",
+      params: { path: "Notes/a.md" },
+      actions: []
+    });
+
+    const counts = await inbox.counts();
+    expect(counts.total).toBe(list.items.length);
+    expect(counts.byKind).toMatchObject(Object.fromEntries(inboxKinds.map((kind) => [kind, 1])));
+    expect(counts.byRisk).toEqual({
+      high: list.items.filter((item) => item.risk === "high").length,
+      medium: list.items.filter((item) => item.risk === "medium").length,
+      low: list.items.filter((item) => item.risk === "low").length
+    });
+  });
+
+  it("pages by risk and age with a cursor that never repeats or skips an item, vault conflicts included", async () => {
+    for (let n = 0; n < 4; n += 1) await finding("duplicate", `dup:${n}`, { reason: "title" });
+    for (let n = 0; n < 3; n += 1) await seedQuarantine(`note:${randomUUID()}`, 30 - n);
+    const vault = [1, 2].map((n) => ({
+      id: randomUUID(),
+      path: `Notes/${n}.md`,
+      variant: "editorial" as const,
+      at: new Date(Date.UTC(2026, 9, 1, 0, n))
+    }));
+    conflicts = async () => vault;
+    const all = await inbox.list({ limit: 50 });
+    expect(all.items).toHaveLength(9);
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await inbox.list({ limit: 2, ...(cursor ? { cursor } : {}) });
+      expect(page.items.length).toBeLessThanOrEqual(2);
+      seen.push(...idsOf(page.items));
+      cursor = page.nextCursor ?? undefined;
+      pages += 1;
+    } while (cursor);
+    expect(pages).toBe(5);
+    expect(seen).toEqual(idsOf(all.items));
+    expect(new Set(seen).size).toBe(9);
+  });
+
+  it("filters by kinds and by risk, and refuses a cursor it cannot read", async () => {
+    await seedQuarantine(`note:${randomUUID()}`);
+    await finding("duplicate", "dup:1", { reason: "title" });
+    await finding("budget", "money_100:2026-10", {}, [], "high");
+    conflicts = async () => [{ id: randomUUID(), path: "a.md", variant: "deleted", at: null }];
+
+    expect((await inbox.list({ kinds: ["duplicate"] })).items.map((item) => item.kind)).toEqual([
+      "duplicate"
+    ]);
+    expect(
+      (await inbox.list({ kinds: ["obsidian_conflict"] })).items.map((item) => item.variant)
+    ).toEqual(["deleted"]);
+    expect((await inbox.list({ risk: "high" })).items.map((item) => item.kind)).toEqual(["budget"]);
+    expect((await inbox.list({ risk: "medium" })).items.map((item) => item.kind).sort()).toEqual([
+      "obsidian_conflict",
+      "quarantined"
+    ]);
+    await expect(inbox.list({ cursor: "not a cursor" })).rejects.toThrow(
+      "inbox.errors.invalidCursor"
+    );
+  });
+
+  it("applies and dismisses a change-set that waits, through the changes writer", async () => {
+    const kept = await seedPass(true);
+    const dropped = await seedPass(true);
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${kept.runId}`, action: "apply" })
+    ).toEqual({
+      status: "done",
+      undoable: true
+    });
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${dropped.runId}`, action: "dismiss" })
+    ).toEqual({
+      status: "done",
+      undoable: false
+    });
+    // Both left the Inbox, and the dismissed pass is reverted: its relation is gone.
+    expect((await inbox.list({})).items).toEqual([]);
+    expect(
+      (await pool!.query("select 1 from atomic_note_relations where id = $1", [dropped.relationId]))
+        .rowCount
+    ).toBe(0);
+    // A second request for a verdict that stands is the item gone, not a second write.
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${kept.runId}`, action: "apply" })
+    ).toEqual({
+      status: "done",
+      undoable: true
+    });
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${randomUUID()}`, action: "apply" })
+    ).toEqual({ status: "gone" });
+  });
+
+  it("takes an applied change-set back", async () => {
+    const pass = await seedPass(true);
+    await inbox.act({ kind: "review", id: `relation:${pass.runId}`, action: "apply" });
+    expect(
+      await inbox.act({ kind: "review", id: `relation:${pass.runId}`, action: "undo" })
+    ).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(
+      (await pool!.query("select 1 from atomic_note_relations where id = $1", [pass.relationId]))
+        .rowCount
+    ).toBe(0);
+  });
+
+  it("keeps or removes a suggested contradiction and a withdrawn relation, final in both directions", async () => {
+    const contradiction = await seedRelation("contradicts");
+    const withdrawn = await seedRelation("supports", true);
+    expect(
+      await inbox.act({ kind: "contradiction", id: contradiction.id, action: "apply" })
+    ).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(await inbox.act({ kind: "withdrawn", id: withdrawn.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.list({})).items).toEqual([]);
+    const status = async (id: string) =>
+      (
+        await pool!.query<{ status: string }>(
+          "select status::text as status from atomic_note_relations where id = $1",
+          [id]
+        )
+      ).rows[0]!.status;
+    expect(await status(contradiction.id)).toBe("accepted");
+    expect(await status(withdrawn.id)).toBe("rejected");
+    // A verdict that already stands is never overwritten: the other one answers stale.
+    expect(
+      await inbox.act({ kind: "contradiction", id: contradiction.id, action: "dismiss" })
+    ).toEqual({
+      status: "stale"
+    });
+    expect(await inbox.act({ kind: "withdrawn", id: randomUUID(), action: "apply" })).toEqual({
+      status: "gone"
+    });
+    expect(relationsChanged).toHaveBeenCalled();
+  });
+
+  it("retries a quarantined subject through the supervisor's retry, and dismisses it until it quarantines again", async () => {
+    const one = await seedQuarantine(`note:${randomUUID()}`);
+    const two = await seedQuarantine(`note:${randomUUID()}`);
+    retryJob.mockResolvedValue({ id: one.jobId });
+    expect(await inbox.act({ kind: "quarantined", id: one.id, action: "retry" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(retryJob).toHaveBeenCalledWith(one.jobId);
+
+    expect(await inbox.act({ kind: "quarantined", id: two.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: true
+    });
+    // The dismissed item is not listed or counted; the retried one stays until the job runs.
+    expect(idsOf((await inbox.list({ kinds: ["quarantined"] })).items)).toEqual([
+      `quarantined:${one.id}`
+    ]);
+    expect((await inbox.counts()).byKind.quarantined).toBe(1);
+
+    expect(await inbox.act({ kind: "quarantined", id: two.id, action: "undo" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.counts()).byKind.quarantined).toBe(2);
+
+    // A newer quarantine of a dismissed subject is a new item.
+    await inbox.act({ kind: "quarantined", id: two.id, action: "dismiss" });
+    await pool!.query(
+      "update gardener_outcomes set quarantined_at = now() + interval '1 minute' where subject_key = $1",
+      [two.id.split("|")[1]]
+    );
+    expect((await inbox.counts()).byKind.quarantined).toBe(2);
+
+    // A subject whose job is gone has no place for the stamp: the mark is released.
+    const orphan = await seedQuarantine(`note:${randomUUID()}`);
+    await pool!.query("delete from jobs where id = $1", [orphan.jobId]);
+    expect(await inbox.act({ kind: "quarantined", id: orphan.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(
+      await inbox
+        .act({ kind: "quarantined", id: "not-an-id", action: "retry" })
+        .catch((error: Error) => error.message)
+    ).toBe("inbox.errors.invalidItem");
+  });
+
+  it("dismisses a finding for good and takes the dismissal back", async () => {
+    await finding("duplicate", "dup:1", { reason: "title" });
+    const id = await openFindingId("duplicate");
+    expect(await inbox.act({ kind: "duplicate", id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: true
+    });
+    expect((await inbox.counts()).byKind.duplicate).toBe(0);
+    // AUDIT finding it again leaves it dismissed.
+    await finding("duplicate", "dup:1", { reason: "title" });
+    expect((await inbox.counts()).byKind.duplicate).toBe(0);
+    expect(await inbox.act({ kind: "duplicate", id, action: "dismiss" })).toEqual({
+      status: "gone"
+    });
+    expect(await inbox.act({ kind: "duplicate", id, action: "undo" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.counts()).byKind.duplicate).toBe(1);
+    // A finding is only reachable through its own kind.
+    expect(await inbox.act({ kind: "backlog", id, action: "dismiss" })).toEqual({ status: "gone" });
+    expect(await inbox.act({ kind: "duplicate", id, action: "apply" })).toEqual({
+      status: "unsupported"
+    });
+  });
+
+  it("accepts the MATCH backlog through its service and maps what it answers", async () => {
+    await finding("backlog", "match:abc", { task: "match", reason: "decider_changed", notes: 3 });
+    await finding("backlog", "other:1", { task: "audit" });
+    const matchId = (
+      await pool!.query<{ id: string }>(
+        "select id from gardener_findings where fingerprint = 'match:abc'"
+      )
+    ).rows[0]!.id;
+    const otherId = (
+      await pool!.query<{ id: string }>(
+        "select id from gardener_findings where fingerprint = 'other:1'"
+      )
+    ).rows[0]!.id;
+    accept.mockResolvedValueOnce({ status: "queued", queued: 3 });
+    expect(await inbox.act({ kind: "backlog", id: matchId, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false,
+      queued: 3
+    });
+    expect(accept).toHaveBeenCalledWith(matchId);
+    for (const [answer, status] of [
+      [{ status: "waiting" }, "waiting"],
+      [{ status: "stale" }, "stale"],
+      [{ status: "closed" }, "gone"]
+    ] as const) {
+      accept.mockResolvedValueOnce(answer);
+      expect(await inbox.act({ kind: "backlog", id: matchId, action: "apply" })).toEqual({
+        status
+      });
+    }
+    // Only the MATCH backlog is accepted by this writer.
+    expect(await inbox.act({ kind: "backlog", id: otherId, action: "apply" })).toEqual({
+      status: "unsupported"
+    });
+  });
+
+  it("takes the MATCH backlog from its offer to its acceptance, through the real backlog service", async () => {
+    const wake = vi.fn();
+    const backlog = new RelationMatchBacklog({
+      getPool: () => pool!,
+      deciderKey: async () => "decider-new",
+      spaceKey: async () => "space-1",
+      wake
+    });
+    const matched = [await seedNote("First"), await seedNote("Second")];
+    for (const note of matched)
+      await createNoteMatchStateRepository(pool!).record({
+        noteId: note.id,
+        deciderKey: "decider-old",
+        spaceKey: "space-1",
+        kthCosine: null
+      });
+    inbox.dispose();
+    inbox = build({ matchBacklog: () => backlog });
+
+    expect(await backlog.offer()).toMatchObject({ status: "offered", notes: 2 });
+    const [offered] = (await inbox.list({ kinds: ["backlog"] })).items;
+    expect(offered).toMatchObject({
+      variant: "match",
+      params: { notes: 2 },
+      actions: ["apply", "dismiss"]
+    });
+
+    expect(await inbox.act({ kind: "backlog", id: offered!.id, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false,
+      queued: 2
+    });
+    expect(wake).toHaveBeenCalled();
+    const queued = await pool!.query<{ type: string }>(
+      "select type from jobs where type = 'relation-match'"
+    );
+    expect(queued.rows).toHaveLength(2);
+    // Accepted: the item left the Inbox for good, and the same decider is not offered again.
+    expect((await inbox.counts()).byKind.backlog).toBe(0);
+    expect(await backlog.offer()).toMatchObject({ status: "closed" });
+    expect(await inbox.act({ kind: "backlog", id: offered!.id, action: "apply" })).toEqual({
+      status: "gone"
+    });
+  });
+
+  it("keeps a dismissed MATCH offer dismissed, and moves a stale one out of the way", async () => {
+    let decider = "decider-new";
+    const backlog = new RelationMatchBacklog({
+      getPool: () => pool!,
+      deciderKey: async () => decider,
+      spaceKey: async () => "space-1"
+    });
+    const note = await seedNote("Only");
+    await createNoteMatchStateRepository(pool!).record({
+      noteId: note.id,
+      deciderKey: "decider-old",
+      spaceKey: "space-1",
+      kthCosine: null
+    });
+    inbox.dispose();
+    inbox = build({ matchBacklog: () => backlog });
+
+    await backlog.offer();
+    const [offered] = (await inbox.list({ kinds: ["backlog"] })).items;
+    expect(await inbox.act({ kind: "backlog", id: offered!.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: true
+    });
+    expect(await backlog.offer()).toMatchObject({ status: "closed" });
+    expect((await inbox.counts()).byKind.backlog).toBe(0);
+
+    // The owner takes the dismissal back; the decider changed since, so the old offer is stale.
+    await inbox.act({ kind: "backlog", id: offered!.id, action: "undo" });
+    decider = "decider-newer";
+    expect(await inbox.act({ kind: "backlog", id: offered!.id, action: "apply" })).toEqual({
+      status: "stale"
+    });
+    expect((await inbox.counts()).byKind.backlog).toBe(0);
+  });
+
+  it("keeps the budget's items in step with its meters and continues past the pause share", async () => {
+    await inbox.syncBudget(snapshot("paused"));
+    const items = (await inbox.list({ kinds: ["budget"] })).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      variant: "money_80",
+      risk: "medium",
+      params: { month: "2026-10", spentUsd: 4.12, capUsd: 5 },
+      actions: ["apply", "dismiss"]
+    });
+
+    budget.continue.mockResolvedValueOnce(snapshot("open", { continued: true }));
+    expect(await inbox.act({ kind: "budget", id: items[0]!.id, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.counts()).byKind.budget).toBe(0);
+
+    // Used up: a high-risk item that can only be dismissed; the 80% item of the month is closed.
+    await inbox.syncBudget(snapshot("paused"));
+    await inbox.syncBudget(snapshot("exhausted"));
+    const exhausted = (await inbox.list({ kinds: ["budget"] })).items;
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0]).toMatchObject({
+      variant: "money_100",
+      risk: "high",
+      actions: ["dismiss"]
+    });
+    expect(await inbox.act({ kind: "budget", id: exhausted[0]!.id, action: "apply" })).toEqual({
+      status: "unsupported"
+    });
+
+    // A dismissal holds while the month stays used up, and the cap rising closes the rest.
+    await inbox.act({ kind: "budget", id: exhausted[0]!.id, action: "dismiss" });
+    await inbox.syncBudget(snapshot("exhausted"));
+    expect((await inbox.counts()).byKind.budget).toBe(0);
+    await inbox.syncBudget(snapshot("open"));
+    expect((await inbox.counts()).byKind.budget).toBe(0);
+
+    // The pause still holding after a continue answers waiting.
+    await inbox.syncBudget(snapshot("paused", { month: "2026-11" }));
+    const next = (await inbox.list({ kinds: ["budget"] })).items[0]!;
+    budget.continue.mockResolvedValueOnce(snapshot("paused", { month: "2026-11" }));
+    expect(await inbox.act({ kind: "budget", id: next.id, action: "apply" })).toEqual({
+      status: "waiting"
+    });
+  });
+
+  it("offers no verb on an Obsidian conflict", async () => {
+    expect(
+      await inbox.act({
+        kind: "obsidian_conflict",
+        id: `editorial:${randomUUID()}`,
+        action: "apply"
+      })
+    ).toEqual({ status: "unsupported" });
+  });
+
+  it("publishes the counts when they change, once for a burst of events", async () => {
+    budget.snapshot.mockResolvedValue(snapshot("open"));
+    inbox.start();
+    await vi.waitFor(() =>
+      expect(published.filter((event) => event.type === "inbox.changed")).toHaveLength(1)
+    );
+    expect(published.at(-1)).toMatchObject({ type: "inbox.changed", total: 0 });
+    await finding("duplicate", "dup:1", { reason: "title" });
+    for (const handler of handlers.get("job.progress") ?? []) {
+      handler({ type: "job.progress" } as AppEvent);
+      handler({ type: "job.progress" } as AppEvent);
+    }
+    await vi.waitFor(() =>
+      expect(published.filter((event) => event.type === "inbox.changed")).toHaveLength(2)
+    );
+    expect(published.at(-1)).toMatchObject({ type: "inbox.changed", total: 1 });
+    // Nothing changed: nothing is published.
+    for (const handler of handlers.get("changes.changed") ?? [])
+      handler({ type: "changes.changed" } as AppEvent);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(published.filter((event) => event.type === "inbox.changed")).toHaveLength(2);
+  });
+
+  it("lists the rest of the Inbox when the vault cannot be read", async () => {
+    const warn = vi.fn();
+    inbox.dispose();
+    inbox = build({ logger: { warn } });
+    await finding("duplicate", "dup:1", { reason: "title" });
+    conflicts = async () => {
+      throw new Error("vault gone");
+    };
+    expect((await inbox.list({})).items).toHaveLength(1);
+    expect(warn).toHaveBeenCalled();
+  });
+});

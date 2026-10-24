@@ -100,6 +100,9 @@ export const changeSetSql = {
      limit $7::int`,
   /** $1 kind, $2 id. */
   get: `select ${viewColumns} from change_sets where kind = $1 and id = $2::uuid`,
+  /** $1 kinds, $2 IDs, pair by pair. */
+  getMany: `select ${viewColumns} from change_sets
+     where (kind, id) in (select * from unnest($1::text[], $2::uuid[]))`,
   /** Change-sets that wait for the owner, per kind and risk. */
   pending: `select kind, risk, count(*)::int as n from change_sets
      where status = 'pending_review' group by kind, risk`,
@@ -644,6 +647,23 @@ export function createChangeSetRepository(pool: PgPool) {
       return snapshot(async (db) => {
         const row = await getRow(db, kind, id);
         return row ? ((await summaries(db, [row]))[0] ?? null) : null;
+      });
+    },
+
+    /** These change-sets (those in the view), in no particular order: the Inbox lists a page at once. */
+    async getMany(
+      refs: ReadonlyArray<{ kind: ChangeSetKind; id: string }>
+    ): Promise<ChangeSetSummary[]> {
+      const valid = refs.filter((ref) => /^[0-9a-f-]{36}$/iu.test(ref.id));
+      if (valid.length === 0) return [];
+      return snapshot(async (db) => {
+        const rows = (
+          await db.query<ViewRow>(changeSetSql.getMany, [
+            valid.map((ref) => ref.kind),
+            valid.map((ref) => ref.id)
+          ])
+        ).rows;
+        return summaries(db, rows);
       });
     },
 

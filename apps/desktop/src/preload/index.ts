@@ -92,6 +92,13 @@ import {
   ChangesUndoResultSchema
 } from "@app/domain";
 import {
+  InboxActInputSchema,
+  InboxActResultSchema,
+  InboxCountsSchema,
+  InboxListInputSchema,
+  InboxListSchema
+} from "@app/domain";
+import {
   monitoringQuerySchema,
   monitoringPageSchema,
   monitoringDetailSchema,
@@ -444,6 +451,17 @@ const api: DesktopApi = {
     diff: async (input) =>
       ChangesDiffSchema.nullable().parse(
         await ipcRenderer.invoke(ipcChannels.changesDiff, ChangesDiffInputSchema.parse(input))
+      )
+  },
+  inbox: {
+    list: async (input) =>
+      InboxListSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.inboxList, InboxListInputSchema.parse(input ?? {}))
+      ),
+    counts: async () => InboxCountsSchema.parse(await ipcRenderer.invoke(ipcChannels.inboxCounts)),
+    act: async (input) =>
+      InboxActResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.inboxAct, InboxActInputSchema.parse(input))
       )
   },
   wiki: {

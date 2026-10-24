@@ -103,6 +103,8 @@ import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
 import { ChangesService } from "./services/gardener/changes-service.js";
 import { registerChangesIpc } from "./services/gardener/changes-ipc.js";
+import { InboxService } from "./services/gardener/inbox-service.js";
+import { registerInboxIpc } from "./services/gardener/inbox-ipc.js";
 import {
   gardenerRetentionJobType,
   retentionJobExecutor,
@@ -227,6 +229,8 @@ let appEvents: AppEventBus | null = null;
 let jobProgress: JobProgressPublisher | null = null;
 /** The Gardener's status (F4 D27, T86): what it does or why it does not, read and pushed. */
 let gardenerStatus: GardenerStatusService | null = null;
+/** The Inbox (F4 D29, T94): one list of what waits for the owner, and the verbs on it. */
+let inboxService: InboxService | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 /** F4 D16 (T83): the optional re-match a change of the note decider offers; the Inbox accepts it. */
@@ -597,27 +601,23 @@ void app.whenReady().then(() => {
     relationsChanged: announceRelationsChanged
   });
   registerRelationExplanationIpc(ipcMain, relationExplanationService);
-  registerRelationReviewIpc(
-    ipcMain,
-    new RelationReviewService({
-      getPool: () => databaseService?.getPool() ?? null,
-      relationsChanged: announceRelationsChanged
-    })
-  );
+  const relationReviewService = new RelationReviewService({
+    getPool: () => databaseService?.getPool() ?? null,
+    relationsChanged: announceRelationsChanged
+  });
+  registerRelationReviewIpc(ipcMain, relationReviewService);
   // F4 D10: the change-sets of every store through one view and one IPC; the topic engine, the
   // relation event log and the overview repository each undo and review their own exactly.
-  registerChangesIpc(
-    ipcMain,
-    new ChangesService({
-      getPool: () => databaseService?.getPool() ?? null,
-      topics: () => topicTreeServices?.service ?? null,
-      relationsChanged: announceRelationsChanged,
-      // F4 D17: a proposal applied on a moved version is proposed again by REFRESH.
-      overviewMoved: (topicId) => void topicTreeServices?.overviewRefresh?.requestTopic(topicId),
-      // After an undo or a review committed: Activity, the Inbox and an open topic page read again.
-      ...changeSetEventHooks(events)
-    })
-  );
+  const changesService = new ChangesService({
+    getPool: () => databaseService?.getPool() ?? null,
+    topics: () => topicTreeServices?.service ?? null,
+    relationsChanged: announceRelationsChanged,
+    // F4 D17: a proposal applied on a moved version is proposed again by REFRESH.
+    overviewMoved: (topicId) => void topicTreeServices?.overviewRefresh?.requestTopic(topicId),
+    // After an undo or a review committed: Activity, the Inbox and an open topic page read again.
+    ...changeSetEventHooks(events)
+  });
+  registerChangesIpc(ipcMain, changesService);
   registerSourceRelationExplanationIpc(
     ipcMain,
     new SourceRelationExplanationService({
@@ -775,6 +775,42 @@ void app.whenReady().then(() => {
       await backgroundPolicy.controls.update({ paused: false });
     }
   });
+  // The Inbox (F4 D29, T94): the open items of every store in one list, each verb carried out by the
+  // store's own writer; its counts are pushed as `inbox.changed`.
+  inboxService = new InboxService({
+    getPool: () => databaseService?.getPool() ?? null,
+    changes: changesService,
+    reviewRelation: (input) => relationReviewService.review(input),
+    matchBacklog: () => relationMatchBacklog,
+    retryJob: (jobId) => jobSupervisor!.retry(jobId),
+    budget: {
+      snapshot: () => remoteBudget!.snapshot(),
+      continue: () => remoteBudget!.continuePastPause()
+    },
+    obsidianConflicts: async () => {
+      const [editorial, wiki] = await Promise.all([
+        obsidianSyncService!.editorial.conflicts(),
+        obsidianSyncService!.wiki.status()
+      ]);
+      return [
+        ...editorial.map((row) => ({
+          id: row.id,
+          path: row.path,
+          variant: row.receipt.status === "deleted" ? ("deleted" as const) : ("editorial" as const),
+          at: null
+        })),
+        ...wiki.conflicts.map((row) => ({
+          id: row.id,
+          path: row.relative_path,
+          variant: "projection" as const,
+          at: null
+        }))
+      ];
+    },
+    events,
+    logger: console
+  });
+  registerInboxIpc(ipcMain, inboxService);
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
@@ -1082,6 +1118,8 @@ void app.whenReady().then(() => {
           void relationMatchBacklog?.offer().catch((error: unknown) => {
             console.warn("The MATCH backlog could not be offered", error);
           });
+        // F4 D29: the Inbox follows the stores' events and the budget once the library is up.
+        if (!libraryQuiet) inboxService?.start();
         // DEV soak profile setup (MEMORA_SOAK_SETUP=1, F3 T62): the models are up, no job has started.
         // The Local preset, the checks and `.cache/f3/soak/setup.json`, then quit.
         if (soakSetup) {
@@ -1421,6 +1459,8 @@ function shutdownSteps(): ShutdownStep[] {
       run: () => {
         gardenerStatus?.stop();
         gardenerStatus = null;
+        inboxService?.dispose();
+        inboxService = null;
         jobProgress?.dispose();
         jobProgress = null;
         appEvents?.dispose();

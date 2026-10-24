@@ -5,6 +5,7 @@ export * from "./documentAssetRepository.js";
 export * from "./jobRepository.js";
 export * from "./gardenerOutcomeRepository.js";
 export * from "./gardenerFindingRepository.js";
+export * from "./inboxRepository.js";
 export * from "./auditLintRepository.js";
 export * from "./gardenerStatusRepository.js";
 export * from "./jobActivityRepository.js";

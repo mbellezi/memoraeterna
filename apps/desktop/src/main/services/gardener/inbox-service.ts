@@ -1,0 +1,484 @@
+// The Inbox (F4 D29, spec 3.10): the one place for human judgment. It reads the open items of every
+// store as one list ordered by risk then age, counts them, and carries each verb out through the
+// store's own writer, so a verdict persists where the calibration label F6 reads it. It adds no
+// label store and calls no AI. Every request is validated here and every answer before it leaves.
+import {
+  createChangeSetRepository,
+  createGardenerFindingRepository,
+  createGardenerOutcomeRepository,
+  createInboxRepository,
+  InboxCursorError,
+  type InboxPageInput,
+  type InboxRowKey,
+  type InboxRowsPage,
+  type PgPool
+} from "@app/db";
+import {
+  InboxActInputSchema,
+  InboxActResultSchema,
+  InboxCountsSchema,
+  InboxListInputSchema,
+  InboxListSchema,
+  compareInboxPositions,
+  emptyInboxCounts,
+  inboxCursor,
+  inboxKinds,
+  inboxReadLimits,
+  inboxRiskRank,
+  inboxTime,
+  parseInboxCursor,
+  type BudgetSnapshot,
+  type ChangesReviewResult,
+  type ChangesUndoResult,
+  type GardenerFindingKind,
+  type InboxActInput,
+  type InboxActResult,
+  type InboxCounts,
+  type InboxItem,
+  type InboxList,
+  type InboxPosition,
+  type RelationReviewInput,
+  type RelationReviewResult
+} from "@app/domain";
+
+import type { AppEvent, AppEventHandler, AppEventType } from "../../../shared/app-events.js";
+import type { MatchBacklogAcceptance } from "../relations/relation-match-backlog.js";
+import {
+  budgetVariant,
+  inboxItems,
+  isUuid,
+  obsidianItem,
+  parseChangeSetItemId,
+  parseQuarantineItemId,
+  type ObsidianConflictRecord
+} from "./inbox-items.js";
+
+const errors = {
+  invalidCursor: "inbox.errors.invalidCursor",
+  invalidItem: "inbox.errors.invalidItem",
+  unavailable: "inbox.errors.unavailable"
+} as const;
+
+/** The store handlers that carry the verbs out (tests pass fakes). */
+export interface InboxServiceOptions {
+  getPool: () => PgPool | null;
+  /** `changes.review` and `changes.undo`: the change-sets of the three stores. */
+  changes: {
+    review(input: unknown): Promise<ChangesReviewResult>;
+    undo(input: unknown): Promise<ChangesUndoResult>;
+  };
+  /** `relations.review`: keep or remove a suggested or withdrawn relation. */
+  reviewRelation(input: RelationReviewInput): Promise<RelationReviewResult | null>;
+  /** The MATCH backlog's acceptance (F4 D16); null while the decider's service is not running. */
+  matchBacklog: () => { accept(findingId: string): Promise<MatchBacklogAcceptance> } | null;
+  /** The supervisor's manual retry of a job; resolves to null when the job is gone. */
+  retryJob(jobId: string): Promise<unknown>;
+  /** The RemoteBudget: its meters, and the continue past the pause share (D14). */
+  budget?: { snapshot(): Promise<BudgetSnapshot>; continue(): Promise<BudgetSnapshot> };
+  /** The vault's conflicts (editorial and projection); empty while Obsidian is not in use. */
+  obsidianConflicts?: () => Promise<ObsidianConflictRecord[]>;
+  /** The bus: counts are published after any change, and the stores' events trigger a recount. */
+  events?: {
+    publish(event: AppEvent): void;
+    subscribe<T extends AppEventType>(type: T, handler: AppEventHandler<T>): () => void;
+  };
+  /** Quiet time after an event before the counts are read again. */
+  refreshDelayMs?: number;
+  now?: () => number;
+  logger?: Pick<Console, "warn">;
+}
+
+/** Events after which the open items may have changed. */
+const recountEvents = [
+  "job.progress",
+  "changes.changed",
+  "tree.changed",
+  "relation.created",
+  "overview.changed"
+] as const satisfies readonly AppEventType[];
+
+const defaultRefreshDelayMs = 3_000;
+/** How long the vault's conflicts are reused by the recounts that follow a stream of events. */
+const vaultCacheMs = 10_000;
+
+const sameCounts = (a: InboxCounts | null, b: InboxCounts): boolean =>
+  a !== null && JSON.stringify(a) === JSON.stringify(b);
+
+/** The meters of a month's budget in the dollars the item shows. */
+const dollars = (value: number): number => Math.round(value * 100) / 100;
+
+export class InboxService {
+  private lastCounts: InboxCounts | null = null;
+  private unsubscribe: Array<() => void> = [];
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private refreshing: Promise<void> | null = null;
+  private again = false;
+  private disposed = false;
+  private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
+
+  constructor(private readonly options: InboxServiceOptions) {}
+
+  private pool(): PgPool {
+    const pool = this.options.getPool();
+    if (!pool) throw new Error(errors.unavailable);
+    return pool;
+  }
+
+  /** Follows the stores' events and the budget; the counts are read once to start. */
+  start(): void {
+    const events = this.options.events;
+    if (!events || this.unsubscribe.length > 0) return;
+    for (const type of recountEvents)
+      this.unsubscribe.push(events.subscribe(type, () => this.schedule()));
+    this.unsubscribe.push(
+      events.subscribe("budget.changed", (event) => {
+        this.syncBudget(event.budget)
+          .catch((error: unknown) =>
+            this.options.logger?.warn("The budget's Inbox items could not be synced", error)
+          )
+          .finally(() => this.schedule());
+      })
+    );
+    void this.syncBudgetNow().then(() => this.schedule());
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    for (const stop of this.unsubscribe) stop();
+    this.unsubscribe = [];
+  }
+
+  // -------------------------------------------------------------------------
+  // inbox.list and inbox.counts
+
+  /** A page of open items by risk (high first) and age (oldest first). */
+  async list(input: unknown): Promise<InboxList> {
+    const parsed = InboxListInputSchema.parse(input ?? {});
+    const pool = this.pool();
+    const after = parsed.cursor ? parseInboxCursor(parsed.cursor) : null;
+    if (parsed.cursor && !after) throw new Error(errors.invalidCursor);
+    const wantsObsidian = !parsed.kinds || parsed.kinds.includes("obsidian_conflict");
+    const obsidian =
+      wantsObsidian && (!parsed.risk || parsed.risk === "medium") ? await this.obsidian() : [];
+    const page = await this.readPage(pool, {
+      kinds: parsed.kinds,
+      risk: parsed.risk,
+      after: parsed.cursor ?? null,
+      limit: parsed.limit
+    });
+
+    // The database rows and the vault's conflicts, merged by the one order of the list.
+    type Entry =
+      | { position: InboxPosition; row: InboxRowKey }
+      | { position: InboxPosition; conflict: InboxItem };
+    const entries: Entry[] = page.rows.map((row) => ({
+      position: { rank: row.rank, at: row.at, key: row.key },
+      row
+    }));
+    for (const record of obsidian) {
+      const item = obsidianItem(record, inboxTime(record.at ?? new Date(0)));
+      const position = {
+        rank: inboxRiskRank(item.risk),
+        at: item.at,
+        key: `${item.kind}:${item.id}`
+      };
+      if (!after || compareInboxPositions(position, after) > 0)
+        entries.push({ position, conflict: item });
+    }
+    entries.sort((a, b) => compareInboxPositions(a.position, b.position));
+    const taken = entries.slice(0, parsed.limit);
+    const hasMore = entries.length > parsed.limit || page.hasMore;
+    const last = taken.at(-1);
+
+    const rows = taken.flatMap((entry) => ("row" in entry ? [entry.row] : []));
+    const hydrated = new Map(
+      (await inboxItems(pool, rows)).map((item) => [`${item.kind}:${item.id}`, item])
+    );
+    const items = taken.flatMap((entry) => {
+      const item = "conflict" in entry ? entry.conflict : hydrated.get(entry.position.key);
+      return item ? [item] : [];
+    });
+    return InboxListSchema.parse({
+      items,
+      nextCursor: hasMore && last ? inboxCursor(last.position) : null
+    });
+  }
+
+  /**
+   * The open items by kind and by risk. `cached` lets the vault's conflicts (the one count that
+   * costs a read of the sync tables) come from the last read within a few seconds: the recount
+   * that follows a stream of events uses it, a person's request never does.
+   */
+  async counts(options: { cached?: boolean } = {}): Promise<InboxCounts> {
+    const rows = await createInboxRepository(this.pool()).counts();
+    const counts = emptyInboxCounts();
+    for (const kind of inboxKinds) counts.byKind[kind] = rows.byKind[kind] ?? 0;
+    counts.byRisk = { ...rows.byRisk };
+    const conflicts = (await this.obsidian(options.cached === true)).length;
+    counts.byKind.obsidian_conflict = conflicts;
+    counts.byRisk.medium += conflicts;
+    counts.total = inboxKinds.reduce((sum, kind) => sum + counts.byKind[kind], 0);
+    return InboxCountsSchema.parse(counts);
+  }
+
+  private async readPage(pool: PgPool, input: InboxPageInput): Promise<InboxRowsPage> {
+    try {
+      return await createInboxRepository(pool).page(input);
+    } catch (error) {
+      if (error instanceof InboxCursorError)
+        throw new Error(errors.invalidCursor, { cause: error });
+      throw error;
+    }
+  }
+
+  private async obsidian(cached = false): Promise<ObsidianConflictRecord[]> {
+    const now = (this.options.now ?? Date.now)();
+    if (cached && this.vault && now - this.vault.at < vaultCacheMs) return this.vault.records;
+    try {
+      const records = ((await this.options.obsidianConflicts?.()) ?? []).slice(
+        0,
+        inboxReadLimits.obsidianMax
+      );
+      this.vault = { at: now, records };
+      return records;
+    } catch (error) {
+      // The vault being unreadable must not hide the rest of the Inbox.
+      this.options.logger?.warn("The Obsidian conflicts could not be listed", error);
+      return [];
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // inbox.act
+
+  /** Carries one verb out through the store's own writer. */
+  async act(input: unknown): Promise<InboxActResult> {
+    const parsed = InboxActInputSchema.parse(input);
+    const result = await this.run(parsed);
+    // A verdict changes what is open: the counts follow at once, not after the quiet period.
+    if (result.status === "done" || result.status === "gone" || result.status === "stale")
+      void this.refreshNow();
+    return InboxActResultSchema.parse(result);
+  }
+
+  private async run(input: InboxActInput): Promise<InboxActResult> {
+    switch (input.kind) {
+      case "review":
+        return this.changeSet(input);
+      case "contradiction":
+      case "withdrawn":
+        return this.relation(input);
+      case "quarantined":
+        return this.quarantine(input);
+      case "duplicate":
+      case "backlog":
+      case "budget":
+        return this.finding(input);
+      case "obsidian_conflict":
+        return { status: "unsupported" };
+    }
+  }
+
+  private async changeSet(input: InboxActInput): Promise<InboxActResult> {
+    const ref = parseChangeSetItemId(input.id);
+    if (!ref) throw new Error(errors.invalidItem);
+    try {
+      if (input.action === "undo") {
+        const undone = await this.options.changes.undo(ref);
+        return undone.status === "undone"
+          ? { status: "done", undoable: false }
+          : { status: "blocked", blockers: undone.blockers, more: undone.more };
+      }
+      if (input.action !== "apply" && input.action !== "dismiss") return { status: "unsupported" };
+      const verdict = await this.options.changes.review({ ...ref, verdict: input.action });
+      if (verdict.status === "blocked")
+        return { status: "blocked", blockers: verdict.blockers, more: verdict.more };
+      if (verdict.status === "stale" || verdict.status === "pending_review")
+        return { status: "stale" };
+      // Applied stays undoable while its store says the undo is available.
+      const undoable =
+        input.action === "apply" &&
+        verdict.status === "applied" &&
+        (await createChangeSetRepository(this.pool()).get(ref.kind, ref.id))?.undo === "available";
+      return { status: "done", undoable };
+    } catch (error) {
+      if (error instanceof Error && error.message === "changes.errors.notFound")
+        return { status: "gone" };
+      throw error;
+    }
+  }
+
+  private async relation(input: InboxActInput): Promise<InboxActResult> {
+    if (!isUuid(input.id)) throw new Error(errors.invalidItem);
+    if (input.action !== "apply" && input.action !== "dismiss") return { status: "unsupported" };
+    const wanted = input.action === "apply" ? "kept" : "removed";
+    const reviewed = await this.options.reviewRelation({
+      relationId: input.id,
+      verdict: input.action === "apply" ? "keep" : "remove"
+    });
+    if (!reviewed) return { status: "gone" };
+    // A verdict is final in both directions (I-R2, I-R3): another one that stands is not ours.
+    return reviewed.outcome === wanted ? { status: "done", undoable: false } : { status: "stale" };
+  }
+
+  private async quarantine(input: InboxActInput): Promise<InboxActResult> {
+    const subject = parseQuarantineItemId(input.id);
+    if (!subject) throw new Error(errors.invalidItem);
+    const pool = this.pool();
+    const inbox = createInboxRepository(pool);
+    if (input.action === "undo") {
+      return (await inbox.undismissQuarantine(subject.kind, subject.subjectKey))
+        ? { status: "done", undoable: false }
+        : { status: "gone" };
+    }
+    if (input.action === "dismiss") {
+      const dismissed = await inbox.dismissQuarantine(subject.kind, subject.subjectKey);
+      return dismissed ? { status: "done", undoable: dismissed === "stamped" } : { status: "gone" };
+    }
+    if (input.action !== "retry") return { status: "unsupported" };
+    const outcome = await createGardenerOutcomeRepository(pool).get(
+      subject.kind,
+      subject.subjectKey
+    );
+    if (!outcome?.quarantinedAt) return { status: "gone" };
+    if (!outcome.lastJobId) return { status: "stale" };
+    // The retry releases the quarantine in the statement that queues the job again.
+    return (await this.options.retryJob(outcome.lastJobId))
+      ? { status: "done", undoable: false }
+      : { status: "stale" };
+  }
+
+  private async finding(input: InboxActInput): Promise<InboxActResult> {
+    if (!isUuid(input.id)) throw new Error(errors.invalidItem);
+    const findings = createGardenerFindingRepository(this.pool());
+    const finding = await findings.get(input.id);
+    const kind = input.kind as GardenerFindingKind;
+    if (!finding || finding.kind !== kind) return { status: "gone" };
+    if (input.action === "undo") {
+      if (finding.status !== "dismissed") return { status: "gone" };
+      return (await findings.reopen(finding.id))
+        ? { status: "done", undoable: false }
+        : { status: "gone" };
+    }
+    if (finding.status !== "open") return { status: "gone" };
+    if (input.action === "dismiss")
+      return (await findings.dismiss(finding.id))
+        ? { status: "done", undoable: true }
+        : { status: "gone" };
+    if (input.action !== "apply") return { status: "unsupported" };
+    if (kind === "backlog") return this.acceptBacklog(finding.id, finding.params.task);
+    if (kind === "budget") return this.continueBudget(finding.fingerprint);
+    return { status: "unsupported" };
+  }
+
+  /** The owner accepted the optional re-match: the affected notes are queued at the lowest priority. */
+  private async acceptBacklog(findingId: string, task: unknown): Promise<InboxActResult> {
+    if (task !== "match") return { status: "unsupported" };
+    const backlog = this.options.matchBacklog();
+    if (!backlog) throw new Error(errors.unavailable);
+    const accepted = await backlog.accept(findingId);
+    switch (accepted.status) {
+      case "queued":
+        return { status: "done", undoable: false, queued: accepted.queued };
+      case "waiting":
+        return { status: "waiting" };
+      case "stale":
+        return { status: "stale" };
+      case "closed":
+        return { status: "gone" };
+    }
+  }
+
+  /** The owner continues remote background work past the pause share (D14). */
+  private async continueBudget(fingerprint: string): Promise<InboxActResult> {
+    const budget = this.options.budget;
+    if (!budget) throw new Error(errors.unavailable);
+    if (budgetVariant(fingerprint) !== "money_80") return { status: "unsupported" };
+    const snapshot = await budget.continue();
+    await this.syncBudget(snapshot);
+    return snapshot.money.state === "paused"
+      ? { status: "waiting" }
+      : { status: "done", undoable: false };
+  }
+
+  // -------------------------------------------------------------------------
+  // The budget's items
+
+  private async syncBudgetNow(): Promise<void> {
+    try {
+      if (this.options.budget) await this.syncBudget(await this.options.budget.snapshot());
+    } catch (error) {
+      this.options.logger?.warn("The budget's Inbox items could not be synced", error);
+    }
+  }
+
+  /**
+   * The budget's meters as Inbox items (D14, D29): one open item for the month's money while it is
+   * paused at the warning share (`money_80`) or used up (`money_100`), closed when the person
+   * continues or the cap rises, and never reopened once the person dismissed it. A subscription
+   * lane's daily allowance clears by itself and has no item.
+   */
+  async syncBudget(snapshot: BudgetSnapshot): Promise<void> {
+    const pool = this.options.getPool();
+    if (!pool) return;
+    const findings = createGardenerFindingRepository(pool);
+    const { money, month } = snapshot;
+    const wanted =
+      money.state === "paused" && !money.continued
+        ? { fingerprint: `money_80:${month}`, risk: "medium" as const }
+        : money.state === "exhausted"
+          ? { fingerprint: `money_100:${month}`, risk: "high" as const }
+          : null;
+    if (wanted)
+      await findings.record([
+        {
+          kind: "budget",
+          fingerprint: wanted.fingerprint,
+          objectRefs: [],
+          params: { month, spentUsd: dollars(money.spentUsd), capUsd: dollars(money.capUsd) },
+          risk: wanted.risk
+        }
+      ]);
+    await findings.resolveMissing("budget", wanted ? [wanted.fingerprint] : []);
+  }
+
+  // -------------------------------------------------------------------------
+  // inbox.changed
+
+  private schedule(): void {
+    if (this.disposed || this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.refreshNow();
+    }, this.options.refreshDelayMs ?? defaultRefreshDelayMs);
+    this.timer.unref?.();
+  }
+
+  /** Reads the counts and publishes them when they differ from the last ones published. */
+  async refreshNow(): Promise<void> {
+    if (this.disposed) return;
+    if (this.refreshing) {
+      this.again = true;
+      return this.refreshing;
+    }
+    this.refreshing = (async () => {
+      do {
+        this.again = false;
+        try {
+          const counts = await this.counts({ cached: true });
+          if (!sameCounts(this.lastCounts, counts)) {
+            this.lastCounts = counts;
+            this.options.events?.publish({ type: "inbox.changed", ...counts });
+          }
+        } catch (error) {
+          this.options.logger?.warn("The Inbox counts could not be read", error);
+        }
+      } while (this.again && !this.disposed);
+    })().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+}

@@ -41,6 +41,7 @@ export * from "./relation-decisions.js";
 export * from "./relation-typing.js";
 export * from "./topics.js";
 export * from "./change-sets.js";
+export * from "./inbox.js";
 export * from "./topic-overview.js";
 export * from "./structured-output.js";
 export * from "./knowledge-graph-batching.js";

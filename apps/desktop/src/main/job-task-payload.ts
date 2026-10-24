@@ -3,11 +3,13 @@
  * Task parsers stay strict: remove only these reserved envelope fields, never
  * arbitrary unknown task keys. The persisted payload is left untouched.
  * `claimedDedupeKey` is the key a claim dropped, kept so a crashed job gets it back.
+ * `inboxDismissedAt` is when the owner dismissed the Inbox item of a quarantined job (F4 D29).
  */
 const envelopeFields = [
   "promptPin",
   "errorHistory",
   "dashboardDismissedAt",
+  "inboxDismissedAt",
   "claimedDedupeKey"
 ] as const;
 

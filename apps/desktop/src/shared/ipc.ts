@@ -92,6 +92,13 @@ import type {
   ChangesUndoResult
 } from "@app/domain";
 import type {
+  InboxActInput,
+  InboxActResult,
+  InboxCounts,
+  InboxList,
+  InboxListInput
+} from "@app/domain";
+import type {
   MonitoringQuery,
   MonitoringPage,
   MonitoringDetail,
@@ -170,6 +177,10 @@ export const ipcChannels = {
   changesUndo: "app:changes:undo",
   changesReview: "app:changes:review",
   changesDiff: "app:changes:diff",
+  /** F4 D29: the Inbox's open items, their counts and its verbs. */
+  inboxList: "app:inbox:list",
+  inboxCounts: "app:inbox:counts",
+  inboxAct: "app:inbox:act",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -1998,6 +2009,19 @@ export interface DesktopApi {
     review: (input: ChangesReviewInput) => Promise<ChangesReviewResult>;
     /** A bounded before and after (the icicle diff and its table); null when it is gone. */
     diff: (input: ChangesDiffInput) => Promise<ChangesDiff | null>;
+  };
+  /**
+   * The Inbox (F4 D29): the one place for human judgment, a read model over the stores. Items come
+   * by risk (high first) then age; every verb goes through the store's own writer and persists
+   * there. Pushed as `inbox.changed` (counts) when the open items change. Errors: `inbox.errors.*`.
+   */
+  inbox: {
+    /** A page of open items; `nextCursor` continues it. */
+    list: (input?: InboxListInput) => Promise<InboxList>;
+    /** The open items by kind and by risk. */
+    counts: () => Promise<InboxCounts>;
+    /** Carries one verb out (apply or keep, dismiss or remove, retry) or takes the last one back. */
+    act: (input: InboxActInput) => Promise<InboxActResult>;
   };
   /** The source search of the Ask and Obsidian scope pickers. */
   wiki: {
