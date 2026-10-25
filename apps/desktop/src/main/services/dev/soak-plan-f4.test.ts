@@ -278,6 +278,38 @@ describe("the gate S profile", () => {
     expect(delay).toBeLessThan(embedder.durationMinutes);
   });
 
+  it("imports the typing-fault source where no window and no local fault meets its first 10 minutes", () => {
+    // Gate S of 10-25 (both runs): the import began in the second g190-embedder-verifying did, and
+    // the verifying embedder failed its graph stage: a collision of the harness, not the product's.
+    const windows = expandWindows(profile.f4!, profile.durationHours * 60);
+    const timeline = buildTimeline(profile);
+    const imports = timeline.filter((entry) => entry.kind === "typing_fault");
+    expect(imports).toHaveLength(1);
+    for (const { atMs: from } of imports) {
+      const to = from + 10 * minute;
+      // Measured (after the warm-up) and after the minutes of the forced faults.
+      expect(from).toBeGreaterThanOrEqual(profile.warmupMinutes * minute);
+      for (const forced of profile.f4!.injection!.forced)
+        expect(forced.afterMinute * minute).toBeLessThan(from);
+      for (const window of windows) {
+        const start = window.startMinute * minute;
+        // A window's condition can outlast its end by its settle.
+        const end =
+          (window.startMinute +
+            window.durationMinutes +
+            (window.settleEndMinutes ?? window.settleMinutes)) *
+          minute;
+        expect(start < to && end > from, window.id).toBe(false);
+      }
+      expect(
+        timeline.filter(
+          (entry) =>
+            ["mlx_kill", "gguf_abort"].includes(entry.kind) && entry.atMs < to && entry.atMs >= from
+        )
+      ).toEqual([]);
+    }
+  });
+
   it("keeps every answer in this profile and in no other 7-day profile", () => {
     expect(profile.f4!.capture).toBe("answers");
     expect(readSoakPlan(planPath, "soak7").profile.f4!.capture).toBeUndefined();

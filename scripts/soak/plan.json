@@ -449,8 +449,8 @@
           "offsetMinutes": 40
         },
         "typingFault": {
-          "everyMinutes": 300,
-          "offsetMinutes": 190
+          "everyMinutes": 600,
+          "offsetMinutes": 20
         },
         "topicOpen": {
           "everyMinutes": 40,
