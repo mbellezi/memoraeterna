@@ -6,7 +6,7 @@
  * `inboxDismissedAt` is when the owner dismissed the Inbox item of a quarantined job (F4 D29).
  * `aiExecution` is the model an AI call of the job ran on, written by the AI service for the Jobs
  * screen as the call starts, so a job that runs again after a call (a retry, a blocker set aside)
- * carries it.
+ * carries it (F4 D7).
  */
 const envelopeFields = [
   "promptPin",

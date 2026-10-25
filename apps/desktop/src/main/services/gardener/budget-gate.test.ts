@@ -29,11 +29,19 @@ function meters(
   };
 }
 
-function setup(routes: Partial<Record<AiClassId, RouteMetering>>) {
+/**
+ * `routes` meters the class routes; `operations` the `op:` routes some calls resolve first, which
+ * win over the class route as the route chain does (`aiRouteKeys`).
+ */
+function setup(
+  routes: Partial<Record<AiClassId, RouteMetering>>,
+  operations: Record<string, RouteMetering> = {}
+) {
   const state = { snapshot: meters("open") };
   const budgetGate = new RemoteBudgetGate({
     snapshot: async () => state.snapshot,
-    metering: async (routeClass) => routes[routeClass] ?? "none"
+    metering: async ({ routeClass, operation }) =>
+      (operation ? operations[operation] : undefined) ?? routes[routeClass] ?? "none"
   });
   const gate = new BackgroundGate({
     controls: () => defaultKnowledgeControls,
@@ -82,6 +90,43 @@ describe("the budget gate at claim (F4 D7, D14)", () => {
     expect(await budgetGate.refresh()).toBe(true);
     expect(gate.heldKinds(kinds)).toEqual(new Set());
     expect(gate.activeReasons(kinds).has("cap.money_100")).toBe(false);
+  });
+
+  it("holds a kind by the operation route its calls take before the class route", async () => {
+    // Gate S's money window (10-25): the explanation backfill on a priced route while the writer
+    // classes stay on the Codex subscription. Held by the class route, the backfill was never held
+    // at the 80% pause, so the rows its calls were refused for cleared at the next re-gate.
+    const { state, budgetGate, gate } = setup(
+      { "write-fast": "calls" },
+      { relation_explanation: "money" }
+    );
+    const types = [...kinds, "relation-explain-backfill"];
+    state.snapshot = meters("paused");
+    expect(await budgetGate.refresh()).toBe(true);
+    expect(gate.forKinds(types)).toEqual(
+      new Map([["relation-explain-backfill", gardenerBlocker("cap", "money_80")]])
+    );
+    expect(gate.activeReasons(types).has("cap.money_80")).toBe(true);
+    // The person continued: nothing is held, and the rows the pause held clear.
+    state.snapshot = meters("open");
+    expect(await budgetGate.refresh()).toBe(true);
+    expect(gate.activeReasons(types).has("cap.money_80")).toBe(false);
+    // The class route's daily calls hold naming; the backfill's priced route is not held by them.
+    state.snapshot = meters("open", "exhausted");
+    await budgetGate.refresh();
+    expect(gate.forKinds(types)).toEqual(
+      new Map([["topic-name", gardenerBlocker("cap", "subscription_daily")]])
+    );
+  });
+
+  it("meters a kind without an operation route by its class route", async () => {
+    // No `op:` route: the backfill's calls fall through to the class route, and so does the gate.
+    const { state, budgetGate, gate } = setup({ "write-fast": "calls" });
+    state.snapshot = meters("open", "exhausted");
+    await budgetGate.refresh();
+    expect(gate.forKinds(["relation-explain-backfill"])).toEqual(
+      new Map([["relation-explain-backfill", gardenerBlocker("cap", "subscription_daily")]])
+    );
   });
 
   it("holds a subscription route at its daily calls only", async () => {

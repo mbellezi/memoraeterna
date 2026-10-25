@@ -357,10 +357,10 @@ void app.whenReady().then(() => {
   // the budget and the AI routes, which exist below; the gate answers only after its first read.
   const budgetGate = new RemoteBudgetGate({
     snapshot: () => remoteBudget!.snapshot(),
-    metering: async (routeClass) => {
+    metering: async ({ routeClass, operation, task }) => {
       const route = await aiService?.taskRouteModel(
-        routeClass === "embed" ? "embedding" : "structured-output",
-        { workloadClass: routeClass }
+        task ?? (routeClass === "embed" ? "embedding" : "structured-output"),
+        { workloadClass: routeClass, ...(operation ? { operation } : {}) }
       );
       if (!route || route.locality === "local") return "none";
       return remoteBudget!.price(route.provider, route.modelId).billing === "subscription"

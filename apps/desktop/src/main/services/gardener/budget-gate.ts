@@ -4,10 +4,12 @@
 // the claim a background kind whose route the budget refuses now, so its rows wait stamped instead of
 // being claimed only to be refused, and so the rows it held clear as soon as it stops holding them
 // (the person continues past the pause share, raises the cap, a day or month rolls over, a route
-// moves to a local model).
+// moves to a local model). A kind is metered by the route its calls resolve: the operation route
+// they try first when it has one, else its class route.
 import {
   gardenerBlocker,
   gardenerTaskKind,
+  relationExplainBackfillJobType,
   type AiClassId,
   type BudgetSnapshot,
   type GardenerBlocker,
@@ -15,6 +17,7 @@ import {
   type GardenerClearingEvent
 } from "@app/domain";
 
+import { relationExplanationOperation } from "../ai-task-parameters.js";
 import type { KindGate } from "./background-gate.js";
 
 /**
@@ -25,6 +28,56 @@ export type RouteMetering = "money" | "calls" | "none";
 
 /** The classes whose routes the budget meters for background kinds (generative and embedding). */
 export const meteredRouteClasses: readonly AiClassId[] = ["write-fast", "write-quality", "embed"];
+
+/**
+ * A route the budget meters: a class route, or the operation route a kind's calls resolve before
+ * it (`op:<operation>`, then the class route, then `task`: `aiRouteKeys`).
+ */
+export interface MeteredRoute {
+  routeClass: AiClassId;
+  operation?: string;
+  /** The task those calls run; absent: the class's own task (`structured-output`, `embedding`). */
+  task?: "text-generation";
+}
+
+/**
+ * The background kinds whose calls resolve an operation route before their class route. Their
+ * operation route may name another provider than the class route (a legacy library's mapped route,
+ * the soak's money window), and the budget refuses by the route a call takes, so the gate holds
+ * them by it: otherwise their rows refused at admission are set free at the next re-gate while the
+ * budget still refuses them (gate S 10-25: cleared, claimed again before the person continued).
+ */
+export const kindRouteOperations: Readonly<Record<string, Omit<MeteredRoute, "routeClass">>> = {
+  [relationExplainBackfillJobType]: {
+    operation: relationExplanationOperation,
+    task: "text-generation"
+  }
+};
+
+/** The key the gate holds a metered route by. */
+function meteredRouteKey(route: MeteredRoute): string {
+  return route.operation ? `op:${route.operation}>${route.routeClass}` : route.routeClass;
+}
+
+/** The route the budget meters a background kind by, or null when it meters none. */
+export function kindMeteredRoute(type: string): MeteredRoute | null {
+  const kind = gardenerTaskKind(type);
+  if (!kind?.remote || !kind.routeClass || !meteredRouteClasses.includes(kind.routeClass))
+    return null;
+  return { routeClass: kind.routeClass, ...kindRouteOperations[type] };
+}
+
+/** Every route the gate meters: each class route, and each operation route a kind resolves. */
+function meteredRoutes(): MeteredRoute[] {
+  const routes = new Map<string, MeteredRoute>(
+    meteredRouteClasses.map((routeClass) => [routeClass, { routeClass }])
+  );
+  for (const type of Object.keys(kindRouteOperations)) {
+    const route = kindMeteredRoute(type);
+    if (route) routes.set(meteredRouteKey(route), route);
+  }
+  return [...routes.values()];
+}
 
 /** Every reason the budget gate holds work by: its rows clear once it stops holding them. */
 export const budgetGateReasons: readonly GardenerBlockerKey[] = [
@@ -50,41 +103,42 @@ export function budgetBlocker(
 export interface RemoteBudgetGateOptions {
   /** The budget's meters now (`RemoteBudget.snapshot`). */
   snapshot: () => Promise<Pick<BudgetSnapshot, "money" | "calls">>;
-  /** How the route of a class is metered now, read with the AI configuration. */
-  metering: (routeClass: AiClassId) => Promise<RouteMetering>;
+  /** How a route is metered now, read with the AI configuration. */
+  metering: (route: MeteredRoute) => Promise<RouteMetering>;
 }
 
 /**
  * The claim-time budget gate. The claim path is synchronous, so the gate answers from what its
- * last {@link RemoteBudgetGate.refresh} read: the budget's meters and the metering of each class
- * route the remote kinds use. A kind is held only when its own route is metered and refused now; a
- * local route is never held (at 100% background work goes local-only, D14).
+ * last {@link RemoteBudgetGate.refresh} read: the budget's meters and the metering of each route
+ * the remote kinds use ({@link kindMeteredRoute}). A kind is held only when its own route is
+ * metered and refused now; a local route is never held (at 100% background work goes local-only,
+ * D14).
  */
 export class RemoteBudgetGate implements KindGate {
   public readonly reasons = budgetGateReasons;
-  private holds = new Map<AiClassId, GardenerBlocker>();
+  private holds = new Map<string, GardenerBlocker>();
 
   public constructor(private readonly options: RemoteBudgetGateOptions) {}
 
   public blocker(type: string): GardenerBlocker | null {
-    const kind = gardenerTaskKind(type);
-    if (!kind?.remote || !kind.routeClass) return null;
-    return this.holds.get(kind.routeClass) ?? null;
+    const route = kindMeteredRoute(type);
+    return route ? (this.holds.get(meteredRouteKey(route)) ?? null) : null;
   }
 
   /** Reads the budget and the routes again; answers whether what the gate holds changed. */
   public async refresh(): Promise<boolean> {
+    const routes = meteredRoutes();
     const [snapshot, meterings] = await Promise.all([
       this.options.snapshot(),
-      Promise.all(meteredRouteClasses.map((routeClass) => this.options.metering(routeClass)))
+      Promise.all(routes.map((route) => this.options.metering(route)))
     ]);
-    const next = new Map<AiClassId, GardenerBlocker>();
-    meteredRouteClasses.forEach((routeClass, index) => {
+    const next = new Map<string, GardenerBlocker>();
+    routes.forEach((route, index) => {
       const blocker = budgetBlocker(snapshot, meterings[index]!);
-      if (blocker) next.set(routeClass, blocker);
+      if (blocker) next.set(meteredRouteKey(route), blocker);
     });
-    const describe = (holds: Map<AiClassId, GardenerBlocker>) =>
-      [...holds].map(([routeClass, blocker]) => `${routeClass}=${blocker.reason}`).join(",");
+    const describe = (holds: Map<string, GardenerBlocker>) =>
+      [...holds].map(([key, blocker]) => `${key}=${blocker.reason}`).join(",");
     const changed = describe(next) !== describe(this.holds);
     this.holds = next;
     return changed;
