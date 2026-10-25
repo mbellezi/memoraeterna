@@ -137,11 +137,17 @@ over the text below where they differ.
   calls take it: the status service reads every route a kind's calls resolve (operation, class, then task route) and
   the lane the scheduler names for each (`remote:<provider configuration>`), for the kinds whose calls are all known:
   topic names, Areas, overviews and label embeddings on their operation's route, the re-typing sweep on the typing and
-  typing-repair routes, the explanation backfill on the explanation's. A kind on several lanes is work on each; work
-  routed to a local model or with no route takes no remote lane; any other kind (the relation decider's, a link job, a
-  catalog header, whose embedding and graph calls are not on its class route, an import) or a route that cannot be
-  read still counts on every remote lane. Precedence, reasons and copy are unchanged; E5 v5 (`f4-e5v4` 3d32afe8) reads
-  the same rule.
+  typing-repair routes, the explanation backfill on the explanation's, and MATCH on its decider's as the matcher
+  resolves it (the local ranker's lane, a generative decider's decide and repair routes, the Decisions API's own lane
+  beside its fallback's) with the embedding of a note that has no vector yet. A kind on several lanes is work on each;
+  work routed to a local model or with no route takes no remote lane; any other kind (a link job, a catalog header,
+  whose embedding and graph calls are not on its class route, an import), MATCH while it waits for a decider, or a
+  route that cannot be read still counts on every remote lane. Precedence, reasons and copy are unchanged. E5 v6
+  (`f4-lane-agree`) reads the lanes from the run's audit rows instead: a task is on the lane of its kind's latest
+  remote call (the real writer's before the first), on the local lane when every call of its kind was local, an import
+  with its inline stages' calls; only a kind with no call at all takes the real writer's lane. Replayed on gate S, the
+  two disagree only in the 10 samples where MATCH waited for its decider (`g170-ranker-invalid`), when no Codex-lane
+  problem was active.
 - **Pre-soak cap 3.1M (owner, 10-25).** Gate S `soak7-gate-20261025T0815` on `f4-soak-start-r2` spent 626,321 Codex
   tokens and failed E5 on the lane-hold defect above, leaving the ledger at 2,362,969 of 2.7M; D38 needs gate S again
   on a new tag (`f4-soak-start-r3`), about 630k, so the owner raised the pre-soak cap to 3.1M. The soak cap (up to

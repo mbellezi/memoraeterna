@@ -58,7 +58,9 @@ export const predicateVersions = {
   // call on it, or a task whose kind's latest remote call took it (the real writer's lane before
   // any); every expectation, a window's stage too, must be compared (one outranked throughout is a
   // review); a mismatch whose sentence names a truth that affected no task says so.
-  e5: 5,
+  // v6: a kind whose calls were all local takes the local lane, an import takes its inline stages'
+  // calls too, and only a kind with no call at all takes the real writer's lane.
+  e5: 6,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
   injection: 2
@@ -946,11 +948,13 @@ function providerLane(run: LoadedRun, provider: string): string | null {
 }
 
 /**
- * The remote lane a task's calls take at a time (E5 v5), from the run's own audit rows: the lane of
- * the latest remote call a task of its kind made by then (the soak routes a kind's calls to one
- * provider at a time; the money window moves the explanations to the priced fake, then back). A kind
- * with no remote call yet takes the real writer's lane, the soak's route for remote work; null when
- * the run names neither.
+ * The lane a task's calls take at a time (E5 v5), from the run's own audit rows: the lane of the
+ * latest remote call a task of its kind made by then (the soak routes a kind's calls to one provider
+ * at a time; the money window moves the explanations to the priced fake, then back), the real
+ * writer's lane before its first. v6: a kind whose calls were all local (the label embeddings on the
+ * local embedder, MATCH on the local ranker) takes `local`; an import's calls are its own and its
+ * inline stages' (each stage is a job of its own beside it); a kind with no call at all takes the
+ * real writer's lane, the soak's route for remote work. Null when the run names no writer.
  */
 export function e5Routes(
   run: LoadedRun
@@ -961,12 +965,19 @@ export function e5Routes(
     if ((event.type === "job_done" || event.type === "job_failure") && !typeOf.has(event.id))
       typeOf.set(event.id, event.jobType);
   const calls = new Map<string, Array<{ at: number; lane: string }>>();
+  /** The kinds that made a call on any lane. */
+  const called = new Set<string>();
   for (const row of run.rows) {
     const type = row.jobId ? typeOf.get(row.jobId) : undefined;
-    if (!type || !row.lane?.startsWith("remote:")) continue;
-    const list = calls.get(type) ?? [];
-    list.push({ at: toMs(row.startedAt), lane: row.lane });
-    calls.set(type, list);
+    if (!type || !row.lane) continue;
+    const kinds = gardenerTaskKind(type)?.worker === "inline" ? [type, "ingestion"] : [type];
+    for (const kind of kinds) {
+      called.add(kind);
+      if (!row.lane.startsWith("remote:")) continue;
+      const list = calls.get(kind) ?? [];
+      list.push({ at: toMs(row.startedAt), lane: row.lane });
+      calls.set(kind, list);
+    }
   }
   for (const list of calls.values()) list.sort((a, b) => a.at - b.at);
   const writer =
@@ -974,7 +985,8 @@ export function e5Routes(
     (run.meta.providers.length === 1 ? run.meta.providers[0]!.providerConfigId : null);
   const fallback = writer ? `remote:${writer}` : null;
   return (job, time) => {
-    const list = calls.get(job.type) ?? [];
+    const list = calls.get(job.type);
+    if (!list) return called.has(job.type) ? "local" : fallback;
     // The last call that started at or before `time` (binary search: a week of rows).
     let low = 0;
     let high = list.length;
@@ -1163,7 +1175,7 @@ export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
 }
 
 /**
- * E5 (predicate v5). (ii): after the settle that follows every ground-truth transition (the latest
+ * E5 (predicate v6). (ii): after the settle that follows every ground-truth transition (the latest
  * `settleUntil` so far), the sentence's class equals the highest-precedence class an active window
  * expects among those whose condition affects work at the sample ({@link e5Affected}); a sample
  * where none does is counted apart (`unaffected`), since the status names a class only for the
@@ -1177,6 +1189,7 @@ export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
  * v5: a provider problem, a window's or a lane fault's, affects only the work on its provider's
  * lane ({@link E5Lane}, {@link e5Routes}); a class mismatch whose sentence names an active truth
  * that affected no task says which (`named`).
+ * v6: a kind whose calls were all local is on the local lane, as the product reads it.
  * (i): a sample with a task set aside by a blocker whose sentence names no class (or is the generic
  * one) is a fallback.
  */

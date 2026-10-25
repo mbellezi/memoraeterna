@@ -1222,6 +1222,96 @@ describe("E5 v4 and v5: a fault injected outside any window is a ground truth of
     expect(e5Affected(sample, signin, { lane: codexLane, routeOf: () => null })).toBe(true);
   });
 
+  /** A call of `jobId` on the local lane (the embedder, or the ranker with `reranking`). */
+  const localCall = (jobId: string, offset: number, taskType = "embedding"): TaskRunRecord => ({
+    ...succeeded(offset, 300),
+    id: `local-${jobId}-${offset}`,
+    taskType,
+    provider: taskType === "embedding" ? "local-gguf" : "local-mlx",
+    modelId: taskType === "embedding" ? "Qwen/Qwen3-Embedding-0.6B-GGUF" : "Qwen3-Reranker-0.6B",
+    runtime: taskType === "embedding" ? "gguf" : "mlx",
+    workloadClass: taskType === "embedding" ? "embed" : "decide",
+    schemaMode: null,
+    lane: "local",
+    jobId
+  });
+
+  it("routes a kind whose calls were all local on the local lane, an import by its stages' calls too (v6)", () => {
+    const label = job("label", "topic-label-embed");
+    const match = job("match", "relation-match");
+    const ingest = job("import", "ingestion", { status: "running", sourceItemId: "source-1" });
+    const summary = job("summary", "summarization", {
+      status: "running",
+      sourceItemId: "source-1"
+    });
+    const run = runOf(1, {
+      samples: [sampleAt(0, { jobs: [label, match, ingest, summary] })],
+      rows: [
+        localCall("label", 10 * minute),
+        localCall("match", 20 * minute, "reranking"),
+        localCall("import", 5 * minute),
+        { ...succeeded(30 * minute, 1_000), id: "summary-call", jobId: "summary" }
+      ]
+    });
+    const route = e5Routes(run);
+    // Every call of the kind local: the local lane, before its first call as after it.
+    expect(route(label, start)).toBe("local");
+    expect(route(match, start + 40 * minute)).toBe("local");
+    // A kind with no call at all: the real writer's lane, the soak's route for remote work.
+    expect(route(job("name", "topic-name"), start)).toBe(codexLane);
+    // An import's own calls are local, its summary stage's on Codex: the import takes Codex.
+    expect(route(ingest, start + 40 * minute)).toBe(codexLane);
+    expect(route(summary, start + 40 * minute)).toBe(codexLane);
+    const signin = { class: "no_model", reason: "signin_required" };
+    const onCodex = { lane: codexLane, routeOf: (entry: Job) => route(entry, start + 40 * minute) };
+    // A Codex sign-in affects none of the local kinds' work, and the writer's work it does.
+    expect(e5Affected(sampleAt(40 * minute, { jobs: [label, match] }), signin, onCodex)).toBe(
+      false
+    );
+    expect(
+      e5Affected(
+        sampleAt(40 * minute, { jobs: [label, match, job("name", "topic-name")] }),
+        signin,
+        onCodex
+      )
+    ).toBe(true);
+    // An import an outage set aside is on Codex too.
+    const setAside = {
+      ...ingest,
+      status: "queued",
+      blockedClass: "waiting",
+      blockedReason: "provider_unavailable"
+    };
+    expect(
+      e5Affected(
+        sampleAt(40 * minute, { jobs: [setAside] }),
+        { class: "waiting", reason: "provider_unavailable" },
+        onCodex
+      )
+    ).toBe(true);
+  });
+
+  it("keeps the 80 % binding at the gate's 12:25 case while MATCH waits beside it on the local ranker (v6)", () => {
+    // Gate S 12:27:30: a relation-match due beside the explanations the 80 % held for the priced
+    // lane. Its calls are the local ranker's, so the Codex sign-in still affects no task.
+    const samples = gateSamples().map((sample, index) => ({
+      ...sample,
+      jobs: [...sample.jobs, job("match", "relation-match", { runAfter: start + fault })],
+      ...(index === 2 || index === 3 ? { status: attention("cap", "money_80") } : {})
+    }));
+    const events = [randomFault, ...nextCall, ...money];
+    const ranked = localCall("match", fault - 30 * minute, "reranking");
+    const run = runOf(6, { events, rows: [...nextSuccess, ...onPriced, ranked], samples });
+    expect(computeE5(run)).toMatchObject({ classMismatches: [], notExercised: [] });
+    expect(e5Check(run).status).toBe("pass");
+    // A kind with no call is still the writer's: the sign-in affects it and outranks the 80 %.
+    const unrouted = computeE5(runOf(6, { events, rows: [...nextSuccess, ...onPriced], samples }));
+    expect(unrouted.classMismatches.map((mismatch) => mismatch.expected)).toEqual([
+      "no_model.signin_required",
+      "no_model.signin_required"
+    ]);
+  });
+
   it("reads a provider window on its provider's lane: work routed elsewhere is not affected", () => {
     const events = [
       truth("g155", "start", 0, 2, undefined, "unauthorized"),
@@ -1913,7 +2003,7 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 5, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 6, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
