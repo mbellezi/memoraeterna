@@ -854,6 +854,13 @@ function classifyErrorText(error: string | null, status: string): string | null 
   // The caller's own cap ended the call (an Ask's budget, for one), not a provider deadline.
   if (status === "canceled" && /^The operation timed out\.?$/u.test(text.trim()))
     return "cancelled by caller deadline";
+  // The RemoteBudget refused the attempt before it was sent: the work waits (job-failure.ts, T75).
+  if (/^gardener\.blocked\.cap\./u.test(text.trim())) return "blocked: budget cap";
+  // The routed model changed while the call waited: retried with the current routing (job-failure.ts).
+  if (/organization\.errors\.modelChanged/u.test(text)) return "transient: model changed";
+  // A job's own arguments refused by its task schema (a Zod issue list), not a model's output.
+  if (/^\s*\[\s*\{\s*"code":\s*"(?:invalid_union|unrecognized_keys|invalid_type)"/u.test(text))
+    return "permanent: job payload";
   if (/429|rate[ _]?limit|usage_limit/iu.test(text)) return "transient: rate limit";
   // The local helper died without answering, or the local model was busy (job-failure.ts).
   if (/errors\.localModels\.(?:runtimeFailed|modelBusy)/u.test(text))
@@ -975,6 +982,98 @@ export function unexplainedActionFailures(run: LoadedRun): ActionRecord[] {
   });
 }
 
+/** The intervals of the ground-truth windows of the given kinds: [start, end], open ones to the end of time. */
+function groundTruthIntervals(
+  run: LoadedRun,
+  kinds: ReadonlySet<string>
+): Array<{ id: string; kind: string; from: number; to: number }> {
+  const opened = new Map<string, { kind: string; from: number }>();
+  const out: Array<{ id: string; kind: string; from: number; to: number }> = [];
+  for (const event of run.events) {
+    // A window's own records (`<id>#met`, `<id>#80`) are moments inside it, not windows of their own.
+    if (event.type !== "ground_truth" || !kinds.has(event.kind) || event.id.includes("#")) continue;
+    if (event.phase === "start") opened.set(event.id, { kind: event.kind, from: toMs(event.at) });
+    else {
+      const start = opened.get(event.id);
+      if (!start) continue;
+      opened.delete(event.id);
+      out.push({ id: event.id, kind: start.kind, from: start.from, to: toMs(event.at) });
+    }
+  }
+  for (const [id, start] of opened)
+    out.push({ id, kind: start.kind, from: start.from, to: Number.POSITIVE_INFINITY });
+  return out;
+}
+
+/** The provider windows of the real lane (F4): every request meets the window's fault. */
+const providerWindowKinds = new Set(["usage_limit", "refused", "enotfound", "unauthorized"]);
+/** What a call of the real lane fails with in a provider window: its fault, or the breaker it opened. */
+const providerWindowErrors: Record<string, RegExp> = {
+  usage_limit: /429|usage_limit|rate[ _]?limit/iu,
+  refused: /ECONNREFUSED|fetch failed|connection/iu,
+  enotfound: /ENOTFOUND|fetch failed|connection/iu,
+  unauthorized: /401|unauthor|authentication/iu
+};
+const breakerRefusal = /providerUnavailable|provider_unavailable|circuit/iu;
+/** The breaker bar: it closes within a minute after a provider window (spec 5.4 stop checks). */
+const breakerCloseAllowanceMs = minute;
+/** The budget windows (F4): the blocker the RemoteBudget refuses a background attempt with. */
+const budgetWindowErrors: Record<string, RegExp> = {
+  money: /^gardener\.blocked\.cap\.money_(?:80|100)$/u,
+  codex_daily_cap: /^gardener\.blocked\.cap\.subscription_daily$/u
+};
+
+/**
+ * The failed calls a ground-truth window refused by design (F4), set apart from the failure audit
+ * only: a call of the real lane that failed in a provider window with the window's fault or the
+ * breaker's refusal (nothing sent, so no injected exchange overlaps it), until the breaker closed
+ * after the window and at most a minute after it; and a background attempt the RemoteBudget
+ * refused in a money or daily-cap window with that window's blocker (the work waits, T75). They do
+ * not enter the injected set: they explain no job failure, input or task (E2, E3), so a job that
+ * failed after such a refusal stays in the audit.
+ */
+export function windowRefusals(run: LoadedRun): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const realLane = run.meta.realWriter ? `remote:${run.meta.realWriter.providerConfigId}` : null;
+  const closes = run.events
+    .filter(
+      (event): event is Extract<SoakEvent, { type: "breaker" }> =>
+        event.type === "breaker" && event.lane === realLane && event.to === "closed"
+    )
+    .map((event) => toMs(event.at));
+  const provider = groundTruthIntervals(run, providerWindowKinds).map((window) => {
+    const closed = closes.find((at) => at >= window.to);
+    const allowance = window.to + breakerCloseAllowanceMs;
+    return { ...window, to: closed !== undefined ? Math.min(closed, allowance) : allowance };
+  });
+  const budget = groundTruthIntervals(run, new Set(Object.keys(budgetWindowErrors)));
+  const grace = 1_000;
+  for (const row of run.rows) {
+    if (row.status === "succeeded") continue;
+    const start = rowStart(row) - grace;
+    const end = rowEnd(row) + grace;
+    const error = row.error ?? "";
+    const inside = (window: { from: number; to: number }) =>
+      window.from <= end && window.to >= start;
+    const byProvider =
+      row.lane === realLane &&
+      provider.find(
+        (window) =>
+          inside(window) &&
+          (breakerRefusal.test(error) || providerWindowErrors[window.kind]!.test(error))
+      );
+    if (byProvider) {
+      reasons.set(row.id, byProvider.id);
+      continue;
+    }
+    const byBudget = budget.find(
+      (window) => inside(window) && budgetWindowErrors[window.kind]!.test(error.trim())
+    );
+    if (byBudget) reasons.set(row.id, byBudget.id);
+  }
+  return reasons;
+}
+
 /** One failed action, with the facts its port recorded (how long it ran, how far it got). */
 const actionLine = (action: ActionRecord) => {
   const facts = Object.entries(action.detail)
@@ -997,7 +1096,15 @@ interface Failure {
 }
 
 function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: number) {
-  const calls = run.rows.filter((row) => row.status !== "succeeded" && !injected.has(row.id));
+  // The calls a window refused by design are not failures to audit; they are counted apart.
+  const refused = windowRefusals(run);
+  const calls = run.rows.filter(
+    (row) => row.status !== "succeeded" && !injected.has(row.id) && !refused.has(row.id)
+  );
+  const refusedByWindow = new Map<string, number>();
+  for (const [id, window] of refused)
+    if (!injected.has(id)) refusedByWindow.set(window, (refusedByWindow.get(window) ?? 0) + 1);
+  const refusedCount = [...refusedByWindow.values()].reduce((sum, count) => sum + count, 0);
   const explained = injectedJobFailures(run, injected);
   const jobs = jobFailuresOf(run.events).filter((job) => !explained.has(job.id));
   const actions = unexplainedActionFailures(run);
@@ -1060,9 +1167,18 @@ function failureAudit(run: LoadedRun, injected: Map<string, string>, seed: numbe
       title: "Failure handling",
       bar: "every non-injected failure (call, job or driver action) classified correctly (audited sample of 50); every wedged event explained",
       status: total === 0 ? "pass" : "review",
-      value: `${calls.length} non-injected failed call(s), ${jobs.length} non-injected failed job(s)${unrecorded > 0 ? `, ${unrecorded} more failed job(s) in the job counts with no record` : ""}, ${actions.length} failed driver action(s) with no injected fault; ${rows.length} in the audited sample, ${unclassified} unclassified by the error text`,
+      value: `${calls.length} non-injected failed call(s), ${jobs.length} non-injected failed job(s)${unrecorded > 0 ? `, ${unrecorded} more failed job(s) in the job counts with no record` : ""}, ${actions.length} failed driver action(s) with no injected fault; ${rows.length} in the audited sample, ${unclassified} unclassified by the error text${refusedCount > 0 ? `; ${refusedCount} call(s) a window refused by design set apart` : ""}`,
       details: [
         "The classification column is a first reading of the error text; a person confirms each row (T64r) and explains every wedged event.",
+        ...(refusedCount > 0
+          ? [
+              `Set apart, refused by a window by design (a provider window's fault or its breaker until it closed, a budget window's blocker): ${[
+                ...refusedByWindow
+              ]
+                .map(([window, count]) => `${window} ${count}`)
+                .join(", ")}.`
+            ]
+          : []),
         ...actions.slice(0, 12).map(actionLine),
         ...(actions.length > 12
           ? [`${actions.length - 12} more failed driver action(s) with no injected fault.`]
@@ -1266,21 +1382,32 @@ export function presoakAssertions(run: LoadedRun): PresoakAssertion[] {
         entry.exchange.closedAfterMs !== null &&
         Math.abs(entry.exchange.closedAfterMs - firstByteMs) <= 3_000
     );
-    const lateCalls = late.filter((entry) =>
-      entry.rows.some(
+    // Spec 5.4: the first byte at 35 s is "aborted at the 30 s bound, retried". The attempt ends
+    // aborted; its call is right when it went on after the abort (it was running when the attempt
+    // began, waited a retry backoff and ended met after the attempt ended, its retry answered) or,
+    // its attempts spent, ended aborted with the no-data error. F3's bursts of three ran on one call
+    // and only the second reading occurred; gate S's real lane interleaves two calls (10-25).
+    const lateCalls = late.map((entry) =>
+      entry.rows.find(
         (row) =>
-          row.deadlineOutcome === "aborted" &&
-          /sent no data|did not respond|timeout/iu.test(row.error ?? "")
+          (row.deadlineOutcome === "aborted" &&
+            /sent no data|did not respond|timeout/iu.test(row.error ?? "")) ||
+          (row.deadlineOutcome === "met" &&
+            (row.retryWaitMs ?? 0) > 0 &&
+            rowStart(row) <= toMs(entry.exchange.startedAt) + 1_000 &&
+            rowEnd(row) > toMs(entry.exchange.endedAt))
       )
     );
+    const lateEnded = lateCalls.filter((row): row is TaskRunRecord => row !== undefined);
+    const lateExhausted = lateEnded.filter((row) => row.deadlineOutcome === "aborted");
     add(
       "late_first_byte",
       provider,
       late.length,
       "aborted",
       `${lateAtBound.length} ended at the ${firstByteMs} ms first-byte bound`,
-      `${lateCalls.length} call(s) ended aborted with a no-data error`,
-      late.length > 0 && lateAtBound.length === late.length && lateCalls.length > 0
+      `${lateEnded.length} of ${late.length} retried after the abort (${new Set(lateEnded.filter((row) => row.deadlineOutcome === "met").map((row) => row.id)).size} call(s) ended met) or ended aborted with a no-data error (${new Set(lateExhausted.map((row) => row.id)).size} call(s))`,
+      late.length > 0 && lateAtBound.length === late.length && lateEnded.length === late.length
     );
     const malformed = around("malformed");
     // The repair must be the reached call's own (`malformedRepairs`): a repair by another caller

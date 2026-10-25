@@ -26,6 +26,7 @@ import {
   renderReport,
   runSoakReport,
   unexplainedActionFailures,
+  windowRefusals,
   type Check,
   type LoadedRun
 } from "./report.ts";
@@ -1027,6 +1028,54 @@ describe("the pre-soak assertion", () => {
     ).toBe(true);
   });
 
+  it("passes a late first byte whose call was retried after the abort, as spec 5.4 says (gate S, 10-25)", () => {
+    // The real lane interleaves calls: a burst of three late first bytes lands on two calls, and
+    // each call's next attempt answers. The call ends met after the aborted attempt ended.
+    const run = injectedRun();
+    const lateExchange = run.events.find(
+      (event): event is ExchangeRecord =>
+        event.type === "exchange" &&
+        event.kind === "late_first_byte" &&
+        event.provider === "codex-wire"
+    )!;
+    const retried = (fields: Partial<TaskRunRecord>) => ({
+      ...run,
+      rows: run.rows.map((entry) => {
+        if (!/sent no data/u.test(entry.error ?? "") || entry.lane !== "remote:ccc") return entry;
+        const durationMs = Date.parse(lateExchange.endedAt) - Date.parse(entry.startedAt) + 2_000;
+        return {
+          ...entry,
+          status: "succeeded" as const,
+          error: null,
+          deadlineOutcome: "met",
+          retryWaitMs: 300,
+          durationMs,
+          finishedAt: new Date(Date.parse(entry.startedAt) + durationMs).toISOString(),
+          ...fields
+        };
+      })
+    });
+    const lateLine = (target: LoadedRun) =>
+      presoakAssertions(target).find(
+        (entry) => entry.kind === "late_first_byte" && entry.provider === "codex-wire"
+      )!;
+    expect(lateLine(run)).toMatchObject({ status: "pass" });
+    expect(lateLine(retried({}))).toMatchObject({ status: "pass" });
+    expect(lateLine(retried({})).call).toContain(
+      "1 of 1 retried after the abort (1 call(s) ended met)"
+    );
+    // A call that never backed off did not retry; one that ended with the attempt was not retried.
+    expect(lateLine(retried({ retryWaitMs: 0 })).status).toBe("fail");
+    expect(
+      lateLine(
+        retried({
+          durationMs: 1_000,
+          finishedAt: new Date(Date.parse(lateExchange.endedAt) - 1_000).toISOString()
+        })
+      ).status
+    ).toBe("fail");
+  });
+
   it("fails a malformed answer whose second call the audit does not mark as a repair", () => {
     // The Ask path asked again at once (the soak's presoak4 run), but the second call carried
     // neither is_repair nor a retry index: the audit cannot tell it from a new question.
@@ -1199,6 +1248,88 @@ describe("failed jobs", () => {
   });
 });
 
+describe("calls a window refused by design (F4)", () => {
+  const f4Meta: SoakMeta = {
+    ...meta,
+    providers: [{ provider: "openai-codex", providerConfigId: "ccc", baseUrl: "https://x/codex" }],
+    realWriter: { providerConfigId: "ccc", provider: "openai-codex", modelId: "gpt-5.6-luna" }
+  };
+  const truth = (id: string, kind: string, phase: "start" | "end", offset: number): SoakEvent => ({
+    type: "ground_truth",
+    id,
+    kind,
+    phase,
+    at: at(offset),
+    settleUntil: at(offset + 2 * minute),
+    detail: {}
+  });
+  const failed = (offset: number, lane: string, error: string) =>
+    row(offset, { lane, runtime: "remote", provider: "openai-codex", status: "failed", error });
+
+  it("sets apart a provider window's breaker refusals until the breaker closed, and a budget window's blockers", () => {
+    const inside = failed(32 * minute, "remote:ccc", "errors.ai.providerUnavailable");
+    const halfOpen = failed(45 * minute + 1_000, "remote:ccc", "errors.ai.providerUnavailable");
+    const afterClose = failed(47 * minute, "remote:ccc", "errors.ai.providerUnavailable");
+    const otherFailure = failed(33 * minute, "remote:ccc", "organization.errors.invalidOutput");
+    const money = failed(91 * minute, "remote:fff", "gardener.blocked.cap.money_80");
+    const moneyOutside = failed(130 * minute, "remote:fff", "gardener.blocked.cap.money_80");
+    // The job that failed 28 s after its call was refused: the window explains no job failure.
+    const job: JobFailureEvent = {
+      type: "job_failure",
+      id: "job-backfill",
+      jobType: "relation-explain-backfill",
+      lane: "light",
+      at: at(91 * minute + 28_000),
+      attempts: 1,
+      sourceItemId: null,
+      error: '[\n  {\n    "code": "invalid_union",\n    "errors": []\n  }\n]'
+    };
+    const run: LoadedRun = {
+      ...goodRun({
+        rows: [inside, halfOpen, afterClose, otherFailure, money, moneyOutside],
+        events: [
+          truth("g030-usage-limit", "usage_limit", "start", 30 * minute),
+          truth("g030-usage-limit#met", "usage_limit", "start", 31 * minute),
+          truth("g030-usage-limit#met", "usage_limit", "end", 45 * minute),
+          truth("g030-usage-limit", "usage_limit", "end", 45 * minute),
+          {
+            type: "breaker",
+            at: at(45 * minute + 7_000),
+            lane: "remote:ccc",
+            from: "half_open",
+            to: "closed",
+            reason: "probe_answered"
+          },
+          truth("g090-money", "money", "start", 90 * minute),
+          truth("g090-money", "money", "end", 120 * minute),
+          job
+        ]
+      }),
+      meta: f4Meta
+    };
+    expect([...windowRefusals(run)].sort()).toEqual(
+      [
+        [inside.id, "g030-usage-limit"],
+        [halfOpen.id, "g030-usage-limit"],
+        [money.id, "g090-money"]
+      ].sort()
+    );
+    const report = analyzeRun(run);
+    const check = report.checks.find((entry) => entry.id === "failure-handling")!;
+    expect(check.value).toContain("3 non-injected failed call(s), 1 non-injected failed job(s)");
+    expect(check.value).toContain("3 call(s) a window refused by design set apart");
+    expect(check.details.join(" ")).toContain("g030-usage-limit 2, g090-money 1");
+    expect(report.failureAudit.map((entry) => entry["classified as"]).sort()).toEqual(
+      [
+        "blocked: budget cap",
+        "permanent: job payload",
+        "permanent: output",
+        "transient: server"
+      ].sort()
+    );
+  });
+});
+
 describe("failures and files", () => {
   it("classifies an error by its text", () => {
     const text = (error: string) => classifyError(row(0, { error, status: "failed" }));
@@ -1219,6 +1350,13 @@ describe("failures and files", () => {
       "cancelled by caller deadline"
     );
     expect(text("The operation timed out.")).toBe("transient: timeout");
+    // A RemoteBudget refusal is a blocker, a routing change a transient retry, a Zod issue list the
+    // job's own payload refused (gate S, 10-25).
+    expect(text("gardener.blocked.cap.money_80")).toBe("blocked: budget cap");
+    expect(text("organization.errors.modelChanged")).toBe("transient: model changed");
+    expect(text('[\n  {\n    "code": "invalid_union",\n    "errors": [')).toBe(
+      "permanent: job payload"
+    );
   });
 
   it("lists a failed driver action that no injected fault explains, and asks a person", () => {

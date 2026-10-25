@@ -43,7 +43,9 @@ export const predicateVersions = {
   e4: 1,
   // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
   e5: 2,
-  injection: 1
+  // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
+  // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
+  injection: 2
 } as const;
 
 function percentile(values: readonly number[], fraction: number): number | null {
