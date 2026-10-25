@@ -271,7 +271,23 @@ function portsFor(w: ReturnType<typeof world>, extra: Partial<SoakPorts> = {}): 
           breaker: null
         }
       ],
-      jobs: [],
+      // A remote Gardener task always due: a provider window's condition affects it (E5 v3).
+      jobs: [
+        {
+          id: "match-1",
+          type: "relation-match",
+          lane: "light",
+          status: "queued",
+          sourceItemId: null,
+          attempts: 0,
+          updatedAt: 0,
+          runAfter: 0,
+          lockedAt: null,
+          scopeKey: null,
+          blockedClass: null,
+          blockedReason: null
+        }
+      ],
       jobCounts: {},
       helper: { pid: 1, rssMb: 1, spawnCount: 1 },
       appRssMb: 100,

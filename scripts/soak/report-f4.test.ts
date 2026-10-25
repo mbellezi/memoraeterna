@@ -621,9 +621,12 @@ describe("E5 status coverage", () => {
     truth("w30", "start", 10 * minute, 2, ["waiting", "provider_rate_limit"]),
     truth("w30", "end", 40 * minute, 2)
   ];
+  // A remote Gardener task due all along: the provider windows' condition affects it (E5 v3).
+  const remoteTask = [job("match", "relation-match")];
 
   it("passes when the sentence follows the window after the settle of its start and of its end", () => {
     const samples = minutes(0, 60, (index) => ({
+      jobs: remoteTask,
       status:
         index >= 12 && index < 40
           ? statusOf("waiting", "provider_rate_limit")
@@ -640,6 +643,7 @@ describe("E5 status coverage", () => {
 
   it("fails on a sentence of another class after the settle, and says which window", () => {
     const samples = minutes(0, 60, (index) => ({
+      jobs: remoteTask,
       status:
         index >= 20 && index < 25
           ? statusOf("offline", "network_unreachable")
@@ -659,6 +663,7 @@ describe("E5 status coverage", () => {
       truth("a", "end", 40 * minute, 2)
     ];
     const samples = minutes(0, 50, (index) => ({
+      jobs: remoteTask,
       status:
         index >= 12 && index < 30
           ? statusOf("paused", "autonomy_off")
@@ -668,8 +673,12 @@ describe("E5 status coverage", () => {
   });
 
   it("notes a right class with another reason without failing it", () => {
-    const samples = minutes(0, 60, () => ({ status: statusOf("waiting", "provider_unavailable") }));
+    const samples = minutes(0, 60, () => ({
+      jobs: remoteTask,
+      status: statusOf("waiting", "provider_unavailable")
+    }));
     const result = computeE5(runOf(2, { events: window, samples }));
+    expect(result.checked).toBeGreaterThan(0);
     expect(result.matched).toBe(result.checked);
     expect(result.reasonMismatches).toBe(result.checked);
   });
@@ -725,7 +734,9 @@ describe("E5 status coverage", () => {
     ];
     const samples = minutes(0, 40, () => ({ status: statusOf(undefined) }));
     const check = e5Check(runOf(1, { events: unmet, samples }));
-    expect(computeE5(runOf(1, { events: unmet, samples })).notExercised).toEqual(["w54"]);
+    expect(computeE5(runOf(1, { events: unmet, samples })).notExercised).toEqual([
+      { window: "w54", why: "unmet" }
+    ]);
     expect(check.status).toBe("review");
     expect(check.details.join(" ")).toContain("w54: no call met its fault");
     // Met, it is checked from that moment like any window.
@@ -736,6 +747,7 @@ describe("E5 status coverage", () => {
       { ...truth("w54", "end", 25 * minute, 2, undefined, "refused"), detail: { met: true } }
     ];
     const following = minutes(0, 40, (index) => ({
+      jobs: remoteTask,
       status:
         index >= 14 && index < 27
           ? statusOf("waiting", "provider_unavailable")
@@ -744,6 +756,212 @@ describe("E5 status coverage", () => {
     const result = computeE5(runOf(1, { events: met, samples: following }));
     expect(result).toMatchObject({ notExercised: [], checked: 9, matched: 9 });
     expect(e5Check(runOf(1, { events: met, samples: following })).status).toBe("pass");
+  });
+
+  // Gate S 10-25 (soak7-gate-20261024T2343): 33 of its 35 misses were samples where the window's
+  // condition affected no work, so the status rightly said idle (spec 3.8: a class with a task
+  // it affects); v3 compares only where the condition affects work.
+  const idleStatus = { state: "idle", params: {} };
+  const busyLane = (waitingP0: number, running = 0) => [
+    { ...lane(running), waiting: { P0: waitingP0, P1: 0, P2: 0, P3: 0 } }
+  ];
+
+  it("compares a provider window's class only while work uses a remote lane (the usage limit, the sign-in)", () => {
+    const events = [
+      truth("g30", "start", 0, 2, undefined, "usage_limit"),
+      truth("g30#met", "start", 4 * minute, 2, ["waiting", "provider_rate_limit"]),
+      truth("g30#met", "end", 15 * minute, 2),
+      { ...truth("g30", "end", 15 * minute, 2), detail: { met: true } }
+    ];
+    const samples = minutes(0, 20, (index) =>
+      index === 8
+        ? // An Ask waits on the lane: the sentence names the rate limit (00:21:09 in gate S).
+          {
+            lanes: busyLane(1),
+            status: { ...statusOf("waiting", "provider_rate_limit"), state: "idle" }
+          }
+        : index === 9
+          ? // A local Gardener task alone does not use the lane.
+            { jobs: [job("rebalance", "topic-rebalance")], status: statusOf("waiting", "queue") }
+          : index === 10
+            ? // An import waiting for its next attempt is not Gardener work (D27).
+              { jobs: [job("import", "ingestion")], status: idleStatus }
+            : index === 11
+              ? // A remote Gardener task due is affected: idle here is a miss.
+                { jobs: [job("match", "relation-match")], status: idleStatus }
+              : { status: idleStatus }
+    );
+    const result = computeE5(runOf(1, { events, samples }));
+    expect(result.checked).toBe(2);
+    expect(result.matched).toBe(1);
+    expect(result.classMismatches).toEqual([
+      expect.objectContaining({ window: "g30#met", seen: "none.none (idle)" })
+    ]);
+    // 6..14 are past the settle and inside the window; 8 and 11 were compared.
+    expect(result.unaffected.map((row) => row.at)).toEqual(
+      [6, 7, 9, 10, 12, 13, 14].map((index) => at(index * minute))
+    );
+    // The same samples with the remote task idle as well: nothing to fail, all apart.
+    const quiet = samples.map((sample, index) => (index === 11 ? { ...sample, jobs: [] } : sample));
+    expect(e5Check(runOf(1, { events, samples: quiet })).status).toBe("pass");
+    // A task the breaker set aside is affected too, whatever its kind (d1376f47).
+    const outage = [
+      truth("g54", "start", 0, 2, ["offline", "network_unreachable"], "enotfound"),
+      truth("g54", "end", 10 * minute, 2, undefined, "enotfound")
+    ];
+    const setAside = minutes(0, 10, () => ({
+      jobs: [
+        {
+          ...job("import", "ingestion"),
+          blockedClass: "offline",
+          blockedReason: "network_unreachable"
+        }
+      ],
+      status: statusOf("offline", "network_unreachable")
+    }));
+    expect(computeE5(runOf(1, { events: outage, samples: setAside }))).toMatchObject({
+      checked: 8,
+      matched: 8
+    });
+  });
+
+  it("expects a missing decider only from the tasks it set aside, a model check while Gardener work is in progress", () => {
+    const ranker = [
+      truth("g170", "start", 0, 2, ["no_model", "no_decider"], "ranker_invalid"),
+      truth("g170", "end", 10 * minute, 2, undefined, "ranker_invalid")
+    ];
+    const samples = minutes(0, 10, (index) =>
+      index === 4
+        ? // A placement due: it takes decision 19's path and waits for its turn, not for a decider.
+          { jobs: [job("place", "topic-place")], status: statusOf("waiting", "queue") }
+        : index === 5
+          ? {
+              jobs: [
+                {
+                  ...job("match", "relation-match"),
+                  blockedClass: "no_model",
+                  blockedReason: "no_decider"
+                }
+              ],
+              status: { ...statusOf("no_model", "no_decider"), state: "blocked" }
+            }
+          : { status: idleStatus }
+    );
+    const result = computeE5(runOf(1, { events: ranker, samples }));
+    expect(result).toMatchObject({ checked: 1, matched: 1, classMismatches: [] });
+    expect(result.unaffected).toHaveLength(7);
+
+    const embedder = [
+      truth("g190", "start", 0, 2, ["download", "model_verifying"], "embedder_verifying"),
+      truth("g190", "end", 10 * minute, 2, undefined, "embedder_verifying")
+    ];
+    const verifying = minutes(0, 10, (index) =>
+      index === 6
+        ? { jobs: [job("rebalance", "topic-rebalance")], status: idleStatus }
+        : index === 7
+          ? // Scheduled for tomorrow: not work in progress.
+            {
+              jobs: [job("retention", "gardener-retention", { runAfter: start + 20 * hour })],
+              status: idleStatus
+            }
+          : { status: idleStatus }
+    );
+    const checked = computeE5(runOf(1, { events: embedder, samples: verifying }));
+    expect(checked).toMatchObject({ checked: 1, matched: 0 });
+    expect(checked.classMismatches[0]).toMatchObject({
+      window: "g190",
+      expected: "download.model_verifying"
+    });
+  });
+
+  it("keeps a control or a cap standing: idle with no task in the way is still a miss", () => {
+    const events = [
+      truth("g250", "start", 0, 2, undefined, "money"),
+      truth("g250#80", "start", 1 * minute, 2, ["cap", "money_80"], "money"),
+      truth("g250#80", "end", 6 * minute, 2, undefined, "money"),
+      truth("g250", "end", 9 * minute, 2, undefined, "money")
+    ];
+    // Gate S 03:55:21 and 03:56:21: the budget paused at 80 %, no task held, the sentence idle.
+    const samples = minutes(0, 10, () => ({ status: idleStatus }));
+    const result = computeE5(runOf(1, { events, samples }));
+    expect(result.classMismatches.map((row) => row.at)).toEqual([
+      at(3 * minute),
+      at(4 * minute),
+      at(5 * minute)
+    ]);
+    expect(e5Check(runOf(1, { events, samples })).status).toBe("fail");
+  });
+
+  it("reads an only-idle block from the sample's power reading, not from the tick that records its end", () => {
+    const events = [
+      truth("g205", "start", 0, 2, undefined, "only_idle"),
+      truth("g205#1", "start", 0, 2, ["paused", "only_idle_user_active"], "only_idle"),
+      // The block turned at minute 10; the tick recorded it a little later (gate S: 03:18:07 vs 03:18:19.345).
+      truth("g205#1", "end", 10 * minute + 30_000, 2, undefined, "only_idle"),
+      truth("g205", "end", 20 * minute, 2, undefined, "only_idle")
+    ];
+    const power = (active: boolean) => ({
+      active,
+      onBattery: false,
+      overridden: true,
+      idleMs: active ? 0 : 300_000 + 11_000
+    });
+    const samples = minutes(0, 11, (index) =>
+      index === 10
+        ? { power: power(false), status: idleStatus }
+        : { power: power(true), status: statusOf("paused", "only_idle_user_active") }
+    );
+    const result = computeE5(runOf(1, { events, samples }));
+    expect(result).toMatchObject({ checked: 8, matched: 8, classMismatches: [] });
+    expect(result.unaffected).toEqual([{ at: at(10 * minute), window: "g205#1" }]);
+    // While the reading says the user is active, idle is a miss.
+    const missed = samples.map((sample, index) =>
+      index === 5 ? { ...sample, status: idleStatus } : sample
+    );
+    expect(computeE5(runOf(1, { events, samples: missed })).classMismatches).toHaveLength(1);
+  });
+
+  it("is a review when a window's class was never compared: no work affected, ended in its settle, never opened", () => {
+    const events = [
+      truth("g170", "start", 0, 2, ["no_model", "no_decider"], "ranker_invalid"),
+      truth("g170", "end", 10 * minute, 2, undefined, "ranker_invalid"),
+      truth("g070", "start", 12 * minute, 2, undefined, "refused"),
+      truth("g070#met", "start", 20 * minute, 2, ["waiting", "provider_unavailable"], "refused"),
+      truth("g070#met", "end", 21 * minute, 2, undefined, "refused"),
+      { ...truth("g070", "end", 21 * minute, 2, undefined, "refused"), detail: { met: true } },
+      truth("g120", "start", 25 * minute, 2, undefined, "codex_daily_cap"),
+      truth("g120", "end", 35 * minute, 2, undefined, "codex_daily_cap")
+    ];
+    const samples = minutes(0, 40, () => ({
+      jobs: [job("match", "relation-match")],
+      status: idleStatus
+    }));
+    const meta = {
+      f4: {
+        codex: { expected: 1, cap: 2, dropFromHour0: 0 },
+        windows: [
+          {
+            id: "g120",
+            kind: "codex_daily_cap",
+            startMinute: 25,
+            durationMinutes: 10,
+            expect: { class: "cap", reason: "subscription_daily" },
+            settleMinutes: 2,
+            settleEndMinutes: 2
+          }
+        ],
+        predicates: { workerStates: 1 }
+      }
+    };
+    const run = runOf(1, { events, samples, meta });
+    expect(computeE5(run).notExercised).toEqual([
+      { window: "g070", why: "ended_in_settle" },
+      { window: "g120", why: "never_opened" },
+      { window: "g170", why: "nothing_affected" }
+    ]);
+    const check = e5Check(run);
+    expect(check.status).toBe("review");
+    expect(check.details.join(" ")).toContain("g170: no sample after its settle held work");
   });
 });
 
@@ -1229,7 +1447,7 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 2, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 3, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");

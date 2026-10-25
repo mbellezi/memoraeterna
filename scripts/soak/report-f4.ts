@@ -11,6 +11,9 @@
  */
 import { compareBlockerClasses } from "../../packages/domain/src/gardener/state.ts";
 import type { GardenerBlockerClass } from "../../packages/domain/src/gardener/blockers.ts";
+import { gardenerTaskKind } from "../../packages/domain/src/gardener/kinds.ts";
+import { defaultGardenerStatusConfig } from "../../packages/domain/src/gardener/status.ts";
+import { defaultGardenerConfig } from "../../packages/domain/src/gardener-config.ts";
 import { relationsConfig } from "../../packages/domain/src/relations-config.ts";
 import {
   deriveWorkerStates,
@@ -44,7 +47,9 @@ export const predicateVersions = {
   // (c) one attempt's estimate is the window's planned estimate or the largest priced attempt.
   e4: 2,
   // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
-  e5: 2,
+  // v3: a window's class is expected where its condition affects work (spec 3.8); a window never
+  // compared is a review.
+  e5: 3,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
   injection: 2
@@ -765,11 +770,24 @@ interface Transition {
   record: GroundTruthRecord;
 }
 
+/** Why a window's class was never compared with the sentence (E5 v3): the window is not exercised. */
+export type E5NotExercisedWhy =
+  /** A provider-wait window no call met: the product could not know of its fault. */
+  | "unmet"
+  /** Its expectation never opened (a daily cap the count never reached, a budget never at 80 %). */
+  | "never_opened"
+  /** Open past its settle, but no sample then held work its condition affects. */
+  | "nothing_affected"
+  /** It ended before a sample came after the settle of its expectation. */
+  | "ended_in_settle";
+
 export interface E5Result {
-  /** Provider-wait windows no call met: the status could never name their fault. */
-  notExercised: string[];
+  /** Windows whose class was never compared: the run did not show the sentence names them. */
+  notExercised: Array<{ window: string; why: E5NotExercisedWhy }>;
   checked: number;
   matched: number;
+  /** Samples after the settle, inside a window, where nothing its condition affects was there. */
+  unaffected: Array<{ at: string; window: string }>;
   classMismatches: Array<{ at: string; window: string; expected: string; seen: string }>;
   reasonMismatches: number;
   recoveryMismatches: Array<{ at: string; window: string; seen: string }>;
@@ -783,10 +801,96 @@ const classRank = (value: string): number => {
   return Number.isFinite(rank) ? rank : 0;
 };
 
+/** The window a record belongs to: `g030-usage-limit#met` and `g205-only-idle#1` are parts. */
+const windowOf = (id: string) => id.split("#")[0]!;
+
 /**
- * E5 (predicate v1). (ii): after the settle that follows every ground-truth transition (the latest
+ * Which work a window's condition affects, by the class it expects (spec 3.8: precedence picks the
+ * highest class with a task it affects; D7, D27, T86's `composeGardenerStatus`):
+ * - `standing`: a control or a cap holds every background task whether or not one waits (the
+ *   gates' holds), so the sentence names it at every sample the condition holds;
+ * - `lane`: a provider problem (a rate limit, a provider or network that does not answer, a failed
+ *   sign-in) affects the work that uses a remote lane: a call running or waiting on one, a remote
+ *   Gardener task in progress, or a task an outage set aside;
+ * - `work`: a model being fetched, checked or loaded affects any Gardener task in progress;
+ * - `set_aside`: a missing model, route or decider affects only the tasks it set aside (placement
+ *   without a decider takes decision 19's path and waits for nothing).
+ */
+export type E5Exposure = "standing" | "lane" | "work" | "set_aside";
+
+export function e5ExposureOf(expect: { class: string; reason: string }): E5Exposure {
+  const key = `${expect.class}.${expect.reason}`;
+  if (expect.class === "paused" || expect.class === "cap") return "standing";
+  if (
+    key === "waiting.provider_rate_limit" ||
+    key === "waiting.provider_unavailable" ||
+    key === "no_model.signin_required" ||
+    expect.class === "offline"
+  )
+    return "lane";
+  if (expect.class === "download" || expect.class === "waiting") return "work";
+  return "set_aside";
+}
+
+/** A task scheduled further ahead than this is not work in progress (the status's own horizon). */
+const workHorizonMs = defaultGardenerStatusConfig.scheduledWithinMs;
+const providerWaitKeys: ReadonlySet<string> = new Set([
+  "waiting.provider_unavailable",
+  "offline.network_unreachable"
+]);
+
+/**
+ * Whether the condition a window expects holds at the sample and affects work there (E5 v3): the
+ * sentence is compared with the window's class only then. A power window's condition is read from
+ * the sample's own power reading (a block of the idle window turns at its minute, and the tick that
+ * records it can come up to a sample later).
+ */
+export function e5Affected(sample: SoakSample, expect: { class: string; reason: string }): boolean {
+  const key = `${expect.class}.${expect.reason}`;
+  const at = toMs(sample.at);
+  const power = sample.power;
+  if (key === "paused.only_idle_user_active" && power)
+    return (
+      (power.idleMs ?? (power.active ? 0 : Number.POSITIVE_INFINITY)) <
+      defaultGardenerConfig.power.onlyIdleAfterMs
+    );
+  if (key === "paused.only_ac_on_battery" && power) return power.onBattery;
+  const exposure = e5ExposureOf(expect);
+  if (exposure === "standing") return true;
+  const setAside = (job: JobSample) => Boolean(job.blockedClass);
+  const keyOfJob = (job: JobSample) => `${job.blockedClass}.${job.blockedReason}`;
+  // A task the condition set aside is affected whatever the family.
+  if (sample.jobs.some((job) => setAside(job) && keyOfJob(job) === key)) return true;
+  if (exposure === "set_aside") return false;
+  const inProgress = (job: JobSample) =>
+    !setAside(job) &&
+    (job.status === "running" || (job.status === "queued" && job.runAfter <= at + workHorizonMs));
+  const gardenerWork = (job: JobSample) =>
+    Boolean(gardenerTaskKind(job.type)?.gardener) && (setAside(job) || inProgress(job));
+  if (exposure === "work") return sample.jobs.some(gardenerWork);
+  // `lane`: a call on a remote lane, remote Gardener work, or a task an outage set aside.
+  const laneBusy = sample.lanes.some(
+    (lane) =>
+      lane.lane !== "local" &&
+      lane.running + lane.waiting.P0 + lane.waiting.P1 + lane.waiting.P2 + lane.waiting.P3 > 0
+  );
+  return (
+    laneBusy ||
+    sample.jobs.some(
+      (job) =>
+        (gardenerWork(job) && Boolean(gardenerTaskKind(job.type)?.remote)) ||
+        (setAside(job) && providerWaitKeys.has(keyOfJob(job)))
+    )
+  );
+}
+
+/**
+ * E5 (predicate v3). (ii): after the settle that follows every ground-truth transition (the latest
  * `settleUntil` so far), the sentence's class equals the highest-precedence class an active window
- * expects; with none active, it is not the class of a window that ended in the last 30 minutes.
+ * expects among those whose condition affects work at the sample ({@link e5Affected}); a sample
+ * where none does is counted apart (`unaffected`), since the status names a class only for the
+ * work it holds (spec 3.8). With no window active, the sentence is not the class of a window that
+ * ended in the last 30 minutes. A window whose class was never compared is not exercised (review).
  * (i): a sample with a task set aside by a blocker whose sentence names no class (or is the generic
  * one) is a fallback.
  */
@@ -799,11 +903,10 @@ export function computeE5(run: LoadedRun): E5Result {
     record
   }));
   const result: E5Result = {
-    notExercised: truths
-      .filter((record) => record.phase === "end" && record.detail?.met === false)
-      .map((record) => record.id),
+    notExercised: [],
     checked: 0,
     matched: 0,
+    unaffected: [],
     classMismatches: [],
     reasonMismatches: 0,
     recoveryMismatches: [],
@@ -811,6 +914,8 @@ export function computeE5(run: LoadedRun): E5Result {
     samplesWithBlocked: 0,
     samplesWithStatus: 0
   };
+  const compared = new Set<string>();
+  const openPastSettle = new Set<string>();
   for (const sample of samples) {
     const at = toMs(sample.at);
     const status = sample.status;
@@ -832,9 +937,19 @@ export function computeE5(run: LoadedRun): E5Result {
     }
     const expecting = [...active.values()].filter((record) => record.expect);
     if (expecting.length > 0) {
-      const top = expecting.toSorted(
+      for (const record of expecting) openPastSettle.add(windowOf(record.id));
+      const affected = expecting.filter((record) => e5Affected(sample, record.expect!));
+      if (affected.length === 0) {
+        const top = expecting.toSorted(
+          (a, b) => classRank(a.expect!.class) - classRank(b.expect!.class)
+        )[0]!;
+        result.unaffected.push({ at: sample.at, window: top.id });
+        continue;
+      }
+      const top = affected.toSorted(
         (a, b) => classRank(a.expect!.class) - classRank(b.expect!.class)
       )[0]!;
+      compared.add(windowOf(top.id));
       result.checked += 1;
       if (status.class === top.expect!.class) {
         result.matched += 1;
@@ -861,8 +976,42 @@ export function computeE5(run: LoadedRun): E5Result {
           seen: `${status.class}.${status.reason}`
         });
   }
+  // Every window that expects a class and started must have been compared at least once.
+  const started = new Set(
+    truths
+      .filter((record) => record.phase === "start" && record.id === windowOf(record.id))
+      .map((record) => record.id)
+  );
+  const expectingWindows = new Set([
+    ...(run.meta.f4?.windows ?? []).filter((window) => window.expect).map((window) => window.id),
+    ...truths
+      .filter((record) => record.expect || record.detail?.met === false)
+      .map((record) => windowOf(record.id))
+  ]);
+  for (const window of [...expectingWindows].sort()) {
+    if (!started.has(window) || compared.has(window)) continue;
+    const records = truths.filter((record) => windowOf(record.id) === window);
+    const why: E5NotExercisedWhy = records.some(
+      (record) => record.phase === "end" && record.detail?.met === false
+    )
+      ? "unmet"
+      : !records.some((record) => record.expect)
+        ? "never_opened"
+        : openPastSettle.has(window)
+          ? "nothing_affected"
+          : "ended_in_settle";
+    result.notExercised.push({ window, why });
+  }
   return result;
 }
+
+const notExercisedText: Record<E5NotExercisedWhy, string> = {
+  unmet: "no call met its fault, so its class was not checked",
+  never_opened: "its expectation never opened, so its class was not checked",
+  nothing_affected:
+    "no sample after its settle held work its condition affects, so its class was not checked",
+  ended_in_settle: "it ended inside the settle of its expectation, so its class was not checked"
+};
 
 export function e5Check(run: LoadedRun): Check {
   const result = computeE5(run);
@@ -879,7 +1028,7 @@ export function e5Check(run: LoadedRun): Check {
   return {
     id: "e5-status",
     title: "E5 status coverage",
-    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects (a provider-wait window from the first call that met its fault)",
+    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects among the windows whose condition affects work at the sample (a control or a cap always; a provider problem the remote work; a model check any Gardener work; a missing decider the tasks it set aside; a provider-wait window from the first call that met its fault), every window compared at least once",
     status: noStatus
       ? "review"
       : failing
@@ -889,10 +1038,10 @@ export function e5Check(run: LoadedRun): Check {
           : "pass",
     value: noStatus
       ? "no status sample was recorded: the run had no status service"
-      : `(i) ${result.fallbackSamples} fallback sample(s) of ${result.samplesWithBlocked} with a task set aside; (ii) ${result.matched} of ${result.checked} = ${pct(result.matched, result.checked)}, ${result.recoveryMismatches.length} recovery mismatch(es), ${result.reasonMismatches} reason difference(s) at a right class`,
+      : `(i) ${result.fallbackSamples} fallback sample(s) of ${result.samplesWithBlocked} with a task set aside; (ii) ${result.matched} of ${result.checked} = ${pct(result.matched, result.checked)}, ${result.recoveryMismatches.length} recovery mismatch(es), ${result.reasonMismatches} reason difference(s) at a right class; ${result.unaffected.length} sample(s) in a window with no work its condition affects; ${result.notExercised.length} window(s) not exercised`,
     details: [
       ...result.notExercised.map(
-        (window) => `${window}: no call met its fault, so its class was not checked (not exercised)`
+        ({ window, why }) => `${window}: ${notExercisedText[why]} (not exercised)`
       ),
       ...result.classMismatches
         .slice(0, 10)
@@ -900,6 +1049,9 @@ export function e5Check(run: LoadedRun): Check {
           (row) => `${row.at}: ${row.window} expected ${row.expected}, the sentence was ${row.seen}`
         ),
       ...group(result.classMismatches).map((line) => `class mismatches in ${line}`),
+      ...group(result.unaffected).map(
+        (line) => `samples with no work the condition affects (not compared) in ${line}`
+      ),
       ...result.recoveryMismatches
         .slice(0, 6)
         .map((row) => `${row.at}: still ${row.seen} after ${row.window} ended`)
