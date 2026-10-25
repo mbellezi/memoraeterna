@@ -903,9 +903,97 @@ describe("E4 cap within one call", () => {
     expect(e4Check(runOf(3, { events, rows: leaked })).status).toBe("fail");
   });
 
+  it("(b) reads a cap the count never reached as not exercised: a review, not a fail", () => {
+    // Gate S of 10-25: calls so far 65 + 10 over 30 minutes; 3 background calls came (68 of 75).
+    const events: SoakEvent[] = [
+      {
+        ...truth("w84", "start", 10 * minute, 2, undefined, "codex_daily_cap"),
+        detail: { callsSoFar: 65, cap: 75 }
+      },
+      truth("w84", "end", 40 * minute, 2, undefined, "codex_daily_cap")
+    ];
+    const budget = (usedCalls: number, callsState: "open" | "exhausted" = "open") => ({
+      moneyState: "open" as const,
+      spentUsd: 0,
+      reservedUsd: 0,
+      capUsd: 5,
+      callsState,
+      usedCalls,
+      reservedCalls: 0,
+      capCalls: 75
+    });
+    const samples = minutes(10 * minute, 30, (index) => ({
+      budget: budget(65 + Math.min(3, index))
+    }));
+    const check = e4Check(runOf(3, { events, samples, rows: [codexRow(20 * minute)] }));
+    expect(check.details.join(" ")).toContain(
+      "not exercised: the background Codex calls counted reached 68 of the window's cap 75"
+    );
+    expect(check.value).toBe("a: n/a, b: review, c: n/a");
+    expect(check.status).toBe("review");
+    // The count reached the cap and the budget never read exhausted: the cap did not take effect.
+    const reached = minutes(10 * minute, 30, () => ({ budget: budget(75) }));
+    const failed = e4Check(runOf(3, { events, samples: reached }));
+    expect(failed.details.join(" ")).toContain("the cap did not take effect");
+    expect(failed.status).toBe("fail");
+  });
+
+  it("(c) measures the spend over the cap against one attempt's estimate, not the ledger's remainder", () => {
+    // A row's `budgetEstimateUsd` is what the ledger adds for usage the row did not report (0 when
+    // it reported its tokens): gate S's report read it as "the largest attempt estimate 0.0000".
+    const money: GroundTruthRecord[] = [
+      {
+        ...truth("w146", "start", 0, 2, undefined, "money"),
+        detail: { fakeModel: "dev-fake-priced-1", capUsd: 0.1, attemptEstimateUsd: 0.012216 }
+      },
+      { ...truth("w146#80", "start", 5 * minute, 2, ["cap", "money_80"], "money") },
+      {
+        ...truth("w146#80", "end", 10 * minute, 2, undefined, "money"),
+        detail: { continued: true }
+      },
+      { ...truth("w146#100", "start", 12 * minute, 2, ["cap", "money_100"], "money") },
+      truth("w146", "end", 30 * minute, 2, undefined, "money")
+    ];
+    const samples = (spentUsd: number) =>
+      minutes(0, 30, () => ({
+        budget: {
+          moneyState: "exhausted",
+          spentUsd,
+          reservedUsd: 0,
+          capUsd: 0.1,
+          callsState: "open",
+          usedCalls: 0,
+          reservedCalls: 0,
+          capCalls: 800
+        }
+      }));
+    const priced = codexRow(minute, {
+      provider: "openai-compatible",
+      modelId: "dev-fake-priced-1",
+      lane: "remote:fake",
+      inputTokens: 5_808,
+      outputTokens: 2_048,
+      budgetEstimateUsd: 0
+    });
+    const plan = {
+      f4: { money: { model: "dev-fake-priced-1", inputUsdPerM: 1, outputUsdPerM: 4 } }
+    };
+    const run = (spentUsd: number) =>
+      runOf(8, { events: money, samples: samples(spentUsd), rows: [priced], meta: { plan } });
+    // The largest priced attempt billed 5,808 in + 2,048 out = US$0.0140 at the fake's prices.
+    const within = e4Check(run(0.11));
+    expect(within.details.join(" ")).toContain("0.0100 over; the largest attempt estimate 0.0140");
+    expect(within.status).toBe("pass");
+    expect(e4Check(run(0.115)).status).toBe("fail");
+  });
+
   it("(c) wants both money transitions, the continue, and spend within one attempt's estimate of the cap", () => {
     const money: GroundTruthRecord[] = [
-      truth("w146", "start", 0, 2, undefined, "money"),
+      // The driver records the attempt estimate it set the cap from.
+      {
+        ...truth("w146", "start", 0, 2, undefined, "money"),
+        detail: { attemptEstimateUsd: 0.008 }
+      },
       {
         ...truth("w146#80", "start", 20 * minute, 2, ["cap", "money_80"], "money"),
         detail: { stage: "money_80" }

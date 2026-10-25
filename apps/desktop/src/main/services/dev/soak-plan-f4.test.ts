@@ -228,6 +228,14 @@ describe("the gate S profile", () => {
     expect(profile.durationHours).toBeLessThanOrEqual(5.5);
   });
 
+  it("brings more background calls to the mid-run cap than its headroom, so the 30 minutes cross it", () => {
+    // Gate S of 10-25: calls so far + 10 in 30 minutes met 3 background calls and never crossed.
+    const window = expandWindows(profile.f4!, profile.durationHours * 60).find(
+      (entry) => entry.kind === "codex_daily_cap"
+    )!;
+    expect(window.params.backfillRelations).toBeGreaterThan(window.params.extraCalls! + 1);
+  });
+
   it("forces a burst of every fault kind so each ends a whole call", () => {
     const kinds = new Set(profile.f4!.injection!.forced.map((entry) => entry.kind));
     expect(kinds).toEqual(

@@ -40,7 +40,9 @@ export const predicateVersions = {
   e2: 1,
   // v2: a cancel counts only as a supersession; a failure an injected fault or the cap made is apart.
   e3: 2,
-  e4: 1,
+  // v2: (b) a window whose count never reached its cap is a review (not exercised), not a fail;
+  // (c) one attempt's estimate is the window's planned estimate or the largest priced attempt.
+  e4: 2,
   // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
   e5: 2,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
@@ -531,6 +533,20 @@ const callTokens = (row: TaskRunRecord) => (row.inputTokens ?? 0) + (row.outputT
 /** The audit error of a call the RemoteBudget refused before it was sent (`RemoteBudgetRefusal`). */
 const budgetRefusal = /gardener\.blocked\.cap\./u;
 
+/**
+ * The money window's fake prices (US$ per million tokens), from the plan the meta recorded; null
+ * when the plan names none.
+ */
+function moneyPrices(run: LoadedRun): { inputUsdPerM: number; outputUsdPerM: number } | null {
+  const plan = run.meta.plan as { f4?: { money?: Record<string, unknown> } } | null | undefined;
+  const money = plan && typeof plan === "object" ? plan.f4?.money : undefined;
+  const input = money?.inputUsdPerM;
+  const output = money?.outputUsdPerM;
+  return typeof input === "number" && typeof output === "number"
+    ? { inputUsdPerM: input, outputUsdPerM: output }
+    : null;
+}
+
 /** The real Codex lane's audit rows: the lane the meta names for the real writer. */
 export function codexRows(run: LoadedRun): TaskRunRecord[] {
   const lane = run.meta.realWriter ? `remote:${run.meta.realWriter.providerConfigId}` : null;
@@ -581,7 +597,8 @@ export function e4Check(run: LoadedRun): Check {
     statuses.push("n/a");
   }
   if (exhausted) {
-    statuses.push("fail");
+    // Part (a)'s own status, so the value's labels stay a, b, c.
+    statuses[0] = "fail";
     details.push(
       "The hard harness cap was reached: the remote leg ended and the run is inconclusive."
     );
@@ -641,9 +658,29 @@ export function e4Check(run: LoadedRun): Check {
         `(b) the daily Codex cap was crossed at ${new Date(crossedAt).toISOString()}: ${background} background Codex call(s) admitted after it (bar <= 1), ${refused} refused by the budget; ${protectedCalls} P0 or user call(s) went on`
       );
     } else {
-      statuses.push("fail");
+      // Never crossed: the calls counted (and in flight) stayed below the window's cap, so the
+      // budget had nothing to hold and the bar was not exercised; reaching it without the budget
+      // reading exhausted would be the cap not taking effect.
+      const capCalls =
+        typeof dailyCap.detail.cap === "number"
+          ? dailyCap.detail.cap
+          : Math.min(
+              ...samples
+                .filter((s) => toMs(s.at) > from && toMs(s.at) <= to && s.budget)
+                .map((s) => s.budget!.capCalls)
+            );
+      const counted = Math.max(
+        0,
+        ...samples
+          .filter((s) => toMs(s.at) > from && toMs(s.at) <= to && s.budget)
+          .map((s) => s.budget!.usedCalls + s.budget!.reservedCalls)
+      );
+      const reached = Number.isFinite(capCalls) && counted >= capCalls;
+      statuses.push(reached ? "fail" : "review");
       details.push(
-        "(b) the budget's calls never read exhausted in the mid-run cap window: the cap did not take effect"
+        reached
+          ? `(b) the background Codex calls counted reached the window's cap (${counted} of ${capCalls}) but the budget never read exhausted: the cap did not take effect`
+          : `(b) not exercised: the background Codex calls counted reached ${counted} of the window's cap ${Number.isFinite(capCalls) ? capCalls : "?"}, so the cap was never crossed and nothing was held`
       );
     }
   } else {
@@ -661,10 +698,32 @@ export function e4Check(run: LoadedRun): Check {
     const inWindow = samples.filter((s) => toMs(s.at) >= from && toMs(s.at) <= to && s.budget);
     const capUsd = Math.min(...inWindow.map((s) => s.budget!.capUsd));
     const spent = Math.max(0, ...inWindow.map((s) => s.budget!.spentUsd));
-    const estimates = run.rows
-      .filter((row) => row.budgetEstimateUsd !== null && row.budgetEstimateUsd !== undefined)
-      .map((row) => row.budgetEstimateUsd as number);
-    const attempt = Math.max(0, ...estimates);
+    // One attempt's estimate: the window's own (the cap is set from it), or the largest priced
+    // background attempt in the window (the fake bills what the budget reserved for it), plus the
+    // estimate its audit row kept for usage it did not report. A row's `budgetEstimateUsd` alone
+    // is only that remainder (0 when the usage was reported), never an attempt's estimate.
+    const planned =
+      typeof first?.detail.attemptEstimateUsd === "number" ? first.detail.attemptEstimateUsd : 0;
+    const prices = moneyPrices(run);
+    const fakeModel = typeof first?.detail.fakeModel === "string" ? first.detail.fakeModel : null;
+    const billed = run.rows
+      .filter(
+        (row) =>
+          row.budgetClass === "background" &&
+          fakeModel !== null &&
+          row.modelId === fakeModel &&
+          toMs(row.startedAt) >= from &&
+          toMs(row.startedAt) <= to
+      )
+      .map(
+        (row) =>
+          (prices
+            ? ((row.inputTokens ?? 0) * prices.inputUsdPerM +
+                (row.outputTokens ?? 0) * prices.outputUsdPerM) /
+              1_000_000
+            : 0) + (row.budgetEstimateUsd ?? 0)
+      );
+    const attempt = Math.max(planned, ...billed);
     const over = spent - capUsd;
     const seen80 = money.some((truth) => truth.id.endsWith("#80") && truth.phase === "start");
     const seen100 = money.some((truth) => truth.id.endsWith("#100") && truth.phase === "start");
@@ -683,13 +742,13 @@ export function e4Check(run: LoadedRun): Check {
   }
   const status: CheckStatus = statuses.includes("fail")
     ? "fail"
-    : statuses.every((entry) => entry === "n/a")
+    : statuses.includes("review") || statuses.every((entry) => entry === "n/a")
       ? "review"
       : "pass";
   return {
     id: "e4-cap",
     title: "E4 cap within one call",
-    bar: "(a) harness cap overshoot <= the largest call's tokens (a run that reaches the hard cap is inconclusive); (b) <= 1 background Codex admission after the crossing; (c) money spend - cap <= one attempt's estimation error, with cap.money_80 then cap.money_100 shown",
+    bar: "(a) harness cap overshoot <= the largest call's tokens (a run that reaches the hard cap is inconclusive); (b) <= 1 background Codex admission after the crossing (a cap never crossed is not exercised: review); (c) money spend - cap <= one attempt's estimation error, with cap.money_80 then cap.money_100 shown",
     status,
     value:
       statuses.map((entry, index) => `${"abc"[Math.min(index, 2)]}: ${entry}`).join(", ") ||

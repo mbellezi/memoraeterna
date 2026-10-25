@@ -61,6 +61,12 @@ export interface WindowPorts {
     /** Calls counted and in flight today, and the budget's day (to re-apply the cap after a rollover). */
     today(): Promise<{ calls: number; day: string }>;
     set(calls: number | null): void;
+    /**
+     * Queues the explanation backfill of `count` relations on the writer's route (background Codex
+     * calls): the window's own load, so a short window crosses its cap whatever else is running.
+     * Answers how many it queued.
+     */
+    enqueueBackfill?(count: number): Promise<number>;
   };
   hooks: {
     invalidateRanker(): Promise<void>;
@@ -237,6 +243,13 @@ export class WindowRunner {
           state.capCalls = today.calls + extra;
           state.crossed = false;
           detail = { callsSoFar: today.calls, cap: today.calls + extra };
+          // A short window (gate S's 30 minutes) brings its own background load past the cap.
+          const backfill = window.params.backfillRelations ?? 0;
+          if (backfill > 0) {
+            if (!ports.codexDailyCap.enqueueBackfill)
+              throw new Error("the mid-run cap window's backfill needs a way to queue it");
+            detail.relationsQueued = await ports.codexDailyCap.enqueueBackfill(backfill);
+          }
           // The budget holds background work only once the count reaches the cap: tick() records the
           // crossing with the window's expectation (`cap.subscription_daily`).
           expectNow = null;

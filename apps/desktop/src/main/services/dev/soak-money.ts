@@ -148,6 +148,35 @@ export function pricedFakeKind(options: {
   };
 }
 
+/**
+ * Queues the explanation backfill of `count` relations (the seed's pick, unexplained first) as the
+ * Gardener's background jobs, and wakes the workers; answers how many were new. The money window
+ * sends them to the priced fake; the mid-run cap window lets them call the writer's route.
+ */
+export async function enqueueExplanationBackfill(
+  pool: PgPool,
+  jobs: { wake(): void },
+  count: number,
+  seed: number
+): Promise<number> {
+  const picked = await pickRelationsToExplain(pool, count, seed);
+  const repository = createJobRepository(pool);
+  let queued = 0;
+  for (const relation of picked) {
+    const result = await repository.enqueueDeduped({
+      type: relationExplainBackfillJobType,
+      lane: "light",
+      dedupeKey: `${relationExplainBackfillJobType}:${relation.id}`,
+      payload: { relationId: relation.id },
+      priority: 0,
+      debounce: { delayMs: 0, maxDelayMs: 0 }
+    });
+    if (result.created) queued += 1;
+  }
+  jobs.wake();
+  return queued;
+}
+
 export interface MoneyPortDeps {
   pool: PgPool;
   credentials: { save(secret: string, existingRef?: string | null): Promise<string> };
@@ -223,24 +252,7 @@ export function createMoneyPort(deps: MoneyPortDeps): MoneyPort & { stop(): Prom
     state: async () => (await deps.budget.snapshot()).money.state,
     continuePastPause: async () => void (await deps.budget.continuePastPause()),
 
-    async enqueueBackfill(count) {
-      const picked = await pickRelationsToExplain(deps.pool, count, deps.seed);
-      const jobs = createJobRepository(deps.pool);
-      let queued = 0;
-      for (const relation of picked) {
-        const result = await jobs.enqueueDeduped({
-          type: relationExplainBackfillJobType,
-          lane: "light",
-          dedupeKey: `${relationExplainBackfillJobType}:${relation.id}`,
-          payload: { relationId: relation.id },
-          priority: 0,
-          debounce: { delayMs: 0, maxDelayMs: 0 }
-        });
-        if (result.created) queued += 1;
-      }
-      deps.jobs.wake();
-      return queued;
-    },
+    enqueueBackfill: (count) => enqueueExplanationBackfill(deps.pool, deps.jobs, count, deps.seed),
 
     async stop() {
       await server?.stop();

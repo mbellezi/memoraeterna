@@ -39,7 +39,7 @@ import { acquireSoakLock } from "./soak-data-root.js";
 import { parseBreakerLog, runSoak, type SoakF4Runtime, type SoakOutcome } from "./soak-driver.js";
 import { createSoakHooks } from "./soak-hooks.js";
 import { LocalFaultController } from "./soak-local-faults.js";
-import { createMoneyPort, soakPriceTable } from "./soak-money.js";
+import { createMoneyPort, enqueueExplanationBackfill, soakPriceTable } from "./soak-money.js";
 import {
   SoakKnobRefusal,
   fakeRemoteKnobName,
@@ -406,7 +406,9 @@ export function prepareSoak(
             set: (calls) => {
               dailyCap = calls ?? undefined;
               f4Deps.budgetChanged();
-            }
+            },
+            enqueueBackfill: (count) =>
+              enqueueExplanationBackfill(deps.pool, deps.jobs, count, soak.profile.seed)
           },
           hooks: createSoakHooks({
             pool: deps.pool,

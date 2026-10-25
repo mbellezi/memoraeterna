@@ -71,7 +71,11 @@ function harness(money: Partial<MoneyPort> | null = null) {
     power: { setBlocks: (blocks) => void calls.push(`power:${blocks ? blocks.join("+") : "off"}`) },
     codexDailyCap: {
       today: async () => ({ calls: usedCalls, day }),
-      set: (value) => void calls.push(`dailyCap:${value}`)
+      set: (value) => void calls.push(`dailyCap:${value}`),
+      enqueueBackfill: async (count) => {
+        calls.push(`dailyCap:backfill ${count}`);
+        return count;
+      }
     },
     hooks: {
       invalidateRanker: async () => void calls.push("hook:ranker-invalid"),
@@ -367,6 +371,31 @@ describe("the mid-run Codex cap", () => {
       "w1#crossed:end",
       "w1:end"
     ]);
+  });
+
+  it("queues its own background load after the cap is set, so a short window crosses it", async () => {
+    // Gate S of 10-25: 30 minutes at calls so far + 10 met 3 background calls and never crossed.
+    const { runner, calls, records } = harness();
+    const window = spec({
+      kind: "codex_daily_cap",
+      params: { extraCalls: 2, backfillRelations: 6 },
+      expect: { class: "cap", reason: "subscription_daily" }
+    });
+    await runner.start(window);
+    expect(calls).toEqual(["dailyCap:14", "dailyCap:backfill 6"]);
+    expect(records()[0]).toMatchObject({
+      detail: { callsSoFar: 12, cap: 14, relationsQueued: 6 }
+    });
+  });
+
+  it("records a load it has no way to queue as the window's start failure", async () => {
+    const { runner, records } = harness();
+    const ports = (runner as unknown as { options: { ports: WindowPorts } }).options.ports;
+    delete ports.codexDailyCap.enqueueBackfill;
+    await runner.start(
+      spec({ kind: "codex_daily_cap", params: { extraCalls: 2, backfillRelations: 6 } })
+    );
+    expect(String(records()[0]!.detail.error)).toMatch(/backfill/u);
   });
 
   it("is set again from the new count when the budget's day rolls over mid-window, and the crossing is closed", async () => {
