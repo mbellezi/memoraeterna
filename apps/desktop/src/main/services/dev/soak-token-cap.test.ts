@@ -326,6 +326,23 @@ describe("what a call settles with", () => {
   });
 });
 
+describe("what the decorator tells the fetch layer of its caller", () => {
+  it("marks a structured caller's call, not a summary's and not a repair's", async () => {
+    const { cap } = newCap(100_000);
+    const { adapter, pending } = manualAdapter();
+    const wrapped = cap.adapterDecorator(adapter);
+    const calls = [
+      wrapped.run(request()),
+      wrapped.run({ ...request(), taskType: "summarization", operation: "summary_map" }),
+      wrapped.run({ ...request(), operation: "graph_atomic_notes_repair" })
+    ];
+    await tick();
+    expect(pending.map((entry) => entry.context?.structured)).toEqual([true, false, false]);
+    for (const entry of pending) entry.resolve(result(10, 5));
+    await Promise.all(calls);
+  });
+});
+
 describe("the composed decorator", () => {
   it("lets only the real Codex writer through the cap, and the others through untouched", () => {
     const { cap } = newCap(1_000);

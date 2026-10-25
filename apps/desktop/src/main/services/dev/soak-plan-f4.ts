@@ -61,14 +61,20 @@ export const fetchFaultPlanSchema = z
     /** How long the answer stays silent after its real deltas (a stall), and before its first byte. */
     stallMs: z.number().int().positive().default(25_000),
     lateFirstByteMs: z.number().int().positive().default(35_000),
-    /** From `afterMinute` on, the next `count` generation requests all carry `kind`. */
+    /**
+     * From `afterMinute` on, the next `count` generation requests all carry `kind`. With `aim:
+     * "structured"` only a request of a structured caller counts (one that states an output
+     * contract and repairs a refused answer, never a repair itself): a malformed answer needs one,
+     * since a plain-text consumer (a summary) turns cut JSON into a partial summary and never repairs.
+     */
     forced: z
       .array(
         z
           .object({
             kind: z.enum(fetchFaultKinds),
             afterMinute: z.number().nonnegative(),
-            count: z.number().int().positive().max(20)
+            count: z.number().int().positive().max(20),
+            aim: z.literal("structured").optional()
           })
           .strict()
       )

@@ -525,7 +525,8 @@
             {
               "kind": "malformed",
               "afterMinute": 3,
-              "count": 1
+              "count": 1,
+              "aim": "structured"
             },
             {
               "kind": "unauthorized",

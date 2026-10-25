@@ -73,10 +73,19 @@ export class FetchFaultSchedule {
     this.forcedLeft = plan.forced.map((entry) => entry.count);
   }
 
-  /** The fault of the `seq`-th generation request (1-based), `elapsedMs` after the clock started. */
-  public requestFault(seq: number, elapsedMs: number): RequestFault | null {
+  /**
+   * The fault of the `seq`-th generation request (1-based), `elapsedMs` after the clock started.
+   * `call` is the context of the call the request belongs to: a forced fault aimed at structured
+   * calls waits for the first request of one and is not spent on any other.
+   */
+  public requestFault(
+    seq: number,
+    elapsedMs: number,
+    call?: Pick<SoakCallContext, "structured">
+  ): RequestFault | null {
     for (const [index, entry] of this.plan.forced.entries()) {
       if (elapsedMs < entry.afterMinute * 60_000 || this.forcedLeft[index]! <= 0) continue;
+      if (entry.aim === "structured" && call?.structured !== true) continue;
       this.forcedLeft[index]! -= 1;
       return {
         kind: entry.kind,
@@ -257,7 +266,7 @@ export class FetchFaultInjector {
     const fault =
       window || !generation
         ? null
-        : this.schedule.requestFault(++this.generations, started - this.origin);
+        : this.schedule.requestFault(++this.generations, started - this.origin, call);
 
     const record: RecordExchange = (kind, note) => {
       const ended = this.now();

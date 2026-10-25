@@ -160,6 +160,42 @@ describe("the per-request faults, against the real Codex adapter", () => {
     expect(exchanges()[0]).toMatchObject({ kind: "malformed", injected: true, forwardedBytes: 0 });
   });
 
+  it("aims a forced malformed answer at a structured caller: a plain-text call before it gets the real answer and the fault waits", async () => {
+    // Gate S of 10-25: the one forced malformed answer reached a summary, whose plain-text consumer
+    // turned the cut JSON into a partial summary and never repaired, so the pre-soak line saw no repair.
+    const { adapter, upstream, exchanges } = layer({
+      forced: [
+        { kind: "malformed", afterMinute: 0, count: 1, aim: "structured" },
+        { kind: "unavailable", afterMinute: 0, count: 1 }
+      ]
+    });
+    // A summary: not structured. It meets the next forced fault in line, never the aimed one.
+    const summary = await withSoakCallContext(() => adapter.run(request), { structured: false });
+    expect(summary.outcome).toMatchObject({ value: { output: "hello again world" } });
+    expect(exchanges().map((entry) => entry.kind)).toEqual(["unavailable", "none"]);
+    // The first structured call after it takes the malformed answer, once.
+    const structured = await withSoakCallContext(() => adapter.run(request), { structured: true });
+    expect(structured.outcome).toMatchObject({ value: { output: malformedAnswerText } });
+    const later = await withSoakCallContext(() => adapter.run(request), { structured: true });
+    expect(later.outcome).toMatchObject({ value: { output: "hello again world" } });
+    expect(exchanges().map((entry) => entry.kind)).toEqual([
+      "unavailable",
+      "none",
+      "malformed",
+      "none"
+    ]);
+    expect(upstream.seen).toHaveLength(2);
+  });
+
+  it("never spends an aimed fault outside a metered call, which states nothing of its caller", async () => {
+    const { adapter, exchanges } = layer({
+      forced: [{ kind: "malformed", afterMinute: 0, count: 1, aim: "structured" }]
+    });
+    const result = await adapter.run(request);
+    expect(result.output).toBe("hello again world");
+    expect(exchanges().map((entry) => entry.kind)).toEqual(["none"]);
+  });
+
   it("holds the first byte past the first-byte bound: the client leaves at the bound, nothing is forwarded, the retry succeeds", async () => {
     const { adapter, upstream, exchanges } = layer({
       forced: [{ kind: "late_first_byte", afterMinute: 0, count: 1 }]
@@ -247,6 +283,37 @@ describe("the per-request faults, against the real Codex adapter", () => {
     expect(share).toBeGreaterThan(0.03);
     expect(share).toBeLessThan(0.055);
     expect(new Set(faulted.map((fault) => fault!.kind)).size).toBeGreaterThanOrEqual(5);
+  });
+
+  it("spends an aimed forced fault on the first structured request at or after its minute, and only once per count", () => {
+    const schedule = new FetchFaultSchedule(
+      plan({
+        forced: [
+          { kind: "malformed", afterMinute: 3, count: 2, aim: "structured" },
+          { kind: "unauthorized", afterMinute: 5, count: 1 }
+        ]
+      }),
+      20261028,
+      codexProviderName
+    );
+    const minute = 60_000;
+    // Before its minute, and for a call that is not structured or states nothing, it waits.
+    expect(schedule.requestFault(1, 2 * minute, { structured: true })).toBeNull();
+    expect(schedule.requestFault(2, 4 * minute, { structured: false })).toBeNull();
+    expect(schedule.requestFault(3, 4 * minute)).toBeNull();
+    // The next fault in line is not held behind it.
+    expect(schedule.requestFault(4, 6 * minute, { structured: false })).toMatchObject({
+      kind: "unauthorized",
+      forced: true
+    });
+    expect(schedule.requestFault(5, 6 * minute, { structured: true })).toMatchObject({
+      kind: "malformed",
+      forced: true
+    });
+    expect(schedule.requestFault(6, 7 * minute, { structured: true })).toMatchObject({
+      kind: "malformed"
+    });
+    expect(schedule.requestFault(7, 8 * minute, { structured: true })).toBeNull();
   });
 
   it("passes a server on this machine through untouched and unrecorded", async () => {

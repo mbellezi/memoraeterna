@@ -12,6 +12,7 @@ import {
 import { devFakeCodexModelId } from "./fake-codex-provider.js";
 import {
   billableRequests,
+  isStructuredCall,
   withSoakCallContext,
   type SoakCallContext
 } from "./soak-call-context.js";
@@ -255,7 +256,9 @@ export class HarnessTokenCap {
         beforeForward: () => {
           forwards += 1;
           if (forwards > 1) this.extend(reservation);
-        }
+        },
+        // The fault layer aims a forced malformed answer at a structured caller by this.
+        structured: isStructuredCall(request)
       });
       if ("error" in outcome) {
         this.settle(reservation, tokensOfFailure(outcome.error, context, reservation));

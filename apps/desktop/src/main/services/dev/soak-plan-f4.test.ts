@@ -236,6 +236,17 @@ describe("the gate S profile", () => {
     expect(window.params.backfillRelations).toBeGreaterThan(window.params.extraCalls! + 1);
   });
 
+  it("aims its forced malformed answer at a structured caller and no other forced fault at one", () => {
+    // Gate S of 10-25: the one malformed answer reached a summary, which never repairs.
+    const forced = profile.f4!.injection!.forced;
+    expect(forced.find((entry) => entry.kind === "malformed")).toMatchObject({
+      afterMinute: 3,
+      count: 1,
+      aim: "structured"
+    });
+    expect(forced.filter((entry) => entry.aim !== undefined)).toHaveLength(1);
+  });
+
   it("forces a burst of every fault kind so each ends a whole call", () => {
     const kinds = new Set(profile.f4!.injection!.forced.map((entry) => entry.kind));
     expect(kinds).toEqual(
