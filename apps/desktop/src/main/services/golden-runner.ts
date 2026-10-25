@@ -48,6 +48,13 @@ import {
   type GoldenRelationsMode
 } from "./relations/link-runtime.js";
 import { readSchemaProbeCalls, runSchemaProbe } from "./schema-probe.js";
+import {
+  readStrictProbePlan,
+  strictProbeKnob,
+  strictProbePairsKnob,
+  type StrictProbeDeps,
+  type StrictProbePlan
+} from "./strict-probe.js";
 import { relationsConfigForRun } from "./dev/relations-dev-options.js";
 import type { LibraryResetService } from "./library-reset-service.js";
 
@@ -347,6 +354,12 @@ export interface GoldenRunEnvironment {
    * strict output schema through the AI service and the cassette. Null when not requested.
    */
   schemaProbeCalls: number | null;
+  /**
+   * MEMORA_GOLDEN_STRICT_PROBE (owner, 10-25): instead of the manifest, a few live calls of the
+   * Ask, topic naming, the source judge and atomic notes on the library (`strict-probe.ts`), with
+   * the pair list of MEMORA_GOLDEN_STRICT_PROBE_PAIRS when set. Absent when not requested.
+   */
+  strictProbe?: { plan: StrictProbePlan; pairsPath: string | null };
 }
 
 /** Reads MEMORA_GOLDEN_*; null when no golden run is requested. Packaged builds refuse it. */
@@ -404,8 +417,24 @@ export function readGoldenRunEnvironment(
     topics: readGoldenTopicsConfig(env, { isPackaged: false }),
     pin: readGoldenPinConfig(env, { isPackaged: false }),
     relations: readGoldenRelationsMode(env, { isPackaged: false }) ?? "live",
-    schemaProbeCalls: readSchemaProbeCalls(env)
+    schemaProbeCalls: readSchemaProbeCalls(env),
+    ...strictProbeEnvironment(env, options.workspaceRoot)
   };
+}
+
+function strictProbeEnvironment(
+  env: Readonly<Record<string, string | undefined>>,
+  workspaceRoot: string
+): Pick<GoldenRunEnvironment, "strictProbe"> {
+  const plan = readStrictProbePlan(env);
+  const pairs = env[strictProbePairsKnob]?.trim();
+  if (!plan) {
+    if (pairs) throw new Error(`${strictProbePairsKnob} only applies with ${strictProbeKnob}`);
+    return {};
+  }
+  if (env.MEMORA_GOLDEN_SCHEMA_PROBE?.trim())
+    throw new Error(`${strictProbeKnob} and MEMORA_GOLDEN_SCHEMA_PROBE each run alone`);
+  return { strictProbe: { plan, pairsPath: pairs ? resolve(workspaceRoot, pairs) : null } };
 }
 
 type Query = Pick<PgPool, "query">;
@@ -439,6 +468,11 @@ export interface GoldenRunOptions {
   settings: { getApp(): Promise<AppSettings> };
   /** Runs the source decider for MEMORA_GOLDEN_SOURCE_PAIRS (the normal AI service: the cassette records it). */
   ai?: Pick<AiService, "runDefaultTask">;
+  /**
+   * MEMORA_GOLDEN_STRICT_PROBE only: the AI service (whose routes the probe checks first) and the
+   * Ask's own service.
+   */
+  strictProbe?: Pick<StrictProbeDeps, "ai" | "consultation">;
   /** The read queries behind a pair verdict; tests replace them. */
   sourcePairReader?: SourcePairReader;
   quit: () => void;
@@ -525,6 +559,7 @@ export async function prepareGoldenRun(
     throw new Error("The golden runner needs the DEV PostgreSQL sidecar (dev-connection.json)");
   if (environment.schemaProbeCalls !== null)
     return prepareSchemaProbeRun(options, environment.schemaProbeCalls);
+  if (environment.strictProbe) return prepareStrictProbeRun(options, environment.strictProbe);
   const fullManifest = goldenManifestSchema.parse(
     JSON.parse(await readFile(options.environment.manifestPath, "utf8"))
   );
@@ -704,6 +739,110 @@ async function prepareSchemaProbeRun(options: GoldenRunOptions, calls: number): 
           finishedAt: now().toISOString(),
           cassette: cassette.stats(),
           probe
+        };
+      } catch (error) {
+        summary = {
+          ...base,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+          finishedAt: now().toISOString(),
+          cassette: cassette.stats()
+        };
+      }
+      try {
+        const directory = join(
+          options.workspaceRoot,
+          ".cache",
+          "golden",
+          "runs",
+          startedAt.toISOString().replace(/[:.]/g, "-")
+        );
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+        log(options, "summary", { status: summary.status, path: join(directory, "summary.json") });
+      } catch (error) {
+        log(options, "summary_failed", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      if (environment.exitWhenDone) options.quit();
+      return summary;
+    }
+  };
+}
+
+/**
+ * The strict-output probe (MEMORA_GOLDEN_STRICT_PROBE, owner 10-25): no source is imported, no job
+ * runs and nothing in the library changes (`strict-probe.ts`). Like the schema probe it reports
+ * itself as a verdict-only run, so the app starts neither the job supervisor nor the topic engine;
+ * the calls only add AI audit rows. Recording needs the token cap like any golden recording.
+ */
+async function prepareStrictProbeRun(
+  options: GoldenRunOptions,
+  probe: NonNullable<GoldenRunEnvironment["strictProbe"]>
+): Promise<GoldenRun> {
+  const { environment } = options;
+  if (environment.resetLibrary || environment.sourcePairsPath)
+    throw new Error(
+      `${strictProbeKnob} runs alone: drop MEMORA_GOLDEN_RESET and MEMORA_GOLDEN_SOURCE_PAIRS; ` +
+        "nothing was changed"
+    );
+  if (!options.strictProbe)
+    throw new Error(`${strictProbeKnob} needs the AI and Ask services; nothing was changed`);
+  const services = options.strictProbe;
+  const manifest = goldenManifestSchema.parse(
+    JSON.parse(await readFile(environment.manifestPath, "utf8"))
+  );
+  const pairs = probe.pairsPath
+    ? await import("./golden-source-pairs.js").then(({ readSourcePairsFile }) =>
+        readSourcePairsFile(probe.pairsPath!)
+      )
+    : null;
+  const cassette = options.cassette!;
+  if (cassette.stats().mode === "record") cassette.limitLiveTokens(environment.maxLiveTokens);
+  const now = options.now ?? (() => new Date());
+  const planned = Object.values(probe.plan).reduce((total, part) => total + part, 0);
+  log(options, "strict_probe", { ...probe.plan, pairsFile: probe.pairsPath });
+  return {
+    manifest,
+    backup: { path: "", createdAt: now().toISOString(), bytes: 0 },
+    sourcePairs: { mode: "verdict_only", pairs: planned },
+    start: async () => {
+      const startedAt = now();
+      const base = {
+        format: "memora-golden-run" as const,
+        version: 1 as const,
+        mode: "strict_probe",
+        startedAt: startedAt.toISOString(),
+        manifest: { name: manifest.name, path: environment.manifestPath }
+      };
+      let summary: GoldenRunSummary;
+      try {
+        const { runStrictProbe } = await import("./strict-probe.js");
+        const app = await options.settings.getApp();
+        const report = await runStrictProbe(probe.plan, {
+          pool: options.pool,
+          ai: services.ai,
+          consultation: services.consultation,
+          settings: {
+            contentLanguage: app.contentLanguage ?? "en",
+            sourceRelationSettings: SourceRelationSettingsSchema.parse(
+              app.sourceRelationSettings ?? {}
+            )
+          },
+          relations: runRelationsConfig(options),
+          cassette,
+          pairs: pairs ? { path: pairs.path, pairs: pairs.pairs } : null,
+          now,
+          log: (event, data) => log(options, event, data)
+        });
+        summary = {
+          ...base,
+          status: "completed",
+          finishedAt: now().toISOString(),
+          cassette: cassette.stats(),
+          relations: goldenRelationsRecord(options),
+          probe: report
         };
       } catch (error) {
         summary = {

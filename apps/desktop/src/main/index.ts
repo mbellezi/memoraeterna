@@ -1050,6 +1050,8 @@ void app.whenReady().then(() => {
                     topicBarrier: topicTreeServices!.goldenBarrier,
                     // MEMORA_GOLDEN_SOURCE_PAIRS only: the source decider runs through the normal AI service.
                     ai: aiService!,
+                    // MEMORA_GOLDEN_STRICT_PROBE only: the same AI service and the Ask's own service.
+                    strictProbe: { ai: aiService!, consultation: consultationService },
                     quit: () => app.quit()
                   })
                 )
