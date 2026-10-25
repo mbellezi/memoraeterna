@@ -17,7 +17,11 @@ import type { WindowPorts } from "./soak-windows.js";
  *   moves the AI configuration's generation so routes resolve again.
  * - The embedder's row is set to `verifying`, the status an install shows while its files are
  *   checked, and the `model.download` event of that state is published for the screens that follow it
- *   (the status service reads the same state); the end sets the row back and publishes it.
+ *   (the status service reads the same state); the end sets the row back and publishes it. Both move
+ *   the AI configuration's generation, as every writer of a local model's row does: the AI service
+ *   reads the row through its configuration cache, so without it the window's state reaches the
+ *   service only if the cache happens to be empty, and its end not until another writer moves it
+ *   (gate S 10-25: the embedder stayed unusable from 03:03 to 03:53, an import failed on it).
  *
  * What the status service reads for these two reasons is T86's; gate S checks that the sentence
  * follows these hooks, and this file is the place to change when it does not.
@@ -164,6 +168,7 @@ export function createSoakHooks(options: SoakHooksDeps): WindowPorts["hooks"] {
         "update local_models set status = 'verifying', updated_at = now() where id = $1::uuid",
         [model.id]
       );
+      bumpAiConfigGeneration();
       announce(embedder, "verifying");
       deps.logger?.info(`SOAK hook: the embedder ${model.catalogId} is marked verifying`);
     },
@@ -176,6 +181,7 @@ export function createSoakHooks(options: SoakHooksDeps): WindowPorts["hooks"] {
         "update local_models set status = $2, updated_at = now() where id = $1::uuid",
         [saved.localModelId, saved.status]
       );
+      bumpAiConfigGeneration();
       announce(saved, saved.status as ModelDownloadEvent["status"]);
       deps.logger?.info(`SOAK hook: the embedder ${saved.catalogId} is back to ${saved.status}`);
     }

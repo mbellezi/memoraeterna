@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import {
   PostgresSidecarManager,
+  aiConfigGeneration,
   closePgPool,
   createAiConfigRepository,
   createLocalModelRepository,
@@ -484,7 +485,12 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
         publishModelDownload: (event) => published.push(event)
       });
       expect(() => createSoakHooks({ pool, isPackaged: true })).toThrow(/packaged/u);
+      // The AI service reads the row through its configuration cache: each change moves the
+      // generation, or the cache keeps the old status (gate S 10-25).
+      const before = aiConfigGeneration();
       await hooks.markEmbedderVerifying();
+      const marked = aiConfigGeneration();
+      expect(marked).toBeGreaterThan(before);
       expect(
         (
           await pool.query<{ status: string }>("select status from local_models where id = $1", [
@@ -493,6 +499,7 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
         ).rows[0]!.status
       ).toBe("verifying");
       await hooks.clearEmbedderVerifying();
+      expect(aiConfigGeneration()).toBeGreaterThan(marked);
       expect(
         (
           await pool.query<{ status: string }>("select status from local_models where id = $1", [
