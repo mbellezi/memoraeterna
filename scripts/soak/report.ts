@@ -176,17 +176,83 @@ const actionsOf = (events: readonly SoakEvent[]) =>
 const injectedMarker = "soak-injected";
 /** A repair follows an injected malformed answer this soon. */
 const repairWindowMs = 3 * minute;
+/** How far an audit row's times may stand from the ledger's around the same exchange. */
+const exchangeGraceMs = 1_000;
 
 /**
- * The calls an injected fault explains: the rows that overlap an injected exchange or window of the
- * provider on their lane, a local fault on the local lane, a repair right after an injected
- * malformed answer, and rows whose error names the marker.
+ * The audit rows an exchange belongs to, among `rows` (the calls on its lane). A call's requests run
+ * inside the call's own time, so a row whose time does not hold the exchange is another call's. Of
+ * the rows that hold it, those that started with it own it (its first request); when none did (a
+ * retry inside a call that started earlier) every row that holds it may, since the ledger names no
+ * call. A lane runs several calls at once: in gate S (10-25) a 30 s late first byte overlapped five
+ * other calls, each with its own answered exchange, and an overlap read all six as injected.
+ */
+export function exchangeCalls(
+  rows: readonly TaskRunRecord[],
+  exchange: ExchangeRecord
+): TaskRunRecord[] {
+  const from = toMs(exchange.startedAt);
+  const to = toMs(exchange.endedAt);
+  const holding = rows.filter(
+    (row) => rowStart(row) - exchangeGraceMs <= from && to <= rowEnd(row) + exchangeGraceMs
+  );
+  const started = holding.filter((row) => Math.abs(from - rowStart(row)) <= exchangeGraceMs);
+  return started.length > 0 ? started : holding;
+}
+
+/** Two calls of one caller asking again: the same job (or none), task type and class. */
+const sameCaller = (a: TaskRunRecord, b: TaskRunRecord) =>
+  (a.jobId ?? null) === (b.jobId ?? null) &&
+  a.taskType === b.taskType &&
+  (a.workloadClass ?? null) === (b.workloadClass ?? null);
+
+/**
+ * The repairs an injected malformed answer explains, among `rows` (the calls on the exchange's lane):
+ * a call marked as a repair, or with a retry index of 1 or more, that starts after the answer ended
+ * and within the repair window, made by the same caller as a call the answer reached (same job, task
+ * type and class). A repair by another caller that merely follows on the lane is the model's own,
+ * whatever it follows (gate S, 10-25: a topic-naming repair 66 s after a malformed answer that a
+ * summary call had read was set aside as the fault's).
+ */
+export function malformedRepairs(
+  rows: readonly TaskRunRecord[],
+  exchange: ExchangeRecord
+): TaskRunRecord[] {
+  if (exchange.kind !== "malformed") return [];
+  const reached = exchangeCalls(rows, exchange);
+  const end = toMs(exchange.endedAt);
+  return rows.filter(
+    (row) =>
+      (row.isRepair || (row.attempt ?? 0) >= 1) &&
+      rowStart(row) >= end - exchangeGraceMs &&
+      rowStart(row) - end <= repairWindowMs &&
+      reached.some((call) => call.id !== row.id && sameCaller(call, row))
+  );
+}
+
+/**
+ * The calls an injected fault explains: the calls an injected exchange belongs to
+ * (`exchangeCalls`), the rows that overlap a window of the provider on their lane, a local fault on
+ * the local lane, the repair an injected malformed answer caused (`malformedRepairs`), and rows
+ * whose error names the marker.
  */
 export function injectedRows(run: LoadedRun): Map<string, string> {
   const lanes = providerLanes(run.meta);
   const reasons = new Map<string, string>();
   const injected = exchangesOf(run.events).filter((exchange) => exchange.injected);
   const windows = windowsOf(run.events);
+  const onLane = (exchange: ExchangeRecord) =>
+    run.rows.filter((row) => row.lane === lanes.get(exchange.provider));
+  // The first injected exchange of each call names its fault.
+  const faultOf = new Map<string, string>();
+  for (const exchange of injected)
+    for (const row of exchangeCalls(onLane(exchange), exchange))
+      if (!faultOf.has(row.id)) faultOf.set(row.id, exchange.kind);
+  const repairedAfterMalformed = new Set(
+    injected.flatMap((exchange) =>
+      malformedRepairs(onLane(exchange), exchange).map((row) => row.id)
+    )
+  );
   // A fault that took effect: a helper that was killed, a batch that was aborted in the middle.
   const locals = localsOf(run.events).filter(
     (fault) =>
@@ -208,14 +274,9 @@ export function injectedRows(run: LoadedRun): Map<string, string> {
     }
     if (row.lane?.startsWith("remote:")) {
       const provider = [...lanes].find(([, lane]) => lane === row.lane)?.[0];
-      const hit = injected.find(
-        (exchange) =>
-          exchange.provider === provider &&
-          toMs(exchange.startedAt) <= end &&
-          toMs(exchange.endedAt) >= start
-      );
+      const hit = faultOf.get(row.id);
       if (hit) {
-        reasons.set(row.id, hit.kind);
+        reasons.set(row.id, hit);
         continue;
       }
       const window = windows.find(
@@ -228,16 +289,7 @@ export function injectedRows(run: LoadedRun): Map<string, string> {
         reasons.set(row.id, window.kind);
         continue;
       }
-      if (row.isRepair || (row.attempt ?? 0) >= 1) {
-        const malformed = injected.find(
-          (exchange) =>
-            exchange.provider === provider &&
-            exchange.kind === "malformed" &&
-            toMs(exchange.endedAt) <= rowStart(row) + grace &&
-            rowStart(row) - toMs(exchange.endedAt) <= repairWindowMs
-        );
-        if (malformed) reasons.set(row.id, "malformed");
-      }
+      if (repairedAfterMalformed.has(row.id)) reasons.set(row.id, "malformed");
     } else if (row.lane === "local") {
       const fault = locals.find((entry) => {
         const at = toMs(entry.at);
@@ -1231,26 +1283,26 @@ export function presoakAssertions(run: LoadedRun): PresoakAssertion[] {
       late.length > 0 && lateAtBound.length === late.length && lateCalls.length > 0
     );
     const malformed = around("malformed");
+    // The repair must be the reached call's own (`malformedRepairs`): a repair by another caller
+    // that follows on the lane says nothing of how this answer ended.
     const repaired = malformed.filter(
       (entry) =>
-        rows.some(
-          (row) =>
-            (row.isRepair || (row.attempt ?? 0) >= 1) &&
-            rowStart(row) >= toMs(entry.exchange.endedAt) - 1_000 &&
-            rowStart(row) - toMs(entry.exchange.endedAt) <= repairWindowMs
-        ) ||
+        malformedRepairs(rows, entry.exchange).length > 0 ||
         entry.rows.some(
           (row) =>
             row.status !== "succeeded" && /invalid|schema|json|output/iu.test(row.error ?? "")
         )
     );
+    const reachedTasks = [
+      ...new Set(malformed.flatMap((entry) => entry.rows.map((row) => row.taskType)))
+    ].sort();
     add(
       "malformed",
       provider,
       malformed.length,
       "met",
       `${malformed.filter((entry) => entry.exchange.status === 200).length} answered 200 with an answer the consumer refuses`,
-      `${repaired.length} followed by a repair or an invalid-output failure`,
+      `${repaired.length} followed by a repair of the call it reached or an invalid-output failure (reached: ${reachedTasks.join(", ") || "no audited call"})`,
       malformed.length > 0 && repaired.length > 0
     );
   }

@@ -293,23 +293,133 @@ describe("repairs", () => {
       answer(80 * minute + index * 1_000)
     );
     expect(statusOf(analyzeRun(goodRun({ rows: structured })).checks, "repairs")).toBe("pass");
-    // Four repairs in 104 calls is above 2 %: a failure, unless they follow an injected malformed answer.
+    // Four repairs in 108 calls is above 2 %: a failure, unless they follow an injected malformed
+    // answer to the call they repair.
+    const firsts = [0, 1, 2, 3].map((index) => answer(90 * minute + index * 10_000));
     const repairs = [0, 1, 2, 3].map((index) =>
-      answer(90 * minute + index * 10_000, { isRepair: true, attempt: 1 })
+      answer(90 * minute + index * 10_000 + 2_000, { isRepair: true, attempt: 1 })
     );
     expect(
-      statusOf(analyzeRun(goodRun({ rows: [...structured, ...repairs] })).checks, "repairs")
+      statusOf(
+        analyzeRun(goodRun({ rows: [...structured, ...firsts, ...repairs] })).checks,
+        "repairs"
+      )
     ).toBe("fail");
     const malformed = [0, 1, 2, 3].map((index) =>
-      exchange(90 * minute + index * 10_000 - 2_000, {
+      exchange(90 * minute + index * 10_000, {
         provider: "openai-compatible",
         kind: "malformed",
-        injected: true
+        injected: true,
+        endedAt: at(90 * minute + index * 10_000 + 500)
       })
     );
-    const excused = analyzeRun(goodRun({ rows: [...structured, ...repairs], events: malformed }));
+    const excused = analyzeRun(
+      goodRun({ rows: [...structured, ...firsts, ...repairs], events: malformed })
+    );
     expect(statusOf(excused.checks, "repairs")).toBe("pass");
-    expect(injectedRows(goodRun({ rows: repairs, events: malformed })).size).toBe(4);
+    const reasons = injectedRows(goodRun({ rows: [...firsts, ...repairs], events: malformed }));
+    expect(reasons.size).toBe(8);
+    expect(repairs.every((entry) => reasons.get(entry.id) === "malformed")).toBe(true);
+  });
+
+  it("lets an injected exchange explain only the call it belongs to, not the calls beside it on the lane", () => {
+    // Gate S (10-25): a 30 s late first byte of a graph call overlapped five other Codex calls with
+    // answers of their own (a naming repair among them); an overlap set all six aside.
+    const codex = (offsetMs: number, overrides: Partial<TaskRunRecord>) =>
+      row(offsetMs, {
+        provider: "openai-codex",
+        runtime: "remote",
+        lane: "remote:ccc",
+        schemaMode: "none",
+        ...overrides
+      });
+    const late = exchange(90 * minute, {
+      provider: "codex-wire",
+      kind: "late_first_byte",
+      injected: true,
+      outcome: "client_closed",
+      endedAt: at(90 * minute + 30_000)
+    });
+    const graph = codex(90 * minute, {
+      taskType: "knowledge-graph-generation",
+      workloadClass: "write-quality",
+      durationMs: 39_000
+    });
+    const beside = codex(90 * minute + 24_000, {
+      taskType: "structured-output",
+      workloadClass: "write-fast",
+      durationMs: 2_500,
+      isRepair: true,
+      attempt: 1
+    });
+    // A retry inside a call that started earlier is that call's, though it did not start with it.
+    const retry = exchange(120 * minute + 3_000, {
+      provider: "codex-wire",
+      kind: "rate_limit",
+      injected: true,
+      status: 429,
+      retryAfterSeconds: 2,
+      endedAt: at(120 * minute + 3_000)
+    });
+    const retried = codex(120 * minute, { taskType: "structured-output", durationMs: 6_000 });
+    const reasons = injectedRows(
+      goodRun({ rows: [graph, beside, retried], events: [late, retry] })
+    );
+    expect(reasons.get(graph.id)).toBe("late_first_byte");
+    expect(reasons.has(beside.id)).toBe(false);
+    expect(reasons.get(retried.id)).toBe("rate_limit");
+  });
+
+  it("sets aside only the repair of the call a malformed answer reached, not another caller's that follows", () => {
+    // Gate S (10-25): the malformed answer reached a summary call of one job; 66 s later a topic
+    // naming job repaired one of its own names. The naming repair is the model's, and counts.
+    const codex = (offsetMs: number, overrides: Partial<TaskRunRecord>) =>
+      row(offsetMs, {
+        provider: "openai-codex",
+        runtime: "remote",
+        lane: "remote:ccc",
+        schemaMode: "none",
+        ...overrides
+      });
+    const malformed = exchange(90 * minute, {
+      provider: "codex-wire",
+      kind: "malformed",
+      injected: true,
+      endedAt: at(90 * minute)
+    });
+    const summary = codex(90 * minute, { taskType: "summarization", jobId: "summary-job" });
+    const naming = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+      codex(offsetMs, {
+        taskType: "structured-output",
+        workloadClass: "write-fast",
+        jobId: "naming-job",
+        ...overrides
+      });
+    const first = naming(90 * minute + 60_000);
+    const repair = naming(90 * minute + 66_000, { isRepair: true, attempt: 1 });
+    const run = goodRun({ rows: [summary, first, repair], events: [malformed] });
+    expect(injectedRows(run).get(summary.id)).toBe("malformed");
+    expect(injectedRows(run).has(repair.id)).toBe(false);
+    const check = analyzeRun(run).checks.find((entry) => entry.id === "repairs")!;
+    // The run's own answer, the naming call and its repair count: 1 of 3.
+    expect(check.value).toContain("1 of 3 = 33.33 % counted");
+    // The same caller asking again after the malformed answer is the fault's repair.
+    const reached = naming(90 * minute, {});
+    const own = naming(90 * minute + 6_000, { isRepair: true, attempt: 1 });
+    const excused = goodRun({ rows: [reached, own], events: [malformed] });
+    expect(injectedRows(excused).get(own.id)).toBe("malformed");
+    // A jobless caller (an Ask) is matched by task type and class, never by a job.
+    const ask = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+      codex(offsetMs, { taskType: "structured-output", workloadClass: "answer", ...overrides });
+    const askRepair = ask(90 * minute + 6_000, { isRepair: true });
+    expect(
+      injectedRows(goodRun({ rows: [ask(90 * minute), askRepair], events: [malformed] })).get(
+        askRepair.id
+      )
+    ).toBe("malformed");
+    expect(
+      injectedRows(goodRun({ rows: [summary, askRepair], events: [malformed] })).has(askRepair.id)
+    ).toBe(false);
   });
 
   it("sets aside every structured call of the local MLX writer (decision 31a), not only its graph", () => {
@@ -935,6 +1045,24 @@ describe("the pre-soak assertion", () => {
     });
     // The Codex wire's repair stays marked, so only the Ask path's kind fails.
     expect(malformed.find((entry) => entry.provider === "codex-wire")?.status).toBe("pass");
+  });
+
+  it("fails a malformed answer followed only by another caller's repair", () => {
+    // Gate S (10-25): the answer reached a summary call (plain text is a summary's answer, so it
+    // never repairs) and the line passed on a topic-naming job's repair 66 s later.
+    const run = injectedRun();
+    const otherCaller = {
+      ...run,
+      rows: run.rows.map((entry) =>
+        entry.isRepair && entry.lane === "remote:ccc" ? { ...entry, jobId: "naming-job" } : entry
+      )
+    };
+    const codex = presoakAssertions(otherCaller).find(
+      (entry) => entry.kind === "malformed" && entry.provider === "codex-wire"
+    );
+    expect(codex).toMatchObject({ status: "fail" });
+    expect(codex?.call).toContain("0 followed by a repair of the call it reached");
+    expect(codex?.call).toContain("reached: summarization");
   });
 });
 
