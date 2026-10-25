@@ -142,6 +142,11 @@ over the text below where they differ.
   catalog header, whose embedding and graph calls are not on its class route, an import) or a route that cannot be
   read still counts on every remote lane. Precedence, reasons and copy are unchanged; E5 v5 (`f4-e5v4` 3d32afe8) reads
   the same rule.
+- **Pre-soak cap 3.1M (owner, 10-25).** Gate S `soak7-gate-20261025T0815` on `f4-soak-start-r2` spent 626,321 Codex
+  tokens and failed E5 on the lane-hold defect above, leaving the ledger at 2,362,969 of 2.7M; D38 needs gate S again
+  on a new tag (`f4-soak-start-r3`), about 630k, so the owner raised the pre-soak cap to 3.1M. The soak cap (up to
+  8.0M) is unchanged. The same gate also moves its typing-fault import to minute 20, where no window meets it (both
+  earlier gates started it in the second `g190-embedder-verifying` opened).
 
 ## Decisions
 
