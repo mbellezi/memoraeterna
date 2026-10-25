@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 
 import { fakeRemoteKnob } from "@app/ai";
 import { z } from "zod";
 
 import { faultPlanSchema } from "./fault-decorator.js";
+import { answerCaptureProfileFolder } from "./soak-capture.js";
 import {
   insideSoakProfiles,
   resolveSoakPaths,
@@ -350,6 +351,15 @@ export function readSoakKnob(
       // D1: from a worktree outside the checkout, on the main checkout's data root and lock.
       const problem = soakWorktreeProblem(options.workspaceRoot, paths);
       if (problem) throw new SoakKnobRefusal("dataRoot", problem);
+      // Full capture retains content: the owner's confirmation covers gate S's profile alone.
+      if (
+        profile.f4.capture === "answers" &&
+        basename(options.userDataPath) !== answerCaptureProfileFolder
+      )
+        throw new SoakKnobRefusal(
+          "capture",
+          `The plan profile ${profileName} keeps every answer (full capture), which the owner confirmed for the profile folder ${answerCaptureProfileFolder} only`
+        );
     } else {
       if (!env[fakeRemoteKnobName]?.trim())
         throw new SoakKnobRefusal(

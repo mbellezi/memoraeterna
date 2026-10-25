@@ -195,7 +195,14 @@ export const soakF4Schema = z
       .strict()
       .optional(),
     /** Whether the Decisions decider may run (`MEMORA_SOAK_ADMIT_DECISIONS`); the 7-day soak keeps it off. */
-    decisions: z.enum(["off", "admitted"]).default("off")
+    decisions: z.enum(["off", "admitted"]).default("off"),
+    /**
+     * `answers`: the start turns debug mode and full capture on in the profile, so
+     * `monitoring_operations` keeps each answer (`soak-capture.ts`). The owner confirmed that
+     * retention for gate S's profile only (10-25): `soak7-gate` alone sets it, and the run is
+     * refused on any other profile folder. Absent: the library must have full capture off.
+     */
+    capture: z.literal("answers").optional()
   })
   .strict();
 export type SoakF4Plan = z.infer<typeof soakF4Schema>;

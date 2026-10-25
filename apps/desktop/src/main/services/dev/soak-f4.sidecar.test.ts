@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   PostgresSidecarManager,
@@ -693,24 +693,26 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
   describe("the start of the 7-day soak", () => {
     const planPath = join(workspace, "scripts", "soak", "plan.json");
 
-    async function prepared(writer: string) {
+    async function prepared(writer: string, over: { profile?: string; folder?: string } = {}) {
+      const folder = over.folder ?? "env-soak7";
       const worktree = await mkdtemp(join(tmpdir(), "soak7-worktree-"));
       const dataRoot = await mkdtemp(join(tmpdir(), "soak7-data-"));
       mkdirSync(join(worktree, "scripts", "soak"), { recursive: true });
       writeFileSync(join(worktree, "scripts", "soak", "plan.json"), readFileSync(planPath, "utf8"));
-      mkdirSync(join(dataRoot, "profiles", "env-soak7"), { recursive: true });
+      mkdirSync(join(dataRoot, "profiles", folder), { recursive: true });
+      const logger = { error: vi.fn(), info: vi.fn() };
       const soak = prepareSoak({
         env: {
           MEMORA_SOAK: "scripts/soak/plan.json",
-          MEMORA_SOAK_PROFILE: "soak7",
+          MEMORA_SOAK_PROFILE: over.profile ?? "soak7",
           MEMORA_SOAK_DATA_ROOT: dataRoot,
           MEMORA_SOAK_REAL_WRITER: writer,
           MEMORA_SOAK_RUN: "soak7-test"
         },
         isPackaged: false,
         workspaceRoot: worktree,
-        userDataPath: join(dataRoot, "profiles", "env-soak7"),
-        logger: { error: vi.fn(), info: vi.fn() }
+        userDataPath: join(dataRoot, "profiles", folder),
+        logger
       })!;
       const deps = {
         pool,
@@ -720,6 +722,7 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       return {
         soak,
         deps,
+        logger,
         lock: join(dataRoot, "f2", "LOCAL_MODEL_BUSY"),
         cleanup: () =>
           Promise.all([
@@ -756,6 +759,88 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       } finally {
         await cleanup();
       }
+    });
+
+    describe("the capture of answers (gate S, owner 10-25)", () => {
+      const preferences = async () =>
+        (await pool.query("select value from settings where key = 'app.preferences'")).rows[0]
+          ?.value;
+      const saveAs = (value: Record<string, unknown>) =>
+        pool.query(
+          `insert into settings (key, value) values ('app.preferences', $1::jsonb)
+           on conflict (key) do update set value = excluded.value`,
+          [JSON.stringify(value)]
+        );
+      afterEach(async () => {
+        await pool.query("delete from settings where key = 'app.preferences'");
+      });
+
+      it("turns debug mode and full capture on in gate S's saved preferences before the run, and changes nothing else in them", async () => {
+        const writer = await codex();
+        await saveAs({
+          language: "pt-BR",
+          debugMode: false,
+          debugFullCapture: false,
+          themeMode: "dark"
+        });
+        const { soak, deps, logger, cleanup } = await prepared(writer.id, {
+          profile: "soak7-gate",
+          folder: "env-soak7-gate"
+        });
+        try {
+          await soak.startFakes(deps);
+          expect(await preferences()).toEqual({
+            language: "pt-BR",
+            debugMode: true,
+            debugFullCapture: true,
+            themeMode: "dark"
+          });
+          expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("SOAK capture"));
+          await soak.stop();
+        } finally {
+          await cleanup();
+        }
+      });
+
+      it("stops gate S's start when the library has no saved preferences to keep the answers in, and gives the slot back", async () => {
+        const writer = await codex();
+        const { soak, deps, lock, cleanup } = await prepared(writer.id, {
+          profile: "soak7-gate",
+          folder: "env-soak7-gate"
+        });
+        try {
+          await expect(soak.startFakes(deps)).rejects.toThrow(/no saved app preferences/u);
+          expect(existsSync(lock)).toBe(false);
+          // Nothing is invented: the app writes its own defaults on its first read.
+          expect(await preferences()).toBeUndefined();
+        } finally {
+          await cleanup();
+        }
+      });
+
+      it("starts the 7-day soak with the preferences as they are, and refuses a library where full capture is on", async () => {
+        const writer = await codex();
+        const saved = { language: "pt-BR", debugMode: true, debugFullCapture: false };
+        await saveAs(saved);
+        const off = await prepared(writer.id);
+        try {
+          await off.soak.startFakes(off.deps);
+          expect(await preferences()).toEqual(saved);
+          await off.soak.stop();
+        } finally {
+          await off.cleanup();
+        }
+        await saveAs({ ...saved, debugFullCapture: true });
+        const on = await prepared(writer.id, { folder: "env-soak7-run" });
+        try {
+          await expect(on.soak.startFakes(on.deps)).rejects.toThrow(/Full capture is on/u);
+          expect(existsSync(on.lock)).toBe(false);
+          // Refused, not repaired: what the owner set stays for the owner to change.
+          expect(await preferences()).toEqual({ ...saved, debugFullCapture: true });
+        } finally {
+          await on.cleanup();
+        }
+      });
     });
 
     it("refuses to start while the lock is another holder's, a writer that is not in the profile, or a second real provider on a route", async () => {

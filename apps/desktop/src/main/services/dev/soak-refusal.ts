@@ -16,6 +16,7 @@ export type SoakKnobRefusalCode =
   | "dataRoot"
   | "realWriter"
   | "decisions"
+  | "capture"
   | "lock";
 
 export class SoakKnobRefusal extends Error {

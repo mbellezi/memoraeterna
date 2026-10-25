@@ -35,6 +35,7 @@ import {
   type FakeRemoteDeps,
   type FakeRemoteHandle
 } from "./fake-remote-install.js";
+import { answerCaptureProblem } from "./soak-capture.js";
 import { acquireSoakLock } from "./soak-data-root.js";
 import { parseBreakerLog, runSoak, type SoakF4Runtime, type SoakOutcome } from "./soak-driver.js";
 import { createSoakHooks } from "./soak-hooks.js";
@@ -292,6 +293,18 @@ export function prepareSoak(
             await findRealRemoteReach(deps.pool, [...fakeIds, realWriter.providerConfigId])
           );
           if (reachProblem) problems.push(reachProblem);
+          // Gate S keeps every answer (the owner's retention confirmation, 10-25); the 7-day soak
+          // never does. Nothing is written when another problem already stops the start.
+          if (problems.length === 0) {
+            const captureProblem = await answerCaptureProblem(deps.pool, {
+              wanted: f4Plan.capture === "answers"
+            });
+            if (captureProblem) problems.push(captureProblem);
+            else if (f4Plan.capture === "answers")
+              console_.info(
+                "SOAK capture: debug mode and full capture are on in this profile (gate S, owner 10-25)"
+              );
+          }
           if (problems.length > 0) throw new Error(problems.join(" "));
         } catch (error) {
           // A refused start quits at once (app.exit skips the quit path): the slot goes back now.

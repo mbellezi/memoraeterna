@@ -278,6 +278,11 @@ describe("the gate S profile", () => {
     expect(delay).toBeLessThan(embedder.durationMinutes);
   });
 
+  it("keeps every answer in this profile and in no other 7-day profile", () => {
+    expect(profile.f4!.capture).toBe("answers");
+    expect(readSoakPlan(planPath, "soak7").profile.f4!.capture).toBeUndefined();
+  });
+
   it("forces a burst of every fault kind so each ends a whole call", () => {
     const kinds = new Set(profile.f4!.injection!.forced.map((entry) => entry.kind));
     expect(kinds).toEqual(
@@ -330,6 +335,24 @@ describe("the knobs of the 7-day soak", () => {
     expect(settings.realWriter).toEqual({ providerConfigId: writerId });
     expect(settings.paths.cacheRoot).toBe(dataRoot);
     expect(settings.decisions).toBeNull();
+  });
+
+  it("run gate S, which keeps every answer, on its own profile folder and no other: the owner confirmed the retention for that one", () => {
+    const { options, env, dataRoot } = setup();
+    for (const folder of ["env-soak7-gate", "env-soak7-run", "env-soak7-gate-r1"])
+      mkdirSync(join(dataRoot, "profiles", folder), { recursive: true });
+    const at = (folder: string) => ({
+      ...options,
+      userDataPath: join(dataRoot, "profiles", folder)
+    });
+    const gate = env({ MEMORA_SOAK_PROFILE: "soak7-gate" });
+    expect(readSoakKnob(soakKnobName, gate, at("env-soak7-gate"))?.profileName).toBe("soak7-gate");
+    for (const folder of ["env-soak7", "env-soak7-run", "env-soak7-gate-r1"])
+      expect(() => readSoakKnob(soakKnobName, gate, at(folder))).toThrow(
+        expect.objectContaining({ code: "capture" })
+      );
+    // The 7-day soak asks for no capture and runs on its clones as before.
+    expect(readSoakKnob(soakKnobName, env(), at("env-soak7-run"))?.profileName).toBe("soak7");
   });
 
   it("refuse the profile without the real writer: its spend is bounded by the cap the writer runs under", () => {
