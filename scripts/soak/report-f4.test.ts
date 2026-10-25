@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { buildTimeline } from "../../apps/desktop/src/main/services/dev/soak-driver.ts";
 import { readSoakPlan } from "../../apps/desktop/src/main/services/dev/soak-plan.ts";
 import { expandWindows } from "../../apps/desktop/src/main/services/dev/soak-plan-f4.ts";
 import type {
@@ -1887,5 +1888,50 @@ describe("the work the gate S plan gives the windows E5 v3 compared nothing in",
         embedder.expect!
       )
     ).toBe(false);
+  });
+});
+
+// The 7-day plan's windows of these kinds bring gate S's work (10-25), unscaled: a refusal and a
+// missing decider keep what they set aside for the whole window (g070 for 10 min, g170 for 15), so
+// w054's 15 and w114's 30 minutes need no more; w120 lasts g190's 10 minutes.
+describe("the work the 7-day plan gives its refused, missing-decider and model-check windows", () => {
+  const plan = resolve(import.meta.dirname, "plan.json");
+  const read = (name: string) => {
+    const { profile } = readSoakPlan(plan, name);
+    return { profile, windows: expandWindows(profile.f4!, profile.durationHours * 60) };
+  };
+  const soak7 = read("soak7");
+  const gate = read("soak7-gate");
+  const params = (windows: typeof soak7.windows, id: string) =>
+    windows.find((entry) => entry.id === id)!.params;
+
+  it("is gate S's, window for window", () => {
+    for (const [week, short] of [
+      ["w054-refused", "g070-refused"],
+      ["w114-ranker-invalid", "g170-ranker-invalid"],
+      ["w120-embedder-verifying", "g190-embedder-verifying"]
+    ] as const)
+      expect(params(soak7.windows, week)).toEqual(params(gate.windows, short));
+  });
+
+  it("keeps imports, typing faults and helper faults out of the model-check window", () => {
+    const outside = (run: typeof soak7, id: string) => {
+      const window = run.windows.find((entry) => entry.id === id)!;
+      const from = window.startMinute * minute;
+      const to =
+        (window.startMinute +
+          window.durationMinutes +
+          (window.settleEndMinutes ?? window.settleMinutes)) *
+        minute;
+      return buildTimeline(run.profile)
+        .filter((entry) => entry.atMs >= from && entry.atMs < to)
+        .map((entry) => entry.kind)
+        .filter((kind) =>
+          ["article", "source_reimport", "typing_fault", "mlx_kill", "gguf_abort"].includes(kind)
+        );
+    };
+    expect(outside(soak7, "w120-embedder-verifying")).toEqual([]);
+    // Gate S's g190 met its typing fault at minute 190, its first minute.
+    expect(outside(gate, "g190-embedder-verifying")).toEqual(["typing_fault"]);
   });
 });
