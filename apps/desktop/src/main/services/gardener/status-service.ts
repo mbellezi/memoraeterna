@@ -25,8 +25,10 @@ import {
   gardenerBlockerKey,
   gardenerStatusKinds,
   idleGardenerStatus,
+  relationExplainBackfillJobType,
   sameGardenerStatus,
   stableGardenerStatus,
+  topicOverviewJobType,
   type BudgetSnapshot,
   type GardenerBlocker,
   type GardenerStatusConfig,
@@ -37,7 +39,15 @@ import {
 } from "@app/domain";
 
 import type { AppEvent, AppEventHandler, AppEventType } from "../../../shared/app-events.js";
-import { kindMeteredRoute, meteredRouteCall, type MeteredRoute } from "./budget-gate.js";
+import {
+  relationExplanationOperation,
+  relationTypingOperation,
+  relationTypingRepairOperation,
+  topicNameOperation,
+  topicOverviewOperation
+} from "../ai-task-parameters.js";
+import { topicAreasOperation, topicLabelOperation } from "../topic-tree/topic-prompts.js";
+import { meteredRouteCall, type MeteredRoute } from "./budget-gate.js";
 
 /** What the service reads from the database (`gardenerStatusStoreOf`; tests pass a fake). */
 export interface GardenerStatusStore {
@@ -177,6 +187,31 @@ export function laneFactsOf(
     failure: lane.failure ?? null
   };
 }
+
+/**
+ * Every route the calls of a remote Gardener kind resolve (operation, class, then task route: a
+ * legacy library's `op:` route may name another provider than the class route), for the lane the
+ * status reads (spec 3.8). Only kinds whose calls are all known are listed: the names, the Areas
+ * and the overviews write and repair on their operation's route (an overview's support check ranks
+ * on the local lane), the label embeddings embed on theirs, the re-typing sweep types and repairs
+ * on the typing operations', the explanation backfill writes and repairs on the explanation's. Any
+ * other remote kind (the relation decider's matching, a link job's typing, judging and discovery, a
+ * catalog header's embedding and graph, an import) counts as work on every remote lane. A change to
+ * a listed kind's calls changes its routes here. The budget gate meters by its own routes.
+ */
+export const kindCallRoutes: Readonly<Record<string, readonly MeteredRoute[]>> = {
+  "topic-name": [{ routeClass: "write-fast", operation: topicNameOperation }],
+  "topic-areas": [{ routeClass: "write-fast", operation: topicAreasOperation }],
+  [topicOverviewJobType]: [{ routeClass: "write-fast", operation: topicOverviewOperation }],
+  "topic-label-embed": [{ routeClass: "embed", operation: topicLabelOperation }],
+  "relation-retype": [
+    { routeClass: "write-fast", operation: relationTypingOperation },
+    { routeClass: "write-fast", operation: relationTypingRepairOperation }
+  ],
+  [relationExplainBackfillJobType]: [
+    { routeClass: "write-fast", operation: relationExplanationOperation, task: "text-generation" }
+  ]
+};
 
 type RouteCall = ReturnType<typeof meteredRouteCall>;
 
@@ -361,17 +396,17 @@ export class GardenerStatusService {
   }
 
   /**
-   * The lane each kind with work now takes (spec 3.8: a lane's problem affects only the work whose
-   * calls take that lane), read from the route its calls resolve: the one the budget gate meters it
-   * by ({@link kindMeteredRoute}). A kind with no such route (the relation decider's, an import's)
-   * or whose route cannot be read now is left out, and the status takes it as any remote lane's.
+   * The lanes each kind with work now takes (spec 3.8: a lane's problem affects only the work whose
+   * calls take that lane), read from every route its calls resolve ({@link kindCallRoutes}). A kind
+   * not listed there, or one of whose routes cannot be read now, is left out, and the status takes
+   * it as any remote lane's.
    */
   private async kindLanes(
     tasks: readonly StatusTaskRow[],
     blocked: readonly BlockedJobGroup[]
-  ): Promise<Record<string, string | null>> {
+  ): Promise<Record<string, string[]>> {
     const { routeLane } = this.options;
-    const lanes: Record<string, string | null> = {};
+    const lanes: Record<string, string[]> = {};
     if (!routeLane) return lanes;
     const types = new Set([
       ...tasks
@@ -383,11 +418,15 @@ export class GardenerStatusService {
     ]);
     await Promise.all(
       [...types].map(async (type) => {
-        const route = kindMeteredRoute(type);
-        if (!route) return;
-        // A route that cannot be read leaves the kind's lane unknown, as without a reader.
-        const lane = await routeLane(route).catch(() => undefined);
-        if (lane !== undefined) lanes[type] = lane;
+        const routes = Object.hasOwn(kindCallRoutes, type) ? kindCallRoutes[type] : undefined;
+        if (!routes) return;
+        // A route that cannot be read leaves the kind's lanes unknown, as without a reader.
+        const read = await Promise.all(
+          routes.map((route) => routeLane(route).catch(() => undefined))
+        );
+        if (read.some((lane) => lane === undefined)) return;
+        // A route no model serves takes no lane.
+        lanes[type] = [...new Set(read.filter((lane): lane is string => typeof lane === "string"))];
       })
     );
     return lanes;

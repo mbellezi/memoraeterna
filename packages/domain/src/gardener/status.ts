@@ -299,12 +299,12 @@ export interface GardenerStatusFacts {
   readonly blocked: readonly StatusBlockedFacts[];
   readonly lanes: readonly StatusLaneFacts[];
   /**
-   * The lane the calls of a remote kind take now, by job type: the scheduler's lane key (`local`,
-   * `remote:<provider configuration>`) of the route its calls resolve, or null when no route serves
-   * it (its calls take no lane). A kind not listed, or every kind when this is absent, takes a lane
-   * the main process cannot tell, and counts as work on every remote lane.
+   * The lanes the calls of a remote kind take now, by job type: the scheduler's lane keys (`local`,
+   * `remote:<provider configuration>`) of every route its calls resolve, empty when no route serves
+   * them. A kind is work on each of its lanes. A kind not listed, or every kind when this is absent,
+   * takes lanes the main process cannot tell, and counts as work on every remote lane.
    */
-  readonly kindLanes?: Readonly<Record<string, string | null>>;
+  readonly kindLanes?: Readonly<Record<string, readonly string[]>>;
   readonly downloads: StatusDownloadFacts;
   readonly budget: StatusBudgetFacts | null;
   /** Durations of finished tasks in milliseconds per kind, oldest first. */
@@ -476,7 +476,7 @@ export function composeGardenerStatus(
   const remoteWorkOn = (laneKey: string) =>
     remoteWork.reduce((sum, work) => {
       const routed = Object.hasOwn(kindLanes, work.type) ? kindLanes[work.type] : undefined;
-      return routed === undefined || routed === laneKey ? sum + work.count : sum;
+      return routed === undefined || routed.includes(laneKey) ? sum + work.count : sum;
     }, 0);
 
   const holds = new Map<GardenerBlockerKey, Hold>();

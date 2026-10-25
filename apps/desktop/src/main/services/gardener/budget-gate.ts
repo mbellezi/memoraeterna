@@ -69,7 +69,7 @@ export function kindMeteredRoute(type: string): MeteredRoute | null {
 
 /**
  * The task and context a route is read with (`AiService.taskRouteModel`), as the kind's calls
- * resolve it: the metering of the budget gate and the lane of the status read the same route.
+ * resolve it: the budget gate's metering and the status's lanes read a route the same way.
  */
 export function meteredRouteCall(route: MeteredRoute): {
   task: "text-generation" | "embedding" | "structured-output";

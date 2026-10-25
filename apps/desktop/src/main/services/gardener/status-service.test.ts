@@ -10,6 +10,7 @@ import type {
 import {
   defaultGardenerStatusConfig,
   gardenerBlocker,
+  gardenerTaskKind,
   relationExplainBackfillJobType,
   gardenerStatusKinds,
   type GardenerBlocker,
@@ -21,6 +22,7 @@ import {
   GardenerStatusService,
   JobDurationSampler,
   distinctHolds,
+  kindCallRoutes,
   laneFactsOf,
   routeLaneOf,
   type GardenerStatusServiceOptions,
@@ -410,7 +412,7 @@ describe("the lane each kind's calls take (spec 3.8)", () => {
     }
   });
 
-  it("reads only the kinds with work now, and none whose route the budget gate does not meter", async () => {
+  it("reads only the kinds with work now, and none whose calls it does not know", async () => {
     const routeLane = vi.fn(async () => priced);
     const { service, state } = setup({ routeLane });
     state.tasks = [
@@ -425,7 +427,81 @@ describe("the lane each kind's calls take (spec 3.8)", () => {
     state.tasks = [task("topic-name", { scheduled: 1 })];
     expect(await service.refresh()).toMatchObject({ reason: "queue" });
     expect(routeLane).toHaveBeenCalledOnce();
-    expect(routeLane).toHaveBeenCalledWith({ routeClass: "write-fast" });
+    expect(routeLane).toHaveBeenCalledWith({ routeClass: "write-fast", operation: "topic_name" });
+  });
+
+  it("reads the topic kinds' operation routes, which a legacy library may point elsewhere", async () => {
+    // `class:write-fast` on the local writer, `op:topic_name` (and the others) mapped to Codex.
+    const opOnCodex = vi.fn(async (route: { operation?: string }) =>
+      route.operation === "topic_label_embedding" ? "local" : route.operation ? codex : "local"
+    );
+    for (const type of ["topic-name", "topic-areas", "topic-overview"]) {
+      const { service, state } = setup({ routeLane: opOnCodex });
+      state.tasks = [task(type, { retrying: 1 })];
+      state.lanes = [lane({ lane: "local", breaker: null }), signedOut()];
+      expect(await service.refresh()).toMatchObject({
+        state: "attention",
+        class: "no_model",
+        reason: "signin_required"
+      });
+    }
+    expect(opOnCodex).toHaveBeenCalledWith({ routeClass: "write-fast", operation: "topic_areas" });
+    expect(opOnCodex).toHaveBeenCalledWith({
+      routeClass: "write-fast",
+      operation: "topic_overview"
+    });
+    // The label embeddings read theirs too, here on the local embedder.
+    const { service, state } = setup({ routeLane: opOnCodex });
+    state.tasks = [task("topic-label-embed", { ready: 1 })];
+    state.lanes = [signedOut()];
+    expect(await service.refresh()).toMatchObject({ class: "waiting", reason: "queue" });
+    expect(opOnCodex).toHaveBeenLastCalledWith({
+      routeClass: "embed",
+      operation: "topic_label_embedding"
+    });
+  });
+
+  it("takes a catalog header and a link job as any remote lane's: their calls take other routes", async () => {
+    // The header's class route is write-fast, on the local writer; its graph call goes to
+    // write-quality (here a signed-out Codex) and its embedding to the embed route.
+    const routeLane = vi.fn(async (route: { routeClass: string }) =>
+      route.routeClass === "write-fast" ? "local" : codex
+    );
+    for (const type of ["catalog-header", "relation-link"]) {
+      const { service, state } = setup({ routeLane });
+      state.tasks = [task(type, { retrying: 1 })];
+      state.lanes = [lane({ lane: "local", breaker: null }), signedOut()];
+      expect(await service.refresh()).toMatchObject({
+        state: "attention",
+        class: "no_model",
+        reason: "signin_required"
+      });
+    }
+    expect(routeLane).not.toHaveBeenCalled();
+  });
+
+  it("counts the re-typing on each lane its typing and repair calls take", async () => {
+    const split = vi.fn(async (route: { operation?: string }) =>
+      route.operation === "relation_typing_repair" ? codex : priced
+    );
+    const { service, state } = setup({ routeLane: split });
+    state.tasks = [task("relation-retype", { ready: 1 })];
+    state.lanes = [signedOut(), lane({ lane: priced })];
+    expect(await service.refresh()).toMatchObject({ class: "no_model", reason: "signin_required" });
+    expect(split).toHaveBeenCalledWith({ routeClass: "write-fast", operation: "relation_typing" });
+    // Both on the priced lane: the Codex sign-in holds none of it.
+    const { service: onPriced, state: pricedState } = setup({ routeLane: async () => priced });
+    pricedState.tasks = [task("relation-retype", { ready: 1 })];
+    pricedState.lanes = [signedOut(), lane({ lane: priced })];
+    expect(await onPriced.refresh()).toMatchObject({ class: "waiting", reason: "queue" });
+    // One route that cannot be read leaves the kind on every remote lane.
+    const { service: unread, state: unreadState } = setup({
+      routeLane: async (route) =>
+        route.operation === "relation_typing_repair" ? undefined : priced
+    });
+    unreadState.tasks = [task("relation-retype", { ready: 1 })];
+    unreadState.lanes = [signedOut(), lane({ lane: priced })];
+    expect(await unread.refresh()).toMatchObject({ reason: "signin_required" });
   });
 });
 
@@ -702,6 +778,18 @@ describe("helpers", () => {
         .sort()
     ).toEqual(["cap.money_80", "paused.user_pause"]);
     expect(distinctHolds(new Map())).toEqual([]);
+  });
+
+  it("lists the call routes of remote Gardener kinds only, each on the kind's own class", () => {
+    for (const [type, routes] of Object.entries(kindCallRoutes)) {
+      const kind = gardenerTaskKind(type);
+      expect(kind, type).toMatchObject({ gardener: true, remote: true });
+      expect(routes.length, type).toBeGreaterThan(0);
+      for (const route of routes) expect(route.routeClass, type).toBe(kind!.routeClass);
+    }
+    // Their calls take routes the table does not hold: work on every remote lane.
+    for (const type of ["catalog-header", "relation-link", "relation-match", "ingestion"])
+      expect(Object.hasOwn(kindCallRoutes, type), type).toBe(false);
   });
 
   it("reads a route's lane from the AI service's route, as the budget gate reads its metering", async () => {

@@ -658,7 +658,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
       budget: { spentUsd: 0.065336, capUsd: 0.097728 },
       blocked: [blocked(backfill, "cap.money_80", { count: 6 })],
       lanes: [lane({ lane: "local" }), signedOut, idle],
-      kindLanes: { [backfill]: priced }
+      kindLanes: { [backfill]: [priced] }
     });
     expect(composeGardenerStatus(gate)).toMatchObject({
       state: "attention",
@@ -685,7 +685,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
             ...work,
             gateHolds: [hold("cap.money_80")],
             lanes: [signedOut, idle],
-            kindLanes: { [backfill]: codex }
+            kindLanes: { [backfill]: [codex] }
           })
         )
       ).toMatchObject({ state: "attention", class: "no_model", reason: "signin_required" });
@@ -697,7 +697,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
         facts({
           tasks: [task(backfill, { ready: 1 })],
           lanes: [{ ...signedOut, waiting: 1 }, idle],
-          kindLanes: { [backfill]: priced }
+          kindLanes: { [backfill]: [priced] }
         })
       )
     ).toMatchObject({ class: "no_model", reason: "signin_required" });
@@ -721,7 +721,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
           facts({
             tasks: [task("topic-overview", { ready: 2 })],
             lanes: [lane({ lane: codex, ...problem }), idle],
-            kindLanes: { "topic-overview": routed }
+            kindLanes: { "topic-overview": [routed] }
           })
         );
       const onCodex = at(codex);
@@ -732,7 +732,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
   });
 
   it("leaves out work routed to a local model and work no route serves", () => {
-    for (const routed of ["local", null])
+    for (const routed of [["local"], []])
       expect(
         composeGardenerStatus(
           facts({
@@ -744,6 +744,23 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
       ).toMatchObject({ class: "waiting", reason: "queue" });
   });
 
+  it("takes a kind whose calls take several lanes as work on each of them", () => {
+    // The re-typing's typing calls on the priced lane, its repairs on Codex.
+    const retype = (lanes: string[]) =>
+      composeGardenerStatus(
+        facts({
+          tasks: [task("relation-retype", { retrying: 1 })],
+          lanes: [signedOut, idle],
+          kindLanes: { "relation-retype": lanes }
+        })
+      );
+    expect(retype(["local", priced, codex])).toMatchObject({
+      class: "no_model",
+      reason: "signin_required"
+    });
+    expect(retype(["local", priced]).class).not.toBe("no_model");
+  });
+
   it("takes a kind whose lane is not told as work on every remote lane", () => {
     // The decider's lane is not read (a local ranker, the generative writer or the Decisions API).
     expect(
@@ -751,7 +768,7 @@ describe("a lane's problem affects only the work that takes that lane (spec 3.8)
         facts({
           tasks: [task("relation-match", { ready: 1 }), task(backfill, { ready: 1 })],
           lanes: [signedOut, idle],
-          kindLanes: { [backfill]: priced }
+          kindLanes: { [backfill]: [priced] }
         })
       )
     ).toMatchObject({ class: "no_model", reason: "signin_required" });

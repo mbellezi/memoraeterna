@@ -134,11 +134,14 @@ over the text below where they differ.
   the Codex lane ran and queued nothing, yet the status said `no_model.signin_required` (attention) from 12:25:30 to
   12:29:30: its lane holds counted every remote Gardener task on every lane. A lane's rate limit, outage, unreachable
   network or refused sign-in now holds only while the lane runs or queues calls, or remote work (held or not) whose
-  route takes it: the status service reads each remote kind's route as the budget gate meters it (operation, class, then
-  task route) and the lane the scheduler names for it (`remote:<provider configuration>`). Work routed to a local model
-  or with no route takes no remote lane; work whose lane is not read (the relation decider's, an import set aside by an
-  outage, a route that cannot be read) still counts on every remote lane. Precedence, reasons and copy are unchanged;
-  E5 v5 (`f4-e5v4` 3d32afe8) reads the same rule.
+  calls take it: the status service reads every route a kind's calls resolve (operation, class, then task route) and
+  the lane the scheduler names for each (`remote:<provider configuration>`), for the kinds whose calls are all known:
+  topic names, Areas, overviews and label embeddings on their operation's route, the re-typing sweep on the typing and
+  typing-repair routes, the explanation backfill on the explanation's. A kind on several lanes is work on each; work
+  routed to a local model or with no route takes no remote lane; any other kind (the relation decider's, a link job, a
+  catalog header, whose embedding and graph calls are not on its class route, an import) or a route that cannot be
+  read still counts on every remote lane. Precedence, reasons and copy are unchanged; E5 v5 (`f4-e5v4` 3d32afe8) reads
+  the same rule.
 
 ## Decisions
 
