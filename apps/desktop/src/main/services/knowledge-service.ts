@@ -4,6 +4,7 @@ import {
   changedPromptIdentity
 } from "./prompt-runtime.js";
 import { atomicNoteEmbeddingText } from "./note-embedding-text.js";
+import { noteMatchingEmbeddingOperation } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
 import {
@@ -14,6 +15,7 @@ import {
 import {
   RelationMatcher,
   type DecidedNote,
+  type MatchDeciderCall,
   type MatchNotesResult
 } from "./relations/relation-matcher.js";
 import {
@@ -1857,7 +1859,7 @@ export class KnowledgeService {
     const { vectors } = await this.ensureAtomicNoteVectors(current, {
       signal,
       logContext,
-      operation: "note_matching_embedding"
+      operation: noteMatchingEmbeddingOperation
     });
     return this.relationMatcher.matchNotes({
       noteIds,
@@ -1979,6 +1981,14 @@ export class KnowledgeService {
   /** The key note matching decides under now; null while it waits for a validated ranker (T52b). */
   public currentRelationDeciderKey(): Promise<string | null> {
     return this.relationMatcher.currentDeciderKey();
+  }
+
+  /**
+   * The calls the next matching admission's decider makes, read without a call (the Gardener
+   * status's lanes); null while it waits for a decider.
+   */
+  public relationDeciderCalls(): Promise<MatchDeciderCall[] | null> {
+    return this.relationMatcher.deciderCalls();
   }
 
   private async tryRunDefaultTask(

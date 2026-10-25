@@ -436,11 +436,20 @@ export class DecisionsRuntime {
    * the person turned the decider on and the local ranker decides anyway.
    */
   public async resolve(): Promise<DecisionsResolution> {
+    const resolution = await this.peek();
+    if (resolution.use === "local" && resolution.reason) await this.noteFallback(resolution.reason);
+    return resolution;
+  }
+
+  /**
+   * What {@link resolve} answers now, recording nothing: the Gardener status asks it often, for the
+   * lane the matching's decider takes.
+   */
+  public async peek(): Promise<DecisionsResolution> {
     const availability = await this.availability();
     if (availability.ok) return { use: "decisions" };
     if (availability.reason === "off" || availability.reason === "preset")
       return { use: "local", reason: null };
-    await this.noteFallback(availability.reason);
     return { use: "local", reason: availability.reason };
   }
 

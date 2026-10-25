@@ -789,6 +789,9 @@ void app.whenReady().then(() => {
     lanes: () => aiService?.laneSnapshots() ?? [],
     // A lane's problem holds only the work whose calls take that lane (spec 3.8).
     routeLane: routeLaneOf(() => aiService),
+    // MATCH's lanes are its decider's: the local ranker, a generative route, the Decisions API's own.
+    matchDecider: async () =>
+      knowledgeService ? await knowledgeService.relationDeciderCalls() : null,
     models: async () => (localModelService ? await localModelService.listStatuses() : []),
     publish: (event) => events.publish(event),
     events,

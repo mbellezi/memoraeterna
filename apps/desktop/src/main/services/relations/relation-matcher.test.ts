@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256 } from "@app/conversion";
-import { findLocalModelCatalogEntry, rankerCatalogArtifactSha256, rankPairsLimits } from "@app/ai";
+import {
+  decisionsLaneKey,
+  findLocalModelCatalogEntry,
+  rankerCatalogArtifactSha256,
+  rankPairsLimits,
+  resolveDecisionsLimits
+} from "@app/ai";
 import {
   calibrate,
   frozenRelationCalibrations,
@@ -18,6 +24,7 @@ import { atomicNoteDeciderKey, atomicNoteDecisionContentHash } from "../knowledg
 import {
   deriveDeciderMode,
   mapGenerativeRelationType,
+  matchDeciderCalls,
   noteMatchInputHash,
   rankerCalibrationIdentity,
   rankerDeciderCacheKey,
@@ -988,6 +995,41 @@ describe("decider modes", () => {
     expect(generativeKey).not.toBeNull();
     expect(generativeKey).not.toBe(key);
     expect((await run([source.id])).handed[0]!.decider.deciderKey).toBe(generativeKey);
+  });
+
+  it("names the calls its decider makes, without a call: the local ranker's lane, the generative routes", async () => {
+    // The validated ranker scores on the local lane (the Gardener status reads it, spec 3.8).
+    await expect(matcher().deciderCalls()).resolves.toEqual([{ lane: "local" }]);
+    // The generative decider: its decide and repair calls, on the routes they resolve.
+    mocks.settings.get.mockResolvedValue("generative");
+    routes["op:note_matching_reranking"] = writerRoute;
+    await expect(matcher().deciderCalls()).resolves.toEqual([
+      { task: "reranking", operation: "note_matching_reranking", workloadClass: "decide" },
+      { task: "reranking", operation: "note_matching_reranking_repair", workloadClass: "decide" }
+    ]);
+    expect(ai.rankPairs).not.toHaveBeenCalled();
+    expect(ai.runDefaultTask).not.toHaveBeenCalled();
+    // Mode ranker waiting for a validated ranker: no decider to place.
+    mocks.settings.get.mockResolvedValue("ranker");
+    ai.decideRouteStatus.mockResolvedValue("not_validated");
+    await expect(matcher().deciderCalls()).resolves.toBeNull();
+    // A required generative decider with no route: none either, and no throw.
+    mocks.settings.get.mockResolvedValue("generative");
+    routes = { "class:decide": rankerRoute };
+    await expect(matcher().deciderCalls()).resolves.toBeNull();
+  });
+
+  it("places the Decisions API on a remote lane of its own, beside the local decider it falls back to", () => {
+    const limits = resolveDecisionsLimits();
+    const own = { lane: decisionsLaneKey(limits) };
+    expect(matchDeciderCalls({ kind: "decisions", limits, fallback: { kind: "ranker" } })).toEqual([
+      own,
+      { lane: "local" }
+    ]);
+    expect(
+      matchDeciderCalls({ kind: "decisions", limits, fallback: { kind: "generative" } })
+    ).toEqual([own, ...matchDeciderCalls({ kind: "generative" })]);
+    expect(matchDeciderCalls({ kind: "decisions", limits, fallback: null })).toEqual([own]);
   });
 
   it("names no key while mode ranker waits for a validated ranker", async () => {

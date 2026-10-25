@@ -10,6 +10,7 @@ import {
   createAiScheduler,
   DecisionsDisabledError,
   DecisionsUnavailableError,
+  decisionsLaneKey,
   resolveAiLaneRuntimeConfig,
   resolveDecisionsLimits,
   setAiAdapterDecorator
@@ -879,6 +880,27 @@ describe("the Decisions decider scoring the retrieval's candidate lists", () => 
     ai.resolveDecisions.mockResolvedValue({ use: "local", reason: null });
     expect(await decider.deciderAvailable()).toBe(false);
     expect(await decider.currentDeciderKey()).toBeNull();
+  });
+
+  it("places its calls on its own lane and its fallback's, peeked at: no fallback is recorded", async () => {
+    // The Gardener status asks often: reading the decider records no Decisions fallback.
+    const peekDecisions = vi.fn(async (): Promise<DecisionsResolution> => ({ use: "decisions" }));
+    const reader = new RelationMatcher({
+      getPool: () => ({}) as PgPool,
+      ai: { ...ai, peekDecisions } as unknown as AiService,
+      config: uncalibrated
+    });
+    const own = { lane: decisionsLaneKey(resolveDecisionsLimits()) };
+    await expect(reader.deciderCalls()).resolves.toEqual([own, { lane: "local" }]);
+    // No local decider to fall back to: its own lane alone.
+    routes = {};
+    await expect(reader.deciderCalls()).resolves.toEqual([own]);
+    // Turned on but unable to decide (a refused key, the day's cap): the local ranker decides.
+    routes = { "class:decide": rankerRoute };
+    peekDecisions.mockResolvedValue({ use: "local", reason: "spend_cap" });
+    await expect(reader.deciderCalls()).resolves.toEqual([{ lane: "local" }]);
+    expect(ai.resolveDecisions).not.toHaveBeenCalled();
+    expect(ai.decideWithDecisions).not.toHaveBeenCalled();
   });
 });
 

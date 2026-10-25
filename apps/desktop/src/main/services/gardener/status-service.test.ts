@@ -421,7 +421,7 @@ describe("the lane each kind's calls take (spec 3.8)", () => {
       task("relation-match", { ready: 1 })
     ];
     state.lanes = [signedOut()];
-    // The decider's lane is not read: its matching is work on every remote lane.
+    // No reader of the decider: its matching is work on every remote lane.
     expect(await service.refresh()).toMatchObject({ reason: "signin_required" });
     expect(routeLane).not.toHaveBeenCalled();
     state.tasks = [task("topic-name", { scheduled: 1 })];
@@ -478,6 +478,91 @@ describe("the lane each kind's calls take (spec 3.8)", () => {
       });
     }
     expect(routeLane).not.toHaveBeenCalled();
+  });
+
+  it("reads MATCH's lanes from its decider: the local ranker takes no remote lane (gate S 10-25)", async () => {
+    const routeLane = vi.fn(async () => "local");
+    const { service, state } = setup({ routeLane, matchDecider: async () => [{ lane: "local" }] });
+    state.tasks = [task("relation-match", { ready: 1 })];
+    state.lanes = [lane({ lane: "local", breaker: null }), signedOut()];
+    expect(await service.refresh()).toMatchObject({ class: "waiting", reason: "queue" });
+    // Its embedding of a note with no vector yet is read on its route too.
+    expect(routeLane).toHaveBeenCalledOnce();
+    expect(routeLane).toHaveBeenCalledWith({
+      routeClass: "embed",
+      operation: "note_matching_embedding"
+    });
+    // An embedder on the signed-out lane holds it.
+    const onCodex = setup({
+      routeLane: async () => codex,
+      matchDecider: async () => [{ lane: "local" }]
+    });
+    onCodex.state.tasks = [task("relation-match", { ready: 1 })];
+    onCodex.state.lanes = [signedOut()];
+    expect(await onCodex.service.refresh()).toMatchObject({ reason: "signin_required" });
+  });
+
+  it("reads a generative decider's lanes from the routes of its decide and repair calls", async () => {
+    const generative = async () =>
+      ["note_matching_reranking", "note_matching_reranking_repair"].map((operation) => ({
+        task: "reranking" as const,
+        operation,
+        workloadClass: "decide" as const
+      }));
+    const routeLane = vi.fn(async (route: { routeClass: string }) =>
+      route.routeClass === "decide" ? codex : "local"
+    );
+    const { service, state } = setup({ routeLane, matchDecider: generative });
+    state.tasks = [task("relation-match", { retrying: 1 })];
+    state.lanes = [lane({ lane: "local", breaker: null }), signedOut()];
+    expect(await service.refresh()).toMatchObject({ class: "no_model", reason: "signin_required" });
+    // Read as the matcher calls it: `op:` route, `class:decide`, then the `reranking` task route.
+    expect(routeLane).toHaveBeenCalledWith({
+      routeClass: "decide",
+      operation: "note_matching_reranking",
+      task: "reranking"
+    });
+    expect(routeLane).toHaveBeenCalledWith({
+      routeClass: "decide",
+      operation: "note_matching_reranking_repair",
+      task: "reranking"
+    });
+    // Routed to the priced lane: the Codex sign-in holds none of it.
+    const elsewhere = setup({
+      routeLane: async (route) => (route.routeClass === "decide" ? priced : "local"),
+      matchDecider: generative
+    });
+    elsewhere.state.tasks = [task("relation-match", { retrying: 1 })];
+    elsewhere.state.lanes = [signedOut(), lane({ lane: priced })];
+    expect(await elsewhere.service.refresh()).toMatchObject({ class: "waiting" });
+    // The Decisions API on a lane of its own: its refused key holds MATCH, Codex's does not.
+    const decisions = "remote:openai-decisions";
+    const own = setup({
+      routeLane: async () => "local",
+      matchDecider: async () => [{ lane: decisions }, { lane: "local" }]
+    });
+    own.state.tasks = [task("relation-match", { ready: 1 })];
+    own.state.lanes = [signedOut()];
+    expect(await own.service.refresh()).toMatchObject({ class: "waiting", reason: "queue" });
+    own.state.lanes = [lane({ lane: decisions, failure: { kind: "unauthorized", ageMs: 11_000 } })];
+    expect(await own.service.refresh()).toMatchObject({ reason: "signin_required" });
+  });
+
+  it("takes MATCH as any remote lane's while it has no decider, or the decider cannot be read", async () => {
+    for (const matchDecider of [
+      async () => null,
+      async () => {
+        throw new Error("no database");
+      }
+    ]) {
+      const routeLane = vi.fn(async () => "local");
+      const { service, state } = setup({ routeLane, matchDecider });
+      state.tasks = [task("relation-match", { ready: 1 })];
+      state.lanes = [signedOut()];
+      // Mode `ranker` waiting for a validated ranker: a real outage is never hidden.
+      expect(await service.refresh()).toMatchObject({ reason: "signin_required" });
+      expect(routeLane).not.toHaveBeenCalled();
+    }
   });
 
   it("counts the re-typing on each lane its typing and repair calls take", async () => {
@@ -787,7 +872,7 @@ describe("helpers", () => {
       expect(routes.length, type).toBeGreaterThan(0);
       for (const route of routes) expect(route.routeClass, type).toBe(kind!.routeClass);
     }
-    // Their calls take routes the table does not hold: work on every remote lane.
+    // Their calls take routes the table does not hold (MATCH's are its decider's, read apart).
     for (const type of ["catalog-header", "relation-link", "relation-match", "ingestion"])
       expect(Object.hasOwn(kindCallRoutes, type), type).toBe(false);
   });

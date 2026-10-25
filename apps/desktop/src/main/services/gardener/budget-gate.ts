@@ -36,8 +36,11 @@ export const meteredRouteClasses: readonly AiClassId[] = ["write-fast", "write-q
 export interface MeteredRoute {
   routeClass: AiClassId;
   operation?: string;
-  /** The task those calls run; absent: the class's own task (`structured-output`, `embedding`). */
-  task?: "text-generation";
+  /**
+   * The task those calls run; absent: the class's own task (`structured-output`, `embedding`). The
+   * status also reads MATCH's generative decider by its `reranking` route.
+   */
+  task?: "text-generation" | "reranking";
 }
 
 /**
@@ -72,7 +75,7 @@ export function kindMeteredRoute(type: string): MeteredRoute | null {
  * resolve it: the budget gate's metering and the status's lanes read a route the same way.
  */
 export function meteredRouteCall(route: MeteredRoute): {
-  task: "text-generation" | "embedding" | "structured-output";
+  task: NonNullable<MeteredRoute["task"]> | "embedding" | "structured-output";
   context: { workloadClass: AiClassId; operation?: string };
 } {
   return {

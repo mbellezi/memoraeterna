@@ -392,6 +392,21 @@ describe("falling back to the local ranker", () => {
     });
   });
 
+  it("answers as an admission would when peeked at, and records no fallback", async () => {
+    const h = harness({ withKey: false });
+    expect(await h.runtime.peek()).toEqual({ use: "local", reason: "no_key" });
+    expect(store.settings.get(relationsDecisionsStateSettingKey)).toBeUndefined();
+    expect(await h.runtime.resolve()).toEqual({ use: "local", reason: "no_key" });
+    expect(store.settings.get(relationsDecisionsStateSettingKey)).toMatchObject({
+      fallback: { reason: "no_key" }
+    });
+    expect(await harness({ preset: "local" }).runtime.peek()).toEqual({
+      use: "local",
+      reason: null
+    });
+    expect(await harness().runtime.peek()).toEqual({ use: "decisions" });
+  });
+
   it("stops at the day's spend cap, before the next request, and starts again on a new day", async () => {
     const h = harness({
       config: RelationsConfigSchema.parse({ decisions: { dailyCapUsd: 0.0001 } }),

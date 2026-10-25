@@ -58,6 +58,7 @@ import {
   decideValidationParityFailed,
   DecisionsDisabledError,
   DecisionsUnavailableError,
+  decisionsLaneKey,
   decisionsLogOdds,
   decisionsNeighbourhood,
   findLocalModelCatalogEntry,
@@ -67,6 +68,7 @@ import {
   type DecisionsLimits
 } from "@app/ai";
 
+import type { DecisionsResolution } from "../ai-decisions.js";
 import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "../ai-service.js";
 import { noteMatchDecisionOperations, withAiTaskParameterDefaults } from "../ai-task-parameters.js";
 import { compareContent, contentKey } from "../content-order.js";
@@ -395,7 +397,10 @@ export interface RelationMatcherOptions {
   getPool: () => PgPool | null;
   ai: Pick<AiService, "rankPairs" | "runDefaultTask" | "decideRouteStatus" | "traceOperation"> &
     Partial<
-      Pick<AiService, "ensureLegacyRouteMapping" | "resolveDecisions" | "decideWithDecisions">
+      Pick<
+        AiService,
+        "ensureLegacyRouteMapping" | "resolveDecisions" | "decideWithDecisions" | "peekDecisions"
+      >
     >;
   config?: RelationsConfig;
   /** The Decisions decider's typed limits (tests); the defaults of `packages/ai` apply when left out. */
@@ -479,6 +484,46 @@ interface CandidateOutcome {
   subjectId: string | null;
   /** The Decisions decider's clear subject (decision 31b), else null. */
   directionSubjectId: string | null;
+}
+
+// --- where the decider's calls go ----------------------------------------------------------------
+
+/**
+ * A call of a matching admission's decider, as the Gardener status places it on a lane (spec 3.8: a
+ * lane's problem holds only the work whose calls take that lane): a lane the call takes whatever the
+ * routes say, or the route it resolves as any call does (`op:` route, `class:decide`, then the
+ * `reranking` task route).
+ */
+export type MatchDeciderCall =
+  { lane: string } | { task: "reranking"; operation: string; workloadClass: "decide" };
+
+/**
+ * The calls a decider makes: the ranker scores on the local lane (`rankPairs`); the generative
+ * decider decides and repairs on the routes of its two operations; the Decisions API scores on a
+ * remote lane of its own, and the local decider it falls back to makes that one's calls.
+ */
+export function matchDeciderCalls(
+  decider:
+    | { kind: "ranker" | "generative" }
+    | {
+        kind: "decisions";
+        limits: Pick<DecisionsLimits, "providerId">;
+        fallback: { kind: "ranker" | "generative" } | null;
+      }
+): MatchDeciderCall[] {
+  switch (decider.kind) {
+    case "ranker":
+      return [{ lane: "local" }];
+    case "generative":
+      return [noteMatchDecisionOperations.decide, noteMatchDecisionOperations.repair].map(
+        (operation): MatchDeciderCall => ({ task: "reranking", operation, workloadClass: "decide" })
+      );
+    case "decisions":
+      return [
+        { lane: decisionsLaneKey(decider.limits) },
+        ...(decider.fallback ? matchDeciderCalls(decider.fallback) : [])
+      ];
+  }
 }
 
 const isCurrentNote = (note: AtomicNoteRecord) =>
@@ -601,6 +646,22 @@ export class RelationMatcher {
   }
 
   /**
+   * The calls the next admission's decider would make ({@link matchDeciderCalls}), read without a
+   * call as an admission resolves its decider; whether the Decisions API decides is peeked at, so
+   * the read records no fallback. Null while there is no decider to place on a lane: mode `ranker`
+   * waits for a validated ranker, or no decider can run.
+   */
+  public async deciderCalls(): Promise<MatchDeciderCall[] | null> {
+    let decider: Decider | typeof waitingForDeciderSkipReason;
+    try {
+      decider = await this.resolveDecider(async () => this.options.ai.peekDecisions?.());
+    } catch {
+      return null;
+    }
+    return decider === waitingForDeciderSkipReason ? null : matchDeciderCalls(decider);
+  }
+
+  /**
    * Whether the note was matched already for this very text in this embedding space (F4 D16). A
    * note with no vector has no space to compare in, and a state recorded before 0060 has no hash:
    * both are matched again.
@@ -625,9 +686,13 @@ export class RelationMatcher {
    * The decider of this admission, or the skip of mode `ranker` without a validated ranker. When the
    * person turned the Decisions API on and it may decide, it is the decider and the local decider
    * the mode would have used is its fallback; when it is on and may not decide, the local decider
-   * decides and says why (plan decision 30).
+   * decides and says why (plan decision 30). `readDecisions` asks whether the Decisions API decides:
+   * the AI service's resolution, which records a fallback, unless a reader asks otherwise.
    */
-  private async resolveDecider(): Promise<Decider | typeof waitingForDeciderSkipReason> {
+  private async resolveDecider(
+    readDecisions: () => Promise<DecisionsResolution | undefined> = async () =>
+      this.options.ai.resolveDecisions?.()
+  ): Promise<Decider | typeof waitingForDeciderSkipReason> {
     const pool = this.requirePool();
     // The routes are read here before any call: the generative-decide `op:` routes that the
     // legacy mapping writes must exist first, as they do for a call (D16, D34).
@@ -644,10 +709,7 @@ export class RelationMatcher {
             rankerValidating: validating,
             generativeRerankingRoute: await this.generativeRerankingTaskRoute()
           });
-    const decisions = (await this.options.ai.resolveDecisions?.()) ?? {
-      use: "local" as const,
-      reason: null
-    };
+    const decisions = (await readDecisions()) ?? { use: "local" as const, reason: null };
     let local: LocalDecider | typeof waitingForDeciderSkipReason;
     try {
       local = await this.localDecider(mode, ranker);

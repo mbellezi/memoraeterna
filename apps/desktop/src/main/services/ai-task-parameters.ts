@@ -13,6 +13,9 @@ export const noteMatchDecisionOperations = {
   repair: "note_matching_reranking_repair"
 } as const;
 
+/** The embedding of a note matching finds without a vector for its current text (`class:embed`). */
+export const noteMatchingEmbeddingOperation = "note_matching_embedding";
+
 /**
  * The operation that writes the explanation of a relation when the owner opens it. It is a sentence
  * or two of prose, so it runs on the writer route with reasoning off by default.

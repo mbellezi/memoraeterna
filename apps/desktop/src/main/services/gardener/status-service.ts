@@ -26,6 +26,7 @@ import {
   gardenerStatusKinds,
   idleGardenerStatus,
   relationExplainBackfillJobType,
+  relationMatchJobType,
   sameGardenerStatus,
   stableGardenerStatus,
   topicOverviewJobType,
@@ -40,12 +41,14 @@ import {
 
 import type { AppEvent, AppEventHandler, AppEventType } from "../../../shared/app-events.js";
 import {
+  noteMatchingEmbeddingOperation,
   relationExplanationOperation,
   relationTypingOperation,
   relationTypingRepairOperation,
   topicNameOperation,
   topicOverviewOperation
 } from "../ai-task-parameters.js";
+import type { MatchDeciderCall } from "../relations/relation-matcher.js";
 import { topicAreasOperation, topicLabelOperation } from "../topic-tree/topic-prompts.js";
 import { meteredRouteCall, type MeteredRoute } from "./budget-gate.js";
 
@@ -143,6 +146,13 @@ export interface GardenerStatusServiceOptions {
    * it every remote kind counts as work on every remote lane.
    */
   routeLane?: (route: MeteredRoute) => Promise<string | null | undefined>;
+  /**
+   * The calls the relation decider's next matching makes (`KnowledgeService.relationDeciderCalls`):
+   * a lane, or a route to read. Null while there is no decider to place on a lane (mode `ranker`
+   * waits for a validated ranker, none can run); MATCH then counts as work on every remote lane, as
+   * without this reader.
+   */
+  matchDecider?: () => Promise<readonly MatchDeciderCall[] | null>;
   /** The statuses of the installed local models (`LocalModelService.listStatuses`). */
   models: () => Promise<ReadonlyArray<{ status: string }>>;
   /** Sends the snapshot to the windows (`gardener.status` on the event bus). */
@@ -194,10 +204,11 @@ export function laneFactsOf(
  * status reads (spec 3.8). Only kinds whose calls are all known are listed: the names, the Areas
  * and the overviews write and repair on their operation's route (an overview's support check ranks
  * on the local lane), the label embeddings embed on theirs, the re-typing sweep types and repairs
- * on the typing operations', the explanation backfill writes and repairs on the explanation's. Any
- * other remote kind (the relation decider's matching, a link job's typing, judging and discovery, a
- * catalog header's embedding and graph, an import) counts as work on every remote lane. A change to
- * a listed kind's calls changes its routes here. The budget gate meters by its own routes.
+ * on the typing operations', the explanation backfill writes and repairs on the explanation's.
+ * MATCH's calls are its decider's, read when it has work ({@link matchEmbeddingRoute}). Any other
+ * remote kind (a link job's typing, judging and discovery, a catalog header's embedding and graph,
+ * an import) counts as work on every remote lane. A change to a listed kind's calls changes its
+ * routes here. The budget gate meters by its own routes.
  */
 export const kindCallRoutes: Readonly<Record<string, readonly MeteredRoute[]>> = {
   "topic-name": [{ routeClass: "write-fast", operation: topicNameOperation }],
@@ -211,6 +222,16 @@ export const kindCallRoutes: Readonly<Record<string, readonly MeteredRoute[]>> =
   [relationExplainBackfillJobType]: [
     { routeClass: "write-fast", operation: relationExplanationOperation, task: "text-generation" }
   ]
+};
+
+/**
+ * MATCH embeds a note that has no vector for its current text before it decides
+ * (`KnowledgeService.matchAtomicNotes`); its decider's calls are read from the matcher
+ * (`RelationMatcher.deciderCalls`, the decider an admission resolves now).
+ */
+export const matchEmbeddingRoute: MeteredRoute = {
+  routeClass: "embed",
+  operation: noteMatchingEmbeddingOperation
 };
 
 type RouteCall = ReturnType<typeof meteredRouteCall>;
@@ -397,9 +418,9 @@ export class GardenerStatusService {
 
   /**
    * The lanes each kind with work now takes (spec 3.8: a lane's problem affects only the work whose
-   * calls take that lane), read from every route its calls resolve ({@link kindCallRoutes}). A kind
-   * not listed there, or one of whose routes cannot be read now, is left out, and the status takes
-   * it as any remote lane's.
+   * calls take that lane), read from every route its calls resolve ({@link kindCallRoutes}, MATCH's
+   * decider). A kind whose calls are not known, or one of whose routes cannot be read now, is left
+   * out, and the status takes it as any remote lane's.
    */
   private async kindLanes(
     tasks: readonly StatusTaskRow[],
@@ -418,11 +439,11 @@ export class GardenerStatusService {
     ]);
     await Promise.all(
       [...types].map(async (type) => {
-        const routes = Object.hasOwn(kindCallRoutes, type) ? kindCallRoutes[type] : undefined;
-        if (!routes) return;
+        const calls = await this.kindCalls(type);
+        if (!calls) return;
         // A route that cannot be read leaves the kind's lanes unknown, as without a reader.
         const read = await Promise.all(
-          routes.map((route) => routeLane(route).catch(() => undefined))
+          calls.map((call) => ("lane" in call ? call.lane : routeLane(call).catch(() => undefined)))
         );
         if (read.some((lane) => lane === undefined)) return;
         // A route no model serves takes no lane.
@@ -430,6 +451,33 @@ export class GardenerStatusService {
       })
     );
     return lanes;
+  }
+
+  /**
+   * The calls of a kind: its routes ({@link kindCallRoutes}), or MATCH's embedding and its decider's
+   * calls (a lane, or a route); undefined while they are not known.
+   */
+  private async kindCalls(
+    type: string
+  ): Promise<ReadonlyArray<MeteredRoute | { lane: string }> | undefined> {
+    if (Object.hasOwn(kindCallRoutes, type)) return kindCallRoutes[type];
+    const { matchDecider } = this.options;
+    if (type !== relationMatchJobType || !matchDecider) return undefined;
+    let decider: readonly MatchDeciderCall[] | null;
+    try {
+      decider = await matchDecider();
+    } catch {
+      return undefined;
+    }
+    if (!decider) return undefined;
+    return [
+      matchEmbeddingRoute,
+      ...decider.map((call) =>
+        "lane" in call
+          ? call
+          : { routeClass: call.workloadClass, operation: call.operation, task: call.task }
+      )
+    ];
   }
 
   private async compose(): Promise<GardenerStatusSnapshot> {

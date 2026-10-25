@@ -1302,6 +1302,11 @@ export class AiService {
     return this.decisionsRuntime().resolve();
   }
 
+  /** What {@link resolveDecisions} answers now, recording no fallback (the Gardener status's lanes). */
+  public peekDecisions(): Promise<DecisionsResolution> {
+    return this.decisionsRuntime().peek();
+  }
+
   /**
    * Scores directed lists on the Decisions API (the candidate lists stay the matcher's): the
    * validated request design on the decider's own remote lane. Throws `DecisionsUnavailableError`
