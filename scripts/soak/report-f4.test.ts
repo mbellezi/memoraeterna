@@ -2064,7 +2064,7 @@ describe("the work the 7-day plan gives its refused, missing-decider and model-c
         );
     };
     expect(outside(soak7, "w120-embedder-verifying")).toEqual([]);
-    // Gate S's g190 met its typing fault at minute 190, its first minute.
-    expect(outside(gate, "g190-embedder-verifying")).toEqual(["typing_fault"]);
+    // The first two gate S runs met their typing fault at g190's first minute; it now runs at minute 20.
+    expect(outside(gate, "g190-embedder-verifying")).toEqual([]);
   });
 });
