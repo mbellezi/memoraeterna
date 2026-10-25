@@ -11,6 +11,7 @@ import type {
 } from "./contracts.js";
 import { createTextDeltaStream } from "./contracts.js";
 import { readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
+import { outputSchemaIdentity } from "./output-schema-identity.js";
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { providerHttpError, providerStreamError, type AiProviderError } from "./provider-error.js";
 import {
@@ -110,9 +111,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
    */
   private readonly refusedLeanDecideShapes = new Set<string>();
   /**
-   * Models this backend refused a strict `text.format` schema for and then accepted the same request
-   * without it (F3 D35). Their later requests go without it at once. As with the lean shape, a refusal
-   * is remembered only once the request without the schema is accepted.
+   * Strict `text.format` schemas this backend refused for a model and then accepted the same request
+   * without (F3 D35), keyed by endpoint, model and schema identity. Later requests with that schema
+   * go without it at once; another schema on the same model is still sent (10-25). As with the lean
+   * shape, a refusal is remembered only once the request without the schema is accepted.
    */
   private readonly refusedSchemaShapes = new Set<string>();
 
@@ -207,6 +209,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     const modelId = request.modelId ?? this.options.modelId;
     const decide = requestWorkloadClass(request) === "decide";
     const shapeKey = `${this.baseUrl}\u0000${modelId}`;
+    // A refused schema is that schema's own: the model's other contracts keep theirs.
+    const schemaKey = request.outputSchema
+      ? `${shapeKey}\u0000${outputSchemaIdentity(request.outputSchema)}`
+      : shapeKey;
     let report: RemoteCallReport | undefined;
     // This call met a refusal of the lean shape; its later attempts go straight to the full shape.
     let refusedInCall = false;
@@ -234,7 +240,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
           ? undefined
           : schemaRefusedInCall
             ? "refused"
-            : this.refusedSchemaShapes.has(shapeKey)
+            : this.refusedSchemaShapes.has(schemaKey)
               ? "refused_earlier"
               : undefined;
         let lean = decide && known === undefined;
@@ -276,7 +282,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         if (!response.ok) throw await call.guard(providerHttpError(response));
         // The backend accepted the full shape after it refused the lean one: keep that from now on.
         if (refusedInCall) this.refusedLeanDecideShapes.add(shapeKey);
-        if (schemaRefusedInCall) this.refusedSchemaShapes.add(shapeKey);
+        if (schemaRefusedInCall) this.refusedSchemaShapes.add(schemaKey);
 
         let output = "";
         let tokenUsage: Record<string, number> = {};

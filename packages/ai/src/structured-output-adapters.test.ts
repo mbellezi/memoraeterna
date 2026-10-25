@@ -7,6 +7,7 @@ import { GoogleGeminiAdapter } from "./google.js";
 import { NodeLlamaCppAdapter, MlxAdapter } from "./local-adapters.js";
 import { OpenAiCodexAdapter } from "./openai-codex.js";
 import { OpenAiCompatibleAdapter } from "./openai-compatible.js";
+import { outputSchemaIdentity } from "./output-schema-identity.js";
 import { remoteCallReport } from "./remote-execution.js";
 
 const contract = z
@@ -44,6 +45,40 @@ const payloadOf = (init: RequestInit | undefined) =>
   JSON.parse(String(init?.body)) as Record<string, unknown>;
 const refusal = (message: string, status = 400) =>
   Response.json({ error: { message, type: "invalid_request_error" } }, { status });
+/** Two contracts of one model: the source judge's and a typing batch's (any batch size). */
+const judgeSchema = toStrictJsonSchema(
+  z.object({ items: z.array(z.array(z.string()).max(7)).max(12) }).strict(),
+  "source_judge"
+) as AiOutputSchema;
+const typingSchema = (maxPairs: number) =>
+  toStrictJsonSchema(
+    z.object({ pairs: z.array(z.object({ type: z.string() }).strict()).max(maxPairs) }).strict(),
+    "relation_typing"
+  ) as AiOutputSchema;
+const withSchema = (schema: AiOutputSchema): AiTaskRequest => ({
+  ...request(),
+  outputSchema: schema
+});
+const formatName = (payload: Record<string, unknown> | undefined) =>
+  ((payload?.text as { format?: { name?: string } } | undefined)?.format?.name ??
+    (payload?.response_format as { json_schema?: { name?: string } } | undefined)?.json_schema
+      ?.name) ||
+  null;
+
+describe("a refused schema's identity", () => {
+  it("is the name and the body, whatever the order of its keys", () => {
+    const reordered = {
+      strict: outputSchema.strict,
+      schema: Object.fromEntries(Object.entries(outputSchema.schema).reverse()),
+      name: outputSchema.name
+    };
+    expect(outputSchemaIdentity(reordered)).toBe(outputSchemaIdentity(outputSchema));
+    expect(outputSchemaIdentity(typingSchema(4))).not.toBe(outputSchemaIdentity(typingSchema(8)));
+    expect(outputSchemaIdentity({ ...outputSchema, name: "other" })).not.toBe(
+      outputSchemaIdentity(outputSchema)
+    );
+  });
+});
 
 describe("the request contract", () => {
   it("carries a strict output schema and rejects a malformed one", () => {
@@ -64,7 +99,7 @@ describe("Codex text.format", () => {
       { type: "response.output_text.delta", delta: text },
       { type: "response.completed", response: { usage: { input_tokens: 2, output_tokens: 1 } } }
     );
-  // The process remembers a refusal per base URL and model, so every test uses its own backend.
+  // The process remembers a refusal per base URL, model and schema, so every test uses its own backend.
   let backend = 0;
   const codex = (fetch: typeof globalThis.fetch) =>
     new OpenAiCodexAdapter({
@@ -109,7 +144,7 @@ describe("Codex text.format", () => {
     expect(result.requestOptions).not.toHaveProperty("schemaMode");
   });
 
-  it("resends once without the format when it is refused, and remembers that per backend and model", async () => {
+  it("resends once without the format when it is refused, and remembers that per backend, model and schema", async () => {
     const payloads: Array<Record<string, unknown>> = [];
     const responses = [
       refusal("Invalid schema for text.format 'pair_verdict': 'strict' is not supported."),
@@ -144,6 +179,50 @@ describe("Codex text.format", () => {
       schemaMode: "strict"
     });
     expect(payloads[3]!.text).toHaveProperty("format");
+  });
+
+  it("keeps sending a model's other schemas after one is refused, and never re-sends the refused one", async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const responses = [
+      refusal("Invalid schema for text.format 'source_judge': 'strict' is not supported."),
+      sse(codexEvents("judged")),
+      sse(codexEvents("typed")),
+      sse(codexEvents("typed again")),
+      sse(codexEvents("judged again"))
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      payloads.push(payloadOf(init));
+      return responses.shift()!;
+    });
+    const adapter = codex(fetch);
+    await expect(adapter.run(withSchema(judgeSchema))).resolves.toMatchObject({
+      output: "judged",
+      requestOptions: { schemaMode: "none", schemaFallback: "refused" }
+    });
+    // A typing call on the same model is sent its strict format, at either batch size.
+    for (const [maxPairs, output] of [
+      [8, "typed"],
+      [4, "typed again"]
+    ] as const) {
+      const typed = await adapter.run(withSchema(typingSchema(maxPairs)));
+      expect(typed).toMatchObject({ output, schemaMode: "strict", attempts: 1 });
+      expect(typed.requestOptions).not.toHaveProperty("schemaFallback");
+    }
+    expect(payloads.slice(2, 4).map(formatName)).toEqual(["relation_typing", "relation_typing"]);
+    // The refused schema itself goes without the format at once.
+    await expect(adapter.run(withSchema(judgeSchema))).resolves.toMatchObject({
+      output: "judged again",
+      requestOptions: { schemaMode: "none", schemaFallback: "refused_earlier" },
+      attempts: 1
+    });
+    expect(payloads.map(formatName)).toEqual([
+      "source_judge",
+      null,
+      "relation_typing",
+      "relation_typing",
+      null
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 
   it("never falls back for a refusal that does not name the format", async () => {
@@ -260,6 +339,36 @@ describe("OpenAI-compatible response_format", () => {
     });
     expect(payloads[2]!.response_format).toEqual({ type: "json_object" });
     expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps sending a model's other schemas after one is refused, and never re-sends the refused one", async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const responses = [
+      refusal("Invalid parameter: 'response_format' of type 'json_schema' is not supported."),
+      completion("judged"),
+      completion("typed"),
+      completion("judged again")
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      payloads.push(payloadOf(init));
+      return responses.shift()!;
+    });
+    const openAi = adapter(fetch);
+    await expect(openAi.run(withSchema(judgeSchema))).resolves.toMatchObject({
+      output: "judged",
+      requestOptions: { schemaMode: "json", schemaFallback: "refused" }
+    });
+    const typed = await openAi.run(withSchema(typingSchema(8)));
+    expect(typed).toMatchObject({ output: "typed", schemaMode: "strict", attempts: 1 });
+    expect(typed.requestOptions).not.toHaveProperty("schemaFallback");
+    await expect(openAi.run(withSchema(judgeSchema))).resolves.toMatchObject({
+      output: "judged again",
+      requestOptions: { schemaMode: "json", schemaFallback: "refused_earlier" },
+      attempts: 1
+    });
+    expect(payloads.map(formatName)).toEqual(["source_judge", null, "relation_typing", null]);
+    expect(payloads[3]!.response_format).toEqual({ type: "json_object" });
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 
   it("does not fall back for a refusal that does not name the format", async () => {

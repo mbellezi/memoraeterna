@@ -24,6 +24,7 @@ import {
   isQwen35Model,
   openAiCompatibleParameterCapabilities
 } from "./parameter-capabilities.js";
+import { outputSchemaIdentity } from "./output-schema-identity.js";
 import { providerHttpError, providerStreamError } from "./provider-error.js";
 import {
   isLocalEndpoint,
@@ -100,9 +101,11 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   private readonly runtime: AiRuntimeConfig;
   private readonly local: boolean;
   /**
-   * Models whose server refused a `json_schema` response format and then accepted `json_object`
-   * (F3 D35). Their later requests send `json_object` at once. The memory lives as long as the
-   * service keeps this instance (F3 D38): a changed configuration is a new adapter and asks again.
+   * Schemas a model's server refused as a `json_schema` response format and then accepted as
+   * `json_object` (F3 D35), keyed by endpoint, model and schema identity. Later requests with that
+   * schema send `json_object` at once; another schema on the same model is still sent (10-25). The
+   * memory lives as long as the service keeps this instance (F3 D38): a changed configuration is a
+   * new adapter and asks again.
    */
   private readonly jsonSchemaRejected = new Set<string>();
 
@@ -467,9 +470,15 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     };
   }
 
-  /** The key a refused `json_schema` format is remembered under: the endpoint and the model. */
+  /**
+   * The key a refused `json_schema` format is remembered under: the endpoint, the model and the
+   * schema's identity, so one refused schema leaves the model's other contracts strict.
+   */
   private schemaKey(request: AiTaskRequest): string {
-    return `${this.options.baseUrl}\u0000${request.modelId ?? this.options.modelId}`;
+    const model = `${this.options.baseUrl}\u0000${request.modelId ?? this.options.modelId}`;
+    return request.outputSchema
+      ? `${model}\u0000${outputSchemaIdentity(request.outputSchema)}`
+      : model;
   }
 
   /** Whether this request sends its strict schema: not when the configuration refused one before. */
