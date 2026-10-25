@@ -1613,4 +1613,24 @@ describe("jobs a blocker set aside (F4 D5)", () => {
     expect(report.checks.find((check) => check.id === "jobs-stuck")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "jobs-blocked")?.value).toMatch(/^1 /u);
   });
+
+  it("counts a job enqueued ahead of its time as stuck from when it came due", () => {
+    // A window's backfill written at the start and due 100 minutes later, then claimed 30 minutes after.
+    const dueAt = start + 100 * minute;
+    const aheadSamples = (claimedAfterMinutes: number) =>
+      waitingSamples(null).map((sample) => {
+        const at = Date.parse(sample.at);
+        const queued = at >= dueAt && at < dueAt + claimedAfterMinutes * minute;
+        return {
+          ...sample,
+          jobs: queued ? sample.jobs.map((job) => ({ ...job, runAfter: dueAt })) : []
+        };
+      });
+    const stuck = (claimedAfterMinutes: number) =>
+      analyzeRun(goodRun({ samples: aheadSamples(claimedAfterMinutes) })).checks.find(
+        (check) => check.id === "jobs-stuck"
+      )?.status;
+    expect(stuck(30)).toBe("pass");
+    expect(stuck(70)).toBe("fail");
+  });
 });

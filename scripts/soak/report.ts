@@ -486,10 +486,13 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
       // A job a blocker set aside (F4 D5) waits for its blocker, not for a worker.
       const due = job.status === "queued" && job.runAfter <= at && !job.blockedClass;
       const eligible = job.status === "running" || due;
-      if (eligible && idle > stuckLimit && !stuck.has(job.id))
+      // A queued job waits from when it came due, not from its last write: a backfill enqueued
+      // ahead of its time, or a daily job re-enqueued for the next day, comes due with an old write.
+      const waited = job.status === "queued" ? at - Math.max(job.updatedAt, job.runAfter) : idle;
+      if (eligible && waited > stuckLimit && !stuck.has(job.id))
         stuck.set(
           job.id,
-          `${job.type} (${job.lane}, ${job.status}) unchanged for ${Math.round(idle / minute)} min at ${sample.at}`
+          `${job.type} (${job.lane}, ${job.status}) unchanged for ${Math.round(waited / minute)} min at ${sample.at}`
         );
       if (due) {
         const since = waiting.get(job.id) ?? at;
