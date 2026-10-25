@@ -35,7 +35,9 @@ import {
  * prompt-level JSON and is validated by Zod all the same; a contract is added here when a caller
  * starts to state an `outputContract`, and a change to a contract that flips its outcome shows up
  * in this table. The AI service sends a remote adapter the strict schema of a contract that has one
- * (F4 D23); the others stay prompt-level there and reach a local runtime as a grammar (T99).
+ * (F4 D23), or of the strict terms its caller states beside it (naming and notes, owner 10-25,
+ * `strict-output-callers.test.ts`); the others stay prompt-level there. Every contract here reaches
+ * a local runtime as its own grammar (T99), strict terms or not.
  *
  * Why most of today's contracts are not strict: they were written for validation, not for a wire
  * format. Their optional members (`language`, `description`, canonical IDs) are the common cause;
@@ -610,7 +612,7 @@ describe("the contracts the topic tree states", () => {
     expect(topicOverviewOutputContract.contract).toBe(TopicOverviewOutputSchema);
   });
 
-  it("derives a strict schema under its name for a strict contract and none for the others", () => {
+  it("derives a strict schema under its name for a strict contract or its strict terms", () => {
     expect(outputSchemaForContract(topicOverviewOutputContract)).toMatchObject({
       name: "topic_overview",
       strict: true
@@ -623,7 +625,11 @@ describe("the contracts the topic tree states", () => {
       name: "topic_overview_patch",
       strict: true
     });
-    expect(outputSchemaForContract(topicNamingOutputContract)).toBeNull();
+    // The naming contract itself is not strict (an optional `aliases`): its strict terms are sent.
+    expect(outputSchemaForContract(topicNamingOutputContract)).toMatchObject({
+      name: "topic_naming",
+      strict: true
+    });
   });
 });
 

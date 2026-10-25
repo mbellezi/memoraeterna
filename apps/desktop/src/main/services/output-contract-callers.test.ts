@@ -58,6 +58,17 @@ const catalogOperations: ReadonlyArray<{ operation: string; contract: string; ca
     operation: "relation_type_resolution",
     contract: "relation_identity",
     caller: "relation-type-resolution.ts"
+  },
+  // Stated for remote runtimes only since the owner's 10-25 decision (strict terms, no grammar).
+  {
+    operation: "wiki-consultation",
+    contract: "consultation_answer",
+    caller: "consultation-service.ts"
+  },
+  {
+    operation: "source_relation_matching",
+    contract: "source_judge",
+    caller: "source-relation-processing.ts"
   }
 ];
 const operationNames = new Set(catalogOperations.map((entry) => entry.operation));

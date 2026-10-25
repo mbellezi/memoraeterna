@@ -20,10 +20,12 @@ import {
 } from "@app/db";
 import {
   ConsultationAnswerSchema,
+  ConsultationAnswerStrictSchema,
   ConsultationEvidenceSchema,
   ConsultationInputSchema,
   ConsultationResultSchema,
   consultationVersion,
+  type AiOutputContract,
   type ConsultationContext,
   type ConsultationEvidence,
   type ConsultationInput,
@@ -104,6 +106,17 @@ export interface ConsultationSnapshot extends ConsultationPromptSnapshot {
   relations: ConsultationRelation[];
 }
 
+/**
+ * The contract the Ask states (owner, 10-25): a remote runtime is sent the strict schema of its
+ * strict terms; no local runtime is sent a grammar, as none was before.
+ */
+export const consultationOutputContract: AiOutputContract = {
+  name: "consultation_answer",
+  contract: ConsultationAnswerSchema,
+  strictContract: ConsultationAnswerStrictSchema,
+  grammar: false
+};
+
 export function parseConsultationAnswer(
   output: unknown,
   snapshot: {
@@ -123,6 +136,9 @@ export function parseConsultationAnswer(
       throw new Error("consultation.errors.invalid");
     }
   }
+  // A strict answer writes every member: outside an investigation it states `change: null`.
+  if (typeof output === "object" && output !== null && "change" in output && output.change === null)
+    output = Object.fromEntries(Object.entries(output).filter(([key]) => key !== "change"));
   const answer = ConsultationAnswerSchema.parse(output);
   if (
     snapshot.consultationIntent === "investigation" &&
@@ -649,6 +665,7 @@ export class ConsultationService {
             priority: "P0",
             budgetClass: "interactive",
             promptVersion: snapshot.consultationVersion ?? "wiki-answer-v1",
+            outputContract: consultationOutputContract,
             contentLanguage: language,
             attempt: attempt + 1,
             // The second call follows an answer that failed validation: a repair for the audit (D35).

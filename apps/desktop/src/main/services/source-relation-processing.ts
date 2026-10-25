@@ -13,6 +13,7 @@ import {
   sourceDecisionPassesFloors,
   sourceVerdictWriteType,
   symmetricSourceRelationTypes,
+  type AiOutputContract,
   type RelationsConfig,
   type SourceDecisionItem,
   type SourceJudgeMode,
@@ -89,6 +90,35 @@ const decisionItemSchema = z.tuple([
 // The envelope has no length cap: the answer is bounded by the output token limit, and items beyond
 // the allowance are dropped after ranking, so a surplus item can never discard the valid ones.
 const decisionEnvelopeSchema = z.object({ relations: z.array(z.unknown()) });
+
+/**
+ * The contract the judge states in both modes (v5 and v6 answer the same items; owner, 10-25), for
+ * remote runtimes only: no local runtime is sent a grammar, as none was before. A strict schema
+ * cannot say a tuple, so in strict terms an item is a list of seven members, each an alias, a
+ * type, a score or a list of chunk aliases; `parseSourceDecision` checks each item's order and
+ * meaning, item by item, as before.
+ */
+export const sourceJudgeOutputContract: AiOutputContract = {
+  name: "source_judge",
+  contract: z.object({ relations: z.array(decisionItemSchema) }),
+  strictContract: z
+    .object({
+      relations: z.array(
+        z
+          .array(
+            z.union([
+              z.string(),
+              z.number().int().min(0).max(sourceDecisionLimits.maxScore),
+              z.array(z.string()).min(1).max(sourceDecisionLimits.maxChunksPerSide)
+            ])
+          )
+          .min(decisionItemSchema.def.items.length)
+          .max(decisionItemSchema.def.items.length)
+      )
+    })
+    .strict(),
+  grammar: false
+};
 
 /**
  * One root's matching state in a run (`source_matching_runs`). States written before design E also
@@ -1437,6 +1467,7 @@ async function judgeRoot(input: {
           budgetClass: input.context?.budgetClass ?? "user",
           contentLanguage: input.contentLanguage,
           promptVersion,
+          outputContract: sourceJudgeOutputContract,
           sourceItemIds: [
             ...new Set([
               root,

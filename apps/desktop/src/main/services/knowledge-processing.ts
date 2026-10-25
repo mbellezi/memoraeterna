@@ -9,6 +9,7 @@ import {
   AtomicNoteGenerationOutputSchema,
   AtomicNoteRelationTypeSchema,
   KnowledgeGraphGenerationOutputSchema,
+  LanguageCodeSchema,
   type AiOutputContract,
   type AtomicNoteGenerationOutput,
   type AtomicNoteRelationType,
@@ -26,9 +27,29 @@ const knowledgeGraphOutputContract: AiOutputContract = {
   name: "knowledge_graph",
   contract: KnowledgeGraphGenerationOutputSchema
 };
+/** The note answer as the pinned path asks it (F3 D5): no schema for a remote runtime. */
 const atomicNotesOutputContract: AiOutputContract = {
   name: "atomic_notes",
   contract: AtomicNoteGenerationOutputSchema
+};
+/**
+ * The note answer in strict terms (owner, 10-25), which the product path sends a remote runtime:
+ * `language` is required and null for a note in none of the content languages (read as absent).
+ * A local runtime keeps the contract's own grammar.
+ */
+const atomicNotesStrictOutputContract: AiOutputContract = {
+  ...atomicNotesOutputContract,
+  strictContract: z
+    .object({
+      notes: z
+        .array(
+          AtomicNoteGenerationCandidateSchema.extend({
+            language: LanguageCodeSchema.nullable()
+          }).strict()
+        )
+        .max(50)
+    })
+    .strict()
 };
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
@@ -670,7 +691,10 @@ function atomicNoteItems(output: unknown, allowedChunkIds: ReadonlySet<string>):
     throw new StructuredItemsError("atomic_note_output_shape", [
       "root: the answer must be one JSON object with a notes list"
     ]);
-  const checked = validateItems(notes, AtomicNoteGenerationCandidateSchema);
+  const checked = validateItems(
+    notes.map(withoutNullLanguage),
+    AtomicNoteGenerationCandidateSchema
+  );
   const items: AtomicNoteItems = {
     valid: [],
     invalid: checked.invalid.map(({ raw, problems }) => ({ raw, problems }))
@@ -696,10 +720,14 @@ export async function generateAtomicNoteCandidates(
   options: AtomicNoteGenerationOptions = {}
 ): Promise<{ output: AtomicNoteGenerationOutput; execution: KnowledgeAiExecution } | null> {
   const allowedChunkIds = new Set(chunks.map((chunk) => chunk.id));
+  // The pinned path asks as it was recorded; the product path in strict terms on a remote runtime.
+  const outputContract = options.pinned
+    ? atomicNotesOutputContract
+    : atomicNotesStrictOutputContract;
   const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), {
     operation: "atomic_note_generation",
     promptVersion: atomicNotePromptVersion,
-    outputContract: atomicNotesOutputContract,
+    outputContract,
     batchIndex: 0,
     attempt: 0,
     chunkIds: [...allowedChunkIds]
@@ -709,7 +737,7 @@ export async function generateAtomicNoteCandidates(
     run(buildAtomicNoteRepairPrompt(previousOutput, [...allowedChunkIds], error), {
       operation: "atomic_note_repair",
       promptVersion: atomicNotePromptVersion,
-      outputContract: atomicNotesOutputContract,
+      outputContract,
       batchIndex: 0,
       attempt: 1,
       chunkIds: [...allowedChunkIds]
@@ -1342,6 +1370,17 @@ function structuredOutputRepairFeedback(error: unknown): string {
     return "- One or more evidenceChunkIds are not allowed. Use only the supplied chunk ids listed below.";
   }
   return "- The response failed the required structured-output schema. Match the schema and all consistency rules exactly.";
+}
+
+/**
+ * A strict answer writes every member: a note in none of the content languages states
+ * `language: null`, which reads as a note that states no language.
+ */
+function withoutNullLanguage(note: unknown): unknown {
+  if (typeof note !== "object" || note === null || Array.isArray(note)) return note;
+  const record = note as Record<string, unknown>;
+  if (record.language !== null) return note;
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== "language"));
 }
 
 function normalizeAtomicNoteGenerationOutput(value: unknown): unknown {

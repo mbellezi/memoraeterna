@@ -109,6 +109,19 @@ over the text below where they differ.
   (about 2.3x the gate plan's unit costs), the owner raised the pre-soak cap to 2.7M for a full gate S rerun and let the
   soak cap rise up to 8.0M if the re-freeze confirms the measured rate (full intensity); the F4 cap becomes about 10.8M.
 - **Q12's probe (10-24).** 20 synthetic requests, provider-reported US$0.0019 equal to the ledger's figure: T76 done.
+- **Strict output for the callers gate S saw repairing (owner, 10-25; amends D23).** Gate S's six real Codex repairs
+  (the Ask 3 of 11 calls, notes, the source judge and naming one each) were all on contracts sent at schema none
+  (strict rows 0/28, none 6/95). Their contracts cannot be strict as written (optional members, the Ask's refinement,
+  the judge's tuple), so each caller now states the same answer in strict terms beside its contract
+  (`AiOutputContract.strictContract`) and remote runtimes are sent that strict schema: every member required, the
+  Ask's `change` and a note's `language` nullable (their parsers read null as absent), a name's `aliases` a required
+  list (absent reads as empty), the Ask's distinct citations left to its parser, and a judge item (perPair v5 and
+  perRoot v6 alike) a list of exactly seven aliases, scores 0-100 or chunk lists. A local runtime keeps what it was
+  sent: naming and notes their contract's own grammar (T99, per-call grammars unchanged), the Ask and the judge none
+  (`grammar: false`); the extraction pin still asks notes without a schema. Prompts, the parsers as final validators,
+  decider and cassette keys (which never read a request's schema) are unchanged. Before gate S runs again, STRICTP
+  (`.cache/f4/scripts/run.sh STRICTP`, about 60k Codex tokens, cap 80k) asks a few of each live on an ENV-G clone
+  through the product's builders and requires `strict` on every row and 0 repairs.
 
 ## Decisions
 

@@ -22,6 +22,7 @@ import {
   parseSourceDecision,
   sourceDecisionAllowance,
   sourceDecisionMaxOutputTokens,
+  sourceJudgeOutputContract,
   sourceJudgePrompt,
   sourceJudgePromptVersions,
   sourceJudgeValidation,
@@ -498,6 +499,7 @@ async function judgePair(
           origin: "golden_source_pairs",
           contentLanguage,
           promptVersion: sourceJudgePromptVersions[mode],
+          outputContract: sourceJudgeOutputContract,
           sourceItemIds,
           attempt,
           // The same audit as the source judge's own calls: the second one is a repair.
@@ -722,6 +724,7 @@ async function judgeGroup(
               origin: "golden_source_pairs",
               contentLanguage,
               promptVersion: sourceJudgePromptVersions[judge.config.mode],
+              outputContract: sourceJudgeOutputContract,
               sourceItemIds: [
                 ...new Set([
                   root,

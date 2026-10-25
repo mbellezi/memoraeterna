@@ -3,8 +3,9 @@ import { z } from "zod";
 /**
  * Structured model output (F3 D35). A contract that is strict-compatible carries its JSON Schema on
  * the request; each adapter maps it to its provider's wire format. A contract that is not (open
- * records, tuples, refinements, optional members) keeps its prompt-level JSON and is validated by
- * Zod after the call, as every structured output always is.
+ * records, tuples, refinements, optional members) keeps its prompt-level JSON unless its caller
+ * also states the answer in strict terms (`strictContract`), and is validated by Zod after the
+ * call, as every structured output always is.
  */
 
 const jsonObjectSchema = z.record(z.string(), z.json());
@@ -168,24 +169,39 @@ export interface AiOutputContract {
    * derived from `contract` alone, so stating it changes nothing a remote provider is sent.
    */
   callContract?: z.ZodType;
+  /**
+   * The same answer in strict terms (owner, 10-25), for a contract that cannot be sent strictly as
+   * it is: every member required (an optional one nullable, or a list the parser reads as empty when
+   * absent), every object closed, a tuple a list of its members' types, no refinement. A remote
+   * runtime is sent its strict schema in place of `contract`'s; a local runtime never reads it. The
+   * caller's parser stays the final validator: it reads such a null as absent and checks what a
+   * strict schema cannot say (patterns, lengths, uniqueness, a tuple's order).
+   */
+  strictContract?: z.ZodType;
+  /**
+   * False for a contract a caller states for remote runtimes only: no local runtime is sent a
+   * grammar for it (the Ask and the source judge sent none before they stated a contract).
+   */
+  grammar?: false;
 }
 
 const strictContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema | null>>();
 
 /**
- * The strict schema a remote runtime is sent for a stated contract (F4 D23), or null when the
- * contract cannot be sent strictly (an optional member, a tuple, a refinement) and the call keeps
- * its prompt-level JSON. Cached per contract object and name: callers keep one contract per shape.
- * A stated `callContract` is never read here.
+ * The strict schema a remote runtime is sent for a stated contract (F4 D23): the strict schema of
+ * its `strictContract` when it states one, else of the contract itself; null when that cannot be
+ * sent strictly (an optional member, a tuple, a refinement) and the call keeps its prompt-level
+ * JSON. Cached per contract object and name: callers keep one contract per shape. A stated
+ * `callContract` is never read here.
  */
 export function outputSchemaForContract(output: AiOutputContract): AiOutputSchema | null {
-  let byName = strictContractSchemas.get(output.contract);
+  const contract = output.strictContract ?? output.contract;
+  let byName = strictContractSchemas.get(contract);
   if (!byName) {
     byName = new Map();
-    strictContractSchemas.set(output.contract, byName);
+    strictContractSchemas.set(contract, byName);
   }
-  if (!byName.has(output.name))
-    byName.set(output.name, toStrictJsonSchema(output.contract, output.name));
+  if (!byName.has(output.name)) byName.set(output.name, toStrictJsonSchema(contract, output.name));
   return byName.get(output.name) ?? null;
 }
 
@@ -321,9 +337,11 @@ const grammarContractSchemas = new WeakMap<z.ZodType, Map<string, AiOutputSchema
  * The grammar schema a runtime that constrains decoding is sent for a stated contract (F4 D24): the
  * call's own contract when the caller states one (built per call, so not cached), else the
  * contract's, cached per contract object and name like `outputSchemaForContract`. A call contract
- * the emitter cannot send (too large) falls back to the contract's grammar.
+ * the emitter cannot send (too large) falls back to the contract's grammar. None for a contract
+ * stated for remote runtimes only (`grammar: false`); a `strictContract` is never read here.
  */
 export function grammarSchemaForContract(output: AiOutputContract): AiOutputSchema | null {
+  if (output.grammar === false) return null;
   if (output.callContract) {
     const narrowed = toGrammarJsonSchema(output.callContract, output.name);
     if (narrowed) return narrowed;

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { toStrictJsonSchema, type AiOutputContract, type AiOutputSchema } from "@app/domain";
+import {
+  grammarSchemaForContract,
+  toStrictJsonSchema,
+  type AiOutputContract,
+  type AiOutputSchema
+} from "@app/domain";
 import { z } from "zod";
 
 import { AiService, routedOutputSchema } from "./ai-service.js";
@@ -181,6 +186,25 @@ describe("the output contract of a call (F4 D23)", () => {
     expect(started.context).toMatchObject({ operation: "pair_verdict" });
   });
 
+  it("sends a remote adapter the strict schema of the answer's strict terms and nothing else new (owner, 10-25)", async () => {
+    const terms: AiOutputContract = {
+      name: "pair_note",
+      contract: z.object({ note: z.string().optional() }).strict(),
+      strictContract: z.object({ note: z.string().nullable() }).strict(),
+      grammar: false
+    };
+    const { ai, requests } = service({ schemaMode: "strict" });
+    await ai.runDefaultTask("structured-output", "decide", {
+      operation: "pair_note",
+      outputContract: terms
+    });
+    await ai.runDefaultTask("structured-output", "decide", { operation: "pair_note" });
+    const [stated, plain] = requests;
+    expect(stated?.outputSchema).toEqual(toStrictJsonSchema(terms.strictContract!, "pair_note"));
+    // Byte for byte the same request but for the schema: prompt, parameters, metadata, operation.
+    expect(JSON.stringify({ ...stated, outputSchema: undefined })).toBe(JSON.stringify(plain));
+  });
+
   it("sends a schema the caller states itself as it is, whatever contract it also states", async () => {
     const { ai, requests } = service();
     const probe = toStrictJsonSchema(z.object({ ok: z.boolean() }).strict(), "probe")!;
@@ -234,6 +258,30 @@ describe("routedOutputSchema", () => {
         adapter: { outputSchemaFor: () => null }
       })
     ).toBeUndefined();
+  });
+
+  it("hands a local runtime nothing for a contract stated for remote runtimes only", () => {
+    const remoteOnly: AiOutputContract = { ...contract, grammar: false };
+    const mlx = { outputSchemaFor: (stated: AiOutputContract) => grammarSchemaForContract(stated) };
+    expect(
+      routedOutputSchema({ contract, taskType: "structured-output", local: true, adapter: mlx })
+    ).toEqual(grammarSchemaForContract(contract));
+    expect(
+      routedOutputSchema({
+        contract: remoteOnly,
+        taskType: "structured-output",
+        local: true,
+        adapter: mlx
+      })
+    ).toBeUndefined();
+    expect(
+      routedOutputSchema({
+        contract: remoteOnly,
+        taskType: "structured-output",
+        local: false,
+        adapter: mlx
+      })
+    ).toEqual(toStrictJsonSchema(contract.contract, "verdict"));
   });
 
   it("states nothing for a call that states no contract, and a stated schema wins", () => {

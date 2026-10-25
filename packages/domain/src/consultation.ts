@@ -82,29 +82,55 @@ export const ConsultationInputSchema = z
     message: "consultation.errors.scope",
     path: ["topicId"]
   });
+const consultationChangeSchema = z
+  .object({ meaningful: z.boolean(), explanation: z.array(z.string().max(1000)).max(6) })
+  .strict();
+const consultationMarkdownSchema = z.string().trim().min(1).max(6000);
+const consultationCitationsSchema = z
+  .array(z.string().regex(/^e\d{1,3}$/))
+  .min(1)
+  .max(12);
+const consultationContextIdsSchema = z.array(z.string().uuid()).max(20);
+const consultationGapsSchema = z.array(z.string().max(1000)).max(8);
 export const ConsultationAnswerSchema = z
   .object({
-    change: z
-      .object({ meaningful: z.boolean(), explanation: z.array(z.string().max(1000)).max(6) })
-      .strict()
-      .optional(),
+    change: consultationChangeSchema.optional(),
     paragraphs: z
       .array(
         z
           .object({
-            markdown: z.string().trim().min(1).max(6000),
-            citations: z
-              .array(z.string().regex(/^e\d{1,3}$/))
-              .min(1)
-              .max(12)
-              .refine((v) => new Set(v).size === v.length),
-            contextIds: z.array(z.string().uuid()).max(20).default([])
+            markdown: consultationMarkdownSchema,
+            citations: consultationCitationsSchema.refine((v) => new Set(v).size === v.length),
+            contextIds: consultationContextIdsSchema.default([])
           })
           .strict()
       )
       .min(1)
       .max(6),
-    gaps: z.array(z.string().max(1000)).max(8)
+    gaps: consultationGapsSchema
+  })
+  .strict();
+/**
+ * The same answer in strict terms (owner, 10-25), which a remote runtime is sent as its schema:
+ * `change` is required and null outside an investigation (the parser reads null as absent),
+ * `contextIds` is always written, and the parser alone checks that citations are distinct.
+ */
+export const ConsultationAnswerStrictSchema = z
+  .object({
+    change: consultationChangeSchema.nullable(),
+    paragraphs: z
+      .array(
+        z
+          .object({
+            markdown: consultationMarkdownSchema,
+            citations: consultationCitationsSchema,
+            contextIds: consultationContextIdsSchema
+          })
+          .strict()
+      )
+      .min(1)
+      .max(6),
+    gaps: consultationGapsSchema
   })
   .strict();
 export const ConsultationResultSchema = z

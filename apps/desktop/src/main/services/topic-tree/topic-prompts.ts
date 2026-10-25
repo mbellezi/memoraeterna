@@ -123,12 +123,17 @@ export type TopicAreasOutput = z.output<typeof TopicAreasOutputSchema>;
 
 /**
  * The contracts the topic tree's structured calls state (F4 D23). The service derives the schema each
- * runtime is sent: the overview and the Areas grouping qualify for a strict one, the naming answer
- * (an optional `aliases` member) stays prompt-level on a remote provider.
+ * runtime is sent: the overview and the Areas grouping qualify for a strict one; the naming answer
+ * (an optional `aliases` member) is sent a remote provider in strict terms (owner, 10-25), where
+ * `aliases` is required and empty when the subject has no other name (the validation reads a
+ * missing list as empty), and keeps the contract's own grammar on a local runtime.
  */
 export const topicNamingOutputContract: AiOutputContract = {
   name: "topic_naming",
-  contract: z.object({ topics: z.array(NamingItemSchema) })
+  contract: z.object({ topics: z.array(NamingItemSchema) }),
+  strictContract: z.object({
+    topics: z.array(NamingItemSchema.extend({ aliases: z.array(z.string()) }))
+  })
 };
 export const topicAreasOutputContract: AiOutputContract = {
   name: "topic_areas",

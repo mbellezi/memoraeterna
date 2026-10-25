@@ -126,6 +126,23 @@ describe("outputSchemaForContract (F4 D23)", () => {
     expect(outputSchemaForContract({ name: "verdict", contract })).toBe(first);
     expect(outputSchemaForContract({ name: "other_name", contract })?.name).toBe("other_name");
   });
+
+  it("derives the strict schema of the answer's strict terms when the caller states them (owner, 10-25)", () => {
+    const contract = z.object({ title: z.string(), language: z.string().optional() }).strict();
+    const strictContract = z
+      .object({ title: z.string(), language: z.string().nullable() })
+      .strict();
+    const output = { name: "titled", contract, strictContract };
+    expect(outputSchemaForContract(output)).toEqual(toStrictJsonSchema(strictContract, "titled"));
+    expect(outputSchemaForContract(output)?.schema).toMatchObject({
+      required: ["title", "language"],
+      properties: { language: { anyOf: [{ type: "string" }, { type: "null" }] } }
+    });
+    // Strict terms that cannot be strict either send nothing, as a contract that cannot be.
+    expect(
+      outputSchemaForContract({ name: "titled", contract, strictContract: contract })
+    ).toBeNull();
+  });
 });
 
 describe("toGrammarJsonSchema (F4 D24)", () => {
@@ -266,6 +283,20 @@ describe("toGrammarJsonSchema (F4 D24)", () => {
     expect(grammarSchemaForContract({ name: "pick", contract, callContract: huge })).toBe(
       grammarSchemaForContract({ name: "pick", contract })
     );
+  });
+
+  it("never reads the strict terms, and sends nothing for a contract stated for remote runtimes only", () => {
+    const contract = z.object({ title: z.string(), language: z.string().optional() }).strict();
+    const strictContract = z
+      .object({ title: z.string(), language: z.string().nullable() })
+      .strict();
+    expect(grammarSchemaForContract({ name: "titled", contract, strictContract })).toEqual(
+      toGrammarJsonSchema(contract, "titled")
+    );
+    expect(grammarSchemaForContract({ name: "titled", contract, grammar: false })).toBeNull();
+    expect(
+      grammarSchemaForContract({ name: "titled", contract, callContract: contract, grammar: false })
+    ).toBeNull();
   });
 
   it("never reads a call contract for the strict schema of a remote runtime", () => {

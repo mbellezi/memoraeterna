@@ -28,6 +28,7 @@ import {
 import { joinPrompts } from "./prompt-runtime.js";
 import {
   sourceDecisionMaxOutputTokens,
+  sourceJudgeOutputContract,
   sourceJudgePromptVersions,
   sourcePairContext,
   sourcePairDecisionPrompt
@@ -341,6 +342,8 @@ describe("source pair verdicts", () => {
       origin: "golden_source_pairs",
       contentLanguage: "en",
       promptVersion: sourceJudgePromptVersions.perPair,
+      // The matcher's contract: Codex is sent its strict schema (owner, 10-25).
+      outputContract: sourceJudgeOutputContract,
       sourceItemIds: ["root-A", "root-B", "src-A", "src-B"],
       attempt: 0,
       isRepair: false
