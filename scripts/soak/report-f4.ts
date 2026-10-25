@@ -54,7 +54,11 @@ export const predicateVersions = {
   // v4: a fault the fetch layer injected outside any window is a ground truth of its lane while the
   // product holds it (a sign-in failure until an answer or the lane-failure TTL, a rate limit's
   // pause, a breaker it opened), ranked with the windows by the product's class precedence.
-  e5: 4,
+  // v5: a provider problem (a window's or a lane fault's) affects only the work on its own lane: a
+  // call on it, or a task whose kind's latest remote call took it (the real writer's lane before
+  // any); every expectation, a window's stage too, must be compared (one outranked throughout is a
+  // review); a mismatch whose sentence names a truth that affected no task says so.
+  e5: 5,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
   injection: 2
@@ -775,7 +779,10 @@ interface Transition {
   record: GroundTruthRecord;
 }
 
-/** Why a window's class was never compared with the sentence (E5 v3): the window is not exercised. */
+/**
+ * Why an expectation's class was never compared with the sentence (E5 v3; per expectation since
+ * v5): the window, or that stage of it, is not exercised.
+ */
 export type E5NotExercisedWhy =
   /** A provider-wait window no call met: the product could not know of its fault. */
   | "unmet"
@@ -784,20 +791,38 @@ export type E5NotExercisedWhy =
   /** Open past its settle, but no sample then held work its condition affects. */
   | "nothing_affected"
   /** It ended before a sample came after the settle of its expectation. */
-  | "ended_in_settle";
+  | "ended_in_settle"
+  /** Every sample it was affected at went to an injected lane fault ranked above it, or its settle. */
+  | "outranked_by_lane_fault"
+  /** Every sample it was affected at went to another window ranked above it (or a lane fault). */
+  | "outranked";
 
 export interface E5Result {
   /** The injected lane faults outside any window, as the product holds them (E5 v4). */
   laneFaults: E5LaneFault[];
   /** Samples whose expectation was a lane fault's. */
   laneFaultChecks: number;
-  /** Windows whose class was never compared: the run did not show the sentence names them. */
+  /**
+   * Expectations whose class was never compared: the run did not show the sentence names them.
+   * `window` is the expectation's record (`g250-money#80`: a stage of a window), since E5 v5.
+   */
   notExercised: Array<{ window: string; why: E5NotExercisedWhy }>;
   checked: number;
   matched: number;
   /** Samples after the settle, inside a window, where nothing its condition affects was there. */
   unaffected: Array<{ at: string; window: string }>;
-  classMismatches: Array<{ at: string; window: string; expected: string; seen: string }>;
+  classMismatches: Array<{
+    at: string;
+    window: string;
+    expected: string;
+    seen: string;
+    /**
+     * The active truth (a window or a lane fault) whose class and reason the sentence named,
+     * although its condition affected no task at the sample (E5 v5): spec 3.8 names a class only
+     * for the work it holds, so this is the status's miss, not the oracle's.
+     */
+    named?: string;
+  }>;
   reasonMismatches: number;
   recoveryMismatches: Array<{ at: string; window: string; seen: string }>;
   fallbackSamples: number;
@@ -819,8 +844,9 @@ const windowOf = (id: string) => id.split("#")[0]!;
  * - `standing`: a control or a cap holds every background task whether or not one waits (the
  *   gates' holds), so the sentence names it at every sample the condition holds;
  * - `lane`: a provider problem (a rate limit, a provider or network that does not answer, a failed
- *   sign-in) affects the work that uses a remote lane: a call running or waiting on one, a remote
- *   Gardener task in progress, or a task an outage set aside;
+ *   sign-in) affects the work that uses its provider's lane: a call running or waiting on it, a
+ *   remote Gardener task in progress or set aside whose calls take it, or a task an outage set
+ *   aside there (E5 v5: work on another lane, or held by a cap for another lane, is not affected);
  * - `work`: a model being fetched, checked or loaded affects any Gardener task in progress;
  * - `set_aside`: a missing model, route or decider affects only the tasks it set aside (placement
  *   without a decider takes decision 19's path and waits for nothing).
@@ -849,16 +875,26 @@ const providerWaitKeys: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Where a provider problem is (E5 v5): its provider's lane, and the lane each task's remote calls
+ * take at the sample ({@link e5Routes}); a task the run does not route is taken as on it.
+ */
+export interface E5Lane {
+  lane: string;
+  routeOf: (job: JobSample) => string | null;
+}
+
+/**
  * Whether the condition a window expects holds at the sample and affects work there (E5 v3): the
  * sentence is compared with the window's class only then. A power window's condition is read from
  * the sample's own power reading (a block of the idle window turns at its minute, and the tick that
- * records it can come up to a sample later).
+ * records it can come up to a sample later). A provider problem whose lane is known (`on`, E5 v5)
+ * affects only the calls on that lane and the tasks whose calls take it; without one, any remote
+ * lane's (v3).
  */
 export function e5Affected(
   sample: SoakSample,
   expect: { class: string; reason: string },
-  /** A lane fault's own lane (E5 v4): the status holds it while that lane or remote work is busy. */
-  lane?: string | null
+  on?: E5Lane | null
 ): boolean {
   const key = `${expect.class}.${expect.reason}`;
   const at = toMs(sample.at);
@@ -873,8 +909,10 @@ export function e5Affected(
   if (exposure === "standing") return true;
   const setAside = (job: JobSample) => Boolean(job.blockedClass);
   const keyOfJob = (job: JobSample) => `${job.blockedClass}.${job.blockedReason}`;
+  // On the problem's lane: a task the run does not route is taken as on it.
+  const routed = (job: JobSample) => !on || (on.routeOf(job) ?? on.lane) === on.lane;
   // A task the condition set aside is affected whatever the family.
-  if (sample.jobs.some((job) => setAside(job) && keyOfJob(job) === key)) return true;
+  if (sample.jobs.some((job) => setAside(job) && keyOfJob(job) === key && routed(job))) return true;
   if (exposure === "set_aside") return false;
   const inProgress = (job: JobSample) =>
     !setAside(job) &&
@@ -882,20 +920,82 @@ export function e5Affected(
   const gardenerWork = (job: JobSample) =>
     Boolean(gardenerTaskKind(job.type)?.gardener) && (setAside(job) || inProgress(job));
   if (exposure === "work") return sample.jobs.some(gardenerWork);
-  // `lane`: a call on a remote lane, remote Gardener work, or a task an outage set aside.
+  // `lane`: a call on its lane, remote Gardener work that takes it, or a task an outage set aside.
   const laneBusy = sample.lanes.some(
     (entry) =>
-      (lane ? entry.lane === lane : entry.lane !== "local") &&
+      (on ? entry.lane === on.lane : entry.lane !== "local") &&
       entry.running + entry.waiting.P0 + entry.waiting.P1 + entry.waiting.P2 + entry.waiting.P3 > 0
   );
   return (
     laneBusy ||
     sample.jobs.some(
       (job) =>
-        (gardenerWork(job) && Boolean(gardenerTaskKind(job.type)?.remote)) ||
-        (setAside(job) && providerWaitKeys.has(keyOfJob(job)))
+        routed(job) &&
+        ((gardenerWork(job) && Boolean(gardenerTaskKind(job.type)?.remote)) ||
+          (setAside(job) && providerWaitKeys.has(keyOfJob(job))))
     )
   );
+}
+
+/** The lane a provider's calls take in the run: `remote:<config>`; null when the run does not name it. */
+function providerLane(run: LoadedRun, provider: string): string | null {
+  const configId =
+    run.meta.providers.find((entry) => entry.provider === provider)?.providerConfigId ??
+    (run.meta.realWriter?.provider === provider ? run.meta.realWriter.providerConfigId : null);
+  return configId ? `remote:${configId}` : null;
+}
+
+/**
+ * The remote lane a task's calls take at a time (E5 v5), from the run's own audit rows: the lane of
+ * the latest remote call a task of its kind made by then (the soak routes a kind's calls to one
+ * provider at a time; the money window moves the explanations to the priced fake, then back). A kind
+ * with no remote call yet takes the real writer's lane, the soak's route for remote work; null when
+ * the run names neither.
+ */
+export function e5Routes(
+  run: LoadedRun
+): (job: Pick<JobSample, "type">, at: number) => string | null {
+  const typeOf = new Map<string, string>();
+  for (const sample of run.samples) for (const job of sample.jobs) typeOf.set(job.id, job.type);
+  for (const event of run.events)
+    if ((event.type === "job_done" || event.type === "job_failure") && !typeOf.has(event.id))
+      typeOf.set(event.id, event.jobType);
+  const calls = new Map<string, Array<{ at: number; lane: string }>>();
+  for (const row of run.rows) {
+    const type = row.jobId ? typeOf.get(row.jobId) : undefined;
+    if (!type || !row.lane?.startsWith("remote:")) continue;
+    const list = calls.get(type) ?? [];
+    list.push({ at: toMs(row.startedAt), lane: row.lane });
+    calls.set(type, list);
+  }
+  for (const list of calls.values()) list.sort((a, b) => a.at - b.at);
+  const writer =
+    run.meta.realWriter?.providerConfigId ??
+    (run.meta.providers.length === 1 ? run.meta.providers[0]!.providerConfigId : null);
+  const fallback = writer ? `remote:${writer}` : null;
+  return (job, time) => {
+    const list = calls.get(job.type) ?? [];
+    // The last call that started at or before `time` (binary search: a week of rows).
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (list[middle]!.at <= time) low = middle + 1;
+      else high = middle;
+    }
+    return low > 0 ? list[low - 1]!.lane : fallback;
+  };
+}
+
+/** The lane of each window whose provider the run names, from the exchanges it injected (E5 v5). */
+function windowLanes(run: LoadedRun): Map<string, string> {
+  const lanes = new Map<string, string>();
+  for (const exchange of exchangesOf(run)) {
+    if (!exchange.window || lanes.has(exchange.window)) continue;
+    const lane = providerLane(run, exchange.provider);
+    if (lane) lanes.set(exchange.window, lane);
+  }
+  return lanes;
 }
 
 /** How a remote lane remembers its provider's last failure (`LaneFailureKind` of `@app/ai`). */
@@ -959,10 +1059,7 @@ export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
   const faults: E5LaneFault[] = [];
   const outside = (exchange: ExchangeRecord) => exchange.injected && !exchange.window;
   for (const provider of new Set(exchanges.map((exchange) => exchange.provider))) {
-    const configId =
-      run.meta.providers.find((entry) => entry.provider === provider)?.providerConfigId ??
-      (run.meta.realWriter?.provider === provider ? run.meta.realWriter.providerConfigId : null);
-    const lane = configId ? `remote:${configId}` : null;
+    const lane = providerLane(run, provider);
     const breakers = run.events
       .filter((event): event is BreakerRecord => event.type === "breaker" && event.lane === lane)
       .toSorted((a, b) => toMs(a.at) - toMs(b.at));
@@ -1066,16 +1163,20 @@ export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
 }
 
 /**
- * E5 (predicate v4). (ii): after the settle that follows every ground-truth transition (the latest
+ * E5 (predicate v5). (ii): after the settle that follows every ground-truth transition (the latest
  * `settleUntil` so far), the sentence's class equals the highest-precedence class an active window
  * expects among those whose condition affects work at the sample ({@link e5Affected}); a sample
  * where none does is counted apart (`unaffected`), since the status names a class only for the
  * work it holds (spec 3.8). With no window active, the sentence is not the class of a window that
- * ended in the last 30 minutes. A window whose class was never compared is not exercised (review).
+ * ended in the last 30 minutes. An expectation (a window, or a stage of one such as
+ * `g250-money#80`) whose class was never compared is not exercised (review), with why.
  * v4: an injected lane fault ({@link e5LaneFaults}) is one more active ground truth, on its lane,
  * from {@link e5LaneSettleMs} after it starts until it ends; within that settle of its start or of
  * its end, a sample whose expectation it would outrank is not judged, and after it the sentence is
  * not its class for 30 minutes, like a window's.
+ * v5: a provider problem, a window's or a lane fault's, affects only the work on its provider's
+ * lane ({@link E5Lane}, {@link e5Routes}); a class mismatch whose sentence names an active truth
+ * that affected no task says which (`named`).
  * (i): a sample with a task set aside by a blocker whose sentence names no class (or is the generic
  * one) is a fallback.
  */
@@ -1088,6 +1189,8 @@ export function computeE5(run: LoadedRun): E5Result {
     record
   }));
   const laneFaults = e5LaneFaults(run);
+  const routes = e5Routes(run);
+  const lanesOfWindows = windowLanes(run);
   const result: E5Result = {
     laneFaults,
     laneFaultChecks: 0,
@@ -1102,8 +1205,13 @@ export function computeE5(run: LoadedRun): E5Result {
     samplesWithBlocked: 0,
     samplesWithStatus: 0
   };
+  // By expectation record (`g250-money#80` apart from `g250-money#100`).
   const compared = new Set<string>();
   const openPastSettle = new Set<string>();
+  /** What took the samples an expectation was affected at but not compared at. */
+  const outrankedBy = new Map<string, Set<"lane_fault" | "window">>();
+  const outrank = (id: string, by: "lane_fault" | "window") =>
+    outrankedBy.set(id, (outrankedBy.get(id) ?? new Set()).add(by));
   const byPrecedence = (a: { expect: { class: string } }, b: { expect: { class: string } }) =>
     classRank(a.expect.class) - classRank(b.expect.class);
   const keyOf = (expect: { class: string; reason: string }) => `${expect.class}.${expect.reason}`;
@@ -1128,37 +1236,65 @@ export function computeE5(run: LoadedRun): E5Result {
       else active.delete(entry.record.id);
     }
     const expecting = [...active.values()].filter((record) => record.expect);
-    for (const record of expecting) openPastSettle.add(windowOf(record.id));
+    for (const record of expecting) openPastSettle.add(record.id);
+    // A provider problem's lane, with the lane each task's calls take now (E5 v5).
+    const routeOf = (job: JobSample) => routes(job, at);
+    const on = (lane: string | null | undefined): E5Lane | null =>
+      lane ? { lane, routeOf } : null;
+    const windowOn = (record: GroundTruthRecord) =>
+      e5ExposureOf(record.expect!) === "lane" ? on(lanesOfWindows.get(windowOf(record.id))) : null;
     // The lane faults the status may hold now: settled ones are expected, the others not judged.
     const openFaults = laneFaults.filter(
       (fault) => fault.from <= at && at < fault.until + e5LaneSettleMs
     );
     const settled = (fault: E5LaneFault) => at >= fault.from + e5LaneSettleMs && at < fault.until;
-    const holding = openFaults.filter((fault) => e5Affected(sample, fault.expect, fault.lane));
+    const holding = openFaults.filter((fault) => e5Affected(sample, fault.expect, on(fault.lane)));
+    const affecting = expecting.filter((record) =>
+      e5Affected(sample, record.expect!, windowOn(record))
+    );
     // Windows first: of two truths of one class, the window is the one compared.
     const candidates = [
-      ...expecting
-        .filter((record) => e5Affected(sample, record.expect!))
-        .map((record) => ({ id: record.id, expect: record.expect!, window: true })),
+      ...affecting.map((record) => ({ id: record.id, expect: record.expect!, window: true })),
       ...holding.filter(settled).map((fault) => ({ ...fault, window: false }))
     ];
     if (candidates.length > 0) {
       const top = candidates.toSorted(byPrecedence)[0]!;
       // A fault in its settle that would outrank the expectation: either reading may be right.
-      if (holding.some((fault) => !settled(fault) && byPrecedence(fault, top) < 0)) continue;
-      if (top.window) compared.add(windowOf(top.id));
+      if (holding.some((fault) => !settled(fault) && byPrecedence(fault, top) < 0)) {
+        for (const record of affecting) outrank(record.id, "lane_fault");
+        continue;
+      }
+      for (const record of affecting)
+        if (record.id !== top.id) outrank(record.id, top.window ? "window" : "lane_fault");
+      if (top.window) compared.add(top.id);
       else result.laneFaultChecks += 1;
       result.checked += 1;
       if (status.class === top.expect.class) {
         result.matched += 1;
         if (status.reason !== top.expect.reason) result.reasonMismatches += 1;
-      } else
+      } else {
+        // The sentence named a truth active now whose condition affected no task here.
+        const seenKey = `${status.class}.${status.reason}`;
+        const idle = [
+          ...expecting
+            .filter((record) => !affecting.includes(record))
+            .map((record) => ({ name: record.id, expect: record.expect! })),
+          ...openFaults
+            .filter((fault) => !holding.includes(fault))
+            .map((fault) => ({
+              name: `${fault.id} on ${fault.lane ?? "its lane"}`,
+              expect: fault.expect
+            }))
+        ];
+        const named = idle.find((truth) => keyOf(truth.expect) === seenKey)?.name;
         result.classMismatches.push({
           at: sample.at,
           window: top.id,
           expected: keyOf(top.expect),
-          seen: `${status.class ?? "none"}.${status.reason ?? "none"} (${status.state})`
+          seen: `${status.class ?? "none"}.${status.reason ?? "none"} (${status.state})`,
+          ...(named ? { named } : {})
         });
+      }
       continue;
     }
     if (expecting.length > 0) {
@@ -1188,7 +1324,8 @@ export function computeE5(run: LoadedRun): E5Result {
       )
         result.recoveryMismatches.push({ at: sample.at, window: record.id, seen });
   }
-  // Every window that expects a class and started must have been compared at least once.
+  // Every window that expects a class and started, and each of its expectations (a stage such as
+  // `g250-money#80` apart from `#100`), must have been compared at least once.
   const started = new Set(
     truths
       .filter((record) => record.phase === "start" && record.id === windowOf(record.id))
@@ -1201,18 +1338,36 @@ export function computeE5(run: LoadedRun): E5Result {
       .map((record) => windowOf(record.id))
   ]);
   for (const window of [...expectingWindows].sort()) {
-    if (!started.has(window) || compared.has(window)) continue;
+    if (!started.has(window)) continue;
     const records = truths.filter((record) => windowOf(record.id) === window);
-    const why: E5NotExercisedWhy = records.some(
-      (record) => record.phase === "end" && record.detail?.met === false
-    )
-      ? "unmet"
-      : !records.some((record) => record.expect)
-        ? "never_opened"
-        : openPastSettle.has(window)
+    const expectations = [
+      ...new Set(
+        records
+          .filter((record) => record.phase === "start" && record.expect)
+          .map((record) => record.id)
+      )
+    ];
+    if (expectations.some((id) => compared.has(id))) {
+      // Compared at least once; a stage of it that never was is not exercised on its own.
+    } else if (records.some((record) => record.phase === "end" && record.detail?.met === false)) {
+      result.notExercised.push({ window, why: "unmet" });
+      continue;
+    } else if (expectations.length === 0) {
+      result.notExercised.push({ window, why: "never_opened" });
+      continue;
+    }
+    for (const id of expectations.toSorted()) {
+      if (compared.has(id)) continue;
+      const by = outrankedBy.get(id);
+      const why: E5NotExercisedWhy = by
+        ? by.has("window")
+          ? "outranked"
+          : "outranked_by_lane_fault"
+        : openPastSettle.has(id)
           ? "nothing_affected"
           : "ended_in_settle";
-    result.notExercised.push({ window, why });
+      result.notExercised.push({ window: id, why });
+    }
   }
   return result;
 }
@@ -1222,7 +1377,11 @@ const notExercisedText: Record<E5NotExercisedWhy, string> = {
   never_opened: "its expectation never opened, so its class was not checked",
   nothing_affected:
     "no sample after its settle held work its condition affects, so its class was not checked",
-  ended_in_settle: "it ended inside the settle of its expectation, so its class was not checked"
+  ended_in_settle: "it ended inside the settle of its expectation, so its class was not checked",
+  outranked_by_lane_fault:
+    "every sample after its settle that it affected went to an injected lane fault ranked above it, so its class was not checked",
+  outranked:
+    "every sample after its settle that it affected went to another window ranked above it (or to a lane fault), so its class was not checked"
 };
 
 export function e5Check(run: LoadedRun): Check {
@@ -1232,6 +1391,7 @@ export function e5Check(run: LoadedRun): Check {
     result.fallbackSamples > 0 ||
     result.classMismatches.length > 0 ||
     result.recoveryMismatches.length > 0;
+  const named = result.classMismatches.filter((row) => row.named).length;
   const group = (rows: Array<{ window: string }>) => {
     const counts = new Map<string, number>();
     for (const row of rows) counts.set(row.window, (counts.get(row.window) ?? 0) + 1);
@@ -1240,7 +1400,7 @@ export function e5Check(run: LoadedRun): Check {
   return {
     id: "e5-status",
     title: "E5 status coverage",
-    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects among the windows whose condition affects work at the sample (a control or a cap always; a provider problem the remote work; a model check any Gardener work; a missing decider the tasks it set aside; a provider-wait window from the first call that met its fault), every window compared at least once",
+    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects among the windows whose condition affects work at the sample (a control or a cap always; a provider problem the work on its own lane: a call on it, a remote task whose calls take it; a model check any Gardener work; a missing decider the tasks it set aside; a provider-wait window from the first call that met its fault), every window and every stage of one compared at least once",
     status: noStatus
       ? "review"
       : failing
@@ -1250,7 +1410,7 @@ export function e5Check(run: LoadedRun): Check {
           : "pass",
     value: noStatus
       ? "no status sample was recorded: the run had no status service"
-      : `(i) ${result.fallbackSamples} fallback sample(s) of ${result.samplesWithBlocked} with a task set aside; (ii) ${result.matched} of ${result.checked} = ${pct(result.matched, result.checked)}, ${result.recoveryMismatches.length} recovery mismatch(es), ${result.reasonMismatches} reason difference(s) at a right class; ${result.unaffected.length} sample(s) in a window with no work its condition affects; ${result.notExercised.length} window(s) not exercised`,
+      : `(i) ${result.fallbackSamples} fallback sample(s) of ${result.samplesWithBlocked} with a task set aside; (ii) ${result.matched} of ${result.checked} = ${pct(result.matched, result.checked)}, ${result.recoveryMismatches.length} recovery mismatch(es), ${result.reasonMismatches} reason difference(s) at a right class; ${result.unaffected.length} sample(s) in a window with no work its condition affects; ${result.notExercised.length} window(s) or stage(s) not exercised`,
     details: [
       ...result.notExercised.map(
         ({ window, why }) => `${window}: ${notExercisedText[why]} (not exercised)`
@@ -1258,9 +1418,15 @@ export function e5Check(run: LoadedRun): Check {
       ...result.classMismatches
         .slice(0, 10)
         .map(
-          (row) => `${row.at}: ${row.window} expected ${row.expected}, the sentence was ${row.seen}`
+          (row) =>
+            `${row.at}: ${row.window} expected ${row.expected}, the sentence was ${row.seen}${row.named ? `, the class of ${row.named}, whose condition affected no task at the sample` : ""}`
         ),
       ...group(result.classMismatches).map((line) => `class mismatches in ${line}`),
+      ...(named > 0
+        ? [
+            `${named} class mismatch(es) name an active truth whose condition affected no task at the sample: spec 3.8 names the highest class with an affected task, so the status, not the oracle, missed (E5 v5)`
+          ]
+        : []),
       ...group(result.unaffected).map(
         (line) => `samples with no work the condition affects (not compared) in ${line}`
       ),

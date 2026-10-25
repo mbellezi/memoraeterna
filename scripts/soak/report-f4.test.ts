@@ -26,6 +26,7 @@ import {
   e5Affected,
   e5Check,
   e5LaneFaults,
+  e5Routes,
   f4Report,
   injectionCheck,
   loadCheck,
@@ -962,8 +963,9 @@ describe("E5 status coverage", () => {
       }
     };
     const run = runOf(1, { events, samples, meta });
+    // Per expectation since v5: the stage that ended in its settle is named.
     expect(computeE5(run).notExercised).toEqual([
-      { window: "g070", why: "ended_in_settle" },
+      { window: "g070#met", why: "ended_in_settle" },
       { window: "g120", why: "never_opened" },
       { window: "g170", why: "nothing_affected" }
     ]);
@@ -973,7 +975,7 @@ describe("E5 status coverage", () => {
   });
 });
 
-describe("E5 v4: a fault injected outside any window is a ground truth of its lane", () => {
+describe("E5 v4 and v5: a fault injected outside any window is a ground truth of its lane, for the work on it", () => {
   const second = 1_000;
   const exchange = (
     seq: number,
@@ -1092,21 +1094,152 @@ describe("E5 v4: a fault injected outside any window is a ground truth of its la
     ]);
   });
 
-  it("reads the 12:25 case right: the sign-in outranks the money window's 80 % while the lane holds it", () => {
+  // The money window's explanations ran on the priced fake from 12:25:19 (E5 v5 routes by them).
+  const pricedLane = "remote:b60e6e43-b5d0-464c-a087-f983f8fff6e7";
+  const pricedCall = (jobId: string, offset: number): TaskRunRecord => ({
+    ...succeeded(offset, 1_200),
+    id: `priced-${jobId}-${offset}`,
+    taskType: "text-generation",
+    provider: "openai-compatible",
+    modelId: "dev-fake-priced-1",
+    lane: pricedLane,
+    jobId
+  });
+  const onPriced = [pricedCall("explain", fault + 20)];
+
+  it("reads the gate's 12:25 case as the status's miss: a Codex sign-in with only the priced lane's held work leaves the 80 % binding", () => {
+    // Gate S 12:27:30 and 12:28:30: the Codex lane ran and queued nothing, and the only remote
+    // tasks were explanations the 80 % held for the priced lane (spec 3.8: no task the sign-in affects).
     const run = runOf(6, {
       events: [randomFault, ...nextCall, ...money],
-      rows: nextSuccess,
+      rows: [...nextSuccess, ...onPriced],
       samples: gateSamples()
+    });
+    const result = computeE5(run);
+    expect(result).toMatchObject({ checked: 8, matched: 6, laneFaultChecks: 0, notExercised: [] });
+    expect(result.classMismatches).toEqual(
+      [2, 3].map((index) => ({
+        at: at(fault + index * minute + 11_500),
+        window: "g250-money#80",
+        expected: "cap.money_80",
+        seen: "no_model.signin_required (attention)",
+        named: `fault-unauthorized#298 on ${codexLane}`
+      }))
+    );
+    const check = e5Check(run);
+    expect(check.status).toBe("fail");
+    expect(check.details.join(" ")).toContain(
+      "the class of fault-unauthorized#298 on " + codexLane + ", whose condition affected no task"
+    );
+    expect(check.details.join(" ")).toContain(
+      "2 class mismatch(es) name an active truth whose condition affected no task at the sample"
+    );
+    // The sentence spec 3.8 asks for: the 80 % while it holds, then the cap.
+    const right = runOf(6, {
+      events: [randomFault, ...nextCall, ...money],
+      rows: [...nextSuccess, ...onPriced],
+      samples: gateSamples().map((sample, index) =>
+        index === 2 || index === 3 ? { ...sample, status: attention("cap", "money_80") } : sample
+      )
+    });
+    expect(computeE5(right)).toMatchObject({ classMismatches: [], notExercised: [] });
+    expect(e5Check(right).status).toBe("pass");
+  });
+
+  it("compares a sign-in that holds Codex work above the 80 %, and reads the 80 % it outranked throughout as not exercised", () => {
+    // A name due on the Codex lane: the sign-in affects it, so it outranks the cap (D7).
+    const run = runOf(6, {
+      events: [randomFault, ...nextCall, ...money],
+      rows: [...nextSuccess, ...onPriced],
+      samples: gateSamples().map((sample) => ({
+        ...sample,
+        jobs: [...sample.jobs, job("name", "topic-name")]
+      }))
     });
     const result = computeE5(run);
     // 12:27:30 and 12:28:30 against the fault, 12:31:30 to 12:36:30 against the cap at 100 %.
     expect(result).toMatchObject({ checked: 8, matched: 8, laneFaultChecks: 2 });
     expect(result.classMismatches).toEqual([]);
     expect(result.recoveryMismatches).toEqual([]);
-    expect(e5Check(run).status).toBe("pass");
-    expect(e5Check(run).details.join(" ")).toContain(
+    // The 80 % stage was never compared, though the window was (through its 100 %): a review.
+    expect(result.notExercised).toEqual([
+      { window: "g250-money#80", why: "outranked_by_lane_fault" }
+    ]);
+    const check = e5Check(run);
+    expect(check.status).toBe("review");
+    expect(check.value).toContain("1 window(s) or stage(s) not exercised");
+    expect(check.details.join(" ")).toContain(
+      "g250-money#80: every sample after its settle that it affected went to an injected lane fault ranked above it"
+    );
+    expect(check.details.join(" ")).toContain(
       "injected lane faults outside any window, held as the product holds them (E5 v4): 1 (no_model.signin_required 1); 2 sample(s) compared with one"
     );
+    // A window of a higher class over the whole stage outranks it the same way.
+    const paused = runOf(6, {
+      events: [
+        ...money,
+        truth("g260-pause", "start", fault, 2, ["paused", "user_pause"], "pause"),
+        truth("g260-pause", "end", fault + 4 * minute, 2, undefined, "pause")
+      ],
+      rows: onPriced,
+      samples: gateSamples().map((sample, index) =>
+        index < 4 ? { ...sample, status: attention("paused", "user_pause") } : sample
+      )
+    });
+    expect(computeE5(paused).notExercised).toEqual([{ window: "g250-money#80", why: "outranked" }]);
+  });
+
+  it("routes a task by its kind's latest remote call, the real writer's lane before any", () => {
+    const held = {
+      ...job("explain", "relation-explain-backfill"),
+      blockedClass: "cap",
+      blockedReason: "money_80"
+    };
+    const run = runOf(1, {
+      samples: [sampleAt(0, { jobs: [held] })],
+      rows: [pricedCall("explain", 10 * minute)]
+    });
+    const route = e5Routes(run);
+    expect(route(held, start + 5 * minute)).toBe(codexLane);
+    expect(route(held, start + 10 * minute)).toBe(pricedLane);
+    expect(route(job("name", "topic-name"), start + 10 * minute)).toBe(codexLane);
+    const signin = { class: "no_model", reason: "signin_required" };
+    const busyPriced = { ...lane(1), lane: pricedLane };
+    const sample = sampleAt(11 * minute, { lanes: [lane(), busyPriced], jobs: [held] });
+    const routeOf = (entry: Job) => route(entry, start + 11 * minute);
+    const onCodex = { lane: codexLane, routeOf };
+    // Held for the priced lane, a call running there: nothing the Codex sign-in affects.
+    expect(e5Affected(sample, signin, onCodex)).toBe(false);
+    expect(e5Affected(sample, signin, { lane: pricedLane, routeOf })).toBe(true);
+    // Without a lane (v3), any remote lane's call and any remote task counts.
+    expect(e5Affected(sample, signin)).toBe(true);
+    // A task due whose calls take Codex, or a call on Codex: affected.
+    expect(
+      e5Affected({ ...sample, jobs: [held, job("name", "topic-name")] }, signin, onCodex)
+    ).toBe(true);
+    expect(e5Affected({ ...sample, lanes: [lane(1)] }, signin, onCodex)).toBe(true);
+    // A task the run does not route is taken as on the lane.
+    expect(e5Affected(sample, signin, { lane: codexLane, routeOf: () => null })).toBe(true);
+  });
+
+  it("reads a provider window on its provider's lane: work routed elsewhere is not affected", () => {
+    const events = [
+      truth("g155", "start", 0, 2, undefined, "unauthorized"),
+      truth("g155#met", "start", minute, 2, ["no_model", "signin_required"], "unauthorized"),
+      truth("g155#met", "end", 10 * minute, 2, undefined, "unauthorized"),
+      { ...truth("g155", "end", 10 * minute, 2, undefined, "unauthorized"), detail: { met: true } },
+      exchange(5, minute, { window: "g155" })
+    ];
+    const samples = minutes(0, 10, () => ({
+      jobs: [job("explain", "relation-explain-backfill")],
+      status: { state: "idle", params: {} }
+    }));
+    const elsewhere = computeE5(runOf(1, { events, samples, rows: [pricedCall("explain", 0)] }));
+    expect(elsewhere).toMatchObject({ checked: 0, classMismatches: [] });
+    expect(elsewhere.unaffected).toHaveLength(7);
+    expect(elsewhere.notExercised).toEqual([{ window: "g155#met", why: "nothing_affected" }]);
+    // The same task on the Codex lane is affected: idle is a miss.
+    expect(computeE5(runOf(1, { events, samples })).classMismatches).toHaveLength(7);
   });
 
   it("still fails a sign-in the sentence shows with no injected fault and no window behind it", () => {
@@ -1780,7 +1913,7 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 4, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 5, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
