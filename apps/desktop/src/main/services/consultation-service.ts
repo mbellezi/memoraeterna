@@ -117,13 +117,14 @@ export const consultationOutputContract: AiOutputContract = {
   grammar: false
 };
 
+const contextLinkIdSchema = z.string().uuid();
 /**
  * Reads an Ask answer and checks it against the question's snapshot. A citation the snapshot does
  * not hold, or an `[eN]` marker the paragraph does not cite, rejects the answer. A paragraph's
- * context link is optional context (F4, 10-25): one that names neither a context nor a relation
- * of the snapshot, or whose passages that paragraph does not all cite, is dropped from the paragraph
- * and the answer stands on its citations. `onDroppedLinks` hears how many links were dropped, only
- * when there were some.
+ * context link is optional context (F4, 10-25): one that is no id, names neither a context nor a
+ * relation of the snapshot, or whose passages that paragraph does not all cite, is dropped from the
+ * paragraph and the answer stands on its citations. `onDroppedLinks` hears how many links were
+ * dropped, only when there were some.
  */
 export function parseConsultationAnswer(
   output: unknown,
@@ -148,13 +149,38 @@ export function parseConsultationAnswer(
   // A strict answer writes every member: outside an investigation it states `change: null`.
   if (typeof output === "object" && output !== null && "change" in output && output.change === null)
     output = Object.fromEntries(Object.entries(output).filter(([key]) => key !== "change"));
+  let dropped = 0;
+  // The strict schema lets a context link be any string, and STRICTP saw passage handles there
+  // (10-25): a link that is no id at all is dropped like an unknown one, before the schema reads it.
+  if (
+    typeof output === "object" &&
+    output !== null &&
+    "paragraphs" in output &&
+    Array.isArray(output.paragraphs)
+  )
+    output = {
+      ...output,
+      paragraphs: output.paragraphs.map((paragraph: unknown) => {
+        if (
+          typeof paragraph !== "object" ||
+          paragraph === null ||
+          !("contextIds" in paragraph) ||
+          !Array.isArray(paragraph.contextIds)
+        )
+          return paragraph;
+        const ids = paragraph.contextIds.filter(
+          (id: unknown) => contextLinkIdSchema.safeParse(id).success
+        );
+        dropped += paragraph.contextIds.length - ids.length;
+        return { ...paragraph, contextIds: ids };
+      })
+    };
   const answer = ConsultationAnswerSchema.parse(output);
   if (
     snapshot.consultationIntent === "investigation" &&
     (!answer.change || (answer.change.meaningful && !answer.change.explanation.length))
   )
     throw new Error("consultation.errors.invalid");
-  let dropped = 0;
   for (const paragraph of answer.paragraphs) {
     if (paragraph.citations.some((h) => !snapshot.evidence.some((e) => e.handle === h)))
       throw new Error("consultation.errors.evidence");

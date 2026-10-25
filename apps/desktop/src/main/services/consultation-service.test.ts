@@ -250,6 +250,33 @@ describe("an answer's context links", () => {
     expect(output).toEqual(before);
   });
 
+  it("drops a link that is no id, as STRICTP saw passage handles there, and leaves the caller's object", () => {
+    const onDropped = vi.fn();
+    const output = {
+      change: null,
+      paragraphs: [
+        {
+          markdown: "Practice helps [e1].",
+          citations: ["e1"],
+          contextIds: [notes.summary.id, "e1"]
+        },
+        {
+          markdown: "Feedback qualifies it [e12].",
+          citations: ["e12"],
+          contextIds: [notes.twelfth.id, "e12", 7, "⟦id:26⟧"]
+        }
+      ],
+      gaps: []
+    };
+    const before = structuredClone(output);
+    const read = parseConsultationAnswer(output, snapshot, onDropped);
+    // The summary is dropped too: the first paragraph does not cite its e11.
+    expect(read.paragraphs.map((p) => p.contextIds)).toEqual([[], [notes.twelfth.id]]);
+    expect(onDropped).toHaveBeenCalledTimes(1);
+    expect(onDropped).toHaveBeenCalledWith(5);
+    expect(output).toEqual(before);
+  });
+
   it("keeps covered contexts and relations and reports nothing", () => {
     const onDropped = vi.fn();
     const answer = {
