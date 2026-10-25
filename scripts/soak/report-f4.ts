@@ -9,6 +9,7 @@
  * Each criterion is evaluated by a predicate with a version ({@link predicateVersions}); the report
  * prints them, so a number is always tied to the rule that made it.
  */
+import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
 import { compareBlockerClasses } from "../../packages/domain/src/gardener/state.ts";
 import type { GardenerBlockerClass } from "../../packages/domain/src/gardener/blockers.ts";
 import { gardenerTaskKind } from "../../packages/domain/src/gardener/kinds.ts";
@@ -21,6 +22,7 @@ import {
   workerPredicateVersion
 } from "../../apps/desktop/src/main/services/dev/soak-workers.ts";
 import type {
+  BreakerRecord,
   ExchangeRecord,
   GroundTruthRecord,
   JobDoneRecord,
@@ -49,7 +51,10 @@ export const predicateVersions = {
   // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
   // v3: a window's class is expected where its condition affects work (spec 3.8); a window never
   // compared is a review.
-  e5: 3,
+  // v4: a fault the fetch layer injected outside any window is a ground truth of its lane while the
+  // product holds it (a sign-in failure until an answer or the lane-failure TTL, a rate limit's
+  // pause, a breaker it opened), ranked with the windows by the product's class precedence.
+  e5: 4,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
   injection: 2
@@ -782,6 +787,10 @@ export type E5NotExercisedWhy =
   | "ended_in_settle";
 
 export interface E5Result {
+  /** The injected lane faults outside any window, as the product holds them (E5 v4). */
+  laneFaults: E5LaneFault[];
+  /** Samples whose expectation was a lane fault's. */
+  laneFaultChecks: number;
   /** Windows whose class was never compared: the run did not show the sentence names them. */
   notExercised: Array<{ window: string; why: E5NotExercisedWhy }>;
   checked: number;
@@ -845,7 +854,12 @@ const providerWaitKeys: ReadonlySet<string> = new Set([
  * the sample's own power reading (a block of the idle window turns at its minute, and the tick that
  * records it can come up to a sample later).
  */
-export function e5Affected(sample: SoakSample, expect: { class: string; reason: string }): boolean {
+export function e5Affected(
+  sample: SoakSample,
+  expect: { class: string; reason: string },
+  /** A lane fault's own lane (E5 v4): the status holds it while that lane or remote work is busy. */
+  lane?: string | null
+): boolean {
   const key = `${expect.class}.${expect.reason}`;
   const at = toMs(sample.at);
   const power = sample.power;
@@ -870,9 +884,9 @@ export function e5Affected(sample: SoakSample, expect: { class: string; reason: 
   if (exposure === "work") return sample.jobs.some(gardenerWork);
   // `lane`: a call on a remote lane, remote Gardener work, or a task an outage set aside.
   const laneBusy = sample.lanes.some(
-    (lane) =>
-      lane.lane !== "local" &&
-      lane.running + lane.waiting.P0 + lane.waiting.P1 + lane.waiting.P2 + lane.waiting.P3 > 0
+    (entry) =>
+      (lane ? entry.lane === lane : entry.lane !== "local") &&
+      entry.running + entry.waiting.P0 + entry.waiting.P1 + entry.waiting.P2 + entry.waiting.P3 > 0
   );
   return (
     laneBusy ||
@@ -884,13 +898,184 @@ export function e5Affected(sample: SoakSample, expect: { class: string; reason: 
   );
 }
 
+/** How a remote lane remembers its provider's last failure (`LaneFailureKind` of `@app/ai`). */
+type LaneFailure = "unauthorized" | "unreachable" | "unavailable";
+
 /**
- * E5 (predicate v3). (ii): after the settle that follows every ground-truth transition (the latest
+ * What one exchange tells its lane (`providerFailureKind` of `@app/ai` on the error the call met):
+ * a refused credential, an unknown host, a refused connection, a 5xx or a deadline the client met (a
+ * late first byte, a stall) name how the provider failed; any other answer (a rate limit, a rejected
+ * request, an answer the consumer refuses) shows that it answers. A forwarded answer (`none`, 2xx)
+ * is recorded at its headers: the call's own audit row tells when its stream, and so the lane's
+ * success, ended.
+ */
+function exchangeFailure(exchange: ExchangeRecord): LaneFailure | "answer" | null {
+  if (exchange.outcome === "server_stopped") return null;
+  if (exchange.kind === "enotfound") return "unreachable";
+  if (["refused", "stall", "late_first_byte"].includes(exchange.kind)) return "unavailable";
+  if (exchange.status === 401 || exchange.status === 403) return "unauthorized";
+  if (exchange.status >= 500) return "unavailable";
+  if (exchange.kind === "none" && exchange.status >= 200 && exchange.status < 300) return null;
+  return "answer";
+}
+
+/**
+ * A fault the fetch layer injected outside any window, while the product holds it (E5 v4): the
+ * status reads a lane's last failure for `laneFailureTtlMs`, its rate-limit pause and its breaker
+ * (`composeGardenerStatus`), so a random fault is as much a ground truth as a window, on its lane.
+ */
+export interface E5LaneFault {
+  /** `fault-<kind>#<seq>`: the injected exchange behind it. */
+  id: string;
+  /** The remote lane its provider's calls take; null when the run does not name it. */
+  lane: string | null;
+  from: number;
+  until: number;
+  expect: { class: string; reason: string };
+}
+
+/**
+ * The status follows a lane without an event, from its heartbeat (`heartbeatMs`) while something is
+ * held: a sample within two heartbeats of a lane fault's start or end may show either side.
+ */
+export const e5LaneSettleMs = 2 * defaultGardenerStatusConfig.heartbeatMs;
+
+/**
+ * The lane faults of a run (E5 v4), as the product holds them. Per provider, the lane's failure is
+ * replayed from its exchanges and the successes of its audit rows (`Scheduler.record`): a failure
+ * that names its kind replaces the last one; any other answer forgets it unless the breaker is open
+ * (half-open, the answer is the probe's). From an injected exchange outside any window:
+ * - a refused credential holds `no_model.signin_required` until it is forgotten or replaced, at
+ *   most the status's `laneFailureTtlMs`, whatever the breaker;
+ * - a 429 pauses the lane for its Retry-After, at most `maxPauseMs`: `waiting.provider_rate_limit`;
+ * - a breaker it opened (the lane's failure when the breaker left `closed`) holds
+ *   `offline.network_unreachable` for an unknown host, else `waiting.provider_unavailable`, until
+ *   the breaker closes. A single 5xx, refusal or deadline with the breaker closed holds nothing.
+ * A window's own exchanges are the window's ground truth, with its settles.
+ */
+export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
+  const ttlMs = defaultGardenerStatusConfig.laneFailureTtlMs;
+  const exchanges = exchangesOf(run);
+  const faults: E5LaneFault[] = [];
+  const outside = (exchange: ExchangeRecord) => exchange.injected && !exchange.window;
+  for (const provider of new Set(exchanges.map((exchange) => exchange.provider))) {
+    const configId =
+      run.meta.providers.find((entry) => entry.provider === provider)?.providerConfigId ??
+      (run.meta.realWriter?.provider === provider ? run.meta.realWriter.providerConfigId : null);
+    const lane = configId ? `remote:${configId}` : null;
+    const breakers = run.events
+      .filter((event): event is BreakerRecord => event.type === "breaker" && event.lane === lane)
+      .toSorted((a, b) => toMs(a.at) - toMs(b.at));
+    const breakerAt = (time: number) =>
+      breakers.findLast((record) => toMs(record.at) <= time)?.to ?? "closed";
+    const own = exchanges.filter((exchange) => exchange.provider === provider);
+    const outcomes = [
+      ...own.map((exchange) => ({
+        at: toMs(exchange.endedAt),
+        what: exchangeFailure(exchange),
+        exchange
+      })),
+      ...run.rows
+        .filter(
+          (row) =>
+            row.status === "succeeded" &&
+            row.finishedAt !== null &&
+            (lane ? row.lane === lane : row.provider === provider)
+        )
+        .map((row) => ({ at: toMs(row.finishedAt!), what: "answer" as const, exchange: null }))
+    ]
+      .filter((outcome) => outcome.what !== null)
+      .toSorted((a, b) => a.at - b.at);
+    // The lane's failure, replayed: each one from its exchange until it is forgotten or replaced.
+    const failures: Array<{
+      kind: LaneFailure;
+      at: number;
+      until: number;
+      exchange: ExchangeRecord;
+    }> = [];
+    let current: (typeof failures)[number] | null = null;
+    const forget = (time: number) => {
+      if (current) failures.push({ ...current, until: Math.min(time, current.at + ttlMs) });
+      current = null;
+    };
+    for (const outcome of outcomes) {
+      if (outcome.what === "answer") {
+        if (breakerAt(outcome.at) !== "open") forget(outcome.at);
+        continue;
+      }
+      forget(outcome.at);
+      current = {
+        kind: outcome.what!,
+        at: outcome.at,
+        until: outcome.at,
+        exchange: outcome.exchange!
+      };
+    }
+    forget(runEnd(run));
+    for (const failure of failures)
+      if (
+        failure.kind === "unauthorized" &&
+        outside(failure.exchange) &&
+        failure.until > failure.at
+      )
+        faults.push({
+          id: `fault-unauthorized#${failure.exchange.seq}`,
+          lane,
+          from: failure.at,
+          until: failure.until,
+          expect: { class: "no_model", reason: "signin_required" }
+        });
+    for (const exchange of own)
+      if (outside(exchange) && exchange.status === 429 && exchange.retryAfterSeconds !== null) {
+        const from = toMs(exchange.endedAt);
+        const pauseMs = Math.min(
+          exchange.retryAfterSeconds * 1_000,
+          defaultAiLaneRuntimeConfig.lanes.maxPauseMs
+        );
+        if (pauseMs > 0)
+          faults.push({
+            id: `fault-${exchange.kind}#${exchange.seq}`,
+            lane,
+            from,
+            until: from + pauseMs,
+            expect: { class: "waiting", reason: "provider_rate_limit" }
+          });
+      }
+    // A breaker that left `closed` while the lane's last failure was a fault outside any window.
+    for (const [index, record] of breakers.entries()) {
+      if (record.from !== "closed" || record.to === "closed") continue;
+      const opened = toMs(record.at);
+      const cause = failures.findLast((failure) => failure.at <= opened);
+      // A sign-in failure outranks the breaker in the status: it is its own fault above.
+      if (!cause || cause.until < opened || cause.kind === "unauthorized") continue;
+      if (!outside(cause.exchange)) continue;
+      const closed = breakers.slice(index + 1).find((next) => next.to === "closed");
+      faults.push({
+        id: `fault-${cause.exchange.kind}#${cause.exchange.seq}`,
+        lane,
+        from: opened,
+        until: closed ? toMs(closed.at) : runEnd(run),
+        expect:
+          cause.kind === "unreachable"
+            ? { class: "offline", reason: "network_unreachable" }
+            : { class: "waiting", reason: "provider_unavailable" }
+      });
+    }
+  }
+  return faults.toSorted((a, b) => a.from - b.from);
+}
+
+/**
+ * E5 (predicate v4). (ii): after the settle that follows every ground-truth transition (the latest
  * `settleUntil` so far), the sentence's class equals the highest-precedence class an active window
  * expects among those whose condition affects work at the sample ({@link e5Affected}); a sample
  * where none does is counted apart (`unaffected`), since the status names a class only for the
  * work it holds (spec 3.8). With no window active, the sentence is not the class of a window that
  * ended in the last 30 minutes. A window whose class was never compared is not exercised (review).
+ * v4: an injected lane fault ({@link e5LaneFaults}) is one more active ground truth, on its lane,
+ * from {@link e5LaneSettleMs} after it starts until it ends; within that settle of its start or of
+ * its end, a sample whose expectation it would outrank is not judged, and after it the sentence is
+ * not its class for 30 minutes, like a window's.
  * (i): a sample with a task set aside by a blocker whose sentence names no class (or is the generic
  * one) is a fallback.
  */
@@ -902,7 +1087,10 @@ export function computeE5(run: LoadedRun): E5Result {
     settleUntil: toMs(record.settleUntil),
     record
   }));
+  const laneFaults = e5LaneFaults(run);
   const result: E5Result = {
+    laneFaults,
+    laneFaultChecks: 0,
     notExercised: [],
     checked: 0,
     matched: 0,
@@ -916,6 +1104,9 @@ export function computeE5(run: LoadedRun): E5Result {
   };
   const compared = new Set<string>();
   const openPastSettle = new Set<string>();
+  const byPrecedence = (a: { expect: { class: string } }, b: { expect: { class: string } }) =>
+    classRank(a.expect.class) - classRank(b.expect.class);
+  const keyOf = (expect: { class: string; reason: string }) => `${expect.class}.${expect.reason}`;
   for (const sample of samples) {
     const at = toMs(sample.at);
     const status = sample.status;
@@ -927,54 +1118,75 @@ export function computeE5(run: LoadedRun): E5Result {
         result.fallbackSamples += 1;
     }
     // (ii) after the settle of every transition so far.
+    if (!status) continue;
     const happened = transitions.filter((entry) => entry.at <= at);
-    if (happened.length === 0 || !status) continue;
-    if (at < Math.max(...happened.map((entry) => entry.settleUntil))) continue;
+    if (happened.length > 0 && at < Math.max(...happened.map((entry) => entry.settleUntil)))
+      continue;
     const active = new Map<string, GroundTruthRecord>();
     for (const entry of happened) {
       if (entry.record.phase === "start") active.set(entry.record.id, entry.record);
       else active.delete(entry.record.id);
     }
     const expecting = [...active.values()].filter((record) => record.expect);
-    if (expecting.length > 0) {
-      for (const record of expecting) openPastSettle.add(windowOf(record.id));
-      const affected = expecting.filter((record) => e5Affected(sample, record.expect!));
-      if (affected.length === 0) {
-        const top = expecting.toSorted(
-          (a, b) => classRank(a.expect!.class) - classRank(b.expect!.class)
-        )[0]!;
-        result.unaffected.push({ at: sample.at, window: top.id });
-        continue;
-      }
-      const top = affected.toSorted(
-        (a, b) => classRank(a.expect!.class) - classRank(b.expect!.class)
-      )[0]!;
-      compared.add(windowOf(top.id));
+    for (const record of expecting) openPastSettle.add(windowOf(record.id));
+    // The lane faults the status may hold now: settled ones are expected, the others not judged.
+    const openFaults = laneFaults.filter(
+      (fault) => fault.from <= at && at < fault.until + e5LaneSettleMs
+    );
+    const settled = (fault: E5LaneFault) => at >= fault.from + e5LaneSettleMs && at < fault.until;
+    const holding = openFaults.filter((fault) => e5Affected(sample, fault.expect, fault.lane));
+    // Windows first: of two truths of one class, the window is the one compared.
+    const candidates = [
+      ...expecting
+        .filter((record) => e5Affected(sample, record.expect!))
+        .map((record) => ({ id: record.id, expect: record.expect!, window: true })),
+      ...holding.filter(settled).map((fault) => ({ ...fault, window: false }))
+    ];
+    if (candidates.length > 0) {
+      const top = candidates.toSorted(byPrecedence)[0]!;
+      // A fault in its settle that would outrank the expectation: either reading may be right.
+      if (holding.some((fault) => !settled(fault) && byPrecedence(fault, top) < 0)) continue;
+      if (top.window) compared.add(windowOf(top.id));
+      else result.laneFaultChecks += 1;
       result.checked += 1;
-      if (status.class === top.expect!.class) {
+      if (status.class === top.expect.class) {
         result.matched += 1;
-        if (status.reason !== top.expect!.reason) result.reasonMismatches += 1;
+        if (status.reason !== top.expect.reason) result.reasonMismatches += 1;
       } else
         result.classMismatches.push({
           at: sample.at,
           window: top.id,
-          expected: `${top.expect!.class}.${top.expect!.reason}`,
+          expected: keyOf(top.expect),
           seen: `${status.class ?? "none"}.${status.reason ?? "none"} (${status.state})`
         });
       continue;
     }
-    // Nothing is expected: the sentence must have left the class of a window that just ended.
-    const ended = happened
-      .filter((entry) => entry.record.phase === "end" && at - entry.at <= 30 * minute)
-      .map((entry) => truths.find((t) => t.id === entry.record.id && t.phase === "start"))
-      .filter((record): record is GroundTruthRecord => Boolean(record?.expect));
+    if (expecting.length > 0) {
+      const top = expecting.toSorted(
+        (a, b) => classRank(a.expect!.class) - classRank(b.expect!.class)
+      )[0]!;
+      result.unaffected.push({ at: sample.at, window: top.id });
+      continue;
+    }
+    // Nothing is expected: the sentence must have left the class of a window or a lane fault that
+    // just ended, unless a lane fault of that class may still hold it.
+    const ended = [
+      ...happened
+        .filter((entry) => entry.record.phase === "end" && at - entry.at <= 30 * minute)
+        .map((entry) => truths.find((t) => t.id === entry.record.id && t.phase === "start"))
+        .filter((record): record is GroundTruthRecord => Boolean(record?.expect))
+        .map((record) => ({ id: record.id, expect: record.expect! })),
+      ...laneFaults.filter(
+        (fault) => fault.until + e5LaneSettleMs <= at && at - fault.until <= 30 * minute
+      )
+    ];
+    const seen = `${status.class}.${status.reason}`;
     for (const record of ended)
-      if (status.class === record.expect!.class && status.reason === record.expect!.reason)
-        result.recoveryMismatches.push({
-          at: sample.at,
-          window: record.id,
-          seen: `${status.class}.${status.reason}`
-        });
+      if (
+        seen === keyOf(record.expect) &&
+        !openFaults.some((fault) => keyOf(fault.expect) === seen)
+      )
+        result.recoveryMismatches.push({ at: sample.at, window: record.id, seen });
   }
   // Every window that expects a class and started must have been compared at least once.
   const started = new Set(
@@ -1054,7 +1266,19 @@ export function e5Check(run: LoadedRun): Check {
       ),
       ...result.recoveryMismatches
         .slice(0, 6)
-        .map((row) => `${row.at}: still ${row.seen} after ${row.window} ended`)
+        .map((row) => `${row.at}: still ${row.seen} after ${row.window} ended`),
+      ...(result.laneFaults.length > 0
+        ? [
+            `injected lane faults outside any window, held as the product holds them (E5 v4): ${result.laneFaults.length} (${[
+              ...Map.groupBy(
+                result.laneFaults,
+                (fault) => `${fault.expect.class}.${fault.expect.reason}`
+              )
+            ]
+              .map(([key, faults]) => `${key} ${faults.length}`)
+              .join(", ")}); ${result.laneFaultChecks} sample(s) compared with one`
+          ]
+        : [])
     ]
   };
 }

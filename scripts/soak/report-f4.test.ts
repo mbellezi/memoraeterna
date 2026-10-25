@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { readSoakPlan } from "../../apps/desktop/src/main/services/dev/soak-plan.ts";
 import { expandWindows } from "../../apps/desktop/src/main/services/dev/soak-plan-f4.ts";
 import type {
+  BreakerRecord,
   ExchangeRecord,
   GroundTruthRecord,
   JobDoneRecord,
@@ -23,6 +24,7 @@ import {
   e4Check,
   e5Affected,
   e5Check,
+  e5LaneFaults,
   f4Report,
   injectionCheck,
   loadCheck,
@@ -970,6 +972,331 @@ describe("E5 status coverage", () => {
   });
 });
 
+describe("E5 v4: a fault injected outside any window is a ground truth of its lane", () => {
+  const second = 1_000;
+  const exchange = (
+    seq: number,
+    offset: number,
+    overrides: Partial<ExchangeRecord> = {}
+  ): ExchangeRecord => ({
+    type: "exchange",
+    provider: "openai-codex",
+    seq,
+    startedAt: at(offset),
+    endedAt: at(offset),
+    kind: "unauthorized",
+    injected: true,
+    status: 401,
+    outcome: "completed",
+    closedAfterMs: null,
+    closedAfterLastWriteMs: null,
+    retryAfterSeconds: null,
+    plannedMs: null,
+    forwardedBytes: 0,
+    synthetic: true,
+    tag: "soak-injected",
+    ...overrides
+  });
+  const forwarded = (seq: number, offset: number) =>
+    exchange(seq, offset, {
+      kind: "none",
+      injected: false,
+      status: 200,
+      synthetic: undefined,
+      tag: undefined
+    });
+  /** A call on the Codex lane that succeeded: the lane's success is when its stream ended. */
+  const succeeded = (offset: number, finishedAfter: number): TaskRunRecord => ({
+    id: `row-${offset}`,
+    taskType: "structured-output",
+    provider: "openai-codex",
+    modelId: "gpt-5.6-luna",
+    runtime: "remote",
+    workloadClass: "write-fast",
+    lane: codexLane,
+    priority: 3,
+    deadlineMs: 120_000,
+    deadlineOutcome: "met",
+    isRepair: false,
+    schemaMode: "none",
+    retryWaitMs: 0,
+    requeueMs: 0,
+    queueMs: 1,
+    attempt: 0,
+    status: "succeeded",
+    error: null,
+    startedAt: at(offset),
+    finishedAt: at(offset + finishedAfter),
+    durationMs: finishedAfter,
+    inputTokens: 1_000,
+    outputTokens: 100,
+    budgetClass: "background",
+    jobId: null
+  });
+  const breaker = (offset: number, from: string, to: string): BreakerRecord => ({
+    type: "breaker",
+    at: at(offset),
+    lane: codexLane,
+    from,
+    to,
+    reason: "failures"
+  });
+  const backfill = (reason: string) => [
+    {
+      ...job("explain", "relation-explain-backfill"),
+      blockedClass: "cap",
+      blockedReason: reason
+    }
+  ];
+  const attention = (cls: string, reason: string) => ({
+    ...statusOf(cls, reason),
+    state: "attention"
+  });
+
+  // Gate S soak7-gate-20261025T0815, 12:25:19: a random 401 (rates.unauthorized) on the Codex lane in
+  // the second the money window opened. The lane kept the failure until its next success, 12:30:23.
+  const fault = 250 * minute;
+  const money = [
+    truth("g250-money", "start", fault + 13, 2, undefined, "money"),
+    truth("g250-money#80", "start", fault + 11 * second, 2, ["cap", "money_80"], "money"),
+    truth("g250-money#80", "end", fault + 3 * minute + 11_600, 2, undefined, "money"),
+    truth("g250-money#100", "start", fault + 4 * minute + 11_200, 2, ["cap", "money_100"], "money"),
+    truth("g250-money#100", "end", fault + 15 * minute, 2, undefined, "money"),
+    truth("g250-money", "end", fault + 15 * minute, 2, undefined, "money")
+  ];
+  const randomFault = exchange(298, fault);
+  const nextCall = [forwarded(299, fault + 5 * minute + 900)];
+  const nextSuccess = [succeeded(fault + 5 * minute + 900, 2_600)];
+  /** Samples a minute from 12:25:30.9; the sentence says sign-in through 12:29:30, then the cap. */
+  const gateSamples = (signinUntil = 4) =>
+    minutes(fault + 11_500, 12, (index) => ({
+      jobs: backfill(index < 4 ? "money_80" : "money_100"),
+      status:
+        index <= signinUntil
+          ? attention("no_model", "signin_required")
+          : attention("cap", "money_100")
+    }));
+
+  it("replays the lane's failure: a sign-in fault holds until the next success's stream ends", () => {
+    const run = runOf(6, { events: [randomFault, ...nextCall], rows: nextSuccess });
+    expect(e5LaneFaults(run)).toEqual([
+      {
+        id: "fault-unauthorized#298",
+        lane: codexLane,
+        from: start + fault,
+        // The answer's headers (5:00.9) do not forget it; the call's end does (5:03.5).
+        until: start + fault + 5 * minute + 3_500,
+        expect: { class: "no_model", reason: "signin_required" }
+      }
+    ]);
+  });
+
+  it("reads the 12:25 case right: the sign-in outranks the money window's 80 % while the lane holds it", () => {
+    const run = runOf(6, {
+      events: [randomFault, ...nextCall, ...money],
+      rows: nextSuccess,
+      samples: gateSamples()
+    });
+    const result = computeE5(run);
+    // 12:27:30 and 12:28:30 against the fault, 12:31:30 to 12:36:30 against the cap at 100 %.
+    expect(result).toMatchObject({ checked: 8, matched: 8, laneFaultChecks: 2 });
+    expect(result.classMismatches).toEqual([]);
+    expect(result.recoveryMismatches).toEqual([]);
+    expect(e5Check(run).status).toBe("pass");
+    expect(e5Check(run).details.join(" ")).toContain(
+      "injected lane faults outside any window, held as the product holds them (E5 v4): 1 (no_model.signin_required 1); 2 sample(s) compared with one"
+    );
+  });
+
+  it("still fails a sign-in the sentence shows with no injected fault and no window behind it", () => {
+    const run = runOf(6, {
+      events: [...nextCall, ...money],
+      rows: nextSuccess,
+      samples: gateSamples()
+    });
+    const check = e5Check(run);
+    expect(check.status).toBe("fail");
+    expect(computeE5(run).classMismatches).toEqual([
+      expect.objectContaining({
+        at: at(fault + 2 * minute + 11_500),
+        window: "g250-money#80",
+        expected: "cap.money_80",
+        seen: "no_model.signin_required (attention)"
+      }),
+      expect.objectContaining({ at: at(fault + 3 * minute + 11_500), window: "g250-money#80" })
+    ]);
+    // A real 401 (not injected) is no lane fault either.
+    const real = { ...randomFault, injected: false, synthetic: undefined, tag: undefined };
+    const unexplained = runOf(6, {
+      events: [real, ...nextCall, ...money],
+      rows: nextSuccess,
+      samples: gateSamples()
+    });
+    expect(computeE5(unexplained).classMismatches).toHaveLength(2);
+  });
+
+  it("fails a sign-in the sentence still shows after the lane's hold ended", () => {
+    // The hold ended at 5:03.5; at 12:31:30 (6:11.5) the sentence still says sign-in.
+    const run = runOf(6, {
+      events: [randomFault, ...nextCall, ...money],
+      rows: nextSuccess,
+      samples: gateSamples(6)
+    });
+    expect(computeE5(run).classMismatches).toEqual([
+      expect.objectContaining({
+        at: at(fault + 6 * minute + 11_500),
+        window: "g250-money#100",
+        expected: "cap.money_100"
+      })
+    ]);
+    expect(e5Check(run).status).toBe("fail");
+    // With no window: the sentence leaves the fault's class after its end like a window's.
+    const alone = runOf(6, {
+      events: [randomFault, ...nextCall],
+      rows: nextSuccess,
+      samples: gateSamples(8).map((sample) => ({
+        ...sample,
+        jobs: [job("match", "relation-match")]
+      }))
+    });
+    expect(computeE5(alone).recoveryMismatches).toEqual([
+      {
+        at: at(fault + 6 * minute + 11_500),
+        window: "fault-unauthorized#298",
+        seen: "no_model.signin_required"
+      },
+      {
+        at: at(fault + 7 * minute + 11_500),
+        window: "fault-unauthorized#298",
+        seen: "no_model.signin_required"
+      },
+      {
+        at: at(fault + 8 * minute + 11_500),
+        window: "fault-unauthorized#298",
+        seen: "no_model.signin_required"
+      }
+    ]);
+  });
+
+  it("keeps the money window's 80 % binding when no lane fault holds", () => {
+    // 10:45:19 in the same run: a 429 11 ms after the 401 is an answer, and the lane forgot it.
+    const forgotten = [randomFault, exchange(299, fault + 11, { kind: "rate_limit", status: 429 })];
+    const showing = (cls: string, reason: string) =>
+      gateSamples().map((sample, index) =>
+        index === 2 || index === 3 ? { ...sample, status: attention(cls, reason) } : sample
+      );
+    const misses = computeE5(
+      runOf(6, {
+        events: [...forgotten, ...money],
+        rows: nextSuccess,
+        samples: showing("no_model", "signin_required")
+      })
+    );
+    expect(misses.laneFaultChecks).toBe(0);
+    expect(misses.classMismatches.map((row) => row.window)).toEqual([
+      "g250-money#80",
+      "g250-money#80"
+    ]);
+    const right = runOf(6, {
+      events: [...forgotten, ...money],
+      rows: nextSuccess,
+      samples: showing("cap", "money_80")
+    });
+    expect(computeE5(right)).toMatchObject({ classMismatches: [], laneFaultChecks: 0 });
+    expect(e5Check(right).status).toBe("pass");
+  });
+
+  it("holds a sign-in fault at most the status's failure TTL, and a later failure replaces it", () => {
+    const ttl = runOf(6, { events: [randomFault] });
+    expect(e5LaneFaults(ttl)[0]?.until).toBe(start + fault + 15 * minute);
+    const replaced = runOf(6, {
+      events: [randomFault, exchange(299, fault + minute, { kind: "unavailable", status: 503 })],
+      rows: nextSuccess
+    });
+    // The 503 replaces it; with the breaker closed it holds nothing of its own.
+    expect(e5LaneFaults(replaced)).toEqual([
+      expect.objectContaining({ id: "fault-unauthorized#298", until: start + fault + minute })
+    ]);
+    // An answer while the breaker is open (a call that started before) forgets nothing.
+    const open = runOf(6, {
+      events: [
+        randomFault,
+        breaker(fault + 10 * second, "closed", "open"),
+        breaker(fault + 40 * second, "open", "half_open"),
+        breaker(fault + 4 * minute, "half_open", "closed")
+      ],
+      rows: [succeeded(fault + 5 * second, 20 * second), ...nextSuccess]
+    });
+    expect(e5LaneFaults(open).map((entry) => [entry.id, entry.until - start - fault])).toEqual([
+      ["fault-unauthorized#298", 5 * minute + 3_500]
+    ]);
+  });
+
+  it("reads a rate limit's pause and a breaker the faults opened; a window's own faults are the window's", () => {
+    const events = [
+      exchange(10, 10 * minute, { kind: "rate_limit", status: 429, retryAfterSeconds: 7 }),
+      exchange(11, 20 * minute, { kind: "rate_limit", status: 429, retryAfterSeconds: 3_600 }),
+      ...[1, 2, 3, 4, 5].map((index) =>
+        exchange(20 + index, 30 * minute + index * 100, { kind: "unavailable", status: 503 })
+      ),
+      breaker(30 * minute + 600, "closed", "open"),
+      breaker(31 * minute, "open", "half_open"),
+      breaker(31 * minute + 5 * second, "half_open", "closed"),
+      exchange(40, 40 * minute, { kind: "unavailable", status: 503 }),
+      exchange(50, 50 * minute, { window: "w102-unauthorized" })
+    ];
+    expect(
+      e5LaneFaults(runOf(2, { events })).map((entry) => [
+        entry.id,
+        entry.from - start,
+        entry.until - entry.from,
+        `${entry.expect.class}.${entry.expect.reason}`
+      ])
+    ).toEqual([
+      ["fault-rate_limit#10", 10 * minute, 7_000, "waiting.provider_rate_limit"],
+      // The lane pauses at most `maxPauseMs`.
+      ["fault-rate_limit#11", 20 * minute, minute, "waiting.provider_rate_limit"],
+      ["fault-unavailable#25", 30 * minute + 600, minute + 4_400, "waiting.provider_unavailable"]
+    ]);
+  });
+
+  it("does not judge a sample in a fault's settle that it would outrank, and leaves lower faults alone", () => {
+    const pause = exchange(10, 20 * minute + 50 * second, {
+      kind: "rate_limit",
+      status: 429,
+      retryAfterSeconds: 9
+    });
+    const events = [
+      truth("g30", "start", 0, 2, ["waiting", "provider_unavailable"], "refused"),
+      truth("g30", "end", 40 * minute, 2, undefined, "refused"),
+      truth("g05", "start", 0, 2, ["offline", "network_unreachable"], "enotfound"),
+      truth("g05", "end", 40 * minute, 2, undefined, "enotfound"),
+      pause,
+      exchange(298, 25 * minute + 30 * second)
+    ];
+    const samples = minutes(0, 40, (index) => ({
+      jobs: [job("match", "relation-match")],
+      status:
+        index < 26
+          ? // The pause is of the window's class: compared with the window as ever.
+            statusOf("waiting", "provider_rate_limit")
+          : index === 26
+            ? statusOf("waiting", "provider_unavailable")
+            : statusOf("no_model", "signin_required")
+    }));
+    const result = computeE5(runOf(1, { events, samples }));
+    // Minutes 0-1 are the windows' settle; 26 is the sign-in fault's (25:30-26:30), not judged:
+    // either reading may be right. From 27 the fault is expected, above both windows.
+    expect(result.classMismatches).toEqual([]);
+    expect(result).toMatchObject({ checked: 37, matched: 37, laneFaultChecks: 13 });
+    // The same sentence at 26 as at 27 is no miss either.
+    const early = samples.map((sample, index) =>
+      index === 26 ? { ...sample, status: statusOf("no_model", "signin_required") } : sample
+    );
+    expect(computeE5(runOf(1, { events, samples: early })).classMismatches).toEqual([]);
+  });
+});
+
 describe("E4 cap within one call", () => {
   const codexRow = (offset: number, overrides: Partial<TaskRunRecord> = {}): TaskRunRecord => ({
     id: `row-${offset}`,
@@ -1452,7 +1779,7 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 3, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 4, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
