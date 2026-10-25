@@ -147,7 +147,13 @@ over the text below where they differ.
   remote call (the real writer's before the first), on the local lane when every call of its kind was local, an import
   with its inline stages' calls; only a kind with no call at all takes the real writer's lane. Replayed on gate S, the
   two disagree only in the 10 samples where MATCH waited for its decider (`g170-ranker-invalid`), when no Codex-lane
-  problem was active.
+  problem was active. E5 v7 (same branch, after review) reads the other side too: where no active truth affects work, a
+  sentence of the class an active truth expects for its kind of condition (a provider problem, a model check, a missing
+  model or decider) is an over-hold, a class mismatch, unless a reading the status may take finds work it affects (a
+  retrying task at any time ahead, a kind whose lanes the status does not read, MATCH while a decider is missing) or a
+  lane fault of that class is in its settle; replayed on gate S it flags 08:59:21 and 10:59:27, where the recorded
+  status, before the MATCH fix, named `g030-usage-limit`'s and `g155-unauthorized`'s class for a MATCH on the local
+  ranker.
 - **Pre-soak cap 3.1M (owner, 10-25).** Gate S `soak7-gate-20261025T0815` on `f4-soak-start-r2` spent 626,321 Codex
   tokens and failed E5 on the lane-hold defect above, leaving the ledger at 2,362,969 of 2.7M; D38 needs gate S again
   on a new tag (`f4-soak-start-r3`), about 630k, so the owner raised the pre-soak cap to 3.1M. The soak cap (up to

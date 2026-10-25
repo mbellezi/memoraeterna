@@ -12,7 +12,10 @@
 import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
 import { compareBlockerClasses } from "../../packages/domain/src/gardener/state.ts";
 import type { GardenerBlockerClass } from "../../packages/domain/src/gardener/blockers.ts";
-import { gardenerTaskKind } from "../../packages/domain/src/gardener/kinds.ts";
+import {
+  gardenerTaskKind,
+  relationMatchJobType
+} from "../../packages/domain/src/gardener/kinds.ts";
 import { defaultGardenerStatusConfig } from "../../packages/domain/src/gardener/status.ts";
 import { defaultGardenerConfig } from "../../packages/domain/src/gardener-config.ts";
 import { relationsConfig } from "../../packages/domain/src/relations-config.ts";
@@ -60,7 +63,10 @@ export const predicateVersions = {
   // review); a mismatch whose sentence names a truth that affected no task says so.
   // v6: a kind whose calls were all local takes the local lane, an import takes its inline stages'
   // calls too, and only a kind with no call at all takes the real writer's lane.
-  e5: 6,
+  // v7: where no active truth affects work, a sentence of the class an active truth expects (its
+  // own kind of condition) is an over-hold, a class mismatch, unless some reading the status may
+  // take finds work that condition affects ({@link e5MayAffect}).
+  e5: 7,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
   injection: 2
@@ -824,6 +830,11 @@ export interface E5Result {
      * for the work it holds, so this is the status's miss, not the oracle's.
      */
     named?: string;
+    /**
+     * E5 v7: no active truth affected work at the sample, and the sentence named the class of one
+     * of them (`window`, `named`): an over-hold; `expected` is `none`.
+     */
+    overHold?: true;
   }>;
   reasonMismatches: number;
   recoveryMismatches: Array<{ at: string; window: string; seen: string }>;
@@ -935,6 +946,56 @@ export function e5Affected(
         routed(job) &&
         ((gardenerWork(job) && Boolean(gardenerTaskKind(job.type)?.remote)) ||
           (setAside(job) && providerWaitKeys.has(keyOfJob(job))))
+    )
+  );
+}
+
+/**
+ * The kinds whose lanes the status does not read (docs/f4-decisions.md, "A lane's problem holds
+ * only the work on that lane"): a link job and a catalog header, whose embedding and graph calls
+ * are not on their class route, and an import. It counts them on every remote lane, and MATCH too
+ * while it waits for a decider.
+ */
+const laneUnreadKinds: ReadonlySet<string> = new Set([
+  "relation-link",
+  "catalog-header",
+  "ingestion"
+]);
+
+/**
+ * Whether a condition could affect work by any reading the status may take (E5 v7), the generous
+ * side of {@link e5Affected}, which E5 compares with: besides what that counts, a task queued for
+ * another attempt at any time ahead (the status counts every retrying task, not only those due within
+ * its horizon); for a model check, an import an outage set aside (it waits too); on a lane, a task of
+ * a kind whose lanes the status does not read, and MATCH while a decider is missing
+ * (`decidersMissing`), whatever lane their calls took. A sentence that names such a condition where
+ * none of this holds named a class for no task (spec 3.8: the highest class with a task it affects).
+ */
+export function e5MayAffect(
+  sample: SoakSample,
+  expect: { class: string; reason: string },
+  on: E5Lane | null,
+  decidersMissing: boolean
+): boolean {
+  const at = toMs(sample.at);
+  const retrying = (job: JobSample) =>
+    job.status === "queued" && !job.blockedClass && job.attempts > 0 && job.runAfter > at;
+  const generous = {
+    ...sample,
+    jobs: sample.jobs.map((job) => (retrying(job) ? { ...job, runAfter: at } : job))
+  };
+  const unread = (job: JobSample) =>
+    laneUnreadKinds.has(job.type) || (decidersMissing && job.type === relationMatchJobType);
+  const anyLane = on
+    ? { lane: on.lane, routeOf: (job: JobSample) => (unread(job) ? on.lane : on.routeOf(job)) }
+    : null;
+  if (e5Affected(generous, expect, anyLane)) return true;
+  return (
+    e5ExposureOf(expect) === "work" &&
+    sample.jobs.some(
+      (job) =>
+        Boolean(job.blockedClass) &&
+        providerWaitKeys.has(`${job.blockedClass}.${job.blockedReason}`)
     )
   );
 }
@@ -1190,6 +1251,10 @@ export function e5LaneFaults(run: LoadedRun): E5LaneFault[] {
  * lane ({@link E5Lane}, {@link e5Routes}); a class mismatch whose sentence names an active truth
  * that affected no task says which (`named`).
  * v6: a kind whose calls were all local is on the local lane, as the product reads it.
+ * v7: where no active truth affects work, the sentence must not name the class of one of them for
+ * its own kind of condition (a provider problem, a model check, a missing model or decider): such a
+ * sample is an over-hold, a class mismatch with `named`, unless {@link e5MayAffect} finds work that
+ * condition could affect or a lane fault of that class is within its settle; it exercises no window.
  * (i): a sample with a task set aside by a blocker whose sentence names no class (or is the generic
  * one) is a fallback.
  */
@@ -1228,6 +1293,15 @@ export function computeE5(run: LoadedRun): E5Result {
   const byPrecedence = (a: { expect: { class: string } }, b: { expect: { class: string } }) =>
     classRank(a.expect.class) - classRank(b.expect.class);
   const keyOf = (expect: { class: string; reason: string }) => `${expect.class}.${expect.reason}`;
+  /**
+   * A sentence names a truth's own kind of condition: its class, read the same way (E5 v7). E5
+   * compares classes: a usage limit's sentence may be `waiting.provider_unavailable` once the
+   * breaker opens, never `waiting.queue`.
+   */
+  const namesKindOf = (
+    seen: { class: string; reason: string } | null,
+    expect: { class: string; reason: string }
+  ) => seen !== null && seen.class === expect.class && e5ExposureOf(seen) === e5ExposureOf(expect);
   for (const sample of samples) {
     const at = toMs(sample.at);
     const status = sample.status;
@@ -1287,7 +1361,8 @@ export function computeE5(run: LoadedRun): E5Result {
         if (status.reason !== top.expect.reason) result.reasonMismatches += 1;
       } else {
         // The sentence named a truth active now whose condition affected no task here.
-        const seenKey = `${status.class}.${status.reason}`;
+        const seenExpect =
+          status.class && status.reason ? { class: status.class, reason: status.reason } : null;
         const idle = [
           ...expecting
             .filter((record) => !affecting.includes(record))
@@ -1299,7 +1374,7 @@ export function computeE5(run: LoadedRun): E5Result {
               expect: fault.expect
             }))
         ];
-        const named = idle.find((truth) => keyOf(truth.expect) === seenKey)?.name;
+        const named = idle.find((truth) => namesKindOf(seenExpect, truth.expect))?.name;
         result.classMismatches.push({
           at: sample.at,
           window: top.id,
@@ -1308,6 +1383,53 @@ export function computeE5(run: LoadedRun): E5Result {
           ...(named ? { named } : {})
         });
       }
+      continue;
+    }
+    // v7: no active truth affects work here. A sentence of the class one of them expects, for its
+    // own kind of condition (a provider problem, a model check, a missing model or decider), holds
+    // work that condition does not affect (spec 3.8: an over-hold), unless a reading the status may
+    // take finds such work, or a lane fault of that class is in its settle (either may be right).
+    const shown =
+      status.class && status.reason ? { class: status.class, reason: status.reason } : null;
+    const decidersMissing =
+      expecting.some((record) => keyOf(record.expect!) === "no_model.no_decider") ||
+      sample.jobs.some(
+        (job) => job.blockedClass === "no_model" && job.blockedReason === "no_decider"
+      );
+    const overHeld =
+      shown && !openFaults.some((fault) => !settled(fault) && fault.expect.class === shown.class)
+        ? [
+            ...expecting.map((record) => ({
+              id: record.id,
+              name: record.id,
+              expect: record.expect!,
+              on: windowOn(record)
+            })),
+            ...openFaults.filter(settled).map((fault) => ({
+              id: fault.id,
+              name: `${fault.id} on ${fault.lane ?? "its lane"}`,
+              expect: fault.expect,
+              on: on(fault.lane)
+            }))
+          ].find(
+            (truth) =>
+              // A control or a cap holds whether or not work waits (a power window by its reading).
+              e5ExposureOf(truth.expect) !== "standing" &&
+              namesKindOf(shown, truth.expect) &&
+              !e5MayAffect(sample, truth.expect, truth.on, decidersMissing) &&
+              !e5MayAffect(sample, shown, truth.on, decidersMissing)
+          )
+        : undefined;
+    if (overHeld) {
+      result.checked += 1;
+      result.classMismatches.push({
+        at: sample.at,
+        window: overHeld.id,
+        expected: "none",
+        seen: `${status.class}.${status.reason} (${status.state})`,
+        named: overHeld.name,
+        overHold: true
+      });
       continue;
     }
     if (expecting.length > 0) {
@@ -1413,7 +1535,7 @@ export function e5Check(run: LoadedRun): Check {
   return {
     id: "e5-status",
     title: "E5 status coverage",
-    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects among the windows whose condition affects work at the sample (a control or a cap always; a provider problem the work on its own lane: a call on it, a remote task whose calls take it; a model check any Gardener work; a missing decider the tasks it set aside; a provider-wait window from the first call that met its fault), every window and every stage of one compared at least once",
+    bar: "(i) 0 samples with a task set aside whose sentence is a fallback; (ii) 100 % of the samples after the settle of every transition show the class the highest-precedence active ground truth expects among the windows whose condition affects work at the sample (a control or a cap always; a provider problem the work on its own lane: a call on it, a remote task whose calls take it; a model check any Gardener work; a missing decider the tasks it set aside; a provider-wait window from the first call that met its fault), and where none affects work no sentence of an active truth's class for its kind of condition; every window and every stage of one compared at least once",
     status: noStatus
       ? "review"
       : failing
@@ -1430,14 +1552,15 @@ export function e5Check(run: LoadedRun): Check {
       ),
       ...result.classMismatches
         .slice(0, 10)
-        .map(
-          (row) =>
-            `${row.at}: ${row.window} expected ${row.expected}, the sentence was ${row.seen}${row.named ? `, the class of ${row.named}, whose condition affected no task at the sample` : ""}`
+        .map((row) =>
+          row.overHold
+            ? `${row.at}: no active truth affected a task, yet the sentence was ${row.seen}, the class of ${row.named}, whose condition affected no task at the sample (an over-hold, E5 v7)`
+            : `${row.at}: ${row.window} expected ${row.expected}, the sentence was ${row.seen}${row.named ? `, the class of ${row.named}, whose condition affected no task at the sample` : ""}`
         ),
       ...group(result.classMismatches).map((line) => `class mismatches in ${line}`),
       ...(named > 0
         ? [
-            `${named} class mismatch(es) name an active truth whose condition affected no task at the sample: spec 3.8 names the highest class with an affected task, so the status, not the oracle, missed (E5 v5)`
+            `${named} class mismatch(es) name an active truth whose condition affected no task at the sample: spec 3.8 names the highest class with an affected task, so the status, not the oracle, missed (E5 v5, v7)`
           ]
         : []),
       ...group(result.unaffected).map(

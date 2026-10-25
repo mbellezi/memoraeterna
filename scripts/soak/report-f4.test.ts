@@ -26,6 +26,7 @@ import {
   e5Affected,
   e5Check,
   e5LaneFaults,
+  e5MayAffect,
   e5Routes,
   f4Report,
   injectionCheck,
@@ -1519,6 +1520,200 @@ describe("E5 v4 and v5: a fault injected outside any window is a ground truth of
     );
     expect(computeE5(runOf(1, { events, samples: early })).classMismatches).toEqual([]);
   });
+
+  // Gate S 10:59:27, inside g155-unauthorized#met: the only remote Gardener task was a match due in
+  // 52 s whose calls had all been the local ranker's, and the status (before 85f58170, which reads
+  // MATCH's lanes from its decider) named the sign-in. E5 v6 counted the sample unaffected.
+  const signinWindow = [
+    truth("g155-unauthorized", "start", 0, 2, undefined, "unauthorized"),
+    truth(
+      "g155-unauthorized#met",
+      "start",
+      3 * minute,
+      2,
+      ["no_model", "signin_required"],
+      "unauthorized"
+    ),
+    truth("g155-unauthorized#met", "end", 10 * minute + 30 * second, 6, undefined, "unauthorized"),
+    {
+      ...truth("g155-unauthorized", "end", 10 * minute + 30 * second, 6, undefined, "unauthorized"),
+      detail: { met: true }
+    },
+    exchange(234, 3 * minute, { window: "g155-unauthorized" })
+  ];
+  const ranked = localCall("match", -30 * minute, "reranking");
+  /** The 10:59:27 jobs, a sample at minute `index`: a placement due in 2 s, a match in 52 s. */
+  const dueSoon = (index: number) => [
+    job("place", "topic-place", { runAfter: start + index * minute + 2 * second }),
+    job("match", "relation-match", { runAfter: start + index * minute + 52 * second })
+  ];
+  const signinSamples = (shown: (index: number) => SoakSample["status"], jobs = dueSoon) =>
+    minutes(0, 10, (index) => ({
+      jobs: index === 9 ? jobs(index) : [],
+      status: shown(index)
+    }));
+  const idleStatus = { state: "idle", params: {} };
+  const signinAt9 = (index: number) =>
+    index === 9 ? attention("no_model", "signin_required") : idleStatus;
+
+  it("reads the gate's 10:59:27 sample as an over-hold: a sign-in named for a match on the local ranker (v7)", () => {
+    const run = runOf(1, {
+      events: signinWindow,
+      rows: [ranked],
+      samples: signinSamples(signinAt9)
+    });
+    const result = computeE5(run);
+    expect(result.classMismatches).toEqual([
+      {
+        at: at(9 * minute),
+        window: "g155-unauthorized#met",
+        expected: "none",
+        seen: "no_model.signin_required (attention)",
+        named: "g155-unauthorized#met",
+        overHold: true
+      }
+    ]);
+    // The over-hold compares the sentence with nothing: the window is still not exercised.
+    expect(result).toMatchObject({ checked: 1, matched: 0 });
+    expect(result.unaffected).toHaveLength(4);
+    expect(result.notExercised).toEqual([
+      { window: "g155-unauthorized#met", why: "nothing_affected" }
+    ]);
+    const check = e5Check(run);
+    expect(check.status).toBe("fail");
+    expect(check.details.join(" ")).toContain(
+      "no active truth affected a task, yet the sentence was no_model.signin_required (attention), the class of g155-unauthorized#met"
+    );
+    // The sentence spec 3.8 asks for there names no class of its own: not exercised, a review.
+    const right = runOf(1, {
+      events: signinWindow,
+      rows: [ranked],
+      samples: signinSamples(() => idleStatus)
+    });
+    expect(computeE5(right).classMismatches).toEqual([]);
+    expect(e5Check(right).status).toBe("review");
+    // A match with no call at all is the writer's (v6): the sign-in affects it, and is compared.
+    const unrouted = computeE5(
+      runOf(1, { events: signinWindow, samples: signinSamples(signinAt9) })
+    );
+    expect(unrouted).toMatchObject({ checked: 1, matched: 1, classMismatches: [] });
+    expect(unrouted.notExercised).toEqual([]);
+  });
+
+  it("reads the gate's 08:59:21 sample as an over-hold of the usage limit's class, the breaker's reason shown (v7)", () => {
+    // g030-usage-limit expects waiting.provider_rate_limit; once the breaker opened the status says
+    // provider_unavailable, the same class read the same way, which E5 compares.
+    const events = [
+      truth("g030-usage-limit", "start", 0, 2, undefined, "usage_limit"),
+      truth("g030-usage-limit#met", "start", 3 * minute, 2, ["waiting", "provider_rate_limit"]),
+      truth("g030-usage-limit#met", "end", 10 * minute + 30 * second, 2),
+      {
+        ...truth("g030-usage-limit", "end", 10 * minute + 30 * second, 2),
+        detail: { met: true }
+      },
+      exchange(30, 3 * minute, {
+        window: "g030-usage-limit",
+        kind: "usage_limit",
+        status: 429
+      })
+    ];
+    // A retrying import due in 58 s is no Gardener work: an outage it is not set aside by.
+    const jobs = (index: number) => [
+      ...dueSoon(index),
+      job("import", "ingestion", { attempts: 1, runAfter: start + index * minute + 58 * second })
+    ];
+    const shown = (sentence: SoakSample["status"]) =>
+      signinSamples((index) => (index === 9 ? sentence : idleStatus), jobs);
+    const outage = computeE5(
+      runOf(1, {
+        events,
+        rows: [ranked],
+        samples: shown({ ...statusOf("waiting", "provider_unavailable") })
+      })
+    );
+    expect(outage.classMismatches).toEqual([
+      expect.objectContaining({
+        at: at(9 * minute),
+        window: "g030-usage-limit#met",
+        seen: "waiting.provider_unavailable (blocked)",
+        overHold: true
+      })
+    ]);
+    // The queue's own wait is another kind of condition, not the window's.
+    const queue = computeE5(
+      runOf(1, { events, rows: [ranked], samples: shown(statusOf("waiting", "queue")) })
+    );
+    expect(queue.classMismatches).toEqual([]);
+    expect(queue.unaffected).toHaveLength(5);
+  });
+
+  it("takes every reading the status may take before it calls a sentence an over-hold (v7)", () => {
+    const run = (jobs: (index: number) => Job[], rows: TaskRunRecord[] = [ranked]) =>
+      computeE5(runOf(1, { events: signinWindow, rows, samples: signinSamples(signinAt9, jobs) }));
+    // A backfill retrying on the Codex lane in 20 minutes: the status counts every retrying task.
+    const retrying = run(() => [
+      job("explain", "relation-explain-backfill", {
+        attempts: 1,
+        runAfter: start + 29 * minute
+      })
+    ]);
+    expect(retrying.classMismatches).toEqual([]);
+    expect(retrying.unaffected).toHaveLength(5);
+    // A link job whose calls were all local: the status does not read a link job's lanes.
+    const link = run(
+      () => [job("link", "relation-link")],
+      [ranked, localCall("link", -20 * minute)]
+    );
+    expect(link.classMismatches).toEqual([]);
+    // MATCH while a decider is missing (one set aside for it): the status counts it on every lane.
+    const deciderless = run((index) => [
+      ...dueSoon(index),
+      job("match-2", "relation-match", { blockedClass: "no_model", blockedReason: "no_decider" })
+    ]);
+    expect(deciderless.classMismatches).toEqual([]);
+    // Without them the same sample is an over-hold.
+    expect(run(() => [job("place", "topic-place")]).classMismatches).toHaveLength(1);
+    // Directly: the generous reading counts what E5's comparison does not.
+    const signin = { class: "no_model", reason: "signin_required" };
+    // MATCH on the local ranker, the rest on the writer's lane.
+    const onCodex = {
+      lane: codexLane,
+      routeOf: (entry: Job) => (entry.type === "relation-match" ? "local" : codexLane)
+    };
+    const later = sampleAt(0, {
+      jobs: [job("explain", "relation-explain-backfill", { attempts: 1, runAfter: start + hour })]
+    });
+    expect(e5Affected(later, signin, onCodex)).toBe(false);
+    expect(e5MayAffect(later, signin, onCodex, false)).toBe(true);
+    const queuedMatch = sampleAt(0, { jobs: [job("match", "relation-match")] });
+    expect(e5MayAffect(queuedMatch, signin, onCodex, false)).toBe(false);
+    expect(e5MayAffect(queuedMatch, signin, onCodex, true)).toBe(true);
+    // A model check waits for any Gardener work, and for an import an outage set aside.
+    const verifying = { class: "download", reason: "model_verifying" };
+    const setAsideImport = sampleAt(0, {
+      jobs: [
+        job("import", "ingestion", {
+          blockedClass: "waiting",
+          blockedReason: "provider_unavailable"
+        })
+      ]
+    });
+    expect(e5Affected(setAsideImport, verifying)).toBe(false);
+    expect(e5MayAffect(setAsideImport, verifying, null, false)).toBe(true);
+  });
+
+  it("does not call a sentence an over-hold while a lane fault of its class is in its settle (v7)", () => {
+    // A random 401 at 8:30, outside the window: its settle runs to 9:30, so 9:00 is not judged.
+    const events = [...signinWindow, exchange(240, 8 * minute + 30 * second)];
+    const result = computeE5(
+      runOf(1, {
+        events,
+        rows: [ranked, succeeded(20 * minute, 1_000)],
+        samples: signinSamples(signinAt9)
+      })
+    );
+    expect(result.classMismatches).toEqual([]);
+  });
 });
 
 describe("E4 cap within one call", () => {
@@ -2003,7 +2198,7 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 6, workerStates: 1 });
+    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 7, workerStates: 1 });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
