@@ -180,26 +180,34 @@ describe("the DEV flag treatAsRemote on a provider configuration (R6)", () => {
     await ai.runDefaultTask("text-generation", "explain");
     return {
       row: rows()[0]!,
-      locality: await ai.taskRouteLocality("text-generation")
+      locality: await ai.taskRouteLocality("text-generation"),
+      // The lane the route names without a call (the Gardener status, F4 D27) is the call's.
+      routeLane: (await ai.taskRouteModel("text-generation"))?.lane
     };
   };
 
   it("puts a loopback fake in its own remote lane with the remote total when honoured", async () => {
-    const { row, locality } = await audited({ honourTreatAsRemote: true });
+    const { row, locality, routeLane } = await audited({ honourTreatAsRemote: true });
     expect(row).toMatchObject({ lane: `remote:${ids.codexConfig}` });
     expect(locality).toBe("remote");
+    expect(routeLane).toBe(`remote:${ids.codexConfig}`);
   });
 
   it("ignores the flag without the knob, so the loopback endpoint is local", async () => {
-    const { row, locality } = await audited({});
+    const { row, locality, routeLane } = await audited({});
     expect(row).toMatchObject({ lane: "local" });
     expect(locality).toBe("local");
+    expect(routeLane).toBe("local");
   });
 
   it("ignores the flag in a packaged build whatever is passed", async () => {
-    const { row, locality } = await audited({ honourTreatAsRemote: true, isPackaged: true });
+    const { row, locality, routeLane } = await audited({
+      honourTreatAsRemote: true,
+      isPackaged: true
+    });
     expect(row).toMatchObject({ lane: "local" });
     expect(locality).toBe("local");
+    expect(routeLane).toBe("local");
   });
 
   it("keeps the remote total deadline of an OpenAI-compatible fake that runs on loopback", async () => {

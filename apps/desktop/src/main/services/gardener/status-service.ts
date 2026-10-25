@@ -37,6 +37,7 @@ import {
 } from "@app/domain";
 
 import type { AppEvent, AppEventHandler, AppEventType } from "../../../shared/app-events.js";
+import { kindMeteredRoute, meteredRouteCall, type MeteredRoute } from "./budget-gate.js";
 
 /** What the service reads from the database (`gardenerStatusStoreOf`; tests pass a fake). */
 export interface GardenerStatusStore {
@@ -126,6 +127,12 @@ export interface GardenerStatusServiceOptions {
   lanes: () => ReadonlyArray<
     Pick<LaneSnapshot, "lane" | "running" | "waiting" | "pausedForMs" | "breaker" | "failure">
   >;
+  /**
+   * The lane the calls of a route take now ({@link routeLaneOf}): `local` or `remote:<provider
+   * configuration>`, null when no route serves it, undefined when it cannot be read now. Without
+   * it every remote kind counts as work on every remote lane.
+   */
+  routeLane?: (route: MeteredRoute) => Promise<string | null | undefined>;
   /** The statuses of the installed local models (`LocalModelService.listStatuses`). */
   models: () => Promise<ReadonlyArray<{ status: string }>>;
   /** Sends the snapshot to the windows (`gardener.status` on the event bus). */
@@ -168,6 +175,25 @@ export function laneFactsOf(
       ? { state: lane.breaker.state, reopensInMs: lane.breaker.reopensInMs }
       : null,
     failure: lane.failure ?? null
+  };
+}
+
+type RouteCall = ReturnType<typeof meteredRouteCall>;
+
+/** The status's route reader over the AI service's routes (`AiService.taskRouteModel`). */
+export function routeLaneOf(
+  ai: () => {
+    taskRouteModel(
+      task: RouteCall["task"],
+      context: RouteCall["context"]
+    ): Promise<{ lane: string } | null>;
+  } | null
+): NonNullable<GardenerStatusServiceOptions["routeLane"]> {
+  return async (route) => {
+    const service = ai();
+    if (!service) return undefined;
+    const { task, context } = meteredRouteCall(route);
+    return (await service.taskRouteModel(task, context))?.lane ?? null;
   };
 }
 
@@ -334,6 +360,39 @@ export class GardenerStatusService {
     return value;
   }
 
+  /**
+   * The lane each kind with work now takes (spec 3.8: a lane's problem affects only the work whose
+   * calls take that lane), read from the route its calls resolve: the one the budget gate meters it
+   * by ({@link kindMeteredRoute}). A kind with no such route (the relation decider's, an import's)
+   * or whose route cannot be read now is left out, and the status takes it as any remote lane's.
+   */
+  private async kindLanes(
+    tasks: readonly StatusTaskRow[],
+    blocked: readonly BlockedJobGroup[]
+  ): Promise<Record<string, string | null>> {
+    const { routeLane } = this.options;
+    const lanes: Record<string, string | null> = {};
+    if (!routeLane) return lanes;
+    const types = new Set([
+      ...tasks
+        .filter(
+          (task) => task.running + task.ready + task.sameScope + task.retrying + task.scheduled > 0
+        )
+        .map((task) => task.type),
+      ...blocked.filter((group) => group.count > 0).map((group) => group.type)
+    ]);
+    await Promise.all(
+      [...types].map(async (type) => {
+        const route = kindMeteredRoute(type);
+        if (!route) return;
+        // A route that cannot be read leaves the kind's lane unknown, as without a reader.
+        const lane = await routeLane(route).catch(() => undefined);
+        if (lane !== undefined) lanes[type] = lane;
+      })
+    );
+    return lanes;
+  }
+
   private async compose(): Promise<GardenerStatusSnapshot> {
     const store = this.options.store();
     const nowMs = this.now();
@@ -350,6 +409,7 @@ export class GardenerStatusService {
     ]);
     await this.sampler.observe(running, nowMs, (ids) => store.jobEnds(ids));
     const coverage = await this.coverage(store, nowMs);
+    const kindLanes = await this.kindLanes(tasks, blocked);
     const etas = [...this.downloads.values()]
       .map((download) => download.etaSeconds)
       .filter((seconds): seconds is number => seconds !== null);
@@ -365,6 +425,7 @@ export class GardenerStatusService {
         earliestRunAfterMs: group.earliestRunAfter.getTime()
       })),
       lanes: this.options.lanes().map(laneFactsOf),
+      kindLanes,
       downloads: {
         downloading:
           models.some((model) => model.status === "downloading") ||

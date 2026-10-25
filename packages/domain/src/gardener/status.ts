@@ -298,6 +298,13 @@ export interface GardenerStatusFacts {
   readonly tasks: readonly StatusTaskFacts[];
   readonly blocked: readonly StatusBlockedFacts[];
   readonly lanes: readonly StatusLaneFacts[];
+  /**
+   * The lane the calls of a remote kind take now, by job type: the scheduler's lane key (`local`,
+   * `remote:<provider configuration>`) of the route its calls resolve, or null when no route serves
+   * it (its calls take no lane). A kind not listed, or every kind when this is absent, takes a lane
+   * the main process cannot tell, and counts as work on every remote lane.
+   */
+  readonly kindLanes?: Readonly<Record<string, string | null>>;
   readonly downloads: StatusDownloadFacts;
   readonly budget: StatusBudgetFacts | null;
   /** Durations of finished tasks in milliseconds per kind, oldest first. */
@@ -452,17 +459,25 @@ export function composeGardenerStatus(
   const blockedTasks = gardenerBlocked.reduce((sum, group) => sum + group.count, 0);
   const pending = waitingTasks + blockedTasks;
   const anyWork = pending + running > 0;
-  const remoteWork =
-    gardenerTasks
+  // Remote work by kind, held or not: a lane's problem affects the work whose calls take that lane
+  // (spec 3.8), and a kind whose lane is not known could take any remote lane.
+  const remoteWork = [
+    ...gardenerTasks
       .filter((task) => gardenerTaskKind(task.type)?.remote)
-      .reduce(
-        (sum, task) =>
-          sum + task.running + task.ready + task.sameScope + task.retrying + task.scheduled,
-        0
-      ) +
-    gardenerBlocked
+      .map((task) => ({
+        type: task.type,
+        count: task.running + task.ready + task.sameScope + task.retrying + task.scheduled
+      })),
+    ...gardenerBlocked
       .filter((group) => gardenerTaskKind(group.type)?.remote)
-      .reduce((sum, group) => sum + group.count, 0);
+      .map((group) => ({ type: group.type, count: group.count }))
+  ];
+  const kindLanes = facts.kindLanes ?? {};
+  const remoteWorkOn = (laneKey: string) =>
+    remoteWork.reduce((sum, work) => {
+      const routed = Object.hasOwn(kindLanes, work.type) ? kindLanes[work.type] : undefined;
+      return routed === undefined || routed === laneKey ? sum + work.count : sum;
+    }, 0);
 
   const holds = new Map<GardenerBlockerKey, Hold>();
 
@@ -507,10 +522,11 @@ export function composeGardenerStatus(
   }
 
   // The provider lanes: a rate limit, a provider that does not answer, an unreachable network, a
-  // sign-in that failed. Only while work could be using the lane.
+  // sign-in that failed. Only while work could be using the lane: its own calls, or remote work
+  // whose calls take it (work held on another provider's lane is not affected).
   for (const lane of facts.lanes) {
     if (lane.lane === "local") continue;
-    if (lane.running + lane.waiting === 0 && remoteWork === 0) continue;
+    if (lane.running + lane.waiting === 0 && remoteWorkOn(lane.lane) === 0) continue;
     const failure =
       lane.failure && lane.failure.ageMs <= config.laneFailureTtlMs ? lane.failure.kind : null;
     const breakerNotClosed = lane.breaker !== null && lane.breaker.state !== "closed";

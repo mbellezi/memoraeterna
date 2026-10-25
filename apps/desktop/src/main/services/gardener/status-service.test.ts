@@ -10,6 +10,7 @@ import type {
 import {
   defaultGardenerStatusConfig,
   gardenerBlocker,
+  relationExplainBackfillJobType,
   gardenerStatusKinds,
   type GardenerBlocker,
   type GardenerStatusSnapshot
@@ -21,6 +22,7 @@ import {
   JobDurationSampler,
   distinctHolds,
   laneFactsOf,
+  routeLaneOf,
   type GardenerStatusServiceOptions,
   type GardenerStatusStore
 } from "./status-service.js";
@@ -345,6 +347,88 @@ describe("the status read from the database and the ports", () => {
   });
 });
 
+describe("the lane each kind's calls take (spec 3.8)", () => {
+  const codex = "remote:codex";
+  const priced = "remote:priced";
+  const signedOut = () => lane({ lane: codex, failure: { kind: "unauthorized", ageMs: 11_000 } });
+  const heldBackfills: BlockedJobGroup = {
+    type: relationExplainBackfillJobType,
+    blockerClass: "cap",
+    reason: "money_80",
+    count: 6,
+    earliestRunAfter: new Date(0)
+  };
+  /** The money window's routes: the explanations on the priced fake, every other call on Codex. */
+  const moneyWindowRoutes = vi.fn(async (route: { operation?: string }) =>
+    route.operation === "relation_explanation" ? priced : codex
+  );
+
+  it("names the cap that holds work routed to another lane, not that lane's sign-in (gate S 10-25)", async () => {
+    const { service, state } = setup({ routeLane: moneyWindowRoutes });
+    state.holds = [gardenerBlocker("cap", "money_80")];
+    state.budget = { money: { spentUsd: 0.065336, capUsd: 0.097728 } } as never;
+    state.blocked = [heldBackfills];
+    state.lanes = [lane({ lane: "local", breaker: null }), signedOut(), lane({ lane: priced })];
+    expect(await service.refresh()).toMatchObject({
+      state: "attention",
+      class: "cap",
+      reason: "money_80",
+      action: "continue_budget"
+    });
+    // The backfill is read by the route the budget gate holds it by: its operation route first.
+    expect(moneyWindowRoutes).toHaveBeenCalledWith({
+      routeClass: "write-fast",
+      operation: "relation_explanation",
+      task: "text-generation"
+    });
+  });
+
+  it("names the sign-in for work whose calls take the signed-out lane, held or not", async () => {
+    const { service, state } = setup({ routeLane: async () => codex });
+    state.holds = [gardenerBlocker("cap", "money_80")];
+    state.blocked = [heldBackfills];
+    state.lanes = [signedOut(), lane({ lane: priced })];
+    expect(await service.refresh()).toMatchObject({ class: "no_model", reason: "signin_required" });
+    state.blocked = [];
+    state.tasks = [task("topic-overview", { ready: 1 })];
+    expect(await service.refresh()).toMatchObject({ class: "no_model", reason: "signin_required" });
+  });
+
+  it("takes work whose lane it cannot read as any remote lane's, as without a reader", async () => {
+    for (const routeLane of [
+      undefined,
+      async () => undefined,
+      async () => {
+        throw new Error("routes gone");
+      }
+    ]) {
+      const { service, state } = setup(routeLane ? { routeLane } : {});
+      state.holds = [gardenerBlocker("cap", "money_80")];
+      state.blocked = [heldBackfills];
+      state.lanes = [signedOut(), lane({ lane: priced })];
+      expect(await service.refresh()).toMatchObject({ reason: "signin_required" });
+    }
+  });
+
+  it("reads only the kinds with work now, and none whose route the budget gate does not meter", async () => {
+    const routeLane = vi.fn(async () => priced);
+    const { service, state } = setup({ routeLane });
+    state.tasks = [
+      task("topic-name"),
+      task("topic-place", { running: 1 }),
+      task("relation-match", { ready: 1 })
+    ];
+    state.lanes = [signedOut()];
+    // The decider's lane is not read: its matching is work on every remote lane.
+    expect(await service.refresh()).toMatchObject({ reason: "signin_required" });
+    expect(routeLane).not.toHaveBeenCalled();
+    state.tasks = [task("topic-name", { scheduled: 1 })];
+    expect(await service.refresh()).toMatchObject({ reason: "queue" });
+    expect(routeLane).toHaveBeenCalledOnce();
+    expect(routeLane).toHaveBeenCalledWith({ routeClass: "write-fast" });
+  });
+});
+
 describe("the time left from the tasks the service saw finish", () => {
   it("is the median duration of a kind times the tasks ahead of it", async () => {
     const { service, state, time } = setup();
@@ -618,6 +702,31 @@ describe("helpers", () => {
         .sort()
     ).toEqual(["cap.money_80", "paused.user_pause"]);
     expect(distinctHolds(new Map())).toEqual([]);
+  });
+
+  it("reads a route's lane from the AI service's route, as the budget gate reads its metering", async () => {
+    const taskRouteModel = vi.fn(async (task: string) =>
+      task === "embedding" ? null : { lane: "remote:priced" }
+    );
+    const read = routeLaneOf(() => ({ taskRouteModel }));
+    expect(
+      await read({
+        routeClass: "write-fast",
+        operation: "relation_explanation",
+        task: "text-generation"
+      })
+    ).toBe("remote:priced");
+    expect(taskRouteModel).toHaveBeenCalledWith("text-generation", {
+      workloadClass: "write-fast",
+      operation: "relation_explanation"
+    });
+    expect(await read({ routeClass: "write-fast" })).toBe("remote:priced");
+    expect(taskRouteModel).toHaveBeenLastCalledWith("structured-output", {
+      workloadClass: "write-fast"
+    });
+    // No route serves it: its calls take no lane. No AI service yet: the lane is not known.
+    expect(await read({ routeClass: "embed" })).toBeNull();
+    expect(await routeLaneOf(() => null)({ routeClass: "write-fast" })).toBeUndefined();
   });
 
   it("sums the waits of a lane over its priorities", () => {

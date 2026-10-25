@@ -69,6 +69,7 @@ import {
   type RankPairsRequest,
   type RankRequest,
   type RankResult,
+  type LaneKey,
   type LanePermit,
   type LaneSnapshot,
   ActiveDeadline,
@@ -1393,20 +1394,28 @@ export class AiService {
   }
 
   /**
-   * The provider and model a task is routed to, and where it runs, read without a call (F4 D14: the
-   * import estimate prices them). Null when no route serves the task.
+   * The provider and model a task is routed to, where it runs and the lane its calls take, read
+   * without a call (F4 D14: the import estimate prices them; D27: a lane's problem holds the work
+   * whose calls take that lane). Null when no route serves the task.
    */
   public async taskRouteModel(
     task: RoutedTask,
     context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
-  ): Promise<{ locality: "local" | "remote"; provider: string; modelId: string } | null> {
+  ): Promise<{
+    locality: "local" | "remote";
+    provider: string;
+    modelId: string;
+    lane: LaneKey;
+  } | null> {
     await this.ensureLegacyRouteMapping();
     const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
     if (!selection) return null;
+    const target = this.executionTarget(selection);
     return {
-      locality: isRemoteExecution(this.executionTarget(selection)) ? "remote" : "local",
+      locality: isRemoteExecution(target) ? "remote" : "local",
       provider: selection.provider,
-      modelId: selection.modelId
+      modelId: selection.modelId,
+      lane: executionLane(target).lane
     };
   }
 

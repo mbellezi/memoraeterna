@@ -21,12 +21,17 @@ import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
 import { RemoteBudget } from "./services/gardener/remote-budget.js";
-import { BudgetRelay, RemoteBudgetGate } from "./services/gardener/budget-gate.js";
+import {
+  BudgetRelay,
+  RemoteBudgetGate,
+  meteredRouteCall
+} from "./services/gardener/budget-gate.js";
 import { registerBudgetIpc } from "./services/gardener/budget-ipc.js";
 import {
   GardenerStatusService,
   distinctHolds,
-  gardenerStatusStoreOf
+  gardenerStatusStoreOf,
+  routeLaneOf
 } from "./services/gardener/status-service.js";
 import { registerGardenerStatusIpc } from "./services/gardener/status-ipc.js";
 import { HardwareService } from "./services/hardware/hardware-service.js";
@@ -357,11 +362,9 @@ void app.whenReady().then(() => {
   // the budget and the AI routes, which exist below; the gate answers only after its first read.
   const budgetGate = new RemoteBudgetGate({
     snapshot: () => remoteBudget!.snapshot(),
-    metering: async ({ routeClass, operation, task }) => {
-      const route = await aiService?.taskRouteModel(
-        task ?? (routeClass === "embed" ? "embedding" : "structured-output"),
-        { workloadClass: routeClass, ...(operation ? { operation } : {}) }
-      );
+    metering: async (metered) => {
+      const { task, context } = meteredRouteCall(metered);
+      const route = await aiService?.taskRouteModel(task, context);
       if (!route || route.locality === "local") return "none";
       return remoteBudget!.price(route.provider, route.modelId).billing === "subscription"
         ? "calls"
@@ -784,6 +787,8 @@ void app.whenReady().then(() => {
       backgroundPolicy ? distinctHolds(backgroundPolicy.gate.forKinds(gardenerStatusKinds)) : [],
     budget: async () => (remoteBudget ? await remoteBudget.snapshot() : null),
     lanes: () => aiService?.laneSnapshots() ?? [],
+    // A lane's problem holds only the work whose calls take that lane (spec 3.8).
+    routeLane: routeLaneOf(() => aiService),
     models: async () => (localModelService ? await localModelService.listStatuses() : []),
     publish: (event) => events.publish(event),
     events,

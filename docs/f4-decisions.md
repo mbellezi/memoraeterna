@@ -128,6 +128,17 @@ over the text below where they differ.
   answer put passage handles there) is now dropped from its paragraph and the answer kept, the count going to the structured log line `consultation_context_links_dropped`. Every other check
   still rejects the answer (schema, citations, `[eN]` markers, the investigation rule); prompts and cassette keys are
   unchanged.
+- **A lane's problem holds only the work on that lane (orchestrator, 10-25; D27, spec 3.8).** In gate S
+  (`soak7-gate-20261025T0815`, E5 v5 FAIL 131/133) a random injected 401 hit the Codex lane at 12:25:19 while the money
+  window had routed the only remote work, six explanation backfills held by `cap.money_80`, to the priced fake's lane;
+  the Codex lane ran and queued nothing, yet the status said `no_model.signin_required` (attention) from 12:25:30 to
+  12:29:30: its lane holds counted every remote Gardener task on every lane. A lane's rate limit, outage, unreachable
+  network or refused sign-in now holds only while the lane runs or queues calls, or remote work (held or not) whose
+  route takes it: the status service reads each remote kind's route as the budget gate meters it (operation, class, then
+  task route) and the lane the scheduler names for it (`remote:<provider configuration>`). Work routed to a local model
+  or with no route takes no remote lane; work whose lane is not read (the relation decider's, an import set aside by an
+  outage, a route that cannot be read) still counts on every remote lane. Precedence, reasons and copy are unchanged;
+  E5 v5 (`f4-e5v4` 3d32afe8) reads the same rule.
 
 ## Decisions
 

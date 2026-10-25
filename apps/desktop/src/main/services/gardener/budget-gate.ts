@@ -67,6 +67,23 @@ export function kindMeteredRoute(type: string): MeteredRoute | null {
   return { routeClass: kind.routeClass, ...kindRouteOperations[type] };
 }
 
+/**
+ * The task and context a route is read with (`AiService.taskRouteModel`), as the kind's calls
+ * resolve it: the metering of the budget gate and the lane of the status read the same route.
+ */
+export function meteredRouteCall(route: MeteredRoute): {
+  task: "text-generation" | "embedding" | "structured-output";
+  context: { workloadClass: AiClassId; operation?: string };
+} {
+  return {
+    task: route.task ?? (route.routeClass === "embed" ? "embedding" : "structured-output"),
+    context: {
+      workloadClass: route.routeClass,
+      ...(route.operation ? { operation: route.operation } : {})
+    }
+  };
+}
+
 /** Every route the gate meters: each class route, and each operation route a kind resolves. */
 function meteredRoutes(): MeteredRoute[] {
   const routes = new Map<string, MeteredRoute>(

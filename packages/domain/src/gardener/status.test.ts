@@ -643,6 +643,121 @@ describe("the AI lanes", () => {
   });
 });
 
+describe("a lane's problem affects only the work that takes that lane (spec 3.8)", () => {
+  const codex = "remote:codex";
+  const priced = "remote:priced";
+  const signedOut = lane({ lane: codex, failure: { kind: "unauthorized", ageMs: 11_000 } });
+  const idle = lane({ lane: priced });
+  const backfill = "relation-explain-backfill";
+
+  it("names the cap that holds the work, not a sign-in on a lane none of it takes (gate S 10-25, 12:25-12:29)", () => {
+    // The money window routed the explanations to the priced fake and the budget held them at 80%;
+    // a random 401 hit the Codex lane, which ran and queued nothing.
+    const gate = facts({
+      gateHolds: [hold("cap.money_80")],
+      budget: { spentUsd: 0.065336, capUsd: 0.097728 },
+      blocked: [blocked(backfill, "cap.money_80", { count: 6 })],
+      lanes: [lane({ lane: "local" }), signedOut, idle],
+      kindLanes: { [backfill]: priced }
+    });
+    expect(composeGardenerStatus(gate)).toMatchObject({
+      state: "attention",
+      class: "cap",
+      reason: "money_80",
+      params: { capUsd: 0.1, spentUsd: 0.07 },
+      action: "continue_budget"
+    });
+    // A lane the facts do not tell is any remote lane's, as before the lanes were read.
+    expect(composeGardenerStatus({ ...gate, kindLanes: undefined })).toMatchObject({
+      class: "no_model",
+      reason: "signin_required"
+    });
+  });
+
+  it("still names a refused sign-in for work routed to that lane, held or not", () => {
+    for (const work of [
+      { tasks: [task(backfill, { ready: 1 })] },
+      { blocked: [blocked(backfill, "cap.money_80", { count: 6 })] }
+    ])
+      expect(
+        composeGardenerStatus(
+          facts({
+            ...work,
+            gateHolds: [hold("cap.money_80")],
+            lanes: [signedOut, idle],
+            kindLanes: { [backfill]: codex }
+          })
+        )
+      ).toMatchObject({ state: "attention", class: "no_model", reason: "signin_required" });
+  });
+
+  it("still names the problem of a lane whose own calls run or wait, whatever the tasks take", () => {
+    expect(
+      composeGardenerStatus(
+        facts({
+          tasks: [task(backfill, { ready: 1 })],
+          lanes: [{ ...signedOut, waiting: 1 }, idle],
+          kindLanes: { [backfill]: priced }
+        })
+      )
+    ).toMatchObject({ class: "no_model", reason: "signin_required" });
+  });
+
+  it("reads a rate limit, an outage and an unreachable network on their own lane's work only", () => {
+    const problems: Array<[Partial<StatusLaneFacts>, string]> = [
+      [{ pausedForMs: 5 * minute }, "waiting.provider_rate_limit"],
+      [{ breaker: { state: "open", reopensInMs: 30_000 } }, "waiting.provider_unavailable"],
+      [
+        {
+          breaker: { state: "open", reopensInMs: 30_000 },
+          failure: { kind: "unreachable", ageMs: 2_000 }
+        },
+        "offline.network_unreachable"
+      ]
+    ];
+    for (const [problem, key] of problems) {
+      const at = (routed: string) =>
+        composeGardenerStatus(
+          facts({
+            tasks: [task("topic-overview", { ready: 2 })],
+            lanes: [lane({ lane: codex, ...problem }), idle],
+            kindLanes: { "topic-overview": routed }
+          })
+        );
+      const onCodex = at(codex);
+      expect(`${onCodex.class}.${onCodex.reason}`).toBe(key);
+      // On the other lane the tasks only wait their turn.
+      expect(at(priced)).toMatchObject({ state: "running", class: "waiting", reason: "queue" });
+    }
+  });
+
+  it("leaves out work routed to a local model and work no route serves", () => {
+    for (const routed of ["local", null])
+      expect(
+        composeGardenerStatus(
+          facts({
+            tasks: [task("topic-name", { ready: 1 })],
+            lanes: [signedOut],
+            kindLanes: { "topic-name": routed }
+          })
+        )
+      ).toMatchObject({ class: "waiting", reason: "queue" });
+  });
+
+  it("takes a kind whose lane is not told as work on every remote lane", () => {
+    // The decider's lane is not read (a local ranker, the generative writer or the Decisions API).
+    expect(
+      composeGardenerStatus(
+        facts({
+          tasks: [task("relation-match", { ready: 1 }), task(backfill, { ready: 1 })],
+          lanes: [signedOut, idle],
+          kindLanes: { [backfill]: priced }
+        })
+      )
+    ).toMatchObject({ class: "no_model", reason: "signin_required" });
+  });
+});
+
 describe("downloads", () => {
   const idleDownloads = { downloading: false, verifying: false, loading: false, etaSeconds: null };
 
