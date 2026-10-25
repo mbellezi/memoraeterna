@@ -25,6 +25,7 @@ import {
   e4Check,
   e5Affected,
   e5Check,
+  e5ExposureOf,
   e5LaneFaults,
   e5MayAffect,
   e5Routes,
@@ -2327,7 +2328,9 @@ describe("the work the 7-day plan gives its refused, missing-decider and model-c
     for (const [week, short] of [
       ["w054-refused", "g070-refused"],
       ["w114-ranker-invalid", "g170-ranker-invalid"],
-      ["w120-embedder-verifying", "g190-embedder-verifying"]
+      ["w120-embedder-verifying", "g190-embedder-verifying"],
+      ["w078-enotfound", "g105-enotfound"],
+      ["w102-unauthorized", "g155-unauthorized"]
     ] as const)
       expect(params(soak7.windows, week)).toEqual(params(gate.windows, short));
   });
@@ -2351,5 +2354,134 @@ describe("the work the 7-day plan gives its refused, missing-decider and model-c
     expect(outside(soak7, "w120-embedder-verifying")).toEqual([]);
     // The first two gate S runs met their typing fault at g190's first minute; it now runs at minute 20.
     expect(outside(gate, "g190-embedder-verifying")).toEqual([]);
+  });
+});
+
+// Gate S of 10-25 replayed under E5 v6: after their settle, g030-usage-limit#met and
+// g155-unauthorized#met held no Codex work (their only remote task, a queued MATCH, is on the local
+// ranker), so they were not exercised, and g105-enotfound had work only by chance (a link job).
+// Each provider window now brings its own backfill, shaped by what the product does with a call
+// that meets its fault:
+// - a refused connection or an unknown host sets the task aside, its attempt kept, for the whole
+//   window (`providerOutageBlocker`; g070 and g105 on 10-25);
+// - a usage limit fails the attempt and requeues it at the stated reset, the window's remaining
+//   seconds clamped at 60 minutes (the fault decorator, `aiErrorRetryAfterMs`; the import that met
+//   g030 at 08:55:20 came back at its end);
+// - a refused sign-in fails the job for good, a 4xx (the backfill a random 401 met at 10:45:19), so
+//   only a backfill still due is work it affects once the first call met it.
+describe("the work every provider window brings to the stretch E5 compares it in", () => {
+  const plan = resolve(import.meta.dirname, "plan.json");
+  const windowsOf = (name: string) => {
+    const { profile } = readSoakPlan(plan, name);
+    return expandWindows(profile.f4!, profile.durationHours * 60);
+  };
+  type Window = ReturnType<typeof windowsOf>[number];
+  const providerKinds = ["usage_limit", "refused", "enotfound", "unauthorized"];
+  const providerWindows = [...windowsOf("soak7"), ...windowsOf("soak7-gate")].filter((window) =>
+    providerKinds.includes(window.kind)
+  );
+  const maxAttempts = 3;
+
+  /** A backfill due at `due` (ms from the window's start), at `t`: its job's fields, or null once gone. */
+  const backfillAt = (window: Window, due: number, t: number): Partial<Job> | null => {
+    const end = window.durationMinutes * minute;
+    if (t < due) return { runAfter: start + due };
+    switch (window.kind) {
+      case "refused":
+      case "enotfound":
+        return {
+          blockedClass: window.expect!.class,
+          blockedReason: window.expect!.reason,
+          runAfter: start + t + 30_000
+        };
+      case "usage_limit": {
+        let call = due;
+        let attempts = 0;
+        while (call <= t) {
+          // A call after the window's end is answered: the backfill is done.
+          if (call >= end) return null;
+          attempts += 1;
+          if (attempts >= maxAttempts) return null;
+          call += Math.min(hour, end - call);
+        }
+        return { attempts, runAfter: start + call };
+      }
+      default:
+        return null;
+    }
+  };
+
+  /**
+   * The samples after the settle of `#met` (opened by the first backfill's call at the latest, seen
+   * at the next tick) and before the window's end, a minute apart, whose Codex Gardener work the
+   * window's condition affects as E5 reads it; and whether a backfill failed for good inside it.
+   */
+  const comparedIn = (window: Window) => {
+    const count = window.params.backfillRelations ?? 0;
+    const delay = window.params.backfillDelayMinutes ?? 0;
+    const every = window.params.backfillEveryMinutes ?? 0;
+    const dues = Array.from({ length: count }, (_, index) => (delay + index * every) * minute);
+    const end = window.durationMinutes * minute;
+    const settled = Math.min(...dues) + minute + window.settleMinutes * minute;
+    const onCodex = { lane: codexLane, routeOf: () => codexLane };
+    let samples = 0;
+    for (let t = 30_000; t < end; t += minute) {
+      const jobs = dues.flatMap((due, index) => {
+        const fields = backfillAt(window, due, t);
+        return fields ? [job(`backfill-${index}`, "relation-explain-backfill", fields)] : [];
+      });
+      if (t >= settled && e5Affected(sampleAt(t, { jobs }), window.expect!, onCodex)) samples += 1;
+    }
+    const spent =
+      window.kind === "usage_limit" &&
+      dues.some((due) => backfillAt(window, due, end - 1) === null && due < end);
+    return { samples, spent };
+  };
+
+  it("gives every provider window of both plans backfills compared at three samples or more", () => {
+    expect(providerWindows.map((window) => window.id).sort()).toEqual([
+      "g030-usage-limit",
+      "g070-refused",
+      "g105-enotfound",
+      "g155-unauthorized",
+      "w030-usage-limit",
+      "w054-refused",
+      "w078-enotfound",
+      "w102-unauthorized"
+    ]);
+    for (const window of providerWindows) {
+      expect(e5ExposureOf(window.expect!), window.id).toBe("lane");
+      const { samples, spent } = comparedIn(window);
+      expect(samples, window.id).toBeGreaterThanOrEqual(3);
+      // A usage limit's backfill keeps an attempt for the call after the window's end.
+      expect(spent, window.id).toBe(false);
+    }
+  });
+
+  it("spaces a sign-in window's backfills: due together, the first call fails them all", () => {
+    for (const window of providerWindows.filter((entry) => entry.kind === "unauthorized")) {
+      expect(window.params.backfillEveryMinutes, window.id).toBeGreaterThan(0);
+      const together = { ...window, params: { backfillRelations: 3 } };
+      expect(comparedIn(together).samples, window.id).toBe(0);
+      // The last one is due before the window ends, so none calls the writer after it.
+      const last =
+        (window.params.backfillRelations! - 1) * window.params.backfillEveryMinutes! +
+        (window.params.backfillDelayMinutes ?? 0);
+      expect(last, window.id).toBeLessThan(window.durationMinutes);
+    }
+  });
+
+  it("brings the 7-day usage limit's backfill to its last hour, so its reset is the window's end", () => {
+    const week = providerWindows.find((window) => window.id === "w030-usage-limit")!;
+    const delay = week.params.backfillDelayMinutes!;
+    expect(week.durationMinutes - delay).toBeLessThanOrEqual(60);
+    expect(week.durationMinutes - delay).toBeGreaterThanOrEqual(week.settleMinutes + 5);
+    // Due at once, it would meet the limit twice (its reset is clamped at 60 minutes).
+    const atOnce = { ...week, params: { backfillRelations: 3 } };
+    expect(backfillAt(atOnce, 0, 61 * minute)).toMatchObject({ attempts: 2 });
+    expect(backfillAt(week, delay * minute, (delay + 1) * minute)).toMatchObject({
+      attempts: 1,
+      runAfter: start + week.durationMinutes * minute
+    });
   });
 });

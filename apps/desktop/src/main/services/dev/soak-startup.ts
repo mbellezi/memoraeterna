@@ -440,8 +440,15 @@ export function prepareSoak(
           },
           money,
           work: {
-            enqueueBackfill: (count, delayMs) =>
-              enqueueExplanationBackfill(deps.pool, deps.jobs, count, soak.profile.seed, delayMs),
+            enqueueBackfill: (count, delayMs, everyMs) =>
+              enqueueExplanationBackfill(
+                deps.pool,
+                deps.jobs,
+                count,
+                soak.profile.seed,
+                delayMs,
+                everyMs
+              ),
             // The driver's note edit, at indexes of its own so the notes differ from the timeline's.
             editNotes: async (count) => {
               let edited = 0;

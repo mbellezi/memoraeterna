@@ -153,7 +153,12 @@ over the text below where they differ.
   retrying task at any time ahead, a kind whose lanes the status does not read, MATCH while a decider is missing) or a
   lane fault of that class is in its settle; replayed on gate S it flags 08:59:21 and 10:59:27, where the recorded
   status, before the MATCH fix, named `g030-usage-limit`'s and `g155-unauthorized`'s class for a MATCH on the local
-  ranker.
+  ranker. Since v6 left those two windows with no compared sample, every provider window of both plans now brings
+  Codex work of its own to the stretch E5 compares it in: 3 backfills at the start for `g030`, `g105` and `w078` (a
+  usage limit requeues them at its reset, the window's end; an unknown host sets them aside), 3 due at minute 100 of
+  `w030`'s 120 (the reset is clamped at 60 minutes, so they too come back at its end), and for `g155` and `w102` 3 due 4
+  minutes apart (`backfillEveryMinutes`, new: a refused sign-in fails the call that meets it, so only a backfill still
+  due is work it affects). About 6,100 more Codex tokens in each run (the backfills that met a 401 forward nothing).
 - **Pre-soak cap 3.1M (owner, 10-25).** Gate S `soak7-gate-20261025T0815` on `f4-soak-start-r2` spent 626,321 Codex
   tokens and failed E5 on the lane-hold defect above, leaving the ledger at 2,362,969 of 2.7M; D38 needs gate S again
   on a new tag (`f4-soak-start-r3`), about 630k, so the owner raised the pre-soak cap to 3.1M. The soak cap (up to

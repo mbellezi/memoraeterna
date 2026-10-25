@@ -123,7 +123,7 @@ const windowBase = {
   /**
    * Numbers a kind needs (`extraCalls`, `attempts`, `continueAfterMinutes`, `blockMinutes`) and the
    * load a window brings so its condition affects work (`backfillRelations`, `backfillDelayMinutes`,
-   * `noteEdits`: see `WindowRunner.startWork`).
+   * `backfillEveryMinutes`, `noteEdits`: see `WindowRunner.startWork`).
    */
   params: z.record(z.string().min(1).max(40), z.number()).default({})
 };

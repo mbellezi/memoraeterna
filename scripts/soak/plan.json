@@ -275,6 +275,10 @@
             "expect": {
               "class": "waiting",
               "reason": "provider_rate_limit"
+            },
+            "params": {
+              "backfillRelations": 3,
+              "backfillDelayMinutes": 100
             }
           },
           {
@@ -314,6 +318,9 @@
             "expect": {
               "class": "offline",
               "reason": "network_unreachable"
+            },
+            "params": {
+              "backfillRelations": 3
             }
           },
           {
@@ -338,7 +345,11 @@
               "class": "no_model",
               "reason": "signin_required"
             },
-            "settleEndMinutes": 6
+            "settleEndMinutes": 6,
+            "params": {
+              "backfillRelations": 3,
+              "backfillEveryMinutes": 4
+            }
           },
           {
             "id": "w114-ranker-invalid",
@@ -579,6 +590,9 @@
             "expect": {
               "class": "waiting",
               "reason": "provider_rate_limit"
+            },
+            "params": {
+              "backfillRelations": 3
             }
           },
           {
@@ -618,6 +632,9 @@
             "expect": {
               "class": "offline",
               "reason": "network_unreachable"
+            },
+            "params": {
+              "backfillRelations": 3
             }
           },
           {
@@ -643,7 +660,11 @@
               "class": "no_model",
               "reason": "signin_required"
             },
-            "settleEndMinutes": 6
+            "settleEndMinutes": 6,
+            "params": {
+              "backfillRelations": 3,
+              "backfillEveryMinutes": 4
+            }
           },
           {
             "id": "g170-ranker-invalid",

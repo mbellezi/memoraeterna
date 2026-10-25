@@ -206,6 +206,36 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
     expect(await dueInSeconds()).toBeLessThanOrEqual(0.5);
   });
 
+  it("spaces the backfills a sign-in window queues, the n-th due n steps after the first", async () => {
+    const ids: string[] = [];
+    for (const title of ["Spaced one", "Spaced two", "Spaced three", "Spaced four"])
+      ids.push((await seedNote(title)).id);
+    ids.sort();
+    // Three relations of distinct pairs, the smaller id first (the table's pair check).
+    for (const [lo, hi] of [
+      [ids[0], ids[1]],
+      [ids[0], ids[2]],
+      [ids[2], ids[3]]
+    ])
+      await pool.query(
+        `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id,
+            relation_type, final_score, explanation, direction, direction_source, band, probability,
+            status)
+         values ($1, $2, 'supports', 0.9, 'x', 'lo_to_hi', 'typer', 'apply', 0.9, 'accepted')`,
+        [lo, hi]
+      );
+    expect(
+      await enqueueExplanationBackfill(pool, { wake: vi.fn() }, 3, 20261027, 0, 4 * 60_000)
+    ).toBe(3);
+    const due = (
+      await pool.query<{ due: number }>(
+        `select extract(epoch from run_after - now())::float8 as due from jobs
+          where type = 'relation-explain-backfill' and payload ? 'relationId' order by run_after`
+      )
+    ).rows.map((row) => Math.round(Number(row.due) / 60) || 0);
+    expect(due).toEqual([0, 4, 8]);
+  });
+
   it("reads the jobs that ended and the outcome rows that changed, for E2 and E3", async () => {
     await pool.query(
       `insert into jobs (type, status, lane, payload, attempts, scope_key, subject_key, outcome,

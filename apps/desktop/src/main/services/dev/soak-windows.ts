@@ -85,13 +85,16 @@ export interface WindowPorts {
   work?: WindowWork;
 }
 
-/** What a window queues of its own (params `backfillRelations`, `backfillDelayMinutes`, `noteEdits`). */
+/**
+ * What a window queues of its own (params `backfillRelations`, `backfillDelayMinutes`,
+ * `backfillEveryMinutes`, `noteEdits`).
+ */
 export interface WindowWork {
   /**
    * Queues the explanation backfill of `count` relations on the writer's route (background Codex
-   * calls), each due `delayMs` from now. Answers how many it queued.
+   * calls), the n-th (from 0) due `delayMs + n * everyMs` from now. Answers how many it queued.
    */
-  enqueueBackfill(count: number, delayMs: number): Promise<number>;
+  enqueueBackfill(count: number, delayMs: number, everyMs: number): Promise<number>;
   /** Edits `count` notes as a person does (each queues the note's match). Answers how many were edited. */
   editNotes(count: number): Promise<number>;
 }
@@ -312,7 +315,9 @@ export class WindowRunner {
    * - `backfillRelations` explanation backfills (background Codex calls: a provider window's calls
    *   meet its fault and are set aside, which is work the outage affects), due
    *   `backfillDelayMinutes` after the start (a task due within the status's horizon counts as work
-   *   in progress, which a model check names for the whole of that time, at no call until it is due);
+   *   in progress, which a model check names for the whole of that time, at no call until it is due),
+   *   each further one `backfillEveryMinutes` after the one before (a refused sign-in fails the
+   *   call that meets it, so only a backfill still due is work it affects after the first);
    * - `noteEdits` human edits (each queues the note's match, which a missing decider sets aside).
    * The cap and the money windows queue their own backfill at their start.
    */
@@ -326,7 +331,8 @@ export class WindowRunner {
     const detail: Detail = {};
     if (backfill > 0) {
       const delayMs = Math.round((window.params.backfillDelayMinutes ?? 0) * minute);
-      detail.relationsQueued = await work.enqueueBackfill(backfill, delayMs);
+      const everyMs = Math.round((window.params.backfillEveryMinutes ?? 0) * minute);
+      detail.relationsQueued = await work.enqueueBackfill(backfill, delayMs, everyMs);
     }
     if (edits > 0) detail.notesEdited = await work.editNotes(edits);
     return detail;

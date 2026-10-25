@@ -94,8 +94,10 @@ function harness(money: Partial<MoneyPort> | null = null, withWork = true) {
     ...(withWork
       ? {
           work: {
-            enqueueBackfill: async (count: number, delayMs: number) => {
-              calls.push(`work:backfill ${count} due ${delayMs}`);
+            enqueueBackfill: async (count: number, delayMs: number, everyMs: number) => {
+              calls.push(
+                `work:backfill ${count} due ${delayMs}${everyMs > 0 ? ` every ${everyMs}` : ""}`
+              );
               return count;
             },
             editNotes: async (count: number) => {
@@ -579,6 +581,21 @@ describe("the work a window brings of its own", () => {
     );
     expect(calls).toEqual(["hook:embedder-verifying", `work:backfill 4 due ${6 * minute}`]);
     expect(records()[0]!.detail).toMatchObject({ relationsQueued: 4 });
+  });
+
+  it("spaces a sign-in window's backfills by the minutes the plan states, so one is due after another failed", async () => {
+    const { runner, calls, records } = harness();
+    await runner.start(
+      spec({
+        kind: "unauthorized",
+        params: { backfillRelations: 3, backfillEveryMinutes: 4 }
+      })
+    );
+    expect(calls).toEqual([
+      "lane:start w1 unauthorized 1800000",
+      `work:backfill 3 due 0 every ${4 * minute}`
+    ]);
+    expect(records()[0]!.detail).toMatchObject({ relationsQueued: 3 });
   });
 
   it("brings nothing when the plan states nothing, and leaves the cap and the money windows to their own queue", async () => {
