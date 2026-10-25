@@ -120,7 +120,11 @@ const windowBase = {
   /** Minutes the status gets to follow a start, and (by default the same) an end. */
   settleMinutes: z.number().nonnegative().default(2),
   settleEndMinutes: z.number().nonnegative().optional(),
-  /** Numbers a kind needs (`extraCalls`, `attempts`, `backfillRelations`, `continueAfterMinutes`, `blockMinutes`). */
+  /**
+   * Numbers a kind needs (`extraCalls`, `attempts`, `continueAfterMinutes`, `blockMinutes`) and the
+   * load a window brings so its condition affects work (`backfillRelations`, `backfillDelayMinutes`,
+   * `noteEdits`: see `WindowRunner.startWork`).
+   */
   params: z.record(z.string().min(1).max(40), z.number()).default({})
 };
 

@@ -241,6 +241,9 @@ export function prepareSoak(
         })
       : null;
   let dailyCap: number | undefined;
+  // The notes the windows edit themselves (`noteEdits`): indexes past the timeline's own note edits.
+  let windowEdits = 0;
+  const windowEditIndexBase = 10_000;
   // Drop step 3 (spec 5.4): the explanation backfill's daily allowance, lowered from 20 to 10.
   let backfillCap: number | null = null;
   let fakeDeps: Pick<FakeRemoteDeps, "pool" | "credentials" | "setAnswerRoute"> | null = null;
@@ -422,7 +425,21 @@ export function prepareSoak(
             lowerToSpentPlus: (calls) => cap.lowerToSpentPlus(calls),
             restore: () => cap.restore()
           },
-          money
+          money,
+          work: {
+            enqueueBackfill: (count, delayMs) =>
+              enqueueExplanationBackfill(deps.pool, deps.jobs, count, soak.profile.seed, delayMs),
+            // The driver's note edit, at indexes of its own so the notes differ from the timeline's.
+            editNotes: async (count) => {
+              let edited = 0;
+              for (let index = 0; index < count; index += 1) {
+                const result = await ports.editNote(windowEditIndexBase + windowEdits);
+                windowEdits += 1;
+                if (result.outcome === "edited") edited += 1;
+              }
+              return edited;
+            }
+          }
         };
         f4Runtime = {
           windows: new WindowRunner({

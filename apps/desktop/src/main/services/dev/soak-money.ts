@@ -150,15 +150,19 @@ export function pricedFakeKind(options: {
 
 /**
  * Queues the explanation backfill of `count` relations (the seed's pick, unexplained first) as the
- * Gardener's background jobs, and wakes the workers; answers how many were new. The money window
- * sends them to the priced fake; the mid-run cap window lets them call the writer's route.
+ * Gardener's background jobs, each due `delayMs` from now (at once by default), and wakes the
+ * workers; answers how many were new. The money window sends them to the priced fake; the mid-run
+ * cap window and the provider windows let them call the writer's route; the model-check window
+ * has them due late, so work is in progress for the whole of its time and calls nothing before.
  */
 export async function enqueueExplanationBackfill(
   pool: PgPool,
   jobs: { wake(): void },
   count: number,
-  seed: number
+  seed: number,
+  delayMs = 0
 ): Promise<number> {
+  const delay = Math.max(0, Math.round(delayMs));
   const picked = await pickRelationsToExplain(pool, count, seed);
   const repository = createJobRepository(pool);
   let queued = 0;
@@ -169,7 +173,7 @@ export async function enqueueExplanationBackfill(
       dedupeKey: `${relationExplainBackfillJobType}:${relation.id}`,
       payload: { relationId: relation.id },
       priority: 0,
-      debounce: { delayMs: 0, maxDelayMs: 0 }
+      debounce: { delayMs: delay, maxDelayMs: delay }
     });
     if (result.created) queued += 1;
   }

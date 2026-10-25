@@ -24,7 +24,7 @@ function spec(overrides: Record<string, unknown>): SoakWindowSpec {
   });
 }
 
-function harness(money: Partial<MoneyPort> | null = null) {
+function harness(money: Partial<MoneyPort> | null = null, withWork = true) {
   const calls: string[] = [];
   let now = t0;
   /** When a request first met each provider-wait window (the fetch layer's own record). */
@@ -90,7 +90,21 @@ function harness(money: Partial<MoneyPort> | null = null) {
       },
       restore: () => void calls.push("harnessCap:restore")
     },
-    money: moneyPort
+    money: moneyPort,
+    ...(withWork
+      ? {
+          work: {
+            enqueueBackfill: async (count: number, delayMs: number) => {
+              calls.push(`work:backfill ${count} due ${delayMs}`);
+              return count;
+            },
+            editNotes: async (count: number) => {
+              calls.push(`work:edit ${count}`);
+              return count;
+            }
+          }
+        }
+      : {})
   };
   const sink = new MemoryEventSink();
   const runner = new WindowRunner({ ports, sink, clock: { now: () => now } });
@@ -523,6 +537,66 @@ describe("the money window", () => {
     await runner.start(moneyWindow());
     expect(records()[0]!.detail).toMatchObject({
       error: expect.stringContaining("priced loopback fake")
+    });
+  });
+});
+
+describe("the work a window brings of its own", () => {
+  // Gate S of 10-25: the status names a refused connection, a missing decider or a model check only
+  // for work they affect, and three windows ended with none for it to name.
+  it("queues the backfill of a provider window at once, after the fault is in place, and says how many", async () => {
+    const { runner, calls, records } = harness();
+    await runner.start(spec({ kind: "refused", params: { backfillRelations: 3 } }));
+    expect(calls).toEqual(["lane:start w1 refused 1800000", "work:backfill 3 due 0"]);
+    expect(records()[0]!.detail).toMatchObject({ relationsQueued: 3 });
+    // The expectation still opens only once a request met the fault.
+    expect(records()[0]!.expect).toBeUndefined();
+  });
+
+  it("edits the notes of a missing-decider window after the ranker is invalidated, so their match meets no decider", async () => {
+    const { runner, calls, records } = harness();
+    await runner.start(
+      spec({
+        kind: "ranker_invalid",
+        expect: { class: "no_model", reason: "no_decider" },
+        params: { noteEdits: 2 }
+      })
+    );
+    expect(calls).toEqual(["hook:ranker-invalid", "work:edit 2"]);
+    expect(records()[0]).toMatchObject({
+      expect: { class: "no_model", reason: "no_decider" },
+      detail: { notesEdited: 2 }
+    });
+  });
+
+  it("queues a model-check window's backfill due later, by the minutes the plan states", async () => {
+    const { runner, calls, records } = harness();
+    await runner.start(
+      spec({
+        kind: "embedder_verifying",
+        params: { backfillRelations: 4, backfillDelayMinutes: 6 }
+      })
+    );
+    expect(calls).toEqual(["hook:embedder-verifying", `work:backfill 4 due ${6 * minute}`]);
+    expect(records()[0]!.detail).toMatchObject({ relationsQueued: 4 });
+  });
+
+  it("brings nothing when the plan states nothing, and leaves the cap and the money windows to their own queue", async () => {
+    const { runner, calls } = harness({});
+    await runner.start(spec({ kind: "refused" }));
+    await runner.start(
+      spec({ id: "w2", kind: "codex_daily_cap", params: { extraCalls: 2, backfillRelations: 6 } })
+    );
+    // The cap window's six go through its own port, once.
+    expect(calls.filter((call) => call.startsWith("work:"))).toEqual([]);
+    expect(calls.filter((call) => call.includes("backfill"))).toEqual(["dailyCap:backfill 6"]);
+  });
+
+  it("records a failed start, not a silent one, when the plan asks for work the harness cannot queue", async () => {
+    const { runner, records } = harness(null, false);
+    await runner.start(spec({ kind: "refused", params: { backfillRelations: 3 } }));
+    expect(records()[0]!.detail).toMatchObject({
+      error: expect.stringContaining("needs a way to queue it")
     });
   });
 });

@@ -76,6 +76,24 @@ export interface WindowPorts {
   };
   harnessCap: { lowerToSpentPlus(calls: number): number; restore(): void };
   money: MoneyPort | null;
+  /**
+   * Work a window brings of its own, so that the condition it makes true affects something while
+   * it lasts: the status names a provider problem, a model check or a missing decider only for
+   * work they affect (spec 3.8), and gate S of 10-25 left three windows with nothing for the
+   * sentence to name. Absent: a window that states such a param cannot start it.
+   */
+  work?: WindowWork;
+}
+
+/** What a window queues of its own (params `backfillRelations`, `backfillDelayMinutes`, `noteEdits`). */
+export interface WindowWork {
+  /**
+   * Queues the explanation backfill of `count` relations on the writer's route (background Codex
+   * calls), each due `delayMs` from now. Answers how many it queued.
+   */
+  enqueueBackfill(count: number, delayMs: number): Promise<number>;
+  /** Edits `count` notes as a person does (each queues the note's match). Answers how many were edited. */
+  editNotes(count: number): Promise<number>;
 }
 
 /** The money window's effects: a priced loopback fake for the explanation backfill, a monthly cap, a pass. */
@@ -281,11 +299,37 @@ export class WindowRunner {
           expectNow = null;
           break;
       }
+      detail = { ...detail, ...(await this.startWork(window)) };
     } catch (error) {
       detail = { ...detail, error: failureText(error) };
       this.options.logger?.error(`SOAK window ${window.id} did not start: ${failureText(error)}`);
     }
     this.record(window, "start", detail, expectNow === undefined ? {} : { expect: expectNow });
+  }
+
+  /**
+   * The load a window states beyond its own effect, queued once the effect holds:
+   * - `backfillRelations` explanation backfills (background Codex calls: a provider window's calls
+   *   meet its fault and are set aside, which is work the outage affects), due
+   *   `backfillDelayMinutes` after the start (a task due within the status's horizon counts as work
+   *   in progress, which a model check names for the whole of that time, at no call until it is due);
+   * - `noteEdits` human edits (each queues the note's match, which a missing decider sets aside).
+   * The cap and the money windows queue their own backfill at their start.
+   */
+  private async startWork(window: SoakWindowSpec): Promise<Detail> {
+    if (window.kind === "codex_daily_cap" || window.kind === "money") return {};
+    const backfill = window.params.backfillRelations ?? 0;
+    const edits = window.params.noteEdits ?? 0;
+    if (backfill <= 0 && edits <= 0) return {};
+    const { work } = this.options.ports;
+    if (!work) throw new Error(`the ${window.id} window's own work needs a way to queue it`);
+    const detail: Detail = {};
+    if (backfill > 0) {
+      const delayMs = Math.round((window.params.backfillDelayMinutes ?? 0) * minute);
+      detail.relationsQueued = await work.enqueueBackfill(backfill, delayMs);
+    }
+    if (edits > 0) detail.notesEdited = await work.editNotes(edits);
+    return detail;
   }
 
   /** Ends a window: the effect is lifted, and the record says the sentence returns to the next truth. */

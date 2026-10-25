@@ -26,7 +26,12 @@ import {
 } from "@app/domain";
 
 import { createSoakHooks } from "./soak-hooks.js";
-import { createMoneyPort, moneyProviderName, soakPriceTable } from "./soak-money.js";
+import {
+  createMoneyPort,
+  enqueueExplanationBackfill,
+  moneyProviderName,
+  soakPriceTable
+} from "./soak-money.js";
 import { plannedEntryTokens } from "./soak-budget.js";
 import {
   pickEditableNoteInRoot,
@@ -164,6 +169,41 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       ["remote:abc", 5400, 700, "background"]
     ]);
     expect(rows[1]).toMatchObject({ jobId: job, budgetEstimateUsd: 0.0123 });
+  });
+
+  it("queues the explanation backfill of the relations picked, each due when the window says, at once by default", async () => {
+    const a = await seedNote("Backfill one");
+    const b = await seedNote("Backfill two");
+    // A relation's source id is the smaller of its two notes (the table's pair check).
+    const [lo, hi] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+    await pool.query(
+      `insert into atomic_note_relations (source_atomic_note_id, target_atomic_note_id, relation_type,
+          final_score, explanation, direction, direction_source, band, probability, status)
+       values ($1, $2, 'supports', 0.9, 'x', 'lo_to_hi', 'typer', 'apply', 0.9, 'accepted')`,
+      [lo, hi]
+    );
+    const wake = vi.fn();
+    const dueInSeconds = async () =>
+      Number(
+        (
+          await pool.query<{ due: number }>(
+            `select extract(epoch from run_after - now())::float8 as due from jobs
+              where type = 'relation-explain-backfill' and status = 'queued' and payload ? 'relationId'`
+          )
+        ).rows[0]?.due
+      );
+    // Due late: a task due within the status's horizon is work in progress, and calls nothing yet.
+    expect(await enqueueExplanationBackfill(pool, { wake }, 3, 20261027, 6 * 60_000)).toBe(1);
+    expect(await dueInSeconds()).toBeGreaterThan(5.5 * 60);
+    expect(await dueInSeconds()).toBeLessThanOrEqual(6 * 60);
+    expect(wake).toHaveBeenCalledTimes(1);
+    // The same relation again pulls a later job's time forward, never creates a second one.
+    expect(await enqueueExplanationBackfill(pool, { wake }, 3, 20261027)).toBe(0);
+    expect(await dueInSeconds()).toBeLessThanOrEqual(0.5);
+    await pool.query("delete from jobs");
+    // At once when nothing is stated: the cap and the provider windows.
+    expect(await enqueueExplanationBackfill(pool, { wake }, 3, 20261027)).toBe(1);
+    expect(await dueInSeconds()).toBeLessThanOrEqual(0.5);
   });
 
   it("reads the jobs that ended and the outcome rows that changed, for E2 and E3", async () => {

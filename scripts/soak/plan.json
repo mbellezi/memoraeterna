@@ -589,6 +589,9 @@
             "expect": {
               "class": "waiting",
               "reason": "provider_unavailable"
+            },
+            "params": {
+              "backfillRelations": 3
             }
           },
           {
@@ -640,6 +643,9 @@
             "expect": {
               "class": "no_model",
               "reason": "no_decider"
+            },
+            "params": {
+              "noteEdits": 2
             }
           },
           {
@@ -650,6 +656,10 @@
             "expect": {
               "class": "download",
               "reason": "model_verifying"
+            },
+            "params": {
+              "backfillRelations": 4,
+              "backfillDelayMinutes": 6
             }
           },
           {

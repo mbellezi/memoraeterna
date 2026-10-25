@@ -1,5 +1,9 @@
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
+import { readSoakPlan } from "../../apps/desktop/src/main/services/dev/soak-plan.ts";
+import { expandWindows } from "../../apps/desktop/src/main/services/dev/soak-plan-f4.ts";
 import type {
   ExchangeRecord,
   GroundTruthRecord,
@@ -17,6 +21,7 @@ import {
   e2Check,
   e3Check,
   e4Check,
+  e5Affected,
   e5Check,
   f4Report,
   injectionCheck,
@@ -1486,5 +1491,74 @@ describe("the whole F4 report", () => {
     expect(repairs(counted).value).toContain("1 local-writer structured row(s) in mode none");
     expect(counted.countedLocalWriter).toBe(true);
     expect(renderReport(counted)).toContain("every local-writer row");
+  });
+});
+
+// Gate S of 10-25 left g070, g170 and g190 with nothing their condition affects, so their classes
+// were never compared (review). The plan now gives each the work it needs; these read the plan's own
+// numbers against the rule that decides what is affected (E5 v3).
+describe("the work the gate S plan gives the windows E5 v3 compared nothing in", () => {
+  const { profile } = readSoakPlan(resolve(import.meta.dirname, "plan.json"), "soak7-gate");
+  const windows = expandWindows(profile.f4!, profile.durationHours * 60);
+  const window = (id: string) => windows.find((entry) => entry.id === id)!;
+  const backfill = (overrides: Partial<Job> = {}) =>
+    job("backfill", "relation-explain-backfill", overrides);
+
+  it("g070: a backfill that met the refusal and was set aside is remote Gardener work the outage affects, and an Ask on the lane alone is not", () => {
+    const refused = window("g070-refused");
+    expect(refused.params.backfillRelations).toBeGreaterThan(0);
+    const setAside = backfill({ blockedClass: "waiting", blockedReason: "provider_unavailable" });
+    expect(e5Affected(sampleAt(0, { jobs: [setAside] }), refused.expect!)).toBe(true);
+    expect(
+      e5Affected(sampleAt(0, { jobs: [backfill({ status: "running" })] }), refused.expect!)
+    ).toBe(true);
+    // The window ends with nothing queued: the sentence has nothing to name.
+    expect(e5Affected(sampleAt(0, { jobs: [] }), refused.expect!)).toBe(false);
+  });
+
+  it("g170: an edited note's match, set aside for want of a decider, is the only work the missing decider affects", () => {
+    const ranker = window("g170-ranker-invalid");
+    expect(ranker.params.noteEdits).toBeGreaterThan(0);
+    const match = job("match", "relation-match", {
+      blockedClass: "no_model",
+      blockedReason: "no_decider"
+    });
+    expect(e5Affected(sampleAt(0, { jobs: [match] }), ranker.expect!)).toBe(true);
+    // A match still waiting out its debounce, or a placement taking decision 19's path, is not set aside.
+    expect(
+      e5Affected(sampleAt(0, { jobs: [job("match", "relation-match")] }), ranker.expect!)
+    ).toBe(false);
+    expect(e5Affected(sampleAt(0, { jobs: [job("place", "topic-place")] }), ranker.expect!)).toBe(
+      false
+    );
+  });
+
+  it("g190: backfills due late are Gardener work in progress from the settle to the minute they are due, for several samples", () => {
+    const embedder = window("g190-embedder-verifying");
+    const delay = embedder.params.backfillDelayMinutes!;
+    const due = start + delay * minute;
+    const pending = backfill({ runAfter: due });
+    const inWindow = (m: number) =>
+      sampleAt(m * minute, { jobs: m * minute < delay * minute ? [pending] : [] });
+    const compared = Array.from({ length: embedder.durationMinutes }, (_, index) => index)
+      .filter((m) => m >= embedder.settleMinutes && m < embedder.durationMinutes)
+      .filter((m) => e5Affected(inWindow(m), embedder.expect!));
+    // From the settle to the minute they are due, none missing, and at least three samples.
+    expect(compared).toEqual(
+      Array.from(
+        { length: delay - embedder.settleMinutes },
+        (_, index) => embedder.settleMinutes + index
+      )
+    );
+    expect(compared.length).toBeGreaterThanOrEqual(3);
+    // Due after the window ends they would be nothing to name inside it.
+    expect(
+      e5Affected(
+        sampleAt(embedder.settleMinutes * minute, {
+          jobs: [backfill({ runAfter: start + 3 * hour })]
+        }),
+        embedder.expect!
+      )
+    ).toBe(false);
   });
 });

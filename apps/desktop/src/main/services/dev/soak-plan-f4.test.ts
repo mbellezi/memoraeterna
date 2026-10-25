@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { relationsConfig } from "@app/domain";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -245,6 +246,36 @@ describe("the gate S profile", () => {
       aim: "structured"
     });
     expect(forced.filter((entry) => entry.aim !== undefined)).toHaveLength(1);
+  });
+
+  it("gives the windows whose condition affects only some work that work, so the sentence has something to name", () => {
+    // Gate S of 10-25: g070 met its first call at minute 9 of 10, g170 set no task aside no_decider
+    // and g190 found no Gardener work in progress, so their classes were never compared.
+    const windows = expandWindows(profile.f4!, profile.durationHours * 60);
+    const window = (id: string) => windows.find((entry) => entry.id === id)!;
+
+    // A refused connection: backfill calls at the start meet it at once and are set aside.
+    const refused = window("g070-refused");
+    expect(refused.params.backfillRelations).toBeGreaterThanOrEqual(2);
+    expect(refused.params.backfillDelayMinutes).toBeUndefined();
+
+    // A missing decider: edited notes queue their match (60 s debounce), which it sets aside.
+    const ranker = window("g170-ranker-invalid");
+    expect(ranker.params.noteEdits).toBeGreaterThanOrEqual(1);
+    // The match is due after the debounce and the task stays set aside to the window's end: the
+    // window must outlast the settle and that wait by a few samples.
+    expect(ranker.durationMinutes * minute).toBeGreaterThanOrEqual(
+      ranker.settleMinutes * minute + relationsConfig.match.debounceMs + 3 * minute
+    );
+
+    // A model being verified: backfills due late stay work in progress (within the status's 5
+    // minutes) for several samples after the settle, and call only when the window is nearly over.
+    const embedder = window("g190-embedder-verifying");
+    const delay = embedder.params.backfillDelayMinutes!;
+    expect(embedder.params.backfillRelations).toBeGreaterThanOrEqual(1);
+    expect(delay).toBeGreaterThanOrEqual(embedder.settleMinutes + 3);
+    expect(delay).toBeLessThanOrEqual(embedder.settleMinutes + 5);
+    expect(delay).toBeLessThan(embedder.durationMinutes);
   });
 
   it("forces a burst of every fault kind so each ends a whole call", () => {
