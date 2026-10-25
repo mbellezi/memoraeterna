@@ -117,6 +117,14 @@ export const consultationOutputContract: AiOutputContract = {
   grammar: false
 };
 
+/**
+ * Reads an Ask answer and checks it against the question's snapshot. A citation the snapshot does
+ * not hold, or an `[eN]` marker the paragraph does not cite, rejects the answer. A paragraph's
+ * context link is optional context (F4, 10-25): one that names neither a context nor a relation
+ * of the snapshot, or whose passages that paragraph does not all cite, is dropped from the paragraph
+ * and the answer stands on its citations. `onDroppedLinks` hears how many links were dropped, only
+ * when there were some.
+ */
 export function parseConsultationAnswer(
   output: unknown,
   snapshot: {
@@ -124,7 +132,8 @@ export function parseConsultationAnswer(
     contexts: ReadonlyArray<{ id: string; handles: readonly string[] }>;
     relations: ReadonlyArray<{ id: string; sourceHandle: string; targetHandle: string }>;
     consultationIntent?: string | undefined;
-  }
+  },
+  onDroppedLinks?: (count: number) => void
 ) {
   if (typeof output === "string") {
     if (output.length > 45000) throw new Error("consultation.errors.invalid");
@@ -145,20 +154,24 @@ export function parseConsultationAnswer(
     (!answer.change || (answer.change.meaningful && !answer.change.explanation.length))
   )
     throw new Error("consultation.errors.invalid");
+  let dropped = 0;
   for (const paragraph of answer.paragraphs) {
     if (paragraph.citations.some((h) => !snapshot.evidence.some((e) => e.handle === h)))
       throw new Error("consultation.errors.evidence");
     for (const match of paragraph.markdown.matchAll(/\[(e\d{1,3})\]/g))
       if (!paragraph.citations.includes(match[1]!)) throw new Error("consultation.errors.evidence");
-    for (const id of paragraph.contextIds) {
+    const covered = paragraph.contextIds.filter((id) => {
       const context = snapshot.contexts.find((c) => c.id === id),
         relation = snapshot.relations.find((r) => r.id === id),
         handles =
           context?.handles ?? (relation ? [relation.sourceHandle, relation.targetHandle] : null);
-      if (!handles || handles.some((h) => !paragraph.citations.includes(h)))
-        throw new Error("consultation.errors.evidence");
-    }
+      return handles !== null && handles.every((h) => paragraph.citations.includes(h));
+    });
+    dropped += paragraph.contextIds.length - covered.length;
+    // The parsed answer is this call's own copy, so the paragraph keeps only its covered links.
+    paragraph.contextIds = covered;
   }
+  if (dropped) onDroppedLinks?.(dropped);
   return answer;
 }
 export function consultationPrompt(
@@ -325,8 +338,26 @@ export class ConsultationService {
       wake?: () => void;
       /** Builds the canceler for a pool; the default asks PostgreSQL from a connection of its own. */
       statementCanceler?: (pool: PgPool) => StatementCanceler;
+      /** Where the structured line of an answer's dropped context links goes; none when left out. */
+      logger?: Pick<Console, "info">;
     }
   ) {}
+  /**
+   * One structured line per call whose answer had context links dropped (F4, 10-25): the count
+   * and the call's audit row, never the question or the answer's text.
+   */
+  private logDroppedLinks(aiTaskRunId: string, attempt: number, count: number) {
+    this.options.logger?.info(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "info",
+        event: "consultation_context_links_dropped",
+        aiTaskRunId,
+        attempt,
+        droppedContextLinks: count
+      })
+    );
+  }
   /**
    * Ends the Ask and stops the statement it has running, so a slow query does not go on after the
    * person gave up. Stopping the statement is best effort: the Ask has ended either way, and the
@@ -705,7 +736,9 @@ export class ConsultationService {
           : costEstimate + result.costEstimate;
       signal.throwIfAborted();
       try {
-        answer = parseConsultationAnswer(result.output, snapshot);
+        answer = parseConsultationAnswer(result.output, snapshot, (count) =>
+          this.logDroppedLinks(result.aiTaskRunId, attempt + 1, count)
+        );
       } catch {
         if (attempt || (inputTokens !== null && inputTokens > 30000))
           throw new Error("consultation.errors.invalid");

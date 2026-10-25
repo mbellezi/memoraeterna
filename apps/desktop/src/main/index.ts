@@ -704,7 +704,8 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null,
     ai: aiService,
     contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
-    wake: () => jobSupervisor?.wake()
+    wake: () => jobSupervisor?.wake(),
+    logger: console
   });
   registerConsultationIpc(ipcMain, consultationService, events);
   registerBudgetIpc(

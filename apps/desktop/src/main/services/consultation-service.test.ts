@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import type { ConsultationContext } from "@app/domain";
 import {
+  ConsultationService,
   parseConsultationAnswer,
   rankConsultationCandidates,
   packConsultationSnapshot,
@@ -25,7 +27,7 @@ const fixture = () =>
     ]
   });
 describe("bounded cited consultation", () => {
-  it("requires supplied original handles and two-sided context, rejecting forged tools and duplicate citations", () => {
+  it("requires supplied original handles and cited markers, rejecting forged tools and duplicate citations", () => {
     const snapshot = fixture(),
       answer = {
         paragraphs: [
@@ -159,5 +161,192 @@ describe("bounded cited consultation", () => {
     expect(() => packConsultationSnapshot(snapshot, "Question")).toThrow(
       "consultation.errors.context"
     );
+  });
+});
+
+describe("an answer's context links", () => {
+  const context = (handles: string[], text = "A synthetic note."): ConsultationContext => ({
+    id: randomUUID(),
+    kind: "atomic_note",
+    sourceItemId: consultationEvidence(1).sourceItemId,
+    text,
+    review: "active",
+    fingerprint: "fixture",
+    handles,
+    dependencies: []
+  });
+  // The shape STRICTP recorded on 10-25 (synthetic text): the second paragraph cites one passage
+  // and links a summary whose passages are that one and another the paragraph does not cite.
+  const notes = {
+    first: context(["e1"]),
+    fourth: context(["e4"]),
+    eleventh: context(["e11"]),
+    summary: { ...context(["e1", "e11"], "Retention declines without review."), kind: "summary" },
+    twelfth: context(["e12"]),
+    second: context(["e2"])
+  } satisfies Record<string, ConsultationContext>;
+  const relation = { id: randomUUID(), sourceHandle: "e1", targetHandle: "e2" };
+  const snapshot = {
+    ...consultationSnapshot({
+      evidence: Array.from({ length: 12 }, (_, i) => consultationEvidence(i + 1)),
+      contexts: Object.values(notes)
+    }),
+    relations: [relation]
+  };
+  const recorded = () => ({
+    change: null,
+    paragraphs: [
+      {
+        markdown: "Practice slows forgetting [e1] and spacing helps [e4].",
+        citations: ["e1", "e4"],
+        contextIds: [notes.first.id, notes.fourth.id]
+      },
+      {
+        markdown: "Stronger memories stay reachable longer [e11].",
+        citations: ["e11"],
+        contextIds: [notes.eleventh.id, notes.summary.id]
+      },
+      {
+        markdown: "Feedback qualifies the benefit [e12] [e2].",
+        citations: ["e12", "e2"],
+        contextIds: [notes.twelfth.id, notes.second.id]
+      }
+    ],
+    gaps: ["Long-term effects are not covered."]
+  });
+
+  it("drops a link whose passages the paragraph does not all cite and keeps the answer", () => {
+    const onDropped = vi.fn();
+    const read = parseConsultationAnswer(JSON.stringify(recorded()), snapshot, onDropped);
+    expect(read.paragraphs.map((p) => p.contextIds)).toEqual([
+      [notes.first.id, notes.fourth.id],
+      [notes.eleventh.id],
+      [notes.twelfth.id, notes.second.id]
+    ]);
+    // Citations and text are the model's own: nothing is added to cover the link.
+    expect(read.paragraphs.map((p) => p.citations)).toEqual([["e1", "e4"], ["e11"], ["e12", "e2"]]);
+    expect(read.paragraphs[1]!.markdown).toBe(recorded().paragraphs[1]!.markdown);
+    expect(onDropped).toHaveBeenCalledTimes(1);
+    expect(onDropped).toHaveBeenCalledWith(1);
+  });
+
+  it("drops an unknown id and a relation whose two passages are not both cited", () => {
+    const onDropped = vi.fn();
+    const output = {
+      paragraphs: [
+        {
+          markdown: "Practice helps [e1].",
+          citations: ["e1"],
+          contextIds: [randomUUID(), relation.id, notes.first.id]
+        }
+      ],
+      gaps: []
+    };
+    const before = structuredClone(output);
+    const read = parseConsultationAnswer(output, snapshot, onDropped);
+    expect(read.paragraphs[0]!.contextIds).toEqual([notes.first.id]);
+    expect(onDropped).toHaveBeenCalledWith(2);
+    // The caller's object is read, never changed.
+    expect(output).toEqual(before);
+  });
+
+  it("keeps covered contexts and relations and reports nothing", () => {
+    const onDropped = vi.fn();
+    const answer = {
+      paragraphs: [
+        {
+          markdown: "Practice and feedback [e1] [e2] [e11].",
+          citations: ["e1", "e2", "e11"],
+          contextIds: [notes.summary.id, relation.id, notes.second.id]
+        }
+      ],
+      gaps: []
+    };
+    expect(parseConsultationAnswer(answer, snapshot, onDropped)).toEqual(answer);
+    expect(onDropped).not.toHaveBeenCalled();
+  });
+
+  it("still rejects the schema, an unknown citation, an uncited marker and the investigation rule", () => {
+    const onDropped = vi.fn();
+    const paragraph = recorded().paragraphs[1]!;
+    const answer = (p: Record<string, unknown>) => ({ paragraphs: [p], gaps: [] });
+    expect(() =>
+      parseConsultationAnswer({ ...answer(paragraph), tool: "x" }, snapshot, onDropped)
+    ).toThrow();
+    expect(() =>
+      parseConsultationAnswer(answer({ ...paragraph, extra: true }), snapshot, onDropped)
+    ).toThrow();
+    expect(() =>
+      parseConsultationAnswer(
+        answer({ ...paragraph, markdown: "Unsupported [e13].", citations: ["e11", "e13"] }),
+        snapshot,
+        onDropped
+      )
+    ).toThrow("consultation.errors.evidence");
+    expect(() =>
+      parseConsultationAnswer(
+        answer({ ...paragraph, markdown: "Also [e1] [e11]." }),
+        snapshot,
+        onDropped
+      )
+    ).toThrow("consultation.errors.evidence");
+    expect(() =>
+      parseConsultationAnswer(
+        answer(paragraph),
+        { ...snapshot, consultationIntent: "investigation" },
+        onDropped
+      )
+    ).toThrow("consultation.errors.invalid");
+    expect(onDropped).not.toHaveBeenCalled();
+  });
+
+  it("answers in one call and logs the count with the call's audit row, never the text", async () => {
+    const runOrganizationTask = vi.fn(async () => ({
+      output: JSON.stringify(recorded()),
+      aiTaskRunId: "run-1",
+      inputTokens: 10,
+      outputTokens: 5,
+      costEstimate: 0
+    }));
+    const info = vi.fn();
+    const ai = {
+      pinOrganizationProfile: vi.fn(),
+      runOrganizationTask,
+      runConsultationEmbedding: vi.fn(async () => null)
+    } as never;
+    const sample = consultationSnapshot({
+      evidence: snapshot.evidence,
+      contexts: snapshot.contexts
+    });
+    const question = "Does retrieval practice help?";
+    const service = new ConsultationService({
+      getPool: () => null,
+      ai,
+      contentLanguage: async () => "en",
+      logger: { info }
+    });
+    const result = await service.generate(sample, question, new AbortController().signal);
+    expect(runOrganizationTask).toHaveBeenCalledTimes(1);
+    expect(result.answer.paragraphs[1]!.contextIds).toEqual([notes.eleventh.id]);
+    expect(info).toHaveBeenCalledTimes(1);
+    const line = String(info.mock.calls[0]![0]);
+    expect(JSON.parse(line)).toMatchObject({
+      level: "info",
+      event: "consultation_context_links_dropped",
+      aiTaskRunId: "run-1",
+      attempt: 1,
+      droppedContextLinks: 1
+    });
+    for (const text of [question, ...recorded().paragraphs.map((p) => p.markdown)])
+      expect(line).not.toContain(text);
+    // Without a logger the answer is the same and nothing is written.
+    const quiet = new ConsultationService({
+      getPool: () => null,
+      ai,
+      contentLanguage: async () => "en"
+    });
+    await expect(
+      quiet.generate(sample, question, new AbortController().signal)
+    ).resolves.toMatchObject({ answer: result.answer });
   });
 });

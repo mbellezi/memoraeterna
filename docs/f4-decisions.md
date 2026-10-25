@@ -122,6 +122,12 @@ over the text below where they differ.
   decider and cassette keys (which never read a request's schema) are unchanged. Before gate S runs again, STRICTP
   (`.cache/f4/scripts/run.sh STRICTP`, about 60k Codex tokens, cap 80k) asks a few of each live on an ENV-G clone
   through the product's builders and requires `strict` on every row and 0 repairs.
+- **The Ask drops a context link it cannot cover (orchestrator, 10-25; D35).** In STRICTP both the Ask's answer and
+  its repair linked a summary to a paragraph that cites only one of the summary's two passages, so the Ask failed;
+  such a link, or one that names no context or relation of the question, is now dropped from its paragraph and the
+  answer kept, the count going to the structured log line `consultation_context_links_dropped`. Every other check
+  still rejects the answer (schema, citations, `[eN]` markers, the investigation rule); prompts and cassette keys are
+  unchanged.
 
 ## Decisions
 
