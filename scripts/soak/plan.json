@@ -758,6 +758,235 @@
         "decisions": "off",
         "capture": "answers"
       }
+    },
+    "soak7-tail": {
+      "description": "D38 complement of soak7-r1-20261026T0254 (owner 10-30): the rest of soak7's plan, from plan minute 5705 (r1's last action, explain #95) to 10080, on env-soak7-tail, a fresh clone of r1's profile. Tail minute = soak7 minute - 5675 (a 30 min warm-up first): every cadence offset and every window after minute 5705 shifted by -5675, the three remaining daily pauses explicit as pause-5..7, nothing of w084 repeated. Seed 20261030 so the corpus order and the seeded picks do not repeat r1's; the local faults keep their own period (phase shifted). codex.expected = this profile's projection at soak7's gate S unit costs; codex.cap = expected x 1.34375 x 1.1 (the registered rule), with r1's harness spend 1,947,546 + cap <= 7,973,422. The final report joins it with r1 (scripts/soak/report.ts <r1> --join <tail>).",
+      "seed": 20261030,
+      "durationHours": 73.5,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": {
+          "everyMinutes": 480,
+          "offsetMinutes": 145
+        },
+        "ask": {
+          "everyMinutes": 180,
+          "offsetMinutes": 105
+        },
+        "explain": {
+          "everyMinutes": 60,
+          "offsetMinutes": 90
+        },
+        "explainBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 120,
+          "count": 5
+        },
+        "noteEdit": {
+          "everyMinutes": 180,
+          "offsetMinutes": 135
+        },
+        "sourceReimport": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 1105,
+          "days": "odd"
+        },
+        "typingFault": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 1105,
+          "days": "even"
+        },
+        "topicOpen": {
+          "everyMinutes": 120,
+          "offsetMinutes": 125
+        },
+        "contentionBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 445,
+          "reembeds": 20,
+          "edits": 6,
+          "editSpacingMinutes": 2
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": {
+          "everyMinutes": 360,
+          "jitterMinutes": 30
+        },
+        "ggufAbort": {
+          "everyMinutes": 720
+        }
+      },
+      "bounds": {
+        "connectMs": 10000,
+        "firstByteMs": 30000,
+        "stallMs": 20000
+      },
+      "f4": {
+        "codex": {
+          "expected": 2410342,
+          "cap": 3562787,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 42841,
+            "typing_fault": 42841,
+            "source_reimport": 42841,
+            "ask": 17603,
+            "explain": 745,
+            "explain_burst": 3725,
+            "topic_open": 3111,
+            "note_edit": 9158,
+            "burst_edit": 4579,
+            "contention_burst": 0,
+            "backgroundPerHour": 12539
+          },
+          "windowTokenFactor": {
+            "usage_limit": 0,
+            "refused": 0,
+            "enotfound": 0,
+            "unauthorized": 0,
+            "autonomy_off": 0.75,
+            "autonomy_suggest": 0.85,
+            "codex_daily_cap": 0.9,
+            "money": 0.9
+          }
+        },
+        "injection": {
+          "rates": {
+            "rateLimit": 0.02,
+            "unavailable": 0.01,
+            "lateFirstByte": 0.005,
+            "stall": 0.002,
+            "malformed": 0.003,
+            "unauthorized": 0.001,
+            "contextOverflow": 0.001
+          },
+          "retryAfterSeconds": [1, 10],
+          "stallMs": 25000,
+          "lateFirstByteMs": 35000,
+          "forced": []
+        },
+        "windows": [
+          {
+            "id": "w102-unauthorized",
+            "kind": "unauthorized",
+            "startMinute": 445,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "no_model",
+              "reason": "signin_required"
+            },
+            "settleEndMinutes": 6,
+            "params": {
+              "backfillRelations": 3,
+              "backfillEveryMinutes": 4
+            }
+          },
+          {
+            "id": "pause-5",
+            "kind": "pause",
+            "startMinute": 685,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          },
+          {
+            "id": "w114-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 1165,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "no_model",
+              "reason": "no_decider"
+            },
+            "params": {
+              "noteEdits": 2
+            }
+          },
+          {
+            "id": "w120-embedder-verifying",
+            "kind": "embedder_verifying",
+            "startMinute": 1525,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "download",
+              "reason": "model_verifying"
+            },
+            "params": {
+              "backfillRelations": 4,
+              "backfillDelayMinutes": 6
+            }
+          },
+          {
+            "id": "pause-6",
+            "kind": "pause",
+            "startMinute": 2125,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          },
+          {
+            "id": "w132-only-idle",
+            "kind": "only_idle",
+            "startMinute": 2245,
+            "durationMinutes": 240,
+            "expect": {
+              "class": "paused",
+              "reason": "only_idle_user_active"
+            },
+            "params": {
+              "blockMinutes": 10
+            }
+          },
+          {
+            "id": "w140-only-ac",
+            "kind": "only_ac",
+            "startMinute": 2725,
+            "durationMinutes": 60,
+            "expect": {
+              "class": "paused",
+              "reason": "only_ac_on_battery"
+            }
+          },
+          {
+            "id": "w146-money",
+            "kind": "money",
+            "startMinute": 3085,
+            "durationMinutes": 360,
+            "params": {
+              "attempts": 8,
+              "backfillRelations": 10,
+              "continueAfterMinutes": 10,
+              "attemptInputBytes": 3000
+            }
+          },
+          {
+            "id": "pause-7",
+            "kind": "pause",
+            "startMinute": 3565,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          }
+        ],
+        "windowSeries": [],
+        "money": {
+          "model": "dev-fake-priced-1",
+          "inputUsdPerM": 1,
+          "outputUsdPerM": 4,
+          "latencyMs": 1200
+        },
+        "decisions": "off"
+      }
     }
   }
 }
