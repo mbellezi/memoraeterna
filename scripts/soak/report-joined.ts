@@ -554,6 +554,35 @@ function tokensJoined(
   };
 }
 
+/**
+ * How much of the plan the two segments actually ran: joinPlan checks the tail's planned duration, this its real
+ * end. A tail that ended before its duration (a manual or host STOP, a signal) without a failing check is no pass.
+ */
+export function coverageCheck(tail: LoadedRun, coveredHours: number, plannedHours: number): Check {
+  const short = coveredHours < plannedHours;
+  const early = tail.meta.endReason !== "duration";
+  return {
+    id: "plan-coverage",
+    title: "Plan covered",
+    bar: `the tail ended by its duration and both segments cover >= ${plannedHours} h of plan time (review otherwise)`,
+    status: short || early ? "review" : "pass",
+    value: `${coveredHours} h of ${plannedHours} h; the tail ended by ${tail.meta.endReason ?? "-"}`,
+    details: [
+      ...(early
+        ? [
+            `The tail ended by ${tail.meta.endReason ?? "-"}, not by its duration: read its STOP or the host's record.`
+          ]
+        : []),
+      ...(short
+        ? [
+            `Plan time covered ${coveredHours} h < ${plannedHours} h: the windows after the tail's end did not run.`
+          ]
+        : [])
+    ],
+    data: { coveredHours, plannedHours }
+  };
+}
+
 /** Joins a stopped run and its tail into one report (refuses with {@link JoinRefusal}). */
 export function joinRuns(
   first: LoadedRun,
@@ -645,7 +674,14 @@ export function joinRuns(
   const tokens = tokensJoined(first, tail, merged, dayOf, planDays);
   const load = loadCheck(merged, { dayOf });
 
+  const coveredHours =
+    Math.round(
+      ((Math.min(t0Minute, (endOf(first) - firstStart) / minute) + coveredMinutes - t0Minute) /
+        60) *
+        100
+    ) / 100;
   const checks: Check[] = [
+    coverageCheck(tail, coveredHours, first.meta.durationMs / hour),
     pastDeadlineJoined(segments),
     repairsJoined(segments),
     jobsJoined(segments, "jobs-inactive"),
@@ -693,12 +729,7 @@ export function joinRuns(
       t0Minute,
       shiftMinutes,
       plannedHours: first.meta.durationMs / hour,
-      coveredHours:
-        Math.round(
-          ((Math.min(t0Minute, (endOf(first) - firstStart) / minute) + coveredMinutes - t0Minute) /
-            60) *
-            100
-        ) / 100,
+      coveredHours,
       gapHours: Math.round(gapHours * 100) / 100
     },
     notes,

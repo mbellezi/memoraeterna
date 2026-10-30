@@ -300,6 +300,27 @@ describe("joining a stopped 7-day run and its tail (D38a)", () => {
     expect(refused(...twice)).toContain("ids in both segments: w030-usage-limit");
   });
 
+  it("is no pass when the tail ended before its duration, however its checks read", () => {
+    const [first, tail] = runs();
+    expect(checkOf(first, tail, "plan-coverage")).toMatchObject({
+      status: "pass",
+      value: "168.08 h of 168 h; the tail ended by duration"
+    });
+    // A manual or host STOP at tail hour 50: the planned duration still covers the plan (joinPlan), the real end not.
+    const stopped = runs({
+      tail: { meta: { endReason: "stop_file", endedAt: iso(tailStart + 50 * hour) } }
+    });
+    const report = joinRuns(...stopped, { now });
+    const coverage = report.checks.find((check) => check.id === "plan-coverage")!;
+    expect(coverage.status).toBe("review");
+    expect(coverage.details.join("\n")).toContain("ended by stop_file, not by its duration");
+    expect(coverage.details.join("\n")).toContain("< 168 h");
+    expect(report.verdict).not.toBe("pass");
+    // A signal at the planned end still reads review: the tail did not end by its duration.
+    const signal = runs({ tail: { meta: { endReason: "signal" } } });
+    expect(checkOf(...signal, "plan-coverage").status).toBe("review");
+  });
+
   it("counts E1 exposure by plan day, the tail's warm-up never again", () => {
     // Two due tasks of different scopes on the model worker, which executes a third: exposure.
     const contention = (): Partial<SoakSample> => ({
