@@ -471,13 +471,16 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
   const waiting = new Map<string, number>();
   const blocked = new Map<string, string>();
   const samples = run.samples.toSorted((a, b) => toMs(a.at) - toMs(b.at));
+  // A job does not wait while the app is closed: a run on a profile another run left (D38a's
+  // complement) finds jobs written, or due, before it began, and measures them from its start.
+  const runStart = toMs(run.meta.startedAt);
   for (const sample of samples) {
     const at = toMs(sample.at);
     const runningTypes = new Set(
       sample.jobs.filter((job) => job.status === "running").map((job) => job.type)
     );
     for (const job of sample.jobs) {
-      const idle = at - job.updatedAt;
+      const idle = at - Math.max(job.updatedAt, runStart);
       if (job.status === "running" && idle > inactivityLimit && !inactive.has(job.id))
         inactive.set(
           job.id,
@@ -488,7 +491,8 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
       const eligible = job.status === "running" || due;
       // A queued job waits from when it came due, not from its last write: a backfill enqueued
       // ahead of its time, or a daily job re-enqueued for the next day, comes due with an old write.
-      const waited = job.status === "queued" ? at - Math.max(job.updatedAt, job.runAfter) : idle;
+      const waited =
+        job.status === "queued" ? at - Math.max(job.updatedAt, job.runAfter, runStart) : idle;
       if (eligible && waited > stuckLimit && !stuck.has(job.id))
         stuck.set(
           job.id,
@@ -519,7 +523,7 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
     {
       id: "jobs-inactive",
       title: "Jobs running past twice their class deadline",
-      bar: "0 (a running job unchanged for 2 x the longest class deadline)",
+      bar: "0 (a running job unchanged for 2 x the longest class deadline; time before the run's start, when the app was closed, is not counted)",
       status: inactive.size === 0 ? "pass" : "review",
       value: `${inactive.size} (limit ${Math.round(inactivityLimit / 1000)} s)`,
       details: list(inactive)
@@ -527,7 +531,7 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
     {
       id: "jobs-stuck",
       title: "Jobs stuck over 1 h",
-      bar: "0 (an eligible job unchanged for an hour)",
+      bar: "0 (an eligible job unchanged for an hour; time before the run's start, when the app was closed, is not waited)",
       status: stuck.size === 0 ? "pass" : "fail",
       value: `${stuck.size}`,
       details: list(stuck)
@@ -1842,7 +1846,11 @@ export function statusDigest(run: LoadedRun, report: SoakReport): string[] {
   const queued = last.jobs.filter(
     (job) => job.status === "queued" && job.runAfter <= at && !job.blockedClass
   );
-  const oldest = queued.length ? Math.max(...queued.map((job) => at - job.updatedAt)) : 0;
+  // Measured as the stuck-job check measures it (jobs v2): from its last write, its due time or the run's start.
+  const since = toMs(run.meta.startedAt);
+  const oldest = queued.length
+    ? Math.max(...queued.map((job) => at - Math.max(job.updatedAt, job.runAfter, since)))
+    : 0;
   const pageouts = pageoutWindows(run.samples, toMs(run.meta.startedAt) + run.meta.warmupMs);
   const pageoutLine =
     pageouts.worstMb === null

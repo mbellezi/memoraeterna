@@ -72,7 +72,10 @@ export const predicateVersions = {
   injection: 2,
   // v2 (report.ts): pageouts in any rolling 24 h after warm-up, as F4 registered X6 ("per 24 h");
   // v1 read F3's 24 h soak's "over the run" and stopped r1 at 52.7 MB over 95 h (D38, 10-30).
-  swap: 2
+  swap: 2,
+  // v2 (report.ts): a job does not wait while the app is closed: stuck and inactivity are measured
+  // from the later of its last write, its due time and the run's start (D38a's complement).
+  jobs: 2
 } as const;
 
 function percentile(values: readonly number[], fraction: number): number | null {

@@ -1710,3 +1710,60 @@ describe("jobs a blocker set aside (F4 D5)", () => {
     expect(stuck(70)).toBe("fail");
   });
 });
+
+describe("jobs a run found on its profile (jobs v2, D38a's complement)", () => {
+  // The profile of a stopped run, reopened 10 h later: its queue holds jobs written and due then.
+  const before = start - 10 * 60 * minute;
+  const leftOver = (status: "queued" | "running", untilMinute: number) =>
+    samples().map((sample, index) => ({
+      ...sample,
+      jobs:
+        index < untilMinute
+          ? [
+              {
+                id: "bbbbbbbb-0000-4000-8000-000000000002",
+                type: "relation-explain-backfill",
+                lane: "light",
+                status,
+                sourceItemId: null,
+                attempts: 0,
+                updatedAt: before,
+                runAfter: before,
+                lockedAt: status === "running" ? before : null,
+                scopeKey: null
+              }
+            ]
+          : []
+    }));
+  const checkOf = (run: LoadedRun, id: string) =>
+    analyzeRun(run).checks.find((check) => check.id === id)!;
+
+  it("does not count the hours the app was closed: a job claimed 10 minutes in is not stuck", () => {
+    const stuck = checkOf(goodRun({ samples: leftOver("queued", 10) }), "jobs-stuck");
+    expect(stuck.status).toBe("pass");
+    expect(stuck.bar).toContain("when the app was closed, is not waited");
+  });
+
+  it("still fails the same job queued an hour after the run's start", () => {
+    const stuck = checkOf(goodRun({ samples: leftOver("queued", 62) }), "jobs-stuck");
+    expect(stuck.status).toBe("fail");
+    expect(stuck.details.join(" ")).toContain("unchanged for 61 min");
+  });
+
+  it("measures a running job written before the start from the start", () => {
+    // Five minutes in: well under twice the longest deadline (700 s), though written 10 h before.
+    expect(checkOf(goodRun({ samples: leftOver("running", 6) }), "jobs-inactive").status).toBe(
+      "pass"
+    );
+    expect(checkOf(goodRun({ samples: leftOver("running", 6) }), "jobs-stuck").status).toBe("pass");
+    expect(checkOf(goodRun({ samples: leftOver("running", 20) }), "jobs-inactive").status).toBe(
+      "review"
+    );
+  });
+
+  it("measures the status digest's oldest queued job the same way", () => {
+    const run = goodRun({ samples: leftOver("queued", 241) });
+    const lines = statusDigest(run, analyzeRun(run)).join("\n");
+    expect(lines).toContain("oldest eligible queued job unchanged for 240 min");
+  });
+});
