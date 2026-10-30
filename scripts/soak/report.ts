@@ -543,20 +543,63 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
   ];
 }
 
+/** The swap window of X6: a rolling day (F4 registered "per 24 h"; F3's 24 h soak read it as the run). */
+const swapWindowMs = 24 * hour;
+
+export interface PageoutWindows {
+  /** The most pageouts in any 24 h after warm-up, in MB; null with fewer than 2 readable samples. */
+  worstMb: number | null;
+  /** Where that 24 h began (the sample it is measured from). */
+  worstFrom: string | null;
+  /** All pageouts after warm-up, in MB (information). */
+  totalMb: number | null;
+  pageSize: number;
+}
+
+/**
+ * Pageouts after warm-up: the worst rolling 24 h and the total. vm_stat's counter only grows, so a
+ * lower reading is a reset of the counter (counted from 0), never a negative window. A run of 24 h or
+ * less after warm-up has one window, its total.
+ */
+export function pageoutWindows(samples: readonly SoakSample[], warmEndMs: number): PageoutWindows {
+  const readable = samples
+    .filter((sample) => sample.pageouts !== null && toMs(sample.at) >= warmEndMs)
+    .toSorted((a, b) => toMs(a.at) - toMs(b.at));
+  const pageSize = readable.at(-1)?.pageSizeBytes ?? 16_384;
+  if (readable.length < 2) return { worstMb: null, worstFrom: null, totalMb: null, pageSize };
+  const cumulative = [0];
+  for (let index = 1; index < readable.length; index += 1) {
+    const step = readable[index]!.pageouts! - readable[index - 1]!.pageouts!;
+    cumulative.push(cumulative[index - 1]! + (step >= 0 ? step : readable[index]!.pageouts!));
+  }
+  const megabytes = (pages: number) => (pages * pageSize) / 1_048_576;
+  let worst = 0;
+  let worstFrom = 0;
+  let last = 0;
+  for (let from = 0; from < readable.length; from += 1) {
+    const until = toMs(readable[from]!.at) + swapWindowMs;
+    last = Math.max(last, from);
+    while (last + 1 < readable.length && toMs(readable[last + 1]!.at) <= until) last += 1;
+    const pages = cumulative[last]! - cumulative[from]!;
+    if (pages > worst) {
+      worst = pages;
+      worstFrom = from;
+    }
+  }
+  return {
+    worstMb: megabytes(worst),
+    worstFrom: readable[worstFrom]!.at,
+    totalMb: megabytes(cumulative.at(-1)!),
+    pageSize
+  };
+}
+
 function swapCheck(run: LoadedRun): {
   check: Check;
   resources: Array<Record<string, string | number>>;
 } {
   const warmEnd = toMs(run.meta.startedAt) + run.meta.warmupMs;
-  const readable = run.samples.filter((sample) => sample.pageouts !== null);
-  const afterWarm = readable.filter((sample) => toMs(sample.at) >= warmEnd);
-  const first = afterWarm[0];
-  const last = afterWarm.at(-1);
-  const pageSize = last?.pageSizeBytes ?? 16_384;
-  const megabytes =
-    first && last && first !== last
-      ? ((last.pageouts! - first.pageouts!) * pageSize) / 1_048_576
-      : null;
+  const pageouts = pageoutWindows(run.samples, warmEnd);
   const helperRss = run.samples.flatMap((sample) =>
     sample.helper?.rssMb ? [sample.helper.rssMb] : []
   );
@@ -569,12 +612,12 @@ function swapCheck(run: LoadedRun): {
     check: {
       id: "swap",
       title: "Swap",
-      bar: "pageouts <= 50 MB over the run after warm-up",
-      status: megabytes === null ? "review" : megabytes <= 50 ? "pass" : "fail",
+      bar: "pageouts <= 50 MB in any 24 h after warm-up (rolling; the run's total is information)",
+      status: pageouts.worstMb === null ? "review" : pageouts.worstMb <= 50 ? "pass" : "fail",
       value:
-        megabytes === null
+        pageouts.worstMb === null
           ? "pageouts were not readable after warm-up"
-          : `${megabytes.toFixed(1)} MB of pageouts after warm-up`,
+          : `worst 24 h ${pageouts.worstMb.toFixed(1)} MB (from ${pageouts.worstFrom}); ${pageouts.totalMb!.toFixed(1)} MB over the run after warm-up (information)`,
       details: []
     },
     resources: [
@@ -1800,12 +1843,11 @@ export function statusDigest(run: LoadedRun, report: SoakReport): string[] {
     (job) => job.status === "queued" && job.runAfter <= at && !job.blockedClass
   );
   const oldest = queued.length ? Math.max(...queued.map((job) => at - job.updatedAt)) : 0;
-  const warmEnd = toMs(run.meta.startedAt) + run.meta.warmupMs;
-  const warm = run.samples.find((sample) => toMs(sample.at) >= warmEnd && sample.pageouts !== null);
-  const pageoutMb =
-    warm && last.pageouts !== null
-      ? (((last.pageouts - warm.pageouts!) * (last.pageSizeBytes ?? 16_384)) / 1_048_576).toFixed(1)
-      : "-";
+  const pageouts = pageoutWindows(run.samples, toMs(run.meta.startedAt) + run.meta.warmupMs);
+  const pageoutLine =
+    pageouts.worstMb === null
+      ? "-"
+      : `worst 24 h ${pageouts.worstMb.toFixed(1)} MB (since warm-up ${pageouts.totalMb!.toFixed(1)} MB)`;
   const actions = run.events.filter(
     (event) => event.type === "action" && event.status === "failed"
   );
@@ -1820,7 +1862,7 @@ export function statusDigest(run: LoadedRun, report: SoakReport): string[] {
     ...f4Lines,
     `Lanes: ${last.lanes.map((lane) => `${lane.lane} running ${lane.running}/${lane.limit} waiting ${Object.values(lane.waiting).reduce((a, b) => a + b, 0)}${lane.breaker && lane.breaker !== "closed" ? ` breaker ${lane.breaker}` : ""}${lane.held ? ` HELD ${lane.held}` : ""}`).join("; ")}`,
     `Jobs: ${JSON.stringify(last.jobCounts)}; oldest eligible queued job unchanged for ${Math.round(oldest / minute)} min.`,
-    `Helper: ${last.helper ? `pid ${last.helper.pid} rss ${last.helper.rssMb} MB spawns ${last.helper.spawnCount}` : "not running"}; app rss ${last.appRssMb} MB; pageouts since warm-up ${pageoutMb} MB; loop lag p99 ${last.eventLoopLagP99Ms ?? "-"} ms.`,
+    `Helper: ${last.helper ? `pid ${last.helper.pid} rss ${last.helper.rssMb} MB spawns ${last.helper.spawnCount}` : "not running"}; app rss ${last.appRssMb} MB; pageouts ${pageoutLine}; loop lag p99 ${last.eventLoopLagP99Ms ?? "-"} ms.`,
     `Audited calls ${report.counts.taskRuns}; failed driver actions ${actions.length}.`
   ];
 }

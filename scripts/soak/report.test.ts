@@ -22,9 +22,11 @@ import {
   isUnconstrainedLocalWriterCall,
   loadRun,
   p0Waits,
+  pageoutWindows,
   presoakAssertions,
   renderReport,
   runSoakReport,
+  statusDigest,
   unexplainedActionFailures,
   windowRefusals,
   type Check,
@@ -546,6 +548,80 @@ describe("swap, P0 wait and helper restarts", () => {
     // 4,000 pages of 16 KiB = 62.5 MB after warm-up.
     const late = samples({ pageouts: (index) => (index > 100 ? 5_000 : 1_000) });
     expect(statusOf(analyzeRun(goodRun({ samples: late })).checks, "swap")).toBe("fail");
+  });
+
+  describe("pageouts in any 24 h (swap v2, the bar F4 registered)", () => {
+    // A run of `hours` with a sample every 10 minutes, the meta's warm-up of 20 minutes.
+    const long = (hours: number, pageouts: (minute: number) => number | null): LoadedRun => {
+      const base = goodRun();
+      const count = (hours * 60) / 10 + 1;
+      return {
+        ...base,
+        meta: { ...meta, endedAt: at(hours * 60 * minute), durationMs: hours * 60 * minute },
+        samples: Array.from({ length: count }, (_, index) => ({
+          ...base.samples[0]!,
+          at: at(index * 10 * minute),
+          elapsedMs: index * 10 * minute,
+          pageouts: pageouts(index * 10)
+        }))
+      };
+    };
+    // 64 pages of 16 KiB are 1 MB.
+    const mb = (megabytes: number) => megabytes * 64;
+    const swapOf = (run: LoadedRun) => analyzeRun(run).checks.find((check) => check.id === "swap")!;
+
+    it("passes 40 MB in each of two days: the 80 MB total is information", () => {
+      const check = swapOf(
+        long(
+          48,
+          (minute) =>
+            1_000 +
+            (minute < 24 * 60
+              ? mb(40 * (minute / (24 * 60)))
+              : mb(40 + 40 * ((minute - 24 * 60) / (24 * 60))))
+        )
+      );
+      expect(check.status).toBe("pass");
+      expect(check.value).toMatch(/^worst 24 h 40\.\d MB \(from /u);
+      expect(check.value).toContain("79.");
+      expect(check.value).toContain("MB over the run after warm-up (information)");
+      expect(check.bar).toContain("in any 24 h after warm-up");
+    });
+
+    it("fails 60 MB inside a 24 h span that straddles the day boundary", () => {
+      // 30 MB in the last 6 h of day 1 and 30 MB in the first 6 h of day 2: each day holds 30 MB.
+      const check = swapOf(
+        long(48, (minute) =>
+          minute < 18 * 60
+            ? 1_000
+            : minute < 30 * 60
+              ? 1_000 + mb(60 * ((minute - 18 * 60) / (12 * 60)))
+              : 1_000 + mb(60)
+        )
+      );
+      expect(check.status).toBe("fail");
+      expect(check.value).toMatch(/^worst 24 h 60\.0 MB/u);
+    });
+
+    it("reads a lower counter as a reset, not a negative window", () => {
+      // 9 MB after warm-up, then the counter restarts at 0 and climbs 20 MB: 29 MB, never a negative step.
+      const pages = pageoutWindows(
+        long(10, (minute) =>
+          minute < 300 ? 1_000 + mb(10 * (minute / 300)) : mb(20 * ((minute - 300) / 300))
+        ).samples,
+        start + 20 * minute
+      );
+      expect(pages.worstMb).toBeCloseTo(29, 6);
+      expect(pages.totalMb).toBe(pages.worstMb);
+      expect(pageoutWindows(long(10, () => null).samples, start + 20 * minute).worstMb).toBeNull();
+      expect(swapOf(long(10, () => null)).status).toBe("review");
+    });
+
+    it("prints the worst 24 h in the status digest", () => {
+      const run = long(48, (minute) => 1_000 + mb(minute / 60));
+      const lines = statusDigest(run, analyzeRun(run)).join("\n");
+      expect(lines).toMatch(/pageouts worst 24 h 24\.0 MB \(since warm-up 47\.\d MB\)/u);
+    });
   });
 
   it("fails a P0 call that waited behind background work for longer than one bounded call", () => {

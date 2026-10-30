@@ -69,7 +69,10 @@ export const predicateVersions = {
   e5: 7,
   // v2: the pre-soak line of a late first byte reads its call as spec 5.4 says, "aborted at the 30 s
   // bound, retried": a call that went on after the abort and ended met, or one whose attempts were spent.
-  injection: 2
+  injection: 2,
+  // v2 (report.ts): pageouts in any rolling 24 h after warm-up, as F4 registered X6 ("per 24 h");
+  // v1 read F3's 24 h soak's "over the run" and stopped r1 at 52.7 MB over 95 h (D38, 10-30).
+  swap: 2
 } as const;
 
 function percentile(values: readonly number[], fraction: number): number | null {
