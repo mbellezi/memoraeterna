@@ -50,7 +50,10 @@ export const predicateVersions = {
   e3: 2,
   // v2: (b) a window whose count never reached its cap is a review (not exercised), not a fail;
   // (c) one attempt's estimate is the window's planned estimate or the largest priced attempt.
-  e4: 2,
+  // v3: (b) each crossing segment on its own (a crossing until the budget day rolled over, or the
+  // window or the run ended): r1 read the new day's allowance after its rollover as admissions past
+  // the cap (D38, 10-30); without crossing records the budget's day resets split the window.
+  e4: 3,
   // v2: a provider-wait window expects its class from the first call that met it; unmet: review.
   // v3: a window's class is expected where its condition affects work (spec 3.8); a window never
   // compared is a review.
@@ -581,6 +584,72 @@ export function codexRows(run: LoadedRun): TaskRunRecord[] {
   return lane ? run.rows.filter((row) => row.lane === lane) : [];
 }
 
+interface CrossingSegment {
+  from: number;
+  to: number;
+  cause: string;
+}
+
+/**
+ * The stretches in which the daily Codex cap held background work (E4 b, v3): from a crossing to
+ * the budget day's rollover (the driver closes `<window>#crossed` and sets the cap again from the
+ * new day's count, which may cross again), or to the window's or the run's end. A crossing starts at
+ * its record or at the first sample before it whose budget reads exhausted, whichever came first. A
+ * run without crossing records splits by budget day (the call counter's reset): in each day, from
+ * the first sample that reads exhausted.
+ */
+function crossingSegments(
+  run: LoadedRun,
+  windowId: string,
+  from: number,
+  to: number,
+  windowEnded: boolean
+): CrossingSegment[] {
+  const samples = sortedSamples(run).filter(
+    (s) => toMs(s.at) >= from && toMs(s.at) <= to && s.budget
+  );
+  const lastCause = windowEnded ? "the window ended" : "the run ended";
+  const records = groundTruthOf(run)
+    .filter((truth) => truth.id === `${windowId}#crossed`)
+    .toSorted((a, b) => toMs(a.at) - toMs(b.at));
+  const segments: CrossingSegment[] = [];
+  if (records.length > 0) {
+    let previous = from - 1;
+    for (const start of records.filter(
+      (truth) => truth.phase === "start" && toMs(truth.at) >= from && toMs(truth.at) <= to
+    )) {
+      const at = toMs(start.at);
+      const end = records.find((truth) => truth.phase === "end" && toMs(truth.at) >= at);
+      const until = Math.min(end ? toMs(end.at) : to, to);
+      const sampled = samples.find(
+        (s) => toMs(s.at) > previous && toMs(s.at) <= at && s.budget!.callsState === "exhausted"
+      );
+      segments.push({
+        from: Math.min(at, sampled ? toMs(sampled.at) : at),
+        to: until,
+        cause: end && toMs(end.at) < to ? "the budget day rolled over" : lastCause
+      });
+      previous = until;
+    }
+    return segments;
+  }
+  // No crossing records: one stretch per budget day, cut where the call counter went down.
+  let day: SoakSample[] = [];
+  const close = (until: number, cause: string) => {
+    const crossed = day.find((s) => s.budget!.callsState === "exhausted");
+    if (crossed) segments.push({ from: toMs(crossed.at), to: until, cause });
+    day = [];
+  };
+  for (const sample of samples) {
+    const previous = day.at(-1);
+    if (previous && sample.budget!.usedCalls < previous.budget!.usedCalls)
+      close(toMs(sample.at), "the budget day rolled over");
+    day.push(sample);
+  }
+  close(to, lastCause);
+  return segments;
+}
+
 export function e4Check(run: LoadedRun): Check {
   const truths = groundTruthOf(run);
   const samples = sortedSamples(run);
@@ -641,50 +710,41 @@ export function e4Check(run: LoadedRun): Check {
     const end = truths.find((truth) => truth.id === dailyCap.id && truth.phase === "end");
     const from = toMs(dailyCap.at);
     const to = end ? toMs(end.at) : runEnd(run);
-    // The crossing: the first sample whose budget reads exhausted, or the window's own record of it
-    // (each at the sample interval), whichever came first.
-    const crossings = [
-      ...samples
-        .filter(
-          (s) => toMs(s.at) >= from && toMs(s.at) <= to && s.budget?.callsState === "exhausted"
-        )
-        .slice(0, 1)
-        .map((s) => toMs(s.at)),
-      ...truths
-        .filter(
-          (truth) =>
-            truth.id === `${dailyCap.id}#crossed` &&
-            truth.phase === "start" &&
-            toMs(truth.at) >= from &&
-            toMs(truth.at) <= to
-        )
-        .slice(0, 1)
-        .map((truth) => toMs(truth.at))
-    ];
-    if (crossings.length > 0) {
-      const crossedAt = Math.min(...crossings);
-      // A call the budget refused was never admitted: its audit row names the refusal.
-      const admitted = rows.filter(
-        (row) =>
-          !budgetRefusal.test(row.error ?? "") &&
-          toMs(row.startedAt) > crossedAt &&
-          toMs(row.startedAt) <= to
-      );
-      const background = admitted.filter((row) => row.budgetClass === "background").length;
-      const protectedCalls = admitted.filter(
-        (row) =>
-          row.budgetClass === "user" || row.budgetClass === "interactive" || row.priority === 0
-      ).length;
-      const refused = rows.filter(
-        (row) =>
-          budgetRefusal.test(row.error ?? "") &&
-          toMs(row.startedAt) > crossedAt &&
-          toMs(row.startedAt) <= to
-      ).length;
-      statuses.push(background <= 1 ? "pass" : "fail");
-      details.push(
-        `(b) the daily Codex cap was crossed at ${new Date(crossedAt).toISOString()}: ${background} background Codex call(s) admitted after it (bar <= 1), ${refused} refused by the budget; ${protectedCalls} P0 or user call(s) went on`
-      );
+    const segments = crossingSegments(run, dailyCap.id, from, to, end !== undefined);
+    if (segments.length > 0) {
+      const counts = segments.map((segment, index) => {
+        // A call the budget refused was never admitted: its audit row names the refusal.
+        const inside = rows.filter(
+          (row) => toMs(row.startedAt) > segment.from && toMs(row.startedAt) <= segment.to
+        );
+        const admitted = inside.filter((row) => !budgetRefusal.test(row.error ?? ""));
+        const background = admitted.filter((row) => row.budgetClass === "background").length;
+        const protectedCalls = admitted.filter(
+          (row) =>
+            row.budgetClass === "user" || row.budgetClass === "interactive" || row.priority === 0
+        ).length;
+        const refused = inside.length - admitted.length;
+        details.push(
+          `(b) crossing ${index + 1} at ${new Date(segment.from).toISOString()} until ${new Date(segment.to).toISOString()} (${segment.cause}): ${background} background Codex call(s) admitted after it (bar <= 1), ${refused} refused by the budget; ${protectedCalls} P0 or user call(s) went on`
+        );
+        const next = segments[index + 1];
+        if (next) {
+          // The new budget day's allowance: the cap was set again from its count, so these calls
+          // were admitted under a cap not yet crossed, never past one.
+          const allowance = rows.filter(
+            (row) =>
+              row.budgetClass === "background" &&
+              !budgetRefusal.test(row.error ?? "") &&
+              toMs(row.startedAt) > segment.to &&
+              toMs(row.startedAt) <= next.from
+          ).length;
+          details.push(
+            `(b) between crossings ${index + 1} and ${index + 2}: ${allowance} background Codex call(s) admitted, the new budget day's allowance before its cap was crossed again (information, not counted)`
+          );
+        }
+        return background;
+      });
+      statuses.push(counts.every((count) => count <= 1) ? "pass" : "fail");
     } else {
       // Never crossed: the calls counted (and in flight) stayed below the window's cap, so the
       // budget had nothing to hold and the bar was not exercised; reaching it without the budget
@@ -776,7 +836,7 @@ export function e4Check(run: LoadedRun): Check {
   return {
     id: "e4-cap",
     title: "E4 cap within one call",
-    bar: "(a) harness cap overshoot <= the largest call's tokens (a run that reaches the hard cap is inconclusive); (b) <= 1 background Codex admission after the crossing (a cap never crossed is not exercised: review); (c) money spend - cap <= one attempt's estimation error, with cap.money_80 then cap.money_100 shown",
+    bar: "(a) harness cap overshoot <= the largest call's tokens (a run that reaches the hard cap is inconclusive); (b) <= 1 background Codex admission in each crossing segment, from a crossing until the budget day rolls over or the window ends (the new day's allowance between segments is not counted; a cap never crossed is not exercised: review); (c) money spend - cap <= one attempt's estimation error, with cap.money_80 then cap.money_100 shown",
     status,
     value:
       statuses.map((entry, index) => `${"abc"[Math.min(index, 2)]}: ${entry}`).join(", ") ||

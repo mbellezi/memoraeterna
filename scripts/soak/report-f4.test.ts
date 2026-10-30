@@ -1908,6 +1908,154 @@ describe("E4 cap within one call", () => {
     expect(failed.status).toBe("fail");
   });
 
+  describe("(b) v3: each crossing segment on its own (soak7-r1, 10-29/30)", () => {
+    // r1's w084, a day later on the fixture's clock: the cap crossed at 20:01:44, the budget day
+    // rolled over at midnight (the driver closed '#crossed' at 00:00:03.758 and set the cap again
+    // from the new day's 0 calls + 10), the new day's 10 calls came between 00:00:03.774 and
+    // 00:00:31.168, and the cap was crossed again at 00:01:03.842 until the run's STOP.
+    const t = (clock: string) => Date.parse(clock) - start;
+    const windowStart = t("2026-10-28T14:54:11.792Z");
+    const crossed = t("2026-10-28T20:01:44.441Z");
+    const rollover = t("2026-10-29T00:00:00.000Z");
+    const closed = t("2026-10-29T00:00:03.758Z");
+    const recrossed = t("2026-10-29T00:01:03.842Z");
+    const windowEnd = t("2026-10-29T01:59:13.285Z");
+    const capEvents = (withCrossings: boolean): SoakEvent[] => [
+      {
+        ...truth("w084", "start", windowStart, 2, undefined, "codex_daily_cap"),
+        detail: { callsSoFar: 36, cap: 46 }
+      },
+      ...(withCrossings
+        ? [
+            truth(
+              "w084#crossed",
+              "start",
+              crossed,
+              2,
+              ["cap", "subscription_daily"],
+              "codex_daily_cap"
+            ),
+            truth("w084#crossed", "end", closed, 2, undefined, "codex_daily_cap"),
+            truth(
+              "w084#crossed",
+              "start",
+              recrossed,
+              2,
+              ["cap", "subscription_daily"],
+              "codex_daily_cap"
+            ),
+            truth("w084#crossed", "end", windowEnd, 2, undefined, "codex_daily_cap")
+          ]
+        : []),
+      truth("w084", "end", windowEnd, 2, undefined, "codex_daily_cap")
+    ];
+    // A sample a minute at r1's phases: the first day's from 14:55:44.358 (exhausted from
+    // 20:01:44.358, 46 of 46), the new day's from 00:00:03.672 (0 of 46, then 10 of 10).
+    const budgetOf = (usedCalls: number, capCalls: number) => ({
+      moneyState: "open" as const,
+      spentUsd: 0,
+      reservedUsd: 0,
+      capUsd: 5,
+      callsState: usedCalls >= capCalls ? ("exhausted" as const) : ("open" as const),
+      usedCalls,
+      reservedCalls: 0,
+      capCalls
+    });
+    const firstDay = t("2026-10-28T14:55:44.358Z");
+    const newDay = t("2026-10-29T00:00:03.672Z");
+    const capSamples = [
+      ...minutes(firstDay, Math.floor((rollover - firstDay) / minute) + 1, (index) => ({
+        budget:
+          firstDay + index * minute >= crossed - 100
+            ? budgetOf(46, 46)
+            : budgetOf(36 + Math.floor((index * minute) / (31 * minute)), 46)
+      })),
+      ...minutes(newDay, Math.floor((windowEnd - newDay) / minute) + 1, (index) => ({
+        budget: index === 0 ? budgetOf(0, 46) : budgetOf(10, 10)
+      }))
+    ];
+    const refused = (offset: number) =>
+      codexRow(offset, {
+        status: "failed",
+        error: "gardener.blocked.cap.subscription_daily",
+        inputTokens: null,
+        outputTokens: null,
+        durationMs: 3
+      });
+    const newDayCalls = Array.from({ length: 10 }, (_, index) =>
+      codexRow(t("2026-10-29T00:00:03.774Z") + Math.round(index * ((31_168 - 3_774) / 9)))
+    );
+    const r1Rows = [
+      codexRow(windowStart + 60 * minute),
+      ...Array.from({ length: 8 }, (_, index) => refused(crossed + (index + 1) * 20 * minute)),
+      ...Array.from({ length: 8 }, (_, index) =>
+        codexRow(crossed + (index + 1) * 20 * minute + 5_000, { budgetClass: "user", priority: 0 })
+      ),
+      ...newDayCalls,
+      refused(recrossed + 30 * minute),
+      refused(recrossed + 60 * minute)
+    ];
+    const check = (rows: TaskRunRecord[], withCrossings = true) =>
+      e4Check(runOf(26, { events: capEvents(withCrossings), samples: capSamples, rows }));
+
+    it("passes r1: no background admission inside either crossing, the new day's 10 between them", () => {
+      const result = check(r1Rows);
+      const text = result.details.join("\n");
+      expect(text).toContain(
+        "(b) crossing 1 at 2026-10-28T20:01:44.358Z until 2026-10-29T00:00:03.758Z (the budget day rolled over): 0 background Codex call(s) admitted after it (bar <= 1), 8 refused by the budget; 8 P0 or user call(s) went on"
+      );
+      expect(text).toContain(
+        "(b) crossing 2 at 2026-10-29T00:01:03.672Z until 2026-10-29T01:59:13.285Z (the window ended): 0 background Codex call(s) admitted after it (bar <= 1), 2 refused by the budget"
+      );
+      expect(text).toContain(
+        "(b) between crossings 1 and 2: 10 background Codex call(s) admitted, the new budget day's allowance"
+      );
+      expect(result.value).toBe("a: n/a, b: pass, c: n/a");
+      expect(result.status).toBe("pass");
+    });
+
+    it("fails two background admissions inside the second crossing", () => {
+      const leaked = [
+        ...r1Rows,
+        codexRow(recrossed + 40 * minute),
+        codexRow(recrossed + 50 * minute)
+      ];
+      const result = check(leaked);
+      expect(result.details.join("\n")).toContain(
+        "(b) crossing 2 at 2026-10-29T00:01:03.672Z until 2026-10-29T01:59:13.285Z (the window ended): 2 background Codex call(s) admitted after it"
+      );
+      expect(result.status).toBe("fail");
+    });
+
+    it("counts a call between the rollover and the driver's end record in the first crossing (conservative)", () => {
+      const one = check([...r1Rows, codexRow(rollover + 1_000)]);
+      expect(one.details.join("\n")).toMatch(
+        /crossing 1 at [^:]+:\d\d:\d\d\.\d+Z until [^ ]+ \(the budget day rolled over\): 1 background/u
+      );
+      expect(one.status).toBe("pass");
+      expect(
+        check([...r1Rows, codexRow(rollover + 1_000), codexRow(rollover + 2_000)]).status
+      ).toBe("fail");
+    });
+
+    it("splits a run without crossing records by budget day: the counter's reset ends a crossing", () => {
+      const result = check(r1Rows, false);
+      const text = result.details.join("\n");
+      expect(text).toContain(
+        "(b) crossing 1 at 2026-10-28T20:01:44.358Z until 2026-10-29T00:00:03.672Z (the budget day rolled over): 0 background"
+      );
+      expect(text).toContain(
+        "(b) crossing 2 at 2026-10-29T00:01:03.672Z until 2026-10-29T01:59:13.285Z (the window ended): 0 background"
+      );
+      expect(text).toContain("(b) between crossings 1 and 2: 10 background Codex call(s) admitted");
+      expect(result.status).toBe("pass");
+      expect(
+        check([...r1Rows, codexRow(crossed + 30 * minute), codexRow(crossed + 31 * minute)], false)
+          .status
+      ).toBe("fail");
+    });
+  });
+
   it("(c) measures the spend over the cap against one attempt's estimate, not the ledger's remainder", () => {
     // A row's `budgetEstimateUsd` is what the ledger adds for usage the row did not report (0 when
     // it reported its tokens): gate S's report read it as "the largest attempt estimate 0.0000".
@@ -2199,7 +2347,15 @@ describe("the whole F4 report", () => {
         "load-ledger"
       ])
     );
-    expect(report.predicates).toMatchObject({ e1: 1, e3: 2, e5: 7, workerStates: 1 });
+    expect(report.predicates).toMatchObject({
+      e1: 1,
+      e3: 2,
+      e4: 3,
+      e5: 7,
+      swap: 2,
+      jobs: 2,
+      workerStates: 1
+    });
     expect(report.relations).toContain("source discovery neighbours 1");
     // The source judge's mode beside the neighbours (F4 D21): what C2 decided, the run states.
     expect(report.relations).toContain("source judge perRoot (at most 12 pairs a call)");
