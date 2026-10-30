@@ -6,6 +6,7 @@
  * ended the way the remote deadlines say.
  *
  *   npm run soak:report -- .cache/f3/soak/<run> [--presoak] [--explanations <file.json>]
+ *   npm run soak:report -- <stopped run> --join <tail run>
  *
  * A run of the 7-day Hybrid soak (F4 T89; its meta has an `f4` section) adds E1-E5, the injection
  * ledger, the token budget and the load ledger (`report-f4.ts`), and with `--count-local-writer` the
@@ -13,11 +14,13 @@
  *
  * Exit code 0 when every check passes, 2 when some need a person's judgement (the report says
  * which), 1 when one fails or the run cannot be read. Writes `report.md` and `report.json` into the
- * run directory (or where `--out` and `--json` say).
+ * run directory (or where `--out` and `--json` say). With `--join` (a complement, D38a) it joins a
+ * stopped 7-day run and its tail (`report-joined.ts`) and writes `report-joined.md` and
+ * `report-joined.json` into the tail's directory, never the stopped run's.
  */
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
@@ -66,6 +69,8 @@ export interface Check {
   value: string;
   /** What to look at, in plain lines (at most a few dozen). */
   details: string[];
+  /** The numbers behind the value, where a joined report (D38a) sums or compares them. */
+  data?: Record<string, number | string>;
 }
 
 export interface PresoakAssertion {
@@ -369,6 +374,12 @@ function pastDeadlineCheck(run: LoadedRun): { check: Check; wedged: string[] } {
       bar: "0 (duration_ms - requeue_ms > deadline_ms + 2,000, or the watchdog)",
       status: failing > 0 ? "fail" : noDeadline.length > 0 ? "review" : "pass",
       value: `${past.length} audited, ${watchdog.length} by the watchdog, ${noDeadline.length} without a deadline (of ${run.rows.length} calls)`,
+      data: {
+        audited: past.length,
+        watchdog: watchdog.length,
+        noDeadline: noDeadline.length,
+        calls: run.rows.length
+      },
       details: [
         ...past
           .slice(0, 12)
@@ -456,7 +467,23 @@ function repairsCheck(
             "No structured call outside the local MLX writer ran: nothing counts against the bar. A person decides whether that is enough."
           ]
         : [])
-    ]
+    ],
+    data: {
+      countLocalWriter: countLocalWriter ? 1 : 0,
+      unconstrained: unconstrained.length,
+      ...Object.fromEntries(
+        classes.flatMap((workloadClass) => {
+          const of = (rows: TaskRunRecord[]) =>
+            rows.filter((row) => (row.workloadClass ?? "?") === workloadClass);
+          return [
+            [`counted.${workloadClass}.calls`, of(calls).length],
+            [`counted.${workloadClass}.repairs`, of(repairs).length],
+            [`apart.${workloadClass}.calls`, of(apart).length],
+            [`apart.${workloadClass}.repairs`, of(apartRepairs).length]
+          ];
+        })
+      )
+    }
   };
 }
 
@@ -526,7 +553,8 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
       bar: "0 (a running job unchanged for 2 x the longest class deadline; time before the run's start, when the app was closed, is not counted)",
       status: inactive.size === 0 ? "pass" : "review",
       value: `${inactive.size} (limit ${Math.round(inactivityLimit / 1000)} s)`,
-      details: list(inactive)
+      details: list(inactive),
+      data: { count: inactive.size, limitSeconds: Math.round(inactivityLimit / 1000) }
     },
     {
       id: "jobs-stuck",
@@ -534,7 +562,8 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
       bar: "0 (an eligible job unchanged for an hour; time before the run's start, when the app was closed, is not waited)",
       status: stuck.size === 0 ? "pass" : "fail",
       value: `${stuck.size}`,
-      details: list(stuck)
+      details: list(stuck),
+      data: { count: stuck.size }
     },
     {
       id: "jobs-blocked",
@@ -542,7 +571,8 @@ function jobChecks(run: LoadedRun, explanations: Record<string, string>): Check[
       bar: "0 unexplained (candidates are listed for the failure audit)",
       status: blocked.size === 0 ? "pass" : unexplained.length === 0 ? "pass" : "review",
       value: `${blocked.size} candidate(s), ${blocked.size - unexplained.length} explained`,
-      details: list(new Map(unexplained))
+      details: list(new Map(unexplained)),
+      data: { count: blocked.size, explained: blocked.size - unexplained.length }
     }
   ];
 }
@@ -622,7 +652,16 @@ function swapCheck(run: LoadedRun): {
         pageouts.worstMb === null
           ? "pageouts were not readable after warm-up"
           : `worst 24 h ${pageouts.worstMb.toFixed(1)} MB (from ${pageouts.worstFrom}); ${pageouts.totalMb!.toFixed(1)} MB over the run after warm-up (information)`,
-      details: []
+      details: [],
+      ...(pageouts.worstMb === null
+        ? {}
+        : {
+            data: {
+              worstMb: pageouts.worstMb,
+              worstFrom: pageouts.worstFrom!,
+              totalMb: pageouts.totalMb!
+            }
+          })
     },
     resources: [
       {
@@ -790,7 +829,8 @@ function p0Check(run: LoadedRun): { check: Check; table: Array<Record<string, st
         table.length === 0
           ? "no P0 call was audited"
           : `${table.length} lane/class group(s), ${exceeding.length} over the bound`,
-      details: exceeding
+      details: exceeding,
+      data: { groups: table.length, over: exceeding.length }
     }
   };
 }
@@ -884,6 +924,7 @@ function helperCheck(run: LoadedRun): Check {
     bar: "equal to the injected kills",
     status,
     value: `${restarts} restart(s) for ${kills.length} injected kill(s)`,
+    data: { restarts, kills: kills.length },
     details:
       status === "review"
         ? [
@@ -1314,6 +1355,18 @@ function remoteDeadlinesCheck(run: LoadedRun): Check {
     bar: "the injected first byte ends at the first-byte bound, the stall at the stall bound, Codex-wire calls ran through the Codex adapter, totals are the remote ones (no x3)",
     status: problems.length > 0 ? "fail" : unobserved ? "review" : "pass",
     value: `first byte: ${lateOk.length}/${late.length} at ${firstByteMs} ms; stall: ${stallOk.length}/${stalled.length} at ${stallMs} ms; Codex-wire calls ${codex.length} (${codexRows.length} audited); remote totals ${remoteRows.length - times.length}/${remoteRows.length}`,
+    data: {
+      late: late.length,
+      lateOk: lateOk.length,
+      stalled: stalled.length,
+      stallOk: stallOk.length,
+      codexWire: codex.length,
+      codexAudited: codexRows.length,
+      remote: remoteRows.length,
+      remoteOtherTotal: times.length,
+      firstByteMs,
+      stallMs
+    },
     details: [
       ...problems,
       ...(unobserved && problems.length === 0
@@ -1560,6 +1613,22 @@ function callsTable(run: LoadedRun) {
     });
 }
 
+/**
+ * The run's own audit: the collector reads the audit from a little before the run began, and a
+ * call that was running when it began is no part of it, nor a job that failed before it: both
+ * belong to what happened before.
+ */
+export function ownRun(loaded: LoadedRun): LoadedRun {
+  const runStart = toMs(loaded.meta.startedAt);
+  return {
+    ...loaded,
+    rows: loaded.rows.filter((row) => rowStart(row) >= runStart),
+    events: loaded.events.filter(
+      (event) => event.type !== "job_failure" || toMs(event.at) >= runStart
+    )
+  };
+}
+
 /** Analyses a loaded run into the report. */
 export function analyzeRun(
   loaded: LoadedRun,
@@ -1571,16 +1640,7 @@ export function analyzeRun(
     countLocalWriter?: boolean;
   } = {}
 ): SoakReport {
-  // The collector reads the audit from a little before the run began, and a call that was running
-  // when it began is no part of it: both belong to what happened before.
-  const runStart = toMs(loaded.meta.startedAt);
-  const run: LoadedRun = {
-    ...loaded,
-    rows: loaded.rows.filter((row) => rowStart(row) >= runStart),
-    events: loaded.events.filter(
-      (event) => event.type !== "job_failure" || toMs(event.at) >= runStart
-    )
-  };
+  const run = ownRun(loaded);
   const injected = injectedRows(run);
   const f4 = f4Report(run, { injected, injectedJobs: injectedJobFailures(run, injected) });
   const { check: past, wedged } = pastDeadlineCheck(run);
@@ -1832,6 +1892,8 @@ export const soakReportUsage = `Usage: npx tsx scripts/soak/report.ts <run direc
   --presoak               Also assert that each injected fault kind ended as expected (gate P, gate S).
   --count-local-writer    Count every structured call of the local writer in the repair rate (C4's re-run).
   --explanations <file>   JSON {"<job id>": "why it was not blocked by an unrelated job"} (T64r).
+  --join <tail run>       Join a stopped 7-day run (the positional) and its complement (D38a); writes
+                          <tail run>/report-joined.md and .json, never into the stopped run.
   --out <file.md>         Where to write the Markdown (default: <run>/report.md).
   --json <file.json>      Where to write the data (default: <run>/report.json).
   --help                  Show this text.
@@ -1886,6 +1948,7 @@ export async function runSoakReport(
       presoak: { type: "boolean", default: false },
       "count-local-writer": { type: "boolean", default: false },
       explanations: { type: "string" },
+      join: { type: "string" },
       out: { type: "string" },
       json: { type: "string" },
       help: { type: "boolean", default: false }
@@ -1894,10 +1957,12 @@ export async function runSoakReport(
   if (values.help || positionals.length !== 1)
     return { text: soakReportUsage, code: values.help ? 0 : 1 };
   const directory = resolve(positionals[0]!);
-  const run = await loadRun(directory);
   const explanations = values.explanations
     ? (JSON.parse(await readFile(resolve(values.explanations), "utf8")) as Record<string, string>)
     : {};
+  if (values.join !== undefined)
+    return joinedReport(directory, resolve(values.join), values, explanations);
+  const run = await loadRun(directory);
   const report = analyzeRun(run, {
     presoak: values.presoak,
     explanations,
@@ -1938,13 +2003,60 @@ export async function runSoakReport(
   };
 }
 
-if (import.meta.main) {
+/** `--join`: the joined report of a stopped run and its tail, written into the tail's folder. */
+async function joinedReport(
+  first: string,
+  tail: string,
+  values: { status?: boolean; presoak?: boolean; out?: string; json?: string },
+  explanations: Record<string, string>
+): Promise<{ text: string; code: 0 | 1 | 2 }> {
+  if (values.status || values.presoak)
+    return {
+      text: "--join makes the final report of two ended runs: --status and --presoak read one run (pass the tail alone)",
+      code: 1
+    };
+  const out = resolve(values.out ?? join(tail, "report-joined.md"));
+  const json = resolve(values.json ?? join(tail, "report-joined.json"));
+  const inside = (path: string) => {
+    const rel = relative(first, path);
+    return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
+  };
+  if (inside(out) || inside(json) || inside(tail))
+    return { text: `--join never writes into the stopped run's folder ${first}`, code: 1 };
+  // Loaded lazily: report-joined.ts reads this module's analysis.
+  const { JoinRefusal, joinRuns, renderJoinedReport } = await import("./report-joined.ts");
+  const [firstRun, tailRun] = [await loadRun(first), await loadRun(tail)];
+  let report: ReturnType<typeof joinRuns>;
   try {
-    const { text, code } = await runSoakReport(process.argv.slice(2));
-    console.info(text);
-    process.exitCode = code;
+    report = joinRuns(firstRun, tailRun, { explanations });
   } catch (error) {
-    console.error(`[soak-report] ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
+    if (error instanceof JoinRefusal) return { text: error.message, code: 1 };
+    throw error;
   }
+  await writeFile(out, `${renderJoinedReport(report)}\n`);
+  await writeFile(json, `${JSON.stringify(report, null, 2)}\n`);
+  return {
+    text: [
+      `Joined soak ${report.run}: ${report.verdict.toUpperCase()} (${report.plan.coveredHours} h of plan time)`,
+      ...report.checks.map(
+        (check) => `${mark[check.status].padEnd(6)} ${check.title}: ${check.value}`
+      ),
+      `Written: ${out}, ${json}`
+    ].join("\n"),
+    code: report.verdict === "pass" ? 0 : report.verdict === "review" ? 2 : 1
+  };
 }
+
+// Not a top-level await: --join imports report-joined.ts, which imports this module, and a module
+// still awaiting at its top level would never finish loading for it.
+if (import.meta.main)
+  void runSoakReport(process.argv.slice(2)).then(
+    ({ text, code }) => {
+      console.info(text);
+      process.exitCode = code;
+    },
+    (error: unknown) => {
+      console.error(`[soak-report] ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  );

@@ -162,7 +162,15 @@ export interface E1Result {
  * exposure counts the lane-minutes with two or more due tasks of different scopes. A lock wait of the
  * same length in `pg_locks` is a candidate event of its own.
  */
-export function computeE1(run: LoadedRun): E1Result {
+export function computeE1(
+  run: LoadedRun,
+  options: {
+    /** The day a moment belongs to (0-based); by default the run's own days from its start. */
+    dayOf?: (atMs: number) => number;
+    /** Exposure counts from here only (a joined run leaves out a warm-up its other segment ran). */
+    exposureFromMs?: number;
+  } = {}
+): E1Result {
   const samples = sortedSamples(run);
   const capacity = capacityOf();
   const start = toMs(run.meta.startedAt);
@@ -191,8 +199,9 @@ export function computeE1(run: LoadedRun): E1Result {
       derived = true;
       workers = deriveWorkerStates(sample, at, capacity);
     }
-    const dayIndex = Math.floor((at - start) / day);
+    const dayIndex = options.dayOf ? options.dayOf(at) : Math.floor((at - start) / day);
     exposure[dayIndex] ??= {};
+    const exposed = at >= (options.exposureFromMs ?? Number.NEGATIVE_INFINITY);
     const byWorker = new Map<string, { idle: number; executing: number; waiting: number }>();
     for (const entry of workers) {
       const tally = byWorker.get(entry.worker) ?? { idle: 0, executing: 0, waiting: 0 };
@@ -223,7 +232,7 @@ export function computeE1(run: LoadedRun): E1Result {
       );
     }
     for (const [worker, scopes] of dueByWorker)
-      if (scopes.size >= 2)
+      if (exposed && scopes.size >= 2)
         exposure[dayIndex]![worker] = (exposure[dayIndex]![worker] ?? 0) + sampleMinutes;
 
     const dueIds = new Set(due.map((job) => job.id));
@@ -291,9 +300,22 @@ export function e1Check(run: LoadedRun): {
   check: Check;
   table: Array<Record<string, string | number>>;
 } {
-  const result = computeE1(run);
   const days = Math.floor((runEnd(run) - toMs(run.meta.startedAt)) / day);
-  const full = result.exposure.slice(0, Math.max(days, run.samples.length > 0 ? 1 : 0));
+  return e1CheckOf(computeE1(run), Math.max(days, run.samples.length > 0 ? 1 : 0));
+}
+
+/** E1's line from its result, over its first `fullDays` days (a partial last day is left out). */
+export function e1CheckOf(
+  result: E1Result,
+  fullDays: number
+): {
+  check: Check;
+  table: Array<Record<string, string | number>>;
+} {
+  const full = Array.from(
+    { length: Math.min(fullDays, result.exposure.length) },
+    (_, index) => result.exposure[index] ?? {}
+  );
   const perDay = full.map((row) => Object.values(row).reduce((sum, value) => sum + value, 0));
   const belowFloor = perDay.filter((total) => total < e1ExposureFloor).length;
   const events = result.events.length + result.lockEvents.length;
@@ -422,6 +444,17 @@ export interface E3Row {
 /** A cancel that completes a task (spec 5.2 E3): superseded by a dedupe merge or a source deletion. */
 const supersededCauses = new Set(["merged", "source_deleted"]);
 
+export interface E3Result {
+  /** The tasks created in [warm-up end, end - 24 h]: what E3 measures. */
+  rows: E3Row[];
+  /** The tasks created outside that window (the warm-up, the last 24 h, before the run). */
+  outside: E3Row[];
+  /** Per blocker window: the tasks it set aside, and how many of them ended within 24 h. */
+  windows: Array<{ window: string; "tasks set aside": number; "ended within 24 h": number }>;
+  /** The run is shorter than the warm-up plus 24 h. */
+  short: boolean;
+}
+
 export function e3Check(
   run: LoadedRun,
   context: Pick<F4Context, "injectedJobs"> = { injectedJobs: new Map() }
@@ -429,6 +462,13 @@ export function e3Check(
   check: Check;
   table: Array<Record<string, string | number>>;
 } {
+  return e3CheckOf(computeE3(run, context));
+}
+
+export function computeE3(
+  run: LoadedRun,
+  context: Pick<F4Context, "injectedJobs"> = { injectedJobs: new Map() }
+): E3Result {
   const from = warmEnd(run);
   const to = runEnd(run) - day;
   const windows = run.meta.f4?.windows ?? [];
@@ -453,15 +493,16 @@ export function e3Check(
     }
   }
   const rows: E3Row[] = [];
+  const outside: E3Row[] = [];
   const stillOpen = sortedSamples(run).at(-1)?.jobs ?? [];
   const seen = new Set<string>();
   for (const job of done) {
     seen.add(job.id);
     const created = chainStart.get(job.id) ?? toMs(job.createdAt);
-    if (created < from || created > to) continue;
     // A deferred job is not the end of its chain: its successor decides.
     if (job.resultStatus && deferredStatuses.has(job.resultStatus) && chainEnd.has(job.id))
       continue;
+    const target = created < from || created > to ? outside : rows;
     const ended = job.finishedAt ? toMs(job.finishedAt) : Number.POSITIVE_INFINITY;
     const completedKind =
       (job.status === "succeeded" &&
@@ -469,7 +510,7 @@ export function e3Check(
           job.outcome === "no_change" ||
           job.resultStatus === "pending_review")) ||
       (job.status === "canceled" && supersededCauses.has(job.cancelCause ?? ""));
-    rows.push({
+    target.push({
       kind: job.jobType,
       created,
       completedWithin24h: completedKind && ended - created <= day,
@@ -481,8 +522,7 @@ export function e3Check(
   // Tasks still queued or running at the end that were created in the window have not completed.
   for (const job of stillOpen) {
     if (seen.has(job.id) || job.createdAt === undefined) continue;
-    if (job.createdAt < from || job.createdAt > to) continue;
-    rows.push({
+    (job.createdAt < from || job.createdAt > to ? outside : rows).push({
       kind: job.type,
       created: job.createdAt,
       completedWithin24h: false,
@@ -491,24 +531,6 @@ export function e3Check(
       setAside: false
     });
   }
-  const counted = rows.filter((row) => !row.skippedJob && !row.legacy && !row.setAside);
-  const completed = counted.filter((row) => row.completedWithin24h).length;
-  const rate = counted.length === 0 ? 1 : completed / counted.length;
-  const byKind = new Map<string, { total: number; done: number }>();
-  for (const row of counted) {
-    const tally = byKind.get(row.kind) ?? { total: 0, done: 0 };
-    tally.total += 1;
-    if (row.completedWithin24h) tally.done += 1;
-    byKind.set(row.kind, tally);
-  }
-  const table = [...byKind]
-    .toSorted(([a], [b]) => a.localeCompare(b))
-    .map(([kind, tally]) => ({
-      kind,
-      tasks: tally.total,
-      "within 24 h": tally.done,
-      rate: pct(tally.done, tally.total)
-    }));
   // Per blocker window: tasks that were set aside while a window was open, and how they ended.
   const delayedIn = new Map<string, Set<string>>();
   for (const sample of sortedSamples(run)) {
@@ -537,6 +559,33 @@ export function e3Check(
       });
       return { window: id, "tasks set aside": jobs.size, "ended within 24 h": within.length };
     });
+  return { rows, outside, windows: windowTable, short: to <= from };
+}
+
+/** E3's line from its result (one run's, or the segments' of a joined run summed). */
+export function e3CheckOf(result: E3Result): {
+  check: Check;
+  table: Array<Record<string, string | number>>;
+} {
+  const { rows, windows: windowTable } = result;
+  const counted = rows.filter((row) => !row.skippedJob && !row.legacy && !row.setAside);
+  const completed = counted.filter((row) => row.completedWithin24h).length;
+  const rate = counted.length === 0 ? 1 : completed / counted.length;
+  const byKind = new Map<string, { total: number; done: number }>();
+  for (const row of counted) {
+    const tally = byKind.get(row.kind) ?? { total: 0, done: 0 };
+    tally.total += 1;
+    if (row.completedWithin24h) tally.done += 1;
+    byKind.set(row.kind, tally);
+  }
+  const table = [...byKind]
+    .toSorted(([a], [b]) => a.localeCompare(b))
+    .map(([kind, tally]) => ({
+      kind,
+      tasks: tally.total,
+      "within 24 h": tally.done,
+      rate: pct(tally.done, tally.total)
+    }));
   return {
     table: [...table, ...windowTable],
     check: {
@@ -550,7 +599,7 @@ export function e3Check(
           .filter((row) => row.tasks !== row["within 24 h"])
           .slice(0, 12)
           .map((row) => `${row.kind}: ${row["within 24 h"]} of ${row.tasks} within 24 h`),
-        ...(to <= from
+        ...(result.short
           ? ["The run is shorter than the warm-up plus 24 h: there is no window to measure yet."]
           : [])
       ]
@@ -841,7 +890,8 @@ export function e4Check(run: LoadedRun): Check {
     value:
       statuses.map((entry, index) => `${"abc"[Math.min(index, 2)]}: ${entry}`).join(", ") ||
       "not run",
-    details
+    details,
+    data: { a: statuses[0] ?? "n/a", b: statuses[1] ?? "n/a", c: statuses[2] ?? "n/a" }
   };
 }
 
@@ -1586,7 +1636,11 @@ const notExercisedText: Record<E5NotExercisedWhy, string> = {
 };
 
 export function e5Check(run: LoadedRun): Check {
-  const result = computeE5(run);
+  return e5CheckOf(computeE5(run));
+}
+
+/** E5's line from its result (one run's, or the segments' of a joined run merged). */
+export function e5CheckOf(result: E5Result): Check {
   const noStatus = result.samplesWithStatus === 0;
   const failing =
     result.fallbackSamples > 0 ||
@@ -1771,18 +1825,22 @@ export function tokensCheck(run: LoadedRun): {
 
 // --- Load ledger and relations ------------------------------------------------------------------
 
-export function loadCheck(run: LoadedRun): {
+export function loadCheck(
+  run: LoadedRun,
+  options: { dayOf?: (atMs: number) => number } = {}
+): {
   check: Check;
   table: Array<Record<string, string | number>>;
 } {
   const samples = sortedSamples(run).filter((sample) => sample.load);
   const start = toMs(run.meta.startedAt);
+  const dayOf = options.dayOf ?? ((at: number) => Math.floor((at - start) / day));
   const byDay = new Map<
     number,
     { max1m: number; warn: number; critical: number; samples: number; top: Map<string, number> }
   >();
   for (const sample of samples) {
-    const index = Math.floor((toMs(sample.at) - start) / day);
+    const index = dayOf(toMs(sample.at));
     const tally = byDay.get(index) ?? {
       max1m: 0,
       warn: 0,
