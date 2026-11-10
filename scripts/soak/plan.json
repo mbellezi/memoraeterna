@@ -987,6 +987,220 @@
         },
         "decisions": "off"
       }
+    },
+    "soak7-tail2": {
+      "description": "D38a second complement (owner 11-10) after soak7-tail-20261109T1621 ended at tail minute 613 (an operator quit from the menu bar, clean shutdown, 0 FAIL): the rest of soak7's plan from plan minute 6280 (soak7-tail's last action, topic_open at tail minute 605) to 10080, on env-soak7-tail2, a fresh APFS clone of env-soak7-tail (its data at the tail's end). Tail2 minute = soak7 minute - 6250 (a 30 min warm-up first): every cadence offset and every window after minute 6280 shifted by -6250; nothing at or before 6280 again. Seed 20261110 so the corpus order and the seeded picks do not repeat r1's or the tail's; the local faults keep their own period. codex.expected = this profile's projection at soak7's frozen unit costs; codex.cap = expected x 1.34375 x 1.1, with r1's and the tail's harness spend + cap <= soak7's 7,973,422. The owner ends it early at 2026-11-11 02:00 GMT (STOP). The final report joins r1, the tail and tail2. Known D1 limits (review wf_0d73af33-497, 11-10): (1) the per-run imported list starts empty, so tail2's source_reimport at plan minute 6780 (tail2 530, the same minute as an article) sees one article and versions it without deleting one, where a continuous soak7 run would also delete; (2) drop steps keep each kind's even indexes of tail2's own timeline, which are soak7's odd ones for explain, ask, topic_open and article (no drop step fired in r1 or the tail); (3) the three-segment join clips the tail at plan minute 6280 (its minutes 6280-6288 overlap tail2's warm-up).",
+      "seed": 20261110,
+      "durationHours": 63.9,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": {
+          "everyMinutes": 480,
+          "offsetMinutes": 50
+        },
+        "ask": {
+          "everyMinutes": 180,
+          "offsetMinutes": 70
+        },
+        "explain": {
+          "everyMinutes": 60,
+          "offsetMinutes": 55
+        },
+        "explainBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 265,
+          "count": 5
+        },
+        "noteEdit": {
+          "everyMinutes": 180,
+          "offsetMinutes": 100
+        },
+        "sourceReimport": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 530,
+          "days": "odd"
+        },
+        "typingFault": {
+          "everyMinutes": 1440,
+          "offsetMinutes": 530,
+          "days": "even"
+        },
+        "topicOpen": {
+          "everyMinutes": 120,
+          "offsetMinutes": 150
+        },
+        "contentionBurst": {
+          "everyMinutes": 720,
+          "offsetMinutes": 590,
+          "reembeds": 20,
+          "edits": 6,
+          "editSpacingMinutes": 2
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": {
+          "everyMinutes": 360,
+          "jitterMinutes": 30
+        },
+        "ggufAbort": {
+          "everyMinutes": 720
+        }
+      },
+      "bounds": {
+        "connectMs": 10000,
+        "firstByteMs": 30000,
+        "stallMs": 20000
+      },
+      "f4": {
+        "codex": {
+          "expected": 2118096,
+          "cap": 3130811,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 42841,
+            "typing_fault": 42841,
+            "source_reimport": 42841,
+            "ask": 17603,
+            "explain": 745,
+            "explain_burst": 3725,
+            "topic_open": 3111,
+            "note_edit": 9158,
+            "burst_edit": 4579,
+            "contention_burst": 0,
+            "backgroundPerHour": 12539
+          },
+          "windowTokenFactor": {
+            "usage_limit": 0,
+            "refused": 0,
+            "enotfound": 0,
+            "unauthorized": 0,
+            "autonomy_off": 0.75,
+            "autonomy_suggest": 0.85,
+            "codex_daily_cap": 0.9,
+            "money": 0.9
+          }
+        },
+        "injection": {
+          "rates": {
+            "rateLimit": 0.02,
+            "unavailable": 0.01,
+            "lateFirstByte": 0.005,
+            "stall": 0.002,
+            "malformed": 0.003,
+            "unauthorized": 0.001,
+            "contextOverflow": 0.001
+          },
+          "retryAfterSeconds": [1, 10],
+          "stallMs": 25000,
+          "lateFirstByteMs": 35000,
+          "forced": []
+        },
+        "windows": [
+          {
+            "id": "pause-5",
+            "kind": "pause",
+            "startMinute": 110,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          },
+          {
+            "id": "w114-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 590,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "no_model",
+              "reason": "no_decider"
+            },
+            "params": {
+              "noteEdits": 2
+            }
+          },
+          {
+            "id": "w120-embedder-verifying",
+            "kind": "embedder_verifying",
+            "startMinute": 950,
+            "durationMinutes": 10,
+            "expect": {
+              "class": "download",
+              "reason": "model_verifying"
+            },
+            "params": {
+              "backfillRelations": 4,
+              "backfillDelayMinutes": 6
+            }
+          },
+          {
+            "id": "pause-6",
+            "kind": "pause",
+            "startMinute": 1550,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          },
+          {
+            "id": "w132-only-idle",
+            "kind": "only_idle",
+            "startMinute": 1670,
+            "durationMinutes": 240,
+            "expect": {
+              "class": "paused",
+              "reason": "only_idle_user_active"
+            },
+            "params": {
+              "blockMinutes": 10
+            }
+          },
+          {
+            "id": "w140-only-ac",
+            "kind": "only_ac",
+            "startMinute": 2150,
+            "durationMinutes": 60,
+            "expect": {
+              "class": "paused",
+              "reason": "only_ac_on_battery"
+            }
+          },
+          {
+            "id": "w146-money",
+            "kind": "money",
+            "startMinute": 2510,
+            "durationMinutes": 360,
+            "params": {
+              "attempts": 8,
+              "backfillRelations": 10,
+              "continueAfterMinutes": 10,
+              "attemptInputBytes": 3000
+            }
+          },
+          {
+            "id": "pause-7",
+            "kind": "pause",
+            "startMinute": 2990,
+            "durationMinutes": 30,
+            "expect": {
+              "class": "paused",
+              "reason": "user_pause"
+            }
+          }
+        ],
+        "windowSeries": [],
+        "money": {
+          "model": "dev-fake-priced-1",
+          "inputUsdPerM": 1,
+          "outputUsdPerM": 4,
+          "latencyMs": 1200
+        },
+        "decisions": "off"
+      }
     }
   }
 }
