@@ -63,3 +63,4 @@ export * from "./topicOverviewRepository.js";
 export * from "./aiBudgetRepository.js";
 export * from "./questionRepository.js";
 export * from "./questionCitationHashSql.js";
+export * from "./entityPageRepository.js";
