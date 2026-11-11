@@ -9,8 +9,11 @@ import {
   compareWithBaseline,
   readRun,
   renderBaselineComparison,
+  generatedBegin,
+  generatedEnd,
   renderReport,
   spikeBars,
+  spliceGenerated,
   summarizeContract,
   summarizeRun
 } from "./writer-report.ts";
@@ -376,5 +379,29 @@ describe("a run against a baseline run (F4 D24)", () => {
     );
     expect(text).toContain("agreement 66.7% → 83.3%");
     expect(renderBaselineComparison([])).toEqual([]);
+  });
+});
+
+describe("the generated block of an output file", () => {
+  it("writes a new file as the block alone", () => {
+    const text = spliceGenerated(null, "## Runs\n\n| a |\n");
+    expect(text).toBe(`${generatedBegin}\n\n## Runs\n\n| a |\n\n${generatedEnd}\n`);
+  });
+
+  it("rewrites only what sits between the markers and keeps the prose around them", () => {
+    const first = spliceGenerated(null, "## Runs\n\nold\n");
+    const prose = `# Title\n\nBefore.\n\n${first}\nAfter.\n`;
+    const next = spliceGenerated(prose, "## Runs\n\nnew\n");
+    expect(next).toBe(
+      `# Title\n\nBefore.\n\n${generatedBegin}\n\n## Runs\n\nnew\n\n${generatedEnd}\n\nAfter.\n`
+    );
+    expect(spliceGenerated(next, "## Runs\n\nnew\n")).toBe(next);
+  });
+
+  it("refuses to overwrite a file that has no markers, or has them out of order", () => {
+    expect(() => spliceGenerated("# Hand-written\n", "x")).toThrow(/no generated block markers/u);
+    expect(() => spliceGenerated(`${generatedEnd}\n${generatedBegin}\n`, "x")).toThrow(
+      /no generated block markers/u
+    );
   });
 });

@@ -825,7 +825,8 @@ answer's validity, repairs, salvage, tok/s, time to first text, memory, swap and
 answer (decisions 25 and 26: nothing is adopted). `plan` runs no inference; `run --arm <arm>` replays one arm,
 holds the data root's `LOCAL_MODEL_BUSY` for the whole run and can resume. `--data-root` (or
 `MEMORA_BENCH_DATA_ROOT`) names the `.cache` it reads and writes (default `<cwd>/.cache`).
-`npm run bench:writer-report -- <run dir>...` writes the tables per arm and contract.
+`npm run bench:writer-report -- <run dir>...` writes the tables per arm and contract; with `--out` on a file that
+holds its marker comments (`docs/spikes/local-writer-benchmark.md`) only the block between them is rewritten.
 
 ## After a run
 

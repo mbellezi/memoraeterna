@@ -36,6 +36,9 @@ binding decision records of F2, F3 and F4. The measurements are dated, not rules
   topic tree built on real embeddings.
 - [spikes/hardware-tiers-and-models.md](spikes/hardware-tiers-and-models.md) — hardware tiers (Apple Silicon and Windows), recommended local
   and cheap cloud models per tier, the detection design and the benchmark plan (decision 25; research of 2026-10-18).
+- [spikes/local-writer-benchmark.md](spikes/local-writer-benchmark.md) — F4 T69, record only (decision 26): five
+  local writers replayed on the recorded golden prompts; validity, repairs, speed, memory and yield, with the caveats
+  and what is still pending.
 - [spikes/f1a-matching-latency.md](spikes/f1a-matching-latency.md) — where note-matching time goes on
   the golden library and the ranked fixes behind decision 16.
 - [spikes/source-relations-plan.md](spikes/source-relations-plan.md) — source matching cost, what the
