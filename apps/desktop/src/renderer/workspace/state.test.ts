@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { destinationIds, destinationRoots, navigatorDefaults } from "./destinations";
+import { layoutConfig } from "./layout-config";
 import {
   WorkspaceStateSchema,
+  contextTabFor,
   defaultWorkspace,
   initialState,
   layout,
   localDay,
   reduce,
+  stackWidth,
   workspaceLimits,
+  type LayoutChrome,
   type Stack,
   type WorkspaceAction,
   type WorkspaceState
@@ -53,8 +57,15 @@ describe("defaults", () => {
         closed: []
       });
     expect(state.navigator).toEqual(navigatorDefaults);
-    expect(state.navigator.explore && state.navigator.library).toBe(true);
-    expect(state).toMatchObject({ context: false, lastHomeDay: today, lastHomeOpenAt: null });
+    expect(state.navigator).toMatchObject({ explore: true, library: false });
+    expect(state).toMatchObject({
+      context: false,
+      lastHomeDay: today,
+      lastHomeOpenAt: null,
+      contextTab: {},
+      hoist: null,
+      density: "comfortable"
+    });
     expect(WorkspaceStateSchema.safeParse(state).success).toBe(true);
   });
 });
@@ -297,7 +308,7 @@ describe("reduce: focus, destinations and toggles", () => {
     let state = start();
     state = reduce(state, { type: "toggleNavigator" });
     expect(state.navigator.explore).toBe(false);
-    expect(state.navigator.library).toBe(true);
+    expect(state.navigator.library).toBe(false);
     state = reduce(state, { type: "toggleContext" });
     expect(state.context).toBe(true);
     const settings = reduce(state, { type: "go", destination: "settings" });
@@ -314,6 +325,7 @@ describe("reduce: focus, destinations and toggles", () => {
       { type: "focus", panel: 0 },
       { type: "focusNext", delta: 1 },
       { type: "resize", panel: 0, width: 600 },
+      { type: "scroll", panel: 0, top: 200 },
       { type: "redirect", panel: 0, to: note(5) }
     ] as WorkspaceAction[])
       expect(reduce(state, action), action.type).toBe(state);
@@ -335,6 +347,26 @@ describe("reduce: redirect and resize", () => {
     expect(reduce(state, { type: "redirect", panel: 0, to: "memora://nowhere" })).toBe(state);
   });
 
+  it("never leaves one address open in two panels", () => {
+    const three = run(start(), push(source(1), -1), push(source(2), 0), push(source(3), 1));
+    // Panel 0 (focused) is redirected to an address panel 2 shows: panel 0 goes, panel 2 is focused.
+    let state = run(
+      three,
+      { type: "focus", panel: 0 },
+      { type: "redirect", panel: 0, to: source(3) }
+    );
+    expect(addresses(explore(state))).toEqual([source(2), source(3)]);
+    expect(explore(state).focus).toBe(1);
+    // An unfocused panel redirected to an open address goes; the focus stays on its panel.
+    state = reduce(three, { type: "redirect", panel: 0, to: source(2) });
+    expect(addresses(explore(state))).toEqual([source(2), source(3)]);
+    expect(explore(state).focus).toBe(1);
+    // Redirected to the root's address, the panel goes and the root is focused.
+    state = reduce(three, { type: "redirect", panel: 2, to: destinationRoots.explore });
+    expect(addresses(explore(state))).toEqual([source(1), source(2)]);
+    expect(explore(state).focus).toBe(-1);
+  });
+
   it("does not take a pending reopen away", () => {
     let state = run(trail(2), { type: "close" });
     state = reduce(state, { type: "redirect", panel: 0, to: note(8) });
@@ -354,6 +386,95 @@ describe("reduce: redirect and resize", () => {
     );
     expect(reduce(state, { type: "resize", panel: 0, width: Number.NaN })).toBe(state);
     expect(reduce(state, { type: "resize", panel: -1, width: 500 })).toBe(state);
+  });
+});
+
+describe("reduce: the S1 view state", () => {
+  const topic = (n: number) => uuid(n);
+
+  it("firstSource goes to Explore and pushes the Source right of its focused panel (A6)", () => {
+    const home = defaultWorkspace(today);
+    const state = reduce(home, { type: "firstSource", address: source(1) });
+    expect(state.destination).toBe("explore");
+    expect(addresses(explore(state))).toEqual([source(1)]);
+    expect(explore(state).focus).toBe(0);
+    for (const destination of destinationIds)
+      if (destination !== "explore")
+        expect(state.stacks[destination]).toBe(home.stacks[destination]);
+    // Dispatched again, it focuses the open Source instead of opening it twice.
+    const again = reduce(reduce(state, { type: "go", destination: "home" }), {
+      type: "firstSource",
+      address: source(1)
+    });
+    expect(again.destination).toBe("explore");
+    expect(addresses(explore(again))).toEqual([source(1)]);
+    // Only a Source address is a first source.
+    expect(reduce(home, { type: "firstSource", address: note(1) })).toBe(home);
+    expect(reduce(home, { type: "firstSource", address: "memora://library" })).toBe(home);
+  });
+
+  it("setContextTab remembers the last tab per kind over the §5.6 defaults", () => {
+    let state = defaultWorkspace(today);
+    expect(contextTabFor(state, "note")).toBe("connections");
+    expect(contextTabFor(state, "question")).toBe("evidence");
+    expect(contextTabFor(state, "entity")).toBe("ask");
+    expect(contextTabFor(state, "topic")).toBe("connections");
+    expect(contextTabFor(state, "source")).toBe("connections");
+    expect(contextTabFor(state, "source", { sourceGenerating: true })).toBe("ask");
+    state = reduce(state, { type: "setContextTab", kind: "note", tab: "graph" });
+    expect(state.contextTab).toEqual({ note: "graph" });
+    expect(contextTabFor(state, "note")).toBe("graph");
+    expect(reduce(state, { type: "setContextTab", kind: "note", tab: "graph" })).toBe(state);
+    expect(
+      reduce(state, {
+        type: "setContextTab",
+        kind: "wiki",
+        tab: "ask"
+      } as unknown as WorkspaceAction)
+    ).toBe(state);
+    expect(
+      reduce(state, {
+        type: "setContextTab",
+        kind: "note",
+        tab: "activity"
+      } as unknown as WorkspaceAction)
+    ).toBe(state);
+    expect(WorkspaceStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("hoist sets and clears Explore's hoisted topic", () => {
+    let state = defaultWorkspace(today);
+    state = reduce(state, { type: "hoist", topicId: topic(5) });
+    expect(state.hoist).toBe(topic(5));
+    expect(reduce(state, { type: "hoist", topicId: topic(5) })).toBe(state);
+    expect(reduce(state, { type: "hoist", topicId: "not-an-id" })).toBe(state);
+    expect(WorkspaceStateSchema.safeParse(state).success).toBe(true);
+    expect(reduce(state, { type: "hoist", topicId: null }).hoist).toBeNull();
+  });
+
+  it("setDensity switches the Library density", () => {
+    const state = reduce(defaultWorkspace(today), { type: "setDensity", density: "compact" });
+    expect(state.density).toBe("compact");
+    expect(reduce(state, { type: "setDensity", density: "compact" })).toBe(state);
+    expect(
+      reduce(state, { type: "setDensity", density: "dense" } as unknown as WorkspaceAction)
+    ).toBe(state);
+  });
+
+  it("scroll stores a panel's offset, rounded and bounded", () => {
+    let state = trail(2);
+    state = reduce(state, { type: "scroll", panel: 0, top: 320.4 });
+    expect(explore(state).panels[0]?.scroll).toBe(320);
+    expect(reduce(state, { type: "scroll", panel: 0, top: 320 })).toBe(state);
+    expect(explore(reduce(state, { type: "scroll", panel: 1, top: -5 })).panels[1]?.scroll).toBe(
+      undefined
+    );
+    expect(explore(reduce(state, { type: "scroll", panel: 1, top: 1e12 })).panels[1]?.scroll).toBe(
+      workspaceLimits.maxScroll
+    );
+    expect(reduce(state, { type: "scroll", panel: 0, top: Number.NaN })).toBe(state);
+    expect(reduce(state, { type: "scroll", panel: 5, top: 10 })).toBe(state);
+    expect(WorkspaceStateSchema.safeParse(state).success).toBe(true);
   });
 });
 
@@ -475,51 +596,147 @@ describe("initialState: the Home rule", () => {
   });
 });
 
-describe("layout", () => {
-  const stackOf = (
-    count: number,
-    focus = count - 1,
-    widths: Record<number, number> = {}
-  ): Stack => ({
+describe("layout (A1)", () => {
+  const stackOf = (count: number, focus = count - 1): Stack => ({
     root: destinationRoots.explore,
     panels: Array.from({ length: count }, (_, index) => ({
       id: `p${index + 1}`,
       history: [note(index + 1)],
-      index: 0,
-      ...(widths[index] ? { width: widths[index] } : {})
+      index: 0
     })),
     focus,
     closed: []
   });
-  const modes = (stack: Stack, width: number) =>
-    layout(stack, width)
-      .map((item) => (item.mode === "full" ? "F" : "s"))
+  const on: LayoutChrome = { navigator: true, context: true };
+  const noNavigator: LayoutChrome = { navigator: false, context: true };
+  const bare: LayoutChrome = { navigator: false, context: false };
+  /** F full, c compact, s spine, m a spine inside the "+N" spine; root first. */
+  const modes = (stack: Stack, width: number, chrome: LayoutChrome = on) =>
+    layout(stack, width, undefined, chrome)
+      .map((item) =>
+        item.mode === "full" ? "F" : item.mode === "compact" ? "c" : item.merged ? "m" : "s"
+      )
       .join("");
+  /** The top panel's width under the result. */
+  const topWidth = (stack: Stack, width: number, chrome: LayoutChrome = on) => {
+    const items = layout(stack, width, undefined, chrome);
+    const tier = width >= 1440 ? 240 : width >= 1180 ? 224 : 216;
+    const merged = items.filter((item) => item.merged).length;
+    const spines =
+      items.filter((item) => item.mode === "spine" && !item.merged).length + (merged > 0 ? 1 : 0);
+    const compact = items.some((item) => item.mode === "compact") ? tier : 0;
+    return stackWidth(width, chrome) - compact - spines * 40;
+  };
+
+  it("takes the stack width from the window less the rail, navigator and context panel", () => {
+    // 960: compact tier, context as a 40 px strip.
+    expect(stackWidth(960, on)).toBe(960 - 64 - 224 - 40);
+    expect(stackWidth(960, noNavigator)).toBe(960 - 64 - 40);
+    expect(stackWidth(960, bare)).toBe(960 - 64);
+    // 1280: docked context.
+    expect(stackWidth(1280, on)).toBe(1280 - 72 - 256 - 304);
+    expect(stackWidth(1440, on)).toBe(1440 - 72 - 272 - 320);
+    expect(stackWidth(1440, bare)).toBe(1440 - 72);
+  });
 
   it("shows the root alone in full", () => {
-    expect(layout(stackOf(0), 960)).toEqual([{ panel: -1, mode: "full" }]);
+    for (const width of [960, 1280, 1440])
+      expect(layout(stackOf(0), width)).toEqual([{ panel: -1, mode: "full" }]);
   });
 
-  it("collapses the items farthest from focus to spines first", () => {
-    expect(modes(stackOf(1), 960)).toBe("FF");
-    expect(modes(stackOf(2), 960)).toBe("sFF");
-    expect(modes(stackOf(3), 960)).toBe("ssFF");
-    expect(modes(stackOf(3), 1440)).toBe("sFFF");
-    expect(modes(stackOf(8), 1440)).toBe("sssssssFF");
-    expect(modes(stackOf(8), 1200)).toBe("sssssssFF");
-    expect(modes(stackOf(8), 960)).toBe("ssssssssF");
+  it("at 960 keeps the top at 552 with two spines and merges older spines", () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map((count) => modes(stackOf(count), 960))).toEqual([
+      "sF",
+      "ssF",
+      "mmsF",
+      "mmmsF",
+      "mmmmsF",
+      "mmmmmsF",
+      "mmmmmmsF",
+      "mmmmmmmsF"
+    ]);
+    for (let count = 2; count <= 8; count += 1)
+      expect(topWidth(stackOf(count), 960)).toBe(layoutConfig.topMinAtWindowMin);
+    // 999 still bends the floor; 1000 does not.
+    expect(modes(stackOf(3), 999)).toBe("mmsF");
+    expect(topWidth(stackOf(2), 1000)).toBe(592);
   });
 
-  it("keeps the focused item full and expands its left neighbour before its right", () => {
-    expect(modes(stackOf(5, 2), 960)).toBe("sssFss");
-    expect(modes(stackOf(5, 2), 1440)).toBe("ssFFFs");
-    expect(modes(stackOf(5, -1), 300)).toBe("Fsssss");
+  it("at 960 without the navigator shows the previous panel compact from an 848 px stack", () => {
+    expect(stackWidth(960, noNavigator)).toBeGreaterThanOrEqual(848);
+    expect([1, 2, 3, 4, 8].map((count) => modes(stackOf(count), 960, noNavigator))).toEqual([
+      "cF",
+      "scF",
+      "sscF",
+      // Two spines and the compact panel would leave the top 520 < 552: the previous folds first.
+      "ssssF",
+      "mmssssssF"
+    ]);
+    // Without the strip either, the stack is 896.
+    expect(modes(stackOf(4), 960, bare)).toBe("ssscF");
   });
 
-  it("uses stored widths and stops a side at the first panel that does not fit", () => {
-    // A 1000 px neighbour does not fit, so the 420 px panel beyond it stays a spine too.
-    expect(modes(stackOf(3, 2, { 1: 1000 }), 1440)).toBe("sssF");
-    expect(modes(stackOf(3, 2, { 1: 600 }), 1440)).toBe("ssFF");
+  it("at 1280 keeps the top at 568 with two spines and the context docked", () => {
+    expect([1, 2, 3, 5, 8].map((count) => modes(stackOf(count), 1280))).toEqual([
+      "sF",
+      "ssF",
+      "mmsF",
+      "mmmmsF",
+      "mmmmmmmsF"
+    ]);
+    for (const count of [2, 3, 5, 8]) expect(topWidth(stackOf(count), 1280)).toBe(568);
+    // Without the navigator the stack is 904 ≥ 848: the previous panel shows while the top keeps 568.
+    expect([1, 2, 3, 4].map((count) => modes(stackOf(count), 1280, noNavigator))).toEqual([
+      "cF",
+      "scF",
+      "sscF",
+      "ssssF"
+    ]);
+    // At 1200 (narrow tier, context strip) the stack is 832 < 848: the previous panel is a spine.
+    expect(stackWidth(1200, on)).toBe(832);
+    expect(modes(stackOf(2), 1200, on)).toBe("ssF");
+  });
+
+  it("at 1440 shows the previous panel only from an 848 px stack and merges past 6 spines", () => {
+    // 776 px with the navigator and the docked context: no compact panel.
+    expect([1, 3, 5, 6, 8].map((count) => modes(stackOf(count), 1440))).toEqual([
+      "sF",
+      "sssF",
+      "sssssF",
+      "mmssssF",
+      "mmmmssssF"
+    ]);
+    for (const count of [5, 6, 8])
+      expect(topWidth(stackOf(count), 1440)).toBeGreaterThanOrEqual(568);
+    // Bare, 1368 px: the previous panel is compact and the spines past 6 merge into "+N".
+    expect([1, 2, 7, 8].map((count) => modes(stackOf(count), 1440, bare))).toEqual([
+      "cF",
+      "scF",
+      "sssssscF",
+      "msssssscF"
+    ]);
+    expect(layout(stackOf(8), 1440, undefined, bare)[0]).toEqual({
+      panel: -1,
+      mode: "spine",
+      merged: true
+    });
+    expect(topWidth(stackOf(8), 1440, bare)).toBe(1368 - 240 - 7 * 40);
+  });
+
+  it("keeps panels right of the top as spines and the root as the top when focused", () => {
+    expect(modes(stackOf(5, 2), 1440, bare)).toBe("sscFss");
+    expect(modes(stackOf(5, -1), 1440, bare)).toBe("Fsssss");
+    expect(modes(stackOf(5, 0), 1440, bare)).toBe("cFssss");
+  });
+
+  it("honours an explicit floor", () => {
+    expect(modes(stackOf(3), 1280, on)).toBe("mmsF");
+    expect(layout(stackOf(3), 1280, 400, on).map((item) => item.mode)).toEqual([
+      "spine",
+      "spine",
+      "spine",
+      "full"
+    ]);
   });
 });
 
@@ -528,8 +745,7 @@ describe("limits", () => {
     expect(workspaceLimits).toMatchObject({
       maxPanels: 8,
       maxClosed: 20,
-      minPanelWidth: 420,
-      spineWidth: 40
+      minPanelWidth: 216
     });
   });
 });

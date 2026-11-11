@@ -58,6 +58,46 @@ describe("loadWorkspace", () => {
     expect(loadWorkspace(now, old.storage, london)).toEqual(fresh);
   });
 
+  it("round-trips the S1 view state", () => {
+    const state = [
+      { type: "firstSource", address: `memora://source/${"00000000-0000-4000-8000-000000000001"}` },
+      { type: "scroll", panel: 0, top: 480 },
+      { type: "setContextTab", kind: "question", tab: "ask" },
+      { type: "hoist", topicId: "00000000-0000-4000-8000-000000000002" },
+      { type: "setDensity", density: "compact" }
+    ].reduce((current, action) => reduce(current, action as Parameters<typeof reduce>[1]), fresh);
+    const { storage } = memoryStorage();
+    saveWorkspace(state, storage);
+    expect(state.stacks.explore.panels[0]?.scroll).toBe(480);
+    expect(loadWorkspace(now, storage, london)).toEqual(state);
+  });
+
+  it("gives a state saved without an S1 field that field's default, keeping the rest", () => {
+    const saved = reduce(fresh, { type: "go", destination: "library" });
+    for (const field of ["contextTab", "hoist", "density"] as const) {
+      const rest: Record<string, unknown> = { ...saved };
+      delete rest[field];
+      const { storage } = memoryStorage({ [workspaceStorageKey]: JSON.stringify(rest) });
+      const loaded = loadWorkspace(now, storage, london);
+      expect(loaded, field).toEqual(saved);
+      expect(loaded.destination).toBe("library");
+    }
+  });
+
+  it("falls back to the defaults on an invalid S1 field", () => {
+    for (const patch of [
+      { density: "dense" },
+      { hoist: "not-an-id" },
+      { contextTab: { note: "activity" } },
+      { contextTab: { wiki: "ask" } }
+    ]) {
+      const { storage } = memoryStorage({
+        [workspaceStorageKey]: JSON.stringify({ ...fresh, destination: "library", ...patch })
+      });
+      expect(loadWorkspace(now, storage, london), JSON.stringify(patch)).toEqual(fresh);
+    }
+  });
+
   it("falls back to the defaults when the storage throws or is missing", () => {
     expect(readPersistedWorkspace(throwing)).toBeNull();
     expect(loadWorkspace(now, throwing, london)).toEqual(fresh);

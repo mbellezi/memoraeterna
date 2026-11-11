@@ -22,11 +22,14 @@ export const destinationRoots: Readonly<Record<DestinationId, string>> = {
   map: formatView({ view: "map", lens: "relations" })
 };
 
-/** The navigator is on by default in Explore and Library (D8); Cmd-\ toggles it per destination. */
+/**
+ * The navigator is on by default in Explore only (design record §20.1 row 30: the Library has a
+ * filter bar and a territory bar instead); Cmd-\ toggles it per destination.
+ */
 export const navigatorDefaults: Readonly<Record<DestinationId, boolean>> = {
   home: false,
   explore: true,
-  library: true,
+  library: false,
   inbox: false,
   map: false
 };

@@ -24,10 +24,9 @@ describe("destinations", () => {
     expect(destinationRoots.map).toBe("memora://map/relations");
   });
 
-  it("show the navigator by default in Explore and Library only", () => {
+  it("show the navigator by default in Explore only (design record §20.1 row 30)", () => {
     expect(destinationIds.filter((destination) => navigatorDefaults[destination])).toEqual([
-      "explore",
-      "library"
+      "explore"
     ]);
   });
 

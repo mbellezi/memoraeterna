@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { objectKinds, parseObjectAddress, type ObjectKind } from "@app/domain";
+
 import {
   destinationIds,
   destinationRoots,
@@ -8,6 +10,14 @@ import {
   type DestinationId,
   type WorkspacePlace
 } from "./destinations";
+import {
+  contextMode,
+  layoutConfig,
+  prevShowsAt,
+  tierFor,
+  topMinFor,
+  type LayoutTier
+} from "./layout-config";
 import { parseAddress, parseViewAddress } from "./route";
 
 /**
@@ -25,6 +35,8 @@ export interface Panel {
   history: PanelAddress[];
   index: number;
   width?: number;
+  /** The panel body's scroll offset in px (S1). */
+  scroll?: number;
 }
 
 export interface Stack {
@@ -51,6 +63,48 @@ export interface WorkspaceState {
   lastHomeDay: string;
   /** When Home was last opened (ISO); Home's "New" counts from it. */
   lastHomeOpenAt: string | null;
+  /** The last context tab chosen per object kind (S1); a kind without one uses its default. */
+  contextTab: Partial<Record<ObjectKind, ContextTabId>>;
+  /** The topic Explore's navigator is hoisted to, or null. */
+  hoist: string | null;
+  /** The Library header's density toggle (S1). */
+  density: Density;
+}
+
+/** The context panel's tabs in amendment A5's order (Option-1..6 follow it). */
+export const contextTabIds = [
+  "connections",
+  "evidence",
+  "ask",
+  "mentions",
+  "graph",
+  "history"
+] as const;
+export type ContextTabId = (typeof contextTabIds)[number];
+export const densities = ["comfortable", "compact"] as const;
+export type Density = (typeof densities)[number];
+
+/**
+ * The tab the context panel opens on for a kind before the user picks one (design record §5.6): a
+ * Source still generating opens on Ask, a ready one on Connections.
+ */
+export const defaultContextTabs: Readonly<Record<ObjectKind, ContextTabId>> = {
+  source: "connections",
+  note: "connections",
+  topic: "connections",
+  question: "evidence",
+  entity: "ask"
+};
+
+/** The tab to show for `kind`: the last one chosen, or the kind's default. */
+export function contextTabFor(
+  state: Pick<WorkspaceState, "contextTab">,
+  kind: ObjectKind,
+  options: { sourceGenerating?: boolean } = {}
+): ContextTabId {
+  const chosen = state.contextTab[kind];
+  if (chosen) return chosen;
+  return kind === "source" && options.sourceGenerating ? "ask" : defaultContextTabs[kind];
 }
 
 export type WorkspaceAction =
@@ -66,7 +120,13 @@ export type WorkspaceAction =
   | { type: "toggleContext" }
   | { type: "redirect"; panel: number; to: PanelAddress }
   | { type: "resize"; panel: number; width: number }
-  | { type: "homeOpened"; at: string };
+  | { type: "homeOpened"; at: string }
+  /** Onboarding's first source (D9, A6): go to Explore and push the Source. */
+  | { type: "firstSource"; address: PanelAddress }
+  | { type: "setContextTab"; kind: ObjectKind; tab: ContextTabId }
+  | { type: "hoist"; topicId: string | null }
+  | { type: "setDensity"; density: Density }
+  | { type: "scroll"; panel: number; top: number };
 
 export const workspaceLimits = {
   /** Panels per stack; a 9th evicts the leftmost panel that is not focused (D8, cal.). */
@@ -75,11 +135,11 @@ export const workspaceLimits = {
   maxClosed: 20,
   /** Entries per panel history; the oldest go first. */
   maxHistory: 50,
-  /** Narrowest full panel (D8, cal.). */
-  minPanelWidth: 420,
+  /** A stored panel width's bounds: the narrowest compact panel (layout-config.ts) and a cap. */
+  minPanelWidth: Math.min(...layoutConfig.tiers.map((tier) => tier.prevW)),
   maxPanelWidth: 4096,
-  /** A collapsed panel's width. */
-  spineWidth: 40
+  /** A panel's stored scroll offset cap, in px. */
+  maxScroll: 10_000_000
 } as const;
 
 export interface ReduceOptions {
@@ -122,9 +182,14 @@ export function defaultWorkspace(today: string): WorkspaceState {
     navigator: { ...navigatorDefaults },
     context: false,
     lastHomeDay: today,
-    lastHomeOpenAt: null
+    lastHomeOpenAt: null,
+    contextTab: {},
+    hoist: null,
+    density: "comfortable"
   };
 }
+
+const isTopicId = (value: string) => parseObjectAddress(`memora://topic/${value}`) !== null;
 
 const addressSchema = z.string().refine((value) => parseAddress(value) !== null);
 
@@ -138,7 +203,8 @@ const panelSchema = z
       .int()
       .min(workspaceLimits.minPanelWidth)
       .max(workspaceLimits.maxPanelWidth)
-      .optional()
+      .optional(),
+    scroll: z.number().int().min(0).max(workspaceLimits.maxScroll).optional()
   })
   .strict()
   .refine((panel) => panel.index < panel.history.length);
@@ -170,7 +236,11 @@ const perDestination = <T extends z.ZodType>(schema: (destination: DestinationId
     )
     .strict();
 
-/** The persisted shape (`memora.workspace.v1`); anything else falls back to the defaults. */
+/**
+ * The persisted shape (`memora.workspace.v1`); anything else falls back to the defaults. The S1
+ * fields joined the same version (nothing had shipped): a state saved without them gets their
+ * defaults.
+ */
 export const WorkspaceStateSchema = z
   .object({
     version: z.literal(workspaceStateVersion),
@@ -179,7 +249,10 @@ export const WorkspaceStateSchema = z
     navigator: perDestination(() => z.boolean()),
     context: z.boolean(),
     lastHomeDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    lastHomeOpenAt: z.string().datetime({ offset: true }).nullable()
+    lastHomeOpenAt: z.string().datetime({ offset: true }).nullable(),
+    contextTab: z.partialRecord(z.enum(objectKinds), z.enum(contextTabIds)).default({}),
+    hoist: z.string().refine(isTopicId).nullable().default(null),
+    density: z.enum(densities).default("comfortable")
   })
   .strict();
 
@@ -364,7 +437,10 @@ function reopen(stack: Stack, maxPanels: number): Stack {
  * - `back` at a panel's first entry closes it; `forward` right after a close reopens it.
  * - A 9th panel evicts the leftmost panel that is not focused (D8).
  * - `go` changes the destination and keeps every stack.
- * - `redirect` swaps a panel's address in its history (a topic redirect), without a new entry.
+ * - `redirect` swaps a panel's address in its history (a topic redirect), without a new entry; when
+ *   the target is already open elsewhere, the redirected panel goes and the open one takes focus.
+ * - `firstSource` (D9, A6) goes to Explore and pushes the Source right of its focused panel.
+ * - `setContextTab`, `hoist`, `setDensity` and `scroll` remember the S1 view state.
  */
 export function reduce(
   state: WorkspaceState,
@@ -390,6 +466,31 @@ export function reduce(
     }
     case "open":
       return open(state, action, maxPanels);
+    case "firstSource": {
+      const parsed = parseAddress(action.address);
+      if (!parsed || !("object" in parsed) || parsed.object.kind !== "source") return state;
+      const inExplore: WorkspaceState =
+        state.destination === "explore" ? state : { ...state, destination: "explore" };
+      const from = inExplore.stacks.explore.focus;
+      return open(
+        inExplore,
+        { type: "open", address: action.address, from, mode: "push" },
+        maxPanels
+      );
+    }
+    case "setContextTab": {
+      if (!objectKinds.includes(action.kind) || !contextTabIds.includes(action.tab)) return state;
+      if (state.contextTab[action.kind] === action.tab) return state;
+      return { ...state, contextTab: { ...state.contextTab, [action.kind]: action.tab } };
+    }
+    case "hoist": {
+      if (action.topicId !== null && !isTopicId(action.topicId)) return state;
+      return state.hoist === action.topicId ? state : { ...state, hoist: action.topicId };
+    }
+    case "setDensity":
+      return !densities.includes(action.density) || state.density === action.density
+        ? state
+        : { ...state, density: action.density };
     default:
       break;
   }
@@ -444,6 +545,14 @@ export function reduce(
       if (!panel || !isPanelIndex(stack, action.panel) || !parseAddress(action.to)) return state;
       const from = currentAddress(panel);
       if (from === action.to) return state;
+      const existing = findOpen(stack, action.to);
+      if (existing !== null) {
+        // The target is open already: an address is never open twice (D8), so this panel goes.
+        const panels = stack.panels.filter((_, index) => index !== action.panel);
+        const shift = (index: number) => (index > action.panel ? index - 1 : index);
+        const focus = stack.focus === action.panel ? shift(existing) : shift(stack.focus);
+        return update({ ...settled(stack), panels, focus });
+      }
       const redirected = {
         ...panel,
         history: panel.history.map((address) => (address === from ? action.to : address))
@@ -451,6 +560,19 @@ export function reduce(
       return update({
         ...stack,
         panels: stack.panels.map((entry, index) => (index === action.panel ? redirected : entry))
+      });
+    }
+    case "scroll": {
+      const panel = stack.panels[action.panel];
+      if (!panel || !isPanelIndex(stack, action.panel) || !Number.isFinite(action.top))
+        return state;
+      const scroll = Math.min(workspaceLimits.maxScroll, Math.max(0, Math.round(action.top)));
+      if ((panel.scroll ?? 0) === scroll) return state;
+      return update({
+        ...stack,
+        panels: stack.panels.map((entry, index) =>
+          index === action.panel ? { ...entry, scroll } : entry
+        )
       });
     }
     case "resize": {
@@ -473,34 +595,80 @@ export function reduce(
   return state;
 }
 
+export interface LayoutChrome {
+  /** The destination's navigator is shown. */
+  navigator: boolean;
+  /** The context panel is shown: docked from 1280 px, otherwise its 40 px strip. */
+  context: boolean;
+}
+
+export type LayoutMode = "full" | "compact" | "spine";
+export interface LayoutItem {
+  /** The panel index; -1 is the root surface. */
+  panel: number;
+  mode: LayoutMode;
+  /** A spine drawn inside the one "+N" spine at the far left. */
+  merged?: true;
+}
+
+/** The stack's width: the window less the rail, the navigator when shown and the context panel. */
+export function stackWidth(
+  viewportWidth: number,
+  chrome: LayoutChrome,
+  tier: LayoutTier = tierFor(viewportWidth)
+): number {
+  const context = !chrome.context
+    ? 0
+    : contextMode(viewportWidth) === "docked"
+      ? tier.ctxW
+      : layoutConfig.contextStripW;
+  return Math.max(0, viewportWidth - tier.railW - (chrome.navigator ? tier.navW : 0) - context);
+}
+
 /**
- * Which items of a stack show in full and which collapse to spines, for a stack area
- * `viewportWidth` wide (the root counts as item -1). The focused item is always full; its
- * neighbours expand nearest first (left before right at the same distance), each side until one
- * does not fit. Items keep their stored width, or `minWidth`; a spine is 40 px.
+ * How each item of a stack draws in a `viewportWidth` px window (D8 as amended by A1; design
+ * record §3 and §8). The root counts as item -1.
+ *
+ * - The focused item is the top panel, `full`, and keeps at least `topMin` (568, 552 at a 960-999
+ *   px window) where the rest allows it.
+ * - The item left of it is `compact` when the stack is at least `prevShowsAt` (848 px) wide and the
+ *   top keeps its floor beside it; otherwise it is a spine. Every other item is a spine.
+ * - Spines beyond `maxSpines` (6) merge, the leftmost first, into one "+N" spine at the far left
+ *   (`merged: true`); while the top would still fall below its floor, older spines merge too.
  */
 export function layout(
   stack: Stack,
   viewportWidth: number,
-  minWidth: number = workspaceLimits.minPanelWidth
-): { panel: number; mode: "full" | "spine" }[] {
+  topMin: number = topMinFor(viewportWidth),
+  chrome: LayoutChrome = { navigator: true, context: true }
+): LayoutItem[] {
+  const tier = tierFor(viewportWidth);
+  const width = stackWidth(viewportWidth, chrome, tier);
   const items = [-1, ...stack.panels.map((_, index) => index)];
-  const widthOf = (item: number) => Math.max(minWidth, stack.panels[item]?.width ?? minWidth);
-  const full = new Set<number>([stack.focus]);
-  let used = widthOf(stack.focus) + (items.length - 1) * workspaceLimits.spineWidth;
-  const growing = { left: true, right: true };
-  for (let distance = 1; distance < items.length; distance += 1) {
-    for (const side of ["left", "right"] as const) {
-      const item = side === "left" ? stack.focus - distance : stack.focus + distance;
-      if (!growing[side] || item < -1 || item >= stack.panels.length) continue;
-      const extra = widthOf(item) - workspaceLimits.spineWidth;
-      if (used + extra > viewportWidth) {
-        growing[side] = false;
-        continue;
-      }
-      used += extra;
-      full.add(item);
-    }
-  }
-  return items.map((panel) => ({ panel, mode: full.has(panel) ? "full" : "spine" }));
+  const top = Math.min(Math.max(stack.focus, -1), stack.panels.length - 1);
+  const spinesWith = (compact: boolean) =>
+    items.filter((item) => item !== top && !(compact && item === top - 1));
+  const drawn = (spines: number, merged: number) => spines - merged + (merged > 0 ? 1 : 0);
+  const topWidth = (compact: boolean, merged: number) =>
+    width - (compact ? tier.prevW : 0) - drawn(spinesWith(compact).length, merged) * tier.spineW;
+  const beyondMax = (compact: boolean) =>
+    Math.max(0, spinesWith(compact).length - layoutConfig.maxSpines);
+
+  // 1. The previous panel folds to a spine first.
+  const compact =
+    top > -1 && width >= prevShowsAt(tier) && topWidth(true, beyondMax(true)) >= topMin;
+  const spines = spinesWith(compact);
+  // 2. Spines beyond six merge; older ones merge while the top is below its floor.
+  let merged = beyondMax(compact);
+  while (topWidth(compact, merged) < topMin && drawn(spines.length, merged) > 1)
+    merged = merged === 0 ? 2 : merged + 1;
+  const mergedItems = new Set(spines.slice(0, merged));
+
+  return items.map((panel): LayoutItem => {
+    if (panel === top) return { panel, mode: "full" };
+    if (compact && panel === top - 1) return { panel, mode: "compact" };
+    return mergedItems.has(panel)
+      ? { panel, mode: "spine", merged: true }
+      : { panel, mode: "spine" };
+  });
 }
