@@ -52,3 +52,16 @@ export const inTopicChunks = (topic: string, chunk: string): string =>
 /** True when the note belongs to the topic (or no topic is set); `note` is the note ID expression. */
 export const inTopicNotes = (topic: string, note: string): string =>
   `(${topic}::uuid is null or ${note} in (select note_id from topic_note_ids))`;
+
+/**
+ * The territory partition (the Library's topic filter and territory bar, F5 T131): the sources
+ * whose primary place (rank 0) is in the subtree of the topic. A secondary ("also in") placement
+ * and the parts of a placed book are left out on purpose: a source belongs to exactly one
+ * territory, so the territory counts add up to the library's total and a territory's list is as long
+ * as its count. It is one more expression for the same `with recursive` statement as
+ * `topicScopeCtes` and reads its `topic_sub`.
+ */
+export const topicPrimarySourcesCte = (): string => `topic_primary_sources as (
+      select p.source_item_id as id from topic_placements p
+       where p.item_kind = 'source' and p.rank = 0 and p.topic_id in (select id from topic_sub)
+    )`;

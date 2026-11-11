@@ -47,7 +47,7 @@ export class LibraryService {
 
   private pool(): PgPool {
     const pool = this.getPool();
-    if (!pool) throw new Error("library.errors.unavailable");
+    if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
 }

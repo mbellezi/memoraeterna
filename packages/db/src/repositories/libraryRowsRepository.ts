@@ -7,7 +7,7 @@ import {
 } from "@app/domain";
 
 import { appliedNoteRelationSql, currentNoteSql } from "./note-relation-sql.js";
-import { topicScopeCtes } from "./topicScopeSql.js";
+import { topicPrimarySourcesCte, topicScopeCtes } from "./topicScopeSql.js";
 import type { Queryable } from "./types.js";
 
 /**
@@ -51,7 +51,7 @@ export const libraryRowsLimit = { default: 50, max: 100 } as const;
 /** The most sections the ruler shows; a longer source merges neighbouring sections. */
 export const sourceProgressSectionLimit = 40;
 /** Completed sources whose notes per passage make the estimate, and the least that make one. */
-export const sourceProgressEstimate = { referenceSources: 30, minReferenceSources: 3 } as const;
+export const sourceProgressEstimate = { referenceSources: 30, minReferenceSources: 3 };
 
 const malformedCursor = "errors.common.validationFailed";
 
@@ -147,6 +147,8 @@ export interface SourceProgress {
   } | null;
   /** The Gardener blocker key when the work waits for a person (as `LibraryRow.reason`). */
   needsYou: string | null;
+  /** The person paused the work: a run of the source or of a part waits in a paused job. */
+  paused: boolean;
   steps: {
     read: { state: StepState; pages: number | null };
     chunks: { state: StepState; indexed: number };
@@ -162,19 +164,30 @@ export interface SourceProgress {
 // Cursor
 
 interface RowsCursor {
-  key: string | number;
+  /** Null only for a title cursor whose key is too long to carry: the id gives it back. */
+  key: string | number | null;
   id: string;
 }
 
 const base64url = (text: string) => Buffer.from(text, "utf8").toString("base64url");
 
-/** The cursor is the sort key and id of the last row of a page: opaque to the renderer. */
+/** The longest cursor the statement hands out; the IPC schemas accept up to 600 characters. */
+export const libraryRowsCursorMax = 500;
+
+/**
+ * The cursor is the sort key and id of the last row of a page: opaque to the renderer. A title
+ * key can be as long as the title (1000 characters, three bytes each in CJK), so a title cursor
+ * that would pass `libraryRowsCursorMax` carries no key: the statement reads the key back from the
+ * row's id. Every other key is a number or an instant.
+ */
 export function encodeLibraryRowsCursor(
   sort: LibraryRowSort,
   dir: "asc" | "desc",
   cursor: RowsCursor
 ): string {
-  return base64url(JSON.stringify([sort, dir, cursor.key, cursor.id]));
+  const full = base64url(JSON.stringify([sort, dir, cursor.key, cursor.id]));
+  if (sort !== "title" || cursor.key === null || full.length <= libraryRowsCursorMax) return full;
+  return base64url(JSON.stringify([sort, dir, null, cursor.id]));
 }
 
 /** Decodes a cursor made for this sort and direction; anything else is refused. */
@@ -197,11 +210,12 @@ export function decodeLibraryRowsCursor(
     cursorDir !== dir ||
     typeof id !== "string" ||
     !uuidPattern.test(id) ||
-    (numeric ? !Number.isInteger(key) : typeof key !== "string") ||
+    (sort === "title" ? key !== null && typeof key !== "string" : false) ||
+    (sort !== "title" && (numeric ? !Number.isInteger(key) : typeof key !== "string")) ||
     ((sort === "added" || sort === "updated") && !instantPattern.test(key as string))
   )
     throw new Error(malformedCursor);
-  return { key: key as string | number, id };
+  return { key: key as string | number | null, id };
 }
 
 /** A cursor instant: UTC with microseconds, as the statement writes it. */
@@ -242,6 +256,8 @@ const sortKeys: Record<
     sql: (status: string) => string;
     type: "text" | "int" | "timestamptz";
     out: (key: string) => string;
+    /** The cursor's key as a typed value, from its parameter and its row id parameter. */
+    anchor?: (key: string, id: string) => string;
     derived: boolean;
   }
 > = {
@@ -249,6 +265,9 @@ const sortKeys: Record<
     sql: () => "f_unaccent(lower(c.title))",
     type: "text",
     out: (key) => key,
+    // A cursor too long to carry the key (null) gets it back from the row it names.
+    anchor: (key, id) =>
+      `coalesce(${key}::text, (select f_unaccent(lower(a.title)) from source_items a where a.id = ${id}::uuid))`,
     derived: false
   },
   added: { sql: () => "c.created_at", type: "timestamptz", out: timestampTextSql, derived: false },
@@ -276,9 +295,7 @@ const candidatesCte = (topicFilter: boolean) => `candidates as (
 ${
   topicFilter
     ? `
-     and ($5::uuid is null or s.id in (
-           select p.source_item_id from topic_placements p
-            where p.item_kind = 'source' and p.rank = 0 and p.topic_id in (select id from topic_sub)))`
+     and ($5::uuid is null or s.id in (select id from topic_primary_sources))`
     : ""
 }
 )`;
@@ -393,14 +410,16 @@ export function libraryRowsStatement(
 ): string {
   const key = sortKeys[sort];
   const cursorWhere = cursor
-    ? `where (x.key, x.id) ${dir === "asc" ? ">" : "<"} (${cursor.key}::${key.type}, ${cursor.id}::uuid)`
+    ? `where (x.key, x.id) ${dir === "asc" ? ">" : "<"} (${
+        key.anchor ? key.anchor(cursor.key, cursor.id) : `${cursor.key}::${key.type}`
+      }, ${cursor.id}::uuid)`
     : "";
   const order = `x.key ${dir}, x.id ${dir}`;
   const paging = `${cursorWhere} order by ${order} limit ${limit}::int + 1`;
   // `$4` (the status filter) is read only when the status is derived first; naming it here gives
   // the cheap statements a type for it.
   const head = `with recursive ${activeTree}, filter_status as (select $4::text as status),
-  ${topicScopeCtes("$5")}, ${candidatesCte(true)}`;
+  ${topicScopeCtes("$5")}, ${topicPrimarySourcesCte()}, ${candidatesCte(true)}`;
   const tail = `select x.id, x.title, x.type, ${timestampTextSql("x.created_at")} as "createdAt",
         ${timestampTextSql("x.updated_at")} as "updatedAt",
         source.metadata #> '{descriptor,creators}' as creators,
@@ -474,14 +493,11 @@ select w.id as "sourceId", best.topic_id as "topicId"
 
 /** Territories and status counts over every candidate, ignoring the facet's own filter. */
 export const libraryFacetsSql = `with recursive ${activeTree}, ${topicScopeCtes("$5")},
-${candidatesCte(false)},
+${topicPrimarySourcesCte()}, ${candidatesCte(false)},
 ${derivedCtes("a", "candidates", "exists")},
 typed as (
   select c.id, d.status, place.topic_id,
-         ($5::uuid is null or exists (
-           select 1 from topic_placements p
-            where p.item_kind = 'source' and p.source_item_id = c.id and p.rank = 0
-              and p.topic_id in (select id from topic_sub))) as in_topic
+         ($5::uuid is null or c.id in (select id from topic_primary_sources)) as in_topic
     from candidates c join a_derived d on d.id = c.id
     ${placeLateral("c.id")}
 ),
@@ -597,25 +613,76 @@ export function buildSectionRuler(input: {
       return index <= lastWithNotes ? "done" : index === lastWithNotes + 1 ? "reading" : "pending";
     return input.notesDone || index <= lastWithNotes ? "done" : "pending";
   };
-  const limit = input.limit ?? sourceProgressSectionLimit;
+  return mergeSections(
+    sections.map((section, index) => ({ ...section, state: stateOf(index) })),
+    input.limit ?? sourceProgressSectionLimit
+  );
+}
+
+interface RulerSection {
+  title: string;
+  length: number;
+  notes: number;
+  state: SourceProgressSection["state"];
+}
+
+/** At most `limit` segments: neighbouring sections merge, named after the first of them. */
+function mergeSections(sections: readonly RulerSection[], limit: number): SourceProgressSection[] {
   const group = Math.max(1, Math.ceil(sections.length / limit));
-  const total = sections.reduce((sum, section) => sum + section.length, 0) || 1;
+  const measured = sections.reduce((sum, section) => sum + section.length, 0);
+  // Nothing is chunked yet: the sections share the ruler equally.
+  const weight = (section: RulerSection) => (measured > 0 ? section.length : 1);
+  const total = measured > 0 ? measured : sections.length;
   const merged: SourceProgressSection[] = [];
   for (let from = 0; from < sections.length; from += group) {
     const part = sections.slice(from, from + group);
-    const states = part.map((_, offset) => stateOf(from + offset));
     merged.push({
       title: part[0]!.title,
-      share: part.reduce((sum, section) => sum + section.length, 0) / total,
+      share: part.reduce((sum, section) => sum + weight(section), 0) / total,
       notes: part.reduce((sum, section) => sum + section.notes, 0),
-      state: states.every((state) => state === "done")
+      state: part.every((section) => section.state === "done")
         ? "done"
-        : states.includes("reading")
+        : part.some((section) => section.state === "reading")
           ? "reading"
           : "pending"
     });
   }
   return merged;
+}
+
+/** One part of a book (a direct child of the source, with its own parts) as the ruler sees it. */
+export interface RulerPart {
+  title: string;
+  /** Characters of its passages, its own parts' included. */
+  length: number;
+  /** Current notes resting on it, its own parts' included. */
+  notes: number;
+  /** A run of it or of one of its parts is pending or running. */
+  active: boolean;
+  /** The latest run of it or of one of its parts failed or was canceled. */
+  failed: boolean;
+  hasRun: boolean;
+}
+
+/**
+ * The ruler of a book whose text is in its parts (design record 6.2): one segment per part in the
+ * order they were added, wide in proportion to its text. Each part has runs of its own, so its state
+ * is read from them: `reading` while one is active, `done` once its runs finished without failing,
+ * else `pending`.
+ */
+export function buildPartRuler(
+  parts: readonly RulerPart[],
+  limit: number = sourceProgressSectionLimit
+): SourceProgressSection[] {
+  return mergeSections(
+    parts.map((part) => ({
+      title: part.title,
+      length: part.length,
+      notes: part.notes,
+      state: part.active ? "reading" : part.hasRun && !part.failed ? "done" : "pending"
+    })),
+    limit
+  );
 }
 
 interface Checkpoint {
@@ -645,6 +712,15 @@ export function stepState(
     if (effectiveStages.length > 0 && !effectiveStages.includes(stage)) return "notApplicable";
     return "pending";
   });
+  return combineStepStates(states);
+}
+
+/**
+ * One state from several: any failure fails it, any work in hand is running, the ones that do not
+ * apply are left out (all of them: it does not apply), and what is left is done only when each is.
+ */
+export function combineStepStates(states: readonly StepState[]): StepState {
+  if (states.length === 0) return "pending";
   if (states.includes("failed")) return "failed";
   if (states.includes("running")) return "running";
   const applicable = states.filter((state) => state !== "notApplicable");
@@ -654,13 +730,7 @@ export function stepState(
 
 interface ProgressRow extends QueryResultRow {
   hasSource: boolean;
-  runStatus: SourceProgressRunStatus | null;
-  currentStage: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  effectiveStages: unknown;
-  checkpoints: unknown;
-  reason: string | null;
+  runs: unknown;
   hasDocument: boolean;
   hasSummary: boolean;
   pages: number;
@@ -672,44 +742,96 @@ interface ProgressRow extends QueryResultRow {
   chunkLengths: unknown;
   headings: unknown;
   notesByChunk: unknown;
+  parts: unknown;
 }
 
 type SourceProgressRunStatus = NonNullable<SourceProgress["run"]>["status"];
 
-const progressSql = `with src as (select s.id, s.title, s.summary from source_items s where s.id = $1::uuid),
-run as (
-  select r.status::text as status, r.current_stage, r.started_at, r.completed_at,
-         r.effective_stages, r.stages_checkpoint, r.job_id
-    from ingestion_runs r where r.source_item_id = $1::uuid
-   order by r.created_at desc, r.id desc limit 1),
+/** The latest ingestion run of the source or of one of its parts (the stages as the strip reads them). */
+interface MemberRun {
+  /** 0 for the source's own run. */
+  depth: number;
+  status: SourceProgressRunStatus;
+  stage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  effective: string[];
+  checkpoints: Record<string, Checkpoint | undefined>;
+  reason: string | null;
+  paused: boolean;
+}
+
+const instantSql = (column: string) =>
+  `to_char(${column} at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/**
+ * One bounded read of a source and the tree of its parts (a book's content and notes are in its
+ * chapters; its own run only catalogues): the latest run of each member, the passages, the
+ * current notes and, for a source with parts, one row per direct part for the ruler. `$1` the
+ * source, `$2` the blocker keys that need a person.
+ */
+const progressSql = `with recursive src as (select s.id, s.title, s.summary from source_items s where s.id = $1::uuid),
+tree(id, top_id, depth) as (
+  select id, null::uuid, 0 from src
+  union all
+  select c.id, coalesce(t.top_id, c.id), t.depth + 1
+    from tree t join source_items c on c.parent_source_item_id = t.id
+   where t.depth < 6),
+member_runs as (
+  select t.id, t.top_id, t.depth, run.status, run.current_stage, run.started_at, run.completed_at,
+         run.effective_stages, run.created_at,
+         case when jsonb_typeof(run.stages_checkpoint) = 'object' then (
+           select jsonb_object_agg(e.key, jsonb_build_object('status', e.value -> 'status', 'reason', e.value -> 'reason'))
+             from jsonb_each(run.stages_checkpoint) e) end as checkpoints,
+         ${attentionReasonSql("run", "job", "$2")} as reason,
+         coalesce(job.status = 'queued' and job.blocked_class = 'paused', false) as paused
+    from tree t
+    cross join lateral (
+      select r.status::text as status, r.current_stage, r.started_at, r.completed_at, r.effective_stages,
+             r.stages_checkpoint, r.job_id, r.created_at
+        from ingestion_runs r where r.source_item_id = t.id
+       order by r.created_at desc, r.id desc limit 1) run
+    left join jobs job on job.id = run.job_id),
 docs as (
   select d.id from documents d
-   where d.source_item_id = $1::uuid and not (d.metadata ? 'supersededByDocumentId')),
+   where d.source_item_id in (select id from tree) and not (d.metadata ? 'supersededByDocumentId')),
 chunk_rows as (
-  select c.id, c.chunk_index, c.content from chunks c
-   where c.source_item_id = $1::uuid and c.document_id in (select id from docs)),
+  select c.id, c.source_item_id, c.chunk_index, c.content from chunks c
+   where c.source_item_id in (select id from tree) and c.document_id in (select id from docs)),
+has_parts as (select exists (select 1 from tree where depth > 0) as yes),
 heading_rows as (
   select c.chunk_index, length(m.h[1]) as level, m.h[2] as title
     from chunk_rows c, lateral regexp_matches(c.content, '^(#{1,6})[ \\t]+(.+)$', 'gn') with ordinality as m(h, n)
+   where c.source_item_id = $1::uuid and not (select yes from has_parts)
    order by c.chunk_index, m.n limit 5000),
 note_rows as (
-  select n.id, n.evidence_chunk_id from atomic_notes n
-   where n.created_from_source_item_id = $1::uuid and ${currentNoteSql("n")}),
+  select n.id, n.created_from_source_item_id as source_id, n.evidence_chunk_id from atomic_notes n
+   where n.created_from_source_item_id in (select id from tree) and ${currentNoteSql("n")}),
 note_chunk as (
   select c.chunk_index, count(*)::int as n
-    from note_rows nr join chunk_rows c on c.id = nr.evidence_chunk_id group by c.chunk_index)
+    from note_rows nr join chunk_rows c on c.id = nr.evidence_chunk_id
+   where c.source_item_id = $1::uuid group by c.chunk_index),
+part_rows as (
+  select p.id, p.title, p.created_at,
+         coalesce((select sum(length(c.content)) from chunk_rows c join tree t2 on t2.id = c.source_item_id
+                    where t2.top_id = p.id), 0)::bigint as length,
+         (select count(*)::int from note_rows nr join tree t2 on t2.id = nr.source_id
+           where t2.top_id = p.id) as notes,
+         exists (select 1 from member_runs m where m.top_id = p.id and m.status in ('pending', 'running')) as active,
+         exists (select 1 from member_runs m where m.top_id = p.id and m.status in ('failed', 'canceled')) as failed,
+         exists (select 1 from member_runs m where m.top_id = p.id) as has_run
+    from source_items p where p.id in (select top_id from tree where top_id is not null))
 select exists (select 1 from src) as "hasSource", (select title from src) as title,
-       (select status from run) as "runStatus", (select current_stage from run) as "currentStage",
-       to_char((select started_at from run) at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "startedAt",
-       to_char((select completed_at from run) at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "completedAt",
-       (select effective_stages from run) as "effectiveStages",
-       (select stages_checkpoint from run) as checkpoints,
-       (select ${attentionReasonSql("run", "job", "$2")}
-          from run left join jobs job on job.id = run.job_id) as reason,
+       (select coalesce(jsonb_agg(jsonb_build_object(
+                 'depth', m.depth, 'status', m.status, 'stage', m.current_stage,
+                 'startedAt', ${instantSql("m.started_at")}, 'completedAt', ${instantSql("m.completed_at")},
+                 'effective', m.effective_stages, 'checkpoints', m.checkpoints,
+                 'reason', m.reason, 'paused', m.paused) order by m.depth, m.created_at desc), '[]'::jsonb)
+          from member_runs m) as runs,
        exists (select 1 from docs) as "hasDocument",
        coalesce((select summary is not null from src), false) as "hasSummary",
-       (select count(distinct sp.page)::int from source_spans sp
-         where sp.source_item_id = $1::uuid and sp.document_id in (select id from docs)
+       (select count(distinct (sp.document_id, sp.page))::int from source_spans sp
+         where sp.source_item_id in (select id from tree) and sp.document_id in (select id from docs)
            and sp.page is not null) as pages,
        (select count(*)::int from chunk_rows) as "chunkCount",
        (select count(*)::int from note_rows) as notes,
@@ -722,19 +844,32 @@ select exists (select 1 from src) as "hasSource", (select title from src) as tit
                 or r.target_atomic_note_id in (select id from note_rows))
            and ${appliedNoteRelationSql("r")}) as connections,
        coalesce((select jsonb_agg(jsonb_build_array(c.chunk_index, length(c.content)) order by c.chunk_index)
-                   from chunk_rows c), '[]'::jsonb) as "chunkLengths",
+                   from chunk_rows c where c.source_item_id = $1::uuid), '[]'::jsonb) as "chunkLengths",
        coalesce((select jsonb_agg(jsonb_build_array(h.chunk_index, h.level, h.title)) from heading_rows h),
                 '[]'::jsonb) as headings,
        coalesce((select jsonb_agg(jsonb_build_array(n.chunk_index, n.n)) from note_chunk n),
-                '[]'::jsonb) as "notesByChunk"`;
+                '[]'::jsonb) as "notesByChunk",
+       coalesce((select jsonb_agg(jsonb_build_array(p.title, p.length, p.notes, p.active, p.failed, p.has_run)
+                                  order by p.created_at, p.id) from part_rows p), '[]'::jsonb) as parts`;
 
-/** Notes per passage over the library's latest completed sources: the estimate's one ratio. */
-const estimateSql = `with ref as (
+/**
+ * Notes per passage over the library's latest completed sources: the estimate's one ratio. A
+ * reference is a source (a standalone one or a part of a book) whose run completed its notes with a
+ * model: a run made while no model was configured finished with no notes and says nothing about a
+ * yield. A book's own run only catalogues, so what it holds is not counted twice.
+ * `$1` the source (and its parts, left out), `$2` how many references.
+ */
+const estimateSql = `with recursive self(id, depth) as (
+  select $1::uuid, 0
+  union all select c.id, s.depth + 1 from self s join source_items c on c.parent_source_item_id = s.id
+   where s.depth < 6),
+ref as (
   select s.id from source_items s
-   where s.parent_source_item_id is null and s.id <> $1::uuid
+   where s.id not in (select id from self)
      and exists (select 1 from ingestion_runs r
                   where r.source_item_id = s.id and r.status = 'succeeded'
-                    and r.stages_checkpoint #>> '{atomicNotes,status}' = 'completed')
+                    and r.stages_checkpoint #>> '{atomicNotes,status}' = 'completed'
+                    and coalesce(r.stages_checkpoint #>> '{atomicNotes,metadata,configured}', 'true') <> 'false')
    order by s.updated_at desc, s.id limit $2::int)
 select (select count(*)::int from ref) as sources,
        (select count(*)::int from chunks c join documents d on d.id = c.document_id
@@ -746,7 +881,11 @@ select (select count(*)::int from ref) as sources,
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const needsPerson = [...gardenerStatusNeedsPerson];
 
-export function createLibraryRowsRepository(db: Queryable) {
+export function createLibraryRowsRepository(
+  db: Queryable,
+  options: { estimate?: Partial<typeof sourceProgressEstimate> } = {}
+) {
+  const estimateConfig = { ...sourceProgressEstimate, ...options.estimate };
   /** The path below the tree root of each topic, root-most first; a topic with none is absent. */
   async function paths(topicIds: readonly string[]): Promise<Map<string, LibraryPathSegment[]>> {
     const found = new Map<string, LibraryPathSegment[]>();
@@ -809,12 +948,12 @@ export function createLibraryRowsRepository(db: Queryable) {
   async function estimateNotes(sourceId: string, chunks: number): Promise<number | null> {
     const { rows } = await db.query<{ sources: number; chunks: number; notes: number }>(
       estimateSql,
-      [sourceId, sourceProgressEstimate.referenceSources]
+      [sourceId, estimateConfig.referenceSources]
     );
     const reference = rows[0];
     if (
       !reference ||
-      Number(reference.sources) < sourceProgressEstimate.minReferenceSources ||
+      Number(reference.sources) < estimateConfig.minReferenceSources ||
       Number(reference.chunks) === 0 ||
       Number(reference.notes) === 0
     )
@@ -892,31 +1031,73 @@ export function createLibraryRowsRepository(db: Queryable) {
     /**
      * The generation strip's data for one source (design record 6.2): the six steps and the section
      * ruler, in one bounded read (plus one more for the estimate while the notes are being made).
-     * Null when the source does not exist.
+     * A book is read as the tree of its parts, as the Library row is: the passages, the notes, the
+     * connections and the stages of every run count, because its own run only catalogues. Null when
+     * the source does not exist.
      */
     async sourceProgress(sourceId: string): Promise<SourceProgress | null> {
       const { rows } = await db.query<ProgressRow>(progressSql, [sourceId, needsPerson]);
       const row = rows[0];
       if (!row?.hasSource) return null;
-      const effective = asArray(row.effectiveStages).filter(
-        (stage): stage is string => typeof stage === "string"
+      const runs = asArray(row.runs).flatMap((entry): MemberRun[] => {
+        if (typeof entry !== "object" || entry === null) return [];
+        const value = entry as Record<string, unknown>;
+        return [
+          {
+            depth: Number(value.depth),
+            status: value.status as SourceProgressRunStatus,
+            stage: typeof value.stage === "string" ? value.stage : null,
+            startedAt: typeof value.startedAt === "string" ? value.startedAt : null,
+            completedAt: typeof value.completedAt === "string" ? value.completedAt : null,
+            effective: asArray(value.effective).filter(
+              (stage): stage is string => typeof stage === "string"
+            ),
+            checkpoints: (typeof value.checkpoints === "object" && value.checkpoints !== null
+              ? value.checkpoints
+              : {}) as Record<string, Checkpoint | undefined>,
+            reason: typeof value.reason === "string" ? value.reason : null,
+            paused: value.paused === true
+          }
+        ];
+      });
+      const own = runs.find((entry) => entry.depth === 0) ?? runs[0];
+      const activeRun = runs.find(
+        (entry) => entry.status === "pending" || entry.status === "running"
       );
-      const checkpoints = (
-        typeof row.checkpoints === "object" && row.checkpoints !== null ? row.checkpoints : {}
-      ) as Record<string, Checkpoint | undefined>;
-      const run: SourceProgress["run"] = row.runStatus
+      const failedRun = runs.find(
+        (entry) => entry.status === "failed" || entry.status === "canceled"
+      );
+      // The source is as busy or as broken as the worst of its parts: the Library row says the same.
+      const headline =
+        activeRun && own && own.status !== "pending" && own.status !== "running"
+          ? activeRun
+          : !activeRun && failedRun && own && own.status !== "failed" && own.status !== "canceled"
+            ? failedRun
+            : own;
+      const failing = failedRun ?? own;
+      const started = runs
+        .map((entry) => entry.startedAt)
+        .filter((value): value is string => value !== null)
+        .sort()[0];
+      const run: SourceProgress["run"] = headline
         ? {
-            status: row.runStatus,
-            stage: row.currentStage ?? "queued",
-            startedAt: row.startedAt,
-            completedAt: row.completedAt,
+            status: headline.status,
+            stage: headline.stage ?? "queued",
+            startedAt: started ?? null,
+            completedAt: activeRun ? null : headline.completedAt,
             failedStage:
-              Object.entries(checkpoints).find(([, value]) => value?.status === "failed")?.[0] ??
-              (row.runStatus === "failed" ? (row.currentStage ?? null) : null)
+              Object.entries(failing?.checkpoints ?? {}).find(
+                ([, value]) => value?.status === "failed"
+              )?.[0] ?? (headline.status === "failed" ? (headline.stage ?? null) : null)
           }
         : null;
-      const active = row.runStatus === "pending" || row.runStatus === "running";
-      const stage = (...names: string[]) => stepState(names, checkpoints, effective);
+      const active = activeRun !== undefined;
+      const stage = (...names: string[]) => {
+        const states = runs.map((entry) => stepState(names, entry.checkpoints, entry.effective));
+        const combined = combineStepStates(states);
+        // Some parts are done and the rest wait their turn: the work is going on.
+        return combined === "pending" && active && states.includes("done") ? "running" : combined;
+      };
       const notesState = stage("atomicNotes");
       const notes = Number(row.notes);
       const placed = Number(row.placed);
@@ -957,27 +1138,53 @@ export function createLibraryRowsRepository(db: Queryable) {
           count: Number(row.connections)
         }
       };
+      const parts = asArray(row.parts).flatMap((entry): RulerPart[] =>
+        Array.isArray(entry)
+          ? [
+              {
+                title: String(entry[0] ?? ""),
+                length: Number(entry[1]),
+                notes: Number(entry[2]),
+                active: entry[3] === true,
+                failed: entry[4] === true,
+                hasRun: entry[5] === true
+              }
+            ]
+          : []
+      );
       const notesByChunk = new Map<number, number>();
       for (const entry of asArray(row.notesByChunk))
         if (Array.isArray(entry)) notesByChunk.set(Number(entry[0]), Number(entry[1]));
       return {
         run,
-        needsYou: row.reason,
+        needsYou: runs.find((entry) => entry.reason !== null)?.reason ?? null,
+        paused: runs.some((entry) => entry.paused),
         steps,
-        sections: buildSectionRuler({
-          title: row.title,
-          chunks: asArray(row.chunkLengths).flatMap((entry) =>
-            Array.isArray(entry) ? [{ chunkIndex: Number(entry[0]), length: Number(entry[1]) }] : []
-          ),
-          headings: asArray(row.headings).flatMap((entry) =>
-            Array.isArray(entry)
-              ? [{ chunkIndex: Number(entry[0]), level: Number(entry[1]), title: String(entry[2]) }]
-              : []
-          ),
-          notesByChunk,
-          running: active,
-          notesDone: notesState === "done"
-        })
+        sections:
+          parts.length > 0
+            ? buildPartRuler(parts)
+            : buildSectionRuler({
+                title: row.title,
+                chunks: asArray(row.chunkLengths).flatMap((entry) =>
+                  Array.isArray(entry)
+                    ? [{ chunkIndex: Number(entry[0]), length: Number(entry[1]) }]
+                    : []
+                ),
+                headings: asArray(row.headings).flatMap((entry) =>
+                  Array.isArray(entry)
+                    ? [
+                        {
+                          chunkIndex: Number(entry[0]),
+                          level: Number(entry[1]),
+                          title: String(entry[2])
+                        }
+                      ]
+                    : []
+                ),
+                notesByChunk,
+                running: active,
+                notesDone: notesState === "done"
+              })
       };
     }
   };

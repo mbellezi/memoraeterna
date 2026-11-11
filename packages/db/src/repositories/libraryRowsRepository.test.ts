@@ -2,9 +2,12 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPartRuler,
   buildSectionRuler,
+  combineStepStates,
   decodeLibraryRowsCursor,
   encodeLibraryRowsCursor,
+  libraryRowsCursorMax,
   libraryRowSorts,
   libraryRowStatuses,
   stepState,
@@ -41,6 +44,30 @@ describe("the library rows cursor", () => {
     expect(() => decodeLibraryRowsCursor(wrongInstant, "added", "desc")).toThrow();
     const wrongId = encodeLibraryRowsCursor("title", "asc", { key: "a", id: "nope" });
     expect(() => decodeLibraryRowsCursor(wrongId, "title", "asc")).toThrow();
+  });
+});
+
+describe("the cursor of a title sort", () => {
+  const id = randomUUID();
+
+  it("keeps the whole key while it fits and hands out nothing longer than the bound", () => {
+    const short = encodeLibraryRowsCursor("title", "asc", { key: "alpha", id });
+    expect(decodeLibraryRowsCursor(short, "title", "asc")).toEqual({ key: "alpha", id });
+    // A title may be 1000 characters: Latin, Cyrillic or CJK keys all exceed any cursor bound.
+    for (const key of ["a".repeat(1000), "щ".repeat(1000), "日".repeat(1000), "💥".repeat(900)]) {
+      const cursor = encodeLibraryRowsCursor("title", "desc", { key, id });
+      expect(cursor.length).toBeLessThanOrEqual(libraryRowsCursorMax);
+      // The key is read back from the row the cursor names.
+      expect(decodeLibraryRowsCursor(cursor, "title", "desc")).toEqual({ key: null, id });
+    }
+    expect(libraryRowsCursorMax).toBeLessThanOrEqual(600);
+  });
+
+  it("never drops the key of a numeric or timestamp sort", () => {
+    const refused = encodeLibraryRowsCursor("notes", "asc", { key: null, id });
+    expect(() => decodeLibraryRowsCursor(refused, "notes", "asc")).toThrow();
+    const instant = encodeLibraryRowsCursor("added", "asc", { key: null, id });
+    expect(() => decodeLibraryRowsCursor(instant, "added", "asc")).toThrow();
   });
 });
 
@@ -181,5 +208,61 @@ describe("the section ruler", () => {
       "pending",
       "pending"
     ]);
+  });
+});
+
+describe("the ruler of a book's parts", () => {
+  const part = (
+    title: string,
+    extra: Partial<Parameters<typeof buildPartRuler>[0][number]> = {}
+  ) => ({
+    title,
+    length: 100,
+    notes: 0,
+    active: false,
+    failed: false,
+    hasRun: true,
+    ...extra
+  });
+
+  it("has a segment per part, wide by its text, and reads each part's state from its runs", () => {
+    const ruler = buildPartRuler([
+      part("One", { length: 300, notes: 4 }),
+      part("Two", { length: 100, active: true }),
+      part("Three", { hasRun: false }),
+      part("Four", { failed: true })
+    ]);
+    expect(ruler.map((section) => [section.title, section.state, section.notes])).toEqual([
+      ["One", "done", 4],
+      ["Two", "reading", 0],
+      ["Three", "pending", 0],
+      ["Four", "pending", 0]
+    ]);
+    expect(ruler[0]!.share).toBeCloseTo(300 / 600, 10);
+    expect(ruler.reduce((sum, section) => sum + section.share, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("shares the ruler equally while nothing is chunked, and merges past the limit", () => {
+    const idle = buildPartRuler([part("A", { length: 0 }), part("B", { length: 0 })]);
+    expect(idle.map((section) => section.share)).toEqual([0.5, 0.5]);
+    const many = buildPartRuler(
+      Array.from({ length: 100 }, (_, index) => part(`Part ${index}`)),
+      40
+    );
+    expect(many).toHaveLength(34);
+    expect(many[0]!.title).toBe("Part 0");
+    expect(many.reduce((sum, section) => sum + section.share, 0)).toBeCloseTo(1, 10);
+    expect(buildPartRuler([])).toEqual([]);
+  });
+});
+
+describe("combining the steps of several runs", () => {
+  it("fails on a failure, works while one works, and ignores what does not apply", () => {
+    expect(combineStepStates([])).toBe("pending");
+    expect(combineStepStates(["done", "failed"])).toBe("failed");
+    expect(combineStepStates(["done", "running", "pending"])).toBe("running");
+    expect(combineStepStates(["notApplicable", "notApplicable"])).toBe("notApplicable");
+    expect(combineStepStates(["notApplicable", "done", "done"])).toBe("done");
+    expect(combineStepStates(["notApplicable", "done", "pending"])).toBe("pending");
   });
 });

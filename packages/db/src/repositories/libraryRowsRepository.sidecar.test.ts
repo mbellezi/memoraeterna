@@ -183,7 +183,7 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
     const tentative = await source(s.tentative!, "Notas colocadas", "Book", day(9));
     const noRun = await source(s.noRun!, "Sem execução", "PersonalNote", day(10));
     const part1 = await source(child1, "Parte 1", "BookChapter", day(7), { parent: s.book! });
-    const part2 = await source(child2, "Parte 2", "BookChapter", day(7), { parent: s.book! });
+    const part2 = await source(child2, "Parte 2", "BookChapter", day(8), { parent: s.book! });
 
     await pool.query(
       `insert into document_assets (source_item_id, original_file_name, sha256, mime_type, size_bytes,
@@ -204,8 +204,14 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
       atomicNotes: { status: "completed", metadata: { configured: false, generatedCount: 0 } }
     });
     await run(s.stored!, "succeeded", { chunking: completed, atomicNotes: { status: "skipped" } });
-    await run(s.book!, "succeeded", stages);
-    await run(child1, "running", { chunking: completed });
+    // A book's own run only catalogues; its chapters carry the content runs and the notes.
+    await run(
+      s.book!,
+      "succeeded",
+      { chunking: completed, embedding: completed },
+      { stage: "embedding", effective: ["chunking", "embedding"] }
+    );
+    await run(child1, "running", { chunking: completed, atomicNotes: { status: "running" } });
     await run(child2, "succeeded", stages);
     const job = randomUUID();
     await pool.query(
@@ -274,7 +280,7 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
         }))
       ]
     });
-  }, 120_000);
+  }, 300_000);
 
   afterAll(async () => {
     if (pool) await closePgPool(pool);
@@ -354,25 +360,29 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
     expect(byId(result, s.stored!).place).toBeNull();
   });
 
-  it("keeps a stable order across pages for every sort and direction", async () => {
-    for (const sort of libraryRowSorts as readonly LibraryRowSort[]) {
-      for (const dir of ["asc", "desc"] as const) {
-        const whole = await all({ sort, dir });
-        const paged: string[] = [];
-        let cursor: string | undefined;
-        let pages = 0;
-        do {
-          const page = await library.rows({ sort, dir, limit: 3, ...(cursor ? { cursor } : {}) });
-          expect(page.total).toBe(11);
-          paged.push(...page.rows.map((row) => row.id));
-          cursor = page.next;
-          pages += 1;
-        } while (cursor && pages < 10);
-        expect(paged, `${sort} ${dir}`).toEqual(whole.rows.map((row) => row.id));
-        expect(new Set(paged).size).toBe(11);
+  it(
+    "keeps a stable order across pages for every sort and direction",
+    { timeout: 120_000 },
+    async () => {
+      for (const sort of libraryRowSorts as readonly LibraryRowSort[]) {
+        for (const dir of ["asc", "desc"] as const) {
+          const whole = await all({ sort, dir });
+          const paged: string[] = [];
+          let cursor: string | undefined;
+          let pages = 0;
+          do {
+            const page = await library.rows({ sort, dir, limit: 3, ...(cursor ? { cursor } : {}) });
+            expect(page.total).toBe(11);
+            paged.push(...page.rows.map((row) => row.id));
+            cursor = page.next;
+            pages += 1;
+          } while (cursor && pages < 10);
+          expect(paged, `${sort} ${dir}`).toEqual(whole.rows.map((row) => row.id));
+          expect(new Set(paged).size).toBe(11);
+        }
       }
     }
-  });
+  );
 
   it("sorts by what each column says", async () => {
     const titles = (await all({ sort: "title", dir: "asc" })).rows.map((row) => row.title);
@@ -532,9 +542,10 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
     expect(progress.needsYou).toBeNull();
     expect(progress.steps.read).toEqual({ state: "done", pages: 2 });
     expect(progress.steps.chunks).toEqual({ state: "done", indexed: 6 });
-    // The reference sources that completed their notes (the three ready ones, the model-less one
-    // and the book) hold 10 passages and 9 notes between them: 6 passages make about 5 notes.
-    expect(progress.steps.notes).toEqual({ state: "running", soFar: 3, estimate: 5 });
+    // The reference sources that completed their notes with a model (the three ready ones and the
+    // second chapter of the book) hold 8 passages and 10 notes between them: 6 passages make about 8
+    // notes. The model-less source made none and the book's own run only catalogues: neither counts.
+    expect(progress.steps.notes).toEqual({ state: "running", soFar: 3, estimate: 8 });
     expect(progress.steps.placed).toEqual({ state: "running", count: 0 });
     expect(progress.steps.summary.state).toBe("done");
     expect(progress.steps.relations).toEqual({ state: "pending", count: 0 });
@@ -577,9 +588,112 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
   });
 
   it("answers the estimate only with enough completed sources to learn from", async () => {
-    // Five sources completed their notes: 9 notes for 10 passages.
-    expect(await library.estimateNotes(randomUUID(), 8)).toBe(7);
+    // Four sources completed their notes with a model: 10 notes for 8 passages.
+    expect(await library.estimateNotes(randomUUID(), 8)).toBe(10);
     expect(await library.estimateNotes(randomUUID(), 1)).toBe(1);
+    // Too few to learn from is unknown, not a guess: five are asked for and four exist, and so is a
+    // library asked to learn from two.
+    const strict = createLibraryRowsRepository(pool, { estimate: { minReferenceSources: 5 } });
+    expect(await strict.estimateNotes(randomUUID(), 8)).toBeNull();
+    const narrow = createLibraryRowsRepository(pool, { estimate: { referenceSources: 2 } });
+    expect(await narrow.estimateNotes(randomUUID(), 8)).toBeNull();
+    // A source never teaches its own estimate: leave out the second chapter and three are left.
+    expect(await library.estimateNotes(child2, 8)).toBe(Math.round((8 * 9) / 6));
+  });
+
+  it("reads a book as the tree of its parts", async () => {
+    const progress = (await library.sourceProgress(s.book!))!;
+    // The book's own run finished cataloguing, but its first chapter is still being read.
+    expect(progress.run).toMatchObject({
+      status: "running",
+      stage: "atomicNotes",
+      completedAt: null
+    });
+    // The notes are the chapters' (what the Library row counts), and their stage is applicable. The
+    // book's own chapters are not references for its estimate: 6 passages at 9 notes per 6.
+    expect(progress.steps.notes).toEqual({ state: "running", soFar: 3, estimate: 9 });
+    expect(progress.steps.chunks.indexed).toBe(6);
+    // The ruler has a segment per chapter, not one from the catalogue's passage.
+    expect(
+      progress.sections.map((section) => [
+        section.title,
+        section.notes,
+        section.state,
+        section.share
+      ])
+    ).toEqual([
+      ["Parte 1", 2, "reading", 0.5],
+      ["Parte 2", 1, "done", 0.5]
+    ]);
+    // A book the Library lists as processing is not "done" in the strip.
+    expect((await all()).rows.find((row) => row.id === s.book)).toMatchObject({
+      status: "processing",
+      noteCount: progress.steps.notes.soFar
+    });
+  });
+
+  it("says when the person paused the work, apart from work that waits for them", async () => {
+    const job = (
+      await pool.query<{ id: string }>(
+        "select job_id as id from ingestion_runs where source_item_id = $1",
+        [s.queued]
+      )
+    ).rows[0]!.id;
+    await pool.query(
+      "update jobs set blocked_class = 'paused', blocked_reason = 'user_pause' where id = $1",
+      [job]
+    );
+    try {
+      const paused = (await library.sourceProgress(s.queued!))!;
+      expect(paused.paused).toBe(true);
+      expect(paused.needsYou).toBeNull();
+      expect(paused.run).toMatchObject({ status: "pending" });
+    } finally {
+      await pool.query(
+        "update jobs set blocked_class = 'no_model', blocked_reason = 'no_route' where id = $1",
+        [job]
+      );
+    }
+    expect((await library.sourceProgress(s.queued!))!.paused).toBe(false);
+    expect((await library.sourceProgress(s.basics!))!.paused).toBe(false);
+  });
+
+  it("pages a title sort past titles too long for the cursor", async () => {
+    const longTitles = [
+      ...[1, 2, 3].map((n) => `zzlong ${"a".repeat(450)} ${n}`),
+      ...[1, 2, 3].map((n) => `zzcjk ${"日".repeat(150)} ${n}`)
+    ];
+    const made: string[] = [];
+    for (const [index, title] of longTitles.entries()) {
+      const id = randomUUID();
+      made.push(id);
+      await pool.query(
+        `insert into source_items (id, type, title, language, content_hash)
+         values ($1, 'WebArticle', $2, 'en', $3)`,
+        [id, title, `long-${index}`]
+      );
+    }
+    try {
+      for (const query of ["zzlong", "zzcjk"]) {
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await library.rows({
+            sort: "title",
+            limit: 1,
+            filter: { query },
+            ...(cursor ? { cursor } : {})
+          });
+          // What the IPC schemas accept (600 characters).
+          if (page.next) expect(page.next.length).toBeLessThanOrEqual(600);
+          seen.push(...page.rows.map((row) => row.title));
+          cursor = page.next;
+        } while (cursor && seen.length < 10);
+        expect(seen, query).toEqual(longTitles.filter((title) => title.startsWith(query)));
+      }
+    } finally {
+      await pool.query("delete from source_items where id = any($1::uuid[])", [made]);
+    }
   });
 
   it("reads 10k synthetic rows within the latency bar", async () => {

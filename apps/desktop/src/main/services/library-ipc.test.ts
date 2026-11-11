@@ -5,6 +5,7 @@ import type { IpcMain } from "electron";
 import {
   libraryRowSorts,
   libraryRowStatuses,
+  libraryRowsCursorMax,
   libraryRowsLimit as dbRowsLimit,
   type LibraryRowsRepository,
   type PgPool
@@ -115,9 +116,9 @@ describe("the library service", () => {
     );
     await expect(service.sourceProgress({ sourceId: rowId })).resolves.toBeNull();
     const offline = new LibraryService(() => null);
-    await expect(offline.rows({})).rejects.toThrow("library.errors.unavailable");
+    await expect(offline.rows({})).rejects.toThrow("errors.database.notReady");
     await expect(offline.sourceProgress({ sourceId: rowId })).rejects.toThrow(
-      "library.errors.unavailable"
+      "errors.database.notReady"
     );
   });
 
@@ -131,6 +132,7 @@ describe("the library service", () => {
         failedStage: null
       },
       needsYou: null,
+      paused: false,
       steps: {
         read: { state: "done", pages: 24 },
         chunks: { state: "done", indexed: 142 },
@@ -142,6 +144,11 @@ describe("the library service", () => {
       sections: [{ title: "Intro", share: 1, notes: 7, state: "reading" }]
     };
     expect(LibrarySourceProgressSchema.parse(strip)).toEqual(strip);
+    expect(LibrarySourceProgressSchema.parse({ ...strip, paused: true })).toMatchObject({
+      paused: true
+    });
+    // The strip reads its paused state from here, so a reply without it is not a strip.
+    expect(() => LibrarySourceProgressSchema.parse({ ...strip, paused: undefined })).toThrow();
     expect(LibrarySourceProgressSchema.parse(null)).toBeNull();
     expect(() =>
       LibrarySourceProgressSchema.parse({
@@ -163,6 +170,12 @@ describe("the vocabularies stay equal to the database's", () => {
     expect(
       LibraryRowsInputSchema.safeParse({ filter: { kinds: [...librarySourceTypes] } }).success
     ).toBe(true);
+  });
+
+  it("accepts the longest cursor the repository hands out", () => {
+    const next = "a".repeat(libraryRowsCursorMax);
+    expect(LibraryRowsResultSchema.parse({ rows: [], total: 0, next }).next).toBe(next);
+    expect(LibraryRowsInputSchema.parse({ cursor: next }).cursor).toBe(next);
   });
 
   it("parses a result with facets", () => {

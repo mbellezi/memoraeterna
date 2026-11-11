@@ -156,6 +156,8 @@ export const LibrarySourceProgressSchema = z
       .nullable(),
     /** The blocker key when the work waits for a person; the strip says what to do. */
     needsYou: z.string().min(1).max(100).nullable(),
+    /** The person paused the work (the strip says "Pausada por você" and offers to resume it). */
+    paused: z.boolean(),
     steps: z
       .object({
         read: z
