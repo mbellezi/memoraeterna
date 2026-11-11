@@ -260,7 +260,7 @@ export function ConsultationDialog({
   useAppEvent(
     "consultation.status",
     (event) => {
-      if (event.requestId === request.current) setWaiting(event.status === "waitingForProvider");
+      if (event.requestId === request.current) setWaiting(event.stage === "waitingForProvider");
     },
     busy
   );

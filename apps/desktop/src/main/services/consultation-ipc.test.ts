@@ -74,9 +74,7 @@ describe("what a running Ask tells the windows (F4 D26)", () => {
     const requestId = randomUUID();
     await expect(ask(requestId)).resolves.toBe("answer");
     bus.flush();
-    expect(sent).toEqual([
-      { type: "consultation.status", requestId, status: "waitingForProvider" }
-    ]);
+    expect(sent).toEqual([{ type: "consultation.status", requestId, stage: "waitingForProvider" }]);
     expect(invalid).toEqual([]);
     for (const event of sent) expect(AppEventSchema.parse(event)).toEqual(event);
     expect(channels.sort()).toEqual(
@@ -86,16 +84,17 @@ describe("what a running Ask tells the windows (F4 D26)", () => {
     bus.dispose();
   });
 
-  it("keeps the newest status of each request apart from another request's", async () => {
+  it("sends every stage of each request as it comes, never folded (a 0 ms window)", async () => {
     const { ask, bus, sent } = asking(["waitingForProvider", "answering"]);
     const first = randomUUID();
     const second = randomUUID();
     await ask(first);
     await ask(second);
-    bus.flush();
     expect(sent).toEqual([
-      { type: "consultation.status", requestId: first, status: "answering" },
-      { type: "consultation.status", requestId: second, status: "answering" }
+      { type: "consultation.status", requestId: first, stage: "waitingForProvider" },
+      { type: "consultation.status", requestId: first, stage: "answering" },
+      { type: "consultation.status", requestId: second, stage: "waitingForProvider" },
+      { type: "consultation.status", requestId: second, stage: "answering" }
     ]);
     bus.dispose();
   });
@@ -111,12 +110,12 @@ describe("what a running Ask tells the windows (F4 D26)", () => {
       AppEventSchema.safeParse({
         type: "consultation.status",
         requestId,
-        status: "answering",
+        stage: "answering",
         detail: "x"
       }).success
     ).toBe(false);
     expect(
-      AppEventSchema.safeParse({ type: "consultation.status", requestId: "r", status: "answering" })
+      AppEventSchema.safeParse({ type: "consultation.status", requestId: "r", stage: "answering" })
         .success
     ).toBe(false);
     bus.dispose();

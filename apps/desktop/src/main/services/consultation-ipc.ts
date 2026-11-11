@@ -19,7 +19,11 @@ export function registerConsultationIpc(
     const parsed = ConsultationInputSchema.parse(input);
     return service.ask(parsed, {
       onStatus: (status) =>
-        events.publish({ type: "consultation.status", requestId: parsed.requestId, status })
+        events.publish({
+          type: "consultation.status",
+          requestId: parsed.requestId,
+          stage: status
+        })
     });
   });
   ipc.handle(ipcChannels.consultationCancel, (_event, id: unknown) =>

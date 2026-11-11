@@ -5,9 +5,11 @@ import { inboxKinds } from "@app/domain";
 import {
   AppEventSchema,
   appEventJobIdsMax,
+  consultationStages,
   createAppEventDispatcher,
   inboxEventKinds,
   inboxEventRisks,
+  objectChangedRefsMax,
   type AppEvent,
   type AppEventWire
 } from "./app-events";
@@ -89,8 +91,60 @@ const samples: Record<AppEvent["type"], AppEvent> = {
   "consultation.status": {
     type: "consultation.status",
     requestId: id(10),
-    status: "waitingForProvider"
-  }
+    questionId: id(11),
+    stage: "waitingForProvider"
+  },
+  "consultation.delta": {
+    type: "consultation.delta",
+    requestId: id(10),
+    questionId: id(11),
+    paragraphs: [
+      {
+        markdown: "A cited paragraph.",
+        citations: [{ ordinal: 1, address: `memora://note/${id(12)}`, anchor: { passage: id(13) } }]
+      }
+    ],
+    restart: false
+  },
+  "object.changed": {
+    type: "object.changed",
+    refs: [
+      { kind: "note", id: id(14), change: "updated" },
+      { kind: "source", id: id(15), change: "deleted" }
+    ]
+  },
+  "view.changed": { type: "view.changed" },
+  "settings.changed": { type: "settings.changed", stores: ["app", "ai"], keys: ["theme"] },
+  "database.status": {
+    type: "database.status",
+    state: "ready",
+    messageKey: "database.status.ready",
+    updatedAt: "2026-11-11T10:00:00.000Z"
+  },
+  "model.loading": { type: "model.loading", modelId: "mlx-embedding", state: "loading" },
+  "obsidian.sync": {
+    type: "obsidian.sync",
+    state: "running",
+    stage: "reconciling",
+    progress: 0.5,
+    processed: 5,
+    total: 10,
+    synced: 4,
+    conflicts: 0,
+    projected: 0,
+    startedAt: "2026-11-11T10:00:00.000Z",
+    finishedAt: null,
+    error: null
+  },
+  "obsidian.projection": { type: "obsidian.projection", kind: "wiki", state: "running" },
+  "monitoring.changed": { type: "monitoring.changed", since: "2026-11-11T10:00:00.000Z" },
+  "explanation.delta": {
+    type: "explanation.delta",
+    requestId: id(16),
+    relationId: id(17),
+    text: "The notes agree."
+  },
+  "import.progress": { type: "import.progress", runId: id(18), fileIndex: 2, fraction: 0.25 }
 };
 
 describe("the app event contract", () => {
@@ -98,7 +152,7 @@ describe("the app event contract", () => {
     expect(AppEventSchema.safeParse(event).success).toBe(true);
   });
 
-  it("covers the six event types of D26, the budget, change-set and overview changes and the Ask's status", () => {
+  it("covers the F4 event types and the eleven that F5 adds (D16)", () => {
     expect(Object.keys(samples).sort()).toEqual(
       [
         "gardener.status",
@@ -110,9 +164,25 @@ describe("the app event contract", () => {
         "budget.changed",
         "changes.changed",
         "overview.changed",
-        "consultation.status"
+        "consultation.status",
+        "consultation.delta",
+        "object.changed",
+        "view.changed",
+        "settings.changed",
+        "database.status",
+        "model.loading",
+        "obsidian.sync",
+        "obsidian.projection",
+        "monitoring.changed",
+        "explanation.delta",
+        "import.progress"
       ].sort()
     );
+  });
+
+  it.each(Object.entries(samples))("round-trips %s through JSON unchanged", (_type, event) => {
+    const parsed = AppEventSchema.parse(JSON.parse(JSON.stringify(event)));
+    expect(parsed).toEqual(event);
   });
 
   it("validates the budget's meters and a change-set's reference", () => {
@@ -131,12 +201,109 @@ describe("the app event contract", () => {
     );
   });
 
-  it("knows only the two states of a running Ask, for one request id", () => {
+  it("knows the six stages of an Ask, for one request id", () => {
     const status = samples["consultation.status"];
-    expect(AppEventSchema.safeParse({ ...status, status: "answering" }).success).toBe(true);
-    expect(AppEventSchema.safeParse({ ...status, status: "thinking" }).success).toBe(false);
+    for (const stage of consultationStages)
+      expect(AppEventSchema.safeParse({ ...status, stage }).success).toBe(true);
+    expect(consultationStages).toHaveLength(6);
+    expect(AppEventSchema.safeParse({ ...status, stage: "thinking" }).success).toBe(false);
     expect(AppEventSchema.safeParse({ ...status, requestId: "r" }).success).toBe(false);
     expect(AppEventSchema.safeParse({ ...status, message: "Waiting" }).success).toBe(false);
+    expect(AppEventSchema.safeParse({ ...status, status: "answering" }).success).toBe(false);
+  });
+
+  it("carries a failure's error and an optional question id on the Ask's status", () => {
+    const bare: Record<string, unknown> = { ...samples["consultation.status"] };
+    delete bare.questionId;
+    expect(AppEventSchema.safeParse({ ...bare, stage: "retrieving" }).success).toBe(true);
+    expect(
+      AppEventSchema.safeParse({ ...bare, stage: "failed", error: "consultation.errors.failed" })
+        .success
+    ).toBe(true);
+  });
+
+  it("holds an answer's paragraphs whole, with bounded citations", () => {
+    const delta = samples["consultation.delta"] as Extract<
+      AppEvent,
+      { type: "consultation.delta" }
+    >;
+    expect(AppEventSchema.safeParse({ ...delta, paragraphs: [], restart: true }).success).toBe(
+      true
+    );
+    const withoutQuestion: Record<string, unknown> = { ...delta };
+    delete withoutQuestion.questionId;
+    expect(AppEventSchema.safeParse(withoutQuestion).success).toBe(false);
+    expect(
+      AppEventSchema.safeParse({
+        ...delta,
+        paragraphs: [{ markdown: "x", citations: [{ ordinal: 0, address: "memora://note/n" }] }]
+      }).success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({
+        ...delta,
+        paragraphs: [
+          { markdown: "x", citations: [{ ordinal: 1, address: "a", anchor: { page: "1" } }] }
+        ]
+      }).success
+    ).toBe(false);
+  });
+
+  it("lists at most 200 refs of the five kinds, or says only which kinds overflowed", () => {
+    const ref = (n: number) => ({ kind: "note" as const, id: id(n), change: "created" as const });
+    const many = (count: number) => Array.from({ length: count }, (_, n) => ref(n));
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", refs: many(objectChangedRefsMax) }).success
+    ).toBe(true);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", refs: many(objectChangedRefsMax + 1) })
+        .success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", overflow: true, kinds: ["note", "topic"] })
+        .success
+    ).toBe(true);
+    expect(AppEventSchema.safeParse({ type: "object.changed", refs: [] }).success).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", overflow: false, kinds: ["note"] }).success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", refs: [{ ...ref(1), kind: "graph" }] })
+        .success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", refs: [{ ...ref(1), change: "gone" }] })
+        .success
+    ).toBe(false);
+    expect(
+      AppEventSchema.safeParse({ type: "object.changed", refs: [ref(1)], overflow: true }).success
+    ).toBe(false);
+  });
+
+  it("names the stores a settings change touched, and rejects an unknown one", () => {
+    expect(
+      AppEventSchema.safeParse({ type: "settings.changed", stores: ["storage"] }).success
+    ).toBe(true);
+    expect(AppEventSchema.safeParse({ type: "settings.changed", stores: [] }).success).toBe(false);
+    expect(AppEventSchema.safeParse({ type: "settings.changed", stores: ["theme"] }).success).toBe(
+      false
+    );
+  });
+
+  it("rejects a bad model state, projection kind, import fraction and monitoring time", () => {
+    expect(AppEventSchema.safeParse({ ...samples["model.loading"], state: "asleep" }).success).toBe(
+      false
+    );
+    expect(
+      AppEventSchema.safeParse({ ...samples["obsidian.projection"], kind: "graph" }).success
+    ).toBe(false);
+    expect(AppEventSchema.safeParse({ ...samples["import.progress"], fraction: 1.5 }).success).toBe(
+      false
+    );
+    expect(
+      AppEventSchema.safeParse({ ...samples["monitoring.changed"], since: "yesterday" }).success
+    ).toBe(false);
+    expect(AppEventSchema.safeParse({ type: "view.changed", extra: 1 }).success).toBe(false);
   });
 
   it("rejects an unknown type, a missing field, an extra field and a bad value", () => {

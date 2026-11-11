@@ -8,12 +8,20 @@ import {
   BudgetSnapshotSchema,
   ChangeSetRefSchema,
   GardenerStatusSnapshotSchema,
+  ObjectKindSchema,
+  objectAnchorKeys,
   TopicsChangedEventSchema,
   type GardenerStatusSnapshot
 } from "@app/domain";
 import { z } from "zod";
 
-import { localModelStatusSchema, RelationsChangedEventSchema } from "./ipc.js";
+import {
+  databaseStatusSchema,
+  localModelStatusSchema,
+  obsidianSyncStatusSchema,
+  RelationExplanationDeltaEventSchema,
+  RelationsChangedEventSchema
+} from "./ipc.js";
 
 const count = z.number().int().nonnegative();
 
@@ -144,19 +152,193 @@ export const OverviewChangedEventSchema = z
 export const consultationStatusSchema = z.enum(["answering", "waitingForProvider"]);
 export type ConsultationStatus = z.infer<typeof consultationStatusSchema>;
 
+/** The stages of one Ask, in the order it passes through them (the last three end it). */
+export const consultationStages = [
+  "retrieving",
+  "answering",
+  "waitingForProvider",
+  "done",
+  "failed",
+  "canceled"
+] as const;
+export const consultationStageSchema = z.enum(consultationStages);
+export type ConsultationStage = z.infer<typeof consultationStageSchema>;
+
 /**
- * `consultation.status` (owner Q2): an Ask waits out the provider's rate limit, then answers again.
- * Every window hears it; the dialog that asked keeps the events of its own request id only.
+ * `consultation.status` (owner Q2, F5 D14): where an Ask is, one event per stage and never folded
+ * (a 0 ms window), so a wait shorter than any window still shows. Every window hears it; the
+ * surface that asked keeps the events of its own request id only. `questionId` is optional while
+ * the Ask that stores no Question exists; `error` is a message key or redacted text, set with
+ * `failed`.
  */
 export const ConsultationStatusEventSchema = z
   .object({
     type: z.literal("consultation.status"),
     requestId: z.string().uuid(),
-    status: consultationStatusSchema
+    questionId: z.string().uuid().optional(),
+    stage: consultationStageSchema,
+    error: z.string().max(2_000).optional()
   })
   .strict();
 
-export const AppEventSchema = z.discriminatedUnion("type", [
+/** The most paragraphs, citations and characters one streamed answer may carry. */
+export const consultationDeltaLimits = {
+  paragraphs: 100,
+  citationsPerParagraph: 50,
+  markdownCharacters: 20_000,
+  addressCharacters: 400
+} as const;
+
+/** One citation of a streamed paragraph: its ordinal in the answer and the object it points at. */
+export const ConsultationDeltaCitationSchema = z
+  .object({
+    ordinal: z.number().int().positive(),
+    address: z.string().min(1).max(consultationDeltaLimits.addressCharacters),
+    anchor: z.partialRecord(z.enum(objectAnchorKeys), z.string().min(1).max(200)).optional()
+  })
+  .strict();
+
+/** One complete paragraph of an answer (markdown) and the citations it carries. */
+export const ConsultationDeltaParagraphSchema = z
+  .object({
+    markdown: z.string().max(consultationDeltaLimits.markdownCharacters),
+    citations: z
+      .array(ConsultationDeltaCitationSchema)
+      .max(consultationDeltaLimits.citationsPerParagraph)
+  })
+  .strict();
+export type ConsultationDeltaParagraph = z.infer<typeof ConsultationDeltaParagraphSchema>;
+
+/**
+ * `consultation.delta` (F5 D14): the paragraphs written so far, whole and in order, so a missed
+ * delta costs nothing (each replaces the last). `restart` says the provider retried and what was
+ * shown is void. A 50 ms window per request keeps the latest.
+ */
+export const ConsultationDeltaEventSchema = z
+  .object({
+    type: z.literal("consultation.delta"),
+    requestId: z.string().uuid(),
+    questionId: z.string().uuid(),
+    paragraphs: z.array(ConsultationDeltaParagraphSchema).max(consultationDeltaLimits.paragraphs),
+    restart: z.boolean()
+  })
+  .strict();
+
+/** The most refs one `object.changed` lists; a larger batch says only which kinds changed. */
+export const objectChangedRefsMax = 200;
+export const objectChangeKinds = ["created", "updated", "deleted", "moved", "relations"] as const;
+export const objectChangeSchema = z.enum(objectChangeKinds);
+export type ObjectChange = z.infer<typeof objectChangeSchema>;
+
+export const ObjectChangedRefSchema = z
+  .object({ kind: ObjectKindSchema, id: z.string().uuid(), change: objectChangeSchema })
+  .strict();
+export type ObjectChangedRef = z.infer<typeof ObjectChangedRefSchema>;
+
+/**
+ * `object.changed` (F5 D16): objects that changed after a commit. At most 200 refs travel; a
+ * bigger batch is `{ overflow: true, kinds }` and a consumer reads its list again.
+ */
+export const ObjectChangedEventSchema = z.union([
+  z
+    .object({
+      type: z.literal("object.changed"),
+      refs: z.array(ObjectChangedRefSchema).min(1).max(objectChangedRefsMax)
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("object.changed"),
+      overflow: z.literal(true),
+      kinds: z.array(ObjectKindSchema).min(1).max(ObjectKindSchema.options.length)
+    })
+    .strict()
+]);
+
+/** `view.changed`: the topic structure or a view over it changed; a consumer reads it again. */
+export const ViewChangedEventSchema = z.object({ type: z.literal("view.changed") }).strict();
+
+/** The stores a `settings.changed` names, in the order they are listed. */
+export const settingsChangedStores = [
+  "app",
+  "knowledge.controls",
+  "ai",
+  "storage",
+  "obsidian"
+] as const;
+export const settingsChangedKeysMax = 100;
+
+/**
+ * `settings.changed`: a settings store changed. `keys` names the settings that moved; without them
+ * the whole store may have (a reset), so a consumer reads it all again.
+ */
+export const SettingsChangedEventSchema = z
+  .object({
+    type: z.literal("settings.changed"),
+    stores: z.array(z.enum(settingsChangedStores)).min(1).max(settingsChangedStores.length),
+    keys: z.array(z.string().min(1).max(200)).min(1).max(settingsChangedKeysMax).optional()
+  })
+  .strict();
+
+/** `database.status` (sticky, 0 ms): the database lifecycle, as `database.getStatus` answers it. */
+export const DatabaseStatusEventSchema = databaseStatusSchema
+  .extend({ type: z.literal("database.status") })
+  .strict();
+
+/** The states of one model that loads into memory and is released again. */
+export const modelLoadingStates = ["loading", "ready", "released", "failed"] as const;
+
+/** `model.loading` (sticky per model): a local model loads, is ready, is released, or failed. */
+export const ModelLoadingEventSchema = z
+  .object({
+    type: z.literal("model.loading"),
+    modelId: z.string().min(1).max(200),
+    state: z.enum(modelLoadingStates)
+  })
+  .strict();
+
+/** `obsidian.sync`: the vault synchronization's status, as `obsidian.getSyncStatus` answers it. */
+export const ObsidianSyncEventSchema = obsidianSyncStatusSchema
+  .extend({ type: z.literal("obsidian.sync") })
+  .strict();
+
+export const obsidianProjectionKinds = ["editorial", "layout", "wiki"] as const;
+export const obsidianProjectionStates = ["running", "completed", "failed"] as const;
+
+/** `obsidian.projection`: one kind of projection into the vault started, ended or failed. */
+export const ObsidianProjectionEventSchema = z
+  .object({
+    type: z.literal("obsidian.projection"),
+    kind: z.enum(obsidianProjectionKinds),
+    state: z.enum(obsidianProjectionStates)
+  })
+  .strict();
+
+/** `monitoring.changed`: monitoring data changed from `since` (an ISO time) on. */
+export const MonitoringChangedEventSchema = z
+  .object({ type: z.literal("monitoring.changed"), since: z.string().datetime() })
+  .strict();
+
+/**
+ * `explanation.delta` (F3 D22, F5 D16): a relation's explanation as it is written, the whole text
+ * so far; empty text voids what was shown. Coalesced to 50 ms per request.
+ */
+export const ExplanationDeltaEventSchema = RelationExplanationDeltaEventSchema.extend({
+  type: z.literal("explanation.delta")
+}).strict();
+
+/** `import.progress`: how far one import run is through its current file. */
+export const ImportProgressEventSchema = z
+  .object({
+    type: z.literal("import.progress"),
+    runId: z.string().min(1).max(200),
+    fileIndex: count,
+    fraction: z.number().min(0).max(1)
+  })
+  .strict();
+
+/** Every event with one shape per type; `object.changed` has two and is added beside it. */
+const SingleShapeEventSchema = z.discriminatedUnion("type", [
   JobProgressEventSchema,
   InboxChangedEventSchema,
   GardenerStatusEventSchema,
@@ -166,8 +348,24 @@ export const AppEventSchema = z.discriminatedUnion("type", [
   BudgetChangedEventSchema,
   ChangeSetChangedEventSchema,
   OverviewChangedEventSchema,
-  ConsultationStatusEventSchema
+  ConsultationStatusEventSchema,
+  ConsultationDeltaEventSchema,
+  ViewChangedEventSchema,
+  SettingsChangedEventSchema,
+  DatabaseStatusEventSchema,
+  ModelLoadingEventSchema,
+  ObsidianSyncEventSchema,
+  ObsidianProjectionEventSchema,
+  MonitoringChangedEventSchema,
+  ExplanationDeltaEventSchema,
+  ImportProgressEventSchema
 ]);
+
+/**
+ * The whole contract. `object.changed` is `{ refs } | { overflow, kinds }`, two shapes under one
+ * type, which a discriminated union on `type` cannot hold, so it joins as a plain union.
+ */
+export const AppEventSchema = z.union([SingleShapeEventSchema, ObjectChangedEventSchema]);
 
 export type AppEvent = z.infer<typeof AppEventSchema>;
 export type AppEventType = AppEvent["type"];
