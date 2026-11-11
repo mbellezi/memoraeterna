@@ -459,6 +459,30 @@ describe("the dedicated run's reported lines (D38b)", () => {
     expect(check(checks, "e1-waves").details[0]).toContain("wave 1: 1 conflict(s)");
   });
 
+  it("never counts a link row that waits for the next local day (D26 cap) as busy", () => {
+    // After the cap a link run re-queues its root for the next local day: queued, unblocked,
+    // `runAfter` a day ahead. It sits in every sample between waves and is no drain work.
+    const nextDay = job("l9", "relation-link", {
+      scopeKey: "root:c",
+      runAfter: start + 24 * 60 * minute
+    });
+    const samples = minutes(0, 70, (index) => {
+      const due = (index >= 32 && index < 35) || (index >= 46 && index < 49);
+      const jobs = [...(due ? twoRoots().jobs! : []), ...(index >= 35 ? [nextDay] : [])];
+      return { jobs, workers: due ? busy : idle };
+    });
+    const run = runOf(samples, {
+      events: [
+        wave(0, 31.4, { picked: 3, edited: 3, conflicts: 0, gone: 0, order: "by_root" }),
+        wave(1, 45.782, { picked: 3, edited: 3, conflicts: 0, gone: 0, order: "interleaved" })
+      ]
+    });
+    const { waves, checks } = lines(run);
+    expect(waves.map((row) => row["drain end min"])).toEqual([2.6, 2.2]);
+    expect(check(checks, "e1-waves").status).toBe("pass");
+    expect(check(checks, "e1-waves").value).toContain("busy p50 2.2 / max 2.6 min");
+  });
+
   it("reviews a row set aside by another blocker for more than 45 min, never the run's own Off", () => {
     const aside = (blockedClass: string, blockedReason: string) =>
       minutes(0, 60, () => ({
@@ -537,6 +561,20 @@ describe("the dedicated run's reported lines (D38b)", () => {
     const conditions = check(lines(runOf(unpinned)).checks, "e1-conditions");
     expect(conditions.status).toBe("review");
     expect(conditions.details[0]).toContain("1 sample(s) without the idle power pin");
+  });
+
+  it("reviews a collector whose mean spacing would leave a full day short of its samples", () => {
+    // The loop sleeps a full interval, then collects: its overhead adds to the spacing. A day
+    // needs 1,426 of 1,440 samples, so a mean spacing above 60 x 1440 / 1426 = 60.589 s fails it.
+    const spaced = (spacingMs: number) =>
+      Array.from({ length: 120 }, (_, index) => sampleAt(index * spacingMs));
+    const slow = check(lines(runOf(spaced(60_650))).checks, "e1-conditions");
+    expect(slow.status).toBe("review");
+    expect(slow.value).toContain("mean spacing 60.650 s");
+    expect(slow.details[0]).toContain("projects 1424 samples a day (< 1426)");
+    const fine = check(lines(runOf(spaced(60_064))).checks, "e1-conditions");
+    expect(fine.status).toBe("pass");
+    expect(fine.value).toContain("mean spacing 60.064 s");
   });
 
   it("adds its lines and the wave ledger to the F4 report of the dedicated run only", () => {

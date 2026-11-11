@@ -15,7 +15,7 @@ import type {
   SoakSample,
   TaskRunRecord
 } from "../../apps/desktop/src/main/services/dev/soak-records.ts";
-import type { E1Result } from "./report-f4.ts";
+import { e1FullDayShare, type E1Result } from "./report-f4.ts";
 import type { Check, CheckStatus, LoadedRun } from "./report.ts";
 
 const minute = 60_000;
@@ -89,11 +89,11 @@ export function e1WaveLedger(
     const firstDue = span.find((sample) =>
       sample.jobs.some((job) => job.type === "relation-match" && isDue(job, toMs(sample.at)))
     );
+    // Busy: a relations job running or due. A queued row not yet due (a link run the D26 cap
+    // re-queued for the next local day) is no drain work.
     const busy = span.filter((sample) =>
       sample.jobs.some(
-        (job) =>
-          relationsJob(job) &&
-          (job.status === "running" || (job.status === "queued" && !job.blockedClass))
+        (job) => relationsJob(job) && (job.status === "running" || isDue(job, toMs(sample.at)))
       )
     );
     const drainEnd = busy.at(-1);
@@ -167,6 +167,12 @@ export function e1RunLines(
   const truncated = samples.filter((sample) => (sample.jobsTruncated ?? 0) > 0);
   const lastAt = samples.length > 0 ? toMs(samples.at(-1)!.at) : start;
   const expectedSamples = Math.floor((lastAt - start) / run.meta.sampleIntervalMs) + 1;
+  // The collector sleeps a full interval and then collects, so its whole loop overhead adds to the
+  // spacing (collectMs times the sample only): a day short of its samples shows here first.
+  const meanSpacingMs =
+    samples.length > 1 ? (lastAt - toMs(samples[0]!.at)) / (samples.length - 1) : null;
+  const perDay = meanSpacingMs === null ? null : Math.floor(day / meanSpacingMs);
+  const neededPerDay = Math.ceil((day / run.meta.sampleIntervalMs) * e1FullDayShare);
   const collect = samples.flatMap((sample) =>
     typeof sample.collectMs === "number" ? [sample.collectMs] : []
   );
@@ -187,6 +193,11 @@ export function e1RunLines(
       ? [`${notPinned.length} sample(s) without the idle power pin (overridden and not active)`]
       : []),
     ...(truncated.length > 0 ? [`${truncated.length} truncated sample(s)`] : []),
+    ...(perDay !== null && perDay < neededPerDay
+      ? [
+          `the collector's mean spacing projects ${perDay} samples a day (< ${neededPerDay}): a full day would read "not exercised"`
+        ]
+      : []),
     ...(largestPayload !== null && largestPayload > e1PayloadReviewBytes
       ? [`a job payload of ${(largestPayload / 1_048_576).toFixed(1)} MB (> 4 MB)`]
       : []),
@@ -197,9 +208,9 @@ export function e1RunLines(
   const conditions: Check = {
     id: "e1-conditions",
     title: "E1 run conditions (D38b)",
-    bar: "autonomy Off and the idle power pin in every sample, no truncated sample, payloads <= 4 MB, database growth <= 15 GB a day",
+    bar: "autonomy Off and the idle power pin in every sample, no truncated sample, a mean sample spacing that keeps a day's samples at the floor, payloads <= 4 MB, database growth <= 15 GB a day",
     status: samples.length === 0 ? "n/a" : conditionProblems.length > 0 ? "review" : "pass",
-    value: `${samples.length} samples of ${expectedSamples} expected since the start (${Math.max(0, expectedSamples - samples.length)} missed); collector p50 ${percentile(collect, 0.5) ?? "-"} / p95 ${percentile(collect, 0.95) ?? "-"} / max ${collect.length > 0 ? Math.max(...collect) : "-"} ms; largest payload ${largestPayload === null ? "-" : `${Math.round(largestPayload / 1024)} KB`}; database ${sized.length > 0 ? `${(sized.at(-1)!.dbBytes! / 1_073_741_824).toFixed(2)} GB` : "-"}, growth ${growth === null ? "-" : `${(growth / 1_073_741_824).toFixed(2)} GB a day`}`,
+    value: `${samples.length} samples of ${expectedSamples} expected since the start (${Math.max(0, expectedSamples - samples.length)} missed), mean spacing ${meanSpacingMs === null ? "-" : `${(meanSpacingMs / 1000).toFixed(3)} s`}; collector p50 ${percentile(collect, 0.5) ?? "-"} / p95 ${percentile(collect, 0.95) ?? "-"} / max ${collect.length > 0 ? Math.max(...collect) : "-"} ms; largest payload ${largestPayload === null ? "-" : `${Math.round(largestPayload / 1024)} KB`}; database ${sized.length > 0 ? `${(sized.at(-1)!.dbBytes! / 1_073_741_824).toFixed(2)} GB` : "-"}, growth ${growth === null ? "-" : `${(growth / 1_073_741_824).toFixed(2)} GB a day`}`,
     details: conditionProblems
   };
 

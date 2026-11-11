@@ -17,10 +17,16 @@ import { expandWindows } from "../../apps/desktop/src/main/services/dev/soak-pla
 //   window start = offset + k_w c + B + 1, k_w the largest k with that <= 740;
 //   kill minutes = offset + k_T c + 2.0, k_T = ceil((T - offset) / c) for T in 360, 600, 960, 1320,
 //   moved to the next wave when that wave is inside the window or is an abort's wave.
+// B is read from the profile (B = 1470 - `untilMinutes`), so a freeze that sets c*, B and the
+// derived figures by these formulas passes; the provisional figures are pinned only while the
+// profile's description says its cadence is provisional. The pilot keeps the cadence it ran at.
 const plan = resolve(import.meta.dirname, "plan.json");
 const minute = 60_000;
-/** The provisional busy time B of a wave (minutes); the freeze puts the pilot's in its place. */
-const busy = 4.5;
+/** The provisional busy time B of a wave (minutes), before the freeze puts the pilot's in its place. */
+const provisionalBusy = 4.5;
+/** B of a profile: its plan length less the last minute a wave may start at. */
+const busyOf = (profile: SoakProfile) =>
+  profile.durationHours * 60 - profile.driver.editWave!.untilMinutes!;
 const killTargets = [360, 600, 960, 1320];
 const otherKinds = [
   "article",
@@ -56,22 +62,30 @@ describe("the soak7-e1 plan (D38b: the dedicated E1 contention run)", () => {
   const offset = wave.offsetMinutes;
   const end = run.durationHours * 60;
   const waves = wavesOf(run);
+  const busy = busyOf(run);
+  const provisional = run.description.includes("provisional");
 
   it("runs W waves in the plan day by the formula, at fractional minutes spread over the sample phase", () => {
     expect(run.durationHours).toBe(24.5);
     expect(run.warmupMinutes).toBe(30);
-    expect(wave.untilMinutes).toBe(end - busy);
+    // B: the provisional 4.5 min, or the pilot's largest busy time in whole minutes (the freeze).
+    if (provisional) expect(busy).toBe(provisionalBusy);
+    else expect(Number.isInteger(busy) && busy >= 1 && busy <= 30).toBe(true);
+    // The freeze's grid: c = n + 0.382 with max(10, B + 4) <= c <= 23.382.
+    expect(Math.round((c - 0.382) * 1000) % 1000).toBe(0);
+    expect(c).toBeGreaterThanOrEqual(Math.max(10, busy + 4));
+    expect(c).toBeLessThanOrEqual(23.382);
     let count = 0;
     while (offset + count * c <= end - busy) count += 1;
     expect(waves).toHaveLength(count);
-    expect(waves).toHaveLength(100);
+    if (provisional) expect(waves).toHaveLength(100);
     expect(waves[0]).toBeCloseTo(31.4, 6);
     expect(Math.min(...waves)).toBeGreaterThanOrEqual(run.warmupMinutes);
     expect(waves.at(-1)! + busy).toBeLessThanOrEqual(end);
     // Fractional cadence (R6): the waves start at many phases of the minute samples.
     expect(
       new Set(waves.map((start) => Math.round((start % 1) * 100))).size
-    ).toBeGreaterThanOrEqual(80);
+    ).toBeGreaterThanOrEqual(Math.min(80, Math.floor(0.8 * waves.length)));
     expect(wave.notes).toBe(1000);
     expect(wave.order).toBe("alternate");
   });
@@ -98,9 +112,12 @@ describe("the soak7-e1 plan (D38b: the dedicated E1 contention run)", () => {
 
     const aborts = [1, 2].map((index) => index * run.local.ggufAbort.everyMinutes + 17);
     const abortWaves = new Set(aborts.map((armed) => abortWave(waves, armed)));
-    expect([...abortWaves]).toEqual([48, 97]);
+    if (provisional) expect([...abortWaves]).toEqual([48, 97]);
     const inWindow = (k: number) =>
       waves[k]! >= window.startMinute && waves[k]! < window.startMinute + window.durationMinutes;
+    // Two aborts, in two waves of the day.
+    expect(abortWaves.size).toBe(2);
+    for (const k of abortWaves) expect(k).toBeGreaterThan(0);
     const expected = killTargets.map((target) => {
       let k = Math.ceil((target - offset) / c);
       while (inWindow(k) || abortWaves.has(k)) k += 1;
@@ -166,10 +183,20 @@ describe("the soak7-e1-pilot plan (D38b calibration, never a result)", () => {
   const waves = wavesOf(pilot);
   const c = pilot.driver.editWave!.everyMinutes;
   const offset = pilot.driver.editWave!.offsetMinutes;
+  // The pilot runs at the provisional cadence and B; the freeze moves soak7-e1 only.
+  const busy = provisionalBusy;
+  const frozen = !run.description.includes("provisional");
+  const cadenceFree = (profile: SoakProfile) => ({
+    ...profile.driver.editWave!,
+    untilMinutes: 0,
+    ...(frozen ? { everyMinutes: 0 } : {})
+  });
 
-  it("runs 8 waves at soak7-e1's cadence in 2.5 h, the last done before the end", () => {
+  it("runs 8 waves at the provisional cadence (soak7-e1's until the freeze) in 2.5 h, the last done before the end", () => {
     expect(pilot.durationHours).toBe(2.5);
-    expect(pilot.driver.editWave).toEqual({ ...run.driver.editWave, untilMinutes: 150 - busy });
+    expect(c).toBe(14.382);
+    expect(busyOf(pilot)).toBe(busy);
+    expect(cadenceFree(pilot)).toEqual(cadenceFree(run));
     expect(waves).toHaveLength(8);
     waves.forEach((start, k) => expect(close(start, offset + k * c)).toBe(true));
     expect(waves.at(-1)! + busy).toBeLessThanOrEqual(150);
@@ -207,7 +234,7 @@ describe("the soak7-e1-pilot plan (D38b calibration, never a result)", () => {
       seed: 0,
       durationHours: 0,
       local: null,
-      driver: { ...profile.driver, editWave: { ...profile.driver.editWave!, untilMinutes: 0 } },
+      driver: { ...profile.driver, editWave: cadenceFree(profile) },
       f4: { ...profile.f4!, windows: [] }
     });
     expect(strip(pilot)).toEqual(strip(run));
