@@ -61,7 +61,7 @@ import { createApplicationMenuController, registerApplicationMenuIpc } from "./a
 import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -102,6 +102,11 @@ import { BackupService } from "./services/backup-service.js";
 import { runProfileResetStartup } from "./services/profile-reset.js";
 import { laneProbeRequested, runLaneProbe } from "./services/lane-probe.js";
 import { decisionsDevOptions } from "./services/dev/decisions-dev-options.js";
+import {
+  decideUserDataOverride,
+  describeUserDataOverrideRefusal,
+  userDataOverrideRefusedExitCode
+} from "./services/dev/default-profile-guard.js";
 import { relationsConfigForRun } from "./services/dev/relations-dev-options.js";
 import { explainProbeRequested, runExplainProbe } from "./services/dev/explain-probe.js";
 import { prepareSoak, type SoakPreparation } from "./services/dev/soak-startup.js";
@@ -140,8 +145,17 @@ import {
 } from "./window-navigation.js";
 import { ipcChannels, localEmbeddingLoadStatusSchema } from "../shared/ipc.js";
 
-const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
-if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
+// F5 D25 (T111): the default userData is read before the override, so the database can tell an
+// override that points back at it. A blank or relative override is refused instead of silently
+// opening the default profile; `app.exit` may return before the loop stops, so nothing else starts.
+const defaultUserDataPath = app.getPath("userData");
+const userDataOverride = decideUserDataOverride(process.env.MEMORA_USER_DATA_DIR);
+if (!userDataOverride.ok) {
+  console.error(describeUserDataOverrideRefusal(userDataOverride.reason));
+  app.exit(userDataOverrideRefusedExitCode);
+  process.exit(userDataOverrideRefusedExitCode);
+}
+if (userDataOverride.path) app.setPath("userData", userDataOverride.path);
 
 const trayIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
@@ -296,6 +310,7 @@ void app.whenReady().then(() => {
   if (app.isPackaged) app.setAsDefaultProtocolClient("memora");
   databaseService = new DatabaseService({
     userDataPath: app.getPath("userData"),
+    defaultUserDataPath,
     cwd: process.cwd(),
     resourcesPath: getResourcesPath(),
     isPackaged: app.isPackaged,

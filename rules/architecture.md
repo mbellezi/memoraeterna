@@ -111,4 +111,6 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
   Memora Eterna instance at a time and target it by repository path or `localhost` content.
 - Agent proofs, screenshots and journeys use scratch or cloned profiles (`MEMORA_USER_DATA_DIR`); agents never start
   the owner's profiles (the default DEV userData and the F7 trial profile) unless the owner asks (plan decision 34).
+- An unpackaged build refuses to apply pending migrations to the default userData without
+  `MEMORA_ALLOW_DEFAULT_PROFILE_UPGRADE=1`; a blank or relative `MEMORA_USER_DATA_DIR` is refused.
 - Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does not steal focus.

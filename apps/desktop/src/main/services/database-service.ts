@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { safeStorage } from "electron";
+import { z } from "zod";
 import {
   closePgPool,
   createPgPool,
@@ -17,6 +18,12 @@ import type {
   DatabaseStatus,
   DatabaseStatusMessageKey
 } from "../../shared/ipc";
+import {
+  allowDefaultProfileUpgradeKnob,
+  decideDefaultProfileStart,
+  DefaultProfileUpgradeRefusedError,
+  isDefaultUserData
+} from "./dev/default-profile-guard.js";
 import { resolveWorkspaceRoot } from "./workspace-paths.js";
 
 interface StoredDatabaseCredentials {
@@ -35,6 +42,8 @@ interface DatabaseCredentials {
 
 export interface DatabaseServiceOptions {
   readonly userDataPath: string;
+  /** The default userData, read before any `MEMORA_USER_DATA_DIR` override (F5 D25). */
+  readonly defaultUserDataPath: string;
   readonly cwd: string;
   readonly resourcesPath: string;
   readonly isPackaged: boolean;
@@ -208,6 +217,7 @@ export class DatabaseService {
           }
         }
       });
+      await this.assertDefaultProfileMayMigrate(this.pool, migrationsFolder);
       await withTimeout(
         runMigrations(this.pool, migrationsFolder, { seedFolder }),
         30_000,
@@ -229,8 +239,41 @@ export class DatabaseService {
       this.manager = null;
       const redactedError = redactError(error);
       this.logger?.error(redactedError);
-      this.setStatus("failed", redactedError);
+      this.setStatus(
+        "failed",
+        redactedError,
+        error instanceof DefaultProfileUpgradeRefusedError
+          ? "database.errors.defaultProfileUpgradeRefused"
+          : undefined
+      );
     }
+  }
+
+  /**
+   * F5 D25 (T111): an unpackaged build whose userData is the default one does not apply pending
+   * migrations unless the owner set the knob to exactly `1`. It runs before `runMigrations`, so a
+   * refusal changes nothing in the profile; the catch above stops the pool and the sidecar.
+   */
+  private async assertDefaultProfileMayMigrate(
+    pool: Pick<PgPool, "query">,
+    migrationsFolder: string
+  ): Promise<void> {
+    if (this.options.isPackaged) return;
+    const isDefault = await isDefaultUserData({
+      userDataPath: this.options.userDataPath,
+      defaultUserDataPath: this.options.defaultUserDataPath,
+      platform: process.platform
+    });
+    if (!isDefault) return;
+
+    const decision = decideDefaultProfileStart({
+      isPackaged: this.options.isPackaged,
+      isDefault,
+      knob: this.env[allowDefaultProfileUpgradeKnob],
+      history: await readMigrationHistory(pool),
+      journalLastWhen: await readJournalLastWhen(migrationsFolder)
+    });
+    if (!decision.start) throw new DefaultProfileUpgradeRefusedError();
   }
 
   private async getOrCreateCredentials(): Promise<DatabaseCredentials> {
@@ -322,16 +365,24 @@ export class DatabaseService {
     }
   }
 
-  private setStatus(state: DatabaseLifecycleState, error?: string): void {
-    this.status = createStatus(state, error);
+  private setStatus(
+    state: DatabaseLifecycleState,
+    error?: string,
+    messageKey?: DatabaseStatusMessageKey
+  ): void {
+    this.status = createStatus(state, error, messageKey);
     this.logger?.info(`Database status: ${state}${error ? ` (${error})` : ""}`);
   }
 }
 
-function createStatus(state: DatabaseLifecycleState, error?: string): DatabaseStatus {
+function createStatus(
+  state: DatabaseLifecycleState,
+  error?: string,
+  messageKey?: DatabaseStatusMessageKey
+): DatabaseStatus {
   return {
     state,
-    messageKey: statusMessageKeys[state],
+    messageKey: messageKey ?? statusMessageKeys[state],
     updatedAt: new Date().toISOString(),
     ...(error ? { error } : {})
   };
@@ -365,6 +416,38 @@ function parseStoredCredentials(raw: string): StoredDatabaseCredentials | null {
     encryptedPassword: value.encryptedPassword,
     createdAt: value.createdAt
   };
+}
+
+/** The newest migration the database has applied; null for a profile with no history yet. */
+async function readMigrationHistory(
+  pool: Pick<PgPool, "query">
+): Promise<{ readonly maxCreatedAt: number | null }> {
+  const table = await pool.query<{ present: boolean }>(
+    "select to_regclass('drizzle.__drizzle_migrations') is not null as present"
+  );
+  if (!table.rows[0]?.present) return { maxCreatedAt: null };
+
+  const latest = await pool.query<{ maxCreatedAt: string | null }>(
+    'select max(created_at)::text as "maxCreatedAt" from drizzle.__drizzle_migrations'
+  );
+  const raw = latest.rows[0]?.maxCreatedAt;
+  if (raw === null || raw === undefined) return { maxCreatedAt: null };
+  const maxCreatedAt = Number(raw);
+  if (!Number.isFinite(maxCreatedAt)) {
+    throw new Error("The migration history holds an unreadable timestamp.");
+  }
+  return { maxCreatedAt };
+}
+
+const migrationJournalSchema = z.object({
+  entries: z.array(z.object({ when: z.number().finite() }))
+});
+
+/** The `when` of the journal's newest entry: the migration time Drizzle compares the history with. */
+async function readJournalLastWhen(migrationsFolder: string): Promise<number> {
+  const raw = await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8");
+  const journal = migrationJournalSchema.parse(JSON.parse(raw));
+  return journal.entries.reduce((latest, entry) => Math.max(latest, entry.when), 0);
 }
 
 function resolveMigrationsFolder(input: {

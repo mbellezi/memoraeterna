@@ -625,6 +625,9 @@
     "suggestedEdge": "Suggestion : personne n’a encore conservé cette relation."
   },
   "database": {
+    "errors": {
+      "defaultProfileUpgradeRefused": "Cette version de développement mettrait à jour vos données Memora de tous les jours, elle s'est donc arrêtée avant de rien modifier. Lancez-la avec un profil de test (MEMORA_USER_DATA_DIR) ou définissez MEMORA_ALLOW_DEFAULT_PROFILE_UPGRADE=1 pour mettre ce profil à jour volontairement."
+    },
     "startup": {
       "title": "Demarrage de Memora Eterna",
       "failedTitle": "La base locale n'a pas demarre"

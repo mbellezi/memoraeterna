@@ -625,6 +625,9 @@
     "suggestedEdge": "Suggerimento: nessuno ha ancora mantenuto questa relazione."
   },
   "database": {
+    "errors": {
+      "defaultProfileUpgradeRefused": "Questa versione di sviluppo aggiornerebbe i tuoi dati Memora di uso quotidiano, quindi si è fermata prima di modificare qualsiasi cosa. Avviala con un profilo di prova (MEMORA_USER_DATA_DIR) oppure imposta MEMORA_ALLOW_DEFAULT_PROFILE_UPGRADE=1 per aggiornare questo profilo di proposito."
+    },
     "startup": {
       "title": "Avvio di Memora Eterna",
       "failedTitle": "Il database locale non si e avviato"

@@ -625,6 +625,9 @@
     "suggestedEdge": "Suggestion: nobody has kept this relation yet."
   },
   "database": {
+    "errors": {
+      "defaultProfileUpgradeRefused": "This development build would upgrade your everyday Memora data, so it stopped before changing anything. Start it with a scratch profile (MEMORA_USER_DATA_DIR), or set MEMORA_ALLOW_DEFAULT_PROFILE_UPGRADE=1 to upgrade this profile on purpose."
+    },
     "startup": {
       "title": "Starting Memora Eterna",
       "failedTitle": "Local database did not start"

@@ -332,7 +332,8 @@ export const databaseStatusMessageKeySchema = z.enum([
   "database.status.ready",
   "database.status.failed",
   "database.status.stopping",
-  "database.status.stopped"
+  "database.status.stopped",
+  "database.errors.defaultProfileUpgradeRefused"
 ]);
 
 export const databaseStatusSchema = z.object({
