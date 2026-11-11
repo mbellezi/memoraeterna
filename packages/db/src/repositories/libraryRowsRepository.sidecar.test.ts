@@ -696,7 +696,8 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
     }
   });
 
-  it("reads 10k synthetic rows within the latency bar", async () => {
+  it("reads 10k synthetic rows at a few floors a page, and reports its latency", async () => {
+    const before = (await library.rows({ limit: 1 })).total;
     await pool.query(
       `insert into source_items (id, type, title, language, content_hash, created_at, updated_at, metadata)
        select gen_random_uuid(), 'Book', 'Synthetic ' || n || ' ' || md5(n::text), 'en', 'synthetic-' || n,
@@ -743,59 +744,165 @@ describe.skipIf(!sidecarInstalled)("the Library's read model on a real database"
 
     // The title filter is the trigram index of migration 0067 (a selective text, a real table).
     const { rows: plan } = await pool.query<{ "QUERY PLAN": string }>(
-      `explain ${libraryRowsStatement("added", "desc", false, undefined, "$6")}`,
+      `explain ${libraryRowsStatement({ sort: "added", dir: "desc", limit: "$6" })}`,
       [null, "synthetic 4242 ", [], null, null, 10]
     );
     expect(plan.map((row) => row["QUERY PLAN"]).join(" ")).toContain("source_items_title_trgm_idx");
 
-    // Twenty timed reads after one warm-up; the reads that derive every source's status or notes
-    // are measured on seven, which is what their cost makes affordable (their p95 is the slowest).
-    const measure = async (label: string, work: () => Promise<unknown>, runs = 20) => {
+    // Work done, not time: what makes a page cheap is that it reads the notes and runs of its own
+    // rows only. A plan walk counts the loops of the statements that read them, whatever the load.
+    const loopsOn = async (
+      options: Parameters<typeof libraryRowsStatement>[0],
+      values: unknown[],
+      relation: string
+    ): Promise<number[]> => {
+      const { rows } = await pool.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
+        `explain (analyze, format json) ${libraryRowsStatement(options)}`,
+        values
+      );
+      const walk = (node: PlanNode): number[] => [
+        ...(node["Relation Name"] === relation ? [Number(node["Actual Loops"])] : []),
+        ...(node.Plans ?? []).flatMap(walk)
+      ];
+      return walk(rows[0]!["QUERY PLAN"][0]!.Plan);
+    };
+    // A page of 51 rows and the few parts of the fixture's book: the loops are per member of the page.
+    const pageRows = 60;
+    for (const relation of ["atomic_notes", "ingestion_runs"]) {
+      // The default page, and a filter on a status no note decides, derive the page's rows only.
+      for (const options of [
+        { sort: "added", dir: "desc", limit: "$6" },
+        { sort: "title", dir: "asc", limit: "$6" },
+        { sort: "added", dir: "desc", limit: "$6", status: "processing" }
+      ] as const) {
+        const values = [null, null, [], options.status ?? null, null, 50];
+        const loops = await loopsOn(options, values, relation);
+        expect(
+          Math.max(0, ...loops),
+          `${relation} ${options.sort} ${"status" in options ? options.status : ""}`
+        ).toBeLessThanOrEqual(pageRows);
+      }
+    }
+
+    // Time. The machine is shared and its load swings ten-fold, so a millisecond figure says little
+    // by itself: each read is timed beside the floor of any keyset page without an index (the same
+    // top-N over the same rows, with no status, note count or place), and the bar is how many floors
+    // it costs. The 30 ms (cal.) the card started from is the default page on a quiet machine, a
+    // few floors; the derived-first reads (a sort by notes or status, the state chips, a status that
+    // needs the notes) derive every source and are reported with their cost.
+    const base =
+      "with c as (select id, title, type::text as type, created_at, updated_at from source_items where parent_source_item_id is null)";
+    const topN = (order: string, where = "true") =>
+      `${base} select (select count(*) from c where ${where}) as total, x.* from (select * from c where ${where} order by ${order} limit 51) x`;
+    const floor = {
+      added: () => pool.query(topN("created_at desc, id desc")),
+      title: () => pool.query(topN("f_unaccent(lower(title)), id")),
+      query: () =>
+        pool.query(topN("created_at desc, id desc", "f_unaccent(title) ilike '%synthetic 4242%'")),
+      derived: () =>
+        pool.query(
+          `select count(*) from source_items s join lateral
+             (select 1 from atomic_notes n where n.created_from_source_item_id = s.id limit 1) n on true
+            where s.parent_source_item_id is null`
+        )
+    };
+    const median = (values: number[]) =>
+      [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+    const p95Of = (values: number[]) =>
+      [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!;
+    const measure = async (
+      label: string,
+      reference: () => Promise<unknown>,
+      work: () => Promise<unknown>,
+      runs: number
+    ) => {
+      await reference();
+      await work();
       const times: number[] = [];
-      for (let attempt = 0; attempt <= runs; attempt += 1) {
+      const floors: number[] = [];
+      const ratios: number[] = [];
+      for (let attempt = 0; attempt < runs; attempt += 1) {
+        const floorStarted = performance.now();
+        await reference();
+        floors.push(performance.now() - floorStarted);
         const started = performance.now();
         await work();
-        if (attempt > 0) times.push(performance.now() - started);
+        times.push(performance.now() - started);
+        ratios.push(times.at(-1)! / floors.at(-1)!);
       }
-      times.sort((a, b) => a - b);
-      const p95 = times[Math.ceil(times.length * 0.95) - 1]!;
-      const median = times[Math.floor(runs / 2)]!;
-      const line = `library.rows 10k ${label}: p95 ${p95.toFixed(1)} ms (median ${median.toFixed(1)}, ${runs} runs)`;
+      const line = `library.rows 10k ${label}: p95 ${p95Of(times).toFixed(1)} ms (median ${median(times).toFixed(1)}, ${runs} runs); floor median ${median(floors).toFixed(1)} ms; ${median(ratios).toFixed(1)} floors`;
       console.info(line);
-      // The values are a report, not a bar: `LIBRARY_ROWS_REPORT=<file>` collects them.
+      // The values are a report: `LIBRARY_ROWS_REPORT=<file>` collects them.
       if (process.env.LIBRARY_ROWS_REPORT)
         appendFileSync(process.env.LIBRARY_ROWS_REPORT, `${line}\n`);
-      return p95;
+      return median(ratios);
     };
-    const p95 = {
-      // A read of the whole table, to read the others against on a busy machine.
-      baseline: await measure("baseline count(*) of source_items", () =>
-        pool.query("select count(*) from source_items")
+    const ratio = {
+      added: await measure(
+        "added desc, first page",
+        floor.added,
+        () => library.rows({ limit: 50 }),
+        15
       ),
-      added: await measure("added desc, first page", () => library.rows({ limit: 50 })),
-      title: await measure("title asc, first page", () =>
-        library.rows({ sort: "title", limit: 50 })
+      title: await measure(
+        "title asc, first page",
+        floor.title,
+        () => library.rows({ sort: "title", limit: 50 }),
+        15
       ),
-      query: await measure("title query", () =>
-        library.rows({ filter: { query: "synthetic 4242" }, limit: 50 })
+      query: await measure(
+        "title query",
+        floor.query,
+        () => library.rows({ filter: { query: "synthetic 4242" }, limit: 50 }),
+        15
+      ),
+      processing: await measure(
+        "status filter processing (no note read)",
+        floor.derived,
+        () => library.rows({ filter: { status: "processing" }, limit: 50 }),
+        5
       ),
       notes: await measure(
         "notes desc (derived first)",
+        floor.derived,
         () => library.rows({ sort: "notes", limit: 50 }),
-        7
+        5
+      ),
+      ready: await measure(
+        "status filter ready (derived first)",
+        floor.derived,
+        () => library.rows({ filter: { status: "ready" }, limit: 50 }),
+        5
       ),
       status: await measure(
-        "status filter processing",
-        () => library.rows({ filter: { status: "processing" }, limit: 50 }),
-        7
+        "status asc (derived first)",
+        floor.derived,
+        () => library.rows({ sort: "status", limit: 50 }),
+        5
       ),
-      facets: await measure("facets", () => library.rows({ facets: true, limit: 50 }), 7)
+      facets: await measure(
+        "facets",
+        floor.derived,
+        () => library.rows({ facets: true, limit: 50 }),
+        5
+      )
     };
-    const total = (await library.rows({ limit: 1 })).total;
-    expect(total).toBe(10_012);
-    // The bar is 30 ms p95 (cal.) for the default page and the title filter; it is reported, not
-    // asserted: a wall-clock line flakes on a busy machine (the baseline above shows how busy). The
-    // orchestrator's proof reads the report from a quiet one.
-    expect(Number.isFinite(p95.baseline)).toBe(true);
-  }, 300_000);
+    expect((await library.rows({ limit: 1 })).total).toBe(before + 10_000);
+    // A page costs a few floors, not the library: these fail when a page derives every source. The
+    // card's 30 ms (cal.) is the default page on an idle machine, where the floor (a scan of 10k
+    // rows) is about 4 ms: eight floors.
+    expect(ratio.added).toBeLessThan(8);
+    expect(ratio.title).toBeLessThan(8);
+    expect(ratio.query).toBeLessThan(8);
+    // The derived-first reads are a multiple of a pass over the notes: a regression to a probe per
+    // run or per note of every source passes this bar's slack, a hash of every note does not.
+    for (const derived of [ratio.processing, ratio.notes, ratio.ready, ratio.status, ratio.facets])
+      expect(derived).toBeLessThan(40);
+  }, 900_000);
 });
+
+interface PlanNode {
+  "Relation Name"?: string;
+  "Actual Loops": number;
+  Plans?: PlanNode[];
+}

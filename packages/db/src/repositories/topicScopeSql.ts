@@ -9,22 +9,30 @@
  */
 
 /**
+ * `topic_sub`, alone: the topic and its live descendants, walked through the index on (tree,
+ * parent). `topic` is the placeholder holding the topic ID (for example `$5`).
+ */
+export const topicSubtreeCte = (topic: string): string => `topic_sub as (
+      select t.id, t.tree_id from topics t where t.id = ${topic}::uuid and t.retired_at is null
+      union all
+      select k.id, k.tree_id from topic_sub s
+        join topics k on k.tree_id = s.tree_id and k.parent_id = s.id and k.retired_at is null
+    )`;
+
+/**
  * Common table expressions for a `with recursive` statement; `topic` is the placeholder holding
  * the topic ID (for example `$5`), and every expression is empty when it is null.
  *
- * - `topic_sub`: the topic and its live descendants, walked through the index on (tree, parent).
+ * - `topic_sub` (`topicSubtreeCte`): the topic and its live descendants.
  * - `topic_note_ids`: the current notes placed in the subtree, with their primary evidence chunk.
  * - `topic_chunks`: the original passages Ask may read for the topic: every chunk a placed note
  *   rests on (its evidence chunk, source links and retained evidence), and every chunk of a source
  *   placed in the subtree together with the sources below it. A chunk of the same source that no
  *   placed note rests on is not part of the topic.
  */
-export const topicScopeCtes = (topic: string): string => `topic_sub as (
-      select t.id, t.tree_id from topics t where t.id = ${topic}::uuid and t.retired_at is null
-      union all
-      select k.id, k.tree_id from topic_sub s
-        join topics k on k.tree_id = s.tree_id and k.parent_id = s.id and k.retired_at is null
-    ), topic_placed as (
+export const topicScopeCtes = (
+  topic: string
+): string => `${topicSubtreeCte(topic)}, topic_placed as (
       select p.item_kind, p.note_id, p.source_item_id from topic_placements p
        where p.topic_id in (select id from topic_sub)
     ), topic_note_ids as (
@@ -59,7 +67,8 @@ export const inTopicNotes = (topic: string, note: string): string =>
  * and the parts of a placed book are left out on purpose: a source belongs to exactly one
  * territory, so the territory counts add up to the library's total and a territory's list is as long
  * as its count. It is one more expression for the same `with recursive` statement as
- * `topicScopeCtes` and reads its `topic_sub`.
+ * `topicScopeCtes` and reads its `topic_sub`, which a statement that needs no more than this takes
+ * alone from `topicSubtreeCte`.
  */
 export const topicPrimarySourcesCte = (): string => `topic_primary_sources as (
       select p.source_item_id as id from topic_placements p

@@ -7,7 +7,7 @@ import {
 } from "@app/domain";
 
 import { appliedNoteRelationSql, currentNoteSql } from "./note-relation-sql.js";
-import { topicPrimarySourcesCte, topicScopeCtes } from "./topicScopeSql.js";
+import { topicPrimarySourcesCte, topicSubtreeCte } from "./topicScopeSql.js";
 import type { Queryable } from "./types.js";
 
 /**
@@ -262,12 +262,14 @@ const sortKeys: Record<
   }
 > = {
   title: {
-    sql: () => "f_unaccent(lower(c.title))",
+    // An accent- and case-insensitive order is what the ICU root collation gives at its first
+    // levels, and it costs a fifth of unaccenting every title (the keyset page has to key them all).
+    sql: () => 'c.title collate "und-x-icu"',
     type: "text",
     out: (key) => key,
     // A cursor too long to carry the key (null) gets it back from the row it names.
     anchor: (key, id) =>
-      `coalesce(${key}::text, (select f_unaccent(lower(a.title)) from source_items a where a.id = ${id}::uuid))`,
+      `coalesce(${key}::text, (select a.title from source_items a where a.id = ${id}::uuid)) collate "und-x-icu"`,
     derived: false
   },
   added: { sql: () => "c.created_at", type: "timestamptz", out: timestampTextSql, derived: false },
@@ -283,73 +285,117 @@ const sortKeys: Record<
 
 /**
  * The root sources that match the filter: narrow rows (the page reads the rest). `$1` kinds, `$2`
- * the query text, `$3` the blocker keys that need a person, `$4` status, `$5` topic.
+ * the query text, `$3` the blocker keys that need a person, `$4` status, `$5` topic. The topic
+ * filter is in the statement only when the request has one: `topic` adds the subtree CTEs it reads.
  */
-const candidatesCte = (topicFilter: boolean) => `candidates as (
+const candidatesCte = (topic: boolean, inline = false) => `candidates as ${
+  inline ? "not materialized " : ""
+}(
   select s.id, s.title, s.type::text as type, s.created_at, s.updated_at
     from source_items s
    where s.parent_source_item_id is null
      and ($1::text[] is null or s.type::text = any($1::text[]))
      and ($2::text is null or f_unaccent(s.title) ilike
-           '%' || replace(replace(replace(f_unaccent($2::text), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%')
-${
-  topicFilter
-    ? `
-     and ($5::uuid is null or s.id in (select id from topic_primary_sources))`
-    : ""
-}
+           '%' || replace(replace(replace(f_unaccent($2::text), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%')${
+             topic ? "\n     and s.id in (select id from topic_primary_sources)" : ""
+           }
 )`;
 
-/** The reason that holds a source's work for a person, or null (a Gardener blocker key). */
+/**
+ * The `with recursive` head every statement starts with. `filter_status` only gives `$4` and `$5` a
+ * type, for the statements that read neither; the topic CTEs are there only for a topic filter, so
+ * the planner has no more to plan than the request needs.
+ */
+const statementHead = (topic: boolean) =>
+  `with recursive ${activeTree}, filter_status as (select $4::text as status, $5::uuid as topic)${
+    topic ? `,\n  ${topicSubtreeCte("$5")}, ${topicPrimarySourcesCte()}` : ""
+  }`;
+
+/**
+ * The reason that holds a source's work for a person, or null (a Gardener blocker key). `run` has
+ * the run's `status` and `configured` (whether a model was configured when its notes were made,
+ * `'false'` when none was), `job` the job that runs it.
+ */
 export function attentionReasonSql(run: string, job: string, needsPerson: string): string {
   return `(case
     when ${run}.status in ('pending', 'running') and ${job}.status = 'queued'
          and ${job}.blocked_class is not null
          and (${job}.blocked_class || '.' || ${job}.blocked_reason) = any(${needsPerson}::text[])
       then ${job}.blocked_class || '.' || ${job}.blocked_reason
-    when ${run}.status = 'succeeded'
-         and ${run}.stages_checkpoint #>> '{atomicNotes,metadata,configured}' = 'false'
+    when ${run}.status = 'succeeded' and ${run}.configured = 'false'
       then 'no_model.no_route'
   end)`;
 }
 
+/** The `configured` flag of a run row `r`, as `attentionReasonSql` reads it. */
+const configuredSql = (r: string) =>
+  `${r}.stages_checkpoint #>> '{atomicNotes,metadata,configured}'`;
+
 /**
  * Per source of the CTE `subject` (with an `id`), the CTEs `<name>_tree`, `<name>_members` and
  * `<name>_derived`: the notes of the source and of its parts, and whether a run is active or
- * failed anywhere in that tree; `reason` comes from the source's own latest run.
+ * failed anywhere in that tree; `reason` is the first any run of the tree gives.
  *
- * `count` counts the current notes. `exists` only says whether there is one (1 or 0) and looks
- * only where the answer can matter: a member whose run is active or failed already decides the
- * status, so it is not probed. A status needs no more than that, and it is what makes deriving
- * every source of a large library affordable. The probe is a scalar subquery with a limit, so the
- * planner reads one source's notes by their index rather than hashing every note of the library
+ * `notes` is how a member's notes are read: `count` counts the current ones; `exists` only says
+ * whether there is one (1 or 0) and looks only where the answer can matter, because a member whose
+ * run is active or failed already decides the status; `none` reads no note at all, for a status that
+ * no note decides (needsYou, processing, failed). The probe is a scalar subquery with a limit, so
+ * the planner reads one source's notes by their index rather than hashing every note of the library
  * (an EXISTS would be turned into that hash).
+ *
+ * `bulk` is for a subject that is every candidate of the library: the parts are found by one pass
+ * over the parts and the latest runs by one pass over the runs, where a handful of rows (a page)
+ * walks the indexes instead.
  */
-const derivedCtes = (name: string, subject: string, notes: "count" | "exists") => {
+const derivedCtes = (
+  name: string,
+  subject: string,
+  notes: "count" | "exists" | "none",
+  bulk: boolean
+) => {
   const current = `n.created_from_source_item_id = t.id and ${currentNoteSql("n")}`;
-  return `${name}_tree(root_id, id, depth) as (
-    select id, id, 0 from ${subject}
-    union all
-    select t.root_id, child.id, t.depth + 1
-      from ${name}_tree t
-      cross join lateral (select c.id from source_items c where c.parent_source_item_id = t.id) child
-     where t.depth < 6
-  ),
-  ${name}_members as (
-    select t.root_id,
-           ${
-             notes === "count"
-               ? `(select count(*)::int from atomic_notes n where ${current})`
-               : `(case when coalesce(run.status, '') in ('pending', 'running', 'failed', 'canceled') then 0
+  const noteColumn =
+    notes === "count"
+      ? `(select count(*)::int from atomic_notes n where ${current})`
+      : notes === "exists"
+        ? `(case when coalesce(run.status, '') in ('pending', 'running', 'failed', 'canceled') then 0
                    else coalesce((select 1 from atomic_notes n where ${current} limit 1), 0) end)`
-           } as notes,
-           run.status as run_status,
-           case when t.id = t.root_id then ${attentionReasonSql("run", "job", "$3")} end as reason
+        : "0";
+  return `${name}_parts(root_id, id, depth) as (
+    select c.parent_source_item_id, c.id, 1 from source_items c
+     where c.parent_source_item_id in (select id from ${subject})
+    union all
+    select p.root_id, c.id, p.depth + 1
+      from ${name}_parts p join source_items c on c.parent_source_item_id = p.id
+     where p.depth < 6
+  ),
+  ${name}_tree as (
+    select s.id as root_id, s.id, 0 as depth from ${subject} s
+    union all
+    select root_id, id, depth from ${name}_parts
+  ),${
+    bulk
+      ? `
+  ${name}_runs as (
+    select distinct on (r.source_item_id) r.source_item_id, r.status::text as status, r.job_id,
+           ${configuredSql("r")} as configured
+      from ingestion_runs r where r.source_item_id in (select id from ${name}_tree)
+     order by r.source_item_id, r.created_at desc, r.id desc
+  ),`
+      : ""
+  }
+  ${name}_members as (
+    select t.root_id, ${noteColumn} as notes, run.status as run_status,
+           ${attentionReasonSql("run", "job", "$3")} as reason
       from ${name}_tree t
-      left join lateral (
-        select r.status::text as status, r.job_id, r.stages_checkpoint
+      ${
+        bulk
+          ? `left join ${name}_runs run on run.source_item_id = t.id`
+          : `left join lateral (
+        select r.status::text as status, r.job_id, ${configuredSql("r")} as configured
           from ingestion_runs r where r.source_item_id = t.id
-         order by r.created_at desc, r.id desc limit 1) run on true
+         order by r.created_at desc, r.id desc limit 1) run on true`
+      }
       left join jobs job on job.id = run.job_id
   ),
   ${name}_derived as materialized (
@@ -395,19 +441,28 @@ interface RowsRow extends QueryResultRow {
   total: number;
 }
 
+export interface LibraryRowsStatementOptions {
+  sort: LibraryRowSort;
+  dir: "asc" | "desc";
+  /** The statement filters by a status (`$4`). */
+  status?: LibraryRowStatus | undefined;
+  /** The statement filters by a root topic (`$5`). */
+  topic?: boolean | undefined;
+  /** The keyset cursor's key and id parameters. */
+  cursor?: { key: string; id: string } | undefined;
+  /** The page size parameter. */
+  limit: string;
+}
+
 /**
  * The statement for one page. A cheap sort (title, added, updated) pages the candidates first and
  * derives the status of the page's rows only. A sort by notes derives the count for every
- * candidate. A status sort or filter derives the status of every candidate (`exists`, no count)
- * and then the count of the page's rows only.
+ * candidate. A status sort or filter derives the status of every candidate and then the count of
+ * the page's rows only; a filter on a status that no note decides (needsYou, processing, failed)
+ * reads no note for the candidates at all, and any other reads whether there is one (`exists`).
  */
-export function libraryRowsStatement(
-  sort: LibraryRowSort,
-  dir: "asc" | "desc",
-  derivedFirst: boolean,
-  cursor: { key: string; id: string } | undefined,
-  limit: string
-): string {
+export function libraryRowsStatement(options: LibraryRowsStatementOptions): string {
+  const { sort, dir, cursor, limit } = options;
   const key = sortKeys[sort];
   const cursorWhere = cursor
     ? `where (x.key, x.id) ${dir === "asc" ? ">" : "<"} (${
@@ -416,10 +471,11 @@ export function libraryRowsStatement(
     : "";
   const order = `x.key ${dir}, x.id ${dir}`;
   const paging = `${cursorWhere} order by ${order} limit ${limit}::int + 1`;
-  // `$4` (the status filter) is read only when the status is derived first; naming it here gives
-  // the cheap statements a type for it.
-  const head = `with recursive ${activeTree}, filter_status as (select $4::text as status),
-  ${topicScopeCtes("$5")}, ${topicPrimarySourcesCte()}, ${candidatesCte(true)}`;
+  // The cheap statement reads the candidates twice (the page and the total), each a plain scan: it
+  // is cheaper than storing them. The derived-first ones read them many times and keep them.
+  const cheap = !key.derived && options.status === undefined;
+  const head = `${statementHead(options.topic === true)},
+  ${candidatesCte(options.topic === true, cheap)}`;
   const tail = `select x.id, x.title, x.type, ${timestampTextSql("x.created_at")} as "createdAt",
         ${timestampTextSql("x.updated_at")} as "updatedAt",
         source.metadata #> '{descriptor,creators}' as creators,
@@ -430,11 +486,11 @@ export function libraryRowsStatement(
    join source_items source on source.id = x.id
    ${placeLateral("x.id")}
   order by ${order}`;
-  if (!derivedFirst)
+  if (cheap)
     return `${head},
   ordered as (select c.*, ${key.sql("")} as key from candidates c),
   paged as (select x.* from ordered x ${paging}),
-  ${derivedCtes("p", "paged", "count")},
+  ${derivedCtes("p", "paged", "count", false)},
   page as (
     select pg.*, d.notes, d.status, d.reason,
            (select count(*)::int from candidates) as total
@@ -446,14 +502,16 @@ ${tail}`;
      where ($4::text is null or ${d}.status = $4::text)),
   counted as (select f.*, count(*) over ()::int as total from filtered f)`;
   if (sort === "notes")
-    return `${head}, ${derivedCtes("a", "candidates", "count")},
+    return `${head}, ${derivedCtes("a", "candidates", "count", true)},
   ${filtered("d")},
   page as (select x.* from counted x ${paging})
 ${tail}`;
-  return `${head}, ${derivedCtes("a", "candidates", "exists")},
+  const noNotes =
+    options.status === "needsYou" || options.status === "processing" || options.status === "failed";
+  return `${head}, ${derivedCtes("a", "candidates", noNotes ? "none" : "exists", true)},
   ${filtered("d")},
   paged as (select x.* from counted x ${paging}),
-  ${derivedCtes("p", "paged", "count")},
+  ${derivedCtes("p", "paged", "count", false)},
   page as (select pg.id, pg.title, pg.type, pg.created_at, pg.updated_at, pg.key, pg.total,
                   pg.status, pg.reason, d.notes
              from paged pg join p_derived d on d.id = pg.id)
@@ -491,15 +549,23 @@ select w.id as "sourceId", best.topic_id as "topicId"
      where t.root_id = w.id and p.tree_id = (select id from topic_trees where status = 'active')
      group by p.topic_id order by count(*) desc, p.topic_id limit 1) best`;
 
-/** Territories and status counts over every candidate, ignoring the facet's own filter. */
-export const libraryFacetsSql = `with recursive ${activeTree}, ${topicScopeCtes("$5")},
-${topicPrimarySourcesCte()}, ${candidatesCte(false)},
-${derivedCtes("a", "candidates", "exists")},
+/**
+ * Territories and status counts over every candidate, ignoring the facet's own filter (`topic`: the
+ * statement filters the status counts by a root topic, `$5`). A source's territory is the root topic
+ * above its primary place.
+ */
+export const libraryFacetsStatement = (topic: boolean) => `${statementHead(topic)},
+${candidatesCte(false)},
+${derivedCtes("a", "candidates", "exists", true)},
 typed as (
   select c.id, d.status, place.topic_id,
-         ($5::uuid is null or c.id in (select id from topic_primary_sources)) as in_topic
+         ${topic ? "c.id in (select id from topic_primary_sources)" : "true"} as in_topic
     from candidates c join a_derived d on d.id = c.id
-    ${placeLateral("c.id")}
+    left join (
+      select p.source_item_id, p.topic_id
+        from topic_placements p join topics pt on pt.id = p.topic_id
+       where p.item_kind = 'source' and p.rank = 0 and pt.retired_at is null
+         and p.tree_id = (select id from active)) place on place.source_item_id = c.id
 ),
 up(origin, id, parent_id, role, depth) as (
     select t.id, t.id, t.parent_id, t.role, 0 from topics t
@@ -788,7 +854,7 @@ member_runs as (
     from tree t
     cross join lateral (
       select r.status::text as status, r.current_stage, r.started_at, r.completed_at, r.effective_stages,
-             r.stages_checkpoint, r.job_id, r.created_at
+             r.stages_checkpoint, r.job_id, r.created_at, ${configuredSql("r")} as configured
         from ingestion_runs r where r.source_item_id = t.id
        order by r.created_at desc, r.id desc limit 1) run
     left join jobs job on job.id = run.job_id),
@@ -915,7 +981,10 @@ export function createLibraryRowsRepository(
 
   /** The territory bar and the state chips for a filter (each ignores its own facet's filter). */
   async function facets(filter: LibraryRowsFilter): Promise<LibraryRowsFacets> {
-    const { rows } = await db.query<FacetRow>(libraryFacetsSql, filterValues(filter));
+    const { rows } = await db.query<FacetRow>(
+      libraryFacetsStatement(filter.topicId !== undefined),
+      filterValues(filter)
+    );
     const statuses = Object.fromEntries(libraryRowStatuses.map((status) => [status, 0])) as Record<
       LibraryRowStatus,
       number
@@ -980,17 +1049,17 @@ export function createLibraryRowsRepository(
       const filter = input.filter ?? {};
       const cursor =
         input.cursor === undefined ? undefined : decodeLibraryRowsCursor(input.cursor, sort, dir);
-      const derivedFirst = sortKeys[sort].derived || filter.status !== undefined;
       const values = filterValues(filter);
       if (cursor) values.push(cursor.key, cursor.id, limit);
       else values.push(limit);
-      const statement = libraryRowsStatement(
+      const statement = libraryRowsStatement({
         sort,
         dir,
-        derivedFirst,
-        cursor ? { key: "$6", id: "$7" } : undefined,
-        cursor ? "$8" : "$6"
-      );
+        status: filter.status,
+        topic: filter.topicId !== undefined,
+        cursor: cursor ? { key: "$6", id: "$7" } : undefined,
+        limit: cursor ? "$8" : "$6"
+      });
       const result = await db.query<RowsRow>(statement, values);
       const page = result.rows.slice(0, limit);
       const unplaced = page.filter((row) => row.placeTopicId === null).map((row) => row.id);
