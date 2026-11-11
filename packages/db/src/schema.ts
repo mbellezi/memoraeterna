@@ -18,6 +18,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar
@@ -3250,6 +3251,107 @@ export const gardenerFindings = pgTable(
         and ${table.risk} in ('low','medium','high')
         and ${table.status} in ('open','dismissed','resolved')
         and (${table.status} = 'open') = (${table.closedAt} is null)`
+    )
+  })
+);
+
+/**
+ * A question the owner asked in Ask and its stored answers (F5 D14): the row exists from the first
+ * token, so `memora://question/<id>` is valid while the answer streams. Only the question
+ * repository writes it. `scope` is `{kind: library}`, `{kind: topic, topicId}` or
+ * `{kind: sources, sourceIds}` (at most 50); a scope reference is data, not a foreign key.
+ */
+export const questions = pgTable(
+  "questions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    text: text("text").notNull(),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    scope: jsonb("scope")
+      .notNull()
+      .default(sql`'{"kind":"library"}'::jsonb`),
+    privacy: text("privacy").notNull(),
+    mode: text("mode").notNull(),
+    status: text("status").notNull(),
+    errorKey: text("error_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // The question's own words for Cmd-K and the Questions table (F5 D12, D27): accent-folded
+    // through f_unaccent (migration 0053), which keeps the expression immutable.
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      (): SQL => sql`to_tsvector('simple', f_unaccent(${questions.text}))`
+    )
+  },
+  (table) => ({
+    searchTsvIdx: index("questions_search_tsv_idx").using("gin", table.searchTsv),
+    textTrgmIdx: index("questions_text_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(${table.text}) gin_trgm_ops`
+    ),
+    createdAtIdx: index("questions_created_at_idx").on(table.createdAt.desc(), table.id.desc()),
+    textCheck: check("questions_text", sql`char_length(${table.text}) between 1 and 2000`),
+    modeCheck: check("questions_mode", sql`${table.mode} in ('text','hybrid')`),
+    statusCheck: check(
+      "questions_status",
+      sql`${table.status} in ('running','complete','canceled','failed')`
+    )
+  })
+);
+
+/** One version of a question's answer; "Ask again" adds a version, nothing is overwritten. */
+export const questionAnswers = pgTable(
+  "question_answers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    questionId: uuid("question_id")
+      .notNull()
+      .references(() => questions.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    /** `[{markdown, citations:[ordinal]}]`: the ordinals name rows of `question_citations`. */
+    paragraphs: jsonb("paragraphs").notNull(),
+    /** Route, provider, model, lane and prompt revision that produced it. */
+    provenance: jsonb("provenance").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => ({
+    versionUnique: unique("question_answers_question_id_version_unique").on(
+      table.questionId,
+      table.version
+    ),
+    versionCheck: check("question_answers_version", sql`${table.version} >= 1`),
+    statusCheck: check(
+      "question_answers_status",
+      sql`${table.status} in ('complete','canceled','failed')`
+    )
+  })
+);
+
+/**
+ * What an answer cites and the hash of the target when it was stored (one SQL expression per kind,
+ * `questionCitationHashSql`). The target is not a foreign key: a deleted note leaves a citation
+ * that reads "unavailable", as relation evidence already does.
+ */
+export const questionCitations = pgTable(
+  "question_citations",
+  {
+    answerId: uuid("answer_id")
+      .notNull()
+      .references(() => questionAnswers.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    targetKind: text("target_kind").notNull(),
+    targetId: uuid("target_id").notNull(),
+    anchor: jsonb("anchor"),
+    contentHash: text("content_hash").notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.answerId, table.ordinal] }),
+    targetIdx: index("question_citations_target_idx").on(table.targetKind, table.targetId),
+    ordinalCheck: check("question_citations_ordinal", sql`${table.ordinal} >= 1`),
+    kindCheck: check(
+      "question_citations_kind",
+      sql`${table.targetKind} in ('note','source','topic','chunk')`
     )
   })
 );

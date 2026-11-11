@@ -60,3 +60,5 @@ export * from "./topicReadRepository.js";
 export * from "./topicNamingRepository.js";
 export * from "./topicOverviewRepository.js";
 export * from "./aiBudgetRepository.js";
+export * from "./questionRepository.js";
+export * from "./questionCitationHashSql.js";

@@ -50,7 +50,8 @@
     "db:topics:verify": "tsx src/scripts/verify-topic-tree.ts",
     "db:changes:verify": "tsx src/scripts/verify-change-sets.ts",
     "db:divergence-findings:verify": "tsx src/scripts/verify-divergence-findings.ts",
-    "db:legacy-drop:verify": "tsx src/scripts/verify-legacy-drop.ts"
+    "db:legacy-drop:verify": "tsx src/scripts/verify-legacy-drop.ts",
+    "db:questions:verify": "tsx src/scripts/verify-questions.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",

@@ -112,7 +112,8 @@ describe("baseline seed", () => {
       "0062_change_set_envelope",
       "0063_legacy_drop",
       "0064_ask_text_vectors",
-      "0065_divergence_findings"
+      "0065_divergence_findings",
+      "0066_questions"
     ]);
   });
 
@@ -196,7 +197,8 @@ describe("baseline seed", () => {
         "0062_change_set_envelope",
         "0063_legacy_drop",
         "0064_ask_text_vectors",
-        "0065_divergence_findings"
+        "0065_divergence_findings",
+        "0066_questions"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
