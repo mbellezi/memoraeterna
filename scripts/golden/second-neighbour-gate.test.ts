@@ -465,7 +465,8 @@ describe.skipIf(!storedPresent)("F3's stored second library and replay", () => {
     expect(one.expected.min).toBe(54);
     expect(one.forbiddenMax).toBe(0);
     await rm(join(out, ".."), { recursive: true, force: true });
-  });
+    // The whole sweep over 50 orders takes about 1.3 s alone but over 5 s on a loaded machine.
+  }, 60_000);
 
   it("prices the S1 re-measure at two neighbours: 140 pairs F3 never judged are reached by 5% of orders, none at one", async () => {
     const input = replayInputSchema.parse(JSON.parse(await readFile(stored.replay, "utf8")));
