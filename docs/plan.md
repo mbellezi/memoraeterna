@@ -1,6 +1,7 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F4 (authorized by the owner on 2026-10-23; F3 closed on 2026-10-20). Sequence: F4 → F5 → F6 →
+**Current phase: F4 (authorized by the owner on 2026-10-23; F3 closed on 2026-10-20); F5 started 2026-11-11
+beside F4's close (`docs/f5-decisions.md` D3). Sequence: F4 → F5 → F6 →
 F7; the owner tests only in F7, the complete app after legacy removal (decision 34).** Branch: `refactoring`
 (from tag `pre-strangler`). This document holds the target architecture and the roadmap. Durable invariants live
 in `RULES.md` and `rules/`; numbers here are starting points unless marked measured.
@@ -827,39 +828,99 @@ states; clean Hybrid install places and connects the first note in ≤10 min (e2
 
 ### F5 Unified workspace (weeks 19-22)
 
-- [ ] Shell (title bar, 5-destination rail, navigator, panel stack, context panel) and the `memora://`
-      router with per-panel history and Obsidian deep links.
-- [ ] Complete objects layer and `search.omni`; Cmd-K (shadcn Command / cmdk); Ask with streaming and
-      persisted answers; Home; Library table; hover previews.
-- [ ] Remaining pollers replaced by events.
-- [ ] Playwright-Electron journeys: first run, import to tree, read topic, follow a relation, Inbox triage,
-      ask and jump to citation. Inbox triage does Keep, Remove and Dismiss on a scratch profile and asserts each
-      verdict is stored in its store (the proof that labels persist before any real label; F6's label export
-      reads them back).
-- [ ] Scratch-profile mode (`MEMORA_USER_DATA_DIR`) for the matching pilot and expanded benchmark runners and
-      their report and status scripts, which today refuse anything but the owner's DEV profile; until it lands
-      they are frozen (`docs/matching-calibration.md`, `docs/matching-benchmark.md`).
-- [ ] Startup guard: the unpackaged build refuses to apply pending migrations to the default userData unless an
-      explicit owner knob is set, so one bare start cannot upgrade the owner's DEV profile (decision 34).
-- [ ] Settings v2 (decision 24): mockups approved by the owner first (static HTML with synthetic data, as in F1b,
-      shared as a private artifact: a design approval, not a test; design approvals batched where possible; F5's
-      Settings v2 mockups go first); a few sections (General and appearance, AI with the presets first,
-      Knowledge, Library and storage, Integrations, Privacy and data, Advanced and Diagnostics); search across
-      settings; "changed from default" markers with a per-item reset; plain-language help; design-system
-      components; the old settings screens removed.
-- [ ] Remove the old top-level views and duplicate wiki browsers.
-- [ ] Map › Relations (moved from F6, owner 2026-10-19): the force graph scoped to a branch, coloured by topic
-      (force + Louvain, topic super-nodes when zoomed out) on the canvas T60g extracted, with its table
-      alternative; it replaces the old global Knowledge Graph screen that this phase removes.
-- [ ] Map › Shape (owner 2026-10-19): the zoomable icicle of the tree (size, depth, violations, growth) on the
-      icicle component F4 builds for the Inbox's structural diffs.
-- [ ] Atlas spike, record only (owner 2026-10-19): UMAP + Procrustes on a golden-small clone; does each branch
-      form a contiguous territory? F6 builds Atlas only on a go.
-- [ ] Parallel calls inside one import on remote routes (owner, 2026-10-23): a source's summary map batches and graph
-      extraction batches run at once up to the remote lane's limit (4 for API keys, 2 for Codex), their results kept
-      in input order; the cumulative per-source graph caps become fixed per-batch caps (12/12). Same tokens, less
-      time; the local lane stays at one call. Measured: import time (X3's TP-C200 on a paid route), entity yield and
-      calls per chapter (X7-REF), equal results in any completion order.
+Decisions D1-D32, the owner's answers of 2026-11-11 and the defaults Q4-Q21, the gates D, M, U, J and X, the exit bars
+X1-X12 with their data and methods, the slot plan, remote spend and the budget: `docs/f5-decisions.md`; it binds F5
+and, where sections 4-6 differ, it wins. Tasks run in waves as in F4 (separate worktrees; IPC by area with one wiring
+card per wave and a fixed chain for every other shared file; a proof that starts a Memora Electron or a local model
+takes that slot). F4's close runs beside F5 from its own branch and worktree (D3). Every UI box is ticked only with its
+gate U records: fixture screenshots before merge and live screenshots on a scratch profile (D1).
+
+Wave 0 (decisions and design, 2026-11-11):
+- [x] T106 Decision record (`docs/f5-decisions.md`) and these task boxes.
+- [ ] T107 Settings v2 mockups, published as a private artifact (synthetic data, both themes, two widths).
+- [ ] T108 Design record (`docs/design/f5-workspace.md`) from the four seeded candidates, three judges and the
+      synthesis (gate D).
+
+Wave 1 (foundations, model-free, no new dependency; gate M at the end):
+- [ ] T109 Held-out settings queries, written blind before the registry's keywords (X9, X10).
+- [ ] T110 Whole-catalog i18n parity test with the identical-to-English allowlist (X6).
+- [ ] T111 Startup guard: no pending migrations on the default userData without the owner knob; blank or relative
+      `MEMORA_USER_DATA_DIR` refused (decision 34).
+- [ ] T112 Scratch-profile mode of the matching pilot and benchmark runners and their scripts; the matching docs
+      unfrozen.
+- [ ] T113 Event bus v2: per-type windows, sticky replay, `appEventPort`, the new event types.
+- [ ] T114 `object.changed` publishers.
+- [ ] T115 The other publishers (view, settings, database status, Obsidian, monitoring, explanation deltas).
+- [ ] T116 Questions: migration 0066, repository and citation hashes.
+- [ ] T117 Search indexes: migration 0067.
+- [ ] T118 Objects read layer: `get`, `resolveMany`, `backlinks`.
+- [ ] T119 `objects.locate` for topics and entities.
+- [ ] T120 Workspace state and the `memora://` router (pure), with the legacy deep-link forms.
+- [ ] T121 Ask streaming and persistence in main.
+- [ ] T122 Parallel calls inside one import (`mapInOrder`, lane concurrency, fixed 12/12 caps).
+- [ ] T123 Remove the cumulative graph-cap settings.
+- [ ] T138 Screens tool and the four-state check (X5).
+- [ ] T169 SEED30K as a persistent scratch cluster; the benchmarks' profile server.
+- [ ] T170 Wave 1 IPC wiring.
+
+Wave 2 (services, journey harness and shell; the four new dependencies at its start):
+- [ ] T124 Design-system primitives on the tokens (Radix and cmdk wrappers).
+- [ ] T125 Event consumers; the six side channels retired.
+- [ ] T126 Pollers replaced by events; the ratchet at 0 and 0 (X4).
+- [ ] T127 `search.omni`.
+- [ ] T128 Cmd-K service benchmark and EXPLAIN gate (X3a).
+- [ ] T129 Question reads and `locate(question)`.
+- [ ] T130 `home.digest`.
+- [ ] T131 `library.rows`.
+- [ ] T132 `entities.page`.
+- [ ] T133 `relations.branch`.
+- [ ] T134 `topics.history` and Shape depth 7.
+- [ ] T135 Shell chrome: title bar, five-destination rail, navigator host, menu.
+- [ ] T136 Panel stack with per-panel history and the path ribbon.
+- [ ] T137 Playwright-Electron journey harness, gesture counter, IPC trace, contrast scan.
+- [ ] T171 Wave 2 IPC wiring.
+
+Wave 3 (surfaces):
+- [ ] T139 Source page extraction.
+- [ ] T140 Source panel, live.
+- [ ] T141 Note and Topic panels, Explore, Obsidian deep links.
+- [ ] T142 Inbox and Map hosting; Map › Shape with growth.
+- [ ] T143 Context panel: Connections, Mentions, Evidence, Graph.
+- [ ] T144 Hover previews, citation passages, quick-look and Markdown links.
+- [ ] T145 Cmd-K and the search results panel (X3b).
+- [ ] T146 Ask panel and the Question page.
+- [ ] T147 Entity panel.
+- [ ] T148 Home, with the Shape strip.
+- [ ] T149 Library table (Sources and Questions).
+- [ ] T150 Add flow, window drop and the advanced import panel.
+- [ ] T151 Map › Relations canvas and topic colour tokens.
+- [ ] T152 Map › Relations table, super-nodes and the lens.
+- [ ] T153 Atlas spike, record only (`docs/spikes/atlas-f5.md`).
+- [ ] T173 Context panel: Activity and Ask.
+
+Wave 4 (journeys, removals, settings data; gate J before the removals):
+- [ ] T154 Journeys J1-J3 and the idle proof (X1, X2, X4, X7).
+- [ ] T155 Journeys J4-J6 and J8, with Inbox triage asserting Keep, Remove and Dismiss in their stores.
+- [ ] T156 Remove the Review queue, Search, `search.query` and the dead wiki browsers.
+- [ ] T157 Remove the old Knowledge Graph screen.
+- [ ] T158 Remove the old Library view, Wiki root, RecentObjects and the Ask dialog.
+- [ ] T159 Settings registry v2 and its reader test (X8, X11).
+- [ ] T160 `settings.describe` and `settings.reset`.
+- [ ] T172 Stop the writes to the dead AI profile columns.
+- [ ] T175 Settings registry copy (labels, help, keywords in 5 locales).
+
+Wave 5 (Settings v2 build):
+- [ ] T161 Settings shell, search and "changed from default" markers (X9).
+- [ ] T162 General, Library and Privacy sections.
+- [ ] T163 AI section with This Mac (decision 25).
+- [ ] T164 Knowledge and Integrations sections.
+- [ ] T165 Advanced and Diagnostics.
+- [ ] T174 Journey J7, Settings (X10, X12).
+- [ ] T166 Remove the old settings screens, Jobs, Monitoring and the Debug list.
+- [ ] T167 Rules, stack and docs sync.
+
+Wave 6 (exit):
+- [ ] T168 Exit measurement (`docs/kpi-f5.md`) and phase close.
 
 Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
 clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in

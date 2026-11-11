@@ -62,6 +62,8 @@ binding decision records of F2, F3 and F4. The measurements are dated, not rules
   the golden runner, the F3 and F4 soaks, relation re-match, Decisions and probe runs, and the F4 writer benchmark.
 - [f4-decisions.md](f4-decisions.md) — the binding F4 decisions (D1-D38), owner answers Q1-Q13 and the later owner
   decisions, gates M, S and X, the exit and carried bars (E1-E7, C1-C4), the 7-day soak plan and the budget.
+- [f5-decisions.md](f5-decisions.md) — the binding F5 decisions (D1-D32), the owner answers of 2026-11-11, the gates
+  D, M, U, J and X, the exit bars X1-X12, the slot plan and the budget.
 - [settings-inventory.md](settings-inventory.md) — F4 T68: every persisted setting with its reader, default, screen,
   fate and E7 category; the 35/43 counts and the 17 matching controls verified; the dead settings; the pair-key fields.
 
