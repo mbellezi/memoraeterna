@@ -331,6 +331,15 @@ describe.skipIf(!sidecarInstalled)("home digest on a real PostgreSQL database", 
         { kind: "topic", objectId: id.ghostTopic, title: "A topic that went away" }
       ];
       for (const open of opens) await history.record(open);
+      // Opens recorded within one millisecond would tie in the trail's time order (a JS Date has
+      // no microseconds), so the test spaces them a second apart, in the order they were opened.
+      for (const [index, open] of opens.entries()) {
+        await pool.query(
+          `update view_history set opened_at = now() - make_interval(secs => $2::int)
+           where address = $1`,
+          [formatObjectAddress({ kind: open.kind, id: open.objectId }), opens.length - index]
+        );
+      }
       await history.setPinned(formatObjectAddress({ kind: "source", id: id.sOld }), true);
     }, 60_000);
 
