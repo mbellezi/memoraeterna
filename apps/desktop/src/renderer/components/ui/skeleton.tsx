@@ -65,3 +65,22 @@ export function SkeletonLines({ lines = 3, className }: { lines?: number; classN
     </div>
   );
 }
+
+const rowTitleWidths = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-1/3"] as const;
+
+/**
+ * List-shaped bars: `rows` rows at the height of a list row, each with a title bar of a different
+ * width on the left and a short meta bar on the right, so the block keeps its size when the rows arrive.
+ */
+export function SkeletonRows({ rows = 5, className }: { rows?: number; className?: string }) {
+  return (
+    <div className={cn("grid gap-1", className)}>
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="flex h-7 items-center gap-3 px-2">
+          <Skeleton className={rowTitleWidths[index % rowTitleWidths.length]} />
+          <Skeleton className="ml-auto w-16 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}

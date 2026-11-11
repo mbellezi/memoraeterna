@@ -27,7 +27,7 @@ import { EmptyState } from "./empty-state";
 import { ErrorState } from "./error-state";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./hover-card";
 import { Kbd } from "./kbd";
-import { LoadingState, SkeletonLines } from "./skeleton";
+import { LoadingState, SkeletonRows } from "./skeleton";
 import { ScrollArea } from "./scroll-area";
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from "./sheet";
 import { ToggleGroup, ToggleGroupItem } from "./toggle-group";
@@ -78,14 +78,14 @@ const frameState = (state: SampleState): string =>
 
 function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="grid min-w-0 content-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-[var(--shadow-sheet)]">
+    <section className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-[var(--shadow-sheet)]">
       <h2 className="m-0 text-xs font-semibold text-secondary-foreground">{title}</h2>
       {children}
     </section>
   );
 }
 
-function ControlsBlock({ t }: { t: Translator }) {
+function ControlsBlock() {
   const [density, setDensity] = useState("comfortable");
   return (
     <Block title="Buttons, keys and the segmented control">
@@ -107,7 +107,7 @@ function ControlsBlock({ t }: { t: Translator }) {
         <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
       </ToggleGroup>
       <p className="m-0 flex flex-wrap items-center gap-1 text-sm text-secondary-foreground">
-        {t("ui.close")} <Kbd>Esc</Kbd> <Kbd>↵</Kbd> <Kbd>⌥↵</Kbd> <Kbd>Space</Kbd>
+        <Kbd>Esc</Kbd> close · <Kbd>↵</Kbd> open · <Kbd>⌥↵</Kbd> open here · <Kbd>Space</Kbd> peek
       </p>
     </Block>
   );
@@ -200,10 +200,26 @@ function QuickLookBlock() {
         <SheetContent
           title="Lactic fermentation"
           portal={false}
-          className="static! w-full! max-w-none! translate-x-0!"
+          className="static! mx-auto max-w-full! translate-x-0!"
         >
-          <SheetHeader>
-            Peeking <Kbd>Space</Kbd> closes <Kbd>↵</Kbd> opens beside
+          <SheetHeader className="flex-wrap">
+            <span>Peeking</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <Kbd>Space</Kbd> closes
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <Kbd>↵</Kbd> opens beside
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <Kbd>↑↓</Kbd> peek the next
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <Kbd>⌥↵</Kbd> open in this panel
+            </span>
           </SheetHeader>
           <SheetBody>
             <p className="m-0 font-reading text-xl font-semibold">Lactic fermentation</p>
@@ -212,7 +228,10 @@ function QuickLookBlock() {
             </p>
           </SheetBody>
           <SheetFooter>
-            <Kbd>Esc</Kbd> close
+            <span>
+              <Kbd>Esc</Kbd> close
+            </span>
+            <span className="text-muted-foreground">The list stays here; nothing was opened.</span>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -233,7 +252,7 @@ function StatesBlock({
     <Block title="States: loading, empty, error, success">
       {state.status === "loading" ? (
         <LoadingState t={t}>
-          <SkeletonLines lines={4} />
+          <SkeletonRows rows={5} />
         </LoadingState>
       ) : state.status === "error" ? (
         <ErrorState
@@ -287,7 +306,7 @@ export function PrimitivesSheet({
       <h1 className="m-0 font-reading text-2xl font-semibold">Primitives</h1>
       <div className="grid min-w-0 grid-cols-2 gap-4">
         <div className="grid min-w-0 content-start gap-4">
-          <ControlsBlock t={t} />
+          <ControlsBlock />
           <StatesBlock t={t} state={state} retry={retry} />
           <PaletteBlock />
         </div>
