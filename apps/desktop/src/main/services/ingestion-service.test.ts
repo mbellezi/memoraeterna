@@ -540,6 +540,8 @@ class TransactionRecordingPool {
   failOn: RegExp | null = null;
   /** Makes every stored file look referenced by a committed document_assets row. */
   assetsReferenced = false;
+  /** Makes the duplicate lookups and the source update find this already stored source. */
+  hasDuplicate = false;
   private connections = 0;
 
   async connect() {
@@ -573,51 +575,56 @@ class TransactionRecordingPool {
     this.statements.push({ connection, text, values });
     if (this.failOn?.test(text)) throw new Error("simulated database failure");
     const now = new Date(0);
-    const rows = text.includes("insert into source_items")
-      ? [
-          {
-            id: "00000000-0000-4000-8000-000000000001",
-            type: "GenericDocument",
-            title: "Atomic",
-            subtitle: null,
-            sourceOrigin: "file_upload",
-            sourceUri: null,
-            externalId: null,
-            parentSourceItemId: null,
-            contentHash: null,
-            language: "en",
-            summary: null,
-            summaryGeneratedAt: null,
-            metadata: {},
-            createdAt: now,
-            updatedAt: now
-          }
-        ]
-      : text.includes("insert into documents")
+    const rows =
+      (this.hasDuplicate &&
+        (text.includes("where ($1::text is not null and source_uri = $1)") ||
+          text.includes("unaccent(lower(title))") ||
+          text.startsWith("update source_items"))) ||
+      text.includes("insert into source_items")
         ? [
             {
-              id: "00000000-0000-4000-8000-0000000000c1",
-              sourceItemId: "00000000-0000-4000-8000-000000000001",
+              id: "00000000-0000-4000-8000-000000000001",
+              type: "GenericDocument",
               title: "Atomic",
-              canonicalMarkdown: "",
-              contentHash: "hash",
+              subtitle: null,
+              sourceOrigin: "file_upload",
+              sourceUri: null,
+              externalId: null,
+              parentSourceItemId: null,
+              contentHash: null,
               language: "en",
+              summary: null,
+              summaryGeneratedAt: null,
               metadata: {},
               createdAt: now,
               updatedAt: now
             }
           ]
-        : text.includes("insert into bibliographic_works")
-          ? [{ id: "00000000-0000-4000-8000-000000000002", creators: [], identifiers: {} }]
-          : text.includes("insert into bibliographic_instances")
-            ? [{ id: "00000000-0000-4000-8000-000000000003" }]
-            : text.includes("insert into document_assets")
-              ? [{ id: "00000000-0000-4000-8000-0000000000a1" }]
-              : text.includes("from document_assets where storage_base")
-                ? this.assetsReferenced
-                  ? [{ "?column?": 1 }]
-                  : []
-                : [];
+        : text.includes("insert into documents")
+          ? [
+              {
+                id: "00000000-0000-4000-8000-0000000000c1",
+                sourceItemId: "00000000-0000-4000-8000-000000000001",
+                title: "Atomic",
+                canonicalMarkdown: "",
+                contentHash: "hash",
+                language: "en",
+                metadata: {},
+                createdAt: now,
+                updatedAt: now
+              }
+            ]
+          : text.includes("insert into bibliographic_works")
+            ? [{ id: "00000000-0000-4000-8000-000000000002", creators: [], identifiers: {} }]
+            : text.includes("insert into bibliographic_instances")
+              ? [{ id: "00000000-0000-4000-8000-000000000003" }]
+              : text.includes("insert into document_assets")
+                ? [{ id: "00000000-0000-4000-8000-0000000000a1" }]
+                : text.includes("from document_assets where storage_base")
+                  ? this.assetsReferenced
+                    ? [{ "?column?": 1 }]
+                    : []
+                  : [];
     return {
       command: "SELECT",
       rowCount: rows.length,
@@ -661,7 +668,8 @@ describe("IngestionService atomic import persistence", () => {
   async function importMarkdown(
     pool: TransactionRecordingPool,
     type: "GenericDocument" | "Book",
-    createStructureDraft?: () => Promise<unknown>
+    createStructureDraft?: () => Promise<unknown>,
+    duplicatePolicy: "version" | "update" = "version"
   ) {
     const path = join(directory, "import-source.md");
     await writeFile(path, "# Chapter One\n\nFirst chapter.\n\n# Chapter Two\n\nSecond chapter.\n");
@@ -687,7 +695,7 @@ describe("IngestionService atomic import persistence", () => {
     const run = () =>
       service.importFile(path, {
         descriptor: SourceDescriptorSchema.parse({ type, title: "Atomic" }),
-        duplicatePolicy: "version",
+        duplicatePolicy,
         processingPlan: plan
       });
     return { run, process };
@@ -839,5 +847,63 @@ describe("IngestionService atomic import persistence", () => {
     expect(capture.refs()).toEqual([
       { kind: "source", id: "00000000-0000-4000-8000-000000000001", change: "created" }
     ]);
+  });
+
+  describe("a source that was stored before", () => {
+    const sourceItemId = "00000000-0000-4000-8000-000000000001";
+    /** The rows of an update are the persisted rows' own business: the announcement is what counts. */
+    const persistedRows = () =>
+      vi
+        .spyOn(
+          IngestionService.prototype as unknown as { persistRows: () => Promise<unknown> },
+          "persistRows"
+        )
+        .mockResolvedValue({
+          sourceItem: { id: sourceItemId },
+          document: { id: "00000000-0000-4000-8000-0000000000c1" },
+          structure: null,
+          edited: false
+        });
+
+    it.each([
+      ["update", "updated"],
+      ["version", "created"]
+    ] as const)(
+      "announces a %s import of a known source as %s, after its transaction committed",
+      async (policy, change) => {
+        const pool = new TransactionRecordingPool();
+        pool.hasDuplicate = true;
+        persistedRows();
+        const { run } = await importMarkdown(pool, "GenericDocument", undefined, policy);
+        await run();
+        expect(capture.refs()).toEqual([{ kind: "source", id: sourceItemId, change }]);
+      }
+    );
+
+    it("announces nothing for an update whose transaction failed", async () => {
+      const pool = new TransactionRecordingPool();
+      pool.hasDuplicate = true;
+      vi.spyOn(
+        IngestionService.prototype as unknown as { persistRows: () => Promise<unknown> },
+        "persistRows"
+      ).mockRejectedValue(new Error("simulated database failure"));
+      const { run } = await importMarkdown(pool, "GenericDocument", undefined, "update");
+      await expect(run()).rejects.toThrow("simulated database failure");
+      expect(capture.events).toEqual([]);
+    });
+
+    it.each([
+      ["update", "updated"],
+      ["version", "created"]
+    ] as const)("announces a %s of a known container source as %s", async (policy, change) => {
+      const pool = new TransactionRecordingPool();
+      pool.hasDuplicate = true;
+      const service = createService(pool as unknown as PgPool, { userDataPath: directory });
+      await service.createContainerSource({
+        descriptor: SourceDescriptorSchema.parse({ type: "Book", title: "Atomic book" }),
+        duplicatePolicy: policy
+      });
+      expect(capture.refs()).toEqual([{ kind: "source", id: sourceItemId, change }]);
+    });
   });
 });

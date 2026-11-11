@@ -8,7 +8,8 @@ import { renderPrompt } from "./prompt-runtime.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
 const mocks = vi.hoisted(() => ({
-  sources: { findById: vi.fn() },
+  sources: { findById: vi.fn(), update: vi.fn() },
+  summaries: { clearCurrent: vi.fn(), create: vi.fn() },
   documents: { findById: vi.fn() },
   chunks: { listByDocument: vi.fn() },
   hierarchy: {
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     createKnowledgeGeneration: vi.fn(),
     completeKnowledgeGeneration: vi.fn()
   },
-  notes: { upsertGenerated: vi.fn(), review: vi.fn() },
+  notes: { upsertGeneratedWithOutcome: vi.fn(), review: vi.fn() },
   embedding: { findCurrentNoteVectors: vi.fn(), upsert: vi.fn() },
   run: vi.fn(),
   embedMany: vi.fn()
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
   createSourceItemRepository: () => mocks.sources,
+  createSourceSummaryRepository: () => mocks.summaries,
   createDocumentRepository: () => mocks.documents,
   createChunkRepository: () => mocks.chunks,
   createHierarchicalIngestionRepository: () => mocks.hierarchy,
@@ -104,6 +106,7 @@ beforeEach(() => {
   mocks.documents.findById.mockResolvedValue({
     id: documentId,
     sourceItemId: sourceId,
+    metadata: {},
     contentHash: "hash",
     canonicalMarkdown: "Spacing and retrieval."
   });
@@ -114,14 +117,17 @@ beforeEach(() => {
   mocks.hierarchy.createKnowledgeGeneration.mockResolvedValue("generation");
   mocks.hierarchy.completeKnowledgeGeneration.mockResolvedValue(undefined);
   let created = 0;
-  mocks.notes.upsertGenerated.mockImplementation(async (input) => ({
-    id: `note-${(created += 1)}`,
-    title: input.title,
-    ideaStatement: input.ideaStatement,
-    bodyMarkdown: input.bodyMarkdown,
-    metadata: {},
-    createdFromSourceItemId: input.sourceItemId,
-    status: "active"
+  mocks.notes.upsertGeneratedWithOutcome.mockImplementation(async (input) => ({
+    outcome: "created",
+    note: {
+      id: `note-${(created += 1)}`,
+      title: input.title,
+      ideaStatement: input.ideaStatement,
+      bodyMarkdown: input.bodyMarkdown,
+      metadata: {},
+      createdFromSourceItemId: input.sourceItemId,
+      status: "active"
+    }
   }));
   mocks.embedding.findCurrentNoteVectors.mockResolvedValue(new Map());
   mocks.run.mockImplementation(async (task) => (task === "embedding" ? embedded : generation));
@@ -159,7 +165,9 @@ describe("embedding notes when they are created", () => {
     });
     expect(passedSignal).toBe(signal);
     // Persisted before embedded, and stored with the hash of the text it was built from.
-    const lastPersist = Math.max(...mocks.notes.upsertGenerated.mock.invocationCallOrder);
+    const lastPersist = Math.max(
+      ...mocks.notes.upsertGeneratedWithOutcome.mock.invocationCallOrder
+    );
     expect(lastPersist).toBeLessThan(mocks.embedMany.mock.invocationCallOrder[0]!);
     expect(mocks.embedding.upsert).toHaveBeenCalledTimes(2);
     expect(mocks.embedding.upsert.mock.calls[0]![0]).toMatchObject({
@@ -346,22 +354,33 @@ describe("announcing notes to the windows (F5 T114)", () => {
   });
   afterEach(() => capture.stop());
 
-  it("announces the notes it stored as created, and the ones a regeneration rewrote as updated", async () => {
-    const before = new Date("2026-01-01T00:00:00Z");
-    const after = new Date("2026-01-02T00:00:00Z");
+  it("announces the notes it stored as created, the ones a regeneration rewrote as updated, and none it left alone", async () => {
+    const outcomes = ["updated", "created", "unchanged"] as const;
     let made = 0;
-    mocks.notes.upsertGenerated.mockImplementation(async (input) => {
+    mocks.notes.upsertGeneratedWithOutcome.mockImplementation(async (input) => {
+      const outcome = outcomes[made]!;
       made += 1;
+      // The timestamps say nothing about it: only what the upsert did counts.
       return {
-        id: `note-${made}`,
-        title: input.title,
-        metadata: {},
-        status: "active",
-        createdAt: before,
-        // The first note was already there: its row was updated in place.
-        updatedAt: made === 1 ? after : before
+        outcome,
+        note: {
+          id: `note-${made}`,
+          title: input.title,
+          metadata: {},
+          status: "active",
+          createdAt: new Date(0),
+          updatedAt: new Date(0)
+        }
       };
     });
+    mocks.run.mockImplementation(async (task) =>
+      task === "embedding"
+        ? embedded
+        : {
+            ...generation,
+            output: { notes: [...generatedNotes, { ...generatedNotes[0]!, title: "Interleaving" }] }
+          }
+    );
     await service().generateAtomicNotes(sourceId, documentId);
     expect(capture.refs()).toEqual([
       { kind: "note", id: "note-1", change: "updated" },
@@ -379,9 +398,12 @@ describe("announcing notes to the windows (F5 T114)", () => {
 
   it("announces the notes stored before a later one failed, each was committed on its own", async () => {
     let made = 0;
-    mocks.notes.upsertGenerated.mockImplementation(async (input) => {
+    mocks.notes.upsertGeneratedWithOutcome.mockImplementation(async (input) => {
       if ((made += 1) === 2) throw new Error("database_unavailable");
-      return { id: "note-1", title: input.title, metadata: {}, status: "active" };
+      return {
+        outcome: "created",
+        note: { id: "note-1", title: input.title, metadata: {}, status: "active" }
+      };
     });
     await expect(service().generateAtomicNotes(sourceId, documentId)).rejects.toThrow(
       "database_unavailable"
@@ -411,5 +433,47 @@ describe("announcing notes to the windows (F5 T114)", () => {
       "sourceWorkspace.conflict"
     );
     expect(capture.events).toEqual([]);
+  });
+
+  describe("a source's summary", () => {
+    const summarizer = (minimumWords: number) =>
+      new KnowledgeService({
+        getPool: () => ({}) as PgPool,
+        aiService: { runDefaultTask: mocks.run } as unknown as AiService,
+        userDataPath: "/tmp/test",
+        getStorageSettings: async () => ({}) as never,
+        getUploadedFilesBasePath: async () => null,
+        getSummaryMinimumWordCount: async () => minimumWords
+      });
+
+    it("announces the source once its summary is stored", async () => {
+      mocks.run.mockResolvedValue({ ...generation, output: "Spacing and retrieval help memory." });
+      mocks.summaries.create.mockResolvedValue({ id: "summary-1", generatedAt: new Date(0) });
+      await summarizer(0).summarizeSource(sourceId, documentId);
+      expect(mocks.sources.update).toHaveBeenCalledWith(
+        sourceId,
+        expect.objectContaining({ summary: expect.any(String) })
+      );
+      expect(capture.refs()).toEqual([{ kind: "source", id: sourceId, change: "updated" }]);
+    });
+
+    it("announces the source whose summary was cleared because the text is too short", async () => {
+      await summarizer(50).summarizeSource(sourceId, documentId);
+      expect(mocks.summaries.clearCurrent).toHaveBeenCalledWith(sourceId);
+      expect(mocks.sources.update).toHaveBeenCalledWith(sourceId, {
+        summary: null,
+        summaryGeneratedAt: null
+      });
+      expect(capture.refs()).toEqual([{ kind: "source", id: sourceId, change: "updated" }]);
+    });
+
+    it("announces nothing when storing the summary failed", async () => {
+      mocks.run.mockResolvedValue({ ...generation, output: "Spacing and retrieval help memory." });
+      mocks.summaries.create.mockRejectedValue(new Error("database_unavailable"));
+      await expect(summarizer(0).summarizeSource(sourceId, documentId)).rejects.toThrow(
+        "database_unavailable"
+      );
+      expect(capture.events).toEqual([]);
+    });
   });
 });

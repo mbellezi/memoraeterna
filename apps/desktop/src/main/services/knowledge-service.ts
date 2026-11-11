@@ -1062,7 +1062,7 @@ export class KnowledgeService {
             evidenceChunkIds: generated.evidenceChunkIds.toSorted()
           })
         );
-        const note = await repository.upsertGenerated({
+        const { note, outcome } = await repository.upsertGeneratedWithOutcome({
           generationId,
           title: generated.title,
           bodyMarkdown: generated.bodyMarkdown,
@@ -1088,12 +1088,9 @@ export class KnowledgeService {
         noteIds.push(note.id);
         persistedNotes.push(note);
         // Each note is committed on its own, so each is announced as it is stored (the bus folds
-        // them); a regeneration rewrites the notes it made before, and those read "updated".
-        publishObjectKindChanged(
-          "note",
-          [note.id],
-          note.updatedAt > note.createdAt ? "updated" : "created"
-        );
+        // them): a regeneration rewrites the notes it made before; a note it had to leave alone (the
+        // owner's, approved) changed nothing and says nothing.
+        if (outcome !== "unchanged") publishObjectKindChanged("note", [note.id], outcome);
       }
       await hierarchy.completeKnowledgeGeneration(generationId);
       // A note is embedded when it is created, so matching never meets a note without a vector.

@@ -84,6 +84,22 @@ export class SourceDeletionService {
           [sourceItemIds]
         )
       ).rows.map((row) => row.id);
+      // Relations to notes of other sources go with these notes by cascade: those notes read their
+      // relations again once the deletion commits.
+      const survivingRelated =
+        atomicNoteIds.length === 0
+          ? []
+          : (
+              await client.query<IdRow>(
+                `select distinct case when source_atomic_note_id = any($1::uuid[])
+                          then target_atomic_note_id else source_atomic_note_id end as id
+                   from atomic_note_relations
+                  where source_atomic_note_id = any($1::uuid[]) or target_atomic_note_id = any($1::uuid[])`,
+                [atomicNoteIds]
+              )
+            ).rows
+              .map((row) => row.id)
+              .filter((id) => !atomicNoteIds.includes(id));
       const chunkIds = (
         await client.query<IdRow>(`select id from chunks where source_item_id = any($1::uuid[])`, [
           sourceItemIds
@@ -304,6 +320,7 @@ export class SourceDeletionService {
       publishObjectsChanged([
         ...objectRefs("source", sourceItemIds, "deleted"),
         ...objectRefs("note", atomicNoteIds, "deleted"),
+        ...objectRefs("note", survivingRelated, "relations"),
         ...objectRefs("entity", deletedEntityIds, "deleted")
       ]);
 

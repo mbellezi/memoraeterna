@@ -705,6 +705,25 @@ describe("entity identity announces its commits (F5 T114)", () => {
     ]);
   });
 
+  it("announces an entity created with an alias in the same group as created only", async () => {
+    const batches: KnowledgeGraphGenerationOutput[] = [
+      { entities: [person("e1", "Person 7", 0)], relations: [] },
+      { entities: [person("e1", "Person 7", 1)], relations: [] }
+    ];
+    // The second mention names the first (an in-group candidate); the writer confirms it.
+    await createEntityIdentityResolver({
+      ...base,
+      ai: writer((row) => row[3][0] ?? null),
+      settings: settings(),
+      group: identityGroupFor("remote", settings())
+    })(batches);
+    const decisions = fake.entities.commit.mock.calls[0]![0];
+    expect(decisions[1]!.target).toEqual({ key: "b0:e1" });
+    expect(capture.refs()).toEqual([
+      { kind: "entity", id: "00000000-0000-4000-8000-000000000001", change: "created" }
+    ]);
+  });
+
   it("announces nothing when the catalog moved under the group and the commit was refused", async () => {
     // The resolver tries a group three times before it gives up on a moving catalog.
     fake.entities.commit.mockResolvedValueOnce(null).mockResolvedValueOnce(null);

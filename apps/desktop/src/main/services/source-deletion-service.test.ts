@@ -15,6 +15,8 @@ const sectionSourceId = "33333333-3333-4333-8333-333333333333";
 const documentId = "44444444-4444-4444-8444-444444444444";
 const noteId = "55555555-5555-4555-8555-555555555555";
 const chunkId = "66666666-6666-4666-8666-666666666666";
+/** A note of another source, related to the deleted note: its relation goes with the deletion. */
+const relatedNoteId = "12121212-1212-4212-8212-121212121212";
 
 describe("SourceDeletionService", () => {
   let capture: ObjectEventCapture;
@@ -128,6 +130,7 @@ describe("SourceDeletionService", () => {
       { kind: "source", id: childSourceId, change: "deleted" },
       { kind: "source", id: sectionSourceId, change: "deleted" },
       { kind: "note", id: noteId, change: "deleted" },
+      { kind: "note", id: relatedNoteId, change: "relations" },
       { kind: "entity", id: "ffffffff-ffff-4fff-8fff-ffffffffffff", change: "deleted" }
     ]);
     await rm(root, { recursive: true, force: true });
@@ -237,6 +240,9 @@ class DeletionPool {
       rows = [{ id: documentId }];
     } else if (normalized.startsWith("select id from atomic_notes")) {
       rows = [{ id: noteId }];
+    } else if (normalized.startsWith("select distinct case when source_atomic_note_id")) {
+      // The deleted note itself may show up too (a relation inside the deleted set).
+      rows = [{ id: relatedNoteId }, { id: noteId }];
     } else if (normalized.startsWith("select id from chunks")) {
       rows = [{ id: chunkId }];
     } else if (normalized.startsWith("select distinct asset.storage_base")) {

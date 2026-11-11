@@ -107,18 +107,21 @@ function mapNote(row: AtomicNoteRow): AtomicNoteRecord {
   };
 }
 
+/** What an upsert did to the note: wrote a new row, rewrote its row, or left a protected row as it was. */
+export type GeneratedNoteOutcome = "created" | "updated" | "unchanged";
+
 export function createAtomicNoteRepository(db: Queryable) {
-  return {
-    async upsertGenerated(input: CreateGeneratedAtomicNoteInput): Promise<AtomicNoteRecord> {
-      const connection = await acquireConnection(db);
-      try {
-        await connection.query("begin");
-        const generationId =
-          input.generationId ?? (await ensureLegacyGeneration(connection, input));
-        const result = await connection.query<AtomicNoteRow>(
-          // The status is the column default: a generated note is active at birth. Leaving it out
-          // keeps this insert valid on a database that has not reached migration 0045 yet.
-          `insert into atomic_notes (
+  const upsertGeneratedWithOutcome = async (
+    input: CreateGeneratedAtomicNoteInput
+  ): Promise<{ note: AtomicNoteRecord; outcome: GeneratedNoteOutcome }> => {
+    const connection = await acquireConnection(db);
+    try {
+      await connection.query("begin");
+      const generationId = input.generationId ?? (await ensureLegacyGeneration(connection, input));
+      const result = await connection.query<AtomicNoteRow & { inserted?: boolean }>(
+        // The status is the column default: a generated note is active at birth. Leaving it out
+        // keeps this insert valid on a database that has not reached migration 0045 yet.
+        `insert into atomic_notes (
              title, body_markdown, idea_statement, language,
              created_from_source_item_id, source_span_id, evidence_chunk_id,
              generation_profile_id, ai_task_run_id, generation_provider,
@@ -143,56 +146,70 @@ export function createAtomicNoteRepository(db: Queryable) {
            where atomic_notes.ownership = 'source'
              and atomic_notes.status::text in ('active', 'pending_review')
              and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
-           returning ${returning}`,
-          [
-            input.title,
-            input.bodyMarkdown,
-            input.ideaStatement,
-            input.language ?? "und",
-            input.sourceItemId,
-            input.sourceSpanId ?? null,
-            input.evidenceChunkId,
-            input.generationProfileId ?? null,
-            input.aiTaskRunId ?? null,
-            input.generationProvider,
-            input.generationModel,
-            input.generationRuntime,
-            input.generationPromptVersion,
-            input.generationKey,
-            input.metadata ?? {},
-            generationId
-          ]
-        );
-        let row = result.rows[0];
-        if (!row) {
-          const existing = await connection.query<AtomicNoteRow>(
-            `select ${returning} from atomic_notes
+           returning ${returning}, (xmax = 0) as inserted`,
+        [
+          input.title,
+          input.bodyMarkdown,
+          input.ideaStatement,
+          input.language ?? "und",
+          input.sourceItemId,
+          input.sourceSpanId ?? null,
+          input.evidenceChunkId,
+          input.generationProfileId ?? null,
+          input.aiTaskRunId ?? null,
+          input.generationProvider,
+          input.generationModel,
+          input.generationRuntime,
+          input.generationPromptVersion,
+          input.generationKey,
+          input.metadata ?? {},
+          generationId
+        ]
+      );
+      const written = result.rows[0];
+      let row: AtomicNoteRow | undefined = written;
+      if (!row) {
+        const existing = await connection.query<AtomicNoteRow>(
+          `select ${returning} from atomic_notes
              where created_from_source_item_id = $1 and generation_id = $2 and generation_key = $3`,
-            [input.sourceItemId, generationId, input.generationKey]
-          );
-          row = existing.rows[0];
-        }
-        if (!row) throw new Error("Atomic note upsert returned no row.");
-        for (const link of result.rows.length ? input.evidenceLinks : []) {
-          await connection.query(
-            `insert into atomic_note_source_links (
+          [input.sourceItemId, generationId, input.generationKey]
+        );
+        row = existing.rows[0];
+      }
+      if (!row) throw new Error("Atomic note upsert returned no row.");
+      for (const link of result.rows.length ? input.evidenceLinks : []) {
+        await connection.query(
+          `insert into atomic_note_source_links (
                atomic_note_id, source_item_id, chunk_id, source_span_id, relation_type, confidence
              ) values ($1, $2, $3, $4, 'derived_from', 1)
              on conflict (atomic_note_id, chunk_id) do update set
                source_span_id = excluded.source_span_id,
                confidence = excluded.confidence`,
-            [row.id, input.sourceItemId, link.chunkId, link.sourceSpanId ?? null]
-          );
-        }
-        await connection.query("commit");
-        return mapNote(row);
-      } catch (error) {
-        await connection.query("rollback").catch(() => undefined);
-        throw error;
-      } finally {
-        connection.release?.();
+          [row.id, input.sourceItemId, link.chunkId, link.sourceSpanId ?? null]
+        );
       }
+      await connection.query("commit");
+      const { inserted, ...columns } = row as AtomicNoteRow & { inserted?: boolean };
+      void inserted;
+      return {
+        note: mapNote(columns),
+        outcome: !written ? "unchanged" : written.inserted === false ? "updated" : "created"
+      };
+    } catch (error) {
+      await connection.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      connection.release?.();
+    }
+  };
+
+  return {
+    async upsertGenerated(input: CreateGeneratedAtomicNoteInput): Promise<AtomicNoteRecord> {
+      return (await upsertGeneratedWithOutcome(input)).note;
     },
+
+    /** `upsertGenerated`, saying whether the row was inserted, rewritten or left alone (human-protected, approved). */
+    upsertGeneratedWithOutcome,
 
     async findById(id: string): Promise<AtomicNoteRecord | null> {
       const result = await db.query<AtomicNoteRow>(

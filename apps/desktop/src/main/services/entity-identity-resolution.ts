@@ -279,12 +279,15 @@ export function createEntityIdentityResolver(
         const committed = await repository.commit(decisions, revision);
         if (committed) {
           // The group is stored: a new canonical entity was created, an existing one gained aliases.
+          // A member that is an alias of another member of the group adds nothing of its own: that
+          // member's decision already said whether its entity was created or existed.
           publishObjectsChanged(
             decisions.flatMap((decision) => {
               const id = committed.get(decision.key);
-              return id
-                ? [{ kind: "entity" as const, id, change: decision.target ? "updated" : "created" }]
-                : [];
+              if (!id || (decision.target && !("id" in decision.target))) return [];
+              return [
+                { kind: "entity" as const, id, change: decision.target ? "updated" : "created" }
+              ];
             })
           );
           outcome = { size, ids: idsOf(committed) };

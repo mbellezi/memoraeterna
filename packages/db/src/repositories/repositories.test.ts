@@ -1136,6 +1136,47 @@ describe("repositories", () => {
       expect(insert?.text).toContain("humanProtected' is distinct from 'true'");
     });
 
+    describe("what an upsert reports it did", () => {
+      const generated = {
+        generationId: "00000000-0000-4000-8000-000000000001",
+        title: "Title",
+        bodyMarkdown: "Body",
+        ideaStatement: "Idea",
+        sourceItemId: "source-1",
+        evidenceChunkId: "chunk-1",
+        evidenceLinks: [{ chunkId: "chunk-1" }],
+        generationProvider: "test",
+        generationModel: "test",
+        generationRuntime: "test",
+        generationPromptVersion: "atomic-note-v4",
+        generationKey: "key"
+      };
+
+      it("says created for an inserted row and updated for a rewritten one, without leaking the flag", async () => {
+        for (const [inserted, outcome] of [
+          [true, "created"],
+          [false, "updated"]
+        ] as const) {
+          const db = new FakeQueryable([[], [{ ...noteRow("active"), inserted }], [], []]);
+          const stored = await createAtomicNoteRepository(db).upsertGeneratedWithOutcome(generated);
+          expect(stored.outcome).toBe(outcome);
+          expect(stored.note).not.toHaveProperty("inserted");
+          expect(
+            db.queries.find((query) => query.text.includes("insert into atomic_notes"))?.text
+          ).toContain("(xmax = 0) as inserted");
+        }
+      });
+
+      it("says unchanged for a protected row the conflict update skipped, and writes no evidence links", async () => {
+        const db = new FakeQueryable([[], [], [noteRow("active")], []]);
+        const stored = await createAtomicNoteRepository(db).upsertGeneratedWithOutcome(generated);
+        expect(stored.outcome).toBe("unchanged");
+        expect(db.queries.some((query) => query.text.includes("atomic_note_source_links"))).toBe(
+          false
+        );
+      });
+    });
+
     it("offers every unreviewed note for the optional review", async () => {
       const db = new FakeQueryable([[noteRow("active"), noteRow("pending_review")]]);
       const pending = await createAtomicNoteRepository(db).listPending(10);

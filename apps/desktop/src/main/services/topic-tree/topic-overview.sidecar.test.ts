@@ -43,12 +43,13 @@ import {
   topicRecordOf,
   topicTreeConfigWith
 } from "@app/domain/topic-tree";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices, TopicTreeServicesOptions } from "./index.js";
 import { ItemVectorStore } from "./topic-cache.js";
 import { ChangesService } from "../gardener/changes-service.js";
+import { captureObjectEvents, type ObjectEventCapture } from "../object-events-fixture.js";
 import { TopicOverviewService, topicOverviewSupportOperation } from "./topic-overview.js";
 import { TopicOverviewRefresh, topicOverviewJobType } from "./topic-overview-job.js";
 
@@ -149,6 +150,14 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
   let manager: PostgresSidecarManager;
   let connection: PostgresSidecarConnection;
   let pool: PgPool;
+  let capture: ObjectEventCapture;
+  // F5 T114: a stored version announces its topic as `updated`, once, and nothing else does.
+  const announced = (topicId: string) =>
+    capture.refs().filter((ref) => ref.kind === "topic" && ref.id === topicId);
+  beforeEach(() => {
+    capture = captureObjectEvents();
+  });
+  afterEach(() => capture.stop());
 
   beforeAll(async () => {
     workDir = await mkdtemp(join(tmpdir(), "memora-topic-overview-"));
@@ -467,7 +476,11 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
     const w = await world();
     try {
       expect(await w.overview.state(w.topics.A1)).toEqual({ status: "absent", canWrite: true });
+      capture.clear();
       const written = ready(await w.overview.overview({ id: w.topics.A1 }));
+      expect(announced(w.topics.A1)).toEqual([
+        { kind: "topic", id: w.topics.A1, change: "updated" }
+      ]);
       expect(w.writes).toHaveLength(1);
       const [call] = w.writes;
       // The evidence: the topic's notes with their whole passages, in centrality order, no IDs.
@@ -632,6 +645,8 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
         w.topics.A2
       ]);
       expect(rows.rowCount).toBe(0);
+      // Nothing was stored, so nothing was announced.
+      expect(announced(w.topics.A2)).toEqual([]);
       expect(await w.overview.state(w.topics.A2)).toEqual({ status: "absent", canWrite: true });
       expect(w.overview.cancel({ id: w.topics.A2 })).toBe(false);
     } finally {
@@ -925,7 +940,14 @@ describe.skipIf(!sidecarAvailable)("topic overviews on the PostgreSQL sidecar", 
       const runsBefore = await p0Runs();
       const writes = w.writes.length;
       const ranks = w.ranks.length;
+      capture.clear();
       const { job, fingerprint, result } = await runRefresh(refresh);
+      // The job's patch stored a version: the topic is announced (the change-set's record may add it).
+      expect(announced(w.topics.A1)).toContainEqual({
+        kind: "topic",
+        id: w.topics.A1,
+        change: "updated"
+      });
       expect(fingerprint).toBe(before);
       expect(result).toMatchObject({
         status: "applied",
