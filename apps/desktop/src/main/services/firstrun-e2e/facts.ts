@@ -296,7 +296,7 @@ const boundaryNotes = {
 
 /**
  * What the end of a heavy job of `sourceItemId` tells the release policy: its root and that root's
- * notes. `current` counts the current notes, as the import's division just wrote them. `embedded`
+ * notes. `current` counts the current notes, as the division of the import just wrote them. `embedded`
  * counts the notes whose embedding job ran or is running (the self-test: its notes arrive seeded at
  * once and become placeable one embedding at a time; the job that ends is still running).
  */

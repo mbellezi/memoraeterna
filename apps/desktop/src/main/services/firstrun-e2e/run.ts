@@ -640,8 +640,8 @@ async function runPass(
       logger: quietLogger,
       topicHooks: topics.hooks
     });
-    // The a2 release (E6A2): the end of each heavy job of a source is a division boundary (an
-    // import's division; the self-test's seeded notes' embeddings stand in for divisions), read
+    // The a2 release (E6A2): the end of each heavy job of a source is a division boundary (a
+    // division of an import; the self-test's seeded notes' embeddings stand in for divisions), read
     // before the supervisor claims its next job. The boundary hook and the release job's body are
     // bound below, once the pass's waits exist; until then a boundary decides nothing.
     const boundaryJob = config.synthetic ? "note-embedding" : "ingestion";

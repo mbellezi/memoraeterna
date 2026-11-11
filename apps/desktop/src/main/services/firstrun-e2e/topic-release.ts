@@ -7,7 +7,7 @@
 // least `firstSourceNotes` current notes (the topic bootstrap's own minimum is 12), drained on the
 // light lane, then held again; then once per source, after its heavy work. Optional hardening
 // (`repeatUntilT1`): after the first release, every later division boundary releases again until T1
-// is seen. A boundary is the end of one of the source's heavy jobs (an import's division; the
+// is seen. A boundary is the end of one of the source's heavy jobs (a division of an import; the
 // self-test's notes arrive seeded, so its note embeddings stand in for the divisions). Each decision
 // is a function of what the boundary read, never of the time, so two replays release at the same
 // points. Pure: the runner reads the boundaries and runs the releases.
