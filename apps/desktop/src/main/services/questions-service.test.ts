@@ -616,7 +616,7 @@ describe("Ask with a stored Question: its edges", () => {
   it("logs both store errors and still reports the failure when the status cannot be stored twice", async () => {
     const h = harness();
     const warn = vi.fn();
-    const failing: QuestionStore = {
+    const failing: QuestionsStore = {
       ...h.store,
       setStatus: async () => {
         throw new Error("the database went away");
