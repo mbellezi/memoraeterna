@@ -4,6 +4,7 @@ import type { PgPool } from "@app/db";
 import { ObjectLocateResultSchema } from "@app/domain";
 
 import { ipcChannels } from "../../shared/ipc.js";
+import { objectsIpcChannels } from "../../shared/ipc-objects.js";
 import { registerObjectsIpc } from "./objects-ipc.js";
 import { ObjectsService } from "./objects-service.js";
 
@@ -246,5 +247,156 @@ describe("ObjectsService.neighborhood and its IPC registration (R30)", () => {
       depth: 1,
       limit: 40
     });
+  });
+});
+
+describe("ObjectsService.get, resolveMany and backlinks (F5 D11)", () => {
+  // The SQL runs against a real database in `objectReadRepository.sidecar.test.ts`; these pin the
+  // boundary: what is validated, what is refused, how a missing object and a cursor travel.
+  const sourceRow = {
+    id: ids.book,
+    title: "Book",
+    raw: "A **bold** summary.",
+    language: "en",
+    updatedAt: new Date("2026-11-11T10:00:00.000Z"),
+    notes: "3",
+    passages: 12
+  };
+  const pooled = (rows: unknown[]) => {
+    const query = vi.fn(async () => ({ rows }));
+    return { service: new ObjectsService(() => ({ query }) as unknown as PgPool), query };
+  };
+
+  it("gets one object with the stable contract, and answers missing for no row", async () => {
+    const { service, query } = pooled([sourceRow]);
+    expect(await service.get({ address: `memora://source/${ids.book}` })).toEqual({
+      address: `memora://source/${ids.book}`,
+      kind: "source",
+      title: "Book",
+      status: "current",
+      preview: "A bold summary.",
+      language: "en",
+      updatedAt: "2026-11-11T10:00:00.000Z",
+      counts: { notes: 3, passages: 12 }
+    });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(await pooled([]).service.get({ address: `memora://note/${ids.note}` })).toEqual({
+      status: "missing"
+    });
+  });
+
+  it("refuses an address that is not an object address, and fails without a database", async () => {
+    const { service, query } = pooled([]);
+    await expect(service.get({ address: "memora://open/source/x" })).rejects.toThrow();
+    await expect(
+      service.get({ address: `memora://source/${ids.book}`, extra: 1 })
+    ).rejects.toThrow();
+    await expect(service.resolveMany({ addresses: ["nope"] })).rejects.toThrow();
+    await expect(service.backlinks({ address: "nope" })).rejects.toThrow();
+    expect(query).not.toHaveBeenCalled();
+    await expect(
+      new ObjectsService(() => null).get({ address: `memora://source/${ids.book}` })
+    ).rejects.toThrow("objects.errors.unavailable");
+  });
+
+  it("resolves many keyed by the address as requested, with the missing ones listed", async () => {
+    const { service } = pooled([sourceRow]);
+    const upper = `memora://source/${ids.book.toUpperCase()}`;
+    const absent = `memora://note/${ids.note}`;
+    const result = await service.resolveMany({ addresses: [upper, absent] });
+    expect(Object.keys(result.items)).toEqual([upper]);
+    expect(result.items[upper]?.address).toBe(`memora://source/${ids.book}`);
+    expect(result.missing).toEqual([absent]);
+    expect(await service.resolveMany({ addresses: [] })).toEqual({ items: {}, missing: [] });
+  });
+
+  it("asks for paths only when the request does", async () => {
+    const { service, query } = pooled([sourceRow]);
+    await service.resolveMany({ addresses: [`memora://source/${ids.book}`] });
+    expect(query).toHaveBeenCalledTimes(1);
+    await service.resolveMany({
+      addresses: [`memora://source/${ids.book}`],
+      include: { path: true }
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it("pages backlinks: items validated, a cursor handed out and taken back, a bad one refused", async () => {
+    const row = (n: number) => ({
+      arm: 0,
+      from: `memora://note/${ids.note}`,
+      anchor: `passage=${ids.chunk}`,
+      snippet: "A **passage** of the source.",
+      id: `00000000-0000-4000-8000-0000000001${n}0`,
+      createdAt: `2026-11-11T10:00:0${n}.123456Z`
+    });
+    const { service, query } = pooled([row(3), row(2), row(1)]);
+    const first = await service.backlinks({ address: `memora://source/${ids.book}`, limit: 2 });
+    const item = {
+      from: `memora://note/${ids.note}`,
+      via: "evidence",
+      anchor: `passage=${ids.chunk}`,
+      snippet: "A passage of the source."
+    };
+    expect(first.items).toEqual([item, item]);
+    expect(first.next).toBeDefined();
+    expect(query).toHaveBeenLastCalledWith(expect.any(String), [
+      ids.book,
+      -1,
+      expect.any(String),
+      expect.any(String),
+      3
+    ]);
+    await service.backlinks({
+      address: `memora://source/${ids.book}`,
+      limit: 2,
+      cursor: first.next
+    });
+    expect(query).toHaveBeenLastCalledWith(expect.any(String), [
+      ids.book,
+      0,
+      "2026-11-11T10:00:02.123456Z",
+      "00000000-0000-4000-8000-000000000120",
+      3
+    ]);
+    await expect(
+      service.backlinks({ address: `memora://source/${ids.book}`, cursor: "garbage" })
+    ).rejects.toThrow("errors.common.validationFailed");
+    await expect(
+      service.backlinks({ address: `memora://source/${ids.book}`, limit: 51 })
+    ).rejects.toThrow();
+  });
+
+  it("answers no backlinks for a question without reading", async () => {
+    const { service, query } = pooled([]);
+    expect(await service.backlinks({ address: `memora://question/${ids.page}` })).toEqual({
+      items: []
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("registers the three channels and validates each payload before the service", async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
+    const service = {
+      locate: vi.fn(),
+      neighborhood: vi.fn(),
+      get: vi.fn(),
+      resolveMany: vi.fn(),
+      backlinks: vi.fn()
+    };
+    registerObjectsIpc(ipc as unknown as IpcMain, service as unknown as ObjectsService);
+    const call = (channel: string, payload: unknown) => handlers.get(channel)!({}, payload);
+    const note = `memora://note/${ids.note}`;
+    expect(() => call(objectsIpcChannels.objectsGet, { address: "nope" })).toThrow();
+    expect(() => call(objectsIpcChannels.objectsResolveMany, { addresses: ["nope"] })).toThrow();
+    expect(() => call(objectsIpcChannels.objectsBacklinks, { address: "nope" })).toThrow();
+    expect(service.get).not.toHaveBeenCalled();
+    await call(objectsIpcChannels.objectsGet, { address: note });
+    await call(objectsIpcChannels.objectsResolveMany, { addresses: [note] });
+    await call(objectsIpcChannels.objectsBacklinks, { address: note });
+    expect(service.get).toHaveBeenCalledWith({ address: note });
+    expect(service.resolveMany).toHaveBeenCalledWith({ addresses: [note] });
+    expect(service.backlinks).toHaveBeenCalledWith({ address: note, limit: 50 });
   });
 });

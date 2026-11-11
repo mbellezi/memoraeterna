@@ -52,3 +52,4 @@ export * from "./remote-budget.js";
 export * from "./gardener-config.js";
 export * from "./onboarding.js";
 export * from "./questions.js";
+export * from "./objects.js";

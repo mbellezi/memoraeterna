@@ -1,16 +1,30 @@
 import {
   createObjectLocateRepository,
   createObjectNeighborhoodRepository,
+  createObjectReadRepository,
   type PgPool
 } from "@app/db";
 import {
+  decodeBacklinkCursor,
+  encodeBacklinkCursor,
+  formatObjectAddress,
+  ObjectBacklinksInputSchema,
+  ObjectBacklinksResultSchema,
+  ObjectGetInputSchema,
+  ObjectGetResultSchema,
   ObjectLocateInputSchema,
   ObjectLocateResultSchema,
   ObjectNeighborhoodInputSchema,
   ObjectNeighborhoodSchema,
+  ObjectResolveManyInputSchema,
+  ObjectResolveManyResultSchema,
   parseObjectAddress,
+  type ObjectAddress,
+  type ObjectBacklinksResult,
+  type ObjectGetResult,
   type ObjectLocateResult,
-  type ObjectNeighborhood
+  type ObjectNeighborhood,
+  type ObjectResolveManyResult
 } from "@app/domain";
 
 /**
@@ -55,4 +69,73 @@ export class ObjectsService {
       await createObjectNeighborhoodRepository(pool).read({ objectId, depth, limit })
     );
   }
+
+  /**
+   * One object by address (F5 D11): its kind, title, status, preview and counts. A retired topic
+   * answers with the live topic that replaced it in `redirectTo`; an address with a `passage` or
+   * `span` previews that passage. `{ status: "missing" }` when the object does not exist.
+   */
+  async get(input: unknown): Promise<ObjectGetResult> {
+    const { address } = ObjectGetInputSchema.parse(input);
+    const target = this.parse(address);
+    const found = (await createObjectReadRepository(this.pool()).resolve([target])).values().next();
+    return ObjectGetResultSchema.parse(found.done ? { status: "missing" } : found.value);
+  }
+
+  /**
+   * Many addresses in one read, for lists, hovers and citations (at most 200, unique). `items` is
+   * keyed by the address as requested; an address with no object is listed in `missing`.
+   * `include.path` adds the topics above each object.
+   */
+  async resolveMany(input: unknown): Promise<ObjectResolveManyResult> {
+    const { addresses, include } = ObjectResolveManyInputSchema.parse(input);
+    const targets = addresses.map((address) => ({ address, target: this.parse(address) }));
+    const resolved = await createObjectReadRepository(this.pool()).resolve(
+      targets.map((entry) => entry.target),
+      { path: include?.path === true }
+    );
+    const items: ObjectResolveManyResult["items"] = {};
+    const missing: string[] = [];
+    for (const { address, target } of targets) {
+      const summary = resolved.get(canonical(target));
+      if (summary) items[address] = summary;
+      else missing.push(address);
+    }
+    return ObjectResolveManyResultSchema.parse({ items, missing });
+  }
+
+  /**
+   * The links into an object, one keyset-paged list across the kinds of link (evidence, relation,
+   * source relation, overview citation, question citation, mention). Anchors on the address are
+   * ignored: the target is the object. A malformed cursor is refused.
+   */
+  async backlinks(input: unknown): Promise<ObjectBacklinksResult> {
+    const { address, limit, cursor } = ObjectBacklinksInputSchema.parse(input);
+    const target = this.parse(address);
+    const position = cursor === undefined ? undefined : decodeBacklinkCursor(cursor);
+    if (position === null) throw new Error("errors.common.validationFailed");
+    const page = await createObjectReadRepository(this.pool()).backlinks({
+      target,
+      limit,
+      cursor: position
+    });
+    return ObjectBacklinksResultSchema.parse({
+      items: page.items,
+      ...(page.next ? { next: encodeBacklinkCursor(page.next) } : {})
+    });
+  }
+
+  private parse(address: string): ObjectAddress {
+    const target = parseObjectAddress(address);
+    if (!target) throw new Error("errors.common.validationFailed");
+    return target;
+  }
+
+  private pool(): PgPool {
+    const pool = this.getPool();
+    if (!pool) throw new Error("objects.errors.unavailable");
+    return pool;
+  }
 }
+
+const canonical = (target: ObjectAddress): string => formatObjectAddress(target);

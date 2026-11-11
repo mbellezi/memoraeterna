@@ -52,6 +52,7 @@ export * from "./topicTreeLoadRepository.js";
 export * from "./sourceScopeRepository.js";
 export * from "./objectLocateRepository.js";
 export * from "./objectNeighborhoodRepository.js";
+export * from "./objectReadRepository.js";
 export * from "./notePageRepository.js";
 export * from "./relationExplanationRepository.js";
 export * from "./sourceRelationExplanationRepository.js";

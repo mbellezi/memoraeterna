@@ -6,9 +6,15 @@ import { parseArgs } from "node:util";
 
 import pg from "pg";
 
-import { ObjectLocateResultSchema } from "@app/domain";
+import {
+  ObjectBacklinksResultSchema,
+  ObjectLocateResultSchema,
+  ObjectResolvedSchema,
+  type ObjectAddress
+} from "@app/domain";
 import {
   createObjectLocateRepository,
+  createObjectReadRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations
@@ -24,7 +30,7 @@ import {
   writeProfileConnectionFile,
   type ProfileServer
 } from "../lib/profile-server.js";
-import { librarySeedSteps, seedTopicTree } from "./synthetic-library.js";
+import { librarySeedSteps, noteRelationSeedSteps, seedTopicTree } from "./synthetic-library.js";
 
 /**
  * Latency of `objects.locate` (F1b exit and F2 T27: p95 <= 50 ms, with the topic path in front of
@@ -46,6 +52,12 @@ import { librarySeedSteps, seedTopicTree } from "./synthetic-library.js";
  *                                           through `scripts/lib/profile-server.ts` and measured
  *                                           read-only.
  *
+ * The same run measures the rest of the objects read layer (F5 T118, D11) on the same database:
+ * `resolveMany(200)` (a batch of 200 addresses over notes, sources and topics, with and without
+ * the topics above each object; bar p95 <= 60 ms, calibrated) and `objects.backlinks` (one page of
+ * 50 for sampled sources and notes, reported, with the heaviest objects among them). The backlinks
+ * statements are checked for sequential scans of the large tables.
+ *
  * The time includes the database round trip on loopback and the result validation, and excludes the
  * Electron IPC hop (about a millisecond). Nothing is written to a `--db` database. The run also
  * reports how many of the located objects have a topic path, and fails when the database holds an
@@ -63,10 +75,14 @@ const usage = `Usage: npx tsx scripts/objects/locate-benchmark.ts (--db <connect
                        <repo>/.cache/f<N>/scratch/ and measure it read-only.
   --books <n>          (--seed) root books; each has 3 chapters x 2 sections (default 300 = 3,000 sources).
   --notes <n>          (--seed) atomic notes (default 30000).
+  --relations <n>      (--seed) also seed n relations per note and 20 hub notes of 400 (default 0, none:
+                       SEED30K has no relations; this exercises the relation arm of backlinks).
   --topics <n>         (--seed) topics of the tree, the root included (default 2500).
   --sample <n>         Random sources and notes measured per kind (default 300), plus the heaviest ones.
   --rounds <n>         Passes over the sample after one warm-up pass (default 5).
-  --target-ms <n>      p95 target; the exit code is 1 above it (default 50).
+  --target-ms <n>      p95 target of locate; the exit code is 1 above it (default 50).
+  --resolve-target-ms <n>  p95 target of resolveMany(200); the exit code is 1 above it (default 60).
+  --batches <n>        resolveMany batches of 200 addresses measured per variant (default 40).
   --json <file>        Also write the measurements as JSON.
   --help               Show this text.`;
 
@@ -79,10 +95,13 @@ const { values } = parseArgs({
     profile: { type: "string" },
     books: { type: "string" },
     notes: { type: "string" },
+    relations: { type: "string" },
     topics: { type: "string" },
     sample: { type: "string" },
     rounds: { type: "string" },
     "target-ms": { type: "string" },
+    "resolve-target-ms": { type: "string" },
+    batches: { type: "string" },
     json: { type: "string" },
     help: { type: "boolean", short: "h" }
   },
@@ -97,8 +116,13 @@ if ([values.db, values.seed, values.profile].filter(Boolean).length !== 1) {
   console.error(`Pass exactly one of --db, --seed and --profile.\n\n${usage}`);
   process.exit(2);
 }
-if ((values.keep !== undefined || values["to-migration"] !== undefined) && !values.seed) {
-  console.error(`--keep and --to-migration need --seed.\n\n${usage}`);
+if (
+  (values.keep !== undefined ||
+    values["to-migration"] !== undefined ||
+    values.relations !== undefined) &&
+  !values.seed
+) {
+  console.error(`--keep, --to-migration and --relations need --seed.\n\n${usage}`);
   process.exit(2);
 }
 const integer = (value: string | undefined, fallback: number, name: string): number => {
@@ -111,10 +135,14 @@ const integer = (value: string | undefined, fallback: number, name: string): num
 };
 const books = integer(values.books, 300, "books");
 const noteTotal = integer(values.notes, 30_000, "notes");
+const relationsPerNote =
+  values.relations === undefined ? 0 : integer(values.relations, 0, "relations");
 const topicTotal = integer(values.topics, 2_500, "topics");
 const sampleSize = integer(values.sample, 300, "sample");
 const rounds = integer(values.rounds, 5, "rounds");
 const targetMs = integer(values["target-ms"], 50, "target-ms");
+const resolveTargetMs = integer(values["resolve-target-ms"], 60, "resolve-target-ms");
+const batchCount = integer(values.batches, 40, "batches");
 
 function log(message: string): void {
   console.error(`[locate-benchmark] ${message}`);
@@ -263,6 +291,56 @@ async function sequentialScans(client: pg.Pool, statement: string, id: string): 
   return [...sequentialRelations(result.rows[0]!["QUERY PLAN"][0]!.Plan)];
 }
 
+/** Large tables a backlinks page must reach through an index, never by reading them whole. */
+const backlinkGuardedRelations = new Set([
+  ...guardedRelations,
+  "atomic_note_source_links",
+  "atomic_note_relations"
+]);
+
+async function backlinkSequentialScans(
+  client: pg.Pool,
+  statement: string,
+  id: string
+): Promise<string[]> {
+  const result = await client.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
+    `explain (format json) ${statement}`,
+    [id, -1, "1970-01-01T00:00:00.000000Z", "00000000-0000-0000-0000-000000000000", 51]
+  );
+  const found = new Set<string>();
+  const walk = (node: PlanNode) => {
+    if (
+      node["Node Type"] === "Seq Scan" &&
+      node["Relation Name"] &&
+      backlinkGuardedRelations.has(node["Relation Name"])
+    )
+      found.add(node["Relation Name"]);
+    for (const child of node.Plans ?? []) walk(child);
+  };
+  walk(result.rows[0]!["QUERY PLAN"][0]!.Plan);
+  return [...found];
+}
+
+/** `count` addresses of a mixed batch: half notes, a third sources, the rest topics. */
+function mixedBatch(
+  notes: readonly string[],
+  sources: readonly string[],
+  topics: readonly string[],
+  count: number,
+  offset: number
+): ObjectAddress[] {
+  const pick = (list: readonly string[], index: number) =>
+    list[(offset * 37 + index) % list.length]!;
+  const wanted = { note: Math.floor(count / 2), source: Math.floor(count / 3) };
+  return Array.from({ length: count }, (_, index): ObjectAddress => {
+    if (index < wanted.note && notes.length) return { kind: "note", id: pick(notes, index) };
+    if (index < wanted.note + wanted.source && sources.length)
+      return { kind: "source", id: pick(sources, index) };
+    if (topics.length) return { kind: "topic", id: pick(topics, index) };
+    return { kind: "note", id: pick(notes, index) };
+  });
+}
+
 const startedAt = Date.now();
 let manager: PostgresSidecarManager | null = null;
 let profileServer: ProfileServer | null = null;
@@ -345,7 +423,13 @@ try {
     log(`seeding ${books * 10} sources and ${noteTotal} notes`);
     const seedClient = await pool.connect();
     try {
-      for (const step of librarySeedSteps(books, noteTotal)) await seedClient.query(step);
+      for (const step of [
+        ...librarySeedSteps(books, noteTotal),
+        ...(relationsPerNote > 0
+          ? noteRelationSeedSteps({ relationsPerNote, hubNotes: 20, hubRelations: 400 })
+          : [])
+      ])
+        await seedClient.query(step);
     } finally {
       seedClient.release();
     }
@@ -443,6 +527,89 @@ try {
   for (const sample of samples.filter((s) => s.kind === "note").slice(0, 40))
     for (const relation of await sequentialScans(pool, repository.statements.note, sample.id))
       sequential.set(`note: ${relation}`, (sequential.get(`note: ${relation}`) ?? 0) + 1);
+  // The rest of the objects read layer: resolveMany(200) and backlinks (F5 T118).
+  const objects = createObjectReadRepository(pool);
+  const sampleNotes = [...new Set(samples.filter((s) => s.kind === "note").map((s) => s.id))];
+  const sampleSources = [...new Set(samples.filter((s) => s.kind === "source").map((s) => s.id))];
+  const sampleTopics = await ids(
+    pool,
+    `select t.id from topics t where t.retired_at is null and t.role <> 'root'
+      order by random() limit $1`,
+    [sampleSize]
+  );
+  const resolveBatch = async (batch: ObjectAddress[], path: boolean): Promise<number> => {
+    const start = performance.now();
+    const resolvedBatch = await objects.resolve(batch, { path });
+    for (const summary of resolvedBatch.values()) ObjectResolvedSchema.parse(summary);
+    return performance.now() - start;
+  };
+  const batches = Array.from({ length: batchCount }, (_, index) =>
+    mixedBatch(sampleNotes, sampleSources, sampleTopics, 200, index)
+  );
+  await resolveBatch(batches[0]!, true); // warm-up
+  const resolveTimes = { plain: [] as number[], withPath: [] as number[] };
+  for (const batch of batches) resolveTimes.plain.push(await resolveBatch(batch, false));
+  for (const batch of batches) resolveTimes.withPath.push(await resolveBatch(batch, true));
+  const resolved = {
+    batchSize: 200,
+    plain: summarize(resolveTimes.plain),
+    withPath: summarize(resolveTimes.withPath),
+    resolvedInFirstBatch: (await objects.resolve(batches[0]!, { path: false })).size
+  };
+
+  const heavySources = await ids(
+    pool,
+    `select source_item_id as id from atomic_note_source_links group by source_item_id
+      order by count(*) desc limit 20`
+  );
+  const heavyNotes = await ids(
+    pool,
+    `select n.id from (select source_atomic_note_id as id, count(*) as c from atomic_note_relations
+                        group by source_atomic_note_id order by count(*) desc limit 20) n`
+  );
+  const backlinkSamples: ObjectAddress[] = [
+    ...[...new Set([...sampleSources, ...heavySources])].map((id): ObjectAddress => ({
+      kind: "source",
+      id
+    })),
+    ...[...new Set([...sampleNotes, ...heavyNotes])].map((id): ObjectAddress => ({
+      kind: "note",
+      id
+    }))
+  ];
+  const backlinkTimes = { source: [] as number[], note: [] as number[] };
+  let backlinkItems = 0;
+  for (let round = 0; round < rounds + 1; round += 1) {
+    for (const target of backlinkSamples) {
+      const start = performance.now();
+      const page = await objects.backlinks({ target, limit: 50 });
+      ObjectBacklinksResultSchema.parse({ items: page.items });
+      const elapsed = performance.now() - start;
+      if (round === 0) continue; // warm-up
+      backlinkItems += page.items.length;
+      backlinkTimes[target.kind === "source" ? "source" : "note"].push(elapsed);
+    }
+  }
+  const backlinkScans = new Map<string, number>();
+  for (const kind of ["source", "note"] as const) {
+    const statement = objects.statements.backlinks(kind);
+    if (!statement) continue;
+    for (const sample of backlinkSamples.filter((s) => s.kind === kind).slice(0, 40)) {
+      for (const relation of await backlinkSequentialScans(pool, statement, sample.id)) {
+        const line = `${kind}: ${relation}`;
+        backlinkScans.set(line, (backlinkScans.get(line) ?? 0) + 1);
+      }
+    }
+  }
+  const backlinkCalls = backlinkTimes.source.length + backlinkTimes.note.length;
+  const backlinks = {
+    pageSize: 50,
+    source: summarize(backlinkTimes.source),
+    note: summarize(backlinkTimes.note),
+    meanItemsPerPage: backlinkCalls > 0 ? backlinkItems / backlinkCalls : 0,
+    sequentialScans: Object.fromEntries(backlinkScans)
+  };
+
   const report = {
     origin,
     library,
@@ -463,7 +630,15 @@ try {
       longestTopicPath: shape.longestTopicPath
     },
     sequentialScans: Object.fromEntries(sequential),
-    passed: all.p95 <= targetMs && (!hasTree || shape.placed > 0) && sequential.size === 0,
+    resolveTargetMs,
+    resolveMany: resolved,
+    backlinks,
+    passed:
+      all.p95 <= targetMs &&
+      (!hasTree || shape.placed > 0) &&
+      sequential.size === 0 &&
+      resolved.plain.p95 <= resolveTargetMs &&
+      backlinkScans.size === 0,
     slowestPlan: {
       kind: slowest.sample.kind,
       ms: slowest.ms,
@@ -498,7 +673,25 @@ try {
       sequential.size === 0
         ? "No sequential scan of topic_placements, atomic_notes or chunks in the sampled plans"
         : `Sequential scans of large tables: ${[...sequential].map(([line, n]) => `${line} (${n})`).join(", ")}`,
-      `Target p95 <= ${targetMs} ms: ${report.passed ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
+      `Target p95 <= ${targetMs} ms: ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
+      "",
+      `objects.resolveMany(${resolved.batchSize}) latency (ms), ${batchCount} batches of notes, sources and topics (${resolved.resolvedInFirstBatch} resolved in the first)`,
+      "| Variant | Calls | p50 | p95 | p99 | max |",
+      "| --- | --- | --- | --- | --- | --- |",
+      row("without path", resolved.plain),
+      row("with path", resolved.withPath),
+      `Target p95 <= ${resolveTargetMs} ms (without path): ${resolved.plain.p95 <= resolveTargetMs ? "PASS" : "FAIL"} (${fixed(resolved.plain.p95)} ms)`,
+      "",
+      `objects.backlinks latency (ms), one page of ${backlinks.pageSize} (mean ${backlinks.meanItemsPerPage.toFixed(1)} items), reported without a bar`,
+      "| Kind | Calls | p50 | p95 | p99 | max |",
+      "| --- | --- | --- | --- | --- | --- |",
+      row("source", backlinks.source),
+      row("note", backlinks.note),
+      backlinkScans.size === 0
+        ? "No sequential scan of a large table in the sampled backlinks plans"
+        : `Sequential scans in backlinks plans: ${[...backlinkScans].map(([line, n]) => `${line} (${n})`).join(", ")}`,
+      "",
+      `Overall: ${report.passed ? "PASS" : "FAIL"}`,
       `Slowest call: ${report.slowestPlan.kind}, ${fixed(report.slowestPlan.ms)} ms; scans in its plan:`,
       ...report.slowestPlan.scans.map((line) => `  - ${line}`)
     ].join("\n")

@@ -9,9 +9,8 @@ pgvector, AGE, projection views, provenance storage or data wipes.
   relations, topics, processing history and synchronization state. pgvector
   indexes, AGE graphs, search indexes and read-only projection views are derived
   query layers.
-- Read-only projection views (for example `knowledge_objects`,
-  `knowledge_links`) may unify objects for reading; canonical tables stay
-  authoritative and the views never become a write path.
+- A read model composes the visibility and currentness predicate modules; no
+  SQL view repeats a predicate, and canonical tables stay authoritative.
 - All SQL lives in `@app/db` repositories. Renderer components and services do
   not issue ad hoc SQL.
 - Use transactions for multi-row invariants (hierarchy changes, deletions,
