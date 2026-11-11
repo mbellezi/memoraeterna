@@ -5,11 +5,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { topicRecord } from "@app/domain/topic-tree";
+
 import { closePgPool, createPgPool, type PgPool } from "../client.js";
 import { runMigrations } from "../migrations.js";
 import { omniArmParameters, omniArms } from "../objectSearchArms.js";
 import { contentTsvectorCalls, type PlanNode } from "../repositories/consultationPlan.js";
 import { consultationCandidatesSql } from "../repositories/consultationRepository.js";
+import { createTopicTreeRepository } from "../repositories/topicTreeRepository.js";
 import { splitSqlStatements } from "../seed.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
 
@@ -55,37 +58,45 @@ async function migrateBefore(db: PgPool, workDir: string): Promise<void> {
 
 /** A small library: accented names, aliases (one that is not an array), topics and passages. */
 async function seedLibrary(db: PgPool): Promise<void> {
-  const tree = randomUUID();
+  // The topic tree goes through the engine's repository (D9): createTree writes the root; the
+  // snapshot adds four named topics with accented titles, descriptions and aliases, and an unnamed one.
+  const trees = createTopicTreeRepository(db);
   const root = randomUUID();
-  await db.query(
-    `insert into topic_trees (id, status, space_key, embedding_provider, embedding_model,
-        embedding_runtime, dimensions, config, config_hash, seed, activated_at)
-     values ($1, 'active', 'k', 'p', 'm', 'r', 256, '{}', 'h', 1, now())`,
-    [tree]
-  );
-  await db.query(
-    `insert into topics (id, tree_id, role, name_state, management) values ($1, $2, 'root', 'unnamed', 'human')`,
-    [root, tree]
-  );
+  const tree = await trees.createTree({
+    id: randomUUID(),
+    rootId: root,
+    spaceKey: "verify:search-indexes:256",
+    embeddingProvider: "verify",
+    embeddingModel: "verify",
+    embeddingRuntime: "none",
+    dimensions: 256,
+    config: {},
+    configHash: "verify",
+    seed: 1
+  });
   const titles = ["Memória e sono", "Fotossíntese", "Redes neurais", "Árvore de decisão"];
-  for (const [index, title] of titles.entries())
-    await db.query(
-      `insert into topics (tree_id, parent_id, role, title, name_state, name_source, description, aliases, position, management)
-       values ($1, $2, 'topic', $3, 'named', 'human', $4, $5::jsonb, $6, 'human')`,
-      [
-        tree,
-        root,
-        title,
-        `Descrição de ${title} com ação`,
-        JSON.stringify([`alias ${index} água`, "Coração"]),
-        index
-      ]
-    );
-  await db.query(
-    `insert into topics (tree_id, parent_id, role, name_state, position, management)
-     values ($1, $2, 'topic', 'unnamed', 9, 'human')`,
-    [tree, root]
-  );
+  const built = await trees.bootstrapSnapshot({
+    treeId: tree.id,
+    expectedGeneration: tree.generation,
+    titleKey: "topics.changeSets.build",
+    topics: [
+      ...titles.map((title, index) =>
+        topicRecord(randomUUID(), root, {
+          role: "topic",
+          title,
+          nameState: "named",
+          nameSource: "human",
+          description: `Descrição de ${title} com ação`,
+          aliases: [`alias ${index} água`, "Coração"],
+          management: "human",
+          position: index
+        })
+      ),
+      topicRecord(randomUUID(), root, { role: "topic", management: "human", position: 9 })
+    ],
+    placements: []
+  });
+  assert.equal(built.kind, "applied", "the fixture topic tree is written");
   const entities: [string, unknown][] = [
     ["Ação Humana", ["Ludwig von Mises", "Praxeologia"]],
     ["Café", []],
