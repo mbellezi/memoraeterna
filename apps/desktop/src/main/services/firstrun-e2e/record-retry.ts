@@ -11,11 +11,34 @@
 // attempts and the waits, so a replay with recorded timing waits as long as the record did. A call
 // that still fails reaches the product as before, and the record's `replayable` check fails. The
 // product's behaviour is unchanged: only this harness wraps adapters this way.
+//
+// The tries run under the lane scheduler, and each failed attempt still reports "transient" to its
+// lane: under the product's breaker (5 in a row) one retried call opens it, and the entries waiting
+// on the lane are refused above this wrapper, so their jobs back off: the same reorder. The harness
+// therefore runs its lanes with `firstRunLaneRuntime`. A try also keeps its lane slot through its
+// wait, which a replay with recorded timing does too (the entry's duration covers the wait).
 import { isTransientAiError } from "@app/ai";
-import type { AiModelAdapter, AiProgressListener, AiTaskRequest, AiTaskResult } from "@app/ai";
+import type {
+  AiLaneRuntimeConfigInput,
+  AiModelAdapter,
+  AiProgressListener,
+  AiTaskRequest,
+  AiTaskResult
+} from "@app/ai";
 
 /** The waits before each new try of a failed call; their number is the tries a call gets. */
 export const recordRetryDelaysMs: readonly number[] = [10_000, 30_000, 60_000, 120_000];
+
+/**
+ * The lanes of the harness, record and replays alike: the breaker of a remote lane opens only at the
+ * schema's top of 1,000 consecutive transient failures, so the failed attempts of calls the record
+ * tries again (at most 3 adapter attempts x 5 tries each) never refuse other entries. A replay has
+ * no failures, so the breaker is inert there either way; any call that still fails voids the record
+ * (`replayable`). Everything else keeps the product's defaults.
+ */
+export const firstRunLaneRuntime: AiLaneRuntimeConfigInput = {
+  breaker: { failureThreshold: 1_000 }
+};
 
 /** What the record's retries did, as the report lists it. */
 export interface RecordRetryStats {

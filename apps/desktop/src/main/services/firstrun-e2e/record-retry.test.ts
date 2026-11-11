@@ -2,17 +2,29 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AiCassette, AiProviderError } from "@app/ai";
+import {
+  AiCassette,
+  AiProviderError,
+  ProviderUnavailableError,
+  bindLanePermit,
+  createAiScheduler,
+  resolveAiLaneRuntimeConfig,
+  resolveAiRuntimeConfig,
+  runRemoteCall
+} from "@app/ai";
 import type {
+  AiLaneRuntimeConfigInput,
   AiModelAdapter,
   AiModelDescriptor,
   AiProgressEvent,
+  AiScheduler,
   AiTaskRequest,
-  AiTaskResult
+  AiTaskResult,
+  LaneTicket
 } from "@app/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { RecordRetry, recordRetryDelaysMs } from "./record-retry.js";
+import { RecordRetry, firstRunLaneRuntime, recordRetryDelaysMs } from "./record-retry.js";
 
 const descriptor = (runtime: AiModelDescriptor["runtime"]): AiModelDescriptor => ({
   providerId: runtime === "remote" ? "openai-codex" : "local-mlx",
@@ -234,6 +246,105 @@ describe("the record's retry of a transient remote failure (FRMISS)", () => {
       expect(replay.stats()).toMatchObject({ served: 1, misses: 0, recorded: 0 });
       expect(waited).toHaveLength(1);
       expect(waited[0]).toBeGreaterThan(recordRetryDelaysMs[0]! - 1_000);
+    });
+  });
+
+  describe("under the lane scheduler and the remote retry loop", () => {
+    const codex = "remote:codex";
+    const ticket = (label: string): LaneTicket => ({
+      lane: codex,
+      remoteKind: "codex",
+      priority: "P2",
+      workloadClass: "write-quality",
+      label
+    });
+    // The product's retry loop (3 attempts a call), with short backoffs.
+    const remote = {
+      config: resolveAiRuntimeConfig({ retry: { baseDelayMs: 1, maxDelayMs: 1 } }),
+      random: () => 0
+    };
+
+    /**
+     * A remote adapter that runs the product's retry loop, whose attempts stall `stalls` times; at the
+     * fifth stall it puts a second entry on the full lane (the other slot is held), as a job would.
+     */
+    function stallingAdapter(stalls: number, onFifth: () => void): AiModelAdapter {
+      let attempts = 0;
+      return {
+        describe: () => descriptor("remote"),
+        canHandle: () => true,
+        run: (call, signal) =>
+          runRemoteCall(
+            remote,
+            { streaming: false, taskType: call.taskType, ...(signal ? { signal } : {}) },
+            async () => {
+              attempts += 1;
+              if (attempts === 5) onFifth();
+              if (attempts <= stalls) throw stalled();
+              return {
+                taskType: call.taskType,
+                output: { attempts },
+                providerId: "openai-codex",
+                modelId: "gpt-test",
+                runtime: "remote" as const,
+                durationMs: 4_000
+              };
+            }
+          )
+      };
+    }
+
+    async function recordThrough(lanes: AiLaneRuntimeConfigInput) {
+      const scheduler: AiScheduler = createAiScheduler(
+        resolveAiLaneRuntimeConfig(lanes, { environment: {} })
+      );
+      const gate = Promise.withResolvers<void>();
+      const holder = scheduler.run(ticket("other division"), () => gate.promise);
+      let waiting: Promise<unknown> | null = null;
+      const retry = new RecordRetry({ ...fakeTime() });
+      // Two whole adapter calls stall (6 attempts): the record tries the call twice more.
+      const adapter = retry.wrap(
+        stallingAdapter(6, () => {
+          waiting = scheduler
+            .run(ticket("next division"), async () => "ran")
+            .catch((error: unknown) => error);
+        })
+      );
+      const answer = await scheduler.run(ticket("Introduction"), (permit) => {
+        const controller = new AbortController();
+        bindLanePermit(controller.signal, permit);
+        return adapter.run(request("Introduction"), controller.signal);
+      });
+      gate.resolve();
+      await holder;
+      const later = await scheduler
+        .run(ticket("later division"), async () => "ran")
+        .catch((error: unknown) => error);
+      const breaker = scheduler.snapshot().find((lane) => lane.lane === codex)?.breaker;
+      return { answer, waiting: await waiting, later, breaker, stats: retry.stats() };
+    }
+
+    it("keeps the breaker closed and refuses no entry while a call is tried again", async () => {
+      const run = await recordThrough(firstRunLaneRuntime);
+      expect(run.answer.output).toEqual({ attempts: 7 });
+      expect(run.stats).toMatchObject({ calls: 1, retries: 2, recovered: 1 });
+      expect(run.waiting).toBe("ran");
+      expect(run.later).toBe("ran");
+      expect(run.breaker).toMatchObject({
+        state: "closed",
+        consecutiveFailures: 0,
+        opened: 0,
+        refused: 0
+      });
+    });
+
+    it("would open under the product's breaker and refuse the entries, the reorder it prevents", async () => {
+      const run = await recordThrough({});
+      expect(run.answer.output).toEqual({ attempts: 7 });
+      expect(run.waiting).toBeInstanceOf(ProviderUnavailableError);
+      expect(run.later).toBeInstanceOf(ProviderUnavailableError);
+      expect(run.breaker).toMatchObject({ opened: 1 });
+      expect(run.breaker?.refused).toBeGreaterThanOrEqual(2);
     });
   });
 });

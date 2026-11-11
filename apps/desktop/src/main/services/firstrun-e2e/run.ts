@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { monitorEventLoopDelay, type IntervalHistogram } from "node:perf_hooks";
 
 import { AiCassette, readAiCassetteLocalMisses, setAiAdapterDecorator } from "@app/ai";
 import {
@@ -144,7 +145,7 @@ import {
   topicReleasePriority
 } from "./topic-release.js";
 import type { ReleaseSource, TopicRelease } from "./topic-release.js";
-import { RecordRetry } from "./record-retry.js";
+import { RecordRetry, firstRunLaneRuntime } from "./record-retry.js";
 import { waitQuiet } from "./wait.js";
 import type { WaitOutcome } from "./wait.js";
 import {
@@ -415,6 +416,7 @@ async function runPass(
   let gardenerStatus: GardenerStatusService | null = null;
   let firstRunRanker: FirstRunRanker | null = null;
   let sampler: ReturnType<typeof startSampler> | null = null;
+  let loopDelay: IntervalHistogram | null = null;
   let keep = config.keep;
   const errors: string[] = [];
   // T0: the app launch. Everything below it, up to the last service started, is the launch.
@@ -460,11 +462,21 @@ async function runPass(
     // A recording tries a transient remote failure again under the cassette (FRMISS): a failed call
     // has no entry, and the job the product would run again later is the order no replay follows.
     const maxTokens = config.maxTokens;
+    // Each retry line says how long this process's event loop was blocked at most since the last
+    // one, so a provider that stalls is told from a harness too busy to read the stream (11-11).
+    if (mode === "record") {
+      loopDelay = monitorEventLoopDelay({ resolution: 20 });
+      loopDelay.enable();
+    }
     const recordRetry =
       mode === "record"
         ? new RecordRetry({
             allow: () => maxTokens === null || cassette.stats().liveTokens < maxTokens,
-            onRetry: (event) => log("record_retry", { ...event })
+            onRetry: (event) => {
+              const eventLoopMaxMs = loopDelay ? Math.round(loopDelay.max / 1e6) : null;
+              loopDelay?.reset();
+              log("record_retry", { ...event, eventLoopMaxMs });
+            }
           })
         : null;
     setAiAdapterDecorator((adapter) => {
@@ -526,7 +538,9 @@ async function runPass(
       // Owner decision 19: the library's first embedding route installs the local ranker.
       onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks),
       cassetteMode: mode,
-      backgroundAdmission: policy.admission
+      backgroundAdmission: policy.admission,
+      // Record and replays run the same lanes; the breaker cannot trip on a retried call (FRMISS).
+      lanes: firstRunLaneRuntime
     });
     ai = service;
     const localModels = createFirstRunModels({
@@ -1328,6 +1342,7 @@ async function runPass(
       record
     };
   } finally {
+    loopDelay?.disable();
     await sampler?.stop().catch(() => undefined);
     gardenerStatus?.stop();
     setAiAdapterDecorator(null);

@@ -210,6 +210,18 @@ over the text below where they differ.
   the product's: drain mode also holds the heavy lane for link jobs, which the product never does. The live record is
   taken again on final code (the 10-24 cassette is stale; about 350k Codex tokens, cap 560k; the Q5 downloads again into
   a scratch profile), and the gate stays "each of two replays + D ≤ 10:00" (T103).
+- **E6's harness method: record retries (card FRMISS, 11-11; amends E6's method, not its bar, T0, T1 or D).** FRREC
+  of 11-11 (7:17) is void: 17 knowledge-graph jobs failed on Codex stalls and breaker refusals, ran again later in the
+  record, and one division's graph never got an answer; a cassette keeps only answers, so its replays ran the divisions
+  in import order and missed 2 calls (entity-identity candidates and note-judge pairs built from other notes). From
+  FRMISS on, a live record tries a transient remote failure again inside the harness, under the cassette and above the
+  provider adapter (10, 30, 60 and 120 s; the recorded duration covers the failed tries and the waits, and the call
+  keeps its lane slot through them, so a replay with recorded timing holds the slot as long; the product's own backoff
+  releases it, so this clock is the harness's). Record and replays run the remote lanes with a breaker threshold of
+  1,000 (`firstRunLaneRuntime`), so a retried call cannot open the breaker and refuse waiting entries; the replays have
+  no failures, so it is inert there. A record that still holds a failed AI call fails its `replayable` check and is
+  taken again; each retry line logs the harness's longest event-loop block since the last one, to tell a provider
+  stall from a harness too busy to read the stream.
 - **Codex ledger correction (T101's audit, 2026-11-11; amends the pre-soak figures above and section "Budget"; a
   correction, not a new approval).** The ledger file `queue-ledger.tsv`, whose running total RUN.md and the 10-25 cap
   decision quoted, omitted two gate S runs of 10-24 that never reached `gate-s.sh finish`: #1 (window closed, 31,664
