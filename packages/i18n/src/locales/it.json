@@ -3819,6 +3819,7 @@
       "expand": "Mostra il percorso completo",
       "label": "Posizione nell’albero",
       "loading": "Ricerca della posizione nell’albero…",
+      "mostCited": "La più citata in",
       "placedByCitations": "collocata dalle citazioni",
       "retry": "Riprova",
       "tentative": "Posizione probabile:",
@@ -3830,5 +3831,53 @@
     },
     "stackLabel": "Pannelli aperti",
     "untitled": "Senza titolo"
+  },
+  "entityPage": {
+    "aliases": "Altri nomi",
+    "articleLabel": "Entità: {name}",
+    "coMentioned": {
+      "heading": "Compare spesso con",
+      "sharedMany": "{count} note in comune",
+      "sharedOne": "{count} nota in comune"
+    },
+    "empty": {
+      "body": "Le note che citeranno questo nome compariranno qui appena saranno scritte.",
+      "headline": "Ancora nessuna menzione diretta."
+    },
+    "error": {
+      "kept": "Le tue note e le tue fonti sono rimaste come erano.",
+      "message": "Impossibile aprire questa entità."
+    },
+    "mentions": {
+      "heading": "Menzioni",
+      "listLabel": "Note che citano questa entità",
+      "moreFailed": "Impossibile caricare altre menzioni.",
+      "moreLoading": "Caricamento di altre menzioni",
+      "moreMany": "Mostra {count} note in più",
+      "moreOne": "Mostra {count} nota in più",
+      "summaryMany": "{count} note, per argomento",
+      "summaryOne": "{count} nota, per argomento",
+      "unplaced": "Senza posizione",
+      "untitledTopic": "Argomento senza nome"
+    },
+    "meta": {
+      "mentionsMany": "citata in {count} note",
+      "mentionsOne": "citata in {count} nota",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte"
+    },
+    "missing": {
+      "body": "Potrebbe essere stata unita a un’altra entità. Cerca il suo nome per ritrovarla.",
+      "headline": "Questa entità non è più nella libreria."
+    },
+    "sources": {
+      "heading": "Fonti",
+      "partial": "Fonti delle menzioni caricate finora. Mostra altre menzioni per vedere il resto."
+    },
+    "topics": {
+      "heading": "Argomenti",
+      "more": "e altri {count}",
+      "mostCited": "la più citata"
+    }
   }
 }

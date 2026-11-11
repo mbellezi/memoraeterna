@@ -3824,6 +3824,7 @@
       "expand": "Mostrar o caminho inteiro",
       "label": "Lugar na árvore",
       "loading": "Procurando lugar na árvore…",
+      "mostCited": "Mais citada em",
       "placedByCitations": "colocada pelas citações",
       "retry": "Tentar de novo",
       "tentative": "Lugar provável:",
@@ -3835,5 +3836,53 @@
     },
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
+  },
+  "entityPage": {
+    "aliases": "Outros nomes",
+    "articleLabel": "Entidade: {name}",
+    "coMentioned": {
+      "heading": "Costuma aparecer com",
+      "sharedMany": "{count} notas em comum",
+      "sharedOne": "{count} nota em comum"
+    },
+    "empty": {
+      "body": "As notas que citarem este nome aparecem aqui assim que forem escritas.",
+      "headline": "Ainda sem menções diretas."
+    },
+    "error": {
+      "kept": "Suas notas e fontes continuam como estavam.",
+      "message": "Não foi possível abrir esta entidade."
+    },
+    "mentions": {
+      "heading": "Menções",
+      "listLabel": "Notas que citam esta entidade",
+      "moreFailed": "Não foi possível carregar mais menções.",
+      "moreLoading": "Carregando mais menções",
+      "moreMany": "Mostrar mais {count} notas",
+      "moreOne": "Mostrar mais {count} nota",
+      "summaryMany": "{count} notas, por tópico",
+      "summaryOne": "{count} nota, por tópico",
+      "unplaced": "Sem lugar",
+      "untitledTopic": "Tópico sem nome"
+    },
+    "meta": {
+      "mentionsMany": "citada em {count} notas",
+      "mentionsOne": "citada em {count} nota",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte"
+    },
+    "missing": {
+      "body": "Ela pode ter sido juntada a outra entidade. Busque pelo nome para encontrá-la.",
+      "headline": "Esta entidade não está mais na biblioteca."
+    },
+    "sources": {
+      "heading": "Fontes",
+      "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
+    },
+    "topics": {
+      "heading": "Tópicos",
+      "more": "e mais {count}",
+      "mostCited": "mais citada"
+    }
   }
 }

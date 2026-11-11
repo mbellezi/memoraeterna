@@ -30,7 +30,8 @@ export interface RibbonSegment {
 }
 
 /** How the place is known: placed, tentative while a source or an answer is still being made. */
-export type RibbonPlace = "placed" | "tentativeSource" | "tentativeQuestion" | "byCitations";
+export type RibbonPlace =
+  "placed" | "tentativeSource" | "tentativeQuestion" | "byCitations" | "mostCited";
 
 const topicAddress = (ref: ObjectRef) => formatObjectAddress({ kind: "topic", id: ref.id });
 
@@ -385,6 +386,9 @@ export function PathRibbonView({
         />
         {tentative ? (
           <span className="text-muted-foreground">{t("panelFrame.ribbon.tentative")}</span>
+        ) : place === "mostCited" ? (
+          // An entity sits where most of its notes are: its ribbon says so before the path.
+          <span className="text-muted-foreground">{t("panelFrame.ribbon.mostCited")}</span>
         ) : null}
         {/* The crumbs are items of the glyph's own line: a box around them would be one flex item
             as wide as the whole path, and would drop to a line of its own under the glyph. */}

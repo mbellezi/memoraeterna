@@ -3821,6 +3821,7 @@
       "expand": "Show the whole path",
       "label": "Place in the tree",
       "loading": "Finding the place in the tree…",
+      "mostCited": "Most cited in",
       "placedByCitations": "placed by the citations",
       "retry": "Try again",
       "tentative": "Likely place:",
@@ -3832,5 +3833,53 @@
     },
     "stackLabel": "Open panels",
     "untitled": "Untitled"
+  },
+  "entityPage": {
+    "aliases": "Other names",
+    "articleLabel": "Entity: {name}",
+    "coMentioned": {
+      "heading": "Often appears with",
+      "sharedMany": "{count} notes in common",
+      "sharedOne": "{count} note in common"
+    },
+    "empty": {
+      "body": "Notes that cite this name appear here as soon as they are written.",
+      "headline": "No direct mentions yet."
+    },
+    "error": {
+      "kept": "Your notes and sources are as they were.",
+      "message": "This entity could not be opened."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes that cite this entity",
+      "moreFailed": "More mentions could not be loaded.",
+      "moreLoading": "Loading more mentions",
+      "moreMany": "Show {count} more notes",
+      "moreOne": "Show {count} more note",
+      "summaryMany": "{count} notes, by topic",
+      "summaryOne": "{count} note, by topic",
+      "unplaced": "No place",
+      "untitledTopic": "Untitled topic"
+    },
+    "meta": {
+      "mentionsMany": "cited in {count} notes",
+      "mentionsOne": "cited in {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "It may have been merged into another entity. Search for its name to find it.",
+      "headline": "This entity is no longer in the library."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources of the mentions loaded so far. Show more mentions to see the rest."
+    },
+    "topics": {
+      "heading": "Topics",
+      "more": "and {count} more",
+      "mostCited": "most cited"
+    }
   }
 }

@@ -3828,6 +3828,7 @@
       "expand": "Mostrar la ruta completa",
       "label": "Lugar en el árbol",
       "loading": "Buscando el lugar en el árbol…",
+      "mostCited": "Más citada en",
       "placedByCitations": "colocada por las citas",
       "retry": "Intentar de nuevo",
       "tentative": "Lugar probable:",
@@ -3839,5 +3840,53 @@
     },
     "stackLabel": "Paneles abiertos",
     "untitled": "Sin título"
+  },
+  "entityPage": {
+    "aliases": "Otros nombres",
+    "articleLabel": "Entidad: {name}",
+    "coMentioned": {
+      "heading": "Suele aparecer con",
+      "sharedMany": "{count} notas en común",
+      "sharedOne": "{count} nota en común"
+    },
+    "empty": {
+      "body": "Las notas que citen este nombre aparecerán aquí en cuanto se escriban.",
+      "headline": "Aún sin menciones directas."
+    },
+    "error": {
+      "kept": "Tus notas y fuentes siguen como estaban.",
+      "message": "No se pudo abrir esta entidad."
+    },
+    "mentions": {
+      "heading": "Menciones",
+      "listLabel": "Notas que citan esta entidad",
+      "moreFailed": "No se pudieron cargar más menciones.",
+      "moreLoading": "Cargando más menciones",
+      "moreMany": "Mostrar {count} notas más",
+      "moreOne": "Mostrar {count} nota más",
+      "summaryMany": "{count} notas, por tema",
+      "summaryOne": "{count} nota, por tema",
+      "unplaced": "Sin lugar",
+      "untitledTopic": "Tema sin nombre"
+    },
+    "meta": {
+      "mentionsMany": "citada en {count} notas",
+      "mentionsOne": "citada en {count} nota",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente"
+    },
+    "missing": {
+      "body": "Puede haberse unido a otra entidad. Busca su nombre para encontrarla.",
+      "headline": "Esta entidad ya no está en la biblioteca."
+    },
+    "sources": {
+      "heading": "Fuentes",
+      "partial": "Fuentes de las menciones cargadas hasta ahora. Muestra más menciones para ver el resto."
+    },
+    "topics": {
+      "heading": "Temas",
+      "more": "y {count} más",
+      "mostCited": "más citada"
+    }
   }
 }

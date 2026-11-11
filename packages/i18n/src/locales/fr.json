@@ -3826,6 +3826,7 @@
       "expand": "Afficher le chemin complet",
       "label": "Emplacement dans l’arbre",
       "loading": "Recherche de l’emplacement dans l’arbre…",
+      "mostCited": "La plus citée dans",
       "placedByCitations": "placée par les citations",
       "retry": "Réessayer",
       "tentative": "Emplacement probable :",
@@ -3837,5 +3838,53 @@
     },
     "stackLabel": "Panneaux ouverts",
     "untitled": "Sans titre"
+  },
+  "entityPage": {
+    "aliases": "Autres noms",
+    "articleLabel": "Entité : {name}",
+    "coMentioned": {
+      "heading": "Apparaît souvent avec",
+      "sharedMany": "{count} notes en commun",
+      "sharedOne": "{count} note en commun"
+    },
+    "empty": {
+      "body": "Les notes qui citeront ce nom apparaîtront ici dès qu’elles seront écrites.",
+      "headline": "Pas encore de mentions directes."
+    },
+    "error": {
+      "kept": "Vos notes et vos sources sont restées telles quelles.",
+      "message": "Impossible d’ouvrir cette entité."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes qui citent cette entité",
+      "moreFailed": "Impossible de charger d’autres mentions.",
+      "moreLoading": "Chargement d’autres mentions",
+      "moreMany": "Afficher {count} notes de plus",
+      "moreOne": "Afficher {count} note de plus",
+      "summaryMany": "{count} notes, par sujet",
+      "summaryOne": "{count} note, par sujet",
+      "unplaced": "Sans emplacement",
+      "untitledTopic": "Sujet sans nom"
+    },
+    "meta": {
+      "mentionsMany": "citée dans {count} notes",
+      "mentionsOne": "citée dans {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "Elle a peut-être été fusionnée avec une autre entité. Cherchez son nom pour la retrouver.",
+      "headline": "Cette entité n’est plus dans la bibliothèque."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
+    },
+    "topics": {
+      "heading": "Sujets",
+      "more": "et {count} de plus",
+      "mostCited": "la plus citée"
+    }
   }
 }
