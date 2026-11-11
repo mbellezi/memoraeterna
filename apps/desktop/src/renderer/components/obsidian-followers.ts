@@ -16,7 +16,11 @@ export interface EditorialApi extends AppEventApi {
   obsidian: Pick<DesktopApi["obsidian"], "editorialConflicts">;
 }
 
-/** The editorial conflicts: read after an editorial projection and after a sync that ended. */
+/**
+ * The editorial conflicts: read after an editorial projection, after a sync that ended and after a
+ * change of the vault or storage settings (the conflicts belong to one vault and managed root, so
+ * a new binding must not keep the old one's rows).
+ */
 export function followEditorialConflicts(
   api: () => EditorialApi | undefined,
   onRows: (rows: Conflicts) => void,
@@ -26,7 +30,8 @@ export function followEditorialConflicts(
     api,
     sources: [
       { type: "obsidian.projection", when: (event) => event.kind === "editorial" },
-      { type: "obsidian.sync", when: obsidianSyncEnded }
+      { type: "obsidian.sync", when: obsidianSyncEnded },
+      { type: "settings.changed", when: settingsTouch("obsidian", "storage") }
     ],
     read: () => requireApi(api).obsidian.editorialConflicts(),
     onValue: onRows,
