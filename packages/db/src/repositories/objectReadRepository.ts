@@ -19,6 +19,7 @@ import {
 } from "@app/domain";
 
 import { currentNoteSql, shownNoteRelationSql } from "./note-relation-sql.js";
+import { questionCitedNotesSql } from "./questionCitationSql.js";
 import { currentSourceRelationSql } from "./sourceRelationRepository.js";
 import type { Queryable } from "./types.js";
 
@@ -283,6 +284,8 @@ const citationAnchorSql = `(case when c.target_kind = 'chunk'
 /**
  * Question citation: the questions whose answers cite the object, once each, from the newest
  * version that does and, within it, the citation that names a passage before one that does not.
+ * A note is cited by naming it or by citing a passage that rests on it, as `objects.locate` reads a
+ * Question's notes (`questionCitedNotesSql`); a topic is cited only by name, and Ask stores none.
  */
 const questionCitationArm = (kind: "note" | "source" | "topic"): Arm => {
   const hits =
@@ -293,7 +296,12 @@ const questionCitationArm = (kind: "note" | "source" | "topic"): Arm => {
          select c.answer_id, c.ordinal, c.target_kind, c.target_id, c.anchor from question_citations c
           where c.target_kind = 'chunk'
             and c.target_id in (select k.id from chunks k where k.source_item_id = $1::uuid)`
-      : `select c.answer_id, c.ordinal, c.target_kind, c.target_id, c.anchor from question_citations c
+      : kind === "note"
+        ? `select f.answer_id, f.ordinal, f.target_kind, f.target_id, f.anchor
+             from (${questionCitedNotesSql}) f
+            where f.note_id = $1::uuid
+              and exists (select 1 from atomic_notes n where n.id = f.note_id and ${currentNoteSql("n")})`
+        : `select c.answer_id, c.ordinal, c.target_kind, c.target_id, c.anchor from question_citations c
           where c.target_kind = '${kind}' and c.target_id = $1::uuid`;
   return arm(
     "question_citation",
