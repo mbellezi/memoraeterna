@@ -33,9 +33,11 @@ const read: RelationBranchRead = {
 };
 
 describe("relations.branch channel", () => {
-  it("is named by the area and collides with no existing channel", () => {
+  it("is named by the area and held once by ipcChannels (F5 T171)", () => {
     expect(relationsBranchChannels).toEqual({ branch: "app:relations:branch" });
-    expect(Object.values(ipcChannels)).not.toContain(relationsBranchChannels.branch);
+    expect(
+      Object.values(ipcChannels).filter((value) => value === relationsBranchChannels.branch)
+    ).toHaveLength(1);
   });
 });
 

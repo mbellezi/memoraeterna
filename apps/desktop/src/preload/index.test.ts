@@ -4,8 +4,14 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ipcChannels, type DesktopApi } from "../shared/ipc.js";
+import { entitiesChannels } from "../shared/ipc-entities.js";
+import { homeChannels } from "../shared/ipc-home.js";
+import { libraryChannels } from "../shared/ipc-library.js";
 import { objectsIpcChannels } from "../shared/ipc-objects.js";
 import { questionsChannels } from "../shared/ipc-questions.js";
+import { relationsBranchChannels } from "../shared/ipc-relations-branch.js";
+import { searchIpcChannels } from "../shared/ipc-search.js";
+import { topicsHistoryChannels } from "../shared/ipc-topics-history.js";
 
 const electron = vi.hoisted(() => {
   /** The channel of every listener the preload registered, in order, whatever the registering call. */
@@ -105,12 +111,97 @@ describe("the preload's window.app (F5 T170)", () => {
   });
 });
 
+describe("the preload's window.app, W2 areas (F5 T171)", () => {
+  let app: DesktopApi;
+  beforeAll(async () => {
+    await import("./index.js");
+    app = electron.exposed.app as DesktopApi;
+  });
+  const id = "00000000-0000-4000-8000-000000000002";
+
+  it("adds search.omni beside the legacy query, home, library, entities, relations.branch and topics.history", () => {
+    expect(Object.keys(app.search).sort()).toEqual(["omni", "query"]);
+    expect(Object.keys(app.home)).toEqual(["digest"]);
+    expect(Object.keys(app.library).sort()).toEqual(["rows", "sourceProgress"]);
+    expect(Object.keys(app.entities)).toEqual(["page"]);
+    expect(Object.keys(app.relations)).toContain("branch");
+    expect(Object.keys(app.relations)).toContain("explain");
+    expect(Object.keys(app.topics)).toContain("history");
+    expect(Object.keys(app.topics)).toContain("tree");
+  });
+
+  it("sends every new read on its area's channel", async () => {
+    electron.invoke.mockClear();
+    // The mocked answers are not valid: only where each request went is under test here.
+    const asks = [
+      () => app.search.omni({ query: "memory", mode: "quick", requestId: "r1" }),
+      () => app.home.digest(),
+      () => app.library.rows({ sort: "title" }),
+      () => app.library.sourceProgress({ sourceId: id }),
+      () => app.entities.page({ id }),
+      () => app.relations.branch({ scope: { topicId: id } }),
+      () => app.topics.history({ topicIds: [id], days: 7 }),
+      () => app.questions.get({ id }),
+      () => app.questions.list(),
+      () => app.questions.delete({ id }),
+      () => app.questions.askAgain({ id }),
+      () => app.questions.clear()
+    ];
+    for (const ask of asks) await ask().catch(() => undefined);
+    expect(electron.invoke.mock.calls.map((call) => call[0])).toEqual([
+      searchIpcChannels.searchOmni,
+      homeChannels.digest,
+      libraryChannels.rows,
+      libraryChannels.sourceProgress,
+      entitiesChannels.page,
+      relationsBranchChannels.branch,
+      topicsHistoryChannels.topicsHistory,
+      questionsChannels.get,
+      questionsChannels.list,
+      questionsChannels.delete,
+      questionsChannels.askAgain,
+      questionsChannels.clear
+    ]);
+    expect(electron.invoke.mock.calls.slice(0, 7).map((call) => call[0])).toEqual([
+      ipcChannels.searchOmni,
+      ipcChannels.homeDigest,
+      ipcChannels.libraryRows,
+      ipcChannels.librarySourceProgress,
+      ipcChannels.entitiesPage,
+      ipcChannels.relationsBranch,
+      ipcChannels.topicsHistory
+    ]);
+  });
+
+  it("validates the answer before the page sees it", async () => {
+    electron.invoke.mockResolvedValueOnce({ unexpected: true });
+    await expect(app.home.digest()).rejects.toThrow();
+    electron.invoke.mockResolvedValueOnce({ unexpected: true });
+    await expect(app.entities.page({ id })).rejects.toThrow();
+  });
+
+  it("refuses a malformed request before anything is sent", async () => {
+    electron.invoke.mockClear();
+    await expect(app.search.omni({ query: "", mode: "quick", requestId: "r" })).rejects.toThrow();
+    await expect(app.library.rows({ limit: 1000 })).rejects.toThrow();
+    await expect(app.entities.page({ id: "x" })).rejects.toThrow();
+    await expect(app.topics.history({ topicIds: [], days: 0 })).rejects.toThrow();
+    expect(electron.invoke).not.toHaveBeenCalled();
+  });
+});
+
 describe("the area channels in ipcChannels", () => {
-  it("hold every channel of the objects and questions areas, once", () => {
+  it("hold every channel of the objects, questions and W2 areas, once", () => {
     const values = Object.values(ipcChannels);
     for (const channel of [
       ...Object.values(objectsIpcChannels),
-      ...Object.values(questionsChannels)
+      ...Object.values(questionsChannels),
+      ...Object.values(searchIpcChannels),
+      ...Object.values(homeChannels),
+      ...Object.values(libraryChannels),
+      ...Object.values(entitiesChannels),
+      ...Object.values(relationsBranchChannels),
+      ...Object.values(topicsHistoryChannels)
     ])
       expect(values.filter((value) => value === channel)).toHaveLength(1);
     expect(new Set(values).size).toBe(values.length);

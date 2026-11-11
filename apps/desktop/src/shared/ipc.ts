@@ -39,6 +39,12 @@ import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
 import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
 import { questionsChannels, type QuestionsApi } from "./ipc-questions.js";
+import { entitiesChannels, type EntitiesApi } from "./ipc-entities.js";
+import { homeChannels, type HomeApi } from "./ipc-home.js";
+import { libraryChannels, type LibraryApi } from "./ipc-library.js";
+import { relationsBranchChannels, type RelationsBranchApi } from "./ipc-relations-branch.js";
+import { searchIpcChannels, type SearchApi } from "./ipc-search.js";
+import { topicsHistoryChannels, type TopicsHistoryApi } from "./ipc-topics-history.js";
 import type {
   ViewHistoryEntry,
   ViewHistoryListInput,
@@ -168,6 +174,14 @@ export const ipcChannels = {
   questionsDelete: questionsChannels.delete,
   questionsAskAgain: questionsChannels.askAgain,
   questionsClear: questionsChannels.clear,
+  /** The W2 areas (F5 D30, T171): each `app:<area>:*` channel, named by area here. */
+  searchOmni: searchIpcChannels.searchOmni,
+  homeDigest: homeChannels.digest,
+  libraryRows: libraryChannels.rows,
+  librarySourceProgress: libraryChannels.sourceProgress,
+  entitiesPage: entitiesChannels.page,
+  relationsBranch: relationsBranchChannels.branch,
+  topicsHistory: topicsHistoryChannels.topicsHistory,
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
@@ -1973,6 +1987,8 @@ export interface DesktopApi {
     explainSource: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
     /** Stops the source relation's explanation being written; true when one was stopped. */
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
+    /** The relation branch of one object for the Map and the Ask panel (F5 D19); read-only, no AI. */
+    branch: RelationsBranchApi["branch"];
   };
   /**
    * The topic tree (docs/plan.md F2): reads without AI, human operations through the engine, and a
@@ -2003,6 +2019,8 @@ export interface DesktopApi {
     overview: (input: TopicOverviewInput) => Promise<TopicOverviewState>;
     /** Stops the overview being written for a topic; true when one was stopped. */
     cancelOverview: (input: TopicOverviewCancelInput) => Promise<boolean>;
+    /** Daily arrivals per topic over the last days, for Home's growth (F5 D20); read-only. */
+    history: TopicsHistoryApi["history"];
   };
   /**
    * Change-sets of every store (F4 D10): the topic engine's, relation passes and overview writes,
@@ -2149,9 +2167,16 @@ export interface DesktopApi {
     delete: (jobId: string) => Promise<JobsDeleteResult | null>;
     clearCompletedOrFailed: () => Promise<JobsClearResult>;
   };
-  search: {
+  /** `query` is the legacy search; `omni` is the one retriever of Cmd-K and the results panel (F5 D12). */
+  search: SearchApi & {
     query: (input: SearchInput) => Promise<SearchResult[]>;
   };
+  /** Home's one read (F5 D9): what arrived, what waits, the last questions and the tree's shape. */
+  home: HomeApi;
+  /** The Library's table and the generation strip's data (F5 D18, T131). */
+  library: LibraryApi;
+  /** One entity's page; null when it does not exist (F5 T132). */
+  entities: EntitiesApi;
   knowledge: {
     startRelationLabels: (input: z.infer<typeof relationLabelsInputSchema>) => Promise<string>;
     relationLabelsStatus: () => Promise<JobRecord | null>;

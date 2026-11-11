@@ -509,6 +509,14 @@ describe("desktop IPC contracts", () => {
     expect(ipcChannels.questionsDelete).toBe("app:questions:delete");
     expect(ipcChannels.questionsAskAgain).toBe("app:questions:ask-again");
     expect(ipcChannels.questionsClear).toBe("app:questions:clear");
+    // The W2 areas (F5 T171).
+    expect(ipcChannels.searchOmni).toBe("app:search:omni");
+    expect(ipcChannels.homeDigest).toBe("app:home:digest");
+    expect(ipcChannels.libraryRows).toBe("app:library:rows");
+    expect(ipcChannels.librarySourceProgress).toBe("app:library:source-progress");
+    expect(ipcChannels.entitiesPage).toBe("app:entities:page");
+    expect(ipcChannels.relationsBranch).toBe("app:relations:branch");
+    expect(ipcChannels.topicsHistory).toBe("app:topics:history");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 

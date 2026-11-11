@@ -29,10 +29,11 @@ const empty = {
 };
 
 describe("home area channels", () => {
-  it("are named by the area and collide with no other channel", () => {
+  it("are named by the area and held once by ipcChannels (F5 T171)", () => {
     expect(homeChannels).toEqual({ digest: "app:home:digest" });
-    // The wave's wiring card spreads the area into `ipcChannels`; until then none holds it.
-    expect(Object.values(ipcChannels)).not.toContain(homeChannels.digest);
+    expect(
+      Object.values(ipcChannels).filter((value) => value === homeChannels.digest)
+    ).toHaveLength(1);
   });
 });
 

@@ -55,7 +55,10 @@ const operationChannels = [
 
 describe("topic IPC channels", () => {
   it("registers every contract of the spec once, and no channel for the switch", () => {
-    const topicChannels = Object.entries(ipcChannels).filter(([name]) => name.startsWith("topics"));
+    // `topicsHistory` is the topics-history area's (F5 T171), registered by its own IPC module.
+    const topicChannels = Object.entries(ipcChannels).filter(
+      ([name]) => name.startsWith("topics") && name !== "topicsHistory"
+    );
     expect(topicChannels.map(([name]) => name).sort()).toEqual(
       [
         "topicsChangeSet",

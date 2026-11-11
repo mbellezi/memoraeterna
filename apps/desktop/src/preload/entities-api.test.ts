@@ -20,10 +20,11 @@ const page = {
 };
 
 describe("entities area channels", () => {
-  it("are named by the area and collide with no existing channel", () => {
+  it("are named by the area and held once by ipcChannels (F5 T171)", () => {
     expect(entitiesChannels).toEqual({ page: "app:entities:page" });
     const all = Object.values(ipcChannels) as string[];
-    for (const channel of Object.values(entitiesChannels)) expect(all).not.toContain(channel);
+    for (const channel of Object.values(entitiesChannels))
+      expect(all.filter((value) => value === channel)).toHaveLength(1);
   });
 });
 

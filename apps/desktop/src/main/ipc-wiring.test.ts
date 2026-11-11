@@ -7,6 +7,20 @@ import { describe, expect, it, vi } from "vitest";
 import { ipcChannels } from "../shared/ipc.js";
 import { objectsIpcChannels } from "../shared/ipc-objects.js";
 import { questionsChannels } from "../shared/ipc-questions.js";
+import { entitiesChannels } from "../shared/ipc-entities.js";
+import { homeChannels } from "../shared/ipc-home.js";
+import { libraryChannels } from "../shared/ipc-library.js";
+import { relationsBranchChannels } from "../shared/ipc-relations-branch.js";
+import { searchIpcChannels } from "../shared/ipc-search.js";
+import { topicsHistoryChannels } from "../shared/ipc-topics-history.js";
+import { registerEntitiesIpc } from "./services/entities-ipc.js";
+import { registerHomeIpc } from "./services/home-ipc.js";
+import type { HomeService } from "./services/home-service.js";
+import { registerLibraryIpc, type LibraryService } from "./services/library-ipc.js";
+import { registerRelationsBranchIpc } from "./services/relations-branch-ipc.js";
+import { registerSearchOmniIpc } from "./services/search-omni-ipc.js";
+import type { SearchOmniService } from "./services/search-omni-service.js";
+import { registerTopicsHistoryIpc } from "./services/topics-history-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
 import type { ObjectsService } from "./services/objects-service.js";
 import { registerQuestionsIpc } from "./services/questions-ipc.js";
@@ -62,6 +76,60 @@ describe("the questions area wiring", () => {
   });
 });
 
+describe("the W2 read areas wiring (F5 T171)", () => {
+  const cases: [string, string[], string[]][] = [
+    [
+      "search",
+      registered((ipc) =>
+        registerSearchOmniIpc(ipc, { omni: vi.fn() } as unknown as SearchOmniService)
+      ),
+      Object.values(searchIpcChannels)
+    ],
+    [
+      "home",
+      registered((ipc) => registerHomeIpc(ipc, { digest: vi.fn() } as unknown as HomeService)),
+      Object.values(homeChannels)
+    ],
+    [
+      "library",
+      registered((ipc) =>
+        registerLibraryIpc(ipc, {
+          rows: vi.fn(),
+          sourceProgress: vi.fn()
+        } as unknown as LibraryService)
+      ),
+      Object.values(libraryChannels)
+    ],
+    [
+      "entities",
+      registered((ipc) => registerEntitiesIpc(ipc, () => null)),
+      Object.values(entitiesChannels)
+    ],
+    [
+      "relations.branch",
+      registered((ipc) => registerRelationsBranchIpc(ipc, vi.fn())),
+      Object.values(relationsBranchChannels)
+    ],
+    [
+      "topics.history",
+      registered((ipc) => registerTopicsHistoryIpc(ipc, { history: vi.fn() })),
+      Object.values(topicsHistoryChannels)
+    ]
+  ];
+
+  it.each(cases)("%s registers exactly its channels, all in ipcChannels", (_area, got, wanted) => {
+    expect(got).toEqual([...wanted].sort());
+    for (const channel of got) expect(Object.values(ipcChannels)).toContain(channel);
+  });
+
+  it("registers no channel twice across every area of the window", () => {
+    const all = cases.flatMap(([, got]) => got);
+    expect(new Set(all).size).toBe(all.length);
+    const taken = new Set(Object.values(ipcChannels));
+    expect(taken.size).toBe(Object.values(ipcChannels).length);
+  });
+});
+
 describe("the entry files", () => {
   const main = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
   const handlers = readFileSync(join(import.meta.dirname, "ipc.ts"), "utf8");
@@ -71,6 +139,29 @@ describe("the entry files", () => {
     expect(main).toMatch(/registerQuestionsIpc\(\s*ipcMain,/u);
     expect(main).toMatch(/appEventPort\.attach\(events\)/u);
     expect(main).toMatch(/appEventPort\.detach\(\)/u);
+  });
+
+  it("install the IPC trace before the first handler registers, and register every W2 area", () => {
+    const trace = main.search(/installIpcTrace\(\s*ipcMain,/u);
+    expect(trace).toBeGreaterThan(0);
+    // Nothing may register a handler before the trace wraps `handle`: it is the first call on ipcMain.
+    expect(main.search(/ipcMain\.handle\(/u)).toBeGreaterThan(trace);
+    expect(main.search(/register\w+Ipc\(/u)).toBeGreaterThan(trace);
+    for (const register of [
+      /registerSearchOmniIpc\(\s*ipcMain,/u,
+      /registerHomeIpc\(\s*ipcMain,/u,
+      /registerLibraryIpc\(\s*ipcMain,/u,
+      /registerEntitiesIpc\(\s*ipcMain,/u,
+      /registerRelationsBranchIpc\(\s*ipcMain,/u,
+      /registerTopicsHistoryIpc\(\s*ipcMain,/u
+    ])
+      expect(main).toMatch(register);
+  });
+
+  it("let a quit wait for the Asks that are writing their end", () => {
+    expect(main).toMatch(/registerQuestionsIpc\(ipcMain, questionsService\)/u);
+    expect(main).toMatch(/name: "questions"[\s\S]*?questionsService\?\.idle\(\)/u);
+    expect(main.indexOf('name: "questions"')).toBeLessThan(main.indexOf('name: "AI runtime"'));
   });
 
   it("replay the sticky states to a window that has loaded", () => {

@@ -151,6 +151,25 @@ import {
   type WindowNavigationDirection
 } from "./window-navigation.js";
 import { ipcChannels, localEmbeddingLoadStatusSchema } from "../shared/ipc.js";
+import { installIpcTrace } from "./services/dev/ipc-trace.js";
+import { registerEntitiesIpc } from "./services/entities-ipc.js";
+import { HomeService } from "./services/home-service.js";
+import { registerHomeIpc } from "./services/home-ipc.js";
+import { LibraryService, registerLibraryIpc } from "./services/library-ipc.js";
+import {
+  registerRelationsBranchIpc,
+  relationsBranchReader
+} from "./services/relations-branch-ipc.js";
+import { registerSearchOmniIpc } from "./services/search-omni-ipc.js";
+import { SearchOmniService } from "./services/search-omni-service.js";
+import {
+  createTopicsHistoryService,
+  registerTopicsHistoryIpc
+} from "./services/topics-history-ipc.js";
+
+// F5 T137 (spec 3.14): the IPC trace wraps `ipcMain.handle` before any handler registers, so this
+// is the first statement of the entry. Only an unpackaged build with MEMORA_IPC_TRACE=1 traces.
+installIpcTrace(ipcMain, { isPackaged: app.isPackaged });
 
 // F5 D25 (T111): the default userData is read before the override, so the database can tell an
 // override that points back at it. A blank or relative override is refused instead of silently
@@ -270,6 +289,7 @@ let jobProgress: JobProgressPublisher | null = null;
 let gardenerStatus: GardenerStatusService | null = null;
 /** The Inbox (F4 D29, T94): one list of what waits for the owner, and the verbs on it. */
 let inboxService: InboxService | null = null;
+let questionsService: QuestionsService | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 /** F4 D16 (T83): the optional re-match a change of the note decider offers; the Inbox accepts it. */
@@ -629,6 +649,14 @@ void app.whenReady().then(() => {
   );
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
   registerObjectsIpc(ipcMain, new ObjectsService(() => databaseService?.getPool() ?? null));
+  // The W2 read areas (F5 D30, T171): every one reads the open library and writes nothing.
+  const readPool = () => databaseService?.getPool() ?? null;
+  registerSearchOmniIpc(ipcMain, new SearchOmniService(readPool, aiService));
+  registerHomeIpc(ipcMain, new HomeService({ getPool: readPool, inbox: () => inboxService }));
+  registerLibraryIpc(ipcMain, new LibraryService(readPool));
+  registerEntitiesIpc(ipcMain, readPool);
+  registerRelationsBranchIpc(ipcMain, relationsBranchReader(readPool));
+  registerTopicsHistoryIpc(ipcMain, createTopicsHistoryService({ getPool: readPool }));
   // Who writes a relation's explanation now (the prompt and the writer model): the key of a cached
   // explanation includes it, and the Note page judges explanations by it (F3 D22).
   const explanationWriter = createRelationExplanationWriterResolver(
@@ -739,15 +767,14 @@ void app.whenReady().then(() => {
   });
   registerConsultationIpc(ipcMain, consultationService, events);
   // Ask with a stored Question (F5 D14): the answer travels on the bus through the port.
-  registerQuestionsIpc(
-    ipcMain,
-    new QuestionsService({
-      getPool: () => databaseService?.getPool() ?? null,
-      consultation: consultationService,
-      contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
-      logger: console
-    })
-  );
+  // The instance is kept so a quit waits for the Asks that are writing their end (shutdown step).
+  questionsService = new QuestionsService({
+    getPool: () => databaseService?.getPool() ?? null,
+    consultation: consultationService,
+    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    logger: console
+  });
+  registerQuestionsIpc(ipcMain, questionsService);
   registerBudgetIpc(
     ipcMain,
     remoteBudget!,
@@ -1525,6 +1552,15 @@ function shutdownSteps(): ShutdownStep[] {
         obsidianSyncService = null;
         ingestionService = null;
         metadataEnrichmentService = null;
+      }
+    },
+    {
+      // An Ask that is writing stores its answer or its end before the AI runtime goes away.
+      name: "questions",
+      timeoutMs: 10_000,
+      run: async () => {
+        await questionsService?.idle();
+        questionsService = null;
       }
     },
     {

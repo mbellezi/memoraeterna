@@ -38,11 +38,13 @@ function register(service: TopicsHistoryService) {
 }
 
 describe("the topic history area over IPC", () => {
-  it("registers its one channel, which no other channel uses", () => {
+  it("registers its one channel, which ipcChannels holds once (F5 T171)", () => {
     const { channels } = register({ history: vi.fn() });
     expect(channels).toEqual([topicsHistoryChannels.topicsHistory]);
     expect(topicsHistoryChannels.topicsHistory).toBe("app:topics:history");
-    expect(Object.values(ipcChannels)).not.toContain(topicsHistoryChannels.topicsHistory);
+    expect(
+      Object.values(ipcChannels).filter((value) => value === topicsHistoryChannels.topicsHistory)
+    ).toHaveLength(1);
   });
 
   it("validates a request before the service sees it: 200 topics, 90 days, UUIDs only", async () => {

@@ -112,6 +112,12 @@ import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
 import { createObjectsApi } from "./objects-api.js";
 import { createQuestionsApi } from "./questions-api.js";
+import { createEntitiesApi } from "./entities-api.js";
+import { createHomeApi } from "./home-api.js";
+import { createLibraryApi } from "./library-api.js";
+import { createRelationsBranchApi } from "./relations-branch-api.js";
+import { createSearchApi } from "./search-api.js";
+import { createTopicsHistoryApi } from "./topics-history-api.js";
 import type {
   AiProfileCreate,
   AiProfileUpdate,
@@ -377,7 +383,8 @@ const api: DesktopApi = {
             ipcChannels.relationsCancelExplainSource,
             RelationExplainInputSchema.parse(input)
           )
-        )
+        ),
+    ...createRelationsBranchApi(ipcRenderer)
   },
   topics: {
     tree: async (input) =>
@@ -437,7 +444,8 @@ const api: DesktopApi = {
             ipcChannels.topicsOverviewCancel,
             TopicOverviewCancelInputSchema.parse(input)
           )
-        )
+        ),
+    ...createTopicsHistoryApi((channel, ...args) => ipcRenderer.invoke(channel, ...args))
   },
   changes: {
     list: async (input) =>
@@ -881,12 +889,16 @@ const api: DesktopApi = {
     }
   },
   search: {
+    ...createSearchApi(ipcRenderer),
     async query(input: SearchInput) {
       return searchResultsSchema.parse(
         await ipcRenderer.invoke(ipcChannels.searchQuery, searchInputSchema.parse(input))
       );
     }
   },
+  home: createHomeApi((channel, ...args) => ipcRenderer.invoke(channel, ...args)),
+  library: createLibraryApi((channel, ...args) => ipcRenderer.invoke(channel, ...args)),
+  entities: createEntitiesApi(ipcRenderer),
   knowledge: {
     async startRelationLabels(input) {
       return z

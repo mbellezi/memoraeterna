@@ -14,8 +14,9 @@ import type { TopicServiceStatus } from "./topic-tree-service.js";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const quiet = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+// `topicsHistory` belongs to the topics-history area (F5 T171), registered by its own IPC module.
 const topicChannels = Object.entries(ipcChannels)
-  .filter(([name]) => name.startsWith("topics"))
+  .filter(([name]) => name.startsWith("topics") && name !== "topicsHistory")
   .map(([, channel]) => channel);
 
 /** An `ipcMain` that, like Electron's, refuses a second handler for a channel. */
