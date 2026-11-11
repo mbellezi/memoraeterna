@@ -332,6 +332,31 @@ describe("the app event bus: an Ask's status and text", () => {
     restart
   });
 
+  it("sends the pending text of a request before its next status, never after", () => {
+    const { bus, sent } = newBus();
+    bus.publish(delta(id(1), ["so far"]));
+    bus.publish(delta(id(2), ["other request"]));
+    bus.publish(delta(id(1), ["final"]));
+    bus.publish(status(id(1), "done"));
+    expect(sent).toEqual([delta(id(1), ["final"]), status(id(1), "done")]);
+    // The other request keeps its own window.
+    vi.advanceTimersByTime(appEventDeltaMs);
+    expect(sent).toEqual([
+      delta(id(1), ["final"]),
+      status(id(1), "done"),
+      delta(id(2), ["other request"])
+    ]);
+  });
+
+  it("keeps a restart in order with a terminal status", () => {
+    const { bus, sent } = newBus();
+    bus.publish(delta(id(1), ["again"], true));
+    bus.publish({ ...status(id(1), "failed"), error: "consultation.errors.failed" });
+    expect(sent.map((event) => event.type)).toEqual(["consultation.delta", "consultation.status"]);
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    expect(sent).toHaveLength(2);
+  });
+
   it("folds consultation.delta per request in a 50 ms window and keeps the latest", () => {
     const { bus, sent } = newBus();
     bus.publish(delta(id(1), ["One."]));
@@ -532,6 +557,42 @@ describe("the app event bus: object.changed", () => {
     bus.publish(changed(...sources));
     vi.advanceTimersByTime(appEventCoalesceMs);
     expect(sent).toEqual([{ type: "object.changed", overflow: true, kinds: ["source", "note"] }]);
+  });
+
+  it("turns one published batch over 200 into an overflow, not a dropped event", () => {
+    const invalid: Error[] = [];
+    const { bus, sent } = newBus({ onInvalid: (error) => invalid.push(error) });
+    bus.publish(changed(...Array.from({ length: 201 }, (_, n) => ref(n, "deleted"))));
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    expect(invalid).toEqual([]);
+    expect(sent).toEqual([{ type: "object.changed", overflow: true, kinds: ["note"] }]);
+  });
+
+  it("merges an oversized batch with the refs of its window into one overflow", () => {
+    const { bus, sent } = newBus();
+    bus.publish(changed(ref(1, "created", "topic")));
+    bus.publish(
+      changed(
+        ...Array.from({ length: 300 }, (_, n) => ref(n, "deleted", "source")),
+        ref(900, "deleted", "note")
+      )
+    );
+    bus.flush();
+    expect(sent).toEqual([
+      { type: "object.changed", overflow: true, kinds: ["source", "note", "topic"] }
+    ]);
+  });
+
+  it("still rejects an oversized batch whose refs are malformed", () => {
+    const invalid: Error[] = [];
+    const { bus, sent } = newBus({ onInvalid: (error) => invalid.push(error) });
+    bus.publish({
+      type: "object.changed",
+      refs: Array.from({ length: 201 }, () => ({ kind: "nope", id: "x", change: "deleted" }))
+    } as unknown as AppEvent);
+    bus.flush();
+    expect(sent).toEqual([]);
+    expect(invalid).toHaveLength(1);
   });
 
   it("keeps an overflow an overflow when more refs follow in the window", () => {

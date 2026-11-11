@@ -12,6 +12,7 @@ import { objectKinds, topicLimits, type BudgetSnapshot, type ChangeSetRef } from
 import {
   appEventJobIdsMax,
   AppEventSchema,
+  ObjectChangedRefSchema,
   objectChangedRefsMax,
   settingsChangedKeysMax,
   settingsChangedStores,
@@ -40,6 +41,11 @@ interface Coalescing<T extends AppEventType> {
   windowMs?: number;
   /** The last event of each key is kept and replayed to a window that has just loaded. */
   sticky?: boolean;
+  /**
+   * The type whose pending event under the same key leaves first, so a newer event of this type
+   * never overtakes an older one of that type (a status after its last text).
+   */
+  settles?: AppEventType;
 }
 
 const latest = <T extends AppEventType>(): Coalescing<T> => ({
@@ -144,7 +150,8 @@ const coalescing: { [T in AppEventType]: Coalescing<T> } = {
   "consultation.status": {
     key: (event) => event.requestId,
     merge: (_previous, next) => next,
-    windowMs: 0
+    windowMs: 0,
+    settles: "consultation.delta"
   },
   // The paragraphs so far are whole, so the newest replaces the rest; a restart is never lost.
   "consultation.delta": {
@@ -214,6 +221,23 @@ function coalescingOf(event: AppEvent): Coalescing<AppEventType> {
   return coalescing[event.type] as unknown as Coalescing<AppEventType>;
 }
 
+/**
+ * A batch of more than 200 refs published in one call is an overflow of its kinds, as a batch that
+ * grew past 200 by merging is; refs that do not match the contract stay as they are, to be rejected.
+ */
+function overflowOfOversizedBatch(event: AppEvent): AppEvent {
+  if (event.type !== "object.changed" || !("refs" in event)) return event;
+  const refs: unknown = event.refs;
+  if (!Array.isArray(refs) || refs.length <= objectChangedRefsMax) return event;
+  const parsed = ObjectChangedRefSchema.array().safeParse(refs);
+  if (!parsed.success) return event;
+  return {
+    type: "object.changed",
+    overflow: true,
+    kinds: orderedKinds(parsed.data.map((ref) => ref.kind))
+  };
+}
+
 /** The key under which a sticky event is kept, or null when its type is not sticky. */
 function stickyKeyOf(event: AppEvent): string | null {
   const rules = coalescingOf(event);
@@ -253,7 +277,7 @@ export class AppEventBus {
    */
   public publish(event: AppEvent): void {
     if (this.disposed) return;
-    const parsed = AppEventSchema.safeParse(event);
+    const parsed = AppEventSchema.safeParse(overflowOfOversizedBatch(event));
     if (!parsed.success) {
       this.options.onInvalid?.(new Error(`Invalid app event: ${parsed.error.message}`));
       return;
@@ -263,6 +287,7 @@ export class AppEventBus {
     const stickyKey = stickyKeyOf(valid);
     if (stickyKey) this.sticky.set(stickyKey, valid);
     const windowMs = rules.windowMs ?? this.options.windowMs ?? appEventCoalesceMs;
+    if (rules.settles) this.settle(rules.settles, rules.key(valid));
     if (windowMs <= 0) {
       this.deliverFolded(valid);
       return;
@@ -336,6 +361,20 @@ export class AppEventBus {
       this.pending.delete(key);
     }
     for (const folded of due) this.deliverFolded(folded);
+  }
+
+  /** Sends at once the pending event of one type and key, when there is one. */
+  private settle(type: AppEventType, key: string): void {
+    const pendingKey = `${type}\u0000${key}`;
+    const held = this.pending.get(pendingKey);
+    if (!held) return;
+    this.pending.delete(pendingKey);
+    if (![...this.pending.values()].some((event) => event.type === type)) {
+      const timer = this.timers.get(type);
+      if (timer) clearTimeout(timer);
+      this.timers.delete(type);
+    }
+    this.deliverFolded(held);
   }
 
   private deliverFolded(folded: AppEvent): void {
