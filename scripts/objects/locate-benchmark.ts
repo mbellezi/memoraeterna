@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import pg from "pg";
@@ -15,6 +15,14 @@ import {
 } from "@app/db";
 
 import { resolveConnection } from "../kpi/connection.js";
+import {
+  assertScratchProfilePath,
+  copyMigrationsToTag,
+  profilePaths,
+  startProfileServer,
+  writeProfileConnectionFile,
+  type ProfileServer
+} from "../lib/profile-server.js";
 import { librarySeedSteps, seedTopicTree } from "./synthetic-library.js";
 
 /**
@@ -28,6 +36,14 @@ import { librarySeedSteps, seedTopicTree } from "./synthetic-library.js";
  *   --seed                                  a throwaway PostgreSQL sidecar migrated from scratch
  *                                           and filled with DS-S: a synthetic library and a seeded
  *                                           topic tree written through `topicTreeRepository`.
+ *                                           With `--keep <abs dir>` the cluster is kept, stopped
+ *                                           cleanly, in a profile-shaped folder (T169, SEED30K);
+ *                                           `--to-migration <tag>` migrates only up to that tag,
+ *                                           or
+ *   --profile <abs dir>                     a profile-shaped scratch clone under
+ *                                           `.cache/f<N>/scratch/` (for example SEED30K), started
+ *                                           through `scripts/lib/profile-server.ts` and measured
+ *                                           read-only.
  *
  * The time includes the database round trip on loopback and the result validation, and excludes the
  * Electron IPC hop (about a millisecond). Nothing is written to a `--db` database. The run also
@@ -35,10 +51,15 @@ import { librarySeedSteps, seedTopicTree } from "./synthetic-library.js";
  * active tree but none of them has one (the placement lookup would be reading nothing), or when a
  * sequential scan of `topic_placements`, `atomic_notes` or `chunks` appears in a sampled plan.
  */
-const usage = `Usage: npx tsx scripts/objects/locate-benchmark.ts (--db <connection.json | url> | --seed) [options]
+const usage = `Usage: npx tsx scripts/objects/locate-benchmark.ts (--db <connection.json | url> | --seed | --profile <abs dir>) [options]
 
   --db <value>         Scratch connection file or postgres:// URL; opened read-only.
   --seed               Seed a throwaway sidecar database with DS-S instead.
+  --keep <abs dir>     (--seed) keep the cluster, stopped, in a profile-shaped folder under
+                       <repo>/.cache/f<N>/scratch/ (database/dev-connection.json, never printed).
+  --to-migration <tag> (--seed) migrate only up to this journal tag (default: all).
+  --profile <abs dir>  Start a scratch server on a profile-shaped clone under
+                       <repo>/.cache/f<N>/scratch/ and measure it read-only.
   --books <n>          (--seed) root books; each has 3 chapters x 2 sections (default 300 = 3,000 sources).
   --notes <n>          (--seed) atomic notes (default 30000).
   --topics <n>         (--seed) topics of the tree, the root included (default 2500).
@@ -52,6 +73,9 @@ const { values } = parseArgs({
   options: {
     db: { type: "string" },
     seed: { type: "boolean" },
+    keep: { type: "string" },
+    "to-migration": { type: "string" },
+    profile: { type: "string" },
     books: { type: "string" },
     notes: { type: "string" },
     topics: { type: "string" },
@@ -68,8 +92,12 @@ if (values.help) {
   console.info(usage);
   process.exit(0);
 }
-if (Boolean(values.db) === Boolean(values.seed)) {
-  console.error(`Pass exactly one of --db and --seed.\n\n${usage}`);
+if ([values.db, values.seed, values.profile].filter(Boolean).length !== 1) {
+  console.error(`Pass exactly one of --db, --seed and --profile.\n\n${usage}`);
+  process.exit(2);
+}
+if ((values.keep !== undefined || values["to-migration"] !== undefined) && !values.seed) {
+  console.error(`--keep and --to-migration need --seed.\n\n${usage}`);
   process.exit(2);
 }
 const integer = (value: string | undefined, fallback: number, name: string): number => {
@@ -236,7 +264,10 @@ async function sequentialScans(client: pg.Pool, statement: string, id: string): 
 
 const startedAt = Date.now();
 let manager: PostgresSidecarManager | null = null;
+let profileServer: ProfileServer | null = null;
 let workDir: string | null = null;
+let keptDir: string | null = null;
+let migrationsTemp: string | null = null;
 let pool: pg.Pool | null = null;
 try {
   let connectionString: string;
@@ -250,25 +281,65 @@ try {
       max: 1,
       options: "-c default_transaction_read_only=on -c statement_timeout=60000"
     });
-  } else {
-    workDir = await mkdtemp(join(tmpdir(), "memora-locate-benchmark-"));
+  } else if (values.profile) {
     const repoRoot = resolve(import.meta.dirname, "../..");
+    profileServer = await startProfileServer(values.profile, { repoRoot });
+    connectionString = profileServer.connectionString;
+    origin = `scratch profile ${basename(profileServer.profileDir)}`;
+    pool = new pg.Pool({
+      connectionString,
+      max: 1,
+      options: "-c default_transaction_read_only=on -c statement_timeout=60000"
+    });
+  } else {
+    const repoRoot = resolve(import.meta.dirname, "../..");
+    let dataDir: string;
+    let database = "memora_locate_benchmark";
+    let user = "memora_locate_benchmark";
+    if (values.keep) {
+      keptDir = await assertScratchProfilePath(values.keep, repoRoot);
+      await mkdir(keptDir, { recursive: true });
+      if ((await readdir(keptDir)).length > 0)
+        throw new Error(`--keep needs an empty or new folder: ${keptDir}`);
+      dataDir = profilePaths(keptDir).dataDir;
+      database = "memora_app";
+      user = "memora_app";
+    } else {
+      workDir = await mkdtemp(join(tmpdir(), "memora-locate-benchmark-"));
+      dataDir = join(workDir, "data");
+    }
     const sidecar = resolvePostgresSidecarPaths({ cwd: repoRoot, env: process.env });
+    const password = `benchmark-${randomUUID()}`;
     manager = new PostgresSidecarManager({
       binDir: sidecar.binDir,
-      dataDir: join(workDir, "data"),
-      database: "memora_locate_benchmark",
-      user: "memora_locate_benchmark",
-      password: `benchmark-${randomUUID()}`,
+      dataDir,
+      database,
+      user,
+      password,
       startupTimeoutMs: 30_000,
       shutdownTimeoutMs: 10_000
     });
     const started = await manager.start();
     connectionString = started.connectionString;
-    origin = "throwaway sidecar";
+    origin = keptDir ? `kept scratch profile ${basename(keptDir)}` : "throwaway sidecar";
     pool = new pg.Pool({ connectionString, max: 2 });
-    log("migrating");
-    await runMigrations(pool, resolve(repoRoot, "packages/db/drizzle"));
+    if (keptDir)
+      await writeProfileConnectionFile(keptDir, {
+        host: started.host,
+        port: started.port,
+        database: started.database,
+        user: started.user,
+        password
+      });
+    let migrationsFolder = resolve(repoRoot, "packages/db/drizzle");
+    const toMigration = values["to-migration"];
+    if (toMigration) {
+      migrationsTemp = await mkdtemp(join(tmpdir(), "memora-locate-migrations-"));
+      const kept = await copyMigrationsToTag(migrationsFolder, migrationsTemp, toMigration);
+      migrationsFolder = migrationsTemp;
+      log(`migrating up to ${toMigration} (${kept} migrations)`);
+    } else log("migrating");
+    await runMigrations(pool, migrationsFolder);
     log(`seeding ${books * 10} sources and ${noteTotal} notes`);
     const seedClient = await pool.connect();
     try {
@@ -426,5 +497,8 @@ try {
 } finally {
   if (pool) await pool.end().catch(() => undefined);
   if (manager) await manager.stop().catch(() => undefined);
+  if (profileServer) await profileServer.stop().catch(() => undefined);
   if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (migrationsTemp) await rm(migrationsTemp, { recursive: true, force: true });
+  if (keptDir) log(`kept the stopped cluster at ${keptDir}`);
 }
