@@ -134,7 +134,7 @@ export class InboxService {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private refreshing: Promise<void> | null = null;
   private again = false;
-  /** How long the last count took to read (the quiet time before the next one follows it). */
+  /** How long the database's last count took (the quiet time before the next recount follows it). */
   private lastReadMs = 0;
   private disposed = false;
   private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
@@ -143,6 +143,10 @@ export class InboxService {
   private conflictSeen = new Map<string, Date>();
 
   constructor(private readonly options: InboxServiceOptions) {}
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
 
   private pool(): PgPool {
     const pool = this.options.getPool();
@@ -251,7 +255,10 @@ export class InboxService {
    * that follows a stream of events uses it, a person's request never does.
    */
   async counts(options: { cached?: boolean } = {}): Promise<InboxCounts> {
+    // Only the database's count is timed: the vault's conflicts have their own cache.
+    const startedAt = this.now();
     const rows = await createInboxRepository(this.pool()).counts();
+    this.lastReadMs = Math.max(0, this.now() - startedAt);
     const counts = emptyInboxCounts();
     for (const kind of inboxKinds) counts.byKind[kind] = rows.byKind[kind] ?? 0;
     counts.byRisk = { ...rows.byRisk };
@@ -596,9 +603,7 @@ export class InboxService {
       do {
         this.again = false;
         try {
-          const startedAt = (this.options.now ?? Date.now)();
           const counts = await this.counts({ cached: true });
-          this.lastReadMs = Math.max(0, (this.options.now ?? Date.now)() - startedAt);
           if (!sameCounts(this.lastCounts, counts)) {
             this.lastCounts = counts;
             this.options.events?.publish({ type: "inbox.changed", ...counts });
