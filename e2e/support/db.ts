@@ -60,14 +60,6 @@ export async function openProfileDb(userDataDir: string): Promise<ProfileDb> {
   };
 }
 
-/** Jobs that are not finished yet, by type (`queued` and `running`). */
-export async function pendingJobs(db: ProfileDb): Promise<Record<string, number>> {
-  const rows = await db.query<{ type: string; count: string }>(
-    "select type, count(*)::text as count from jobs where status in ('queued', 'running') group by type"
-  );
-  return Object.fromEntries(rows.map((row) => [row.type, Number(row.count)]));
-}
-
 /** How many rows a table holds (a fixed table name from the caller, never user input). */
 export async function countRows(
   db: ProfileDb,
@@ -75,4 +67,90 @@ export async function countRows(
 ) {
   const [row] = await db.query<{ count: string }>(`select count(*)::text as count from ${table}`);
   return Number(row?.count ?? 0);
+}
+
+/** An unfinished job as the settle wait reads it. */
+export interface UnfinishedJob extends Record<string, unknown> {
+  type: string;
+  status: string;
+  dedupeKey: string | null;
+  blockedClass: string | null;
+}
+
+/**
+ * Passes that always wait in the queue for their next day (`scheduleRetention`,
+ * `scheduleExplainBackfillPass`): never work an import leaves. Matched by their dedupe keys, so the
+ * per-relation explanations a backfill pass queues still count.
+ */
+export const periodicPassKeys: readonly string[] = [
+  "gardener-retention",
+  "relation-explain-backfill:pass"
+];
+
+/**
+ * Whether a job is work the settle wait must see finish: every running job and every queued one,
+ * whatever its `run_after` (relation matching, topic overviews and topic-tree jobs are debounced
+ * for up to minutes, and a clone starts paused, so work left queued would never run), except the
+ * periodic passes, a job set aside until its class clears (`blocked_class`) and a model download
+ * (as the first-run harness's `activeJobs`).
+ */
+export function isPendingWork(job: UnfinishedJob): boolean {
+  if (job.status !== "running" && job.status !== "queued") return false;
+  if (job.type === "local-model-download") return false;
+  if (job.status === "running") return true;
+  if (job.blockedClass !== null) return false;
+  return job.dedupeKey === null || !periodicPassKeys.includes(job.dedupeKey);
+}
+
+export interface SettleOptions {
+  timeoutMs: number;
+  /** Between polls (10 s). */
+  pollMs?: number;
+  /** Polls in a row with no pending work (6: a finished job queues its follow-up a moment later). */
+  quietPolls?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Waits until no job is pending work (`isPendingWork`) for `quietPolls` polls in a row; throws on
+ * timeout naming the job types still pending. Returns the jobs it left aside (blocked, periodic).
+ */
+export async function waitForSettled(
+  db: ProfileDb,
+  options: SettleOptions
+): Promise<{ setAside: Record<string, number> }> {
+  const pollMs = options.pollMs ?? 10_000;
+  const quietPolls = options.quietPolls ?? 6;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
+  const deadline = Date.now() + options.timeoutMs;
+  let quiet = 0;
+  for (;;) {
+    const rows = await db.query<UnfinishedJob>(
+      `select type::text as type, status::text as status, dedupe_key as "dedupeKey",
+              blocked_class as "blockedClass"
+         from jobs where status::text in ('queued', 'running')`
+    );
+    const pending = rows.filter(isPendingWork);
+    quiet = pending.length === 0 ? quiet + 1 : 0;
+    if (quiet >= quietPolls) return { setAside: countByType(rows) };
+    if (Date.now() >= deadline)
+      throw new Error(
+        `The import and its knowledge work did not settle within ${options.timeoutMs / 1000} s ` +
+          `(pending: ${formatCounts(countByType(pending))})`
+      );
+    await sleep(pollMs);
+  }
+}
+
+function countByType(rows: readonly UnfinishedJob[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.type] = (counts[row.type] ?? 0) + 1;
+  return counts;
+}
+
+function formatCounts(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, count]) => `${type} ${count}`)
+    .join(", ");
 }

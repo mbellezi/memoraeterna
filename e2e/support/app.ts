@@ -1,17 +1,22 @@
 // Launching Memora in a journey (F5 T137, spec 5.3): the built, unpackaged app
 // (`apps/desktop/out/main/index.js`, from `npm run build -w @app/desktop`) through Playwright's
 // `_electron.launch`, on one scratch profile, with the IPC trace on, `NODE_ENV=production` and, by
-// default, the AI cassette `firstrun-hybrid-f4` in replay (a call it does not hold fails; nothing
-// reaches the network). Every inherited `MEMORA_*` knob is dropped first, so a journey runs only
-// with what it states. Step screenshots are taken in both themes and scanned for contrast (X12).
+// default, the AI cassette `firstrun-hybrid-f4` in replay (a call it does not hold fails, never runs
+// live). Local models install only from the DEV seed folder: the product falls back to a download
+// for a file the seed lacks, so the global setup refuses before the first launch unless the seed
+// holds every pinned file of both first-run models (`assertModelsSeeded`). Every inherited
+// `MEMORA_*` knob is dropped first, so a journey runs only with what it states. Step screenshots are taken in both themes and scanned for contrast (X12).
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
+import { assertLocalModelSeeded, findLocalModelCatalogEntry, LocalModelSeedError } from "@app/ai";
+import { machineRunsMlx, presetCatalogIds } from "@app/domain";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
 
 import { scanContrast, type ContrastResult } from "./contrast.js";
+import { stubOpenDialog } from "./dialog.js";
 import {
   assertJourneysScratchPath,
   cloneProfile,
@@ -20,6 +25,8 @@ import {
 } from "./profile.js";
 
 export const defaultCassette = "firstrun-hybrid-f4";
+/** FR2's second source (`defaultSecondSourceKey` of the first-run harness): J0 checks the cassette serves it. */
+export const secondSourceKey = "wikibooks-en-memory-and-language";
 export const defaultLocale = "pt-BR";
 /** The built main entry, relative to the checkout. */
 export const builtMain = join("apps", "desktop", "out", "main", "index.js");
@@ -27,6 +34,47 @@ export const builtMain = join("apps", "desktop", "out", "main", "index.js");
 const forbiddenKnobs = ["MEMORA_AI_CASSETTE_LOCAL_MISSES", "MEMORA_ALLOW_DEFAULT_PROFILE_UPGRADE"];
 /** Inherited `MEMORA_*` variables a journey keeps: where the vendored PostgreSQL lives. */
 const keptKnobs = ["MEMORA_POSTGRES_SIDECAR_ROOT"];
+
+/** The DEV seed folder the app installs local models from (`MEMORA_LOCAL_MODEL_SEED_DIR`). */
+export function modelSeedDir(run: Pick<JourneysRun, "repoRoot">): string {
+  return join(run.repoRoot, ".cache", "models");
+}
+
+/** The first run's two models on a machine: the embedder and the ranker, MLX where MLX runs. */
+export function firstRunModelIds(
+  machine: { platform: string; arch: string } = { platform: process.platform, arch: process.arch }
+): { embedding: string; ranker: string } {
+  return {
+    embedding: presetCatalogIds.embedding,
+    ranker: machineRunsMlx(machine) ? presetCatalogIds.rankerMlx : presetCatalogIds.rankerGguf
+  };
+}
+
+/**
+ * Refuses unless the seed folder holds every pinned file of each model at its declared size (the
+ * install verifies the bytes). Without it the app's download would fetch what the seed lacks from
+ * the model host: a journey never downloads a model.
+ */
+export async function assertModelsSeeded(
+  seedDir: string,
+  catalogIds: readonly string[] = Object.values(firstRunModelIds()),
+  check: typeof assertLocalModelSeeded = assertLocalModelSeeded
+): Promise<void> {
+  for (const catalogId of catalogIds) {
+    const entry = findLocalModelCatalogEntry(catalogId);
+    if (!entry) throw new Error(`The local model catalog has no entry ${catalogId}`);
+    try {
+      await check(entry, seedDir);
+    } catch (error) {
+      if (!(error instanceof LocalModelSeedError)) throw error;
+      throw new Error(
+        `The seed folder ${seedDir} cannot install ${catalogId} (${error.message}); ` +
+          "a journey never downloads a model: seed it first (the first-run harness's seed folder)",
+        { cause: error }
+      );
+    }
+  }
+}
 
 export interface LaunchOptions {
   run: JourneysRun;
@@ -132,7 +180,7 @@ export async function launchMemora(options: LaunchOptions): Promise<MemoraSessio
     MEMORA_WORKSPACE_ROOT: run.repoRoot,
     MEMORA_IPC_TRACE: "1",
     MEMORA_DEV_BACKGROUND: "1",
-    MEMORA_LOCAL_MODEL_SEED_DIR: join(run.repoRoot, ".cache", "models"),
+    MEMORA_LOCAL_MODEL_SEED_DIR: modelSeedDir(run),
     NODE_ENV: "production"
   };
   const cassette = options.cassette ?? defaultCassette;
@@ -296,5 +344,95 @@ export async function waitForDatabase(page: Page, timeoutMs: number): Promise<vo
     if (Date.now() >= deadline)
       throw new Error(`The database was not ready within ${timeoutMs / 1000} s`);
     await new Promise((done) => setTimeout(done, 1_000));
+  }
+}
+
+/** The default processing plan of `fileImportInputSchema` (a structure review sends it back). */
+const defaultProcessingPlan = {
+  preset: "full_knowledge",
+  requestedStages: [],
+  scope: "source_only",
+  targetSourceItemIds: [],
+  forceRegeneration: false,
+  previousArtifactPolicy: "reuse_valid"
+};
+
+/** A golden source's file and the descriptor a person would have filled in. */
+export async function goldenSource(repoRoot: string, key: string) {
+  const manifest = JSON.parse(
+    await readFile(join(repoRoot, "scripts", "golden", "manifest.json"), "utf8")
+  ) as {
+    sources: {
+      key: string;
+      import?: string;
+      format: string;
+      title: string;
+      language: string;
+      descriptor: object;
+    }[];
+  };
+  const entry = manifest.sources.find((source) => source.key === key);
+  if (!entry || entry.import !== "file") throw new Error(`${key} is not a golden file source`);
+  const extension = { pdf: ".pdf", html: ".html", markdown: ".md", text: ".txt" }[entry.format];
+  const path = join(repoRoot, ".cache", "golden", "sources", `${key}${extension ?? ""}`);
+  if (!existsSync(path))
+    throw new Error(`The golden source ${key} is not in .cache/golden/sources`);
+  return {
+    path,
+    descriptor: { ...entry.descriptor, title: entry.title, language: entry.language }
+  };
+}
+
+/**
+ * Imports a golden file source with the default plan, as a person would: the stubbed picker answers
+ * its file; a structure review is confirmed as detected.
+ */
+export async function importGoldenSource(session: MemoraSession, key: string): Promise<void> {
+  const source = await goldenSource(session.run.repoRoot, key);
+  await stubOpenDialog(session.electronApp, [source.path]);
+  const result = await invokeApp<{
+    duplicate?: unknown;
+    requiresStructureReview?: boolean;
+    structureId?: string | null;
+  } | null>(session.page, "ingestion.importFile", { descriptor: source.descriptor });
+  if (!result) throw new Error(`The stubbed dialog did not return ${key}`);
+  if (result.duplicate) throw new Error(`${key} is already in the library`);
+  if (result.requiresStructureReview && result.structureId) {
+    const structure = await invokeApp<{ id: string; divisions: Record<string, unknown>[] }>(
+      session.page,
+      "ingestion.getStructure",
+      result.structureId
+    );
+    const fields = [
+      "id",
+      "parentId",
+      "kind",
+      "title",
+      "level",
+      "position",
+      "startSelector",
+      "endSelector",
+      "startPage",
+      "endPage",
+      "markdownStart",
+      "markdownEnd",
+      "confidence",
+      "evidence",
+      "reviewStatus",
+      "isProcessable",
+      "metadata"
+    ];
+    const divisions = structure.divisions.map((division) =>
+      Object.fromEntries(
+        fields
+          .filter((field) => division[field] !== undefined)
+          .map((field) => [field, division[field]])
+      )
+    );
+    await invokeApp(session.page, "ingestion.confirmStructure", {
+      structureId: structure.id,
+      divisions,
+      plan: defaultProcessingPlan
+    });
   }
 }

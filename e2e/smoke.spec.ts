@@ -2,9 +2,25 @@
 // workspace shell once T135 merges, the legacy App's navigation before). It also exercises every
 // harness part a later journey leans on: the step capture in both themes with its contrast scan,
 // the gesture counter, the performance marks and the IPC trace.
+//
+// J0's second test is the card's [I] check: on another clone, FR2's second source is imported with
+// the default plan and every AI call must come from `firstrun-hybrid-f4`. A miss fails it, names the
+// task types that missed and means the orchestrator records `journeys-f5` (R4).
+import { join } from "node:path";
+
 import { expect, test } from "@playwright/test";
 
-import { captureStep, openClone, waitForDatabase } from "./support/app.js";
+import {
+  captureStep,
+  cassetteMisses,
+  defaultCassette,
+  importGoldenSource,
+  invokeApp,
+  openClone,
+  secondSourceKey,
+  waitForDatabase
+} from "./support/app.js";
+import { countRows, openProfileDb, waitForSettled, type ProfileDb } from "./support/db.js";
 import { installGestureCounter, readGestures } from "./support/gestures.js";
 import { readIpcTrace } from "./support/ipc-trace.js";
 import { readMarks } from "./support/perf.js";
@@ -63,6 +79,49 @@ test("J0 smoke: a clone of BASE-J opens and shows the shell", async () => {
       }
     );
   } finally {
+    await session.close();
+  }
+});
+
+test("J0 second source: firstrun-hybrid-f4 serves FR2's second source on a BASE-J clone", async () => {
+  test.setTimeout(75 * 60_000);
+  const run = journeysRun();
+  // The run's copy of the cassette: BASE-J left no miss there (the setup fails otherwise), and J0's
+  // first test calls no AI, so what this test adds is the second source's.
+  const cassetteDir = join(run.scratchDir, "cassettes", defaultCassette);
+  const before = await cassetteMisses(cassetteDir);
+  const session = await openClone(run, "j0-second-source");
+  let db: ProfileDb | null = null;
+  try {
+    await waitForDatabase(session.page, 180_000);
+    db = await openProfileDb(session.userDataDir);
+    const sourcesBefore = await countRows(db, "source_items");
+    await invokeApp(session.page, "knowledgeControls.update", { paused: false, autonomy: "auto" });
+    await importGoldenSource(session, secondSourceKey);
+    const settled = await waitForSettled(db, { timeoutMs: 60 * 60_000 });
+    const sourcesAfter = await countRows(db, "source_items");
+    await invokeApp(session.page, "knowledgeControls.update", { paused: true, autonomy: "off" });
+    const after = await cassetteMisses(cassetteDir);
+    const byTask = Object.fromEntries(
+      Object.entries(after.byTask)
+        .map(([task, count]) => [task, count - (before.byTask[task] ?? 0)] as const)
+        .filter(([, count]) => count > 0)
+    );
+    const missed = after.total - before.total;
+    test
+      .info()
+      .annotations.push(
+        { type: "second source misses", description: `${missed} ${JSON.stringify(byTask)}` },
+        { type: "left aside", description: JSON.stringify(settled.setAside) }
+      );
+    expect(sourcesAfter, "the second source was not stored").toBeGreaterThan(sourcesBefore);
+    expect(
+      missed,
+      `${defaultCassette} missed ${missed} calls for ${secondSourceKey} (${JSON.stringify(byTask)}): ` +
+        "record journeys-f5 (R4)"
+    ).toBe(0);
+  } finally {
+    await db?.close();
     await session.close();
   }
 });

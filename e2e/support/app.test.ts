@@ -4,8 +4,21 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { LocalModelSeedError } from "@app/ai";
+
 import { readSoakPlan } from "../../apps/desktop/src/main/services/dev/soak-plan.js";
-import { cassetteMisses, fakeRemotePlan, journeyEnvironment } from "./app.js";
+import {
+  defaultSecondSourceKey,
+  firstRunModels
+} from "../../apps/desktop/src/main/services/firstrun-e2e/config.js";
+import {
+  assertModelsSeeded,
+  cassetteMisses,
+  fakeRemotePlan,
+  firstRunModelIds,
+  journeyEnvironment,
+  secondSourceKey
+} from "./app.js";
 import { repositoryRoot } from "./profile.js";
 
 describe("journeyEnvironment", () => {
@@ -66,5 +79,47 @@ describe("the fake remote plan", () => {
       expect(side.faults.forced).toEqual([]);
       expect(side.latency.fit).toBeNull();
     }
+  });
+});
+
+describe("the first-run models a journey installs", () => {
+  it("are the first-run harness's: the embedder and the ranker, MLX where MLX runs", () => {
+    expect(firstRunModelIds({ platform: "darwin", arch: "arm64" })).toEqual({
+      embedding: firstRunModels.embedding,
+      ranker: firstRunModels.rankerMlx
+    });
+    expect(firstRunModelIds({ platform: "linux", arch: "x64" })).toEqual({
+      embedding: firstRunModels.embedding,
+      ranker: firstRunModels.rankerGguf
+    });
+  });
+
+  it("are refused before any launch unless the seed folder holds every pinned file", async () => {
+    // The app would download a file the seed lacks from the model host.
+    const seed = await mkdtemp(join(tmpdir(), "journeys-seed-"));
+    try {
+      const { embedding, ranker } = firstRunModelIds();
+      await expect(assertModelsSeeded(seed)).rejects.toThrow(
+        new RegExp(`cannot install ${embedding}.*never downloads a model`, "u")
+      );
+      const checked: string[] = [];
+      await assertModelsSeeded(seed, undefined, async (entry) => {
+        checked.push(entry.id);
+      });
+      expect(checked).toEqual([embedding, ranker]);
+      await expect(
+        assertModelsSeeded(seed, undefined, async (entry) => {
+          if (entry.id === ranker) throw new LocalModelSeedError("seed_incomplete", "missing");
+        })
+      ).rejects.toThrow(new RegExp(`cannot install ${ranker}`, "u"));
+    } finally {
+      await rm(seed, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the second source J0 checks", () => {
+  it("is FR2's second source", () => {
+    expect(secondSourceKey).toBe(defaultSecondSourceKey);
   });
 });

@@ -6,9 +6,11 @@
 //   played in the built app through `window.app` (the onboarding's own calls, in the order of
 //   `S/first-run-sequence.ts`), the writer signed in with the DEV Codex credential stub (the one
 //   step a harness cannot play: a browser sign-in), the two first-run models installed from the DEV
-//   seed folder, then the E6 PLOS paper imported with the default plan, every AI call served by the
-//   cassette `firstrun-hybrid-f4`. When the work settles the Knowledge controls are paused with
-//   autonomy Off, so every clone starts quiet, and the app quits.
+//   seed folder (checked complete before the first launch: no model is ever downloaded), then the
+//   E6 PLOS paper imported with the default plan, every AI call served by the cassette
+//   `firstrun-hybrid-f4`. When the work settles (no job running or queued, debounced ones
+//   included, `waitForSettled`) the Knowledge controls are paused with autonomy Off, so every
+//   clone starts quiet, and the app quits.
 //
 // A cassette miss fails the setup (MEMORA_AI_CASSETTE_LOCAL_MISSES stays unset) and names the task
 // types that missed: the orchestrator then records `journeys-f5` (R4). The returned teardown gives
@@ -23,15 +25,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
+  assertModelsSeeded,
   cassetteMisses,
   defaultCassette,
+  firstRunModelIds,
+  importGoldenSource,
   invokeApp,
   launchMemora,
+  modelSeedDir,
   waitForDatabase,
   type MemoraSession
 } from "./support/app.js";
-import { countRows, openProfileDb, pendingJobs, type ProfileDb } from "./support/db.js";
-import { stubOpenDialog } from "./support/dialog.js";
+import { countRows, openProfileDb, waitForSettled, type ProfileDb } from "./support/db.js";
 import {
   cloneProfile,
   emptyProfile,
@@ -43,7 +48,6 @@ import { acquireJourneySlots, busyLockPath, mainCheckoutRoot } from "./support/s
 
 const firstSourceKey = "plos-one-murre-dros-2015";
 const contentLanguage = "pt-BR";
-const embedderCatalogId = "gguf-qwen3-embedding-0.6b-q8-0";
 const firstRunRankerKey = "local-models.first-run-ranker";
 const classTests = ["embed", "write-fast", "write-quality", "answer", "judge"] as const;
 /** The capabilities Settings gives a Codex writer (`codexCapabilities` of the first-run harness). */
@@ -65,15 +69,6 @@ const devCodexCredential = {
   refresh: "dev-fake-codex-refresh-token",
   expires: 4_102_444_800_000,
   accountId: "dev-fake-codex-account"
-};
-/** The default processing plan of `fileImportInputSchema` (a structure review sends it back). */
-const defaultProcessingPlan = {
-  preset: "full_knowledge",
-  requestedStages: [],
-  scope: "source_only",
-  targetSourceItemIds: [],
-  forceRegeneration: false,
-  previousArtifactPolicy: "reuse_valid"
 };
 const minutes = (count: number) => count * 60_000;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -178,6 +173,7 @@ async function signInWriter(session: MemoraSession, db: ProfileDb, modelId: stri
 /** Steps 0-2 of the first run in Hybrid, as the onboarding calls them. */
 async function playFirstRun(session: MemoraSession, db: ProfileDb, writerModel: string) {
   const { page } = session;
+  const embedderCatalogId = firstRunModelIds().embedding;
   const state = await invokeApp<{ show: boolean }>(page, "onboarding.state");
   if (!state.show) throw new Error("The first-run view is not due on the empty profile");
   const settings = await invokeApp<{ language: string }>(page, "settings.getApp");
@@ -230,100 +226,6 @@ async function playFirstRun(session: MemoraSession, db: ProfileDb, writerModel: 
   return { providerConfigId, tests, ranker };
 }
 
-/** A golden source's file and the descriptor a person would have filled in. */
-export async function goldenSource(repoRoot: string, key: string) {
-  const manifest = JSON.parse(
-    await readFile(join(repoRoot, "scripts", "golden", "manifest.json"), "utf8")
-  ) as {
-    sources: {
-      key: string;
-      import?: string;
-      format: string;
-      title: string;
-      language: string;
-      descriptor: object;
-    }[];
-  };
-  const entry = manifest.sources.find((source) => source.key === key);
-  if (!entry || entry.import !== "file") throw new Error(`${key} is not a golden file source`);
-  const extension = { pdf: ".pdf", html: ".html", markdown: ".md", text: ".txt" }[entry.format];
-  const path = join(repoRoot, ".cache", "golden", "sources", `${key}${extension ?? ""}`);
-  if (!existsSync(path))
-    throw new Error(`The golden source ${key} is not in .cache/golden/sources`);
-  return {
-    path,
-    descriptor: { ...entry.descriptor, title: entry.title, language: entry.language }
-  };
-}
-
-/** The import step: the stubbed picker answers the paper; a structure review is confirmed as detected. */
-async function importFirstSource(session: MemoraSession, repoRoot: string) {
-  const source = await goldenSource(repoRoot, firstSourceKey);
-  await stubOpenDialog(session.electronApp, [source.path]);
-  const result = await invokeApp<{
-    duplicate?: unknown;
-    requiresStructureReview?: boolean;
-    structureId?: string | null;
-  } | null>(session.page, "ingestion.importFile", { descriptor: source.descriptor });
-  if (!result) throw new Error("The stubbed dialog did not return the paper");
-  if (result.duplicate) throw new Error("The paper is already in the library");
-  if (result.requiresStructureReview && result.structureId) {
-    const structure = await invokeApp<{ id: string; divisions: Record<string, unknown>[] }>(
-      session.page,
-      "ingestion.getStructure",
-      result.structureId
-    );
-    const fields = [
-      "id",
-      "parentId",
-      "kind",
-      "title",
-      "level",
-      "position",
-      "startSelector",
-      "endSelector",
-      "startPage",
-      "endPage",
-      "markdownStart",
-      "markdownEnd",
-      "confidence",
-      "evidence",
-      "reviewStatus",
-      "isProcessable",
-      "metadata"
-    ];
-    const divisions = structure.divisions.map((division) =>
-      Object.fromEntries(
-        fields
-          .filter((field) => division[field] !== undefined)
-          .map((field) => [field, division[field]])
-      )
-    );
-    await invokeApp(session.page, "ingestion.confirmStructure", {
-      structureId: structure.id,
-      divisions,
-      plan: defaultProcessingPlan
-    });
-  }
-  log("the PLOS paper is importing");
-}
-
-/** Waits until no job runs and the queued ones stay the same for three polls in a row. */
-async function waitForSettled(db: ProfileDb, timeoutMs: number) {
-  let previous = "";
-  let calm = 0;
-  await until("the import and its knowledge work to settle", timeoutMs, 10_000, async () => {
-    const pending = await pendingJobs(db);
-    const running = await db.query<{ count: string }>(
-      "select count(*)::text as count from jobs where status = 'running'"
-    );
-    const key = JSON.stringify(pending);
-    calm = Number(running[0]?.count ?? 0) === 0 && key === previous ? calm + 1 : 0;
-    previous = key;
-    return calm >= 3 ? true : null;
-  });
-}
-
 async function buildBaseJ(run: JourneysRun): Promise<BaseJRecord> {
   const base = profileDir(run, "base");
   const recordPath = join(run.scratchDir, "base-j.json");
@@ -343,6 +245,10 @@ async function buildBaseJ(run: JourneysRun): Promise<BaseJRecord> {
     log(`BASE-J cloned from ${from}`);
     return record;
   }
+  // Both first-run models come from the seed folder or the setup stops here, before anything is
+  // created: the product would download a file the seed lacks.
+  await assertModelsSeeded(modelSeedDir(run));
+  log("both first-run models are seeded");
   await emptyProfile(base, run.repoRoot);
   const writerModel = await recordedWriterModel(run);
   let session = await launchMemora({ run, userDataDir: base });
@@ -362,8 +268,10 @@ async function buildBaseJ(run: JourneysRun): Promise<BaseJRecord> {
     await waitForDatabase(session.page, minutes(3));
     db = await openProfileDb(base);
     await invokeApp(session.page, "knowledgeControls.update", { paused: false, autonomy: "auto" });
-    await importFirstSource(session, run.repoRoot);
-    await waitForSettled(db, minutes(30));
+    await importGoldenSource(session, firstSourceKey);
+    log("the PLOS paper is importing");
+    const settled = await waitForSettled(db, { timeoutMs: minutes(60) });
+    log(`settled (left aside: ${JSON.stringify(settled.setAside)})`);
     const counts = {
       sources: await countRows(db, "source_items"),
       notes: await countRows(db, "atomic_notes"),
