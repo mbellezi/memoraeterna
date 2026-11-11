@@ -52,8 +52,10 @@ describe("the 7-day profile of the plan", () => {
     expect(f4.decisions).toBe("off");
   });
 
-  it("freezes the expected spend and the cap, and the plan cannot be read without them", () => {
-    expect(f4.codex).toMatchObject({ expected: 3_200_000, cap: 4_700_000, dropFromHour0: 0 });
+  it("freezes the expected spend and the cap of gate S's re-freeze, and the plan cannot be read without them", () => {
+    // Gate S soak7-gate-20261025T2111 re-froze them (D37; owner 10-24 and 10-25: the soak cap up to 8.0M,
+    // the registered band 1.34375). They are the record of what ran and are never altered.
+    expect(f4.codex).toMatchObject({ expected: 5_394_281, cap: 7_973_422, dropFromHour0: 0 });
     const raw = JSON.parse(readFileSync(planPath, "utf8")) as {
       profiles: Record<string, { f4: { codex: Record<string, unknown> } }>;
     };
@@ -175,15 +177,20 @@ describe("the 7-day profile of the plan", () => {
     });
   });
 
-  it("plans about 452k tokens a day, the table's total, and 3.2M over the run", () => {
+  it("freezes the expected spend by the registered projection rule, not the table's provisional 452k a day", () => {
+    // The table's 452k a day (3.2M over the run) was provisional: gate S re-measured the unit costs (an Ask
+    // 17.6k, a note edit 9.2k, a background hour 12.5k), so the frozen figures are the rule applied to them:
+    // expected = the plan's window-aware tokens over the run, cap = expected x band 1.34375 x 1.1,
+    // inside the owner's 8.0M ceiling (10-24, 10-25).
     const entries = buildTimeline(profile);
-    const planned = plannedTokensByHour({ entries, plan: f4, windows: [], applied: [] }, 168);
-    const perDay = planned.slice(0, 24).reduce((sum, value) => sum + value, 0);
-    expect(perDay).toBeGreaterThan(440_000);
-    expect(perDay).toBeLessThan(465_000);
-    const total = planned.reduce((sum, value) => sum + value, 0);
-    expect(total).toBeGreaterThan(3_000_000);
-    expect(total).toBeLessThan(3_300_000);
+    const windows = expandWindows(f4, profile.durationHours * 60);
+    const projected = plannedTokensByHour(
+      { entries, plan: f4, windows, applied: [] },
+      Math.ceil(profile.durationHours)
+    ).reduce((sum, value) => sum + value, 0);
+    expect(f4.codex.expected).toBe(Math.round(projected));
+    expect(f4.codex.cap).toBe(Math.round(f4.codex.expected * 1.34375 * 1.1));
+    expect(f4.codex.cap).toBeLessThanOrEqual(8_000_000);
   });
 });
 

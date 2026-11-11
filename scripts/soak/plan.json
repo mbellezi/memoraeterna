@@ -157,7 +157,7 @@
       "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 }
     },
     "soak7": {
-      "description": "The 7-day Hybrid soak of F4 (spec 5.4, D37): SOAK7 on a clone of ENV-G, the real Codex writer for every writer class and the judge, Decisions off, reduced intensity plus twice-daily contention bursts, zero-token fault injection in front of the Codex adapter, control and blocker windows with ground truth, the product's mid-run Codex cap, a harness token cap, one money window on a priced loopback fake. codex.expected and codex.cap are provisional until gate S re-freezes them (T91).",
+      "description": "The 7-day Hybrid soak of F4 (spec 5.4, D37): SOAK7 on a clone of ENV-G, the real Codex writer for every writer class and the judge, Decisions off, reduced intensity plus twice-daily contention bursts, zero-token fault injection in front of the Codex adapter, control and blocker windows with ground truth, the product's mid-run Codex cap, a harness token cap, one money window on a priced loopback fake. codex.expected and codex.cap re-frozen by gate S soak7-gate-20261025T2111 (T91).",
       "seed": 20261028,
       "durationHours": 168,
       "warmupMinutes": 30,
@@ -224,21 +224,21 @@
       },
       "f4": {
         "codex": {
-          "expected": 3200000,
-          "cap": 4700000,
+          "expected": 5394281,
+          "cap": 7973422,
           "dropFromHour0": 0,
           "tokens": {
-            "article": 40800,
-            "typing_fault": 40800,
-            "source_reimport": 40800,
-            "ask": 6600,
-            "explain": 1000,
-            "explain_burst": 5000,
-            "topic_open": 3167,
-            "note_edit": 3500,
-            "burst_edit": 1750,
+            "article": 42841,
+            "typing_fault": 42841,
+            "source_reimport": 42841,
+            "ask": 17603,
+            "explain": 745,
+            "explain_burst": 3725,
+            "topic_open": 3111,
+            "note_edit": 9158,
+            "burst_edit": 4579,
             "contention_burst": 0,
-            "backgroundPerHour": 4792
+            "backgroundPerHour": 12539
           },
           "windowTokenFactor": {
             "usage_limit": 0,
@@ -502,8 +502,8 @@
       },
       "f4": {
         "codex": {
-          "expected": 1230000,
-          "cap": 1500000,
+          "expected": 439086,
+          "cap": 730000,
           "dropFromHour0": 0,
           "tokens": {
             "article": 40800,
