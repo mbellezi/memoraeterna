@@ -441,7 +441,8 @@ export const settingsRegistry: readonly SettingEntry[] = [
   },
 
   // --- state with no control ------------------------------------------------------------------
-  internal("navigationCollapsed", "app.preferences", `${renderer}/App.tsx`),
+  // The rail no longer collapses (F5 T135): the key is only the stored schema now; T159 removes it.
+  internal("navigationCollapsed", "app.preferences", "apps/desktop/src/shared/ipc.ts"),
   internal("updatedAt", "app.preferences", `${main}/services/settings-service.ts`),
   internal("import.lastDirectory", "settings", `${main}/services/settings-service.ts`),
   internal("ai.classTests.v1", "settings", `${main}/services/ai-class-routes.ts`),

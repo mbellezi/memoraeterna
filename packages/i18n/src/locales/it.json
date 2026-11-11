@@ -3705,5 +3705,72 @@
     "details": "Dettagli",
     "loading": "Caricamento in corso",
     "retry": "Riprova"
+  },
+  "workspace": {
+    "destinations": {
+      "home": "Inizio",
+      "explore": "Esplora",
+      "inbox": "Posta in arrivo",
+      "library": "Libreria",
+      "map": "Mappa"
+    },
+    "menu": {
+      "addSource": "Aggiungi fonte…",
+      "focusMode": "Modalità focus",
+      "focusNext": "Pannello successivo",
+      "focusPrevious": "Pannello precedente",
+      "hoistTopic": "Mostra solo questo ramo",
+      "legacyViews": "Schermate precedenti",
+      "openPalette": "Cerca, apri o chiedi…",
+      "reopenClosed": "Riapri il pannello chiuso",
+      "toggleContext": "Mostra o nascondi il pannello di contesto",
+      "unhoist": "Mostra tutto l’albero"
+    },
+    "navigator": {
+      "emptyBody": "Quando la tua prima fonte diventerà note, l’albero comparirà qui. Non devi creare cartelle.",
+      "emptyHeadline": "Gli argomenti nascono da soli.",
+      "error": "Impossibile caricare l’albero.",
+      "errorKept": "Le tue fonti e le tue note sono intatte.",
+      "label": "Navigatore",
+      "rowLabel": "{title}, {count} elementi",
+      "title": "Albero",
+      "total": "{count} elementi",
+      "unsortedMany": "Senza posto · {count} elementi",
+      "unsortedOne": "Senza posto · {count} elemento"
+    },
+    "rail": {
+      "explore": "Esplora",
+      "home": "Inizio",
+      "inbox": "In arrivo",
+      "inboxFailed": "Impossibile contare ciò che ti aspetta. Aprire la Posta in arrivo riprova.",
+      "inboxLoading": "Conteggio di ciò che ti aspetta",
+      "inboxWaitingMany": "{count} decisioni ti aspettano",
+      "inboxWaitingOne": "{count} decisione ti aspetta",
+      "label": "Navigazione principale",
+      "legacy": "Schermate precedenti",
+      "legacyLabel": "Schermate precedenti ancora disponibili",
+      "library": "Libreria",
+      "map": "Mappa",
+      "settings": "Impostazioni"
+    },
+    "regions": {
+      "content": "Contenuto",
+      "titleBar": "Barra superiore"
+    },
+    "status": {
+      "needsYouMany": "{count} hanno bisogno di te",
+      "needsYouOne": "{count} ha bisogno di te",
+      "waiting": "{count} in attesa"
+    },
+    "titleBar": {
+      "add": "Aggiungi",
+      "addFile": "Scegli file…",
+      "addMore": "Altri modi per aggiungere",
+      "addMoreOptions": "Altre opzioni di importazione…",
+      "addSource": "Aggiungi fonte",
+      "omniLabel": "Cerca, apri o chiedi",
+      "omniPlaceholder": "Cerca, apri o chiedi…",
+      "status": "Stato dell’attività"
+    }
   }
 }

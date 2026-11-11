@@ -23,7 +23,8 @@ import {
   statusSection,
   undoKey,
   usedShare,
-  withEmbedderLoading
+  withEmbedderLoading,
+  type ActivitySnapshot
 } from "./activity-model";
 import {
   activitySnapshot,
@@ -182,7 +183,8 @@ describe("the pill", () => {
     expect(pillView(en, activitySnapshot())).toEqual({
       glyph: "loading",
       text: "Checking what is happening...",
-      badge: 0
+      badge: 0,
+      waiting: 0
     });
     expect(pillView(en, activitySnapshot({ status: { status: "error" } }))).toMatchObject({
       glyph: "error",
@@ -211,6 +213,14 @@ describe("the pill", () => {
     );
     expect(view).toMatchObject({ glyph: "waiting", badge: 3 });
     expect(view.text).toContain("loading into memory");
+  });
+
+  it("counts the jobs that wait or are on hold, once the counts are known", () => {
+    const view = (jobs: ActivitySnapshot["jobs"]) =>
+      pillView(en, activitySnapshot({ status: ready(runningStatus), jobs }));
+    expect(view(null).waiting).toBe(0);
+    expect(view({ running: 1, waiting: 3, onHold: 2 }).waiting).toBe(5);
+    expect(view({ running: 1, waiting: 0, onHold: 0 }).waiting).toBe(0);
   });
 
   it("speaks every hold in every locale", () => {

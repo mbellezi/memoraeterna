@@ -74,12 +74,10 @@ describe("App", () => {
 
     expect(html).toContain("Memora Eterna");
     expect(html).toContain("dark");
-    expect(html).toContain("Library");
-    expect(html).toContain("Review notes");
-    expect(html).toContain("Knowledge graph");
-    expect(html).toContain("Settings");
-    expect(html).toContain("h-screen overflow-hidden");
-    expect(html).toContain("overflow-y-auto overscroll-contain");
+    for (const name of ["Home", "Explore", "Library", "Inbox", "Map", "Settings"])
+      expect(html).toContain(`aria-label="${name}"`);
+    expect(html).toContain('data-surface="shell"');
+    expect(html).toContain("h-screen");
     expect(html).toContain("overflow-auto overscroll-contain");
   });
 
@@ -182,8 +180,8 @@ describe("interface language", () => {
   });
 });
 
-describe("compact main navigation", () => {
-  it("renders all destinations as named icons with tooltips and retains the active destination", () => {
+describe("the rail", () => {
+  const rail = () => {
     const html = renderToString(
       <App
         firstRun={false}
@@ -198,22 +196,30 @@ describe("compact main navigation", () => {
         })}
         initialAppSettings={appSettingsSchema.parse({
           ...defaultAppSettings,
-          navigationCollapsed: true,
           language: "en",
           updatedAt: new Date(0).toISOString()
         })}
       />
     );
-    expect(html).toContain('aria-label="Expand main navigation"');
-    expect(html).toContain('aria-expanded="false" aria-controls="app-navigation"');
-    expect(html).toContain('aria-label="Library" aria-current="page" title="Library"');
-    expect(html).toContain('aria-label="Settings" title="Settings"');
-    expect(html).toContain('aria-label="Inbox" title="Inbox"');
-    expect(html).toContain('aria-label="Toggle theme"');
-    expect(html).toContain("w-16");
-    const navigation = html.slice(html.indexOf('<nav id="app-navigation"'), html.indexOf("</nav>"));
-    expect(navigation).not.toContain(">Library</button>");
-    expect(navigation.match(/<button/g)).toHaveLength(10);
+    return html.slice(html.indexOf('<nav aria-label="Main navigation"'), html.indexOf("</nav>"));
+  };
+
+  it("lists the five worded destinations, Settings and the old screens, with no theme toggle", () => {
+    const navigation = rail();
+    // Five destinations and Settings are buttons; the old views sit behind one menu.
+    expect(navigation.match(/<button/g)).toHaveLength(7);
+    for (const word of ["Home", "Explore", "Library", "Inbox", "Map", "Settings", "Old screens"])
+      expect(navigation).toContain(`<span>${word}</span>`);
+    expect(navigation).not.toContain("Toggle theme");
+    expect(navigation).not.toContain("navigation\u0020collapsed");
+  });
+
+  it("marks the place the app starts at (Home) as current and shows the Inbox count is being read", () => {
+    const navigation = rail();
+    expect(navigation.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(navigation).toMatch(/aria-label="Home" aria-current="page"/u);
+    expect(navigation).toContain('data-state="loading"');
+    expect(navigation).toContain("Counting what is waiting for you");
   });
 });
 
@@ -250,10 +256,7 @@ describe("entry points of the removed wiki", () => {
   it("has no Automation destination in any language", () => {
     for (const language of supportedLanguageCodes) {
       const html = shell(language);
-      const navigation = html.slice(
-        html.indexOf('<nav id="app-navigation"'),
-        html.indexOf("</nav>")
-      );
+      const navigation = html.slice(html.indexOf("<nav "), html.indexOf("</nav>"));
       expect(navigation, language).not.toContain(removedAutomationTitle[language]);
       expect(html, language).not.toContain(removedAutomationTitle[language]);
     }

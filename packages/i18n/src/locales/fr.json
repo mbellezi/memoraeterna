@@ -3712,5 +3712,72 @@
     "details": "Détails",
     "loading": "Chargement en cours",
     "retry": "Réessayer"
+  },
+  "workspace": {
+    "destinations": {
+      "home": "Accueil",
+      "explore": "Explorer",
+      "inbox": "Boîte de réception",
+      "library": "Bibliothèque",
+      "map": "Carte"
+    },
+    "menu": {
+      "addSource": "Ajouter une source…",
+      "focusMode": "Mode concentration",
+      "focusNext": "Panneau suivant",
+      "focusPrevious": "Panneau précédent",
+      "hoistTopic": "Afficher seulement cette branche",
+      "legacyViews": "Anciens écrans",
+      "openPalette": "Chercher, ouvrir ou demander…",
+      "reopenClosed": "Rouvrir le panneau fermé",
+      "toggleContext": "Afficher ou masquer le panneau de contexte",
+      "unhoist": "Afficher tout l’arbre"
+    },
+    "navigator": {
+      "emptyBody": "Quand votre première source deviendra des notes, l’arbre apparaîtra ici. Inutile de créer des dossiers.",
+      "emptyHeadline": "Les sujets naissent tout seuls.",
+      "error": "Impossible de charger l’arbre.",
+      "errorKept": "Vos sources et vos notes sont intactes.",
+      "label": "Navigateur",
+      "rowLabel": "{title}, {count} éléments",
+      "title": "Arbre",
+      "total": "{count} éléments",
+      "unsortedMany": "Sans place · {count} éléments",
+      "unsortedOne": "Sans place · {count} élément"
+    },
+    "rail": {
+      "explore": "Explorer",
+      "home": "Accueil",
+      "inbox": "Réception",
+      "inboxFailed": "Impossible de compter ce qui vous attend. Ouvrir la boîte de réception réessaie.",
+      "inboxLoading": "Comptage de ce qui vous attend",
+      "inboxWaitingMany": "{count} décisions vous attendent",
+      "inboxWaitingOne": "{count} décision vous attend",
+      "label": "Navigation principale",
+      "legacy": "Anciens écrans",
+      "legacyLabel": "Anciens écrans encore disponibles",
+      "library": "Bibliothèque",
+      "map": "Carte",
+      "settings": "Réglages"
+    },
+    "regions": {
+      "content": "Contenu",
+      "titleBar": "Barre supérieure"
+    },
+    "status": {
+      "needsYouMany": "{count} ont besoin de vous",
+      "needsYouOne": "{count} a besoin de vous",
+      "waiting": "{count} en attente"
+    },
+    "titleBar": {
+      "add": "Ajouter",
+      "addFile": "Choisir un fichier…",
+      "addMore": "Autres façons d’ajouter",
+      "addMoreOptions": "Plus d’options d’importation…",
+      "addSource": "Ajouter une source",
+      "omniLabel": "Chercher, ouvrir ou demander",
+      "omniPlaceholder": "Chercher, ouvrir ou demander…",
+      "status": "État de l’activité"
+    }
   }
 }

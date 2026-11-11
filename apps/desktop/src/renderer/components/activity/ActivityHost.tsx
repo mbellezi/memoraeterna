@@ -11,6 +11,12 @@ import { statusSentence } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
+import { isUndoKey } from "../topics/ops/notice-key";
+import {
+  canUndoNotice,
+  sharedNoticeCenter,
+  type TopicNoticeCenter
+} from "../topics/ops/topic-notice-center";
 import { useStableCallback } from "../../lib/stable-callback";
 import { ActivityController, activityApiOf } from "./activity-controller";
 import {
@@ -20,7 +26,7 @@ import {
   type ActivitySnapshot
 } from "./activity-model";
 import { ActivityDrawer } from "./ActivityDrawer";
-import { ActivityPill } from "./ActivityPill";
+import { ActivityPill, type PillNotice } from "./ActivityPill";
 import { closesDrawer, createDrawerFocus } from "./drawer-focus";
 
 export interface ActivityHostProps {
@@ -29,7 +35,21 @@ export interface ActivityHostProps {
   onNavigate: (to: ActivityNavigation) => void;
   /** Opens the Inbox; without it the drawer counts the reviews and offers no button. */
   onOpenInbox?: () => void;
+  /** Home drops the pill's needs-you clause: its "Precisa de você" column shows it. */
+  hideNeedsYou?: boolean;
+  /** At compact width the pill drops its "waiting" clause first. */
+  compact?: boolean;
+  /**
+   * The window's notice center: what follows a change to the topics is shown in the pill as its undo
+   * extension, with the U key, in place of the floating toast (the window's, unless a test brings
+   * its own).
+   */
+  notices?: TopicNoticeCenter;
 }
+
+/** A name in a notice: the stored one, or the words for a topic that has none. */
+const nameOf = (t: Translator, title: string | null): string =>
+  title === null || title === "" ? t("topics.unnamed") : title;
 
 /**
  * What the polite live region says: the result of an action, or the sentence when the Gardener
@@ -55,7 +75,14 @@ export function announcementText(t: Translator, snapshot: ActivitySnapshot): str
  * the status is followed for as long as the shell lives, and the drawer reads its own data only
  * while it is open.
  */
-export function ActivityHost({ t, onNavigate, onOpenInbox }: ActivityHostProps) {
+export function ActivityHost({
+  t,
+  onNavigate,
+  onOpenInbox,
+  hideNeedsYou = false,
+  compact = false,
+  notices = sharedNoticeCenter
+}: ActivityHostProps) {
   const drawerId = useId();
   const navigate = useStableCallback(onNavigate);
   const [controller] = useState(
@@ -94,6 +121,39 @@ export function ActivityHost({ t, onNavigate, onOpenInbox }: ActivityHostProps) 
     }, closePanelPriority.panel);
   }, [open, dismiss]);
 
+  const { notice } = useSyncExternalStore(
+    notices.subscribe,
+    notices.getSnapshot,
+    notices.getSnapshot
+  );
+  const undoable = canUndoNotice(notice);
+
+  // The U key undoes the notice in the pill, from anywhere but a text field, a dialog or a modifier.
+  useEffect(() => {
+    if (!undoable) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isUndoKey(event)) return;
+      event.preventDefault();
+      void notices.undo();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [undoable, notices]);
+
+  const pillNotice: PillNotice | null = notice
+    ? {
+        text: t(notice.key, {
+          values: { title: nameOf(t, notice.title), parent: nameOf(t, notice.parent) }
+        }),
+        canUndo: undoable,
+        pending: notice.state === "pending",
+        blocked: notice.state === "blocked",
+        failed: notice.state === "failed",
+        onUndo: () => void notices.undo(),
+        onHold: (held) => notices.hold(held)
+      }
+    : null;
+
   const view = pillView(t, snapshot);
   const live = useMemo(() => announcementText(t, snapshot), [t, snapshot]);
   const closeOnEscape = (event: {
@@ -119,6 +179,9 @@ export function ActivityHost({ t, onNavigate, onOpenInbox }: ActivityHostProps) 
           else controller.setOpen(true);
         }}
         onKeyDown={closeOnEscape}
+        hideNeedsYou={hideNeedsYou}
+        compact={compact}
+        notice={pillNotice}
       />
       {open ? (
         <ActivityDrawer

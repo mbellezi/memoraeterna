@@ -1,6 +1,12 @@
 import type { IpcMain, MenuItemConstructorOptions } from "electron";
 import { createTranslator, type LanguageCode, type MessageKey } from "@app/i18n";
-import type { AppMenuCommand, AppViewId } from "../shared/app-menu.js";
+import {
+  legacyViewIds,
+  type AppDestinationId,
+  type AppMenuCommand,
+  type AppViewId,
+  type LegacyViewId
+} from "../shared/app-menu.js";
 import { ipcChannels, languageCodeSchema } from "../shared/ipc.js";
 import type { WindowNavigationDirection } from "./window-navigation.js";
 
@@ -11,21 +17,32 @@ import type { WindowNavigationDirection } from "./window-navigation.js";
  *   open it does nothing. The menu has no Close Window item, so Cmd-W can never close the window.
  * - Cmd-[ and Cmd-] already reach the renderer through the window navigation channel (before the
  *   menu sees the key); the Back and Forward items here only act when clicked.
+ * - The workspace accelerators (design record section 12) live here: Cmd-1..5 go to the five
+ *   destinations, Cmd-K opens the palette, Cmd-N adds a source, Cmd-Shift-T reopens a closed panel,
+ *   Cmd-\ and Cmd-Shift-\ toggle the navigator and the context panel, Cmd-Shift-F is focus mode
+ *   and Ctrl-Tab moves between panels. Cmd-6..8 are free again.
  * - No accelerator uses E, I or "." with the platform modifier: those belong to text editing.
  *   Single-key shortcuts are never part of a menu.
  */
 
-/** The destinations of the Go menu, in navigation order; they take Cmd-1 to Cmd-8. */
-export const goDestinations: ReadonlyArray<{ view: AppViewId; label: MessageKey }> = [
-  { view: "wiki", label: "wiki.title" },
-  { view: "library", label: "shell.navigation.library" },
-  { view: "inbox", label: "inbox.title" },
-  { view: "import", label: "shell.navigation.import" },
-  { view: "search", label: "shell.navigation.search" },
-  { view: "review", label: "shell.navigation.review" },
-  { view: "jobs", label: "shell.navigation.jobs" },
-  { view: "knowledgeGraph", label: "shell.navigation.knowledgeGraph" }
+/** The destinations of the Go menu, in rail order; they take Cmd-1 to Cmd-5. */
+export const goDestinations: ReadonlyArray<{ view: AppDestinationId; label: MessageKey }> = [
+  { view: "home", label: "workspace.destinations.home" },
+  { view: "explore", label: "workspace.destinations.explore" },
+  { view: "library", label: "workspace.destinations.library" },
+  { view: "inbox", label: "workspace.destinations.inbox" },
+  { view: "map", label: "workspace.destinations.map" }
 ];
+
+/** The old views, in the "Old screens" submenu of Go until the cards that remove them (D6). */
+export const legacyViewLabels: Readonly<Record<LegacyViewId, MessageKey>> = {
+  import: "shell.navigation.import",
+  search: "shell.navigation.search",
+  review: "shell.navigation.review",
+  jobs: "shell.navigation.jobs",
+  knowledgeGraph: "shell.navigation.knowledgeGraph",
+  debug: "debug.title"
+};
 
 /** Settings and Monitoring have their own menu items; every other view is in the Go menu. */
 export const viewsOutsideGoMenu: readonly AppViewId[] = ["settings", "debug"];
@@ -90,9 +107,9 @@ export function buildApplicationMenuTemplate(
       label: t("app.menu.file"),
       submenu: [
         {
-          label: t("shell.navigation.import"),
+          label: t("workspace.menu.addSource"),
           accelerator: "CmdOrCtrl+N",
-          click: goTo("import")
+          click: send({ type: "new-import" })
         },
         { type: "separator" },
         {
@@ -123,6 +140,20 @@ export function buildApplicationMenuTemplate(
           accelerator: "CmdOrCtrl+\\",
           click: send({ type: "toggle-navigation" })
         },
+        {
+          label: t("workspace.menu.toggleContext"),
+          accelerator: "CmdOrCtrl+Shift+\\",
+          click: send({ type: "toggle-context" })
+        },
+        {
+          label: t("workspace.menu.focusMode"),
+          accelerator: "CmdOrCtrl+Shift+F",
+          click: send({ type: "toggle-focus-mode" })
+        },
+        { type: "separator" },
+        { label: t("workspace.menu.hoistTopic"), click: send({ type: "hoist-topic" }) },
+        { label: t("workspace.menu.unhoist"), click: send({ type: "unhoist" }) },
+        { type: "separator" },
         { label: t("shell.actions.toggleTheme"), click: send({ type: "toggle-theme" }) },
         { type: "separator" },
         { role: "togglefullscreen", label: t("app.menu.fullScreen") },
@@ -143,11 +174,40 @@ export function buildApplicationMenuTemplate(
         navigation("back", "[", "app.menu.back"),
         navigation("forward", "]", "app.menu.forward"),
         { type: "separator" },
+        {
+          label: t("workspace.menu.openPalette"),
+          accelerator: "CmdOrCtrl+K",
+          click: send({ type: "open-palette" })
+        },
+        { type: "separator" },
         ...goDestinations.map(({ view, label }, index) => ({
           label: t(label),
           accelerator: `CmdOrCtrl+${index + 1}`,
           click: goTo(view)
-        }))
+        })),
+        { type: "separator" },
+        {
+          label: t("workspace.menu.focusNext"),
+          accelerator: "Ctrl+Tab",
+          click: send({ type: "focus-panel", direction: "next" })
+        },
+        {
+          label: t("workspace.menu.focusPrevious"),
+          accelerator: "Ctrl+Shift+Tab",
+          click: send({ type: "focus-panel", direction: "prev" })
+        },
+        {
+          label: t("workspace.menu.reopenClosed"),
+          accelerator: "CmdOrCtrl+Shift+T",
+          click: send({ type: "reopen-closed" })
+        },
+        { type: "separator" },
+        {
+          label: t("workspace.menu.legacyViews"),
+          submenu: legacyViewIds
+            .filter((view) => !viewsOutsideGoMenu.includes(view))
+            .map((view) => ({ label: t(legacyViewLabels[view]), click: goTo(view) }))
+        }
       ]
     },
     {

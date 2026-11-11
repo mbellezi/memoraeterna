@@ -82,7 +82,7 @@ export function ActivityDrawer({
       ref={ref}
       tabIndex={-1}
       aria-labelledby={titleId}
-      className="fixed bottom-0 right-0 top-14 z-40 flex w-96 max-w-full flex-col border-l border-border bg-surface shadow-lg focus-visible:outline-none"
+      className="fixed bottom-0 right-0 top-(--top-h,3.5rem) z-40 flex w-100 max-w-full flex-col border-l border-border bg-surface shadow-[var(--shadow-pop)] focus-visible:outline-none"
       onKeyDown={onKeyDown}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">

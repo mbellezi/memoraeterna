@@ -3707,5 +3707,72 @@
     "details": "Details",
     "loading": "Loading",
     "retry": "Retry"
+  },
+  "workspace": {
+    "destinations": {
+      "home": "Home",
+      "explore": "Explore",
+      "inbox": "Inbox",
+      "library": "Library",
+      "map": "Map"
+    },
+    "menu": {
+      "addSource": "Add source…",
+      "focusMode": "Focus mode",
+      "focusNext": "Next panel",
+      "focusPrevious": "Previous panel",
+      "hoistTopic": "Show only this branch",
+      "legacyViews": "Old screens",
+      "openPalette": "Search, open or ask…",
+      "reopenClosed": "Reopen closed panel",
+      "toggleContext": "Show or hide context panel",
+      "unhoist": "Show the whole tree"
+    },
+    "navigator": {
+      "emptyBody": "When your first source becomes notes, the tree appears here. You do not need to create folders.",
+      "emptyHeadline": "Topics grow on their own.",
+      "error": "Could not load the tree.",
+      "errorKept": "Your sources and notes are untouched.",
+      "label": "Navigator",
+      "rowLabel": "{title}, {count} items",
+      "title": "Tree",
+      "total": "{count} items",
+      "unsortedMany": "Unplaced · {count} items",
+      "unsortedOne": "Unplaced · {count} item"
+    },
+    "rail": {
+      "explore": "Explore",
+      "home": "Home",
+      "inbox": "Inbox",
+      "inboxFailed": "Could not count what is waiting for you. Opening the Inbox tries again.",
+      "inboxLoading": "Counting what is waiting for you",
+      "inboxWaitingMany": "{count} decisions are waiting for you",
+      "inboxWaitingOne": "{count} decision is waiting for you",
+      "label": "Main navigation",
+      "legacy": "Old screens",
+      "legacyLabel": "Old screens that are still available",
+      "library": "Library",
+      "map": "Map",
+      "settings": "Settings"
+    },
+    "regions": {
+      "content": "Content",
+      "titleBar": "Top bar"
+    },
+    "status": {
+      "needsYouMany": "{count} need you",
+      "needsYouOne": "{count} needs you",
+      "waiting": "{count} waiting"
+    },
+    "titleBar": {
+      "add": "Add",
+      "addFile": "Choose file…",
+      "addMore": "More ways to add",
+      "addMoreOptions": "More import options…",
+      "addSource": "Add source",
+      "omniLabel": "Search, open or ask",
+      "omniPlaceholder": "Search, open or ask…",
+      "status": "Activity status"
+    }
   }
 }

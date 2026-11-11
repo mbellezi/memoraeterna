@@ -88,9 +88,13 @@ describe("the Activity pill", () => {
     expect(pill(activitySnapshot({ status: ready(idleStatus) }))).toContain(
       "Your library is up to date."
     );
-    for (const status of [idleStatus, runningStatus, pausedStatus, signInStatus]) {
+    // A state is a solid glyph or the running ring, never colour alone.
+    for (const status of [idleStatus, pausedStatus, signInStatus]) {
       expect(pill(activitySnapshot({ status: ready(status) }))).toContain("<svg");
     }
+    expect(pill(activitySnapshot({ status: ready(runningStatus) }))).toContain(
+      "motion-safe:animate-spin"
+    );
   });
 
   it("spins only while something is going on, and never with reduced motion", () => {
@@ -100,13 +104,79 @@ describe("the Activity pill", () => {
     expect(pill(activitySnapshot({ status: ready(pausedStatus) }))).not.toContain("animate-spin");
   });
 
-  it("shows the reviews that wait as a number the name also says", () => {
-    const html = pill(activitySnapshot({ status: ready(idleStatus), inboxTotal: 3 }));
-    expect(html).toContain("3 waiting for your review");
-    expect(html).toMatch(/aria-hidden="true"[^>]*>3<\/span>/u);
-    expect(pill(activitySnapshot({ status: ready(idleStatus), inboxTotal: 0 }))).not.toContain(
-      "waiting for your review"
+  it("says the reviews that wait in words, and Home drops the clause", () => {
+    const waiting = activitySnapshot({ status: ready(idleStatus), inboxTotal: 3 });
+    const html = pill(waiting);
+    expect(html).toContain("3 need you");
+    // The same words are in the button's name, so a screen reader hears them too.
+    expect(html).toMatch(/aria-label="Activity: Your library is up to date\. 3 need you"/u);
+    expect(pill(activitySnapshot({ status: ready(idleStatus), inboxTotal: 1 }))).toContain(
+      "1 needs you"
     );
+    expect(pill(activitySnapshot({ status: ready(idleStatus), inboxTotal: 0 }))).not.toContain(
+      "need"
+    );
+    const home = renderToString(
+      <ActivityPill
+        t={en}
+        view={pillView(en, waiting)}
+        open={false}
+        drawerId="activity-drawer"
+        onToggle={vi.fn()}
+        hideNeedsYou
+      />
+    );
+    expect(home).not.toContain("need you");
+  });
+
+  it("names the jobs that wait, and drops that clause first at compact width", () => {
+    const snapshot = activitySnapshot({
+      status: ready(runningStatus),
+      jobs: { running: 1, waiting: 2, onHold: 1 },
+      inboxTotal: 2
+    });
+    const wide = pill(snapshot);
+    expect(wide).toContain("3 waiting");
+    expect(wide).toContain("2 need you");
+    const compact = renderToString(
+      <ActivityPill
+        t={en}
+        view={pillView(en, snapshot)}
+        open={false}
+        drawerId="activity-drawer"
+        onToggle={vi.fn()}
+        compact
+      />
+    );
+    expect(compact).not.toContain("3 waiting");
+    expect(compact).toContain("2 need you");
+  });
+
+  it("turns into the undo extension after a change, with the needs-you clause kept", () => {
+    const calls: string[] = [];
+    const html = renderToString(
+      <ActivityPill
+        t={en}
+        view={pillView(en, activitySnapshot({ status: ready(idleStatus), inboxTotal: 2 }))}
+        open={false}
+        drawerId="activity-drawer"
+        onToggle={vi.fn()}
+        notice={{
+          text: "Renamed to Micronutrients.",
+          canUndo: true,
+          pending: false,
+          blocked: false,
+          failed: false,
+          onUndo: () => calls.push("undo"),
+          onHold: () => undefined
+        }}
+      />
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Renamed to Micronutrients.");
+    expect(html).toContain("Undo");
+    expect(html).toContain('aria-keyshortcuts="U"');
+    expect(html).toContain("2 need you");
   });
 
   it("says the embedder is loading instead of blocking the screen", () => {

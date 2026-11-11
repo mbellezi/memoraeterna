@@ -49,7 +49,7 @@ export interface ActivitySnapshot {
   /** The reviews that wait for the person: the Inbox count. Null until it is known. */
   inboxTotal: number | null;
   open: boolean;
-  /** Null until a `job.progress` arrived since the drawer opened. */
+  /** Null until a `job.progress` arrived. */
   jobs: JobFacts | null;
   budget: Load<BudgetSnapshot>;
   done: Load<ChangeSetSummary[]>;
@@ -248,8 +248,10 @@ export interface PillView {
   glyph: PillGlyph;
   /** One line: the sentence's message and the time left or the time it resumes. */
   text: string;
-  /** The reviews waiting for the person; 0 shows no badge. */
+  /** The reviews waiting for the person: the pill says them in words; 0 says nothing. */
   badge: number;
+  /** Jobs waiting or on hold, from `job.progress`; 0 says nothing. */
+  waiting: number;
 }
 
 const glyphOfState = {
@@ -261,15 +263,18 @@ const glyphOfState = {
 
 export function pillView(t: Translator, snapshot: ActivitySnapshot): PillView {
   const badge = snapshot.inboxTotal ?? 0;
+  const waiting = snapshot.jobs ? snapshot.jobs.waiting + snapshot.jobs.onHold : 0;
   if (snapshot.status.status === "loading")
-    return { glyph: "loading", text: t("activity.pill.loading"), badge };
+    return { glyph: "loading", text: t("activity.pill.loading"), badge, waiting };
   const status = effectiveStatus(snapshot);
-  if (status === null) return { glyph: "error", text: t("activity.pill.unavailable"), badge };
+  if (status === null)
+    return { glyph: "error", text: t("activity.pill.unavailable"), badge, waiting };
   const sentence = statusSentence(status, t.locale, { now: snapshot.now });
   return {
     glyph: glyphOfState[status.state],
     text: [sentence.headline, sentence.eta].filter((part) => part !== null).join(" "),
-    badge
+    badge,
+    waiting
   };
 }
 

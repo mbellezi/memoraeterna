@@ -54,12 +54,12 @@ describe("the window's one notice host", () => {
     }
   });
 
-  it("is mounted by the app alone: no view draws a notice of its own", () => {
+  it("is no longer mounted by the app: the Activity pill shows the notice (T135), and no view draws one", () => {
     const filesWith = (pattern: RegExp) =>
       Object.entries(sources)
         .filter(([, source]) => pattern.test(source))
         .map(([file]) => file);
-    expect(filesWith(/<TopicNoticeHost[\s>]/u)).toEqual(["../../../App.tsx"]);
+    expect(filesWith(/<TopicNoticeHost[\s>]/u)).toEqual([]);
     expect(filesWith(/<TopicUndoToast[\s>]/u)).toEqual(["./TopicNoticeHost.tsx"]);
   });
 });

@@ -1,7 +1,12 @@
 import type { IpcMain, MenuItemConstructorOptions } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
-import { appViewIds, type AppMenuCommand } from "../shared/app-menu.js";
+import {
+  appDestinationIds,
+  appViewIds,
+  legacyViewIds,
+  type AppMenuCommand
+} from "../shared/app-menu.js";
 import { ipcChannels } from "../shared/ipc.js";
 import {
   buildApplicationMenuTemplate,
@@ -136,7 +141,9 @@ describe("application menu", () => {
     for (const accelerator of accelerators) {
       // Always with the platform modifier: a single-key shortcut would fire while typing. Only
       // letters, digits and a few punctuation keys, which Electron accepts as key codes.
-      expect(accelerator, accelerator).toMatch(/^CmdOrCtrl\+(?:[A-Z0-9]|[,[\]\\])$/u);
+      expect(accelerator, accelerator).toMatch(
+        /^(?:CmdOrCtrl\+(?:Shift\+)?(?:[A-Z0-9]|[,[\]\\])|Ctrl\+(?:Shift\+)?Tab)$/u
+      );
       expect(accelerator, accelerator).not.toMatch(/\+(?:E|I)$/u);
     }
     // The edit actions use the standard roles, so their shortcuts are the platform ones.
@@ -156,10 +163,8 @@ describe("application menu", () => {
       if (command?.type === "go-to") opened.set(command.view, (opened.get(command.view) ?? 0) + 1);
     }
     for (const view of appViewIds) {
-      const entries = opened.get(view) ?? 0;
-      // Add content is also in File; every other view has one entry.
-      expect(entries, view).toBeGreaterThanOrEqual(1);
-      if (view !== "import") expect(entries, view).toBe(1);
+      // Every view has exactly one entry: Cmd-N is a command of its own, not the old import view.
+      expect(opened.get(view) ?? 0, view).toBe(1);
     }
     expect(viewsOutsideGoMenu).toEqual(["settings", "debug"]);
     const go = submenu(named(template, "Go"));
@@ -169,9 +174,52 @@ describe("application menu", () => {
       click(item);
       expect(send).toHaveBeenCalledWith({ type: "go-to", view });
     });
-    expect(goDestinations.map((entry) => entry.view)).toEqual(
-      appViewIds.filter((view) => !viewsOutsideGoMenu.includes(view))
+    // Go lists the five destinations (Cmd-1..5); the old views sit in its Old screens submenu.
+    expect(goDestinations.map((entry) => entry.view)).toEqual([...appDestinationIds]);
+    const oldScreens = submenu(go.find((entry) => entry.label === "Old screens"));
+    expect(
+      oldScreens.map((entry) => {
+        send.mockClear();
+        click(entry);
+        return (send.mock.calls[0]?.[0] as { view?: string } | undefined)?.view;
+      })
+    ).toEqual(legacyViewIds.filter((view) => !viewsOutsideGoMenu.includes(view)));
+  });
+
+  it("carries the workspace accelerators and sends one command for each", () => {
+    const { template, send } = build();
+    const accelerated = new Map(
+      flatten(template).flatMap((item) =>
+        item.accelerator ? [[String(item.accelerator), item] as const] : []
+      )
     );
+    const expected: Array<[string, AppMenuCommand]> = [
+      ["CmdOrCtrl+K", { type: "open-palette" }],
+      ["CmdOrCtrl+N", { type: "new-import" }],
+      ["CmdOrCtrl+Shift+T", { type: "reopen-closed" }],
+      ["CmdOrCtrl+Shift+\\", { type: "toggle-context" }],
+      ["CmdOrCtrl+Shift+F", { type: "toggle-focus-mode" }],
+      ["CmdOrCtrl+\\", { type: "toggle-navigation" }],
+      ["Ctrl+Tab", { type: "focus-panel", direction: "next" }],
+      ["Ctrl+Shift+Tab", { type: "focus-panel", direction: "prev" }]
+    ];
+    for (const [accelerator, command] of expected) {
+      send.mockClear();
+      click(accelerated.get(accelerator));
+      expect(send.mock.calls, accelerator).toEqual([[command]]);
+    }
+    // Hoist has no accelerator (Option-Arrow belongs to text editing); it is a menu command only.
+    const view = submenu(named(template, "View"));
+    for (const [label, command] of [
+      ["Show only this branch", { type: "hoist-topic" }],
+      ["Show the whole tree", { type: "unhoist" }]
+    ] as const) {
+      send.mockClear();
+      click(view.find((item) => item.label === label));
+      expect(send.mock.calls, label).toEqual([[command]]);
+    }
+    // Cmd-6..8 are free again.
+    for (const digit of [6, 7, 8]) expect(accelerated.has(`CmdOrCtrl+${digit}`)).toBe(false);
   });
 
   it("has no Automation destination, in any language", () => {

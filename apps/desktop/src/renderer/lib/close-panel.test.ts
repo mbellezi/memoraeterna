@@ -127,14 +127,16 @@ describe("application menu commands in the renderer", () => {
       closePanel: vi.fn(),
       goTo: vi.fn(),
       toggleNavigation: vi.fn(),
-      toggleTheme: vi.fn()
+      toggleTheme: vi.fn(),
+      workspace: vi.fn(),
+      hoistTopic: vi.fn()
     };
     applyMenuCommand({ type: "close-panel" }, handlers);
-    applyMenuCommand({ type: "go-to", view: "wiki" }, handlers);
+    applyMenuCommand({ type: "go-to", view: "explore" }, handlers);
     applyMenuCommand({ type: "toggle-navigation" }, handlers);
     applyMenuCommand({ type: "toggle-theme" }, handlers);
     expect(handlers.closePanel).toHaveBeenCalledTimes(1);
-    expect(handlers.goTo).toHaveBeenCalledExactlyOnceWith("wiki");
+    expect(handlers.goTo).toHaveBeenCalledExactlyOnceWith("explore");
     expect(handlers.toggleNavigation).toHaveBeenCalledTimes(1);
     expect(handlers.toggleTheme).toHaveBeenCalledTimes(1);
   });

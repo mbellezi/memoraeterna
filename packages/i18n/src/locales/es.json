@@ -3714,5 +3714,72 @@
     "details": "Detalles",
     "loading": "Cargando",
     "retry": "Reintentar"
+  },
+  "workspace": {
+    "destinations": {
+      "home": "Inicio",
+      "explore": "Explorar",
+      "inbox": "Bandeja de entrada",
+      "library": "Biblioteca",
+      "map": "Mapa"
+    },
+    "menu": {
+      "addSource": "Añadir fuente…",
+      "focusMode": "Modo enfoque",
+      "focusNext": "Panel siguiente",
+      "focusPrevious": "Panel anterior",
+      "hoistTopic": "Mostrar solo esta rama",
+      "legacyViews": "Pantallas antiguas",
+      "openPalette": "Buscar, abrir o preguntar…",
+      "reopenClosed": "Reabrir el panel cerrado",
+      "toggleContext": "Mostrar u ocultar el panel de contexto",
+      "unhoist": "Mostrar todo el árbol"
+    },
+    "navigator": {
+      "emptyBody": "Cuando tu primera fuente se convierta en notas, el árbol aparecerá aquí. No necesitas crear carpetas.",
+      "emptyHeadline": "Los temas nacen solos.",
+      "error": "No se pudo cargar el árbol.",
+      "errorKept": "Tus fuentes y notas siguen intactas.",
+      "label": "Navegador",
+      "rowLabel": "{title}, {count} elementos",
+      "title": "Árbol",
+      "total": "{count} elementos",
+      "unsortedMany": "Sin lugar · {count} elementos",
+      "unsortedOne": "Sin lugar · {count} elemento"
+    },
+    "rail": {
+      "explore": "Explorar",
+      "home": "Inicio",
+      "inbox": "Entrada",
+      "inboxFailed": "No se pudo contar lo que te espera. Abrir la Bandeja de entrada lo intenta de nuevo.",
+      "inboxLoading": "Contando lo que te espera",
+      "inboxWaitingMany": "{count} decisiones te esperan",
+      "inboxWaitingOne": "{count} decisión te espera",
+      "label": "Navegación principal",
+      "legacy": "Pantallas antiguas",
+      "legacyLabel": "Pantallas antiguas que siguen disponibles",
+      "library": "Biblioteca",
+      "map": "Mapa",
+      "settings": "Ajustes"
+    },
+    "regions": {
+      "content": "Contenido",
+      "titleBar": "Barra superior"
+    },
+    "status": {
+      "needsYouMany": "{count} te necesitan",
+      "needsYouOne": "{count} te necesita",
+      "waiting": "{count} en espera"
+    },
+    "titleBar": {
+      "add": "Añadir",
+      "addFile": "Elegir archivo…",
+      "addMore": "Más formas de añadir",
+      "addMoreOptions": "Más opciones de importación…",
+      "addSource": "Añadir fuente",
+      "omniLabel": "Buscar, abrir o preguntar",
+      "omniPlaceholder": "Buscar, abrir o preguntar…",
+      "status": "Estado de la actividad"
+    }
   }
 }

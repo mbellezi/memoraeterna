@@ -7,35 +7,31 @@ import {
   subscribeClosePanel
 } from "./lib/close-panel";
 import { applyMenuCommand } from "./lib/menu-commands";
-import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
+import {
+  legacyViewIds,
+  type AppMenuCommand,
+  type AppViewId,
+  type LegacyViewId
+} from "../shared/app-menu";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
-import { TopicNoticeHost } from "./components/topics/ops/TopicNoticeHost";
 import {
   currentWikiTopic,
   showInWiki,
   startWikiTopicHistory,
   wikiNavigationStep
 } from "./components/topics/wiki-topic-history";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BriefcaseBusiness,
-  Activity,
-  ClipboardCheck,
-  Database,
-  FilePlus2,
-  Inbox,
-  Moon,
-  BookOpen,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Network,
-  RefreshCw,
-  Search,
-  Settings,
-  SquareLibrary,
-  Sun
-} from "lucide-react";
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState
+} from "react";
+import { Database, RefreshCw } from "lucide-react";
 import {
   createTranslator,
   normalizeLanguageCode,
@@ -71,51 +67,44 @@ import { LibraryView, type LibraryExternalTarget } from "./components/LibraryVie
 import type { OpenableNavigation } from "./components/WhereIsThis";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
-import { ActivityHost } from "./components/activity/ActivityHost";
 import type { ActivityNavigation } from "./components/activity/activity-model";
 import { InboxScreen } from "./components/inbox/InboxScreen";
-import { useInboxTotal } from "./components/inbox/use-inbox-total";
 import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
+import { createWorkspaceSaver, loadWorkspace } from "./workspace/persist";
+import { Shell } from "./workspace/Shell";
+import { hasNavigator, legacyHostFor } from "./workspace/shell-model";
+import { reduce, type WorkspaceAction, type WorkspaceState } from "./workspace/state";
+import type { KeymapResult } from "./workspace/keymap";
 
-type ViewId = AppViewId;
+/**
+ * The old view each place shows until its replacement lands (D6): the old views the shell hosts for
+ * a destination, Settings, and the old views the rail's "Old screens" menu opens.
+ */
+type ViewId = "wiki" | "library" | "inbox" | "settings" | LegacyViewId;
+
+const legacyViews: readonly string[] = legacyViewIds;
+const isLegacyView = (view: string): view is LegacyViewId => legacyViews.includes(view);
+
+/** The old view the shell shows for a place, unless an old view was chosen from the rail's menu. */
+function viewOf(place: WorkspaceState["destination"], legacyView: LegacyViewId | null): ViewId {
+  if (legacyView !== null) return legacyView;
+  if (place === "settings") return "settings";
+  const host = legacyHostFor[place];
+  return host === "graph" ? "knowledgeGraph" : host;
+}
+
+/** The place an old view that a destination hosts belongs to (for a link that opens it). */
+const placeOfView: Record<
+  "wiki" | "library" | "inbox" | "settings",
+  WorkspaceState["destination"]
+> = { wiki: "explore", library: "library", inbox: "inbox", settings: "settings" };
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
   return { default: module.KnowledgeGraphDashboard };
 });
-
-interface NavItem {
-  id: ViewId;
-  label: MessageKey;
-  icon: typeof SquareLibrary;
-}
-
-const navItems: NavItem[] = [
-  { id: "wiki", label: "wiki.title", icon: BookOpen },
-  { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
-  { id: "inbox", label: "inbox.title", icon: Inbox },
-  { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
-  { id: "search", label: "shell.navigation.search", icon: Search },
-  { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
-  { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
-  { id: "knowledgeGraph", label: "shell.navigation.knowledgeGraph", icon: Network },
-  { id: "debug", label: "debug.title", icon: Activity },
-  { id: "settings", label: "shell.navigation.settings", icon: Settings }
-];
-
-const emptyViews: Record<
-  Exclude<ViewId, "settings" | "review" | "debug" | "inbox">,
-  { title: MessageKey; empty: MessageKey }
-> = {
-  wiki: { title: "wiki.title", empty: "wiki.empty" },
-  library: { title: "shell.navigation.library", empty: "shell.states.empty" },
-  import: { title: "shell.navigation.import", empty: "shell.states.empty" },
-  search: { title: "shell.navigation.search", empty: "shell.states.empty" },
-  jobs: { title: "jobs.title", empty: "shell.states.empty" },
-  knowledgeGraph: { title: "shell.navigation.knowledgeGraph", empty: "shell.states.empty" }
-};
 
 const databaseStartupTimeoutMs = 60_000;
 
@@ -174,7 +163,35 @@ export function App({
   useEffect(() => {
     wikiHistoryRef.current = wikiHistory;
   }, [wikiHistory]);
-  const [activeView, setActiveView] = useState<ViewId>("library");
+  // F5 T135: the shell's place and layout (D8); the old views a place hosts follow it (D6).
+  const [workspace, dispatch] = useReducer(
+    (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
+    undefined,
+    () => loadWorkspace()
+  );
+  // An old view chosen from the rail's "Old screens" menu; a destination or Settings clears it.
+  const [legacyView, setLegacyView] = useState<LegacyViewId | null>(null);
+  const activeView = viewOf(workspace.destination, legacyView);
+  const setActiveView = useCallback((view: ViewId) => {
+    if (isLegacyView(view)) {
+      setLegacyView(view);
+      return;
+    }
+    setLegacyView(null);
+    dispatch({ type: "go", destination: placeOfView[view] });
+  }, []);
+  const [workspaceSaver] = useState(() => createWorkspaceSaver());
+  useEffect(() => {
+    workspaceSaver.save(workspace);
+  }, [workspace, workspaceSaver]);
+  useEffect(() => {
+    const flush = () => workspaceSaver.flush();
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, [workspaceSaver]);
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
@@ -187,7 +204,7 @@ export function App({
   const [settings, setSettings] = useState<StorageSettings>(
     initialSettings ?? createDefaultSettings()
   );
-  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(initialSystemInfo);
+  const [, setSystemInfo] = useState<SystemInfo | null>(initialSystemInfo);
   const [hasLoadedAppData, setHasLoadedAppData] = useState(Boolean(initialSettings));
   const [isSaving, setIsSaving] = useState(false);
   const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
@@ -211,7 +228,6 @@ export function App({
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
-  const inboxTotal = useInboxTotal(databaseStatus.state === "ready" && hasLoadedAppData);
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   // The preference the startup screen of the next launch starts from; the boot defaults are not stored.
   useEffect(() => {
@@ -552,10 +568,15 @@ export function App({
 
   // These stay below the functions they use: a closure that reaches a function declared later stops
   // the React Compiler lint from checking this component.
-  // The navigation rail and the application menu open a view the same way.
-  const goToView = useStableCallback((view: ViewId) => {
-    if (view === "settings") selectSettingsScope("overview");
-    setActiveView(view);
+  // The rail, the application menu and the shortcuts go to a place the same way.
+  const goToPlace = useStableCallback((place: WorkspaceState["destination"]) => {
+    if (place === "settings") selectSettingsScope("overview");
+    setLegacyView(null);
+    dispatch({ type: "go", destination: place });
+  });
+  const goToView = useStableCallback((view: AppViewId) => {
+    if (isLegacyView(view)) setActiveView(view);
+    else goToPlace(view);
   });
   // What an Activity action leads to: a place in Settings, or the Inbox.
   const openFromActivity = useStableCallback((target: ActivityNavigation) => {
@@ -563,6 +584,31 @@ export function App({
     setActiveView(target.view);
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
+
+  // What a shortcut of the workspace does. Until the palette (T145), Adicionar's picker (T150) and
+  // the panel stack (T136) land, Cmd-K and Cmd-N open the old Search and Add content views, and the
+  // commands of a stack that is not there yet do nothing.
+  const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
+    switch (result.type) {
+      case "openPalette":
+        return goToView("search");
+      case "newImport":
+        return goToView("import");
+      case "quickLook":
+      case "toggleFocusMode":
+      case "cycleRegion":
+      case "contextTab":
+        return;
+      case "go":
+        return goToPlace(result.destination);
+      case "toggleNavigator":
+        // Cmd-\ acts only where a navigator exists (Explore).
+        if (hasNavigator(workspace.destination)) dispatch(result);
+        return;
+      default:
+        dispatch(result);
+    }
+  });
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
   const openConnectionsSettings = useStableCallback(() => {
@@ -574,9 +620,11 @@ export function App({
     applyMenuCommand(command, {
       closePanel: () => void dispatchClosePanel(),
       goTo: goToView,
-      toggleNavigation: () =>
-        updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed }),
-      toggleTheme: toggleThemeMode
+      toggleNavigation: () => handleWorkspaceResult({ type: "toggleNavigator" }),
+      toggleTheme: toggleThemeMode,
+      workspace: handleWorkspaceResult,
+      // Hoisting needs the topic in the top panel (T141).
+      hoistTopic: () => undefined
     })
   );
 
@@ -593,17 +641,6 @@ export function App({
   useEffect(() => {
     void window.app.menu.setLanguage(appSettings.language).catch(() => undefined);
   }, [appSettings.language]);
-
-  const pageTitle =
-    activeView === "settings"
-      ? "settings.title"
-      : activeView === "review"
-        ? "knowledge.review.title"
-        : activeView === "debug"
-          ? "debug.title"
-          : activeView === "inbox"
-            ? "inbox.title"
-            : emptyViews[activeView].title;
 
   // F4 D31: the first-run view stands in for the shell while the library is empty and unrecorded.
   const firstRunScreen = useFirstRun({
@@ -680,154 +717,29 @@ export function App({
   if (firstRunScreen) return firstRunScreen;
 
   return (
-    <div
-      className={cn(
-        "flex h-screen overflow-hidden bg-background text-foreground",
-        isDarkMode && "dark"
-      )}
-    >
-      <aside
-        className={cn(
-          "flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-surface",
-          appSettings.navigationCollapsed ? "w-16" : "w-56"
-        )}
+    <div className={cn(isDarkMode && "dark")}>
+      <Shell
+        t={t}
+        place={workspace.destination}
+        legacyView={legacyView}
+        navigatorOn={
+          workspace.destination !== "settings" && workspace.navigator[workspace.destination]
+        }
+        // The old Wiki hosts its own navigator; the host appears with Explore's root (T141).
+        navigatorHidden={activeView === "wiki"}
+        dataEnabled
+        onGo={goToPlace}
+        onOpenLegacy={setActiveView}
+        onOpenPalette={() => handleWorkspaceResult({ type: "openPalette" })}
+        onAdd={() => handleWorkspaceResult({ type: "newImport" })}
+        onAddMore={() => handleWorkspaceResult({ type: "newImport" })}
+        onNavigateActivity={openFromActivity}
+        onOpenInbox={openInbox}
+        onOpenTopic={openTopic}
       >
         <div
-          className={cn(
-            "flex h-14 shrink-0 items-center gap-2.5 border-b border-border",
-            appSettings.navigationCollapsed ? "justify-center px-2" : "px-4"
-          )}
-        >
-          {!appSettings.navigationCollapsed && (
-            <>
-              <Database className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
-              <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">
-                {t("app.title")}
-              </span>
-            </>
-          )}
-          <button
-            type="button"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
-            aria-label={t(
-              appSettings.navigationCollapsed
-                ? "shell.actions.expandNavigation"
-                : "shell.actions.collapseNavigation"
-            )}
-            title={t(
-              appSettings.navigationCollapsed
-                ? "shell.actions.expandNavigation"
-                : "shell.actions.collapseNavigation"
-            )}
-            aria-expanded={!appSettings.navigationCollapsed}
-            aria-controls="app-navigation"
-            onClick={() =>
-              updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed })
-            }
-          >
-            {appSettings.navigationCollapsed ? (
-              <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
-        </div>
-        <nav
-          id="app-navigation"
-          aria-label={t("shell.navigation.label")}
-          className={cn(
-            "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain",
-            appSettings.navigationCollapsed ? "p-2" : "p-3"
-          )}
-        >
-          <div className="grid gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id;
-              const waiting = item.id === "inbox" ? (inboxTotal ?? 0) : 0;
-              const label =
-                waiting > 0
-                  ? `${t(item.label)}, ${t("inbox.badge", { values: { count: waiting } })}`
-                  : t(item.label);
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-label={label}
-                  aria-current={isActive ? "page" : undefined}
-                  title={appSettings.navigationCollapsed ? label : undefined}
-                  className={cn(
-                    "relative flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
-                    appSettings.navigationCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
-                    isActive
-                      ? "bg-accent-soft text-accent"
-                      : "text-muted-foreground hover:bg-soft hover:text-foreground"
-                  )}
-                  onClick={() => goToView(item.id)}
-                >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {!appSettings.navigationCollapsed && (
-                    <span className="min-w-0 flex-1">{t(item.label)}</span>
-                  )}
-                  {waiting > 0 ? (
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-foreground",
-                        appSettings.navigationCollapsed && "absolute right-0.5 top-0.5 min-w-4 px-1"
-                      )}
-                    >
-                      {waiting > 99 ? "99+" : waiting}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-          {activeView === "settings" ? (
-            <SettingsScopeMenu
-              collapsed={appSettings.navigationCollapsed}
-              activeScope={activeSettingsScope}
-              t={t}
-              onScopeChange={selectSettingsScope}
-            />
-          ) : null}
-        </nav>
-        <div
-          className={cn(
-            "flex shrink-0 border-t border-border p-3",
-            appSettings.navigationCollapsed && "justify-center"
-          )}
-        >
-          <button
-            type="button"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
-            aria-label={t("shell.actions.toggleTheme")}
-            title={t("shell.actions.toggleTheme")}
-            onClick={() => {
-              void toggleThemeMode();
-            }}
-          >
-            {isDarkMode ? (
-              <Sun className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Moon className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
-        </div>
-      </aside>
-
-      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background px-5">
-          <h1 className="shrink-0 text-base font-medium text-foreground">{t(pageTitle)}</h1>
-          <div className="ml-auto flex min-w-0 justify-end">
-            <ActivityHost t={t} onNavigate={openFromActivity} onOpenInbox={openInbox} />
-          </div>
-        </header>
-        <div
           ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-auto overscroll-contain p-5"
+          className="h-full min-h-0 overflow-auto overscroll-contain p-5"
           onScroll={(event) => {
             scrollPositions.current[activeView] = event.currentTarget.scrollTop;
           }}
@@ -878,21 +790,36 @@ export function App({
             />
           </div>
           {activeView === "settings" ? (
-            <SettingsView
-              onReset={async () => {
-                window.location.reload();
-              }}
-              activeScope={activeSettingsScope}
-              appSettings={appSettings}
-              settings={settings}
-              isSaving={isSaving}
-              t={t}
-              onAppSettingsChange={updateAppSettings}
-              onChange={updateStorageSettings}
-              onSelectObsidianVault={selectObsidianVault}
-              onScopeChange={selectSettingsScope}
-              onToast={(message, tone) => pushToast(t(message), tone)}
-            />
+            // The old Settings keeps its section menu until Settings v2 (T161) brings its own column.
+            <div className="flex min-h-full gap-5">
+              <nav
+                aria-label={t("shell.navigation.label")}
+                className="sticky top-0 w-60 shrink-0 self-start"
+              >
+                <SettingsScopeMenu
+                  activeScope={activeSettingsScope}
+                  t={t}
+                  onScopeChange={selectSettingsScope}
+                />
+              </nav>
+              <div className="min-w-0 flex-1">
+                <SettingsView
+                  onReset={async () => {
+                    window.location.reload();
+                  }}
+                  activeScope={activeSettingsScope}
+                  appSettings={appSettings}
+                  settings={settings}
+                  isSaving={isSaving}
+                  t={t}
+                  onAppSettingsChange={updateAppSettings}
+                  onChange={updateStorageSettings}
+                  onSelectObsidianVault={selectObsidianVault}
+                  onScopeChange={selectSettingsScope}
+                  onToast={(message, tone) => pushToast(t(message), tone)}
+                />
+              </div>
+            </div>
           ) : activeView === "import" ? (
             <ImportView
               t={t}
@@ -957,13 +884,12 @@ export function App({
             />
           ) : null}
         </div>
-      </main>
+      </Shell>
       <ToastViewport
         toasts={toasts}
         dismissLabel={t("shell.toasts.dismiss")}
         onDismiss={dismissToast}
       />
-      <TopicNoticeHost t={t} />
     </div>
   );
 }

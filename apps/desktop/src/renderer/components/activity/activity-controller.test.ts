@@ -175,9 +175,9 @@ describe("the pill's status", () => {
     const { controller, api, listeners } = setup();
     controller.start();
     controller.start();
-    // The Gardener status, the Inbox count and the embedder (`model.loading`).
-    expect(api.onAppEvent).toHaveBeenCalledTimes(3);
-    expect(listeners()).toBe(3);
+    // The Gardener status, the Inbox count, the job counts and the embedder (`model.loading`).
+    expect(api.onAppEvent).toHaveBeenCalledTimes(4);
+    expect(listeners()).toBe(4);
     controller.stop();
     expect(listeners()).toBe(0);
   });
@@ -296,13 +296,15 @@ describe("the drawer", () => {
     const pillListeners = listeners();
     expect(api.budget.snapshot).not.toHaveBeenCalled();
     expect(api.changes.list).not.toHaveBeenCalled();
-    expect(listening("job.progress")).toBe(0);
+    // The job counts are the pill's ("3 waiting"), so they are followed from the start.
+    expect(listening("job.progress")).toBe(1);
 
     controller.setOpen(true);
     expect(api.budget.snapshot).toHaveBeenCalledOnce();
     expect(api.changes.list).toHaveBeenCalledWith({ status: "applied", limit: 8 });
     expect(listening("job.progress")).toBe(1);
     expect(listening("budget.changed")).toBe(1);
+    expect(listening("job.progress")).toBe(1);
     for (const type of [
       "changes.changed",
       "tree.changed",
@@ -313,7 +315,7 @@ describe("the drawer", () => {
 
     controller.setOpen(false);
     expect(listeners()).toBe(pillListeners);
-    expect(listening("job.progress")).toBe(0);
+    expect(listening("job.progress")).toBe(1);
   });
 
   it("toggles", () => {
@@ -388,19 +390,20 @@ describe("the drawer", () => {
     expect(controller.getSnapshot().done).toEqual({ status: "loading" });
   });
 
-  it("counts running, waiting and held jobs from the push, only while open", () => {
+  it("counts running, waiting and held jobs from the push, and keeps them when the drawer closes", () => {
     const { controller, emit } = setup();
-    controller.setOpen(true);
+    controller.start();
     expect(controller.getSnapshot().jobs).toBeNull();
     emit(jobProgress({ running: 1, queued: 3, blocked: 1 }, { queued: 2 }));
     expect(controller.getSnapshot().jobs).toEqual({ running: 1, waiting: 5, onHold: 1 });
+    controller.setOpen(true);
     controller.setOpen(false);
-    expect(controller.getSnapshot().jobs).toBeNull();
+    expect(controller.getSnapshot().jobs).toEqual({ running: 1, waiting: 5, onHold: 1 });
   });
 
-  it("does not draw the drawer again for counts that did not move", () => {
+  it("does not draw the pill again for counts that did not move", () => {
     const { controller, emit } = setup();
-    controller.setOpen(true);
+    controller.start();
     emit(jobProgress({ running: 1, queued: 3 }));
     const shown = controller.getSnapshot();
     emit(jobProgress({ running: 1, queued: 3 }));

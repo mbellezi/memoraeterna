@@ -84,8 +84,8 @@ const changeEvents = [
 /**
  * The state of the Activity pill and drawer, outside React so every rule is tested without a
  * renderer. The pill is always shown, so `start` follows only what it needs: the Gardener's status,
- * the Inbox count and the embedder loading. The drawer's own reads (the spending meters, the
- * changes just made) and its `job.progress` counts exist only while it is open. Everything is
+ * the Inbox count, the job counts ("3 waiting") and the embedder loading. The drawer's own reads (the
+ * spending meters, the changes just made) exist only while it is open. Everything is
  * pushed; nothing polls. A failed read stays visible and can be retried.
  */
 export class ActivityController {
@@ -132,6 +132,18 @@ export class ActivityController {
         this.inboxToken += 1;
         this.update({ inboxTotal: event.total });
       }),
+      api.onAppEvent("job.progress", (event) => {
+        const jobs = jobFactsOf(event);
+        const { jobs: shown } = this.snapshot;
+        // Counts that did not move are not a change: the pill is not drawn again for them.
+        if (
+          shown?.running === jobs.running &&
+          shown.waiting === jobs.waiting &&
+          shown.onHold === jobs.onHold
+        )
+          return;
+        this.update({ jobs });
+      }),
       api.onAppEvent("model.loading", (status) => {
         if (status.state === "loading") {
           this.loadingModelId = status.modelId;
@@ -163,7 +175,7 @@ export class ActivityController {
     if (this.snapshot.open === open) return;
     if (!open) {
       this.stopDrawer();
-      this.update({ open, jobs: null });
+      this.update({ open });
       return;
     }
     this.update({ open });
@@ -307,18 +319,6 @@ export class ActivityController {
     const api = this.deps.api();
     const follow = <T extends AppEventType>(type: T, handler: AppEventHandler<T>) =>
       this.drawerStops.push(api.onAppEvent(type, handler));
-    follow("job.progress", (event) => {
-      const jobs = jobFactsOf(event);
-      const { jobs: shown } = this.snapshot;
-      // Counts that did not move are not a change: the drawer is not drawn again for them.
-      if (
-        shown?.running === jobs.running &&
-        shown.waiting === jobs.waiting &&
-        shown.onHold === jobs.onHold
-      )
-        return;
-      this.update({ jobs });
-    });
     follow("budget.changed", (event) => {
       this.budgetToken += 1;
       this.update({ budget: { status: "ready", value: event.budget } });
