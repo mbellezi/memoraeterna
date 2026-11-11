@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Fechar atividade",
       "explainer": "o que o Memora faz em segundo plano",
-      "loadFailed": "Não foi possível carregar a atividade."
+      "loadFailed": "Não foi possível carregar a atividade.",
+      "loadFailedKept": "Nada foi alterado. Sua biblioteca está segura."
     },
     "sections": {
       "now": "Agora",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Nada foi alterado automaticamente ainda.",
       "loadFailed": "Não foi possível carregar as alterações recentes.",
+      "loadFailedKept": "As alterações estão guardadas e poderão ser desfeitas assim que carregarem.",
       "undo": "Desfazer",
       "undoing": "Desfazendo...",
       "undone": "Alteração desfeita.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "Não foi possível carregar os medidores de gasto.",
+      "loadFailedKept": "Seus limites e gastos não foram alterados.",
       "state": {
         "open": "Abaixo do limite",
         "paused": "Pausado perto do limite",

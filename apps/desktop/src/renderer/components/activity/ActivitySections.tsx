@@ -33,21 +33,27 @@ export function LoadingLine({ t, lines = 2 }: { t: Translator; lines?: number })
   );
 }
 
-/** A read that failed stays visible and retryable. */
+/**
+ * A read that failed stays visible and retryable: one plain sentence saying what failed, one muted
+ * line saying what is kept (design record 5.12), and one "Tentar de novo".
+ */
 export function FailedLine({
   t,
   message,
+  kept,
   onRetry
 }: {
   t: Translator;
   message: string;
+  kept: string;
   onRetry: () => void;
 }) {
   return (
     <div className="grid justify-items-start gap-1">
-      <p role="alert" className="text-sm text-foreground">
-        {message}
-      </p>
+      <div role="alert" className="grid gap-0.5">
+        <p className="text-sm text-foreground">{message}</p>
+        <p className="text-xs text-muted-foreground">{kept}</p>
+      </div>
       {/* The link's own padding is pulled back, so its words start where the sentence does. */}
       <Button variant="link" className="-ml-[13px]" onClick={onRetry}>
         {t("shell.actions.retry")}
@@ -299,19 +305,20 @@ export function DoneList({
             key={undoKey(change)}
             className="grid gap-1 border-t border-border py-2 first:border-t-0"
           >
-            {/* The sentence, the time and Undo share one line (Undo at the end), so a row is short. */}
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="min-w-0 text-sm text-foreground">
-                {changeSetTitle(t, change)}
-                <span className="whitespace-nowrap text-muted-foreground">
-                  {` · ${formatStatusTime(t.locale, new Date(change.at), new Date(now))}`}
-                </span>
-              </p>
+            {/* The sentence leads and its time sits muted on its own line under it, so a long title
+                wraps on its own words; Undo stays at the end of the first line. */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="grid min-w-0 gap-0.5">
+                <p className="text-sm text-foreground">{changeSetTitle(t, change)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {formatStatusTime(t.locale, new Date(change.at), new Date(now))}
+                </p>
+              </div>
               {change.undo === "available" ? (
                 <button
                   type="button"
                   disabled={pending}
-                  className="-my-1 shrink-0 rounded-sm px-1 py-1 text-xs font-medium leading-5 text-accent transition-colors hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  className="-my-0.5 shrink-0 rounded-sm px-1 py-1 text-xs font-medium leading-5 text-accent transition-colors hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={() => onUndo(change)}
                 >
                   {pending ? t("activity.done.undoing") : t("activity.done.undo")}

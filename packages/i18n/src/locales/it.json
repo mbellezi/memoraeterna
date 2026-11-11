@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Chiudi attività",
       "explainer": "cosa fa Memora in background",
-      "loadFailed": "Impossibile caricare l’attività."
+      "loadFailed": "Impossibile caricare l’attività.",
+      "loadFailedKept": "Non è stato modificato nulla. La tua libreria è al sicuro."
     },
     "sections": {
       "now": "Adesso",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Non è ancora stato modificato nulla in automatico.",
       "loadFailed": "Impossibile caricare le modifiche recenti.",
+      "loadFailedKept": "Le modifiche sono salvate e potrai annullarle quando saranno caricate.",
       "undo": "Annulla",
       "undoing": "Annullamento...",
       "undone": "Modifica annullata.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "Impossibile caricare i contatori di spesa.",
+      "loadFailedKept": "I tuoi limiti e le tue spese non sono cambiati.",
       "state": {
         "open": "Entro il limite",
         "paused": "In pausa vicino al limite",

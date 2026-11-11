@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Fermer l’activité",
       "explainer": "ce que Memora fait en arrière-plan",
-      "loadFailed": "Impossible de charger l’activité."
+      "loadFailed": "Impossible de charger l’activité.",
+      "loadFailedKept": "Rien n’a été modifié. Votre bibliothèque est en sécurité."
     },
     "sections": {
       "now": "En ce moment",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Rien n’a encore été modifié automatiquement.",
       "loadFailed": "Impossible de charger les modifications récentes.",
+      "loadFailedKept": "Les modifications sont enregistrées et pourront être annulées une fois chargées.",
       "undo": "Annuler",
       "undoing": "Annulation...",
       "undone": "Modification annulée.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "Impossible de charger les compteurs de dépenses.",
+      "loadFailedKept": "Vos limites et vos dépenses n’ont pas changé.",
       "state": {
         "open": "Sous la limite",
         "paused": "En pause près de la limite",

@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Close activity",
       "explainer": "what Memora does in the background",
-      "loadFailed": "Activity could not be loaded."
+      "loadFailed": "Activity could not be loaded.",
+      "loadFailedKept": "Nothing was changed. Your library is safe."
     },
     "sections": {
       "now": "Now",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Nothing was changed automatically yet.",
       "loadFailed": "Recent changes could not be loaded.",
+      "loadFailedKept": "The changes are stored and can still be undone once they load.",
       "undo": "Undo",
       "undoing": "Undoing...",
       "undone": "Change undone.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "The spending meters could not be loaded.",
+      "loadFailedKept": "Your limits and spending are unchanged.",
       "state": {
         "open": "Under the limit",
         "paused": "Paused near the limit",

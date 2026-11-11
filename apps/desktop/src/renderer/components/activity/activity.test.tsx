@@ -307,11 +307,16 @@ describe("the Activity drawer", () => {
     expect(html.match(/>Retry</gu)).toHaveLength(1);
     expect(html).toContain("Activity could not be loaded.");
     expect(html).not.toContain("Recent changes could not be loaded.");
+    // The failure says in one muted line what is kept, once.
+    expect(html).toContain("Nothing was changed. Your library is safe.");
+    expect(html.match(/text-muted-foreground">Nothing was changed/gu)).toHaveLength(1);
     // A read that fails by itself while the status answered keeps its own line and retry.
     const alone = drawer(answered({ budget: { status: "error" }, done: { status: "error" } }));
     expect(alone.match(/>Retry</gu)).toHaveLength(2);
     expect(alone).toContain("Recent changes could not be loaded.");
     expect(alone).toContain("The spending meters could not be loaded.");
+    expect(alone).toContain("The changes are stored and can still be undone once they load.");
+    expect(alone).toContain("Your limits and spending are unchanged.");
   });
 
   it("leaves out the Waiting and Needs you sections while they have nothing to say", () => {
@@ -460,6 +465,15 @@ describe("the Activity drawer", () => {
     expect(html).not.toContain("00000000-0000");
   });
 
+  it("puts a change's time on its own muted line under its title, never inside the title", () => {
+    const html = drawer(answered({ done: ready([changeSet(1)]) }));
+    expect(html).toContain('<p class="text-sm text-foreground">Placed 12 items in topics</p>');
+    expect(html).toMatch(
+      /Placed 12 items in topics<\/p><p class="text-xs text-muted-foreground">[^<]+<\/p>/u
+    );
+    expect(html).not.toMatch(/Placed 12 items in topics[^<]* · /u);
+  });
+
   it("shows the result of an undo beside the change", () => {
     const one = changeSet(1);
     const html = drawer(
@@ -522,6 +536,17 @@ describe("the Activity drawer", () => {
         onOpenInbox: vi.fn()
       });
       expect(html, locale).not.toMatch(/\[\[missing|\{\w+\}/u);
+    }
+    const failed = activitySnapshot({
+      open: true,
+      status: ready(idleStatus),
+      budget: { status: "error" },
+      done: { status: "error" }
+    });
+    for (const locale of supportedLanguageCodes) {
+      const html = drawer(failed, { t: createTranslator(locale) });
+      expect(html, locale).not.toMatch(/\[\[missing|\{\w+\}/u);
+      expect(html.match(/text-muted-foreground">[^<]*<\/p><\/div>/gu), locale).toHaveLength(2);
     }
     const french = drawer(snapshot, { t: createTranslator("fr") });
     expect(french).toContain("Activité");
