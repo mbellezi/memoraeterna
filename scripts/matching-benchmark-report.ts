@@ -1,6 +1,5 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   createPgPool,
@@ -8,26 +7,15 @@ import {
   createMatchingEvaluationRepository
 } from "../packages/db/src/index.ts";
 import { SettingsService } from "../apps/desktop/src/main/services/settings-service.ts";
+import { readProfileDescriptor, scriptProfile } from "./lib/profile-arg.ts";
 
-const directory = resolve(".cache/matching-benchmark");
+// The scratch profile of the benchmark (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const { profilePath, outputDirectory: directory, rest } = await scriptProfile("benchmark");
 const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
-const phase = z
-  .enum(["prepare", "baseline", "economy", "coverage", "validate"])
-  .parse(process.argv[2]);
+const phase = z.enum(["prepare", "baseline", "economy", "coverage", "validate"]).parse(rest[0]);
 const state = manifest.phases[phase];
 if (!state) throw Error("Requested phase has not started");
-const descriptor = z
-  .object({ developmentOnly: z.literal(true), connectionString: z.string() })
-  .parse(
-    JSON.parse(
-      await readFile(
-        join(homedir(), "Library/Application Support/@app/desktop/database/dev-connection.json"),
-        "utf8"
-      )
-    )
-  );
-if (!["127.0.0.1", "localhost"].includes(new URL(descriptor.connectionString).hostname))
-  throw Error("Loopback DEV required");
+const descriptor = await readProfileDescriptor(profilePath);
 const pool = createPgPool({ connectionString: descriptor.connectionString, max: 1 });
 try {
   const repository = createMatchingEvaluationRepository(pool);
@@ -52,10 +40,10 @@ try {
       2
     )
   );
-  const settings = await new SettingsService(
-    join(homedir(), "Library/Application Support/@app/desktop"),
-    { getDatabasePool: () => pool, requireDatabase: true }
-  ).getApp();
+  const settings = await new SettingsService(profilePath, {
+    getDatabasePool: () => pool,
+    requireDatabase: true
+  }).getApp();
   await writeFile(join(target, "settings.json"), JSON.stringify(settings, null, 2));
   await writeFile(join(target, "progress.json"), JSON.stringify(progress, null, 2));
   console.log(

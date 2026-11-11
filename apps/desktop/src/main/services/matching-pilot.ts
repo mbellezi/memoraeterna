@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   createAiConfigRepository,
@@ -14,6 +14,7 @@ import type { HierarchicalIngestionService } from "./hierarchical-ingestion-serv
 import type { SettingsService } from "./settings-service.js";
 import type { BackupService } from "./backup-service.js";
 import type { JobSupervisor } from "./job-supervisor.js";
+import { readMatchingProfile } from "./matching-profile.js";
 
 const documentSchema = z.object({
   key: z.string(),
@@ -91,16 +92,27 @@ export async function runMatchingPilot(options: {
     !["inspect", "prepare", "run", "report", "rematch"].includes(options.mode)
   )
     throw new Error("Pilot requires an unpackaged DEV application and an explicit mode");
+  // The scratch-profile gate comes first: nothing is read from the database or written before it.
+  const { profilePath, outputDirectory } = await readMatchingProfile({
+    userDataPath: options.userDataPath,
+    workspaceRoot: options.workspaceRoot,
+    runner: "pilot"
+  });
   const descriptor = JSON.parse(
-    await readFile(join(options.userDataPath, "database/dev-connection.json"), "utf8")
+    await readFile(join(profilePath, "database/dev-connection.json"), "utf8")
   );
-  if (
-    descriptor.developmentOnly !== true ||
-    !resolve(options.userDataPath).endsWith("/@app/desktop")
-  )
+  if (descriptor.developmentOnly !== true)
     throw new Error("Pilot refuses a non-DEV userData directory");
   const repository = createMatchingEvaluationRepository(options.pool);
   const preflight = await repository.preflight();
+  if (options.mode === "inspect") {
+    // Written before the log line so a reader that waits for the line finds the file.
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(
+      join(outputDirectory, "preflight.json"),
+      JSON.stringify({ capturedAt: new Date().toISOString(), ...preflight }, null, 2)
+    );
+  }
   console.log(
     "MATCHING_PILOT",
     JSON.stringify({ event: "preflight", userDataPath: options.userDataPath, ...preflight })
@@ -111,7 +123,6 @@ export async function runMatchingPilot(options: {
       await readFile(join(options.workspaceRoot, "scripts/fixtures/matching-pilot.json"), "utf8")
     )
   );
-  const outputDirectory = join(options.workspaceRoot, ".cache/matching-pilot");
   await mkdir(outputDirectory, { recursive: true });
   const limitsPath = join(outputDirectory, "limits.json");
   const limitsSchema = z

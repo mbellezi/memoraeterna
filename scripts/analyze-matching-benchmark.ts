@@ -1,9 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-const phase = process.argv[2] ?? "baseline";
+import { scriptProfile } from "./lib/profile-arg.ts";
+
+// The scratch profile of the benchmark (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const { outputDirectory: directory, rest } = await scriptProfile("benchmark");
+const phase = rest[0] ?? "baseline";
 if (!["prepare", "baseline", "economy", "coverage", "validate"].includes(phase))
   throw Error("Invalid phase");
-const directory = ".cache/matching-benchmark";
 const read = async (path: string) => JSON.parse(await readFile(path, "utf8"));
 const [corpus, manifest, results, settings] = await Promise.all([
   read("scripts/fixtures/matching-benchmark.json"),

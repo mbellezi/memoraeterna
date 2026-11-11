@@ -13,9 +13,13 @@ export default defineConfig({
       "scripts/kpi/**/*.test.ts",
       "scripts/db/**/*.test.ts",
       "scripts/golden/**/*.test.ts",
+      "scripts/lib/**/*.test.ts",
       "scripts/relations/**/*.test.ts",
+      "scripts/screens/**/*.test.ts",
       "scripts/soak/**/*.test.ts",
-      "scripts/topics/**/*.test.ts"
+      "scripts/spikes/atlas/**/*.test.ts",
+      "scripts/topics/**/*.test.ts",
+      "e2e/support/**/*.test.ts"
     ],
     coverage: {
       reporter: ["text", "lcov"]

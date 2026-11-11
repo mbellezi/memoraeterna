@@ -1,6 +1,6 @@
 import { renderPrompt } from "./prompt-runtime.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
 import { sha256 } from "@app/conversion";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../../shared/ipc.js";
 import type { AiService } from "./ai-service.js";
 import { isMatchingPilotComplete, type runMatchingPilot } from "./matching-pilot.js";
+import { readMatchingProfile } from "./matching-profile.js";
 
 const documentSchema = z.object({
   key: z.string(),
@@ -100,15 +101,20 @@ export function benchmarkConfiguration(
 export async function runMatchingBenchmark(
   options: Parameters<typeof runMatchingPilot>[0] & { ai: AiService }
 ) {
-  if (options.isPackaged || !resolve(options.userDataPath).endsWith("/@app/desktop"))
-    throw Error("Benchmark requires the unpackaged DEV profile");
+  if (options.isPackaged) throw Error("Benchmark requires the unpackaged DEV profile");
+  // The scratch-profile gate comes first: nothing is read from the database or written before it.
+  const profile = await readMatchingProfile({
+    userDataPath: options.userDataPath,
+    workspaceRoot: options.workspaceRoot,
+    runner: "benchmark"
+  });
   const descriptor = z
     .object({ developmentOnly: z.literal(true) })
     .parse(
-      JSON.parse(await readFile(join(options.userDataPath, "database/dev-connection.json"), "utf8"))
+      JSON.parse(await readFile(join(profile.profilePath, "database/dev-connection.json"), "utf8"))
     );
   if (!descriptor.developmentOnly) throw Error("DEV required");
-  const directory = join(options.workspaceRoot, ".cache/matching-benchmark");
+  const directory = profile.outputDirectory;
   await mkdir(directory, { recursive: true });
   const fixtureText = await readFile(
     join(options.workspaceRoot, "scripts/fixtures/matching-benchmark.json"),
@@ -126,11 +132,15 @@ export async function runMatchingBenchmark(
   ]);
   if (new Set(allKeys).size !== 82 || allKeys.length !== 82)
     throw Error("Invalid benchmark source identities");
+  // The benchmark's own copy wins; otherwise the pilot's snapshot in the same scratch profile.
+  const readSettingsBefore = () =>
+    readFile(join(directory, "settings-before.json"), "utf8").catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return readFile(join(profile.profilePath, "matching-pilot/settings-before.json"), "utf8");
+    });
   // Snapshots written before matching settings v2 (T53b) read through its migration.
   const reference = appSettingsSchema.parse(
-    migrateMatchingSettingsV2(
-      JSON.parse(await readFile(join(directory, "settings-before.json"), "utf8"))
-    )
+    migrateMatchingSettingsV2(JSON.parse(await readSettingsBefore()))
   );
   const repository = createMatchingEvaluationRepository(options.pool);
   const manifestPath = join(directory, "manifest.json");
@@ -143,7 +153,7 @@ export async function runMatchingBenchmark(
       .object({ ids: z.record(z.string(), z.string().uuid()) })
       .parse(
         JSON.parse(
-          await readFile(join(options.workspaceRoot, ".cache/matching-pilot/manifest.json"), "utf8")
+          await readFile(join(profile.profilePath, "matching-pilot/manifest.json"), "utf8")
         )
       );
     const before = await repository.preflight();

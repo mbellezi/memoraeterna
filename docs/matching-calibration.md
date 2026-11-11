@@ -19,28 +19,31 @@ homonyms, conditions/negation, and an index with no substantive ideas.
 
 ## Run
 
-**Frozen until the runner's scratch-profile mode lands** (plan F5 box; plan decision 34, 2026-11-11). The
-runner below and the "Inspect and assess" commands work only on the default DEV profile, and no agent starts
-the owner's DEV profile on refactoring code. Until the mode lands, run none of them; once it lands, run them
-only on a clone or scratch profile (`MEMORA_USER_DATA_DIR`), never on the owner's DEV profile.
+The runner works only on a scratch profile (F5 D26): an absolute `MEMORA_USER_DATA_DIR` that is a folder
+inside `.cache/profiles/` (an APFS clone of a stopped profile, `cp -cR`) or inside `.cache/f<N>/scratch/`
+(for example `.cache/f5/scratch/pilot`), with symbolic links resolved. It refuses the owner's DEV profile, a
+relative path and any other folder before it reads or writes anything, so no agent ever runs it on the owner's
+DEV profile. Its artifacts live in the profile, in `<profile>/matching-pilot/`, not in the repository's
+`.cache/`.
 
-Start from an empty DEV library with configured embedding, summary, atomic-note,
+Start from an empty scratch library with configured embedding, summary, atomic-note,
 graph and reranking routes. The runner never resets the library. Quit any
 existing DEV instance before starting another one against its database.
 
 ```sh
-MEMORA_MATCHING_PILOT=inspect npm run dev -w @app/desktop
-MEMORA_MATCHING_PILOT=prepare npm run dev -w @app/desktop
-MEMORA_MATCHING_PILOT=run npm run dev -w @app/desktop
+export PROFILE="$PWD/.cache/f5/scratch/pilot"   # absolute; inside .cache/profiles/ or .cache/f<N>/scratch/
+mkdir -p "$PROFILE"
+MEMORA_USER_DATA_DIR="$PROFILE" MEMORA_MATCHING_PILOT=inspect npm run dev -w @app/desktop
+MEMORA_USER_DATA_DIR="$PROFILE" MEMORA_MATCHING_PILOT=prepare npm run dev -w @app/desktop
+MEMORA_USER_DATA_DIR="$PROFILE" MEMORA_MATCHING_PILOT=run npm run dev -w @app/desktop
 ```
 
-`inspect` checks counts only. `prepare` imports without AI processing. `run`
-prepares missing fixture items and queues one full-knowledge batch, or follows
-the batch from its existing manifest and requeues canceled ingestion jobs in that
-batch through the normal retry service. It uses the unpackaged desktop's normal
-services, queue, model routes and database. The runner currently guards the
-macOS DEV profile at `~/Library/Application Support/@app/desktop` and refuses a
-packaged app or another user-data directory.
+`inspect` checks counts only and writes them to `<profile>/matching-pilot/preflight.json`, then prints the
+`MATCHING_PILOT preflight` log line. `prepare` imports without AI
+processing. `run` prepares missing fixture items and queues one full-knowledge batch, or follows the batch from
+its existing manifest and requeues canceled ingestion jobs in that batch through the normal retry service. It
+uses the unpackaged desktop's normal services, queue, model routes and database. The runner refuses a packaged
+app and any user-data directory that is not a scratch profile.
 
 The runner enables candidate diagnostics without full prompt/output capture,
 then restores the prior diagnostic settings after reporting. Keep model routes
@@ -51,13 +54,14 @@ normal task recovery. Saved artifacts and completed stages remain reusable.
 ## Inspect and assess
 
 ```sh
-node --import tsx scripts/matching-pilot-report.ts
-node --import tsx scripts/matching-pilot-report.ts --snapshot
-node scripts/analyze-matching-pilot.ts
+node --import tsx scripts/matching-pilot-report.ts --profile "$PROFILE"
+node --import tsx scripts/matching-pilot-report.ts --profile "$PROFILE" --snapshot
+node scripts/analyze-matching-pilot.ts --profile "$PROFILE"
 ```
 
-The report command only reads the DEV database. Local artifacts under
-`.cache/matching-pilot/` include the source-ID manifest, settings before/run,
+Every script requires an absolute `--profile` that passes the runner's scratch check, refuses the default
+userData path, and never prints the connection descriptor. The report command only reads the scratch profile's
+database. Local artifacts under `<profile>/matching-pilot/` include the source-ID manifest, settings before/run,
 model routes and parameters, progress and exported results. These files must
 not contain credentials. Exported results include canonical notes, relations,
 entity identities and participating sources, candidate diagnostics and usage by
@@ -65,7 +69,7 @@ stage. The user can inspect all pilot sources and tasks in the normal app UI.
 
 Completion requires both ingestion and deferred note/source matching to finish.
 The run reads its reported input-plus-output token stop from
-`.cache/matching-pilot/limits.json` on every progress poll. The default is
+`<profile>/matching-pilot/limits.json` on every progress poll. The default is
 600,000; this pilot was raised to 1,800,000 at the user’s request. There is no
 time-based stop. Exhausting the token allowance requests cancellation of the
 selected sources. This is an
@@ -95,12 +99,12 @@ from tuning, and retain negative cases when expanding the corpus.
 After every baseline ingestion and deferred stage has completed successfully:
 
 ```sh
-MEMORA_MATCHING_PILOT=rematch npm run dev -w @app/desktop
-node scripts/analyze-matching-pilot.ts --baseline
-node scripts/analyze-matching-pilot.ts
+MEMORA_USER_DATA_DIR="$PROFILE" MEMORA_MATCHING_PILOT=rematch npm run dev -w @app/desktop
+node scripts/analyze-matching-pilot.ts --profile "$PROFILE" --baseline
+node scripts/analyze-matching-pilot.ts --profile "$PROFILE"
 ```
 
-This explicit DEV-only mode first saves a full database backup through the
+This explicit DEV-only, scratch-profile-only mode first saves a full database backup through the
 normal backup service and copies the baseline artifacts. A guarded transaction
 refuses any library other than the manifest's exact 20 sources, active ingestion,
 or reviewed relationships. It clears only their unreviewed note/source matching

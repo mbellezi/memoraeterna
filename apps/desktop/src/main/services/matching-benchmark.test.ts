@@ -1,4 +1,7 @@
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   appSettingsSchema,
@@ -6,7 +9,42 @@ import {
   defaultAppSettings
 } from "../../shared/ipc.js";
 import { migrateMatchingSettingsV2 } from "@app/domain";
-import { benchmarkConfiguration } from "./matching-benchmark.js";
+import { benchmarkConfiguration, runMatchingBenchmark } from "./matching-benchmark.js";
+
+describe("benchmark scratch-profile mode", () => {
+  it("refuses a non-scratch userData before any read or write", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "memora-benchmark-workspace-"));
+    try {
+      const sibling = join(workspace, ".cache", "other");
+      await mkdir(sibling, { recursive: true });
+      const untouched = {
+        query: () => {
+          throw new Error("the pool must not be used");
+        }
+      };
+      for (const userDataPath of [sibling, "relative/path", join(workspace, "@app", "desktop")])
+        await expect(
+          runMatchingBenchmark({
+            mode: "benchmark",
+            isPackaged: false,
+            userDataPath,
+            workspaceRoot: workspace,
+            pool: untouched as never,
+            ingestion: {} as never,
+            hierarchy: {} as never,
+            settings: {} as never,
+            jobs: {} as never,
+            backup: {} as never,
+            ai: {} as never
+          })
+        ).rejects.toThrow("matching.errors.notScratchProfile");
+      expect(await readdir(sibling)).toEqual([]);
+      expect(await readdir(workspace)).toEqual([".cache"]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("larger matching benchmark", () => {
   it("compares bounded evidence presets without changing acceptance or identity safeguards", () => {

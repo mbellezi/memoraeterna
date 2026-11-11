@@ -9,25 +9,30 @@ from ingestion/model inputs.
 
 ## Execution
 
-**Frozen until the runners' scratch-profile mode lands** (plan F5 box; plan decision 34, 2026-11-11). The
-benchmark below works only on the default DEV profile and runs tuning resets of its library, and no agent
-starts the owner's DEV profile on refactoring code. Until the mode lands, do not run it or its status, report
-and analysis scripts; once it lands, run them only on a clone or scratch profile (`MEMORA_USER_DATA_DIR`),
-never on the owner's DEV profile.
+The benchmark runs tuning resets of its library, so it works only on a scratch profile (F5 D26): an absolute
+`MEMORA_USER_DATA_DIR` inside `.cache/profiles/` or `.cache/f<N>/scratch/`, with symbolic links resolved. It
+refuses the owner's DEV profile and any other folder before it reads or writes anything. It continues the
+pilot in the same profile: it reads the pilot's manifest (and, when it has no copy of its own,
+`settings-before.json`) from `<profile>/matching-pilot/` and keeps its own files in
+`<profile>/matching-benchmark/`.
 
-Use the unpackaged DEV app and its generated DEV database descriptor. The
+Use the unpackaged DEV app and the scratch profile's generated DEV database descriptor. The
 benchmark refuses another profile, changed fixtures, unrelated library IDs,
 reviewed relationships, and active ingestion during a reset. It saves a full
 backup before extending the pilot and before each tuning reset.
 
 ```sh
-MEMORA_MATCHING_BENCHMARK=1 npm run dev -w @app/desktop
-node scripts/matching-benchmark-status.ts
-node --import tsx scripts/matching-benchmark-report.ts baseline
-node scripts/analyze-matching-benchmark.ts baseline
+export PROFILE="$PWD/.cache/f5/scratch/pilot"   # the profile that holds the pilot's library
+MEMORA_USER_DATA_DIR="$PROFILE" MEMORA_MATCHING_BENCHMARK=1 npm run dev -w @app/desktop
+node scripts/matching-benchmark-status.ts --profile "$PROFILE"
+node --import tsx scripts/matching-benchmark-report.ts --profile "$PROFILE" baseline
+node scripts/analyze-matching-benchmark.ts --profile "$PROFILE" baseline
 ```
 
-The DEV-only controller reads `.cache/matching-benchmark/control.json`. Each
+Every script requires an absolute `--profile` that passes the same scratch check, refuses the default userData
+path, and never prints the connection descriptor.
+
+The DEV-only controller reads `<profile>/matching-benchmark/control.json`. Each
 command has a `phase` and an increasing `revision`. Phases are `prepare`,
 `baseline`, `economy`, `coverage`, `validate`, and `stop`. The app remains available
 while it waits for the next phase. Phases advance only after result export and
@@ -75,7 +80,7 @@ The original ambiguous botany/astronomy pair is separately documented.
 
 Freeze the selected settings, timestamp, configuration name and SHA-256 hash of
 its training results in `selection.json`. Restore that configuration's unreviewed
-graph with `node --import tsx scripts/select-matching-benchmark.ts <configuration>`.
+graph with `node --import tsx scripts/select-matching-benchmark.ts --profile "$PROFILE" <configuration>`.
 An optional final numeric argument raises the source importance floor using the
 observed training scores. Lowering it is refused because rejected source proposals
 were not exported. The command filters source relations and their evidence before

@@ -1,5 +1,10 @@
 import { readFile, stat } from "node:fs/promises";
-const path = ".cache/matching-benchmark/progress.json";
+import { join } from "node:path";
+import { scriptProfile } from "./lib/profile-arg.ts";
+
+// The scratch profile of the benchmark (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const { outputDirectory } = await scriptProfile("benchmark");
+const path = join(outputDirectory, "progress.json");
 const progress = JSON.parse(await readFile(path, "utf8"));
 const runs = progress.runs as Array<Record<string, any>>;
 const corpus = JSON.parse(await readFile("scripts/fixtures/matching-benchmark.json", "utf8"));

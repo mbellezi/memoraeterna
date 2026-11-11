@@ -1,9 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { scriptProfile } from "./lib/profile-arg.ts";
 
+// The scratch profile of the pilot (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const profile = await scriptProfile("pilot");
 const directory = resolve(
-  ".cache/matching-pilot",
-  process.argv.includes("--baseline") ? "baseline" : "."
+  profile.outputDirectory,
+  profile.rest.includes("--baseline") ? "baseline" : "."
 );
 const read = async (path: string) => JSON.parse(await readFile(path, "utf8"));
 const [corpus, manifest, results, settings] = await Promise.all([

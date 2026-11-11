@@ -1,26 +1,16 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   createPgPool,
   closePgPool,
   createMatchingEvaluationRepository
 } from "../packages/db/src/index.ts";
+import { readProfileDescriptor, scriptProfile } from "./lib/profile-arg.ts";
 
-const directory = resolve(".cache/matching-pilot");
-const descriptor = z
-  .object({ developmentOnly: z.literal(true), connectionString: z.string() })
-  .parse(
-    JSON.parse(
-      await readFile(
-        join(homedir(), "Library/Application Support/@app/desktop/database/dev-connection.json"),
-        "utf8"
-      )
-    )
-  );
-if (!["127.0.0.1", "localhost"].includes(new URL(descriptor.connectionString).hostname))
-  throw new Error("Expected loopback DEV database");
+// The scratch profile of the pilot (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const { profilePath, outputDirectory: directory, rest } = await scriptProfile("pilot");
+const descriptor = await readProfileDescriptor(profilePath);
 const manifest = z
   .object({
     startedAt: z.string().datetime(),
@@ -35,7 +25,7 @@ try {
   const progress = manifest.batchId
     ? await repository.progress(manifest.batchId, manifest.startedAt)
     : null;
-  if (process.argv.includes("--snapshot")) {
+  if (rest.includes("--snapshot")) {
     const snapshot = await repository.snapshot(
       Object.values(manifest.ids),
       manifest.roundStartedAt ?? manifest.startedAt

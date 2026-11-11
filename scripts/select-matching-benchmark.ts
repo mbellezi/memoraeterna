@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { sha256 } from "../packages/conversion/src/index.ts";
 import { migrateMatchingSettingsV2 } from "../packages/domain/src/index.ts";
@@ -14,9 +13,15 @@ import { SettingsService } from "../apps/desktop/src/main/services/settings-serv
 import { BackupService } from "../apps/desktop/src/main/services/backup-service.ts";
 import { benchmarkConfiguration } from "../apps/desktop/src/main/services/matching-benchmark.ts";
 import { appSettingsSchema } from "../apps/desktop/src/shared/ipc.ts";
+import { readProfileDescriptor, scriptProfile } from "./lib/profile-arg.ts";
 
-const configuration = z.enum(["baseline", "economy", "coverage"]).parse(process.argv[2]);
-const directory = resolve(".cache/matching-benchmark");
+// The scratch profile of the benchmark (`--profile <abs dir>`); the owner's DEV profile is never a default.
+const {
+  profilePath: userData,
+  outputDirectory: directory,
+  rest
+} = await scriptProfile("benchmark");
+const configuration = z.enum(["baseline", "economy", "coverage"]).parse(rest[0]);
 const read = async (path: string) => JSON.parse(await readFile(path, "utf8"));
 const manifest = await read(join(directory, "manifest.json"));
 if (Object.keys(manifest.ids).length !== 62) throw Error("Freeze only before holdout import");
@@ -31,9 +36,9 @@ const settings = appSettingsSchema.parse(
 );
 const generatedMinimumImportance = settings.sourceRelationSettings.minImportance;
 const minimumImportance =
-  process.argv[3] === undefined
+  rest[1] === undefined
     ? generatedMinimumImportance
-    : z.coerce.number().min(generatedMinimumImportance).max(1).parse(process.argv[3]);
+    : z.coerce.number().min(generatedMinimumImportance).max(1).parse(rest[1]);
 const originalSourceRelations = snapshot.sourceRelations.length;
 settings.sourceRelationSettings = {
   ...settings.sourceRelationSettings,
@@ -47,12 +52,10 @@ snapshot.sourceEvidence = snapshot.sourceEvidence.filter((r: { relation_id: stri
   retainedSourceRelations.has(r.relation_id)
 );
 const trainingResultsHash = sha256(text);
-const userData = join(homedir(), "Library/Application Support/@app/desktop");
-const descriptor = z
-  .object({ developmentOnly: z.literal(true), connectionString: z.string(), psqlPath: z.string() })
-  .parse(await read(join(userData, "database/dev-connection.json")));
+const descriptor = await readProfileDescriptor(userData);
+if (!descriptor.psqlPath) throw Error("The profile's descriptor has no psqlPath");
+const psqlPath = descriptor.psqlPath;
 const url = new URL(descriptor.connectionString);
-if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw Error("Loopback DEV required");
 const pool = createPgPool({ connectionString: descriptor.connectionString, max: 2 });
 try {
   const repository = createMatchingEvaluationRepository(pool),
@@ -108,7 +111,7 @@ try {
         password: decodeURIComponent(url.password),
         connectionString: descriptor.connectionString
       },
-      pgDumpPath: join(dirname(descriptor.psqlPath), "pg_dump")
+      pgDumpPath: join(dirname(psqlPath), "pg_dump")
     }),
     getStorageSettings: () => service.get()
   }).create(directory);
