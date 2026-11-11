@@ -4253,5 +4253,71 @@
       "more": "and {count} more",
       "mostCited": "most cited"
     }
+  },
+  "preview": {
+    "card": {
+      "empty": "No summary yet. Open it to read it all.",
+      "error": "Could not read the preview.",
+      "errorKept": "The link still works; nothing was changed.",
+      "goTo": "Go to",
+      "keys": {
+        "open": "open beside",
+        "peek": "peek"
+      },
+      "label": "Preview",
+      "missing": "This is no longer in the library.",
+      "passage": "Passage",
+      "relation": "Connection",
+      "status": {
+        "redirected": "Replaced by another topic",
+        "retired": "Out of use"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} answer",
+        "other": "{count} answers"
+      },
+      "items": {
+        "one": "{count} item in the topic",
+        "other": "{count} items in the topic"
+      },
+      "notes": {
+        "one": "{count} note",
+        "other": "{count} notes"
+      },
+      "passages": {
+        "one": "{count} passage",
+        "other": "{count} passages"
+      },
+      "sources": {
+        "one": "{count} source",
+        "other": "{count} sources"
+      },
+      "subtopics": {
+        "one": "{count} subtopic",
+        "other": "{count} subtopics"
+      }
+    },
+    "quickLook": {
+      "empty": "No summary yet. Open it beside to read it all.",
+      "error": "Could not read this one.",
+      "errorKept": "Nothing was changed; the list is still here.",
+      "keys": {
+        "close": "close",
+        "closes": "closes",
+        "openHere": "open in this panel",
+        "opensBeside": "opens beside",
+        "peekNext": "peek the next",
+        "space": "Space"
+      },
+      "label": "Quick look",
+      "missing": "This is no longer in the library.",
+      "notesMentioning": "Notes that mention it",
+      "notesOfSource": "Notes from this source",
+      "peeking": "Peeking",
+      "stays": "Everything stays where it was; nothing was opened.",
+      "updated": "last updated {date}"
+    }
   }
 }
