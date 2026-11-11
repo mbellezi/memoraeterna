@@ -135,10 +135,7 @@ const library: Record<string, Entry> = {
 };
 
 /** An object whose text is not there yet: what the empty state shows. */
-const withoutText = (entry: Entry): Entry => {
-  const { counts: _counts, ...rest } = entry;
-  return { ...rest, preview: "" };
-};
+const withoutText = (entry: Entry): Entry => ({ ...entry, preview: "", counts: {} });
 
 function resolveMany(empty: boolean) {
   return ({ addresses }: ObjectResolveManyInput) => {
