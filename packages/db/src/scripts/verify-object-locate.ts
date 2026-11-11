@@ -481,9 +481,13 @@ try {
   ObjectLocateResultSchema.parse(cyclicNote);
   await db.query("update source_items set parent_source_item_id = null where id = $1", [book.id]);
 
-  // Both statements are valid for EXPLAIN (the plans are compared at scale by the benchmark).
-  for (const statement of [locate.statements.source, locate.statements.note])
-    await db.query(`explain ${statement}`, [section.id, objectLocateListLimit, 31]);
+  // All four statements are valid for EXPLAIN (the plans are compared at scale by the benchmark).
+  const explained = { source: section.id, note: own, topic: deepTopics[0]!, entity: randomUUID() };
+  for (const kind of ["source", "note", "topic", "entity"] as const)
+    await db.query(
+      `explain ${locate.statements[kind]}`,
+      locate.statementParameters(kind, explained[kind])
+    );
 
   console.info(
     JSON.stringify({
@@ -493,7 +497,7 @@ try {
         "citations: cross-source notes; archived, superseded and rejected notes and superseded document chunks are excluded; lists capped with full counts",
         "the deepest topic path (root and seven levels) fits the contract; a retired tree places nothing",
         "missing objects and kind mix-ups return null; parent cycles terminate",
-        "both statements EXPLAIN on the migrated schema"
+        "the four statements (source, note, topic, entity) EXPLAIN on the migrated schema"
       ]
     })
   );

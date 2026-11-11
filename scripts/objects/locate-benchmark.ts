@@ -34,7 +34,9 @@ import { librarySeedSteps, noteRelationSeedSteps, seedTopicTree } from "./synthe
 
 /**
  * Latency of `objects.locate` (F1b exit and F2 T27: p95 <= 50 ms, with the topic path in front of
- * the source chain). Measures the read-only locate repository (the same statement and Zod
+ * the source chain), for sources, notes, topics (the active root, the deepest and random live
+ * ones) and entities (the most mentioned and random ones); the bar holds overall and for each kind
+ * (F5 W1FU F4). Measures the read-only locate repository (the same statement and Zod
  * validation the desktop service runs) against
  *
  *   --db <connection.json | postgres url>   an existing database, read-only: a restored backup or
@@ -155,8 +157,12 @@ function percentile(sorted: readonly number[], fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1))]!;
 }
 
+/** The four kinds `objects.locate` answers for; each one's p95 and plans are measured. */
+const locateKinds = ["source", "note", "topic", "entity"] as const;
+type LocateKind = (typeof locateKinds)[number];
+
 interface Sample {
-  readonly kind: "source" | "note";
+  readonly kind: LocateKind;
   readonly id: string;
 }
 
@@ -167,6 +173,8 @@ async function ids(client: pg.Pool, sql: string, values: unknown[] = []): Promis
 async function collectSamples(client: pg.Pool): Promise<Sample[]> {
   const sources = new Set<string>();
   const notes = new Set<string>();
+  const topics = new Set<string>();
+  const entities = new Set<string>();
   const add = (target: Set<string>, list: string[]) => list.forEach((id) => target.add(id));
   add(
     sources,
@@ -236,9 +244,51 @@ async function collectSamples(client: pg.Pool): Promise<Sample[]> {
         limit 20`
     )
   );
+  // Topics: the active root (the worst case, it walks every live topic and current note), the
+  // deepest topics and a few random live ones.
+  const liveTopic = `t.retired_at is null and t.tree_id = (select id from topic_trees where status = 'active')`;
+  add(
+    topics,
+    await ids(client, `select t.id from topics t where t.role = 'root' and ${liveTopic}`)
+  );
+  add(
+    topics,
+    await ids(
+      client,
+      `with recursive depth(id, level) as (
+         select t.id, 0 from topics t where t.role = 'root' and ${liveTopic}
+         union all
+         select c.id, depth.level + 1 from depth join topics c on c.parent_id = depth.id
+          where c.retired_at is null)
+       select id from depth order by level desc, id limit 5`
+    )
+  );
+  add(
+    topics,
+    await ids(client, `select t.id from topics t where ${liveTopic} order by random() limit $1`, [
+      Math.min(sampleSize, 50)
+    ])
+  );
+  // Entities: the ones mentioned by the most notes (the widest placements) and a few random ones.
+  add(
+    entities,
+    await ids(
+      client,
+      `select entity_id as id from atomic_note_entity_links
+        group by entity_id order by count(*) desc, entity_id limit 5`
+    )
+  );
+  add(
+    entities,
+    await ids(client, "select id from entities order by random() limit $1", [
+      Math.min(sampleSize, 50)
+    ])
+  );
   return [
     ...[...sources].map((id): Sample => ({ kind: "source", id })),
-    ...[...notes].map((id): Sample => ({ kind: "note", id }))
+    ...[...notes].map((id): Sample => ({ kind: "note", id })),
+    ...[...topics].map((id): Sample => ({ kind: "topic", id })),
+    ...[...entities].map((id): Sample => ({ kind: "entity", id }))
   ];
 }
 
@@ -259,10 +309,14 @@ function scans(node: PlanNode, found: string[] = []): string[] {
   return found;
 }
 
-async function scanSummary(client: pg.Pool, statement: string, id: string): Promise<string[]> {
+async function scanSummary(
+  client: pg.Pool,
+  statement: string,
+  parameters: unknown[]
+): Promise<string[]> {
   const result = await client.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
     `explain (analyze, format json) ${statement}`,
-    [id, 25, 31]
+    parameters
   );
   const counts = new Map<string, number>();
   for (const line of scans(result.rows[0]!["QUERY PLAN"][0]!.Plan))
@@ -284,10 +338,14 @@ function sequentialRelations(node: PlanNode, found: Set<string> = new Set()): Se
   return found;
 }
 
-async function sequentialScans(client: pg.Pool, statement: string, id: string): Promise<string[]> {
+async function sequentialScans(
+  client: pg.Pool,
+  statement: string,
+  parameters: unknown[]
+): Promise<string[]> {
   const result = await client.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
     `explain (format json) ${statement}`,
-    [id, 25, 31]
+    parameters
   );
   return [...sequentialRelations(result.rows[0]!["QUERY PLAN"][0]!.Plan)];
 }
@@ -501,15 +559,25 @@ try {
   if (samples.length === 0) throw new Error("The database holds no source or note to measure.");
   const shape = { placed: 0, alsoIn: 0, topicSteps: 0, longestTopicPath: 0, located: 0 };
   let measuring = false;
+  const locateOf = (sample: Sample) => {
+    switch (sample.kind) {
+      case "source":
+        return repository.locateSource(sample.id);
+      case "note":
+        return repository.locateNote(sample.id);
+      case "topic":
+        return repository.locateTopic(sample.id);
+      case "entity":
+        return repository.locateEntity(sample.id);
+    }
+  };
   const measure = async (sample: Sample): Promise<number> => {
     const start = performance.now();
-    const result =
-      sample.kind === "source"
-        ? await repository.locateSource(sample.id)
-        : await repository.locateNote(sample.id);
+    const result = await locateOf(sample);
     ObjectLocateResultSchema.parse(result);
     const elapsed = performance.now() - start;
-    if (measuring && result) {
+    // The path shape is the source and note story; a topic's or entity's path is its own place.
+    if (measuring && result && (sample.kind === "source" || sample.kind === "note")) {
       const topicPath = result.primaryPath.filter((segment) => segment.kind === "topic").length;
       shape.located += 1;
       shape.placed += topicPath > 0 ? 1 : 0;
@@ -522,7 +590,7 @@ try {
 
   for (const sample of samples) await measure(sample); // warm-up: caches and plans
   measuring = true;
-  const byKind = { source: [] as number[], note: [] as number[] };
+  const byKind: Record<LocateKind, number[]> = { source: [], note: [], topic: [], entity: [] };
   const slowest = { ms: 0, sample: samples[0]! };
   for (let round = 0; round < rounds; round += 1) {
     for (const sample of samples) {
@@ -544,15 +612,20 @@ try {
       max: sorted.at(-1) ?? Number.NaN
     };
   };
-  const all = summarize([...byKind.source, ...byKind.note]);
+  const all = summarize(locateKinds.flatMap((kind) => byKind[kind]));
+  const perKind = Object.fromEntries(
+    locateKinds.map((kind) => [kind, summarize(byKind[kind])])
+  ) as Record<LocateKind, ReturnType<typeof summarize>>;
   // Plans under the planner's own choices for the objects sampled (the first 40 of each kind).
   const sequential = new Map<string, number>();
-  for (const sample of samples.filter((s) => s.kind === "source").slice(0, 40))
-    for (const relation of await sequentialScans(pool, repository.statements.source, sample.id))
-      sequential.set(`source: ${relation}`, (sequential.get(`source: ${relation}`) ?? 0) + 1);
-  for (const sample of samples.filter((s) => s.kind === "note").slice(0, 40))
-    for (const relation of await sequentialScans(pool, repository.statements.note, sample.id))
-      sequential.set(`note: ${relation}`, (sequential.get(`note: ${relation}`) ?? 0) + 1);
+  for (const kind of locateKinds)
+    for (const sample of samples.filter((s) => s.kind === kind).slice(0, 40))
+      for (const relation of await sequentialScans(
+        pool,
+        repository.statements[kind],
+        repository.statementParameters(kind, sample.id)
+      ))
+        sequential.set(`${kind}: ${relation}`, (sequential.get(`${kind}: ${relation}`) ?? 0) + 1);
   // The rest of the objects read layer: resolveMany(200) and backlinks (F5 T118).
   const objects = createObjectReadRepository(pool);
   const sampleNotes = [...new Set(samples.filter((s) => s.kind === "note").map((s) => s.id))];
@@ -683,12 +756,16 @@ try {
     library,
     sampledObjects: {
       sources: samples.filter((s) => s.kind === "source").length,
-      notes: samples.filter((s) => s.kind === "note").length
+      notes: samples.filter((s) => s.kind === "note").length,
+      topics: samples.filter((s) => s.kind === "topic").length,
+      entities: samples.filter((s) => s.kind === "entity").length
     },
     rounds,
     targetMs,
-    source: summarize(byKind.source),
-    note: summarize(byKind.note),
+    source: perKind.source,
+    note: perKind.note,
+    topic: perKind.topic,
+    entity: perKind.entity,
     overall: all,
     topicPaths: {
       located: shape.located,
@@ -703,6 +780,7 @@ try {
     backlinks,
     passed:
       all.p95 <= targetMs &&
+      locateKinds.every((kind) => perKind[kind].count === 0 || perKind[kind].p95 <= targetMs) &&
       (!hasTree || shape.placed > 0) &&
       sequential.size === 0 &&
       resolved.plain.p95 <= resolveTargetMs &&
@@ -713,10 +791,8 @@ try {
       ms: slowest.ms,
       scans: await scanSummary(
         pool,
-        slowest.sample.kind === "source"
-          ? repository.statements.source
-          : repository.statements.note,
-        slowest.sample.id
+        repository.statements[slowest.sample.kind],
+        repository.statementParameters(slowest.sample.kind, slowest.sample.id)
       )
     },
     wallSeconds: Math.round((Date.now() - startedAt) / 1000)
@@ -736,13 +812,17 @@ try {
       "| --- | --- | --- | --- | --- | --- |",
       row("source", report.source),
       row("note", report.note),
+      row("topic", report.topic),
+      row("entity", report.entity),
       row("all", report.overall),
       "",
       `Topic paths: ${report.topicPaths.withTopicPath} of ${report.topicPaths.located} located objects have one (mean ${report.topicPaths.meanTopicPathLength.toFixed(2)} topics, longest ${report.topicPaths.longestTopicPath}); ${report.topicPaths.withAlsoIn} have secondary placements`,
       sequential.size === 0
         ? "No sequential scan of topic_placements, atomic_notes or chunks in the sampled plans"
         : `Sequential scans of large tables: ${[...sequential].map(([line, n]) => `${line} (${n})`).join(", ")}`,
-      `Target p95 <= ${targetMs} ms: ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
+      `Target p95 <= ${targetMs} ms: ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms overall; per kind ${locateKinds
+        .map((kind) => `${kind} ${fixed(perKind[kind].p95)}`)
+        .join(", ")})`,
       "",
       `objects.resolveMany(${resolved.batchSize}) latency (ms), ${batchCount} batches of notes, sources, topics, entities and questions, ${resolved.mix.anchored} anchored (${resolved.resolvedInFirstBatch} resolved, ${resolved.mix.entities} entities and ${resolved.mix.questions} questions in the first)`,
       "| Variant | Calls | p50 | p95 | p99 | max |",

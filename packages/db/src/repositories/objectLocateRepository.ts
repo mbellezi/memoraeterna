@@ -409,16 +409,19 @@ function toResult(
   };
 }
 
+const topicParameters = (id: string) => [
+  id,
+  objectLocateTopicPathLimit - 1,
+  topicRedirectLimit,
+  topicCitingPagesLimit
+];
+const entityParameters = (id: string) => [id, entityPlacementLimit, objectLocateTopicPathLimit - 1];
+
 export function createObjectLocateRepository(db: Queryable) {
   // The walk stops at depth `pathLimit - 1`, so the chain holds at most `pathLimit` sources.
   const parameters = (id: string, pathLimit: number) => [id, objectLocateListLimit, pathLimit - 1];
   const locateTopic = async (id: string): Promise<ObjectLocateResult | null> => {
-    const result = await db.query<LocateRow>(topicLocateSql, [
-      id,
-      objectLocateTopicPathLimit - 1,
-      topicRedirectLimit,
-      topicCitingPagesLimit
-    ]);
+    const result = await db.query<LocateRow>(topicLocateSql, topicParameters(id));
     return toResult("topic", id, result.rows[0]);
   };
   return {
@@ -443,11 +446,7 @@ export function createObjectLocateRepository(db: Queryable) {
      * no such entity exists.
      */
     async locateEntity(id: string): Promise<ObjectLocateResult | null> {
-      const result = await db.query<LocateRow>(entityLocateSql, [
-        id,
-        entityPlacementLimit,
-        objectLocateTopicPathLimit - 1
-      ]);
+      const result = await db.query<LocateRow>(entityLocateSql, entityParameters(id));
       return toResult("entity", id, result.rows[0]);
     },
 
@@ -515,6 +514,20 @@ export function createObjectLocateRepository(db: Queryable) {
       topic: topicLocateSql,
       entity: entityLocateSql,
       question: questionLocateSql
+    },
+
+    /** The parameters of `statements[kind]` for one object, as the `locate` read binds them. */
+    statementParameters(kind: "source" | "note" | "topic" | "entity", id: string): unknown[] {
+      switch (kind) {
+        case "source":
+          return parameters(id, objectLocatePathLimit);
+        case "note":
+          return parameters(id, objectLocatePathLimit - 1);
+        case "topic":
+          return topicParameters(id);
+        case "entity":
+          return entityParameters(id);
+      }
     }
   };
 }
