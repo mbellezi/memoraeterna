@@ -288,7 +288,6 @@ export function ImportView({
     [active]
   );
   const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const descriptor = useMemo(
     () => buildDescriptor(sourceType, values, coverAssetId, fieldProvenance),
@@ -475,16 +474,6 @@ export function ImportView({
     };
   }, [descriptor, effectiveContent, file, origin, step]);
 
-  useEffect(() => {
-    if (!busy || progressStartedAt === null) return;
-    const updateElapsed = () => {
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1_000)));
-    };
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 1_000);
-    return () => window.clearInterval(timer);
-  }, [busy, progressStartedAt]);
-
   function chooseType(type: SourceItemType) {
     setSourceType(type);
     setValues((current) => ({
@@ -546,7 +535,6 @@ export function ImportView({
     progressRunId.current = requestId;
     setFileProgress({ requestId, stage: "selecting_file", progress: 0.01 });
     setProgressStartedAt(Date.now());
-    setElapsedSeconds(0);
     setBusy(true);
     setStatus("shell.states.loading");
     try {
@@ -918,7 +906,7 @@ export function ImportView({
         t={t}
       />
       {busy && fileProgress ? (
-        <FileImportProgressCard progress={fileProgress} elapsedSeconds={elapsedSeconds} t={t} />
+        <FileImportProgressCard progress={fileProgress} startedAt={progressStartedAt} t={t} />
       ) : null}
       <fieldset disabled={busy} className="grid min-w-0 gap-4 disabled:opacity-70">
         {step === 0 ? (
@@ -1238,11 +1226,12 @@ export function ImportView({
 
 export function FileImportProgressCard({
   progress,
-  elapsedSeconds,
+  startedAt,
   t
 }: {
   progress: FileImportProgress;
-  elapsedSeconds: number;
+  /** When the run began (epoch ms); null before it is known. The card shows a time, never a clock that ticks. */
+  startedAt: number | null;
   t: Translator;
 }) {
   const percent = Math.round(progress.progress * 100);
@@ -1303,10 +1292,12 @@ export function FileImportProgressCard({
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
         <span>{pageStatus ?? t("import.progress.keepOpen")}</span>
-        <span className="flex items-center gap-1.5 font-medium tabular-nums">
-          <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
-          {t("import.progress.elapsed", { values: { time: formatElapsedTime(elapsedSeconds) } })}
-        </span>
+        {startedAt !== null ? (
+          <span className="flex items-center gap-1.5 font-medium tabular-nums">
+            <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("import.startedAt", { values: { time: formatStartTime(startedAt, t.locale) } })}
+          </span>
+        ) : null}
       </div>
       {pageStatus ? (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -1317,10 +1308,13 @@ export function FileImportProgressCard({
   );
 }
 
-function formatElapsedTime(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.max(0, totalSeconds % 60);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+/** The hour and minute of a start time as hh:mm (24 hours, in the interface language's digits). */
+export function formatStartTime(startedAt: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(startedAt);
 }
 
 function OriginStep({

@@ -1300,9 +1300,9 @@
       "percent": "{percent}%",
       "pagesProcessed": "{completed} of {total} pages processed",
       "pagesFound": "{total} pages found",
-      "elapsed": "Elapsed {time}",
       "keepOpen": "Keep this screen open; scanned pages can take longer."
     },
+    "startedAt": "Started at {time}",
     "status": {
       "queued": "Import queued.",
       "canceled": "File selection canceled.",

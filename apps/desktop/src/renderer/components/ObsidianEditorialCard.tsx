@@ -3,6 +3,7 @@ import { FileWarning, X } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import { Button } from "./ui/button";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { followEditorialConflicts } from "./obsidian-followers";
 type Conflict = Awaited<ReturnType<typeof window.app.obsidian.editorialConflicts>>[number];
 export function ObsidianEditorialCard({ t }: { t: (key: MessageKey) => string }) {
   const [rows, setRows] = useState<Conflict[] | null>(null),
@@ -13,11 +14,16 @@ export function ObsidianEditorialCard({ t }: { t: (key: MessageKey) => string })
       .editorialConflicts()
       .then(setRows)
       .catch(() => setError(true));
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 3000);
-    return () => clearInterval(timer);
-  }, []);
+  // One read now, and one after each editorial projection or end of a sync (D16); no timer.
+  useEffect(
+    () =>
+      followEditorialConflicts(
+        () => window.app,
+        setRows,
+        () => setError(true)
+      ),
+    []
+  );
   return (
     <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
       <h4 className="flex items-center gap-2 font-medium">

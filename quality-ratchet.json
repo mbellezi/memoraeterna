@@ -2,6 +2,7 @@
   "rawPaletteClasses": 1531,
   "arbitraryFontSizes": 41,
   "windowDialogs": 12,
-  "rendererSetIntervals": 6,
+  "rendererSetIntervals": 0,
+  "rendererPollLoops": 0,
   "productLinesOver200": 153
 }

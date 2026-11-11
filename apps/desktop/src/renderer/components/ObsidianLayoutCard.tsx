@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MessageKey } from "@app/i18n";
 import type { ObsidianLayoutConfig, ObsidianLayoutStatus } from "@app/integration-contracts";
+import { followLayout } from "./obsidian-followers";
 import { Button } from "./ui/button";
 
 export function ObsidianLayoutCard({ t }: { t: (key: MessageKey) => string }) {
@@ -16,42 +17,25 @@ export function ObsidianLayoutCard({ t }: { t: (key: MessageKey) => string }) {
     [excluded, setExcluded] = useState<string[]>([]);
   const [configured, setConfigured] = useState(false),
     [active, setActive] = useState(false);
-  useEffect(() => {
-    let stopped = false,
-      binding: string | undefined;
-    const refresh = async () => {
-      const storage = await window.app.settings.get();
-      if (stopped) return;
-      setConfigured(Boolean(storage.obsidianVaultPath));
-      setActive(
-        Boolean(storage.obsidianVaultPath) &&
-          storage.obsidianSyncEnabled &&
-          !storage.obsidianSyncPaused
-      );
-      const next = JSON.stringify([storage.obsidianVaultPath, storage.managedRoot]);
-      if (next === binding) return;
-      binding = next;
-      const [s, app] = await Promise.all([
-        window.app.obsidian.layoutStatus(),
-        window.app.settings.getApp()
-      ]);
-      if (stopped || binding !== next) return;
-      setStatus(s);
-      setClosed(false);
-      setExcluded([]);
-      setError(null);
-      setConfig(s.config ?? { version: 2, language: app.contentLanguage, attachments: "omit" });
-    };
-    void refresh().catch(() => setError("obsidianLayout.error"));
-    const timer = setInterval(
-      () => void refresh().catch(() => setError("obsidianLayout.error")),
-      3000
-    );
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, []);
+  // One read now, and one after a change of the vault settings or a layout projection (D16); no timer.
+  useEffect(
+    () =>
+      followLayout(() => window.app, {
+        onBinding: (binding) => {
+          setConfigured(binding.configured);
+          setActive(binding.active);
+        },
+        onStatus: setStatus,
+        onRebound: (next) => {
+          setClosed(false);
+          setExcluded([]);
+          setError(null);
+          setConfig(next);
+        },
+        onError: () => setError("obsidianLayout.error")
+      }),
+    []
+  );
   async function action(work: () => Promise<ObsidianLayoutStatus>) {
     setBusy(true);
     setError(null);

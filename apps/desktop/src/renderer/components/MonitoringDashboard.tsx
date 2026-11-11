@@ -7,6 +7,7 @@ import type {
   MonitoringQuery,
   MonitoringRow
 } from "../../shared/monitoring";
+import { watchMonitoringChanged } from "../lib/status-followers";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
 import { DebugDashboard } from "./DebugDashboard";
@@ -99,13 +100,18 @@ export function MonitoringDashboard({
       requestId.current += 1;
     };
   }, [refresh]);
-  useEffect(() => {
-    if (!live || offset > 0) return;
-    const timer = setInterval(() => {
-      if (!document.hidden) setAnchor(new Date().toISOString());
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [live, offset]);
+  // Live: a monitoring.changed (folded to 250 ms by the bus) moves the anchor to now, which reads the
+  // page again. A change that arrives while the window is hidden is read when it is shown; no timer.
+  useEffect(
+    () =>
+      watchMonitoringChanged(
+        () => window.app,
+        live && offset === 0,
+        document,
+        () => setAnchor(new Date().toISOString())
+      ),
+    [live, offset]
+  );
 
   async function changeCapture(debugMode: boolean, debugFullCapture: boolean) {
     if (

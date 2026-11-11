@@ -1302,9 +1302,9 @@
       "percent": "{percent}%",
       "pagesProcessed": "{completed} pages traitées sur {total}",
       "pagesFound": "{total} pages trouvées",
-      "elapsed": "Temps écoulé : {time}",
       "keepOpen": "Gardez cet écran ouvert ; les pages numérisées peuvent prendre plus de temps."
     },
+    "startedAt": "Commencé à {time}",
     "status": {
       "queued": "Import en file.",
       "canceled": "Selection de fichier annulee.",

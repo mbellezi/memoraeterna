@@ -87,7 +87,7 @@ describe("phase 2 renderer views", () => {
     ).toEqual({ origin: false, file: false, content: false, confirm: false, structure: false });
   });
 
-  it("renders real file page progress with elapsed time", () => {
+  it("renders real file page progress with the time the run started", () => {
     const html = renderToString(
       <FileImportProgressCard
         progress={{
@@ -97,13 +97,14 @@ describe("phase 2 renderer views", () => {
           completedPages: 37,
           totalPages: 100
         }}
-        elapsedSeconds={83}
+        startedAt={new Date(2026, 10, 11, 9, 5, 30).getTime()}
         t={t}
       />
     );
     expect(html).toContain("37 of 100 pages processed");
     expect(html).toContain("37%");
-    expect(html).toContain("01:23");
+    expect(html).toContain("Started at 09:05");
+    expect(html).not.toContain("Elapsed");
     expect(html).toContain('role="progressbar"');
   });
 

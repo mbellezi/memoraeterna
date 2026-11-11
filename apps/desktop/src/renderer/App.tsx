@@ -57,6 +57,7 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
+import { waitForDatabaseReady } from "./lib/database-boot";
 import { createObsidianLinkOpener, type ObsidianLinkActions } from "./lib/obsidian-link";
 import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
@@ -116,7 +117,6 @@ const emptyViews: Record<
   knowledgeGraph: { title: "shell.navigation.knowledgeGraph", empty: "shell.states.empty" }
 };
 
-const databasePollIntervalMs = 300;
 const databaseStartupTimeoutMs = 60_000;
 
 function createDefaultSettings(): StorageSettings {
@@ -368,7 +368,10 @@ export function App({
     }));
 
     void window.app.database.start().catch(() => undefined);
-    const nextDatabaseStatus = await waitForDatabaseReady();
+    const nextDatabaseStatus = await waitForDatabaseReady(window.app, {
+      onStatus: setDatabaseStatus,
+      timeoutMs: databaseStartupTimeoutMs
+    });
     setDatabaseStatus(nextDatabaseStatus);
 
     if (nextDatabaseStatus.state !== "ready") {
@@ -590,37 +593,6 @@ export function App({
   useEffect(() => {
     void window.app.menu.setLanguage(appSettings.language).catch(() => undefined);
   }, [appSettings.language]);
-
-  async function waitForDatabaseReady(): Promise<DatabaseStatus> {
-    const startedAt = Date.now();
-    await delay(100);
-
-    while (Date.now() - startedAt < databaseStartupTimeoutMs) {
-      try {
-        const nextStatus = await window.app.database.getStatus();
-        setDatabaseStatus(nextStatus);
-
-        if (nextStatus.state === "ready" || nextStatus.state === "failed") {
-          return nextStatus;
-        }
-      } catch {
-        return {
-          state: "failed",
-          messageKey: "database.status.failed",
-          updatedAt: new Date().toISOString()
-        };
-      }
-
-      await delay(databasePollIntervalMs);
-    }
-
-    return {
-      state: "failed",
-      messageKey: "database.status.failed",
-      updatedAt: new Date().toISOString(),
-      error: "Database startup timed out."
-    };
-  }
 
   const pageTitle =
     activeView === "settings"
@@ -1002,10 +974,4 @@ function getBrowserLocale(): LanguageCode {
   }
 
   return normalizeLanguageCode(navigator.language);
-}
-
-async function delay(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

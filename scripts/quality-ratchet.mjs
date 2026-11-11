@@ -87,6 +87,19 @@ const metrics = [
     count: countMatches(/\bsetInterval\s*\(/gu)
   },
   {
+    name: "rendererPollLoops",
+    description:
+      "awaited sleeps in renderer code (non-test): the loop that waits and asks again (F5 D16)",
+    appliesTo: (file) =>
+      isRenderer(file) && [".tsx", ".ts"].includes(extensionOf(file)) && !isTestFile(file),
+    // An awaited `delay(`, `sleep(`, `wait(` or `pause(` call, or an awaited `new Promise` that
+    // arms a `setTimeout` with a delay other than the literal 0 (a macrotask yield is not a poll).
+    // A regex alone is gameable; the runtime proof (J-idle) is the other half of D16.
+    count: countMatches(
+      /\bawait\s+(?:delay|sleep|wait|pause)\s*\(|\bawait\s+new\s+Promise\b[^;]*?\bsetTimeout\s*\([^;]*?,(?!\s*0\s*\))[^;)]+\)/gu
+    )
+  },
+  {
     name: "productLinesOver200",
     description: "product code lines longer than 200 characters (apps/*/src, packages/*/src)",
     appliesTo: (file) =>

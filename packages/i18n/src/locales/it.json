@@ -1298,9 +1298,9 @@
       "percent": "{percent}%",
       "pagesProcessed": "{completed} pagine elaborate su {total}",
       "pagesFound": "{total} pagine trovate",
-      "elapsed": "Tempo trascorso: {time}",
       "keepOpen": "Mantieni aperta questa schermata; le pagine scansionate possono richiedere più tempo."
     },
+    "startedAt": "Iniziato alle {time}",
     "status": {
       "queued": "Importazione in coda.",
       "canceled": "Selezione file annullata.",

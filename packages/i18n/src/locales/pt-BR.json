@@ -1300,9 +1300,9 @@
       "percent": "{percent}%",
       "pagesProcessed": "{completed} de {total} paginas processadas",
       "pagesFound": "{total} paginas encontradas",
-      "elapsed": "Tempo decorrido: {time}",
       "keepOpen": "Mantenha esta tela aberta; paginas digitalizadas podem levar mais tempo."
     },
+    "startedAt": "Iniciado às {time}",
     "status": {
       "queued": "Importacao enfileirada.",
       "canceled": "Selecao de arquivo cancelada.",

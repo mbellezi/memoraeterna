@@ -5,6 +5,7 @@ import { BookOpen, FileWarning, X } from "lucide-react";
 import type { MessageKey, TranslateOptions } from "@app/i18n";
 import { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
 import { ObsidianRetiredReport } from "./ObsidianRetiredReport";
+import { followWikiStatus } from "./obsidian-followers";
 import { Button } from "./ui/button";
 type Translator = (key: MessageKey, options?: TranslateOptions) => string;
 type Status = Awaited<ReturnType<typeof window.app.obsidian.wikiStatus>>;
@@ -23,24 +24,21 @@ export function ObsidianWikiCard({ t }: { t: Translator }) {
     [error, setError] = useState<MessageKey | null>(null),
     [busy, setBusy] = useState(false),
     [diff, setDiff] = useState<Diff | null>(null);
-  useEffect(() => {
-    void window.app.obsidian
-      .wikiStatus()
-      .then((value) => {
-        setStatus(value);
-        setScope(value.scope);
-      })
-      .catch(() => setError("obsidianWiki.errors.load"));
-    const timer = setInterval(
-      () =>
-        void window.app.obsidian
-          .wikiStatus()
-          .then(setStatus)
-          .catch(() => setError("obsidianWiki.errors.load")),
-      3000
-    );
-    return () => clearInterval(timer);
-  }, []);
+  // One read now, and one after each wiki projection page, a sync that ended or a change of the
+  // vault settings (D16); no timer. The scope is taken from the first read only: the one being
+  // edited is never replaced by a later read.
+  useEffect(
+    () =>
+      followWikiStatus(
+        () => window.app,
+        (value) => {
+          setStatus(value);
+          setScope((current) => current ?? value.scope);
+        },
+        () => setError("obsidianWiki.errors.load")
+      ),
+    []
+  );
   async function action(work: () => Promise<void>) {
     setBusy(true);
     setError(null);

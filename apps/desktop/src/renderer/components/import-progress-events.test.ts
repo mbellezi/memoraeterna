@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AppEventOf } from "../../shared/app-events";
 import type { FileImportProgress } from "../../shared/ipc";
-import { progressOfImportEvent } from "./ImportView";
+import { formatStartTime, progressOfImportEvent } from "./ImportView";
 
 const runId = "00000000-0000-4000-8000-0000000000c1";
 const started: FileImportProgress = { requestId: runId, stage: "selecting_file", progress: 0.01 };
@@ -42,5 +42,19 @@ describe("the import card follows import.progress on the bus", () => {
 
   it("shows nothing before the import started or after it ended", () => {
     expect(progressOfImportEvent(null, event())).toBeNull();
+  });
+});
+
+describe("the import card shows when the run started, not a clock that ticks", () => {
+  const startedAt = new Date(2026, 10, 11, 9, 5, 59).getTime();
+
+  it("writes the start as hh:mm in every language", () => {
+    for (const locale of ["en", "pt-BR", "it", "fr", "es"]) {
+      expect(formatStartTime(startedAt, locale)).toBe("09:05");
+    }
+  });
+
+  it("uses 24 hours in the afternoon", () => {
+    expect(formatStartTime(new Date(2026, 10, 11, 21, 30).getTime(), "en")).toBe("21:30");
   });
 });

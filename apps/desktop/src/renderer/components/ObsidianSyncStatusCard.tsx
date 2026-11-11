@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
 import type { ObsidianSyncStatus } from "../../shared/ipc";
+import { watchObsidianSync } from "../lib/status-followers";
 import { Button } from "./ui/button";
 
 interface ObsidianSyncStatusCardProps {
@@ -18,19 +19,12 @@ export function ObsidianSyncStatusCard({
 }: ObsidianSyncStatusCardProps) {
   const [status, setStatus] = useState<ObsidianSyncStatus | null>(null);
 
-  async function refresh() {
-    setStatus(await window.app.obsidian.getSyncStatus());
-  }
-
   async function start() {
     setStatus(await window.app.obsidian.startSync());
   }
 
-  useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 750);
-    return () => window.clearInterval(interval);
-  }, []);
+  // obsidian.sync carries the whole status; one read fills the card until the first event.
+  useEffect(() => watchObsidianSync(() => window.app, setStatus), []);
 
   const progress = status?.progress ?? 0;
   const stateKey = `obsidianSync.states.${status?.state ?? "idle"}` as MessageKey;
