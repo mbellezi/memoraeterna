@@ -236,13 +236,14 @@ describe.skipIf(!sidecarInstalled)("migration 0064 on a real PostgreSQL database
     expect((await definitions(pool)).atomic_notes_evidence_chunk_id_idx).toContain(
       "USING btree (evidence_chunk_id)"
     );
-    // No query of the statement uses `@@`, so a GIN on the vectors would serve none.
+    // No query of Ask's statement uses `@@`, so 0064 indexes neither vector. Omni's chunk arm does
+    // (F5 T117): 0067 adds `chunks_search_tsv_idx`, the only index on a vector allowed after it.
     const onVectors = await pool.query<{ indexname: string }>(
       `select indexname from pg_indexes
         where (tablename = 'chunks' and indexdef like '%search_tsv%')
            or (tablename = 'atomic_notes' and indexdef like '%ask_tsv%')`
     );
-    expect(onVectors.rows).toEqual([]);
+    expect(onVectors.rows).toEqual([{ indexname: "chunks_search_tsv_idx" }]);
   });
 
   it("records the migration in the history and has nothing left to apply", async () => {

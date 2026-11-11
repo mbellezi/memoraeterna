@@ -214,8 +214,10 @@ async function verifyState(db: PgPool, label: string) {
   );
   assert.equal(index.rows[0]?.valid, true, `${label}: the evidence index is valid`);
   assert.match(index.rows[0]!.definition, /USING btree \(evidence_chunk_id\)/u);
+  // Omni's chunk arm has an `@@` (F5 T117): 0067 adds chunks_search_tsv_idx, the one index allowed.
   const onVectors = await db.query(
-    `select 1 from pg_indexes where (tablename = 'chunks' and indexdef like '%search_tsv%')
+    `select 1 from pg_indexes where (tablename = 'chunks' and indexdef like '%search_tsv%'
+          and indexname <> 'chunks_search_tsv_idx')
         or (tablename = 'atomic_notes' and indexdef like '%ask_tsv%')`
   );
   assert.equal(
