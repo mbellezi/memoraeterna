@@ -96,7 +96,8 @@ const metrics = [
   {
     name: "ruleLines",
     description: "total lines of RULES.md and rules/**/*.md",
-    budget: 800,
+    // 900 while the refactoring phases run (owner 2026-11-11); back to 800 when F7 closes.
+    budget: 900,
     appliesTo: (file) => file === "RULES.md" || (file.startsWith("rules/") && file.endsWith(".md")),
     count: countLines
   }

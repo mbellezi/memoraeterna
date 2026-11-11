@@ -465,7 +465,8 @@ measured data, not facts.
       = typecheck + vitest + prettier --check + eslint + ratchet, building on `scripts/check-format.mjs` and
       the `lint` alias.
 - [x] `scripts/quality-ratchet.mjs` (raw palette classes, arbitrary text sizes, window dialogs, renderer
-      setInterval, product lines over 200 characters: numbers only go down; rule lines: fixed 800-line budget).
+      setInterval, product lines over 200 characters: numbers only go down; rule lines: fixed 800-line budget,
+      raised to 900 until F7 closes by the owner on 2026-11-11).
 - [x] Wall-clock instrumentation (migration 0043: stage attempts/attempt start/end, AI `queue_ms`/`attempt`)
       and `npm run kpi`; baseline in `docs/kpi-baseline.md` (owner library: 13 sources, 0 notes).
 - [x] First measurement of the v6 matching contract: 10.4 s/note, ~1,044 output tokens/call (`docs/kpi-golden.md`).
@@ -950,7 +951,8 @@ only if the owner approved it. The final build is the commit gate T tests.
 Exit: the owner accepts the app; no open severity-1 or severity-2 finding; full check and e2e green on the
 fixed build; the nightly KPIs green on 3 consecutive runs on the fixed build and the clean-install first run
 green on it; recalibration results recorded. Then the owner decides on the rollback tag
-`f6-pre-legacy-removal`, the F3/F4 cold copies (`docs/f4-decisions.md` Q9) and the model adoptions.
+`f6-pre-legacy-removal`, the F3/F4 cold copies (`docs/f4-decisions.md` Q9) and the model adoptions, and the
+rule-line budget returns to 800 (`scripts/quality-ratchet.mjs`; 900 during the phases, owner 2026-11-11).
 
 ## 8. KPIs and risks
 
