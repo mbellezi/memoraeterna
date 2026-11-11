@@ -229,6 +229,39 @@ export function addressKind(address: PanelAddress): ObjectKind | null {
   return parsed && objectKinds.includes(parsed.kind) ? parsed.kind : null;
 }
 
+/**
+ * The words of a spine: the kind word and, once the object's title is read, `kind · title`. A read
+ * that failed keeps the kind word and adds a quiet dash, so a sighted person sees a title is
+ * missing; the spine's label already says "title unavailable" in words.
+ */
+export function SpineText({
+  kindWord,
+  title,
+  unavailable
+}: {
+  kindWord: string;
+  title: string;
+  unavailable: boolean;
+}) {
+  if (title !== "")
+    return (
+      <>
+        <span className="panel-stack__spine-kind">{kindWord} · </span>
+        {title}
+      </>
+    );
+  return unavailable ? (
+    <>
+      {kindWord}
+      <span aria-hidden="true" className="panel-stack__spine-kind">
+        {" · —"}
+      </span>
+    </>
+  ) : (
+    <>{kindWord}</>
+  );
+}
+
 /** The titles the spines show, and how their read went. */
 interface Summaries {
   summaries: ReadonlyMap<string, ObjectSummary>;
@@ -452,14 +485,11 @@ export function PanelStack({
           className="panel-stack__spine-text"
           data-pending={pending === "loading" ? "" : undefined}
         >
-          {isRoot || title === "" ? (
-            kindWord
-          ) : (
-            <>
-              <span className="panel-stack__spine-kind">{kindWord} · </span>
-              {title}
-            </>
-          )}
+          <SpineText
+            kindWord={kindWord}
+            title={isRoot ? "" : title}
+            unavailable={pending === "error"}
+          />
         </span>
         {pending === "loading" ? <Skeleton className="h-16 w-3 flex-none" /> : null}
       </button>
