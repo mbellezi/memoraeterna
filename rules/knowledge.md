@@ -103,8 +103,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Search and Ask
 
-- One retriever (full-text, trigram, vector; RRF) serves every search surface
-  (target F5). Text search needs no AI; missing embeddings degrade explicitly.
+- One retriever (full-text, trigram, vector; RRF) serves every search surface.
+  Text search needs no AI; missing embeddings degrade explicitly.
 - Results carry their evidence (chunk ID, SourceSpan, breadcrumbs); IDs are never fabricated. Scope and privacy
   filters apply before retrieval and before any provider call. Browsing is read-only; an Ask stores only its own
   Question (deletable, cleared in Privacy); nothing else is saved without the user.
