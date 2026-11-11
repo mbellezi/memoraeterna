@@ -12,3 +12,4 @@ export * from "./repositories/obsidianEditorialRepository.js";
 export * from "./repositories/promptRepository.js";
 export * from "./repositories/knowledgeConsultationRepository.js";
 export * from "./repositories/obsidianLayoutRepository.js";
+export * from "./repositories/libraryRowsRepository.js";
