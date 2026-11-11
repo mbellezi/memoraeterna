@@ -143,6 +143,7 @@ function run(overrides: Partial<FirstRunFacts> = {}): FirstRunFacts {
       missDetails: [],
       maxLiveTokens: null
     },
+    recordRetries: null,
     setup: {
       onboarding: { show: true, libraryEmpty: true },
       card: { recommended: "hybrid", localAvailable: true },
@@ -334,6 +335,68 @@ describe("the first-run verdict", () => {
     expect(record.checks.map((check) => check.id)).not.toContain("gate");
     expect(record.checks.map((check) => check.id)).not.toContain("replay");
     expect(record.reported.withDownloadMs).toBe(495_000);
+  });
+
+  it("fails a recording with a failed AI call: no replay serves that work in the same order (FRMISS)", () => {
+    const recordFacts = (retries: FirstRunFacts["recordRetries"]) =>
+      run({
+        mode: "record",
+        modelSource: "download",
+        recorded: null,
+        cassette: {
+          mode: "record",
+          served: 0,
+          recorded: 1066,
+          misses: 0,
+          liveTokens: 317_368,
+          byTask: {},
+          missDetails: [],
+          maxLiveTokens: 560_000
+        },
+        recordRetries: retries
+      });
+    // FRREC of 11-11: 17 graph calls failed live; the record passed and both replays missed.
+    const failedStore = store({
+      aiCalls: [
+        { taskType: "embedding", adapter: "node-llama-cpp", status: "succeeded", count: 711 },
+        {
+          taskType: "knowledge-graph-generation",
+          adapter: "openai-codex",
+          status: "failed",
+          count: 11
+        },
+        { taskType: "knowledge-graph-generation", adapter: null, status: "failed", count: 6 }
+      ]
+    });
+    const failed = evaluateFirstRun(failedStore, recordFacts(null));
+    expect(failing(failed.checks)).toEqual(["replayable"]);
+    expect(failed.passed).toBe(false);
+    expect(failed.checks.find((check) => check.id === "replayable")!.detail).toBe(
+      "17 failed calls (17 knowledge-graph-generation): a failed call " +
+        "leaves no cassette entry and its job runs again later, so a replay serves that work in " +
+        "another order; record again"
+    );
+
+    const retried = {
+      calls: 3,
+      retries: 4,
+      recovered: 3,
+      exhausted: 0,
+      byTask: { summarization: 4 }
+    };
+    const clean = evaluateFirstRun(store(), recordFacts(retried));
+    expect(failing(clean.checks)).toEqual([]);
+    expect(clean.checks.find((check) => check.id === "replayable")!.detail).toBe(
+      "0 failed calls; 3 of 3 calls that failed transiently were answered on a retry (4 retries)"
+    );
+    expect(renderFirstRunMarkdown(clean, store())).toContain(
+      "- Transient remote failures the recording tried again: 3 calls, 4 retries (summarization 4), " +
+        "3 answered, 0 still failed."
+    );
+    // A replay is judged by its misses, not by this check.
+    expect(evaluateFirstRun(failedStore, run()).checks.map((check) => check.id)).not.toContain(
+      "replayable"
+    );
   });
 
   it("refuses a replay that ran without recorded timing, because its clock is not E6's", () => {

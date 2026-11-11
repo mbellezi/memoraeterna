@@ -10,10 +10,12 @@
 // the first source has enough notes, by a heavy job of the harness's own that drains the light lane
 // between two divisions, then once per source. The link jobs run in drain mode (one at a time, the
 // heavy lane waiting for them), so every prompt is a function of the arrival order and two replays
-// make the same calls. T0 is the instant before the database starts; T1 is the first time a note of
-// the first source sits in a named topic with a shown relation; D is the time the recording spent
-// waiting for the downloads with nothing else to do (a replay adds the recording's D to its own
-// T1 - T0).
+// make the same calls. A recording tries a transient remote failure again under the cassette
+// (`record-retry.ts`), and one with a failed AI call left does not pass: that call has no entry and
+// its job ran later than any replay runs it. T0 is the instant before the database starts; T1 is
+// the first time a note of the first source sits in a named topic with a shown relation; D is the
+// time the recording spent waiting for the downloads with nothing else to do (a replay adds the
+// recording's D to its own T1 - T0).
 //
 // Import this module only after `electron` resolves to the stub (`topics-e2e/electron-stub.ts`).
 import { existsSync } from "node:fs";
@@ -142,6 +144,7 @@ import {
   topicReleasePriority
 } from "./topic-release.js";
 import type { ReleaseSource, TopicRelease } from "./topic-release.js";
+import { RecordRetry } from "./record-retry.js";
 import { waitQuiet } from "./wait.js";
 import type { WaitOutcome } from "./wait.js";
 import {
@@ -454,13 +457,22 @@ async function runPass(
     });
     if (mode === "record" && config.maxTokens !== null) cassette.limitLiveTokens(config.maxTokens);
     const syntheticLang = config.synthetic ? syntheticLanguage(locale) : null;
-    setAiAdapterDecorator((adapter) =>
-      cassette.wrap(
-        syntheticLang
-          ? hybridSyntheticProvider(adapter, { language: syntheticLang, contentLanguage: locale })
-          : adapter
-      )
-    );
+    // A recording tries a transient remote failure again under the cassette (FRMISS): a failed call
+    // has no entry, and the job the product would run again later is the order no replay follows.
+    const maxTokens = config.maxTokens;
+    const recordRetry =
+      mode === "record"
+        ? new RecordRetry({
+            allow: () => maxTokens === null || cassette.stats().liveTokens < maxTokens,
+            onRetry: (event) => log("record_retry", { ...event })
+          })
+        : null;
+    setAiAdapterDecorator((adapter) => {
+      const provider = syntheticLang
+        ? hybridSyntheticProvider(adapter, { language: syntheticLang, contentLanguage: locale })
+        : adapter;
+      return cassette.wrap(recordRetry ? recordRetry.wrap(provider) : provider);
+    });
 
     // The product's services, wired as the main process wires them for a first run (no Electron window).
     const ipc = new SequencedIpc();
@@ -1191,6 +1203,7 @@ async function runPass(
         ...(stats.timing ? { timing: stats.timing } : {}),
         ...(stats.waitedMs !== undefined ? { waitedMs: stats.waitedMs } : {})
       },
+      recordRetries: recordRetry?.stats() ?? null,
       setup: outcome.setup,
       hybrid,
       models: modelFacts,

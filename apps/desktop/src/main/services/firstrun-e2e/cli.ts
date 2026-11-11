@@ -34,6 +34,10 @@ import { UsageError, parseFirstRunArgs, usage } from "./config.js";
  *     --codex-credential-file <file outside the repository> \
  *     --copy-models-to <repository>/.cache/models
  *
+ * A recording tries a transient failure of a remote call again itself (`record-retry.ts`, card
+ * FRMISS), and one still left with a failed AI call fails its `replayable` check and is not saved:
+ * that call has no cassette entry, and its job ran again later, in an order no replay follows.
+ *
  * Self-test of the harness itself, with two synthetic papers, simulated installs and synthetic
  * models (no PDF, no Docling, no download, no model; records and replays a throwaway cassette):
  *

@@ -22,6 +22,7 @@ import type { StatusAtStalls } from "./timeline.js";
 import type { SetupFacts } from "./setup.js";
 import type { RecordedFirstRun } from "./config.js";
 import type { HarnessLinkRuntime, TopicRelease, TopicReleaseSettings } from "./topic-release.js";
+import type { RecordRetryStats } from "./record-retry.js";
 
 export { formatDuration };
 
@@ -71,6 +72,8 @@ export interface FirstRunFacts {
     missDetails: AiCassetteStats["missDetails"];
     maxLiveTokens: number | null;
   };
+  /** A recording's retries of transient remote failures (`record-retry.ts`); null for a replay. */
+  recordRetries: RecordRetryStats | null;
   setup: SetupFacts | null;
   hybrid: HybridRouteFacts;
   models: { embedding: ModelFacts; ranker: ModelFacts };
@@ -129,6 +132,7 @@ export type FirstRunCheckId =
   | "waiting"
   | "t1"
   | "cassette"
+  | "replayable"
   | "replay"
   | "lane"
   | "gate";
@@ -165,6 +169,7 @@ export interface FirstRunReport {
     withDownloadMs: number | null;
     budgetMs: number;
     cassette: FirstRunFacts["cassette"];
+    recordRetries: RecordRetryStats | null;
     aiCalls: StoreFacts["aiCalls"];
     ipc: IpcSummary;
     hybrid: HybridRouteFacts;
@@ -432,6 +437,30 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
       : `${cassette.recorded} calls recorded, ${cassette.served} served from earlier takes, ` +
           `${cassette.liveTokens} live tokens of ${cassette.maxLiveTokens ?? "no"} cap`
   );
+  // A failed call of a recording has no entry, and the job that made it ran again later, after
+  // other work, in an order no replay follows (FRMISS): such a recording gates nothing.
+  if (run.mode === "record") {
+    const failedByTask = new Map<string, number>();
+    for (const row of store.aiCalls)
+      if (row.status === "failed")
+        failedByTask.set(row.taskType, (failedByTask.get(row.taskType) ?? 0) + row.count);
+    const failed = [...failedByTask.values()].reduce((sum, n) => sum + n, 0);
+    const retries = run.recordRetries;
+    check(
+      "replayable",
+      "The recording has no failed AI call, so a replay makes the same calls in the same order",
+      failed === 0,
+      (failed === 0
+        ? "0 failed calls"
+        : `${failed} failed calls (${[...failedByTask]
+            .map(([task, n]) => `${n} ${task}`)
+            .join(", ")}): a failed call leaves no cassette entry and its job runs again later, ` +
+          "so a replay serves that work in another order; record again") +
+        (retries && retries.calls > 0
+          ? `; ${retries.recovered} of ${retries.calls} calls that failed transiently were answered on a retry (${retries.retries} retries)`
+          : "")
+    );
+  }
   if (run.recorded) {
     const same =
       run.recorded.result.notes === store.currentNotes &&
@@ -521,6 +550,7 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
       withDownloadMs: withDownload,
       budgetMs: run.budgetMs,
       cassette: run.cassette,
+      recordRetries: run.recordRetries,
       aiCalls: store.aiCalls,
       ipc: run.ipc,
       hybrid: run.hybrid,
@@ -627,6 +657,16 @@ export function renderFirstRunMarkdown(report: FirstRunReport, store: StoreFacts
     }.`,
     `- AI cassette ${r.cassette.mode}${r.cassette.timing ? ` with ${r.cassette.timing} timing (waited ${formatDuration(r.cassette.waitedMs ?? 0)} in all)` : ""}: ` +
       `${r.cassette.served} served, ${r.cassette.recorded} recorded, ${r.cassette.misses} misses, ${r.cassette.liveTokens} live tokens.`,
+    ...(r.recordRetries
+      ? [
+          `- Transient remote failures the recording tried again: ${r.recordRetries.calls} calls, ${r.recordRetries.retries} retries ` +
+            `(${
+              Object.entries(r.recordRetries.byTask)
+                .map(([task, n]) => `${task} ${n}`)
+                .join(", ") || "none"
+            }), ${r.recordRetries.recovered} answered, ${r.recordRetries.exhausted} still failed.`
+        ]
+      : []),
     `- Engine status: ${
       r.engine
         ? `${r.engine.phase}${r.engine.blocked ? ` (${r.engine.blocked})` : ""}, ${r.engine.counts.placed} of ${r.engine.counts.items} items placed, ${r.engine.counts.needsGate} waiting for the gate`
