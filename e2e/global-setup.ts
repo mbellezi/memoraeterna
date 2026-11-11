@@ -36,7 +36,13 @@ import {
   waitForDatabase,
   type MemoraSession
 } from "./support/app.js";
-import { countRows, openProfileDb, waitForSettled, type ProfileDb } from "./support/db.js";
+import {
+  aiConfigRepositoryOn,
+  countRows,
+  openProfileDb,
+  waitForSettled,
+  type ProfileDb
+} from "./support/db.js";
 import {
   cloneProfile,
   emptyProfile,
@@ -141,12 +147,13 @@ async function signInWriter(session: MemoraSession, db: ProfileDb, modelId: stri
       mode: 0o600
     }
   );
-  const [row] = await db.query<{ id: string }>(
-    `insert into ai_provider_configs (provider, display_name, credential_ref, status, metadata)
-     values ('openai-codex', 'ChatGPT / Codex', $1, 'configured', $2) returning id`,
-    [reference, { modelId, capabilities: codexCapabilities }]
-  );
-  const providerConfigId = row!.id;
+  // The row a browser sign-in leaves, written through the repository (no SQL here, D38's guard).
+  const { id: providerConfigId } = await aiConfigRepositoryOn(db).upsertProvider({
+    provider: "openai-codex",
+    displayName: "ChatGPT / Codex",
+    credentialRef: reference,
+    metadata: { modelId, capabilities: codexCapabilities }
+  });
   await invokeApp(session.page, "ai.saveProvider", {
     id: providerConfigId,
     provider: "openai-codex",

@@ -5,7 +5,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import pg from "pg";
+import { createAiConfigRepository } from "@app/db";
+import pg, { type QueryResult, type QueryResultRow } from "pg";
 import { z } from "zod";
 
 const connectionSchema = z
@@ -58,6 +59,25 @@ export async function openProfileDb(userDataDir: string): Promise<ProfileDb> {
     },
     close: () => pool.end()
   };
+}
+
+/**
+ * The AI configuration repository of the profile's database. The one state a harness cannot reach
+ * through the product is the Codex provider row that a browser sign-in leaves behind; it is written
+ * here through the repository (so no new writer of the configuration tables exists), and the
+ * product's own `ai.saveProvider` takes it from there.
+ */
+export function aiConfigRepositoryOn(db: ProfileDb) {
+  const queryable: Parameters<typeof createAiConfigRepository>[0] = {
+    async query<Row extends QueryResultRow = QueryResultRow>(
+      text: string,
+      values: readonly unknown[] = []
+    ) {
+      const rows = await db.query<Record<string, unknown>>(text, [...values]);
+      return { rows, rowCount: rows.length, command: "", oid: 0, fields: [] } as QueryResult<Row>;
+    }
+  };
+  return createAiConfigRepository(queryable);
 }
 
 /** How many rows a table holds (a fixed table name from the caller, never user input). */
