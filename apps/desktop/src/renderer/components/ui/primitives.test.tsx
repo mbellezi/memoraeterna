@@ -317,6 +317,14 @@ describe("the four-state building blocks", () => {
     expect(html).toContain('role="alert"');
   });
 
+  it("error keeps the optional retryLabel so a place can say the retry word its own way", () => {
+    const html = renderToStaticMarkup(
+      <ErrorState t={t} message="It failed." onRetry={noop} retryLabel="Retry" />
+    );
+    expect(html).toContain(">Retry<");
+    expect(html).not.toContain(">Try again<");
+  });
+
   it("an empty headline balances its lines only on a page", () => {
     const inline = renderToStaticMarkup(<EmptyState headline="Nothing is placed here yet." />);
     const page = renderToStaticMarkup(

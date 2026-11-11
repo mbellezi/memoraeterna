@@ -18,6 +18,7 @@ export function ErrorState({
   message,
   kept,
   onRetry,
+  retryLabel,
   details,
   className
 }: {
@@ -27,6 +28,8 @@ export function ErrorState({
   /** What is kept ("Your notes are safe"), when it matters. */
   kept?: ReactNode;
   onRetry?: () => void;
+  /** The retry button's words when a place says it differently; default `ui.retry`. */
+  retryLabel?: string;
   /** Technical text for the disclosure; it never replaces `message`. */
   details?: string;
   className?: string;
@@ -50,7 +53,7 @@ export function ErrorState({
         <div className="col-start-2 flex flex-wrap items-center gap-2">
           {onRetry ? (
             <Button variant="secondary" onClick={onRetry}>
-              {t("ui.retry")}
+              {retryLabel ?? t("ui.retry")}
             </Button>
           ) : null}
           {details ? (
