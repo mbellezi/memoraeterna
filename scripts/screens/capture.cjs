@@ -64,6 +64,14 @@ async function run() {
     }
   });
   await window.loadFile(plan.bundle);
+  if (plan.focus) {
+    // A window that is not shown has no focus of its own: let the page believe it has it, so a
+    // focused element matches :focus and :focus-visible.
+    window.webContents.debugger.attach("1.3");
+    await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", {
+      enabled: true
+    });
+  }
   console.log("screens-capture ready");
   let done = 0;
   let width = null;
@@ -82,6 +90,19 @@ async function run() {
         jobTimeoutMs,
         `${job.surface} ${job.mode}`
       );
+      if (plan.focus) {
+        // As the keyboard would: the window has focus and the last input was a key, so a ring shows.
+        window.webContents.focus();
+        window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
+        window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
+        const found = await window.webContents.executeJavaScript(
+          `(() => { const el = document.querySelector(${JSON.stringify(plan.focus)}); if (!el) return false; el.focus({ focusVisible: true }); return document.activeElement === el; })()`
+        );
+        if (!found) {
+          result.ok = false;
+          result.reasons = [...result.reasons, `--focus matched nothing: ${plan.focus}`];
+        }
+      }
       if (plan.shots) {
         await window.webContents.executeJavaScript(
           "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
@@ -91,7 +112,7 @@ async function run() {
         const image = await window.webContents.capturePage();
         const directory = join(plan.outDirectory, job.surface);
         mkdirSync(directory, { recursive: true });
-        const file = `${job.mode}-${job.theme}-${job.width}.png`;
+        const file = `${job.mode}-${job.theme}-${job.width}${plan.focus ? "-focus" : ""}.png`;
         writeFileSync(join(directory, file), image.toPNG());
         result.screenshot = `${job.surface}/${file}`;
         result.size = image.getSize();
@@ -101,10 +122,12 @@ async function run() {
         surface: job.surface,
         mode: job.mode,
         theme: job.theme,
+        locale: plan.locale,
         frame: "none",
         state: null,
         ok: false,
         reasons: [String(error && error.message ? error.message : error)],
+        fits: [],
         missing: [],
         pageErrors: []
       };

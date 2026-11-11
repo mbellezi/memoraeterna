@@ -1,13 +1,15 @@
-import { createTranslator } from "@app/i18n";
-
 import { idleStatus, inboxCounts, runningStatus } from "../components/activity/activity-fixtures";
 import { id, nodeSummary } from "../components/topics/topic-fixtures";
 import { Shell } from "./Shell";
+import { screenTranslator } from "./screen-locale";
 import type { ScreenModule } from "./surfaces";
+
+/** The shell and the rail fill the window: the screens tool shows them edge to edge. */
+export const fullWindow = true;
 
 export const surface = "shell";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 const tree = {

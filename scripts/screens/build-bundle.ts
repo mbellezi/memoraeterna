@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build } from "vite";
 
+import type { LanguageCode } from "../../packages/i18n/src/index";
 import type { SurfaceEntry } from "../../apps/desktop/src/renderer/workspace/surfaces";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,13 +41,15 @@ export function entrySource(surfaces: readonly SurfaceEntry[], root = rendererRo
 }
 
 /** The page that carries the bundle (a script body never contains a closing script tag). */
-export function pageHtml(code: string, css: string): string {
+export function pageHtml(code: string, css: string, locale: LanguageCode = "en"): string {
   const safe = (text: string, closing: string) =>
     text.replaceAll(closing, closing.replace("</", "<\\/"));
+  // The language is set before the bundle runs: a screen module reads it when it builds its translator.
   return (
-    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8">` +
+    `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<style>${safe(css, "</style")}</style></head><body>` +
+    `<script>window.__screenLocale=${JSON.stringify(locale)}</script>` +
     `<script>${safe(code, "</script")}</script></body></html>`
   );
 }
@@ -60,7 +63,8 @@ export interface BundleResult {
 export async function buildBundle(
   surfaces: readonly SurfaceEntry[],
   outDirectory: string,
-  root = rendererRoot
+  root = rendererRoot,
+  locale: LanguageCode = "en"
 ): Promise<BundleResult> {
   const entry = entrySource(surfaces, root);
   const result = await build({
@@ -118,7 +122,7 @@ export async function buildBundle(
     .join("\n");
   mkdirSync(outDirectory, { recursive: true });
   const file = join(outDirectory, "screens.html");
-  const html = pageHtml(code, css);
+  const html = pageHtml(code, css, locale);
   writeFileSync(file, html);
   return { file, bytes: Buffer.byteLength(html) };
 }

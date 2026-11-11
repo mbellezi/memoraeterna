@@ -183,6 +183,7 @@ describe("the pill", () => {
     expect(pillView(en, activitySnapshot())).toEqual({
       glyph: "loading",
       text: "Checking activity…",
+      short: "Checking activity…",
       full: "Checking activity…",
       badge: 0,
       waiting: 0

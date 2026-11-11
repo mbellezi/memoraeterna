@@ -13,6 +13,8 @@ export interface LayoutTier {
   name: LayoutTierName;
   minWidth: number;
   railW: number;
+  /** One rail item: as wide as the rail less its margin; no padding, so a long word fits (§5.1). */
+  railItemW: number;
   navW: number;
   /** The context panel, docked from 1280 px, otherwise the overlay a 40 px strip opens. */
   ctxW: number;
@@ -34,6 +36,7 @@ export const layoutConfig = {
       name: "compact",
       minWidth: 0,
       railW: 64,
+      railItemW: 56,
       navW: 224,
       ctxW: 304,
       prevW: 216,
@@ -47,6 +50,7 @@ export const layoutConfig = {
       name: "narrow",
       minWidth: 1180,
       railW: 72,
+      railItemW: 60,
       navW: 256,
       ctxW: 304,
       prevW: 224,
@@ -60,6 +64,7 @@ export const layoutConfig = {
       name: "standard",
       minWidth: 1280,
       railW: 72,
+      railItemW: 60,
       navW: 256,
       ctxW: 304,
       prevW: 224,
@@ -73,6 +78,7 @@ export const layoutConfig = {
       name: "wide",
       minWidth: 1440,
       railW: 72,
+      railItemW: 60,
       navW: 272,
       ctxW: 320,
       prevW: 240,

@@ -1,12 +1,11 @@
-import { createTranslator } from "@app/i18n";
-
+import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
 import { fixtureId, notePage } from "./note-page-fixtures";
 import { NotePage } from "./NotePage";
 
 export const surface = "note-page";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 export const fixtures: ScreenModule["fixtures"] = {

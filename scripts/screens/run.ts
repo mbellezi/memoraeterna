@@ -1,11 +1,18 @@
 /**
- * `npm run screens -- [--screen id[,id…]] [--check] [--no-shots] [--mode m] [--theme t] [--width w]`
+ * `npm run screens -- [--screen id[,id…]] [--check] [--no-shots] [--mode m] [--theme t] [--width w]
+ *                     [--locale en|pt-BR|es|fr|it] [--focus <css selector>]`
  *
  * Renders each requested surface (every surface whose implementation and screen module exist, by
  * default) in each mode (loading, empty, error, success), theme (light, dark) and width (960,
  * 1440) in a bare offscreen Electron over a fake `window.app`, and writes
  * `.cache/f5/screens/<run>/<surface>/<mode>-<theme>-<width>.png` and `.cache/f5/screens/<run>/check.json`.
- * `--check` exits 1 unless every surface reported `[data-surface=<id>][data-state=<mode>]` within
+ * `--locale` (default en) renders every surface in that language, through the same `createTranslator`
+ * the app gives its components; a run is one locale, and `--check` proves the page really carried it.
+ * `--focus <selector>` focuses the first element that matches after the surface is mounted (as the
+ * keyboard would, so `:focus-visible` shows) and writes `<mode>-<theme>-<width>-focus.png`; a
+ * selector that matches nothing fails the capture. It is how a screenshot shows a focus ring.
+ * A surface that fills the window (the shell, the rail) is captured edge to edge at the stated width;
+ * the others sit on a 1 rem stand. `--check` exits 1 unless every surface reported `[data-surface=<id>][data-state=<mode>]` within
  * five seconds in every combination (an object panel also shows its path ribbon in success).
  *
  * One capture runs at a time on the machine: the lock file lives in the repository's shared git
@@ -35,6 +42,12 @@ import {
   type ScreenMode,
   type SurfaceEntry
 } from "../../apps/desktop/src/renderer/workspace/surfaces";
+import {
+  defaultLanguageCode,
+  isSupportedLanguageCode,
+  supportedLanguageCodes,
+  type LanguageCode
+} from "../../packages/i18n/src/index";
 import { buildBundle, rendererRoot, repositoryRoot } from "./build-bundle";
 import type { MountResult, ScreenTheme } from "./harness";
 
@@ -51,6 +64,9 @@ export interface ScreensArgs {
   modes: ScreenMode[];
   themes: ScreenTheme[];
   widths: number[];
+  locale: LanguageCode;
+  /** A CSS selector to focus before each shot, or null. */
+  focus: string | null;
 }
 
 export function parseScreensArgs(argv: readonly string[]): ScreensArgs {
@@ -60,7 +76,9 @@ export function parseScreensArgs(argv: readonly string[]): ScreensArgs {
     shots: true,
     modes: [],
     themes: [],
-    widths: []
+    widths: [],
+    locale: defaultLanguageCode,
+    focus: null
   };
   const values = (flag: string, index: number): string => {
     const value = argv[index + 1];
@@ -85,6 +103,13 @@ export function parseScreensArgs(argv: readonly string[]): ScreensArgs {
       const width = Number(values(flag, index++));
       if (!Number.isInteger(width) || width < 960) throw new Error("--width is at least 960");
       args.widths.push(width);
+    } else if (flag === "--focus") {
+      args.focus = values(flag, index++);
+    } else if (flag === "--locale") {
+      const locale = values(flag, index++);
+      if (!isSupportedLanguageCode(locale))
+        throw new Error(`Unknown locale ${locale}; one of ${supportedLanguageCodes.join(", ")}`);
+      args.locale = locale;
     } else throw new Error(`Unknown argument ${flag}`);
   }
   return args;
@@ -142,7 +167,8 @@ export interface CheckSummary {
 export function summarize(
   results: readonly (MountResult & { width: number })[],
   expected = results.length,
-  exitCode = 0
+  exitCode = 0,
+  locale: string = defaultLanguageCode
 ): CheckSummary {
   const failures = results
     .filter((result) => !result.ok)
@@ -150,6 +176,12 @@ export function summarize(
       (result) =>
         `${result.surface} ${result.mode} ${result.theme} ${result.width}: ${result.reasons.join("; ") || "failed"}`
     );
+  // The language must have reached the page, not only the plan.
+  for (const result of results)
+    if (result.locale !== locale)
+      failures.push(
+        `${result.surface} ${result.mode} ${result.theme} ${result.width}: rendered in ${result.locale}, expected ${locale}`
+      );
   // An empty state that shows what the success state shows is not an empty state.
   const shown = new Map<string, string>();
   for (const result of results)
@@ -320,9 +352,9 @@ export async function main(argv: readonly string[]): Promise<number> {
   const outDirectory = join(base, run);
   try {
     mkdirSync(outDirectory, { recursive: true });
-    const bundle = await buildBundle(selected, scratch);
+    const bundle = await buildBundle(selected, scratch, rendererRoot, args.locale);
     console.log(
-      `screens: ${selected.length} surface(s), ${jobs.length} capture(s), bundle ${(bundle.bytes / 1e6).toFixed(1)} MB`
+      `screens: ${selected.length} surface(s), ${jobs.length} capture(s) in ${args.locale}, bundle ${(bundle.bytes / 1e6).toFixed(1)} MB`
     );
     const resultsFile = join(scratch, "results.json");
     const planFile = join(scratch, "plan.json");
@@ -333,6 +365,8 @@ export async function main(argv: readonly string[]): Promise<number> {
         outDirectory,
         resultsFile,
         jobs,
+        locale: args.locale,
+        focus: args.focus,
         shots: args.shots,
         height: viewportHeight
       })
@@ -342,12 +376,13 @@ export async function main(argv: readonly string[]): Promise<number> {
       existsSync(resultsFile) ? readFileSync(resultsFile, "utf8") : ""
     );
     if (captured.results.length === 0) throw new Error(`The capture process failed (${code})`);
-    const summary = summarize(captured.results, jobs.length, code);
+    const summary = summarize(captured.results, jobs.length, code, args.locale);
     writeFileSync(
       join(outDirectory, "check.json"),
       `${JSON.stringify(
         {
           run,
+          locale: args.locale,
           surfaces: selected.map((entry) => entry.id),
           ...summary,
           blockedRequests: captured.blocked,

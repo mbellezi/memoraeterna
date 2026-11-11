@@ -94,6 +94,7 @@
     },
     "drawer": {
       "close": "Fechar atividade",
+      "explainer": "o que o Memora faz em segundo plano",
       "loadFailed": "Não foi possível carregar a atividade."
     },
     "sections": {
@@ -3776,6 +3777,12 @@
       "needsYouMany": "{count} precisam de você",
       "needsYouOne": "{count} precisa de você",
       "running": "Organizando a biblioteca",
+      "shortDownload": "Preparando",
+      "shortNoModel": "Sem modelo",
+      "shortOffline": "Sem internet",
+      "shortPaused": "Pausado",
+      "shortRunning": "Organizando",
+      "shortWaiting": "Em espera",
       "waiting": "{count} em espera"
     },
     "titleBar": {
@@ -3786,6 +3793,7 @@
       "addSource": "Adicionar fonte",
       "omniLabel": "Buscar, abrir ou perguntar",
       "omniPlaceholder": "Buscar, abrir ou perguntar…",
+      "omniShort": "Buscar ou perguntar…",
       "status": "Estado da atividade"
     }
   }

@@ -94,6 +94,7 @@
     },
     "drawer": {
       "close": "Fermer l’activité",
+      "explainer": "ce que Memora fait en arrière-plan",
       "loadFailed": "Impossible de charger l’activité."
     },
     "sections": {
@@ -3778,6 +3779,12 @@
       "needsYouMany": "{count} ont besoin de vous",
       "needsYouOne": "{count} a besoin de vous",
       "running": "Classement de votre bibliothèque",
+      "shortDownload": "Préparation",
+      "shortNoModel": "Sans modèle",
+      "shortOffline": "Hors ligne",
+      "shortPaused": "En pause",
+      "shortRunning": "Classement",
+      "shortWaiting": "En attente",
       "waiting": "{count} en attente"
     },
     "titleBar": {
@@ -3788,6 +3795,7 @@
       "addSource": "Ajouter une source",
       "omniLabel": "Chercher, ouvrir ou demander",
       "omniPlaceholder": "Chercher, ouvrir ou demander…",
+      "omniShort": "Chercher ou demander…",
       "status": "État de l’activité"
     }
   }

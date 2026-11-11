@@ -94,6 +94,7 @@
     },
     "drawer": {
       "close": "Close activity",
+      "explainer": "what Memora does in the background",
       "loadFailed": "Activity could not be loaded."
     },
     "sections": {
@@ -3773,6 +3774,12 @@
       "needsYouMany": "{count} need you",
       "needsYouOne": "{count} needs you",
       "running": "Organizing your library",
+      "shortDownload": "Getting ready",
+      "shortNoModel": "No model",
+      "shortOffline": "Offline",
+      "shortPaused": "Paused",
+      "shortRunning": "Organizing",
+      "shortWaiting": "Waiting",
       "waiting": "{count} waiting"
     },
     "titleBar": {
@@ -3783,6 +3790,7 @@
       "addSource": "Add source",
       "omniLabel": "Search, open or ask",
       "omniPlaceholder": "Search, open or ask…",
+      "omniShort": "Search or ask…",
       "status": "Activity status"
     }
   }

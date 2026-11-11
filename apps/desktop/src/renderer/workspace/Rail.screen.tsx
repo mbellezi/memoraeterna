@@ -1,14 +1,17 @@
 import type { CSSProperties } from "react";
-import { createTranslator } from "@app/i18n";
 
 import { inboxCounts } from "../components/activity/activity-fixtures";
 import { ConnectedRail } from "./Rail";
 import { layoutCustomProperties } from "./shell-model";
+import { screenTranslator } from "./screen-locale";
 import type { ScreenModule } from "./surfaces";
+
+/** The shell and the rail fill the window: the screens tool shows them edge to edge. */
+export const fullWindow = true;
 
 export const surface = "rail";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 export const fixtures: ScreenModule["fixtures"] = {

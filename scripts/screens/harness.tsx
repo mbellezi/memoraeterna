@@ -21,6 +21,7 @@ import { readEvidence } from "./evidence";
 import { createFakeApi } from "./fake-api";
 import {
   resolveFrame,
+  standStyle,
   stateReasons,
   textSignature,
   untilState,
@@ -35,6 +36,8 @@ export interface MountResult {
   surface: string;
   mode: ScreenMode;
   theme: ScreenTheme;
+  /** The language the page was built for (`<html lang>`), so a run can prove the locale reached it. */
+  locale: string;
   frame: FrameSource;
   /** What `data-state` said when the check ended. */
   state: string | null;
@@ -42,6 +45,8 @@ export interface MountResult {
   signature: string;
   ok: boolean;
   reasons: string[];
+  /** The labels that step down when they do not fit, and the form each one shows (`pill=2@width/room`). */
+  fits: string[];
   /** Calls the surface made that its fixtures did not answer. */
   missing: string[];
   /** Uncaught page errors (an unhandled promise rejection is not one). */
@@ -72,7 +77,7 @@ async function mount(
   theme: ScreenTheme
 ): Promise<MountResult> {
   const module = registry.modules[id];
-  const base = { surface: id, mode, theme };
+  const base = { surface: id, mode, theme, locale: document.documentElement.lang };
   if (!module)
     return {
       ...base,
@@ -81,6 +86,7 @@ async function mount(
       signature: "",
       ok: false,
       reasons: ["no screen module"],
+      fits: [],
       missing: [],
       pageErrors: []
     };
@@ -103,9 +109,10 @@ async function mount(
   const stand = document.createElement("div");
   stand.setAttribute("data-harness", "");
   stand.style.height = "100vh";
-  stand.style.padding = "1rem";
+  const box = standStyle(module.fullWindow === true);
+  stand.style.padding = box.padding;
   stand.style.boxSizing = "border-box";
-  stand.style.overflow = "auto";
+  stand.style.overflow = box.overflow;
   host.append(stand);
   root = createRoot(stand);
   root.render(module.render());
@@ -144,6 +151,10 @@ async function mount(
     signature: textSignature(stand.innerText),
     ok: last.reasons.length === 0 && pageErrors.length === 0,
     reasons: pageErrors.length > 0 ? [...last.reasons, "uncaught page error"] : last.reasons,
+    fits: [...document.querySelectorAll<HTMLElement>("[data-fit]")].map(
+      (element) =>
+        `${element.dataset.fit}=${element.dataset.fitLevel}@${Math.round(element.getBoundingClientRect().width)}/${element.parentElement?.clientWidth ?? 0}`
+    ),
     missing: fake.missing(),
     pageErrors: [...pageErrors]
   };

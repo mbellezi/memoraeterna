@@ -52,6 +52,11 @@ export interface ScreenModule {
      */
     readonly error?: ScreenFixtureSet;
   };
+  /**
+   * The surface fills the whole window (the shell, the rail): the screens tool shows it edge to edge
+   * at the stated width, with no padding around it. Absent, the surface sits on a padded stand.
+   */
+  readonly fullWindow?: true;
   render(): ReactNode;
 }
 

@@ -154,6 +154,8 @@ export function Rail({
 /** The Inbox's own mark: the count, a quiet marker while it is read, or one that says it failed. */
 function InboxMark({ t, inbox }: { t: Translator; inbox: Read<number> }): ReactNode {
   const position = "absolute left-8 top-1";
+  // A 2 px ring in the desk colour cuts the mark out of the icon under it (the mockup's .badge).
+  const knockout = "[box-shadow:0_0_0_2px_var(--surface-canvas)]";
   if (inbox.status === "loading")
     return (
       <span role="status" aria-busy="true" className={position}>
@@ -166,7 +168,11 @@ function InboxMark({ t, inbox }: { t: Translator; inbox: Read<number> }): ReactN
       <span
         role="alert"
         title={t("workspace.rail.inboxFailed")}
-        className={cn(position, "grid size-5 place-items-center text-warning")}
+        className={cn(
+          position,
+          "grid size-5 place-items-center rounded-full bg-background text-warning",
+          knockout
+        )}
       >
         <SolidTriangle className="size-3.5" />
         <span className="sr-only">{t("workspace.rail.inboxFailed")}</span>
@@ -180,7 +186,7 @@ function InboxMark({ t, inbox }: { t: Translator; inbox: Read<number> }): ReactN
       className={cn(
         position,
         "h-5 min-w-5 rounded-full bg-warning px-1 text-center text-xs font-bold leading-5 tabular-nums text-surface",
-        "shadow-[0_0_0_2px_var(--surface-canvas)]"
+        knockout
       )}
     >
       {text}

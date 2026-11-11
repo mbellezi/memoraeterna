@@ -101,6 +101,7 @@ export function layoutCustomProperties(viewportWidth: number): Record<`--${strin
   const px = (value: number) => `${value}px`;
   return {
     "--rail-w": px(tier.railW),
+    "--rail-item-w": px(tier.railItemW),
     "--top-h": px(titleBarMetrics.height),
     "--nav-w": px(tier.navW),
     "--ctx-w": px(tier.ctxW),

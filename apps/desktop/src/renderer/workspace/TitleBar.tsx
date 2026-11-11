@@ -11,6 +11,7 @@ import {
 import { Kbd } from "../components/ui/kbd";
 import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
+import { useOverflowLevel } from "../lib/use-overflow-level";
 
 export interface TitleBarProps {
   t: Translator;
@@ -69,9 +70,7 @@ export function TitleBar({
         onClick={onOpenPalette}
       >
         <Search aria-hidden="true" className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {t("workspace.titleBar.omniPlaceholder")}
-        </span>
+        <OmniLabel t={t} />
         <Kbd>⌘K</Kbd>
       </button>
       <div
@@ -84,6 +83,32 @@ export function TitleBar({
       </div>
       {add ?? <AddSplitButton t={t} onAdd={onAdd} onAddMore={onAddMore} />}
     </header>
+  );
+}
+
+/**
+ * The trigger's words. When the full "Search, open or ask…" does not fit beside the keycap (a long
+ * language at the 960 px window), the whole clause "open" goes and the shorter phrase stays; the
+ * words are never cut in the middle. The button's accessible name always has the full label.
+ */
+function OmniLabel({ t }: { t: Translator }) {
+  const full = t("workspace.titleBar.omniPlaceholder");
+  const short = t("workspace.titleBar.omniShort");
+  const { box, content, level } = useOverflowLevel<HTMLSpanElement, HTMLSpanElement>(
+    2,
+    `${full}|${short}`
+  );
+  return (
+    <span ref={box} className="min-w-0 flex-1 overflow-hidden text-left">
+      <span
+        ref={content}
+        data-fit="omni"
+        data-fit-level={level}
+        className="inline-block whitespace-nowrap"
+      >
+        {level === 0 ? full : short}
+      </span>
+    </span>
   );
 }
 

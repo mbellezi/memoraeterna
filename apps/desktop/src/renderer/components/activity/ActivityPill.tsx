@@ -3,6 +3,7 @@ import { Circle, PauseCircle, Undo2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { useOverflowLevel } from "../../lib/use-overflow-level";
 import { Kbd } from "../ui/kbd";
 import type { PillGlyph, PillView } from "./activity-model";
 import { RunningRing, SolidCheck, SolidTriangle } from "./solid-glyphs";
@@ -94,9 +95,25 @@ export function pillSentence(
   };
 }
 
-const shellBase = "inline-flex h-8 min-w-0 max-w-full items-center rounded-full border text-sm";
+/**
+ * What the pill keeps as its room shrinks, fullest first (design record §5.2, gate D's orchestrator
+ * review: no label is cut in the middle of a word). The needs-you clause is the one that survives:
+ * the waiting clause goes first, then the phrase shortens to its verb, then it leaves the pill (the
+ * tooltip and the accessible name keep the whole sentence), and only a pill with nothing else left
+ * drops the clause too.
+ */
+export const pillLevels = [
+  { phrase: "full", waiting: true, needsYou: true },
+  { phrase: "full", waiting: false, needsYou: true },
+  { phrase: "short", waiting: false, needsYou: true },
+  { phrase: "none", waiting: false, needsYou: true },
+  { phrase: "none", waiting: false, needsYou: false }
+] as const;
+
+const shellBase = "inline-flex h-8 items-center rounded-full border text-sm";
 /** At compact width the pill spends less on padding and gaps, so its phrase stays whole. */
-const shellOf = (compact: boolean) => cn(shellBase, compact ? "gap-1.5 px-2.5" : "gap-2 px-3");
+const shellOf = (compact: boolean) =>
+  cn(shellBase, "min-w-0 max-w-full", compact ? "gap-1.5 px-2.5" : "gap-2 px-3");
 
 function NeedsYou({ text }: { text: string }) {
   return (
@@ -131,7 +148,12 @@ export function ActivityPill({
 }: ActivityPillProps) {
   const sentence = pillSentence(t, view, { hideNeedsYou, compact });
   const needsYou = sentence.needsYou;
-
+  const { box, content, level } = useOverflowLevel<HTMLDivElement, HTMLDivElement>(
+    pillLevels.length,
+    [view.text, view.short, sentence.waiting, needsYou, view.glyph].join("|"),
+    compact ? 1 : 0
+  );
+  const shows = pillLevels[level] ?? pillLevels[0];
   if (notice) {
     // At compact width the needs-you clause waits: the notice lasts a few seconds, the Inbox badge
     // in the rail says the same, and the Undo link and the sentence need the room (design §3).
@@ -211,32 +233,42 @@ export function ActivityPill({
   const full = [view.full, sentence.waiting].filter(Boolean).join(" · ");
   const name = t("activity.pill.label", { values: { status: full } });
   return (
-    <button
-      ref={ref}
-      type="button"
-      aria-expanded={open}
-      aria-controls={open ? drawerId : undefined}
-      aria-label={needsYou ? `${name} ${needsYou}` : name}
-      title={needsYou ? `${full}. ${needsYou}` : full}
-      className={cn(
-        shellOf(compact),
-        "border-border-strong text-secondary-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-        // `cn` does not merge classes: one background and one border at a time.
-        open ? "bg-accent-soft" : "bg-surface hover:bg-soft"
-      )}
-      onClick={onToggle}
-      onKeyDown={onKeyDown}
-    >
-      {glyphs[view.glyph].render()}
-      <span className="min-w-0 truncate font-medium text-foreground">{view.text}</span>
-      {sentence.waiting ? (
-        // Its own span: only the main phrase truncates, the clause stays whole or drops at compact width.
-        <span className="shrink-0 whitespace-nowrap text-secondary-foreground">
-          · {sentence.waiting}
-        </span>
-      ) : null}
-      {needsYou ? <NeedsYou text={needsYou} /> : null}
-    </button>
+    // The room: as wide as the slot, whatever the pill draws; the pill steps down its levels in it.
+    <div ref={box} className="flex w-full min-w-0 justify-end">
+      <div ref={content} className="w-max shrink-0">
+        <button
+          ref={ref}
+          type="button"
+          data-fit="pill"
+          data-fit-level={level}
+          aria-expanded={open}
+          aria-controls={open ? drawerId : undefined}
+          aria-label={needsYou ? `${name} ${needsYou}` : name}
+          title={needsYou ? `${full}. ${needsYou}` : full}
+          className={cn(
+            shellBase,
+            compact ? "gap-1.5 px-2" : "gap-2 px-3",
+            "w-max shrink-0 border-border-strong text-secondary-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+            // `cn` does not merge classes: one background and one border at a time.
+            open ? "bg-accent-soft" : "bg-surface hover:bg-soft"
+          )}
+          onClick={onToggle}
+          onKeyDown={onKeyDown}
+        >
+          {glyphs[view.glyph].render()}
+          {shows.phrase !== "none" ? (
+            // Whole words only: the phrase and the waiting clause are one run of text, one gap.
+            <span className="whitespace-nowrap font-medium text-foreground">
+              {shows.phrase === "short" ? view.short : view.text}
+              {shows.waiting && sentence.waiting ? (
+                <span className="font-normal text-secondary-foreground">{` · ${sentence.waiting}`}</span>
+              ) : null}
+            </span>
+          ) : null}
+          {needsYou && shows.needsYou ? <NeedsYou text={needsYou} /> : null}
+        </button>
+      </div>
+    </div>
   );
 }
 

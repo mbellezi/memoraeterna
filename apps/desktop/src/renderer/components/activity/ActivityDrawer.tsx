@@ -19,6 +19,7 @@ import {
   FailedLine,
   JobFactsLine,
   LoadingLine,
+  needsYouIsEmpty,
   NeedsYouList,
   SentenceBlock,
   WaitingJobsLine
@@ -75,6 +76,8 @@ export function ActivityDrawer({
   const section = status ? statusSection(status) : null;
   const budget = snapshot.budget.status === "ready" ? snapshot.budget.value : null;
   const state = actionStateOf(snapshot);
+  const statusLoading = snapshot.status.status === "loading";
+  const statusFailed = snapshot.status.status === "error";
   const inbox = snapshot.inboxTotal ?? 0;
   // The pill's "waiting" clause counts these; the Waiting section lists the same ones.
   const waitingJobs = snapshot.jobs ? snapshot.jobs.waiting + snapshot.jobs.onHold : 0;
@@ -89,8 +92,11 @@ export function ActivityDrawer({
       onKeyDown={onKeyDown}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
-        <h2 id={titleId} className="text-sm font-semibold text-foreground">
+        <h2 id={titleId} className="min-w-0 text-sm font-semibold text-foreground">
           {t("activity.title")}
+          <span className="font-normal text-muted-foreground">
+            {` · ${t("activity.drawer.explainer")}`}
+          </span>
         </h2>
         <button
           type="button"
@@ -104,8 +110,8 @@ export function ActivityDrawer({
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <Section title={t("activity.sections.now")}>
-          {snapshot.status.status === "loading" ? <LoadingLine t={t} /> : null}
-          {snapshot.status.status === "error" ? (
+          {statusLoading ? <LoadingLine t={t} /> : null}
+          {statusFailed ? (
             <FailedLine t={t} message={t("activity.drawer.loadFailed")} onRetry={onRetry} />
           ) : null}
           {status && section === "now" ? (
@@ -122,7 +128,13 @@ export function ActivityDrawer({
           {status ? <CoverageList t={t} coverage={status.coverage} /> : null}
           {snapshot.jobs ? <JobFactsLine t={t} jobs={snapshot.jobs} /> : null}
         </Section>
-        {status ? (
+        {/* Waiting and Needs you appear only when they have something to say (§5.8). */}
+        {statusLoading ? (
+          <Section title={t("activity.sections.waiting")}>
+            <LoadingLine t={t} lines={1} />
+          </Section>
+        ) : null}
+        {status && (section === "waiting" || waitingJobs > 0) ? (
           <Section title={t("activity.sections.waiting")}>
             {section === "waiting" ? (
               <SentenceBlock
@@ -133,14 +145,17 @@ export function ActivityDrawer({
                 state={state}
                 onAction={onAction}
               />
-            ) : waitingJobs > 0 ? (
-              <WaitingJobsLine t={t} count={waitingJobs} />
             ) : (
-              <EmptyLine>{t("activity.waiting.empty")}</EmptyLine>
+              <WaitingJobsLine t={t} count={waitingJobs} />
             )}
           </Section>
         ) : null}
-        {status ? (
+        {statusLoading ? (
+          <Section title={t("activity.sections.needsYou")}>
+            <LoadingLine t={t} lines={1} />
+          </Section>
+        ) : null}
+        {status && !needsYouIsEmpty(entries, inbox) ? (
           <Section title={t("activity.sections.needsYou")}>
             <NeedsYouList
               t={t}
@@ -152,28 +167,33 @@ export function ActivityDrawer({
             />
           </Section>
         ) : null}
-        <Section title={t("activity.sections.done")}>
-          {snapshot.done.status === "loading" ? <LoadingLine t={t} /> : null}
-          {snapshot.done.status === "error" ? (
-            <FailedLine t={t} message={t("activity.done.loadFailed")} onRetry={onRetry} />
-          ) : null}
-          {snapshot.done.status === "ready" ? (
-            <DoneList
-              t={t}
-              changes={snapshot.done.value}
-              now={now}
-              snapshot={snapshot}
-              onUndo={onUndo}
-            />
-          ) : null}
-        </Section>
-        <Section title={t("activity.sections.budget")}>
-          {snapshot.budget.status === "loading" ? <LoadingLine t={t} /> : null}
-          {snapshot.budget.status === "error" ? (
-            <FailedLine t={t} message={t("activity.budget.loadFailed")} onRetry={onRetry} />
-          ) : null}
-          {budget ? <BudgetMeters t={t} budget={budget} /> : null}
-        </Section>
+        {/* A failed activity read says so once, at the top; the sections below do not repeat it. */}
+        {!(statusFailed && snapshot.done.status === "error") ? (
+          <Section title={t("activity.sections.done")}>
+            {snapshot.done.status === "loading" ? <LoadingLine t={t} /> : null}
+            {snapshot.done.status === "error" ? (
+              <FailedLine t={t} message={t("activity.done.loadFailed")} onRetry={onRetry} />
+            ) : null}
+            {snapshot.done.status === "ready" ? (
+              <DoneList
+                t={t}
+                changes={snapshot.done.value}
+                now={now}
+                snapshot={snapshot}
+                onUndo={onUndo}
+              />
+            ) : null}
+          </Section>
+        ) : null}
+        {!(statusFailed && snapshot.budget.status === "error") ? (
+          <Section title={t("activity.sections.budget")}>
+            {snapshot.budget.status === "loading" ? <LoadingLine t={t} /> : null}
+            {snapshot.budget.status === "error" ? (
+              <FailedLine t={t} message={t("activity.budget.loadFailed")} onRetry={onRetry} />
+            ) : null}
+            {budget ? <BudgetMeters t={t} budget={budget} /> : null}
+          </Section>
+        ) : null}
       </div>
     </aside>
   );

@@ -1,13 +1,13 @@
 import { inboxKinds, type InboxItem } from "@app/domain";
-import { createTranslator } from "@app/i18n";
 
+import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
 import { countsOf, item, page, topicDiff } from "./inbox-fixtures";
 import { InboxScreen } from "./InboxScreen";
 
 export const surface = "inbox";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 /** One item of every kind, the first a reviewed topic overview with its change-set diff. */

@@ -1,11 +1,10 @@
-import { createTranslator } from "@app/i18n";
-
+import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
 import { PrimitivesSheet, type PrimitiveSample } from "./primitives-sheet";
 
 export const surface = "primitives";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 
 const samples: PrimitiveSample[] = [
   { id: "s1", title: "Lactic fermentation", meta: "Note · 3 min" },

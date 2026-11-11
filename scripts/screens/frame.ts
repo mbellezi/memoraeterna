@@ -8,6 +8,18 @@ import { evidenceReasons, type Evidence } from "./evidence";
 
 export type FrameSource = "own" | "harness" | "none";
 
+/**
+ * The stand-in wrapper's box. A surface that fills the window (the shell and anything like it) sits
+ * on a stand with no padding, so a 960 px capture shows a 960 px surface; every other surface keeps
+ * the 1 rem margin around it.
+ */
+export function standStyle(fullWindow: boolean): {
+  padding: string;
+  overflow: string;
+} {
+  return fullWindow ? { padding: "0", overflow: "hidden" } : { padding: "1rem", overflow: "auto" };
+}
+
 /** What the check reads of an element: its `data-*` attributes. */
 export interface FrameNode {
   dataset: {

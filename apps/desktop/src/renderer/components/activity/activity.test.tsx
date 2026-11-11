@@ -21,7 +21,7 @@ import { ActivityDrawer } from "./ActivityDrawer";
 import { TopicNoticeCenter } from "../topics/ops/topic-notice-center";
 import { pinNotice } from "../topics/ops/topic-ops";
 import { ActivityHost, announcementText } from "./ActivityHost";
-import { ActivityPill, noticeAnnouncement, type PillNotice } from "./ActivityPill";
+import { ActivityPill, noticeAnnouncement, pillLevels, type PillNotice } from "./ActivityPill";
 import { pillView } from "./activity-model";
 
 const en = createTranslator("en");
@@ -129,6 +129,41 @@ describe("the Activity pill", () => {
       />
     );
     expect(home).not.toContain("need you");
+  });
+
+  it("steps down in the order of the design: waiting first, then the phrase to its verb, then out, the needs-you clause last", () => {
+    const rows = pillLevels.map((level) => [level.phrase, level.waiting, level.needsYou]);
+    expect(rows).toEqual([
+      ["full", true, true],
+      ["full", false, true],
+      ["short", false, true],
+      ["none", false, true],
+      ["none", false, false]
+    ]);
+  });
+
+  it("draws the waiting clause in the same run as the phrase, with one gap, and keeps its whole sentence in the name", () => {
+    const html = renderToString(
+      <ActivityPill
+        t={en}
+        view={{
+          glyph: "working",
+          text: "Organizing your library",
+          short: "Organizing",
+          full: "Organizing your library.",
+          badge: 2,
+          waiting: 2
+        }}
+        open={false}
+        drawerId="d"
+        onToggle={vi.fn()}
+      />
+    );
+    expect(html).toContain("Organizing your library<span");
+    expect(html).toContain(" · 2 waiting");
+    expect(html).toContain('data-fit="pill"');
+    expect(html).toContain('data-fit-level="0"');
+    expect(html).toContain("2 need you");
   });
 
   it("names the jobs that wait, and drops that clause first at compact width", () => {
@@ -249,8 +284,10 @@ describe("the Activity drawer", () => {
 
   it("is loading while nothing answered", () => {
     const html = drawer(activitySnapshot({ open: true }));
-    expect(html.match(/role="status"/gu)).toHaveLength(3);
-    expect(html).toContain("Loading...");
+    // A busy region for each of the five sections, bars in their shape, no sentence of text.
+    expect(html.match(/role="status"/gu)).toHaveLength(5);
+    expect(html.match(/aria-busy="true"/gu)).toHaveLength(5);
+    expect(html).toContain("Loading");
     // Without a status the drawer cannot say what waits or needs the person.
     expect(html).not.toContain("Nothing is waiting.");
     expect(html).not.toContain("Nothing needs your attention.");
@@ -265,20 +302,25 @@ describe("the Activity drawer", () => {
         done: { status: "error" }
       })
     );
-    expect(html.match(/role="alert"/gu)).toHaveLength(3);
-    expect(html.match(/>Retry</gu)).toHaveLength(3);
+    // One plain sentence and one retry for the whole drawer: the sections below do not repeat it.
+    expect(html.match(/role="alert"/gu)).toHaveLength(1);
+    expect(html.match(/>Retry</gu)).toHaveLength(1);
     expect(html).toContain("Activity could not be loaded.");
-    expect(html).toContain("Recent changes could not be loaded.");
-    expect(html).toContain("The spending meters could not be loaded.");
+    expect(html).not.toContain("Recent changes could not be loaded.");
+    // A read that fails by itself while the status answered keeps its own line and retry.
+    const alone = drawer(answered({ budget: { status: "error" }, done: { status: "error" } }));
+    expect(alone.match(/>Retry</gu)).toHaveLength(2);
+    expect(alone).toContain("Recent changes could not be loaded.");
+    expect(alone).toContain("The spending meters could not be loaded.");
   });
 
-  it("lists the five sections, and says plainly that nothing is waiting or needed", () => {
+  it("leaves out the Waiting and Needs you sections while they have nothing to say", () => {
     const html = drawer(answered());
-    for (const heading of ["Now", "Waiting", "Needs you", "Done", "Budget"])
-      expect(html).toContain(`>${heading}</h3>`);
+    for (const heading of ["Now", "Done", "Budget"]) expect(html).toContain(`>${heading}</h3>`);
+    for (const heading of ["Waiting", "Needs you"]) expect(html).not.toContain(`>${heading}</h3>`);
     expect(html).toContain("Your library is up to date.");
-    expect(html).toContain("Nothing is waiting.");
-    expect(html).toContain("Nothing needs your attention.");
+    expect(html).not.toContain("Nothing is waiting.");
+    expect(html).not.toContain("Nothing needs your attention.");
     expect(html).toContain("Nothing was changed automatically yet.");
     expect(html).toContain("$1.20 of $5.00 used this month.");
     expect(html).toContain("Under the limit");
@@ -293,7 +335,8 @@ describe("the Activity drawer", () => {
     expect(jobs(1)).toContain("1 task waits its turn.");
     // The pill counts jobs that wait and jobs on hold together; the section lists the same number.
     expect(jobs(1, 1)).toContain("2 tasks wait their turn.");
-    expect(jobs(0)).toContain("Nothing is waiting.");
+    expect(jobs(0)).not.toContain("Nothing is waiting.");
+    expect(jobs(0)).not.toContain(">Waiting</h3>");
   });
 
   it("shows how much of the library each task keeps current, with the number in text", () => {
@@ -318,7 +361,7 @@ describe("the Activity drawer", () => {
   it("keeps the ordinary waiting of healthy work in Now", () => {
     const html = drawer(answered({ status: ready(queueStatus) }));
     expect(html).toContain("Tasks run one after another.");
-    expect(html).toContain("Nothing is waiting.");
+    expect(html).not.toContain("Nothing is waiting.");
   });
 
   it("puts a hold in Waiting with the reason, the time it clears and the action", () => {
@@ -374,7 +417,7 @@ describe("the Activity drawer", () => {
     expect(without).not.toContain("Open Inbox");
     const open = drawer(answered({ inboxTotal: 3 }), { onOpenInbox: vi.fn() });
     expect(open).toContain(">Open Inbox<");
-    expect(drawer(answered({ inboxTotal: 0 }))).toContain("Nothing needs your attention.");
+    expect(drawer(answered({ inboxTotal: 0 }))).not.toContain(">Needs you</h3>");
   });
 
   it("shows an action that is running, and one that failed", () => {

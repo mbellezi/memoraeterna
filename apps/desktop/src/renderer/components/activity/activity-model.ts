@@ -248,6 +248,11 @@ export interface PillView {
   glyph: PillGlyph;
   /** The short phrase the pill draws (no trailing period): it names the work, never the whole story. */
   text: string;
+  /**
+   * The phrase's shortest form, its verb ("Organizando"): what the pill keeps when the whole phrase
+   * does not fit beside the needs-you clause. Never cut from `text`; it has its own message.
+   */
+  short: string;
   /** The full sentence and the time left or the time it resumes: the tooltip and accessible name. */
   full: string;
   /** The reviews waiting for the person: the pill says them in words; 0 says nothing. */
@@ -273,6 +278,22 @@ const holdPhrases = {
   offline: "workspace.status.holdOffline"
 } as const satisfies Record<(typeof gardenerBlockerClasses)[number], MessageKey>;
 
+const holdShorts = {
+  paused: "workspace.status.shortPaused",
+  no_model: "workspace.status.shortNoModel",
+  cap: "workspace.status.shortPaused",
+  download: "workspace.status.shortDownload",
+  waiting: "workspace.status.shortWaiting",
+  offline: "workspace.status.shortOffline"
+} as const satisfies Record<(typeof gardenerBlockerClasses)[number], MessageKey>;
+
+/** The shortest form of the pill's phrase for a status: one word or two, whole. */
+export function pillShortPhrase(t: Translator, status: GardenerStatusSnapshot): string {
+  if (status.class !== undefined && (status.state === "blocked" || status.state === "attention"))
+    return t(holdShorts[status.class]);
+  return t(status.state === "running" ? "workspace.status.shortRunning" : "workspace.status.idle");
+}
+
 /** The pill's own short phrase for a status: the work it names, in a few words. */
 export function pillPhrase(t: Translator, status: GardenerStatusSnapshot): string {
   // A running status can carry a class too (the queue, autonomy off); it is still running.
@@ -286,17 +307,18 @@ export function pillView(t: Translator, snapshot: ActivitySnapshot): PillView {
   const waiting = snapshot.jobs ? snapshot.jobs.waiting + snapshot.jobs.onHold : 0;
   if (snapshot.status.status === "loading") {
     const text = t("activity.pill.loading");
-    return { glyph: "loading", text, full: text, badge, waiting };
+    return { glyph: "loading", text, short: text, full: text, badge, waiting };
   }
   const status = effectiveStatus(snapshot);
   if (status === null) {
     const text = t("activity.pill.unavailable");
-    return { glyph: "error", text, full: text, badge, waiting };
+    return { glyph: "error", text, short: text, full: text, badge, waiting };
   }
   const sentence = statusSentence(status, t.locale, { now: snapshot.now });
   return {
     glyph: glyphOfState[status.state],
     text: pillPhrase(t, status),
+    short: pillShortPhrase(t, status),
     full: [sentence.headline, sentence.eta].filter((part) => part !== null).join(" "),
     badge,
     waiting

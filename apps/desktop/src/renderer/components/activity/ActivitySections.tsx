@@ -12,6 +12,7 @@ import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { LoadingState, SkeletonLines } from "../ui/skeleton";
 import {
   budgetView,
   percentText,
@@ -23,12 +24,12 @@ import {
 } from "./activity-model";
 import { changeSetTitle } from "./change-title";
 
-/** The text of a read that is loading, with the polite status role. */
-export function LoadingLine({ t }: { t: Translator }) {
+/** A section whose read is loading: a busy status region and, after 150 ms, bars in the shape of its text (§5.12). */
+export function LoadingLine({ t, lines = 2 }: { t: Translator; lines?: number }) {
   return (
-    <p role="status" className="text-sm text-muted-foreground">
-      {t("shell.states.loading")}
-    </p>
+    <LoadingState t={t}>
+      <SkeletonLines lines={lines} />
+    </LoadingState>
   );
 }
 
@@ -44,10 +45,11 @@ export function FailedLine({
 }) {
   return (
     <div className="grid justify-items-start gap-1">
-      <p role="alert" className="text-sm text-danger">
+      <p role="alert" className="text-sm text-foreground">
         {message}
       </p>
-      <Button variant="link" onClick={onRetry}>
+      {/* The link's own padding is pulled back, so its words start where the sentence does. */}
+      <Button variant="link" className="-ml-[13px]" onClick={onRetry}>
         {t("shell.actions.retry")}
       </Button>
     </div>
@@ -219,6 +221,11 @@ export function JobFactsLine({ t, jobs }: { t: Translator; jobs: JobFacts }) {
 // ---------------------------------------------------------------------------
 // Needs you
 
+/** Whether the Needs you section has anything to say: it is left out of the drawer when it has not. */
+export function needsYouIsEmpty(entries: readonly NeedsYouEntry[], inboxTotal: number): boolean {
+  return entries.length === 0 && inboxTotal === 0;
+}
+
 export function NeedsYouList({
   t,
   entries,
@@ -234,7 +241,7 @@ export function NeedsYouList({
   onAction: (action: GardenerStatusAction) => void;
   onOpenInbox?: () => void;
 }) {
-  if (entries.length === 0 && inboxTotal === 0)
+  if (needsYouIsEmpty(entries, inboxTotal))
     return <EmptyLine>{t("activity.needsYou.empty")}</EmptyLine>;
   return (
     <ul className="grid gap-3">
@@ -304,7 +311,7 @@ export function DoneList({
             {change.undo === "available" ? (
               <Button
                 variant="link"
-                className="justify-self-start"
+                className="-ml-[13px] justify-self-start"
                 disabled={pending}
                 onClick={() => onUndo(change)}
               >

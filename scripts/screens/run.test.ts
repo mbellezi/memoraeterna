@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SurfaceEntry } from "../../apps/desktop/src/renderer/workspace/surfaces";
 import { entrySource, pageHtml } from "./build-bundle";
+import { standStyle } from "./frame";
 import { evidenceReasons, type Evidence } from "./evidence";
 import {
   captureJobs,
@@ -52,6 +53,21 @@ describe("the screens command line", () => {
       shots: false,
       widths: [1200]
     });
+  });
+
+  it("reads --locale (English by default) and refuses a language the app does not ship", () => {
+    expect(parseScreensArgs([]).locale).toBe("en");
+    expect(parseScreensArgs(["--locale", "pt-BR"]).locale).toBe("pt-BR");
+    for (const locale of ["en", "pt-BR", "es", "fr", "it"])
+      expect(parseScreensArgs(["--locale", locale]).locale).toBe(locale);
+    expect(() => parseScreensArgs(["--locale", "pt"])).toThrow("Unknown locale pt");
+    expect(() => parseScreensArgs(["--locale"])).toThrow("needs a value");
+  });
+
+  it("reads --focus as a selector to focus before the shot, none by default", () => {
+    expect(parseScreensArgs([]).focus).toBeNull();
+    expect(parseScreensArgs(["--focus", "[data-omni]"]).focus).toBe("[data-omni]");
+    expect(() => parseScreensArgs(["--focus"])).toThrow("needs a value");
   });
 
   it("refuses an unknown flag, a missing value, a bad mode and a width below the window minimum", () => {
@@ -101,11 +117,13 @@ describe("the check summary", () => {
     mode: "error" as const,
     theme: "light" as const,
     width: 960,
+    locale: "en",
     frame: "harness" as const,
     state: "error",
     signature: "1:a",
     ok,
     reasons,
+    fits: [],
     missing: [],
     pageErrors: []
   });
@@ -113,6 +131,15 @@ describe("the check summary", () => {
   it("passes only when something was checked and nothing failed", () => {
     expect(summarize([result(true)]).passed).toBe(true);
     expect(summarize([]).passed).toBe(false);
+  });
+
+  it("fails a capture whose page was not in the requested language", () => {
+    const portuguese = { ...result(true), locale: "pt-BR" };
+    expect(summarize([portuguese], 1, 0, "pt-BR").passed).toBe(true);
+    const wrong = summarize([result(true)], 1, 0, "pt-BR");
+    expect(wrong.passed).toBe(false);
+    expect(wrong.failures).toEqual(["inbox error light 960: rendered in en, expected pt-BR"]);
+    expect(summarize([result(true)]).passed).toBe(true);
   });
 
   it("fails an empty state that shows what the success state shows", () => {
@@ -274,7 +301,23 @@ describe("the fixture bundle's entry", () => {
 
   it("never lets a closing tag end the page's script or style early", () => {
     const html = pageHtml('const s = "</script>";', "a::after{content:'</style>'}");
-    expect(html.match(/<\/script>/gu)).toHaveLength(1);
+    // The page's own two scripts (the language, the bundle) close; the one inside the code does not.
+    expect(html.match(/<\/script>/gu)).toHaveLength(2);
     expect(html.match(/<\/style>/gu)).toHaveLength(1);
+  });
+
+  it("sets the page's language before the bundle runs, so a screen module builds its translator in it", () => {
+    const html = pageHtml("run();", "a{}", "pt-BR");
+    expect(html).toContain('<html lang="pt-BR"');
+    expect(html.indexOf('window.__screenLocale="pt-BR"')).toBeGreaterThan(0);
+    expect(html.indexOf("window.__screenLocale")).toBeLessThan(html.indexOf("run();"));
+    expect(pageHtml("run();", "a{}")).toContain('<html lang="en"');
+  });
+});
+
+describe("the stand around a surface", () => {
+  it("shows a surface that fills the window edge to edge, and pads every other one", () => {
+    expect(standStyle(true)).toEqual({ padding: "0", overflow: "hidden" });
+    expect(standStyle(false)).toEqual({ padding: "1rem", overflow: "auto" });
   });
 });

@@ -94,6 +94,7 @@
     },
     "drawer": {
       "close": "Chiudi attività",
+      "explainer": "cosa fa Memora in background",
       "loadFailed": "Impossibile caricare l’attività."
     },
     "sections": {
@@ -3771,6 +3772,12 @@
       "needsYouMany": "{count} hanno bisogno di te",
       "needsYouOne": "{count} ha bisogno di te",
       "running": "Organizzazione della biblioteca",
+      "shortDownload": "Preparazione",
+      "shortNoModel": "Senza modello",
+      "shortOffline": "Senza rete",
+      "shortPaused": "In pausa",
+      "shortRunning": "Organizzazione",
+      "shortWaiting": "In attesa",
       "waiting": "{count} in attesa"
     },
     "titleBar": {
@@ -3781,6 +3788,7 @@
       "addSource": "Aggiungi fonte",
       "omniLabel": "Cerca, apri o chiedi",
       "omniPlaceholder": "Cerca, apri o chiedi…",
+      "omniShort": "Cerca o chiedi…",
       "status": "Stato dell’attività"
     }
   }

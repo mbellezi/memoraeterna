@@ -5,8 +5,10 @@ import { createTranslator } from "@app/i18n";
 import { legacyViewIds } from "../../shared/app-menu";
 import { LegacyMenu, legacyMenuViews } from "./LegacyMenu";
 import { Rail, inboxWaitingText, railState } from "./Rail";
+import { NavigatorHost } from "./NavigatorHost";
 import { Shell, shellState, titleKey } from "./Shell";
-import { hostedViewIds } from "./shell-model";
+import { railItemClass } from "./rail-styles";
+import { hostedViewIds, layoutCustomProperties } from "./shell-model";
 import { TitleBar } from "./TitleBar";
 
 const en = createTranslator("en");
@@ -134,5 +136,63 @@ describe("the shell frame", () => {
     expect(explore).toContain("--omni-min:240px");
     expect(render("home")).not.toContain('aria-label="Navigator"');
     expect(explore).toContain("content");
+  });
+});
+
+describe("the rail's marks and items", () => {
+  it("cuts the Inbox badge and the failed-count triangle out of the icon with a ring in the desk colour", () => {
+    const ring = "[box-shadow:0_0_0_2px_var(--surface-canvas)]";
+    expect(rail({ status: "ready", value: 3 })).toContain(ring);
+    expect(rail({ status: "error" })).toContain(ring);
+  });
+
+  it("sizes an item from --rail-item-w with no side padding (60 px, 56 at the compact rail)", () => {
+    expect(railItemClass).toContain("w-(--rail-item-w)");
+    expect(railItemClass).not.toMatch(/\bpx-/u);
+    expect(layoutCustomProperties(1440)["--rail-item-w"]).toBe("60px");
+    expect(layoutCustomProperties(1180)["--rail-item-w"]).toBe("60px");
+    expect(layoutCustomProperties(1179)["--rail-item-w"]).toBe("56px");
+    expect(layoutCustomProperties(960)["--rail-item-w"]).toBe("56px");
+  });
+});
+
+describe("the navigator's states", () => {
+  const retry = vi.fn();
+  const host = (tree: Parameters<typeof NavigatorHost>[0]["tree"], compact = false) =>
+    renderToString(<NavigatorHost t={en} tree={tree} compact={compact} />);
+  const ready = {
+    status: "ready" as const,
+    value: {
+      topics: [{ id: "t1", title: "Nutrition", items: 96, children: 4, health: "good" as const }],
+      total: 412,
+      unsorted: 0
+    },
+    retry
+  };
+
+  it("keeps the Tree header in every state, so the column does not jump", () => {
+    for (const tree of [
+      { status: "loading" as const, retry },
+      { status: "error" as const, retry }
+    ])
+      expect(host(tree)).toContain(">Tree</h2>");
+    expect(host(ready)).toContain(">Tree</h2>");
+  });
+
+  it("says a failed read in place: a plain sentence with a solid glyph and a link, not a danger card", () => {
+    const html = host({ status: "error", retry });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Could not load the tree.");
+    expect(html).toContain("Your sources and notes are untouched.");
+    expect(html).toContain(">Try again<");
+    expect(html).not.toContain("bg-danger-soft");
+    expect(html).not.toContain("border-danger");
+    expect(html).toContain("<svg"); // the solid triangle, not an outline icon
+    expect(html).not.toContain("lucide");
+  });
+
+  it("shows counts on hover and focus only at the compact tier", () => {
+    expect(host(ready, true)).toContain("hidden group-hover:block group-focus-visible:block");
+    expect(host(ready, false)).not.toContain("group-hover:block");
   });
 });

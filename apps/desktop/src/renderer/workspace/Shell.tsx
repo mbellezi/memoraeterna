@@ -210,7 +210,12 @@ export function Shell({
       />
       <div className="flex min-h-0 min-w-0">
         {showNavigator ? (
-          <NavigatorHost t={t} tree={tree} {...(onOpenTopic ? { onOpenTopic } : {})}>
+          <NavigatorHost
+            t={t}
+            tree={tree}
+            compact={pillDropsWaiting(width)}
+            {...(onOpenTopic ? { onOpenTopic } : {})}
+          >
             {navigator}
           </NavigatorHost>
         ) : null}

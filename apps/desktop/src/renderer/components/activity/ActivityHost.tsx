@@ -181,7 +181,7 @@ export function ActivityHost({
   };
 
   return (
-    <div className="flex min-w-0 items-center">
+    <div className="flex w-full min-w-0 items-center">
       <ActivityPill
         ref={pillRef}
         noticeRef={noticeRef}

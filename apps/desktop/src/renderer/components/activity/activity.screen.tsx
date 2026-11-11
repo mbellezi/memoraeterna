@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { createTranslator } from "@app/i18n";
 
+import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
 import {
   budgetSnapshot,
@@ -13,7 +13,7 @@ import { ActivityHost } from "./ActivityHost";
 
 export const surface = "activity";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 export const fixtures: ScreenModule["fixtures"] = {
