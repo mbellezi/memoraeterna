@@ -7,7 +7,11 @@ import {
   objectLocatePathLimit,
   objectLocateTopicPathLimit
 } from "@app/domain";
-import { createObjectLocateRepository } from "./objectLocateRepository.js";
+import {
+  createObjectLocateRepository,
+  entityPlacementLimit,
+  topicCitingPagesLimit
+} from "./objectLocateRepository.js";
 import type { Queryable } from "./types.js";
 
 // The SQL runs against a real database in `npm run db:object-locate:verify` (answers) and
@@ -153,14 +157,67 @@ describe("object locate repository", () => {
 
   it("walks the topics up to the depth cap and no further, and finds the note and source by their own indexes", () => {
     const { statements } = setup([]).repository;
-    for (const statement of Object.values(statements)) {
+    for (const statement of [statements.source, statements.note])
       expect(statement).toContain(`topic_chain.depth < ${objectLocateTopicPathLimit - 1}`);
+    // The topic and the entity statements take the bound as a parameter (see the next test).
+    for (const statement of [statements.topic, statements.entity])
+      expect(statement).toContain("c.depth < $");
+    for (const statement of Object.values(statements)) {
       expect(statement).toContain("tree.status = 'active'");
       expect(statement).toContain("t.retired_at is null");
       expect(statement).not.toMatch(/\bwiki_\w+|\borganization_\w+/);
     }
     expect(statements.note).toContain("p.note_id = $1::uuid");
     expect(statements.source).toContain("p.source_item_id = (select c.id from chain c");
+  });
+
+  it("asks for a topic with its own bounds, and answers for the topic its chain ends with", async () => {
+    const { repository, query } = setup([
+      row({
+        title: "Sleep",
+        path: [],
+        topicPath: [
+          { id: id(30), title: "" },
+          { id: id(31), title: "Biology" },
+          { id: id(32), title: "Sleep" }
+        ],
+        alsoIn: [],
+        alsoInCount: 0
+      })
+    ]);
+    // The requested ID is a retired topic that redirects; the answer is about the live one.
+    const located = await repository.locateTopic(id(99));
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      id(99),
+      objectLocateTopicPathLimit - 1,
+      8,
+      topicCitingPagesLimit
+    ]);
+    expect(located?.object).toEqual({ kind: "topic", id: id(32), title: "Sleep" });
+    expect(located?.primaryPath.map((item) => item.title)).toEqual(["", "Biology", "Sleep"]);
+    expect(ObjectLocateResultSchema.safeParse(located).success).toBe(true);
+    expect(await setup([row({ title: null })]).repository.locateTopic(id(1))).toBeNull();
+    expect(await setup([]).repository.locateTopic(id(1))).toBeNull();
+  });
+
+  it("ends the path of an entity with the entity after its primary topic, and keeps the rest as alsoIn", async () => {
+    const { repository, query } = setup([row({ title: "Circadian rhythm", path: [] })]);
+    const located = await repository.locateEntity(id(70));
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      id(70),
+      entityPlacementLimit,
+      objectLocateTopicPathLimit - 1
+    ]);
+    expect(located?.primaryPath).toEqual([
+      { kind: "topic", id: id(30), title: "" },
+      { kind: "topic", id: id(31), title: "Memory" },
+      { kind: "entity", id: id(70), title: "Circadian rhythm" }
+    ]);
+    const unplaced = await setup([
+      row({ title: "Orphan", path: [], topicPath: [], alsoIn: [], alsoInCount: 0 })
+    ]).repository.locateEntity(id(71));
+    expect(unplaced?.primaryPath).toEqual([{ kind: "entity", id: id(71), title: "Orphan" }]);
+    expect(await setup([row({ title: null })]).repository.locateEntity(id(1))).toBeNull();
   });
 
   it("returns null when the object does not exist", async () => {

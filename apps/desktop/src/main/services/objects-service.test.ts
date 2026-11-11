@@ -102,14 +102,43 @@ describe("ObjectsService.locate", () => {
     expect(await setup([]).service.locate({ address: `memora://note/${ids.note}` })).toBeNull();
   });
 
-  it("fails clearly for kinds that have no page yet, without querying", async () => {
-    for (const kind of ["topic", "question", "entity"]) {
-      const { service, query } = setup();
-      await expect(service.locate({ address: `memora://${kind}/${ids.page}` })).rejects.toThrow(
-        "objects.errors.unsupportedKind"
-      );
-      expect(query).not.toHaveBeenCalled();
-    }
+  it("locates a topic by its chain, itself last, and an entity after its primary topic", async () => {
+    const topic = setup([
+      row({
+        title: "Memory",
+        path: [],
+        topicPath: [
+          { id: ids.root, title: "" },
+          { id: ids.topic, title: "Memory" }
+        ],
+        alsoIn: [],
+        alsoInCount: 0,
+        notes: 6,
+        passages: 0,
+        children: 2
+      })
+    ]);
+    const located = await topic.service.locate({ address: `memora://topic/${ids.topic}` });
+    expect(located?.object).toEqual({ kind: "topic", id: ids.topic, title: "Memory" });
+    expect(located?.primaryPath.map((item) => item.id)).toEqual([ids.root, ids.topic]);
+    expect(ObjectLocateResultSchema.parse(located)).toEqual(located);
+    const entity = await setup([row({ title: "Circadian rhythm", path: [] })]).service.locate({
+      address: `memora://entity/${ids.page}`
+    });
+    expect(entity?.primaryPath.at(-1)).toEqual({
+      kind: "entity",
+      id: ids.page,
+      title: "Circadian rhythm"
+    });
+    expect(await setup([]).service.locate({ address: `memora://topic/${ids.topic}` })).toBeNull();
+  });
+
+  it("fails clearly for the kind that has no location yet, without querying", async () => {
+    const { service, query } = setup();
+    await expect(service.locate({ address: `memora://question/${ids.page}` })).rejects.toThrow(
+      "objects.errors.unsupportedKind"
+    );
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("refuses malformed requests and an unavailable database", async () => {

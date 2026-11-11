@@ -37,9 +37,9 @@ export class ObjectsService {
   /**
    * Where an object is, in one read (D24): its primary path (the topics from the root of the topic
    * tree down to the topic it is placed in, then its source chain), its other topics, the objects
-   * that cite it and counts. Resolves to null when the object does not exist. Sources and notes are
-   * the kinds that have a location today; the others fail until they have one (topics open by their
-   * own address, questions and entities arrive with the unified workspace).
+   * that cite it and counts. Resolves to null when the object does not exist. A topic is located by
+   * its ancestors (a retired one through its redirect to the live topic), an entity by the topics
+   * its notes are placed in. Questions fail until they have a location (F5 T129).
    */
   async locate(input: unknown): Promise<ObjectLocateResult | null> {
     const { address } = ObjectLocateInputSchema.parse(input);
@@ -52,6 +52,10 @@ export class ObjectsService {
       return ObjectLocateResultSchema.nullable().parse(await repository.locateSource(target.id));
     if (target.kind === "note")
       return ObjectLocateResultSchema.nullable().parse(await repository.locateNote(target.id));
+    if (target.kind === "topic")
+      return ObjectLocateResultSchema.nullable().parse(await repository.locateTopic(target.id));
+    if (target.kind === "entity")
+      return ObjectLocateResultSchema.nullable().parse(await repository.locateEntity(target.id));
     throw new Error("objects.errors.unsupportedKind");
   }
 

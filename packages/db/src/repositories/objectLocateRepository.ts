@@ -9,6 +9,8 @@ import {
   type ObjectTopicRef
 } from "@app/domain";
 
+import { currentNoteSql } from "./note-relation-sql.js";
+import { topicScopeCtes } from "./topicScopeSql.js";
 import type { Queryable } from "./types.js";
 
 /**
@@ -22,7 +24,9 @@ import type { Queryable } from "./types.js";
  * tree, or an object the tree does not hold yet, simply has no topic entries.
  *
  * A note is placed on its own; a source is placed through its root source (only root sources are
- * items of the tree). The tree root and a topic that is not named yet come back with an empty
+ * items of the tree). A topic is its own place: the chain of its ancestors from the root (a retired
+ * topic is read through `redirect_to` to the live topic that replaced it); an entity is placed where
+ * its mentioning notes are (F5 T119, D11). The tree root and a topic that is not named yet come back with an empty
  * title: no placeholder is stored (D11) and the interface localizes the label.
  */
 interface LocateRow extends QueryResultRow {
@@ -167,16 +171,130 @@ ${finalSelect(
   0 as children`
 )}`;
 
+/** The most pages shown as citing a topic's notes (F5 T119, spec 3.3). */
+export const topicCitingPagesLimit = 10;
+/** The most topics an entity is placed in: its primary one and the rest of the top five. */
+export const entityPlacementLimit = 5;
+/** Longest chain of redirects followed from a retired topic (the same bound as `objects.get`). */
+const topicRedirectLimit = 8;
+
+/**
+ * A topic: its ancestors up to the root, itself last in the path. A topic that is retired, or that
+ * belongs to a tree that is no longer active, resolves through `redirect_to` (a bounded chain) to
+ * the live topic that replaced it, and the answer describes that topic; with no live successor it
+ * has no place (no row). `citedBy` lists the other live topics of the active tree whose overview
+ * cites a note of this topic's subtree, through `topicScopeCtes` (the one definition of a topic's
+ * members). $1 topic, $2 ancestors walked, $3 redirects followed, $4 pages shown.
+ */
+const topicLocateSql = `
+with recursive follow(id, redirect_to, dead, depth) as (
+  select t.id, t.redirect_to, (t.retired_at is not null or tree.status <> 'active'), 0
+    from topics t join topic_trees tree on tree.id = t.tree_id where t.id = $1::uuid
+  union all
+  select t.id, t.redirect_to, (t.retired_at is not null or tree.status <> 'active'), f.depth + 1
+    from follow f
+    join topics t on t.id = f.redirect_to
+    join topic_trees tree on tree.id = t.tree_id
+   where f.dead and f.depth < $3::int
+),
+live as (select f.id from follow f where not f.dead order by f.depth limit 1),
+topic_chain as (
+  select t.id, t.parent_id, t.title, 0 as depth from topics t where t.id = (select id from live)
+  union all
+  select parent.id, parent.parent_id, parent.title, c.depth + 1
+    from topic_chain c join topics parent on parent.id = c.parent_id
+   where c.depth < $2::int and parent.retired_at is null
+),
+${topicScopeCtes("(select id from live)")},
+cited_by as (
+  select t.id, coalesce(t.title, '') as title, 'topic' as kind
+    from (
+      select distinct c.topic_id from topic_overview_citations c
+       where c.note_id in (select note_id from topic_note_ids)
+    ) cited
+    join topics t on t.id = cited.topic_id
+   where t.retired_at is null and t.id <> (select id from live)
+     and t.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
+)
+select (select coalesce(t.title, '') from topics t where t.id = (select id from live)) as title,
+  '[]'::jsonb as path,
+  coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'title', coalesce(c.title, ''))
+                             order by c.depth desc)
+              from topic_chain c), '[]'::jsonb) as "topicPath",
+  '[]'::jsonb as "alsoIn",
+  coalesce((select jsonb_agg(jsonb_build_object('kind', entry.kind, 'id', entry.id, 'title', entry.title)
+                             order by entry.title, entry.id)
+              from (select * from cited_by order by title, id limit $4::int) entry),
+           '[]'::jsonb) as "citedBy",
+  0 as "alsoInCount",
+  (select count(*)::int from cited_by) as "citedByCount",
+  coalesce((select st.n from topic_stats st where st.topic_id = (select id from live)), 0) as notes,
+  0 as passages,
+  coalesce((select st.children from topic_stats st where st.topic_id = (select id from live)), 0) as children`;
+
+/**
+ * An entity: the topics of the active tree where the current notes that mention it are primarily
+ * placed, the five with the most notes (ties by title, then ID). The first is its primary place and
+ * ends the path with the entity; the rest are `alsoIn`. An entity none of whose notes is placed has
+ * the entity alone in its path. $1 entity, $2 topics kept, $3 ancestors walked.
+ */
+const entityLocateSql = `
+with recursive entity as (select e.id, e.canonical_name as title from entities e where e.id = $1::uuid),
+mentions as (
+  select p.topic_id, count(*)::int as notes
+    from atomic_note_entity_links l
+    join atomic_notes n on n.id = l.atomic_note_id
+    join topic_placements p on p.note_id = n.id and p.rank = 0
+     and p.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
+   where l.entity_id = $1::uuid and ${currentNoteSql("n")}
+   group by p.topic_id
+),
+ranked as (
+  select m.topic_id, m.notes, coalesce(t.title, '') as title,
+         row_number() over (order by m.notes desc, coalesce(t.title, ''), m.topic_id) as place
+    from mentions m join topics t on t.id = m.topic_id and t.retired_at is null
+),
+top_places as (select * from ranked where place <= $2::int),
+topic_chain as (
+  select t.id, t.parent_id, t.title, 0 as depth
+    from top_places tp join topics t on t.id = tp.topic_id where tp.place = 1
+  union all
+  select parent.id, parent.parent_id, parent.title, c.depth + 1
+    from topic_chain c join topics parent on parent.id = c.parent_id
+   where c.depth < $3::int and parent.retired_at is null
+)
+select (select title from entity) as title,
+  '[]'::jsonb as path,
+  coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'title', coalesce(c.title, ''))
+                             order by c.depth desc)
+              from topic_chain c), '[]'::jsonb) as "topicPath",
+  coalesce((select jsonb_agg(jsonb_build_object('kind', 'topic', 'id', tp.topic_id, 'title', tp.title)
+                             order by tp.place)
+              from top_places tp where tp.place > 1), '[]'::jsonb) as "alsoIn",
+  '[]'::jsonb as "citedBy",
+  greatest((select count(*)::int from ranked) - 1, 0) as "alsoInCount",
+  0 as "citedByCount",
+  (select count(*)::int from atomic_note_entity_links l join atomic_notes n on n.id = l.atomic_note_id
+    where l.entity_id = $1::uuid and ${currentNoteSql("n")}) as notes,
+  0 as passages,
+  0 as children`;
+
 function topicRefs(items: ReadonlyArray<{ id: string; title: string }>): ObjectRef[] {
   return items.map(({ id, title }) => ({ kind: "topic" as const, id, title }));
 }
 
 function toResult(
-  kind: "source" | "note",
+  kind: "source" | "note" | "topic" | "entity",
   id: string,
   row: LocateRow | undefined
 ): ObjectLocateResult | null {
   if (!row || row.title === null) return null;
+  if (kind === "topic") {
+    // The topic that answers is the end of its own chain: the live one when `id` was redirected.
+    const own = row.topicPath.at(-1);
+    if (!own) return null;
+    id = own.id;
+  }
   const chain = row.path.map(({ id: itemId, title }) => ({
     kind: "source" as const,
     id: itemId,
@@ -187,7 +305,11 @@ function toResult(
     object,
     // Topics first, then the source chain; a source ends its own chain and a note hangs from its
     // owning source, when that source exists.
-    primaryPath: [...topicRefs(row.topicPath), ...chain, ...(kind === "note" ? [object] : [])],
+    primaryPath: [
+      ...topicRefs(row.topicPath),
+      ...chain,
+      ...(kind === "note" || kind === "entity" ? [object] : [])
+    ],
     // Only the contract's fields pass; the process boundary validates their values.
     alsoIn: row.alsoIn.map(({ kind: otherKind, id: otherId, title }) => ({
       kind: otherKind,
@@ -222,6 +344,34 @@ export function createObjectLocateRepository(db: Queryable) {
       return toResult("source", id, result.rows[0]);
     },
 
+    /**
+     * Where a topic is: its ancestors from the root, itself last. A retired topic answers for the
+     * live topic that replaced it (`object` is that topic); one with no live successor, or no such
+     * topic, is null.
+     */
+    async locateTopic(id: string): Promise<ObjectLocateResult | null> {
+      const result = await db.query<LocateRow>(topicLocateSql, [
+        id,
+        objectLocateTopicPathLimit - 1,
+        topicRedirectLimit,
+        topicCitingPagesLimit
+      ]);
+      return toResult("topic", id, result.rows[0]);
+    },
+
+    /**
+     * Where an entity is: the topics its notes are primarily placed in, top five by count. Null when
+     * no such entity exists.
+     */
+    async locateEntity(id: string): Promise<ObjectLocateResult | null> {
+      const result = await db.query<LocateRow>(entityLocateSql, [
+        id,
+        entityPlacementLimit,
+        objectLocateTopicPathLimit - 1
+      ]);
+      return toResult("entity", id, result.rows[0]);
+    },
+
     /** Where a note is; null when no such note exists. The note itself takes one slot of the path. */
     async locateNote(id: string): Promise<ObjectLocateResult | null> {
       const result = await db.query<LocateRow>(
@@ -231,7 +381,12 @@ export function createObjectLocateRepository(db: Queryable) {
       return toResult("note", id, result.rows[0]);
     },
 
-    /** The statements behind `locateSource` and `locateNote`, for EXPLAIN in verification. */
-    statements: { source: sourceLocateSql, note: noteLocateSql }
+    /** The statements behind the four `locate` reads, for EXPLAIN in verification. */
+    statements: {
+      source: sourceLocateSql,
+      note: noteLocateSql,
+      topic: topicLocateSql,
+      entity: entityLocateSql
+    }
   };
 }
