@@ -141,17 +141,23 @@ export const surfaces: readonly SurfaceEntry[] = [
   contextTab("mentions"),
   contextTab("evidence"),
   contextTab("graph"),
-  contextTab("activity"),
+  contextTab("history"),
   contextTab("ask"),
 
-  // Overlays: Cmd-K, the Add sheet and quick-look.
+  // Overlays: Cmd-K, the Add menu, the drop overlay and quick-look (a non-modal sheet).
   entry(
     "palette",
     "overlay",
     "workspace/palette/Palette.tsx",
     "workspace/palette/palette.screen.tsx"
   ),
-  entry("add-sheet", "overlay", "workspace/add/AddSheet.tsx", "workspace/add/add-sheet.screen.tsx"),
+  entry("add-menu", "overlay", "workspace/add/AddMenu.tsx", "workspace/add/add-menu.screen.tsx"),
+  entry(
+    "drop-overlay",
+    "overlay",
+    "workspace/add/DropOverlay.tsx",
+    "workspace/add/drop-overlay.screen.tsx"
+  ),
   entry("quick-look", "overlay", "workspace/QuickLook.tsx", "workspace/QuickLook.screen.tsx"),
 
   // Settings v2: the surface and its seven sections.
