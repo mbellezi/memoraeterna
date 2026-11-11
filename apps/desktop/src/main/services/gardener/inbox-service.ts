@@ -106,6 +106,17 @@ const recountEvents = [
 ] as const satisfies readonly AppEventType[];
 
 const defaultRefreshDelayMs = 3_000;
+/** The longest quiet time the adaptive delay of `recountDelayMs` grows to. */
+const recountDelayMaxMs = 60_000;
+
+/**
+ * The quiet time before a recount: at least `baseMs`, and ten times as long as the last read took,
+ * so a library with tens of thousands of routed suggestions (D33: the visibility check is paid per
+ * relation) never spends most of its time counting while a stream of events goes on.
+ */
+export function recountDelayMs(baseMs: number, lastReadMs: number): number {
+  return Math.max(baseMs, Math.min(recountDelayMaxMs, Math.round(lastReadMs * 10)));
+}
 /** How long the vault's conflicts are reused by the recounts that follow a stream of events. */
 const vaultCacheMs = 10_000;
 /** How often opening the Inbox asks the MATCH backlog whether its decider changed. */
@@ -123,6 +134,8 @@ export class InboxService {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private refreshing: Promise<void> | null = null;
   private again = false;
+  /** How long the last count took to read (the quiet time before the next one follows it). */
+  private lastReadMs = 0;
   private disposed = false;
   private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
   private offeredAt = Number.NEGATIVE_INFINITY;
@@ -562,10 +575,13 @@ export class InboxService {
 
   private schedule(): void {
     if (this.disposed || this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      void this.refreshNow();
-    }, this.options.refreshDelayMs ?? defaultRefreshDelayMs);
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        void this.refreshNow();
+      },
+      recountDelayMs(this.options.refreshDelayMs ?? defaultRefreshDelayMs, this.lastReadMs)
+    );
     this.timer.unref?.();
   }
 
@@ -580,7 +596,9 @@ export class InboxService {
       do {
         this.again = false;
         try {
+          const startedAt = (this.options.now ?? Date.now)();
           const counts = await this.counts({ cached: true });
+          this.lastReadMs = Math.max(0, (this.options.now ?? Date.now)() - startedAt);
           if (!sameCounts(this.lastCounts, counts)) {
             this.lastCounts = counts;
             this.options.events?.publish({ type: "inbox.changed", ...counts });
