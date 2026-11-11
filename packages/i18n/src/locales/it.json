@@ -3692,6 +3692,14 @@
       "unavailable": "Le modifiche non sono disponibili in questo momento."
     }
   },
+  "questions": {
+    "errors": {
+      "cursor": "L'elenco delle domande è cambiato nel frattempo. Ricaricalo.",
+      "interrupted": "Questa domanda non ha avuto risposta: l'app si è chiusa mentre la risposta veniva scritta. Chiedi di nuovo.",
+      "notFound": "Questa domanda non esiste più.",
+      "running": "Questa domanda sta ancora ricevendo risposta."
+    }
+  },
   "ui": {
     "close": "Chiudi",
     "details": "Dettagli",

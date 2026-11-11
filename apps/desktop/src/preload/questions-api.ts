@@ -1,7 +1,14 @@
 import {
+  QuestionsAskAgainResultSchema,
   QuestionsAskInputSchema,
   QuestionsAskResultSchema,
   QuestionsCancelInputSchema,
+  QuestionsClearResultSchema,
+  QuestionsDeleteResultSchema,
+  QuestionsIdInputSchema,
+  QuestionsListInputSchema,
+  QuestionsListResultSchema,
+  QuestionViewSchema,
   questionsChannels,
   type QuestionsApi
 } from "../shared/ipc-questions.js";
@@ -23,6 +30,23 @@ export function createQuestionsApi(invoke: QuestionsInvoke): QuestionsApi {
     cancel: async (input) =>
       z
         .null()
-        .parse(await invoke(questionsChannels.cancel, QuestionsCancelInputSchema.parse(input)))
+        .parse(await invoke(questionsChannels.cancel, QuestionsCancelInputSchema.parse(input))),
+    get: async (input) =>
+      QuestionViewSchema.nullable().parse(
+        await invoke(questionsChannels.get, QuestionsIdInputSchema.parse(input))
+      ),
+    list: async (input = {}) =>
+      QuestionsListResultSchema.parse(
+        await invoke(questionsChannels.list, QuestionsListInputSchema.parse(input))
+      ),
+    delete: async (input) =>
+      QuestionsDeleteResultSchema.parse(
+        await invoke(questionsChannels.delete, QuestionsIdInputSchema.parse(input))
+      ),
+    askAgain: async (input) =>
+      QuestionsAskAgainResultSchema.parse(
+        await invoke(questionsChannels.askAgain, QuestionsIdInputSchema.parse(input))
+      ),
+    clear: async () => QuestionsClearResultSchema.parse(await invoke(questionsChannels.clear))
   };
 }

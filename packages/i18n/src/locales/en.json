@@ -3694,6 +3694,14 @@
       "unavailable": "Changes are not available right now."
     }
   },
+  "questions": {
+    "errors": {
+      "cursor": "The list of questions changed meanwhile. Load it again.",
+      "interrupted": "This question was not answered: the app closed while it was being written. Ask again.",
+      "notFound": "This question no longer exists.",
+      "running": "This question is still being answered."
+    }
+  },
   "ui": {
     "close": "Close",
     "details": "Details",

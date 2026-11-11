@@ -133,12 +133,30 @@ describe("ObjectsService.locate", () => {
     expect(await setup([]).service.locate({ address: `memora://topic/${ids.topic}` })).toBeNull();
   });
 
-  it("fails clearly for the kind that has no location yet, without querying", async () => {
-    const { service, query } = setup();
-    await expect(service.locate({ address: `memora://question/${ids.page}` })).rejects.toThrow(
-      "objects.errors.unsupportedKind"
-    );
-    expect(query).not.toHaveBeenCalled();
+  it("locates a question by its citations: the winning topic's chain, then the question", async () => {
+    const question = row({
+      title: "What helps memory?",
+      scope: { kind: "library" },
+      citedBy: [],
+      path: []
+    });
+    const { service } = setup([question]);
+    const located = await service.locate({ address: `memora://question/${ids.page}` });
+    expect(located?.object).toEqual({
+      kind: "question",
+      id: ids.page,
+      title: "What helps memory?"
+    });
+    expect(located?.primaryPath.map((item) => item.kind)).toEqual(["topic", "topic", "question"]);
+    expect(located?.alsoIn).toEqual([{ kind: "topic", id: ids.page, title: "Learning" }]);
+    expect(ObjectLocateResultSchema.parse(located)).toEqual(located);
+  });
+
+  it("answers null for a question with no place or no row", async () => {
+    const unplaced = row({ title: "Q", scope: { kind: "library" }, topicPath: [], alsoIn: [] });
+    const { service } = setup([unplaced]);
+    expect(await service.locate({ address: `memora://question/${ids.page}` })).toBeNull();
+    expect(await setup([]).service.locate({ address: `memora://question/${ids.page}` })).toBeNull();
   });
 
   it("refuses malformed requests and an unavailable database", async () => {

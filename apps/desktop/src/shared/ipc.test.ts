@@ -504,6 +504,11 @@ describe("desktop IPC contracts", () => {
     expect(ipcChannels.objectsBacklinks).toBe("app:objects:backlinks");
     expect(ipcChannels.questionsAsk).toBe("app:questions:ask");
     expect(ipcChannels.questionsCancel).toBe("app:questions:cancel");
+    expect(ipcChannels.questionsGet).toBe("app:questions:get");
+    expect(ipcChannels.questionsList).toBe("app:questions:list");
+    expect(ipcChannels.questionsDelete).toBe("app:questions:delete");
+    expect(ipcChannels.questionsAskAgain).toBe("app:questions:ask-again");
+    expect(ipcChannels.questionsClear).toBe("app:questions:clear");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 

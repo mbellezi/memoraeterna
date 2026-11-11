@@ -20,7 +20,7 @@ import {
 } from "./dev/fake-remote-provider.js";
 import { FakeProviderServer, fixedLatency } from "./dev/fake-remote-core.js";
 import { MemoryEventSink } from "./dev/soak-records.js";
-import { QuestionsService, type QuestionStore } from "./questions-service.js";
+import { interruptedErrorKey, QuestionsService, type QuestionsStore } from "./questions-service.js";
 
 const mocks = vi.hoisted(() => ({
   retrieval: { candidates: vi.fn(), vector: vi.fn() },
@@ -82,12 +82,19 @@ beforeEach(() => {
 });
 
 /** What the test's store saw, in order, beside the events: the order is what the tests assert. */
-function harness(options: { failEnd?: boolean; deleteWhileRunning?: boolean } = {}) {
+function harness(
+  options: {
+    failEnd?: boolean;
+    deleteWhileRunning?: boolean;
+    listError?: Error;
+    nextCursor?: string;
+  } = {}
+) {
   const log: string[] = [];
   const answers: Array<{ questionId: string; answer: QuestionAnswerInput }> = [];
   const statuses: Array<{ id: string; status: string; errorKey: string | null | undefined }> = [];
   const questions = new Map<string, Record<string, unknown>>();
-  const store: QuestionStore = {
+  const store: QuestionsStore = {
     create: async (input) => {
       log.push("store:create");
       const created = {
@@ -116,7 +123,28 @@ function harness(options: { failEnd?: boolean; deleteWhileRunning?: boolean } = 
     setStatus: async (id, status, errorKey) => {
       log.push(`store:status:${status}`);
       statuses.push({ id, status, errorKey });
+      const question = questions.get(id);
+      if (question) question.status = status;
       return questions.has(id);
+    },
+    get: async (id) => (questions.get(id) as never) ?? null,
+    list: async (input) => {
+      if (options.listError) throw options.listError;
+      const items = [...questions.values()].map((question) => ({ ...question, answerCount: 0 }));
+      return {
+        items: items.slice(0, input?.limit ?? 25),
+        nextCursor: options.nextCursor ?? null
+      } as never;
+    },
+    delete: async (id) => {
+      log.push("store:delete");
+      return questions.delete(id);
+    },
+    clear: async () => {
+      log.push("store:clear");
+      const count = questions.size;
+      questions.clear();
+      return count;
     }
   };
   const sent: AppEvent[] = [];
@@ -566,5 +594,332 @@ describe("Ask with a stored Question: its edges", () => {
     await expect(service.ask({ text: "Is the database ready?" })).rejects.toThrow(
       "consultation.errors.unavailable"
     );
+  });
+});
+
+describe("Ask persistence reads (F5 T129)", () => {
+  const scripted = (
+    behavior: (input: unknown, hooks: Parameters<ConsultationService["ask"]>[1]) => Promise<never>
+  ) => ({
+    ask: vi.fn(behavior) as unknown as ConsultationService["ask"],
+    cancel: vi.fn(async () => null) as unknown as ConsultationService["cancel"]
+  });
+  /** An Ask that never ends until `release` is called, then fails as canceled. */
+  const held = () => {
+    let release: () => void = () => undefined;
+    const consultation = scripted(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          release = () => reject(new Error("consultation.errors.canceled"));
+        })
+    );
+    (consultation.cancel as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      release();
+      return null;
+    });
+    return { consultation, release: () => release() };
+  };
+  const make = (h: ReturnType<typeof harness>, consultation: ReturnType<typeof scripted>) =>
+    new QuestionsService({
+      getPool: () => ({}) as PgPool,
+      consultation,
+      contentLanguage: async () => "en",
+      publish: h.publish,
+      repository: () => h.store
+    });
+
+  const target = randomUUID();
+  const storedQuestion = (overrides: Record<string, unknown> = {}) => ({
+    id: randomUUID(),
+    text: "What helps memory?",
+    language: "en",
+    scope: { kind: "library" },
+    privacy: "offline_only",
+    mode: "text",
+    status: "complete",
+    errorKey: null,
+    createdAt: new Date("2026-11-11T10:00:00.000Z"),
+    updatedAt: new Date("2026-11-11T10:00:05.000Z"),
+    answers: [
+      {
+        id: randomUUID(),
+        version: 1,
+        paragraphs: [
+          { markdown: "Retrieval practice helps [e1].", citations: [1] },
+          { markdown: "Spacing helps [e2] and [e1].", citations: [2, 1] },
+          { markdown: "A plain closing.", citations: [] }
+        ],
+        provenance: { route: "class:answer", model: "m" },
+        status: "complete",
+        startedAt: new Date("2026-11-11T10:00:01.000Z"),
+        completedAt: new Date("2026-11-11T10:00:05.000Z"),
+        stale: true,
+        citations: [
+          {
+            ordinal: 1,
+            address: `memora://source/${target}`,
+            anchor: { passage: randomUUID() },
+            unavailable: false,
+            stale: false
+          },
+          { ordinal: 2, address: null, unavailable: true, stale: true }
+        ]
+      }
+    ],
+    ...overrides
+  });
+
+  it("reads one Question with its answer versions, citations in paragraph order and staleness", async () => {
+    const h = harness();
+    const question = storedQuestion();
+    h.questions.set(question.id, question);
+    const service = make(
+      h,
+      scripted(async () => Promise.reject(new Error("x")))
+    );
+    const view = await service.get({ id: question.id });
+    expect(view).toMatchObject({
+      id: question.id,
+      text: "What helps memory?",
+      status: "complete",
+      createdAt: "2026-11-11T10:00:00.000Z",
+      scope: { kind: "library" }
+    });
+    expect(view).not.toHaveProperty("errorKey");
+    const [answer] = view!.answers;
+    expect(answer).toMatchObject({
+      version: 1,
+      status: "complete",
+      stale: true,
+      completedAt: "2026-11-11T10:00:05.000Z",
+      model: { route: "class:answer", model: "m" }
+    });
+    expect(
+      answer!.paragraphs.map((paragraph) => paragraph.citations.map((c) => c.ordinal))
+    ).toEqual([[1], [2, 1], []]);
+    // A citation whose target is gone says so: no address, unavailable and stale.
+    expect(answer!.paragraphs[1]!.citations[0]).toEqual({
+      ordinal: 2,
+      address: null,
+      unavailable: true,
+      stale: true
+    });
+    expect(await service.get({ id: randomUUID() })).toBeNull();
+    await expect(service.get({ id: "nope" })).rejects.toThrow();
+  });
+
+  it("reads a Question the store holds as running, with no Ask writing it, as failed", async () => {
+    const h = harness();
+    const orphan = storedQuestion({ status: "running", answers: [] });
+    h.questions.set(orphan.id, orphan);
+    const service = make(
+      h,
+      scripted(async () => Promise.reject(new Error("x")))
+    );
+    expect(await service.get({ id: orphan.id })).toMatchObject({
+      status: "failed",
+      errorKey: interruptedErrorKey
+    });
+    const page = await service.list({});
+    expect(page.items.map((item) => item.status)).toEqual(["failed"]);
+  });
+
+  it("keeps a running Question running while its Ask writes it", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const { questionId } = await service.ask({ text: "Still being answered" });
+    expect((await service.get({ id: questionId }))?.status).toBe("running");
+    expect((await service.list({})).items[0]?.status).toBe("running");
+    release();
+    await service.idle();
+  });
+
+  it("lists as the store pages: items as strings, an optional next, and a refused cursor by key", async () => {
+    const h = harness({ nextCursor: "next-page" });
+    const first = storedQuestion();
+    h.questions.set(first.id, first);
+    const service = make(
+      h,
+      scripted(async () => Promise.reject(new Error("x")))
+    );
+    const page = await service.list({ limit: 10, query: "memory" });
+    expect(page).toEqual({
+      items: [
+        {
+          id: first.id,
+          text: "What helps memory?",
+          language: "en",
+          scope: { kind: "library" },
+          status: "complete",
+          createdAt: "2026-11-11T10:00:00.000Z",
+          updatedAt: "2026-11-11T10:00:05.000Z",
+          answerCount: 0
+        }
+      ],
+      next: "next-page"
+    });
+    expect(
+      await make(
+        harness(),
+        scripted(async () => Promise.reject(new Error("x")))
+      ).list({})
+    ).toEqual({
+      items: []
+    });
+    await expect(service.list({ limit: 51 })).rejects.toThrow();
+    for (const error of [
+      new Error("errors.questions.cursor"),
+      Object.assign(new Error('invalid input syntax for type timestamp with time zone: "1"'), {
+        code: "22007"
+      }),
+      Object.assign(new Error('invalid input syntax for type uuid: "x"'), { code: "22P02" })
+    ])
+      await expect(
+        make(
+          harness({ listError: error }),
+          scripted(async () => Promise.reject(new Error("x")))
+        ).list({
+          cursor: "tampered"
+        })
+      ).rejects.toThrow("questions.errors.cursor");
+    // Any other failure is not taken for a cursor.
+    await expect(
+      make(
+        harness({ listError: new Error("connection lost") }),
+        scripted(async () => Promise.reject(new Error("x")))
+      ).list({})
+    ).rejects.toThrow("connection lost");
+  });
+
+  it("deletes one Question, says so, and cancels the Ask still writing it", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const { questionId, requestId } = await service.ask({ text: "To be deleted while running" });
+    await expect(service.delete({ id: questionId })).resolves.toEqual({ deleted: true });
+    expect(consultation.cancel).toHaveBeenCalledWith(requestId);
+    release();
+    await service.idle();
+    expect(h.raw).toContainEqual({
+      type: "object.changed",
+      refs: [{ kind: "question", id: questionId, change: "deleted" }]
+    });
+    expect(h.answers).toEqual([]);
+    expect(stagesOf(h.raw).at(-1)).toBe("canceled");
+    // Nothing is left to delete the second time, and nothing is published for it.
+    const before = h.raw.length;
+    await expect(service.delete({ id: questionId })).resolves.toEqual({ deleted: false });
+    expect(h.raw).toHaveLength(before);
+    await expect(service.delete({ id: "nope" })).rejects.toThrow();
+  });
+
+  it("clears every Question in one call with one overflow event, canceling running Asks", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const old = storedQuestion();
+    h.questions.set(old.id, old);
+    await service.ask({ text: "Running when cleared" });
+    await expect(service.clear()).resolves.toEqual({ deleted: 2 });
+    release();
+    await service.idle();
+    expect(h.log.filter((entry) => entry === "store:clear")).toHaveLength(1);
+    const overflow = h.raw.filter(
+      (event) => event.type === "object.changed" && "overflow" in event
+    );
+    expect(overflow).toEqual([{ type: "object.changed", overflow: true, kinds: ["question"] }]);
+    for (const event of overflow) expect(AppEventSchema.parse(event)).toEqual(event);
+    expect(h.questions.size).toBe(0);
+    // Clearing nothing publishes nothing.
+    const before = h.raw.length;
+    await expect(service.clear()).resolves.toEqual({ deleted: 0 });
+    expect(h.raw).toHaveLength(before);
+  });
+
+  it("asks again with the stored words, scope, privacy and mode, as a new request on the same Question", async () => {
+    const h = harness();
+    const topicId = randomUUID();
+    const consultation = scripted(async () =>
+      Promise.reject(new Error("consultation.errors.deadline"))
+    );
+    const service = make(h, consultation);
+    const question = storedQuestion({
+      scope: { kind: "topic", topicId },
+      privacy: "allow_remote",
+      mode: "hybrid"
+    });
+    h.questions.set(question.id, question);
+    const { requestId } = await service.askAgain({ id: question.id });
+    await service.idle();
+    expect(requestId).toEqual(expect.any(String));
+    const [input] = (consultation.ask as unknown as { mock: { calls: Array<[unknown]> } }).mock
+      .calls[0]!;
+    expect(input).toMatchObject({
+      requestId,
+      question: "What helps memory?",
+      topicId,
+      privacy: "allow_remote",
+      mode: "hybrid"
+    });
+    // The Question goes back to running before the Ask starts, and a new row is never inserted.
+    expect(h.log.indexOf("store:status:running")).toBeLessThan(
+      h.log.indexOf("event:object.changed")
+    );
+    expect(h.log).not.toContain("store:create");
+    expect(h.raw[0]).toEqual({
+      type: "object.changed",
+      refs: [{ kind: "question", id: question.id, change: "updated" }]
+    });
+    // This Ask failed, so the Question ends failed with the failure's key.
+    expect(h.statuses.at(-1)).toMatchObject({ id: question.id, status: "failed" });
+  });
+
+  it("stores the new answer as the next version of the same Question", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const question = storedQuestion();
+    h.questions.set(question.id, question);
+    const { requestId } = await service.askAgain({ id: question.id });
+    await service.cancel({ requestId });
+    release();
+    await service.idle();
+    expect(h.answers.map((entry) => entry.questionId)).toEqual([question.id]);
+    expect(h.answers[0]!.answer.status).toBe("canceled");
+  });
+
+  it("refuses to ask again while an Ask writes the Question, at once or twice at the same time", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const { questionId } = await service.ask({ text: "Being answered right now" });
+    await expect(service.askAgain({ id: questionId })).rejects.toThrow("questions.errors.running");
+    release();
+    await service.idle();
+
+    const done = storedQuestion();
+    h.questions.set(done.id, done);
+    const second = held();
+    const again = make(h, second.consultation);
+    const results = await Promise.allSettled([
+      again.askAgain({ id: done.id }),
+      again.askAgain({ id: done.id })
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    second.release();
+    await again.idle();
+  });
+
+  it("refuses to ask again for a Question that does not exist or an id that is not one", async () => {
+    const h = harness();
+    const consultation = scripted(async () => Promise.reject(new Error("x")));
+    const service = make(h, consultation);
+    await expect(service.askAgain({ id: randomUUID() })).rejects.toThrow(
+      "questions.errors.notFound"
+    );
+    await expect(service.askAgain({ id: "nope" })).rejects.toThrow();
+    expect(consultation.ask).not.toHaveBeenCalled();
+    expect(h.raw).toEqual([]);
   });
 });

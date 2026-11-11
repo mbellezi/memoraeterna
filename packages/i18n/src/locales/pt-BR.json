@@ -3697,6 +3697,14 @@
       "unavailable": "As mudanças não estão disponíveis agora."
     }
   },
+  "questions": {
+    "errors": {
+      "cursor": "A lista de perguntas mudou enquanto isso. Carregue-a de novo.",
+      "interrupted": "Esta pergunta não foi respondida: o app foi fechado enquanto a resposta era escrita. Pergunte de novo.",
+      "notFound": "Esta pergunta não existe mais.",
+      "running": "Esta pergunta ainda está sendo respondida."
+    }
+  },
   "ui": {
     "close": "Fechar",
     "details": "Detalhes",

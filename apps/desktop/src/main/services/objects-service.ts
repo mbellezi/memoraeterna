@@ -39,7 +39,8 @@ export class ObjectsService {
    * tree down to the topic it is placed in, then its source chain), its other topics, the objects
    * that cite it and counts. Resolves to null when the object does not exist. A topic is located by
    * its ancestors (a retired one through its redirect to the live topic), an entity by the topics
-   * its notes are placed in. Questions fail until they have a location (F5 T129).
+   * its notes are placed in. A question is placed by its scope topic or, for a library or source scope,
+   * by the topic where most of the notes its answer cites are placed; null when it has no place.
    */
   async locate(input: unknown): Promise<ObjectLocateResult | null> {
     const { address } = ObjectLocateInputSchema.parse(input);
@@ -56,7 +57,7 @@ export class ObjectsService {
       return ObjectLocateResultSchema.nullable().parse(await repository.locateTopic(target.id));
     if (target.kind === "entity")
       return ObjectLocateResultSchema.nullable().parse(await repository.locateEntity(target.id));
-    throw new Error("objects.errors.unsupportedKind");
+    return ObjectLocateResultSchema.nullable().parse(await repository.locateQuestion(target.id));
   }
 
   /**

@@ -41,11 +41,24 @@ describe("the objects area wiring", () => {
 describe("the questions area wiring", () => {
   it("registers exactly the area's channels, all in ipcChannels", () => {
     const channels = registered((ipc) =>
-      registerQuestionsIpc(ipc, { ask: vi.fn(), cancel: vi.fn() } as unknown as QuestionsService)
+      registerQuestionsIpc(ipc, {
+        ask: vi.fn(),
+        cancel: vi.fn(),
+        get: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+        askAgain: vi.fn(),
+        clear: vi.fn()
+      } as unknown as QuestionsService)
     );
     expect(channels).toEqual(Object.values(questionsChannels).sort());
     expect(ipcChannels.questionsAsk).toBe(questionsChannels.ask);
     expect(ipcChannels.questionsCancel).toBe(questionsChannels.cancel);
+    expect(ipcChannels.questionsGet).toBe(questionsChannels.get);
+    expect(ipcChannels.questionsList).toBe(questionsChannels.list);
+    expect(ipcChannels.questionsDelete).toBe(questionsChannels.delete);
+    expect(ipcChannels.questionsAskAgain).toBe(questionsChannels.askAgain);
+    expect(ipcChannels.questionsClear).toBe(questionsChannels.clear);
   });
 });
 

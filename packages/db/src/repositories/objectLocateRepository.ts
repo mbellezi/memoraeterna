@@ -1,6 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import {
+  AskScopeSchema,
   objectLocateListLimit,
   objectLocatePathLimit,
   objectLocateTopicPathLimit,
@@ -26,7 +27,8 @@ import type { Queryable } from "./types.js";
  * A note is placed on its own; a source is placed through its root source (only root sources are
  * items of the tree). A topic is its own place: the chain of its ancestors from the root (a retired
  * topic is read through `redirect_to` to the live topic that replaced it); an entity is placed where
- * its mentioning notes are (F5 T119, D11). The tree root and a topic that is not named yet come back with an empty
+ * its mentioning notes are (F5 T119, D11); a question is placed by its scope topic, or by the topic
+ * where most of the notes its answer cites are (F5 T129, S4). The tree root and a topic that is not named yet come back with an empty
  * title: no placeholder is stored (D11) and the interface localizes the label.
  */
 interface LocateRow extends QueryResultRow {
@@ -279,6 +281,81 @@ select (select title from entity) as title,
   0 as passages,
   0 as children`;
 
+/**
+ * A question (F5 S4, T129): the topic where most of the notes its newest cited answer rests on are
+ * primarily placed in the active tree. A citation names a note, or a passage (the way Ask cites):
+ * a passage stands for the current notes whose primary evidence it is or that link to it. A note
+ * counts once however many citations reach it. The topics are ranked by those notes, then by title,
+ * then by ID, so a tie always has one winner; the winner is the primary place and the next four are
+ * `alsoIn`. An answer with no citation, or none that reaches a placed note, has no place.
+ * $1 question, $2 topics kept, $3 ancestors walked.
+ */
+const questionLocateSql = `
+with recursive latest as (
+  select a.id from question_answers a
+   where a.question_id = $1::uuid
+     and exists (select 1 from question_citations c where c.answer_id = a.id)
+   order by a.version desc limit 1
+),
+cited as (
+  select c.target_id as note_id from question_citations c
+   where c.answer_id = (select id from latest) and c.target_kind = 'note'
+  union
+  select n.id from question_citations c join atomic_notes n on n.evidence_chunk_id = c.target_id
+   where c.answer_id = (select id from latest) and c.target_kind = 'chunk'
+  union
+  select l.atomic_note_id
+    from question_citations c
+    join chunks k on k.id = c.target_id
+    join atomic_note_source_links l on l.source_item_id = k.source_item_id and l.chunk_id = c.target_id
+   where c.answer_id = (select id from latest) and c.target_kind = 'chunk'
+),
+live as (
+  select n.id from cited join atomic_notes n on n.id = cited.note_id where ${currentNoteSql("n")}
+),
+votes as (
+  select p.topic_id, count(*)::int as notes
+    from live
+    join topic_placements p on p.note_id = live.id and p.rank = 0
+     and p.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
+   group by p.topic_id
+),
+ranked as (
+  select v.topic_id, v.notes, coalesce(t.title, '') as title,
+         row_number() over (order by v.notes desc, coalesce(t.title, ''), v.topic_id) as place
+    from votes v join topics t on t.id = v.topic_id and t.retired_at is null
+),
+top_places as (select * from ranked where place <= $2::int),
+topic_chain as (
+  select t.id, t.parent_id, t.title, 0 as depth
+    from top_places tp join topics t on t.id = tp.topic_id where tp.place = 1
+  union all
+  select parent.id, parent.parent_id, parent.title, c.depth + 1
+    from topic_chain c join topics parent on parent.id = c.parent_id
+   where c.depth < $3::int and parent.retired_at is null
+)
+select left(q.text, 200) as title, q.scope,
+  coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'title', coalesce(c.title, ''))
+                             order by c.depth desc)
+              from topic_chain c), '[]'::jsonb) as "topicPath",
+  coalesce((select jsonb_agg(jsonb_build_object('kind', 'topic', 'id', tp.topic_id, 'title', tp.title)
+                             order by tp.place)
+              from top_places tp where tp.place > 1), '[]'::jsonb) as "alsoIn",
+  greatest((select count(*)::int from ranked) - 1, 0) as "alsoInCount",
+  (select count(*)::int from live) as notes,
+  (select count(*)::int from question_citations c where c.answer_id = (select id from latest)) as passages
+  from questions q where q.id = $1::uuid`;
+
+interface QuestionLocateRow extends QueryResultRow {
+  title: string;
+  scope: unknown;
+  topicPath: Array<{ id: string; title: string }>;
+  alsoIn: ObjectTopicRef[];
+  alsoInCount: number;
+  notes: number;
+  passages: number;
+}
+
 function topicRefs(items: ReadonlyArray<{ id: string; title: string }>): ObjectRef[] {
   return items.map(({ id, title }) => ({ kind: "topic" as const, id, title }));
 }
@@ -334,6 +411,15 @@ function toResult(
 export function createObjectLocateRepository(db: Queryable) {
   // The walk stops at depth `pathLimit - 1`, so the chain holds at most `pathLimit` sources.
   const parameters = (id: string, pathLimit: number) => [id, objectLocateListLimit, pathLimit - 1];
+  const locateTopic = async (id: string): Promise<ObjectLocateResult | null> => {
+    const result = await db.query<LocateRow>(topicLocateSql, [
+      id,
+      objectLocateTopicPathLimit - 1,
+      topicRedirectLimit,
+      topicCitingPagesLimit
+    ]);
+    return toResult("topic", id, result.rows[0]);
+  };
   return {
     /** Where a source is; null when no such source exists. */
     async locateSource(id: string): Promise<ObjectLocateResult | null> {
@@ -349,15 +435,7 @@ export function createObjectLocateRepository(db: Queryable) {
      * live topic that replaced it (`object` is that topic); one with no live successor, or no such
      * topic, is null.
      */
-    async locateTopic(id: string): Promise<ObjectLocateResult | null> {
-      const result = await db.query<LocateRow>(topicLocateSql, [
-        id,
-        objectLocateTopicPathLimit - 1,
-        topicRedirectLimit,
-        topicCitingPagesLimit
-      ]);
-      return toResult("topic", id, result.rows[0]);
-    },
+    locateTopic,
 
     /**
      * Where an entity is: the topics its notes are primarily placed in, top five by count. Null when
@@ -381,12 +459,61 @@ export function createObjectLocateRepository(db: Queryable) {
       return toResult("note", id, result.rows[0]);
     },
 
-    /** The statements behind the four `locate` reads, for EXPLAIN in verification. */
+    /**
+     * Where a question is (S4): with a topic scope, the scope topic's chain (a retired scope topic
+     * through its redirect); otherwise, or when that topic is gone, the chain of the topic where most
+     * of its cited notes are placed. The question ends the path, as a note does. Null when the
+     * question does not exist or has no place: no citation reaches a placed note.
+     */
+    async locateQuestion(id: string): Promise<ObjectLocateResult | null> {
+      const result = await db.query<QuestionLocateRow>(questionLocateSql, [
+        id,
+        entityPlacementLimit,
+        objectLocateTopicPathLimit - 1
+      ]);
+      const row = result.rows[0];
+      if (!row) return null;
+      const object = { kind: "question" as const, id, title: row.title };
+      const counts = {
+        alsoIn: 0,
+        citedBy: 0,
+        notes: Number(row.notes),
+        passages: Number(row.passages),
+        children: 0
+      };
+      const scope = AskScopeSchema.safeParse(row.scope);
+      if (scope.success && scope.data.kind === "topic") {
+        const scoped = await locateTopic(scope.data.topicId);
+        if (scoped)
+          return {
+            object,
+            primaryPath: [...scoped.primaryPath, object],
+            alsoIn: [],
+            citedBy: [],
+            counts
+          };
+      }
+      if (row.topicPath.length === 0) return null;
+      return {
+        object,
+        primaryPath: [...topicRefs(row.topicPath), object],
+        alsoIn: row.alsoIn.map(({ id: otherId, title }) => ({
+          kind: "topic" as const,
+          id: otherId,
+          title
+        })),
+        citedBy: [],
+        counts: { ...counts, alsoIn: Number(row.alsoInCount) }
+      };
+    },
+
+    /** The statements behind the five `locate` reads, for EXPLAIN in verification. */
     statements: {
       source: sourceLocateSql,
       note: noteLocateSql,
       topic: topicLocateSql,
-      entity: entityLocateSql
+      entity: entityLocateSql,
+      question: questionLocateSql
     }
   };
 }

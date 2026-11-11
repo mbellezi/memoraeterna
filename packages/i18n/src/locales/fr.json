@@ -3699,6 +3699,14 @@
       "unavailable": "Les modifications ne sont pas disponibles pour le moment."
     }
   },
+  "questions": {
+    "errors": {
+      "cursor": "La liste des questions a changé entre-temps. Rechargez-la.",
+      "interrupted": "Cette question n'a pas reçu de réponse : l'application s'est fermée pendant la rédaction. Posez-la à nouveau.",
+      "notFound": "Cette question n'existe plus.",
+      "running": "Cette question est encore en cours de réponse."
+    }
+  },
   "ui": {
     "close": "Fermer",
     "details": "Détails",

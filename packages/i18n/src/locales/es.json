@@ -3701,6 +3701,14 @@
       "unavailable": "Los cambios no están disponibles ahora."
     }
   },
+  "questions": {
+    "errors": {
+      "cursor": "La lista de preguntas cambió entretanto. Vuelve a cargarla.",
+      "interrupted": "Esta pregunta no se respondió: la aplicación se cerró mientras se escribía la respuesta. Vuelve a preguntar.",
+      "notFound": "Esta pregunta ya no existe.",
+      "running": "Esta pregunta todavía se está respondiendo."
+    }
+  },
   "ui": {
     "close": "Cerrar",
     "details": "Detalles",

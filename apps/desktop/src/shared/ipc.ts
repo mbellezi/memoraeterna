@@ -164,6 +164,11 @@ export const ipcChannels = {
   /** The questions area (`ipc-questions.ts`, F5 D30): `app:questions:*`, named by area here. */
   questionsAsk: questionsChannels.ask,
   questionsCancel: questionsChannels.cancel,
+  questionsGet: questionsChannels.get,
+  questionsList: questionsChannels.list,
+  questionsDelete: questionsChannels.delete,
+  questionsAskAgain: questionsChannels.askAgain,
+  questionsClear: questionsChannels.clear,
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",

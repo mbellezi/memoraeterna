@@ -53,8 +53,16 @@ describe("the preload's window.app (F5 T170)", () => {
     ]);
   });
 
-  it("exposes questions.ask and questions.cancel on the area's channels", async () => {
-    expect(Object.keys(app.questions).sort()).toEqual(["ask", "cancel"]);
+  it("exposes the questions area on its channels", async () => {
+    expect(Object.keys(app.questions).sort()).toEqual([
+      "ask",
+      "askAgain",
+      "cancel",
+      "clear",
+      "delete",
+      "get",
+      "list"
+    ]);
     electron.invoke.mockClear();
     const answer = { questionId: randomUUID(), requestId: randomUUID() };
     electron.invoke.mockResolvedValueOnce(answer);

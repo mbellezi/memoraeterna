@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { createQuestionRepository, type PgPool, type QuestionRepository } from "@app/db";
+import {
+  createQuestionRepository,
+  questionCursorMessage,
+  type PgPool,
+  type QuestionRecord,
+  type QuestionRepository
+} from "@app/db";
 import {
   ConsultationInputSchema,
   createAnswerStreamReader,
@@ -26,9 +32,17 @@ import type {
 import {
   QuestionsAskInputSchema,
   QuestionsCancelInputSchema,
+  QuestionsIdInputSchema,
+  QuestionsListInputSchema,
+  type QuestionListItemView,
+  type QuestionsAskAgainResult,
   type QuestionsAskInput,
   type QuestionsAskResult,
-  type QuestionsCancelInput
+  type QuestionsCancelInput,
+  type QuestionsClearResult,
+  type QuestionsDeleteResult,
+  type QuestionsListResult,
+  type QuestionView
 } from "../../shared/ipc-questions.js";
 import { appEventPort } from "./app-events.js";
 import {
@@ -51,10 +65,24 @@ import {
  *
  * A citation of an answer is its evidence handle's number: the marker `[e3]` in the Markdown is the
  * citation of ordinal 3, a passage (chunk) read inside its source.
+ *
+ * The reads (T129): `get` returns the Question with every answer version and whether each is stale
+ * (a cited target changed or is gone, computed on read), `list` pages the Questions newest first,
+ * `delete` and `clear` remove them (publishing `object.changed`, and canceling an Ask that is still
+ * writing one), `askAgain` writes a new answer version for the same Question. A Question that the
+ * store holds as running while no Ask of this process writes it (the app quit mid-answer) reads as
+ * failed: the status is derived, never written.
  */
 
 /** What this service writes: the Question, its answer versions and its status. */
 export type QuestionStore = Pick<QuestionRepository, "create" | "appendAnswer" | "setStatus">;
+
+/** What the reads add to the store. */
+export type QuestionsStore = QuestionStore &
+  Pick<QuestionRepository, "get" | "list" | "delete" | "clear">;
+
+/** The message key of a Question that was left running by an app that quit. */
+export const interruptedErrorKey = "questions.errors.interrupted";
 
 export interface QuestionsServiceOptions {
   getPool: () => PgPool | null;
@@ -63,7 +91,7 @@ export interface QuestionsServiceOptions {
   /** Where events go; the process-wide port by default (it reaches the bus once attached). */
   publish?: (event: AppEvent) => void;
   /** Builds the question store for a pool; the repository by default. */
-  repository?: (pool: PgPool) => QuestionStore;
+  repository?: (pool: PgPool) => QuestionsStore;
   now?: () => Date;
   logger?: Pick<Console, "warn">;
 }
@@ -80,6 +108,18 @@ interface ActiveAsk {
   paragraphs: readonly StreamedAnswerParagraph[];
   canceled: boolean;
   done: Promise<void>;
+}
+
+/** The message key of a page cursor this service did not issue. */
+export const cursorErrorKey = "questions.errors.cursor";
+
+/** The repository refuses a malformed cursor itself; a cursor it cannot cast fails in PostgreSQL. */
+function isCursorError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.message === questionCursorMessage) return true;
+  // invalid_text_representation, invalid_datetime_format, datetime_field_overflow
+  const code = (error as { code?: unknown }).code;
+  return code === "22P02" || code === "22007" || code === "22008";
 }
 
 /** The scope of a question as the consultation pipeline takes it. */
@@ -100,6 +140,8 @@ function citationTarget(evidence: ConsultationEvidence) {
 
 export class QuestionsService {
   private readonly active = new Map<string, ActiveAsk>();
+  /** Questions whose "Ask again" has begun but whose Ask is not registered yet. */
+  private readonly starting = new Set<string>();
 
   public constructor(private readonly options: QuestionsServiceOptions) {}
 
@@ -118,9 +160,16 @@ export class QuestionsService {
     return pool;
   }
 
-  private repository(): QuestionStore {
+  private repository(): QuestionsStore {
     const pool = this.pool();
     return (this.options.repository ?? createQuestionRepository)(pool);
+  }
+
+  /** Whether an Ask of this process is writing the Question now. */
+  private isWriting(questionId: string): boolean {
+    if (this.starting.has(questionId)) return true;
+    for (const ask of this.active.values()) if (ask.questionId === questionId) return true;
+    return false;
   }
 
   /**
@@ -162,6 +211,149 @@ export class QuestionsService {
     ask.canceled = true;
     await this.options.consultation.cancel(requestId);
     return null;
+  }
+
+  /** One Question with its answer versions, oldest first; null when there is no such Question. */
+  public async get(raw: unknown): Promise<QuestionView | null> {
+    const { id } = QuestionsIdInputSchema.parse(raw);
+    const record = await this.repository().get(id);
+    return record ? this.view(record) : null;
+  }
+
+  /** The Questions, newest first; a cursor this service did not issue is refused with a message key. */
+  public async list(raw: unknown): Promise<QuestionsListResult> {
+    const input = QuestionsListInputSchema.parse(raw ?? {});
+    let page: Awaited<ReturnType<QuestionsStore["list"]>>;
+    try {
+      page = await this.repository().list(input);
+    } catch (error) {
+      if (isCursorError(error)) throw new Error(cursorErrorKey, { cause: error });
+      throw error;
+    }
+    return {
+      items: page.items.map((item): QuestionListItemView => ({
+        id: item.id,
+        text: item.text,
+        language: item.language,
+        scope: item.scope,
+        status: this.statusOf(item.id, item.status),
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+        answerCount: item.answerCount
+      })),
+      ...(page.nextCursor === null ? {} : { next: page.nextCursor })
+    };
+  }
+
+  /**
+   * Deletes the Question with its answers and citations. An Ask still writing it is canceled: it
+   * stores nothing, and says it was canceled.
+   */
+  public async delete(raw: unknown): Promise<QuestionsDeleteResult> {
+    const { id } = QuestionsIdInputSchema.parse(raw);
+    const deleted = await this.repository().delete(id);
+    if (deleted)
+      this.publish({ type: "object.changed", refs: [{ kind: "question", id, change: "deleted" }] });
+    await this.stopAsks((ask) => ask.questionId === id);
+    return { deleted };
+  }
+
+  /**
+   * Deletes every Question in one transaction and says so with one overflow `object.changed` (the
+   * kinds, not the refs). Asks still writing are canceled.
+   */
+  public async clear(): Promise<QuestionsClearResult> {
+    const deleted = await this.repository().clear();
+    if (deleted > 0) this.publish({ type: "object.changed", overflow: true, kinds: ["question"] });
+    await this.stopAsks(() => true);
+    return { deleted };
+  }
+
+  /**
+   * Writes a new answer version for the same Question and its stored scope, privacy and mode: the
+   * Question goes back to running and the answer arrives on the bus like any Ask. Refused while an
+   * Ask is writing the Question, and when the Question does not exist.
+   */
+  public async askAgain(raw: unknown): Promise<QuestionsAskAgainResult> {
+    const { id } = QuestionsIdInputSchema.parse(raw);
+    if (this.isWriting(id)) throw new Error("questions.errors.running");
+    this.starting.add(id);
+    try {
+      const repository = this.repository();
+      const question = await repository.get(id);
+      if (!question) throw new Error("questions.errors.notFound");
+      const requestId = randomUUID();
+      const consultation = ConsultationInputSchema.parse({
+        requestId,
+        question: question.text,
+        ...consultationScopeOf(question.scope),
+        privacy: question.privacy,
+        mode: question.mode
+      });
+      if (!(await repository.setStatus(id, "running")))
+        throw new Error("questions.errors.notFound");
+      this.publish({ type: "object.changed", refs: [{ kind: "question", id, change: "updated" }] });
+      this.begin(repository, id, requestId, consultation);
+      return { requestId };
+    } finally {
+      this.starting.delete(id);
+    }
+  }
+
+  /** Cancels the Asks that match: their own end is stored (or dropped, when the Question is gone). */
+  private async stopAsks(matches: (ask: ActiveAsk) => boolean): Promise<void> {
+    for (const ask of [...this.active.values()].filter(matches)) {
+      ask.canceled = true;
+      try {
+        await this.options.consultation.cancel(ask.requestId);
+      } catch (error) {
+        this.options.logger?.warn("An Ask could not be canceled.", error);
+      }
+    }
+  }
+
+  /** What the Question is now: a stored `running` that no Ask writes was cut short. */
+  private statusOf(id: string, stored: QuestionRecord["status"]): QuestionRecord["status"] {
+    return stored === "running" && !this.isWriting(id) ? "failed" : stored;
+  }
+
+  private view(record: QuestionRecord): QuestionView {
+    const status = this.statusOf(record.id, record.status);
+    const errorKey =
+      status === "failed"
+        ? record.status === "failed"
+          ? record.errorKey
+          : interruptedErrorKey
+        : null;
+    return {
+      id: record.id,
+      text: record.text,
+      language: record.language,
+      scope: record.scope,
+      privacy: record.privacy,
+      mode: record.mode,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+      status,
+      ...(errorKey ? { errorKey } : {}),
+      answers: record.answers.map((answer) => {
+        const citations = new Map(answer.citations.map((citation) => [citation.ordinal, citation]));
+        return {
+          version: answer.version,
+          status: answer.status,
+          paragraphs: answer.paragraphs.map((paragraph) => ({
+            markdown: paragraph.markdown,
+            citations: paragraph.citations.flatMap((ordinal) => {
+              const citation = citations.get(ordinal);
+              return citation ? [citation] : [];
+            })
+          })),
+          model: answer.provenance,
+          ...(answer.completedAt ? { completedAt: answer.completedAt.toISOString() } : {}),
+          stale: answer.stale
+        };
+      })
+    };
   }
 
   /** Resolves when every Ask that is running has stored its end (tests, and a quiet shutdown). */
