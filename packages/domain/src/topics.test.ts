@@ -399,9 +399,25 @@ describe("topics.shape", () => {
       depth: 4,
       nodeLimit: 2000
     });
-    for (const bad of [{ depth: 0 }, { depth: 6 }, { nodeLimit: 2001 }, { nodeLimit: 0 }]) {
+    for (const bad of [{ depth: 0 }, { depth: 8 }, { nodeLimit: 2001 }, { nodeLimit: 0 }]) {
       expect(topics.TopicShapeInputSchema.safeParse(bad).success).toBe(false);
     }
+  });
+
+  it("reaches the tree's hard depth cap (7) and no deeper", () => {
+    expect(topics.topicReadLimits.shapeDepthMax).toBe(7);
+    // The root and seven levels are the longest path a read can name.
+    expect(topics.topicReadLimits.pathMax).toBe(topics.topicReadLimits.shapeDepthMax + 1);
+    for (const depth of [1, 4, 5, 6, 7]) {
+      expect(topics.TopicShapeInputSchema.parse({ depth }).depth).toBe(depth);
+    }
+    expect(topics.TopicShapeInputSchema.safeParse({ depth: 8 }).success).toBe(false);
+    expect(topics.TopicShapeInputSchema.safeParse({ depth: 7.5 }).success).toBe(false);
+    expect(topics.TopicShapeInputSchema.parse({ depth: 7, nodeLimit: 2000 })).toEqual({
+      rootId: null,
+      depth: 7,
+      nodeLimit: 2000
+    });
   });
 
   it("round-trips an answer and refuses shares outside 0..1 and more than 2,000 cells", () => {

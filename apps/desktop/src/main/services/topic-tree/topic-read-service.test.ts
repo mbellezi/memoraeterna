@@ -166,6 +166,19 @@ describe("TopicReadService", () => {
     );
   });
 
+  it("reads a Shape down to depth 7 and refuses depth 8 before the repository sees it", async () => {
+    const service = new TopicReadService({ getPool: () => pool });
+    repository.readShape.mockClear();
+    await expect(service.shape({ depth: 8 })).rejects.toThrow();
+    expect(repository.readShape).not.toHaveBeenCalled();
+    repository.readShape.mockResolvedValue(null);
+    await service.shape({ depth: 7 });
+    expect(repository.readShape).toHaveBeenCalledWith(
+      { rootId: null, depth: 7, nodeLimit: 2000 },
+      expect.anything()
+    );
+  });
+
   it("returns null for every missing object", async () => {
     const service = new TopicReadService({ getPool: () => pool });
     for (const mock of [

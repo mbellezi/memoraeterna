@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { topicReadLimits } from "@app/domain";
+
 import {
   buildIcicle,
   cellContent,
@@ -7,6 +9,7 @@ import {
   cellTrail,
   drawnCells,
   emptyIcicle,
+  fillShares,
   minDrawnWidth,
   moveFocus,
   stepZoom,
@@ -292,5 +295,83 @@ describe("a big tree", () => {
     expect(layout.order).toHaveLength(nodes.length + 1);
     // The bar is 50 ms; a loaded machine gets headroom here and the proof records the measured time.
     expect(Math.min(...times)).toBeLessThan(50);
+  });
+});
+
+describe("a tree at the depth cap (7)", () => {
+  /** A chain of eight topics, the root at depth 0 and the last at depth 7, each holding items. */
+  const chain = Array.from({ length: topicReadLimits.shapeDepthMax + 1 }, (_, depth) =>
+    shapeNode(
+      depth + 1,
+      depth === 0 ? null : depth,
+      depth,
+      `Level ${depth}`,
+      // A parent spans its subtopic and its own two items.
+      2 * (topicReadLimits.shapeDepthMax - depth) + 1,
+      { directItems: depth === 7 ? 1 : 2, children: depth === 7 ? 0 : 1 }
+    )
+  );
+
+  it("lays one row per level down to depth 7, each parent spanning exactly its children", () => {
+    const layout = buildIcicle(chain, { wholeTree: false });
+    expect(layout.rows).toBe(8);
+    for (const cell of layout.cells) {
+      if (cell.kind === "topic") expect(cell.row).toBe(cell.node!.depth);
+    }
+    const deepest = layout.byKey.get(topicCellKey(shapeId(8)))!;
+    expect(deepest.row).toBe(7);
+    expect(deepest.cut).toBe(false);
+    expect(cellTrail(layout, deepest.key)).toHaveLength(8);
+    expectTiling(layout);
+    expect(layout.total).toBe(chain[0]!.items);
+  });
+
+  it("walks the focus down and back up all seven steps", () => {
+    const layout = buildIcicle(chain, { wholeTree: false });
+    const reachable = new Set(layout.order);
+    let at = layout.rootKey!;
+    for (let step = 0; step < 7; step += 1) {
+      const next = moveFocus(layout, at, "down", reachable);
+      expect(next, `down from level ${step}`).not.toBeNull();
+      at = next!;
+    }
+    expect(layout.byKey.get(at)!.row).toBe(7);
+    expect(moveFocus(layout, at, "down", reachable)).toBeNull();
+    for (let step = 0; step < 7; step += 1) at = moveFocus(layout, at, "up", reachable)!;
+    expect(at).toBe(layout.rootKey);
+  });
+
+  it("marks a topic whose subtopics the read left out below depth 7 as cut", () => {
+    const stopped = chain.map((node, index) =>
+      index === 7 ? { ...node, children: 3, directItems: 0, items: 1 } : node
+    );
+    const layout = buildIcicle(stopped, { wholeTree: false });
+    expect(layout.byKey.get(topicCellKey(shapeId(8)))!.cut).toBe(true);
+  });
+
+  it("lays out 2,000 topics seven levels deep, as many blocks as topics, within the bar", () => {
+    const nodes = bigNodes(topicReadLimits.shapeNodesMax, topicReadLimits.shapeDepthMax);
+    expect(nodes.length).toBeLessThanOrEqual(topicReadLimits.shapeNodesMax);
+    expect(Math.max(...nodes.map((node) => node.depth))).toBe(7);
+    buildIcicle(nodes);
+    const times: number[] = [];
+    let layout = emptyIcicle;
+    for (let i = 0; i < 5; i += 1) {
+      const start = performance.now();
+      layout = buildIcicle(nodes);
+      times.push(performance.now() - start);
+    }
+    expectTiling(layout);
+    expect(layout.rows).toBeGreaterThanOrEqual(8);
+    expect(layout.order).toHaveLength(nodes.length + 1);
+    // The bar is 50 ms; the best of five keeps a loaded machine from deciding it.
+    expect(Math.min(...times)).toBeLessThan(50);
+  });
+
+  it("tints every level the read can reach: the shares only get paler with depth", () => {
+    expect(fillShares.length).toBeGreaterThan(0);
+    for (let i = 1; i < fillShares.length; i += 1) {
+      expect(fillShares[i]!).toBeLessThanOrEqual(fillShares[i - 1]!);
+    }
   });
 });

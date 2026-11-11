@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { topicChangeSetOrigins } from "@app/domain";
+import { topicChangeSetOrigins, topicReadLimits } from "@app/domain";
 import { createTranslator, supportedLanguageCodes, type LanguageCode } from "@app/i18n";
 
 import { buildIcicle, topicCellKey, unsortedCellKey } from "./icicle-layout";
@@ -26,7 +26,8 @@ import {
   sampleChangeSet,
   sampleNodes,
   sampleWarnings,
-  shapeId
+  shapeId,
+  shapeNode
 } from "./shape-fixtures";
 
 const en = createTranslator("en");
@@ -356,5 +357,34 @@ describe("before and after", () => {
     const view = compareView(en, changeSet);
     expect(view.before[0]!.text).toBe("Unnamed topic, under Memory and learning");
     expect(view.partial).toBe(true);
+  });
+});
+
+describe("the deepest level the read reaches (7)", () => {
+  const depth = topicReadLimits.shapeDepthMax;
+  const chain = Array.from({ length: depth + 1 }, (_, level) =>
+    shapeNode(level + 1, level === 0 ? null : level, level, `Level ${level}`, depth + 1 - level, {
+      directItems: 1,
+      children: level === depth ? 0 : 1
+    })
+  );
+  const deep = buildIcicle(chain, { wholeTree: false });
+  const deepest = topicCellKey(shapeId(depth + 1));
+
+  it("names the level of a block at depth 7, and 7 more below a branch that starts at level 3", () => {
+    expect(cellLabel(en, deep.byKey.get(deepest)!, false, 0)).toContain("level 7");
+    expect(cellLabel(en, deep.byKey.get(deepest)!, false, 3)).toContain("level 10");
+    expect(panelModel(en, deep, deepest, false, 0)).toMatchObject({
+      level: 7,
+      trail: expect.any(Array),
+      canZoom: false
+    });
+    expect(panelModel(en, deep, deepest, false, 0)!.trail).toHaveLength(depth);
+  });
+
+  it("lists every level in the table, deepest last", () => {
+    const rows = tableRows(en, deep, false, 0);
+    expect(rows.map((row) => row.level)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(rows.at(-1)).toMatchObject({ kind: "topic", subtopics: 0, direct: 1 });
   });
 });

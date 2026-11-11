@@ -207,8 +207,13 @@ export const topicReadLimits = {
   ideaMax: 400,
   subtitleMax: 300,
   shapeDepthDefault: 4,
-  shapeDepthMax: 5,
+  /** The tree's depth cap (invariant I5, root = 0, default 7): a Shape read reaches every level of it. */
+  shapeDepthMax: 7,
+  /** Bounds a read of any depth: more cells than this are cut and `truncated` says so. */
   shapeNodesMax: 2_000,
+  /** `topics.history`: topics per request and days of arrivals (the change-set retention is 90). */
+  historyTopicsMax: 200,
+  historyDaysMax: 90,
   shapeWarningsMax: 50,
   shapeChangedMax: 20,
   changeSetTopicsMax: 50,

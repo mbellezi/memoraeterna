@@ -86,7 +86,8 @@ export class TopicReadError extends Error {
 // SQL (exported so the benchmark can EXPLAIN exactly what the repository runs)
 
 /** Origins whose placements count as "new this week": content arriving, not the tree being built. */
-const arrivalOrigins = "('place', 'gate', 'human')";
+export const topicArrivalOriginsSql = "('place', 'gate', 'human')";
+const arrivalOrigins = topicArrivalOriginsSql;
 /** Origins "changed today" lists: structure that changed, not routine placements. */
 const structuralOrigins = "('rebalance', 'audit', 'areas', 'naming', 'human', 'rebuild')";
 /** Notes the tree places: neither discarded nor archived (superseded notes are filtered by the engine). */
