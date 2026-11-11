@@ -42,6 +42,17 @@ export const legacyHostFor: Readonly<Record<DestinationId, LegacyHost>> = {
   map: "graph"
 };
 
+/**
+ * The view id each hosted old view has in `App.tsx`. None of them is a `LegacyViewId`: a view a
+ * destination hosts is that destination's, never an "Old screens" item (a test pins the two apart).
+ */
+export const hostedViewIds = {
+  wiki: "wiki",
+  library: "library",
+  inbox: "inbox",
+  graph: "knowledgeGraph"
+} as const satisfies Record<LegacyHost, string>;
+
 /** What each destination is called in the title bar, the menu and the rail's tooltip. */
 export const destinationTitleKeys = {
   home: "workspace.destinations.home",
@@ -57,7 +68,6 @@ export const legacyTitleKeys = {
   search: "shell.navigation.search",
   review: "shell.navigation.review",
   jobs: "shell.navigation.jobs",
-  knowledgeGraph: "shell.navigation.knowledgeGraph",
   debug: "debug.title"
 } as const satisfies Record<LegacyViewId, string>;
 

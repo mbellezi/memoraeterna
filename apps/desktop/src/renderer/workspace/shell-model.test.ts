@@ -120,16 +120,19 @@ describe("the title bar grid", () => {
     for (let width = 960; width <= 2560; width += 10) {
       const tier = tierFor(width);
       const layout = titleBarLayout(width);
+      // The unused gap is left out on purpose: it is derived from the other columns, so adding it
+      // back would make the sum equal the bar by construction. The four columns, the three flex gaps
+      // and both paddings must fit on their own.
       const used =
         tier.topPl +
         layout.name +
         layout.omni +
-        layout.gap +
         layout.status +
         layout.add +
         titleBarMetrics.padRight +
         3 * tier.topGap;
       expect(used, String(width)).toBeLessThanOrEqual(width - tier.railW + 0.001);
+      expect(layout.gap, String(width)).toBeGreaterThanOrEqual(0);
       expect(layout.omni, String(width)).toBeGreaterThanOrEqual(layoutConfig.omniMin);
       expect(layout.omni, String(width)).toBeLessThanOrEqual(titleBarMetrics.omniMax);
       expect(layout.status, String(width)).toBeLessThanOrEqual(titleBarMetrics.statusMax);

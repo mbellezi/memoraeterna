@@ -13,17 +13,11 @@ export const appDestinationIds = ["home", "explore", "library", "inbox", "map"] 
 export type AppDestinationId = (typeof appDestinationIds)[number];
 
 /**
- * The old top-level views that no destination hosts yet. The rail's "Telas antigas" menu and the
- * application menu list exactly these, until the cards that remove them (D6) empty the list.
+ * The old top-level views that no destination hosts. The rail's "Telas antigas" menu and the
+ * application menu list exactly these, until the cards that remove them (D6) empty the list. The
+ * knowledge graph is not one of them: the Map hosts it, so it has a destination of its own.
  */
-export const legacyViewIds = [
-  "import",
-  "search",
-  "review",
-  "jobs",
-  "knowledgeGraph",
-  "debug"
-] as const;
+export const legacyViewIds = ["import", "search", "review", "jobs", "debug"] as const;
 export type LegacyViewId = (typeof legacyViewIds)[number];
 
 /**

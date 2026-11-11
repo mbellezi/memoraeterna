@@ -3710,8 +3710,8 @@
   },
   "workspace": {
     "destinations": {
-      "home": "Home",
       "explore": "Explore",
+      "home": "Home",
       "inbox": "Inbox",
       "library": "Library",
       "map": "Map"

@@ -26,7 +26,7 @@ import {
   type ActivitySnapshot
 } from "./activity-model";
 import { ActivityDrawer } from "./ActivityDrawer";
-import { ActivityPill, type PillNotice } from "./ActivityPill";
+import { ActivityPill, noticeAnnouncement, type PillNotice } from "./ActivityPill";
 import { closesDrawer, createDrawerFocus } from "./drawer-focus";
 
 export interface ActivityHostProps {
@@ -94,8 +94,18 @@ export function ActivityHost({
     controller.getSnapshot
   );
   const pillRef = useRef<HTMLButtonElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const { open } = snapshot;
+  // While a notice stands in for the pill button, focus goes back to the notice.
+  const pillTarget = useMemo(
+    () => ({
+      get current() {
+        return pillRef.current ?? noticeRef.current;
+      }
+    }),
+    []
+  );
 
   useEffect(() => {
     controller.start();
@@ -104,13 +114,13 @@ export function ActivityHost({
 
   // Opening moves focus into the drawer (it is rendered with the open state, so it exists now).
   useEffect(() => {
-    if (open) createDrawerFocus({ pill: pillRef, drawer: drawerRef }).opened();
-  }, [open]);
+    if (open) createDrawerFocus({ pill: pillTarget, drawer: drawerRef }).opened();
+  }, [open, pillTarget]);
 
   const dismiss = useCallback(() => {
     controller.setOpen(false);
-    createDrawerFocus({ pill: pillRef, drawer: drawerRef }).closed();
-  }, [controller]);
+    createDrawerFocus({ pill: pillTarget, drawer: drawerRef }).closed();
+  }, [controller, pillTarget]);
 
   // Cmd-W closes the drawer like any other panel, and does nothing when it is not open.
   useEffect(() => {
@@ -150,12 +160,16 @@ export function ActivityHost({
         blocked: notice.state === "blocked",
         failed: notice.state === "failed",
         onUndo: () => void notices.undo(),
+        onDismiss: () => notices.dismiss(),
         onHold: (held) => notices.hold(held)
       }
     : null;
 
   const view = pillView(t, snapshot);
   const live = useMemo(() => announcementText(t, snapshot), [t, snapshot]);
+  // A new notice with the same words as the last one still has to be spoken: a no-break space.
+  const noticeLive = noticeAnnouncement(t, pillNotice);
+  const noticeSpoken = notice && notice.id % 2 === 0 ? `${noticeLive}\u00a0` : noticeLive;
   const closeOnEscape = (event: {
     key: string;
     defaultPrevented: boolean;
@@ -170,6 +184,7 @@ export function ActivityHost({
     <div className="flex min-w-0 items-center">
       <ActivityPill
         ref={pillRef}
+        noticeRef={noticeRef}
         t={t}
         view={view}
         open={open}
@@ -208,6 +223,15 @@ export function ActivityHost({
       ) : null}
       <div role="status" aria-live="polite" className="sr-only">
         {live}
+      </div>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-notice-live=""
+        className="sr-only"
+      >
+        {noticeSpoken}
       </div>
     </div>
   );

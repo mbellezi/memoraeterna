@@ -68,6 +68,9 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
     inbox: {
       counts: vi.fn(async () => inboxCounts(0))
     },
+    jobs: {
+      list: vi.fn(async () => [] as unknown[])
+    },
     onAppEvent: vi.fn(<T extends AppEventType>(type: T, handler: AppEventHandler<T>) => {
       const set = handlers.get(type) ?? new Set();
       set.add(handler as (event: never) => void);
@@ -84,6 +87,7 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
       undo: ReturnType<typeof vi.fn>;
     };
     inbox: { counts: ReturnType<typeof vi.fn> };
+    jobs: { list: ReturnType<typeof vi.fn> };
   };
   const navigate = vi.fn();
   const controller = new ActivityController({
@@ -399,6 +403,44 @@ describe("the drawer", () => {
     controller.setOpen(true);
     controller.setOpen(false);
     expect(controller.getSnapshot().jobs).toEqual({ running: 1, waiting: 5, onHold: 1 });
+  });
+
+  it("counts the jobs that already wait when the window opens, with no event to say so", async () => {
+    const { controller, api } = setup({
+      jobs: {
+        list: vi.fn(async () => [
+          { status: "queued" },
+          { status: "queued" },
+          { status: "queued" },
+          { status: "running" },
+          { status: "succeeded" }
+        ])
+      }
+    } as unknown as Partial<ActivityApi>);
+    controller.start();
+    expect(controller.getSnapshot().jobs).toBeNull();
+    await flush();
+    expect(controller.getSnapshot().jobs).toEqual({ running: 1, waiting: 3, onHold: 0 });
+    expect(api.jobs.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the first read of the jobs when an event overtook it, and shows nothing when it fails", async () => {
+    const read = deferred<unknown[]>();
+    const first = setup({
+      jobs: { list: vi.fn(() => read.promise) }
+    } as unknown as Partial<ActivityApi>);
+    first.controller.start();
+    first.emit(jobProgress({ running: 1, queued: 1 }));
+    read.resolve([{ status: "queued" }, { status: "queued" }, { status: "queued" }]);
+    await flush();
+    expect(first.controller.getSnapshot().jobs).toEqual({ running: 1, waiting: 1, onHold: 0 });
+
+    const failing = setup({
+      jobs: { list: vi.fn(async () => Promise.reject(new Error("down"))) }
+    } as unknown as Partial<ActivityApi>);
+    failing.controller.start();
+    await flush();
+    expect(failing.controller.getSnapshot().jobs).toBeNull();
   });
 
   it("does not draw the pill again for counts that did not move", () => {

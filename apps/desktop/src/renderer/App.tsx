@@ -74,7 +74,7 @@ import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 import { createWorkspaceSaver, loadWorkspace } from "./workspace/persist";
 import { Shell } from "./workspace/Shell";
-import { hasNavigator, legacyHostFor } from "./workspace/shell-model";
+import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import { reduce, type WorkspaceAction, type WorkspaceState } from "./workspace/state";
 import type { KeymapResult } from "./workspace/keymap";
 
@@ -82,7 +82,7 @@ import type { KeymapResult } from "./workspace/keymap";
  * The old view each place shows until its replacement lands (D6): the old views the shell hosts for
  * a destination, Settings, and the old views the rail's "Old screens" menu opens.
  */
-type ViewId = "wiki" | "library" | "inbox" | "settings" | LegacyViewId;
+type ViewId = "wiki" | "library" | "inbox" | "settings" | "knowledgeGraph" | LegacyViewId;
 
 const legacyViews: readonly string[] = legacyViewIds;
 const isLegacyView = (view: string): view is LegacyViewId => legacyViews.includes(view);
@@ -91,15 +91,20 @@ const isLegacyView = (view: string): view is LegacyViewId => legacyViews.include
 function viewOf(place: WorkspaceState["destination"], legacyView: LegacyViewId | null): ViewId {
   if (legacyView !== null) return legacyView;
   if (place === "settings") return "settings";
-  const host = legacyHostFor[place];
-  return host === "graph" ? "knowledgeGraph" : host;
+  return hostedViewIds[legacyHostFor[place]];
 }
 
 /** The place an old view that a destination hosts belongs to (for a link that opens it). */
 const placeOfView: Record<
-  "wiki" | "library" | "inbox" | "settings",
+  "wiki" | "library" | "inbox" | "settings" | "knowledgeGraph",
   WorkspaceState["destination"]
-> = { wiki: "explore", library: "library", inbox: "inbox", settings: "settings" };
+> = {
+  wiki: "explore",
+  library: "library",
+  inbox: "inbox",
+  settings: "settings",
+  knowledgeGraph: "map"
+};
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
@@ -793,7 +798,7 @@ export function App({
             // The old Settings keeps its section menu until Settings v2 (T161) brings its own column.
             <div className="flex min-h-full gap-5">
               <nav
-                aria-label={t("shell.navigation.label")}
+                aria-label={t("settings.dashboard.navigation.label")}
                 className="sticky top-0 w-60 shrink-0 self-start"
               >
                 <SettingsScopeMenu

@@ -40,7 +40,6 @@ export const legacyViewLabels: Readonly<Record<LegacyViewId, MessageKey>> = {
   search: "shell.navigation.search",
   review: "shell.navigation.review",
   jobs: "shell.navigation.jobs",
-  knowledgeGraph: "shell.navigation.knowledgeGraph",
   debug: "debug.title"
 };
 

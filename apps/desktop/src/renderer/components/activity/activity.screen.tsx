@@ -21,6 +21,7 @@ export const fixtures: ScreenModule["fixtures"] = {
     "gardener.status": runningStatus,
     "budget.snapshot": budgetSnapshot(),
     "inbox.counts": inboxCounts(3),
+    "jobs.list": [{ status: "queued" }, { status: "queued" }, { status: "running" }],
     "changes.list": {
       items: [changeSet(1), changeSet(2, { titleParams: { items: 4 } }), changeSet(3)],
       nextCursor: null
@@ -33,6 +34,7 @@ export const fixtures: ScreenModule["fixtures"] = {
     "gardener.status": idleStatus,
     "budget.snapshot": budgetSnapshot(),
     "inbox.counts": inboxCounts(0),
+    "jobs.list": [],
     "changes.list": { items: [], nextCursor: null }
   }
 };

@@ -3,9 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { legacyViewIds } from "../../shared/app-menu";
-import { legacyMenuViews } from "./LegacyMenu";
+import { LegacyMenu, legacyMenuViews } from "./LegacyMenu";
 import { Rail, inboxWaitingText, railState } from "./Rail";
 import { Shell, shellState, titleKey } from "./Shell";
+import { hostedViewIds } from "./shell-model";
 import { TitleBar } from "./TitleBar";
 
 const en = createTranslator("en");
@@ -56,8 +57,14 @@ describe("the rail", () => {
     expect(rail({ status: "error" })).toContain('role="alert"');
   });
 
-  it("lists every remaining legacy view in the old screens menu", () => {
-    expect(legacyMenuViews).toEqual([...legacyViewIds]);
+  it("lists in the old screens menu only the views no destination hosts", () => {
+    const hosted: readonly string[] = Object.values(hostedViewIds);
+    // The Map hosts the knowledge graph: it is a destination, never an "Old screens" item.
+    expect(hosted).toContain("knowledgeGraph");
+    expect(legacyViewIds.filter((view) => hosted.includes(view))).toEqual([]);
+    expect(legacyMenuViews.filter((view) => hosted.includes(view))).toEqual([]);
+    const html = renderToString(<LegacyMenu t={en} current={null} onOpen={noop} />);
+    expect(html).toContain("Old screens that are still available");
     expect(legacyMenuViews.length).toBeGreaterThan(0);
   });
 });

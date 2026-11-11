@@ -3715,8 +3715,8 @@
   },
   "workspace": {
     "destinations": {
-      "home": "Accueil",
       "explore": "Explorer",
+      "home": "Accueil",
       "inbox": "Boîte de réception",
       "library": "Bibliothèque",
       "map": "Carte"

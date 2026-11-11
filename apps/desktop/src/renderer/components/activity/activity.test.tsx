@@ -18,8 +18,10 @@ import {
   signInStatus
 } from "./activity-fixtures";
 import { ActivityDrawer } from "./ActivityDrawer";
+import { TopicNoticeCenter } from "../topics/ops/topic-notice-center";
+import { pinNotice } from "../topics/ops/topic-ops";
 import { ActivityHost, announcementText } from "./ActivityHost";
-import { ActivityPill } from "./ActivityPill";
+import { ActivityPill, noticeAnnouncement, type PillNotice } from "./ActivityPill";
 import { pillView } from "./activity-model";
 
 const en = createTranslator("en");
@@ -152,31 +154,78 @@ describe("the Activity pill", () => {
     expect(compact).toContain("2 need you");
   });
 
-  it("turns into the undo extension after a change, with the needs-you clause kept", () => {
-    const calls: string[] = [];
-    const html = renderToString(
+  const noticeOf = (changes: Partial<PillNotice> = {}): PillNotice => ({
+    text: "Renamed to Micronutrients.",
+    canUndo: true,
+    pending: false,
+    blocked: false,
+    failed: false,
+    onUndo: () => undefined,
+    onDismiss: () => undefined,
+    onHold: () => undefined,
+    ...changes
+  });
+  const noticePill = (notice: PillNotice, compact = false) =>
+    renderToString(
       <ActivityPill
         t={en}
         view={pillView(en, activitySnapshot({ status: ready(idleStatus), inboxTotal: 2 }))}
         open={false}
         drawerId="activity-drawer"
         onToggle={vi.fn()}
-        notice={{
-          text: "Renamed to Micronutrients.",
-          canUndo: true,
-          pending: false,
-          blocked: false,
-          failed: false,
-          onUndo: () => calls.push("undo"),
-          onHold: () => undefined
-        }}
+        compact={compact}
+        notice={notice}
       />
     );
-    expect(html).toContain('role="status"');
+
+  it("turns into the undo extension after a change, with the needs-you clause kept", () => {
+    const html = noticePill(noticeOf());
     expect(html).toContain("Renamed to Micronutrients.");
     expect(html).toContain("Undo");
     expect(html).toContain('aria-keyshortcuts="U"');
     expect(html).toContain("2 need you");
+  });
+
+  it("leaves the announcement to the host's live region, which is in the page before the text", () => {
+    // A region that is inserted already holding its text is not spoken: the pill has none.
+    expect(noticePill(noticeOf())).not.toContain('role="status"');
+    expect(noticeAnnouncement(en, noticeOf())).toBe("Renamed to Micronutrients. Undo U");
+    expect(noticeAnnouncement(en, noticeOf({ canUndo: false, blocked: true }))).toContain(
+      "a later change depends on it"
+    );
+    expect(noticeAnnouncement(en, noticeOf({ failed: true }))).toContain("could not be undone");
+    expect(noticeAnnouncement(en, null)).toBe("");
+  });
+
+  it("can never outgrow its slot: it clips, and every sentence in it can shrink", () => {
+    for (const changes of [
+      {},
+      { canUndo: false, blocked: true },
+      { canUndo: false, failed: true }
+    ]) {
+      const html = noticePill(noticeOf(changes), true);
+      expect(html).toMatch(/data-activity-notice="" class="[^"]*overflow-hidden/u);
+      // Each sentence is a span that truncates; only the glyph, the Undo link and the clause that
+      // waits for the person keep their size.
+      expect(html).toMatch(/<span class="min-w-0 shrink-\[4\] truncate" title="Renamed/u);
+    }
+    const blocked = noticePill(noticeOf({ canUndo: false, blocked: true }));
+    expect(blocked).toMatch(/<span class="min-w-0 truncate[^"]*" title="[^"]*later change/u);
+    const failed = noticePill(noticeOf({ canUndo: false, failed: true }));
+    expect(failed).toMatch(/<span class="min-w-0 truncate[^"]*" title="[^"]*could not be undone/u);
+  });
+
+  it("drops the needs-you clause from the notice at compact width, where the slot is 260 px", () => {
+    expect(noticePill(noticeOf(), false)).toContain("2 need you");
+    const compact = noticePill(noticeOf(), true);
+    expect(compact).not.toContain("need you");
+    expect(compact).toContain("Undo");
+  });
+
+  it("shows a warning glyph, not a check, when the undo is blocked or failed", () => {
+    expect(noticePill(noticeOf())).toContain("text-success");
+    expect(noticePill(noticeOf({ blocked: true, canUndo: false }))).not.toContain("text-success");
+    expect(noticePill(noticeOf({ failed: true }))).toContain("text-danger");
   });
 
   it("says the embedder is loading instead of blocking the screen", () => {
@@ -452,6 +501,29 @@ describe("the live region", () => {
 });
 
 describe("the host", () => {
+  const noticeCenter = () =>
+    new TopicNoticeCenter(() => ({
+      undo: async () => ({ status: "undone", changeSetId: "cs", generation: 1 })
+    }));
+
+  it("has the notice's live region in the page before any notice, and fills the same one", () => {
+    const region =
+      /<div role="status" aria-live="polite" aria-atomic="true" data-notice-live="" class="sr-only">([^<]*)<\/div>/u;
+    const empty = renderToString(
+      <ActivityHost t={en} onNavigate={vi.fn()} notices={noticeCenter()} />
+    );
+    expect(empty).toMatch(region);
+    expect(empty.match(region)?.[1]).toBe("");
+    const center = noticeCenter();
+    center.show(pinNotice(true, "Memory"), "cs", "idle");
+    const shown = renderToString(<ActivityHost t={en} onNavigate={vi.fn()} notices={center} />);
+    expect(shown.match(region)?.[1]).toContain("Pinned Memory.");
+    expect(shown.match(region)?.[1]).toContain("Undo U");
+    // The pill itself carries no second live region for the same words.
+    expect(shown.match(/data-activity-notice="" class="[^"]*"/u)).not.toBeNull();
+    expect(shown.match(/role="status"/gu)).toHaveLength(2);
+  });
+
   it("renders the pill before anything is read, without touching the window", () => {
     const html = renderToString(<ActivityHost t={en} onNavigate={vi.fn()} />);
     expect(html).toContain("Checking what is happening...");

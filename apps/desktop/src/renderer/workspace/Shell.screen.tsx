@@ -29,11 +29,13 @@ const tree = {
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
     "inbox.counts": inboxCounts(3),
+    "jobs.list": [{ status: "queued" }, { status: "queued" }, { status: "running" }],
     "gardener.status": runningStatus,
     "topics.tree": tree
   },
   empty: {
     "inbox.counts": inboxCounts(0),
+    "jobs.list": [],
     "gardener.status": idleStatus,
     "topics.tree": null
   }

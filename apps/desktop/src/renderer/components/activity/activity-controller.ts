@@ -31,6 +31,8 @@ export interface ActivityApi {
   changes: Pick<DesktopApi["changes"], "list" | "undo">;
   /** The Inbox's own count of every kind that waits for the person (`inbox.changed` follows it). */
   inbox: Pick<DesktopApi["inbox"], "counts">;
+  /** The one read of the jobs the pill makes at start: `job.progress` is not a sticky event. */
+  jobs: Pick<DesktopApi["jobs"], "list">;
   /** The bus, including `model.loading`: the local embedder loading into memory (a sticky state). */
   onAppEvent: DesktopApi["onAppEvent"];
 }
@@ -42,6 +44,7 @@ export function activityApiOf(app: DesktopApi): ActivityApi {
     budget: app.budget,
     changes: app.changes,
     inbox: app.inbox,
+    jobs: app.jobs,
     onAppEvent: (type, handler) => app.onAppEvent(type, handler)
   };
 }
@@ -100,6 +103,9 @@ export class ActivityController {
   private inboxToken = 0;
   /** The Inbox count came from `inbox.changed`, which is newer than any read in flight. */
   private inboxFromEvents = false;
+  private jobsToken = 0;
+  /** The job counts came from `job.progress`, which is newer than the read in flight. */
+  private jobsFromEvents = false;
   private loadingModelId: string | null = null;
   private announcementId = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +139,8 @@ export class ActivityController {
         this.update({ inboxTotal: event.total });
       }),
       api.onAppEvent("job.progress", (event) => {
+        this.jobsFromEvents = true;
+        this.jobsToken += 1;
         const jobs = jobFactsOf(event);
         const { jobs: shown } = this.snapshot;
         // Counts that did not move are not a change: the pill is not drawn again for them.
@@ -156,6 +164,7 @@ export class ActivityController {
     );
     this.loadStatus();
     this.loadInbox();
+    this.loadJobs();
   }
 
   /** Stops every subscription and timer; reads that are still in flight are dropped. */
@@ -165,6 +174,7 @@ export class ActivityController {
     if (this.snapshot.open) this.setOpen(false);
     this.statusToken += 1;
     this.inboxToken += 1;
+    this.jobsToken += 1;
   }
 
   toggle(): void {
@@ -280,6 +290,26 @@ export class ActivityController {
       .then((counts) => {
         if (token === this.inboxToken && !this.inboxFromEvents)
           this.update({ inboxTotal: counts.total });
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * The jobs that wait when the window opens: `job.progress` says nothing until a job moves, and
+   * jobs that are paused on battery never do. The list cannot tell a job a blocker set aside from a
+   * queued one, so every queued job counts as waiting until the next event gives the exact split;
+   * the pill adds the two together.
+   */
+  private loadJobs(): void {
+    const token = ++this.jobsToken;
+    this.deps
+      .api()
+      .jobs.list()
+      .then((records) => {
+        if (token !== this.jobsToken || this.jobsFromEvents) return;
+        const count = (status: "running" | "queued") =>
+          records.filter((record) => record.status === status).length;
+        this.update({ jobs: { running: count("running"), waiting: count("queued"), onHold: 0 } });
       })
       .catch(() => undefined);
   }

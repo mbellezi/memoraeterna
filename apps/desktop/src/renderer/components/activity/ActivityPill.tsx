@@ -22,6 +22,8 @@ export interface PillNotice {
   blocked: boolean;
   failed: boolean;
   onUndo: () => void;
+  /** Escape on the notice clears it; the pill returns at once. */
+  onDismiss: () => void;
   /** Hovering or focusing the notice keeps it; leaving it starts the wait again. */
   onHold: (held: boolean) => void;
 }
@@ -33,6 +35,8 @@ export interface ActivityPillProps {
   /** The drawer this button opens; referenced only while it is shown. */
   drawerId: string;
   ref?: Ref<HTMLButtonElement>;
+  /** The notice's own element: focus goes here when the pill button is not on screen. */
+  noticeRef?: Ref<HTMLDivElement>;
   onToggle: () => void;
   onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
   /** Home drops the needs-you clause: its "Precisa de você" column shows the same thing. */
@@ -117,6 +121,7 @@ export function ActivityPill({
   open,
   drawerId,
   ref,
+  noticeRef,
   onToggle,
   onKeyDown,
   hideNeedsYou = false,
@@ -127,20 +132,40 @@ export function ActivityPill({
   const needsYou = sentence.needsYou;
 
   if (notice) {
+    // At compact width the needs-you clause waits: the notice lasts a few seconds, the Inbox badge
+    // in the rail says the same, and the Undo link and the sentence need the room (design §3).
+    const noticeNeedsYou = compact ? null : needsYou;
+    const problem = notice.failed ? "failed" : notice.blocked ? "blocked" : null;
     return (
+      // The announcement is the host's always-mounted live region: one that appears with its text
+      // is not spoken. Everything here can shrink or truncate, so the pill never outgrows its slot.
       <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
+        ref={noticeRef}
+        tabIndex={-1}
         data-activity-notice=""
-        className={cn(shell, "border-accent bg-surface text-foreground")}
+        className={cn(
+          shell,
+          "overflow-hidden border-accent bg-surface text-foreground focus-visible:outline-2",
+          "focus-visible:outline-accent"
+        )}
         onMouseEnter={() => notice.onHold(true)}
         onMouseLeave={() => notice.onHold(false)}
         onFocus={() => notice.onHold(true)}
         onBlur={() => notice.onHold(false)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          event.preventDefault();
+          notice.onDismiss();
+        }}
       >
-        <SolidCheck className="text-success" />
-        <span className="min-w-0 truncate" title={notice.text}>
+        {problem === "failed" ? (
+          <SolidTriangle className="text-danger" />
+        ) : problem === "blocked" ? (
+          <SolidTriangle className="text-warning" />
+        ) : (
+          <SolidCheck className="text-success" />
+        )}
+        <span className="min-w-0 shrink-[4] truncate" title={notice.text}>
           {notice.text}
         </span>
         {notice.canUndo ? (
@@ -150,7 +175,7 @@ export function ActivityPill({
             aria-keyshortcuts="U"
             className={cn(
               "inline-flex shrink-0 items-center gap-1 rounded-sm font-medium text-accent",
-              "hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2",
+              "hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-0",
               "focus-visible:outline-accent disabled:opacity-60"
             )}
             onClick={notice.onUndo}
@@ -161,14 +186,22 @@ export function ActivityPill({
           </button>
         ) : null}
         {notice.blocked ? (
-          <span className="shrink-0 text-xs text-muted-foreground">
+          <span
+            className="min-w-0 truncate text-xs text-muted-foreground"
+            title={t("topics.ops.toast.blocked")}
+          >
             {t("topics.ops.toast.blocked")}
           </span>
         ) : null}
         {notice.failed ? (
-          <span className="shrink-0 text-xs text-danger">{t("topics.ops.toast.failed")}</span>
+          <span
+            className="min-w-0 truncate text-xs text-danger"
+            title={t("topics.ops.toast.failed")}
+          >
+            {t("topics.ops.toast.failed")}
+          </span>
         ) : null}
-        {needsYou ? <NeedsYou text={needsYou} /> : null}
+        {noticeNeedsYou ? <NeedsYou text={noticeNeedsYou} /> : null}
       </div>
     );
   }
@@ -200,4 +233,17 @@ export function ActivityPill({
       {needsYou ? <NeedsYou text={needsYou} /> : null}
     </button>
   );
+}
+
+/**
+ * What the always-mounted live region says for a notice: the sentence, then what the person can do
+ * (Undo, with its key) or why they cannot. The region exists before the text, so it is spoken.
+ */
+export function noticeAnnouncement(t: Translator, notice: PillNotice | null): string {
+  if (notice === null) return "";
+  const parts = [notice.text];
+  if (notice.canUndo) parts.push(`${t("topics.ops.toast.undo")} U`);
+  if (notice.blocked) parts.push(t("topics.ops.toast.blocked"));
+  if (notice.failed) parts.push(t("topics.ops.toast.failed"));
+  return parts.join(" ");
 }
