@@ -29,9 +29,9 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 - New code pushes state changes to the renderer as typed events on the one
   `AppEventBus` channel, published after commit; it adds no channel or polling loop.
 - Objects (source, note, topic, question, entity) are addressed as `memora://<kind>/<uuid>` with
-  anchors `#passage=<chunkId>`, `#span=<sourceSpanId>` and `#section=<sectionId>`; `@app/domain`
-  holds the one parser. `objects.locate` is a read-only read without AI (primary path, other
-  placements, citing objects, counts) and stays within a p95 of 50 ms.
+  anchors `#passage=<chunkId>`, `#span=<sourceSpanId>`, `#section=<sectionId>` and
+  `#relation=<sourceRelationId>`; `@app/domain` holds the one parser. `objects.locate` is a read
+  without AI (primary path, other placements, citing objects, counts) within a p95 of 50 ms.
 - A citation opens its exact chunk and SourceSpan, highlighted, in the source reader; a passage
   that is no longer current is reported, never replaced by similar text.
 

@@ -5,18 +5,20 @@ import { z } from "zod";
  * the router, links, Cmd-K, Obsidian deep links and Back (docs/plan.md 4.5).
  *
  *   memora://<kind>/<uuid>[#passage=<chunkId>][&span=<sourceSpanId>][&section=<sectionId>]
+ *                         [&relation=<sourceRelationId>]
  *
  * An address names an object by identity, never by title. Anchors point inside it: a chunk
- * (`passage`), a SourceSpan (`span`) or a section (`section`). The parser is strict (unknown kinds,
- * unknown or repeated anchors and malformed IDs are rejected) and the formatter is canonical, so
- * `parse(format(a))` equals `a`.
+ * (`passage`), a SourceSpan (`span`), a section (`section`) or a source relation (`relation`). The
+ * parser is strict (unknown kinds, unknown or repeated anchors and malformed IDs are rejected) and
+ * the formatter is canonical, so `parse(format(a))` equals `a`. Links from outside the app go
+ * through `normalizeMemoraLink`, which also reads the legacy Obsidian forms.
  */
 export const objectKinds = ["source", "note", "topic", "question", "entity"] as const;
 export const ObjectKindSchema = z.enum(objectKinds);
 export type ObjectKind = z.infer<typeof ObjectKindSchema>;
 
 /** Anchor names in canonical order. */
-export const objectAnchorKeys = ["passage", "span", "section"] as const;
+export const objectAnchorKeys = ["passage", "span", "section", "relation"] as const;
 export type ObjectAnchorKey = (typeof objectAnchorKeys)[number];
 export type ObjectAnchor = Partial<Record<ObjectAnchorKey, string>>;
 
@@ -80,6 +82,101 @@ export function formatObjectAddress(address: ObjectAddress): string {
   }
   const base = `${addressPrefix}${address.kind}/${address.id.toLowerCase()}`;
   return parts.length > 0 ? `${base}#${parts.join("&")}` : base;
+}
+
+/**
+ * What a `memora://` link from outside the app (the OS protocol handler, an Obsidian note) names.
+ *
+ * - `object`: an object address. `legacy` says which old Obsidian spelling it came in, if any.
+ * - `retired-wiki`: a link to a wiki page, which no longer exists; the app shows a notice.
+ * - `invalid`: anything else, with the first part that failed. Only the reason is ever logged.
+ */
+export type NormalizedLink =
+  | { kind: "object"; address: ObjectAddress; legacy?: "open-source" | "open-source-relation" }
+  | { kind: "retired-wiki"; id: string }
+  | { kind: "invalid"; reason: "scheme" | "kind" | "id" | "anchor" | "query" };
+
+const invalidLink = (reason: Extract<NormalizedLink, { kind: "invalid" }>["reason"]) =>
+  ({ kind: "invalid", reason }) as const;
+
+/** The query fields each legacy `memora://open/<kind>/<id>` route allows. */
+const legacyQueryKeys = { source: ["relation"], wiki: ["revision", "evidence"] } as const;
+
+/** Reads `key=<uuid>&…` with only `allowed` keys, each at most once; null when it does not. */
+function parseLegacyQuery(query: string, allowed: readonly string[]): Map<string, string> | null {
+  const fields = new Map<string, string>();
+  for (const part of query.split("&")) {
+    const separator = part.indexOf("=");
+    if (separator <= 0) return null;
+    const key = part.slice(0, separator);
+    const value = part.slice(separator + 1);
+    if (!allowed.includes(key) || fields.has(key) || !uuidPattern.test(value)) return null;
+    fields.set(key, value.toLowerCase());
+  }
+  return fields;
+}
+
+/**
+ * The one reader of external `memora://` links (docs/f5-decisions.md D10). It accepts the canonical
+ * object address with its anchors and the legacy forms the Obsidian projections wrote:
+ *
+ *   memora://open/source/<id>                  → object source/<id>
+ *   memora://open/source/<id>?relation=<rid>   → object source/<id>#relation=<rid>
+ *   memora://open/wiki/<id>[?revision=…][&evidence=…] → retired-wiki (the fields are ignored)
+ *
+ * The scheme and the first segment are case-insensitive, as in any URL; the rest is as strict as
+ * `parseObjectAddress` (IDs are lowered). Unknown or repeated query keys, anything else under
+ * `open/`, view addresses and other schemes are invalid: a deep link only ever opens an object.
+ */
+export function normalizeMemoraLink(raw: string): NormalizedLink {
+  if (
+    raw.length > maxAddressLength ||
+    raw.slice(0, addressPrefix.length).toLowerCase() !== addressPrefix
+  )
+    return invalidLink("scheme");
+  const rest = raw.slice(addressPrefix.length);
+  const hash = rest.indexOf("#");
+  const beforeHash = hash === -1 ? rest : rest.slice(0, hash);
+  const fragment = hash === -1 ? null : rest.slice(hash + 1);
+  const question = beforeHash.indexOf("?");
+  const path = question === -1 ? beforeHash : beforeHash.slice(0, question);
+  const query = question === -1 ? null : beforeHash.slice(question + 1);
+  const [first = "", ...segments] = path.split("/");
+  const authority = first.toLowerCase();
+
+  if (authority === "open") {
+    const [kind, id] = segments;
+    if (kind !== "source" && kind !== "wiki") return invalidLink("kind");
+    if (segments.length !== 2 || !id || !uuidPattern.test(id)) return invalidLink("id");
+    if (fragment !== null) return invalidLink("anchor");
+    const fields =
+      query === null ? new Map<string, string>() : parseLegacyQuery(query, legacyQueryKeys[kind]);
+    if (!fields) return invalidLink("query");
+    if (kind === "wiki") return { kind: "retired-wiki", id: id.toLowerCase() };
+    const relation = fields.get("relation");
+    return relation
+      ? {
+          kind: "object",
+          address: { kind: "source", id: id.toLowerCase(), anchor: { relation } },
+          legacy: "open-source-relation"
+        }
+      : {
+          kind: "object",
+          address: { kind: "source", id: id.toLowerCase() },
+          legacy: "open-source"
+        };
+  }
+
+  if (!isKind(authority)) return invalidLink("kind");
+  const [id] = segments;
+  if (segments.length !== 1 || !id || !uuidPattern.test(id)) return invalidLink("id");
+  if (query !== null) return invalidLink("query");
+  if (fragment === null)
+    return { kind: "object", address: { kind: authority, id: id.toLowerCase() } };
+  const anchor = parseAnchor(fragment);
+  return anchor
+    ? { kind: "object", address: { kind: authority, id: id.toLowerCase(), anchor } }
+    : invalidLink("anchor");
 }
 
 /** A string that is a well-formed object address; used at every process boundary. */

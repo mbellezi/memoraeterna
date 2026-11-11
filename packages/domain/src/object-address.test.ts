@@ -4,6 +4,8 @@ import {
   ObjectLocateInputSchema,
   ObjectLocateResultSchema,
   formatObjectAddress,
+  normalizeMemoraLink,
+  objectAnchorKeys,
   objectKinds,
   objectLocatePathLimit,
   objectLocateTopicPathLimit,
@@ -15,6 +17,7 @@ const id = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const chunk = "11111111-2222-4333-8444-555555555555";
 const span = "66666666-7777-4888-9999-aaaaaaaaaaaa";
 const section = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+const relation = "cccccccc-dddd-4eee-8fff-000000000000";
 
 describe("object addresses", () => {
   it("parses every visible kind into its kind and identity", () => {
@@ -36,6 +39,25 @@ describe("object addresses", () => {
       parseObjectAddress(`memora://source/${id}#section=${section}&span=${span}&passage=${chunk}`)
         ?.anchor
     ).toEqual({ passage: chunk, span, section });
+  });
+
+  it("parses the relation anchor and keeps it last in the canonical order", () => {
+    expect(objectAnchorKeys).toEqual(["passage", "span", "section", "relation"]);
+    expect(parseObjectAddress(`memora://source/${id}#relation=${relation}`)).toEqual({
+      kind: "source",
+      id,
+      anchor: { relation }
+    });
+    expect(formatObjectAddress({ kind: "source", id, anchor: { relation, passage: chunk } })).toBe(
+      `memora://source/${id}#passage=${chunk}&relation=${relation}`
+    );
+    for (const value of [
+      `memora://source/${id}#relation=`,
+      `memora://source/${id}#relation=not-a-uuid`,
+      `memora://source/${id}#relation=${relation}&relation=${relation}`,
+      `memora://source/${id}?relation=${relation}`
+    ])
+      expect(parseObjectAddress(value), value).toBeNull();
   });
 
   it("normalizes identifiers to lower case but keeps the scheme exact", () => {
@@ -84,7 +106,9 @@ describe("object addresses", () => {
       { span },
       { section },
       { span, passage: chunk },
-      { section, span, passage: chunk }
+      { section, span, passage: chunk },
+      { relation },
+      { relation, section, span, passage: chunk }
     ];
     for (const kind of objectKinds) {
       for (const anchor of anchors) {
@@ -195,5 +219,138 @@ describe("objects.locate contract", () => {
 
   it("keeps the topic path limit equal to the longest path the topic reads return", () => {
     expect(objectLocateTopicPathLimit).toBe(topicReadLimits.pathMax);
+  });
+});
+
+describe("normalizeMemoraLink", () => {
+  it("reads every canonical address, anchors included, exactly as the parser does", () => {
+    for (const kind of objectKinds) {
+      const text = `memora://${kind}/${id}`;
+      expect(normalizeMemoraLink(text)).toEqual({ kind: "object", address: { kind, id } });
+    }
+    const anchored = `memora://source/${id}#passage=${chunk}&span=${span}&section=${section}&relation=${relation}`;
+    expect(normalizeMemoraLink(anchored)).toEqual({
+      kind: "object",
+      address: parseObjectAddress(anchored)
+    });
+    expect(normalizeMemoraLink(`memora://topic/${id}`)).toEqual({
+      kind: "object",
+      address: { kind: "topic", id }
+    });
+  });
+
+  it("maps the legacy open/source forms onto the source address", () => {
+    expect(normalizeMemoraLink(`memora://open/source/${id}`)).toEqual({
+      kind: "object",
+      address: { kind: "source", id },
+      legacy: "open-source"
+    });
+    const link = normalizeMemoraLink(`memora://open/source/${id}?relation=${relation}`);
+    expect(link).toEqual({
+      kind: "object",
+      address: { kind: "source", id, anchor: { relation } },
+      legacy: "open-source-relation"
+    });
+    if (link.kind !== "object") throw new Error("expected an object");
+    expect(formatObjectAddress(link.address)).toBe(`memora://source/${id}#relation=${relation}`);
+  });
+
+  it("reads a legacy wiki link as retired, ignoring its revision and evidence", () => {
+    const retired = { kind: "retired-wiki", id };
+    expect(normalizeMemoraLink(`memora://open/wiki/${id}`)).toEqual(retired);
+    expect(normalizeMemoraLink(`memora://open/wiki/${id}?revision=${chunk}`)).toEqual(retired);
+    expect(normalizeMemoraLink(`memora://open/wiki/${id}?evidence=${span}`)).toEqual(retired);
+    expect(
+      normalizeMemoraLink(`memora://open/wiki/${id}?revision=${chunk}&evidence=${span}`)
+    ).toEqual(retired);
+    expect(
+      normalizeMemoraLink(`memora://open/wiki/${id}?evidence=${span}&revision=${chunk}`)
+    ).toEqual(retired);
+  });
+
+  it("lowers identifiers and reads the scheme and first segment case-insensitively", () => {
+    const upper = id.toUpperCase();
+    expect(normalizeMemoraLink(`MEMORA://Source/${upper}#Passage=${chunk}`)).toEqual({
+      kind: "invalid",
+      reason: "anchor"
+    });
+    expect(normalizeMemoraLink(`MEMORA://Source/${upper}#passage=${chunk.toUpperCase()}`)).toEqual({
+      kind: "object",
+      address: { kind: "source", id, anchor: { passage: chunk } }
+    });
+    expect(
+      normalizeMemoraLink(`Memora://OPEN/source/${upper}?relation=${relation.toUpperCase()}`)
+    ).toEqual({
+      kind: "object",
+      address: { kind: "source", id, anchor: { relation } },
+      legacy: "open-source-relation"
+    });
+    expect(normalizeMemoraLink(`memora://open/wiki/${upper}`)).toEqual({
+      kind: "retired-wiki",
+      id
+    });
+    // Below the first segment the spelling is exact.
+    expect(normalizeMemoraLink(`memora://open/SOURCE/${id}`)).toEqual({
+      kind: "invalid",
+      reason: "kind"
+    });
+    expect(normalizeMemoraLink(`memora://open/source/${id}?RELATION=${relation}`)).toEqual({
+      kind: "invalid",
+      reason: "query"
+    });
+  });
+
+  it("names the first part that fails", () => {
+    const cases: [string, string][] = [
+      ["", "scheme"],
+      [id, "scheme"],
+      [`https://source/${id}`, "scheme"],
+      [`memora:source/${id}`, "scheme"],
+      [` memora://source/${id}`, "scheme"],
+      [`memora://source/${id}#passage=${chunk}${"a".repeat(400)}`, "scheme"],
+      ["memora://", "kind"],
+      [`memora://wiki/${id}`, "kind"],
+      [`memora://topics/${id}`, "kind"],
+      [`memora://topic:80/${id}`, "kind"],
+      [`memora://user@topic/${id}`, "kind"],
+      ["memora://home", "kind"],
+      ["memora://settings/privacy", "kind"],
+      [`memora://open/topic/${id}`, "kind"],
+      [`memora://open/settings/${id}`, "kind"],
+      [`memora://open/note/${id}`, "kind"],
+      ["memora://open", "kind"],
+      ["memora://source", "id"],
+      ["memora://source/", "id"],
+      ["memora://source/not-a-uuid", "id"],
+      [`memora://source/${id}/`, "id"],
+      [`memora://source/${id}/extra`, "id"],
+      [`memora://source/${id} `, "id"],
+      [`memora://source/${id.slice(1)}`, "id"],
+      ["memora://open/source", "id"],
+      ["memora://open/source/not-a-uuid", "id"],
+      [`memora://open/source/${id}/extra`, "id"],
+      [`memora://open/wiki/${id}/`, "id"],
+      [`memora://source/${id}#`, "anchor"],
+      [`memora://source/${id}#unknown=${chunk}`, "anchor"],
+      [`memora://source/${id}#passage=${chunk}&passage=${chunk}`, "anchor"],
+      [`memora://source/${id}#relation=not-a-uuid`, "anchor"],
+      [`memora://source/${id}#passage=${chunk}?x=1`, "anchor"],
+      [`memora://open/source/${id}#relation=${relation}`, "anchor"],
+      [`memora://topic/${id}?revision=${id}`, "query"],
+      [`memora://source/${id}?relation=${relation}`, "query"],
+      [`memora://open/source/${id}?`, "query"],
+      [`memora://open/source/${id}?relation`, "query"],
+      [`memora://open/source/${id}?relation=`, "query"],
+      [`memora://open/source/${id}?relation=not-a-uuid`, "query"],
+      [`memora://open/source/${id}?relation=${relation}&relation=${relation}`, "query"],
+      [`memora://open/source/${id}?revision=${chunk}`, "query"],
+      [`memora://open/source/${id}?relation=${relation}&delete=true`, "query"],
+      [`memora://open/wiki/${id}?relation=${relation}`, "query"],
+      [`memora://open/wiki/${id}?delete=true`, "query"],
+      [`memora://open/wiki/${id}?revision=${chunk}&revision=${chunk}`, "query"],
+      [`memora://open/wiki/${id}?revision=not-a-uuid`, "query"]
+    ];
+    for (const [raw, reason] of cases)
+      expect(normalizeMemoraLink(raw), raw).toEqual({ kind: "invalid", reason });
   });
 });
