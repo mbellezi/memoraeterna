@@ -1762,8 +1762,6 @@ const settingsKeys = [
   "summaryMinimumWordCount",
   "entityIdentitySimilarityThreshold",
   "relationTypeSimilarityThreshold",
-  "knowledgeGraphMaxEntitiesPerSource",
-  "knowledgeGraphMaxRelationsPerSource",
   "keepLocalEmbeddingModelsLoaded",
   "activeMatchingPresetId"
 ] as const;

@@ -711,13 +711,6 @@ void app.whenReady().then(() => {
       (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
     getRelationTypeSimilarityThreshold: async () =>
       (await settingsService!.getApp()).relationTypeSimilarityThreshold,
-    getKnowledgeGraphLimits: async () => {
-      const settings = await settingsService!.getApp();
-      return {
-        maxEntities: settings.knowledgeGraphMaxEntitiesPerSource,
-        maxRelations: settings.knowledgeGraphMaxRelationsPerSource
-      };
-    },
     logger: console,
     topicHooks: topicTreeServices.hooks
   });

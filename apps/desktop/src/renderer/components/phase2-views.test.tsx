@@ -502,10 +502,8 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Minimum words for a summary");
     expect(html).toContain('id="summaryMinimumWordCount"');
     expect(html).toContain('value="40"');
-    expect(html).toContain('id="knowledgeGraphMaxEntitiesPerSource"');
-    expect(html).toContain('value="250"');
-    expect(html).toContain('id="knowledgeGraphMaxRelationsPerSource"');
-    expect(html).toContain('value="500"');
+    expect(html).not.toContain('id="knowledgeGraphMaxEntitiesPerSource"');
+    expect(html).not.toContain('id="knowledgeGraphMaxRelationsPerSource"');
     expect(html).not.toContain('id="bookMetadataProvider"');
     expect(html).not.toContain('id="googleBooksApiKey"');
   });

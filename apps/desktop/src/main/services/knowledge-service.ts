@@ -178,13 +178,8 @@ export interface KnowledgeServiceOptions {
   getContentLanguage?: () => Promise<string>;
   getEntityIdentitySimilarityThreshold?: () => Promise<number>;
   getRelationTypeSimilarityThreshold?: () => Promise<number>;
-  /**
-   * @deprecated Ignored since F5 (D22): no budget spans a source's graph batches any more, so each
-   * batch's prompt depends only on its own input. T123 removes it with its two settings.
-   */
-  getKnowledgeGraphLimits?: () => Promise<{ maxEntities: number; maxRelations: number }>;
   summaryMaxInputCharacters?: number;
-  knowledgeGraphMaxInputCharacters?: number;
+  graphMaxInputCharacters?: number;
   userDataPath: string;
   getStorageSettings: () => Promise<StorageSettings>;
   getUploadedFilesBasePath: () => Promise<string | null>;
@@ -230,16 +225,16 @@ export interface KnowledgeGraphGenerationContext {
 export class KnowledgeService {
   private readonly summaryMaxInputCharacters: number;
   /** An explicit batch size; absent, the batch follows the writer's locality (F3 D36). */
-  private readonly knowledgeGraphMaxInputCharacters: number | null;
+  private readonly graphMaxInputCharacters: number | null;
   private readonly sourceDeletionService: SourceDeletionService;
   private readonly relationMatcher: RelationMatcher;
 
   public constructor(private readonly options: KnowledgeServiceOptions) {
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
-    this.knowledgeGraphMaxInputCharacters =
-      options.knowledgeGraphMaxInputCharacters === undefined
+    this.graphMaxInputCharacters =
+      options.graphMaxInputCharacters === undefined
         ? null
-        : Math.max(2_000, options.knowledgeGraphMaxInputCharacters);
+        : Math.max(2_000, options.graphMaxInputCharacters);
     this.sourceDeletionService = new SourceDeletionService({
       getPool: options.getPool,
       getStorageSettings: options.getStorageSettings,
@@ -1303,7 +1298,7 @@ export class KnowledgeService {
     // Every call states the same caps; no budget spans the source's batches (F5 D22), so they run up
     // to the writer's lane limit and each prompt depends only on its own input.
     const batchLimits = { maxEntities: batch.maxEntities, maxRelations: batch.maxRelations };
-    const maxInputCharacters = this.knowledgeGraphMaxInputCharacters ?? batch.maxInputCharacters;
+    const maxInputCharacters = this.graphMaxInputCharacters ?? batch.maxInputCharacters;
     const sourceInputKind = processingMode ? "catalog_metadata" : "source_chunks";
     const sourceConcurrency = await this.routeConcurrency(
       "knowledge-graph-generation",

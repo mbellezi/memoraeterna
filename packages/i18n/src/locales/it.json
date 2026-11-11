@@ -1760,13 +1760,6 @@
       "minimumWordCount": "Parole minime per un riassunto",
       "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA."
     },
-    "knowledgeGraphLimits": {
-      "title": "Limiti del grafo della conoscenza",
-      "description": "Limita l’estrazione per documento autonomo o sottoelemento elaborabile.",
-      "entities": "Entità massime",
-      "relations": "Relazioni massime",
-      "hint": "Il limite residuo viene incluso in ogni prompt IA e il backend applica gli stessi limiti prima del salvataggio."
-    },
     "metadataEnrichment": {
       "apiKey": "Chiave API Google Books",
       "saveKey": "Salva chiave",

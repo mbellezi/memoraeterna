@@ -1764,13 +1764,6 @@
       "minimumWordCount": "Nombre minimal de mots pour un résumé",
       "minimumWordCountHint": "Utilisez 0 pour désactiver cette heuristique. Les sections structurelles ou uniquement bibliographiques restent exclues par les instructions de l’IA."
     },
-    "knowledgeGraphLimits": {
-      "title": "Limites du graphe de connaissances",
-      "description": "Limite l’extraction par document autonome ou sous-élément traitable.",
-      "entities": "Nombre maximal d’entités",
-      "relations": "Nombre maximal de relations",
-      "hint": "Le quota restant est inclus dans chaque prompt IA et le backend applique les mêmes limites avant l’enregistrement."
-    },
     "metadataEnrichment": {
       "apiKey": "Clé API Google Books",
       "saveKey": "Enregistrer la clé",

@@ -1,7 +1,7 @@
 /**
  * Sources the cumulative graph budget bound, counted from recorded traces (F5 D23, T122). Until F5
  * a source's graph extraction lowered each call's caps to what was left of a per-source budget
- * (`knowledgeGraphMax{Entities,Relations}PerSource`, 250 and 500 by default) and stopped once no
+ * (the two per-source graph-cap settings, 250 and 500 by default, removed in T123) and stopped once no
  * entity was left, so for a source whose answers reached it some batches were cut, asked with lower
  * caps or never sent. Since T122 every batch states the same caps and runs: such a source's prompts
  * change, a cassette replay meets them as misses, and its calls per chapter grow. This counts those

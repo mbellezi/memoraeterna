@@ -275,7 +275,7 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
   });
   const run = async (
     locality: "local" | "remote" | null,
-    options: { knowledgeGraphMaxInputCharacters?: number } = {},
+    options: { graphMaxInputCharacters?: number } = {},
     output: unknown = { entities: [], relations: [] }
   ) => {
     mocks.chunks.listByDocument.mockResolvedValue(longChunks);
@@ -341,7 +341,7 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
   });
 
   it("lets an explicit batch size override the writer's", async () => {
-    const { prompts } = await run("remote", { knowledgeGraphMaxInputCharacters: 7_000 });
+    const { prompts } = await run("remote", { graphMaxInputCharacters: 7_000 });
     expect(prompts).toHaveLength(2);
   });
 
@@ -360,11 +360,7 @@ describe("knowledge graph batches by writer and the extraction pin (F3 D5, D36)"
         }
       ]
     };
-    const { prompts, traces } = await run(
-      "remote",
-      { knowledgeGraphMaxInputCharacters: 7_000 },
-      bad
-    );
+    const { prompts, traces } = await run("remote", { graphMaxInputCharacters: 7_000 }, bad);
     // Two batches, one dropped relation each, no repair call.
     expect(prompts).toHaveLength(2);
     expect(traces.find((trace) => trace.operation === "graph_salvage")?.details).toEqual({

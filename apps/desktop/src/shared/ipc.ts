@@ -423,8 +423,6 @@ export const appSettingsSchema = z.object({
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1).default(0.92),
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
-  knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
-  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
   atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault(
     recommendedMatchingConfiguration.atomicNoteMatchingSettings
   ),
@@ -455,8 +453,6 @@ export const appSettingsUpdateSchema = z
     summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional(),
     entityIdentitySimilarityThreshold: z.number().min(0).max(1).optional(),
     relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),
-    knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
-    knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional(),
     atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.optional(),
     canonicalMatchingSettings: CanonicalMatchingSettingsSchema.optional(),
     sourceRelationSettings: SourceRelationSettingsSchema.optional()
@@ -1871,8 +1867,6 @@ export const defaultAppSettings = {
   keepLocalEmbeddingModelsLoaded: true,
   bookMetadataProvider: "auto",
   summaryMinimumWordCount: 40,
-  knowledgeGraphMaxEntitiesPerSource: 250,
-  knowledgeGraphMaxRelationsPerSource: 500,
   ...recommendedMatchingConfiguration,
   matchingPresets: [],
   activeMatchingPresetId: recommendedMatchingPresetId

@@ -113,10 +113,19 @@ describe("desktop IPC contracts", () => {
       themeMode: "system",
       graphWheelZoomSensitivity: 1,
       keepLocalEmbeddingModelsLoaded: true,
-      summaryMinimumWordCount: 40,
-      knowledgeGraphMaxEntitiesPerSource: 250,
-      knowledgeGraphMaxRelationsPerSource: 500
+      summaryMinimumWordCount: 40
     });
+    // The two cumulative graph-cap settings left in F5 (T123): a stored value is stripped on read
+    // and an update that carries one is refused.
+    const stripped = appSettingsSchema.parse({
+      ...defaultAppSettings,
+      language: "en",
+      updatedAt: new Date(0).toISOString(),
+      knowledgeGraphMaxEntitiesPerSource: 125,
+      knowledgeGraphMaxRelationsPerSource: 300
+    });
+    expect(stripped).not.toHaveProperty("knowledgeGraphMaxEntitiesPerSource");
+    expect(stripped).not.toHaveProperty("knowledgeGraphMaxRelationsPerSource");
 
     expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
       themeMode: "light"
@@ -142,22 +151,16 @@ describe("desktop IPC contracts", () => {
     expect(appSettingsUpdateSchema.parse({ summaryMinimumWordCount: 75 })).toEqual({
       summaryMinimumWordCount: 75
     });
-    expect(
+    expect(() =>
       appSettingsUpdateSchema.parse({
         knowledgeGraphMaxEntitiesPerSource: 125,
         knowledgeGraphMaxRelationsPerSource: 300
       })
-    ).toEqual({
-      knowledgeGraphMaxEntitiesPerSource: 125,
-      knowledgeGraphMaxRelationsPerSource: 300
-    });
+    ).toThrow();
     expect(appSettingsUpdateSchema.parse({ keepLocalEmbeddingModelsLoaded: false })).toEqual({
       keepLocalEmbeddingModelsLoaded: false
     });
     expect(() => appSettingsUpdateSchema.parse({ summaryMinimumWordCount: -1 })).toThrow();
-    expect(() =>
-      appSettingsUpdateSchema.parse({ knowledgeGraphMaxEntitiesPerSource: 0 })
-    ).toThrow();
     expect(() => appSettingsUpdateSchema.parse({ language: "de" })).toThrow();
   });
 

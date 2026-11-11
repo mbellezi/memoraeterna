@@ -1762,13 +1762,6 @@
       "minimumWordCount": "Mínimo de palavras para gerar resumo",
       "minimumWordCountHint": "Use 0 para desativar esta heurística de tamanho. Partes estruturais ou apenas referenciais continuam excluídas pelas instruções da IA."
     },
-    "knowledgeGraphLimits": {
-      "title": "Limites do grafo de conhecimento",
-      "description": "Limita a extração do grafo por documento único ou subitem processável.",
-      "entities": "Máximo de entidades",
-      "relations": "Máximo de relações",
-      "hint": "O saldo restante entra em cada prompt da IA e o backend aplica os mesmos limites antes de salvar."
-    },
     "metadataEnrichment": {
       "apiKey": "Chave de API do Google Books",
       "saveKey": "Salvar chave",

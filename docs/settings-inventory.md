@@ -157,8 +157,8 @@ fallback of tests and scripts. The stored document carries `updatedAt` (internal
 | `summaryMinimumWordCount` | 40 | `M/index.ts:473` → `knowledge-service.ts:639` | Personalization `:1039` | automation | keep: Advanced |
 | `entityIdentitySimilarityThreshold` | 0.92 | section 3.2 row 3 | Matching `:810` | automation | **Advanced › Matching (Q4)**; the map said "drop to typed config" |
 | `relationTypeSimilarityThreshold` | 0.92 | row 2 | Matching `:797` | automation | Advanced › Matching |
-| `knowledgeGraphMaxEntitiesPerSource` | 250 | `M/index.ts:479-484` → `knowledge-service.ts:1228` → `M/services/knowledge-processing.ts:404-417,492-495` | Personalization `:1092` | automation | keep: Advanced |
-| `knowledgeGraphMaxRelationsPerSource` | 500 | same | Personalization `:1113` | automation | keep: Advanced |
+| `knowledgeGraphMaxEntitiesPerSource` | 250 | `M/index.ts:479-484` → `knowledge-service.ts:1228` → `M/services/knowledge-processing.ts:404-417,492-495` | Personalization `:1092` | automation | **removed in F5 (T123, D22)**: a cumulative cap makes batch N depend on batches 0..N-1; caps are fixed at 12/12 per call; a stored value is stripped on read |
+| `knowledgeGraphMaxRelationsPerSource` | 500 | same | Personalization `:1113` | automation | **removed in F5 (T123, D22)**, as above |
 | `atomicNoteMatchingSettings` `{maxRerankOutputTokens}` | 4096 (schema and recommended agree) | row 4 | Matching › Advanced | automation | Advanced › Matching |
 | `canonicalMatchingSettings` (4 members) | 3 / 3 / 12 / 12000 (schema and recommended agree) | rows 5-8 | Matching › Advanced | automation | Advanced › Matching |
 | `sourceRelationSettings` (9 members) | recommended set: 2 / 800 / 1000 / 4096 / 4 / 60000 / 0.75 / 0.85 / false; **Zod member defaults differ** (section 11.4) | rows 9-17 | Matching | automation | Advanced › Matching |

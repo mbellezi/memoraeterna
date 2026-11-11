@@ -72,9 +72,9 @@ describe("E7: the settings that change what the app does by itself", () => {
     const hidden = settingsRegistry.filter(
       (entry) => entry.category === "automation" && !visibleAutomationSettings().includes(entry)
     );
-    // The 16 matching values, the preset selector and its saved list, the summary and graph limits,
+    // The 16 matching values, the preset selector and its saved list, the summary minimum,
     // keep-loaded and the decider mode.
-    expect(hidden.length).toBe(16 + 2 + 3 + 2);
+    expect(hidden.length).toBe(16 + 2 + 1 + 2);
     for (const entry of hidden) expect(entry.placement, entry.id).toBe("advanced");
   });
 

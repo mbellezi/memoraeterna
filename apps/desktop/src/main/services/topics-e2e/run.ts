@@ -418,13 +418,6 @@ async function runPass(
         (await settings.getApp()).entityIdentitySimilarityThreshold,
       getRelationTypeSimilarityThreshold: async () =>
         (await settings.getApp()).relationTypeSimilarityThreshold,
-      getKnowledgeGraphLimits: async () => {
-        const app = await settings.getApp();
-        return {
-          maxEntities: app.knowledgeGraphMaxEntitiesPerSource,
-          maxRelations: app.knowledgeGraphMaxRelationsPerSource
-        };
-      },
       logger: quietLogger,
       topicHooks: topics.hooks
     });

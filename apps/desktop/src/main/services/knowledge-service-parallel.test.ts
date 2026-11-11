@@ -140,9 +140,7 @@ describe("graph extraction batches in parallel (F5 D22)", () => {
       aiService: { traceOperation, ...aiService } as unknown as AiService,
       userDataPath: "/tmp/memora-test",
       getStorageSettings: async () => ({}) as never,
-      getUploadedFilesBasePath: async () => null,
-      // Deprecated and ignored: no budget spans a source's batches any more.
-      getKnowledgeGraphLimits: async () => ({ maxEntities: 1, maxRelations: 1 })
+      getUploadedFilesBasePath: async () => null
     });
 
   it("runs the batches up to the route's lane limit and stores them in batch order", async () => {

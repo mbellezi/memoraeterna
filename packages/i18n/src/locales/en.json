@@ -1762,13 +1762,6 @@
       "minimumWordCount": "Minimum words for a summary",
       "minimumWordCountHint": "Use 0 to disable this size heuristic. Structural and reference-only sections are still excluded by the AI instructions."
     },
-    "knowledgeGraphLimits": {
-      "title": "Knowledge graph limits",
-      "description": "Cap graph extraction for each standalone document or processable subitem.",
-      "entities": "Maximum entities",
-      "relations": "Maximum relations",
-      "hint": "The remaining allowance is included in every AI prompt and the backend enforces the same hard limits before saving."
-    },
     "metadataEnrichment": {
       "apiKey": "Google Books API key",
       "saveKey": "Save key",

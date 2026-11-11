@@ -211,24 +211,6 @@ export const settingsRegistry: readonly SettingEntry[] = [
     reader: `${main}/index.ts`
   },
   {
-    id: "knowledgeGraphMaxEntitiesPerSource",
-    store: "app.preferences",
-    category: "automation",
-    placement: "advanced",
-    scope: "knowledge",
-    control: "knowledgeGraphMaxEntitiesPerSource",
-    reader: `${main}/index.ts`
-  },
-  {
-    id: "knowledgeGraphMaxRelationsPerSource",
-    store: "app.preferences",
-    category: "automation",
-    placement: "advanced",
-    scope: "knowledge",
-    control: "knowledgeGraphMaxRelationsPerSource",
-    reader: `${main}/index.ts`
-  },
-  {
     id: "keepLocalEmbeddingModelsLoaded",
     store: "app.preferences",
     category: "automation",
