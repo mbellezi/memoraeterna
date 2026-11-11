@@ -36,8 +36,9 @@ unless marked agent-days. Plan decision 34 holds: F5's exit is automated only, a
   alone.**
 - **Agent names** show model and effort, for example "Opus (high)".
 
-The Settings v2 mockups (T107, done 2026-11-11) are rebuilt on the gate D design and published as a private artifact;
-the orchestrator records the link here when it has published it. The design record `docs/design/f5-workspace.md`
+The Settings v2 mockups (T107, done 2026-11-11) are rebuilt on the gate D design and published with the workspace
+mockup as one private artifact for the owner: <https://claude.ai/artifact/Q6eXBYpZvhuomeBExbnUQK> (static pages,
+synthetic content). The design record `docs/design/f5-workspace.md`
 (gate D, passed 2026-11-11) binds visuals, layout, copy and states; this file binds behaviour, data and keys, with the
 gate D amendments applied below.
 
