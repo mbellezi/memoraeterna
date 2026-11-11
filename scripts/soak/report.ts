@@ -36,6 +36,7 @@ import {
 import {
   parseNdjson,
   soakEventSchema,
+  sourceJudgeOperation,
   soakFiles,
   soakMetaSchema,
   soakSampleSchema,
@@ -413,6 +414,17 @@ export function isUnconstrainedLocalWriterCall(row: TaskRunRecord): boolean {
   );
 }
 
+/**
+ * C4's reading "A" (owner amendment of 10-25 to D23: the source judge is sent to a local runtime
+ * with `grammar: false`, so its rows are in schema mode `none` by design). The judge's calls are
+ * the ones that ran for the `source_relation_matching` operation, which the run's task-run records
+ * export from each call's monitoring entry. A run recorded before the field has no `operation` on
+ * any row: nothing is recognised as the judge's there, and the "mode none" line reads as it did.
+ */
+export function isSourceJudgeCall(row: TaskRunRecord): boolean {
+  return row.operation === sourceJudgeOperation;
+}
+
 function repairsCheck(
   run: LoadedRun,
   injected: Map<string, string>,
@@ -422,8 +434,14 @@ function repairsCheck(
   // C4's re-run counts every structured call of the local writer (decision 31a set them aside in F3).
   const apart = countLocalWriter ? [] : all.filter(isUnconstrainedLocalWriterCall);
   const calls = countLocalWriter ? all : all.filter((row) => !isUnconstrainedLocalWriterCall(row));
-  // C4: no structured call of the local writer may run unconstrained (schema mode `none`).
-  const unconstrained = countLocalWriter ? all.filter(isUnconstrainedLocalWriterCall) : [];
+  // C4: no structured call of the local writer may run unconstrained (schema mode `none`), except
+  // the source judge's, which are reported apart and stay counted in the rate (reading "A").
+  const noneRows = countLocalWriter ? all.filter(isUnconstrainedLocalWriterCall) : [];
+  const judgeRows = noneRows.filter(isSourceJudgeCall);
+  const unconstrained = noneRows.filter((row) => !isSourceJudgeCall(row));
+  const operationRecorded = run.rows.some((row) => row.operation !== undefined);
+  const judgeModels = [...new Set(judgeRows.map((row) => row.modelId))].sort();
+  const judgeOf = (model: string) => judgeRows.filter((row) => row.modelId === model);
   const repairs = calls.filter((row) => row.isRepair);
   const apartRepairs = apart.filter((row) => row.isRepair);
   const share = (count: number, of: number) => (of === 0 ? 0 : count / of);
@@ -445,16 +463,25 @@ function repairsCheck(
     id: "repairs",
     title: "Repairs (D35) over non-injected structured generative calls",
     bar: countLocalWriter
-      ? "<= 2 % of the non-injected structured calls, every local-writer row counted (C4), and 0 local-writer structured rows in schema mode none"
+      ? "<= 2 % of the non-injected structured calls, every local-writer row counted (C4), and 0 local-writer structured rows in schema mode none (the source judge's, grammar: false by design, are reported apart and stay counted)"
       : "<= 2 % of the structured calls that count; decision 31a sets aside the local MLX writer's (lane local, runtime mlx, no enforced schema mode), reported apart",
     status,
     value: countLocalWriter
-      ? `${count(calls)} counted, the local writer's included; ${unconstrained.length} local-writer structured row(s) in mode none`
+      ? `${count(calls)} counted, the local writer's included; ${unconstrained.length} local-writer structured row(s) in mode none${judgeRows.length > 0 ? `, besides the source judge's ${judgeRows.length} (mode none by design, counted in the rate)` : ""}`
       : `${count(calls)} counted; set aside by decision 31a: ${apart.length} local writer call(s), ${apartRepairs.length} repair(s) = ${pct(share(apartRepairs.length, apart.length))} (information)`,
     details: [
       ...(unconstrained.length > 0
         ? [
             `${unconstrained.length} structured call(s) of the local writer ran without an enforced schema mode: C4 needs 0`
+          ]
+        : []),
+      ...judgeModels.map(
+        (model) =>
+          `source judge, ${model}: ${judgeOf(model).length} row(s) in mode none by design (grammar: false), ${count(judgeOf(model))} (counted in the rate)`
+      ),
+      ...(noneRows.length > 0 && !operationRecorded
+        ? [
+            "this run's task-run records carry no operation (recorded before the field): the source judge's rows are not told apart and count in the mode none line, as before"
           ]
         : []),
       ...classes.map((workloadClass) => {
@@ -472,6 +499,15 @@ function repairsCheck(
     data: {
       countLocalWriter: countLocalWriter ? 1 : 0,
       unconstrained: unconstrained.length,
+      operationRecorded: operationRecorded ? 1 : 0,
+      "judge.calls": judgeRows.length,
+      "judge.repairs": judgeRows.filter((row) => row.isRepair).length,
+      ...Object.fromEntries(
+        judgeModels.flatMap((model) => [
+          [`judge.model.${model}.calls`, judgeOf(model).length],
+          [`judge.model.${model}.repairs`, judgeOf(model).filter((row) => row.isRepair).length]
+        ])
+      ),
       ...Object.fromEntries(
         classes.flatMap((workloadClass) => {
           const of = (rows: TaskRunRecord[]) =>

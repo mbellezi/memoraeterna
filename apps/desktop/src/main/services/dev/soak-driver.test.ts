@@ -337,6 +337,31 @@ describe("the soak driver", () => {
     expect(runs.records.map((record) => record.id)).toEqual(["a", "b"]);
   });
 
+  it("holds a call whose monitoring entry is not linked yet for its operation, then writes it once with the operation", async () => {
+    const harness = ports();
+    const unlinked = { ...row("a", "2026-10-20T08:00:50.000Z"), operation: null };
+    const never = { ...row("b", "2026-10-20T08:00:50.000Z"), operation: null };
+    const old = row("c", "2026-10-20T08:00:50.000Z");
+    harness.setRows([unlinked, never, old]);
+    const { directory, clock, done } = await start(harness.ports);
+    // The first minute's read finds "a" and "b" 10 s after they ended, without an operation: they
+    // wait. The link then appears for "a" only; "c" has no operation field at all and is written.
+    await clock.advance(minute);
+    harness.setRows([{ ...unlinked, operation: "source_relation_matching" }, never, old]);
+    await clock.advance(12 * minute);
+    await done;
+    const runs = parseNdjson(
+      readFileSync(join(directory, soakFiles.taskRuns), "utf8"),
+      taskRunRecordSchema
+    );
+    const byId = new Map(runs.records.map((record) => [record.id, record]));
+    expect(runs.records).toHaveLength(3);
+    expect(byId.get("a")?.operation).toBe("source_relation_matching");
+    // A call that never gets a link is written once the wait is over, with a null operation.
+    expect(byId.get("b")?.operation).toBeNull();
+    expect(byId.get("c")?.operation).toBeUndefined();
+  });
+
   it("writes each failed job once, and none that failed before the run began", async () => {
     const harness = ports();
     const failed = (id: string, at: string): JobFailureRecord => ({

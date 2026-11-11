@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   soakFiles,
+  sourceJudgeOperation,
   type ExchangeRecord,
   type JobFailureEvent,
   type SoakEvent,
@@ -18,6 +19,7 @@ import {
   classifyError,
   injectedJobFailures,
   injectedRows,
+  isSourceJudgeCall,
   isStructuredGenerative,
   isUnconstrainedLocalWriterCall,
   loadRun,
@@ -536,6 +538,121 @@ describe("repairs", () => {
     const check = analyzeRun(run).checks.find((entry) => entry.id === "repairs")!;
     // The writer on the local MLX lane: set aside by decision 31a, reported with its repair.
     expect(check.details).toContain("decide: counted 0 of 0 = 0.00 %; set aside 1 of 2 = 50.00 %");
+  });
+
+  describe("C4's reading A: the source judge's rows in mode none", () => {
+    const judge = (offsetMs: number, overrides: Partial<TaskRunRecord> = {}) =>
+      row(offsetMs, {
+        taskType: "reranking",
+        workloadClass: "decide",
+        schemaMode: "none",
+        operation: sourceJudgeOperation,
+        ...overrides
+      });
+    // Only the rows given: the good run's own graph call is a mode none row without an operation.
+    const repairs = (rows: TaskRunRecord[]) =>
+      analyzeRun({ ...goodRun(), rows }, { countLocalWriter: true }).checks.find(
+        (entry) => entry.id === "repairs"
+      )!;
+    // Every other row of the run carries the field too, as in a run recorded with it.
+    const withField = (entry: TaskRunRecord) => ({ ...entry, operation: entry.operation ?? null });
+    const rest = [
+      writer(80 * minute, { schemaMode: "grammar", operation: "knowledge_graph" }),
+      answer(81 * minute, { operation: "ask" })
+    ];
+
+    it("leaves the judge's rows out of the mode none line, reports them apart by model, and counts them in the rate", () => {
+      const check = repairs(
+        [
+          ...rest,
+          judge(90 * minute),
+          judge(91 * minute, { isRepair: true, attempt: 1 }),
+          judge(92 * minute, { modelId: "other-writer" })
+        ].map(withField)
+      );
+      expect(check.value).toContain("0 local-writer structured row(s) in mode none");
+      expect(check.value).toContain("source judge's 3 (mode none by design, counted in the rate)");
+      expect(check.details).toContain(
+        "source judge, writer: 2 row(s) in mode none by design (grammar: false), 1 of 2 = 50.00 % (counted in the rate)"
+      );
+      expect(check.details).toContain(
+        "source judge, other-writer: 1 row(s) in mode none by design (grammar: false), 0 of 1 = 0.00 % (counted in the rate)"
+      );
+      // The judge's repair is in the rate: 1 repair over the 3 judge rows and the other 2 calls.
+      expect(check.value).toContain("1 of 5 = 20.00 % counted, the local writer's included");
+      expect(check.data).toMatchObject({
+        unconstrained: 0,
+        operationRecorded: 1,
+        "judge.calls": 3,
+        "judge.repairs": 1,
+        "judge.model.writer.calls": 2,
+        "judge.model.writer.repairs": 1,
+        "judge.model.other-writer.calls": 1
+      });
+      // The repair counted over the bar (20 %), though nothing is in mode none outside the judge.
+      expect(check.status).toBe("fail");
+    });
+
+    it("recognises the judge by its operation only, not by the task type", () => {
+      expect(isSourceJudgeCall(judge(0))).toBe(true);
+      expect(isSourceJudgeCall(judge(0, { operation: "other" }))).toBe(false);
+      expect(isSourceJudgeCall(judge(0, { operation: null }))).toBe(false);
+      expect(isSourceJudgeCall(judge(0, { operation: undefined }))).toBe(false);
+    });
+
+    it("still fails a mode none row that is not the judge's, whatever its task type", () => {
+      // A reranking row on the writer in mode none, but for another operation: not the judge.
+      const check = repairs(
+        [
+          ...rest,
+          judge(90 * minute),
+          judge(91 * minute, { operation: "something_else" }),
+          judge(92 * minute, { operation: null })
+        ].map(withField)
+      );
+      expect(check.value).toContain("2 local-writer structured row(s) in mode none");
+      expect(check.data).toMatchObject({ unconstrained: 2, "judge.calls": 1 });
+      expect(check.details.join(" ")).toContain("2 structured call(s) of the local writer ran");
+    });
+
+    it("passes when the judge's rows are the only ones in mode none and the rate holds", () => {
+      const many = Array.from({ length: 60 }, (_, index) =>
+        answer(100 * minute + index * 1_000, { operation: "ask" })
+      );
+      const check = analyzeRun(
+        {
+          ...goodRun(),
+          rows: [
+            ...many,
+            ...Array.from({ length: 5 }, (_, index) => judge(95 * minute + index * 1_000))
+          ].map(withField)
+        },
+        { countLocalWriter: true }
+      ).checks.find((entry) => entry.id === "repairs")!;
+      expect(check.status).toBe("pass");
+      expect(check.value).toContain("0 local-writer structured row(s) in mode none");
+      expect(check.value).toContain("source judge's 5");
+    });
+
+    it("reads a run recorded before the field as it did: the judge's rows count in the line, and the report says so", () => {
+      const check = repairs([
+        writer(80 * minute, { schemaMode: "grammar" }),
+        judge(90 * minute, { operation: undefined })
+      ]);
+      expect(check.value).toContain("1 local-writer structured row(s) in mode none");
+      expect(check.data).toMatchObject({ operationRecorded: 0, "judge.calls": 0 });
+      expect(check.details.join(" ")).toContain("carry no operation");
+      expect(check.status).toBe("fail");
+    });
+
+    it("does not change the report without --count-local-writer", () => {
+      const rows = [...rest, judge(90 * minute), judge(91 * minute, { isRepair: true })].map(
+        withField
+      );
+      const check = analyzeRun(goodRun({ rows })).checks.find((entry) => entry.id === "repairs")!;
+      expect(check.value).toContain("set aside by decision 31a");
+      expect(check.value).not.toContain("source judge");
+    });
   });
 });
 

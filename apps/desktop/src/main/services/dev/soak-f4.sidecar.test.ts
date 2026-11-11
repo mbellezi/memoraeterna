@@ -31,6 +31,7 @@ import {
 import type { AiService } from "../ai-service.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { noteMatchInputHash } from "../relations/relation-matcher.js";
+import { sourceMatchingOperation } from "../source-relation-processing.js";
 import { createF4Ports } from "./soak-f4-ports.js";
 import { createSoakHooks } from "./soak-hooks.js";
 import {
@@ -57,6 +58,7 @@ import {
   MemoryEventSink,
   jobDoneSchema,
   outcomeSchema,
+  sourceJudgeOperation,
   taskRunRecordSchema
 } from "./soak-records.js";
 import { findRealRemoteReach } from "./soak-routes.js";
@@ -178,6 +180,40 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       ["remote:abc", 5400, 700, "background"]
     ]);
     expect(rows[1]).toMatchObject({ jobId: job, budgetEstimateUsd: 0.0123 });
+  });
+
+  it("reads the operation of an audit row from its monitoring entry, null when none is linked", async () => {
+    const judge = randomUUID();
+    const unlinked = randomUUID();
+    const far = randomUUID();
+    await pool.query(
+      `insert into ai_task_runs (id, task_type, provider, model_id, runtime, duration_ms, status,
+         started_at, finished_at, lane, workload_class, is_repair, schema_mode)
+       values ($1, 'reranking', 'local-mlx', 'op-judge-writer', 'mlx', 900, 'succeeded',
+         now() - interval '4 seconds', now() - interval '3 seconds', 'local', 'decide', false, 'none'),
+        ($2, 'reranking', 'local-mlx', 'op-unlinked-writer', 'mlx', 900, 'succeeded',
+         now() - interval '4 seconds', now() - interval '3 seconds', 'local', 'decide', false, 'none'),
+        ($3, 'reranking', 'local-mlx', 'op-far-writer', 'mlx', 900, 'succeeded',
+         now() - interval '4 seconds', now() - interval '3 seconds', 'local', 'decide', false, 'none')`,
+      [judge, unlinked, far]
+    );
+    await pool.query(
+      `insert into monitoring_operations (kind, operation, stage, status, started_at, ai_task_run_id)
+       values ('ai', $2, 'sourceMatching', 'succeeded', now() - interval '4 seconds', $1::uuid),
+              ('ai', 'earlier_call', 'x', 'succeeded', now() - interval '3 hours', $3::uuid)`,
+      [judge, sourceJudgeOperation, far]
+    );
+    const rows = (await readTaskRuns(pool, Date.now() - 60_000)).filter((row) =>
+      row.modelId.startsWith("op-")
+    );
+    for (const row of rows) taskRunRecordSchema.parse(row);
+    const operationOf = (model: string) => rows.find((row) => row.modelId === model)?.operation;
+    expect(operationOf("op-judge-writer")).toBe(sourceJudgeOperation);
+    // No entry linked to the row (yet), or one that began hours away: nothing is guessed.
+    expect(operationOf("op-unlinked-writer")).toBeNull();
+    expect(operationOf("op-far-writer")).toBeNull();
+    // The product's name for the judge's operation is the one the report looks for.
+    expect(sourceJudgeOperation).toBe(sourceMatchingOperation);
   });
 
   it("queues the explanation backfill of the relations picked, each due when the window says, at once by default", async () => {

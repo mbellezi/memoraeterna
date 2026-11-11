@@ -345,7 +345,12 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   const iso = (ms: number) => new Date(ms).toISOString();
   const emit = (event: SoakEvent) => options.sink.append(event);
 
-  const collect = async () => {
+  // An audit row is read before its monitoring entry is linked to it (the entry finishes just after
+  // the row is written), and its operation then reads null. The row waits this long for the link, so
+  // the operation the report sets the source judge's rows apart by is not lost to that gap; the
+  // final collection takes whatever is there.
+  const operationGraceMs = 30_000;
+  const collect = async (final = false) => {
     const at = clock.now();
     try {
       samples.append({
@@ -361,6 +366,13 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
       const rows = await ports.taskRuns(cursor - 2 * minute);
       for (const row of rows) {
         if (seen.has(row.id)) continue;
+        if (
+          !final &&
+          row.operation === null &&
+          row.finishedAt &&
+          clock.now() - Date.parse(row.finishedAt) < operationGraceMs
+        )
+          continue;
         seen.add(row.id);
         taskRuns.append(row);
         counts.taskRuns += 1;
@@ -678,7 +690,7 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
   const settle = new AbortController();
   await Promise.race([Promise.all(running.values()), clock.sleep(settleMs, settle.signal)]);
   settle.abort();
-  await collect();
+  await collect(true);
   const endedAt = clock.now();
   await writeFile(join(directory, soakFiles.meta), `${JSON.stringify(meta(endedAt), null, 2)}\n`);
   await Promise.all([samples.flush(), taskRuns.flush(), options.sink.flush?.()]);

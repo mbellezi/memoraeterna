@@ -275,28 +275,42 @@ export async function countAnswerCalls(db: Db, sinceMs: number): Promise<number>
   return result.rows[0]?.calls ?? 0;
 }
 
-/** The audit rows of the calls that ended after `sinceMs` (epoch milliseconds), oldest first. */
+/**
+ * The audit rows of the calls that ended after `sinceMs` (epoch milliseconds), oldest first. Each
+ * carries the operation of its monitoring entry (`operation`: null while the entry is not linked to
+ * the row yet, or when the call has none). The entry starts with the call, so the join looks only a
+ * little around the row's own times and uses the table's time index.
+ */
 export async function readTaskRuns(db: Db, sinceMs: number): Promise<TaskRunRecord[]> {
   const result = await db.query<
     Omit<TaskRunRecord, "startedAt" | "finishedAt"> & { startedAt: Date; finishedAt: Date }
   >(
-    `select id::text as id, task_type as "taskType", provider, model_id as "modelId", runtime,
-            workload_class as "workloadClass", lane, priority, deadline_ms as "deadlineMs",
-            deadline_outcome as "deadlineOutcome", is_repair as "isRepair",
-            schema_mode as "schemaMode", retry_wait_ms as "retryWaitMs",
-            requeue_ms as "requeueMs", queue_ms as "queueMs", duration_ms as "durationMs",
-            attempt, status, left(error, 300) as error,
-            started_at as "startedAt", finished_at as "finishedAt",
-            input_tokens as "inputTokens", output_tokens as "outputTokens",
-            budget_class as "budgetClass", job_id::text as "jobId",
-            budget_estimate_usd as "budgetEstimateUsd"
-       from ai_task_runs
-      where finished_at is not null and finished_at > $1
-      order by finished_at limit 5000`,
+    `select r.id::text as id, r.task_type as "taskType", r.provider, r.model_id as "modelId",
+            r.runtime, r.workload_class as "workloadClass", r.lane, r.priority,
+            r.deadline_ms as "deadlineMs", r.deadline_outcome as "deadlineOutcome",
+            r.is_repair as "isRepair", r.schema_mode as "schemaMode",
+            r.retry_wait_ms as "retryWaitMs", r.requeue_ms as "requeueMs",
+            r.queue_ms as "queueMs", r.duration_ms as "durationMs",
+            r.attempt, r.status, left(r.error, 300) as error,
+            r.started_at as "startedAt", r.finished_at as "finishedAt",
+            r.input_tokens as "inputTokens", r.output_tokens as "outputTokens",
+            r.budget_class as "budgetClass", r.job_id::text as "jobId",
+            r.budget_estimate_usd as "budgetEstimateUsd", m.operation
+       from ai_task_runs r
+       left join lateral (
+         select operation from monitoring_operations
+          where ai_task_run_id = r.id
+            and started_at between r.started_at - interval '10 minutes'
+                               and r.finished_at + interval '10 minutes'
+          order by started_at limit 1
+       ) m on true
+      where r.finished_at is not null and r.finished_at > $1
+      order by r.finished_at limit 5000`,
     [new Date(sinceMs)]
   );
   return result.rows.map((row) => ({
     ...row,
+    operation: row.operation ?? null,
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt.toISOString()
   }));

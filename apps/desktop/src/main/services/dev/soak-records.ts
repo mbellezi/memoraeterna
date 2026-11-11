@@ -510,6 +510,9 @@ export const soakSampleSchema = z
   .strict();
 export type SoakSample = z.infer<typeof soakSampleSchema>;
 
+/** The operation of the source judge's calls (`sourceMatchingOperation` in the product; a test pins the two together). */
+export const sourceJudgeOperation = "source_relation_matching";
+
 /** The audit columns of `ai_task_runs` the report needs (0057 included), one per call. */
 export const taskRunRecordSchema = z
   .object({
@@ -542,7 +545,13 @@ export const taskRunRecordSchema = z
     budgetClass: z.string().nullable().optional(),
     jobId: z.string().nullable().optional(),
     /** The US$ estimate the monthly ledger counts beyond the reported tokens (0061). */
-    budgetEstimateUsd: z.number().nullable().optional()
+    budgetEstimateUsd: z.number().nullable().optional(),
+    /**
+     * The operation the call ran for (`source_relation_matching` for the source judge), read from the
+     * call's monitoring entry; null when the call has none, absent from runs recorded before this
+     * field. The report sets the source judge's rows apart by it (C4, reading "A").
+     */
+    operation: z.string().nullable().optional()
   })
   .strict();
 export type TaskRunRecord = z.infer<typeof taskRunRecordSchema>;
