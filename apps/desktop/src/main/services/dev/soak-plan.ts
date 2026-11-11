@@ -77,6 +77,9 @@ export const soakConflictingKnobs = [
 ] as const;
 
 const minutes = z.number().positive();
+/** How an edit wave orders its notes (D38b); `alternate`: even waves by root, odd interleaved. */
+export const editWaveOrders = ["by_root", "interleaved", "alternate"] as const;
+export type EditWaveOrder = Exclude<(typeof editWaveOrders)[number], "alternate">;
 const every = z
   .object({
     everyMinutes: minutes,
@@ -138,6 +141,24 @@ export const soakProfileSchema = z
             editSpacingMinutes: minutes.default(2)
           })
           .optional(),
+        /**
+         * An edit wave (F4 D38b, the dedicated E1 run): every `everyMinutes` (fractional allowed)
+         * from `offsetMinutes`, no later than `untilMinutes`, up to `notes` current notes are each
+         * edited once through the knowledge service with a revision marker at the head of the
+         * body, so MATCH decides every one of them again. `order`: the notes grouped by root
+         * (largest root first), interleaved over the roots, or the two alternating (even waves by
+         * root).
+         */
+        editWave: z
+          .object({
+            everyMinutes: minutes,
+            offsetMinutes: z.number().nonnegative().default(0),
+            untilMinutes: z.number().positive().optional(),
+            notes: z.number().int().min(1).max(2_000).default(1_000),
+            order: z.enum(editWaveOrders).default("alternate")
+          })
+          .strict()
+          .optional(),
         /** An explanation opened this long after an outage of the Codex-wire fake ends (the probe that closes its breaker). */
         postOutageProbeSeconds: z.number().int().positive().default(35)
       })
@@ -162,10 +183,25 @@ export const soakProfileSchema = z
     f4: soakF4Schema.optional(),
     local: z
       .object({
-        /** SIGKILL of the MLX helper, every so often, plus or minus a seeded jitter. */
+        /**
+         * SIGKILL of the MLX helper: every so often, plus or minus a seeded jitter, or at the
+         * listed plan minutes (D38b: inside a wave's ranker phase); exactly one of the two.
+         */
         mlxKill: z
-          .object({ everyMinutes: minutes, jitterMinutes: z.number().nonnegative().default(0) })
-          .strict(),
+          .object({
+            everyMinutes: minutes.optional(),
+            jitterMinutes: z.number().nonnegative().default(0),
+            atMinutes: z.array(z.number().positive()).min(1).optional()
+          })
+          .strict()
+          .refine((kill) => (kill.everyMinutes === undefined) !== (kill.atMinutes === undefined), {
+            message: "mlxKill takes everyMinutes or atMinutes, exactly one of the two"
+          })
+          .refine(
+            (kill) =>
+              (kill.atMinutes ?? []).every((at, index, all) => index === 0 || all[index - 1]! < at),
+            { message: "mlxKill.atMinutes must be in increasing order" }
+          ),
         /** A forced abort of the GGUF embedder during an embedding batch. */
         ggufAbort: z.object({ everyMinutes: minutes }).strict()
       })
@@ -180,7 +216,18 @@ export const soakProfileSchema = z
       .strict()
       .default({ connectMs: 10_000, firstByteMs: 30_000, stallMs: 20_000 })
   })
-  .strict();
+  .strict()
+  .superRefine((profile, context) => {
+    const end = profile.durationHours * 60;
+    (profile.local.mlxKill.atMinutes ?? []).forEach((at, index) => {
+      if (at >= end)
+        context.addIssue({
+          code: "custom",
+          path: ["local", "mlxKill", "atMinutes", index],
+          message: `a helper kill at minute ${at} is past the run's ${end} minutes`
+        });
+    });
+  });
 export type SoakProfile = z.infer<typeof soakProfileSchema>;
 export type SoakLatencySpec = z.infer<typeof latencySchema>;
 

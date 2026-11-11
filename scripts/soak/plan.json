@@ -1201,6 +1201,144 @@
         },
         "decisions": "off"
       }
+    },
+    "soak7-e1": {
+      "description": "F4 D38b (owner decision 2026-11-11): the dedicated E1 contention run. A fresh APFS clone of env-soak7-tail2's end state (env-soak7-e1) with autonomy Off written into its stored controls before the first start, from the pinned worktree memoraeterna-f4-e1 at tag f4-e1-start, Hybrid routes, Decisions off, autonomy Off for the whole run (never lifted; the driver refuses a start that is not Off), the power reading pinned idle by the driver. 24 h of plan time after a 30 min warm-up: an edit wave every 14.382 min (31.4 + k x 14.382, none after 1465.5 = 1470 - B with B 4.5: 100 waves) edits every current note once through KnowledgeService.reviewNote with the head marker [e1 r<wave>], so MATCH decides each note again on the local ranker (relations pool, scope root:<rootId>) and its root's link job runs again; waves alternate root-ordered (even) and interleaved (odd); one 30 min ranker-invalid window at 727.236 (1 min after wave 48's drain; covers waves 49 and 50, settled before wave 51); four MLX kills 2.0 min into waves 23, 40, 65 and 90 (364.186, 608.68, 968.23, 1327.78); GGUF aborts every 700 min (armed at 717 and 1417, firing in waves 48 and 97). No import, Ask, explanation, topic open, re-import, typing fault, burst or injection. E1 reads the floor on scoped exposure over [warm-up end, +24 h). Codex expected 0 (Off), harness cap 50,000 by reservation. Cadence 14.382 and the figures derived from it (until, window start, kill minutes) are provisional until soak7-e1-pilot freezes them by D38b's rule.",
+      "seed": 20261114,
+      "durationHours": 24.5,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "ask": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "explain": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "explainBurst": { "everyMinutes": 1440, "offsetMinutes": 100000, "count": 1 },
+        "noteEdit": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "sourceReimport": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "typingFault": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "editWave": {
+          "everyMinutes": 14.382,
+          "offsetMinutes": 31.4,
+          "untilMinutes": 1465.5,
+          "notes": 1000,
+          "order": "alternate"
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": { "atMinutes": [364.186, 608.68, 968.23, 1327.78] },
+        "ggufAbort": { "everyMinutes": 700 }
+      },
+      "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 },
+      "f4": {
+        "codex": {
+          "expected": 0,
+          "cap": 50000,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 0,
+            "typing_fault": 0,
+            "source_reimport": 0,
+            "ask": 0,
+            "explain": 0,
+            "explain_burst": 0,
+            "topic_open": 0,
+            "note_edit": 0,
+            "burst_edit": 0,
+            "contention_burst": 0,
+            "edit_wave": 0,
+            "backgroundPerHour": 0
+          },
+          "windowTokenFactor": {}
+        },
+        "windows": [
+          {
+            "id": "e1-w727-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 727.236,
+            "durationMinutes": 30,
+            "settleMinutes": 2
+          }
+        ],
+        "windowSeries": [],
+        "decisions": "off",
+        "e1": {
+          "autonomy": "off",
+          "power": "idle",
+          "floorReads": "scoped",
+          "dayOrigin": "warmup_end"
+        }
+      }
+    },
+    "soak7-e1-pilot": {
+      "description": "F4 D38b calibration only: its E1 figures never count. soak7-e1's pilot, 2.5 h on its own fresh clone env-soak7-e1-pilot (autonomy Off written before its first start, power pinned idle by its driver), from the same worktree: the same edit waves (14.382 min from 31.4, none after 145.5: 8 waves at 31.4 .. 132.074), one 15 min ranker-invalid window at 65.664 (1 min after wave 2's drain; covers wave 3 only, released and drained before wave 4), MLX kills 2.0 min into waves 1 and 5 (47.782, 105.31), the GGUF abort armed at 117 firing in wave 6's embeddings. Unaffected waves U = 0, 2, 4, 7. It measures each wave's exposure, busy time and costs and freezes soak7-e1's cadence on the grid n + 0.382 by D38b's rule; nothing else of soak7-e1 may change.",
+      "seed": 20261111,
+      "durationHours": 2.5,
+      "warmupMinutes": 30,
+      "sampleEveryMinutes": 1,
+      "runFolder": "f4",
+      "driver": {
+        "article": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "ask": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "explain": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "explainBurst": { "everyMinutes": 1440, "offsetMinutes": 100000, "count": 1 },
+        "noteEdit": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "sourceReimport": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "typingFault": { "everyMinutes": 1440, "offsetMinutes": 100000 },
+        "editWave": {
+          "everyMinutes": 14.382,
+          "offsetMinutes": 31.4,
+          "untilMinutes": 145.5,
+          "notes": 1000,
+          "order": "alternate"
+        },
+        "postOutageProbeSeconds": 35
+      },
+      "local": {
+        "mlxKill": { "atMinutes": [47.782, 105.31] },
+        "ggufAbort": { "everyMinutes": 100 }
+      },
+      "bounds": { "connectMs": 10000, "firstByteMs": 30000, "stallMs": 20000 },
+      "f4": {
+        "codex": {
+          "expected": 0,
+          "cap": 50000,
+          "dropFromHour0": 0,
+          "tokens": {
+            "article": 0,
+            "typing_fault": 0,
+            "source_reimport": 0,
+            "ask": 0,
+            "explain": 0,
+            "explain_burst": 0,
+            "topic_open": 0,
+            "note_edit": 0,
+            "burst_edit": 0,
+            "contention_burst": 0,
+            "edit_wave": 0,
+            "backgroundPerHour": 0
+          },
+          "windowTokenFactor": {}
+        },
+        "windows": [
+          {
+            "id": "e1p-w066-ranker-invalid",
+            "kind": "ranker_invalid",
+            "startMinute": 65.664,
+            "durationMinutes": 15,
+            "settleMinutes": 2
+          }
+        ],
+        "windowSeries": [],
+        "decisions": "off",
+        "e1": {
+          "autonomy": "off",
+          "power": "idle",
+          "floorReads": "scoped",
+          "dayOrigin": "warmup_end"
+        }
+      }
     }
   }
 }

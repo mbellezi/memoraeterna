@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { seededUnit } from "./fake-remote-core.js";
 import { decideDrop, droppedBy, dropStepLabels, type AppliedDropStep } from "./soak-budget.js";
-import type { SoakProfile } from "./soak-plan.js";
+import type { EditWaveOrder, SoakProfile } from "./soak-plan.js";
 import { expandWindows, type SoakWindowSpec } from "./soak-plan-f4.js";
 import {
   NdjsonFile,
@@ -114,6 +114,11 @@ export interface SoakPorts {
   contentionBurst?(index: number, reembeds: number): Promise<ActionDetail>;
   /** F4: one human edit of a note in the `rootIndex`-th root (the burst's six edits land in six roots). */
   editBurstNote?(index: number, rootIndex: number): Promise<ActionDetail>;
+  /**
+   * F4 D38b: an edit wave, every current note (up to `notes`) edited once through the knowledge
+   * service with the wave's revision marker, in the order given.
+   */
+  editWave?(index: number, spec: { notes: number; order: EditWaveOrder }): Promise<ActionDetail>;
   /** F4: jobs that reached a final state since `sinceMs`, for E3. */
   finishedJobs?(sinceMs: number): Promise<JobDoneRecord[]>;
   /** F4: (kind, subject) outcome rows that changed since `sinceMs`, for E2. */
@@ -180,14 +185,32 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
         });
     }
   }
+  if (driver.editWave) {
+    // D38b: a wave every `everyMinutes` (fractional), none after `untilMinutes` or the run's end.
+    const wave = driver.editWave;
+    const lastMs = Math.min(total - 1, (wave.untilMinutes ?? Number.POSITIVE_INFINITY) * minute);
+    for (let index = 0; ; index++) {
+      const atMs = (wave.offsetMinutes + index * wave.everyMinutes) * minute;
+      if (atMs > lastMs) break;
+      entries.push({ atMs: Math.round(atMs), kind: "edit_wave", index });
+    }
+  }
   const kill = profile.local.mlxKill;
-  // The first kill comes after one period, never at the start: the helper has to be running.
-  for (let index = 1; ; index++) {
-    const jitter =
-      (2 * seededUnit(profile.seed, "mlx-kill", index) - 1) * kill.jitterMinutes * minute;
-    const atMs = Math.round(index * kill.everyMinutes * minute + jitter);
-    if (atMs >= total) break;
-    entries.push({ atMs, kind: "mlx_kill", index });
+  if (kill.atMinutes) {
+    // D38b: kills at the listed plan minutes (inside a wave's ranker phase), numbered from 1.
+    kill.atMinutes.forEach((at, position) => {
+      const atMs = Math.round(at * minute);
+      if (atMs < total) entries.push({ atMs, kind: "mlx_kill", index: position + 1 });
+    });
+  } else if (kill.everyMinutes !== undefined) {
+    // The first kill comes after one period, never at the start: the helper has to be running.
+    for (let index = 1; ; index++) {
+      const jitter =
+        (2 * seededUnit(profile.seed, "mlx-kill", index) - 1) * kill.jitterMinutes * minute;
+      const atMs = Math.round(index * kill.everyMinutes * minute + jitter);
+      if (atMs >= total) break;
+      entries.push({ atMs, kind: "mlx_kill", index });
+    }
   }
   const abort = profile.local.ggufAbort;
   for (let index = 1; ; index++) {
@@ -218,6 +241,7 @@ export function buildTimeline(profile: SoakProfile): TimelineEntry[] {
       "topic_open",
       "contention_burst",
       "burst_edit",
+      "edit_wave",
       "mlx_kill",
       "gguf_abort"
     ].indexOf(entry.kind);
@@ -523,6 +547,18 @@ export async function runSoak(options: SoakRunOptions): Promise<SoakOutcome> {
           if (!ports.editBurstNote) throw new Error("This run has no burst-edit port.");
           const edits = profile.driver.contentionBurst?.edits ?? 6;
           finish("ok", await ports.editBurstNote(entry.index, entry.index % edits));
+          return;
+        }
+        case "edit_wave": {
+          if (!ports.editWave) throw new Error("This run has no edit-wave port.");
+          const wave = profile.driver.editWave;
+          const order: EditWaveOrder =
+            wave?.order === "by_root" || wave?.order === "interleaved"
+              ? wave.order
+              : entry.index % 2 === 0
+                ? "by_root"
+                : "interleaved";
+          finish("ok", await ports.editWave(entry.index, { notes: wave?.notes ?? 1_000, order }));
           return;
         }
       }

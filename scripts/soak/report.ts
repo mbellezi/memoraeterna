@@ -26,6 +26,7 @@ import { parseArgs } from "node:util";
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
 import { defaultAiLaneRuntimeConfig } from "../../packages/ai/src/runtime-config.ts";
 import {
+  e1PlanOf,
   gateSAssertions,
   f4Report,
   predicateVersions,
@@ -1349,12 +1350,32 @@ function remoteDeadlinesCheck(run: LoadedRun): Check {
       `${times.length} remote call(s) carry a total deadline that is not the remote one`
     );
   const unobserved = late.length === 0 || stalled.length === 0;
+  const value = `first byte: ${lateOk.length}/${late.length} at ${firstByteMs} ms; stall: ${stallOk.length}/${stalled.length} at ${stallMs} ms; Codex-wire calls ${codex.length} (${codexRows.length} audited); remote totals ${remoteRows.length - times.length}/${remoteRows.length}`;
+  // The dedicated E1 run (D38b) holds autonomy Off from before its start and injects nothing: no
+  // Codex call is there to judge (n/a), and one that completed is a D12 finding to review, never a
+  // stop: the E1 run's stop lines are its own.
+  const offRun = e1PlanOf(run)?.autonomy === "off";
+  const offProblems = problems.filter(
+    (problem) => problem !== "no Codex-wire call ran through the Codex adapter"
+  );
   return {
     id: "remote-deadlines",
     title: "Remote deadlines exercised (R6)",
     bar: "the injected first byte ends at the first-byte bound, the stall at the stall bound, Codex-wire calls ran through the Codex adapter, totals are the remote ones (no x3)",
-    status: problems.length > 0 ? "fail" : unobserved ? "review" : "pass",
-    value: `first byte: ${lateOk.length}/${late.length} at ${firstByteMs} ms; stall: ${stallOk.length}/${stalled.length} at ${stallMs} ms; Codex-wire calls ${codex.length} (${codexRows.length} audited); remote totals ${remoteRows.length - times.length}/${remoteRows.length}`,
+    status: offRun
+      ? codex.length > 0 || offProblems.length > 0
+        ? "review"
+        : "n/a"
+      : problems.length > 0
+        ? "fail"
+        : unobserved
+          ? "review"
+          : "pass",
+    value: offRun
+      ? codex.length === 0
+        ? `not exercised: the dedicated E1 run makes no Codex call (D38b); ${value}`
+        : `${codex.length} completed Codex exchange(s) under autonomy Off: a D12 finding (D38b); ${value}`
+      : value,
     data: {
       late: late.length,
       lateOk: lateOk.length,
@@ -1815,6 +1836,12 @@ export function renderReport(report: SoakReport): string {
       "",
       ...table(report.f4.tables.load)
     );
+    if (report.f4.tables.waves)
+      lines.push(
+        "## Edit-wave ledger (the dedicated E1 run, D38b)",
+        "",
+        ...table(report.f4.tables.waves)
+      );
   }
   if (report.presoak) {
     lines.push(

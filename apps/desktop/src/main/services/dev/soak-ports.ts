@@ -242,6 +242,7 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
           openTopic: f4.openTopic,
           contentionBurst: f4.contentionBurst,
           editBurstNote: f4.editBurstNote,
+          editWave: f4.editWave,
           finishedJobs: f4.finishedJobs,
           outcomeChanges: f4.outcomeChanges
         }
@@ -408,6 +409,7 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
     },
 
     async sample() {
+      const began = performance.now();
       const [jobs, vm] = await Promise.all([readJobs(deps.pool), readVmStat()]);
       const helper = deps.ai.mlxHelperStats();
       const loop = lag.count > 0 ? Math.round((lag.percentile(99) / 1e6) * 10) / 10 : null;
@@ -423,18 +425,21 @@ export async function createSoakPorts(deps: SoakPortsDeps): Promise<SoakPorts> {
         pausedForMs: lane.pausedForMs ?? null
       }));
       const detail = f4 ? await f4.sampleDetail({ jobs: jobs.jobs, lanes }) : {};
+      const helperSample = helper
+        ? {
+            pid: helper.pid ?? null,
+            rssMb: helper.pid === undefined ? null : await readRssMb(helper.pid),
+            spawnCount: helper.spawnCount
+          }
+        : null;
       return {
         ...detail,
         lanes,
         jobs: jobs.jobs,
+        jobsTruncated: jobs.truncated,
+        collectMs: Math.round((performance.now() - began) * 10) / 10,
         jobCounts: jobs.counts,
-        helper: helper
-          ? {
-              pid: helper.pid ?? null,
-              rssMb: helper.pid === undefined ? null : await readRssMb(helper.pid),
-              spawnCount: helper.spawnCount
-            }
-          : null,
+        helper: helperSample,
         appRssMb: Math.round(process.memoryUsage().rss / 1_048_576),
         pageouts: vm?.pageouts ?? null,
         pageSizeBytes: vm?.pageSize ?? null,

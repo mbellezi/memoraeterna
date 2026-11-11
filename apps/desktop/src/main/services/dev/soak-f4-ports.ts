@@ -5,10 +5,13 @@ import { GardenerStatusSnapshotSchema } from "../../../shared/app-events.js";
 import type { KnowledgeService } from "../knowledge-service.js";
 import { SoakActionFailure, type ActionDetail, type SoakPorts } from "./soak-driver.js";
 import { readLoad, type LoadReaderOptions } from "./soak-load.js";
+import { withWaveMarker } from "./soak-e1.js";
 import {
   pickEditableNoteInRoot,
+  pickNotesForEditWave,
   pickNotesToReembed,
   pickTopicToOpen,
+  readE1Extras,
   readFinishedJobs,
   readLockWaits,
   readOutcomeChanges,
@@ -59,6 +62,8 @@ export interface SoakF4PortsDeps {
   power: { snapshot(): { active: boolean; onBattery: boolean; overridden: boolean } };
   budget: { snapshot(): Promise<BudgetSnapshot> };
   cap: { snapshot(): CapSnapshot };
+  /** The dedicated E1 run (D38b): the sample also reads the database size, the D26 counter and the change-sets. */
+  e1?: boolean;
   now?: () => number;
   load?: LoadReaderOptions;
 }
@@ -76,7 +81,7 @@ const failureText = (error: unknown) =>
 
 type F4Ports = Pick<
   SoakPorts,
-  "openTopic" | "contentionBurst" | "editBurstNote" | "finishedJobs" | "outcomeChanges"
+  "openTopic" | "contentionBurst" | "editBurstNote" | "editWave" | "finishedJobs" | "outcomeChanges"
 > & {
   /** What the sample holds beyond F3's, from the jobs and lanes it already read. */
   sampleDetail(base: Pick<SoakSample, "jobs" | "lanes">): Promise<Partial<SoakSample>>;
@@ -140,6 +145,45 @@ export function createF4Ports(deps: SoakF4PortsDeps): F4Ports {
       return { auditRequested, reembedsPicked: notes.length, reembedsQueued: queued };
     },
 
+    async editWave(index, spec): Promise<ActionDetail> {
+      const began = now();
+      const notes = await pickNotesForEditWave(pool, seed, index, spec.notes, spec.order);
+      const tally = { edited: 0, conflicts: 0, gone: 0, errors: 0 };
+      let firstError: string | null = null;
+      for (const [position, note] of notes.entries()) {
+        try {
+          const edited = await deps.knowledge.reviewNote({
+            id: note.id,
+            action: "edit",
+            expectedUpdatedAt: note.updatedAt,
+            bodyMarkdown: withWaveMarker(note.bodyMarkdown, index)
+          });
+          if (edited) tally.edited += 1;
+          else tally.gone += 1;
+        } catch (error) {
+          // A note a person (or the product) changed since the pick: the edit is refused, counted.
+          if (error instanceof Error && error.message === "sourceWorkspace.conflict")
+            tally.conflicts += 1;
+          else {
+            tally.errors += 1;
+            firstError ??= failureText(error);
+          }
+        }
+        // The supervisor hears of the new embedding jobs as the wave goes.
+        if ((position + 1) % 50 === 0) deps.jobs.wake();
+      }
+      deps.jobs.wake();
+      const detail: ActionDetail = {
+        picked: notes.length,
+        ...tally,
+        roots: new Set(notes.map((note) => note.rootId)).size,
+        order: spec.order,
+        issueMs: now() - began
+      };
+      if (tally.errors > 0) throw new SoakActionFailure(firstError ?? "edit failed", detail);
+      return detail;
+    },
+
     async editBurstNote(index, rootIndex): Promise<ActionDetail> {
       const note = await pickEditableNoteInRoot(pool, seed, index, rootIndex);
       if (!note) return { outcome: "no_note", rootIndex };
@@ -165,11 +209,13 @@ export function createF4Ports(deps: SoakF4PortsDeps): F4Ports {
           return null;
         }
       };
-      const [status, budget, lockWaits, load] = await Promise.all([
+      const [status, budget, lockWaits, load, extras] = await Promise.all([
         settle(() => deps.status?.snapshot() ?? null),
         settle(() => deps.budget.snapshot()),
         settle(() => readLockWaits(pool)),
-        settle(() => readLoad(deps.load))
+        settle(() => readLoad(deps.load)),
+        // The dedicated E1 run's ledger (D38b): database size, the D26 counter, change-sets.
+        deps.e1 ? settle(() => readE1Extras(pool)) : Promise.resolve(null)
       ]);
       const parsed = status === null ? null : GardenerStatusSnapshotSchema.safeParse(status);
       const controls = deps.controls.current();
@@ -221,7 +267,14 @@ export function createF4Ports(deps: SoakF4PortsDeps): F4Ports {
         },
         power,
         lockWaits,
-        load
+        load,
+        ...(deps.e1
+          ? {
+              dbBytes: extras?.dbBytes ?? null,
+              relationCalls: extras?.relationCalls ?? null,
+              changeSets: extras?.changeSets ?? null
+            }
+          : {})
       };
     }
   };

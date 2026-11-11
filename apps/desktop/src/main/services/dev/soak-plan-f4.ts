@@ -157,18 +157,46 @@ export const codexTokenPlanSchema = z
     note_edit: z.number().nonnegative(),
     burst_edit: z.number().nonnegative(),
     contention_burst: z.number().nonnegative(),
+    /** An edit wave of the dedicated E1 run (D38b); absent: 0. */
+    edit_wave: z.number().nonnegative().optional(),
     /** Work nobody schedules (REFRESH, backfill, naming, stalls), spread over every hour. */
     backgroundPerHour: z.number().nonnegative()
   })
   .strict();
 export type CodexTokenPlan = z.infer<typeof codexTokenPlanSchema>;
 
+/**
+ * The dedicated E1 contention run (D38b, owner 2026-11-11): the conditions it holds for its whole
+ * length and how its report reads E1. Autonomy Off is written into the clone's stored controls by
+ * the launcher before the app first opens it; the driver only checks it (and refuses the run
+ * otherwise) and pins the power reading idle. `floorReads: "scoped"` reads the exposure floor on
+ * lane-minutes with two or more due tasks of distinct non-null scope keys (stricter than the
+ * registered reading, printed beside it); `dayOrigin: "warmup_end"` makes the plan day
+ * [warm-up end, +24 h).
+ */
+export const soakE1Schema = z
+  .object({
+    autonomy: z.literal("off"),
+    power: z.literal("idle"),
+    floorReads: z.enum(["scoped", "registered"]),
+    dayOrigin: z.enum(["start", "warmup_end"])
+  })
+  .strict();
+export type SoakE1Plan = z.infer<typeof soakE1Schema>;
+
+/**
+ * The only window kind a dedicated E1 run may hold (an allow-list): every other kind changes the
+ * controls, the power reading, a cap or the Codex lane, and some lift the run's own conditions at
+ * their end (the money window restores Auto, only-idle and only-AC lift the power pin).
+ */
+export const e1WindowKinds: ReadonlySet<string> = new Set(["ranker_invalid"]);
+
 export const soakF4Schema = z
   .object({
     codex: z
       .object({
-        /** Expected tokens over the run; provisional until gate S re-freezes it (T91). */
-        expected: z.number().int().positive(),
+        /** Expected tokens over the run; provisional until gate S re-freezes it (T91); 0 under Off (D38b). */
+        expected: z.number().int().nonnegative(),
         /** The harness cap, enforced by reservation; the driver refuses to run without it. */
         cap: z.number().int().positive(),
         /** Drop steps applied from hour 0 (gate S's re-projection exceeded the ceiling). */
@@ -202,9 +230,27 @@ export const soakF4Schema = z
      * retention for gate S's profile only (10-25): `soak7-gate` alone sets it, and the run is
      * refused on any other profile folder. Absent: the library must have full capture off.
      */
-    capture: z.literal("answers").optional()
+    capture: z.literal("answers").optional(),
+    /** The dedicated E1 contention run (D38b); absent on every other profile, read as before. */
+    e1: soakE1Schema.optional()
   })
-  .strict();
+  .strict()
+  .superRefine((plan, context) => {
+    if (!plan.e1) return;
+    const lists = [
+      ["windows", plan.windows],
+      ["windowSeries", plan.windowSeries]
+    ] as const;
+    for (const [list, entries] of lists)
+      entries.forEach((window, index) => {
+        if (!e1WindowKinds.has(window.kind))
+          context.addIssue({
+            code: "custom",
+            path: [list, index, "kind"],
+            message: `a dedicated E1 run holds autonomy Off and the power pin for its whole length: a ${window.kind} window is refused (only ${[...e1WindowKinds].join(", ")})`
+          });
+      });
+  });
 export type SoakF4Plan = z.infer<typeof soakF4Schema>;
 
 /** The windows of a profile with the series expanded, in start order, ids unique. */

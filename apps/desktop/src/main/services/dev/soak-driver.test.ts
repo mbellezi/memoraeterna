@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  buildTimeline,
   parseBreakerLog,
   runSoak,
   SoakActionFailure,
@@ -455,5 +456,153 @@ describe("the records", () => {
     ];
     for (const event of events) expect(soakEventSchema.parse(event)).toEqual(event);
     expect(() => soakEventSchema.parse({ type: "exchange", provider: "x" })).toThrow();
+  });
+});
+
+describe("the edit waves and the listed helper kills (F4 D38b)", () => {
+  /** A 40 minute run: a wave every 7.5 min from 2.5, none after 30; kills at listed minutes. */
+  const waveProfile: SoakProfile = soakProfileSchema.parse({
+    ...profile,
+    remote: undefined,
+    driver: {
+      ...profile.driver,
+      article: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      ask: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      explain: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      explainBurst: { everyMinutes: 1440, offsetMinutes: 100_000, count: 1 },
+      noteEdit: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      sourceReimport: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      typingFault: { everyMinutes: 1440, offsetMinutes: 100_000 },
+      editWave: { everyMinutes: 7.5, offsetMinutes: 2.5, untilMinutes: 30 }
+    },
+    durationHours: 40 / 60,
+    local: { mlxKill: { atMinutes: [4.5, 19.5] }, ggufAbort: { everyMinutes: 600 } }
+  });
+
+  it("places a wave at offset + k x every (fractional), none after its bound, and kills at the listed minutes", () => {
+    const timeline = buildTimeline(waveProfile);
+    expect(
+      timeline.filter((entry) => entry.kind === "edit_wave").map((entry) => entry.atMs / minute)
+    ).toEqual([2.5, 10, 17.5, 25]);
+    expect(
+      timeline
+        .filter((entry) => entry.kind === "mlx_kill")
+        .map((entry) => [entry.atMs / minute, entry.index])
+    ).toEqual([
+      [4.5, 1],
+      [19.5, 2]
+    ]);
+    // Defaults: 1,000 notes, alternating order; without a bound, the run's end bounds the waves.
+    expect(waveProfile.driver.editWave).toMatchObject({ notes: 1000, order: "alternate" });
+    const unbounded = soakProfileSchema.parse({
+      ...waveProfile,
+      driver: { ...waveProfile.driver, editWave: { everyMinutes: 14.382, offsetMinutes: 1.4 } }
+    });
+    expect(
+      buildTimeline(unbounded)
+        .filter((entry) => entry.kind === "edit_wave")
+        .map((entry) => entry.atMs)
+    ).toEqual([1.4, 15.782, 30.164].map((at) => Math.round(at * minute)));
+    // A wave and a burst edit at the same moment: the burst edit first, then the wave, then a kill.
+    const tied = soakProfileSchema.parse({
+      ...waveProfile,
+      driver: {
+        ...waveProfile.driver,
+        editWave: { everyMinutes: 10, offsetMinutes: 5 },
+        contentionBurst: { everyMinutes: 1440, offsetMinutes: 5, edits: 1 }
+      },
+      local: { mlxKill: { atMinutes: [5] }, ggufAbort: { everyMinutes: 600 } }
+    });
+    expect(
+      buildTimeline(tied)
+        .filter((entry) => entry.atMs === 5 * minute)
+        .map((entry) => entry.kind)
+    ).toEqual(["contention_burst", "burst_edit", "edit_wave", "mlx_kill"]);
+  });
+
+  it("refuses kills given both ways or neither, out of order or past the run's end, and waves out of bounds", () => {
+    const local = (mlxKill: object) =>
+      soakProfileSchema.safeParse({
+        ...waveProfile,
+        local: { mlxKill, ggufAbort: { everyMinutes: 600 } }
+      }).success;
+    expect(local({ atMinutes: [4.5, 19.5] })).toBe(true);
+    expect(local({ everyMinutes: 10 })).toBe(true);
+    expect(local({ everyMinutes: 10, atMinutes: [4.5] })).toBe(false);
+    expect(local({})).toBe(false);
+    expect(local({ atMinutes: [19.5, 4.5] })).toBe(false);
+    expect(local({ atMinutes: [4.5, 40] })).toBe(false);
+    const wave = (editWave: object) =>
+      soakProfileSchema.safeParse({ ...waveProfile, driver: { ...waveProfile.driver, editWave } })
+        .success;
+    expect(wave({ everyMinutes: 14.382, notes: 2000, order: "by_root" })).toBe(true);
+    expect(wave({ everyMinutes: 0 })).toBe(false);
+    expect(wave({ everyMinutes: 10, notes: 0 })).toBe(false);
+    expect(wave({ everyMinutes: 10, notes: 2001 })).toBe(false);
+    expect(wave({ everyMinutes: 10, order: "random" })).toBe(false);
+  });
+
+  it("dispatches each wave with its index, the note cap and the order (even by root, odd interleaved)", async () => {
+    const waves: Array<[number, number, string]> = [];
+    const { ports: driverPorts, calls } = ports({
+      editWave: async (index, spec) => {
+        waves.push([index, spec.notes, spec.order]);
+        return { picked: 3, edited: 3 };
+      }
+    });
+    const { clock, sink, done } = await start(driverPorts, { profile: waveProfile });
+    await clock.advance(41 * minute);
+    await done;
+    expect(waves).toEqual([
+      [0, 1000, "by_root"],
+      [1, 1000, "interleaved"],
+      [2, 1000, "by_root"],
+      [3, 1000, "interleaved"]
+    ]);
+    expect(calls.filter((call) => call === "kill")).toHaveLength(2);
+    const recorded = actions(sink).filter((action) => action.kind === "edit_wave");
+    expect(recorded.map((action) => [action.index, action.status])).toEqual([
+      [0, "ok"],
+      [1, "ok"],
+      [2, "ok"],
+      [3, "ok"]
+    ]);
+    expect(recorded[0]!.detail).toMatchObject({ picked: 3, edited: 3 });
+  });
+
+  it("fails a wave when the run has no port, and skips (and records) a wave whose predecessor still runs", async () => {
+    const { ports: none } = ports();
+    const first = await start(none, {
+      profile: waveProfile,
+      logger: { info: () => undefined, error: () => undefined }
+    });
+    await first.clock.advance(41 * minute);
+    await first.done;
+    const failed = actions(first.sink).filter((action) => action.kind === "edit_wave");
+    expect(failed).toHaveLength(4);
+    expect(failed.every((action) => action.status === "failed")).toBe(true);
+    expect(failed[0]!.error).toContain("no edit-wave port");
+
+    let release: () => void = () => undefined;
+    const stuck = new Promise<void>((resolve) => (release = resolve));
+    const { ports: slow } = ports({
+      editWave: async () => {
+        await stuck;
+        return { edited: 1 };
+      }
+    });
+    const second = await start(slow, { profile: waveProfile });
+    await second.clock.advance(41 * minute);
+    release();
+    await second.done;
+    const statuses = actions(second.sink)
+      .filter((action) => action.kind === "edit_wave")
+      .map((action) => [action.index, action.status, action.detail.reason ?? null]);
+    expect(statuses).toEqual([
+      [1, "skipped", "previous action of the kind still running"],
+      [2, "skipped", "previous action of the kind still running"],
+      [3, "skipped", "previous action of the kind still running"],
+      [0, "ok", null]
+    ]);
   });
 });

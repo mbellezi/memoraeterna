@@ -50,7 +50,9 @@ import {
   type SoakKnobSettings
 } from "./soak-plan.js";
 import { expandWindows, fetchFaultPlanSchema } from "./soak-plan-f4.js";
+import { startE1 } from "./soak-e1.js";
 import { createSoakPorts } from "./soak-ports.js";
+import { readE1Extras } from "./soak-queries.js";
 import { decisionsOptInProblem, realWriterProblems } from "./soak-real-writer.js";
 import { fileEventSink, soakFiles } from "./soak-records.js";
 import { findRealRemoteReach, realRemoteProblem } from "./soak-routes.js";
@@ -335,6 +337,15 @@ export function prepareSoak(
             "The 7-day soak checks the Gardener's status sentence: this build has no status service (T86)."
           );
       }
+      // The dedicated E1 run (D38b): Off as stored before the first start, or no run; power pinned idle.
+      const e1Start =
+        f4Plan?.e1 && f4Deps
+          ? await startE1(f4Plan.e1, {
+              controls: f4Deps.controls,
+              power: f4Deps.power,
+              relationCalls: async () => (await readE1Extras(deps.pool)).relationCalls
+            })
+          : null;
       const views = new ViewHistoryService({ getPool: () => deps.pool });
       const ports = await createSoakPorts({
         profile: soak.profile,
@@ -367,7 +378,8 @@ export function prepareSoak(
                 controls: f4Deps.controls,
                 power: f4Deps.power,
                 budget: f4Deps.budget,
-                cap
+                cap,
+                e1: e1Start !== null
               }
             }
           : {})
@@ -583,7 +595,8 @@ export function prepareSoak(
                     settleMinutes: settleMs(window, "start") / 60_000,
                     settleEndMinutes: settleMs(window, "end") / 60_000
                   })),
-                  predicates: { workerStates: workerPredicateVersion }
+                  predicates: { workerStates: workerPredicateVersion },
+                  ...(e1Start ? { e1: e1Start } : {})
                 }
               }
             : {})

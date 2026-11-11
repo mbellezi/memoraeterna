@@ -71,6 +71,8 @@ export function plannedEntryTokens(
       return tokens[entry.kind];
     case "post_outage_probe":
       return tokens.explain;
+    case "edit_wave":
+      return tokens.edit_wave ?? 0;
     default:
       return 0;
   }

@@ -559,14 +559,33 @@ export function mergeE5(results: readonly E5Result[]): E5Result {
 
 /** E1's results by plan day: exposure added day by day, events and waits together. */
 function mergeE1(results: readonly E1Result[]): E1Result {
-  const exposure: Array<Record<string, number>> = [];
+  const byDay = (pick: (result: E1Result) => ReadonlyArray<Record<string, number> | undefined>) => {
+    const merged: Array<Record<string, number>> = [];
+    for (const result of results)
+      pick(result).forEach((row, index) => {
+        const into = (merged[index] ??= {});
+        for (const [worker, minutes] of Object.entries(row ?? {}))
+          into[worker] = (into[worker] ?? 0) + minutes;
+      });
+    for (let index = 0; index < merged.length; index += 1) merged[index] ??= {};
+    return merged;
+  };
+  const counts = (pick: (result: E1Result) => readonly number[]) => {
+    const merged: number[] = [];
+    for (const result of results)
+      pick(result).forEach((count, index) => {
+        merged[index] = (merged[index] ?? 0) + (count ?? 0);
+      });
+    return merged;
+  };
+  const exposure = byDay((result) => result.exposure);
+  const idleWithDue: E1Result["idleWithDue"] = {};
   for (const result of results)
-    result.exposure.forEach((row, index) => {
-      const into = (exposure[index] ??= {});
-      for (const [worker, minutes] of Object.entries(row ?? {}))
-        into[worker] = (into[worker] ?? 0) + minutes;
-    });
-  for (let index = 0; index < exposure.length; index += 1) exposure[index] ??= {};
+    for (const [worker, entry] of Object.entries(result.idleWithDue)) {
+      const into = (idleWithDue[worker] ??= { samples: 0, longest: 0 });
+      into.samples += entry.samples;
+      into.longest = Math.max(into.longest, entry.longest);
+    }
   const waits = (pick: (result: E1Result) => Record<string, number[]>) => {
     const merged: Record<string, number[]> = {};
     for (const result of results)
@@ -580,7 +599,13 @@ function mergeE1(results: readonly E1Result[]): E1Result {
     exposure,
     queueWaits: waits((result) => result.queueWaits),
     sameScopeWaits: waits((result) => result.sameScopeWaits),
-    derivedWorkerStates: results.some((result) => result.derivedWorkerStates)
+    derivedWorkerStates: results.some((result) => result.derivedWorkerStates),
+    scopedExposure: byDay((result) => result.scopedExposure),
+    scopedWithoutLink: byDay((result) => result.scopedWithoutLink),
+    samplesByDay: counts((result) => result.samplesByDay),
+    truncatedByDay: counts((result) => result.truncatedByDay),
+    perSample: results.flatMap((result) => result.perSample),
+    idleWithDue
   };
 }
 

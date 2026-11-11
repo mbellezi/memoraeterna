@@ -24,6 +24,10 @@ import {
   workerOfJob,
   workerPredicateVersion
 } from "../../apps/desktop/src/main/services/dev/soak-workers.ts";
+import {
+  soakE1Schema,
+  type SoakE1Plan
+} from "../../apps/desktop/src/main/services/dev/soak-plan-f4.ts";
 import type {
   BreakerRecord,
   ExchangeRecord,
@@ -34,6 +38,7 @@ import type {
   SoakSample,
   TaskRunRecord
 } from "../../apps/desktop/src/main/services/dev/soak-records.ts";
+import { e1RunLines } from "./report-e1.ts";
 import type { Check, CheckStatus, LoadedRun } from "./report.ts";
 
 const minute = 60_000;
@@ -153,7 +158,25 @@ export interface E1Result {
   sameScopeWaits: Record<string, number[]>;
   /** The samples the sentence used worker states from (recorded) or had derived. */
   derivedWorkerStates: boolean;
+  /**
+   * Scoped exposure (D38b): lane-minutes with two or more due tasks of distinct non-null scope
+   * keys, by day and worker; and the same with the link rows left out (V6: the floor met by MATCH).
+   */
+  scopedExposure: Array<Record<string, number>>;
+  scopedWithoutLink: Array<Record<string, number>>;
+  /** Samples inside the exposure range by day, and those whose queued jobs were truncated (D38b). */
+  samplesByDay: number[];
+  truncatedByDay: number[];
+  /** Per sample in the exposure range: its lane-minutes of each reading (the wave ledger sums them). */
+  perSample: Array<{ at: number; registered: number; scoped: number; scopedWithoutLink: number }>;
+  /**
+   * Samples where a worker had an idle slot beside a due task no running task's scope holds back,
+   * and the longest run of such samples, by worker: a reported line, not the bar (D38b).
+   */
+  idleWithDue: Record<string, { samples: number; longest: number }>;
 }
+
+const linkJobType = "relation-link";
 
 /**
  * E1 (predicate v1): a task is blocked by another when, for at least 15 consecutive minutes, it is due
@@ -191,6 +214,13 @@ export function computeE1(
   const queueWaits: Record<string, number[]> = {};
   const sameScopeWaits: Record<string, number[]> = {};
   const lockEvents: E1Result["lockEvents"] = [];
+  const scopedExposure: Array<Record<string, number>> = [];
+  const scopedWithoutLink: Array<Record<string, number>> = [];
+  const samplesByDay: number[] = [];
+  const truncatedByDay: number[] = [];
+  const perSample: E1Result["perSample"] = [];
+  const idleWithDue: E1Result["idleWithDue"] = {};
+  const idleWithDueRun = new Map<string, number>();
   let derived = false;
   let lockReported = false;
 
@@ -203,9 +233,19 @@ export function computeE1(
     }
     const dayIndex = options.dayOf ? options.dayOf(at) : Math.floor((at - start) / day);
     exposure[dayIndex] ??= {};
-    const exposed =
+    scopedExposure[dayIndex] ??= {};
+    scopedWithoutLink[dayIndex] ??= {};
+    const inRange =
       at >= (options.exposureFromMs ?? Number.NEGATIVE_INFINITY) &&
       at < (options.exposureToMs ?? Number.POSITIVE_INFINITY);
+    // D38b: a sample whose queued jobs were cut short adds no exposure; its running rows are all
+    // there, so it still feeds the event predicate as recorded.
+    const truncated = (sample.jobsTruncated ?? 0) > 0;
+    if (inRange) {
+      samplesByDay[dayIndex] = (samplesByDay[dayIndex] ?? 0) + 1;
+      if (truncated) truncatedByDay[dayIndex] = (truncatedByDay[dayIndex] ?? 0) + 1;
+    }
+    const exposed = inRange && !truncated;
     const byWorker = new Map<string, { idle: number; executing: number; waiting: number }>();
     for (const entry of workers) {
       const tally = byWorker.get(entry.worker) ?? { idle: 0, executing: 0, waiting: 0 };
@@ -238,6 +278,59 @@ export function computeE1(
     for (const [worker, scopes] of dueByWorker)
       if (exposed && scopes.size >= 2)
         exposure[dayIndex]![worker] = (exposure[dayIndex]![worker] ?? 0) + sampleMinutes;
+    // D38b, reported beside: distinct non-null scope keys only, and the same without link rows.
+    const scopedOf = (keep: (job: JobSample) => boolean) => {
+      const grouped = new Map<string, Set<string>>();
+      for (const job of due)
+        if (job.scopeKey && keep(job)) {
+          const worker = workerOfJob(job)!;
+          grouped.set(worker, (grouped.get(worker) ?? new Set<string>()).add(job.scopeKey));
+        }
+      return grouped;
+    };
+    const tallyInto = (
+      into: Array<Record<string, number>>,
+      grouped: ReadonlyMap<string, ReadonlySet<string>>
+    ) => {
+      let total = 0;
+      for (const [worker, scopes] of grouped)
+        if (exposed && scopes.size >= 2) {
+          into[dayIndex]![worker] = (into[dayIndex]![worker] ?? 0) + sampleMinutes;
+          total += sampleMinutes;
+        }
+      return total;
+    };
+    const scopedNow = tallyInto(
+      scopedExposure,
+      scopedOf(() => true)
+    );
+    const withoutLinkNow = tallyInto(
+      scopedWithoutLink,
+      scopedOf((job) => job.type !== linkJobType)
+    );
+    if (inRange)
+      perSample.push({
+        at,
+        registered: exposed
+          ? [...dueByWorker.values()].filter((scopes) => scopes.size >= 2).length * sampleMinutes
+          : 0,
+        scoped: scopedNow,
+        scopedWithoutLink: withoutLinkNow
+      });
+    // Reported (not the bar): an idle slot beside a due task no running task of its scope holds back.
+    for (const worker of new Set([...byWorker.keys(), ...dueByWorker.keys()])) {
+      const free = (byWorker.get(worker)?.idle ?? 0) > 0;
+      const claimable = due.some(
+        (job) => workerOfJob(job) === worker && !(job.scopeKey && runningScopes.has(job.scopeKey))
+      );
+      const runLength = free && claimable ? (idleWithDueRun.get(worker) ?? 0) + 1 : 0;
+      idleWithDueRun.set(worker, runLength);
+      if (runLength > 0) {
+        const entry = (idleWithDue[worker] ??= { samples: 0, longest: 0 });
+        entry.samples += 1;
+        entry.longest = Math.max(entry.longest, runLength);
+      }
+    }
 
     const dueIds = new Set(due.map((job) => job.id));
     for (const job of due) {
@@ -297,15 +390,163 @@ export function computeE1(
       }
     } else lockReported = false;
   }
-  return { events, lockEvents, exposure, queueWaits, sameScopeWaits, derivedWorkerStates: derived };
+  for (let index = 0; index < exposure.length; index += 1) {
+    scopedExposure[index] ??= {};
+    scopedWithoutLink[index] ??= {};
+  }
+  return {
+    events,
+    lockEvents,
+    exposure,
+    queueWaits,
+    sameScopeWaits,
+    derivedWorkerStates: derived,
+    scopedExposure,
+    scopedWithoutLink,
+    samplesByDay,
+    truncatedByDay,
+    perSample,
+    idleWithDue
+  };
 }
+
+/** The dedicated E1 run's settings as its plan recorded them (D38b); null for every other run. */
+export function e1PlanOf(run: LoadedRun): SoakE1Plan | null {
+  const plan = run.meta.plan as { f4?: { e1?: unknown } } | null | undefined;
+  const parsed = soakE1Schema.safeParse(plan?.f4?.e1);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The share of a day's samples it must hold to count as full (D38b: 1,426 of 1,440). */
+export const e1FullDayShare = 0.99;
+/** The share of a day's samples that may be truncated before E1 reads "not exercised" (D38b). */
+export const e1TruncatedShare = 0.01;
 
 export function e1Check(run: LoadedRun): {
   check: Check;
   table: Array<Record<string, string | number>>;
+  /** The dedicated run's reading over its plan day (D38b), which its reported lines read. */
+  result?: E1Result;
 } {
+  const plan = e1PlanOf(run);
+  if (plan) return e1DedicatedCheck(run, plan);
   const days = Math.floor((runEnd(run) - toMs(run.meta.startedAt)) / day);
   return e1CheckOf(computeE1(run), Math.max(days, run.samples.length > 0 ? 1 : 0));
+}
+
+const sumOf = (row: Record<string, number> | undefined) =>
+  Object.values(row ?? {}).reduce((sum, value) => sum + value, 0);
+
+/**
+ * E1 in the dedicated contention run (D38b), predicate v1 unchanged: events over the whole run;
+ * exposure over its one plan day from the day origin (`warmup_end`: [warm-up end, +24 h)), on the
+ * reading the plan names (`scoped` is the floor, the registered reading beside it, and the
+ * start-origin reading printed too). The day counts only when it holds 99 % of its samples and the
+ * run did not end before the day did; more than 1 % truncated samples, a run the token cap ended,
+ * or exposure under the floor read "not exercised".
+ */
+function e1DedicatedCheck(
+  run: LoadedRun,
+  plan: SoakE1Plan
+): { check: Check; table: Array<Record<string, string | number>>; result: E1Result } {
+  const start = toMs(run.meta.startedAt);
+  const origin = plan.dayOrigin === "warmup_end" ? warmEnd(run) : start;
+  const dayEnd = origin + day;
+  const dayOf = (atMs: number) => Math.max(0, Math.floor((atMs - origin) / day));
+  const result = computeE1(run, { dayOf, exposureFromMs: origin, exposureToMs: dayEnd });
+  const startOrigin = computeE1(run, {
+    dayOf: (atMs) => Math.max(0, Math.floor((atMs - start) / day)),
+    exposureFromMs: start,
+    exposureToMs: start + day
+  });
+  const interval = run.meta.sampleIntervalMs;
+  const expected = Math.round(day / interval);
+  const needed = Math.ceil(expected * e1FullDayShare);
+  const samples = result.samplesByDay[0] ?? 0;
+  const truncated = result.truncatedByDay[0] ?? 0;
+  const ended = runEnd(run);
+  const endedEarly = ended < dayEnd - interval;
+  const full = samples >= needed && !endedEarly;
+  const capped = run.meta.endReason === "token_cap";
+  const registered = sumOf(result.exposure[0]);
+  const scoped = sumOf(result.scopedExposure[0]);
+  const withoutLink = sumOf(result.scopedWithoutLink[0]);
+  const floorValue = plan.floorReads === "scoped" ? scoped : registered;
+  const events = result.events.length + result.lockEvents.length;
+  const tooTruncated = samples > 0 && truncated / samples > e1TruncatedShare;
+  const why = [
+    ...(capped ? ["the harness token cap ended the run"] : []),
+    ...(full
+      ? []
+      : [
+          endedEarly
+            ? `the run ended ${((dayEnd - ended) / minute).toFixed(1)} min before the plan day's end`
+            : `the plan day holds ${samples} of ${expected} samples (needs ${needed})`
+        ]),
+    ...(tooTruncated ? [`${truncated} of ${samples} samples truncated (> 1 %)`] : []),
+    ...(floorValue < e1ExposureFloor
+      ? [`${plan.floorReads} exposure ${Math.round(floorValue)} < ${e1ExposureFloor} lane-minutes`]
+      : [])
+  ];
+  const status: CheckStatus =
+    events > 0 ? "fail" : samples === 0 || why.length > 0 ? "review" : "pass";
+  const readings = `scoped exposure ${Math.round(scoped)} lane-minutes (link rows left out: ${Math.round(withoutLink)}), registered ${Math.round(registered)}, in the plan day [${plan.dayOrigin === "warmup_end" ? "warm-up end" : "start"}, +24 h); floor on ${plan.floorReads}`;
+  const table = [
+    {
+      reading: `plan day from ${plan.dayOrigin === "warmup_end" ? "the warm-up end" : "the start"}`,
+      ...Object.fromEntries(
+        Object.entries(result.scopedExposure[0] ?? {}).map(([worker, value]) => [
+          `${worker} (scoped)`,
+          Math.round(value)
+        ])
+      ),
+      scoped: Math.round(scoped),
+      "scoped without link rows": Math.round(withoutLink),
+      registered: Math.round(registered),
+      samples,
+      truncated
+    },
+    {
+      reading: "day from the start (the registered origin)",
+      scoped: Math.round(sumOf(startOrigin.scopedExposure[0])),
+      "scoped without link rows": Math.round(sumOf(startOrigin.scopedWithoutLink[0])),
+      registered: Math.round(sumOf(startOrigin.exposure[0])),
+      samples: startOrigin.samplesByDay[0] ?? 0,
+      truncated: startOrigin.truncatedByDay[0] ?? 0
+    }
+  ];
+  const base = e1CheckOf(result, 1);
+  return {
+    result,
+    table,
+    check: {
+      ...base.check,
+      bar: `0 events over the run, with ${plan.floorReads} contention exposure >= ${e1ExposureFloor} lane-minutes in the full plan day (D38b: >= ${needed} of ${expected} samples, <= 1 % truncated; otherwise "not exercised", not passed)`,
+      status,
+      value:
+        events > 0
+          ? `${result.events.length} blocked task(s), ${result.lockEvents.length} lock wait(s) of ${e1BlockedMinutes} min`
+          : samples === 0
+            ? "no sample in the plan day yet"
+            : why.length > 0
+              ? `not exercised: ${why.join("; ")}; ${readings}`
+              : `0 events; ${readings}`,
+      data: {
+        scoped: Math.round(scoped),
+        scopedWithoutLink: Math.round(withoutLink),
+        registered: Math.round(registered),
+        startOriginScoped: Math.round(sumOf(startOrigin.scopedExposure[0])),
+        startOriginRegistered: Math.round(sumOf(startOrigin.exposure[0])),
+        samples,
+        truncated,
+        events
+      },
+      details: [
+        `start-origin reading (day [start, +24 h)): scoped ${Math.round(sumOf(startOrigin.scopedExposure[0]))}, registered ${Math.round(sumOf(startOrigin.exposure[0]))} lane-minutes`,
+        ...base.check.details.filter((line) => !line.startsWith("scoped exposure"))
+      ]
+    }
+  };
 }
 
 /** E1's line from its result, over its first `fullDays` days (a partial last day is left out). */
@@ -367,6 +608,10 @@ export function e1CheckOf(
           (event) =>
             `${event.waiting} backend(s) waited on a lock, the longest ${Math.round(event.longestMs / minute)} min, at ${new Date(event.at).toISOString()}`
         ),
+        `scoped exposure (>= 2 due tasks of distinct non-null scope keys, D38b; reported beside, not the bar): ${
+          full.map((_, index) => Math.round(sumOf(result.scopedExposure[index]))).join(", ") ||
+          "none"
+        } lane-minutes a day`,
         waitLine("same-scope waits", result.sameScopeWaits),
         waitLine("queue waits", result.queueWaits),
         ...(result.derivedWorkerStates
@@ -1954,6 +2199,8 @@ export interface F4Report {
     injection: Array<Record<string, string | number>>;
     tokens: Array<Record<string, string | number>>;
     load: Array<Record<string, string | number>>;
+    /** The dedicated E1 run's edit-wave ledger (D38b); absent on every other run. */
+    waves?: Array<Record<string, string | number>>;
   };
   gateS: GateSAssertion[];
   relations: string | null;
@@ -1968,6 +2215,8 @@ export function f4Report(run: LoadedRun, context: F4Context): F4Report | null {
   const injection = injectionCheck(run);
   const tokens = tokensCheck(run);
   const load = loadCheck(run);
+  // The dedicated E1 run's reported lines (D38b), beside the registered checks.
+  const e1Lines = e1.result ? e1RunLines(run, e1.result) : null;
   return {
     checks: [
       e1.check,
@@ -1977,14 +2226,16 @@ export function f4Report(run: LoadedRun, context: F4Context): F4Report | null {
       e5Check(run),
       injection.check,
       tokens.check,
-      load.check
+      load.check,
+      ...(e1Lines?.checks ?? [])
     ],
     tables: {
       exposure: e1.table,
       e3: e3.table,
       injection: injection.table,
       tokens: tokens.table,
-      load: load.table
+      load: load.table,
+      ...(e1Lines ? { waves: e1Lines.waves } : {})
     },
     gateS: gateSAssertions(run),
     relations: relationsLine(run),

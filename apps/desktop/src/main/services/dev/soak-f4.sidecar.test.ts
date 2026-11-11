@@ -11,6 +11,7 @@ import {
   aiConfigGeneration,
   closePgPool,
   createAiConfigRepository,
+  createAtomicNoteRepository,
   createLocalModelRepository,
   createPgPool,
   createSettingsRepository,
@@ -21,10 +22,16 @@ import {
 import {
   defaultPriceTable,
   presetCatalogIds,
+  relationsConfig,
+  relationsDailyCallsSettingKey,
   relationsDecisionsSettingKey,
   type BudgetSnapshot
 } from "@app/domain";
 
+import type { AiService } from "../ai-service.js";
+import { KnowledgeService } from "../knowledge-service.js";
+import { noteMatchInputHash } from "../relations/relation-matcher.js";
+import { createF4Ports } from "./soak-f4-ports.js";
 import { createSoakHooks } from "./soak-hooks.js";
 import {
   createMoneyPort,
@@ -35,8 +42,10 @@ import {
 import { plannedEntryTokens } from "./soak-budget.js";
 import {
   pickEditableNoteInRoot,
+  pickNotesForEditWave,
   pickNotesToReembed,
   pickTopicToOpen,
+  readE1Extras,
   readFinishedJobs,
   readJobs,
   readLockWaits,
@@ -923,6 +932,244 @@ describe.skipIf(!sidecarInstalled)("the F4 soak harness on a real PostgreSQL dat
       } finally {
         await reach.cleanup();
       }
+    });
+  });
+
+  // F4 D38b: the dedicated E1 run's edit waves, through the product's reviewNote, and its sample.
+  describe("the dedicated E1 run's edit waves and sample", () => {
+    /** Root A: one note and two in a child source; root B: two (one protected); root C: one. */
+    const seedLibrary = async () => {
+      const a = await seedNote("A one");
+      const child = randomUUID();
+      await pool.query(
+        `insert into source_items (id, type, title, parent_source_item_id)
+         values ($1, 'PersonalNote', 'A child', $2)`,
+        [child, a.sourceId]
+      );
+      const a2 = await seedNote("A two", child);
+      const a3 = await seedNote("A three", child);
+      const b = await seedNote("B one");
+      const b2 = await seedNote("B two", b.sourceId);
+      const c = await seedNote("C one");
+      await pool.query(
+        `update atomic_notes set metadata = metadata || '{"humanProtected":true}'::jsonb where id = $1`,
+        [b2.id]
+      );
+      // Left out: a rejected, an archived and a superseded note.
+      const rejected = await seedNote("A rejected", a.sourceId);
+      const archived = await seedNote("B archived", b.sourceId);
+      const superseded = await seedNote("C superseded", c.sourceId);
+      await pool.query(`update atomic_notes set status = 'rejected' where id = $1`, [rejected.id]);
+      await pool.query(`update atomic_notes set status = 'archived' where id = $1`, [archived.id]);
+      await pool.query(`update atomic_notes set supersession_status = 'superseded' where id = $1`, [
+        superseded.id
+      ]);
+      return {
+        roots: { a: a.sourceId, b: b.sourceId, c: c.sourceId },
+        current: [a.id, a2.id, a3.id, b.id, b2.id, c.id],
+        left: [rejected.id, archived.id, superseded.id]
+      };
+    };
+
+    const knowledgeService = () =>
+      new KnowledgeService({
+        getPool: () => pool,
+        aiService: {} as AiService,
+        userDataPath: workDir,
+        getStorageSettings: async () => ({}) as never,
+        getUploadedFilesBasePath: async () => null
+      });
+
+    const wavePorts = (knowledge: Pick<KnowledgeService, "reviewNote">, wake = vi.fn()) =>
+      createF4Ports({
+        pool,
+        seed: 20261114,
+        knowledge,
+        topicOverview: async () => null,
+        recordTopicView: async () => null,
+        recordNoteView: async () => null,
+        requestAudit: async () => null,
+        jobs: { wake },
+        status: null,
+        controls: {
+          current: () => ({
+            autonomy: "off",
+            paused: false,
+            onlyIdle: false,
+            onlyOnAc: false,
+            monthlyCapUsd: 0
+          })
+        },
+        power: { snapshot: () => ({ active: false, onBattery: false, overridden: true }) },
+        budget: { snapshot: async () => ({}) as BudgetSnapshot },
+        cap: {
+          snapshot: () => ({
+            capTokens: 50_000,
+            hardCapTokens: 50_000,
+            spentTokens: 0,
+            reservedTokens: 0,
+            calls: 0,
+            refusals: 0,
+            largestCallTokens: 0
+          })
+        },
+        e1: true
+      });
+
+    it("picks every current note with its root, by root (largest first) or interleaved, seeded per wave", async () => {
+      const { roots, current, left } = await seedLibrary();
+      const byRoot = await pickNotesForEditWave(pool, 20261114, 0, 1000, "by_root");
+      expect(byRoot.map((note) => note.rootId)).toEqual([
+        roots.a,
+        roots.a,
+        roots.a,
+        roots.b,
+        roots.b,
+        roots.c
+      ]);
+      expect(byRoot.map((note) => note.id).toSorted()).toEqual(current.toSorted());
+      for (const id of left) expect(byRoot.some((note) => note.id === id)).toBe(false);
+      const interleaved = await pickNotesForEditWave(pool, 20261114, 1, 1000, "interleaved");
+      expect(interleaved.map((note) => note.rootId)).toEqual([
+        roots.a,
+        roots.b,
+        roots.c,
+        roots.a,
+        roots.b,
+        roots.a
+      ]);
+      // The same seed and wave give the same order; the cap keeps the head of it.
+      expect(await pickNotesForEditWave(pool, 20261114, 0, 1000, "by_root")).toEqual(byRoot);
+      expect(await pickNotesForEditWave(pool, 20261114, 0, 2, "by_root")).toEqual(
+        byRoot.slice(0, 2)
+      );
+    });
+
+    it("edits every current note once a wave with the marker replaced, new MATCH input and one embedding job each", async () => {
+      const { current, left } = await seedLibrary();
+      const notes = createAtomicNoteRepository(pool);
+      const hashes = async () =>
+        new Map(
+          await Promise.all(
+            current.map(async (id) => {
+              const record = (await notes.findById(id))!;
+              return [
+                id,
+                noteMatchInputHash(record, relationsConfig.decide.bodyCharacters)
+              ] as const;
+            })
+          )
+        );
+      const leftBodies = async () =>
+        (
+          await pool.query<{ body: string }>(
+            "select body_markdown as body from atomic_notes where id = any($1::uuid[]) order by id",
+            [left]
+          )
+        ).rows.map((row) => row.body);
+      const leftBefore = await leftBodies();
+      const wake = vi.fn();
+      const ports = wavePorts(knowledgeService(), wake);
+      let previous = await hashes();
+      const lengths: number[][] = [];
+      for (const wave of [0, 1, 2]) {
+        await pool.query("delete from jobs");
+        const order = wave % 2 === 0 ? "by_root" : "interleaved";
+        const detail = await ports.editWave!(wave, { notes: 1000, order });
+        expect(detail).toMatchObject({
+          picked: 6,
+          edited: 6,
+          conflicts: 0,
+          gone: 0,
+          errors: 0,
+          roots: 3,
+          order
+        });
+        const bodies = (
+          await pool.query<{ id: string; body: string; protected: string | null }>(
+            `select id::text as id, body_markdown as body, metadata ->> 'humanProtected' as protected
+               from atomic_notes where id = any($1::uuid[]) order by id`,
+            [current]
+          )
+        ).rows;
+        for (const row of bodies) {
+          expect(row.body.startsWith(`[e1 r${wave}]\n\n`)).toBe(true);
+          expect(row.body.match(/\[e1 r\d+\]/gu)).toHaveLength(1);
+          expect(row.protected).toBe("true");
+        }
+        lengths.push(bodies.map((row) => row.body.length));
+        const next = await hashes();
+        for (const id of current) expect(next.get(id)).not.toBe(previous.get(id));
+        previous = next;
+        const embeddings = (
+          await pool.query<{ noteId: string }>(
+            `select payload ->> 'atomicNoteId' as "noteId" from jobs where type = 'note-embedding'`
+          )
+        ).rows.map((row) => row.noteId);
+        expect(embeddings.toSorted()).toEqual(current.toSorted());
+      }
+      // The marker is replaced, not stacked: the body length is the same at every wave.
+      expect(lengths[1]).toEqual(lengths[0]);
+      expect(lengths[2]).toEqual(lengths[0]);
+      expect(await leftBodies()).toEqual(leftBefore);
+      expect(wake).toHaveBeenCalled();
+    });
+
+    it("counts a note changed since the pick as a conflict, and goes on with the wave", async () => {
+      const { current } = await seedLibrary();
+      const service = knowledgeService();
+      const target = current[0]!;
+      const detail = await wavePorts({
+        reviewNote: async (input) => {
+          if (input.id === target)
+            await pool.query(
+              `update atomic_notes set updated_at = updated_at + interval '1 second' where id = $1`,
+              [target]
+            );
+          return service.reviewNote(input);
+        }
+      }).editWave!(0, { notes: 1000, order: "by_root" });
+      expect(detail).toMatchObject({ picked: 6, edited: 5, conflicts: 1, errors: 0 });
+    });
+
+    it("keeps every running job and the queued ones in claim order up to the bound, with sizes and set-aside times", async () => {
+      await pool.query(
+        `insert into jobs (type, status, lane, priority, run_after, payload, blocked_class,
+           blocked_reason, blocked_at)
+         values ('relation-match', 'running', 'light', 0, now(), '{"noteId":"r1"}'::jsonb, null, null, null),
+                ('relation-match', 'running', 'light', 0, now(), '{"noteId":"r2"}'::jsonb, null, null, null),
+                ('relation-match', 'queued', 'light', 0, now() - interval '3 minutes', '{"noteId":"q1"}'::jsonb, null, null, null),
+                ('relation-match', 'queued', 'light', 0, now() - interval '1 minute', '{"noteId":"q2"}'::jsonb, null, null, null),
+                ('relation-match', 'queued', 'light', -1, now() - interval '9 minutes', '{"noteId":"q3"}'::jsonb, null, null, null),
+                ('relation-link', 'queued', 'light', 1, now(), '{"rootId":"q4"}'::jsonb, 'paused', 'autonomy_off', now() - interval '5 minutes'),
+                ('note-embedding', 'queued', 'heavy', 0, now() - interval '2 minutes', '{"noteId":"q5"}'::jsonb, null, null, null)`
+      );
+      const { jobs, truncated } = await readJobs(pool, 3);
+      expect(jobs.filter((job) => job.status === "running")).toHaveLength(2);
+      const queued = jobs.filter((job) => job.status === "queued");
+      // Priority first, then the due time: the set-aside link row (priority 1), q1, then q5.
+      expect(queued.map((job) => job.type)).toEqual([
+        "relation-link",
+        "relation-match",
+        "note-embedding"
+      ]);
+      expect(truncated).toBe(2);
+      for (const job of jobs) expect(job.payloadBytes).toBeGreaterThan(0);
+      expect(queued[0]!.blockedAt).toBeGreaterThan(Date.now() - 6 * 60_000);
+      expect(queued[1]!.blockedAt).toBeNull();
+      expect((await readJobs(pool)).truncated).toBe(0);
+    });
+
+    it("reads the database size, the D26 counter and the change-sets", async () => {
+      expect(await readE1Extras(pool)).toMatchObject({ relationCalls: null, changeSets: 0 });
+      await createSettingsRepository(pool).set(relationsDailyCallsSettingKey, {
+        day: "2026-11-14",
+        calls: 37,
+        interactiveCalls: 0
+      });
+      const extras = await readE1Extras(pool);
+      expect(extras.relationCalls).toEqual({ day: "2026-11-14", calls: 37 });
+      expect(extras.dbBytes).toBeGreaterThan(1_000_000);
     });
   });
 });

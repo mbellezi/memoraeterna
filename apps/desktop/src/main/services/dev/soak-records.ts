@@ -75,7 +75,8 @@ export const soakActionKinds = [
   "post_outage_probe",
   "topic_open",
   "contention_burst",
-  "burst_edit"
+  "burst_edit",
+  "edit_wave"
 ] as const;
 export type SoakActionKind = (typeof soakActionKinds)[number];
 
@@ -429,7 +430,17 @@ const sampleDetail = {
     })
     .strict()
     .nullable()
-    .optional()
+    .optional(),
+  /** The database's size in bytes (`pg_database_size`, D38b's growth line); null when unreadable. */
+  dbBytes: z.number().nonnegative().nullable().optional(),
+  /** The D26 relation-call counter as stored (`relations.ai.dailyCalls`); null when none is. */
+  relationCalls: z
+    .object({ day: z.string(), calls: z.number().int().nonnegative() })
+    .strict()
+    .nullable()
+    .optional(),
+  /** Change-sets of the relation runs so far (`relation_match_runs`, cumulative; D38b's ledger). */
+  changeSets: z.number().int().nonnegative().nullable().optional()
 };
 
 const jobSample = z
@@ -453,7 +464,11 @@ const jobSample = z
      */
     scopeKey: z.string().nullable().optional(),
     blockedClass: z.string().nullable().optional(),
-    blockedReason: z.string().nullable().optional()
+    blockedReason: z.string().nullable().optional(),
+    /** Epoch ms a blocker set the row aside (F4 D38b's set-aside age); absent from older samples. */
+    blockedAt: z.number().nullable().optional(),
+    /** The size of the row's payload in bytes (D38b: a link job's payload growth). */
+    payloadBytes: z.number().int().nonnegative().optional()
   })
   .strict();
 
@@ -463,8 +478,15 @@ export const soakSampleSchema = z
     at: iso,
     elapsedMs: milliseconds,
     lanes: z.array(laneSample),
-    /** Jobs that are queued or running at the sample, newest information only. */
+    /**
+     * Jobs that are queued or running at the sample: every running one, and the queued ones in
+     * claim order up to a bound (D38b; before it, the first 400 by creation).
+     */
     jobs: z.array(jobSample),
+    /** Queued jobs the bound left out of `jobs` (D38b); absent from samples recorded before it. */
+    jobsTruncated: z.number().int().nonnegative().optional(),
+    /** How long the collector took to read the sample, in ms (D38b); absent before it. */
+    collectMs: z.number().nonnegative().optional(),
     jobCounts: z.record(z.string(), z.number().int()),
     helper: z
       .object({
@@ -620,7 +642,22 @@ export const soakMetaSchema = z
             .strict()
         ),
         /** Version of each predicate the report evaluates (E1 worker states, E5 fallback...). */
-        predicates: z.record(z.string(), z.number().int())
+        predicates: z.record(z.string(), z.number().int()),
+        /**
+         * The dedicated E1 run's start (D38b): the autonomy the driver found (it refuses any but
+         * Off), when it pinned the power reading idle, and the D26 relation-call counter then.
+         */
+        e1: z
+          .object({
+            autonomyAtStart: z.string(),
+            powerPinnedAt: iso,
+            relationCallsAtStart: z
+              .object({ day: z.string(), calls: z.number().int().nonnegative() })
+              .strict()
+              .nullable()
+          })
+          .strict()
+          .optional()
       })
       .strict()
       .optional()

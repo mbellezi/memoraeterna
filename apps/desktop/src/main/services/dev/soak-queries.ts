@@ -1,4 +1,5 @@
 import { shownNoteRelationSql, type PgPool } from "@app/db";
+import { relationsDailyCallsSettingKey } from "@app/domain";
 
 import type {
   JobDoneRecord,
@@ -110,31 +111,151 @@ export async function pickQuestionTitle(
   return result.rows[0]?.title ?? null;
 }
 
-/** Jobs that are queued or running now, and the number of jobs in each status. */
+/** The queued jobs a sample keeps, in claim order (D38b; the running ones are always kept). */
+export const sampleQueuedJobs = 2_000;
+
+/**
+ * Jobs that are running or queued now, and the number of jobs in each status. Every running job is
+ * kept; the queued ones up to `queuedLimit` in the order the workers claim them (priority, then due
+ * time), with `truncated` the queued ones left out (F4 D38b: the E1 run's waves queue hundreds).
+ */
 export async function readJobs(
-  db: Db
-): Promise<{ jobs: SoakSample["jobs"]; counts: SoakSample["jobCounts"] }> {
+  db: Db,
+  queuedLimit = sampleQueuedJobs
+): Promise<{
+  jobs: SoakSample["jobs"];
+  counts: SoakSample["jobCounts"];
+  truncated: number;
+}> {
   const [jobs, counts] = await Promise.all([
-    db.query<SoakSample["jobs"][number]>(
-      `select id::text as id, type, status::text as status, lane,
+    db.query<SoakSample["jobs"][number] & { queuedTotal: number }>(
+      `with picked as (
+         (select * from jobs where status = 'running')
+         union all
+         (select * from jobs where status = 'queued'
+           order by priority desc, run_after asc, id limit $1)
+       )
+       select id::text as id, type, status::text as status, lane,
               payload ->> 'sourceItemId' as "sourceItemId", attempts,
               (extract(epoch from updated_at) * 1000)::float8 as "updatedAt",
               (extract(epoch from run_after) * 1000)::float8 as "runAfter",
               (extract(epoch from locked_at) * 1000)::float8 as "lockedAt",
               (extract(epoch from created_at) * 1000)::float8 as "createdAt",
               scope_key as "scopeKey", blocked_class as "blockedClass",
-              blocked_reason as "blockedReason"
-         from jobs where status in ('queued', 'running')
-        order by created_at limit 400`
+              blocked_reason as "blockedReason",
+              (extract(epoch from blocked_at) * 1000)::float8 as "blockedAt",
+              octet_length(payload::text)::int as "payloadBytes",
+              (select count(*)::int from jobs where status = 'queued') as "queuedTotal"
+         from picked
+        order by (status = 'running') desc, priority desc, run_after asc, id`,
+      [queuedLimit]
     ),
     db.query<{ status: string; count: number }>(
       "select status::text as status, count(*)::int as count from jobs group by status"
     )
   ]);
+  const rows = jobs.rows.map((row) => {
+    const job: Partial<typeof row> = { ...row };
+    delete job.queuedTotal;
+    return job as Omit<typeof row, "queuedTotal">;
+  });
+  const queuedTotal = jobs.rows[0]?.queuedTotal ?? 0;
+  const queuedKept = rows.filter((job) => job.status === "queued").length;
   return {
-    jobs: jobs.rows,
-    counts: Object.fromEntries(counts.rows.map((row) => [row.status, row.count]))
+    jobs: rows,
+    counts: Object.fromEntries(counts.rows.map((row) => [row.status, row.count])),
+    truncated: Math.max(0, queuedTotal - queuedKept)
   };
+}
+
+/**
+ * What the dedicated E1 run's ledger reads beside the jobs (D38b): the database's size, the D26
+ * relation-call counter as stored, and the change-sets of relation runs so far.
+ */
+export async function readE1Extras(db: Db): Promise<{
+  dbBytes: number | null;
+  relationCalls: { day: string; calls: number } | null;
+  changeSets: number | null;
+}> {
+  const result = await db.query<{
+    dbBytes: number | null;
+    counter: { day?: unknown; calls?: unknown } | null;
+    changeSets: number | null;
+  }>(
+    `select pg_database_size(current_database())::float8 as "dbBytes",
+            (select value from settings where key = $1) as counter,
+            (select count(*)::int from relation_match_runs) as "changeSets"`,
+    [relationsDailyCallsSettingKey]
+  );
+  const row = result.rows[0];
+  const counter = row?.counter;
+  return {
+    dbBytes: row?.dbBytes === null || row?.dbBytes === undefined ? null : Number(row.dbBytes),
+    relationCalls:
+      counter && typeof counter.day === "string" && typeof counter.calls === "number"
+        ? { day: counter.day, calls: counter.calls }
+        : null,
+    changeSets: row?.changeSets ?? null
+  };
+}
+
+/**
+ * The notes an edit wave edits (F4 D38b): every current note the soak's edits take (`active` or
+ * `approved`, `current`; protected ones included, since every wave edits them again), at most
+ * `limit`, each with its hierarchy root (the topmost source of its source item, as `linkRootOf`
+ * finds it: MATCH's scope `root:<rootId>`). `by_root`: the roots by descending note count, each
+ * root's notes together; `interleaved`: one note of each root in turn. Within a root the order is
+ * seeded by `seed` and the wave `index`.
+ */
+export async function pickNotesForEditWave(
+  db: Db,
+  seed: number,
+  index: number,
+  limit: number,
+  order: "by_root" | "interleaved"
+): Promise<Array<{ id: string; bodyMarkdown: string; updatedAt: string; rootId: string }>> {
+  const result = await db.query<{
+    id: string;
+    bodyMarkdown: string;
+    updatedAt: Date;
+    rootId: string;
+  }>(
+    `with recursive picked as (
+       select a.id, a.body_markdown, a.updated_at, a.created_from_source_item_id as source_id
+         from atomic_notes a
+        where a.status in ('active', 'approved') and a.supersession_status = 'current'
+     ), up as (
+       select p.id as note_id, s.id, s.parent_source_item_id, 0 as depth
+         from picked p join source_items s on s.id = p.source_id
+       union all
+       select up.note_id, parent.id, parent.parent_source_item_id, up.depth + 1
+         from up join source_items parent on parent.id = up.parent_source_item_id
+        where up.depth < 64
+     ), rooted as (
+       select p.id, p.body_markdown, p.updated_at,
+              coalesce((select u.id from up u where u.note_id = p.id order by u.depth desc limit 1),
+                       p.source_id) as root_id
+         from picked p
+     ), ranked as (
+       select r.*, count(*) over (partition by r.root_id) as root_notes,
+              row_number() over (partition by r.root_id
+                                 order by md5(r.id::text || $1::text || $2::text)) as position
+         from rooted r
+     ), roots as (
+       select root_id,
+              row_number() over (order by max(root_notes) desc,
+                                 md5(root_id::text || $1::text || $2::text)) as root_rank
+         from ranked group by root_id
+     )
+     select k.id::text as id, k.body_markdown as "bodyMarkdown", k.updated_at as "updatedAt",
+            k.root_id::text as "rootId"
+       from ranked k join roots o on o.root_id = k.root_id
+      order by case when $3::text = 'by_root' then o.root_rank else k.position end,
+               case when $3::text = 'by_root' then k.position else o.root_rank end
+      limit $4`,
+    [String(seed), String(index), order, limit]
+  );
+  return result.rows.map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
 }
 
 /**
