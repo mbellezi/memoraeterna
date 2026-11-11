@@ -830,17 +830,19 @@ states; clean Hybrid install places and connects the first note in ≤10 min (e2
 
 ### F5 Unified workspace (weeks 19-22)
 
-Decisions D1-D32, the owner's answers of 2026-11-11 and the defaults Q4-Q21, the gates D, M, U, J and X, the exit bars
-X1-X12 with their data and methods, the slot plan, remote spend and the budget: `docs/f5-decisions.md`; it binds F5
-and, where sections 4-6 differ, it wins. Tasks run in waves as in F4 (separate worktrees; IPC by area with one wiring
-card per wave and a fixed chain for every other shared file; a proof that starts a Memora Electron or a local model
-takes that slot). F4's close runs beside F5 from its own branch and worktree (D3). Every UI box is ticked only with its
-gate U records: fixture screenshots before merge and live screenshots on a scratch profile (D1).
+Decisions D1-D34 (D8, D9, D15, D31 and D32 amended at gate D), the owner's answers of 2026-11-11 and the defaults
+Q4-Q36, the gates D, M, U, J and X, the exit bars X1-X12 with their data and methods, the slot plan, remote spend and
+the budget: `docs/f5-decisions.md`; it binds F5 and, where sections 4-6 differ, it wins. The design record
+`docs/design/f5-workspace.md` (gate D, passed 2026-11-11) binds visuals, layout, copy and states. Tasks run in waves as
+in F4 (separate worktrees; IPC by area with one wiring card per wave and a fixed chain for every other shared file; a
+proof that starts a Memora Electron or a local model takes that slot). F4's close runs beside F5 from its own branch and
+worktree (D3). Every UI box is ticked only with its gate U records: fixture screenshots before merge and live
+screenshots on a scratch profile (D1).
 
 Wave 0 (decisions and design, 2026-11-11):
 - [x] T106 Decision record (`docs/f5-decisions.md`) and these task boxes.
-- [ ] T107 Settings v2 mockups, published as a private artifact (synthetic data, both themes, two widths).
-- [ ] T108 Design record (`docs/design/f5-workspace.md`) from the four seeded candidates, three judges and the
+- [x] T107 Settings v2 mockups, published as a private artifact (synthetic data, both themes, two widths).
+- [x] T108 Design record (`docs/design/f5-workspace.md`) from the four seeded candidates, three judges and the
       synthesis (gate D).
 
 Wave 1 (foundations, model-free, no new dependency; gate M at the end):
@@ -899,6 +901,7 @@ Wave 3 (surfaces):
 - [ ] T152 Map › Relations table, super-nodes and the lens.
 - [ ] T153 Atlas spike, record only (`docs/spikes/atlas-f5.md`).
 - [ ] T173 Context panel: Activity and Ask.
+- [ ] T176 Inbox: suggested relations by confidence (D33).
 
 Wave 4 (journeys, removals, settings data; gate J before the removals):
 - [ ] T154 Journeys J1-J3 and the idle proof (X1, X2, X4, X7).
