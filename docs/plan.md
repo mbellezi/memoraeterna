@@ -1,8 +1,9 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F4 (authorized by the owner on 2026-10-23; F3 closed on 2026-10-20).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
-target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
-starting points unless marked measured.
+**Current phase: F4 (authorized by the owner on 2026-10-23; F3 closed on 2026-10-20). Sequence: F4 → F5 → F6 →
+F7; the owner tests only in F7, the complete app after legacy removal (decision 34).** Branch: `refactoring`
+(from tag `pre-strangler`). This document holds the target architecture and the roadmap. Durable invariants live
+in `RULES.md` and `rules/`; numbers here are starting points unless marked measured.
 
 ## 1. Goal and owner complaints
 
@@ -83,7 +84,8 @@ concurrency and automatic correction.
 21. **Objective ratings by a panel of Opus 5.5 judges** (2026-10-16): objective evaluations such as E4's blind
     topic rating are done by three independent, blind Claude Opus 5.5 judges (each sees only what the rating page
     shows), with the majority per question; the pass rule is unchanged (D20, at least 24/30 rated both coherent
-    and well named). The owner may still rate; the panel replaces the owner's 45 minutes as the gate.
+    and well named). The owner may still rate (optional, in F7); the panel replaces the owner's 45 minutes as
+    the gate.
 22. **F3 decisions** (2026-10-17): the Relations v2 and AI runtime decisions D1-D47, the owner-question defaults
     Q1-Q20 (all approved by the owner with the F3 budget on 2026-10-17), the gates, the measurement rules and seeds
     are recorded in `docs/f3-decisions.md` and bind F3; where section 4 differs, they win. Three readings narrow
@@ -94,9 +96,11 @@ concurrency and automatic correction.
     decision-21 panel instead of owner-labeled pairs (Q10), and a P0 call never spills to a remote lane in F3 (Q9).
 
 23. **Long waits overlap the next work** (2026-10-17): while a soak, a run of nightly KPIs or a stability window
-    runs (F3's 24 h soak, F4's 7-day soak, F6's 7 nightly runs and 2 stable weeks), work continues on the next
-    phase or on the parts of the same phase that do not depend on it. If the test fails, work stops, the fix lands
-    and the test restarts before anything advances further. A phase is closed only when its test passes.
+    runs (F3's 24 h soak, F4's 7-day soak, F6's 7 nightly runs), work continues on the next phase or on the parts
+    of the same phase that do not depend on it. If the test fails, work stops, the fix lands and the test restarts
+    before anything advances further. A phase is closed only when its test passes. F6's runs use scratch profiles
+    with no owner use; F7 starts only after they pass and legacy code is removed (decision 34; the 2 stable weeks
+    before removal were dropped by the owner on 2026-11-11, since the legacy code was never used on refactoring).
 24. **Settings v2** (2026-10-17): Settings is redesigned as one streamlined, consistent surface that carries
     every setting the F3-F5 redesign adds. F4 inventories every setting (where code reads it, its default, and
     its fate: keep, merge, move to Advanced or drop) beside its automation cut (37+ to ≤6); F5 builds Settings v2
@@ -110,8 +114,9 @@ concurrency and automatic correction.
 26. **No new model variable until the program ends** (2026-10-18): every phase keeps today's models (writer
     gpt-5.6-luna on the Codex route, Qwen3-Embedding-0.6B and Qwen3-Reranker-0.6B), quantizations and runtimes.
     The local-model benchmark of decision 25 and any runtime-upgrade spike are measured and recorded only (a
-    document, no catalog, default or preset change, no merge); the owner decides on them after the program.
-    Hardware detection may ship, but its model suggestions stay informative or off until then.
+    document, no catalog, default or preset change, no merge); the owner decides on them after F7, with the
+    trial's findings (decision 34; the trial runs on today's models and runtimes). Hardware detection may ship,
+    but its model suggestions stay informative or off until then.
 27. **A book's catalog header always carries its summary** (2026-10-18): a hierarchy root's catalog header
     chunk includes the root's AI summary whatever the order its jobs ran in. When the summary is written or
     changes after the header was built, the header chunk is rebuilt, re-embedded and its knowledge graph
@@ -128,9 +133,11 @@ concurrency and automatic correction.
     relation automatically. The decide threshold is chosen on the fixture tuning partition (most expected root
     pairs found at 0 forbidden), every automatic relation is shown as a suggestion, typed suggestions promote to
     suggested source relations, the graph draws suggestions distinctly, and the owner's Keep and Remove make a
-    relation final. Panel precision and calibration are reported, not gating; F6 recalibrates from the owner's
-    real Keep and Remove. A typer prompt with the panel's strict criterion is tested on live Codex (about
-    60-100k tokens); if typed suggestions reach precision 0.80 they form a "confirmed" tier.
+    relation final. Panel precision and calibration are reported, not gating; F6 builds the recalibration
+    pipeline and runs it on the decision-21 panel labels plus synthetic labels (reported, not gating), and
+    recalibration from the owner's real Keep and Remove happens in F7 (decision 34). A typer prompt with the
+    panel's strict criterion is tested on live Codex (about 60-100k tokens); if typed suggestions reach precision
+    0.80 they form a "confirmed" tier. (Until 2026-11-11: F6 recalibrated from real Keep and Remove.)
 30. **The Decisions API as an opt-in decider** (2026-10-18): on F3's panel labels the OpenAI Decisions API
     (gpt-6-luna, remote, paid) is the only decider that clears decision 18's apply bar (cross-validated precision
     1.000, Wilson 0.89; fixture tuning 26/26 at 0 forbidden); the local Qwen3-Reranker-4B ranks better than the
@@ -147,7 +154,8 @@ concurrency and automatic correction.
     decider when its two directional scores differ clearly (about 0.78); (c) the Decisions decider applies
     automatically in its frozen apply band (frozen from the product's own requests, fragile across fold seeds:
     the owner accepted it); (d) X2 (reverse-only losses, mostly `extends`) is recorded as not met in F3 and
-    revisited by F6's recalibration from real Keep and Remove.
+    carried as not met through F6 (it may be re-measured on the panel-labelled R_v9 set after any decider change,
+    reported only) and revisited in F7 with real verdicts (decision 34; until 2026-11-11 the revisit was F6's).
 32. **Local models first; a remote run as the last check** (2026-10-23): every phase does all it can for the
     local models to meet their bars as planned (tuning, constrained decoding, batching, prompts, within decision 26).
     If a local model then comes close to a bar but still misses it, the same test runs with the Codex writer and the
@@ -161,6 +169,21 @@ concurrency and automatic correction.
     F4; where section 4 differs, they win. Its readings narrow earlier text: 4.3's states are derived from `jobs`
     columns (D5), a P0 call still never spills to a remote lane (F5), C4's Local 24 h re-run is decision 31a's soak,
     and the Ask box's GIN index is built only with a prefilter (D22).
+34. **The owner tests only the complete app, in F7** (2026-11-11; translated from Portuguese: "I will do the real
+    tests only after F6, including after the removal of the legacy code ... test on the complete version and then
+    review or fix any problem that comes up"). No owner use, test or rating on refactoring code before F7 entry
+    (gate T); F4, F5 and F6 exits are automated only. Before F7 the owner only answers questions and approves
+    designs (static mockups with synthetic data). F7 (section 7) follows F6: the owner tests the final build (the
+    commit gate T tests) and agents triage and fix the findings; the work that needs real use moves there
+    (recalibration from real Keep and Remove, the X2 revisit, the real undo rate, decision 26's adoptions). Agent
+    proofs run on scratch or cloned profiles (`rules/architecture.md`). Owner answers (2026-11-11): (a) the trial
+    starts on a new empty profile where the owner adds their own sources; the owner's DEV profile (only the
+    golden library) is not upgraded for the trial and its library is not re-matched (`docs/f4-decisions.md` Q8,
+    Q11; any later upgrade only on a new owner request); (b) legacy code is removed with no stability window,
+    since it was never used, behind a restore-verified backup and the rollback tag; (c) the tag
+    `f6-pre-legacy-removal` is approved, created just before removal and kept until F7 closes, and the stage is
+    named "F7 Owner trial and fixes". Still open, with no spend unless the owner approves: an optional final
+    Hybrid soak on the F6 build (about 1.4M Codex tokens for 72 h).
 
 ## 3. The five swaps
 
@@ -309,7 +332,8 @@ call" blocks.
   unions the topic change-sets, relation runs and overview versions; each store undoes its own (F4 D10).
 - **Inbox:** a read model over pending-review change-sets, quarantined tasks, contradictions, NOT_RELATED
   vetoes, duplicates, Obsidian conflicts, budget items and backlog offers, worked from the keyboard; each verb
-  goes through its store's writer and each decision becomes a calibration label.
+  goes through its store's writer and each decision becomes a calibration label. Real labels start in F7; F6
+  never waits on a count of real labels (decision 34).
 - **Controls (three):** autonomy (Off: no generative or remote background work, deterministic placement
   still runs; Suggest; Auto with undo, the default), monthly remote spend cap, pause. Plus the tree-shape
   preference and "only idle" / "only on AC power" options. Always reviewed regardless of autonomy: changes
@@ -788,7 +812,8 @@ Wave 4 (after the soak; C4 and E6):
 - [ ] T101 Soak report and failure audit (E1-E5).
 - [ ] T102 Decoder model proof and the Local 24 h re-run (C4; decision 32's remote check if close).
 - [ ] T103 First-run e2e gate on final code (E6).
-- [ ] T104 DEV proofs, screenshots and the settings count (E7).
+- [ ] T104 DEV proofs, screenshots and the settings count (E7), with the DEV app on a scratch clone (data root
+      overridden, autonomy Off; decision 34).
 
 Wave 5 (exit):
 - [ ] T105 Exit measurement (`docs/kpi-f4.md`) and phase close.
@@ -807,18 +832,27 @@ states; clean Hybrid install places and connects the first note in ≤10 min (e2
       persisted answers; Home; Library table; hover previews.
 - [ ] Remaining pollers replaced by events.
 - [ ] Playwright-Electron journeys: first run, import to tree, read topic, follow a relation, Inbox triage,
-      ask and jump to citation.
-- [ ] Settings v2 (decision 24): mockups approved by the owner first; a few sections (General and appearance,
-      AI with the presets first, Knowledge, Library and storage, Integrations, Privacy and data, Advanced and
-      Diagnostics); search across settings; "changed from default" markers with a per-item reset; plain-language
-      help; design-system components; the old settings screens removed.
+      ask and jump to citation. Inbox triage does Keep, Remove and Dismiss on a scratch profile and asserts each
+      verdict is stored in its store (the proof that labels persist before any real label; F6's label export
+      reads them back).
+- [ ] Scratch-profile mode (`MEMORA_USER_DATA_DIR`) for the matching pilot and expanded benchmark runners and
+      their report and status scripts, which today refuse anything but the owner's DEV profile; until it lands
+      they are frozen (`docs/matching-calibration.md`, `docs/matching-benchmark.md`).
+- [ ] Startup guard: the unpackaged build refuses to apply pending migrations to the default userData unless an
+      explicit owner knob is set, so one bare start cannot upgrade the owner's DEV profile (decision 34).
+- [ ] Settings v2 (decision 24): mockups approved by the owner first (static HTML with synthetic data, as in F1b,
+      shared as a private artifact: a design approval, not a test; design approvals batched where possible; F5's
+      Settings v2 mockups go first); a few sections (General and appearance, AI with the presets first,
+      Knowledge, Library and storage, Integrations, Privacy and data, Advanced and Diagnostics); search across
+      settings; "changed from default" markers with a per-item reset; plain-language help; design-system
+      components; the old settings screens removed.
 - [ ] Remove the old top-level views and duplicate wiki browsers.
 - [ ] Map › Relations (moved from F6, owner 2026-10-19): the force graph scoped to a branch, coloured by topic
       (force + Louvain, topic super-nodes when zoomed out) on the canvas T60g extracted, with its table
       alternative; it replaces the old global Knowledge Graph screen that this phase removes.
 - [ ] Map › Shape (owner 2026-10-19): the zoomable icicle of the tree (size, depth, violations, growth) on the
       icicle component F4 builds for the Inbox's structural diffs.
-- [ ] Atlas spike, record only (owner 2026-10-19): UMAP + Procrustes on the reference library; does each branch
+- [ ] Atlas spike, record only (owner 2026-10-19): UMAP + Procrustes on a golden-small clone; does each branch
       form a contiguous territory? F6 builds Atlas only on a go.
 - [ ] Parallel calls inside one import on remote routes (owner, 2026-10-23): a source's summary map batches and graph
       extraction batches run at once up to the remote lane's limit (4 for API keys, 2 for Codex), their results kept
@@ -829,39 +863,135 @@ states; clean Hybrid install places and connects the first note in ≤10 min (e2
 Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
 clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in
 all 5 locales; 5 destinations; Settings v2 with ≤7 sections, every setting found by its search and reached in
-≤2 clicks from the rail, 0 settings that no code reads, AA in both themes.
+≤2 clicks from the rail, 0 settings that no code reads, AA in both themes. F5 exit is automated only
+(decision 34).
 
 ### F6 Lenses, lean ingestion, consolidation (weeks 23-26)
 
 - [ ] Atlas only if F5's spike shows contiguous branches; branch mind map (the scoped Relations lens and Shape
       moved to F5, owner 2026-10-19).
-- [ ] Windowed ingestion under A/B on the reference library.
+- [ ] Windowed ingestion under A/B on a golden-small clone.
 - [ ] Finish the design system (primitives, raw-class codemod, pt-BR accents); sigma 4 migration spike with
       go/no-go.
-- [ ] Remove remaining legacy code after 2 weeks of stable KPIs and a backup; move remaining numeric
-      defaults into typed config with tests.
+- [ ] Nightly KPI runner (today only `scripts/kpi/kpi.ts` exists) on scratch profiles only, never the owner's
+      profiles: the reference profiles are the golden-small clone, the ENV-C corpus clone, a soak-style
+      synthetic profile and an ENV-G clone. Before the first counted night (D3), `docs/kpi-f6.md` pre-registers
+      the profile list, which section-8 KPIs run nightly and their bars, the per-night procedure (a fresh APFS
+      clone per base, cassette replay with remote misses failing the run, spend 0 unless the owner approves),
+      what counts as inconclusive, and that any change under `apps/desktop/src/main` or `packages/` after
+      night 1 restarts the count.
+- [ ] Keep/Remove label export from the D29 stores and `relation_decisions`, extending F5's Inbox triage
+      journey to read its stored verdicts back through the export; a dry-run recalibration of bands, thresholds
+      and the typer on the decision-21 panel labels plus synthetic labels on scratch data (reported, not gating;
+      decision 29), so real labels meet tested code in F7.
+- [ ] Remove remaining legacy code; move remaining numeric defaults into typed config with tests. No stability
+      window, since the legacy code was never used (owner, 2026-11-11; until then "after 2 weeks of stable
+      KPIs"). `docs/kpi-f6.md` lists the removal scope before removal, checked statically (no imports of the
+      listed legacy modules; any legacy table dropped with the row verification of `rules/data.md`). Removal
+      needs a restore-verified backup (dump plus APFS cold copy of every reference profile) and the rollback
+      tag `f6-pre-legacy-removal`, created just before removal and kept until F7 closes (owner request,
+      2026-11-11, per `RULES.md`).
+- [ ] Full `npm run check` and e2e on the post-removal code.
+- [ ] Clean-install first-run e2e on the final build (the commit gate T tests, which is also the trial
+      worktree's commit), with F4 E6's bar: `npm run firstrun:e2e`, each of two replays plus D ≤ 10:00.
+- [ ] Optional final Hybrid soak on the F6 build (about 1.4M Codex tokens for 72 h): an open owner spend
+      decision with no default spend; it runs only on the owner's yes and gates F7 only if it runs; green means
+      F4's soak bars (the X6 stop lines and E1-E5, with D3's no-second-run rule).
+- [ ] A one-page trial guide in Portuguese (pt-BR): the exact start command (below, F7), what to try, and how to
+      report a finding with its severity. The owner never runs a bare `npm run dev` on the default profile.
 
 Exit: ≤15 generative calls per reference chapter with note quality within 5% in the A/B *(cal.)*; raw
-palette classes ≤200 (from 1,854, measured); AA in both themes; KPIs green on 7 consecutive nightly runs.
+palette classes ≤200 (from 1,854, measured); AA in both themes; legacy code removed; KPIs green on 7
+consecutive nightly runs on the post-removal build, on scratch profiles; full check and e2e green; the
+clean-install first run green. F6 exit is automated only (decision 34).
+
+### F7 Owner trial and fixes (after F6)
+
+The owner tests the complete app after legacy removal and agents triage and fix what comes up (decision 34;
+stage name approved by the owner, 2026-11-11).
+
+Entry (gate T, automated, run by the orchestrator): F6 exit met and legacy code removed; KPIs green on 7
+consecutive nightly runs on the post-removal build; full check and e2e green; the clean-install first run
+green on the final build; a restore-verified backup of the reference profiles; the trial guide ready, with
+its exact start command proven on a scratch path (it opens an empty userData); the optional final soak green
+only if the owner approved it. The final build is the commit gate T tests.
+
+- [ ] Gate T, recorded in `docs/kpi-f7.md`.
+- [ ] The trial: the owner runs the final build from a separate worktree pinned at that commit (as F4 D1's soak
+      worktree was), started with `MEMORA_USER_DATA_DIR` set to an absolute folder outside the repository and
+      `.cache` (the F7 trial profile), and adds their own sources after onboarding (F4 D31). Trial defaults,
+      carried from Q11's safeguards: autonomy Suggest (Settings › Knowledge) and a cap of 200 background Codex
+      calls a day for the first week; the owner may choose otherwise at the start. The owner's DEV profile
+      (only the golden library) stays as it is: not upgraded, not re-matched; any later upgrade only on a new
+      owner request (`docs/f4-decisions.md` Q8, Q11). If DEV is opened by mistake, Q9's `dev-database-pre-f4`
+      cold copy is the rollback.
+- [ ] Fixed builds reach the trial profile only at explicit update points: the app stopped, a restore-verified
+      backup of the trial profile, and, if the build carries a migration, gate M's rehearsal on a clone of it
+      with remote routes blocked (F3 D44); then the trial worktree moves to the fixed commit. Rollback is by
+      restore. Agents' fixes never reach the running trial through the watcher.
+- [ ] What the owner tries (the trial guide): importing their own sources, reading topics and following
+      relations, Ask and jumping to a citation, Inbox triage with real Keep, Remove and Dismiss, Settings v2
+      and the Map lenses; optional: rating tree quality and a felt-disturbance question.
+- [ ] Triage: each finding becomes a card with a severity (1: data loss, crash or a blocked journey; 2: a main
+      journey wrong with no workaround; 3: a workaround exists; 4: cosmetic). An agent reproduces it on a
+      scratch profile or a clone (a clone of the owner's profiles is made only from a stopped profile or a
+      restore of its dump, with remote routes blocked, and deleted when the card closes), fixes it with a test
+      on synthetic fixtures, never owner text, and proves it with `check:changed` on scratch profiles; the
+      owner re-checks only what they flagged. A regression stops the line (decision 23). A severity-1 or
+      severity-2 finding whose fix needs a model, quantization or runtime change goes to the owner as a
+      decision-26 exception or is re-scoped.
+- [ ] The nightly KPI runner keeps running through F7, on each fixed build.
+- [ ] Recalibration of bands, thresholds and the typer from the real Keep and Remove export (decision 29),
+      recorded.
+- [ ] X2 revisited with real verdicts (decision 31d).
+- [ ] The real undo rate on automatic structure (≤5%) and the owner-library KPIs (section 8), reported.
+- [ ] Decision 26's model, quantization and runtime adoptions put to the owner with the trial's findings.
+
+Exit: the owner accepts the app; no open severity-1 or severity-2 finding; full check and e2e green on the
+fixed build; the nightly KPIs green on 3 consecutive runs on the fixed build and the clean-install first run
+green on it; recalibration results recorded. Then the owner decides on the rollback tag
+`f6-pre-legacy-removal`, the F3/F4 cold copies (`docs/f4-decisions.md` Q9) and the model adoptions.
 
 ## 8. KPIs and risks
 
-KPIs (real library, *(cal.)* where not yet measured): zero-config install + model + PDF to connected notes
-in named topics ≤10 min Hybrid; reachability 100%, Unsorted ≤2% from 50 items; mean depth ≤4.5 with ≥80% of
-internal nodes at 4-9 children and 0 single-child chains; weekly path churn ≤3%, undo rate on automatic
-structure ≤5%; 200 notes related in ≤4-8 min local with fixture 27/28 and 0/35; 0 tasks blocked by another;
-import to notes and path ≤2 clicks; raw palette classes ≤200, pollers 0.
+KPIs (reference libraries, measured automatically: the golden-small, ENV-C corpus and ENV-G clones and a
+soak-style synthetic profile, as in F6's runner; the owner's library
+is measured in F7 only, reported; *(cal.)* where not yet measured): zero-config install + model + PDF to
+connected notes in named topics ≤10 min Hybrid; reachability 100%, Unsorted ≤2% from 50 items; mean depth
+≤4.5 with ≥80% of internal nodes at 4-9 children and 0 single-child chains; weekly path churn ≤3% (replays);
+undo rate on automatic structure ≤5% (measured in F7 from real use; before F7 the proxies are exact-undo
+drills, the undo flows in the soak and e2e, and the undo rate in replays); 200 notes related in ≤4-8 min
+local with fixture 27/28 and 0/35; 0 tasks blocked by another; import to notes and path ≤2 clicks; raw
+palette classes ≤200, pollers 0.
 
 Risks and mitigations:
-- Tree quality on short bilingual notes is unproven → Spike B, owner rating, pinning.
+- Tree quality on short bilingual notes is unproven → Spike B, the three-judge panel (decision 21), pinning;
+  owner review in F7.
 - Local reranker latency is unknown (serial `rankAll`, #30422) → Spike A gate, GGUF Qwen3, generative decide (bge retired, F3 Q18).
-- Automatic restructuring can break spatial memory → hysteresis, freeze, churn budget, undo, Suggest.
+- Automatic restructuring can break spatial memory → hysteresis, freeze, churn budget, undo, Suggest. Before
+  F7 the proxies are churn, the move budget and freeze in replays and the soak; felt disturbance is a question
+  in the F7 trial guide.
 - Lazy prose can make topics look unfinished → complete MOC, Ask falls back to notes and chunks.
 - The wiki wipe discards existing prose → verified backup first; accepted by the owner (decision 4); done
   early at gate W (D37), with a cold copy of the database as the rollback.
 - Rules lagging code make agents undo work → rule in the same change, line ratchet on `rules/`.
 - New concurrency races in checkpoints → per-source exclusion, stepwise concurrency, soaks.
-- Schedule: one checkout and owner reviews are the bottleneck; any KPI regression stops the line.
+- Schedule: one checkout is the bottleneck (before F7 the owner only answers questions and approves designs);
+  any KPI regression stops the line.
+- Real use starts only after legacy removal, so the owner's first findings arrive late → 7 nightly runs, the
+  Playwright journeys and the clean-install first run on the post-removal build; a restore-verified backup
+  and the rollback tag `f6-pre-legacy-removal`; each F7 finding is fixed with a test.
+- No real Keep and Remove exist before F7, so calibration may be off on real text (decision 29) → panel and
+  synthetic labels written through the real writers, the export and dry run tested in F6, recalibration
+  planned in F7.
+- The F5/F6 main-process code (windowed ingestion, legacy removal) has no long soak (F4 D1 kept F4's close
+  free of a Hybrid re-soak; F5/F6 main-process code has none) → nightly runs; an optional final Hybrid soak
+  (about 1.4M Codex tokens for 72 h) on the owner's yes.
+- View history, freeze and churn weighting are tuned without real viewing → a seeded synthetic view-history
+  fixture in unit tests and soak driver opens; tuning with real use in F7.
+- Agents or the owner could start the owner's DEV profile by default (a bare dev start, the matching runners,
+  `MEMORA_GOLDEN_RESET`) → the rule in `rules/architecture.md` and `RULES.md`, the runners' scratch-profile
+  mode and the startup guard (F5), clones only, the trial's pinned worktree and start command (F7).
 
 ## 9. How agents work on this plan
 
@@ -874,3 +1004,6 @@ Risks and mitigations:
    affects; record measurements, not estimates.
 6. Commit atomically on `refactoring` with explicit staging, tick the task here, and advance "Current phase"
    when every exit criterion of the phase is met.
+7. No agent starts the owner's profiles (the default DEV userData and the F7 trial profile) unless the owner
+   asks; proofs, screenshots and journeys use scratch or cloned profiles (`MEMORA_USER_DATA_DIR`), and clones
+   follow F7's triage rule. No task before F7 waits on the owner's use (decision 34).

@@ -113,7 +113,7 @@ One local writer serves every write class: two local generative models would alt
 | D44 | **Migrations and gate M.** Three migrations, one owner at a time, each taking the next free number when it generates, in this order: relations v2 (T48, expected 0056), AI audit columns `ai_task_run_lanes` (T47, expected 0057), retrieval indexes (T49, expected 0058). Before any real profile (the owner's DEV, ENV-F, ENV-G, ENV-C) starts with them, **the orchestrator runs gate M itself**, as it ran F2's gate W (Gates). F3 adds no fourth migration: the run states of D16 and D25 use existing columns, and a later migration re-opens gate M. | `rules/data.md`; the migrator applies every pending migration in one transaction, so index builds run inside the startup transaction; the DEV profile holds the golden library; agents may not start the owner's live PostgreSQL cluster. T48 is on the critical path and T47 is not. |
 | D45 | **Proof slots** (F2 D35): one DEV-app holder and one local-model holder at a time; the soak holds both for 25 h. A DEV-app proof that loads a local model (the app's own MLX helper or in-process GGUF) holds **both**, because the app never waits on the machine-wide slot. The script slot (`scripts/spikes/topic-tree/local-model-slot.ts`) also matches `scripts/relations/` scorers, since a script running GGUF in-process shows no `node-llama-cpp` on its command line. | One Memora instance and one local inference at a time; the slot is a process scan. |
 | D46 | **Typed configuration.** New numbers live in `packages/domain/src/relations-config.ts` (retrieval, decide, calibration, bands, typing, link, cap, discovery, escalation) and `packages/ai/src/runtime-config.ts` (lanes, aging, local deadlines, breaker, residency), each with a Zod schema and tests; the dead note-matching preset fields leave the settings through a settings migration (T53b). | `RULES.md` section 1 and decision 5. |
-| D47 | **Existing data stays.** The DEV profile's 111 v9 note relations read with a backfilled direction or `unknown`, no band, as applied; its one source relation becomes `origin = judged`; nothing is re-matched or re-typed in F3 (Q13). | No silent rewrite of history; F4 offers re-matching with undo. |
+| D47 | **Existing data stays.** The DEV profile's 111 v9 note relations read with a backfilled direction or `unknown`, no band, as applied; its one source relation becomes `origin = judged`; nothing is re-matched or re-typed in F3 (Q13). | No silent rewrite of history; F4 offers re-matching with undo. (F4 built the offer; the owner's DEV library is not re-matched: Q8 dropped on 2026-11-11, the F7 trial uses a new profile; plan decision 34.) |
 | D48 | **Automatic relations carry no direction (plan decision 31b; T53d, migration 0059).** The typer's direction stays in `direction` for audit, and `direction_source` (`typer`, `decider`, `owner`; null on legacy and symmetric relations) says where it came from. Only `owner` and `decider` directions are shown, drawn, stated, promoted or exported; `noteRelationDirectionSql` / `noteRelationSubjectSql` of the visibility module are the one reading, and a static test bans any other. **Owner:** Keep may carry a direction (this note, the other, or none): `owner`, with `symmetric` on a directed type meaning none, written with the `kept` event; default none; I-R2/I-R3 unchanged. **Decider:** the Decisions decider names the higher-scoring Document as the subject when its two directional scores differ by at least `decisions.directionMarginLogOdds` (1.0 log-odds, typed; 0.78 accurate on the fit panel); the local rankers name none. Source relations promote a direction only from directed note relations; a directed type none of whose notes has one is one relation that reads both ways (derived `directed` flag, never stored: the relation reads from its source only when a note relation's subject is its evidence's source note). The undirected notes of the winning type still count as support and confirm the relation; a relation that reads both ways turns in place (same row, status and page, one revertible `promoted` event) when a direction arrives against its stored order. Existing banded directed relations become `typer`; legacy rows are unchanged. | The typer reads direction from note position (0.57 against the 0.85 bar, `.cache/f3/freeze/direction-analysis.md`); the Decisions asymmetry carries a direction (0.78 at margin 1), the local rankers' does not. | A stored `unknown` on banded rows (D8 keeps it legacy-only); direction kept in `metadata`; a direction column on source relations; a second typing call per pair (40% coverage, 0.76). | 31b |
 
 ## Readings and corrections of the plan
@@ -136,12 +136,12 @@ One local writer serves every write class: two local generative models would alt
 **Not built in F3:** a P0 spill to a remote lane (F4/F5, Q9); OpenAI Decisions as a product adapter (Q6); explanation
 backfill (plan 4.2 step 5, 4.3 REFRESH; the rule forbids background explanations, so F4 REFRESH edits it); undo UI,
 Inbox, the MATCH job and re-matching on note edit or model change (F4, on D14's events); re-typing legacy rows and
-re-matching the DEV library (F4 backlog with undo); `search_tsv` on chunks, per-row `ts_config`, `root_source_id` and
-omni search (F5; `root_source_id` is a lever, D28); dashboard token colours and global graph scoping (F6); streaming
-and veto for source-relation explanations (later); constrained decoding inside the MLX helper (plan 4.4: MLX keeps
-one repair); the ranker as the source discovery judge (untested on inputs 5-7× longer; the bake-off reports its
-offline AUC on the 40 source pairs only); the claims read-side remnants (F4 legacy drop); the MLX embedding adapter
-(D40).
+re-matching the DEV library (F4 backlog with undo; not run, F4 Q8 dropped 2026-11-11); `search_tsv` on chunks,
+per-row `ts_config`, `root_source_id` and omni search (F5; `root_source_id` is a lever, D28); dashboard token colours
+and global graph scoping (F6); streaming and veto for source-relation explanations (later); constrained decoding
+inside the MLX helper (plan 4.4: MLX keeps one repair); the ranker as the source discovery judge (untested on inputs
+5-7× longer; the bake-off reports its offline AUC on the 40 source pairs only); the claims read-side remnants (F4
+legacy drop); the MLX embedding adapter (D40).
 
 ## Owner questions and defaults
 
@@ -161,7 +161,7 @@ All answered on 2026-10-17 with the default (Owner approval).
 | Q10 | Labels only from public and synthetic text (fixture, golden-small, corpus) by the three-judge panel of decision 21, replacing the owner-labelled pairs; the same labels fit and evaluate the calibration; an optional spot-check of 20 pages is offered (D4). | **Yes**; no owner time. |
 | Q11 | Settings › AI lists the five workload classes instead of the seven legacy tasks, plus the "Generative judge" row (D34). | **Yes.** |
 | Q12 | Show a relation's confidence as band words ("Strong", "Possible") and keep the percentage out of normal UI (D42). | **Yes.** |
-| Q13 | Leave the DEV library's 111 v9 note relations as they are in F3, with re-matching offered later by F4 with undo (D47). | **Yes.** |
+| Q13 | Leave the DEV library's 111 v9 note relations as they are in F3, with re-matching offered later by F4 with undo (D47). | **Yes.** (2026-11-11: F4 built the offer; the DEV library is not re-matched, F4 Q8 dropped; plan decision 34.) |
 | Q14 | Stored v5 `similar_to` source verdicts: counted on fixture tuning at $0 before T53, then dropped as weak unless tuning recall needs them. | **Drop as weak** unless tuning recall needs them. |
 | Q15 | X1 and X2 count every relation the decider accepts (applied and suggested), with applied-only reported; source relations are promoted from applied relations only (D23). | **Yes.** |
 | Q16 | Cap background remote relation calls at 500 per day until F4's money cap, with promotion of typed relations and local deciding continuing at the cap; P1 calls counted but not capped; on priced routes the cap is the interim control (D26). | **Yes**, start 500 *(cal.)*. |
@@ -235,7 +235,8 @@ The owner decided (plan decision 29), amending D18 and D23:
   pairs at 0 forbidden (ties: the higher edge), on the rule, instruction, template and aggregation the panel selection
   picked; frozen with T61's parity like any calibration (D3); X1 and X2 stay as written (they count the accept band).
 - **Panel precision, ECE and Brier are reported per decider, not gating.** F6 recalibrates from the owner's Keep and
-  Remove on real use.
+  Remove on real use. (2026-11-11, plan decision 34: F6 builds the recalibration and runs it on panel labels;
+  recalibration from real Keep and Remove happens in F7.)
 - **D23:** typed suggestions promote to *suggested* source relations (a promoted source relation is a suggestion until
   the owner keeps it); the graph and the ego-graph draw suggestions distinctly.
 - **Typer experiment:** a `relations.type` revision carrying the panel's strict "related" criterion is measured on the
@@ -245,7 +246,8 @@ The owner decided (plan decision 29), amending D18 and D23:
 ### Gate outcomes decided by the owner (2026-10-18; plan decision 31)
 
 - Gate F, local deciders (freeze 745469e5): X1 27/28 at 0/35 met; X2 R_v6 0.200 and R_v9 0.095 not met (recorded,
-  revisited by F6); typer direction 0.567 / swap 0.417 not met: automatic relations carry no direction.
+  revisited by F6; since 2026-11-11 in F7, plan decision 34); typer direction 0.567 / swap 0.417 not met: automatic
+  relations carry no direction.
 - Gate F, Decisions decider (frozen from the product's own requests, ae14630a): X1 28/28 at 0/35; X2 R_v9 0.022-0.029
   met, R_v6 0.114 not met (recorded); its apply band (CV precision 1.000, Wilson 0.890 at the pre-registered seed,
   present at 19 of 40 other seeds) applies automatically by the owner's choice.

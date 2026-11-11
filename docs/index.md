@@ -6,7 +6,7 @@ conflicts with a rule, follow the rule and fix the document.
 ## Plan
 
 - [plan.md](plan.md) — the Memora Eterna 2.0 refactoring roadmap: target
-  architecture, phases F0-F6 with exit criteria, and the current phase.
+  architecture, phases F0-F7 with exit criteria, and the current phase.
 
 ## Operational runbooks
 

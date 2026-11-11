@@ -22,7 +22,7 @@ Dated measurements of F3 (Relations v2 and AI runtime lanes). Decisions and the 
 | --- | --- | --- |
 | X1 | S0, S1, S2, B1 held-out 27/28 each (mean 27.00, min 27), 0/35 forbidden in each | met |
 | X1 reported | GGUF 26/28 at 0/35; the Decisions samples not measured (the account had no credit; dropped by the owner) | reported |
-| X2 | R_v9 loss 10.3 % (10.3-11.0 %) over 137 pairs, panel kappa 0.897 | not met (decision 31d, revisited in F6) |
+| X2 | R_v9 loss 10.3 % (10.3-11.0 %) over 137 pairs, panel kappa 0.897 | not met (decision 31d, revisited in F6; carried to F7 on 2026-11-11, plan decision 34) |
 | X3 | W for 200 notes: TP-G 2.72 min, TP-F 4.00 (239.9 s), TP-C200 2.86 and 2.87 (P0 queue p95 675 and 757 ms); TP-Local 7.68 (reported, bar 8.0) | met |
 | X4 | decider contract 4/4; 0 explanation calls, no remote call outside typing and judging, 0 ranker output tokens, every typing in the band | met |
 | X5 | sibling delays -4 to 280 ms (`phase4:e2e`); links commit while later roots decide | met |

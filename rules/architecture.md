@@ -109,4 +109,6 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 - Manual and automated UI validation uses only the DEV app. Never open an installed or packaged
   copy unless the owner asks for release validation, and never run it alongside DEV. Run one
   Memora Eterna instance at a time and target it by repository path or `localhost` content.
+- Agent proofs, screenshots and journeys use scratch or cloned profiles (`MEMORA_USER_DATA_DIR`); agents never start
+  the owner's profiles (the default DEV userData and the F7 trial profile) unless the owner asks (plan decision 34).
 - Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does not steal focus.

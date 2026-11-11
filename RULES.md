@@ -54,7 +54,8 @@ This is the small contract that applies to every repository task. Read it with
   typecheck, related tests, format and lint of the changed files) plus any
   domain-rule check; the full `npm run check` and e2e suites only close a stage
   (wave merge, gate, phase exit) or follow cross-cutting changes.
-- Start DEV only with `npm run dev -w @app/desktop` from the repository root.
+- Start DEV only with `npm run dev -w @app/desktop` from the repository root,
+  with `MEMORA_USER_DATA_DIR` set to a scratch or cloned profile.
 
 ## 4. Agent model tiers
 

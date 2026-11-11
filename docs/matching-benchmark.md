@@ -9,6 +9,12 @@ from ingestion/model inputs.
 
 ## Execution
 
+**Frozen until the runners' scratch-profile mode lands** (plan F5 box; plan decision 34, 2026-11-11). The
+benchmark below works only on the default DEV profile and runs tuning resets of its library, and no agent
+starts the owner's DEV profile on refactoring code. Until the mode lands, do not run it or its status, report
+and analysis scripts; once it lands, run them only on a clone or scratch profile (`MEMORA_USER_DATA_DIR`),
+never on the owner's DEV profile.
+
 Use the unpackaged DEV app and its generated DEV database descriptor. The
 benchmark refuses another profile, changed fixtures, unrelated library IDs,
 reviewed relationships, and active ingestion during a reset. It saves a full

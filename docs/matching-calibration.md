@@ -19,6 +19,11 @@ homonyms, conditions/negation, and an index with no substantive ideas.
 
 ## Run
 
+**Frozen until the runner's scratch-profile mode lands** (plan F5 box; plan decision 34, 2026-11-11). The
+runner below and the "Inspect and assess" commands work only on the default DEV profile, and no agent starts
+the owner's DEV profile on refactoring code. Until the mode lands, run none of them; once it lands, run them
+only on a clone or scratch profile (`MEMORA_USER_DATA_DIR`), never on the owner's DEV profile.
+
 Start from an empty DEV library with configured embedding, summary, atomic-note,
 graph and reranking routes. The runner never resets the library. Quit any
 existing DEV instance before starting another one against its database.

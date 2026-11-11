@@ -8,6 +8,12 @@ The repository keeps only the manifest; files, cassettes, backups and runs live 
 (git-ignored). A cassette holds full prompts and outputs, so `MEMORA_AI_CASSETTE_DIR` must be a folder
 inside `.cache/`; anything else is refused.
 
+**Run only on a clone or scratch profile** (`MEMORA_USER_DATA_DIR`, section 2's note; plan decision 34,
+2026-11-11). The commands below default to the owner's DEV profile, and `MEMORA_GOLDEN_RESET` empties the
+library of whichever profile runs; no agent starts the owner's DEV profile on refactoring code. Record,
+replay and reset stay frozen on the default profile; add `MEMORA_USER_DATA_DIR=<absolute path of the clone>`
+to every command.
+
 ## 1. Fetch and pin the sources
 
 ```sh
