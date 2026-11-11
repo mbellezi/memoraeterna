@@ -6,6 +6,9 @@ import { appEventPort } from "./app-events.js";
 export type ObsidianProjectionKind = (typeof obsidianProjectionKinds)[number];
 export type ObsidianProjectionState = (typeof obsidianProjectionStates)[number];
 
+const pausedMessage = "obsidianWiki.errors.paused";
+const isPaused = (error: unknown) => error instanceof Error && error.message === pausedMessage;
+
 export function publishObsidianProjection(
   kind: ObsidianProjectionKind,
   state: ObsidianProjectionState
@@ -16,6 +19,8 @@ export function publishObsidianProjection(
 /**
  * Runs one projection step and publishes `running` before it and `completed` or `failed` after it,
  * whatever it returns or throws. `endState` lets a step that continues in a next page stay `running`.
+ * A step that stops on purpose (a layout migration, a paused or disabled sync, an aborted lane
+ * throws `obsidianWiki.errors.paused`) is not over: it resumes later, so it stays `running`.
  */
 export async function trackObsidianProjection<T>(
   kind: ObsidianProjectionKind,
@@ -28,7 +33,7 @@ export async function trackObsidianProjection<T>(
     publishObsidianProjection(kind, endState(result));
     return result;
   } catch (error) {
-    publishObsidianProjection(kind, "failed");
+    publishObsidianProjection(kind, isPaused(error) ? "running" : "failed");
     throw error;
   }
 }

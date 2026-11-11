@@ -54,6 +54,19 @@ describe("trackObsidianProjection", () => {
     expect(projections(events)).toEqual(["layout:running", "layout:failed"]);
   });
 
+  it("stays running, not failed, when the step stopped on purpose, and rethrows", async () => {
+    const events = listen();
+    const paused = new Error("obsidianWiki.errors.paused");
+
+    await expect(
+      trackObsidianProjection("wiki", async () => {
+        throw paused;
+      })
+    ).rejects.toBe(paused);
+
+    expect(projections(events)).toEqual(["wiki:running", "wiki:running"]);
+  });
+
   it("stays running when the result says more is left to deliver", async () => {
     const events = listen();
 
