@@ -3,18 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { legacyViewIds } from "../../shared/app-menu";
+import type { WorkspacePlace } from "./destinations";
 import { LegacyMenu, legacyMenuViews } from "./LegacyMenu";
 import { Rail, inboxWaitingText, railState } from "./Rail";
 import { NavigatorHost } from "./NavigatorHost";
 import { Shell, shellState, titleKey } from "./Shell";
-import { railItemClass } from "./rail-styles";
+import { railCurrentClass, railIdleClass, railItemClass } from "./rail-styles";
 import { hostedViewIds, layoutCustomProperties } from "./shell-model";
 import { TitleBar } from "./TitleBar";
 
 const en = createTranslator("en");
 const noop = () => undefined;
 
-const rail = (inbox: Parameters<typeof Rail>[0]["inbox"], place = "explore" as const) =>
+const rail = (inbox: Parameters<typeof Rail>[0]["inbox"], place: WorkspacePlace = "explore") =>
   renderToString(<Rail t={en} place={place} inbox={inbox} onGo={noop} onOpenLegacy={noop} />);
 
 describe("the rail", () => {
@@ -48,6 +49,29 @@ describe("the rail", () => {
     );
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-label="Old screens that are still available" aria-current="page"/u);
+  });
+
+  it("gives the current item the accent colour and never the idle grey beside it", () => {
+    // `cn` only joins strings and the stylesheet puts the grey after the accent: one never carries both.
+    expect(railItemClass).not.toContain("text-secondary-foreground");
+    expect(railCurrentClass).toContain("text-accent");
+    expect(railCurrentClass).not.toContain("text-secondary-foreground");
+    expect(railIdleClass).toContain("text-secondary-foreground");
+    const classes = (html: string) =>
+      [...html.matchAll(/<button[^>]*class="([^"]*)"/gu)].map((match) => match[1] ?? "");
+    const html = rail({ status: "ready", value: 0 });
+    const current = [...html.matchAll(/<button[^>]*aria-current="page"[^>]*class="([^"]*)"/gu)];
+    expect(current).toHaveLength(1);
+    expect(current[0]?.[1]).toContain("text-accent");
+    expect(current[0]?.[1]).not.toContain("text-secondary-foreground");
+    expect(
+      classes(html).filter((value) => value.includes("text-secondary-foreground"))
+    ).toHaveLength(6);
+    const settings = rail({ status: "ready", value: 0 }, "settings");
+    expect(settings.match(/class="[^"]*text-accent[^"]*"/gu)?.length).toBeGreaterThanOrEqual(1);
+    // The bar sits against the rail's edge at every tier: (item - rail) / 2.
+    expect(railCurrentClass).toContain("before:left-[calc((var(--rail-item-w)-var(--rail-w))/2)]");
+    expect(railCurrentClass).not.toContain("before:-left-1.5");
   });
 
   it("reports loading, a failed count, none and some on its frame", () => {

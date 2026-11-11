@@ -19,14 +19,14 @@ export const fixtures: ScreenModule["fixtures"] = {
   empty: { "inbox.counts": inboxCounts(0) }
 };
 
-/** The rail on its own, with the custom properties the shell would write for this window. */
+/** The rail on its own (Biblioteca, its widest word, is current), with the custom properties the shell would write. */
 export function render() {
   return (
     <div
       className="h-screen bg-background text-foreground"
       style={layoutCustomProperties(window.innerWidth) as CSSProperties}
     >
-      <ConnectedRail t={t} place="explore" onGo={noop} onOpenLegacy={noop} />
+      <ConnectedRail t={t} place="library" onGo={noop} onOpenLegacy={noop} />
     </div>
   );
 }

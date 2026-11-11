@@ -5,7 +5,7 @@ import { SolidTriangle } from "../components/activity/solid-glyphs";
 import { ObjectKindGlyph } from "../components/glyphs";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
-import { LoadingState, SkeletonRows } from "../components/ui/skeleton";
+import { LoadingState, Skeleton } from "../components/ui/skeleton";
 import { cn } from "../lib/cn";
 import type { NavigatorTree, Read } from "./shell-stores";
 
@@ -62,7 +62,7 @@ export function NavigatorHost({
 /** "Tree · 412 items": kept above the list and above the empty box, as in the design's shot. */
 function TreeHeader({ t, total }: { t: Translator; total?: number }) {
   return (
-    <div className="mx-1 mb-1 flex items-baseline justify-between text-xs font-semibold text-secondary-foreground">
+    <div className="mb-1 flex items-baseline justify-between px-2 text-xs font-semibold text-secondary-foreground">
       <h2 className="m-0 text-xs font-semibold">{t("workspace.navigator.title")}</h2>
       {total === undefined ? null : (
         <span className="font-normal tabular-nums text-muted-foreground">
@@ -79,7 +79,7 @@ function TreeHeader({ t, total }: { t: Translator; total?: number }) {
  */
 function TreeError({ t, onRetry }: { t: Translator; onRetry: () => void }) {
   return (
-    <div role="alert" className="mx-1 mt-3 grid gap-1 text-sm">
+    <div role="alert" className="mt-3 grid gap-1 px-2 text-sm">
       <p className="m-0 flex items-start gap-2 text-foreground">
         <SolidTriangle className="mt-0.5 text-danger" />
         <span className="min-w-0">{t("workspace.navigator.error")}</span>
@@ -87,9 +87,30 @@ function TreeError({ t, onRetry }: { t: Translator; onRetry: () => void }) {
       <p className="m-0 pl-6 text-xs text-secondary-foreground">
         {t("workspace.navigator.errorKept")}
       </p>
-      <Button variant="link" className="-ml-[13px] justify-self-start" onClick={onRetry}>
+      {/* The link's text starts under the sentence's: the glyph (16 px) and its gap (8 px), less the button's 13 px. */}
+      <Button variant="link" className="ml-[11px] justify-self-start" onClick={onRetry}>
         {t("workspace.navigator.retry")}
       </Button>
+    </div>
+  );
+}
+
+const skeletonTitles = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-1/3"] as const;
+
+/**
+ * Eight rows in the size of the real ones (`--row-h`, a glyph-sized lead block, the title, and the
+ * count only when the count shows), so the column does not jump when the tree arrives.
+ */
+function TreeSkeleton({ compact }: { compact: boolean }) {
+  return (
+    <div className="grid gap-px">
+      {Array.from({ length: 8 }, (_, index) => (
+        <div key={index} className="flex h-(--row-h) items-center gap-2 px-2">
+          <Skeleton className="size-4 shrink-0" />
+          <Skeleton className={skeletonTitles[index % skeletonTitles.length]} />
+          {compact ? null : <Skeleton className="ml-auto h-3 w-6 shrink-0" />}
+        </div>
+      ))}
     </div>
   );
 }
@@ -110,7 +131,7 @@ function TreeList({
       <>
         <TreeHeader t={t} />
         <LoadingState t={t}>
-          <SkeletonRows rows={8} />
+          <TreeSkeleton compact={compact} />
         </LoadingState>
       </>
     );
@@ -125,14 +146,17 @@ function TreeList({
   if (navigatorIsEmpty(value))
     return (
       <>
-        <TreeHeader t={t} total={0} />
-        <EmptyState
-          variant="compact"
-          icon={<ObjectKindGlyph kind="topic" size={16} className="text-object-topic" />}
-          headline={t("workspace.navigator.emptyHeadline")}
-        >
-          {t("workspace.navigator.emptyBody")}
-        </EmptyState>
+        {/* No total above the teaching box: "0 items" would say what the box says, quieter. */}
+        <TreeHeader t={t} />
+        <div className="px-2">
+          <EmptyState
+            variant="compact"
+            icon={<ObjectKindGlyph kind="topic" size={16} className="text-object-topic" />}
+            headline={t("workspace.navigator.emptyHeadline")}
+          >
+            {t("workspace.navigator.emptyBody")}
+          </EmptyState>
+        </div>
       </>
     );
   return (
@@ -188,7 +212,7 @@ function TreeList({
         })}
       </ul>
       {value.unsorted > 0 ? (
-        <p className="mx-1 mt-4 border-t border-border px-1 pt-3 text-xs text-muted-foreground">
+        <p className="mx-2 mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
           {t(
             new Intl.PluralRules(t.locale).select(value.unsorted) === "one"
               ? "workspace.navigator.unsortedOne"

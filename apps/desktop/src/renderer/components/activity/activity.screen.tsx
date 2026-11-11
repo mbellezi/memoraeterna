@@ -47,7 +47,8 @@ function OpenActivity() {
     if (pill && pill.getAttribute("aria-expanded") === "false") pill.click();
   }, []);
   return (
-    <div ref={host} className="flex justify-end">
+    // The title bar's status slot is at most 420 px: the pill steps down its levels inside it, as in the shell.
+    <div ref={host} className="ml-auto w-full max-w-[420px]">
       <ActivityHost t={t} onNavigate={noop} onOpenInbox={noop} />
     </div>
   );

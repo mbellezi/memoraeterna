@@ -108,7 +108,7 @@ export function ActivityDrawer({
           <X aria-hidden="true" className="size-4" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:var(--border-strong)_transparent] [scrollbar-width:thin]">
         <Section title={t("activity.sections.now")}>
           {statusLoading ? <LoadingLine t={t} /> : null}
           {statusFailed ? (

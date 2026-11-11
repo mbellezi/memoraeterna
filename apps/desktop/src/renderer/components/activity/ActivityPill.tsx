@@ -115,10 +115,14 @@ const shellBase = "inline-flex h-8 items-center rounded-full border text-sm";
 const shellOf = (compact: boolean) =>
   cn(shellBase, "min-w-0 max-w-full", compact ? "gap-1.5 px-2.5" : "gap-2 px-3");
 
-function NeedsYou({ text }: { text: string }) {
+/**
+ * The needs-you clause. With the phrase beside it a hairline divides the two; without it (the ring
+ * and the clause are all the pill has) the divider goes, so a bare ring never reads as a lone spinner.
+ */
+function NeedsYou({ text, divided = true }: { text: string; divided?: boolean }) {
   return (
     <>
-      <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+      {divided ? <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" /> : null}
       <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-warning">
         <SolidTriangle className="size-3" />
         {text}
@@ -247,7 +251,8 @@ export function ActivityPill({
           title={needsYou ? `${full}. ${needsYou}` : full}
           className={cn(
             shellBase,
-            compact ? "gap-1.5 px-2" : "gap-2 px-3",
+            compact || shows.phrase === "none" ? "gap-1.5" : "gap-2",
+            compact ? "px-2" : "px-3",
             "w-max shrink-0 border-border-strong text-secondary-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
             // `cn` does not merge classes: one background and one border at a time.
             open ? "bg-accent-soft" : "bg-surface hover:bg-soft"
@@ -265,7 +270,9 @@ export function ActivityPill({
               ) : null}
             </span>
           ) : null}
-          {needsYou && shows.needsYou ? <NeedsYou text={needsYou} /> : null}
+          {needsYou && shows.needsYou ? (
+            <NeedsYou text={needsYou} divided={shows.phrase !== "none"} />
+          ) : null}
         </button>
       </div>
     </div>

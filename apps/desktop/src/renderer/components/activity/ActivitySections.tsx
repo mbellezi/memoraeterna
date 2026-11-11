@@ -160,10 +160,7 @@ export function SentenceBlock({
 
 function Bar({ share }: { share: number }) {
   return (
-    <div
-      aria-hidden="true"
-      className="h-2.5 overflow-hidden rounded-full border border-border-strong bg-soft"
-    >
+    <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-soft">
       <div className="h-full bg-accent" style={{ width: `${Math.round(share * 100)}%` }} />
     </div>
   );
@@ -302,22 +299,26 @@ export function DoneList({
             key={undoKey(change)}
             className="grid gap-1 border-t border-border py-2 first:border-t-0"
           >
-            <p className="text-sm text-foreground">
-              {changeSetTitle(t, change)}
-              <span className="text-muted-foreground">
-                {` · ${formatStatusTime(t.locale, new Date(change.at), new Date(now))}`}
-              </span>
-            </p>
-            {change.undo === "available" ? (
-              <Button
-                variant="link"
-                className="-ml-[13px] justify-self-start"
-                disabled={pending}
-                onClick={() => onUndo(change)}
-              >
-                {pending ? t("activity.done.undoing") : t("activity.done.undo")}
-              </Button>
-            ) : change.undo === "blocked" && row === undefined ? (
+            {/* The sentence, the time and Undo share one line (Undo at the end), so a row is short. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 text-sm text-foreground">
+                {changeSetTitle(t, change)}
+                <span className="whitespace-nowrap text-muted-foreground">
+                  {` · ${formatStatusTime(t.locale, new Date(change.at), new Date(now))}`}
+                </span>
+              </p>
+              {change.undo === "available" ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="-my-1 shrink-0 rounded-sm px-1 py-1 text-xs font-medium leading-5 text-accent transition-colors hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => onUndo(change)}
+                >
+                  {pending ? t("activity.done.undoing") : t("activity.done.undo")}
+                </button>
+              ) : null}
+            </div>
+            {change.undo === "blocked" && row === undefined ? (
               <p className="text-xs text-muted-foreground">{t("activity.done.undoBlocked")}</p>
             ) : null}
             {row && row.status !== "pending" ? (

@@ -8,7 +8,7 @@ import { SolidTriangle } from "../components/activity/solid-glyphs";
 import { Tooltip } from "../components/ui/tooltip";
 import type { DestinationId, WorkspacePlace } from "./destinations";
 import { LegacyMenu } from "./LegacyMenu";
-import { railCurrentClass, railItemClass } from "./rail-styles";
+import { railCurrentClass, railIdleClass, railItemClass } from "./rail-styles";
 import { railDestinations } from "./shell-model";
 import type { Read } from "./shell-stores";
 import { useInboxCount } from "./use-shell-data";
@@ -116,7 +116,7 @@ export function Rail({
               aria-label={label}
               aria-current={current ? "page" : undefined}
               aria-keyshortcuts={`Meta+${index + 1}`}
-              className={cn(railItemClass, current && railCurrentClass)}
+              className={cn(railItemClass, current ? railCurrentClass : railIdleClass)}
               onClick={() => {
                 if (isInbox && inbox.status === "error") onRetryInbox?.();
                 onGo(destination);
@@ -139,7 +139,7 @@ export function Rail({
           aria-keyshortcuts="Meta+,"
           className={cn(
             railItemClass,
-            legacyView === null && place === "settings" && railCurrentClass
+            legacyView === null && place === "settings" ? railCurrentClass : railIdleClass
           )}
           onClick={() => onGo("settings")}
         >

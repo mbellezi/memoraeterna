@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger
 } from "../components/ui/dropdown-menu";
 import { cn } from "../lib/cn";
-import { railCurrentClass, railItemClass } from "./rail-styles";
+import { railCurrentClass, railIdleClass, railItemClass } from "./rail-styles";
 import { legacyTitleKeys } from "./shell-model";
 
 /** The old views the menu lists, in order: every old view that no destination hosts yet. */
@@ -36,7 +36,7 @@ export function LegacyMenu({ t, current, onOpen }: LegacyMenuProps) {
           type="button"
           aria-label={t("workspace.rail.legacyLabel")}
           aria-current={current !== null ? "page" : undefined}
-          className={cn(railItemClass, current !== null && railCurrentClass)}
+          className={cn(railItemClass, current !== null ? railCurrentClass : railIdleClass)}
         >
           <Archive aria-hidden="true" className="size-5" />
           <span>{t("workspace.rail.legacy")}</span>

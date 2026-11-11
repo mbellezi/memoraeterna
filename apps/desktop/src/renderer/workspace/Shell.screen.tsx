@@ -45,22 +45,12 @@ export const fixtures: ScreenModule["fixtures"] = {
 
 /**
  * Explore's content stands in for the panel stack and the destination roots that later cards bring
- * (T136, T141): a sheet on the desk with the words an empty Explore has. The shell's own parts, the
- * rail, the title bar with the Activity pill and the navigator host, are the real components.
+ * (T136, T141): an empty desk with no copy, so no language shows an untranslated heading. The shell's
+ * own parts, the rail, the title bar with the Activity pill and the navigator host, are the real
+ * components.
  */
 function StandIn() {
-  return (
-    <div className="grid h-full place-items-center bg-background p-8">
-      <div className="max-w-(--measure) rounded-lg bg-surface p-8 shadow-[var(--shadow-sheet)]">
-        <h2 className="m-0 font-reading text-2xl font-semibold text-foreground">
-          Nothing open yet
-        </h2>
-        <p className="mt-2 text-base text-secondary-foreground">
-          Open a topic from the tree, or press ⌘K to search, open or ask.
-        </p>
-      </div>
-    </div>
-  );
+  return <div aria-hidden="true" className="h-full bg-background" />;
 }
 
 export function render() {
