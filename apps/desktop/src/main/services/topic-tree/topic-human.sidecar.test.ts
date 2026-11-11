@@ -44,8 +44,10 @@ import {
 } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
+import type { AppEvent } from "../../../shared/app-events.js";
 import { ipcChannels } from "../../../shared/ipc.js";
 import { clusterTopics } from "../../workers/topic-clustering.worker.js";
+import { appEventPort } from "../app-events.js";
 import { JobSupervisor } from "../job-supervisor.js";
 import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices } from "./index.js";
@@ -135,6 +137,8 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
   let supervisor: JobSupervisor;
   const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
   const historyPushes: string[] = [];
+  // The same pushes as `view.changed` on the bus (T115): dual publishing until the renderer moves.
+  const viewChanges: AppEvent[] = [];
   const sources: string[] = [];
   const notesBySource = new Map<string, string[]>();
 
@@ -254,6 +258,11 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
       seedFolder: join(workspaceRoot, "packages/db/seed")
     });
     const stored = createStoredVectorSpaceResolver(() => pool);
+    appEventPort.attach({
+      publish: (event) => {
+        if (event.type === "view.changed") viewChanges.push(event);
+      }
+    });
     services = createTopicTreeServices({
       getPool: () => pool,
       spaceResolver: stored,
@@ -300,6 +309,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
   }, 120_000);
 
   afterAll(async () => {
+    appEventPort.detach();
     await supervisor?.stop().catch(() => undefined);
     services?.dispose();
     if (pool) await closePgPool(pool).catch(() => undefined);
@@ -417,6 +427,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     const moving = getTopic(state, areaB).children[0]!;
     const dump = await dumpTree();
     const pushes = historyPushes.length;
+    const busPushes = viewChanges.length;
     const moved = await mutate({
       op: "move",
       id: moving,
@@ -443,6 +454,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
       (await call<TopicChangeSet>(ipcChannels.topicsChangeSet, { id: moved.changeSetId })).summary
     ).toMatchObject({ status: "undone" });
     expect(historyPushes.length).toBe(pushes);
+    expect(viewChanges.length).toBe(busPushes);
   });
 
   it("creates a subtopic, which undo removes", async () => {
@@ -470,6 +482,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     const address = viewHistoryAddress("topic", areaB);
     const history = createViewHistoryRepository(pool);
     const pushes = historyPushes.length;
+    const busPushes = viewChanges.length;
     const pinned = await mutate({ op: "pin", id: areaB });
     expect(
       (await pool.query("select management from topics where id = $1", [areaB])).rows[0]
@@ -478,6 +491,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
       (await history.list({ kinds: ["topic"] })).find((entry) => entry.address === address)
     ).toMatchObject({ pinned: true });
     expect(historyPushes.length).toBe(pushes + 1);
+    expect(viewChanges.length).toBe(busPushes + 1);
 
     expect(await undo(pinned.changeSetId)).toMatchObject({ status: "undone" });
     expect(

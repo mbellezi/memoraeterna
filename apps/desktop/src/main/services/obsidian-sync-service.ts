@@ -1,3 +1,4 @@
+import { appEventPort } from "./app-events.js";
 import { ObsidianLayoutMigration } from "./obsidian-layout-migration.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianEditorialService } from "./obsidian-editorial-service.js";
@@ -510,7 +511,7 @@ export class ObsidianSyncService {
 
   public startSynchronization(): ObsidianSyncStatus {
     if (this.synchronizationPromise) return this.getSynchronizationStatus();
-    this.synchronizationStatus = {
+    this.setSynchronizationStatus({
       state: "running",
       stage: "reconciling",
       progress: 0,
@@ -522,16 +523,16 @@ export class ObsidianSyncService {
       startedAt: new Date().toISOString(),
       finishedAt: null,
       error: null
-    };
+    });
     this.synchronizationPromise = this.runSynchronization()
       .catch((error: unknown) => {
-        this.synchronizationStatus = {
+        this.setSynchronizationStatus({
           ...this.synchronizationStatus,
           state: "failed",
           stage: "failed",
           finishedAt: new Date().toISOString(),
           error: error instanceof Error ? error.message : String(error)
-        };
+        });
       })
       .finally(() => {
         this.synchronizationPromise = null;
@@ -543,6 +544,12 @@ export class ObsidianSyncService {
     return { ...this.synchronizationStatus };
   }
 
+  /** Every change of the status also goes to the bus; `getSynchronizationStatus` still answers a read. */
+  private setSynchronizationStatus(status: ObsidianSyncStatus): void {
+    this.synchronizationStatus = status;
+    appEventPort.publish({ type: "obsidian.sync", ...status });
+  }
+
   public async waitForSynchronization(): Promise<void> {
     await this.synchronizationPromise;
   }
@@ -551,10 +558,10 @@ export class ObsidianSyncService {
     const settings = await this.options.getStorageSettings();
     if (!isSyncActive(settings)) throw new Error("obsidian_sync_not_configured");
     const reconciliation = await this.reconcileVault((processed, total) => {
-      this.synchronizationStatus = {
+      this.setSynchronizationStatus({
         ...this.synchronizationStatus,
         progress: total === 0 ? 0.2 : (0.2 * processed) / total
-      };
+      });
     });
     const scope = await this.wiki.scope();
     const allowed = new Set(
@@ -569,32 +576,32 @@ export class ObsidianSyncService {
     const sources = (await createSourceItemRepository(this.requirePool()).list()).filter((s) =>
       allowed.has(s.id)
     );
-    this.synchronizationStatus = {
+    this.setSynchronizationStatus({
       ...this.synchronizationStatus,
       stage: "projecting",
       progress: sources.length === 0 ? 1 : 0.2,
       total: sources.length,
       synced: reconciliation.synced,
       conflicts: reconciliation.conflicts
-    };
+    });
     let projected = 0;
     for (const [index, source] of sources.entries()) {
       projected += (await this.projectSource(source.id)).projected;
-      this.synchronizationStatus = {
+      this.setSynchronizationStatus({
         ...this.synchronizationStatus,
         processed: index + 1,
         projected,
         progress: 0.2 + (0.8 * (index + 1)) / sources.length
-      };
+      });
     }
     await this.wiki.enqueue(true);
-    this.synchronizationStatus = {
+    this.setSynchronizationStatus({
       ...this.synchronizationStatus,
       state: "completed",
       stage: "completed",
       progress: 1,
       finishedAt: new Date().toISOString()
-    };
+    });
   }
 
   private async projectEntity(

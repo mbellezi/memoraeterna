@@ -24,6 +24,7 @@ import {
   DefaultProfileUpgradeRefusedError,
   isDefaultUserData
 } from "./dev/default-profile-guard.js";
+import { appEventPort } from "./app-events.js";
 import { resolveWorkspaceRoot } from "./workspace-paths.js";
 
 interface StoredDatabaseCredentials {
@@ -372,6 +373,8 @@ export class DatabaseService {
   ): void {
     this.status = createStatus(state, error, messageKey);
     this.logger?.info(`Database status: ${state}${error ? ` (${error})` : ""}`);
+    // Sticky and sent at once: a window that loads later learns the state from the bus (F5 D16).
+    appEventPort.publish({ type: "database.status", ...this.status });
   }
 }
 

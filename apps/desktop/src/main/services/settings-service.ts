@@ -34,6 +34,8 @@ import {
   storageSettingsSchema,
   storageSettingsUpdateSchema
 } from "../../shared/ipc";
+import { settingsChangedKeysMax, type AppEvent } from "../../shared/app-events.js";
+import { appEventPort } from "./app-events.js";
 import { validateAbsolutePath, validateManagedRoot } from "./path-validation";
 
 const appSettingsKey = "app.preferences";
@@ -73,6 +75,41 @@ export interface SettingsServiceOptions {
    * change (the backlog offer); one that fails is reported and never fails the save.
    */
   readonly onMatchingValuesChanged?: (change: MatchingValuesChange) => void | Promise<void>;
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * The paths of the values that differ between two saved documents, as the settings registry spells
+ * them (`sourceRelationSettings.minImportance`): plain objects are walked, anything else (a list, a
+ * preset set) counts as one value. The save's own timestamp is not a setting.
+ */
+export function changedSettingPaths(before: unknown, after: unknown, prefix = ""): string[] {
+  if (!isPlainObject(before) || !isPlainObject(after))
+    return JSON.stringify(before) === JSON.stringify(after) ? [] : [prefix];
+  const paths: string[] = [];
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (!prefix && key === "updatedAt") continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObject(before[key]) && isPlainObject(after[key]))
+      paths.push(...changedSettingPaths(before[key], after[key], path));
+    else if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) paths.push(path);
+  }
+  return paths;
+}
+
+/**
+ * Tells the bus that a store moved, after its save committed (F5 D16). Nothing is sent when no value
+ * differs; more keys than an event may name leave out the list, so a consumer reads the store again.
+ */
+function publishSettingsChanged(store: "app" | "storage", before: unknown, after: unknown): void {
+  const keys = changedSettingPaths(before, after);
+  if (keys.length === 0) return;
+  const event: AppEvent = { type: "settings.changed", stores: [store] };
+  appEventPort.publish(
+    keys.length <= settingsChangedKeysMax ? { ...event, keys: keys.sort() } : event
+  );
 }
 
 /** Writes a file whole or not at all: a reader never sees a half-written document. */
@@ -392,6 +429,7 @@ export class SettingsService {
       const validated = appSettingsSchema.parse(next);
       const saved = await (await this.getRepository()).saveAppSettings(validated);
       this.noteMatchingValues(current, saved);
+      publishSettingsChanged("app", current, saved);
       return saved;
     });
     this.appUpdateQueue = operation.catch(() => undefined);
@@ -438,7 +476,9 @@ export class SettingsService {
     validateStorageSettings(nextInput);
 
     const next = withStorageTimestamp(nextInput);
-    return this.getRepository().then((repository) => repository.saveStorageSettings(next));
+    const saved = await (await this.getRepository()).saveStorageSettings(next);
+    publishSettingsChanged("storage", current, saved);
+    return saved;
   }
 
   public async dispose(): Promise<void> {

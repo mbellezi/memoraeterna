@@ -42,6 +42,7 @@ import {
 } from "@app/integration-contracts";
 import type { StorageSettings } from "../../shared/ipc.js";
 import { collisionFileName, slugify } from "./obsidian-projection.js";
+import { trackObsidianProjection } from "./obsidian-projection-events.js";
 import {
   safeVaultPath,
   type ObsidianArchiveInput,
@@ -386,7 +387,15 @@ export class ObsidianWikiProjection {
    * which the light lane queues this job again. The first page copies the attachments and retires
    * the files the plan no longer produces, before anything is written.
    */
-  async execute(job: JobRecord, signal?: AbortSignal) {
+  execute(job: JobRecord, signal?: AbortSignal) {
+    // A page that leaves more to deliver keeps the projection running; the last page completes it.
+    return trackObsidianProjection(
+      "wiki",
+      () => this.executePage(job, signal),
+      (result) => (result.done ? "completed" : "running")
+    );
+  }
+  private async executePage(job: JobRecord, signal?: AbortSignal) {
     const started = performance.now();
     const payload = pagePayloadSchema.parse(jobTaskPayload(job.payload));
     const settings = await this.options.getStorageSettings();

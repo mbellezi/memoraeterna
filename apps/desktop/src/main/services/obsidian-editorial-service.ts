@@ -38,6 +38,7 @@ import type { StorageSettings } from "../../shared/ipc.js";
 import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { validateEditorialChange, wikiTitle } from "./obsidian-editorial-content.js";
+import { trackObsidianProjection } from "./obsidian-projection-events.js";
 import type { ObsidianWikiProjection } from "./obsidian-wiki-projection.js";
 export interface EditorialBase {
   content: string;
@@ -313,7 +314,11 @@ export class ObsidianEditorialService {
     return base;
   }
   apply(clientId: string, value: unknown, supportsLayout = false): Promise<ObsidianEditReceipt> {
-    const next = this.edits.then(() => this.applyOperation(clientId, value, supportsLayout));
+    const next = this.edits.then(() =>
+      trackObsidianProjection("editorial", () =>
+        this.applyOperation(clientId, value, supportsLayout)
+      )
+    );
     this.edits = next.then(
       () => undefined,
       () => undefined
@@ -624,7 +629,12 @@ export class ObsidianEditorialService {
       })
     );
   }
-  async acknowledge(clientId: string, operationId: string, vaultId: string) {
+  acknowledge(clientId: string, operationId: string, vaultId: string) {
+    return trackObsidianProjection("editorial", () =>
+      this.acknowledgeOperation(clientId, operationId, vaultId)
+    );
+  }
+  private async acknowledgeOperation(clientId: string, operationId: string, vaultId: string) {
     const s = await this.settings(),
       binding = await this.bind(clientId, vaultId),
       repo = createObsidianEditorialRepository(this.pool());

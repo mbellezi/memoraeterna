@@ -4,6 +4,7 @@ import type { PgPool, RelationExplanationContext } from "@app/db";
 
 import { relationExplanationLimits } from "@app/domain";
 
+import { AppEventSchema } from "../../shared/app-events.js";
 import { ipcChannels } from "../../shared/ipc.js";
 import { ActiveDeadline } from "@app/ai";
 
@@ -15,6 +16,7 @@ vi.mock("@app/db", async (importOriginal) => ({
 
 const { relationExplanationPlan } = await import("@app/db");
 const { RelationExplanationService } = await import("./relation-explanation-service.js");
+const { appEventPort } = await import("./app-events.js");
 const { registerRelationExplanationIpc } = await import("./relation-explanation-ipc.js");
 const { relationExplanationPromptVersion } = await import("./relation-explanation.js");
 
@@ -592,6 +594,38 @@ describe("relation explanation IPC registration", () => {
       { relationId: ids.relation, requestId }
     );
     expect(sent).toEqual([]);
+  });
+
+  it("also publishes each piece as explanation.delta on the bus, for any window (T115)", async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
+    const published: unknown[] = [];
+    appEventPort.attach({ publish: (event) => published.push(event) });
+    try {
+      const sender = { isDestroyed: () => true, send: vi.fn() };
+      const service = {
+        explain: vi.fn(async (_input: unknown, onText?: (text: string) => void) => {
+          onText?.("The first");
+          onText?.("The first note");
+          return null;
+        })
+      };
+      registerRelationExplanationIpc(ipc as unknown as IpcMain, service as never);
+      const explain = handlers.get(ipcChannels.relationsExplain)!;
+      const requestId = "00000000-0000-4000-8000-0000000000c1";
+      await explain({ sender }, { relationId: ids.relation, requestId });
+      expect(published).toEqual([
+        { type: "explanation.delta", requestId, relationId: ids.relation, text: "The first" },
+        { type: "explanation.delta", requestId, relationId: ids.relation, text: "The first note" }
+      ]);
+      for (const event of published) expect(AppEventSchema.safeParse(event).success).toBe(true);
+      // Without a request ID nobody asked for a stream, on either path.
+      published.length = 0;
+      await explain({ sender }, { relationId: ids.relation });
+      expect(published).toEqual([]);
+    } finally {
+      appEventPort.detach();
+    }
   });
 });
 

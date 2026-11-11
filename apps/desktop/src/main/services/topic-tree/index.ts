@@ -10,6 +10,7 @@ import { defaultTopicTreeConfig } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
 import type { AiService } from "../ai-service.js";
+import { appEventPort } from "../app-events.js";
 import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { startCorpusRunner } from "./corpus-runner.js";
@@ -174,13 +175,14 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   });
   const hooks = createTopicChangeHooks(triggers, logger, options.noteMatching);
   // A pin writes the view history in the change-set's transaction; the navigator reads it again.
-  const notifyViewHistory = options.ipc
-    ? () => {
-        for (const target of options.ipc!.targets()) {
-          if (!target.isDestroyed()) target.send(ipcChannels.viewHistoryChanged);
-        }
-      }
-    : undefined;
+  // The bus gets `view.changed` always; the old channel keeps sending to the windows until T125.
+  const notifyViewHistory = () => {
+    appEventPort.publish({ type: "view.changed" });
+    if (!options.ipc) return;
+    for (const target of options.ipc.targets()) {
+      if (!target.isDestroyed()) target.send(ipcChannels.viewHistoryChanged);
+    }
+  };
   // The structure jobs are created below, after the service they run on.
   let structureJobs: TopicStructureJobs | null = null;
   // T19b: re-embedding after the route's embedding space changed (D26).
@@ -221,7 +223,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(options.ai
       ? { deciderReady: (waiting: number) => gateService!.deciderReady(waiting) }
       : {}),
-    ...(notifyViewHistory ? { onViewHistoryChanged: notifyViewHistory } : {}),
+    onViewHistoryChanged: notifyViewHistory,
     ...(options.newTreeConfig ? { newTreeConfig: options.newTreeConfig } : {}),
     ...(options.wake ? { wake: options.wake } : {}),
     ...(logger ? { logger } : {}),

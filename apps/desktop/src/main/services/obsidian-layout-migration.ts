@@ -27,6 +27,7 @@ import type { StorageSettings } from "../../shared/ipc.js";
 import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
 import { projectionHash, type ObsidianWikiProjection } from "./obsidian-wiki-projection.js";
 import type { MirrorTarget } from "./obsidian-mirror.js";
+import { trackObsidianProjection } from "./obsidian-projection-events.js";
 import { withTopicAliases } from "./obsidian-topic-projection.js";
 
 export function renderMirrorTarget(target: MirrorTarget, version: number, user = "") {
@@ -332,7 +333,10 @@ export class ObsidianLayoutMigration {
     await repo.create(binding, config, await this.options.wiki.layout(), targets);
     return this.status();
   }
-  async apply(value: unknown) {
+  apply(value: unknown) {
+    return trackObsidianProjection("layout", () => this.applyLayout(value));
+  }
+  private async applyLayout(value: unknown) {
     const input = obsidianLayoutApplyInputSchema.parse(value),
       s = await this.settings();
     await this.active(s);
@@ -660,7 +664,10 @@ export class ObsidianLayoutMigration {
       });
     await repo.finish(delivery.id, "written");
   }
-  async rollback(value: unknown) {
+  rollback(value: unknown) {
+    return trackObsidianProjection("layout", () => this.rollbackLayout(value));
+  }
+  private async rollbackLayout(value: unknown) {
     const input = obsidianLayoutApplyInputSchema.parse(value),
       s = await this.settings();
     await this.active(s);
