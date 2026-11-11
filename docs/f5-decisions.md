@@ -103,6 +103,9 @@ gate D amendments applied below.
 - **Read model.** Plan 4.5's views `knowledge_objects`, `knowledge_links`, `current_notes` and `current_relations` are
   read as a read repository over the predicate modules (D11); `rules/data.md`'s "projection views may unify objects"
   line is replaced (T118).
+- **A topic's `citedBy`** ("topics whose overview cites a member note", spec 3.3, T119) is read as "a topic outside
+  the subtree whose overview cites a member note": a non-leaf topic is not listed as cited by its own descendants,
+  and the root's list is empty (W1FU F3).
 - **`search_tsv` on wiki sections** is read as topics and questions (D27): wiki sections were dropped in migration 0063.
 - **"~17 pollers, 9 `setInterval`s"** is read against the code: 6 `setInterval`s remain (one is a clock), plus the
   boot loop's `await delay(...)`. "0 pollers" = both ratchet metrics at 0 plus J-idle's runtime proof (D16).

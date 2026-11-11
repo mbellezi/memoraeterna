@@ -250,6 +250,8 @@ describe.skipIf(!sidecarInstalled)("locate for topics and entities on a real dat
     await overview(topic.citing, n0);
     await overview(topic.sleep, n1);
     await overview(topic.memory, n3);
+    // A descendant that cites its own note: an ancestor's subtree holds both, so it is not "outside".
+    await overview(deep[6]!, n6);
 
     // A topic of an old tree: it still has `retired_at` null, but the tree is no longer active.
     const oldTree = randomUUID();
@@ -302,7 +304,7 @@ describe.skipIf(!sidecarInstalled)("locate for topics and entities on a real dat
     expect(unnamed!.primaryPath.map((item) => item.id)).toEqual([rootId, topic.unnamed]);
   });
 
-  it("lists the other pages whose overview cites a note of the topic's subtree, never itself", async () => {
+  it("lists the pages outside the topic's subtree whose overview cites a note of it, never its own descendants", async () => {
     const sleep = await locate.locateTopic(topic.sleep);
     // Sleep holds n0 (cited by Citing) and n1 (cited by Sleep itself, left out).
     expect(sleep!.citedBy).toEqual([{ kind: "topic", id: topic.citing, title: "Citing" }]);
@@ -312,9 +314,13 @@ describe.skipIf(!sidecarInstalled)("locate for topics and entities on a real dat
     expect((await locate.locateTopic(topic.focus))!.citedBy).toEqual([
       { kind: "topic", id: topic.memory, title: "Memory" }
     ]);
-    // The root's subtree is the whole tree: every other page that cites any note.
+    // The root's subtree is the whole tree: no page lies outside it, so nothing cites it from there.
     const root = await locate.locateTopic(rootId);
-    expect(root!.citedBy.map((item) => item.title)).toEqual(["Citing", "Memory", "Sleep"]);
+    expect(root!.citedBy).toEqual([]);
+    expect(root!.counts.citedBy).toBe(0);
+    // A non-leaf topic is not filled by its own descendants: Level 1 holds Level 7 and its note.
+    const level1 = await locate.locateTopic(deep[0]!);
+    expect(level1!.citedBy).toEqual([]);
   });
 
   it("resolves a retired topic through redirect_to to the live topic, at any depth of the chain", async () => {

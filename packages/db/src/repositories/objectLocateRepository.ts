@@ -184,9 +184,10 @@ const topicRedirectLimit = 8;
  * A topic: its ancestors up to the root, itself last in the path. A topic that is retired, or that
  * belongs to a tree that is no longer active, resolves through `redirect_to` (a bounded chain) to
  * the live topic that replaced it, and the answer describes that topic; with no live successor it
- * has no place (no row). `citedBy` lists the other live topics of the active tree whose overview
- * cites a note of this topic's subtree, through `topicScopeCtes` (the one definition of a topic's
- * members). $1 topic, $2 ancestors walked, $3 redirects followed, $4 pages shown.
+ * has no place (no row). `citedBy` lists the live topics of the active tree outside this topic's
+ * subtree (so never the topic or a descendant) whose overview cites a note of the subtree, through
+ * `topicScopeCtes` (the one definition of a topic's members). $1 topic, $2 ancestors walked,
+ * $3 redirects followed, $4 pages shown.
  */
 const topicLocateSql = `
 with recursive follow(id, redirect_to, dead, depth) as (
@@ -215,7 +216,7 @@ cited_by as (
        where c.note_id in (select note_id from topic_note_ids)
     ) cited
     join topics t on t.id = cited.topic_id
-   where t.retired_at is null and t.id <> (select id from live)
+   where t.retired_at is null and t.id not in (select id from topic_sub)
      and t.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
 )
 select (select coalesce(t.title, '') from topics t where t.id = (select id from live)) as title,
