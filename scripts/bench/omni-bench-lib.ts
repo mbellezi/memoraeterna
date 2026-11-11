@@ -82,6 +82,20 @@ export interface ExplainedArm {
   index: string;
 }
 
+/**
+ * The arms a statement really holds, out of the arms the gate knows: the full-text arms are not in
+ * the statement of a query with no word, so a plan is never failed for an index the statement does
+ * not use. Matched by arm name and table, as the statement lists them.
+ */
+export function armsInStatement<T extends ExplainedArm>(
+  known: readonly T[],
+  statementArms: readonly { arm: string; table: string }[]
+): T[] {
+  return known.filter((arm) =>
+    statementArms.some((held) => held.arm === arm.arm && held.table === arm.table)
+  );
+}
+
 export type ArmStatus = "index" | "small-table" | "seq-scan" | "index-unused";
 
 export interface ArmPlanResult extends ExplainedArm {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   analyzePlan,
+  armsInStatement,
   latencyReport,
   seqScanRowLimit,
   summarizeExplain,
@@ -86,6 +87,25 @@ const notes = [
   bitmap("atomic_notes", "atomic_notes_title_trgm_idx"),
   bitmap("atomic_notes", "atomic_notes_search_tsv_idx")
 ] as const;
+
+describe("armsInStatement", () => {
+  const known: ExplainedArm[] = [
+    { arm: "title_trgm", table: "topics", index: "topics_title_trgm" },
+    { arm: "fts", table: "topics", index: "topics_search_tsv" },
+    { arm: "fts", table: "atomic_notes", index: "atomic_notes_search_tsv" }
+  ];
+
+  it("keeps only the arms the statement holds, so a no-word query is not failed for an FTS index", () => {
+    expect(armsInStatement(known, [{ arm: "title_trgm", table: "topics" }])).toEqual([known[0]]);
+    expect(
+      armsInStatement(known, [
+        { arm: "title_trgm", table: "topics" },
+        { arm: "fts", table: "atomic_notes" }
+      ])
+    ).toEqual([known[0], known[2]]);
+    expect(armsInStatement(known, [])).toEqual([]);
+  });
+});
 
 describe("analyzePlan", () => {
   it("passes when every large arm uses its index and a small table is scanned", () => {
