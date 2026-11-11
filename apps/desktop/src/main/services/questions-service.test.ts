@@ -91,11 +91,11 @@ function harness(options: { failEnd?: boolean; deleteWhileRunning?: boolean } = 
     create: async (input) => {
       log.push("store:create");
       const created = {
-        id: randomUUID(),
         language: "und",
         scope: { kind: "library" },
         mode: "text",
         ...input,
+        id: input.id ?? randomUUID(),
         status: "running",
         errorKey: null,
         createdAt: new Date(),
