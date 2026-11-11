@@ -112,10 +112,13 @@ const confidenceKeys = {
 export function confidenceText(t: Translator, probability: number | null): string {
   const band = confidenceBand(probability);
   if (band === "unknown" || probability === null) return t(confidenceKeys.unknown);
+  // Rounded down (the epsilon absorbs 0.57 * 100 = 56.99...), so the number never crosses the
+  // edge of the band the word names: 0.849 is "medium (84%)", never "medium (85%)".
+  const whole = Math.min(100, Math.max(0, Math.floor(probability * 100 + 1e-6)));
   const percent = new Intl.NumberFormat(t.locale, {
     style: "percent",
     maximumFractionDigits: 0
-  }).format(probability);
+  }).format(whole / 100);
   return t(confidenceKeys[band], { values: { percent } });
 }
 
