@@ -64,7 +64,7 @@ export class ChangeSetCursorError extends Error {
   override readonly name = "ChangeSetCursorError";
 }
 
-interface ViewRow extends QueryResultRow {
+export interface ChangeSetViewRow extends QueryResultRow {
   kind: ChangeSetKind;
   id: string;
   titleKey: string;
@@ -82,7 +82,7 @@ interface ViewRow extends QueryResultRow {
 const utc = (column: string) =>
   `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
-const viewColumns = `kind, id, title_key as "titleKey", title_params as "titleParams", risk, status,
+export const changeSetViewColumns = `kind, id, title_key as "titleKey", title_params as "titleParams", risk, status,
   origin, subject_id as "subjectId", job_id as "jobId", ${utc("at")} as at,
   ${utc("undone_at")} as "undoneAt", undo`;
 
@@ -91,7 +91,7 @@ export const changeSetSql = {
    * $1 kind, $2 status, $3 risk (each null for any), $4 cursor time, $5 cursor kind, $6 cursor id
    * (null: the first page), $7 rows: newest first, then by kind and id.
    */
-  list: `select ${viewColumns} from change_sets
+  list: `select ${changeSetViewColumns} from change_sets
      where ($1::text is null or kind = $1) and ($2::text is null or status = $2)
        and ($3::text is null or risk = $3)
        and ($4::timestamptz is null or at < $4::timestamptz
@@ -99,9 +99,9 @@ export const changeSetSql = {
      order by at desc, kind, id
      limit $7::int`,
   /** $1 kind, $2 id. */
-  get: `select ${viewColumns} from change_sets where kind = $1 and id = $2::uuid`,
+  get: `select ${changeSetViewColumns} from change_sets where kind = $1 and id = $2::uuid`,
   /** $1 kinds, $2 IDs, pair by pair. */
-  getMany: `select ${viewColumns} from change_sets
+  getMany: `select ${changeSetViewColumns} from change_sets
      where (kind, id) in (select * from unnest($1::text[], $2::uuid[]))`,
   /** Change-sets that wait for the owner, per kind and risk. */
   pending: `select kind, risk, count(*)::int as n from change_sets
@@ -224,7 +224,10 @@ export function changeSetMessageParams(value: unknown): TopicMessageParams {
   return output;
 }
 
-function summaryOf(row: ViewRow, undo: TopicUndoAvailability = row.undo): ChangeSetSummary {
+function summaryOf(
+  row: ChangeSetViewRow,
+  undo: TopicUndoAvailability = row.undo
+): ChangeSetSummary {
   return {
     kind: row.kind,
     id: row.id,
@@ -270,7 +273,7 @@ export function decodeChangeSetCursor(cursor: string): { at: string; kind: strin
  */
 async function refineUndo(
   db: Queryable,
-  rows: readonly ViewRow[]
+  rows: readonly ChangeSetViewRow[]
 ): Promise<Map<string, TopicUndoAvailability>> {
   const output = new Map<string, TopicUndoAvailability>();
   const topicByTree = new Map<string, string[]>();
@@ -292,6 +295,19 @@ async function refineUndo(
     for (const { id } of blocked.rows) output.set(`relation:${id}`, "blocked");
   }
   return output;
+}
+
+/**
+ * The summaries of rows read from the view, with the undo refined as `changes.list` reports it.
+ * Every reader of the view (the Inbox, Home's Gardener column) goes through here, so none offers
+ * an undo the store would refuse.
+ */
+export async function summarizeChangeSetRows(
+  db: Queryable,
+  rows: readonly ChangeSetViewRow[]
+): Promise<ChangeSetSummary[]> {
+  const refined = await refineUndo(db, rows);
+  return rows.map((row) => summaryOf(row, refined.get(`${row.kind}:${row.id}`) ?? row.undo));
 }
 
 // ---------------------------------------------------------------------------
@@ -605,14 +621,15 @@ export function createChangeSetRepository(pool: PgPool) {
     }
   }
 
-  async function summaries(db: Queryable, rows: readonly ViewRow[]): Promise<ChangeSetSummary[]> {
-    const refined = await refineUndo(db, rows);
-    return rows.map((row) => summaryOf(row, refined.get(`${row.kind}:${row.id}`) ?? row.undo));
-  }
+  const summaries = summarizeChangeSetRows;
 
-  async function getRow(db: Queryable, kind: ChangeSetKind, id: string): Promise<ViewRow | null> {
+  async function getRow(
+    db: Queryable,
+    kind: ChangeSetKind,
+    id: string
+  ): Promise<ChangeSetViewRow | null> {
     if (!/^[0-9a-f-]{36}$/iu.test(id)) return null;
-    return (await db.query<ViewRow>(changeSetSql.get, [kind, id])).rows[0] ?? null;
+    return (await db.query<ChangeSetViewRow>(changeSetSql.get, [kind, id])).rows[0] ?? null;
   }
 
   return {
@@ -622,7 +639,7 @@ export function createChangeSetRepository(pool: PgPool) {
       const limit = Math.max(1, Math.min(input.limit, changeSetReadLimits.pageMax));
       return snapshot(async (db) => {
         const rows = (
-          await db.query<ViewRow>(changeSetSql.list, [
+          await db.query<ChangeSetViewRow>(changeSetSql.list, [
             input.kind ?? null,
             input.status ?? null,
             input.risk ?? null,
@@ -658,7 +675,7 @@ export function createChangeSetRepository(pool: PgPool) {
       if (valid.length === 0) return [];
       return snapshot(async (db) => {
         const rows = (
-          await db.query<ViewRow>(changeSetSql.getMany, [
+          await db.query<ChangeSetViewRow>(changeSetSql.getMany, [
             valid.map((ref) => ref.kind),
             valid.map((ref) => ref.id)
           ])

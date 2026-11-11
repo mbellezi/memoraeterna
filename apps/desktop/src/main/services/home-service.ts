@@ -14,8 +14,10 @@ import {
  * row carrying its sentence parameters); without it they come from the database kinds alone.
  */
 export interface HomeInbox {
-  list: (input: { limit: number }) => Promise<InboxList>;
-  counts: () => Promise<{ total: number }>;
+  /** `offer: false`: no MATCH offer (a finding write) and no refresh; Home only reads. */
+  list: (input: { limit: number }, options: { offer: false }) => Promise<InboxList>;
+  /** `cached`: the vault's conflicts the list just read are not scanned again. */
+  counts: (options: { cached: true }) => Promise<{ total: number }>;
 }
 
 export interface HomeServiceOptions {
@@ -28,7 +30,7 @@ export interface HomeServiceOptions {
 /**
  * Home's one read (F5 D9, T130): what arrived, what the Gardener did, what waits, the last
  * questions and the shape of the tree, since the `since` the renderer passes. Read-only: it stores
- * no last visit and calls no AI.
+ * no last visit, offers no backlog, writes nothing and calls no AI.
  */
 export class HomeService {
   constructor(private readonly options: HomeServiceOptions) {}
@@ -53,10 +55,9 @@ export class HomeService {
     const inbox = this.options.inbox?.() ?? null;
     if (!inbox) return { total: record.inbox.total, order: null };
     try {
-      const [counts, list] = await Promise.all([
-        inbox.counts(),
-        inbox.list({ limit: homeDigestBounds.inbox })
-      ]);
+      // One after the other: the list reads the vault's conflicts and the count reuses that read.
+      const list = await inbox.list({ limit: homeDigestBounds.inbox }, { offer: false });
+      const counts = await inbox.counts({ cached: true });
       return { total: counts.total, order: list.items.slice(0, homeDigestBounds.inbox) };
     } catch {
       return { total: record.inbox.total, order: null };
@@ -98,11 +99,7 @@ function toDigest(record: HomeDigestRecord, inbox: { total: number; order: Inbox
     shape: record.shape,
     gardener: {
       count: record.gardener.count,
-      top: record.gardener.top.map((change) => ({
-        ...change,
-        at: iso(change.at),
-        undoneAt: change.undoneAt ? iso(change.undoneAt) : null
-      }))
+      top: record.gardener.top
     }
   };
 }

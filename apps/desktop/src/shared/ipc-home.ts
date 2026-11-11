@@ -6,15 +6,12 @@
 // schemas, the main handler and the preload bridge agree on one source.
 import {
   AskScopeSchema,
-  ChangeSetKindSchema,
   ChangeSetRiskSchema,
-  ChangeSetStatusSchema,
+  ChangeSetSummarySchema,
   InboxItemSchema,
   InboxKindSchema,
   ObjectKindSchema,
   ObjectResolvedSchema,
-  TopicMessageParamsSchema,
-  TopicUndoAvailabilitySchema,
   AskQuestionStatusSchema,
   questionTextMaxLength
 } from "@app/domain";
@@ -144,23 +141,8 @@ export const HomeShapeSchema = z
   .strict();
 export type HomeShape = z.infer<typeof HomeShapeSchema>;
 
-/** A change-set the Gardener applied or proposed since `since` (the `changes.*` summary). */
-export const HomeGardenerChangeSchema = z
-  .object({
-    kind: ChangeSetKindSchema,
-    id: z.string().uuid(),
-    titleKey: z.string().min(1).max(200),
-    titleParams: TopicMessageParamsSchema,
-    risk: ChangeSetRiskSchema,
-    status: ChangeSetStatusSchema,
-    origin: z.string().min(1),
-    subjectId: z.string().uuid().nullable(),
-    jobId: z.string().uuid().nullable(),
-    at: isoTimestamp,
-    undoneAt: isoTimestamp.nullable(),
-    undo: TopicUndoAvailabilitySchema
-  })
-  .strict();
+/** A change-set the Gardener applied or proposed since `since`: the `changes.*` summary itself. */
+export const HomeGardenerChangeSchema = ChangeSetSummarySchema;
 export type HomeGardenerChange = z.infer<typeof HomeGardenerChangeSchema>;
 
 export const HomeDigestSchema = z

@@ -166,14 +166,22 @@ export class InboxService {
   // -------------------------------------------------------------------------
   // inbox.list and inbox.counts
 
-  /** A page of open items by risk (high first) and age (oldest first). */
-  async list(input: unknown): Promise<InboxList> {
+  /**
+   * A page of open items by risk (high first) and age (oldest first). `offer: false` makes it a
+   * pure read: the MATCH backlog is not offered (the offer writes a finding), which is how Home
+   * reads the top rows.
+   */
+  async list(input: unknown, options: { offer?: boolean } = {}): Promise<InboxList> {
     const parsed = InboxListInputSchema.parse(input ?? {});
     const pool = this.pool();
     const after = parsed.cursor ? parseInboxCursor(parsed.cursor) : null;
     if (parsed.cursor && !after) throw new Error(errors.invalidCursor);
     // Opening the Inbox is when a decider that changed while the app ran offers its re-match.
-    if (!parsed.cursor && (!parsed.kinds || parsed.kinds.includes("backlog")))
+    if (
+      options.offer !== false &&
+      !parsed.cursor &&
+      (!parsed.kinds || parsed.kinds.includes("backlog"))
+    )
       await this.offerBacklog();
     const wantsObsidian = !parsed.kinds || parsed.kinds.includes("obsidian_conflict");
     const obsidian =

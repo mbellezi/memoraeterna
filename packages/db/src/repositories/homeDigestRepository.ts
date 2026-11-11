@@ -3,16 +3,20 @@ import {
   formatObjectAddress,
   type AskQuestionStatus,
   type AskScope,
-  type ChangeSetKind,
   type ChangeSetRisk,
-  type ChangeSetStatus,
+  type ChangeSetSummary,
   type InboxKind,
   type ObjectKind,
-  type ObjectResolved,
-  type TopicUndoAvailability
+  type ObjectResolved
 } from "@app/domain";
 import type { QueryResultRow } from "pg";
 
+import type { PgPool } from "../client.js";
+import {
+  changeSetViewColumns,
+  summarizeChangeSetRows,
+  type ChangeSetViewRow
+} from "./changeSetRepository.js";
 import { createInboxRepository } from "./inboxRepository.js";
 import { currentNoteSql } from "./note-relation-sql.js";
 import { createObjectReadRepository } from "./objectReadRepository.js";
@@ -132,20 +136,8 @@ export interface HomeShape {
   roots: HomeShapeRoot[];
 }
 
-export interface HomeGardenerChange {
-  kind: ChangeSetKind;
-  id: string;
-  titleKey: string;
-  titleParams: Record<string, unknown>;
-  risk: ChangeSetRisk;
-  status: ChangeSetStatus;
-  origin: string;
-  subjectId: string | null;
-  jobId: string | null;
-  at: Date;
-  undoneAt: Date | null;
-  undo: TopicUndoAvailability;
-}
+/** A change-set as `changes.list` reports it (undo refined), for the Gardener column. */
+export type HomeGardenerChange = ChangeSetSummary;
 
 export interface HomeDigestRecord {
   /** The `since` the digest used. */
@@ -234,13 +226,12 @@ const outOfBoundsSql = `select count(*)::int as n from topic_stats s
  * left out when the owner made them (`human`) or took one back (`undo`). The count is exact and
  * the rows are the top by risk, then recency.
  */
-const gardenerSql = `select kind, id, title_key as "titleKey", title_params as "titleParams", risk, status,
-       origin, subject_id as "subjectId", job_id as "jobId", at, undone_at as "undoneAt", undo,
-       (count(*) over ())::int as total
+const gardenerSql = `select ${changeSetViewColumns}, (count(*) over ())::int as total
     from change_sets
-   where status in ('applied', 'pending_review') and at > $1::timestamptz
+   where status in ('applied', 'pending_review') and change_sets.at > $1::timestamptz
      and origin not in ('human', 'undo')
-   order by case risk when 'high' then 0 when 'medium' then 1 else 2 end, at desc, kind, id
+   order by case risk when 'high' then 0 when 'medium' then 1 else 2 end,
+            change_sets.at desc, kind, id
    limit $2::int`;
 
 interface Row extends QueryResultRow {
@@ -261,7 +252,8 @@ const emptyShape = (): HomeShape => ({
   roots: []
 });
 
-export function createHomeDigestRepository(db: Queryable) {
+/** The reads of one digest over one connection (a snapshot), none of which writes. */
+function digestReads(db: Queryable) {
   const objects = createObjectReadRepository(db);
 
   /** The resolved summaries of `ids` of one kind, in the order of `ids`, without the missing ones. */
@@ -445,24 +437,34 @@ export function createHomeDigestRepository(db: Queryable) {
   }
 
   async function gardener(since: Date): Promise<{ count: number; top: HomeGardenerChange[] }> {
-    const result = await db.query<Row>(gardenerSql, [since, homeDigestLimits.gardener]);
+    const result = await db.query<ChangeSetViewRow & { total: number }>(gardenerSql, [
+      since,
+      homeDigestLimits.gardener
+    ]);
     return {
       count: asCount(result.rows[0]?.total),
-      top: result.rows.map((row) => ({
-        kind: row.kind as ChangeSetKind,
-        id: String(row.id),
-        titleKey: String(row.titleKey),
-        titleParams: (row.titleParams as Record<string, unknown> | null) ?? {},
-        risk: row.risk as ChangeSetRisk,
-        status: row.status as ChangeSetStatus,
-        origin: String(row.origin),
-        subjectId: (row.subjectId as string | null) ?? null,
-        jobId: (row.jobId as string | null) ?? null,
-        at: asDate(row.at),
-        undoneAt: row.undoneAt ? asDate(row.undoneAt) : null,
-        undo: row.undo as TopicUndoAvailability
-      }))
+      top: await summarizeChangeSetRows(db, result.rows)
     };
+  }
+
+  return { arrivals, continueEntries, gardener, growth, inbox, questions, shape };
+}
+
+export function createHomeDigestRepository(pool: PgPool) {
+  /** One consistent snapshot: the briefing's counts are sentences about one moment. */
+  async function snapshot<T>(read: (db: Queryable) => Promise<T>): Promise<T> {
+    const client = await pool.connect();
+    try {
+      await client.query("begin transaction isolation level repeatable read, read only");
+      const result = await read(client);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   return {
@@ -474,28 +476,32 @@ export function createHomeDigestRepository(db: Queryable) {
       const now = input.now ?? new Date();
       const since =
         input.since ?? new Date(now.getTime() - homeDigestLimits.defaultSinceDays * dayMs);
-      const treeResult = await db.query<{ id: string; rootId: string }>(topicReadSql.activeTree);
-      const tree = treeResult.rows[0] ?? null;
-      const [empty, trail, arrived, inboxPart, asked, grown, done] = await Promise.all([
-        db.query<{ empty: boolean }>("select not exists (select 1 from source_items) as empty"),
-        continueEntries(),
-        arrivals(since),
-        inbox(),
-        questions(),
-        tree ? growth(tree, now) : Promise.resolve({ topics: [], total: 0 }),
-        gardener(since)
-      ]);
-      return {
-        since,
-        firstRun: empty.rows[0]?.empty === true,
-        continue: trail,
-        new: arrived,
-        inbox: inboxPart,
-        questions: asked,
-        growth: grown.topics,
-        shape: tree ? await shape(tree, grown.total) : emptyShape(),
-        gardener: done
-      };
+      return snapshot(async (db) => {
+        const reads = digestReads(db);
+        const treeResult = await db.query<{ id: string; rootId: string }>(topicReadSql.activeTree);
+        const tree = treeResult.rows[0] ?? null;
+        // One connection runs these one after the other, all against the same snapshot.
+        const empty = await db.query<{ empty: boolean }>(
+          "select not exists (select 1 from source_items) as empty"
+        );
+        const trail = await reads.continueEntries();
+        const arrived = await reads.arrivals(since);
+        const inboxPart = await reads.inbox();
+        const asked = await reads.questions();
+        const grown = tree ? await reads.growth(tree, now) : { topics: [], total: 0 };
+        const done = await reads.gardener(since);
+        return {
+          since,
+          firstRun: empty.rows[0]?.empty === true,
+          continue: trail,
+          new: arrived,
+          inbox: inboxPart,
+          questions: asked,
+          growth: grown.topics,
+          shape: tree ? await reads.shape(tree, grown.total) : emptyShape(),
+          gardener: done
+        };
+      });
     }
   };
 }

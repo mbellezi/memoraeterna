@@ -885,6 +885,42 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     );
   });
 
+  it("reads for Home without offering the MATCH backlog, writing, or scanning the vault twice", async () => {
+    const backlog = new RelationMatchBacklog({
+      getPool: () => pool!,
+      deciderKey: async () => "decider-new",
+      spaceKey: async () => "space-1"
+    });
+    const note = await seedNote("Matched long ago");
+    await createNoteMatchStateRepository(pool!).record({
+      noteId: note.id,
+      deciderKey: "decider-old",
+      spaceKey: "space-1",
+      kthCosine: null
+    });
+    const scans = vi.fn(async () => [] as Awaited<ReturnType<typeof conflicts>>);
+    const before = await pool!.query<{ n: number }>(
+      "select count(*)::int as n from gardener_findings"
+    );
+    const publishedBefore = published.length;
+    inbox.dispose();
+    inbox = build({ matchBacklog: () => backlog, obsidianConflicts: scans });
+
+    const opened = await inbox.list({ limit: 3 }, { offer: false });
+    const counts = await inbox.counts({ cached: true });
+
+    expect(opened.items).toEqual([]);
+    expect(counts.total).toBe(0);
+    expect(scans).toHaveBeenCalledTimes(1);
+    const after = await pool!.query<{ n: number }>(
+      "select count(*)::int as n from gardener_findings"
+    );
+    expect(after.rows[0]!.n).toBe(before.rows[0]!.n);
+    expect(published.length).toBe(publishedBefore);
+    // The Inbox itself still offers it when it opens.
+    expect((await inbox.list({})).items.map((entry) => entry.kind)).toEqual(["backlog"]);
+  });
+
   it("asks the MATCH backlog at most once a minute, only for the first page that can hold it", async () => {
     let clock = 1_000_000;
     const offer = vi.fn<() => Promise<unknown>>(async () => ({ status: "none", notes: 0 }));

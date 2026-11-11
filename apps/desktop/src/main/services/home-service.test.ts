@@ -3,7 +3,7 @@ import type { IpcMain } from "electron";
 import type { HomeDigestRecord, PgPool } from "@app/db";
 import type { InboxItem } from "@app/domain";
 
-import { homeChannels } from "../../shared/ipc-home.js";
+import { homeChannels, homeErrorKeys } from "../../shared/ipc-home.js";
 import { registerHomeIpc } from "./home-ipc.js";
 import { HomeService } from "./home-service.js";
 
@@ -77,7 +77,7 @@ const record = (overrides: Partial<HomeDigestRecord> = {}): HomeDigestRecord => 
         origin: "rebalance",
         subjectId: null,
         jobId: null,
-        at: new Date("2026-11-10T23:00:00.000Z"),
+        at: "2026-11-10T23:00:00.000000Z",
         undoneAt: null,
         undo: "available"
       }
@@ -113,7 +113,7 @@ describe("HomeService.digest", () => {
       openedAt: "2026-11-10T22:38:00.000Z"
     });
     expect(digest.questions[0]?.createdAt).toBe("2026-11-10T09:00:00.000Z");
-    expect(digest.gardener.top[0]?.at).toBe("2026-11-10T23:00:00.000Z");
+    expect(digest.gardener.top[0]?.at).toBe("2026-11-10T23:00:00.000000Z");
     expect(digest.inbox).toEqual({
       total: 2,
       top: [
@@ -138,6 +138,8 @@ describe("HomeService.digest", () => {
     await expect(service({ getPool: () => null }).digest({})).rejects.toThrow(
       "home.errors.unavailable"
     );
+    // The key the page shows (T148 adds its text to the `home` locale namespace).
+    expect(homeErrorKeys).toEqual(["home.errors.unavailable"]);
   });
 
   it("takes the Inbox's own total and rows when the Inbox service is installed", async () => {
@@ -145,7 +147,10 @@ describe("HomeService.digest", () => {
     const list = vi.fn(async () => ({ items: [inboxItem], nextCursor: null }));
     const counts = vi.fn(async () => ({ total: 5 }));
     const digest = await service({ inbox: () => ({ list, counts }) }).digest({ since });
-    expect(list).toHaveBeenCalledWith({ limit: 3 });
+    // A pure read: no MATCH offer (it writes a finding), and the count reuses the list's vault read.
+    expect(list).toHaveBeenCalledWith({ limit: 3 }, { offer: false });
+    expect(counts).toHaveBeenCalledWith({ cached: true });
+    expect(list.mock.invocationCallOrder[0]).toBeLessThan(counts.mock.invocationCallOrder[0]!);
     expect(digest.inbox.total).toBe(5);
     expect(digest.inbox.top).toEqual([
       { kind: "backlog", id: "b1", risk: "high", at: inboxItem.at, item: inboxItem }

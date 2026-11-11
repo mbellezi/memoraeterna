@@ -6,11 +6,12 @@ import { join, resolve } from "node:path";
 
 import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
 import { formatObjectAddress } from "@app/domain";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { closePgPool, createPgPool, type PgPool } from "../client.js";
 import { runMigrations } from "../migrations.js";
 import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/index.js";
+import { createChangeSetRepository } from "./changeSetRepository.js";
 import { createHomeDigestRepository, homeDigestLimits } from "./homeDigestRepository.js";
 import { createTopicTreeRepository } from "./topicTreeRepository.js";
 import { createViewHistoryRepository } from "./viewHistoryRepository.js";
@@ -459,6 +460,19 @@ describe.skipIf(!sidecarInstalled)("home digest on a real PostgreSQL database", 
       ]);
     });
 
+    it("reads every part from one repeatable-read snapshot on one connection", async () => {
+      const connect = vi.spyOn(pool, "connect");
+      const query = vi.spyOn(pool, "query");
+      try {
+        await home.digest({ since, now });
+        expect(connect).toHaveBeenCalledTimes(1);
+        expect(query).not.toHaveBeenCalled();
+      } finally {
+        connect.mockRestore();
+        query.mockRestore();
+      }
+    });
+
     it("reads only: nothing is written by a digest", async () => {
       const count = async () =>
         Number(
@@ -472,6 +486,55 @@ describe.skipIf(!sidecarInstalled)("home digest on a real PostgreSQL database", 
       const before = await count();
       await home.digest({ since, now });
       expect(await count()).toBe(before);
+    });
+
+    it("reports a Gardener row's undo as changes.list does, blocked by a later change-set", async () => {
+      const first = await changeSet({
+        origin: "rebalance",
+        status: "applied",
+        risk: "high",
+        createdAt: ago(10)
+      });
+      const later = await changeSet({
+        origin: "audit",
+        status: "applied",
+        risk: "low",
+        createdAt: ago(5)
+      });
+      for (const changeSetId of [first, later])
+        await pool.query(
+          `insert into topic_structure_events (change_set_id, seq, op, topic_id, ref_topic_ids, before, after)
+           values ($1, 0, 'topic.rename', $2, $3::uuid[], '{}'::jsonb, '{}'::jsonb)`,
+          [changeSetId, id.sleep, [id.sleep]]
+        );
+      const stated = await createChangeSetRepository(pool).get("topic", first);
+      expect(stated?.undo).toBe("blocked");
+      const { gardener } = await home.digest({ since, now });
+      expect(gardener.top.find((change) => change.id === first)).toEqual(stated);
+    });
+
+    it("counts a proposal made before `since` as nothing new, whatever store proposed it", async () => {
+      const base = (await home.digest({ since, now })).gardener.count;
+      const overview = (createdAt: Date) =>
+        pool.query(
+          `insert into topic_overview_versions (topic_id, origin, status, title_key, risk, base_version, proposed, created_at)
+           values ($1, 'rewrite', 'pending_review', 'topics.overview.rewrite', 'high', 0, '{}'::jsonb, $2)`,
+          [id.sleep, createdAt]
+        );
+      // Old proposals, of the topic engine and of the overview store: not new work.
+      await changeSet({
+        origin: "rebalance",
+        status: "pending_review",
+        risk: "high",
+        createdAt: ago(100)
+      });
+      await overview(ago(100));
+      expect((await home.digest({ since, now })).gardener.count).toBe(base);
+      // A proposal after `since` is.
+      await overview(ago(2));
+      const after = await home.digest({ since, now });
+      expect(after.gardener.count).toBe(base + 1);
+      expect(after.gardener.top.some((change) => change.kind === "overview")).toBe(true);
     });
   });
 });
