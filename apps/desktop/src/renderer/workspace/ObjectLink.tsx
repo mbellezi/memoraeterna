@@ -299,7 +299,8 @@ export function ObjectCard({
   }
 
   return (
-    <div data-surface="object-card" data-state={surface} className="grid min-w-0 gap-3">
+    // The card is drawn in the interface font wherever it hangs (in a portal, or inside a reading column).
+    <div data-surface="object-card" data-state={surface} className="grid min-w-0 gap-3 font-sans">
       {body}
       <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2.5 text-xs text-secondary-foreground">
         <span className="inline-flex items-center gap-1.5">

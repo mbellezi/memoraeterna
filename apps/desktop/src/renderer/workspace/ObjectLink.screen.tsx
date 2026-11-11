@@ -28,7 +28,7 @@ function screenBatcher() {
 export function render() {
   const batcher = screenBatcher();
   return (
-    <div className="grid max-w-2xl gap-40 font-reading text-reading leading-relaxed">
+    <div className="grid max-w-md gap-80 font-reading text-reading leading-relaxed">
       <p className="m-0">
         Sauerkraut keeps for weeks outside the fridge because{" "}
         <ObjectLink
