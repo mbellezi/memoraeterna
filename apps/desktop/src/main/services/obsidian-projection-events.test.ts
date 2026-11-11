@@ -155,4 +155,44 @@ describe("the four Obsidian services publish on their state changes", () => {
 
     expect(projections(events)).toEqual(["wiki:running", "wiki:failed"]);
   });
+
+  const options = {
+    getPool: () => null,
+    getStorageSettings: async () => settings,
+    write: vi.fn()
+  };
+  const wikiProjection = () =>
+    new ObsidianWikiProjection({ ...options, projectSource: vi.fn(), archive: vi.fn() });
+  it.each([
+    [
+      "editorial",
+      "resolveDesktop",
+      () =>
+        new ObsidianEditorialService({ ...options, wiki: {} as never }).resolveDesktop({
+          id: "conflict",
+          choice: "app",
+          content: "",
+          currentRevision: "revision",
+          expectedLocal: null
+        })
+    ],
+    [
+      "wiki",
+      "saveScope",
+      () => wikiProjection().saveScope({ sourceIds: [], includeDescendants: false })
+    ],
+    ["wiki", "recover", () => wikiProjection().recover("delivery", null)],
+    ["wiki", "moveRetiredToRecovery", () => wikiProjection().moveRetiredToRecovery("retired")],
+    [
+      "layout",
+      "preview",
+      () => new ObsidianLayoutMigration({ ...options, wiki: {} as never }).preview({})
+    ]
+  ])("announces %s when %s runs, even when it fails", async (kind, _method, call) => {
+    const events = listen();
+
+    await expect(call()).rejects.toThrow();
+
+    expect(projections(events)).toEqual([`${kind}:running`, `${kind}:failed`]);
+  });
 });

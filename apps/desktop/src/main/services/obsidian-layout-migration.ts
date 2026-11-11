@@ -215,7 +215,10 @@ export class ObsidianLayoutMigration {
       if (target.links.length > 5000) throw new Error("obsidianWiki.errors.limit");
     }
   }
-  async preview(value: unknown) {
+  preview(value: unknown) {
+    return trackObsidianProjection("layout", () => this.previewLayout(value));
+  }
+  private async previewLayout(value: unknown) {
     const config = obsidianLayoutConfigSchema.parse(value),
       s = await this.settings(),
       binding = this.binding(s),

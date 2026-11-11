@@ -711,7 +711,17 @@ export class ObsidianEditorialService {
       receipt: obsidianEditReceiptSchema.parse(row.receipt)
     }));
   }
-  async resolveDesktop(input: {
+  /** Resolves a conflict from the desktop: it changes the vault and the conflict list, so it is announced. */
+  resolveDesktop(input: {
+    id: string;
+    choice: "local" | "app" | "manual";
+    content: string;
+    currentRevision: string;
+    expectedLocal: string | null;
+  }) {
+    return trackObsidianProjection("editorial", () => this.resolveDesktopConflict(input));
+  }
+  private async resolveDesktopConflict(input: {
     id: string;
     choice: "local" | "app" | "manual";
     content: string;

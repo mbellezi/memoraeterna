@@ -247,10 +247,13 @@ export class ObsidianWikiProjection {
       (await createSettingsRepository(this.pool()).get("obsidian.wiki.scope")) ?? {}
     );
   }
-  async saveScope(input: unknown) {
-    const scope = ObsidianWikiScopeSchema.parse(input);
-    await createSettingsRepository(this.pool()).set("obsidian.wiki.scope", scope);
-    return scope;
+  /** Saving the scope changes what the vault holds, so it is announced. */
+  saveScope(input: unknown) {
+    return trackObsidianProjection("wiki", async () => {
+      const scope = ObsidianWikiScopeSchema.parse(input);
+      await createSettingsRepository(this.pool()).set("obsidian.wiki.scope", scope);
+      return scope;
+    });
   }
   private vaultBinding(settings: StorageSettings) {
     return projectionHash(JSON.stringify([settings.obsidianVaultPath, settings.managedRoot]));
@@ -303,7 +306,10 @@ export class ObsidianWikiProjection {
     };
   }
   /** "Move to recovery" for a retired wiki file that was kept in the vault because it holds edits. */
-  async moveRetiredToRecovery(id: string) {
+  moveRetiredToRecovery(id: string) {
+    return trackObsidianProjection("wiki", () => this.moveRetiredToRecoveryFile(id));
+  }
+  private async moveRetiredToRecoveryFile(id: string) {
     const settings = await this.options.getStorageSettings();
     if (!settings.obsidianVaultPath) throw new Error("obsidianWiki.errors.binding");
     const binding = await this.binding(settings);
@@ -334,7 +340,10 @@ export class ObsidianWikiProjection {
       localHash: local === null ? null : projectionHash(local)
     };
   }
-  async recover(id: string, expectedHash: string | null) {
+  recover(id: string, expectedHash: string | null) {
+    return trackObsidianProjection("wiki", () => this.recoverDelivery(id, expectedHash));
+  }
+  private async recoverDelivery(id: string, expectedHash: string | null) {
     const repository = createObsidianWikiRepository(this.pool()),
       row = await repository.getDelivery(id);
     if (!row) throw new Error("obsidianWiki.errors.binding");
