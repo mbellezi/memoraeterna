@@ -53,6 +53,7 @@
     "db:divergence-findings:verify": "npm run db:divergence-findings:verify -w @app/db",
     "db:legacy-drop:verify": "npm run db:legacy-drop:verify -w @app/db",
     "db:questions:verify": "npm run db:questions:verify -w @app/db",
+    "db:search-indexes:verify": "npm run db:search-indexes:verify -w @app/db",
     "db:ask-text:verify": "npm run db:ask-text:verify -w @app/db --",
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
     "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts",

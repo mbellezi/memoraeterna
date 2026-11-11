@@ -75,10 +75,10 @@ try {
   const indexes = await pool.query<{ indexname: string }>(
     `select indexname from pg_indexes where schemaname = 'public'
      and indexname in ('embeddings_256_embedding_hnsw_idx', 'embeddings_768_embedding_hnsw_idx',
-                       'embeddings_1024_embedding_hnsw_idx',
-                       'chunks_content_trgm_idx', 'chunks_content_fts_idx')`
+                       'embeddings_1024_embedding_hnsw_idx')`
   );
-  if (indexes.rows.length !== 5) throw new Error("Phase 2 search indexes are missing.");
+  // The two chunk content indexes of 0001 were unused and are dropped by 0067 (F5 T117).
+  if (indexes.rows.length !== 3) throw new Error("Phase 2 search indexes are missing.");
 
   const sources = createSourceItemRepository(pool);
   const documents = createDocumentRepository(pool);

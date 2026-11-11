@@ -197,6 +197,11 @@ export const sourceItems = pgTable(
     externalIdIdx: index("source_items_external_id_idx").on(table.externalId),
     parentSourceItemIdx: index("source_items_parent_source_item_id_idx").on(
       table.parentSourceItemId
+    ),
+    // The omni quick arm (F5 T117, D12): `f_unaccent(q) <% f_unaccent(title)`, written as the index.
+    titleTrgmIdx: index("source_items_title_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(${table.title}) gin_trgm_ops`
     )
   })
 );
@@ -432,8 +437,8 @@ export const chunks = pgTable(
     // Ask's text signal (F4 T79, D22): the unaccented 'simple' full-text document of the passage,
     // stored so the candidate statement ranks it without parsing the text again. It is the document
     // the statement built per row before (f_unaccent, migration 0053, is unaccent() pinned to one
-    // dictionary), so the ranks are the same. No index: the statement ranks every passage in scope
-    // and has no `@@` a GIN could serve.
+    // dictionary), so the ranks are the same. Ask's statement ranks every passage in scope and has
+    // no `@@` a GIN could serve; omni's chunk arm does, and 0067 adds the GIN.
     searchTsv: tsvector("search_tsv").generatedAlwaysAs(
       (): SQL => sql`to_tsvector('simple', f_unaccent(${chunks.content}))`
     ),
@@ -445,7 +450,10 @@ export const chunks = pgTable(
     documentChunkUidx: uniqueIndex("chunks_document_chunk_index_uidx").on(
       table.documentId,
       table.chunkIndex
-    )
+    ),
+    // Omni's full-mode chunk arm (F5 T117, D12): `search_tsv @@ q`. 0067 also dropped the two
+    // unused indexes of 0001 (`chunks_content_trgm_idx`, `chunks_content_fts_idx`).
+    searchTsvIdx: index("chunks_search_tsv_idx").using("gin", table.searchTsv)
   })
 );
 
@@ -469,7 +477,17 @@ export const entities = pgTable(
   },
   (table) => ({
     typeNameIdx: index("entities_type_normalized_name_idx").on(table.type, table.normalizedName),
-    canonicalNameIdx: index("entities_canonical_name_idx").on(table.canonicalName)
+    canonicalNameIdx: index("entities_canonical_name_idx").on(table.canonicalName),
+    // The omni quick arms (F5 T117, D12), written as the index expressions. `f_jsonb_text_array`
+    // (0067) joins the aliases into one text, so one trigram index serves them all.
+    canonicalNameTrgmIdx: index("entities_canonical_name_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(${table.canonicalName}) gin_trgm_ops`
+    ),
+    aliasesTrgmIdx: index("entities_aliases_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(f_jsonb_text_array(${table.aliases})) gin_trgm_ops`
+    )
   })
 );
 
@@ -2673,9 +2691,23 @@ export const topics = pgTable(
       onDelete: "restrict"
     }),
     createdChangeSetId: uuid("created_change_set_id"),
+    // Omni's topic full-text document (F5 T117, D12): the title weighs A, the aliases B and the
+    // description C. 'simple' keeps every language alike; f_unaccent (0053) and f_jsonb_text_array
+    // (0067) are immutable, so the column can be generated.
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      (): SQL => sql`setweight(to_tsvector('simple', f_unaccent(coalesce(${topics.title}, ''))), 'A') ||
+        setweight(to_tsvector('simple', f_unaccent(coalesce(f_jsonb_text_array(${topics.aliases}), ''))), 'B') ||
+        setweight(to_tsvector('simple', f_unaccent(coalesce(${topics.description}, ''))), 'C')`
+    ),
     ...timestamps
   },
   (table) => ({
+    searchTsvIdx: index("topics_search_tsv_idx").using("gin", table.searchTsv),
+    // The omni quick arm: `f_unaccent(q) <% f_unaccent(title)`; a null title is simply not indexed.
+    titleTrgmIdx: index("topics_title_trgm_idx").using(
+      "gin",
+      sql`f_unaccent(${table.title}) gin_trgm_ops`
+    ),
     childrenIdx: index("topics_children_idx")
       .on(table.treeId, table.parentId, table.position)
       .where(sql`${table.retiredAt} is null`),

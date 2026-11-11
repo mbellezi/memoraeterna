@@ -51,7 +51,8 @@
     "db:changes:verify": "tsx src/scripts/verify-change-sets.ts",
     "db:divergence-findings:verify": "tsx src/scripts/verify-divergence-findings.ts",
     "db:legacy-drop:verify": "tsx src/scripts/verify-legacy-drop.ts",
-    "db:questions:verify": "tsx src/scripts/verify-questions.ts"
+    "db:questions:verify": "tsx src/scripts/verify-questions.ts",
+    "db:search-indexes:verify": "tsx src/scripts/verify-object-search-indexes.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",
