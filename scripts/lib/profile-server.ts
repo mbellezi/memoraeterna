@@ -57,6 +57,29 @@ export async function assertScratchProfilePath(path: string, repoRoot: string): 
   return real;
 }
 
+/**
+ * Resolves the paths a server will write to (`database/`, `postgres-data/`, the descriptor) and
+ * refuses any that leaves the profile's real folder: a symlinked `database/` or `postgres-data`
+ * would otherwise start PostgreSQL on a real profile although the root passed the check.
+ */
+export async function assertScratchProfileTree(real: string, repoRoot: string): Promise<void> {
+  const paths = profilePaths(real);
+  const inside = (path: string) => path.startsWith(`${real}${sep}`);
+  for (const path of [
+    paths.databaseDir,
+    paths.dataDir,
+    paths.connectionFile,
+    paths.completionFile
+  ]) {
+    const resolved = await realpathOfNearestAncestor(path);
+    if (!inside(resolved) || path !== resolved)
+      throw new Error(
+        `Refusing ${real}: ${relative(real, path)} resolves outside the scratch profile ` +
+          `(a symlink under ${join(repoRoot, ".cache", "f<N>", "scratch")}${sep} is not followed).`
+      );
+  }
+}
+
 export const profileConnectionFileSchema = z
   .object({
     version: z.literal(1),
@@ -74,8 +97,20 @@ export function profilePaths(profileDir: string) {
   return {
     databaseDir,
     dataDir: join(databaseDir, "postgres-data"),
-    connectionFile: join(databaseDir, "dev-connection.json")
+    connectionFile: join(databaseDir, "dev-connection.json"),
+    completionFile: join(databaseDir, "seed-complete.json")
   };
+}
+
+/** Marks a kept cluster as fully migrated and seeded; written last, so a failed run has none. */
+export async function writeProfileCompletionMarker(
+  profileDir: string,
+  facts: Record<string, string | number>
+): Promise<void> {
+  await writeFile(
+    profilePaths(profileDir).completionFile,
+    `${JSON.stringify({ version: 1, ...facts, completedAt: new Date().toISOString() }, null, 2)}\n`
+  );
 }
 
 /** Writes the development descriptor (mode 0600). The password stays in the file, never in logs. */
@@ -108,6 +143,8 @@ export interface StartProfileServerOptions {
   readonly repoRoot: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly startupTimeoutMs?: number;
+  /** Start a cluster that carries no completion marker (a half-seeded one). Default false. */
+  readonly allowIncomplete?: boolean;
 }
 
 /** Starts the cluster of a scratch profile on a dynamic port (the descriptor's port is stale). */
@@ -116,6 +153,7 @@ export async function startProfileServer(
   options: StartProfileServerOptions
 ): Promise<ProfileServer> {
   const real = await assertScratchProfilePath(profileDir, options.repoRoot);
+  await assertScratchProfileTree(real, options.repoRoot);
   const paths = profilePaths(real);
   let descriptor: ProfileConnectionFile;
   try {
@@ -124,6 +162,16 @@ export async function startProfileServer(
     );
   } catch {
     throw new Error(`The scratch profile has no readable database/dev-connection.json: ${real}`);
+  }
+  if (!options.allowIncomplete) {
+    try {
+      await readFile(paths.completionFile, "utf8");
+    } catch {
+      throw new Error(
+        `The scratch profile is not marked complete (database/seed-complete.json): a seeding run ` +
+          `that failed or is still running leaves none: ${real}`
+      );
+    }
   }
   const sidecar = resolvePostgresSidecarPaths({
     cwd: options.repoRoot,

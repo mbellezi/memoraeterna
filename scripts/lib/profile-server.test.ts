@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   assertScratchProfilePath,
+  assertScratchProfileTree,
   copyMigrationsToTag,
   profilePaths,
   startProfileServer,
   truncateJournal,
+  writeProfileCompletionMarker,
   writeProfileConnectionFile
 } from "./profile-server.js";
 
@@ -62,6 +64,37 @@ describe("assertScratchProfilePath", () => {
     const link = join(repo, ".cache", "f5", "scratch", "sneaky");
     await symlink(join(repo, ".cache", "profiles", "env-c"), link);
     await expect(assertScratchProfilePath(link, repo)).rejects.toThrow(/Refusing/u);
+  });
+
+  it("refuses a symlinked database/ or postgres-data inside a scratch profile", async () => {
+    const real = join(repo, ".cache", "profiles", "env-c", "database");
+    await mkdir(join(real, "postgres-data"), { recursive: true });
+    const viaDatabase = join(repo, ".cache", "f5", "scratch", "x");
+    await mkdir(viaDatabase, { recursive: true });
+    await symlink(real, join(viaDatabase, "database"));
+    await expect(assertScratchProfileTree(viaDatabase, repo)).rejects.toThrow(/Refusing/u);
+    await expect(startProfileServer(viaDatabase, { repoRoot: repo })).rejects.toThrow(/Refusing/u);
+
+    const viaData = join(repo, ".cache", "f5", "scratch", "y");
+    await mkdir(join(viaData, "database"), { recursive: true });
+    await symlink(join(real, "postgres-data"), join(viaData, "database", "postgres-data"));
+    await expect(startProfileServer(viaData, { repoRoot: repo })).rejects.toThrow(/Refusing/u);
+  });
+
+  it("refuses a scratch profile without a completion marker unless asked", async () => {
+    const dir = join(repo, ".cache", "f5", "scratch", "half");
+    await writeProfileConnectionFile(dir, {
+      host: "127.0.0.1",
+      port: 5432,
+      database: "d",
+      user: "u",
+      password: "p"
+    });
+    await expect(startProfileServer(dir, { repoRoot: repo })).rejects.toThrow(
+      /not marked complete/u
+    );
+    await writeProfileCompletionMarker(dir, { notes: 1 });
+    expect((await stat(profilePaths(dir).completionFile)).isFile()).toBe(true);
   });
 
   it("startProfileServer refuses a refused path before starting anything", async () => {

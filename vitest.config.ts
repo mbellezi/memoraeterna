@@ -11,7 +11,6 @@ export default defineConfig({
       "scripts/bench/**/*.test.ts",
       "scripts/contrast/**/*.test.ts",
       "scripts/kpi/**/*.test.ts",
-      "scripts/lib/**/*.test.ts",
       "scripts/db/**/*.test.ts",
       "scripts/golden/**/*.test.ts",
       "scripts/lib/**/*.test.ts",

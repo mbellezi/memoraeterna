@@ -20,6 +20,7 @@ import {
   copyMigrationsToTag,
   profilePaths,
   startProfileServer,
+  writeProfileCompletionMarker,
   writeProfileConnectionFile,
   type ProfileServer
 } from "../lib/profile-server.js";
@@ -267,6 +268,7 @@ let manager: PostgresSidecarManager | null = null;
 let profileServer: ProfileServer | null = null;
 let workDir: string | null = null;
 let keptDir: string | null = null;
+let keptComplete = false;
 let migrationsTemp: string | null = null;
 let pool: pg.Pool | null = null;
 try {
@@ -353,6 +355,15 @@ try {
       `tree: ${1 + seeded.areaIds.length + seeded.subtopicIds.length + seeded.leafIds.length} topics, ` +
         `${seeded.placedItems} items, generation ${seeded.generation}`
     );
+    if (keptDir) {
+      await writeProfileCompletionMarker(keptDir, {
+        sources: books * 10,
+        notes: noteTotal,
+        topics: topicTotal,
+        placedItems: seeded.placedItems
+      });
+      keptComplete = true;
+    }
   }
 
   const hasTree =
@@ -500,5 +511,7 @@ try {
   if (profileServer) await profileServer.stop().catch(() => undefined);
   if (workDir) await rm(workDir, { recursive: true, force: true });
   if (migrationsTemp) await rm(migrationsTemp, { recursive: true, force: true });
-  if (keptDir) log(`kept the stopped cluster at ${keptDir}`);
+  if (keptDir && keptComplete) log(`kept the stopped cluster at ${keptDir}`);
+  else if (keptDir)
+    log(`the run did not finish: ${keptDir} is incomplete and --profile refuses it; remove it`);
 }
