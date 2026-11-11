@@ -68,6 +68,7 @@
     "golden:cassette-nonreg": "tsx scripts/golden/cassette-nonreg.ts",
     "relations:rematch-report": "tsx scripts/relations/rematch-report.ts",
     "bench:branch": "tsx scripts/bench/branch-bench.ts",
+    "bench:omni": "tsx scripts/bench/omni-bench.ts",
     "bench:writer": "tsx scripts/bench/writer-replay.ts",
     "bench:writer-report": "tsx scripts/bench/writer-report.ts",
     "soak:report": "tsx scripts/soak/report.ts",
