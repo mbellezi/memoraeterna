@@ -94,8 +94,8 @@ gate D amendments applied below.
 
 | # | Decision | Why / alternative rejected |
 | --- | --- | --- |
-| D33 | **Inbox routing of suggestions** *(new 2026-11-11, gate D: A9; a default the owner may change, Q30)*. A suggested relation whose confidence is below "high" (typed configuration, 0.85 *(cal.)*), or whose stance is contradicts, appears in the Inbox as well as inline, and counts in "needs you". Other suggestions are inline only. Visibility still comes only from `note-relation-sql.ts`. The read stays bounded to the Inbox page size and the count comes from an indexed query; an EXPLAIN on an ENV-C clone is its proof. T176 extends the Inbox read model. | Design record §5.6 and §19.9. Risk: volume on a large library; the threshold is typed configuration. Rejected: the F4 kinds alone (a medium-confidence suggestion would never reach the user's queue). |
-| D34 | **Inbox keys in F5** *(new 2026-11-11, gate D: A8; replaces F4 D29's key list)*. j/k and ↑/↓ move, and Enter opens. a accepts: apply a structure proposal, or keep a relation. Backspace removes: a veto, so the decider never suggests that relation again. x only dismisses: the item leaves the Inbox and nothing changes; it is offered only where a dismiss verb exists. e edits names before applying a structure proposal, only where the writer supports it. r retries, u undoes, and ? shows the keys. | Removing and dismissing are different verdicts; the first-time-user critic flagged the merged key as a must-fix (design record §20.1 row 22). |
+| D33 | **Inbox routing of suggestions** *(new 2026-11-11, gate D: A9; a default the owner may change, Q30)*. A suggested relation whose confidence is below "high" (typed configuration, 0.85 *(cal.)*), or whose stance is contradicts, appears in the Inbox as well as inline, and counts in "needs you". Other suggestions are inline only. A suggestion with no probability (null: written by an uncalibrated or threshold-only decider) is not "high": it routes to the Inbox and its confidence is worded "confiança desconhecida" with no number (Q37). The Inbox read model's arm and the domain predicate `routesToInbox` implement this one rule, so the inline words and the Inbox never disagree. Visibility still comes only from `note-relation-sql.ts`. The read stays bounded to the Inbox page size and the count comes from an indexed query; an EXPLAIN on an ENV-C clone is its proof. T176 extends the Inbox read model. | Design record §5.6 and §19.9. Risk: volume on a large library; the threshold is typed configuration. Rejected: the F4 kinds alone (a medium-confidence suggestion would never reach the user's queue). |
+| D34 | **Inbox keys in F5** *(new 2026-11-11, gate D: A8; replaces F4 D29's key list)*. j/k and ↑/↓ move, and Enter opens. a accepts: apply a structure proposal, or keep a relation. Backspace removes: the `relations.review` remove verdict (status rejected), so the decider never suggests that relation again; it never sets `vetoed_at`, which is the withdrawn state. x only dismisses: the item leaves the Inbox and nothing changes; it is offered only where a dismiss verb exists. e edits names before applying a structure proposal, only where the writer supports it. r retries, u undoes, and ? shows the keys. | Removing and dismissing are different verdicts; the first-time-user critic flagged the merged key as a must-fix (design record §20.1 row 22). |
 
 ## Readings and corrections of the plan
 
@@ -127,9 +127,9 @@ gate D amendments applied below.
 ## Owner questions
 
 Defaults Q4-Q21 were taken on 2026-11-11 while the owner was away; the owner may change them. Q1-Q3 are answered.
-Q22-Q36 are the defaults taken at gate D on 2026-11-11, also while the owner was away: the design record's §19 items
-1-13 and the Settings v2 mockup's three open points (Q31 covers both §19.10 and the first point). The owner may change
-any of them, at the latest in F7.
+Q22-Q37 are the defaults taken at gate D on 2026-11-11, also while the owner was away: the design record's §19 items
+1-13, the Settings v2 mockup's three open points (Q31 covers both §19.10 and the first point) and the null-confidence
+routing found by the amendment's review (Q37). The owner may change any of them, at the latest in F7.
 
 | # | Question | Default |
 | --- | --- | --- |
@@ -169,6 +169,7 @@ any of them, at the latest in F7.
 | Q34 | Where the first source lands (§19.13) | Explore, with the Source panel on top (D9) |
 | Q35 | Default of the notes' language (Settings v2 mockup) | The macOS language (the registry's `osLocale` default), not "same as the source" (D18) |
 | Q36 | The "changed from default" marker (Settings v2 mockup) | A grey dot; the 2 px bar of a changed row uses the accent (D18) |
+| Q37 | A suggested relation with no probability (an uncalibrated or threshold-only decider) | Not "high": it routes to the Inbox, worded "confiança desconhecida" with no number (D33); while a decider is uncalibrated every suggestion it makes routes, and the Inbox read stays bounded |
 
 ## Gates
 
@@ -307,7 +308,8 @@ default not run (Q17). All other F5 measurement costs $0. Only the orchestrator 
 
 There is no slack before gate X; a slip moves it day for day up to Tue 12-01, and F6 and F7 follow one for one (plan).
 Gate D added 2.75 agent-days (T176 and the growth of T120, T130, T131, T141 and T142); T176 runs beside the W3 chains,
-and T142's growth lengthens the chain T142 → T151 → T152 from 3.5 to 3.75 days.
+and T142's growth (it also took the Inbox icicle's labels from T176 at the amendment's review) lengthens the chain
+T142 → T151 → T152 from 3.5 to 4.0 days.
 
 **Merge order.** Cards that share no chain file may merge in either order.
 
