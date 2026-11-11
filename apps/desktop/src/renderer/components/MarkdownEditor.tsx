@@ -19,6 +19,8 @@ import {
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../lib/cn";
+import { ObjectLink, useObjectLinkContext } from "../workspace/ObjectLink";
+import { markdownObjectLinkSource, parseMarkdownObjectLink } from "../workspace/ObjectLinkModel";
 
 export type MarkdownEditorMode = "write" | "preview" | "split";
 
@@ -502,17 +504,47 @@ function renderBlock(
   );
 }
 
+/**
+ * What one line of Markdown splits into. Order matters: an object link comes before a bare citation
+ * `[1]`, which would otherwise take the link's text and leave its address behind.
+ */
+const inlineTokens = new RegExp(
+  `(${[
+    String.raw`\[[^\]]+\]\(memora:(?:page|source|atomic_note|entity)\/[0-9a-f-]{36}\)`,
+    markdownObjectLinkSource,
+    String.raw`\[(?:e)?[1-9][0-9]{0,3}\]`,
+    "`[^`]+`",
+    String.raw`\*\*[^*]+\*\*`,
+    "__[^_]+__",
+    "~~[^~]+~~",
+    String.raw`\*[^*]+\*`,
+    "_[^_]+_",
+    String.raw`\[[^\]]+\]\(https?:\/\/[^)]+\)`
+  ].join("|")})`,
+  "g"
+);
+
+/**
+ * `[text](memora://…)` is an object link: it opens the object beside the panel that holds the text
+ * and shows the hover card. Outside a panel (no one to open it) it is its text, never a dead link.
+ */
+function MarkdownObjectLink({ label, address }: { label: string; address: string }) {
+  const context = useObjectLinkContext();
+  if (!context) return <>{label}</>;
+  return <ObjectLink address={address}>{label}</ObjectLink>;
+}
+
 function renderInline(
   text: string,
   reference?: ((token: string) => ReactNode) | undefined
 ): ReactNode[] {
-  const tokens = text.split(
-    /(\[[^\]]+\]\(memora:(?:page|source|atomic_note|entity)\/[0-9a-f-]{36}\)|\[(?:e)?[1-9][0-9]{0,3}\]|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\(https?:\/\/[^)]+\))/g
-  );
+  const tokens = text.split(inlineTokens);
   return tokens.map((token, index) => {
     const resolved = reference?.(token);
     if (resolved !== undefined && resolved !== null)
       return <Fragment key={index}>{resolved}</Fragment>;
+    const objectLink = token.startsWith("[") ? parseMarkdownObjectLink(token) : null;
+    if (objectLink) return <MarkdownObjectLink key={index} {...objectLink} />;
     if (token.startsWith("`") && token.endsWith("`"))
       return (
         <code

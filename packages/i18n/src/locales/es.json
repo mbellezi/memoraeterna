@@ -3837,5 +3837,71 @@
     },
     "stackLabel": "Paneles abiertos",
     "untitled": "Sin título"
+  },
+  "preview": {
+    "card": {
+      "empty": "Aún sin resumen. Ábrelo para leerlo completo.",
+      "error": "No se pudo leer la vista previa.",
+      "errorKept": "El enlace sigue funcionando; no se cambió nada.",
+      "goTo": "Ir a",
+      "keys": {
+        "open": "abrir al lado",
+        "peek": "echar un vistazo"
+      },
+      "label": "Vista previa",
+      "missing": "Esto ya no está en la biblioteca.",
+      "passage": "Fragmento",
+      "relation": "Conexión",
+      "status": {
+        "redirected": "Sustituido por otro tema",
+        "retired": "Fuera de uso"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} respuesta",
+        "other": "{count} respuestas"
+      },
+      "items": {
+        "one": "{count} elemento en el tema",
+        "other": "{count} elementos en el tema"
+      },
+      "notes": {
+        "one": "{count} nota",
+        "other": "{count} notas"
+      },
+      "passages": {
+        "one": "{count} fragmento",
+        "other": "{count} fragmentos"
+      },
+      "sources": {
+        "one": "{count} fuente",
+        "other": "{count} fuentes"
+      },
+      "subtopics": {
+        "one": "{count} subtema",
+        "other": "{count} subtemas"
+      }
+    },
+    "quickLook": {
+      "empty": "Aún sin resumen. Ábrelo al lado para leerlo completo.",
+      "error": "No se pudo leer este elemento.",
+      "errorKept": "No se cambió nada; la lista sigue aquí.",
+      "keys": {
+        "close": "cerrar",
+        "closes": "cierra",
+        "openHere": "abrir en este panel",
+        "opensBeside": "abre al lado",
+        "peekNext": "ver el siguiente",
+        "space": "Espacio"
+      },
+      "label": "Vista rápida",
+      "missing": "Esto ya no está en la biblioteca.",
+      "notesMentioning": "Notas que lo mencionan",
+      "notesOfSource": "Notas de esta fuente",
+      "peeking": "Vista rápida",
+      "stays": "Todo sigue donde estaba; no se abrió nada.",
+      "updated": "última actualización: {date}"
+    }
   }
 }

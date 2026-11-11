@@ -3835,5 +3835,71 @@
     },
     "stackLabel": "Panneaux ouverts",
     "untitled": "Sans titre"
+  },
+  "preview": {
+    "card": {
+      "empty": "Pas encore de résumé. Ouvrez-le pour tout lire.",
+      "error": "Impossible de lire l’aperçu.",
+      "errorKept": "Le lien fonctionne toujours ; rien n’a été modifié.",
+      "goTo": "Aller à",
+      "keys": {
+        "open": "ouvrir à côté",
+        "peek": "survoler"
+      },
+      "label": "Aperçu",
+      "missing": "Ceci n’est plus dans la bibliothèque.",
+      "passage": "Passage",
+      "relation": "Connexion",
+      "status": {
+        "redirected": "Remplacé par un autre sujet",
+        "retired": "Hors d’usage"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} réponse",
+        "other": "{count} réponses"
+      },
+      "items": {
+        "one": "{count} élément dans le sujet",
+        "other": "{count} éléments dans le sujet"
+      },
+      "notes": {
+        "one": "{count} note",
+        "other": "{count} notes"
+      },
+      "passages": {
+        "one": "{count} passage",
+        "other": "{count} passages"
+      },
+      "sources": {
+        "one": "{count} source",
+        "other": "{count} sources"
+      },
+      "subtopics": {
+        "one": "{count} sous-sujet",
+        "other": "{count} sous-sujets"
+      }
+    },
+    "quickLook": {
+      "empty": "Pas encore de résumé. Ouvrez-le à côté pour tout lire.",
+      "error": "Impossible de lire cet élément.",
+      "errorKept": "Rien n’a été modifié ; la liste est toujours là.",
+      "keys": {
+        "close": "fermer",
+        "closes": "ferme",
+        "openHere": "ouvrir dans ce panneau",
+        "opensBeside": "ouvre à côté",
+        "peekNext": "voir le suivant",
+        "space": "Espace"
+      },
+      "label": "Coup d’œil",
+      "missing": "Ceci n’est plus dans la bibliothèque.",
+      "notesMentioning": "Notes qui le mentionnent",
+      "notesOfSource": "Notes de cette source",
+      "peeking": "Coup d’œil",
+      "stays": "Tout reste en place ; rien n’a été ouvert.",
+      "updated": "dernière mise à jour : {date}"
+    }
   }
 }
