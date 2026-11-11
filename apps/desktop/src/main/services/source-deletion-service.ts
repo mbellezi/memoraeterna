@@ -1,7 +1,12 @@
 import { readFile, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { createKnowledgeGraphRepository, createViewHistoryRepository, type PgPool } from "@app/db";
+import {
+  createKnowledgeGraphRepository,
+  createRelationTypeRepository,
+  createViewHistoryRepository,
+  type PgPool
+} from "@app/db";
 import type { StorageSettings } from "../../shared/ipc.js";
 import { parseManagedMarkdown } from "./obsidian-projection.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
@@ -236,6 +241,8 @@ export class SourceDeletionService {
         `delete from source_items where id = any($1::uuid[])`,
         [sourceItemIds]
       );
+      // The relation-type catalog keeps its sources in jsonb, without a foreign key to cascade.
+      await createRelationTypeRepository(pool).forgetSources(sourceItemIds, client);
 
       if (aiTaskRunIds.length > 0) {
         await client.query(

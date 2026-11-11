@@ -864,7 +864,10 @@ describe("repositories", () => {
 
     expect(runId).toBe("run-1");
     expect(db.queries[0]?.text).toContain("insert into ai_task_run_sources");
-    expect(db.queries[0]?.text).toContain("unnest($20::uuid[])");
+    // Only sources that still exist get a provenance row: a deleted id never fails the audit row.
+    expect(db.queries[0]?.text).toContain(
+      "select id from source_items where id = any($20::uuid[]) order by id for key share"
+    );
     expect(db.queries[0]?.values[19]).toEqual(["source-1", "source-2"]);
   });
 

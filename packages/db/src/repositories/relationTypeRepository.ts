@@ -86,6 +86,28 @@ export function createRelationTypeRepository(pool: PgPool) {
     async saveVector(id: string, vector: RelationTypeVector) {
       await saveVector(pool, id, vector);
     },
+    /**
+     * Drops deleted sources from the `sourceItemIds` provenance list of the catalog's types and
+     * aliases (jsonb, without a foreign key), in the caller's transaction: a candidate never hands a
+     * later AI call the id of a source that is gone.
+     */
+    async forgetSources(sourceItemIds: readonly string[], db: Queryable = pool): Promise<number> {
+      if (sourceItemIds.length === 0) return 0;
+      let changed = 0;
+      for (const table of ["relation_types", "relation_type_aliases"]) {
+        const result = await db.query(
+          `update ${table} set metadata = jsonb_set(metadata, '{sourceItemIds}', coalesce((
+             select jsonb_agg(kept.value order by kept.position)
+             from jsonb_array_elements(metadata->'sourceItemIds') with ordinality as kept(value, position)
+             where jsonb_typeof(kept.value) <> 'string' or kept.value #>> '{}' <> all($1::text[])
+           ), '[]'::jsonb))
+           where jsonb_typeof(metadata->'sourceItemIds') = 'array' and metadata->'sourceItemIds' ?| $1::text[]`,
+          [sourceItemIds]
+        );
+        changed += result.rowCount ?? 0;
+      }
+      return changed;
+    },
     async candidates(
       vector: RelationTypeVector,
       threshold: number,

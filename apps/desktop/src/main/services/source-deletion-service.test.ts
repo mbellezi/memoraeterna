@@ -88,6 +88,13 @@ describe("SourceDeletionService", () => {
       pool.queries.some((query) => query.includes("not exists (select 1 from ai_task_run_sources"))
     ).toBe(true);
     expect(pool.queries.some((query) => query.includes("delete from source_items"))).toBe(true);
+    // The relation-type catalog's jsonb source lists lose the deleted ids before the commit.
+    for (const table of ["relation_types", "relation_type_aliases"]) {
+      const index = pool.queries.findIndex((query) => query.startsWith(`update ${table} set`));
+      expect(index).toBeGreaterThan(0);
+      expect(index).toBeLessThan(pool.queries.length - 1);
+      expect(pool.values[index]).toEqual([[rootSourceId, childSourceId, sectionSourceId]]);
+    }
     // The view history keeps title snapshots without foreign keys: they go in the same transaction,
     // after the entities are known and before the commit.
     const historyIndex = pool.queries.findIndex((query) =>

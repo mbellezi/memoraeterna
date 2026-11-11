@@ -610,10 +610,14 @@ function aiConfigMethods(db: Queryable) {
              now() - ($17::integer * interval '1 millisecond'),
              $24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34::uuid,$35)
            returning id
+         ), live_sources as (
+           -- A source deleted before the run ends has no provenance row to hold, and its id never
+           -- costs the run its audit row. The key-share lock keeps a listed source until this commits.
+           select id from source_items where id = any($20::uuid[]) order by id for key share
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)
-           select inserted_run.id, source_id
-           from inserted_run cross join unnest($20::uuid[]) as sources(source_id)
+           select inserted_run.id, live_sources.id
+           from inserted_run cross join live_sources
            on conflict (ai_task_run_id, source_item_id) do nothing
            returning id
          )
