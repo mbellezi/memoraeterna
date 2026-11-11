@@ -66,6 +66,8 @@ export interface LegacyViewsValue {
   // The Inbox.
   openConnectionsSettings: () => void;
   // The knowledge graph.
+  /** The graph's wheel zoom (a preference the app reads and passes down). */
+  graphWheelZoomSensitivity: number;
   knowledgeGraphMode: KnowledgeGraphDashboardMode;
   setKnowledgeGraphMode: (mode: KnowledgeGraphDashboardMode) => void;
   knowledgeGraphViewState: (
@@ -231,7 +233,7 @@ export function HostedLegacyView({ view, active }: { view: LegacyHostedView; act
         <KnowledgeGraphDashboard
           t={t}
           mode={legacy.knowledgeGraphMode}
-          wheelZoomSensitivity={legacy.appSettings.graphWheelZoomSensitivity}
+          wheelZoomSensitivity={legacy.graphWheelZoomSensitivity}
           initialViewState={legacy.knowledgeGraphViewState(legacy.knowledgeGraphMode)}
           onViewStateChange={legacy.preserveKnowledgeGraphViewState}
           onModeChange={legacy.setKnowledgeGraphMode}

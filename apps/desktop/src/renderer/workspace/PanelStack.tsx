@@ -12,6 +12,7 @@ import type { MessageKey, Translator } from "@app/i18n";
 import { ObjectKindGlyph, objectKindTextClass } from "../components/glyphs";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { useAppEvent } from "../lib/app-events";
+import { cn } from "../lib/cn";
 import { destinationIds, type DestinationId } from "./destinations";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
 import { destinationTitleKeys } from "./shell-model";
@@ -392,7 +393,11 @@ export function PanelStack({
                   <button
                     type="button"
                     onClick={() => dispatch({ type: "focus", panel: index })}
-                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+                    className={cn(
+                      "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
+                      "text-foreground hover:bg-surface-hover focus-visible:outline-2",
+                      "focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+                    )}
                   >
                     {kind ? (
                       <ObjectKindGlyph

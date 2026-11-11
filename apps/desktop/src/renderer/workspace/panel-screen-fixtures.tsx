@@ -82,7 +82,8 @@ const pages: Record<string, Page> = {
     title: "Lactic acid inhibits pathogens by lowering the pH",
     meta: "Written by the local AI on 3 Nov · reviewed by you on 5 Nov · 2 sources",
     body: [
-      "When lactic acid bacteria consume the sugars of a food, the lactic acid they produce brings the pH down to about 4. At that acidity most of the bacteria that spoil food or cause disease cannot multiply.",
+      "When lactic acid bacteria consume the sugars of a food, the lactic acid they produce brings the pH " +
+        "down to about 4. At that acidity most of the bacteria that spoil food or cause disease cannot multiply.",
       "That is why sauerkraut, yoghurt and pickled vegetables keep for weeks outside the fridge: the fermentation itself builds the barrier that protects the food.",
       "The barrier is not absolute. Acid-resistant spores survive, which is why badly sealed preserves can still spoil."
     ]

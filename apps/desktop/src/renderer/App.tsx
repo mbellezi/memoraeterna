@@ -712,6 +712,7 @@ export function App({
     closeWikiTopic,
     openAskSource,
     openConnectionsSettings,
+    graphWheelZoomSensitivity: appSettings.graphWheelZoomSensitivity,
     knowledgeGraphMode,
     setKnowledgeGraphMode,
     knowledgeGraphViewState: (mode) => knowledgeGraphViewStates.current[mode],

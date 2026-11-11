@@ -344,7 +344,10 @@ export function PathRibbon({
             type="button"
             data-also-in={topicAddress(first)}
             onClick={() => onOpen(topicAddress(first))}
-            className="rounded-sm text-secondary-foreground underline-offset-[3px] hover:text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className={cn(
+              "rounded-sm text-secondary-foreground underline-offset-[3px] hover:text-accent",
+              "hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            )}
           >
             {first.title === "" ? t("panelFrame.ribbon.untitled") : first.title}
           </button>
