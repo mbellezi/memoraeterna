@@ -91,6 +91,13 @@ describe("what an item says", () => {
     expect(confidenceText(en, 0.5)).toBe("low confidence (50%)");
     expect(confidenceText(createTranslator("pt-BR"), 0.64)).toBe("confiança média (64%)");
     expect(confidenceText(createTranslator("pt-BR"), null)).toBe("confiança desconhecida");
+    // The number never rounds across a band's edge: the word and the number always agree.
+    expect(confidenceText(en, 0.849)).toBe("medium confidence (84%)");
+    expect(confidenceText(en, 0.596)).toBe("low confidence (59%)");
+    expect(confidenceText(en, 0.6)).toBe("medium confidence (60%)");
+    expect(confidenceText(en, 0.57)).toBe("low confidence (57%)");
+    expect(confidenceText(createTranslator("pt-BR"), 0.849)).toBe("confiança média (84%)");
+    expect(confidenceText(en, 0.9999)).toBe("high confidence (99%)");
     // A probability that is not a number reads as unknown, never as zero.
     expect(
       itemBody(en, item("suggestion", { params: { relationType: "supports", probability: "x" } }))
