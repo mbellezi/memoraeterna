@@ -12,6 +12,10 @@ import {
   createAnswerStreamReader,
   evidenceHandleOrdinal,
   formatObjectAddress,
+  questionAnswerMaxCitations,
+  questionAnswerMaxParagraphs,
+  questionParagraphMaxCitations,
+  questionParagraphMaxLength,
   type AskScope,
   type ConsultationEvidence,
   type ConsultationInput,
@@ -421,18 +425,23 @@ export class QuestionsService {
     });
   }
 
-  /** The paragraphs and citations to store for what was written: only citations that resolve. */
+  /**
+   * The paragraphs and citations to store for what was written: only citations that resolve, and
+   * never more than the stored shape holds (the stream the reader follows has no such bounds).
+   */
   private storedAnswer(
     ask: ActiveAsk,
     paragraphs: readonly StreamedAnswerParagraph[]
   ): Pick<QuestionAnswerInput, "paragraphs" | "citations"> {
     const citations = new Map<number, QuestionCitationInput>();
-    const stored = paragraphs.map((paragraph) => {
+    const stored = paragraphs.slice(0, questionAnswerMaxParagraphs).map((paragraph) => {
       const ordinals: number[] = [];
       for (const handle of paragraph.citations) {
         const evidence = ask.evidence.get(handle);
         const ordinal = evidenceHandleOrdinal(handle);
-        if (!evidence || ordinal === null) continue;
+        if (!evidence || ordinal === null || ordinals.includes(ordinal)) continue;
+        if (ordinals.length >= questionParagraphMaxCitations) break;
+        if (!citations.has(ordinal) && citations.size >= questionAnswerMaxCitations) continue;
         ordinals.push(ordinal);
         citations.set(ordinal, {
           ordinal,
@@ -441,7 +450,10 @@ export class QuestionsService {
           ...(evidence.sourceSpanId ? { anchor: { span: evidence.sourceSpanId } } : {})
         });
       }
-      return { markdown: paragraph.markdown, citations: ordinals };
+      return {
+        markdown: paragraph.markdown.slice(0, questionParagraphMaxLength),
+        citations: ordinals
+      };
     });
     return { paragraphs: stored, citations: [...citations.values()] };
   }
@@ -542,6 +554,21 @@ export class QuestionsService {
         });
     } catch (storeError) {
       this.options.logger?.warn("The end of an Ask could not be stored.", storeError);
+      // The row must not stay 'running' while the bus says the Ask is over: try the status alone.
+      try {
+        const kept = await repository.setStatus(
+          ask.questionId,
+          canceled ? "canceled" : "failed",
+          errorKey
+        );
+        if (kept)
+          this.publish({
+            type: "object.changed",
+            refs: [{ kind: "question", id: ask.questionId, change: "updated" }]
+          });
+      } catch (statusError) {
+        this.options.logger?.warn("The status of an ended Ask could not be stored.", statusError);
+      }
     }
     if (canceled) this.status(ask, "canceled");
     else this.status(ask, "failed", errorKey);

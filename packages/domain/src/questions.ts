@@ -17,6 +17,7 @@ export const questionScopeMaxSources = 50;
 export const questionAnswerMaxParagraphs = 12;
 export const questionParagraphMaxLength = 6000;
 export const questionParagraphMaxCitations = 12;
+export const questionAnswerMaxCitations = 60;
 
 export const askQuestionStatuses = ["running", "complete", "canceled", "failed"] as const;
 export const AskQuestionStatusSchema = z.enum(askQuestionStatuses);
@@ -135,7 +136,7 @@ export type QuestionCreate = z.input<typeof QuestionCreateSchema>;
 export const QuestionAnswerInputSchema = z
   .object({
     paragraphs: z.array(QuestionParagraphSchema).max(questionAnswerMaxParagraphs),
-    citations: z.array(QuestionCitationInputSchema).max(60),
+    citations: z.array(QuestionCitationInputSchema).max(questionAnswerMaxCitations),
     provenance: QuestionProvenanceSchema,
     status: QuestionAnswerStatusSchema,
     startedAt: z.date(),

@@ -7,7 +7,7 @@ import {
   type AiRuntimeConfigInput,
   type AiTaskRequest
 } from "@app/ai";
-import type { QuestionAnswerInput } from "@app/domain";
+import { QuestionAnswerInputSchema, type QuestionAnswerInput } from "@app/domain";
 
 import { AppEventSchema, type AppEvent, type AppEventOf } from "../../shared/app-events.js";
 import { AppEventBus } from "./app-events.js";
@@ -541,6 +541,99 @@ describe("Ask with a stored Question: its edges", () => {
       citations: []
     });
     expect(stagesOf(h.raw)).toEqual(["canceled"]);
+  });
+
+  /** An Ask that streams the given answer text, then waits for the cancel the test sends. */
+  const streamsThenWaits = (text: string) => {
+    let release: () => void = () => undefined;
+    let streamed: () => void = () => undefined;
+    const written = new Promise<void>((resolve) => {
+      streamed = resolve;
+    });
+    const consultation = scripted(
+      (_input, hooks) =>
+        new Promise<never>((_resolve, reject) => {
+          release = () => reject(new Error("consultation.errors.canceled"));
+          hooks?.onText?.({ kind: "text", delta: text });
+          streamed();
+        })
+    );
+    (consultation.cancel as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      release();
+      return null;
+    });
+    return { consultation, written };
+  };
+  const answerText = (paragraphs: string[]) =>
+    JSON.stringify({
+      paragraphs: paragraphs.map((markdown) => ({ markdown, citations: [], contextIds: [] })),
+      gaps: []
+    });
+
+  it("cuts a canceled answer to the stored limits so the canceled version is kept", async () => {
+    const h = harness();
+    const text = answerText([
+      "x".repeat(7000),
+      ...Array.from({ length: 12 }, (_unused, index) => `Paragraph ${index + 2}.`)
+    ]);
+    const { consultation, written } = streamsThenWaits(text);
+    const service = make(h, consultation);
+    const { requestId } = await service.ask({ text: "Cancel a long answer" });
+    await written;
+    await service.cancel({ requestId });
+    await service.idle();
+    expect(h.answers).toHaveLength(1);
+    const { answer } = h.answers[0]!;
+    expect(answer.status).toBe("canceled");
+    expect(answer.paragraphs).toHaveLength(12);
+    expect(answer.paragraphs[0]!.markdown).toHaveLength(6000);
+    // What is stored passes the schema the repository applies.
+    expect(() => QuestionAnswerInputSchema.parse(answer)).not.toThrow();
+  });
+
+  it("marks the Question canceled when the answer cannot be stored, instead of leaving it running", async () => {
+    const h = harness({ failEnd: true });
+    const warn = vi.fn();
+    const { consultation, written } = streamsThenWaits(answerText(["One paragraph."]));
+    const service = new QuestionsService({
+      getPool: () => ({}) as PgPool,
+      consultation,
+      contentLanguage: async () => "en",
+      publish: h.publish,
+      repository: () => h.store,
+      logger: { warn }
+    });
+    const { questionId, requestId } = await service.ask({ text: "Cancel with a failing store" });
+    await written;
+    await service.cancel({ requestId });
+    await service.idle();
+    expect(h.statuses).toEqual([
+      { id: questionId, status: "canceled", errorKey: "consultation.errors.canceled" }
+    ]);
+    expect(stagesOf(h.raw).at(-1)).toBe("canceled");
+  });
+
+  it("logs both store errors and still reports the failure when the status cannot be stored twice", async () => {
+    const h = harness();
+    const warn = vi.fn();
+    const failing: QuestionStore = {
+      ...h.store,
+      setStatus: async () => {
+        throw new Error("the database went away");
+      }
+    };
+    const service = new QuestionsService({
+      getPool: () => ({}) as PgPool,
+      consultation: scripted(async () => Promise.reject(new Error("consultation.errors.deadline"))),
+      contentLanguage: async () => "en",
+      publish: h.publish,
+      repository: () => failing,
+      logger: { warn }
+    });
+    await service.ask({ text: "Nothing can be stored" });
+    await service.idle();
+    expect(stagesOf(h.raw)).toEqual(["failed"]);
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it("answers null to a cancel of an Ask that is not running, and refuses a malformed one", async () => {
