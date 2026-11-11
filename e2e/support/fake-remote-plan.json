@@ -1,0 +1,36 @@
+{
+  "format": "memora-soak-plan",
+  "version": 1,
+  "profiles": {
+    "journeys": {
+      "description": "The DEV fake remote providers of the F5 journeys (T137): Ask answers and relation explanations with no fault and a fixed latency. Only MEMORA_FAKE_REMOTE reads it; the soak driver never runs with it.",
+      "seed": 20261111,
+      "durationHours": 4,
+      "warmupMinutes": 0,
+      "driver": {
+        "article": { "everyMinutes": 1000 },
+        "ask": { "everyMinutes": 1000 },
+        "explain": { "everyMinutes": 1000 },
+        "explainBurst": { "everyMinutes": 1000, "count": 1 },
+        "noteEdit": { "everyMinutes": 1000 },
+        "sourceReimport": { "everyMinutes": 1000 },
+        "typingFault": { "everyMinutes": 1000 }
+      },
+      "remote": {
+        "openAiCompatible": {
+          "latency": { "fixedMs": 400, "firstByteFraction": 0.3 },
+          "faults": {}
+        },
+        "codexWire": {
+          "latency": { "fixedMs": 400, "firstByteFraction": 0.3 },
+          "faults": {},
+          "notRelatedRate": 0
+        }
+      },
+      "local": {
+        "mlxKill": { "everyMinutes": 1000 },
+        "ggufAbort": { "everyMinutes": 1000 }
+      }
+    }
+  }
+}

@@ -13,6 +13,9 @@ native/mlx-helper/.build/
 dist/
 out/
 coverage/
+test-results/
+playwright-report/
+blob-report/
 .vite/
 .vitest/
 *.tsbuildinfo

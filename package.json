@@ -17,7 +17,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b --pretty false && npm run typecheck:scripts",
-    "typecheck:scripts": "tsc -p scripts/tsconfig.json --pretty false && tsc -p scripts/spikes/corpus/tsconfig.json --pretty false && tsc -p scripts/spikes/decisions/tsconfig.json --pretty false && tsc -p scripts/spikes/reranker/tsconfig.json --pretty false && tsc -p scripts/spikes/topic-tree/tsconfig.json --pretty false && tsc -p scripts/golden/tsconfig.json --pretty false && tsc -p scripts/relations/tsconfig.json --pretty false && tsc -p scripts/soak/tsconfig.json --pretty false && tsc -p scripts/bench/tsconfig.json --pretty false",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json --pretty false && tsc -p scripts/spikes/corpus/tsconfig.json --pretty false && tsc -p scripts/spikes/decisions/tsconfig.json --pretty false && tsc -p scripts/spikes/reranker/tsconfig.json --pretty false && tsc -p scripts/spikes/topic-tree/tsconfig.json --pretty false && tsc -p scripts/golden/tsconfig.json --pretty false && tsc -p scripts/relations/tsconfig.json --pretty false && tsc -p scripts/soak/tsconfig.json --pretty false && tsc -p scripts/bench/tsconfig.json --pretty false && tsc -p e2e/tsconfig.json --pretty false",
     "test": "vitest run",
     "test:graph-webgl": "electron scripts/verify-graph-webgl.mjs",
     "lint": "eslint .",
@@ -84,6 +84,7 @@
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
     "screens": "tsx scripts/screens/run.ts",
+    "journeys": "playwright test -c e2e/playwright.config.ts",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast",
     "check:changed": "node scripts/check-changed.mjs"
   },
