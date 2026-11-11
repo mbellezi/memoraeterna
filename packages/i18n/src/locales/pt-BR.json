@@ -10,6 +10,147 @@
       "related": "Link relacionado"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "gerando notas",
+      "link": "Biblioteca",
+      "noPlace": "ainda sem lugar",
+      "progressOf": "{done} de ~{total}",
+      "progressSoFar": "{done} até agora",
+      "title": "Chegou"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "Chegou {sources}, ainda sem notas;",
+      "arrivedNoNotesOther": "Chegaram {sources}, ainda sem notas;",
+      "arrivedOne": "Chegou {sources} e já gerou {notes};",
+      "arrivedOther": "Chegaram {sources} e já geraram {notes};",
+      "decisionsAmongOne": "{decisions} espera por você: “{title}”.",
+      "decisionsAmongOther": "{decisions} esperam por você, entre elas “{title}”.",
+      "decisionsOne": "{decisions} espera por você.",
+      "decisionsOther": "{decisions} esperam por você.",
+      "gardener": "O {gardener} fez {changes}; revise e desfaça o que quiser.",
+      "generatingOne": "Uma fonte ainda está gerando notas.",
+      "generatingOther": "{count} fontes ainda estão gerando notas.",
+      "label": "O que mudou enquanto você esteve fora",
+      "noneYetOne": "{count} ainda procura lugar na árvore.",
+      "noneYetOther": "{count} ainda procuram lugar na árvore.",
+      "notesOnlyOne": "Chegou {notes};",
+      "notesOnlyOther": "Chegaram {notes};",
+      "placedAll": "todas com lugar na árvore.",
+      "placedOne": "{count} já tem lugar na árvore",
+      "placedOther": "{count} já têm lugar na árvore",
+      "reassurance": "Nada foi apagado. Cada mudança fica no histórico do objeto e, sempre que possível, tem Desfazer.",
+      "unplacedOne": "e {count} ainda procura.",
+      "unplacedOther": "e {count} ainda procuram."
+    },
+    "calm": {
+      "body": "Sem fontes novas, sem mudanças do Jardineiro e nada esperando por você."
+    },
+    "counts": {
+      "changesOne": "{count} mudança",
+      "changesOther": "{count} mudanças",
+      "decisionsOne": "{count} decisão",
+      "decisionsOther": "{count} decisões",
+      "levelsOne": "{count} nível de profundidade",
+      "levelsOther": "{count} níveis de profundidade",
+      "newNotesOne": "{count} nota nova",
+      "newNotesOther": "{count} notas novas",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} notas",
+      "sourcesOne": "{count} fonte",
+      "sourcesOther": "{count} fontes",
+      "topicsOne": "{count} tópico",
+      "topicsOther": "{count} tópicos",
+      "weekNotesOne": "{count} nota nova esta semana",
+      "weekNotesOther": "{count} notas novas esta semana"
+    },
+    "date": {
+      "lastVisit": "{date} · última visita {when}"
+    },
+    "errors": {
+      "unavailable": "O banco de dados ainda não está pronto."
+    },
+    "firstRun": {
+      "add": "Adicionar a primeira fonte",
+      "headline": "Pronto para a primeira fonte",
+      "hint": "Depois, {key} faz o mesmo de qualquer tela.",
+      "lead": "Um PDF, um artigo, um vídeo ou uma nota sua. Em poucos minutos ela vira notas curtas, cada uma com lugar numa árvore de tópicos que se organiza sozinha.",
+      "next": "Depois de escolher, você vai direto para a fonte em Explorar e vê as notas chegando.",
+      "promiseLocal": "Os arquivos ficam no seu Mac. Com um modelo na nuvem, só trechos vão para lá, e só quando a tarefa pede.",
+      "promiseSetup": "Sem configurar nada.",
+      "promiseUndo": "As mudanças podem ser desfeitas.",
+      "promisesTitle": "Combinado",
+      "stepGardener": "O Jardineiro, o trabalho em segundo plano do Memora, arruma a árvore e as conexões",
+      "stepGardenerHint": "você pode revisar o que ele faz",
+      "stepNotes": "Vira notas curtas, uma ideia por nota",
+      "stepPlace": "Cada nota ganha lugar na árvore",
+      "stepRead": "Lida e dividida em trechos",
+      "stepReadHint": "em segundos · a partir daqui já dá para perguntar",
+      "stepsTitle": "O que acontece depois"
+    },
+    "gardener": {
+      "name": "Jardineiro",
+      "tip": "O Jardineiro é o trabalho em segundo plano do Memora: arruma a árvore e as conexões, e você pode revisar o que ele fez."
+    },
+    "gardenerColumn": {
+      "all": "Ver todas",
+      "proposed": "proposta · decida na Caixa de entrada",
+      "title": "O que o Jardineiro fez"
+    },
+    "greeting": {
+      "afternoon": "Boa tarde.",
+      "away": "Enquanto você esteve fora:",
+      "calm": "Nada mudou desde a sua última visita.",
+      "calmWeek": "Nada de novo nos últimos 7 dias.",
+      "evening": "Boa noite.",
+      "morning": "Bom dia.",
+      "week": "Nos últimos 7 dias:"
+    },
+    "label": "Início",
+    "need": {
+      "link": "Caixa de entrada",
+      "risk": {
+        "high": "Alto",
+        "low": "Baixo",
+        "medium": "Médio"
+      },
+      "sub": "maior risco primeiro",
+      "title": "Precisa de você"
+    },
+    "questions": {
+      "failed": "não terminou",
+      "link": "Todas as perguntas",
+      "running": "respondendo",
+      "scopeLibrary": "Toda a biblioteca",
+      "scopeTopic": "Um tópico",
+      "sub": "o que você perguntou por último",
+      "title": "Perguntas recentes"
+    },
+    "resume": {
+      "action": "Retomar",
+      "label": "Os painéis que estavam abertos",
+      "panelsOne": "{count} painel em Explorar",
+      "panelsOther": "{count} painéis em Explorar",
+      "title": "Continuar de onde parou"
+    },
+    "shape": {
+      "label": "A forma da sua árvore",
+      "rootTooBig": "grande demais",
+      "seeInMap": "Ver no Mapa",
+      "summary": "{notes} em {topics}",
+      "title": "Sua árvore",
+      "tooBigOne": "{count} tópico grande demais",
+      "tooBigOther": "{count} tópicos grandes demais"
+    },
+    "since": {
+      "visit": "desde a sua última visita",
+      "week": "nos últimos 7 dias"
+    },
+    "states": {
+      "error": "Não deu para carregar o Início.",
+      "errorKept": "Suas fontes e notas continuam como estavam."
+    }
+  },
   "automation": {
     "clearHistory": "Limpar histórico de tarefas",
     "clearHistoryHint": "Retira das listas as execuções concluídas, com falha ou canceladas. Tarefas ativas, programações, pendências, auditoria e consumo de orçamento são preservados.",

@@ -28,6 +28,7 @@ import {
   type LanguageCode,
   type MessageKey
 } from "@app/i18n";
+import { formatObjectAddress } from "@app/domain";
 import type {
   AppSettings,
   AppSettingsUpdate,
@@ -306,6 +307,17 @@ export function App({
   // After an interactive import the new source opens in the Library with the outcome as a toast.
   function openImportedSource(sourceItemId: string, status?: MessageKey) {
     openLibrarySource({ sourceItemId, origin: "import" });
+    if (status)
+      pushToast(t(status), status === "import.status.duplicateHandled" ? "info" : "success");
+  }
+
+  // The first source of the first run (D9, A6): Explore opens with that Source pushed, and the
+  // outcome of the import is told as a toast.
+  function openFirstSource(sourceItemId: string, status?: MessageKey) {
+    dispatch({
+      type: "firstSource",
+      address: formatObjectAddress({ kind: "source", id: sourceItemId })
+    });
     if (status)
       pushToast(t(status), status === "import.status.duplicateHandled" ? "info" : "success");
   }
@@ -627,7 +639,7 @@ export function App({
       lastPersistedAppSettings.current = saved;
       setAppSettings(saved);
     },
-    onOpenSource: openImportedSource
+    onFirstSource: openFirstSource
   });
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {

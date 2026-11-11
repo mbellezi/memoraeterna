@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ComponentType,
   type Dispatch,
@@ -30,6 +31,7 @@ import {
 } from "./state";
 import { layoutConfig } from "./layout-config";
 import { panelStackStyles } from "./panel-stack-styles";
+import { WorkspaceBridgeContext } from "./workspace-bridge";
 
 /**
  * The panel stack host (design record §3, §5.4, §5.5, §8; D8 as amended by A1). Each destination
@@ -127,9 +129,12 @@ export function matchPanel(
   return registry.find((module) => module.match(address)) ?? null;
 }
 
-/** Every `panels/*.panel.tsx`, found at build time. */
+/**
+ * Every `panels/*.panel.tsx` and every destination's root module (`destinations/<name>/*.panel.tsx`),
+ * found at build time.
+ */
 export const panelRegistry: readonly PanelModule[] = registerPanels(
-  import.meta.glob("./panels/*.panel.tsx", { eager: true })
+  import.meta.glob(["./panels/*.panel.tsx", "./destinations/*/*.panel.tsx"], { eager: true })
 );
 
 // ---------------------------------------------------------------------------
@@ -345,6 +350,7 @@ export function PanelStack({
 }: PanelStackProps) {
   const place = workspace.destination;
   const current: DestinationId | null = place === "settings" ? null : place;
+  const bridge = useMemo(() => ({ workspace, dispatch }), [workspace, dispatch]);
   const [states, setStates] = useState<ReadonlyMap<string, PanelLoadState>>(new Map());
   // What each panel says of its place. Its "Escolher lugar" is kept aside (one map for the host's
   // life), so a new callback from a panel draws nothing again.
@@ -714,38 +720,40 @@ export function PanelStack({
   const rightOfRoot = rootDrawn ? before.slice(view.merged.length > 0 ? 1 : 0) : [];
 
   return (
-    <div
-      data-surface="panel-stack"
-      data-state={stackState}
-      aria-label={t("panelFrame.stackLabel")}
-      role="group"
-      hidden={!shown}
-      className="h-full min-h-0 min-w-0"
-    >
-      <style href="memora-panel-stack" precedence="default">
-        {panelStackStyles}
-      </style>
-      <div className="panel-stack" data-focus-mode={focusMode ? "" : undefined}>
-        {leftOfRoot}
-        {rootItems}
-        {rightOfRoot}
-        {destinationIds.map((destination) => {
-          const stack = workspace.stacks[destination];
-          const active = shown && destination === current;
-          // A hidden destination keeps the panels it draws mounted, so it comes back as it was.
-          const layoutItems =
-            destination === current ? view.items : stackView(stack, viewportWidth, chrome).items;
-          return stack.panels.map((panel, index) =>
-            panelItem(
-              { destination, stack, active },
-              panel,
-              index,
-              layoutItems.find((entry) => entry.panel === index) ?? null
-            )
-          );
-        })}
-        {after}
+    <WorkspaceBridgeContext.Provider value={bridge}>
+      <div
+        data-surface="panel-stack"
+        data-state={stackState}
+        aria-label={t("panelFrame.stackLabel")}
+        role="group"
+        hidden={!shown}
+        className="h-full min-h-0 min-w-0"
+      >
+        <style href="memora-panel-stack" precedence="default">
+          {panelStackStyles}
+        </style>
+        <div className="panel-stack" data-focus-mode={focusMode ? "" : undefined}>
+          {leftOfRoot}
+          {rootItems}
+          {rightOfRoot}
+          {destinationIds.map((destination) => {
+            const stack = workspace.stacks[destination];
+            const active = shown && destination === current;
+            // A hidden destination keeps the panels it draws mounted, so it comes back as it was.
+            const layoutItems =
+              destination === current ? view.items : stackView(stack, viewportWidth, chrome).items;
+            return stack.panels.map((panel, index) =>
+              panelItem(
+                { destination, stack, active },
+                panel,
+                index,
+                layoutItems.find((entry) => entry.panel === index) ?? null
+              )
+            );
+          })}
+          {after}
+        </div>
       </div>
-    </div>
+    </WorkspaceBridgeContext.Provider>
   );
 }

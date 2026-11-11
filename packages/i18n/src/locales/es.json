@@ -10,6 +10,147 @@
       "related": "Enlace relacionado"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "generando notas",
+      "link": "Biblioteca",
+      "noPlace": "todavía sin lugar",
+      "progressOf": "{done} de ~{total}",
+      "progressSoFar": "{done} hasta ahora",
+      "title": "Llegó"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "Llegó {sources}, todavía sin notas;",
+      "arrivedNoNotesOther": "Llegaron {sources}, todavía sin notas;",
+      "arrivedOne": "Llegó {sources} y ya ha generado {notes};",
+      "arrivedOther": "Llegaron {sources} y ya han generado {notes};",
+      "decisionsAmongOne": "{decisions} te espera: “{title}”.",
+      "decisionsAmongOther": "{decisions} te esperan, entre ellas “{title}”.",
+      "decisionsOne": "{decisions} te espera.",
+      "decisionsOther": "{decisions} te esperan.",
+      "gardener": "El {gardener} hizo {changes}; revísalos y deshaz lo que quieras.",
+      "generatingOne": "Una fuente todavía está generando notas.",
+      "generatingOther": "{count} fuentes todavía están generando notas.",
+      "label": "Qué cambió mientras estabas fuera",
+      "noneYetOne": "{count} todavía busca lugar en el árbol.",
+      "noneYetOther": "{count} todavía buscan lugar en el árbol.",
+      "notesOnlyOne": "Llegó {notes};",
+      "notesOnlyOther": "Llegaron {notes};",
+      "placedAll": "todas tienen lugar en el árbol.",
+      "placedOne": "{count} ya tiene lugar en el árbol",
+      "placedOther": "{count} ya tienen lugar en el árbol",
+      "reassurance": "No se borró nada. Cada cambio queda en el historial del objeto y, siempre que se puede, se puede deshacer.",
+      "unplacedOne": "y {count} todavía lo busca.",
+      "unplacedOther": "y {count} todavía lo buscan."
+    },
+    "calm": {
+      "body": "Sin fuentes nuevas, sin cambios del Jardinero y nada esperándote."
+    },
+    "counts": {
+      "changesOne": "{count} cambio",
+      "changesOther": "{count} cambios",
+      "decisionsOne": "{count} decisión",
+      "decisionsOther": "{count} decisiones",
+      "levelsOne": "{count} nivel de profundidad",
+      "levelsOther": "{count} niveles de profundidad",
+      "newNotesOne": "{count} nota nueva",
+      "newNotesOther": "{count} notas nuevas",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} notas",
+      "sourcesOne": "{count} fuente",
+      "sourcesOther": "{count} fuentes",
+      "topicsOne": "{count} tema",
+      "topicsOther": "{count} temas",
+      "weekNotesOne": "{count} nota nueva esta semana",
+      "weekNotesOther": "{count} notas nuevas esta semana"
+    },
+    "date": {
+      "lastVisit": "{date} · última visita {when}"
+    },
+    "errors": {
+      "unavailable": "La base de datos aún no está lista."
+    },
+    "firstRun": {
+      "add": "Añadir la primera fuente",
+      "headline": "Listo para la primera fuente",
+      "hint": "Después, {key} hace lo mismo desde cualquier pantalla.",
+      "lead": "Un PDF, un artículo, un vídeo o una nota tuya. En pocos minutos se convierte en notas cortas, cada una con su lugar en un árbol de temas que se organiza solo.",
+      "next": "Después de elegir, vas directo a la fuente en Explorar y ves llegar las notas.",
+      "promiseLocal": "Tus archivos se quedan en tu Mac. Con un modelo en la nube, solo se envían fragmentos, y solo cuando la tarea lo pide.",
+      "promiseSetup": "Sin configurar nada.",
+      "promiseUndo": "Los cambios se pueden deshacer.",
+      "promisesTitle": "Trato hecho",
+      "stepGardener": "El Jardinero, el trabajo en segundo plano de Memora, ordena el árbol y las conexiones",
+      "stepGardenerHint": "puedes revisar lo que hace",
+      "stepNotes": "Se convierte en notas cortas, una idea por nota",
+      "stepPlace": "Cada nota recibe su lugar en el árbol",
+      "stepRead": "Leída y dividida en fragmentos",
+      "stepReadHint": "en segundos · desde aquí ya puedes preguntar",
+      "stepsTitle": "Qué pasa después"
+    },
+    "gardener": {
+      "name": "Jardinero",
+      "tip": "El Jardinero es el trabajo en segundo plano de Memora: ordena el árbol y las conexiones, y puedes revisar lo que hizo."
+    },
+    "gardenerColumn": {
+      "all": "Ver todos",
+      "proposed": "propuesta · decide en la Bandeja de entrada",
+      "title": "Lo que hizo el Jardinero"
+    },
+    "greeting": {
+      "afternoon": "Buenas tardes.",
+      "away": "Mientras estabas fuera:",
+      "calm": "Nada ha cambiado desde tu última visita.",
+      "calmWeek": "Nada nuevo en los últimos 7 días.",
+      "evening": "Buenas noches.",
+      "morning": "Buenos días.",
+      "week": "En los últimos 7 días:"
+    },
+    "label": "Inicio",
+    "need": {
+      "link": "Bandeja de entrada",
+      "risk": {
+        "high": "Alto",
+        "low": "Bajo",
+        "medium": "Medio"
+      },
+      "sub": "mayor riesgo primero",
+      "title": "Te necesita"
+    },
+    "questions": {
+      "failed": "no terminó",
+      "link": "Todas las preguntas",
+      "running": "respondiendo",
+      "scopeLibrary": "Toda la biblioteca",
+      "scopeTopic": "Un tema",
+      "sub": "lo último que preguntaste",
+      "title": "Preguntas recientes"
+    },
+    "resume": {
+      "action": "Retomar",
+      "label": "Los paneles que estaban abiertos",
+      "panelsOne": "{count} panel en Explorar",
+      "panelsOther": "{count} paneles en Explorar",
+      "title": "Continuar donde lo dejaste"
+    },
+    "shape": {
+      "label": "La forma de tu árbol",
+      "rootTooBig": "demasiado grande",
+      "seeInMap": "Ver en el Mapa",
+      "summary": "{notes} en {topics}",
+      "title": "Tu árbol",
+      "tooBigOne": "{count} tema demasiado grande",
+      "tooBigOther": "{count} temas demasiado grandes"
+    },
+    "since": {
+      "visit": "desde tu última visita",
+      "week": "en los últimos 7 días"
+    },
+    "states": {
+      "error": "No se pudo cargar el Inicio.",
+      "errorKept": "Tus fuentes y notas siguen intactas."
+    }
+  },
   "automation": {
     "clearHistory": "Limpiar historial de tareas",
     "clearHistoryHint": "Retira de las listas las ejecuciones completadas, fallidas o canceladas. Conserva tareas activas, programaciones, pendientes, auditoría y consumo de presupuesto.",

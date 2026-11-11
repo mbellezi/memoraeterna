@@ -16,8 +16,11 @@ export interface FirstRunOptions {
   metadataEnrichmentEnabled: boolean;
   /** The settings the first step stored: the app shows the chosen interface language from then on. */
   onSettings: (saved: AppSettings) => void;
-  /** The first source was saved: the app opens it and tells how the import went. */
-  onOpenSource: (sourceItemId: string, status?: MessageKey) => void;
+  /**
+   * The first source was chosen (D9, A6): the app goes to Explore with that Source pushed, so the
+   * navigator shows the tree being born, and tells how the import went.
+   */
+  onFirstSource: (sourceItemId: string, status?: MessageKey) => void;
 }
 
 /**
@@ -41,7 +44,7 @@ export function onboardingApiOf(app: DesktopApi): OnboardingApi {
  * finished or skipped, or the question failed, which never hides the app).
  */
 export function useFirstRun(options: FirstRunOptions): ReactNode {
-  const { enabled, language, contentLanguage, onSettings, onOpenSource } = options;
+  const { enabled, language, contentLanguage, onSettings, onFirstSource } = options;
   const [controller] = useState(
     () =>
       new OnboardingController({
@@ -86,9 +89,9 @@ export function useFirstRun(options: FirstRunOptions): ReactNode {
   useEffect(() => {
     if (openedSourceId && opened.current !== openedSourceId) {
       opened.current = openedSourceId;
-      onOpenSource(openedSourceId, openedStatus ?? undefined);
+      onFirstSource(openedSourceId, openedStatus ?? undefined);
     }
-  }, [openedSourceId, openedStatus, onOpenSource]);
+  }, [openedSourceId, openedStatus, onFirstSource]);
 
   if (!enabled || snapshot.phase === "off" || snapshot.phase === "done") return null;
   return (

@@ -10,6 +10,147 @@
       "related": "Lien connexe"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "génération des notes",
+      "link": "Bibliothèque",
+      "noPlace": "pas encore de place",
+      "progressOf": "{done} sur ~{total}",
+      "progressSoFar": "{done} pour l’instant",
+      "title": "Arrivé"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "{sources} est arrivée, sans notes pour l’instant ;",
+      "arrivedNoNotesOther": "{sources} sont arrivées, sans notes pour l’instant ;",
+      "arrivedOne": "{sources} est arrivée et a déjà produit {notes} ;",
+      "arrivedOther": "{sources} sont arrivées et ont déjà produit {notes} ;",
+      "decisionsAmongOne": "{decisions} vous attend : « {title} ».",
+      "decisionsAmongOther": "{decisions} vous attendent, dont « {title} ».",
+      "decisionsOne": "{decisions} vous attend.",
+      "decisionsOther": "{decisions} vous attendent.",
+      "gardener": "Le {gardener} a fait {changes} ; relisez-les et annulez ce que vous voulez.",
+      "generatingOne": "Une source génère encore des notes.",
+      "generatingOther": "{count} sources génèrent encore des notes.",
+      "label": "Ce qui a changé pendant votre absence",
+      "noneYetOne": "{count} cherche encore sa place dans l’arbre.",
+      "noneYetOther": "{count} cherchent encore leur place dans l’arbre.",
+      "notesOnlyOne": "{notes} est arrivée ;",
+      "notesOnlyOther": "{notes} sont arrivées ;",
+      "placedAll": "toutes ont une place dans l’arbre.",
+      "placedOne": "{count} a déjà une place dans l’arbre",
+      "placedOther": "{count} ont déjà une place dans l’arbre",
+      "reassurance": "Rien n’a été supprimé. Chaque changement reste dans l’historique de l’objet et, quand c’est possible, peut être annulé.",
+      "unplacedOne": "et {count} en cherche encore une.",
+      "unplacedOther": "et {count} en cherchent encore une."
+    },
+    "calm": {
+      "body": "Pas de nouvelles sources, aucun changement du Jardinier et rien qui vous attende."
+    },
+    "counts": {
+      "changesOne": "{count} changement",
+      "changesOther": "{count} changements",
+      "decisionsOne": "{count} décision",
+      "decisionsOther": "{count} décisions",
+      "levelsOne": "{count} niveau de profondeur",
+      "levelsOther": "{count} niveaux de profondeur",
+      "newNotesOne": "{count} nouvelle note",
+      "newNotesOther": "{count} nouvelles notes",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "topicsOne": "{count} sujet",
+      "topicsOther": "{count} sujets",
+      "weekNotesOne": "{count} nouvelle note cette semaine",
+      "weekNotesOther": "{count} nouvelles notes cette semaine"
+    },
+    "date": {
+      "lastVisit": "{date} · dernière visite {when}"
+    },
+    "errors": {
+      "unavailable": "La base de données n’est pas encore prête."
+    },
+    "firstRun": {
+      "add": "Ajouter votre première source",
+      "headline": "Prêt pour votre première source",
+      "hint": "Ensuite, {key} fait la même chose depuis n’importe quel écran.",
+      "lead": "Un PDF, un article, une vidéo ou une note de vous. En quelques minutes, elle devient des notes courtes, chacune avec sa place dans un arbre de sujets qui s’organise tout seul.",
+      "next": "Une fois votre choix fait, vous allez directement à la source dans Explorer et voyez arriver les notes.",
+      "promiseLocal": "Vos fichiers restent sur votre Mac. Avec un modèle dans le cloud, seuls des extraits sont envoyés, et seulement quand la tâche le demande.",
+      "promiseSetup": "Rien à configurer.",
+      "promiseUndo": "Les changements peuvent être annulés.",
+      "promisesTitle": "Entendu",
+      "stepGardener": "Le Jardinier, le travail de fond de Memora, range l’arbre et les connexions",
+      "stepGardenerHint": "vous pouvez revoir ce qu’il fait",
+      "stepNotes": "Devient des notes courtes, une idée par note",
+      "stepPlace": "Chaque note reçoit sa place dans l’arbre",
+      "stepRead": "Lue et découpée en passages",
+      "stepReadHint": "en quelques secondes · dès ici, vous pouvez déjà poser des questions",
+      "stepsTitle": "Ce qui se passe ensuite"
+    },
+    "gardener": {
+      "name": "Jardinier",
+      "tip": "Le Jardinier est le travail de fond de Memora : il range l’arbre et les connexions, et vous pouvez revoir ce qu’il a fait."
+    },
+    "gardenerColumn": {
+      "all": "Tout voir",
+      "proposed": "proposition · décidez dans la Boîte de réception",
+      "title": "Ce qu’a fait le Jardinier"
+    },
+    "greeting": {
+      "afternoon": "Bon après-midi.",
+      "away": "Pendant votre absence :",
+      "calm": "Rien n’a changé depuis votre dernière visite.",
+      "calmWeek": "Rien de nouveau ces 7 derniers jours.",
+      "evening": "Bonsoir.",
+      "morning": "Bonjour.",
+      "week": "Au cours des 7 derniers jours :"
+    },
+    "label": "Accueil",
+    "need": {
+      "link": "Boîte de réception",
+      "risk": {
+        "high": "Élevé",
+        "low": "Faible",
+        "medium": "Moyen"
+      },
+      "sub": "risque le plus élevé d’abord",
+      "title": "A besoin de vous"
+    },
+    "questions": {
+      "failed": "non terminée",
+      "link": "Toutes les questions",
+      "running": "réponse en cours",
+      "scopeLibrary": "Toute la bibliothèque",
+      "scopeTopic": "Un sujet",
+      "sub": "vos dernières questions",
+      "title": "Questions récentes"
+    },
+    "resume": {
+      "action": "Reprendre",
+      "label": "Les panneaux qui étaient ouverts",
+      "panelsOne": "{count} panneau dans Explorer",
+      "panelsOther": "{count} panneaux dans Explorer",
+      "title": "Reprendre où vous en étiez"
+    },
+    "shape": {
+      "label": "La forme de votre arbre",
+      "rootTooBig": "trop grand",
+      "seeInMap": "Voir dans la Carte",
+      "summary": "{notes} dans {topics}",
+      "title": "Votre arbre",
+      "tooBigOne": "{count} sujet trop grand",
+      "tooBigOther": "{count} sujets trop grands"
+    },
+    "since": {
+      "visit": "depuis votre dernière visite",
+      "week": "au cours des 7 derniers jours"
+    },
+    "states": {
+      "error": "Impossible de charger l’Accueil.",
+      "errorKept": "Vos sources et vos notes sont intactes."
+    }
+  },
   "automation": {
     "clearHistory": "Nettoyer l’historique des tâches",
     "clearHistoryHint": "Retire des listes les exécutions terminées, échouées ou annulées. Les tâches actives, planifications, problèmes en attente, audits et réservations de budget sont conservés.",
