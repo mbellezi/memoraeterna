@@ -14,6 +14,7 @@ export function ErrorState({
   message,
   kept,
   onRetry,
+  retryLabel,
   details,
   className
 }: {
@@ -23,6 +24,8 @@ export function ErrorState({
   /** What is kept ("Your notes are safe"), when it matters. */
   kept?: ReactNode;
   onRetry?: () => void;
+  /** The retry button's words when a place says it differently ("Try again"); default "Retry". */
+  retryLabel?: string;
   /** Technical text for the disclosure; it never replaces `message`. */
   details?: string;
   className?: string;
@@ -37,18 +40,18 @@ export function ErrorState({
         className
       )}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
-        <div className="grid min-w-0 gap-1 [text-wrap:pretty]">
-          <p className="m-0 font-semibold">{message}</p>
-          {kept ? <p className="m-0 text-secondary-foreground">{kept}</p> : null}
-        </div>
+      <div className="grid min-w-0 gap-1 [text-wrap:pretty]">
+        <p className="m-0 flex min-w-0 items-start gap-2 font-semibold">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
+          <span className="min-w-0">{message}</span>
+        </p>
+        {kept ? <p className="m-0 text-secondary-foreground">{kept}</p> : null}
       </div>
       {onRetry || details ? (
         <div className="flex flex-wrap items-center gap-2">
           {onRetry ? (
             <Button variant="secondary" onClick={onRetry}>
-              {t("ui.retry")}
+              {retryLabel ?? t("ui.retry")}
             </Button>
           ) : null}
           {details ? (

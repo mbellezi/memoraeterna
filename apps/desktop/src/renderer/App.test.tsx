@@ -103,7 +103,7 @@ describe("App", () => {
       />
     );
     const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
-    expect(header).toContain("Checking what is happening...");
+    expect(header).toContain("Checking activity…");
     expect(header).toContain('aria-expanded="false"');
     expect(html).not.toContain('aria-modal="true"');
   });

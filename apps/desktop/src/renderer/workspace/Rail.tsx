@@ -1,18 +1,10 @@
 import type { ComponentType, ReactNode } from "react";
-import {
-  Columns3,
-  House,
-  Inbox,
-  LayoutDashboard,
-  Library,
-  SlidersHorizontal,
-  TriangleAlert
-} from "lucide-react";
+import { Columns3, House, Inbox, LayoutDashboard, Library, SlidersHorizontal } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../lib/cn";
 import type { LegacyViewId } from "../../shared/app-menu";
-import { Skeleton, useAfterDelay, skeletonDelayMs } from "../components/ui/skeleton";
+import { SolidTriangle } from "../components/activity/solid-glyphs";
 import { Tooltip } from "../components/ui/tooltip";
 import type { DestinationId, WorkspacePlace } from "./destinations";
 import { LegacyMenu } from "./LegacyMenu";
@@ -161,13 +153,12 @@ export function Rail({
 
 /** The Inbox's own mark: the count, a quiet marker while it is read, or one that says it failed. */
 function InboxMark({ t, inbox }: { t: Translator; inbox: Read<number> }): ReactNode {
-  const shown = useAfterDelay(skeletonDelayMs);
   const position = "absolute left-8 top-1";
   if (inbox.status === "loading")
     return (
       <span role="status" aria-busy="true" className={position}>
+        {/* The rail has no loading state (design §5.1): no mark, only the words for a screen reader. */}
         <span className="sr-only">{t("workspace.rail.inboxLoading")}</span>
-        {shown ? <Skeleton className="h-5 w-5 rounded-full" /> : null}
       </span>
     );
   if (inbox.status === "error")
@@ -175,9 +166,9 @@ function InboxMark({ t, inbox }: { t: Translator; inbox: Read<number> }): ReactN
       <span
         role="alert"
         title={t("workspace.rail.inboxFailed")}
-        className={cn(position, "grid size-5 place-items-center rounded-full text-warning")}
+        className={cn(position, "grid size-5 place-items-center text-warning")}
       >
-        <TriangleAlert aria-hidden="true" className="size-4" />
+        <SolidTriangle className="size-3.5" />
         <span className="sr-only">{t("workspace.rail.inboxFailed")}</span>
       </span>
     );

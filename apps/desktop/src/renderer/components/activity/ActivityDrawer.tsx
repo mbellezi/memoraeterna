@@ -20,7 +20,8 @@ import {
   JobFactsLine,
   LoadingLine,
   NeedsYouList,
-  SentenceBlock
+  SentenceBlock,
+  WaitingJobsLine
 } from "./ActivitySections";
 
 export interface ActivityDrawerProps {
@@ -75,6 +76,8 @@ export function ActivityDrawer({
   const budget = snapshot.budget.status === "ready" ? snapshot.budget.value : null;
   const state = actionStateOf(snapshot);
   const inbox = snapshot.inboxTotal ?? 0;
+  // The pill's "waiting" clause counts these; the Waiting section lists the same ones.
+  const waitingJobs = snapshot.jobs ? snapshot.jobs.waiting + snapshot.jobs.onHold : 0;
   const entries = status ? needsYouEntries({ t, status, budget, now }) : [];
   return (
     <aside
@@ -130,6 +133,8 @@ export function ActivityDrawer({
                 state={state}
                 onAction={onAction}
               />
+            ) : waitingJobs > 0 ? (
+              <WaitingJobsLine t={t} count={waitingJobs} />
             ) : (
               <EmptyLine>{t("activity.waiting.empty")}</EmptyLine>
             )}

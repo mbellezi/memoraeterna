@@ -88,8 +88,8 @@
     "title": "Activité",
     "pill": {
       "label": "Activité : {status}",
-      "loading": "Vérification de ce qui se passe...",
-      "unavailable": "L’activité n’est pas disponible pour le moment.",
+      "loading": "Vérification de l’activité…",
+      "unavailable": "Activité indisponible",
       "badge": "{count} en attente de votre relecture"
     },
     "drawer": {
@@ -115,7 +115,9 @@
       }
     },
     "waiting": {
-      "empty": "Rien n’est en attente."
+      "empty": "Rien n’est en attente.",
+      "jobsMany": "{count} tâches attendent leur tour. Raison : les tâches s’exécutent l’une après l’autre.",
+      "jobsOne": "1 tâche attend son tour. Raison : les tâches s’exécutent l’une après l’autre."
     },
     "needsYou": {
       "empty": "Rien ne demande votre attention.",
@@ -3739,6 +3741,7 @@
       "error": "Impossible de charger l’arbre.",
       "errorKept": "Vos sources et vos notes sont intactes.",
       "label": "Navigateur",
+      "retry": "Réessayer",
       "rowLabel": "{title}, {count} éléments",
       "title": "Arbre",
       "total": "{count} éléments",
@@ -3765,8 +3768,16 @@
       "titleBar": "Barre supérieure"
     },
     "status": {
+      "holdCap": "En pause à cause d’une limite",
+      "holdDownload": "Préparation d’un modèle",
+      "holdNoModel": "Le classement a besoin d’un modèle",
+      "holdOffline": "Pas de connexion internet",
+      "holdPaused": "Classement en pause",
+      "holdWaiting": "Classement en attente",
+      "idle": "Tout est à jour",
       "needsYouMany": "{count} ont besoin de vous",
       "needsYouOne": "{count} a besoin de vous",
+      "running": "Classement de votre bibliothèque",
       "waiting": "{count} en attente"
     },
     "titleBar": {

@@ -50,6 +50,18 @@ export function NavigatorHost({ t, tree, children, onOpenTopic }: NavigatorHostP
   );
 }
 
+/** "Tree · 412 items": kept above the list and above the empty box, as in the design's shot. */
+function TreeHeader({ t, total }: { t: Translator; total: number }) {
+  return (
+    <div className="mx-1 mb-1 flex items-baseline justify-between text-xs font-semibold text-secondary-foreground">
+      <h2 className="m-0 text-xs font-semibold">{t("workspace.navigator.title")}</h2>
+      <span className="font-normal tabular-nums text-muted-foreground">
+        {t("workspace.navigator.total", { values: { count: count(t, total) } })}
+      </span>
+    </div>
+  );
+}
+
 function TreeList({
   t,
   tree,
@@ -71,24 +83,28 @@ function TreeList({
         t={t}
         message={t("workspace.navigator.error")}
         kept={t("workspace.navigator.errorKept")}
+        retryLabel={t("workspace.navigator.retry")}
         onRetry={tree.retry}
+        className="p-3"
       />
     );
   const value = tree.value;
   if (navigatorIsEmpty(value))
     return (
-      <EmptyState headline={t("workspace.navigator.emptyHeadline")}>
-        {t("workspace.navigator.emptyBody")}
-      </EmptyState>
+      <>
+        <TreeHeader t={t} total={0} />
+        <EmptyState
+          variant="compact"
+          icon={<ObjectKindGlyph kind="topic" size={16} className="text-object-topic" />}
+          headline={t("workspace.navigator.emptyHeadline")}
+        >
+          {t("workspace.navigator.emptyBody")}
+        </EmptyState>
+      </>
     );
   return (
     <>
-      <div className="mx-1 mb-1 flex items-baseline justify-between text-xs font-semibold text-secondary-foreground">
-        <h2 className="m-0 text-xs font-semibold">{t("workspace.navigator.title")}</h2>
-        <span className="font-normal tabular-nums text-muted-foreground">
-          {t("workspace.navigator.total", { values: { count: count(t, value.total) } })}
-        </span>
-      </div>
+      <TreeHeader t={t} total={value.total} />
       <ul className="m-0 grid list-none gap-px p-0">
         {value.topics.map((topic) => {
           const title = topic.title ?? t("topics.unnamed");

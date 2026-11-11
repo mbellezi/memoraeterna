@@ -88,8 +88,8 @@
     "title": "Actividad",
     "pill": {
       "label": "Actividad: {status}",
-      "loading": "Comprobando qué está pasando...",
-      "unavailable": "La actividad no está disponible en este momento.",
+      "loading": "Comprobando la actividad…",
+      "unavailable": "Actividad no disponible",
       "badge": "{count} esperando tu revisión"
     },
     "drawer": {
@@ -115,7 +115,9 @@
       }
     },
     "waiting": {
-      "empty": "No hay nada en espera."
+      "empty": "No hay nada en espera.",
+      "jobsMany": "{count} tareas esperan su turno. Motivo: las tareas se ejecutan una tras otra.",
+      "jobsOne": "1 tarea espera su turno. Motivo: las tareas se ejecutan una tras otra."
     },
     "needsYou": {
       "empty": "Nada requiere tu atención.",
@@ -3741,6 +3743,7 @@
       "error": "No se pudo cargar el árbol.",
       "errorKept": "Tus fuentes y notas siguen intactas.",
       "label": "Navegador",
+      "retry": "Intentar de nuevo",
       "rowLabel": "{title}, {count} elementos",
       "title": "Árbol",
       "total": "{count} elementos",
@@ -3767,8 +3770,16 @@
       "titleBar": "Barra superior"
     },
     "status": {
+      "holdCap": "Pausado por un límite",
+      "holdDownload": "Preparando un modelo",
+      "holdNoModel": "Organizar necesita un modelo",
+      "holdOffline": "Sin conexión a internet",
+      "holdPaused": "Organización en pausa",
+      "holdWaiting": "Organización en espera",
+      "idle": "Todo al día",
       "needsYouMany": "{count} te necesitan",
       "needsYouOne": "{count} te necesita",
+      "running": "Organizando tu biblioteca",
       "waiting": "{count} en espera"
     },
     "titleBar": {

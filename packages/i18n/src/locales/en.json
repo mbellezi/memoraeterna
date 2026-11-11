@@ -88,8 +88,8 @@
     "title": "Activity",
     "pill": {
       "label": "Activity: {status}",
-      "loading": "Checking what is happening...",
-      "unavailable": "Activity is not available right now.",
+      "loading": "Checking activity…",
+      "unavailable": "Activity unavailable",
       "badge": "{count} waiting for your review"
     },
     "drawer": {
@@ -115,7 +115,9 @@
       }
     },
     "waiting": {
-      "empty": "Nothing is waiting."
+      "empty": "Nothing is waiting.",
+      "jobsMany": "{count} tasks wait their turn. Reason: tasks run one after another.",
+      "jobsOne": "1 task waits its turn. Reason: tasks run one after another."
     },
     "needsYou": {
       "empty": "Nothing needs your attention.",
@@ -3734,6 +3736,7 @@
       "error": "Could not load the tree.",
       "errorKept": "Your sources and notes are untouched.",
       "label": "Navigator",
+      "retry": "Try again",
       "rowLabel": "{title}, {count} items",
       "title": "Tree",
       "total": "{count} items",
@@ -3760,8 +3763,16 @@
       "titleBar": "Top bar"
     },
     "status": {
+      "holdCap": "Paused by a limit",
+      "holdDownload": "Getting a model ready",
+      "holdNoModel": "Organizing needs a model",
+      "holdOffline": "No internet connection",
+      "holdPaused": "Organizing paused",
+      "holdWaiting": "Organizing is waiting",
+      "idle": "All up to date",
       "needsYouMany": "{count} need you",
       "needsYouOne": "{count} needs you",
+      "running": "Organizing your library",
       "waiting": "{count} waiting"
     },
     "titleBar": {

@@ -73,7 +73,9 @@ describe("the Activity pill", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("aria-controls");
     expect(html).toContain('aria-label="Activity: Automatic organizing is paused.');
-    expect(html).toContain("Automatic organizing is paused.");
+    // What the pill draws is the short phrase; the sentence is the name and the tooltip.
+    expect(html).toContain(">Organizing paused<");
+    expect(html).toContain('title="Automatic organizing is paused.');
   });
 
   it("points at the drawer only while it is open", () => {
@@ -83,13 +85,11 @@ describe("the Activity pill", () => {
   });
 
   it("covers loading, error and success, each with a glyph and a sentence", () => {
-    expect(pill(activitySnapshot())).toContain("Checking what is happening...");
+    expect(pill(activitySnapshot())).toContain("Checking activity…");
     expect(pill(activitySnapshot({ status: { status: "error" } }))).toContain(
-      "Activity is not available right now."
+      "Activity unavailable"
     );
-    expect(pill(activitySnapshot({ status: ready(idleStatus) }))).toContain(
-      "Your library is up to date."
-    );
+    expect(pill(activitySnapshot({ status: ready(idleStatus) }))).toContain("All up to date");
     // A state is a solid glyph or the running ring, never colour alone.
     for (const status of [idleStatus, pausedStatus, signInStatus]) {
       expect(pill(activitySnapshot({ status: ready(status) }))).toContain("<svg");
@@ -282,6 +282,18 @@ describe("the Activity drawer", () => {
     expect(html).toContain("Nothing was changed automatically yet.");
     expect(html).toContain("$1.20 of $5.00 used this month.");
     expect(html).toContain("Under the limit");
+  });
+
+  it("never says nothing waits while the pill counts jobs that wait, and gives the reason", () => {
+    const jobs = (waiting: number, onHold = 0) =>
+      drawer(answered({ jobs: { running: 0, waiting, onHold } }));
+    const two = jobs(2);
+    expect(two).not.toContain("Nothing is waiting.");
+    expect(two).toContain("2 tasks wait their turn. Reason: tasks run one after another.");
+    expect(jobs(1)).toContain("1 task waits its turn.");
+    // The pill counts jobs that wait and jobs on hold together; the section lists the same number.
+    expect(jobs(1, 1)).toContain("2 tasks wait their turn.");
+    expect(jobs(0)).toContain("Nothing is waiting.");
   });
 
   it("shows how much of the library each task keeps current, with the number in text", () => {
@@ -526,7 +538,7 @@ describe("the host", () => {
 
   it("renders the pill before anything is read, without touching the window", () => {
     const html = renderToString(<ActivityHost t={en} onNavigate={vi.fn()} />);
-    expect(html).toContain("Checking what is happening...");
+    expect(html).toContain("Checking activity…");
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toContain("<aside");

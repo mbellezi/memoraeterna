@@ -1,5 +1,5 @@
 import type { KeyboardEventHandler, ReactNode, Ref } from "react";
-import { LoaderCircle, PauseCircle, Undo2 } from "lucide-react";
+import { Circle, PauseCircle, Undo2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
@@ -56,9 +56,10 @@ const glyphs = {
   error: { render: () => <SolidTriangle className="text-danger" /> },
   loading: {
     render: () => (
-      <LoaderCircle
+      // Static: the one moving mark is the running ring, for live work only (design §5.12).
+      <Circle
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin"
+        className="size-4 shrink-0 text-muted-foreground [stroke-dasharray:3_3]"
       />
     )
   }
@@ -93,9 +94,9 @@ export function pillSentence(
   };
 }
 
-const shell = cn(
-  "inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full border px-3 text-sm"
-);
+const shellBase = "inline-flex h-8 min-w-0 max-w-full items-center rounded-full border text-sm";
+/** At compact width the pill spends less on padding and gaps, so its phrase stays whole. */
+const shellOf = (compact: boolean) => cn(shellBase, compact ? "gap-1.5 px-2.5" : "gap-2 px-3");
 
 function NeedsYou({ text }: { text: string }) {
   return (
@@ -144,7 +145,7 @@ export function ActivityPill({
         tabIndex={-1}
         data-activity-notice=""
         className={cn(
-          shell,
+          shellOf(compact),
           "overflow-hidden border-accent bg-surface text-foreground focus-visible:outline-2",
           "focus-visible:outline-accent"
         )}
@@ -206,7 +207,8 @@ export function ActivityPill({
     );
   }
 
-  const full = [view.text, sentence.waiting].filter(Boolean).join(" · ");
+  // The tooltip and the accessible name hold the whole sentence, the time left and the waiting count.
+  const full = [view.full, sentence.waiting].filter(Boolean).join(" · ");
   const name = t("activity.pill.label", { values: { status: full } });
   return (
     <button
@@ -217,7 +219,7 @@ export function ActivityPill({
       aria-label={needsYou ? `${name} ${needsYou}` : name}
       title={needsYou ? `${full}. ${needsYou}` : full}
       className={cn(
-        shell,
+        shellOf(compact),
         "border-border-strong text-secondary-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         // `cn` does not merge classes: one background and one border at a time.
         open ? "bg-accent-soft" : "bg-surface hover:bg-soft"
@@ -226,10 +228,13 @@ export function ActivityPill({
       onKeyDown={onKeyDown}
     >
       {glyphs[view.glyph].render()}
-      <span className="min-w-0 truncate">
-        <span className="font-medium text-foreground">{view.text}</span>
-        {sentence.waiting ? <span> · {sentence.waiting}</span> : null}
-      </span>
+      <span className="min-w-0 truncate font-medium text-foreground">{view.text}</span>
+      {sentence.waiting ? (
+        // Its own span: only the main phrase truncates, the clause stays whole or drops at compact width.
+        <span className="shrink-0 whitespace-nowrap text-secondary-foreground">
+          · {sentence.waiting}
+        </span>
+      ) : null}
       {needsYou ? <NeedsYou text={needsYou} /> : null}
     </button>
   );

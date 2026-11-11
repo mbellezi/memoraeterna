@@ -182,13 +182,14 @@ describe("the pill", () => {
   it("says it is checking, then that the status is unavailable", () => {
     expect(pillView(en, activitySnapshot())).toEqual({
       glyph: "loading",
-      text: "Checking what is happening...",
+      text: "Checking activity…",
+      full: "Checking activity…",
       badge: 0,
       waiting: 0
     });
     expect(pillView(en, activitySnapshot({ status: { status: "error" } }))).toMatchObject({
       glyph: "error",
-      text: "Activity is not available right now."
+      text: "Activity unavailable"
     });
   });
 
@@ -197,13 +198,20 @@ describe("the pill", () => {
       pillView(en, activitySnapshot({ status: ready(status) }));
     expect(view(idleStatus)).toMatchObject({
       glyph: "check",
-      text: "Your library is up to date."
+      text: "All up to date",
+      full: "Your library is up to date."
     });
-    expect(view(runningStatus)).toMatchObject({ glyph: "working" });
-    expect(view(runningStatus).text).toContain("About 10 minutes left.");
+    // The pill names the work in a few words with no period; the sentence and the time go to the tooltip.
+    expect(view(runningStatus)).toMatchObject({
+      glyph: "working",
+      text: "Organizing your library"
+    });
+    expect(view(runningStatus).full).toContain("About 10 minutes left.");
     expect(view(pausedStatus)).toMatchObject({ glyph: "waiting" });
     expect(view(signInStatus)).toMatchObject({ glyph: "attention" });
-    expect(view(rateLimitedStatus).text).toMatch(/Resumes around/);
+    expect(view(rateLimitedStatus).full).toMatch(/Resumes around/);
+    for (const status of [idleStatus, runningStatus, pausedStatus, signInStatus, rateLimitedStatus])
+      expect(view(status).text).not.toMatch(/[.…]$/u);
   });
 
   it("carries the Inbox count as a badge and shows the embedder loading", () => {
@@ -212,7 +220,8 @@ describe("the pill", () => {
       activitySnapshot({ status: ready(idleStatus), inboxTotal: 3, embedderLoading: true })
     );
     expect(view).toMatchObject({ glyph: "waiting", badge: 3 });
-    expect(view.text).toContain("loading into memory");
+    expect(view.text).toBe("Getting a model ready");
+    expect(view.full).toContain("loading into memory");
   });
 
   it("counts the jobs that wait or are on hold, once the counts are known", () => {

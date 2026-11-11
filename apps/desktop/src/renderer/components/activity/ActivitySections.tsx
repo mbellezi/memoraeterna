@@ -58,6 +58,22 @@ export function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
+/**
+ * The jobs that wait their turn, with the reason, for the Waiting section while the status itself
+ * holds nothing: the pill counts them, so the section must not say that nothing waits.
+ */
+export function WaitingJobsLine({ t, count }: { t: Translator; count: number }) {
+  const key =
+    new Intl.PluralRules(t.locale).select(count) === "one"
+      ? "activity.waiting.jobsOne"
+      : "activity.waiting.jobsMany";
+  return (
+    <p className="text-sm text-secondary-foreground">
+      {t(key, { values: { count: new Intl.NumberFormat(t.locale).format(count) } })}
+    </p>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Status sentences (Now, Waiting)
 
