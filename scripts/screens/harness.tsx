@@ -4,18 +4,31 @@
  * `[data-surface=<id>][data-state=<mode>]` (5 s at most) and answers with what it found.
  *
  * A surface that has its own frame (a panel inside `PanelFrame`) reports its state itself and a
- * disagreement fails. A hosted screen that has none yet is wrapped in a stand-in frame that labels
- * the mode, and the check then needs DOM evidence that the surface really is in that state: an
- * alert for error (or a host's `data-screen-passthrough`, for a surface whose failed question shows
- * the app instead), a busy or status region for loading, and neither for empty and success.
+ * disagreement fails. Only a hosted screen that has none yet (kind "hosted") is wrapped in a
+ * stand-in frame that labels the mode; every other kind without its own frame fails. Either way the
+ * check then needs DOM evidence that the surface really is in that state: an alert for error, a
+ * busy or status region for loading, and neither for empty and success. The text of empty must
+ * also differ from the text of success (`run.ts` compares the signatures).
  */
 import { createRoot, type Root } from "react-dom/client";
 
-import type { ScreenModule, ScreenMode } from "../../apps/desktop/src/renderer/workspace/surfaces";
-import { evidenceReasons, readEvidence } from "./evidence";
+import type {
+  ScreenModule,
+  ScreenMode,
+  SurfaceKind
+} from "../../apps/desktop/src/renderer/workspace/surfaces";
+import { readEvidence } from "./evidence";
 import { createFakeApi } from "./fake-api";
+import {
+  resolveFrame,
+  stateReasons,
+  textSignature,
+  untilState,
+  type FrameNode,
+  type FrameSource
+} from "./frame";
 
-export type FrameSource = "own" | "harness" | "none";
+export type { FrameSource };
 export type ScreenTheme = "light" | "dark";
 
 export interface MountResult {
@@ -25,6 +38,8 @@ export interface MountResult {
   frame: FrameSource;
   /** What `data-state` said when the check ended. */
   state: string | null;
+  /** A signature of the text shown when the check ended (empty must differ from success). */
+  signature: string;
   ok: boolean;
   reasons: string[];
   /** Calls the surface made that its fixtures did not answer. */
@@ -47,27 +62,7 @@ window.addEventListener("error", (event) => pageErrors.push(String(event.message
 interface Registry {
   modules: Readonly<Record<string, ScreenModule>>;
   ribbons: readonly string[];
-}
-
-function frameOf(
-  id: string,
-  mode: ScreenMode
-): { frame: FrameSource; reasons: string[]; state: string | null } {
-  const frames = [...document.querySelectorAll<HTMLElement>("[data-surface]")];
-  const own = frames.find((element) => element.dataset.harness === undefined);
-  if (own) {
-    const reasons: string[] = [];
-    if (own.dataset.surface !== id)
-      reasons.push(`frame says surface ${own.dataset.surface ?? ""}, expected ${id}`);
-    const state = own.dataset.state ?? null;
-    if (state !== mode) reasons.push(`frame says state ${state ?? "none"}, expected ${mode}`);
-    return { frame: "own", reasons, state };
-  }
-  const stand = host?.querySelector<HTMLElement>("[data-harness]");
-  if (!stand) return { frame: "none", reasons: ["no frame"], state: null };
-  stand.dataset.surface = id;
-  stand.dataset.state = mode;
-  return { frame: "harness", reasons: [], state: mode };
+  kinds: Readonly<Record<string, SurfaceKind>>;
 }
 
 async function mount(
@@ -83,6 +78,7 @@ async function mount(
       ...base,
       frame: "none",
       state: null,
+      signature: "",
       ok: false,
       reasons: ["no screen module"],
       missing: [],
@@ -97,7 +93,8 @@ async function mount(
 
   const fake = createFakeApi(
     mode,
-    mode === "success" || mode === "empty" ? module.fixtures[mode] : {}
+    mode === "success" || mode === "empty" ? module.fixtures[mode] : {},
+    mode === "error" ? module.fixtures.error : {}
   );
   (window as unknown as { app: unknown }).app = fake.app;
   host = document.createElement("div");
@@ -113,37 +110,38 @@ async function mount(
   root = createRoot(stand);
   root.render(module.render());
 
-  const check = (): { frame: FrameSource; state: string | null; reasons: string[] } => {
-    const found = frameOf(id, mode);
-    const reasons = [...found.reasons];
-    if (found.frame !== "none" && stand.isConnected)
-      reasons.push(...evidenceReasons(mode, readEvidence(document.body)));
-    if (
-      mode === "success" &&
-      registry.ribbons.includes(id) &&
-      !document.querySelector("[data-path-ribbon]")
-    )
-      reasons.push("an object panel shows no path ribbon in success");
-    if ((mode === "success" || mode === "empty") && fake.missing().length > 0)
-      reasons.push(`no fixture for ${fake.missing().join(", ")}`);
-    return { frame: found.frame, state: found.state, reasons };
+  const kind = registry.kinds[id] ?? "panel";
+  const check = () => {
+    const frame = resolveFrame(
+      [...document.querySelectorAll<HTMLElement>("[data-surface]")] as FrameNode[],
+      stand as FrameNode,
+      id,
+      mode,
+      kind
+    );
+    const reasons = stateReasons({
+      mode,
+      ribbon: registry.ribbons.includes(id),
+      ribbonShown: document.querySelector("[data-path-ribbon]") !== null,
+      frame,
+      evidence: readEvidence(document.body),
+      mounted: stand.isConnected,
+      missing: fake.missing()
+    });
+    return { frame: frame.frame, state: frame.state, reasons };
   };
 
-  let last = check();
-  for (let waited = 0; last.reasons.length > 0 && waited < frameTimeoutMs; waited += pollMs) {
-    await sleep(pollMs);
-    last = check();
-  }
-  if (last.reasons.length === 0) {
-    // A surface that is right and then flips (a late failure) is not in the state.
-    await sleep(settleMs);
-    last = check();
-  }
+  const last = await untilState(check, sleep, {
+    timeoutMs: frameTimeoutMs,
+    pollMs,
+    settleMs
+  });
   await document.fonts.ready;
   return {
     ...base,
     frame: last.frame,
     state: last.state,
+    signature: textSignature(stand.innerText),
     ok: last.reasons.length === 0 && pageErrors.length === 0,
     reasons: pageErrors.length > 0 ? [...last.reasons, "uncaught page error"] : last.reasons,
     missing: fake.missing(),
@@ -159,9 +157,10 @@ export interface ScreensApi {
 /** Called by the generated entry: publishes the screens the bundle holds. */
 export function registerScreens(
   modules: Readonly<Record<string, ScreenModule>>,
-  ribbons: readonly string[]
+  ribbons: readonly string[],
+  kinds: Readonly<Record<string, SurfaceKind>>
 ): void {
-  const registry: Registry = { modules, ribbons };
+  const registry: Registry = { modules, ribbons, kinds };
   const api: ScreensApi = {
     ids: Object.keys(modules),
     mount: (id, mode, theme) => mount(registry, id, mode, theme)

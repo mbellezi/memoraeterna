@@ -45,6 +45,12 @@ export interface ScreenModule {
   readonly fixtures: {
     readonly success: ScreenFixtureSet;
     readonly empty: ScreenFixtureSet;
+    /**
+     * Only for a surface whose failure needs part of it to load first (a step that opens after a
+     * question answered): the calls named here answer, every other call rejects. A fixture that
+     * throws makes its call reject. Absent, every call rejects.
+     */
+    readonly error?: ScreenFixtureSet;
   };
   render(): ReactNode;
 }

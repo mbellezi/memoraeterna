@@ -32,7 +32,10 @@ export function entrySource(surfaces: readonly SurfaceEntry[], root = rendererRo
     .map((surface, index) => `${JSON.stringify(surface.id)}: screen${index}`)
     .join(", ");
   const ribbons = surfaces.filter((surface) => surface.ribbon).map((surface) => surface.id);
-  lines.push(`registerScreens({ ${modules} }, ${JSON.stringify(ribbons)});`);
+  const kinds = Object.fromEntries(surfaces.map((surface) => [surface.id, surface.kind]));
+  lines.push(
+    `registerScreens({ ${modules} }, ${JSON.stringify(ribbons)}, ${JSON.stringify(kinds)});`
+  );
   return `${lines.join("\n")}\n`;
 }
 

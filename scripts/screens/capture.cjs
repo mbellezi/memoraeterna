@@ -3,9 +3,19 @@
 // The capture process of the screens tool: a bare offscreen Electron. It has a temporary userData,
 // no network, no Memora main process, no database and no model. It loads the fixture bundle, mounts
 // each job (surface, mode, theme, width) through `window.__screens.mount`, writes the screenshots and
-// a results file. `run.ts` starts it: `electron capture.cjs <plan.json>`.
+// a results file with one JSON line per finished job (`{"result": …}`) and per blocked request
+// (`{"blocked": url}`), appended as they happen so a capture that is stopped still leaves what it
+// did; it prints one line per finished job, which `run.ts` reads as progress. `run.ts` starts it:
+// `electron capture.cjs <plan.json>`.
 const { app, BrowserWindow, session } = require("electron");
-const { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
+const {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 
@@ -15,7 +25,6 @@ app.setPath("userData", join(temporary, "profile"));
 app.disableHardwareAcceleration();
 
 const jobTimeoutMs = 20000;
-const blocked = [];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,12 +37,17 @@ function withTimeout(promise, ms, what) {
 }
 
 async function run() {
+  writeFileSync(plan.resultsFile, "");
   await app.whenReady();
   app.dock?.hide();
   // Nothing leaves the machine: only the bundle's own file and inline data load.
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const local = /^(file|data|blob|devtools):/u.test(details.url);
-    if (!local) blocked.push(details.url.split("?")[0]);
+    if (!local)
+      appendFileSync(
+        plan.resultsFile,
+        `${JSON.stringify({ blocked: details.url.split("?")[0] })}\n`
+      );
     callback({ cancel: !local });
   });
   const window = new BrowserWindow({
@@ -50,7 +64,8 @@ async function run() {
     }
   });
   await window.loadFile(plan.bundle);
-  const results = [];
+  console.log("screens-capture ready");
+  let done = 0;
   let width = null;
   for (const job of plan.jobs) {
     let result;
@@ -94,10 +109,14 @@ async function run() {
         pageErrors: []
       };
     }
-    results.push({ ...result, width: job.width });
+    appendFileSync(
+      plan.resultsFile,
+      `${JSON.stringify({ result: { ...result, width: job.width } })}\n`
+    );
+    done += 1;
+    console.log(`screens-capture ${done}/${plan.jobs.length}`);
   }
   window.destroy();
-  writeFileSync(plan.resultsFile, JSON.stringify({ results, blocked }, null, 2));
 }
 
 run()

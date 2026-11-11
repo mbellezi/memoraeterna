@@ -10,8 +10,6 @@ export interface Evidence {
   busy: number;
   /** A status region the person sees (a screen-reader-only live region does not count). */
   statuses: number;
-  /** The host says the surface gives way to the app (its failed question never hides the app). */
-  passthrough: number;
   text: number;
 }
 
@@ -21,7 +19,6 @@ export function readEvidence(root: Element): Evidence {
     alerts: [...root.querySelectorAll('[role="alert"]')].filter(visible).length,
     busy: root.querySelectorAll('[aria-busy="true"]').length,
     statuses: [...root.querySelectorAll('[role="status"]')].filter(visible).length,
-    passthrough: root.querySelectorAll("[data-screen-passthrough]").length,
     text: (root as HTMLElement).innerText.trim().length
   };
 }
@@ -34,7 +31,7 @@ export function evidenceReasons(mode: ScreenMode, evidence: Evidence): string[] 
     if (evidence.busy === 0 && evidence.statuses === 0)
       reasons.push("loading shows no busy or status region");
   } else if (mode === "error") {
-    if (evidence.alerts === 0 && evidence.passthrough === 0) reasons.push("error shows no alert");
+    if (evidence.alerts === 0) reasons.push("error shows no alert");
   } else {
     if (evidence.alerts > 0) reasons.push(`${mode} shows an alert`);
     if (evidence.busy > 0) reasons.push(`${mode} is still busy`);

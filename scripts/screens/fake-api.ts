@@ -3,7 +3,9 @@
  * browser), so it imports nothing.
  *
  * - loading: every call stays pending, so a surface shows what it shows while it waits;
- * - error: every call rejects, so a surface shows its failure and its way back;
+ * - error: every call rejects, so a surface shows its failure and its way back; a screen module that
+ *   needs part of the surface to load first lists those calls in `fixtures.error` (the third
+ *   argument) and only the others reject;
  * - empty and success: a call is answered from the screen module's fixtures, keyed by the call path
  *   (`"inbox.list"`, or `"onAppEvent"` at the top level). A fixture is a value or a function of the
  *   call's arguments. A call with no fixture rejects and is listed in `missing`, so the check names
@@ -33,7 +35,8 @@ const never = (): Promise<never> => new Promise<never>(() => undefined);
 
 export function createFakeApi(
   mode: FakeMode,
-  fixtures: Readonly<Record<string, unknown>> = {}
+  fixtures: Readonly<Record<string, unknown>> = {},
+  errorFixtures: Readonly<Record<string, unknown>> = {}
 ): FakeApi {
   const calls: FakeCall[] = [];
   const missing = new Set<string>();
@@ -41,12 +44,13 @@ export function createFakeApi(
   const answer = (path: string, args: unknown[]): unknown => {
     calls.push({ path, args });
     if (mode === "loading") return never();
-    if (mode === "error") return Promise.reject(new Error(`fake window.app: ${path} fails`));
-    if (!Object.hasOwn(fixtures, path)) {
+    if (mode === "error" && !Object.hasOwn(errorFixtures, path))
+      return Promise.reject(new Error(`fake window.app: ${path} fails`));
+    if (mode !== "error" && !Object.hasOwn(fixtures, path)) {
       missing.add(path);
       return Promise.reject(new Error(`fake window.app: no fixture for ${path}`));
     }
-    const fixture = fixtures[path];
+    const fixture = (mode === "error" ? errorFixtures : fixtures)[path];
     try {
       return Promise.resolve(typeof fixture === "function" ? fixture(...args) : fixture);
     } catch (error) {

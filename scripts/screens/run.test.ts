@@ -1,12 +1,22 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SurfaceEntry } from "../../apps/desktop/src/renderer/workspace/surfaces";
 import { entrySource, pageHtml } from "./build-bundle";
 import { evidenceReasons, type Evidence } from "./evidence";
-import { captureJobs, parseScreensArgs, selectSurfaces, summarize, takeLock } from "./run";
+import {
+  captureJobs,
+  idleWatchdog,
+  parseScreensArgs,
+  readCaptureLines,
+  selectSurfaces,
+  sharedLockFile,
+  summarize,
+  takeLock
+} from "./run";
 
 const entries: SurfaceEntry[] = [
   { id: "inbox", kind: "hosted", implementation: "a/Inbox.tsx", screen: "a/inbox.screen.tsx" },
@@ -93,6 +103,7 @@ describe("the check summary", () => {
     width: 960,
     frame: "harness" as const,
     state: "error",
+    signature: "1:a",
     ok,
     reasons,
     missing: [],
@@ -104,6 +115,27 @@ describe("the check summary", () => {
     expect(summarize([]).passed).toBe(false);
   });
 
+  it("fails an empty state that shows what the success state shows", () => {
+    const shown = (mode: "empty" | "success", signature: string) => ({
+      ...result(true),
+      mode,
+      signature
+    });
+    expect(summarize([shown("empty", "5:x"), shown("success", "9:y")]).passed).toBe(true);
+    const same = summarize([shown("empty", "9:y"), shown("success", "9:y")]);
+    expect(same.passed).toBe(false);
+    expect(same.failures).toEqual(["inbox light 960: empty shows what success shows"]);
+  });
+
+  it("fails a capture that ended before its last job, even when every result it has is right", () => {
+    const summary = summarize([result(true)], 4);
+    expect(summary).toMatchObject({ passed: false, total: 4 });
+    expect(summary.failures).toEqual(["the capture ended after 1 of 4 captures"]);
+    expect(summarize([result(true)], 1, 137).failures).toEqual([
+      "the capture process exited with 137"
+    ]);
+  });
+
   it("names each failure with its surface, mode, theme, width and reasons", () => {
     const summary = summarize([result(true), result(false, ["error shows no alert"])]);
     expect(summary).toMatchObject({ passed: false, total: 2, failed: 1 });
@@ -112,7 +144,7 @@ describe("the check summary", () => {
 });
 
 describe("what each state must show in the DOM", () => {
-  const none: Evidence = { alerts: 0, busy: 0, statuses: 0, passthrough: 0, text: 12 };
+  const none: Evidence = { alerts: 0, busy: 0, statuses: 0, text: 12 };
 
   it("loading needs a busy or status region and no alert", () => {
     expect(evidenceReasons("loading", { ...none, busy: 1 })).toEqual([]);
@@ -123,9 +155,8 @@ describe("what each state must show in the DOM", () => {
     ]);
   });
 
-  it("error needs an alert, or a host that says the app shows instead", () => {
+  it("error needs an alert", () => {
     expect(evidenceReasons("error", { ...none, alerts: 1 })).toEqual([]);
-    expect(evidenceReasons("error", { ...none, passthrough: 1 })).toEqual([]);
     expect(evidenceReasons("error", none)).toEqual(["error shows no alert"]);
   });
 
@@ -168,13 +199,77 @@ describe("the capture lock", () => {
   });
 });
 
+describe("the lock every worktree shares", () => {
+  const directories: string[] = [];
+  afterEach(() => {
+    for (const directory of directories.splice(0))
+      rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("is the same file from the main checkout and from a linked worktree", () => {
+    const base = mkdtempSync(join(tmpdir(), "screens-worktrees-"));
+    directories.push(base);
+    const main = join(base, "main");
+    const linked = join(base, "linked");
+    const git = (cwd: string, ...args: string[]) =>
+      execFileSync("git", args, { cwd, stdio: "ignore" });
+    execFileSync("git", ["init", "-q", main], { stdio: "ignore" });
+    git(main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-qm", "x");
+    git(main, "worktree", "add", "-q", linked, "-b", "other");
+    expect(sharedLockFile(linked)).toBe(sharedLockFile(main));
+    expect(sharedLockFile(main)).toMatch(/\.git\/memora-screens\.lock$/u);
+  });
+
+  it("falls back to the checkout's own cache outside git", () => {
+    const base = mkdtempSync(join(tmpdir(), "screens-nogit-"));
+    directories.push(base);
+    expect(
+      sharedLockFile(base, () => {
+        throw new Error("not a git repository");
+      })
+    ).toBe(join(base, ".cache/f5/screens/.lock"));
+  });
+});
+
+describe("the capture's progress", () => {
+  const line = (surface: string) =>
+    JSON.stringify({ result: { surface, mode: "error", theme: "light", width: 960, ok: true } });
+
+  it("keeps every result a stopped capture wrote and ignores a cut last line", () => {
+    const text = `${line("a")}\n${JSON.stringify({ blocked: "https://x.test/" })}\n${line("b")}\n{"result": {"surf`;
+    const read = readCaptureLines(text);
+    expect(read.results.map((result) => result.surface)).toEqual(["a", "b"]);
+    expect(read.blocked).toEqual(["https://x.test/"]);
+  });
+
+  it("stops a capture only after it makes no progress, however long the whole run takes", () => {
+    vi.useFakeTimers();
+    try {
+      const idle = vi.fn();
+      const watchdog = idleWatchdog(1000, idle);
+      for (let step = 0; step < 50; step += 1) {
+        vi.advanceTimersByTime(900);
+        watchdog.touch();
+      }
+      expect(idle).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(idle).toHaveBeenCalledTimes(1);
+      watchdog.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("the fixture bundle's entry", () => {
   it("imports the harness, the styles and each screen module, and registers them by id", () => {
     const source = entrySource(entries.slice(0, 2), "/r");
     expect(source).toContain('import "/r/styles.css";');
     expect(source).toContain('import * as screen0 from "/r/a/inbox.screen.tsx";');
     expect(source).toContain('import * as screen1 from "/r/p/note.screen.tsx";');
-    expect(source).toContain('registerScreens({ "inbox": screen0, "note": screen1 }, ["note"]);');
+    expect(source).toContain(
+      'registerScreens({ "inbox": screen0, "note": screen1 }, ["note"], {"inbox":"hosted","note":"panel"});'
+    );
   });
 
   it("never lets a closing tag end the page's script or style early", () => {

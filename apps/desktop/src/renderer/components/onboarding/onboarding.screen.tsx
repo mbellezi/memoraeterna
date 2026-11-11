@@ -70,6 +70,10 @@ const saved = (update: object) => ({
   updatedAt: new Date(0).toISOString()
 });
 
+const failing = () => {
+  throw new Error("fake window.app: the call fails");
+};
+
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
     "onboarding.state": due,
@@ -83,15 +87,22 @@ export const fixtures: ScreenModule["fixtures"] = {
     "settings.updateApp": saved,
     "hardware.profile": windowsReading,
     "localModels.list": []
+  },
+  // The question about the first run answers (a failed one shows the app, not this screen), so the
+  // failure here is the tier card's: the hardware reading and the model list both fail.
+  error: {
+    "onboarding.state": due,
+    "settings.updateApp": saved,
+    "hardware.profile": failing,
+    "localModels.list": failing
   }
 };
 
 /**
- * The first run takes the place of the shell while it is due, and nothing when the question about
- * it fails (a failed question never hides the app). That second answer is this surface's error
- * state, so the host says so with `data-screen-passthrough`, which the screens check accepts for
- * error. The first step is passed through, as a click on Continue would, so the screen shows the
- * AI mode step with the tier card, where the loads and failures of this surface are.
+ * The first run takes the place of the shell while it is due (and nothing when the question about it
+ * fails: a failed question never hides the app, so that answer is not a state of this surface).
+ * The first step is passed through, as a click on Continue would, so the screen shows the AI mode
+ * step with the tier card, where the loads and failures of this surface are.
  */
 function FirstRun() {
   const host = useRef<HTMLDivElement>(null);
@@ -121,7 +132,7 @@ function FirstRun() {
   }, []);
   return (
     <div ref={host} className="h-full">
-      {node ?? <div data-screen-passthrough="">{null}</div>}
+      {node}
     </div>
   );
 }

@@ -8,14 +8,25 @@
  * `--check` exits 1 unless every surface reported `[data-surface=<id>][data-state=<mode>]` within
  * five seconds in every combination (an object panel also shows its path ribbon in success).
  *
- * One capture runs at a time (a lock file); run it at background QoS (`taskpolicy -b`) while an F4
- * run holds the slots. It starts no Memora process and loads no model.
+ * One capture runs at a time on the machine: the lock file lives in the repository's shared git
+ * directory, so the worktrees of parallel cards take the same one. Run it at background QoS
+ * (`taskpolicy -b`) while an F4 run holds the slots. It starts no Memora process and loads no model.
+ * The capture appends each result as it finishes and is stopped only when it makes no progress for
+ * `idleLimitMs`, so a long run over many surfaces is not cut by a fixed total time.
  */
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -30,7 +41,8 @@ import type { MountResult, ScreenTheme } from "./harness";
 export const allThemes: readonly ScreenTheme[] = ["light", "dark"];
 export const allWidths: readonly number[] = [960, 1440];
 const viewportHeight = 900;
-const captureTimeoutMs = 15 * 60 * 1000;
+/** The capture prints a line per finished job; this long without one (a job gives up at 20 s) kills it. */
+export const idleLimitMs = 90 * 1000;
 
 export interface ScreensArgs {
   screens: string[];
@@ -127,19 +139,92 @@ export interface CheckSummary {
   failures: string[];
 }
 
-export function summarize(results: readonly (MountResult & { width: number })[]): CheckSummary {
+export function summarize(
+  results: readonly (MountResult & { width: number })[],
+  expected = results.length,
+  exitCode = 0
+): CheckSummary {
   const failures = results
     .filter((result) => !result.ok)
     .map(
       (result) =>
         `${result.surface} ${result.mode} ${result.theme} ${result.width}: ${result.reasons.join("; ") || "failed"}`
     );
+  // An empty state that shows what the success state shows is not an empty state.
+  const shown = new Map<string, string>();
+  for (const result of results)
+    if (result.ok && result.mode === "success")
+      shown.set(`${result.surface} ${result.theme} ${result.width}`, result.signature);
+  for (const result of results) {
+    const key = `${result.surface} ${result.theme} ${result.width}`;
+    if (result.ok && result.mode === "empty" && shown.get(key) === result.signature)
+      failures.push(`${key}: empty shows what success shows`);
+  }
+  if (results.length < expected)
+    failures.push(`the capture ended after ${results.length} of ${expected} captures`);
+  if (exitCode !== 0) failures.push(`the capture process exited with ${exitCode}`);
   return {
     passed: failures.length === 0 && results.length > 0,
-    total: results.length,
+    total: expected,
     failed: failures.length,
     failures
   };
+}
+
+/** The results file: one JSON line per finished capture or blocked request (a cut last line is ignored). */
+export function readCaptureLines(text: string): {
+  results: (MountResult & { width: number })[];
+  blocked: string[];
+} {
+  const results: (MountResult & { width: number })[] = [];
+  const blocked: string[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const parsed = JSON.parse(line) as {
+        result?: MountResult & { width: number };
+        blocked?: string;
+      };
+      if (parsed.result) results.push(parsed.result);
+      else if (typeof parsed.blocked === "string") blocked.push(parsed.blocked);
+    } catch {
+      // The last line of a capture that was killed can be cut.
+    }
+  }
+  return { results, blocked };
+}
+
+/** Calls `onIdle` once when `touch` has not been called for `limitMs`. */
+export function idleWatchdog(limitMs: number, onIdle: () => void): { touch(): void; stop(): void } {
+  let timer = setTimeout(onIdle, limitMs);
+  return {
+    touch() {
+      clearTimeout(timer);
+      timer = setTimeout(onIdle, limitMs);
+    },
+    stop() {
+      clearTimeout(timer);
+    }
+  };
+}
+
+/**
+ * The one lock every checkout of this repository shares: the git directory common to the worktrees
+ * (a worktree's own `.cache` is not shared). Outside a git checkout it falls back to the checkout.
+ */
+export function sharedLockFile(
+  root: string,
+  git: (args: string[], cwd: string) => string = (args, cwd) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+): string {
+  try {
+    const common = git(["rev-parse", "--git-common-dir"], root).trim();
+    if (common !== "") return join(realpathSync(resolve(root, common)), "memora-screens.lock");
+  } catch {
+    // Not a git checkout.
+  }
+  mkdirSync(join(root, ".cache/f5/screens"), { recursive: true });
+  return join(root, ".cache/f5/screens/.lock");
 }
 
 /** One capture at a time: a lock file holding the owner's pid; a dead owner's lock is replaced. */
@@ -181,27 +266,41 @@ function electronBinary(): string {
   return binary;
 }
 
-async function runCapture(planFile: string): Promise<number> {
+async function runCapture(planFile: string, total: number): Promise<number> {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
       ([name]) => !name.startsWith("MEMORA_") && name !== "ELECTRON_RUN_AS_NODE"
     )
   );
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveCode, reject) => {
     const child = spawn(
       electronBinary(),
       [join(repositoryRoot, "scripts/screens/capture.cjs"), planFile],
       {
         cwd: repositoryRoot,
         env: environment,
-        stdio: ["ignore", "inherit", "inherit"]
+        stdio: ["ignore", "pipe", "inherit"]
       }
     );
-    const timer = setTimeout(() => child.kill("SIGKILL"), captureTimeoutMs);
-    child.once("error", reject);
+    const watchdog = idleWatchdog(idleLimitMs, () => {
+      console.error(`screens: no progress for ${idleLimitMs / 1000} s; stopping the capture`);
+      child.kill("SIGKILL");
+    });
+    child.stdout.on("data", (chunk: Buffer) => {
+      watchdog.touch();
+      for (const line of chunk.toString().split("\n")) {
+        const done = /^screens-capture (\d+)\//u.exec(line)?.[1];
+        if (done !== undefined && Number(done) % 100 === 0)
+          console.log(`screens: ${done}/${total} captured`);
+      }
+    });
+    child.once("error", (error) => {
+      watchdog.stop();
+      reject(error);
+    });
     child.once("exit", (code) => {
-      clearTimeout(timer);
-      resolve(code ?? 1);
+      watchdog.stop();
+      resolveCode(code ?? 1);
     });
   });
 }
@@ -215,7 +314,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   const base = join(repositoryRoot, ".cache/f5/screens");
   mkdirSync(base, { recursive: true });
-  const release = takeLock(join(base, ".lock"));
+  const release = takeLock(sharedLockFile(repositoryRoot));
   const scratch = mkdtempSync(join(tmpdir(), "memora-screens-bundle-"));
   const run = runId();
   const outDirectory = join(base, run);
@@ -238,14 +337,12 @@ export async function main(argv: readonly string[]): Promise<number> {
         height: viewportHeight
       })
     );
-    const code = await runCapture(planFile);
-    if (code !== 0 || !existsSync(resultsFile))
-      throw new Error(`The capture process failed (${code})`);
-    const captured = JSON.parse(readFileSync(resultsFile, "utf8")) as {
-      results: (MountResult & { width: number })[];
-      blocked: string[];
-    };
-    const summary = summarize(captured.results);
+    const code = await runCapture(planFile, jobs.length);
+    const captured = readCaptureLines(
+      existsSync(resultsFile) ? readFileSync(resultsFile, "utf8") : ""
+    );
+    if (captured.results.length === 0) throw new Error(`The capture process failed (${code})`);
+    const summary = summarize(captured.results, jobs.length, code);
     writeFileSync(
       join(outDirectory, "check.json"),
       `${JSON.stringify(
@@ -261,7 +358,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       )}\n`
     );
     console.log(
-      `screens: ${summary.total - summary.failed}/${summary.total} reached their state; ${outDirectory}`
+      `screens: ${summary.failed} failure(s) in ${summary.total} capture(s); ${outDirectory}`
     );
     for (const failure of summary.failures.slice(0, 30)) console.log(`  FAIL ${failure}`);
     if (summary.failures.length > 30) console.log(`  ... ${summary.failures.length - 30} more`);

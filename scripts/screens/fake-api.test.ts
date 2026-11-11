@@ -58,6 +58,28 @@ describe("the fake window.app", () => {
     expect(await settled((fake.app as App).inbox.list({}))).toEqual({ error: "boom" });
   });
 
+  it("answers the calls an error fixture set names and rejects the others, without listing them as missing", async () => {
+    const fake = createFakeApi(
+      "error",
+      { "other.read": 1 },
+      {
+        "inbox.list": { items: [] },
+        "inbox.count": () => {
+          throw new Error("boom");
+        }
+      }
+    );
+    const app = fake.app as App & { inbox: { count(): Promise<unknown> } };
+    expect(await app.inbox.list({})).toEqual({ items: [] });
+    expect(await settled(app.inbox.count())).toEqual({ error: "boom" });
+    expect(
+      await settled((fake.app as { other: { read(): Promise<unknown> } }).other.read())
+    ).toEqual({
+      error: "fake window.app: other.read fails"
+    });
+    expect(fake.missing()).toEqual([]);
+  });
+
   it("makes subscriptions no-ops in every mode, at any depth", () => {
     for (const mode of ["loading", "empty", "error", "success"] as const) {
       const { app, missing } = createFakeApi(mode);
