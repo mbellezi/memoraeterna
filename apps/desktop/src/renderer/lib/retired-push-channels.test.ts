@@ -10,6 +10,9 @@ const sources = import.meta.glob<string>(
   { query: "?raw", import: "default", eager: true }
 );
 
+const withoutComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+
 describe("the renderer's push subscriptions", () => {
   it("name none of the retired window.app subscriptions", () => {
     const retired =
@@ -29,19 +32,22 @@ describe("the renderer's push subscriptions", () => {
       expect(source, file).not.toMatch(/\bipcRenderer\b/u);
   });
 
-  it("have each former consumer listen to its bus type", () => {
+  it("have each former consumer call its follower of the bus (behaviour: bus-followers.test.ts)", () => {
+    // Code only: a comment that names a follower does not wire it. What each follower does with
+    // an event is tested over a fake bus; this checks that the component calls it.
     const consumers: Record<string, string[]> = {
-      "../components/note-page/NotePage.tsx": ['"explanation.delta"'],
-      "../components/RecentObjects.tsx": ['"view.changed"'],
-      "../components/topics/TopicNavigator.tsx": ['"tree.changed"', '"view.changed"'],
+      "../components/note-page/NotePage.tsx": ["watchExplanationDelta("],
+      "../components/RecentObjects.tsx": ["watchViewHistoryChanged("],
+      "../components/topics/TopicNavigator.tsx": ["followNavigatorEvents("],
       "../components/topic-page/topic-page-controller.ts": ["onTreeChanged"],
       "../components/topic-shape/shape-controller.ts": ["onTreeChanged"],
       "../components/activity/activity-controller.ts": ['"model.loading"'],
-      "../components/ImportView.tsx": ['"import.progress"'],
+      "../components/ImportView.tsx": ["watchImportProgress("],
       "./topics-pulse.ts": ['"tree.changed"'],
       "./relations-pulse.ts": ['"relation.created"', '"object.changed"']
     };
     for (const [file, needles] of Object.entries(consumers))
-      for (const needle of needles) expect(sources[file], `${file} ${needle}`).toContain(needle);
+      for (const needle of needles)
+        expect(withoutComments(sources[file]!), `${file} ${needle}`).toContain(needle);
   });
 });

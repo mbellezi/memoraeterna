@@ -8,6 +8,7 @@ import type {
   TopicsChangedEvent,
   TopicsStatus
 } from "@app/domain";
+import { subscribeAppEvent, type AppEventApi } from "../../lib/app-events";
 import {
   appendNodes,
   ancestorsToOpen,
@@ -491,4 +492,24 @@ export class TopicNavigatorStore {
     this.snap = { ...this.snap, ...patch };
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+/**
+ * The pushes the navigator keeps: the tree's commits and the view history's changes. The store
+ * holds them while the Wiki is hidden and applies them when it is shown again.
+ */
+export function followNavigatorEvents(
+  api: () => AppEventApi | undefined,
+  store: Pick<TopicNavigatorStore, "handleChanged" | "handleHistoryChanged">
+): () => void {
+  const offTopics = subscribeAppEvent(true, api, "tree.changed", (event) =>
+    store.handleChanged(event)
+  );
+  const offHistory = subscribeAppEvent(true, api, "view.changed", () =>
+    store.handleHistoryChanged()
+  );
+  return () => {
+    offTopics();
+    offHistory();
+  };
 }

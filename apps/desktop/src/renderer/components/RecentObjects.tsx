@@ -17,7 +17,7 @@ import {
   viewHistoryPinLimitMessage,
   type ViewHistoryEntry
 } from "../../shared/view-history";
-import { useAppEvent } from "../lib/app-events";
+import { watchViewHistoryChanged } from "../lib/bus-followers";
 import { cn } from "../lib/cn";
 import { showsLoadError, type LoadOutcome } from "../lib/hidden-view";
 import { useStableCallback } from "../lib/stable-callback";
@@ -376,7 +376,15 @@ export function RecentObjects({
   }, [active, refreshKey]);
 
   // The history changed (an open, a pin, a clear): read it again while the list is shown.
-  useAppEvent("view.changed", () => setRefreshKey((value) => value + 1), active);
+  useEffect(
+    () =>
+      watchViewHistoryChanged(
+        () => window.app,
+        active,
+        () => setRefreshKey((value) => value + 1)
+      ),
+    [active]
+  );
 
   // Asking, cancelling and confirming replace the control that had focus: follow it.
   useEffect(() => {

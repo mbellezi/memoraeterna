@@ -8,7 +8,8 @@ import {
   sourceLeaf,
   type FakeTopic
 } from "./topic-fixtures";
-import { TopicNavigatorStore } from "./topic-navigator-store";
+import { createFakeAppEvents } from "../../lib/fake-app-events";
+import { followNavigatorEvents, TopicNavigatorStore } from "./topic-navigator-store";
 import { rootBranchKey, topicRows, unsortedKey, unsortedRows } from "./topic-navigation";
 
 const R = id(1);
@@ -578,5 +579,34 @@ describe("the status line", () => {
     expect(store.getSnapshot().reembed).toBe("failed");
     store.askReembed();
     expect(store.getSnapshot().reembed).toBe("confirming");
+  });
+});
+
+describe("the navigator follows the bus", () => {
+  it("reads the tree again on tree.changed and the history on view.changed, and nothing once stopped", async () => {
+    const fake = sample();
+    const store = await open(fake);
+    const bus = createFakeAppEvents();
+    const stop = followNavigatorEvents(() => bus.api, store);
+    expect(bus.listening("tree.changed")).toBe(1);
+    expect(bus.listening("view.changed")).toBe(1);
+    const trees = fake.calls.tree.length;
+    const histories = fake.calls.history.length;
+    bus.emit({
+      type: "tree.changed",
+      treeId: id(99),
+      generation: 2,
+      topicIds: [R],
+      changeSetId: null
+    });
+    await settle();
+    expect(fake.calls.tree.length).toBeGreaterThan(trees);
+    expect(fake.calls.history.length).toBe(histories);
+    bus.emit({ type: "view.changed" });
+    await settle();
+    expect(fake.calls.history.length).toBeGreaterThan(histories);
+    stop();
+    expect(bus.listening("tree.changed")).toBe(0);
+    expect(bus.listening("view.changed")).toBe(0);
   });
 });

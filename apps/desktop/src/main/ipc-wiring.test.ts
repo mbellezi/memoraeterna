@@ -100,10 +100,18 @@ describe("the entry files", () => {
   it("send to a window only on the bus, the menu, the window navigation and the deep link", () => {
     const sent = new Set<string>();
     for (const source of [main, handlers])
-      for (const match of source.matchAll(/(?:\.send|sendToMainWindow)\(\s*ipcChannels\.(\w+)/gu))
-        sent.add(match[1]!);
+      // The first argument of any send, a literal or a variable included: only a named channel is
+      // one. `channel` is the parameter of the helper `sendToMainWindow(channel: string, ...)`
+      // that forwards what its callers name, and those callers are scanned here too.
+      for (const match of source.matchAll(/(?:\.send|sendToMainWindow)\(\s*([^,)\s]+)/gu))
+        if (!/^channel:?$/u.test(match[1]!)) sent.add(match[1]!);
     expect([...sent].sort()).toEqual(
-      ["appEvents", "menuCommand", "obsidianDeepLink", "windowNavigation"].sort()
+      [
+        "ipcChannels.appEvents",
+        "ipcChannels.menuCommand",
+        "ipcChannels.obsidianDeepLink",
+        "ipcChannels.windowNavigation"
+      ].sort()
     );
   });
 });

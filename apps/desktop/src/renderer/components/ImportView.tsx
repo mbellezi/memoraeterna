@@ -66,7 +66,7 @@ import { TagInput, normalizeTags } from "./ui/tag-input";
 import { Label } from "./ui/label";
 import { CoverImage } from "./ui/cover-image";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
-import { useAppEvent } from "../lib/app-events";
+import { watchImportProgress } from "../lib/bus-followers";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportEstimateChip } from "./onboarding/ImportEstimateChip";
 import { importChunkBasis, type ChunkBasis } from "./onboarding/import-estimate";
@@ -277,13 +277,15 @@ export function ImportView({
   const [fileProgress, setFileProgress] = useState<FileImportProgress | null>(null);
   // The request whose progress this view shows; `import.progress` events of other runs are not its own.
   const progressRunId = useRef<string | null>(null);
-  useAppEvent(
-    "import.progress",
-    (event) => {
-      if (event.runId !== progressRunId.current) return;
-      setFileProgress((current) => progressOfImportEvent(current, event));
-    },
-    active
+  useEffect(
+    () =>
+      watchImportProgress(
+        () => window.app,
+        active,
+        () => progressRunId.current,
+        (event) => setFileProgress((current) => progressOfImportEvent(current, event))
+      ),
+    [active]
   );
   const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
