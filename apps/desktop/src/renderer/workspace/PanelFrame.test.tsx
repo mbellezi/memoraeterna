@@ -306,7 +306,7 @@ describe("the path ribbon", () => {
         ref("topic", 3, "Microbiology"),
         ref("note", 5, "Lactic acid")
       ]),
-      alsoIn: [ref("topic", 9, "Fermented foods")],
+      alsoIn: [{ kind: "topic" as const, id: uuid(9), title: "Fermented foods" }],
       counts: { alsoIn: 1, citedBy: 0, notes: 0, passages: 0, children: 0 }
     };
     const html = ribbon(noteAddress, { status: "ready", located: read });
