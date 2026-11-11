@@ -13,7 +13,6 @@ import {
   type AppViewId,
   type LegacyViewId
 } from "../shared/app-menu";
-import { WikiWorkspace } from "./components/WikiWorkspace";
 import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
 import {
   currentWikiTopic,
@@ -21,16 +20,7 @@ import {
   startWikiTopicHistory,
   wikiNavigationStep
 } from "./components/topics/wiki-topic-history";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Database, RefreshCw } from "lucide-react";
 import {
   createTranslator,
@@ -59,24 +49,26 @@ import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-nav
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
 import { readRememberedTheme, rememberTheme, useResolvedTheme } from "./lib/theme";
-import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
-import { ImportView } from "./components/ImportView";
-import { JobsView } from "./components/JobsView";
-import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
-import { LibraryView, type LibraryExternalTarget } from "./components/LibraryView";
+import type { SettingsScope } from "./components/SettingsView";
+import { defaultSearchViewState, type SearchViewState } from "./components/SearchView";
+import type { LibraryExternalTarget } from "./components/LibraryView";
 import type { OpenableNavigation } from "./components/WhereIsThis";
-import { ReviewQueueView } from "./components/ReviewQueueView";
-import { MonitoringDashboard } from "./components/MonitoringDashboard";
 import type { ActivityNavigation } from "./components/activity/activity-model";
-import { InboxScreen } from "./components/inbox/InboxScreen";
 import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
-import { createWorkspaceSaver, loadWorkspace } from "./workspace/persist";
+import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
-import { reduce, type WorkspaceAction, type WorkspaceState } from "./workspace/state";
+import type { WorkspaceState } from "./workspace/state";
 import type { KeymapResult } from "./workspace/keymap";
+import { useViewportWidth, useWorkspace } from "./workspace/use-workspace";
+import * as legacyPanel from "./workspace/views/legacy.panel";
+import {
+  LegacyScreen,
+  LegacyViewsContext,
+  type LegacyViewsValue
+} from "./workspace/views/legacy-views";
 
 /**
  * The old view each place shows until its replacement lands (D6): the old views the shell hosts for
@@ -106,10 +98,8 @@ const placeOfView: Record<
   knowledgeGraph: "map"
 };
 
-const KnowledgeGraphDashboard = lazy(async () => {
-  const module = await import("./components/KnowledgeGraphDashboard");
-  return { default: module.KnowledgeGraphDashboard };
-});
+/** The stack's panels: the files of `workspace/panels/`, then the old views' roots (D6). */
+const stackRegistry = [...panelRegistry, legacyPanel];
 
 const databaseStartupTimeoutMs = 60_000;
 
@@ -168,35 +158,24 @@ export function App({
   useEffect(() => {
     wikiHistoryRef.current = wikiHistory;
   }, [wikiHistory]);
-  // F5 T135: the shell's place and layout (D8); the old views a place hosts follow it (D6).
-  const [workspace, dispatch] = useReducer(
-    (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
-    undefined,
-    () => loadWorkspace()
-  );
+  // F5 T135, T136: the shell's place and the panel stacks (D8); the old views a place hosts follow
+  // it (D6). The workspace hook saves the state and routes Cmd-W and Cmd-[ / Cmd-] to the stack.
+  const { workspace, dispatch, focusMode, toggleFocusMode } = useWorkspace();
+  const viewportWidth = useViewportWidth();
   // An old view chosen from the rail's "Old screens" menu; a destination or Settings clears it.
   const [legacyView, setLegacyView] = useState<LegacyViewId | null>(null);
   const activeView = viewOf(workspace.destination, legacyView);
-  const setActiveView = useCallback((view: ViewId) => {
-    if (isLegacyView(view)) {
-      setLegacyView(view);
-      return;
-    }
-    setLegacyView(null);
-    dispatch({ type: "go", destination: placeOfView[view] });
-  }, []);
-  const [workspaceSaver] = useState(() => createWorkspaceSaver());
-  useEffect(() => {
-    workspaceSaver.save(workspace);
-  }, [workspace, workspaceSaver]);
-  useEffect(() => {
-    const flush = () => workspaceSaver.flush();
-    window.addEventListener("beforeunload", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      flush();
-    };
-  }, [workspaceSaver]);
+  const setActiveView = useCallback(
+    (view: ViewId) => {
+      if (isLegacyView(view)) {
+        setLegacyView(view);
+        return;
+      }
+      setLegacyView(null);
+      dispatch({ type: "go", destination: placeOfView[view] });
+    },
+    [dispatch]
+  );
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
@@ -221,8 +200,6 @@ export function App({
   >({});
   const libraryTargetToken = useRef(0);
   const activeViewRef = useRef(activeView);
-  const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastPersistedAppSettings = useRef<AppSettings | null>(initialAppSettings ?? null);
   const lastPersistedSettings = useRef<StorageSettings | null>(initialSettings ?? null);
   const pendingAppUpdate = useRef<AppSettingsUpdate>({});
@@ -352,17 +329,6 @@ export function App({
       }),
     []
   );
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (container) container.scrollTop = scrollPositions.current[activeView] ?? 0;
-  }, [activeView]);
-
-  // Stable: the Library, which stays mounted while hidden, calls this on every navigation.
-  const scrollActiveViewToTop = useCallback(() => {
-    scrollPositions.current[activeViewRef.current] = 0;
-    scrollContainerRef.current?.scrollTo({ top: 0 });
-  }, []);
 
   async function loadAppData() {
     const [loadedAppSettings, loadedSettings, loadedSystemInfo] = await Promise.all([
@@ -546,8 +512,6 @@ export function App({
   }
 
   function selectSettingsScope(scope: SettingsScope) {
-    scrollPositions.current.settings = 0;
-    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
     setActiveSettingsScope(scope);
   }
 
@@ -599,8 +563,9 @@ export function App({
         return goToView("search");
       case "newImport":
         return goToView("import");
-      case "quickLook":
       case "toggleFocusMode":
+        return toggleFocusMode();
+      case "quickLook":
       case "cycleRegion":
       case "contextTab":
         return;
@@ -721,17 +686,58 @@ export function App({
 
   if (firstRunScreen) return firstRunScreen;
 
+  // The stack is on screen unless Settings or an old screen of the rail's menu covers it.
+  const stackShown = legacyView === null && workspace.destination !== "settings";
+  const navigatorOn =
+    workspace.destination !== "settings" && workspace.navigator[workspace.destination];
+  // The old Wiki hosts its own navigator (the host appears with Explore's root, T141); focus mode
+  // hides the navigator (design record §8 rule 9).
+  const navigatorHidden = activeView === "wiki" || focusMode;
+  const showNavigator =
+    stackShown && hasNavigator(workspace.destination) && navigatorOn && !navigatorHidden;
+  const legacyViews: LegacyViewsValue = {
+    t,
+    appSettings,
+    settings,
+    isSaving,
+    setActiveView,
+    libraryTarget,
+    consumeLibraryTarget,
+    openLibrarySource,
+    clearLibraryTarget: () => setLibraryTarget(null),
+    openTopic,
+    wikiNotice,
+    wikiTopicId: currentWikiTopic(wikiHistory),
+    openWikiObject,
+    closeWikiTopic,
+    openAskSource,
+    openConnectionsSettings,
+    knowledgeGraphMode,
+    setKnowledgeGraphMode,
+    knowledgeGraphViewState: (mode) => knowledgeGraphViewStates.current[mode],
+    preserveKnowledgeGraphViewState,
+    openGraphSource,
+    openGraphNote,
+    activeSettingsScope,
+    selectSettingsScope,
+    updateAppSettings,
+    updateStorageSettings,
+    selectObsidianVault,
+    setMonitoringCapture,
+    pushToast: (message, tone) => pushToast(t(message), tone),
+    openImportedSource,
+    searchState,
+    setSearchState
+  };
+
   return (
     <div className={cn(isDarkMode && "dark")}>
       <Shell
         t={t}
         place={workspace.destination}
         legacyView={legacyView}
-        navigatorOn={
-          workspace.destination !== "settings" && workspace.navigator[workspace.destination]
-        }
-        // The old Wiki hosts its own navigator; the host appears with Explore's root (T141).
-        navigatorHidden={activeView === "wiki"}
+        navigatorOn={navigatorOn}
+        navigatorHidden={navigatorHidden}
         dataEnabled
         onGo={goToPlace}
         onOpenLegacy={setActiveView}
@@ -742,153 +748,25 @@ export function App({
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}
       >
-        <div
-          ref={scrollContainerRef}
-          className="h-full min-h-0 overflow-auto overscroll-contain p-5"
-          onScroll={(event) => {
-            scrollPositions.current[activeView] = event.currentTarget.scrollTop;
-          }}
-        >
-          <div hidden={activeView !== "library"}>
-            <LibraryView
-              t={t}
-              active={activeView === "library"}
-              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
-              externalTarget={libraryTarget}
-              onNavigate={scrollActiveViewToTop}
-              onTargetConsumed={consumeLibraryTarget}
-              onOpenRecent={(target) => openLibrarySource({ ...target, origin: "recents" })}
-              onExitToWiki={() => {
-                setLibraryTarget(null);
-                setActiveView("wiki");
-              }}
-              onExitToSearch={() => {
-                setLibraryTarget(null);
-                setActiveView("search");
-              }}
-              onExitToKnowledgeGraph={() => {
-                setLibraryTarget(null);
-                setActiveView("knowledgeGraph");
-              }}
-              onOpenTopic={openTopic}
+        <LegacyViewsContext.Provider value={legacyViews}>
+          <PanelStack
+            t={t}
+            workspace={workspace}
+            dispatch={dispatch}
+            viewportWidth={viewportWidth}
+            // The context panel joins the layout with its card (T143); until then nothing docks.
+            chrome={{ navigator: showNavigator, context: false }}
+            shown={stackShown}
+            focusMode={focusMode}
+            onToggleFocusMode={toggleFocusMode}
+            registry={stackRegistry}
+          />
+          {stackShown ? null : (
+            <LegacyScreen
+              view={activeView === "settings" ? "settings" : (legacyView ?? "settings")}
             />
-          </div>
-          <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace
-              t={t}
-              active={activeView === "wiki"}
-              noticeToken={wikiNotice?.token ?? null}
-              noticeKind={wikiNotice?.kind}
-              topicId={currentWikiTopic(wikiHistory)}
-              onNavigate={openWikiObject}
-              onCloseTopic={closeWikiTopic}
-              onOpenLibrary={() => goToView("library")}
-              onOpenSource={openAskSource}
-            />
-          </div>
-          <div hidden={activeView !== "inbox"}>
-            <InboxScreen
-              t={t}
-              active={activeView === "inbox"}
-              onNavigate={openWikiObject}
-              onOpenConnections={openConnectionsSettings}
-            />
-          </div>
-          {activeView === "settings" ? (
-            // The old Settings keeps its section menu until Settings v2 (T161) brings its own column.
-            <div className="flex min-h-full gap-5">
-              <nav
-                aria-label={t("settings.dashboard.navigation.label")}
-                className="sticky top-0 w-60 shrink-0 self-start"
-              >
-                <SettingsScopeMenu
-                  activeScope={activeSettingsScope}
-                  t={t}
-                  onScopeChange={selectSettingsScope}
-                />
-              </nav>
-              <div className="min-w-0 flex-1">
-                <SettingsView
-                  onReset={async () => {
-                    window.location.reload();
-                  }}
-                  activeScope={activeSettingsScope}
-                  appSettings={appSettings}
-                  settings={settings}
-                  isSaving={isSaving}
-                  t={t}
-                  onAppSettingsChange={updateAppSettings}
-                  onChange={updateStorageSettings}
-                  onSelectObsidianVault={selectObsidianVault}
-                  onScopeChange={selectSettingsScope}
-                  onToast={(message, tone) => pushToast(t(message), tone)}
-                />
-              </div>
-            </div>
-          ) : activeView === "import" ? (
-            <ImportView
-              t={t}
-              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
-              onSaved={openImportedSource}
-            />
-          ) : activeView === "wiki" ? null : activeView === "search" ? (
-            <SearchView
-              t={t}
-              state={searchState}
-              onStateChange={setSearchState}
-              onOpenSource={(sourceItemId, passage) => {
-                libraryTargetToken.current += 1;
-                setLibraryTarget({
-                  sourceItemId,
-                  ...(passage ? { passage } : {}),
-                  token: libraryTargetToken.current
-                });
-                setActiveView("library");
-              }}
-              onOpenNote={(sourceItemId, noteId) =>
-                openLibrarySource({ sourceItemId, atomicNoteId: noteId })
-              }
-            />
-          ) : activeView === "jobs" ? (
-            <JobsView t={t} />
-          ) : activeView === "review" ? (
-            <ReviewQueueView t={t} />
-          ) : activeView === "knowledgeGraph" ? (
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  className="grid h-[calc(100vh-7rem)] place-items-center text-sm text-slate-500"
-                >
-                  {t("shell.states.loading")}
-                </div>
-              }
-            >
-              <KnowledgeGraphDashboard
-                t={t}
-                mode={knowledgeGraphMode}
-                wheelZoomSensitivity={appSettings.graphWheelZoomSensitivity}
-                initialViewState={knowledgeGraphViewStates.current[knowledgeGraphMode]}
-                onViewStateChange={preserveKnowledgeGraphViewState}
-                onModeChange={setKnowledgeGraphMode}
-                onOpenSource={openGraphSource}
-                onOpenAtomicNote={openGraphNote}
-              />
-            </Suspense>
-          ) : activeView === "debug" ? (
-            <MonitoringDashboard
-              enabled={appSettings.debugMode}
-              t={t}
-              fullCapture={appSettings.debugFullCapture}
-              onCaptureChange={setMonitoringCapture}
-              onOpenSource={(sourceItemId) => {
-                libraryTargetToken.current += 1;
-                setLibraryTarget({ sourceItemId, token: libraryTargetToken.current });
-                setActiveView("library");
-              }}
-            />
-          ) : null}
-        </div>
+          )}
+        </LegacyViewsContext.Provider>
       </Shell>
       <ToastViewport
         toasts={toasts}

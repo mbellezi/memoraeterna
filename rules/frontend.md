@@ -10,7 +10,7 @@ accessibility, visualizations or user-visible backend messages.
 - New code receives live updates through pushed events, not polling. Large lists
   and trees use bounded pages or virtualization. Background state is shown
   quietly (status indicators, drawers), never by blocking the reading surface.
-- Views that hold navigation, filters or scroll (Library, Wiki) stay mounted while hidden. A hidden view loads nothing, holds no open modal and ignores history events; shown again it refreshes in place only when its key is unchanged and its last load succeeded, otherwise a failed load stays visible and retryable.
+- Destinations and panels that hold navigation, filters or scroll stay mounted while hidden, and every object panel shows its path ribbon. A hidden view loads nothing, holds no open modal and ignores history events; shown again it refreshes in place only when its key is unchanged and its last load succeeded, otherwise a failed load stays visible and retryable.
 - A page resolves its links in one batch per revision and evidence-currency change; an opened note is read again. A refresh that found no change neither re-renders nor re-requests, and a failed resolution backs off.
 
 ## Visual language

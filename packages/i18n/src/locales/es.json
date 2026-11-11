@@ -3800,5 +3800,37 @@
       "omniShort": "Buscar o preguntar…",
       "status": "Estado de la actividad"
     }
+  },
+  "panelFrame": {
+    "back": "Atrás en este panel",
+    "close": "Cerrar panel",
+    "focus": "Enfoque",
+    "focusOn": "Modo enfoque · Esc para salir",
+    "forward": "Adelante en este panel",
+    "forwardSpine": "{kind}: {title}. Panel siguiente. Volver a abrir el panel",
+    "older": "más antiguos",
+    "olderList": "{count} paneles más antiguos",
+    "olderOpen": "{count} paneles más antiguos: {titles}. Abrir la lista",
+    "pin": "Fijar en el navegador",
+    "reopenRoot": "{title}. Volver a abrir",
+    "reopenSpine": "{kind}: {title}. Volver a abrir el panel",
+    "ribbon": {
+      "alsoIn": "también en",
+      "andMore": "y {count} más",
+      "choosePlace": "Elegir lugar",
+      "error": "No se pudo leer el lugar",
+      "expand": "Mostrar la ruta completa",
+      "label": "Lugar en el árbol",
+      "loading": "Buscando el lugar en el árbol…",
+      "placedByCitations": "colocada por las citas",
+      "retry": "Intentar de nuevo",
+      "tentative": "Lugar probable:",
+      "tentativeQuestion": "por las citas, cuando termine la respuesta",
+      "tentativeSource": "definido cuando terminen las notas",
+      "unsorted": "Sin lugar",
+      "untitled": "Tema sin nombre"
+    },
+    "stackLabel": "Paneles abiertos",
+    "untitled": "Sin título"
   }
 }

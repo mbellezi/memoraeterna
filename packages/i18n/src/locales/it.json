@@ -3791,5 +3791,37 @@
       "omniShort": "Cerca o chiedi…",
       "status": "Stato dell’attività"
     }
+  },
+  "panelFrame": {
+    "back": "Indietro in questo pannello",
+    "close": "Chiudi il pannello",
+    "focus": "Fuoco",
+    "focusOn": "Modalità fuoco · Esc per uscire",
+    "forward": "Avanti in questo pannello",
+    "forwardSpine": "{kind}: {title}. Pannello successivo. Riapri il pannello",
+    "older": "più vecchi",
+    "olderList": "{count} pannelli più vecchi",
+    "olderOpen": "{count} pannelli più vecchi: {titles}. Apri l’elenco",
+    "pin": "Fissa nel navigatore",
+    "reopenRoot": "{title}. Riapri",
+    "reopenSpine": "{kind}: {title}. Riapri il pannello",
+    "ribbon": {
+      "alsoIn": "anche in",
+      "andMore": "e altri {count}",
+      "choosePlace": "Scegli una posizione",
+      "error": "Impossibile leggere la posizione",
+      "expand": "Mostra il percorso completo",
+      "label": "Posizione nell’albero",
+      "loading": "Ricerca della posizione nell’albero…",
+      "placedByCitations": "collocata dalle citazioni",
+      "retry": "Riprova",
+      "tentative": "Posizione probabile:",
+      "tentativeQuestion": "dalle citazioni, quando la risposta sarà finita",
+      "tentativeSource": "definita quando le note saranno pronte",
+      "unsorted": "Senza posizione",
+      "untitled": "Argomento senza nome"
+    },
+    "stackLabel": "Pannelli aperti",
+    "untitled": "Senza titolo"
   }
 }

@@ -3793,5 +3793,37 @@
       "omniShort": "Search or ask…",
       "status": "Activity status"
     }
+  },
+  "panelFrame": {
+    "back": "Back in this panel",
+    "close": "Close panel",
+    "focus": "Focus",
+    "focusOn": "Focus mode · Esc exits",
+    "forward": "Forward in this panel",
+    "forwardSpine": "{kind}: {title}. Panel ahead. Reopen panel",
+    "older": "older",
+    "olderList": "{count} older panels",
+    "olderOpen": "{count} older panels: {titles}. Open the list",
+    "pin": "Pin in the navigator",
+    "reopenRoot": "{title}. Reopen",
+    "reopenSpine": "{kind}: {title}. Reopen panel",
+    "ribbon": {
+      "alsoIn": "also in",
+      "andMore": "and {count} more",
+      "choosePlace": "Choose a place",
+      "error": "Could not read the place",
+      "expand": "Show the whole path",
+      "label": "Place in the tree",
+      "loading": "Finding the place in the tree…",
+      "placedByCitations": "placed by the citations",
+      "retry": "Try again",
+      "tentative": "Likely place:",
+      "tentativeQuestion": "by the citations, when the answer is done",
+      "tentativeSource": "set when the notes are done",
+      "unsorted": "No place",
+      "untitled": "Untitled topic"
+    },
+    "stackLabel": "Open panels",
+    "untitled": "Untitled"
   }
 }

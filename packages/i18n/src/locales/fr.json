@@ -3798,5 +3798,37 @@
       "omniShort": "Chercher ou demander…",
       "status": "État de l’activité"
     }
+  },
+  "panelFrame": {
+    "back": "Retour dans ce panneau",
+    "close": "Fermer le panneau",
+    "focus": "Concentration",
+    "focusOn": "Mode concentration · Échap pour quitter",
+    "forward": "Avancer dans ce panneau",
+    "forwardSpine": "{kind} : {title}. Panneau suivant. Rouvrir le panneau",
+    "older": "plus anciens",
+    "olderList": "{count} panneaux plus anciens",
+    "olderOpen": "{count} panneaux plus anciens : {titles}. Ouvrir la liste",
+    "pin": "Épingler dans le navigateur",
+    "reopenRoot": "{title}. Rouvrir",
+    "reopenSpine": "{kind} : {title}. Rouvrir le panneau",
+    "ribbon": {
+      "alsoIn": "aussi dans",
+      "andMore": "et {count} de plus",
+      "choosePlace": "Choisir un emplacement",
+      "error": "Impossible de lire l’emplacement",
+      "expand": "Afficher le chemin complet",
+      "label": "Emplacement dans l’arbre",
+      "loading": "Recherche de l’emplacement dans l’arbre…",
+      "placedByCitations": "placée par les citations",
+      "retry": "Réessayer",
+      "tentative": "Emplacement probable :",
+      "tentativeQuestion": "par les citations, quand la réponse sera terminée",
+      "tentativeSource": "défini quand les notes seront prêtes",
+      "unsorted": "Sans emplacement",
+      "untitled": "Sujet sans nom"
+    },
+    "stackLabel": "Panneaux ouverts",
+    "untitled": "Sans titre"
   }
 }
