@@ -16,7 +16,6 @@ import {
   TopicTreeInputSchema,
   TopicUndoInputSchema,
   TopicUndoResultSchema,
-  TopicsChangedEventSchema,
   type TopicChangeSet,
   type TopicMutation,
   type TopicMutationResult,
@@ -31,7 +30,6 @@ import {
   type TopicTree,
   type TopicUndoInput,
   type TopicUndoResult,
-  type TopicsChangedEvent,
   type TopicsStatus
 } from "@app/domain";
 import {
@@ -128,56 +126,21 @@ export function registerTopicIpc(ipc: IpcMain, deps: TopicIpcDependencies): void
   });
 }
 
-/** What the push channel needs of a window's web contents. */
-export interface TopicsChangedTarget {
-  isDestroyed(): boolean;
-  /** `topicsChanged` carries its event; the view-history push (a pin, T26) carries none. */
-  send(channel: string, payload?: TopicsChangedEvent): void;
-}
-
-/** The emitter the topic service calls after a change-set commits (its coalescer lives there). */
-export type TopicsChangedEmitter = (event: TopicsChangedEvent) => void;
-
-/**
- * The `topicsChanged` channel: validates each event and sends it to every live window. It sends
- * nothing by itself and holds no state: the topic service calls it once per committed (and
- * coalesced) change, so no window ever hears of a generation that a read cannot see yet. An event
- * that does not match the contract is reported, never sent.
- */
-export function createTopicsChangedPublisher(
-  targets: () => Iterable<TopicsChangedTarget>,
-  onInvalid: (error: Error) => void = (error) => console.error(error.message)
-): TopicsChangedEmitter {
-  return (event) => {
-    const parsed = TopicsChangedEventSchema.safeParse(event);
-    if (!parsed.success) {
-      onInvalid(new Error(`Invalid topicsChanged event: ${parsed.error.message}`));
-      return;
-    }
-    for (const target of targets()) {
-      if (!target.isDestroyed()) target.send(ipcChannels.topicsChanged, parsed.data);
-    }
-  };
-}
-
 export interface TopicTreeIpcOptions
   extends TopicOperationHandlers, Omit<TopicReadServiceOptions, "getPool"> {
   getPool: () => PgPool | null;
-  /** The windows that hear `topicsChanged` (`webContents.getAllWebContents()`). */
-  targets: () => Iterable<TopicsChangedTarget>;
-  onInvalidEvent?: (error: Error) => void;
 }
 
 /**
- * The whole topic IPC surface in one call: the read service, every handler and the push channel. The
- * topic service's factory calls it once and gives `emitChanged` to its coalescer, which calls it
- * after each committed change-set.
+ * The whole topic IPC surface in one call: the read service and every handler. The topic service's
+ * factory calls it once. The tree's changes are not pushed from here: a committed change reaches
+ * every window as `tree.changed` on the bus (F5 D16), after the coalescer.
  */
 export function registerTopicTreeIpc(
   ipc: IpcMain,
   options: TopicTreeIpcOptions
-): { read: TopicReadService; emitChanged: TopicsChangedEmitter } {
-  const { targets, onInvalidEvent, mutate, undo, review, reembed, ...rest } = options;
+): { read: TopicReadService } {
+  const { mutate, undo, review, reembed, ...rest } = options;
   const { writeOverview, cancelOverview, ...readOptions } = rest;
   const read = new TopicReadService(readOptions);
   registerTopicIpc(ipc, {
@@ -189,5 +152,5 @@ export function registerTopicTreeIpc(
     ...(writeOverview ? { writeOverview } : {}),
     ...(cancelOverview ? { cancelOverview } : {})
   });
-  return { read, emitChanged: createTopicsChangedPublisher(targets, onInvalidEvent) };
+  return { read };
 }

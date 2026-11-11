@@ -79,13 +79,31 @@ describe("the entry files", () => {
     );
   });
 
-  it("publish model.loading, view.changed and import.progress beside their old channels", () => {
+  it("publish model.loading, view.changed and import.progress on the bus and on no other channel", () => {
     expect(main).toMatch(/type: "model\.loading", modelId: payload\.modelId/u);
     expect(main).toMatch(/events\.publish\(\{ type: "view\.changed" \}\)/u);
     expect(handlers).toMatch(/appEventPort\.publish\(\{\s*type: "import\.progress"/u);
-    // The old channels keep sending until the consumers move (T125).
-    expect(main).toContain("ipcChannels.aiLocalEmbeddingLoadStatus");
-    expect(main).toContain("ipcChannels.viewHistoryChanged");
-    expect(handlers).toContain("ipcChannels.ingestionFileProgress");
+    // The six channels the bus replaced (T125) are gone from the senders.
+    for (const retired of [
+      "aiLocalEmbeddingLoadStatus",
+      "viewHistoryChanged",
+      "ingestionFileProgress",
+      "relationsChanged",
+      "topicsChanged",
+      "relationExplanationDelta"
+    ]) {
+      expect(main).not.toContain(`ipcChannels.${retired}`);
+      expect(handlers).not.toContain(`ipcChannels.${retired}`);
+    }
+  });
+
+  it("send to a window only on the bus, the menu, the window navigation and the deep link", () => {
+    const sent = new Set<string>();
+    for (const source of [main, handlers])
+      for (const match of source.matchAll(/(?:\.send|sendToMainWindow)\(\s*ipcChannels\.(\w+)/gu))
+        sent.add(match[1]!);
+    expect([...sent].sort()).toEqual(
+      ["appEvents", "menuCommand", "obsidianDeepLink", "windowNavigation"].sort()
+    );
   });
 });

@@ -644,7 +644,6 @@ describe("desktop IPC contracts", () => {
     expect(ipcChannels.relationsCancelExplain).toBe("app:relations:cancel-explain");
     expect(ipcChannels.relationsExplainSource).toBe("app:relations:explain-source");
     expect(ipcChannels.relationsCancelExplainSource).toBe("app:relations:cancel-explain-source");
-    expect(ipcChannels.relationExplanationDelta).toBe("app:relations:explanation-delta");
     expect(ipcChannels.relationsReview).toBe("app:relations:review");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
@@ -711,5 +710,20 @@ describe("desktop IPC contracts", () => {
       false
     );
     expect(knowledgeGraphDashboardEdgeSchema.safeParse(edge).success).toBe(false);
+  });
+});
+
+describe("the push channels (F5 D16, T125)", () => {
+  const retired = [
+    "topicsChanged",
+    "relationsChanged",
+    "viewHistoryChanged",
+    "aiLocalEmbeddingLoadStatus",
+    "relationExplanationDelta",
+    "ingestionFileProgress"
+  ];
+
+  it("no longer name the six channels the bus replaced", () => {
+    for (const name of retired) expect(Object.keys(ipcChannels)).not.toContain(name);
   });
 });

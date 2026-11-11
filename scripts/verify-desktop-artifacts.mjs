@@ -60,17 +60,26 @@ for (const [owner, methods] of Object.entries({
     "status",
     "reembed",
     "overview",
-    "cancelOverview",
-    "subscribeChanged"
+    "cancelOverview"
   ],
   system: ["subscribeNavigation"],
   objects: ["locate", "neighborhood"],
-  relations: ["review", "subscribeChanged", "subscribeExplanationDelta"],
+  relations: ["review"],
   ai: ["classRoutes", "applyPreset", "testClassRoute", "setClassRoute", "setDeciderMode"]
 })) {
   for (const method of methods)
     assert.equal(typeof exposed.get("app")?.[owner]?.[method], "function", `${owner}.${method}`);
 }
+// The six push channels the bus replaced (F5 T125) are gone: the one listener is `onAppEvent`.
+assert.equal(typeof exposed.get("app")?.onAppEvent, "function", "onAppEvent");
+for (const [owner, method] of [
+  ["topics", "subscribeChanged"],
+  ["relations", "subscribeChanged"],
+  ["relations", "subscribeExplanationDelta"],
+  ["viewHistory", "subscribeChanged"],
+  ["ai", "subscribeLocalEmbeddingLoadStatus"]
+])
+  assert.equal(exposed.get("app")?.[owner]?.[method], undefined, `${owner}.${method} was removed`);
 // The legacy wiki, curator, organization and maintenance surface was removed (F2 T39r, T40r): the
 // packaged preload must not expose any of it.
 const app = exposed.get("app");

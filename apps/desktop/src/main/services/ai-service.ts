@@ -3512,6 +3512,10 @@ export class AiService {
     this.registry.unregister(descriptor.providerId, descriptor.modelId);
     await occupant.adapter.dispose?.();
     if (occupant.runtime === "mlx") await this.unloadMlxSlot(slot, options.unload ?? true);
+    // The embedder left memory: the sticky `model.loading` of its model must not stay `ready`
+    // (F5 D16). The id is the one the load path reports (`selection.modelId`, the adapter's own).
+    if (slot === "embed")
+      this.options.onLocalEmbeddingLoadStatus?.({ state: "released", modelId: descriptor.modelId });
   }
 
   /**

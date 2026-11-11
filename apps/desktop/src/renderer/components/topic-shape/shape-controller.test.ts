@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TopicChangeSet, TopicShape, TopicUndoResult, TopicsChangedEvent } from "@app/domain";
+import type { TopicChangeSet, TopicShape, TopicUndoResult } from "@app/domain";
 import { createTranslator } from "@app/i18n";
 
+import type { AppEventOf } from "../../../shared/app-events";
+import { createFakeAppEvents } from "../../lib/fake-app-events";
 import {
   sameShapeContent,
   ShapeController,
@@ -21,9 +23,10 @@ interface Harness {
     changeSet: ReturnType<typeof vi.fn<ShapeApi["changeSet"]>>;
     undo: ReturnType<typeof vi.fn<ShapeApi["undo"]>>;
     review: ReturnType<typeof vi.fn<ShapeApi["review"]>>;
-    subscribeChanged: ReturnType<typeof vi.fn<ShapeApi["subscribeChanged"]>>;
   };
-  emit(event: Partial<TopicsChangedEvent>): void;
+  /** `tree.changed` on the bus, a fake of `window.app.onAppEvent`. */
+  events: ReturnType<typeof createFakeAppEvents>;
+  emit(event: Partial<AppEventOf<"tree.changed">>): void;
   listening(): boolean;
 }
 
@@ -31,38 +34,35 @@ function harness(
   answer: (rootId: string | null) => Promise<TopicShape | null> = () =>
     Promise.resolve(sampleShape())
 ): Harness {
-  let listener: ((event: TopicsChangedEvent) => void) | null = null;
+  const events = createFakeAppEvents();
   const api = {
     shape: vi.fn<ShapeApi["shape"]>((input) => answer(input?.rootId ?? null)),
     changeSet: vi.fn<ShapeApi["changeSet"]>(() => Promise.resolve(sampleChangeSet())),
     undo: vi.fn<ShapeApi["undo"]>(() =>
       Promise.resolve({ status: "undone", changeSetId: shapeId(950), generation: 13 })
     ),
-    review: vi.fn<ShapeApi["review"]>(() => Promise.resolve({ status: "applied" })),
-    subscribeChanged: vi.fn<ShapeApi["subscribeChanged"]>((next) => {
-      listener = next;
-      return () => {
-        listener = null;
-      };
-    })
+    review: vi.fn<ShapeApi["review"]>(() => Promise.resolve({ status: "applied" }))
   };
   const controller = new ShapeController({
     api: () => api,
+    onTreeChanged: (listener) => events.api.onAppEvent("tree.changed", listener),
     now: () => Date.UTC(2026, 9, 15, 18, 0, 0),
     refreshDelayMs: 1_000
   });
   return {
     controller,
     api,
+    events,
     emit: (event) =>
-      listener?.({
+      events.emit({
+        type: "tree.changed",
         treeId: shapeId(999),
         generation: 13,
         topicIds: null,
         changeSetId: null,
         ...event
       }),
-    listening: () => listener !== null
+    listening: () => events.listening("tree.changed") > 0
   };
 }
 
@@ -101,7 +101,7 @@ describe("showing the shape", () => {
     h.controller.show(false, t);
     await settle();
     expect(h.api.shape).not.toHaveBeenCalled();
-    expect(h.api.subscribeChanged).not.toHaveBeenCalled();
+    expect(h.events.listening("tree.changed")).toBe(0);
     h.controller.show(true, t);
     await settle();
     expect(h.api.shape).toHaveBeenCalledTimes(1);

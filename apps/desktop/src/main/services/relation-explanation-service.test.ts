@@ -560,49 +560,13 @@ describe("relation explanation IPC registration", () => {
     expect(cancel({}, { relationId: ids.relation })).toBe(true);
   });
 
-  it("streams the text to the window that asked, on the delta channel, for the request's ID", async () => {
-    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
-    const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
-    const sent: Array<[string, unknown]> = [];
-    const sender = {
-      isDestroyed: () => false,
-      send: (...args: [string, unknown]) => sent.push(args)
-    };
-    const service = {
-      explain: vi.fn(async (_input: unknown, onText?: (text: string) => void) => {
-        onText?.("The first note");
-        return null;
-      })
-    };
-    registerRelationExplanationIpc(ipc as unknown as IpcMain, service as never);
-    const requestId = "00000000-0000-4000-8000-0000000000c1";
-    await handlers.get(ipcChannels.relationsExplain)!(
-      { sender },
-      { relationId: ids.relation, requestId }
-    );
-    expect(sent).toEqual([
-      [
-        ipcChannels.relationExplanationDelta,
-        { requestId, relationId: ids.relation, text: "The first note" }
-      ]
-    ]);
-    // A window that was destroyed meanwhile receives nothing, and nothing throws.
-    sent.length = 0;
-    sender.isDestroyed = () => true;
-    await handlers.get(ipcChannels.relationsExplain)!(
-      { sender },
-      { relationId: ids.relation, requestId }
-    );
-    expect(sent).toEqual([]);
-  });
-
-  it("also publishes each piece as explanation.delta on the bus, for any window (T115)", async () => {
+  it("publishes each piece as explanation.delta on the bus, the only channel for it (T115, T125)", async () => {
     const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
     const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
     const published: unknown[] = [];
     appEventPort.attach({ publish: (event) => published.push(event) });
     try {
-      const sender = { isDestroyed: () => true, send: vi.fn() };
+      const sender = { isDestroyed: () => false, send: vi.fn() };
       const service = {
         explain: vi.fn(async (_input: unknown, onText?: (text: string) => void) => {
           onText?.("The first");
@@ -619,6 +583,8 @@ describe("relation explanation IPC registration", () => {
         { type: "explanation.delta", requestId, relationId: ids.relation, text: "The first note" }
       ]);
       for (const event of published) expect(AppEventSchema.safeParse(event).success).toBe(true);
+      // Nothing goes to the asking window directly any more.
+      expect(sender.send).not.toHaveBeenCalled();
       // Without a request ID nobody asked for a stream, on either path.
       published.length = 0;
       await explain({ sender }, { relationId: ids.relation });

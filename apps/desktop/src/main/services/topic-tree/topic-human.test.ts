@@ -103,7 +103,7 @@ describe("the human operations in the topic services", () => {
       env: {},
       isPackaged: false,
       logger: quiet,
-      ipc: { main: ipc, targets: () => [] }
+      ipc: { main: ipc }
     });
     try {
       const requests: [string, unknown][] = [

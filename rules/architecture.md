@@ -26,8 +26,8 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 - Heavy work runs in `worker_threads` or a supervised sidecar/helper. Workers
   never touch UI state. Presentation-only computation (graph layout, community
   detection) may run in a renderer Web Worker over validated snapshots.
-- New code pushes state changes to the renderer as typed events on the one
-  `AppEventBus` channel, published after commit; it adds no channel or polling loop.
+- State changes reach the renderer as typed events on the one `AppEventBus` channel, published after
+  commit; the bus is the only push channel besides UI commands (menu, window navigation, deep link).
 - Objects (source, note, topic, question, entity) are addressed as `memora://<kind>/<uuid>` with
   anchors `#passage=<chunkId>`, `#span=<sourceSpanId>`, `#section=<sectionId>` and
   `#relation=<sourceRelationId>`; `@app/domain` holds the one parser. `objects.locate` is a read

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { TopicsChangedEvent } from "@app/domain";
+
+import type { AppEventApi } from "./app-events";
 
 /**
  * A view that shows where an object sits in the topic tree (a note's page, a source's panel) reads
@@ -10,9 +11,8 @@ import type { TopicsChangedEvent } from "@app/domain";
 /** How long after the first push of a burst the views read again. */
 export const topicsPulseDelayMs = 1_000;
 
-export interface TopicsPulseApi {
-  subscribeChanged(listener: (event: TopicsChangedEvent) => void): () => void;
-}
+/** The part of `window.app` the pulse needs: the bus. It listens to `tree.changed`. */
+export type TopicsPulseApi = AppEventApi;
 
 /**
  * Calls `onPulse` once, `delayMs` after the first push of a burst; a push that arrives while that
@@ -24,7 +24,7 @@ export function watchTopicsChanged(
   delayMs: number = topicsPulseDelayMs
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const unsubscribe = api().subscribeChanged(() => {
+  const unsubscribe = api().onAppEvent("tree.changed", () => {
     if (timer !== null) return;
     timer = setTimeout(() => {
       timer = null;
@@ -47,7 +47,7 @@ export function useTopicsPulse(active: boolean): number {
   useEffect(() => {
     if (!active) return;
     return watchTopicsChanged(
-      () => window.app.topics,
+      () => window.app,
       () => setPulse((current) => current + 1)
     );
   }, [active]);

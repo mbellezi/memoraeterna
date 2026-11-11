@@ -8,7 +8,7 @@ import {
 import type { MessageKey } from "@app/i18n";
 
 import type { AppEventHandler, AppEventType } from "../../../shared/app-events";
-import type { DesktopApi, LocalEmbeddingLoadStatus } from "../../../shared/ipc";
+import type { DesktopApi } from "../../../shared/ipc";
 import { topicErrorMessage } from "../topic-shape/shape-controller";
 import {
   actionEffects,
@@ -31,9 +31,8 @@ export interface ActivityApi {
   changes: Pick<DesktopApi["changes"], "list" | "undo">;
   /** The Inbox's own count of every kind that waits for the person (`inbox.changed` follows it). */
   inbox: Pick<DesktopApi["inbox"], "counts">;
+  /** The bus, including `model.loading`: the local embedder loading into memory (a sticky state). */
   onAppEvent: DesktopApi["onAppEvent"];
-  /** The local embedder loading into memory (the signal the blocking dialog used to follow). */
-  subscribeEmbeddingLoad: (listener: (status: LocalEmbeddingLoadStatus) => void) => () => void;
 }
 
 export function activityApiOf(app: DesktopApi): ActivityApi {
@@ -43,8 +42,7 @@ export function activityApiOf(app: DesktopApi): ActivityApi {
     budget: app.budget,
     changes: app.changes,
     inbox: app.inbox,
-    onAppEvent: (type, handler) => app.onAppEvent(type, handler),
-    subscribeEmbeddingLoad: (listener) => app.ai.subscribeLocalEmbeddingLoadStatus(listener)
+    onAppEvent: (type, handler) => app.onAppEvent(type, handler)
   };
 }
 
@@ -134,7 +132,7 @@ export class ActivityController {
         this.inboxToken += 1;
         this.update({ inboxTotal: event.total });
       }),
-      api.subscribeEmbeddingLoad((status) => {
+      api.onAppEvent("model.loading", (status) => {
         if (status.state === "loading") {
           this.loadingModelId = status.modelId;
           if (!this.snapshot.embedderLoading) this.update({ embedderLoading: true });

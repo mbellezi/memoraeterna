@@ -21,10 +21,11 @@ import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
 
 import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicReadService } from "./topic-read-service.js";
-import { createTopicsChangedPublisher, registerTopicIpc } from "./topic-ipc.js";
+import { TopicChangeCoalescer } from "./topic-changes.js";
+import { registerTopicIpc } from "./topic-ipc.js";
 
 // The registered handlers against a real PostgreSQL database: what the renderer's calls return, and
-// the rule that makes `topicsChanged` safe: a window that hears of generation g reads at least g.
+// the rule that makes `tree.changed` safe: a window that hears of generation g reads at least g.
 const workspace = resolve(import.meta.dirname, "../../../../../..");
 const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
 const sidecarInstalled = existsSync(join(sidecar.binDir, "postgres"));
@@ -40,10 +41,6 @@ describe.skipIf(!sidecarInstalled)("topic IPC against a real PostgreSQL database
   let pool: PgPool | undefined;
   let generation = 0;
   const pushed: TopicsChangedEvent[] = [];
-  const windows: Array<{
-    isDestroyed: () => boolean;
-    send: (channel: string, payload: unknown) => void;
-  }> = [];
   const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
   const call = async (channel: string, payload?: unknown) => handlers.get(channel)!({}, payload);
 
@@ -203,11 +200,9 @@ describe.skipIf(!sidecarInstalled)("topic IPC against a real PostgreSQL database
   });
 
   it("makes a pushed generation readable the moment the window hears of it", async () => {
-    const publish = createTopicsChangedPublisher(() => windows);
-    windows.push({
-      isDestroyed: () => false,
-      send: (_channel, payload) => pushed.push(payload as TopicsChangedEvent)
-    });
+    // The coalescer's listener is what the application publishes as `tree.changed`.
+    const changes = new TopicChangeCoalescer();
+    changes.subscribe((event) => pushed.push(event));
     const repo = createTopicTreeRepository(pool!);
     const client = await pool!.connect();
     const before = generation;
@@ -247,7 +242,8 @@ describe.skipIf(!sidecarInstalled)("topic IPC against a real PostgreSQL database
       client.release();
     }
     // The service pushes after the commit, as T15's coalescer does.
-    publish({ treeId: ids.tree, generation, topicIds: [ids.leaf], changeSetId });
+    changes.record({ treeId: ids.tree, generation, topicIds: [ids.leaf], changeSetId });
+    changes.flush();
     expect(pushed).toHaveLength(1);
     const read = (await call(ipcChannels.topicsTree, {})) as { generation: number };
     expect(read.generation).toBeGreaterThanOrEqual(pushed[0]!.generation);

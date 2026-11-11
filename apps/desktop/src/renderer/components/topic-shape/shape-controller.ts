@@ -1,13 +1,8 @@
-import {
-  topicErrorKeys,
-  topicReadLimits,
-  type TopicChangeSet,
-  type TopicShape,
-  type TopicsChangedEvent
-} from "@app/domain";
+import { topicErrorKeys, topicReadLimits, type TopicChangeSet, type TopicShape } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import type { DesktopApi } from "../../../shared/ipc";
+import { onTreeChanged, type TreeChangedListener } from "../../lib/app-events";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import { nextAnnouncement } from "../topic-page/topic-page-model";
 
@@ -54,13 +49,12 @@ export interface ShapeSnapshot {
   readAt: number;
 }
 
-export type ShapeApi = Pick<
-  DesktopApi["topics"],
-  "shape" | "changeSet" | "undo" | "review" | "subscribeChanged"
->;
+export type ShapeApi = Pick<DesktopApi["topics"], "shape" | "changeSet" | "undo" | "review">;
 
 export interface ShapeControllerDeps {
   api: () => ShapeApi;
+  /** Where the tree's committed changes arrive (default: `tree.changed` on the bus). */
+  onTreeChanged?: (listener: TreeChangedListener) => () => void;
   now?: () => number;
   /** Quiet time after a pushed change before the shape is read again. */
   refreshDelayMs?: number;
@@ -335,7 +329,7 @@ export class ShapeController {
 
   private listen(): void {
     if (this.unsubscribe) return;
-    this.unsubscribe = this.deps.api().subscribeChanged((event: TopicsChangedEvent) => {
+    this.unsubscribe = (this.deps.onTreeChanged ?? onTreeChanged)((event) => {
       if (!this.active || this.snapshot.load.status !== "ready") return;
       if (event.generation <= this.seenGeneration) return;
       if (this.timer !== null) return;

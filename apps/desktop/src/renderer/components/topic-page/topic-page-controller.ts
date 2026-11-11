@@ -3,6 +3,7 @@ import type { Translator } from "@app/i18n";
 
 import type { DesktopApi } from "../../../shared/ipc";
 import type { ViewHistoryRecordInput } from "../../../shared/view-history";
+import { onTreeChanged, type TreeChangedListener } from "../../lib/app-events";
 import type { LoadOutcome } from "../../lib/hidden-view";
 import { viewsToRecord } from "../../lib/view-history";
 import {
@@ -47,13 +48,12 @@ export interface TopicPageSnapshot {
   readAt: number;
 }
 
-export type TopicPageApi = Pick<
-  DesktopApi["topics"],
-  "page" | "notes" | "undo" | "subscribeChanged"
->;
+export type TopicPageApi = Pick<DesktopApi["topics"], "page" | "notes" | "undo">;
 
 export interface TopicPageControllerDeps {
   api: () => TopicPageApi;
+  /** Where the tree's committed changes arrive (default: `tree.changed` on the bus). */
+  onTreeChanged?: (listener: TreeChangedListener) => () => void;
   record: (input: ViewHistoryRecordInput) => void;
   now?: () => number;
   /** Quiet time after a pushed change before the page is read again. */
@@ -274,7 +274,7 @@ export class TopicPageController {
 
   private listen(): void {
     if (this.unsubscribe) return;
-    this.unsubscribe = this.deps.api().subscribeChanged((event) => {
+    this.unsubscribe = (this.deps.onTreeChanged ?? onTreeChanged)((event) => {
       const load = this.snapshot.load;
       if (!this.active || load.status !== "ready") return;
       if (!eventTouchesPage(event, load.page, this.seenGeneration)) return;

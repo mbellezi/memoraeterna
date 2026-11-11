@@ -476,13 +476,11 @@ void app.whenReady().then(() => {
       (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
     onLocalEmbeddingLoadStatus: (status) => {
       const payload = localEmbeddingLoadStatusSchema.parse(status);
-      // A model loading into memory is a wait the Activity explains (F4 D27).
-      gardenerStatus?.noteEmbeddingLoad(payload.state);
-      // The same state on the bus, sticky per model, so a window that loads later learns it (F5 D16).
+      // A model loading into memory is a wait the Activity explains (F4 D27); a released one waits
+      // for nothing, like one that is ready.
+      gardenerStatus?.noteEmbeddingLoad(payload.state === "released" ? "ready" : payload.state);
+      // On the bus, sticky per model, so every window and a window that loads later learn it (F5 D16).
       events.publish({ type: "model.loading", modelId: payload.modelId, state: payload.state });
-      for (const contents of webContents.getAllWebContents()) {
-        if (!contents.isDestroyed()) contents.send(ipcChannels.aiLocalEmbeddingLoadStatus, payload);
-      }
     },
     // Owner decision 19: the library's first embedding route installs the local ranker.
     onRoutesSeeded: (tasks) => firstRunRanker?.onRoutesSeeded(tasks),
@@ -558,8 +556,9 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     wake: () => jobSupervisor?.wake("light"),
     logger: console,
-    // The topic IPC (T16) is registered once by the factory; `topicsChanged` reaches every window.
-    ipc: { main: ipcMain, targets: () => webContents.getAllWebContents() },
+    // The topic IPC (T16) is registered once by the factory; its changes reach every window as
+    // `tree.changed` on the bus.
+    ipc: { main: ipcMain },
     // Topic names and label vectors (T18) call the AI service in the library's content language.
     ai: aiService,
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
@@ -582,7 +581,7 @@ void app.whenReady().then(() => {
       ),
     reviewConfigChanges: true
   });
-  // `topicsChanged` stays until F5; the bus carries the same committed, coalesced change as `tree.changed`.
+  // The committed, coalesced change of the topic tree reaches every window as `tree.changed` (F4 D15).
   topicTreeServices.changes.subscribe((change) =>
     events.publish({ type: "tree.changed", ...change })
   );
@@ -796,7 +795,7 @@ void app.whenReady().then(() => {
     ...(backgroundPolicy ? { backgroundPolicy: backgroundPolicy.jobs } : {})
   });
   // `job.progress` (F4 D26): every state change the supervisor announces becomes one coalesced read of
-  // the job counts. `relationsChanged` stays until F5; the bus carries it as `relation.created`.
+  // the job counts. The notes whose relations changed reach every window as `relation.created`.
   jobProgress = connectJobProgress({
     supervisor: jobSupervisor,
     getPool: () => databaseService?.getPool() ?? null,
@@ -930,12 +929,7 @@ void app.whenReady().then(() => {
     ipcMain,
     new ViewHistoryService({
       getPool: () => databaseService?.getPool() ?? null,
-      onChanged: () => {
-        for (const contents of webContents.getAllWebContents())
-          if (!contents.isDestroyed()) contents.send(ipcChannels.viewHistoryChanged);
-        // The old channel keeps sending until the consumers move (T125); the bus event is the new one.
-        events.publish({ type: "view.changed" });
-      }
+      onChanged: () => events.publish({ type: "view.changed" })
     })
   );
   registerIpcHandlers(

@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 
+import type { AppEventApi } from "./app-events";
+
 /**
  * A page that lists a note's relations reads them again when they changed (F3 3.19): a link job
  * committed new ones, an explanation withdrew one, the owner kept or removed one. The main process
- * pushes the notes whose relations changed, already coalesced; a page listens only for its own
- * note and reads once after a burst, never on a timer.
+ * publishes the notes whose relations changed on the bus, already coalesced, as `relation.created`
+ * and as `object.changed` with the change `relations`; a page listens only for its own note and
+ * reads once after a burst, never on a timer.
  */
 
 /** How long after the first push for the note of a burst the page reads again. */
 export const relationsPulseDelayMs = 500;
 
-export interface RelationsPulseApi {
-  subscribeChanged(listener: (event: { noteIds: readonly string[] }) => void): () => void;
-}
+/** The part of `window.app` the pulse needs: the bus. */
+export type RelationsPulseApi = AppEventApi;
 
 /**
  * Calls `onPulse` once, `delayMs` after the first push that names `noteId`; a push that arrives
@@ -26,15 +28,32 @@ export function watchRelationsChanged(
   delayMs: number = relationsPulseDelayMs
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const unsubscribe = api().subscribeChanged((event) => {
-    if (timer !== null || !event.noteIds.includes(noteId)) return;
+  const pulse = () => {
+    if (timer !== null) return;
     timer = setTimeout(() => {
       timer = null;
       onPulse();
     }, delayMs);
-  });
+  };
+  const bus = api();
+  const stops = [
+    bus.onAppEvent("relation.created", (event) => {
+      if (event.noteIds.includes(noteId)) pulse();
+    }),
+    bus.onAppEvent("object.changed", (event) => {
+      // An overflow lists no ids: every open note page reads again, once.
+      if ("overflow" in event) {
+        if (event.kinds.includes("note")) pulse();
+      } else if (
+        event.refs.some(
+          (ref) => ref.kind === "note" && ref.id === noteId && ref.change === "relations"
+        )
+      )
+        pulse();
+    })
+  ];
   return () => {
-    unsubscribe();
+    for (const stop of stops) stop();
     if (timer !== null) clearTimeout(timer);
     timer = null;
   };
@@ -49,7 +68,7 @@ export function useRelationsPulse(active: boolean, noteId: string): number {
   useEffect(() => {
     if (!active) return;
     return watchRelationsChanged(
-      () => window.app.relations,
+      () => window.app,
       noteId,
       () => setPulse((current) => current + 1)
     );

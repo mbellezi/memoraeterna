@@ -26,7 +26,6 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
-import { RelationExplanationDeltaEventSchema, RelationsChangedEventSchema } from "../shared/ipc.js";
 import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 import {
   BudgetSnapshotSchema,
@@ -77,7 +76,6 @@ import {
   TopicTreeSchema,
   TopicUndoInputSchema,
   TopicUndoResultSchema,
-  TopicsChangedEventSchema,
   TopicsStatusSchema
 } from "@app/domain";
 import {
@@ -190,7 +188,6 @@ import {
   databaseStatusSchema,
   ipcChannels,
   fileImportInputSchema,
-  fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
   fileStructurePreviewInputSchema,
   fileStructurePreviewSchema,
@@ -235,7 +232,6 @@ import {
   localModelDefaultsInputSchema,
   localModelViewSchema,
   localModelStatusEntrySchema,
-  localEmbeddingLoadStatusSchema,
   repositoryTokenInputSchema,
   obsidianSyncStatusSchema,
   similarityDebugRunSchema,
@@ -244,15 +240,21 @@ import {
   languageCodeSchema
 } from "../shared/ipc";
 
-// One IPC listener serves every `onAppEvent` subscription: it is attached with the first and
-// removed with the last, and each payload is validated again before a handler sees it.
-const appEvents = createAppEventDispatcher({
-  attach(deliver) {
-    const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => deliver(payload);
-    ipcRenderer.on(ipcChannels.appEvents, handler);
-    return () => ipcRenderer.removeListener(ipcChannels.appEvents, handler);
-  }
-});
+// One IPC listener serves every `onAppEvent` subscription, and each payload is validated again
+// before a handler sees it. It listens from the start: the main process replays the sticky states
+// (database, models, Gardener) once the page has loaded, before any view has subscribed, and the
+// dispatcher keeps the last of each for the view that subscribes next.
+const appEvents = createAppEventDispatcher(
+  {
+    attach(deliver) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => deliver(payload);
+      ipcRenderer.on(ipcChannels.appEvents, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.appEvents, handler);
+    }
+  },
+  undefined,
+  { eager: true }
+);
 
 const api: DesktopApi = {
   onAppEvent: (type, handler) => appEvents.subscribe(type, handler),
@@ -375,23 +377,7 @@ const api: DesktopApi = {
             ipcChannels.relationsCancelExplainSource,
             RelationExplainInputSchema.parse(input)
           )
-        ),
-    subscribeChanged(listener) {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-        const event = RelationsChangedEventSchema.safeParse(payload);
-        if (event.success) listener(event.data);
-      };
-      ipcRenderer.on(ipcChannels.relationsChanged, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.relationsChanged, handler);
-    },
-    subscribeExplanationDelta(listener) {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-        const event = RelationExplanationDeltaEventSchema.safeParse(payload);
-        if (event.success) listener(event.data);
-      };
-      ipcRenderer.on(ipcChannels.relationExplanationDelta, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.relationExplanationDelta, handler);
-    }
+        )
   },
   topics: {
     tree: async (input) =>
@@ -451,15 +437,7 @@ const api: DesktopApi = {
             ipcChannels.topicsOverviewCancel,
             TopicOverviewCancelInputSchema.parse(input)
           )
-        ),
-    subscribeChanged(listener) {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-        const event = TopicsChangedEventSchema.safeParse(payload);
-        if (event.success) listener(event.data);
-      };
-      ipcRenderer.on(ipcChannels.topicsChanged, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.topicsChanged, handler);
-    }
+        )
   },
   changes: {
     list: async (input) =>
@@ -560,11 +538,6 @@ const api: DesktopApi = {
         .int()
         .min(0)
         .parse(await ipcRenderer.invoke(ipcChannels.viewHistoryClear));
-    },
-    subscribeChanged(listener) {
-      const handler = () => listener();
-      ipcRenderer.on(ipcChannels.viewHistoryChanged, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.viewHistoryChanged, handler);
     }
   },
   database: {
@@ -792,22 +765,11 @@ const api: DesktopApi = {
       );
       return ingestionResultSchema.parse(result);
     },
-    async extractFileMetadata(input: FileMetadataExtractionInput, onProgress) {
+    async extractFileMetadata(input: FileMetadataExtractionInput) {
       const requestId = input.requestId ?? globalThis.crypto.randomUUID();
       const payload = fileMetadataExtractionInputSchema.parse({ ...input, requestId });
-      const handler = (_event: Electron.IpcRendererEvent, progressPayload: unknown) => {
-        const progress = fileImportProgressSchema.safeParse(progressPayload);
-        if (progress.success && progress.data.requestId === requestId) {
-          onProgress?.(progress.data);
-        }
-      };
-      if (onProgress) ipcRenderer.on(ipcChannels.ingestionFileProgress, handler);
-      try {
-        const result = await ipcRenderer.invoke(ipcChannels.ingestionExtractFileMetadata, payload);
-        return result === null ? null : fileMetadataExtractionResultSchema.parse(result);
-      } finally {
-        if (onProgress) ipcRenderer.removeListener(ipcChannels.ingestionFileProgress, handler);
-      }
+      const result = await ipcRenderer.invoke(ipcChannels.ingestionExtractFileMetadata, payload);
+      return result === null ? null : fileMetadataExtractionResultSchema.parse(result);
     },
     async previewFileStructure(input) {
       return fileStructurePreviewSchema.parse(
@@ -1025,14 +987,6 @@ const api: DesktopApi = {
     }
   },
   ai: {
-    subscribeLocalEmbeddingLoadStatus(listener) {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-        const status = localEmbeddingLoadStatusSchema.safeParse(payload);
-        if (status.success) listener(status.data);
-      };
-      ipcRenderer.on(ipcChannels.aiLocalEmbeddingLoadStatus, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.aiLocalEmbeddingLoadStatus, handler);
-    },
     async listProviders() {
       return aiProviderConfigSchema
         .array()

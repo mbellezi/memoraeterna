@@ -38,7 +38,7 @@ describe("Topic page IPC", () => {
       for (const match of source.matchAll(/window\.app\.(\w+)/g)) calls.add(match[1]!);
     expect([...calls]).toEqual(["topics"]);
     for (const [file, source] of Object.entries(sources)) {
-      const allowed = ["page", "notes", "undo", "subscribeChanged"];
+      const allowed = ["page", "notes", "undo"];
       if (file.endsWith("/topic-overview-controller.ts"))
         allowed.push("overview", "cancelOverview");
       for (const method of source.matchAll(/\bapi\(\)\s*\.(\w+)/g)) {

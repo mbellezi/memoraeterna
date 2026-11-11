@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TopicNotes, TopicPage, TopicUndoResult, TopicsChangedEvent } from "@app/domain";
+import type { TopicNotes, TopicPage, TopicUndoResult } from "@app/domain";
 import { createTranslator } from "@app/i18n";
 
 import { viewHistoryRecordInputSchema } from "../../../shared/view-history";
+import { createFakeAppEvents } from "../../lib/fake-app-events";
+import type { AppEventOf } from "../../../shared/app-events";
 import { TopicPageController, type TopicPageApi } from "./topic-page-controller";
 import { noteLeaf, topicFixtureId, topicPage } from "./topic-page-fixtures";
 
@@ -16,10 +18,11 @@ interface Harness {
     page: ReturnType<typeof vi.fn<TopicPageApi["page"]>>;
     notes: ReturnType<typeof vi.fn<TopicPageApi["notes"]>>;
     undo: ReturnType<typeof vi.fn<TopicPageApi["undo"]>>;
-    subscribeChanged: ReturnType<typeof vi.fn<TopicPageApi["subscribeChanged"]>>;
   };
   record: ReturnType<typeof vi.fn>;
-  emit(event: Partial<TopicsChangedEvent>): void;
+  /** `tree.changed` on the bus, a fake of `window.app.onAppEvent`. */
+  events: ReturnType<typeof createFakeAppEvents>;
+  emit(event: Partial<AppEventOf<"tree.changed">>): void;
   listening(): boolean;
 }
 
@@ -27,21 +30,16 @@ function harness(
   answer: (id: string) => Promise<TopicPage | null> = (id) =>
     Promise.resolve(topicPage({ topic: { ...topicPage().topic, id } }))
 ): Harness {
-  let listener: ((event: TopicsChangedEvent) => void) | null = null;
+  const events = createFakeAppEvents();
   const api = {
     page: vi.fn<TopicPageApi["page"]>((input) => answer(input.id)),
     notes: vi.fn<TopicPageApi["notes"]>(),
-    undo: vi.fn<TopicPageApi["undo"]>(),
-    subscribeChanged: vi.fn<TopicPageApi["subscribeChanged"]>((next) => {
-      listener = next;
-      return () => {
-        listener = null;
-      };
-    })
+    undo: vi.fn<TopicPageApi["undo"]>()
   };
   const record = vi.fn();
   const controller = new TopicPageController({
     api: () => api,
+    onTreeChanged: (listener) => events.api.onAppEvent("tree.changed", listener),
     record,
     now: () => Date.UTC(2026, 9, 15, 18, 0, 0),
     refreshDelayMs: 1_000
@@ -50,15 +48,17 @@ function harness(
     controller,
     api,
     record,
+    events,
     emit: (event) =>
-      listener?.({
+      events.emit({
+        type: "tree.changed",
         treeId: topicFixtureId(999),
         generation: 13,
         topicIds: null,
         changeSetId: null,
         ...event
       }),
-    listening: () => listener !== null
+    listening: () => events.listening("tree.changed") > 0
   };
 }
 
@@ -188,7 +188,7 @@ describe("a hidden page", () => {
     h.controller.show(topicId, false, t);
     await settle();
     expect(h.api.page).not.toHaveBeenCalled();
-    expect(h.api.subscribeChanged).not.toHaveBeenCalled();
+    expect(h.events.listening("tree.changed")).toBe(0);
     expect(h.record).not.toHaveBeenCalled();
   });
 

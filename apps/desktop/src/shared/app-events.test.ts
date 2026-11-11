@@ -445,3 +445,100 @@ describe("the preload's dispatcher", () => {
     expect(onHandlerError).toHaveBeenCalledWith(boom);
   });
 });
+
+describe("the dispatcher's sticky states (T125)", () => {
+  const database = { ...samples["database.status"] } as AppEvent;
+  const loading = (modelId: string, state: "loading" | "ready" | "released" | "failed") =>
+    ({ type: "model.loading", modelId, state }) as AppEvent;
+
+  it("hands the last sticky value, once, to a subscriber that arrives after it was delivered", () => {
+    const { wire, push } = fakeWire();
+    const dispatcher = createAppEventDispatcher(wire, undefined, { eager: true });
+    push(loading("a", "loading"));
+    push(loading("a", "ready"));
+    push(loading("b", "ready"));
+    push(database);
+    push(samples["job.progress"]);
+
+    const models = vi.fn();
+    const databases = vi.fn();
+    const jobs = vi.fn();
+    dispatcher.subscribe("model.loading", models);
+    dispatcher.subscribe("database.status", databases);
+    dispatcher.subscribe("job.progress", jobs);
+
+    // One value per model, the newest; a type that is not sticky is never replayed.
+    expect(models.mock.calls.map(([event]) => event)).toEqual([
+      loading("a", "ready"),
+      loading("b", "ready")
+    ]);
+    expect(databases).toHaveBeenCalledExactlyOnceWith(database);
+    expect(jobs).not.toHaveBeenCalled();
+
+    // A later event reaches the subscriber once, and a third subscriber sees the newest value.
+    push(loading("a", "released"));
+    expect(models).toHaveBeenCalledTimes(3);
+    const late = vi.fn();
+    dispatcher.subscribe("model.loading", late);
+    expect(late.mock.calls.map(([event]) => event)).toEqual([
+      loading("a", "released"),
+      loading("b", "ready")
+    ]);
+  });
+
+  it("listens from the start when eager, and never lets go of the wire", () => {
+    const { wire, attach, detach } = fakeWire();
+    const dispatcher = createAppEventDispatcher(wire, undefined, { eager: true });
+    expect(attach).toHaveBeenCalledTimes(1);
+    dispatcher.subscribe("job.progress", vi.fn())();
+    expect(detach).not.toHaveBeenCalled();
+    expect(attach).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay an invalid sticky event", () => {
+    const { wire, push } = fakeWire();
+    const dispatcher = createAppEventDispatcher(wire, undefined, { eager: true });
+    push({ type: "model.loading", modelId: "", state: "ready" });
+    const models = vi.fn();
+    dispatcher.subscribe("model.loading", models);
+    expect(models).not.toHaveBeenCalled();
+  });
+
+  it("forgets what it held once nothing listens (it cannot know what changed meanwhile)", () => {
+    const { wire, push } = fakeWire();
+    const dispatcher = createAppEventDispatcher(wire);
+    const stop = dispatcher.subscribe("database.status", vi.fn());
+    push(database);
+    stop();
+    const again = vi.fn();
+    dispatcher.subscribe("database.status", again);
+    expect(again).not.toHaveBeenCalled();
+  });
+
+  it("keeps a handler that throws from stopping the replay", () => {
+    const { wire, push } = fakeWire();
+    const onHandlerError = vi.fn();
+    const dispatcher = createAppEventDispatcher(wire, onHandlerError, { eager: true });
+    push(database);
+    const boom = new Error("boom");
+    dispatcher.subscribe("database.status", () => {
+      throw boom;
+    });
+    expect(onHandlerError).toHaveBeenCalledWith(boom);
+  });
+
+  it("names the stages and page counts of an import in its progress event", () => {
+    const event = {
+      type: "import.progress",
+      runId: id(18),
+      fileIndex: 0,
+      fraction: 0.4,
+      stage: "processing_pages",
+      completedPages: 3,
+      totalPages: 10
+    };
+    expect(AppEventSchema.safeParse(event).success).toBe(true);
+    expect(AppEventSchema.safeParse({ ...event, stage: "unknown_stage" }).success).toBe(false);
+    expect(AppEventSchema.safeParse({ ...event, totalPages: 0 }).success).toBe(false);
+  });
+});

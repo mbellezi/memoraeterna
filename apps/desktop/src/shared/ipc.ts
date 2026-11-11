@@ -83,7 +83,6 @@ import type {
   TopicTreeInput,
   TopicUndoInput,
   TopicUndoResult,
-  TopicsChangedEvent,
   TopicsStatus
 } from "@app/domain";
 import type { TopicOverviewCancelInput, TopicOverviewInput, TopicOverviewState } from "@app/domain";
@@ -176,8 +175,6 @@ export const ipcChannels = {
   relationsReview: "app:relations:review",
   relationsExplainSource: "app:relations:explain-source",
   relationsCancelExplainSource: "app:relations:cancel-explain-source",
-  relationsChanged: "app:relations:changed",
-  relationExplanationDelta: "app:relations:explanation-delta",
   topicsTree: "app:topics:tree",
   topicsPath: "app:topics:path",
   topicsPage: "app:topics:page",
@@ -191,7 +188,6 @@ export const ipcChannels = {
   topicsReembed: "app:topics:reembed",
   topicsOverview: "app:topics:overview",
   topicsOverviewCancel: "app:topics:overview-cancel",
-  topicsChanged: "app:topics:changed",
   changesList: "app:changes:list",
   changesPendingCounts: "app:changes:pending-counts",
   changesUndo: "app:changes:undo",
@@ -209,7 +205,6 @@ export const ipcChannels = {
   viewHistoryList: "app:view-history:list",
   viewHistoryPin: "app:view-history:pin",
   viewHistoryClear: "app:view-history:clear",
-  viewHistoryChanged: "app:view-history:changed",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
   onboardingState: "app:onboarding:state",
@@ -248,7 +243,6 @@ export const ipcChannels = {
   ingestionEditSource: "app:ingestion:edit-source",
   ingestionExtractFileMetadata: "app:ingestion:extract-file-metadata",
   ingestionPreviewFileStructure: "app:ingestion:preview-file-structure",
-  ingestionFileProgress: "app:ingestion:file-progress",
   ingestionEnrichMetadata: "app:ingestion:enrich-metadata",
   ingestionApplyEnrichmentCover: "app:ingestion:apply-enrichment-cover",
   ingestionFindDuplicate: "app:ingestion:find-duplicate",
@@ -310,7 +304,6 @@ export const ipcChannels = {
   aiDecisionsSaveKey: "app:ai:decisions:save-key",
   aiDecisionsRemoveKey: "app:ai:decisions:remove-key",
   aiDecisionsTestKey: "app:ai:decisions:test-key",
-  aiLocalEmbeddingLoadStatus: "app:ai:local-embedding-load-status",
   localModelsList: "app:local-models:list",
   localModelsStatuses: "app:local-models:statuses",
   localModelsDownload: "app:local-models:download",
@@ -382,15 +375,15 @@ export const googleBooksKeyInputSchema = z
   .strict();
 export const googleBooksKeyStatusSchema = z.object({ configured: z.boolean() }).strict();
 
-/** The `relationsChanged` push (F3 3.11 step 4): the notes whose relations a commit changed. */
+/** The notes whose relations a commit changed (F3 3.11 step 4); `relation.created` carries it on the bus. */
 export const RelationsChangedEventSchema = z
   .object({ noteIds: z.array(z.string().uuid()).min(1).max(200) })
   .strict();
 export type RelationsChangedEvent = z.infer<typeof RelationsChangedEventSchema>;
 
 /**
- * The `relationExplanationDelta` push (F3 D22): an explanation as it is written, to the window that
- * asked for it. `text` is the whole text so far, with canonical note references, coalesced to one
+ * An explanation as it is written (F3 D22), the payload of `explanation.delta` on the bus. The window
+ * that asked for it keeps the events of its own `requestId`. `text` is the whole text so far, with canonical note references, coalesced to one
  * message per 50 ms; empty text says what was shown is void (the answer is written again).
  */
 export const RelationExplanationDeltaEventSchema = z
@@ -1336,7 +1329,7 @@ export const searchResultsSchema = z.array(SearchResultSchema);
 
 export const localEmbeddingLoadStatusSchema = z
   .object({
-    state: z.enum(["loading", "ready", "failed"]),
+    state: z.enum(["loading", "ready", "released", "failed"]),
     modelId: z.string().min(1)
   })
   .strict();
@@ -1958,8 +1951,8 @@ export interface DesktopApi {
      * notes unrelated (the relation is withdrawn); `unrelated` when it found them so but the
      * relation stays (a human verdict, an earlier version): no explanation is available. Both
      * verdicts are cached with the relation, so a later open asks nobody. Null when the relation is
-     * gone. A request with a `requestId` also receives the text as it is written, on
-     * `subscribeExplanationDelta`.
+     * gone. A request with a `requestId` also receives the text as it is written, as
+     * `explanation.delta` events on the bus.
      */
     explain: (input: RelationExplainInput) => Promise<RelationExplainOutcome | null>;
     /**
@@ -1980,12 +1973,6 @@ export interface DesktopApi {
     explainSource: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
     /** Stops the source relation's explanation being written; true when one was stopped. */
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
-    /** Pushed after a link job commits (F3 3.11), coalesced: the notes whose relations changed. */
-    subscribeChanged: (listener: (event: RelationsChangedEvent) => void) => () => void;
-    /** Pushed while an explanation is written (F3 D22): the text so far, for a request's id. */
-    subscribeExplanationDelta: (
-      listener: (event: RelationExplanationDeltaEvent) => void
-    ) => () => void;
   };
   /**
    * The topic tree (docs/plan.md F2): reads without AI, human operations through the engine, and a
@@ -2016,8 +2003,6 @@ export interface DesktopApi {
     overview: (input: TopicOverviewInput) => Promise<TopicOverviewState>;
     /** Stops the overview being written for a topic; true when one was stopped. */
     cancelOverview: (input: TopicOverviewCancelInput) => Promise<boolean>;
-    /** Pushed after a change-set commits, coalesced; never polled. */
-    subscribeChanged: (listener: (event: TopicsChangedEvent) => void) => () => void;
   };
   /**
    * Change-sets of every store (F4 D10): the topic engine's, relation passes and overview writes,
@@ -2072,7 +2057,6 @@ export interface DesktopApi {
     setPinned: (address: string, pinned: boolean) => Promise<ViewHistoryEntry | null>;
     /** Forgets every unpinned entry; pins stay. Resolves with the number of entries removed. */
     clear: () => Promise<number>;
-    subscribeChanged: (listener: () => void) => () => void;
   };
   database: {
     getStatus: () => Promise<DatabaseStatus>;
@@ -2141,9 +2125,9 @@ export interface DesktopApi {
       input: z.infer<typeof sourceUrlPreviewInputSchema>
     ) => Promise<z.infer<typeof sourceUrlPreviewSchema>>;
     editSource: (input: SourceEditInput) => Promise<z.infer<typeof sourceEditResultSchema>>;
+    /** Progress arrives as `import.progress` events on the bus, under the request's `requestId`. */
     extractFileMetadata: (
-      input: FileMetadataExtractionInput,
-      onProgress?: (progress: FileImportProgress) => void
+      input: FileMetadataExtractionInput
     ) => Promise<FileMetadataExtractionResult | null>;
     previewFileStructure: (input: FileStructurePreviewInput) => Promise<FileStructurePreview>;
     enrichMetadata: (input: MetadataEnrichmentInput) => Promise<EnrichmentCandidate[]>;
@@ -2226,9 +2210,6 @@ export interface DesktopApi {
     saveDecisionsKey: (apiKey: string) => Promise<AiDecisionsStatus>;
     removeDecisionsKey: () => Promise<AiDecisionsStatus>;
     testDecisionsKey: () => Promise<AiDecisionsStatus>;
-    subscribeLocalEmbeddingLoadStatus: (
-      listener: (status: LocalEmbeddingLoadStatus) => void
-    ) => () => void;
   };
   localModels: {
     list: () => Promise<LocalModelView[]>;

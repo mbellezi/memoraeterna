@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import {
   databaseStatusSchema,
+  fileImportProgressStageSchema,
   localModelStatusSchema,
   obsidianSyncStatusSchema,
   RelationExplanationDeltaEventSchema,
@@ -116,12 +117,19 @@ export const ModelDownloadEventSchema = z
   })
   .strict();
 
-/** `topicsChanged`, bridged (the old channel stays until F5). */
+/**
+ * `tree.changed` (F4 D15): a committed, coalesced change of the topic tree with its generation, its
+ * topics and its change-set. It stays beside `object.changed` for the consumers that need the
+ * reason (the generation a page has already read).
+ */
 export const TreeChangedEventSchema = TopicsChangedEventSchema.extend({
   type: z.literal("tree.changed")
 });
 
-/** `relationsChanged`, bridged (the old channel stays until F5). */
+/**
+ * `relation.created` (F3 3.11): the notes whose relations a link job, a review or a withdrawal
+ * changed. It stays beside `object.changed` for the pages that read one note's relations.
+ */
 export const RelationCreatedEventSchema = RelationsChangedEventSchema.extend({
   type: z.literal("relation.created")
 });
@@ -327,13 +335,20 @@ export const ExplanationDeltaEventSchema = RelationExplanationDeltaEventSchema.e
   type: z.literal("explanation.delta")
 }).strict();
 
-/** `import.progress`: how far one import run is through its current file. */
+/**
+ * `import.progress`: how far one import run is through its current file. `runId` is the request id
+ * the import was started with. The stage and the page counts of the file's own progress travel
+ * with it, so the import card names what is happening and needs no channel of its own.
+ */
 export const ImportProgressEventSchema = z
   .object({
     type: z.literal("import.progress"),
     runId: z.string().min(1).max(200),
     fileIndex: count,
-    fraction: z.number().min(0).max(1)
+    fraction: z.number().min(0).max(1),
+    stage: fileImportProgressStageSchema.optional(),
+    completedPages: count.optional(),
+    totalPages: z.number().int().positive().optional()
   })
   .strict();
 
@@ -387,6 +402,33 @@ export interface AppEventDispatcher {
   subscribe<T extends AppEventType>(type: T, handler: AppEventHandler<T>): () => void;
 }
 
+/**
+ * The states a window that loads late must still learn (D16): the main process keeps the last value
+ * of each and replays it on `did-finish-load`, and the dispatcher keeps the last value it heard so a
+ * subscriber that arrives after the replay gets it too. Each entry names the key of one value:
+ * `model.loading` keeps one per model.
+ */
+export const stickyAppEventKeys = {
+  "database.status": () => "",
+  "gardener.status": () => "",
+  "model.loading": (event: AppEventOf<"model.loading">) => event.modelId
+} as const;
+export type StickyAppEventType = keyof typeof stickyAppEventKeys;
+
+function stickyKeyOf(event: AppEvent): string | null {
+  if (!Object.hasOwn(stickyAppEventKeys, event.type)) return null;
+  const keyOf = stickyAppEventKeys[event.type as StickyAppEventType] as (event: AppEvent) => string;
+  return `${event.type}\u0000${keyOf(event)}`;
+}
+
+export interface AppEventDispatcherOptions {
+  /**
+   * Listens on the wire from the start and never stops, so a sticky event that arrives before the
+   * first subscription (the replay on load) is kept for it. The preload sets it.
+   */
+  eager?: boolean;
+}
+
 /** A handler that throws must not stop the others, and must not vanish: it surfaces on its own turn. */
 function rethrowLater(error: unknown): void {
   setTimeout(() => {
@@ -396,27 +438,38 @@ function rethrowLater(error: unknown): void {
 
 /**
  * The renderer side of the bus. One wire listener serves every subscription (attached with the
- * first, detached with the last); each payload is validated again and an invalid one is dropped, so
- * a handler only ever sees an event of the type it asked for.
+ * first and detached with the last, or from the start when `eager`); each payload is validated
+ * again and an invalid one is dropped, so a handler only ever sees an event of the type it asked
+ * for. The last event of each sticky type and key is kept and handed once to a subscriber that
+ * arrives later, so a view that mounts after the window loaded still learns the database and model
+ * states.
  */
 export function createAppEventDispatcher(
   wire: AppEventWire,
-  onHandlerError: (error: unknown) => void = rethrowLater
+  onHandlerError: (error: unknown) => void = rethrowLater,
+  options: AppEventDispatcherOptions = {}
 ): AppEventDispatcher {
   const handlers = new Map<AppEventType, Set<(event: AppEvent) => void>>();
+  const sticky = new Map<string, AppEvent>();
   let detach: (() => void) | null = null;
+
+  const run = (handler: (event: AppEvent) => void, event: AppEvent): void => {
+    try {
+      handler(event);
+    } catch (error) {
+      onHandlerError(error);
+    }
+  };
 
   const deliver = (payload: unknown): void => {
     const parsed = AppEventSchema.safeParse(payload);
     if (!parsed.success) return;
-    for (const handler of [...(handlers.get(parsed.data.type) ?? [])]) {
-      try {
-        handler(parsed.data);
-      } catch (error) {
-        onHandlerError(error);
-      }
-    }
+    const stickyKey = stickyKeyOf(parsed.data);
+    if (stickyKey) sticky.set(stickyKey, parsed.data);
+    for (const handler of [...(handlers.get(parsed.data.type) ?? [])]) run(handler, parsed.data);
   };
+
+  if (options.eager) detach = wire.attach(deliver);
 
   return {
     subscribe(type, handler) {
@@ -426,13 +479,16 @@ export function createAppEventDispatcher(
       if (!set) handlers.set(type, (set = new Set()));
       set.add(entry);
       detach ??= wire.attach(deliver);
+      for (const event of [...sticky.values()]) if (event.type === type) run(entry, event);
       return () => {
         const current = handlers.get(type);
         if (!current?.delete(entry)) return;
         if (current.size === 0) handlers.delete(type);
-        if (handlers.size === 0) {
+        if (handlers.size === 0 && !options.eager) {
           detach?.();
           detach = null;
+          // Nothing hears the wire now, so what was kept may be out of date.
+          sticky.clear();
         }
       };
     }

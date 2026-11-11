@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { AppEventHandler, AppEventType } from "../../shared/app-events";
+import type { AppEventHandler, AppEventOf, AppEventType } from "../../shared/app-events";
 import { useStableCallback } from "./stable-callback";
 
 /**
@@ -62,4 +62,16 @@ export function useAppEvent<T extends AppEventType>(
     () => subscribeAppEvent(active, () => window.app, type, stable),
     [active, type, stable]
   );
+}
+
+/** What listens to the topic tree's committed changes (`tree.changed`, with the generation it reached). */
+export type TreeChangedListener = (event: AppEventOf<"tree.changed">) => void;
+
+/**
+ * Listens to `tree.changed` until the returned function is called. The topic page and the shape
+ * follow the generation they have read, which only this event carries; a test hands a controller
+ * its own listener instead.
+ */
+export function onTreeChanged(listener: TreeChangedListener): () => void {
+  return subscribe("tree.changed", listener);
 }

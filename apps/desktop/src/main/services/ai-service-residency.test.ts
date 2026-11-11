@@ -133,6 +133,7 @@ interface ServiceOptions {
   /** Total memory of the machine; 64 GiB (the owner's Mac) unless a test states another. */
   totalMemoryBytes?: number;
   availableMemoryBytes?: () => Promise<number>;
+  onLocalEmbeddingLoadStatus?: (status: { state: string; modelId: string }) => void;
 }
 
 function service(options: ServiceOptions = {}) {
@@ -143,6 +144,9 @@ function service(options: ServiceOptions = {}) {
     resourcesPath: "/tmp",
     isPackaged: false,
     getKeepLocalEmbeddingModelsLoaded: async () => true,
+    ...(options.onLocalEmbeddingLoadStatus
+      ? { onLocalEmbeddingLoadStatus: options.onLocalEmbeddingLoadStatus as never }
+      : {}),
     machine: {
       platform: "darwin",
       arch: "arm64",
@@ -331,6 +335,27 @@ describe("residency", () => {
     expect(generative!.dispose).toHaveBeenCalledOnce();
     expect(rankerAdapter!.dispose).toHaveBeenCalledOnce();
     expect(Object.values(internals.resident).filter(Boolean)).toEqual([]);
+  });
+
+  it("reports the embedding model as released when it leaves its slot, and no other model (F5 D16)", async () => {
+    const statuses: Array<{ state: string; modelId: string }> = [];
+    const { ai, internals } = fakeService({
+      onLocalEmbeddingLoadStatus: (status) => statuses.push(status)
+    });
+    await internals.createLocalAdapter(ids.generativeA);
+    await internals.createLocalAdapter(ids.embedding);
+    await internals.residentRanker(ranker);
+
+    // Kept resident: nothing is released, so nothing is reported.
+    await ai.releaseLocalRuntime(false, true);
+    expect(statuses).toEqual([]);
+
+    await ai.releaseLocalRuntime(false, false);
+    expect(statuses).toEqual([{ state: "released", modelId: embedding.modelId }]);
+
+    // Dropping the writer and the ranker on dispose reports nothing more.
+    await ai.dispose();
+    expect(statuses).toHaveLength(1);
   });
 
   it("does not release a model that is running a call", async () => {

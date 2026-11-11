@@ -31,6 +31,7 @@ import {
   type SourceItemType
 } from "@app/domain";
 
+import type { AppEventOf } from "../../shared/app-events";
 import type {
   DocumentStructureView,
   DuplicateCandidate,
@@ -65,6 +66,7 @@ import { TagInput, normalizeTags } from "./ui/tag-input";
 import { Label } from "./ui/label";
 import { CoverImage } from "./ui/cover-image";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import { useAppEvent } from "../lib/app-events";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportEstimateChip } from "./onboarding/ImportEstimateChip";
 import { importChunkBasis, type ChunkBasis } from "./onboarding/import-estimate";
@@ -153,6 +155,25 @@ const fileProgressStageKeys = {
   storing_cover: "import.progress.stages.storingCover",
   completed: "import.progress.stages.completed"
 } satisfies Record<FileImportProgress["stage"], MessageKey>;
+
+/**
+ * The progress the card shows after an `import.progress` event of its own run: the stage and the
+ * page counts the event carries, else the ones already shown. Nothing is shown before the import
+ * started, and a late event after it ended changes nothing.
+ */
+export function progressOfImportEvent(
+  current: FileImportProgress | null,
+  event: AppEventOf<"import.progress">
+): FileImportProgress | null {
+  if (current === null) return null;
+  return {
+    requestId: current.requestId,
+    stage: event.stage ?? current.stage,
+    progress: event.fraction,
+    ...(event.completedPages === undefined ? {} : { completedPages: event.completedPages }),
+    ...(event.totalPages === undefined ? {} : { totalPages: event.totalPages })
+  };
+}
 
 export function ImportView({
   t,
@@ -254,6 +275,16 @@ export function ImportView({
   const [validationError, setValidationError] = useState("");
   const [busy, setBusy] = useState(false);
   const [fileProgress, setFileProgress] = useState<FileImportProgress | null>(null);
+  // The request whose progress this view shows; `import.progress` events of other runs are not its own.
+  const progressRunId = useRef<string | null>(null);
+  useAppEvent(
+    "import.progress",
+    (event) => {
+      if (event.runId !== progressRunId.current) return;
+      setFileProgress((current) => progressOfImportEvent(current, event));
+    },
+    active
+  );
   const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -510,16 +541,17 @@ export function ImportView({
 
   async function chooseFile() {
     const requestId = window.crypto.randomUUID();
+    progressRunId.current = requestId;
     setFileProgress({ requestId, stage: "selecting_file", progress: 0.01 });
     setProgressStartedAt(Date.now());
     setElapsedSeconds(0);
     setBusy(true);
     setStatus("shell.states.loading");
     try {
-      const extracted = await window.app.ingestion.extractFileMetadata(
-        { sourceType: sourceType === "PersonalNote" ? "GenericDocument" : sourceType, requestId },
-        setFileProgress
-      );
+      const extracted = await window.app.ingestion.extractFileMetadata({
+        sourceType: sourceType === "PersonalNote" ? "GenericDocument" : sourceType,
+        requestId
+      });
       if (!extracted) {
         setStatus("import.status.canceled");
         return;
@@ -548,6 +580,7 @@ export function ImportView({
       setStatus(errorMessageKey(error));
       setValidationError(t(errorMessageKey(error)));
     } finally {
+      progressRunId.current = null;
       setBusy(false);
       setFileProgress(null);
       setProgressStartedAt(null);

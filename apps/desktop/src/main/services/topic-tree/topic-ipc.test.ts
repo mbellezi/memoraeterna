@@ -2,13 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IpcMain } from "electron";
 
 import { ipcChannels } from "../../../shared/ipc.js";
-import {
-  createTopicsChangedPublisher,
-  registerTopicIpc,
-  registerTopicTreeIpc,
-  type TopicReadPort,
-  type TopicsChangedTarget
-} from "./topic-ipc.js";
+import { registerTopicIpc, registerTopicTreeIpc, type TopicReadPort } from "./topic-ipc.js";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const at = "2026-10-15T12:00:00.000Z";
@@ -64,7 +58,6 @@ describe("topic IPC channels", () => {
     const topicChannels = Object.entries(ipcChannels).filter(([name]) => name.startsWith("topics"));
     expect(topicChannels.map(([name]) => name).sort()).toEqual(
       [
-        "topicsChanged",
         "topicsChangeSet",
         "topicsMutate",
         "topicsNotes",
@@ -239,60 +232,12 @@ describe("registerTopicIpc", () => {
   });
 });
 
-describe("createTopicsChangedPublisher", () => {
-  const target = (destroyed = false) => {
-    const send = vi.fn();
-    return { isDestroyed: () => destroyed, send, contents: { isDestroyed: () => destroyed, send } };
-  };
-  const event = { treeId: id(1), generation: 4, topicIds: [id(2)], changeSetId: id(3) };
-
-  it("sends a valid event once to every live window and skips destroyed ones", () => {
-    const live = target();
-    const other = target();
-    const gone = target(true);
-    const publish = createTopicsChangedPublisher(() => [
-      live.contents,
-      gone.contents,
-      other.contents
-    ]);
-    publish(event);
-    expect(live.send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
-    expect(other.send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
-    expect(gone.send).not.toHaveBeenCalled();
-    publish({ ...event, topicIds: null, changeSetId: null });
-    expect(live.send).toHaveBeenCalledTimes(2);
-  });
-
-  it("reports an event that breaks the contract instead of sending it", () => {
-    const window = target();
-    const onInvalid = vi.fn();
-    const publish = createTopicsChangedPublisher(() => [window.contents], onInvalid);
-    publish({ ...event, generation: -1 });
-    publish({ ...event, topicIds: Array.from({ length: 201 }, (_, n) => id(n + 10)) });
-    publish({ ...event, stray: true } as never);
-    expect(window.send).not.toHaveBeenCalled();
-    expect(onInvalid).toHaveBeenCalledTimes(3);
-  });
-
-  it("asks for the windows when it publishes, so a window opened later still hears it", () => {
-    const windows: TopicsChangedTarget[] = [];
-    const publish = createTopicsChangedPublisher(() => windows);
-    publish(event);
-    const late = target();
-    windows.push(late.contents);
-    publish(event);
-    expect(late.send).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe("registerTopicTreeIpc", () => {
-  it("wires the read service, every handler and the push channel with one call", async () => {
+  it("wires the read service and every handler with one call, and pushes nothing itself", async () => {
     const { ipc, call, handlers } = fakeIpc();
-    const send = vi.fn();
     const mutate = vi.fn(async () => ({ changeSetId: id(5), generation: 2 }));
     const wired = registerTopicTreeIpc(ipc, {
       getPool: () => null,
-      targets: () => [{ isDestroyed: () => false, send }],
       mutate
     });
     expect(handlers.size).toBe(13);
@@ -306,9 +251,7 @@ describe("registerTopicTreeIpc", () => {
       changeSetId: id(5),
       generation: 2
     });
-    const event = { treeId: id(1), generation: 2, topicIds: null, changeSetId: id(5) };
-    wired.emitChanged(event);
-    expect(send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
+    expect(Object.keys(wired)).toEqual(["read"]);
     expect(wired.read).toBeDefined();
   });
 });

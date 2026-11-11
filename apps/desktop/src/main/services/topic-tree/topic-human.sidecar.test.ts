@@ -136,8 +136,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
   let services: TopicTreeServices;
   let supervisor: JobSupervisor;
   const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
-  const historyPushes: string[] = [];
-  // The same pushes as `view.changed` on the bus (T115): dual publishing until the renderer moves.
+  // The view-history pushes: `view.changed` on the bus (the only channel since T125).
   const viewChanges: AppEvent[] = [];
   const sources: string[] = [];
   const notesBySource = new Map<string, string[]>();
@@ -276,15 +275,7 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
         main: {
           handle: (channel: string, handler: (event: unknown, payload?: unknown) => unknown) =>
             handlers.set(channel, handler)
-        } as unknown as IpcMain,
-        targets: () => [
-          {
-            isDestroyed: () => false,
-            send: (channel: string) => {
-              if (channel === ipcChannels.viewHistoryChanged) historyPushes.push(channel);
-            }
-          }
-        ]
+        } as unknown as IpcMain
       }
     });
     supervisor = new JobSupervisor({
@@ -426,7 +417,6 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     const { areaA, areaB, state } = await pickTopics();
     const moving = getTopic(state, areaB).children[0]!;
     const dump = await dumpTree();
-    const pushes = historyPushes.length;
     const busPushes = viewChanges.length;
     const moved = await mutate({
       op: "move",
@@ -453,7 +443,6 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     expect(
       (await call<TopicChangeSet>(ipcChannels.topicsChangeSet, { id: moved.changeSetId })).summary
     ).toMatchObject({ status: "undone" });
-    expect(historyPushes.length).toBe(pushes);
     expect(viewChanges.length).toBe(busPushes);
   });
 
@@ -481,7 +470,6 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     const { areaB } = await pickTopics();
     const address = viewHistoryAddress("topic", areaB);
     const history = createViewHistoryRepository(pool);
-    const pushes = historyPushes.length;
     const busPushes = viewChanges.length;
     const pinned = await mutate({ op: "pin", id: areaB });
     expect(
@@ -490,7 +478,6 @@ describe.skipIf(!sidecarAvailable)("human structure operations on the PostgreSQL
     expect(
       (await history.list({ kinds: ["topic"] })).find((entry) => entry.address === address)
     ).toMatchObject({ pinned: true });
-    expect(historyPushes.length).toBe(pushes + 1);
     expect(viewChanges.length).toBe(busPushes + 1);
 
     expect(await undo(pinned.changeSetId)).toMatchObject({ status: "undone" });

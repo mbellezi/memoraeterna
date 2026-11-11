@@ -6,6 +6,7 @@ import {
   appEventJobIdsMax,
   consultationStages,
   objectChangedRefsMax,
+  stickyAppEventKeys,
   type AppEvent,
   type AppEventOf,
   type ObjectChangedRef
@@ -661,6 +662,20 @@ describe("the app event bus: sticky types", () => {
       model("b", "ready"),
       gardener("idle")
     ]);
+  });
+
+  it("keeps sticky exactly the types the renderer's dispatcher keeps", () => {
+    const { bus } = newBus();
+    bus.publish(database("ready"));
+    bus.publish(model("a", "ready"));
+    bus.publish(gardener("idle"));
+    bus.publish(progress([id(1)]));
+    vi.advanceTimersByTime(appEventCoalesceMs);
+    const { sends, window } = fakeWindow();
+    bus.replaySticky(window);
+    expect([...new Set(sends.map(([, event]) => (event as { type: string }).type))].sort()).toEqual(
+      Object.keys(stickyAppEventKeys).sort()
+    );
   });
 
   it("replays a value that is still inside its window (the freshest, not the last delivered)", () => {

@@ -166,7 +166,7 @@ describe("opening the links Obsidian sends", () => {
     );
     const record = vi.fn();
     const controller = new TopicPageController({
-      api: () => ({ page, subscribeChanged: () => () => undefined }) as unknown as TopicPageApi,
+      api: () => ({ page }) as unknown as TopicPageApi,
       record
     });
     controller.show(currentWikiTopic(history)!, true, createTranslator("en"));

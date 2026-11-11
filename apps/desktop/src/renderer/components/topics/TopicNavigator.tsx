@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { ChevronsDownUp, FolderPlus, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
 import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+import { subscribe as subscribeAppEvent } from "../../lib/app-events";
 import { Button } from "../ui/button";
 import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
 import {
@@ -335,8 +336,8 @@ export function TopicNavigator({
 
   // Pushed events are kept while the Wiki is hidden and applied when it is shown again.
   useEffect(() => {
-    const offTopics = window.app.topics.subscribeChanged((event) => store.handleChanged(event));
-    const offHistory = window.app.viewHistory.subscribeChanged(() => store.handleHistoryChanged());
+    const offTopics = subscribeAppEvent("tree.changed", (event) => store.handleChanged(event));
+    const offHistory = subscribeAppEvent("view.changed", () => store.handleHistoryChanged());
     return () => {
       offTopics();
       offHistory();

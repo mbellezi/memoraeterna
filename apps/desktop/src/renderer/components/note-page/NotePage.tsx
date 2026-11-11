@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState } from "react";
 import { formatObjectAddress, notePageLimits, type NotePage as NotePageData } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
+import { subscribe as subscribeAppEvent } from "../../lib/app-events";
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import type { PassageAnchor } from "../../lib/object-navigation";
@@ -392,7 +393,7 @@ export function NotePage({
     let canceled = false;
     // The text arrives as it is written, for this request only (a canceled one is ignored).
     const requestId = crypto.randomUUID();
-    const stopListening = window.app.relations.subscribeExplanationDelta((event) => {
+    const stopListening = subscribeAppEvent("explanation.delta", (event) => {
       if (event.requestId !== requestId || event.relationId !== relationId) return;
       setExplanations((current) => {
         const next = explanationStreamed(current[relationId], event.text);

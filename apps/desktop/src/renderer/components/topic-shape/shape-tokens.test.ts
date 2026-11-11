@@ -41,12 +41,6 @@ describe("Shape IPC", () => {
       expect(source, file).not.toMatch(/\.(consultation|ai|search|relations)\./);
     }
     expect([...calls]).toEqual(["topics"]);
-    expect([...methods].sort()).toEqual([
-      "changeSet",
-      "review",
-      "shape",
-      "subscribeChanged",
-      "undo"
-    ]);
+    expect([...methods].sort()).toEqual(["changeSet", "review", "shape", "undo"]);
   });
 });

@@ -48,7 +48,6 @@ const list = (...items: ReturnType<typeof changeSet>[]): ChangesList => ({
 
 function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityControllerDeps> = {}) {
   const handlers: Handlers = new Map();
-  let embeddingListener: ((status: { state: string; modelId: string }) => void) | null = null;
   const api = {
     gardener: {
       status: vi.fn(async () => idleStatus)
@@ -75,12 +74,6 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
       handlers.set(type, set);
       return () => set.delete(handler as (event: never) => void);
     }),
-    subscribeEmbeddingLoad: vi.fn((listener: typeof embeddingListener) => {
-      embeddingListener = listener;
-      return () => {
-        embeddingListener = null;
-      };
-    }),
     ...overrides
   } as unknown as ActivityApi & {
     gardener: { status: ReturnType<typeof vi.fn> };
@@ -104,8 +97,8 @@ function setup(overrides: Partial<ActivityApi> = {}, deps: Partial<ActivityContr
   };
   const listening = (type: AppEventType) => handlers.get(type)?.size ?? 0;
   const listeners = () => [...handlers.values()].reduce((sum, set) => sum + set.size, 0);
-  const embedding = (state: string, modelId = "embedder") =>
-    embeddingListener?.({ state, modelId });
+  const embedding = (state: "loading" | "ready" | "released" | "failed", modelId = "embedder") =>
+    emit({ type: "model.loading", modelId, state });
   return { controller, api, navigate, emit, listening, listeners, embedding };
 }
 
@@ -182,8 +175,9 @@ describe("the pill's status", () => {
     const { controller, api, listeners } = setup();
     controller.start();
     controller.start();
-    expect(api.onAppEvent).toHaveBeenCalledTimes(2);
-    expect(listeners()).toBe(2);
+    // The Gardener status, the Inbox count and the embedder (`model.loading`).
+    expect(api.onAppEvent).toHaveBeenCalledTimes(3);
+    expect(listeners()).toBe(3);
     controller.stop();
     expect(listeners()).toBe(0);
   });
@@ -225,6 +219,22 @@ describe("the embedder loading", () => {
     embedding("loading", "a");
     embedding("failed", "a");
     expect(controller.getSnapshot().embedderLoading).toBe(false);
+  });
+
+  it("is off when a model that was loading is released", () => {
+    const { controller, embedding } = setup();
+    controller.start();
+    embedding("loading", "a");
+    embedding("released", "a");
+    expect(controller.getSnapshot().embedderLoading).toBe(false);
+  });
+
+  it("follows model.loading on the bus and on no channel of its own", () => {
+    const { controller, listening } = setup();
+    controller.start();
+    expect(listening("model.loading")).toBe(1);
+    controller.stop();
+    expect(listening("model.loading")).toBe(0);
   });
 });
 

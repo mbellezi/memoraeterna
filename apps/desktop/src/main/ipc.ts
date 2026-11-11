@@ -15,13 +15,12 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
-import { RelationsChangedEventSchema } from "../shared/ipc.js";
 import { appEventPort } from "./services/app-events.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
 import type { IpcMain } from "electron";
-import { app, dialog, session, shell, webContents } from "electron";
+import { app, dialog, session, shell } from "electron";
 import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
@@ -318,23 +317,23 @@ export function registerIpcHandlers(
     ingestionService.createManual(manualIngestionInputSchema.parse(payload))
   );
 
-  ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (event, payload: unknown) => {
+  ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (_event, payload: unknown) => {
     const input = fileMetadataExtractionInputSchema.parse(payload);
     const requestId = input.requestId ?? randomUUID();
     const path = await chooseImportFile();
     if (!path) return null;
     const report = (progress: Omit<FileImportProgress, "requestId">) => {
       const parsed = fileImportProgressSchema.parse({ requestId, ...progress });
-      // The bus carries it to the windows (F5 D16); one file per request, so the index is 0. The old
-      // channel below keeps sending until the Import consumers move (T125).
+      // The bus carries it to the windows (F5 D16); one file per request, so the index is 0.
       appEventPort.publish({
         type: "import.progress",
         runId: requestId,
         fileIndex: 0,
-        fraction: parsed.progress
+        fraction: parsed.progress,
+        stage: parsed.stage,
+        ...(parsed.completedPages === undefined ? {} : { completedPages: parsed.completedPages }),
+        ...(parsed.totalPages === undefined ? {} : { totalPages: parsed.totalPages })
       });
-      if (event.sender.isDestroyed()) return;
-      event.sender.send(ipcChannels.ingestionFileProgress, parsed);
     };
     return ingestionService.prepareFileMetadata(path, input.sourceType, report);
   });
@@ -407,13 +406,6 @@ export function registerIpcHandlers(
       serializeJob(job, ingestionRun, source)
     )
   );
-  // F3 3.11: the notes whose relations a link job committed, coalesced by the supervisor.
-  jobSupervisor.subscribeRelationsChanged((event) => {
-    const payload = RelationsChangedEventSchema.parse(event);
-    for (const contents of webContents.getAllWebContents()) {
-      if (!contents.isDestroyed()) contents.send(ipcChannels.relationsChanged, payload);
-    }
-  });
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
     const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;

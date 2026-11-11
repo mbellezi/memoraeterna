@@ -15,7 +15,7 @@ import type { TopicServiceStatus } from "./topic-tree-service.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const quiet = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const topicChannels = Object.entries(ipcChannels)
-  .filter(([name]) => name.startsWith("topics") && name !== "topicsChanged")
+  .filter(([name]) => name.startsWith("topics"))
   .map(([, channel]) => channel);
 
 /** An `ipcMain` that, like Electron's, refuses a second handler for a channel. */
@@ -29,11 +29,6 @@ function fakeIpc() {
     }
   };
   return { ipc: ipc as unknown as IpcMain, handlers };
-}
-
-function fakeWindow(destroyed = false) {
-  const send = vi.fn();
-  return { send, target: { isDestroyed: () => destroyed, send } };
 }
 
 describe("the topic services factory", () => {
@@ -63,7 +58,7 @@ describe("the topic services factory", () => {
   describe("the topic IPC (D15)", () => {
     it("registers every topic channel once, and never again from start, a reset or dispose", async () => {
       const { ipc, handlers } = fakeIpc();
-      const created = create({ ipc: { main: ipc, targets: () => [] } });
+      const created = create({ ipc: { main: ipc } });
       expect([...handlers.keys()].sort()).toEqual([...topicChannels].sort());
       expect(created.read).not.toBeNull();
       await created.start();
@@ -78,7 +73,7 @@ describe("the topic services factory", () => {
         handle: (channel: string, handler: (event: unknown, payload?: unknown) => unknown) =>
           handlers.set(channel, handler)
       } as unknown as IpcMain;
-      const created = create({ ipc: { main: ipc, targets: () => [] } });
+      const created = create({ ipc: { main: ipc } });
       const reembed = vi.spyOn(created.spaceChange, "reembed").mockResolvedValue({ queued: 7 });
       await expect(
         handlers.get(ipcChannels.topicsReembed)!({}, { confirm: true })
@@ -91,11 +86,11 @@ describe("the topic services factory", () => {
       expect(created.read).toBeNull();
     });
 
-    it("pushes topicsChanged to every live window after a commit, once per coalesced window", () => {
+    it("hands the committed change to its subscribers once per coalesced window, and to no window", () => {
       const { ipc } = fakeIpc();
-      const live = fakeWindow();
-      const gone = fakeWindow(true);
-      const created = create({ ipc: { main: ipc, targets: () => [live.target, gone.target] } });
+      const created = create({ ipc: { main: ipc } });
+      const heard = vi.fn();
+      created.changes.subscribe(heard);
       // The service records each committed change-set here (topic-tree-service.ts).
       created.changes.record({
         treeId: id(1),
@@ -109,27 +104,27 @@ describe("the topic services factory", () => {
         topicIds: [id(12)],
         changeSetId: id(22)
       });
-      expect(live.send).not.toHaveBeenCalled();
+      expect(heard).not.toHaveBeenCalled();
       vi.advanceTimersByTime(topicsChangedCoalesceMs);
-      expect(live.send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, {
+      expect(heard).toHaveBeenCalledExactlyOnceWith({
         treeId: id(1),
         generation: 5,
         topicIds: [id(11), id(12)],
         changeSetId: null
       });
-      expect(gone.send).not.toHaveBeenCalled();
     });
 
-    it("sends nothing before a commit and nothing after dispose", () => {
+    it("announces nothing before a commit and nothing after dispose", () => {
       const { ipc } = fakeIpc();
-      const live = fakeWindow();
-      const created = create({ ipc: { main: ipc, targets: () => [live.target] } });
+      const created = create({ ipc: { main: ipc } });
+      const heard = vi.fn();
+      created.changes.subscribe(heard);
       vi.advanceTimersByTime(10 * topicsChangedCoalesceMs);
-      expect(live.send).not.toHaveBeenCalled();
+      expect(heard).not.toHaveBeenCalled();
       created.changes.record({ treeId: id(1), generation: 1, topicIds: null, changeSetId: null });
       created.dispose();
       vi.advanceTimersByTime(topicsChangedCoalesceMs);
-      expect(live.send).not.toHaveBeenCalled();
+      expect(heard).not.toHaveBeenCalled();
     });
 
     it("tells topics.status what only the engine knows", () => {

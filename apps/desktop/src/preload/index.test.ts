@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ipcChannels, type DesktopApi } from "../shared/ipc.js";
@@ -92,5 +94,26 @@ describe("the area channels in ipcChannels", () => {
     ])
       expect(values.filter((value) => value === channel)).toHaveLength(1);
     expect(new Set(values).size).toBe(values.length);
+  });
+});
+
+describe("the push channels the preload listens on (F5 D16, T125)", () => {
+  it("are the bus, the menu, the window navigation and the deep link, and no other", () => {
+    const listened = new Set<string>();
+    for (const file of readdirSync(import.meta.dirname).filter(
+      (name) => name.endsWith(".ts") && !name.endsWith(".test.ts")
+    ))
+      for (const match of readFileSync(join(import.meta.dirname, file), "utf8").matchAll(
+        /ipcRenderer\s*\.\s*(?:on|once|addListener)\(\s*(?:ipcChannels|\w+Channels)\.(\w+)/gu
+      ))
+        listened.add(match[1]!);
+    expect([...listened].sort()).toEqual(
+      ["appEvents", "menuCommand", "obsidianDeepLink", "windowNavigation"].sort()
+    );
+  });
+
+  it("listens on the bus from the start, so the replay of the sticky states is kept for the first view", () => {
+    const source = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
+    expect(source).toMatch(/\{ eager: true \}/u);
   });
 });

@@ -21,7 +21,6 @@ import {
   settingsAiBudgetStore
 } from "./topic-ai.js";
 import { TopicAreasService } from "./topic-areas.js";
-import { ipcChannels } from "../../../shared/ipc.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
 import type { TopicAiBudgetStore, TopicAiMode, TopicAiRoute } from "./topic-ai.js";
@@ -29,7 +28,6 @@ import { TopicChangeCoalescer } from "./topic-changes.js";
 import { createTopicChangeHooks } from "./topic-hooks.js";
 import type { NoteMatchRequests, TopicChangeHooks } from "./topic-hooks.js";
 import { registerTopicTreeIpc } from "./topic-ipc.js";
-import type { TopicsChangedTarget } from "./topic-ipc.js";
 import { TopicGateService } from "./topic-gate.js";
 import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobExecutor } from "./topic-jobs.js";
@@ -57,7 +55,7 @@ export interface TopicTreeServicesOptions {
   now?: () => Date;
   /** Where D34's daily counter lives (default: the settings table). */
   budgetStore?: TopicAiBudgetStore;
-  /** Coalescing window of `topicsChanged` (default 250 ms, D15). */
+  /** Coalescing window of the tree's change events (default 250 ms, D15). */
   changesDelayMs?: number;
   /** The configuration of a new tree (default: the engine's start values); tests shrink it. */
   newTreeConfig?: () => TopicTreeConfig;
@@ -69,11 +67,10 @@ export interface TopicTreeServicesOptions {
   /** Clusters builds (default: the clustering worker thread); scripts and tests run it in process. */
   clusterTopics?: ClusterTopics;
   /**
-   * The topic IPC (T16): `ipcMain` and the windows that hear `topicsChanged`. The factory registers
-   * the channels once and subscribes the push to `changes`; absent, nothing is registered (scripts
-   * and tests that drive the services without Electron).
+   * The topic IPC (T16): `ipcMain`. The factory registers the channels once; absent, nothing is
+   * registered (scripts and tests that drive the services without Electron).
    */
-  ipc?: { main: IpcMain; targets: () => Iterable<TopicsChangedTarget> };
+  ipc?: { main: IpcMain };
   /**
    * The AI service the naming and label jobs call (T18) and the library's content language. Both
    * are needed to register those jobs; scripts and tests that drive placement alone leave them out.
@@ -99,7 +96,7 @@ export interface TopicTreeServices {
   triggers: TopicTriggers;
   /** What note, source and deletion call sites call (T15b); a hook never fails its caller. */
   hooks: TopicChangeHooks;
-  /** `topicsChanged` (D15): the topic IPC forwards its events to the renderer channel. */
+  /** The coalesced, committed changes of the tree (D15); the application publishes them as `tree.changed`. */
   changes: TopicChangeCoalescer;
   /** The read side of the topic screens; null without `options.ipc`. */
   read: TopicReadService | null;
@@ -175,14 +172,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   });
   const hooks = createTopicChangeHooks(triggers, logger, options.noteMatching);
   // A pin writes the view history in the change-set's transaction; the navigator reads it again.
-  // The bus gets `view.changed` always; the old channel keeps sending to the windows until T125.
-  const notifyViewHistory = () => {
-    appEventPort.publish({ type: "view.changed" });
-    if (!options.ipc) return;
-    for (const target of options.ipc.targets()) {
-      if (!target.isDestroyed()) target.send(ipcChannels.viewHistoryChanged);
-    }
-  };
+  const notifyViewHistory = () => appEventPort.publish({ type: "view.changed" });
   // The structure jobs are created below, after the service they run on.
   let structureJobs: TopicStructureJobs | null = null;
   // T19b: re-embedding after the route's embedding space changed (D26).
@@ -298,12 +288,11 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     : null;
   if (overviewRefresh) changes.subscribe(overviewRefresh.onTopicsChanged);
 
-  // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
+  // The topic IPC is registered here and nowhere else.
   let read: TopicReadService | null = null;
   if (options.ipc) {
     const registeredIpc = registerTopicTreeIpc(options.ipc.main, {
       getPool,
-      targets: options.ipc.targets,
       engineStatus: async () => {
         const status = await topicService.status();
         const engine = engineStatusOf(
@@ -328,11 +317,9 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
         : {}),
       // T19b: the owner's re-embedding of the library after a space change (D26).
       reembed: () => spaceChange.reembed(),
-      ...(options.now ? { now: options.now } : {}),
-      ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
+      ...(options.now ? { now: options.now } : {})
     });
     read = registeredIpc.read;
-    changes.subscribe(registeredIpc.emitChanged);
   }
 
   const executors: Record<string, TopicJobExecutor> = {

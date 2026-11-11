@@ -1,24 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TopicsChangedEvent } from "@app/domain";
 
-import { topicsPulseDelayMs, watchTopicsChanged, type TopicsPulseApi } from "./topics-pulse";
+import { createFakeAppEvents } from "./fake-app-events";
+import { topicsPulseDelayMs, watchTopicsChanged } from "./topics-pulse";
 
-const event: TopicsChangedEvent = {
+const event = {
+  type: "tree.changed",
   treeId: "00000000-0000-4000-8000-000000000001",
   generation: 4,
   topicIds: null,
   changeSetId: null
-};
+} as const;
 
+/** A fake `window.app` whose bus the test drives; `listeners` counts what listens to the tree. */
 function fakeApi() {
-  const listeners = new Set<(event: TopicsChangedEvent) => void>();
-  const api: TopicsPulseApi = {
-    subscribeChanged: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    }
+  const events = createFakeAppEvents();
+  return {
+    api: events.api,
+    listeners: {
+      get size() {
+        return events.listening("tree.changed");
+      }
+    },
+    push: () => events.emit(event)
   };
-  return { api, listeners, push: () => listeners.forEach((listener) => listener(event)) };
 }
 
 describe("reading where an object sits again when the tree changes", () => {

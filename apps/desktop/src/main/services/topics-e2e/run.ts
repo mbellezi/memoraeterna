@@ -380,7 +380,7 @@ async function runPass(
       isPackaged: false,
       wake: () => jobs?.wake("light"),
       logger: quietLogger,
-      ipc: { main: ipc.main, targets: () => [] },
+      ipc: { main: ipc.main },
       ai: service,
       getContentLanguage: async () => (await settings.getApp()).contentLanguage,
       ...(deps.clusterTopics ? { clusterTopics: deps.clusterTopics } : {}),
