@@ -65,3 +65,4 @@ export * from "./questionRepository.js";
 export * from "./questionCitationHashSql.js";
 export * from "./entityPageRepository.js";
 export * from "./omniSearchRepository.js";
+export * from "./homeDigestRepository.js";
