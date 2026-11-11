@@ -140,4 +140,37 @@ describe.skipIf(!sidecarAvailable)("the release boundary reads on the PostgreSQL
     await expect(readPipelineBusy(pool)).resolves.toBe(true);
     await expect(readPipelineBusy(pool, [topicReleaseJob])).resolves.toBe(false);
   });
+
+  it("is not busy while a release job holds the heavy lane for the ranker, whatever waits behind it", async () => {
+    // The release job runs (it waits for the ranker); the first source's next division is queued
+    // and due with its pending run, and a held topic job waits on the light lane. None can move.
+    const repository = createJobRepository(pool);
+    const division = await repository.create({
+      type: "ingestion",
+      payload: { sourceItemId: root.rootSourceId }
+    });
+    await pool.query("insert into ingestion_runs (job_id) values ($1)", [division.id]);
+    const topic = await repository.create({
+      type: "topic-place",
+      lane: "light",
+      payload: { noteId: "n-1" }
+    });
+    const hold = { heavyHeld: true, heldLightTypes: ["topic-place"] };
+    // Outside the wait the queued division is progress the heavy lane will claim.
+    await expect(readPipelineBusy(pool, [topicReleaseJob])).resolves.toBe(true);
+    await expect(readPipelineBusy(pool, [topicReleaseJob], hold)).resolves.toBe(false);
+
+    // A light job that is not held can still run, and one that runs is progress.
+    const other = await repository.create({ type: "catalog-header", lane: "light", payload: {} });
+    await expect(readPipelineBusy(pool, [topicReleaseJob], hold)).resolves.toBe(true);
+    await pool.query("update jobs set status = 'succeeded' where id = $1", [other.id]);
+    await pool.query("update jobs set status = 'running' where id = $1", [topic.id]);
+    await expect(readPipelineBusy(pool, [topicReleaseJob], hold)).resolves.toBe(true);
+    await pool.query("update jobs set status = 'succeeded' where id = any($1::uuid[])", [
+      [topic.id, division.id]
+    ]);
+    await pool.query("update ingestion_runs set status = 'succeeded' where job_id = $1", [
+      division.id
+    ]);
+  });
 });

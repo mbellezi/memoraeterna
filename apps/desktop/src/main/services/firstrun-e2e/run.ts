@@ -419,6 +419,8 @@ async function runPass(
   const marks = new Marks(t0, now, (name, ms) => log("mark", { name, atMs: ms }));
   const trace = new DownloadTrace(marks);
   const busy = new Busy();
+  // A release job waiting for the ranker (E6A2): it holds the heavy lane and the topic jobs are held.
+  const releaseWaitsForRanker = new Busy();
   let phase: RunPhase = "launch";
   try {
     const connection = await startDatabase(manager, log);
@@ -747,8 +749,13 @@ async function runPass(
       read: async () => {
         const downloading = trace.downloading();
         // A release job waiting for the ranker is the person waiting for the download, so it is
-        // on D's clock; its drain is the topic jobs' work, which counts by itself.
-        const idle = !busy.active && !(await readPipelineBusy(db, [topicReleaseJob]));
+        // on D's clock; its drain is the topic jobs' work, which counts by itself. While it waits
+        // it holds the heavy lane and the topic jobs are held: the queued divisions, their pending
+        // runs and the held topic jobs cannot move, so they do not keep the sample busy.
+        const hold = releaseWaitsForRanker.active
+          ? { heavyHeld: true, heldLightTypes: Object.keys(topics.jobs) }
+          : undefined;
+        const idle = !busy.active && !(await readPipelineBusy(db, [topicReleaseJob], hold));
         // The status is read only where it matters: a download holds everything up. The Gardener's
         // tasks that wait then tell whether its sentence must name a class.
         const reading =
@@ -900,9 +907,12 @@ async function runPass(
     const releases: TopicRelease[] = [];
     const releaseTopics = async (
       entry: TopicRelease,
-      options: { hold: boolean; signal?: AbortSignal }
+      options: { hold: boolean; signal?: AbortSignal; job?: boolean }
     ): Promise<WaitOutcome<Stop | "aborted">> => {
-      const ranker = await waitForRanker();
+      // A release job waits on the heavy lane (D reads it); a source release runs after settle().
+      const ranker = options.job
+        ? await releaseWaitsForRanker.during(waitForRanker)
+        : await waitForRanker();
       if (ranker !== "ready") {
         entry.outcome = `the first-run ranker ended ${ranker}`;
         return "model_failed";
@@ -984,7 +994,7 @@ async function runPass(
       releases.push(entry);
       if (outcome.stoppedBy !== null) return { released: false };
       try {
-        const lane = await releaseTopics(entry, { hold: true, signal });
+        const lane = await releaseTopics(entry, { hold: true, signal, job: true });
         if (lane !== "settled") releaseStopped(lane);
       } catch (error) {
         errors.push(

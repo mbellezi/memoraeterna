@@ -236,15 +236,28 @@ export async function readBlockedJobs(pool: PgPool): Promise<Record<string, numb
 }
 
 /**
+ * What a release job holds while it waits for the ranker (E6A2): the heavy lane (the job is on it,
+ * so the queued divisions and their unfinished ingestion runs cannot move) and the topic jobs (the
+ * barrier, so its light types cannot move either).
+ */
+export interface PipelineHold {
+  heavyHeld: boolean;
+  heldLightTypes: readonly string[];
+}
+
+/**
  * Whether anything can progress now: a job runs or is due, or an ingestion run has not ended. A job
  * a blocker set aside waits for its blocker, not for the lane, and the install of a model is not
  * the pipeline's work (it is what the pipeline may wait for). Nor are the `ignored` job types: the
- * harness's own topic release, which waits for the ranker and then for the light lane.
+ * harness's own topic release, which waits for the ranker and then for the light lane. Under a
+ * `hold` only what can still move counts: a running job, or a due light job of a type not held.
  */
 export async function readPipelineBusy(
   pool: PgPool,
-  ignored: readonly string[] = []
+  ignored: readonly string[] = [],
+  hold?: PipelineHold
 ): Promise<boolean> {
+  const heavyHeld = hold?.heavyHeld ?? false;
   const row = (
     await pool.query<{ n: number }>(
       `select (
@@ -252,10 +265,12 @@ export async function readPipelineBusy(
            where type::text <> 'local-model-download' and type::text <> all($1::text[])
              and (status::text = 'running'
                or (status::text = 'queued' and blocked_class is null
-                   and (run_after is null or run_after <= now()))))
-         + (select count(*) from ingestion_runs where status::text in ('pending', 'running'))
+                   and (run_after is null or run_after <= now())
+                   and (not $2::boolean or (lane = 'light' and type::text <> all($3::text[]))))))
+         + (select count(*) from ingestion_runs
+             where not $2::boolean and status::text in ('pending', 'running'))
        )::int as n`,
-      [[...ignored]]
+      [[...ignored], heavyHeld, [...(hold?.heldLightTypes ?? [])]]
     )
   ).rows[0];
   return Number(row?.n ?? 0) > 0;
