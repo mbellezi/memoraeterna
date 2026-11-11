@@ -13,8 +13,11 @@ import { railDestinations } from "./shell-model";
 import type { Read } from "./shell-stores";
 import { useInboxCount } from "./use-shell-data";
 
-/** The glyph of each destination: an outline icon, never alone (the word is always under it). */
-const destinationGlyphs = {
+/**
+ * The glyph of each destination: an outline icon, never alone (the word is always under it). A
+ * root's spine leads with it too.
+ */
+export const destinationGlyphs = {
   home: House,
   explore: Columns3,
   library: Library,

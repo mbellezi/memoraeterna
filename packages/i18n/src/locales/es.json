@@ -3817,6 +3817,7 @@
     "pin": "Fijar en el navegador",
     "reopenRoot": "{title}. Volver a abrir",
     "reopenSpine": "{kind}: {title}. Volver a abrir el panel",
+    "reopenSpineUnavailable": "{kind}: título no disponible. Volver a abrir el panel",
     "ribbon": {
       "alsoIn": "también en",
       "andMore": "y {count} más",

@@ -179,8 +179,24 @@ export function PathRibbonView({
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState(0);
   const segmentKey = segments.map((segment) => segment.id).join(",");
-  // A new width, path or size measures again from the whole path.
-  const foldKey = `${width}|${segmentKey}|${compact ? "compact" : "regular"}`;
+  // A fallback font is wider than the interface font: the path measures again once fonts load.
+  const [fonts, setFonts] = useState(0);
+  useEffect(() => {
+    const faces = typeof document === "undefined" ? undefined : document.fonts;
+    if (!faces) return undefined;
+    let live = true;
+    const loaded = () => {
+      if (live) setFonts((value) => value + 1);
+    };
+    void faces.ready.then(loaded);
+    faces.addEventListener("loadingdone", loaded);
+    return () => {
+      live = false;
+      faces.removeEventListener("loadingdone", loaded);
+    };
+  }, []);
+  // A new width, path, size or font measures again from the whole path.
+  const foldKey = `${width}|${segmentKey}|${compact ? "compact" : "regular"}|${fonts}`;
   const [fold, setFold] = useState({ key: foldKey, hidden: 0 });
   const hidden = fold.key === foldKey ? fold.hidden : 0;
   useEffect(() => {
@@ -271,6 +287,7 @@ export function PathRibbonView({
     );
 
   const tentative = place === "tentativeSource" || place === "tentativeQuestion";
+  const dashed = "border-b border-dashed border-border-strong italic";
   // A placed object with no crumbs is a top-level topic: its only ancestor is the root.
   if (segments.length === 0 && !tentative)
     return (
@@ -305,7 +322,10 @@ export function PathRibbonView({
             aria-label={t("panelFrame.ribbon.expand")}
             title={t("panelFrame.ribbon.expand")}
             onClick={() => setExpanded(true)}
-            className="rounded-sm px-0.5 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className={cn(
+              "rounded-sm px-0.5 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+              tentative && dashed
+            )}
           >
             …
           </button>
@@ -325,7 +345,8 @@ export function PathRibbonView({
             "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
             leaf && "font-semibold text-foreground",
-            entry.title === "" && "italic"
+            entry.title === "" && "italic",
+            tentative && dashed
           )}
         >
           {label}
@@ -365,14 +386,9 @@ export function PathRibbonView({
         {tentative ? (
           <span className="text-muted-foreground">{t("panelFrame.ribbon.tentative")}</span>
         ) : null}
-        <span
-          className={cn(
-            "inline-flex min-w-0 flex-wrap items-start gap-x-1",
-            tentative && "border-b border-dashed border-border-strong italic"
-          )}
-        >
-          {crumbs}
-        </span>
+        {/* The crumbs are items of the glyph's own line: a box around them would be one flex item
+            as wide as the whole path, and would drop to a line of its own under the glyph. */}
+        {crumbs}
         {clause ? (
           // A trailing clause wraps whole, and a line never starts with its separator.
           <span className="whitespace-normal text-muted-foreground [text-wrap:pretty]">

@@ -177,12 +177,14 @@ export function StandInPage({
         <SkeletonLines lines={compact ? 3 : 5} className="mt-4 max-w-(--measure)" />
       </LoadingState>
     );
+  const kind = kindOf(value);
   if (reported === "error")
     return (
       <ErrorState
         t={stubT}
-        message="This note could not be opened."
-        kept="Nothing was changed. The note is still in your library."
+        className="max-w-(--measure)"
+        message={`This ${kind} could not be opened.`}
+        kept={`Nothing was changed. The ${kind} is still in your library.`}
         retryLabel="Try again"
         onRetry={() => undefined}
       />
@@ -203,11 +205,12 @@ export function StandInPage({
         {title}
         <EmptyState
           className="max-w-(--measure)"
-          headline="Nothing is written here yet."
-          action={<Button variant="secondary">Generate notes</Button>}
+          headline={emptyCopy[kind]?.headline ?? emptyCopy.source.headline}
+          {...(kind === "source"
+            ? { action: <Button variant="secondary">Generate notes</Button> }
+            : {})}
         >
-          The notes of this source appear here as they are written. You can already ask it a
-          question.
+          {emptyCopy[kind]?.body ?? emptyCopy.source.body}
         </EmptyState>
       </div>
     );
@@ -258,6 +261,28 @@ export function StandInPage({
 }
 
 const stubT = createTranslator("en");
+
+/** What each stand-in page says when its object has nothing in it yet. */
+const emptyCopy: Partial<Record<ObjectRef["kind"], { headline: string; body: string }>> & {
+  source: { headline: string; body: string };
+} = {
+  source: {
+    headline: "Nothing is written here yet.",
+    body: "The notes of this source appear here as they are written. You can already ask it a question."
+  },
+  topic: {
+    headline: "Nothing is placed here yet.",
+    body: "Notes and sources land here when the tree places them."
+  },
+  note: {
+    headline: "This note has no text yet.",
+    body: "Its text appears here when it is written."
+  },
+  question: {
+    headline: "This question has no answer yet.",
+    body: "The answer appears here as it is written, with its citations."
+  }
+};
 
 /** The stand-in panel kinds, one per object kind, as `panels/*.panel.tsx` would export them. */
 export const standInPanels: readonly PanelModule[] = (

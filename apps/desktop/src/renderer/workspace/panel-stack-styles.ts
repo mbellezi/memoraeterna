@@ -103,6 +103,11 @@ export const panelStackStyles = `
   writing-mode: vertical-rl;
 }
 
+/* A title still being read: the kind word, then a bar where the title will be. */
+.panel-stack__spine-text[data-pending] {
+  flex: none;
+}
+
 .panel-stack__spine-kind {
   color: var(--text-tertiary);
 }

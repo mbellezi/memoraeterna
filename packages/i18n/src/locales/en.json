@@ -3810,6 +3810,7 @@
     "pin": "Pin in the navigator",
     "reopenRoot": "{title}. Reopen",
     "reopenSpine": "{kind}: {title}. Reopen panel",
+    "reopenSpineUnavailable": "{kind}: title unavailable. Reopen panel",
     "ribbon": {
       "alsoIn": "also in",
       "andMore": "and {count} more",

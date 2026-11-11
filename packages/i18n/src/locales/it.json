@@ -3808,6 +3808,7 @@
     "pin": "Fissa nel navigatore",
     "reopenRoot": "{title}. Riapri",
     "reopenSpine": "{kind}: {title}. Riapri il pannello",
+    "reopenSpineUnavailable": "{kind}: titolo non disponibile. Riapri il pannello",
     "ribbon": {
       "alsoIn": "anche in",
       "andMore": "e altri {count}",

@@ -67,6 +67,12 @@ describe("the panel frame", () => {
     ).not.toContain("data-path-ribbon");
   });
 
+  it("says a failed object once: no ribbon failure line above the body's error", () => {
+    expect(frame({ state: "error" })).not.toContain("data-path-ribbon");
+    expect(frame({ state: "loading" })).toContain("data-path-ribbon");
+    expect(frame({ state: "empty" })).toContain("data-path-ribbon");
+  });
+
   it("gives the top panel Foco and close, and the arrows only where history exists", () => {
     const top = frame({}, pt);
     expect(top).toContain("Foco");
@@ -196,6 +202,35 @@ describe("the path ribbon", () => {
     );
     expect(html).toContain('data-ribbon-state="tentative"');
     expect(html).toContain("Lugar provável:");
+  });
+
+  it("lays the crumbs on the glyph's own line, so a short path never folds under it", () => {
+    // Three crumbs that fit two lines of a 208 px compact panel: a box around the crumbs would be
+    // one flex item as wide as the whole path and drop under the glyph, folding the middle crumb.
+    const read = located([
+      ref("topic", 1, ""),
+      ref("topic", 2, "Life sciences"),
+      ref("topic", 3, "Microbiology"),
+      ref("topic", 4, "Fermentation"),
+      ref("note", 5, "Lactic acid")
+    ]);
+    const html = renderToString(
+      <PathRibbonView
+        t={pt}
+        address={noteAddress}
+        compact
+        onOpen={noop}
+        located={{ status: "ready", located: read }}
+        onRetry={noop}
+      />
+    );
+    const line = html.match(/<nav[^>]*><span class="([^"]*)">(.*)<\/span><\/nav>/u);
+    expect(line?.[1]).toContain("flex-wrap");
+    // The line's children are the glyph, then each crumb and separator: no wrapper in between.
+    const children = (line?.[2] ?? "").replace(/<svg.*?<\/svg>/u, "");
+    expect(children.startsWith("<button")).toBe(true);
+    expect(children.match(/data-segment=/gu)).toHaveLength(3);
+    expect(html).not.toContain("Mostrar o caminho inteiro");
   });
 
   it("shows a busy skeleton while it reads the place", () => {

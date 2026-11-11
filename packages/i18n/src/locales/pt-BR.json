@@ -3813,6 +3813,7 @@
     "pin": "Fixar no navegador",
     "reopenRoot": "{title}. Reabrir",
     "reopenSpine": "{kind}: {title}. Reabrir painel",
+    "reopenSpineUnavailable": "{kind}: título indisponível. Reabrir painel",
     "ribbon": {
       "alsoIn": "também em",
       "andMore": "e mais {count}",

@@ -3815,6 +3815,7 @@
     "pin": "Épingler dans le navigateur",
     "reopenRoot": "{title}. Rouvrir",
     "reopenSpine": "{kind} : {title}. Rouvrir le panneau",
+    "reopenSpineUnavailable": "{kind} : titre indisponible. Rouvrir le panneau",
     "ribbon": {
       "alsoIn": "aussi dans",
       "andMore": "et {count} de plus",

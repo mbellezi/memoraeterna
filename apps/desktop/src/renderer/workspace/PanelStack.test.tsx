@@ -250,6 +250,15 @@ describe("the host", () => {
     expect(html).toContain("Explore. Reopen");
   });
 
+  it("leads the root spine with its destination's glyph, and holds a bar where a title is read", () => {
+    const html = render(4, 1440);
+    const root = html.match(/<button[^>]*aria-label="Explore\. Reopen"[^>]*>(.*?)<\/button>/u);
+    expect(root?.[1]).toContain("<svg");
+    // Before `resolveMany` answers, an object spine shows its kind word and a bar, not "Untitled".
+    expect(html).toContain("data-pending");
+    expect(html).not.toContain("Untitled");
+  });
+
   it("merges spines beyond the floor into one +N spine at 960 px", () => {
     const html = render(8, 960);
     expect(html).toMatch(/older panels: /u);

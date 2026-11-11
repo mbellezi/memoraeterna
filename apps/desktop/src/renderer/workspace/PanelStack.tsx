@@ -11,10 +11,12 @@ import type { MessageKey, Translator } from "@app/i18n";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../components/glyphs";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { Skeleton } from "../components/ui/skeleton";
 import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { destinationIds, type DestinationId } from "./destinations";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
+import { destinationGlyphs } from "./Rail";
 import type { RibbonPlace } from "./PathRibbon";
 import { destinationTitleKeys } from "./shell-model";
 import {
@@ -227,9 +229,17 @@ export function addressKind(address: PanelAddress): ObjectKind | null {
   return parsed && objectKinds.includes(parsed.kind) ? parsed.kind : null;
 }
 
+/** The titles the spines show, and how their read went. */
+interface Summaries {
+  summaries: ReadonlyMap<string, ObjectSummary>;
+  status: "loading" | "error" | "ready";
+}
+
 /** The summaries of the object panels of a stack, in one `resolveMany` per change of the set. */
-function useSummaries(addresses: readonly string[], active: boolean) {
+function useSummaries(addresses: readonly string[], active: boolean): Summaries {
   const [summaries, setSummaries] = useState<ReadonlyMap<string, ObjectSummary>>(new Map());
+  // The set the last read settled for, and whether it failed: a set not settled yet is loading.
+  const [settled, setSettled] = useState<{ key: string; failed: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const key = [...new Set(addresses.filter((address) => addressKind(address) !== null))]
     .sort()
@@ -244,15 +254,20 @@ function useSummaries(addresses: readonly string[], active: boolean) {
       .then((result) => {
         if (!live) return;
         setSummaries(new Map(Object.entries(result.items)));
+        setSettled({ key, failed: false });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // A failed re-read keeps the titles that are shown.
+        if (live) setSettled((current) => (current?.key === key ? current : { key, failed: true }));
+      });
     return () => {
       live = false;
     };
   }, [key, active, attempt]);
   // A renamed object shows its new title on its spine.
   useAppEvent("object.changed", () => setAttempt((value) => value + 1), active && key !== "");
-  return summaries;
+  const status = settled?.key !== key ? "loading" : settled.failed ? "error" : "ready";
+  return { summaries, status };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +363,7 @@ export function PanelStack({
   const view: StackView = activeStack
     ? stackView(activeStack, viewportWidth, chrome, noCompact, focusMode)
     : { items: [], merged: [], mergedAhead: [], top: -1 };
-  const summaries = useSummaries(
+  const { summaries, status: titlesStatus } = useSummaries(
     activeStack ? activeStack.panels.map(addressOf) : [],
     shown && activeStack !== null
   );
@@ -405,12 +420,18 @@ export function PanelStack({
     const kind = addressKind(address);
     const kindWord = isRoot ? rootTitle(destination) : kindWordOf(address);
     const title = isRoot ? "" : titleOf(address);
+    // An object whose title is not read yet shows a bar after its kind word; one whose read failed
+    // says so in its name.
+    const pending = !isRoot && kind !== null && title === "" ? titlesStatus : "ready";
     const label =
-      isRoot || title === ""
-        ? t("panelFrame.reopenRoot", { values: { title: kindWord } })
-        : t(item.side === "right" ? "panelFrame.forwardSpine" : "panelFrame.reopenSpine", {
-            values: { kind: kindWord, title }
-          });
+      pending === "error"
+        ? t("panelFrame.reopenSpineUnavailable", { values: { kind: kindWord } })
+        : isRoot || title === ""
+          ? t("panelFrame.reopenRoot", { values: { title: kindWord } })
+          : t(item.side === "right" ? "panelFrame.forwardSpine" : "panelFrame.reopenSpine", {
+              values: { kind: kindWord, title }
+            });
+    const RootGlyph = isRoot ? destinationGlyphs[destination] : null;
     return (
       <button
         key={`${twin ? "twin" : "spine"}:${isRoot ? "root" : (panel as Panel).id}`}
@@ -424,8 +445,13 @@ export function PanelStack({
       >
         {kind ? (
           <ObjectKindGlyph kind={kind} size={16} className={objectKindTextClass[kind]} />
+        ) : RootGlyph ? (
+          <RootGlyph aria-hidden="true" className="size-4 flex-none text-secondary-foreground" />
         ) : null}
-        <span className="panel-stack__spine-text">
+        <span
+          className="panel-stack__spine-text"
+          data-pending={pending === "loading" ? "" : undefined}
+        >
           {isRoot || title === "" ? (
             kindWord
           ) : (
@@ -435,6 +461,7 @@ export function PanelStack({
             </>
           )}
         </span>
+        {pending === "loading" ? <Skeleton className="h-16 w-3 flex-none" /> : null}
       </button>
     );
   };

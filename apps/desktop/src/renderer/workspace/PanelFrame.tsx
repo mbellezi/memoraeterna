@@ -275,7 +275,9 @@ export function PanelFrame({
           compact ? "px-4 pt-4 pb-8" : "px-(--top-pl) pt-5 pb-12"
         )}
       >
-        {objectPanel ? (
+        {/* A panel whose object failed says so once, in its body: the ribbon's own failure line is
+            for a place that fails while the object reads. */}
+        {objectPanel && state !== "error" ? (
           <div className="sticky top-0 z-[1] -mx-1 bg-surface px-1">
             <PathRibbon
               t={t}
