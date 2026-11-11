@@ -828,8 +828,8 @@
       "graphIncomplete": "Las relaciones se asociaron sin el grafo de conocimiento. Reintentar rehace solo el grafo."
     },
     "types": {
-      "ingestion": "Ingestion",
-      "conversion": "Conversion",
+      "ingestion": "Ingestión",
+      "conversion": "Conversión",
       "chunking": "Division en fragmentos",
       "embedding": "Embedding",
       "noteEmbedding": "Embedding de nota",
@@ -868,7 +868,7 @@
       "organizeKnowledge": "Integrar en la Wiki",
       "queued": "En cola",
       "preparation": "Preparacion de la importacion",
-      "conversion": "Conversion",
+      "conversion": "Conversión",
       "structureDetection": "Deteccion de estructura",
       "structureReview": "Revision de estructura",
       "materialization": "Materializacion",

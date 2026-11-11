@@ -795,7 +795,7 @@
       "attempt": "Tentativa",
       "startedAt": "Iniciada em",
       "jobId": "ID da tarefa",
-      "provider": "Provider",
+      "provider": "Provedor",
       "model": "Modelo",
       "failureReason": "Motivo completo da falha",
       "noFailureReason": "Nenhum motivo de falha foi registrado para esta tentativa."
@@ -2347,7 +2347,7 @@
     "sourceElements": "Elementos vinculados à nota de origem",
     "candidateElements": "Elementos vinculados a esta candidata",
     "entities": "Entidades",
-    "claims": "Claims",
+    "claims": "Afirmações",
     "relations": "Relações",
     "filters": {
       "all": "Todos",
