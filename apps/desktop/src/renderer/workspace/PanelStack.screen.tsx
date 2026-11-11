@@ -1,5 +1,4 @@
 import { useEffect, useReducer, useState, type CSSProperties } from "react";
-import { createTranslator } from "@app/i18n";
 
 import { destinationRoots } from "./destinations";
 import { fixtureAddresses, panelFixtures, standInPanels } from "./panel-screen-fixtures";
@@ -8,10 +7,11 @@ import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } f
 import { layoutCustomProperties } from "./shell-model";
 import type { ScreenModule } from "./surfaces";
 import { useViewportWidth } from "./use-workspace";
+import { screenTranslator } from "./screen-locale";
 
 export const surface = "panel-stack";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 
 export const fixtures: ScreenModule["fixtures"] = {
   success: panelFixtures(false),

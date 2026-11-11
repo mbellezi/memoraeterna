@@ -1,15 +1,15 @@
 import { useCallback, useState, type CSSProperties } from "react";
-import { createTranslator } from "@app/i18n";
 
 import { fixtureAddresses, panelFixtures, StandInPage } from "./panel-screen-fixtures";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
 import { layoutCustomProperties } from "./shell-model";
 import type { ScreenModule } from "./surfaces";
 import { useViewportWidth } from "./use-workspace";
+import { screenTranslator } from "./screen-locale";
 
 export const surface = "panel-frame";
 
-const t = createTranslator("en");
+const t = screenTranslator();
 const noop = () => undefined;
 
 export const fixtures: ScreenModule["fixtures"] = {

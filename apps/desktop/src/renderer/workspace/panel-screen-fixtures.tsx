@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { parseObjectAddress, type ObjectLocateResult, type ObjectRef } from "@app/domain";
-import { createTranslator } from "@app/i18n";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../components/glyphs";
 import { Button } from "../components/ui/button";
@@ -10,6 +9,7 @@ import { LoadingState, Skeleton, SkeletonLines } from "../components/ui/skeleton
 import { cn } from "../lib/cn";
 import { useObject } from "../lib/object-events";
 import type { PanelModule, PanelProps } from "./PanelStack";
+import { screenTranslator } from "./screen-locale";
 
 /**
  * What the panel stack's and the panel frame's screens show inside their frames: one synthetic
@@ -260,7 +260,7 @@ export function StandInPage({
   );
 }
 
-const stubT = createTranslator("en");
+const stubT = screenTranslator();
 
 /** What each stand-in page says when its object has nothing in it yet. */
 const emptyCopy: Partial<Record<ObjectRef["kind"], { headline: string; body: string }>> & {
