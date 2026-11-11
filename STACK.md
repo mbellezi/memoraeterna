@@ -33,6 +33,8 @@ approved version changes, update this file in the same change.
 | `typescript-eslint` | `8.71.0` | TypeScript lint rules; supports TypeScript `>=4.8.4 <6.1.0` |
 | `eslint-plugin-react-hooks` | `7.1.1` | Hooks rules for renderer code |
 | `globals` | `17.12.0` | Environment globals for the ESLint config |
+| `@playwright/test` | `1.64.1` | Electron journeys only (F5 D2, Apache-2.0); install with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, never `playwright install` |
+| `umap-js` | `1.4.0` | Dev only: the Atlas spike (F5 D2, MIT) |
 | CPython | `3.13.13` | Isolated Docling sidecar only |
 
 Directly executed `.ts` files must stay within Node's erasable TypeScript syntax
@@ -53,6 +55,7 @@ files executed directly by Node.
 | `@types/react` / `@types/react-dom` | `19.2.17` / `19.2.3` |
 | Tailwind CSS / `@tailwindcss/vite` | `4.3.2` |
 | shadcn/ui | Vendored components; CLI baseline `4.13.0` |
+| Primitives | `radix-ui` `1.8.1` and `cmdk` `1.1.1` (MIT), behind first-party components on the tokens (F5 D2) |
 | Icons | `lucide-react` `1.23.0` for interface icons; object-kind and relation-stance glyphs are first-party inline SVG (`apps/desktop/src/renderer/components/glyphs.tsx`) |
 | Fonts (OFL-1.1, bundled offline) | `@fontsource-variable/inter` `5.3.0` (interface) and `@fontsource-variable/source-serif-4` `5.3.0` (reading), imported through `wght.css` only |
 | Interactive graph rendering | `sigma` `3.0.3` with `graphology` `0.26.0` |
@@ -132,10 +135,9 @@ Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
 - bge-reranker-v2-m3 Q8_0 GGUF (gpustack), pinned by SHA-256 (F0 spike): Spike A
   rejected it for matching and F3 retired it as decision 3's second fallback
   (Q18; a bake-off control only), so it is not in the catalog.
-- `radix-ui` and `cmdk` through vendored shadcn components (F5).
-- `@playwright/test` for Electron journeys (F5).
-- `umap-js` and `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike
-  (F6). Stay on `sigma` `3.0.3` until a sigma 4 spike decides otherwise.
+- `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike (F6; `umap-js`
+  is installed for the spike). Stay on `sigma` `3.0.3` until a sigma 4 spike
+  decides otherwise.
 
 Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use `@cosmos.gl/graph`
 (MIT) instead if a GPU force layout is ever needed.
