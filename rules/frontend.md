@@ -52,6 +52,7 @@ accessibility, visualizations or user-visible backend messages.
 
 - Every important view covers loading, empty, error and success states (plus
   partial or waiting states). Failures stay visible and retryable.
+- Every surface in `workspace/surfaces.ts` has a screen module with loading, empty, error and success states over a fake `window.app` (`npm run screens -- --check`).
 - Product copy speaks from the user's side: what is happening and what they can
   do. State-machine terms, raw IDs and UUIDs never appear in normal UI (Diagnostics).
 - Cancelable work offers cancellation (destructive actions: `security-privacy.md`).

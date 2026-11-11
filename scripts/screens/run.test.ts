@@ -1,0 +1,185 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import type { SurfaceEntry } from "../../apps/desktop/src/renderer/workspace/surfaces";
+import { entrySource, pageHtml } from "./build-bundle";
+import { evidenceReasons, type Evidence } from "./evidence";
+import { captureJobs, parseScreensArgs, selectSurfaces, summarize, takeLock } from "./run";
+
+const entries: SurfaceEntry[] = [
+  { id: "inbox", kind: "hosted", implementation: "a/Inbox.tsx", screen: "a/inbox.screen.tsx" },
+  {
+    id: "note",
+    kind: "panel",
+    implementation: "p/note.panel.tsx",
+    screen: "p/note.screen.tsx",
+    ribbon: true
+  },
+  { id: "planned", kind: "panel", implementation: "p/x.panel.tsx", screen: "p/x.screen.tsx" }
+];
+
+describe("the screens command line", () => {
+  it("reads repeated and comma-separated surfaces, --check and the filters", () => {
+    expect(
+      parseScreensArgs([
+        "--screen",
+        "shell,rail",
+        "--screen",
+        "inbox",
+        "--check",
+        "--mode",
+        "error"
+      ])
+    ).toMatchObject({
+      screens: ["shell", "rail", "inbox"],
+      check: true,
+      modes: ["error"],
+      shots: true
+    });
+    expect(parseScreensArgs(["--no-shots", "--width", "1200"])).toMatchObject({
+      shots: false,
+      widths: [1200]
+    });
+  });
+
+  it("refuses an unknown flag, a missing value, a bad mode and a width below the window minimum", () => {
+    expect(() => parseScreensArgs(["--nope"])).toThrow("Unknown argument");
+    expect(() => parseScreensArgs(["--screen"])).toThrow("needs a value");
+    expect(() => parseScreensArgs(["--mode", "ready"])).toThrow("Unknown mode");
+    expect(() => parseScreensArgs(["--width", "800"])).toThrow("at least 960");
+  });
+});
+
+describe("which surfaces a run covers", () => {
+  const exists = (path: string) => !path.startsWith("p/x");
+
+  it("covers every surface that has an implementation and a screen module by default", () => {
+    expect(selectSurfaces([], exists, entries).map((entry) => entry.id)).toEqual(["inbox", "note"]);
+  });
+
+  it("names a planned or an unknown surface instead of skipping it when it is requested", () => {
+    expect(() => selectSurfaces(["planned"], exists, entries)).toThrow("is planned");
+    expect(() => selectSurfaces(["nope"], exists, entries)).toThrow("Unknown surface");
+    expect(() =>
+      selectSurfaces(["inbox"], (path) => !path.endsWith(".screen.tsx"), entries)
+    ).toThrow("no screen module");
+  });
+});
+
+describe("the capture plan", () => {
+  it("is surface x 4 modes x 2 themes x 2 widths, with the width as the outer loop", () => {
+    const jobs = captureJobs(entries.slice(0, 2), { modes: [], themes: [], widths: [] });
+    expect(jobs).toHaveLength(2 * 4 * 2 * 2);
+    expect(jobs.slice(0, 16).every((job) => job.width === 960)).toBe(true);
+    expect(new Set(jobs.map((job) => job.mode))).toEqual(
+      new Set(["loading", "empty", "error", "success"])
+    );
+  });
+
+  it("narrows to the requested mode, theme and width", () => {
+    expect(
+      captureJobs(entries.slice(0, 1), { modes: ["error"], themes: ["dark"], widths: [1440] })
+    ).toEqual([{ surface: "inbox", mode: "error", theme: "dark", width: 1440 }]);
+  });
+});
+
+describe("the check summary", () => {
+  const result = (ok: boolean, reasons: string[] = []) => ({
+    surface: "inbox",
+    mode: "error" as const,
+    theme: "light" as const,
+    width: 960,
+    frame: "harness" as const,
+    state: "error",
+    ok,
+    reasons,
+    missing: [],
+    pageErrors: []
+  });
+
+  it("passes only when something was checked and nothing failed", () => {
+    expect(summarize([result(true)]).passed).toBe(true);
+    expect(summarize([]).passed).toBe(false);
+  });
+
+  it("names each failure with its surface, mode, theme, width and reasons", () => {
+    const summary = summarize([result(true), result(false, ["error shows no alert"])]);
+    expect(summary).toMatchObject({ passed: false, total: 2, failed: 1 });
+    expect(summary.failures).toEqual(["inbox error light 960: error shows no alert"]);
+  });
+});
+
+describe("what each state must show in the DOM", () => {
+  const none: Evidence = { alerts: 0, busy: 0, statuses: 0, passthrough: 0, text: 12 };
+
+  it("loading needs a busy or status region and no alert", () => {
+    expect(evidenceReasons("loading", { ...none, busy: 1 })).toEqual([]);
+    expect(evidenceReasons("loading", { ...none, statuses: 1 })).toEqual([]);
+    expect(evidenceReasons("loading", none)).toEqual(["loading shows no busy or status region"]);
+    expect(evidenceReasons("loading", { ...none, busy: 1, alerts: 1 })).toEqual([
+      "loading shows an alert"
+    ]);
+  });
+
+  it("error needs an alert, or a host that says the app shows instead", () => {
+    expect(evidenceReasons("error", { ...none, alerts: 1 })).toEqual([]);
+    expect(evidenceReasons("error", { ...none, passthrough: 1 })).toEqual([]);
+    expect(evidenceReasons("error", none)).toEqual(["error shows no alert"]);
+  });
+
+  it("empty and success need text, no alert and nothing busy", () => {
+    for (const mode of ["empty", "success"] as const) {
+      expect(evidenceReasons(mode, none)).toEqual([]);
+      expect(evidenceReasons(mode, { ...none, alerts: 1, busy: 1, text: 0 })).toEqual([
+        `${mode} shows an alert`,
+        `${mode} is still busy`,
+        `${mode} shows no text`
+      ]);
+    }
+  });
+});
+
+describe("the capture lock", () => {
+  const directories: string[] = [];
+  afterEach(() => {
+    for (const directory of directories.splice(0))
+      rmSync(directory, { recursive: true, force: true });
+  });
+  const lockFile = () => {
+    const directory = mkdtempSync(join(tmpdir(), "screens-lock-"));
+    directories.push(directory);
+    return join(directory, ".lock");
+  };
+
+  it("refuses a second capture while the first owner lives and frees the file on release", () => {
+    const file = lockFile();
+    const release = takeLock(file, () => true);
+    expect(() => takeLock(file, () => true)).toThrow("Another screens capture is running");
+    release();
+    expect(() => takeLock(file, () => true)()).not.toThrow();
+  });
+
+  it("replaces the lock of a dead owner", () => {
+    const file = lockFile();
+    writeFileSync(file, "999999");
+    expect(() => takeLock(file, () => false)()).not.toThrow();
+  });
+});
+
+describe("the fixture bundle's entry", () => {
+  it("imports the harness, the styles and each screen module, and registers them by id", () => {
+    const source = entrySource(entries.slice(0, 2), "/r");
+    expect(source).toContain('import "/r/styles.css";');
+    expect(source).toContain('import * as screen0 from "/r/a/inbox.screen.tsx";');
+    expect(source).toContain('import * as screen1 from "/r/p/note.screen.tsx";');
+    expect(source).toContain('registerScreens({ "inbox": screen0, "note": screen1 }, ["note"]);');
+  });
+
+  it("never lets a closing tag end the page's script or style early", () => {
+    const html = pageHtml('const s = "</script>";', "a::after{content:'</style>'}");
+    expect(html.match(/<\/script>/gu)).toHaveLength(1);
+    expect(html.match(/<\/style>/gu)).toHaveLength(1);
+  });
+});

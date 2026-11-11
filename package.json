@@ -83,6 +83,7 @@
     "firstrun:e2e": "tsx apps/desktop/src/main/services/firstrun-e2e/cli.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
+    "screens": "tsx scripts/screens/run.ts",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast",
     "check:changed": "node scripts/check-changed.mjs"
   },
