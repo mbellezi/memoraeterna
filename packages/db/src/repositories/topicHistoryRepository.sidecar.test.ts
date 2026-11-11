@@ -5,7 +5,23 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { TopicShapeSchema, topicReadLimits } from "@app/domain";
-import { topicRecord } from "@app/domain/topic-tree";
+import {
+  applyGateResolution,
+  createMatrix,
+  createTopicTreeEditor,
+  createTopicTreeState,
+  itemKey,
+  keyedVectors,
+  placeItem,
+  placementRecord,
+  recomputeSubtree,
+  registerItem,
+  resolveGate,
+  topicRecord,
+  topicTreeConfigWith,
+  unit,
+  type StructureEvent
+} from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { closePgPool, createPgPool, type PgPool } from "../client.js";
@@ -42,13 +58,27 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
   const chain = Array.from({ length: 6 }, () => randomUUID());
   const bulk = Array.from({ length: topicReadLimits.shapeNodesMax + 100 }, () => randomUUID());
 
-  const topic = { a: randomUUID(), b: randomUUID(), quiet: randomUUID(), unknown: randomUUID() };
+  const topic = {
+    a: randomUUID(),
+    b: randomUUID(),
+    quiet: randomUUID(),
+    unknown: randomUUID(),
+    // The gate scenario: `parent` holds what waits for the gate, `leaf` (topic A) and `sibling`
+    // are the leaves below it; `moved` receives a human move.
+    parent: randomUUID(),
+    sibling: randomUUID(),
+    moved: randomUUID()
+  };
 
   type Status = "applied" | "pending_review" | "dismissed" | "undone";
   interface Event {
     op?: string;
     topic: string;
     rank?: number;
+    /** The event as the engine wrote it: the item, and the payloads before and after. */
+    item?: string;
+    before?: unknown;
+    after?: unknown;
   }
 
   /** One change-set with its events; `appliedAt` is set only where the status says it was applied. */
@@ -81,15 +111,21 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
       const op = event.op ?? "item.place";
       await pool.query(
         `insert into topic_structure_events (change_set_id, seq, op, topic_id, item_kind, item_id, before, after)
-         values ($1, $2, $3, $4, 'note', $5, $6::jsonb, $7::jsonb)`,
+         values ($1, $2, $3, $4, 'note', $5::uuid, $6::jsonb, $7::jsonb)`,
         [
           id,
           seq,
           op,
           event.topic,
-          randomUUID(),
-          op === "item.place" ? null : JSON.stringify({ rank: event.rank ?? 0 }),
-          JSON.stringify({ topicId: event.topic, rank: event.rank ?? 0 })
+          event.item ?? randomUUID(),
+          JSON.stringify(
+            event.before !== undefined
+              ? event.before
+              : op === "item.place"
+                ? null
+                : { topicId: event.topic, rank: event.rank ?? 0 }
+          ),
+          JSON.stringify(event.after ?? { topicId: event.topic, rank: event.rank ?? 0 })
         ]
       );
     }
@@ -97,6 +133,82 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
   }
 
   const place = (topicId: string, rank = 0): Event => ({ topic: topicId, rank });
+  /** The structure events the engine wrote, as rows of a change-set. */
+  const engineEvents = (events: readonly StructureEvent[]): Event[] =>
+    events.map((event) => ({
+      op: event.op,
+      topic: (event as { topicId: string }).topicId,
+      item: (event as { item: string }).item.slice("note:".length),
+      before: event.before,
+      after: event.after
+    }));
+
+  /**
+   * What the engine does with ambiguous notes, run for real: PLACE parks each one at `topic.parent`
+   * flagged needs_gate (an item.place at rank 0), then the gate accepts one into the leaf `topic.a`
+   * and refuses the other (an item.move, which for the accepted one changes the topic). Neither
+   * change-set holds a rank-0 item.place at the leaf.
+   */
+  function engineGate() {
+    const dim = 4;
+    const vec = (...values: number[]) => unit(Float32Array.from(values));
+    const config = topicTreeConfigWith({
+      placement: { spreadFactor: 10, spreadFloor: 0.2, ambiguityMargin: 0.05 },
+      secondary: { maxScoreGap: 0.3 }
+    });
+    const members = {
+      leaf: [vec(1, 0.1, 0, 0), vec(1, 0, 0.1, 0), vec(1, 0.05, 0.05, 0)],
+      sibling: [vec(0.1, 1, 0, 0), vec(0, 1, 0.1, 0), vec(0.05, 1, 0.05, 0)]
+    };
+    const accepted = itemKey("note", randomUUID());
+    const refused = itemKey("note", randomUUID());
+    const keys = [
+      ...members.leaf.map(() => itemKey("note", randomUUID())),
+      ...members.sibling.map(() => itemKey("note", randomUUID())),
+      accepted,
+      refused
+    ];
+    const rows = [...members.leaf, ...members.sibling, vec(1, 1, 0, 0), vec(1, 1, 0, 0)];
+    const matrix = createMatrix(rows.length, dim);
+    rows.forEach((row, index) => matrix.data.set(row, index * dim));
+    const vectors = keyedVectors(matrix, keys);
+    const state = createTopicTreeState({ dim, rootId });
+    keys.forEach((key, index) =>
+      registerItem(state, {
+        key,
+        kind: "note",
+        contentHash: index.toString(16).padStart(4, "0"),
+        rootSource: null
+      })
+    );
+    const setup = createTopicTreeEditor(state, { record: false });
+    setup.createTopic(topic.parent, rootId);
+    setup.createTopic(topic.a, topic.parent);
+    setup.createTopic(topic.sibling, topic.parent);
+    keys.slice(0, 3).forEach((key) => setup.placeItem(key, placementRecord(topic.a)));
+    keys.slice(3, 6).forEach((key) => setup.placeItem(key, placementRecord(topic.sibling)));
+    recomputeSubtree(state, vectors);
+    const context = () => ({
+      state,
+      vectors,
+      config,
+      editor: createTopicTreeEditor(state),
+      now: "2026-11-10T09:00:00.000Z"
+    });
+
+    const parking = context();
+    for (const key of [accepted, refused]) placeItem(parking, key);
+    const resolving = context();
+    const accept = resolveGate([{ topicId: topic.a, logOdds: 4 }], config.gate);
+    const refuse = resolveGate([{ topicId: topic.a, logOdds: -5 }], config.gate);
+    expect(applyGateResolution(resolving, accepted, accept)).toMatchObject({
+      kind: "moved",
+      from: topic.parent,
+      to: topic.a
+    });
+    expect(applyGateResolution(resolving, refused, refuse)).toMatchObject({ to: topic.parent });
+    return { parked: parking.editor.events, resolved: resolving.editor.events };
+  }
   const counts = (series: { daily: { arrivals: number }[] } | undefined) =>
     series?.daily.map((entry) => entry.arrivals);
 
@@ -157,7 +269,33 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
       appliedAt: at("2026-11-11", "09:00:00"),
       events: [place(topic.a), place(topic.a)]
     });
-    await changeSet({ origin: "gate", appliedAt: at("2026-11-10"), events: [place(topic.a)] });
+    // The gate as the engine does it (see engineGate): the ambiguous notes are parked above the
+    // leaves in a change-set of PLACE, and the gate's change-set moves one into topic A.
+    const gate = engineGate();
+    expect(gate.parked.map((event) => [event.op, event.topicId])).toEqual([
+      ["item.place", topic.parent],
+      ["item.place", topic.parent]
+    ]);
+    expect(gate.resolved.map((event) => event.op)).toEqual(["item.move", "item.move"]);
+    await changeSet({ appliedAt: at("2026-11-10", "08:00:00"), events: engineEvents(gate.parked) });
+    await changeSet({
+      origin: "gate",
+      appliedAt: at("2026-11-10"),
+      events: engineEvents(gate.resolved)
+    });
+    // A person moves a placed item into another topic.
+    await changeSet({
+      origin: "human",
+      appliedAt: at("2026-11-10"),
+      events: [
+        {
+          op: "item.move",
+          topic: topic.moved,
+          before: { topicId: topic.b, rank: 0, needsGate: false, needsVector: false },
+          after: { topicId: topic.moved, rank: 0, needsGate: false, needsVector: false }
+        }
+      ]
+    });
     await changeSet({ origin: "human", appliedAt: at("2026-11-08"), events: [place(topic.a)] });
     // What does not count, all on days inside the window: a proposal that waits, one the person
     // dismissed, one that was undone, the tree being built, a secondary placement and a move.
@@ -177,7 +315,13 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
     await changeSet({
       appliedAt: at("2026-11-09"),
       events: [
-        { op: "item.move", topic: topic.a },
+        // A placement that changes in place (a new score) and one that goes away.
+        {
+          op: "item.move",
+          topic: topic.a,
+          before: { topicId: topic.a, rank: 0, score: 0.5 },
+          after: { topicId: topic.a, rank: 0, score: 0.6 }
+        },
         { op: "item.unplace", topic: topic.a }
       ]
     });
@@ -215,8 +359,23 @@ describe.skipIf(!sidecarInstalled)("topic history on a real database", () => {
       "2026-11-11"
     ]);
     // 11-08 human 1; 11-09 nothing that counts (pending, dismissed, undone, build, rebuild,
-    // secondary and move are all that day); 11-10 gate 1; 11-11 place 2.
+    // secondary, a move within the topic and an unplace are all that day); 11-10 the gate's move
+    // into it 1; 11-11 place 2.
     expect(counts(a)).toEqual([0, 0, 0, 1, 0, 1, 2]);
+  });
+
+  it("counts a gated item where the gate sent it, not where it waited", async () => {
+    const series = await history.readHistory(
+      { topicIds: [topic.a, topic.parent, topic.moved, topic.sibling], days: 2 },
+      { now, timeZone: "UTC" }
+    );
+    // The leaf got the accepted note on 11-10. The topic it waited in got no arrival from the
+    // parking (an item.place flagged needs_gate), only the refused note the gate settled there.
+    expect(counts(series[0])).toEqual([1, 2]);
+    expect(counts(series[1])).toEqual([1, 0]);
+    // A human move counts in the topic the item went to.
+    expect(counts(series[2])).toEqual([1, 0]);
+    expect(counts(series[3])).toEqual([0, 0]);
   });
 
   it("does not count a pending change-set whose time is inside the window", async () => {

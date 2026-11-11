@@ -20,10 +20,11 @@ function fakePool(
   arrivals: Array<{ topicId: string; day: string; arrivals: number }>,
   days = [day(9), day(10), day(11)]
 ) {
-  const query = vi.fn(async (sql: string) =>
-    sql.includes("generate_series")
-      ? { rows: days.map((value) => ({ day: value })) }
-      : { rows: arrivals }
+  const query = vi.fn<(sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>>(
+    async (sql) =>
+      sql.includes("generate_series")
+        ? { rows: days.map((value) => ({ day: value })) }
+        : { rows: arrivals }
   );
   return { pool: { query } as unknown as PgPool, query };
 }

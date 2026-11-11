@@ -88,6 +88,26 @@ export class TopicReadError extends Error {
 /** Origins whose placements count as "new this week": content arriving, not the tree being built. */
 export const topicArrivalOriginsSql = "('place', 'gate', 'human')";
 const arrivalOrigins = topicArrivalOriginsSql;
+
+/** A placement payload (`before` or `after`) of an item that waits for the gate or for its vector. */
+const parkedSql = (payload: string) =>
+  `(coalesce((${payload} ->> 'needsGate')::boolean, false)
+      or coalesce((${payload} ->> 'needsVector')::boolean, false))`;
+
+/**
+ * The structure event of an item arriving in a topic as its primary placement, counted at the
+ * destination: a first placement, or a move into another topic (what a gate decision, a human
+ * move and a later PLACE are), or a move that settles a placement parked where it was. A
+ * placement that only parks the item (it waits for the gate or for its vector, in an internal
+ * topic or the root) is not an arrival: the item has not arrived anywhere yet. `alias` is the
+ * events table's alias; the event's topic is its destination.
+ */
+export const topicArrivalEventSql = (alias: string) =>
+  `((${alias}.after ->> 'rank') = '0' and not ${parkedSql(`${alias}.after`)} and (
+      ${alias}.op = 'item.place'
+      or (${alias}.op = 'item.move' and (
+        (${alias}.before ->> 'topicId') is distinct from (${alias}.after ->> 'topicId')
+        or ${parkedSql(`${alias}.before`)}))))`;
 /** Origins "changed today" lists: structure that changed, not routine placements. */
 const structuralOrigins = "('rebalance', 'audit', 'areas', 'naming', 'human', 'rebuild')";
 /** Notes the tree places: neither discarded nor archived (superseded notes are filtered by the engine). */
@@ -118,7 +138,8 @@ const recentPlacementsSql = (since: number) => `select e.topic_id, count(*)::int
          and cs.origin in ${arrivalOrigins} offset 0) c
     cross join lateral (
       select ev.topic_id from topic_structure_events ev
-       where ev.change_set_id = c.id and ev.op = 'item.place' and (ev.after ->> 'rank') = '0'
+       where ev.change_set_id = c.id and ev.op in ('item.place', 'item.move')
+         and ${topicArrivalEventSql("ev")}
        offset 0) e
    group by e.topic_id`;
 

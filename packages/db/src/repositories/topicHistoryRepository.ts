@@ -4,13 +4,15 @@
 // has not (or no longer has) put anything anywhere.
 //
 // An arrival is what "new this week" counts on the Shape cells (`recent` in topicReadRepository):
-// an `item.place` event at rank 0 (the primary placement) of a change-set whose origin is content
-// arriving (place, gate or human), never the engine rebuilding the tree. The day is the one in the
-// time zone of the caller, as the other reads of "today" are.
+// an item reaching a topic as its primary placement (`topicArrivalEventSql`: a first placement or
+// a move into the topic, never a placement that only parks the item for the gate or its vector),
+// in a change-set whose origin is content arriving (place, gate or human), never the engine
+// rebuilding the tree. The day is the one in the time zone of the caller, as the other reads of
+// "today" are.
 import { topicReadLimits } from "@app/domain";
 
 import type { PgPool } from "../client.js";
-import { topicArrivalOriginsSql } from "./topicReadRepository.js";
+import { topicArrivalEventSql, topicArrivalOriginsSql } from "./topicReadRepository.js";
 
 export interface TopicHistoryInput {
   /** Up to `topicReadLimits.historyTopicsMax` topics; a repeated ID is answered once. */
@@ -62,7 +64,8 @@ export const topicHistorySql = {
          count(*)::int as arrivals
       from topic_structure_events e
       join topic_change_sets cs on cs.id = e.change_set_id
-     where e.topic_id = any($1::uuid[]) and e.op = 'item.place' and (e.after ->> 'rank') = '0'
+     where e.topic_id = any($1::uuid[]) and e.op in ('item.place', 'item.move')
+       and ${topicArrivalEventSql("e")}
        and cs.applied_at is not null and cs.status = 'applied'
        and cs.origin in ${topicArrivalOriginsSql}
        and cs.applied_at >= ((date_trunc('day', $2::timestamptz at time zone $3)
