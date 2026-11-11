@@ -3027,7 +3027,6 @@
         "undone": "Change undone.",
         "undo": "Undo",
         "undoing": "Undoing...",
-        "dismiss": "Dismiss",
         "blocked": "It cannot be undone now: a later change depends on it.",
         "failed": "The change could not be undone. Try again."
       }

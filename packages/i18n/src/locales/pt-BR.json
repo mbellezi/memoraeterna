@@ -3030,7 +3030,6 @@
         "undone": "Mudança desfeita.",
         "undo": "Desfazer",
         "undoing": "Desfazendo...",
-        "dismiss": "Dispensar",
         "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
         "failed": "Não foi possível desfazer a mudança. Tente novamente."
       }

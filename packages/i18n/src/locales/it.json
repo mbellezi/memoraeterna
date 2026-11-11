@@ -3025,7 +3025,6 @@
         "undone": "Modifica annullata.",
         "undo": "Annulla",
         "undoing": "Annullamento...",
-        "dismiss": "Chiudi",
         "blocked": "Non si può annullare ora: una modifica successiva ne dipende.",
         "failed": "Non è stato possibile annullare la modifica. Riprova."
       }

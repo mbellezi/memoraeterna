@@ -3034,7 +3034,6 @@
         "undone": "Cambio deshecho.",
         "undo": "Deshacer",
         "undoing": "Deshaciendo...",
-        "dismiss": "Descartar",
         "blocked": "No se puede deshacer ahora: un cambio posterior depende de él.",
         "failed": "No se pudo deshacer el cambio. Inténtalo de nuevo."
       }
