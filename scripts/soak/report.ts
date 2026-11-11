@@ -19,8 +19,8 @@
  * `report-joined.json` into the tail's directory, never the stopped run's.
  */
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { readFile, realpath, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 
 import { defaultAiRuntimeConfig } from "../../packages/ai/src/remote-execution.ts";
@@ -1892,8 +1892,9 @@ export const soakReportUsage = `Usage: npx tsx scripts/soak/report.ts <run direc
   --presoak               Also assert that each injected fault kind ended as expected (gate P, gate S).
   --count-local-writer    Count every structured call of the local writer in the repair rate (C4's re-run).
   --explanations <file>   JSON {"<job id>": "why it was not blocked by an unrelated job"} (T64r).
-  --join <tail run>       Join a stopped 7-day run (the positional) and its complement (D38a); writes
-                          <tail run>/report-joined.md and .json, never into the stopped run.
+  --join <tail run>       Join a stopped 7-day run (the positional) and its complement (D38a); repeat
+                          it for a second complement, in order. Writes <last tail>/report-joined.md
+                          and .json, never into the stopped run or an earlier tail.
   --out <file.md>         Where to write the Markdown (default: <run>/report.md).
   --json <file.json>      Where to write the data (default: <run>/report.json).
   --help                  Show this text.
@@ -1948,7 +1949,7 @@ export async function runSoakReport(
       presoak: { type: "boolean", default: false },
       "count-local-writer": { type: "boolean", default: false },
       explanations: { type: "string" },
-      join: { type: "string" },
+      join: { type: "string", multiple: true },
       out: { type: "string" },
       json: { type: "string" },
       help: { type: "boolean", default: false }
@@ -1960,8 +1961,13 @@ export async function runSoakReport(
   const explanations = values.explanations
     ? (JSON.parse(await readFile(resolve(values.explanations), "utf8")) as Record<string, string>)
     : {};
-  if (values.join !== undefined)
-    return joinedReport(directory, resolve(values.join), values, explanations);
+  if (values.join !== undefined && values.join.length > 0)
+    return joinedReport(
+      directory,
+      values.join.map((tail) => resolve(tail)),
+      values,
+      explanations
+    );
   const run = await loadRun(directory);
   const report = analyzeRun(run, {
     presoak: values.presoak,
@@ -2003,32 +2009,56 @@ export async function runSoakReport(
   };
 }
 
-/** `--join`: the joined report of a stopped run and its tail, written into the tail's folder. */
+/** `--join`: the joined report of a stopped run and its tail or tails, written into the last tail's folder. */
 async function joinedReport(
   first: string,
-  tail: string,
+  tails: readonly string[],
   values: { status?: boolean; presoak?: boolean; out?: string; json?: string },
   explanations: Record<string, string>
 ): Promise<{ text: string; code: 0 | 1 | 2 }> {
   if (values.status || values.presoak)
     return {
-      text: "--join makes the final report of two ended runs: --status and --presoak read one run (pass the tail alone)",
+      text: "--join makes the final report of ended runs: --status and --presoak read one run (pass the tail alone)",
       code: 1
     };
+  const tail = tails.at(-1)!;
   const out = resolve(values.out ?? join(tail, "report-joined.md"));
   const json = resolve(values.json ?? join(tail, "report-joined.json"));
-  const inside = (path: string) => {
-    const rel = relative(first, path);
-    return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
+  // Canonical spellings (symlinks, case on darwin): a target that does not exist yet by its folder.
+  const canonical = async (path: string) => {
+    try {
+      return await realpath(path);
+    } catch {
+      return join(await realpath(dirname(path)).catch(() => dirname(path)), basename(path));
+    }
   };
-  if (inside(out) || inside(json) || inside(tail))
+  const [firstPath, outPath, jsonPath] = await Promise.all([first, out, json].map(canonical));
+  const tailPaths = await Promise.all(tails.map(canonical));
+  const fold = (path: string) => (process.platform === "darwin" ? path.toLowerCase() : path);
+  const inside = (folder: string, path: string) => {
+    const rel = relative(fold(folder), fold(path));
+    return rel === "" || !(rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+  };
+  if (
+    inside(firstPath!, outPath!) ||
+    inside(firstPath!, jsonPath!) ||
+    tailPaths.some((entry) => inside(firstPath!, entry))
+  )
     return { text: `--join never writes into the stopped run's folder ${first}`, code: 1 };
+  const earlier = tailPaths
+    .slice(0, -1)
+    .findIndex((entry) => inside(entry, outPath!) || inside(entry, jsonPath!));
+  if (earlier >= 0)
+    return { text: `--join writes into the last tail only, never ${tails[earlier]}`, code: 1 };
+  if (new Set(tailPaths.map(fold)).size !== tails.length)
+    return { text: "--join names a tail twice", code: 1 };
   // Loaded lazily: report-joined.ts reads this module's analysis.
   const { JoinRefusal, joinRuns, renderJoinedReport } = await import("./report-joined.ts");
-  const [firstRun, tailRun] = [await loadRun(first), await loadRun(tail)];
+  const firstRun = await loadRun(first);
+  const tailRuns = await Promise.all(tails.map((entry) => loadRun(entry)));
   let report: ReturnType<typeof joinRuns>;
   try {
-    report = joinRuns(firstRun, tailRun, { explanations });
+    report = joinRuns(firstRun, tailRuns, { explanations });
   } catch (error) {
     if (error instanceof JoinRefusal) return { text: error.message, code: 1 };
     throw error;

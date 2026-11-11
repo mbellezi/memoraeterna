@@ -169,6 +169,8 @@ export function computeE1(
     dayOf?: (atMs: number) => number;
     /** Exposure counts from here only (a joined run leaves out a warm-up its other segment ran). */
     exposureFromMs?: number;
+    /** Exposure counts before here only (a joined run leaves out plan time its next segment ran). */
+    exposureToMs?: number;
   } = {}
 ): E1Result {
   const samples = sortedSamples(run);
@@ -201,7 +203,9 @@ export function computeE1(
     }
     const dayIndex = options.dayOf ? options.dayOf(at) : Math.floor((at - start) / day);
     exposure[dayIndex] ??= {};
-    const exposed = at >= (options.exposureFromMs ?? Number.NEGATIVE_INFINITY);
+    const exposed =
+      at >= (options.exposureFromMs ?? Number.NEGATIVE_INFINITY) &&
+      at < (options.exposureToMs ?? Number.POSITIVE_INFINITY);
     const byWorker = new Map<string, { idle: number; executing: number; waiting: number }>();
     for (const entry of workers) {
       const tally = byWorker.get(entry.worker) ?? { idle: 0, executing: 0, waiting: 0 };
@@ -912,6 +916,8 @@ export type E5NotExercisedWhy =
   | "unmet"
   /** Its expectation never opened (a daily cap the count never reached, a budget never at 80 %). */
   | "never_opened"
+  /** A joined run (D38a): the window starts after the plan time the segments covered. */
+  | "not_reached"
   /** Open past its settle, but no sample then held work its condition affects. */
   | "nothing_affected"
   /** It ended before a sample came after the settle of its expectation. */
@@ -1626,6 +1632,7 @@ export function computeE5(run: LoadedRun): E5Result {
 const notExercisedText: Record<E5NotExercisedWhy, string> = {
   unmet: "no call met its fault, so its class was not checked",
   never_opened: "its expectation never opened, so its class was not checked",
+  not_reached: "it starts after the plan time the segments covered, so its class was not checked",
   nothing_affected:
     "no sample after its settle held work its condition affects, so its class was not checked",
   ended_in_settle: "it ended inside the settle of its expectation, so its class was not checked",

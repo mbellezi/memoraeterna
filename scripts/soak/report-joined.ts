@@ -1,16 +1,18 @@
 /**
  * The joined report of a complement (docs/f4-decisions.md D38a, owner 2026-10-30): a 7-day run that
- * a harness predicate stopped, and the tail that ran the rest of the same plan on a clone of its
- * profile (`soak7-tail`: tail minute = plan minute - shift, from the stopped run's last executed
- * plan minute T0). Each segment is analysed on its own with the report's predicates; the joined
- * lines compose them as D38a says: per segment for swap, jobs and helper restarts (two processes, and
- * the wall-clock gap is no plan time), E1 per plan day, E3 per segment window, E2, E4 and E5 over
- * the union, the Codex tokens summed against the registered cap.
+ * a harness predicate stopped, and the tail or tails that ran the rest of the same plan, each on a
+ * clone of the previous segment's profile (`soak7-tail`, `soak7-tail2`: tail minute = plan minute -
+ * shift, from the previous segment's last executed plan minute T0). Each segment is analysed on its
+ * own with the report's predicates; the joined lines compose them as D38a says: per segment for swap,
+ * jobs and helper restarts (separate processes, and the wall-clock gaps are no plan time), E1 per
+ * plan day, E3 per segment window, E2, E4 and E5 over the union, the Codex tokens summed against the
+ * registered cap. A segment counts plan time from its T0 until the next segment's T0 (a tail that
+ * ended early is clipped where the next one took over).
  *
- *   npm run soak:report -- <stopped run> --join <tail run> [--out <md>] [--json <json>]
+ *   npm run soak:report -- <stopped run> --join <tail run> [--join <tail2 run>] [--out <md>] [--json <json>]
  *
- * It writes `report-joined.md` and `report-joined.json` into the tail's folder (never the stopped
- * run's). The per-segment reports are attached in the JSON.
+ * It writes `report-joined.md` and `report-joined.json` into the last tail's folder (never an earlier
+ * segment's). The per-segment reports are attached in the JSON.
  */
 import { buildTimeline } from "../../apps/desktop/src/main/services/dev/soak-driver.ts";
 import { soakProfileSchema } from "../../apps/desktop/src/main/services/dev/soak-plan.ts";
@@ -58,7 +60,7 @@ const fixedPredicates = ["swap", "e4", "jobs"] as const;
 /** A joined report the inputs cannot make (exit 1): the reasons, one a line. */
 export class JoinRefusal extends Error {
   public constructor(public readonly problems: string[]) {
-    super(`the two runs cannot be joined:\n${problems.map((line) => `- ${line}`).join("\n")}`);
+    super(`the runs cannot be joined:\n${problems.map((line) => `- ${line}`).join("\n")}`);
   }
 }
 
@@ -71,8 +73,11 @@ export interface JoinedSegment {
   endedAt: string | null;
   endReason: string | null;
   hours: number;
-  /** Plan minute of the segment's minute 0 (0 for the stopped run, the shift for the tail). */
+  /** Plan minute of the segment's minute 0 (0 for the stopped run, the shift for a tail). */
   planOffsetMinutes: number;
+  /** The plan minutes this segment counts: from its T0 (0 for the stopped run) to the next T0 or its end. */
+  planFromMinute: number;
+  planToMinute: number;
   /** The windows that opened in the segment, by id. */
   windows: string[];
   report: SoakReport;
@@ -83,14 +88,16 @@ export interface JoinedReport {
   generatedAt: string;
   verdict: "pass" | "review" | "fail";
   plan: {
-    /** The stopped run's last executed plan minute. */
+    /** The stopped run's last executed plan minute (the first tail's T0). */
     t0Minute: number;
-    /** Tail minute = plan minute - shift. */
+    /** First tail minute = plan minute - shift. */
     shiftMinutes: number;
+    /** Each tail's T0 and shift, in order (the first equals t0Minute and shiftMinutes). */
+    seams: Array<{ tail: string; t0Minute: number; shiftMinutes: number; gapHours: number }>;
     plannedHours: number;
-    /** Plan time the two segments ran: the stopped run to T0, the tail after its warm-up. */
+    /** Plan time the segments ran: each from its T0 to the next segment's T0 or its end. */
     coveredHours: number;
-    /** Wall-clock time between the stopped run's end and the tail's start (no plan time). */
+    /** Wall-clock time between consecutive segments, summed (no plan time). */
     gapHours: number;
   };
   notes: string[];
@@ -131,84 +138,130 @@ const num = (check: Check | undefined, key: string) => {
   const value = check?.data?.[key];
   return typeof value === "number" ? value : 0;
 };
+const round2 = (value: number) => Math.round(value * 100) / 100;
 const pct = (part: number, whole: number) =>
   whole === 0 ? "n/a" : `${((part / whole) * 100).toFixed(2)} %`;
 
+const isTail = (index: number) => index > 0;
 /**
- * The shift and T0 of a stopped run and its tail, and every reason they cannot be joined: the
- * same writer, the stopped run's plan (`soak7`) with every tail window at one shift of its own
- * window of the same id, nothing of the tail at or before T0, ids unique across the two, and the
- * plan covered.
+ * A segment's last executed plan minute: its own actions shifted; a tail's local faults (own period)
+ * left out. Null when it executed no plan action (a tail quit in its warm-up): no T0 to join after.
  */
+function lastPlanMinute(run: LoadedRun, shiftMinutes: number, tail: boolean): number | null {
+  const start = toMs(run.meta.startedAt);
+  const minutes = actionsOf(run)
+    .filter((action) => !tail || !localActionKinds.has(action.kind))
+    .map((action) => (toMs(action.scheduledAt) - start) / minute + shiftMinutes);
+  return minutes.length === 0 ? (tail ? null : 0) : Math.max(...minutes);
+}
+
+/**
+ * The shift and T0 of each tail and every reason the segments cannot be joined: the same writer, the
+ * stopped run's plan (`soak7`) with every tail window at one shift of its own window of the same id,
+ * nothing of a tail at or before its T0 (the previous segment's last executed plan minute), ids unique
+ * across the segments, and the plan covered by each tail's planned duration.
+ */
+export function joinPlans(
+  first: LoadedRun,
+  tails: readonly LoadedRun[]
+): { seams: Array<{ shiftMinutes: number; t0Minute: number }>; problems: string[] } {
+  const problems: string[] = [];
+  if (tails.length === 0) problems.push("a joined report needs at least one tail");
+  if (!first.meta.f4 || tails.some((tail) => !tail.meta.f4))
+    problems.push("every run must be a 7-day F4 run (meta.f4)");
+  if (!first.meta.endReason) problems.push(`${first.meta.run} has not ended (meta endReason)`);
+  if (first.meta.profile !== "soak7")
+    problems.push(`the stopped run's plan is ${first.meta.profile}, not soak7`);
+  const planned = new Map((first.meta.f4?.windows ?? []).map((window) => [window.id, window]));
+  const seams: Array<{ shiftMinutes: number; t0Minute: number }> = [];
+  let previous = { run: first, shiftMinutes: 0, index: 0 };
+  tails.forEach((tail, position) => {
+    const index = position + 1;
+    const name = tail.meta.run;
+    const where = tails.length > 1 ? `${name}: ` : "";
+    if (!tail.meta.endReason)
+      problems.push(`${name} has not ended (meta endReason): read its --status while it runs`);
+    if (first.meta.realWriter?.providerConfigId !== tail.meta.realWriter?.providerConfigId)
+      problems.push(
+        `${where}the real writers differ (${first.meta.realWriter?.providerConfigId ?? "none"} and ${tail.meta.realWriter?.providerConfigId ?? "none"})`
+      );
+    const tailPlan = planOf(tail);
+    const tailF4 = tailPlan?.f4 as { windows?: unknown } | undefined;
+    if (typeof tailPlan?.description !== "string" || !Array.isArray(tailF4?.windows))
+      problems.push(`${name}'s meta does not record its plan (description and windows)`);
+    // The shift: each tail window starts at its plan window's start less the shift.
+    const tailWindows = tail.meta.f4?.windows ?? [];
+    const shifts = new Set<number>();
+    for (const window of tailWindows) {
+      const own = planned.get(window.id);
+      if (!own)
+        problems.push(`${where}the tail's window ${window.id} is not in the stopped run's plan`);
+      else shifts.add(own.startMinute - window.startMinute);
+    }
+    if (tailWindows.length === 0)
+      problems.push(`${where}the tail has no window to derive its shift from`);
+    if (shifts.size > 1)
+      problems.push(
+        `${where}the tail's windows are shifted unequally (${[...shifts].join(", ")} min)`
+      );
+    const shiftMinutes = shifts.size === 1 ? [...shifts][0]! : Number.NaN;
+    // T0: the previous segment's last executed plan minute (its last action's schedule).
+    const last = lastPlanMinute(previous.run, previous.shiftMinutes, isTail(previous.index));
+    if (last === null)
+      problems.push(
+        `${previous.run.meta.run} executed no plan action: leave it out of the join (the next tail's T0 would be undefined)`
+      );
+    const t0Minute = last ?? Number.NaN;
+    if (Number.isFinite(shiftMinutes) && Number.isFinite(t0Minute)) {
+      // The tail's minute 0 must not come after T0: the plan minutes between would run in no segment.
+      if (shiftMinutes > t0Minute)
+        problems.push(
+          `${where}the tail starts at plan minute ${shiftMinutes}, after T0 ${round2(t0Minute)}: plan minutes ${round2(t0Minute)}-${shiftMinutes} ran in no segment (a segment missing from --join?)`
+        );
+      for (const window of tailWindows)
+        if (window.startMinute + shiftMinutes <= t0Minute)
+          problems.push(
+            `${where}the tail's window ${window.id} starts at plan minute ${window.startMinute + shiftMinutes}, not after T0 ${t0Minute}`
+          );
+      const tailStart = toMs(tail.meta.startedAt);
+      const early = actionsOf(tail).filter(
+        (action) =>
+          !localActionKinds.has(action.kind) &&
+          (toMs(action.scheduledAt) - tailStart) / minute + shiftMinutes <= t0Minute
+      );
+      if (early.length > 0)
+        problems.push(
+          `${where}${early.length} tail action(s) ran at or before T0 ${t0Minute} (the first: ${early[0]!.kind} #${early[0]!.index})`
+        );
+      const covered = shiftMinutes + tail.meta.durationMs / minute;
+      if (covered < first.meta.durationMs / minute)
+        problems.push(
+          `${where}the plan is not covered: ${shiftMinutes} + ${tail.meta.durationMs / minute} min < ${first.meta.durationMs / minute} min`
+        );
+    }
+    previous = { run: tail, shiftMinutes, index };
+    seams.push({ shiftMinutes, t0Minute });
+  });
+  // Window and expectation ids are unique across the segments.
+  const ids = (run: LoadedRun) => new Set(truthsOf(run).map((truth) => truth.id));
+  const seen = ids(first);
+  for (const tail of tails) {
+    const own = ids(tail);
+    const shared = [...own].filter((id) => seen.has(id));
+    if (shared.length > 0)
+      problems.push(`window or expectation ids in both segments: ${shared.slice(0, 6).join(", ")}`);
+    for (const id of own) seen.add(id);
+  }
+  return { seams, problems };
+}
+
+/** {@link joinPlans} for a stopped run and one tail. */
 export function joinPlan(
   first: LoadedRun,
   tail: LoadedRun
 ): { shiftMinutes: number; t0Minute: number; problems: string[] } {
-  const problems: string[] = [];
-  if (!first.meta.f4 || !tail.meta.f4) problems.push("both runs must be 7-day F4 runs (meta.f4)");
-  if (!first.meta.endReason) problems.push(`${first.meta.run} has not ended (meta endReason)`);
-  if (!tail.meta.endReason)
-    problems.push(
-      `${tail.meta.run} has not ended (meta endReason): read its --status while it runs`
-    );
-  if (first.meta.realWriter?.providerConfigId !== tail.meta.realWriter?.providerConfigId)
-    problems.push(
-      `the real writers differ (${first.meta.realWriter?.providerConfigId ?? "none"} and ${tail.meta.realWriter?.providerConfigId ?? "none"})`
-    );
-  if (first.meta.profile !== "soak7")
-    problems.push(`the stopped run's plan is ${first.meta.profile}, not soak7`);
-  const tailPlan = planOf(tail);
-  const tailF4 = tailPlan?.f4 as { windows?: unknown } | undefined;
-  if (typeof tailPlan?.description !== "string" || !Array.isArray(tailF4?.windows))
-    problems.push(`${tail.meta.run}'s meta does not record its plan (description and windows)`);
-  // The shift: each tail window starts at its plan window's start less the shift.
-  const planned = new Map((first.meta.f4?.windows ?? []).map((window) => [window.id, window]));
-  const tailWindows = tail.meta.f4?.windows ?? [];
-  const shifts = new Set<number>();
-  for (const window of tailWindows) {
-    const own = planned.get(window.id);
-    if (!own) problems.push(`the tail's window ${window.id} is not in the stopped run's plan`);
-    else shifts.add(own.startMinute - window.startMinute);
-  }
-  if (tailWindows.length === 0) problems.push("the tail has no window to derive its shift from");
-  if (shifts.size > 1)
-    problems.push(`the tail's windows are shifted unequally (${[...shifts].join(", ")} min)`);
-  const shiftMinutes = shifts.size === 1 ? [...shifts][0]! : Number.NaN;
-  // T0: the stopped run's last executed plan minute (its last action's schedule).
-  const firstStart = toMs(first.meta.startedAt);
-  const t0Minute = Math.max(
-    0,
-    ...actionsOf(first).map((action) => (toMs(action.scheduledAt) - firstStart) / minute)
-  );
-  if (Number.isFinite(shiftMinutes)) {
-    for (const window of tailWindows)
-      if (window.startMinute + shiftMinutes <= t0Minute)
-        problems.push(
-          `the tail's window ${window.id} starts at plan minute ${window.startMinute + shiftMinutes}, not after T0 ${t0Minute}`
-        );
-    const tailStart = toMs(tail.meta.startedAt);
-    const early = actionsOf(tail).filter(
-      (action) =>
-        !localActionKinds.has(action.kind) &&
-        (toMs(action.scheduledAt) - tailStart) / minute + shiftMinutes <= t0Minute
-    );
-    if (early.length > 0)
-      problems.push(
-        `${early.length} tail action(s) ran at or before T0 ${t0Minute} (the first: ${early[0]!.kind} #${early[0]!.index})`
-      );
-    const covered = shiftMinutes + tail.meta.durationMs / minute;
-    if (covered < first.meta.durationMs / minute)
-      problems.push(
-        `the plan is not covered: ${shiftMinutes} + ${tail.meta.durationMs / minute} min < ${first.meta.durationMs / minute} min`
-      );
-  }
-  // Window and expectation ids are unique across the two segments.
-  const ids = (run: LoadedRun) => new Set(truthsOf(run).map((truth) => truth.id));
-  const firstIds = ids(first);
-  const shared = [...ids(tail)].filter((id) => firstIds.has(id));
-  if (shared.length > 0)
-    problems.push(`window or expectation ids in both segments: ${shared.slice(0, 6).join(", ")}`);
-  return { shiftMinutes, t0Minute, problems };
+  const { seams, problems } = joinPlans(first, [tail]);
+  return { ...seams[0]!, problems };
 }
 
 /** The windows that opened in a run (their ground-truth start), by id. */
@@ -217,16 +270,16 @@ const openedWindows = (run: LoadedRun) =>
     .filter((truth) => truth.phase === "start" && !truth.id.includes("#"))
     .map((truth) => truth.id);
 
-/** A window the stop lifted before its planned end: how much of it did not run. */
-function liftedWindows(run: LoadedRun): string[] {
+/** A window the stop lifted before its planned end: how much of it did not run, in plan minutes. */
+function liftedWindows(run: LoadedRun, shiftMinutes = 0): string[] {
   const start = toMs(run.meta.startedAt);
   const planned = new Map((run.meta.f4?.windows ?? []).map((window) => [window.id, window]));
   return truthsOf(run)
     .filter((truth) => truth.phase === "end" && !truth.id.includes("#") && planned.has(truth.id))
     .flatMap((truth) => {
       const window = planned.get(truth.id)!;
-      const endedAt = (toMs(truth.at) - start) / minute;
-      const plannedEnd = window.startMinute + window.durationMinutes;
+      const endedAt = (toMs(truth.at) - start) / minute + shiftMinutes;
+      const plannedEnd = window.startMinute + window.durationMinutes + shiftMinutes;
       return plannedEnd - endedAt > 1
         ? [
             `${truth.id} was lifted at plan minute ${Math.round(endedAt)} instead of ${plannedEnd} (${Math.round(plannedEnd - endedAt)} min not run)`
@@ -236,8 +289,8 @@ function liftedWindows(run: LoadedRun): string[] {
 }
 
 /** The local faults the plan holds over its whole duration, and what each segment injected. */
-function localFaultLine(first: LoadedRun, tail: LoadedRun): string {
-  const parsed = soakProfileSchema.safeParse(first.meta.plan);
+function localFaultLine(runs: readonly LoadedRun[]): string {
+  const parsed = soakProfileSchema.safeParse(runs[0]!.meta.plan);
   const plannedOf = (kind: string) =>
     parsed.success
       ? String(buildTimeline(parsed.data).filter((entry) => entry.kind === kind).length)
@@ -248,7 +301,31 @@ function localFaultLine(first: LoadedRun, tail: LoadedRun): string {
   const aborts = (run: LoadedRun) =>
     localsOf(run).filter((fault) => fault.kind === "gguf_abort" && fault.detail.stage === "armed")
       .length;
-  return `Local faults keep their own period in the tail (phase shifted, D1): helper kills ${kills(first)} + ${kills(tail)} = ${kills(first) + kills(tail)} of ${plannedOf("mlx_kill")} planned, GGUF aborts ${aborts(first)} + ${aborts(tail)} = ${aborts(first) + aborts(tail)} of ${plannedOf("gguf_abort")}; helper restarts are checked per segment.`;
+  const line = (count: (run: LoadedRun) => number) =>
+    `${runs.map(count).join(" + ")} = ${runs.reduce((sum, run) => sum + count(run), 0)}`;
+  return `Local faults keep their own period in a tail (phase shifted, D1): helper kills ${line(kills)} of ${plannedOf("mlx_kill")} planned, GGUF aborts ${line(aborts)} of ${plannedOf("gguf_abort")}; helper restarts are checked per segment.`;
+}
+
+/** The known limits a tail's plan records in its description ("Known D1 limits ..."), if any. */
+function knownLimits(run: LoadedRun): string | null {
+  const description = planOf(run)?.description;
+  if (typeof description !== "string") return null;
+  const at = description.indexOf("Known D1 limits");
+  return at < 0 ? null : description.slice(at);
+}
+
+/** The plan's windows that start at or after the covered end: they never ran in any segment. */
+function notRunWindows(first: LoadedRun, coveredToMinute: number): string[] {
+  const missed = (first.meta.f4?.windows ?? []).filter(
+    (window) => window.startMinute >= coveredToMinute
+  );
+  return missed.length > 0
+    ? [
+        `Windows of the plan not run (they start after plan minute ${round2(coveredToMinute)}): ${missed
+          .map((window) => `${window.id} at ${window.startMinute}`)
+          .join(", ")}.`
+      ]
+    : [];
 }
 
 /** A segment's check by id. */
@@ -419,7 +496,10 @@ function remoteDeadlinesJoined(segments: readonly JoinedSegment[]): Check {
 }
 
 /** E4: each part from the segment that exercised it; a part failed in either segment fails. */
-export function e4Joined(segments: readonly JoinedSegment[]): Check {
+export function e4Joined(
+  segments: readonly JoinedSegment[],
+  unreached: { money?: string } = {}
+): Check {
   const checks = segments.map((segment) => checkOf(segment.report, "e4-cap"));
   const part = (key: "a" | "b" | "c"): CheckStatus => {
     const statuses = checks.map((check) => (check?.data?.[key] ?? "n/a") as CheckStatus);
@@ -431,7 +511,12 @@ export function e4Joined(segments: readonly JoinedSegment[]): Check {
           ? "review"
           : "n/a";
   };
-  const parts = [part("a"), part("b"), part("c")];
+  // A money window the segments never reached leaves (c) unexercised: a review, not an n/a.
+  const parts = [
+    part("a"),
+    part("b"),
+    unreached.money && part("c") === "n/a" ? "review" : part("c")
+  ];
   return {
     ...perSegment("e4-cap", segments),
     bar: `${checks[0]?.bar ?? ""} (each part from the segment that exercised it)`,
@@ -440,7 +525,15 @@ export function e4Joined(segments: readonly JoinedSegment[]): Check {
       : parts.includes("review") || parts.every((entry) => entry === "n/a")
         ? "review"
         : "pass",
-    value: parts.map((entry, index) => `${"abc"[index]}: ${entry}`).join(", ")
+    value: parts.map((entry, index) => `${"abc"[index]}: ${entry}`).join(", "),
+    details: [
+      ...perSegment("e4-cap", segments).details,
+      ...(unreached.money && parts[2] === "review"
+        ? [
+            `(c) the money window ${unreached.money} starts after the plan time covered: not exercised in the soak.`
+          ]
+        : [])
+    ]
   };
 }
 
@@ -491,14 +584,13 @@ function mergeE1(results: readonly E1Result[]): E1Result {
   };
 }
 
-/** The Codex tokens of both segments against the registered expectation and cap. */
+/** The Codex tokens of the segments against the registered expectation and cap. */
 function tokensJoined(
-  first: LoadedRun,
-  tail: LoadedRun,
+  runs: readonly LoadedRun[],
   merged: LoadedRun,
-  dayOf: (atMs: number) => number,
-  planDays: number
+  dayOf: (atMs: number) => number
 ): { check: Check; table: Array<Record<string, string | number>> } {
+  const first = runs[0]!;
   const codex = first.meta.f4!.codex;
   const rows = codexRows(merged);
   const tokens = (row: (typeof rows)[number]) => (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
@@ -506,9 +598,9 @@ function tokensJoined(
   const unknown = rows.filter((row) => row.inputTokens === null || row.inputTokens === undefined);
   const lastCap = (run: LoadedRun) =>
     run.samples.toSorted((a, b) => toMs(a.at) - toMs(b.at)).at(-1)?.cap;
-  const spent = [first, tail].map((run) => lastCap(run)?.spentTokens ?? 0);
+  const spent = runs.map((run) => lastCap(run)?.spentTokens ?? 0);
   const spentTotal = spent.reduce((sum, value) => sum + value, 0);
-  const exhausted = [first, tail].filter((run) =>
+  const exhausted = runs.filter((run) =>
     run.events.some((event) => event.type === "cap" && event.action === "exhausted")
   );
   const drops = merged.events.filter(
@@ -524,7 +616,7 @@ function tokensJoined(
     .map(([index, value]) => ({
       "plan day": index + 1,
       "Codex tokens": value,
-      "planned a day": Math.round(codex.expected / Math.max(1, planDays))
+      "planned a day": Math.round(codex.expected / Math.max(1, first.meta.durationMs / day))
     }));
   const status: CheckStatus =
     exhausted.length > 0 || spentTotal > codex.cap || total > codex.cap
@@ -541,7 +633,12 @@ function tokensJoined(
       status,
       value: `${total} tokens in ${rows.length} Codex call(s) (${unknown.length} without a count) against ${codex.expected} expected for the plan and a cap of ${codex.cap}; harness cap spent ${spent.join(" + ")} = ${spentTotal}; ${drops.length} drop step(s)`,
       details: [
-        `${first.meta.run}: harness cap ${first.meta.f4!.codex.cap}, spent ${spent[0]}; ${tail.meta.run}: harness cap ${tail.meta.f4?.codex.cap ?? "-"}, spent ${spent[1]}`,
+        runs
+          .map(
+            (run, index) =>
+              `${run.meta.run}: harness cap ${run.meta.f4?.codex.cap ?? "-"}, spent ${spent[index]}`
+          )
+          .join("; "),
         ...drops.map(
           (entry) =>
             `drop step ${entry.step} at ${entry.at}: ${entry.note ?? ""} (${entry.spentTokens} spent + ${entry.projectedTokens} projected > ${entry.capTokens})`
@@ -555,27 +652,41 @@ function tokensJoined(
 }
 
 /**
- * How much of the plan the two segments actually ran: joinPlan checks the tail's planned duration, this its real
- * end. A tail that ended before its duration (a manual or host STOP, a signal) without a failing check is no pass.
+ * How much of the plan the segments actually ran: joinPlans checks each tail's planned duration, this
+ * the last tail's real end. A last tail that ended before its duration (a manual or host STOP, a
+ * signal) without a failing check is no pass; an earlier tail's early end is information, the next
+ * segment ran on from its T0.
  */
-export function coverageCheck(tail: LoadedRun, coveredHours: number, plannedHours: number): Check {
+export function coverageCheck(
+  tail: LoadedRun,
+  coveredHours: number,
+  plannedHours: number,
+  earlier: readonly LoadedRun[] = []
+): Check {
   const short = coveredHours < plannedHours;
   const early = tail.meta.endReason !== "duration";
+  const which = earlier.length > 0 ? "last " : "";
   return {
     id: "plan-coverage",
     title: "Plan covered",
-    bar: `the tail ended by its duration and both segments cover >= ${plannedHours} h of plan time (review otherwise)`,
+    bar: `the ${which}tail ended by its duration and the segments cover >= ${plannedHours} h of plan time (review otherwise)`,
     status: short || early ? "review" : "pass",
-    value: `${coveredHours} h of ${plannedHours} h; the tail ended by ${tail.meta.endReason ?? "-"}`,
+    value: `${coveredHours} h of ${plannedHours} h; the ${which}tail ended by ${tail.meta.endReason ?? "-"}`,
     details: [
+      ...earlier
+        .filter((run) => run.meta.endReason !== "duration")
+        .map(
+          (run) =>
+            `${run.meta.run} ended by ${run.meta.endReason ?? "-"} before its duration; the next segment ran on from its last executed plan minute (information).`
+        ),
       ...(early
         ? [
-            `The tail ended by ${tail.meta.endReason ?? "-"}, not by its duration: read its STOP or the host's record.`
+            `The ${which}tail ended by ${tail.meta.endReason ?? "-"}, not by its duration: read its STOP or the host's record.`
           ]
         : []),
       ...(short
         ? [
-            `Plan time covered ${coveredHours} h < ${plannedHours} h: the windows after the tail's end did not run.`
+            `Plan time covered ${coveredHours} h < ${plannedHours} h: the windows after the ${which}tail's end did not run.`
           ]
         : [])
     ],
@@ -583,24 +694,48 @@ export function coverageCheck(tail: LoadedRun, coveredHours: number, plannedHour
   };
 }
 
-/** Joins a stopped run and its tail into one report (refuses with {@link JoinRefusal}). */
+/** The label of a segment: the stopped run's name, a tail's profile less `soak7-`. */
+const labelOf = (run: LoadedRun, index: number) =>
+  index === 0
+    ? run.meta.run.split("-").slice(0, 2).join("-")
+    : run.meta.profile.startsWith("soak7-")
+      ? run.meta.profile.slice("soak7-".length)
+      : `tail${index}`;
+/** Joins a stopped run and its tail or tails into one report (refuses with {@link JoinRefusal}). */
 export function joinRuns(
   first: LoadedRun,
-  tail: LoadedRun,
+  tailOrTails: LoadedRun | readonly LoadedRun[],
   options: { explanations?: Record<string, string>; now?: Date } = {}
 ): JoinedReport {
-  const { shiftMinutes, t0Minute, problems } = joinPlan(first, tail);
+  const tails: readonly LoadedRun[] = Array.isArray(tailOrTails)
+    ? (tailOrTails as readonly LoadedRun[])
+    : [tailOrTails as LoadedRun];
+  const { seams, problems } = joinPlans(first, tails);
   if (problems.length > 0) throw new JoinRefusal(problems);
-  const firstStart = toMs(first.meta.startedAt);
-  const tailStart = toMs(tail.meta.startedAt);
-  const planMs = (at: number) =>
-    at >= tailStart ? at - tailStart + shiftMinutes * minute : at - firstStart;
+  const runs = [first, ...tails];
+  const last = runs.at(-1)!;
+  const starts = runs.map((run) => toMs(run.meta.startedAt));
+  const shifts = [0, ...seams.map((seam) => seam.shiftMinutes)];
+  // Segment i counts plan minutes [from_i, to_i): from its T0 (0 for r1) to the next T0 or its end.
+  const planEnds = runs.map(
+    (run, index) => shifts[index]! + (endOf(run) - starts[index]!) / minute
+  );
+  const fromMinutes = [0, ...seams.map((seam) => Math.max(seam.t0Minute, seam.shiftMinutes))];
+  const toMinutes = runs.map((_, index) =>
+    Math.min(planEnds[index]!, seams[index]?.t0Minute ?? Number.POSITIVE_INFINITY)
+  );
+  // A moment belongs to the latest segment that had started by then.
+  const segmentAt = (at: number) =>
+    starts.reduce((found, start, index) => (at >= start ? index : found), 0);
+  const planMs = (at: number) => {
+    const index = segmentAt(at);
+    return at - starts[index]! + shifts[index]! * minute;
+  };
   const dayOf = (at: number) => Math.floor(planMs(at) / day);
-  const coveredMinutes = shiftMinutes + (endOf(tail) - tailStart) / minute;
-  const planDays = Math.floor(coveredMinutes / (day / minute));
-  const reports = [first, tail].map((run) => analyzeRun(run, options));
-  const segments: JoinedSegment[] = [first, tail].map((run, index) => ({
-    label: index === 0 ? run.meta.run.split("-").slice(0, 2).join("-") : "tail",
+  const planDays = Math.floor(planEnds.at(-1)! / (day / minute));
+  const reports = runs.map((run) => analyzeRun(run, options));
+  const segments: JoinedSegment[] = runs.map((run, index) => ({
+    label: labelOf(run, index),
     run: run.meta.run,
     profile: run.meta.profile,
     seed: run.meta.seed,
@@ -608,39 +743,53 @@ export function joinRuns(
     endedAt: run.meta.endedAt,
     endReason: run.meta.endReason,
     hours: reports[index]!.window.hours,
-    planOffsetMinutes: index === 0 ? 0 : shiftMinutes,
+    planOffsetMinutes: shifts[index]!,
+    planFromMinute: round2(fromMinutes[index]!),
+    planToMinute: round2(toMinutes[index]!),
     windows: openedWindows(run),
     report: reports[index]!
   }));
 
-  // The union of the two runs' own records (E2, the injection ledger, the load ledger, tokens).
-  const own = [ownRun(first), ownRun(tail)] as const;
+  // The union of the runs' own records (E2, the injection ledger, the load ledger, tokens).
+  const own = runs.map((run) => ownRun(run));
   const injected = own.map((run) => injectedRows(run));
   const injectedJobs = own.map((run, index) => injectedJobFailures(run, injected[index]!));
   const context = {
-    injected: new Map([...injected[0]!, ...injected[1]!]),
-    injectedJobs: new Map([...injectedJobs[0]!, ...injectedJobs[1]!])
+    injected: new Map(injected.flatMap((entries) => [...entries])),
+    injectedJobs: new Map(injectedJobs.flatMap((entries) => [...entries]))
   };
   const merged: LoadedRun = {
     meta: first.meta,
-    events: [...own[0].events, ...own[1].events],
-    samples: [...own[0].samples, ...own[1].samples],
-    rows: [...own[0].rows, ...own[1].rows],
+    events: own.flatMap((run) => run.events),
+    samples: own.flatMap((run) => run.samples),
+    rows: own.flatMap((run) => run.rows),
     invalid: {}
   };
 
-  // E1 by plan day; the tail's samples up to T0 (its warm-up) are r1's plan minutes, not again.
+  // E1 by plan day: a tail's samples up to its T0 (its warm-up) are the previous segment's plan
+  // minutes, and a segment's samples after the next T0 are the next segment's; neither counts twice.
   const e1 = e1CheckOf(
-    mergeE1([
-      computeE1(own[0], { dayOf }),
-      computeE1(own[1], {
-        dayOf,
-        exposureFromMs: tailStart + (t0Minute - shiftMinutes) * minute + 1
-      })
-    ]),
+    mergeE1(
+      own.map((run, index) =>
+        computeE1(run, {
+          dayOf,
+          ...(index > 0
+            ? {
+                exposureFromMs: starts[index]! + (fromMinutes[index]! - shifts[index]!) * minute + 1
+              }
+            : {}),
+          ...(seams[index]
+            ? {
+                exposureToMs:
+                  starts[index]! + (seams[index]!.t0Minute - shifts[index]!) * minute + 1
+              }
+            : {})
+        })
+      )
+    ),
     planDays
   );
-  // E3 per segment window, summed; what was created outside both windows is listed apart.
+  // E3 per segment window, summed; what was created outside every window is listed apart.
   const e3Parts = own.map((run, index) => computeE3(run, { injectedJobs: injectedJobs[index]! }));
   const e3 = e3CheckOf({
     rows: e3Parts.flatMap((part) => part.rows),
@@ -654,34 +803,46 @@ export function joinRuns(
   e3.check.bar += " (each segment over its own window, summed)";
   e3.check.details.push(
     `Each segment's window: ${segments
-      .map(
-        (segment, index) =>
-          `${segment.label} tasks created ${(own[index]!.meta.warmupMs / hour).toFixed(2)} h to ${Math.max(0, (endOf(own[index]!) - toMs(own[index]!.meta.startedAt) - day) / hour).toFixed(2)} h`
-      )
+      .map((segment, index) => {
+        const from = own[index]!.meta.warmupMs / hour;
+        const to = (endOf(own[index]!) - toMs(own[index]!.meta.startedAt) - day) / hour;
+        return to <= from
+          ? `${segment.label} no window (shorter than its warm-up + 24 h)`
+          : `${segment.label} tasks created ${from.toFixed(2)} h to ${to.toFixed(2)} h (plan minutes ${round2(shifts[index]! + from * 60)}-${round2(shifts[index]! + to * 60)})`;
+      })
       .join(", ")}.`,
-    `Not measurable at the seam (created outside both windows: a warm-up, a segment's last 24 h, before the tail's start; information): ${
+    `Not measurable at the seam (created outside every window: a warm-up, a segment's last 24 h, a tail too short for a window; information): ${
       [...seam]
         .toSorted(([a], [b]) => a.localeCompare(b))
         .map(([kind, count]) => `${kind} ${count}`)
         .join(", ") || "none"
     }.`
   );
-  const e5 = e5CheckOf(mergeE5(own.map((run) => computeE5(run))));
+  // The plan's windows after the covered end ran in no segment: E5 and E4 (c) read them as not exercised.
+  const unreached = (first.meta.f4?.windows ?? []).filter(
+    (window) => window.startMinute >= toMinutes.at(-1)!
+  );
+  const e5Merged = mergeE5(own.map((run) => computeE5(run)));
+  e5Merged.notExercised.push(
+    ...unreached
+      .filter((window) => window.expect || window.kind === "money")
+      .map((window) => ({ window: window.id, why: "not_reached" as const }))
+  );
+  const e5 = e5CheckOf(e5Merged);
+  const moneyUnreached = unreached.find((window) => window.kind === "money")?.id;
   e5.bar += " (over the union of the segments)";
   const e2 = e2Check(merged, context);
   e2.bar += " (over the union of the segments; an input seen in both counts once)";
   const injection = injectionCheck(merged);
-  const tokens = tokensJoined(first, tail, merged, dayOf, planDays);
+  const tokens = tokensJoined(runs, merged, dayOf);
   const load = loadCheck(merged, { dayOf });
 
-  const coveredHours =
-    Math.round(
-      ((Math.min(t0Minute, (endOf(first) - firstStart) / minute) + coveredMinutes - t0Minute) /
-        60) *
-        100
-    ) / 100;
+  const coveredHours = round2(
+    runs.reduce((sum, _, index) => sum + Math.max(0, toMinutes[index]! - fromMinutes[index]!), 0) /
+      60
+  );
   const checks: Check[] = [
-    coverageCheck(tail, coveredHours, first.meta.durationMs / hour),
+    coverageCheck(last, coveredHours, first.meta.durationMs / hour, tails.slice(0, -1)),
     pastDeadlineJoined(segments),
     repairsJoined(segments),
     jobsJoined(segments, "jobs-inactive"),
@@ -696,7 +857,7 @@ export function joinRuns(
     e1.check,
     e2,
     e3.check,
-    e4Joined(segments),
+    e4Joined(segments, moneyUnreached ? { money: moneyUnreached } : {}),
     e5,
     injection.check,
     tokens.check,
@@ -711,26 +872,53 @@ export function joinRuns(
       .map((row) => ({ segment: segments[index]!.label, ...row }))
   );
   const statuses = checks.map((check) => check.status);
-  const gapHours = (tailStart - endOf(first)) / hour;
+  const gaps = tails.map((tail, index) => (toMs(tail.meta.startedAt) - endOf(runs[index]!)) / hour);
+  const gapHours = gaps.reduce((sum, value) => sum + value, 0);
+  const several = tails.length > 1;
   const notes = [
-    `T0 = plan minute ${t0Minute} (${segments[0]!.label}'s last executed action); tail minute = plan minute - ${shiftMinutes}; plan time covered ${(Math.min(t0Minute, (endOf(first) - firstStart) / minute) / 60 + (coveredMinutes - t0Minute) / 60).toFixed(2)} h of ${first.meta.durationMs / hour} h.`,
-    `The wall-clock gap between the segments, ${gapHours.toFixed(2)} h, is no plan time: the app was closed.`,
-    `Seeds: ${segments.map((segment) => `${segment.label} ${segment.seed}`).join(", ")} (a new seed in the tail, so the corpus order and the seeded picks do not repeat; injection draws and kill jitter differ from a single run).`,
+    ...seams.map(
+      (entry, index) =>
+        `T0 = plan minute ${round2(entry.t0Minute)} (${segments[index]!.label}'s last executed action); ${segments[index + 1]!.label} minute = plan minute - ${entry.shiftMinutes}${index === seams.length - 1 ? `; plan time covered ${coveredHours.toFixed(2)} h of ${first.meta.durationMs / hour} h` : ""}.`
+    ),
+    `Plan minutes counted: ${segments.map((segment) => `${segment.label} ${segment.planFromMinute}-${segment.planToMinute}`).join(", ")}.`,
+    several
+      ? `The wall-clock gaps between the segments, ${gaps.map((value) => `${value.toFixed(2)} h`).join(" and ")}, are no plan time: the app was closed.`
+      : `The wall-clock gap between the segments, ${gapHours.toFixed(2)} h, is no plan time: the app was closed.`,
+    `Seeds: ${segments.map((segment) => `${segment.label} ${segment.seed}`).join(", ")} (a new seed in ${several ? "each" : "the"} tail, so the corpus order and the seeded picks do not repeat; injection draws and kill jitter differ from a single run).`,
     `${segments[0]!.label} ended by ${first.meta.endReason}; the harness predicates D38 found wrong are fixed and re-evaluated here: ${fixedPredicates.map((name) => `${name} v${predicateVersions[name]}`).join(", ")}.`,
+    ...tails
+      .slice(0, -1)
+      .map(
+        (tail, index) =>
+          `${segments[index + 1]!.label} ended by ${tail.meta.endReason ?? "-"} at plan minute ${round2(planEnds[index + 1]!)}; it counts to ${segments[index + 2]!.label}'s T0 ${round2(seams[index + 1]!.t0Minute)} (its later minutes are ${segments[index + 2]!.label}'s first counted minutes and count there, once; ${segments[index + 2]!.label}'s warm-up repeats plan minutes ${seams[index + 1]!.shiftMinutes}-${round2(seams[index + 1]!.t0Minute)}, counted in ${segments[index + 1]!.label}).`
+      ),
     `Windows run: ${segments.map((segment) => `${segment.label} ${segment.windows.join(", ") || "none"}`).join("; ")}.`,
-    ...liftedWindows(first).map((line) => `${segments[0]!.label}: ${line}.`),
-    localFaultLine(first, tail)
+    ...runs.flatMap((run, index) =>
+      liftedWindows(run, shifts[index]).map((line) => `${segments[index]!.label}: ${line}.`)
+    ),
+    ...notRunWindows(first, toMinutes.at(-1)!),
+    ...tails.flatMap((tail, index) => {
+      const limits = knownLimits(tail);
+      return limits ? [`${segments[index + 1]!.label}'s plan records: ${limits}`] : [];
+    }),
+    localFaultLine(runs)
   ];
   return {
-    run: `${first.meta.run} + ${tail.meta.run}`,
+    run: runs.map((run) => run.meta.run).join(" + "),
     generatedAt: (options.now ?? new Date()).toISOString(),
     verdict: statuses.includes("fail") ? "fail" : statuses.includes("review") ? "review" : "pass",
     plan: {
-      t0Minute,
-      shiftMinutes,
+      t0Minute: seams[0]!.t0Minute,
+      shiftMinutes: seams[0]!.shiftMinutes,
+      seams: seams.map((entry, index) => ({
+        tail: tails[index]!.meta.run,
+        t0Minute: entry.t0Minute,
+        shiftMinutes: entry.shiftMinutes,
+        gapHours: round2(gaps[index]!)
+      })),
       plannedHours: first.meta.durationMs / hour,
       coveredHours,
-      gapHours: Math.round(gapHours * 100) / 100
+      gapHours: round2(gapHours)
     },
     notes,
     segments,
@@ -786,6 +974,7 @@ export function renderJoinedReport(report: JoinedReport): string {
         run: segment.run,
         profile: segment.profile,
         "plan minute 0": segment.planOffsetMinutes,
+        "plan minutes counted": `${segment.planFromMinute}-${segment.planToMinute}`,
         started: segment.startedAt,
         ended: segment.endedAt ?? "-",
         "ended by": segment.endReason ?? "-",
@@ -799,7 +988,7 @@ export function renderJoinedReport(report: JoinedReport): string {
       .map(([name, version]) => `${name} v${version}`)
       .join(", ")}. The per-segment reports are in the JSON (segments[].report).`,
     "",
-    "## X6 and E1-E5 over the two segments",
+    "## X6 and E1-E5 over the segments",
     "",
     ...table(
       report.checks.map((check) => ({

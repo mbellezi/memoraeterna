@@ -18,6 +18,7 @@ import type { E5Result } from "./report-f4.ts";
 import {
   e4Joined,
   joinPlan,
+  joinPlans,
   joinRuns,
   JoinRefusal,
   mergeE5,
@@ -375,11 +376,14 @@ describe("joining a stopped 7-day run and its tail (D38a)", () => {
     expect(e3.value).toContain("2 of 3 = 66.67 %");
     expect(e3.status).toBe("fail");
     expect(e3.details.join("\n")).toContain(
-      "Not measurable at the seam (created outside both windows"
+      "Not measurable at the seam (created outside every window"
     );
     expect(e3.details.join("\n")).toContain("topic-name 2");
     expect(e3.details.join("\n")).toContain(
-      "soak7-r1 tasks created 0.50 h to 71.08 h, tail tasks created 0.50 h to 49.50 h"
+      "soak7-r1 tasks created 0.50 h to 71.08 h (plan minutes 30-"
+    );
+    expect(e3.details.join("\n")).toContain(
+      "tail tasks created 0.50 h to 49.50 h (plan minutes 5705-8645)"
     );
   });
 
@@ -491,6 +495,254 @@ describe("joining a stopped 7-day run and its tail (D38a)", () => {
   });
 });
 
+// The second complement (owner 11-10): the tail ended by a signal at its minute 613 (plan minute 6288),
+// its last action at plan minute 6280; tail2 = plan minute - 6250, stopped by the owner at minute 1278.
+const tail1EndMinute = 613;
+const tail2Start = tailStart + 12 * hour;
+const shift2 = 6250;
+const tail2Limits =
+  "Known D1 limits (review): (1) the per-run imported list starts empty, so tail2's source_reimport versions without deleting.";
+
+function threeRuns(
+  parts: {
+    tail2?: Omit<Partial<LoadedRun>, "meta"> & { meta?: Partial<SoakMeta> };
+    tail1Samples?: SoakSample[];
+    tail2Windows?: MetaWindow[];
+    tail2Spent?: number;
+  } = {}
+): [LoadedRun, LoadedRun, LoadedRun] {
+  const [first, tail] = runs({
+    tail: {
+      meta: { endReason: "signal", endedAt: iso(tailStart + tail1EndMinute * minute) },
+      events: [action(tailStart, 6280, shift)],
+      ...(parts.tail1Samples ? { samples: parts.tail1Samples } : {})
+    },
+    tailSpent: 127_739
+  });
+  const windows = parts.tail2Windows ?? [window("pause-5", 6360 - shift2, 30)];
+  const tail2: LoadedRun = {
+    meta: metaOf(
+      "tail",
+      {
+        run: "soak7-tail2-20261110T0442",
+        profile: "soak7-tail2",
+        seed: 20261110,
+        startedAt: iso(tail2Start),
+        endedAt: iso(tail2Start + 1278 * minute),
+        endReason: "stop_file",
+        durationMs: 63.9 * hour,
+        plan: {
+          description: `soak7-tail2. ${tail2Limits}`,
+          f4: { windows: windows.map(({ id }) => ({ id })) }
+        },
+        ...parts.tail2?.meta
+      },
+      windows
+    ),
+    events: [
+      action(tail2Start, 6310, shift2),
+      truth("pause-5", "start", tail2Start + 110 * minute),
+      truth("pause-5", "end", tail2Start + 140 * minute),
+      ...(parts.tail2?.events ?? [])
+    ],
+    samples: parts.tail2?.samples ?? hourly(tail2Start, 21.3, parts.tail2Spent ?? 464_793),
+    rows: parts.tail2?.rows ?? [codexRow(tail2Start + 3 * hour, 30_000)],
+    invalid: {}
+  };
+  tail2.meta.f4 = {
+    ...tail2.meta.f4!,
+    codex: { expected: 2_118_096, cap: 3_130_811, dropFromHour0: 0 }
+  };
+  return [first, tail, tail2];
+}
+
+describe("joining a stopped run and two complements (D38a, owner 11-10)", () => {
+  it("chains the seams: each tail's T0 is the previous segment's last executed plan minute", () => {
+    const [first, tail, tail2] = threeRuns();
+    expect(joinPlans(first, [tail, tail2])).toEqual({
+      seams: [
+        { shiftMinutes: 5675, t0Minute: 5705 },
+        { shiftMinutes: 6250, t0Minute: 6280 }
+      ],
+      problems: []
+    });
+    const report = joinRuns(first, [tail, tail2], { now });
+    expect(report.segments.map((segment) => segment.label)).toEqual(["soak7-r1", "tail", "tail2"]);
+    expect(
+      report.segments.map((segment) => [segment.planFromMinute, segment.planToMinute])
+    ).toEqual([
+      [0, 5705],
+      [5705, 6280],
+      [6280, 7528]
+    ]);
+    // 5705 + 575 + 1248 = 7528 plan minutes; the tail's minutes 6280-6288 count once (tail2's warm-up).
+    expect(report.plan.coveredHours).toBe(125.47);
+    expect(report.plan.seams.map((entry) => entry.t0Minute)).toEqual([5705, 6280]);
+    expect(report.run).toBe(
+      "soak7-r1-20261026T0254 + soak7-tail-20261031T0900 + soak7-tail2-20261110T0442"
+    );
+    const notes = report.notes.join("\n");
+    expect(notes).toContain(
+      "tail ended by signal at plan minute 6288; it counts to tail2's T0 6280"
+    );
+    expect(notes).toContain(`tail2's plan records: ${tail2Limits}`);
+    expect(notes).not.toContain("Windows of the plan not run");
+    expect(notes).toContain("soak7-r1 20261028, tail 20261030, tail2 20261110");
+    expect(notes).toContain(
+      "Plan minutes counted: soak7-r1 0-5705, tail 5705-6280, tail2 6280-7528."
+    );
+    const coverage = report.checks.find((check) => check.id === "plan-coverage")!;
+    expect(coverage.status).toBe("review");
+    expect(coverage.value).toBe("125.47 h of 168 h; the last tail ended by stop_file");
+    expect(coverage.details.join("\n")).toContain(
+      "soak7-tail-20261031T0900 ended by signal before its duration; the next segment ran on"
+    );
+  });
+
+  it("refuses a second tail that runs at or before its T0 or repeats an id the tail ran", () => {
+    const refused = (runsToJoin: [LoadedRun, LoadedRun, LoadedRun]) => {
+      try {
+        joinRuns(runsToJoin[0], [runsToJoin[1], runsToJoin[2]], { now });
+      } catch (error) {
+        expect(error).toBeInstanceOf(JoinRefusal);
+        return (error as JoinRefusal).problems.join("\n");
+      }
+      throw new Error("joined");
+    };
+    expect(refused(threeRuns({ tail2: { events: [action(tail2Start, 6270, shift2)] } }))).toContain(
+      "soak7-tail2-20261110T0442: 1 tail action(s) ran at or before T0 6280"
+    );
+    expect(
+      refused(
+        threeRuns({ tail2: { events: [truth("w102-unauthorized", "start", tail2Start + hour)] } })
+      )
+    ).toContain("ids in both segments: w102-unauthorized");
+    expect(
+      refused(threeRuns({ tail2Windows: [window("w102-unauthorized", 6120 - shift2, 10)] }))
+    ).toContain(
+      "the tail's window w102-unauthorized starts at plan minute 6120, not after T0 6280"
+    );
+  });
+
+  it("counts E1 exposure once per plan minute: the tail clipped at tail2's T0, tail2's warm-up left out", () => {
+    const contention = (): Partial<SoakSample> => ({
+      jobs: ["a", "b"].map((scope) => ({
+        id: `due-${scope}`,
+        type: "topic-name",
+        lane: "light",
+        status: "queued",
+        sourceItemId: null,
+        attempts: 0,
+        updatedAt: tailStart,
+        runAfter: tailStart,
+        lockedAt: null,
+        scopeKey: `tree:${scope}:names`
+      })),
+      workers: [{ worker: "model", state: "executing", jobId: "x", scopeKey: "tree:busy:names" }]
+    });
+    // The tail at its minute 600 (plan 6275, counted) and 612 (plan 6287, tail2's: left out).
+    const tail1Samples = [
+      ...hourly(tailStart, 10, 127_739, (index) => (index === 10 ? contention() : {})),
+      { ...hourly(tailStart, 10, 127_739)[10]!, at: iso(tailStart + 612 * minute), ...contention() }
+    ];
+    // Tail2 at its minute 0 (plan 6250, its warm-up: left out) and 60 (plan 6310, counted).
+    const [first, tail, tail2] = threeRuns({
+      tail1Samples,
+      tail2: {
+        samples: hourly(tail2Start, 21.3, 464_793, (index) => (index <= 1 ? contention() : {}))
+      }
+    });
+    const report = joinRuns(first, [tail, tail2], { now });
+    expect(report.tables.exposure[4]).toMatchObject({ day: 5, model: 120, "lane-minutes": 120 });
+  });
+
+  it("refuses a join that skips a segment or keeps one that ran no plan action", () => {
+    const refusal = (run: () => unknown) => {
+      try {
+        run();
+      } catch (error) {
+        expect(error).toBeInstanceOf(JoinRefusal);
+        return (error as JoinRefusal).problems.join("\n");
+      }
+      throw new Error("joined");
+    };
+    const [first, tail, tail2] = threeRuns();
+    // Without the tail, tail2's minute 0 (plan 6250) comes after r1's T0 5705: 5705-6250 ran nowhere.
+    expect(refusal(() => joinRuns(first, [tail2], { now }))).toContain(
+      "the tail starts at plan minute 6250, after T0 5705: plan minutes 5705-6250 ran in no segment"
+    );
+    // A tail quit in its warm-up executed no plan action: no T0 for the next one.
+    const empty = { ...tail, events: tail.events.filter((event) => event.type !== "action") };
+    expect(refusal(() => joinRuns(first, [empty, tail2], { now }))).toContain(
+      "soak7-tail-20261031T0900 executed no plan action"
+    );
+  });
+
+  it("reads the plan's windows after the covered end as not exercised in E5 and E4 (c)", () => {
+    const [first, tail, tail2] = threeRuns();
+    const money = { ...window("w146-money", 8760, 360), kind: "money" as const };
+    const pause = {
+      ...window("pause-7", 9240, 30),
+      expect: { class: "paused", reason: "paused_by_user" }
+    };
+    first.meta.f4 = { ...first.meta.f4!, windows: [...first.meta.f4!.windows, money, pause] };
+    const report = joinRuns(first, [tail, tail2], { now });
+    const e5 = report.checks.find((check) => check.id === "e5-status")!;
+    expect(e5.status).toBe("review");
+    expect(e5.details.join("\n")).toContain(
+      "w146-money: it starts after the plan time the segments covered"
+    );
+    expect(e5.details.join("\n")).toContain("pause-7: it starts after the plan time");
+    const e4 = report.checks.find((check) => check.id === "e4-cap")!;
+    expect(e4.value).toContain("c: review");
+    expect(e4.status).toBe("review");
+    expect(e4.details.join("\n")).toContain("(c) the money window w146-money starts after");
+    expect(report.notes.join("\n")).toContain(
+      "Windows of the plan not run (they start after plan minute 7528): w146-money at 8760, pause-7 at 9240."
+    );
+  });
+
+  it("prints a tail's lifted window in plan minutes", () => {
+    const [first, tail, tail2] = threeRuns({
+      tail2: {
+        events: [
+          truth("w120-embedder-verifying", "start", tail2Start + 950 * minute),
+          truth("w120-embedder-verifying", "end", tail2Start + 1000 * minute)
+        ]
+      },
+      tail2Windows: [window("pause-5", 110, 30), window("w120-embedder-verifying", 950, 120)]
+    });
+    first.meta.f4 = {
+      ...first.meta.f4!,
+      windows: [...first.meta.f4!.windows, window("w120-embedder-verifying", 7200, 120)]
+    };
+    expect(joinRuns(first, [tail, tail2], { now }).notes.join("\n")).toContain(
+      "tail2: w120-embedder-verifying was lifted at plan minute 7250 instead of 7320 (70 min not run)"
+    );
+  });
+
+  it("sums the harness spend of the three segments against the registered cap", () => {
+    const [first, tail, tail2] = threeRuns();
+    const tokens = joinRuns(first, [tail, tail2], { now }).checks.find(
+      (check) => check.id === "tokens"
+    )!;
+    expect(tokens.status).toBe("pass");
+    expect(tokens.value).toContain("harness cap spent 1947546 + 127739 + 464793 = 2540078");
+    expect(
+      joinRuns(first, [tail, tail2], { now }).tables.tokens.every(
+        (row) => row["planned a day"] === 770_612
+      )
+    ).toBe(true);
+    expect(tokens.details[0]).toContain(
+      "soak7-tail2-20261110T0442: harness cap 3130811, spent 464793"
+    );
+    const [, , over] = threeRuns({ tail2Spent: 6_000_000 });
+    expect(
+      joinRuns(first, [tail, over], { now }).checks.find((check) => check.id === "tokens")!.status
+    ).toBe("fail");
+  });
+});
+
 describe("the --join command", () => {
   const directories: string[] = [];
   afterEach(async () => {
@@ -528,5 +780,61 @@ describe("the --join command", () => {
     expect((await runSoakReport([r1Dir, "--join", tailDir, "--status"])).code).toBe(1);
     const self = await runSoakReport([r1Dir, "--join", r1Dir]);
     expect(self.code).toBe(1);
+  });
+
+  it("joins a second complement into the last tail's folder, never an earlier tail's", async () => {
+    const root = await mkdtemp(join(tmpdir(), "soak-joined3-"));
+    directories.push(root);
+    const [first, tail, tail2] = threeRuns();
+    const [r1Dir, tailDir, tail2Dir] = ["soak7-r1", "soak7-tail", "soak7-tail2"].map((name) =>
+      join(root, name)
+    );
+    await write(r1Dir!, first);
+    await write(tailDir!, tail);
+    await write(tail2Dir!, tail2);
+    const { text, code } = await runSoakReport([r1Dir!, "--join", tailDir!, "--join", tail2Dir!]);
+    expect(text).toContain("(125.47 h of plan time)");
+    expect(code).not.toBe(0);
+    const json = JSON.parse(await readFile(join(tail2Dir!, "report-joined.json"), "utf8"));
+    expect(json.segments).toHaveLength(3);
+    expect(json.plan.seams.map((entry: { shiftMinutes: number }) => entry.shiftMinutes)).toEqual([
+      5675, 6250
+    ]);
+    await expect(readFile(join(tailDir!, "report-joined.md"), "utf8")).rejects.toThrow();
+    const into = await runSoakReport([
+      r1Dir!,
+      "--join",
+      tailDir!,
+      "--join",
+      tail2Dir!,
+      "--json",
+      join(tailDir!, "x.json")
+    ]);
+    expect(into).toEqual({ text: expect.stringContaining("last tail only"), code: 1 });
+    // A name that starts with two dots is inside the folder; a case variant on darwin is the same folder.
+    const dots = await runSoakReport([
+      r1Dir!,
+      "--join",
+      tailDir!,
+      "--join",
+      tail2Dir!,
+      "--out",
+      join(r1Dir!, "..x.md")
+    ]);
+    expect(dots).toEqual({ text: expect.stringContaining("never writes into"), code: 1 });
+    if (process.platform === "darwin") {
+      const variant = await runSoakReport([
+        r1Dir!,
+        "--join",
+        tailDir!,
+        "--join",
+        tail2Dir!,
+        "--json",
+        join(tailDir!.toUpperCase(), "x.json")
+      ]);
+      expect(variant.code).toBe(1);
+    }
+    // In the wrong order the second tail is no complement of the first.
+    expect((await runSoakReport([r1Dir!, "--join", tail2Dir!, "--join", tailDir!])).code).toBe(1);
   });
 });
