@@ -477,5 +477,6 @@ describe.skipIf(!storedPresent)("F3's stored second library and replay", () => {
     expect(two.closure).toEqual({ reached: 1045, atLeast1: 590, atLeast5: 140, atLeast10: 36 });
     expect(one.callsPerSource.mean).toBeCloseTo(1.517, 3);
     expect(two.callsPerSource.mean).toBeCloseTo(2.745, 3);
-  });
+    // Two replays of 2,000 orders each take about 4.6 s alone, so the 5 s default fails under load.
+  }, 60_000);
 });
