@@ -1,41 +1,20 @@
-import { TagBadges } from "./ui/tag-input";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AtomicNoteRelationReferenceText } from "./AtomicNoteRelationReferenceText";
-import { SourceReferenceBadge } from "./SourceRelationReferenceText";
 import {
   ArrowLeft,
   Search,
-  Pencil,
   Plus,
   List,
   LayoutGrid,
-  BookMarked,
-  BookOpen,
-  CalendarDays,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
-  File,
-  FileText,
-  Film,
-  Globe,
-  GraduationCap,
   Layers,
-  Newspaper,
-  NotebookPen,
   Play,
-  Quote,
   RefreshCw,
-  ScrollText,
   Sparkles,
-  StickyNote,
-  Trash2,
   X
 } from "lucide-react";
 import {
-  AtomicNoteRelationTypeSchema,
   formatObjectAddress,
-  relationBandWord,
   SourceItemTypes,
   type ProcessingPlanRequest,
   type SourceItemType
@@ -44,7 +23,6 @@ import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
-import { relationPairArrow, relationTypeView } from "../lib/relation-stance";
 import {
   isSilentRefresh,
   showsLoadError,
@@ -63,7 +41,6 @@ import {
 import { RecentObjects } from "./RecentObjects";
 import { NotePage, type NoteLeaveGuard } from "./note-page/NotePage";
 import { ImportView, childSourceType } from "./ImportView";
-import { AiNoteBadge } from "./AiNoteBadge";
 import { Tabs } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -74,7 +51,6 @@ import {
   ProcessingPlanPicker,
   processingPlanReady
 } from "./ProcessingPlanPicker";
-import { MarkdownPreview } from "./MarkdownEditor";
 import { SearchResultCard, searchResultId } from "./SearchView";
 import { WhereIsThis, type OpenableNavigation } from "./WhereIsThis";
 import { resolvePassage, type PassageAnchor } from "../lib/object-navigation";
@@ -234,121 +210,6 @@ export function navigateLibraryHistoryFromMouseButton(
   else if (button === 4) history.forward();
   else return false;
   return true;
-}
-
-export function expandedCardScrollBlock(
-  card: { top: number; bottom: number; height: number },
-  viewport: { top: number; bottom: number; height: number },
-  margin = 8
-): ScrollLogicalPosition | null {
-  const availableHeight = Math.max(0, viewport.height - margin * 2);
-  if (card.top >= viewport.top + margin && card.bottom <= viewport.bottom - margin) return null;
-  return card.height <= availableHeight ? "nearest" : "start";
-}
-
-function useExpandedCardViewport(expanded: boolean) {
-  const cardRef = useRef<HTMLElement | null>(null);
-  const wasExpanded = useRef(expanded);
-
-  useEffect(() => {
-    const hasJustExpanded = expanded && !wasExpanded.current;
-    wasExpanded.current = expanded;
-    if (!hasJustExpanded) return;
-    const timer = window.setTimeout(() => {
-      const card = cardRef.current;
-      if (!card) return;
-      const cardRect = card.getBoundingClientRect();
-      const scrollViewport = closestVerticalScrollViewport(card);
-      const viewportRect = scrollViewport?.getBoundingClientRect() ?? {
-        top: 0,
-        bottom: window.innerHeight,
-        height: window.innerHeight
-      };
-      const block = expandedCardScrollBlock(cardRect, viewportRect);
-      if (block) card.scrollIntoView({ behavior: "smooth", block, inline: "nearest" });
-    }, 240);
-    return () => window.clearTimeout(timer);
-  }, [expanded]);
-
-  return cardRef;
-}
-
-function closestVerticalScrollViewport(element: HTMLElement): HTMLElement | null {
-  let candidate = element.parentElement;
-  while (candidate) {
-    const overflowY = window.getComputedStyle(candidate).overflowY;
-    if (
-      (overflowY === "auto" || overflowY === "scroll") &&
-      candidate.scrollHeight > candidate.clientHeight
-    )
-      return candidate;
-    candidate = candidate.parentElement;
-  }
-  return null;
-}
-
-const typeIcons: Record<SourceItemType, typeof FileText> = {
-  PersonalNote: StickyNote,
-  DailyNote: CalendarDays,
-  WebArticle: Globe,
-  Book: BookOpen,
-  BookChapter: BookMarked,
-  PeriodicalIssue: Newspaper,
-  AcademicPaper: GraduationCap,
-  DocumentSection: FileText,
-  StandaloneArticle: ScrollText,
-  Video: Film,
-  GenericDocument: File
-};
-
-const typeBadgeStyles: Record<SourceItemType, string> = {
-  PersonalNote: "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200",
-  DailyNote: "bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200",
-  WebArticle: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
-  Book: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
-  BookChapter: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
-  PeriodicalIssue: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
-  AcademicPaper: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
-  DocumentSection: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  StandaloneArticle: "bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200",
-  Video: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200",
-  GenericDocument: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
-};
-
-/**
- * What the relation list of a source says about how sure the matcher was (F3 D42): a relation the
- * owner kept says so; a relations v2 row says its band as a word ("Strong", "Possible", "Not
- * calibrated"), never a per-pair percentage; only a legacy row, whose score was a fused one, keeps
- * showing the stored percentage.
- */
-export function relationConfidenceLabel(
-  relation: {
-    band: "apply" | "suggest" | null;
-    calibration: "frozen" | "provisional" | "uncalibrated" | null;
-    state: "applied" | "suggested" | "withdrawn" | "kept";
-    finalScore: number;
-  },
-  t: Translator
-): string {
-  if (relation.state === "kept") return t("notePage.state.kept");
-  if (relation.band === null) return `${Math.round(relation.finalScore * 100)}%`;
-  const word = relationBandWord(relation);
-  return word === null ? "" : t(`notePage.band.${word}`);
-}
-
-function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translator }) {
-  const Icon = typeIcons[type];
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-        typeBadgeStyles[type]
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {t(`import.sourceTypes.${type}` as MessageKey)}
-    </span>
-  );
 }
 
 export function LibraryView({
@@ -1549,9 +1410,7 @@ export function SourceDetailView({
   loadError: boolean;
   onDeleted: () => void;
 }) {
-  const [historical, setHistorical] = useState<{ title: string; markdown: string } | null>(null);
-  const [historyError, setHistoryError] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const history = useSourceHistory(detail.id);
   const [tab, setTab] = useState(
     focusedSourceRelationId
       ? "graph"
@@ -1602,11 +1461,6 @@ export function SourceDetailView({
   const graphRelations = groupGraphRelations(detail.graph.relations);
   const graphEntities = groupGraphEntities(detail.graph.entities);
   const relatedSourceGroups = groupRelatedSources(detail.graph.sourceConnections);
-  const coverAssetId =
-    coverAssetIdFromMetadata(detail.metadata) ??
-    detail.assets.find((asset) => asset.role === "cover")?.id ??
-    null;
-  const Icon = typeIcons[detail.type];
 
   useEffect(() => {
     if (!focusedAtomicNoteId) return;
@@ -1681,111 +1535,20 @@ export function SourceDetailView({
 
   return (
     <section className="motion-fade-in-up grid gap-4">
-      <nav
-        className="flex flex-wrap items-center gap-1 text-sm text-slate-500"
-        aria-label={t("shell.navigation.library")}
-      >
-        <button
-          type="button"
-          className="rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100"
-          onClick={onGoToLibrary}
-        >
-          {t("shell.navigation.library")}
-        </button>
-        {chain.map((ancestor, index) => (
-          <span key={ancestor.id} className="inline-flex items-center gap-1">
-            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-            {index === chain.length - 1 ? (
-              <span className="max-w-64 truncate font-medium text-slate-900 dark:text-slate-100">
-                {ancestor.title}
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="max-w-56 truncate rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100"
-                onClick={() => onOpenPath(chain.slice(0, index + 1).map((item) => item.id))}
-              >
-                {ancestor.title}
-              </button>
-            )}
-          </span>
-        ))}
-      </nav>
-
-      <header className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
-          <div className="grid h-36 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
-            <CoverImage
-              assetId={coverAssetId}
-              alt={detail.title}
-              fallback={<Icon className="h-10 w-10 text-slate-400" aria-hidden="true" />}
-            />
-          </div>
-          <div className="min-w-0">
-            <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold leading-tight">
-              {detail.title}
-            </h2>
-            {detail.subtitle ? (
-              <p className="mt-1 text-sm text-slate-500">{detail.subtitle}</p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <SourceTypeBadge type={detail.type} t={t} />
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide dark:bg-slate-800">
-                {detail.language}
-              </span>
-              {detail.sourceUri ? (
-                <a
-                  href={detail.sourceUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm text-cyan-700 hover:underline dark:text-cyan-300"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t("library.openOriginal")}
-                </a>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <Button type="button" disabled={deleting} onClick={() => setEditor("edit")}>
-            <Pencil className="h-4 w-4" />
-            {t("sourceWorkspace.edit")}
-          </Button>
-          {childSourceType(detail.type) ? (
-            <Button type="button" onClick={() => setEditor("child")}>
-              <Plus className="h-4 w-4" />
-              {t("sourceWorkspace.addChild")}
-            </Button>
-          ) : null}
-          <Button type="button" disabled={deleting} onClick={() => onProcess()}>
-            <Play className="h-4 w-4" aria-hidden="true" />
-            {t("library.actions.process")}
-          </Button>
-          <Button
-            type="button"
-            disabled={deleting}
-            variant="danger"
-            onClick={() => void deleteSource()}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            {deleting ? t("library.delete.deleting") : t("library.delete.action")}
-          </Button>
-          <Button type="button" disabled={deleting} onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            {backLabel}
-          </Button>
-        </div>
-      </header>
-
-      {deleteFailed ? (
-        <p
-          role="alert"
-          className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200"
-        >
-          {t("library.delete.failed")}
-        </p>
-      ) : null}
+      <SourceBreadcrumb chain={chain} t={t} onGoToLibrary={onGoToLibrary} onOpenPath={onOpenPath} />
+      <SourceHeader
+        detail={detail}
+        headingRef={headingRef}
+        deleting={deleting}
+        deleteFailed={deleteFailed}
+        backLabel={backLabel}
+        t={t}
+        onEdit={() => setEditor("edit")}
+        onAddChild={() => setEditor("child")}
+        onProcess={() => onProcess()}
+        onDelete={() => void deleteSource()}
+        onBack={onBack}
+      />
 
       <WhereIsThis
         t={t}
@@ -1800,8 +1563,8 @@ export function SourceDetailView({
         value={tab}
         onChange={setTab}
         items={[
-          { id: "overview", label: t("sourceWorkspace.overview") },
-          { id: "content", label: t("sourceWorkspace.content") },
+          { id: "overview", label: t("sourcePage.overview") },
+          { id: "content", label: t("sourcePage.content") },
           { id: "children", label: t("library.detail.subitems") },
           {
             id: "notes",
@@ -1819,84 +1582,12 @@ export function SourceDetailView({
             count: detail.relations.length
           },
           { id: "metadata", label: t("import.steps.metadata") },
-          { id: "history", label: t("sourceWorkspace.history") }
+          { id: "history", label: t("sourcePage.history") }
         ]}
       >
-        {tab === "history" ? (
-          <div className="grid gap-3">
-            <p className="text-sm text-slate-500">{t("sourceWorkspace.historyHint")}</p>
-            <ol className="grid gap-2">
-              {detail.history.map((item) => (
-                <li key={item.id}>
-                  <Button
-                    disabled={historyLoading}
-                    onClick={() => {
-                      setHistoryLoading(true);
-                      setHistoryError(false);
-                      window.app.knowledge
-                        .getSourceDocument({ sourceItemId: detail.id, documentId: item.id })
-                        .then(setHistorical)
-                        .catch(() => setHistoryError(true))
-                        .finally(() => setHistoryLoading(false));
-                    }}
-                  >
-                    {item.title} · {new Date(item.createdAt).toLocaleString()}
-                    {item.isCurrent ? ` · ${t("sourceWorkspace.current")}` : ""}
-                  </Button>
-                </li>
-              ))}
-            </ol>
-            {historyLoading ? <p>{t("shell.states.loading")}</p> : null}
-            {historyError ? <p role="alert">{t("library.error")}</p> : null}
-            {historical ? (
-              <div className="max-h-[60vh] overflow-auto rounded-xl border border-slate-200 p-5 dark:border-slate-800">
-                <MarkdownPreview
-                  markdown={historical.markdown}
-                  emptyLabel={t("markdown.emptyPreview")}
-                />
-              </div>
-            ) : null}
-            {detail.summaries.map((summary) => (
-              <details
-                key={summary.id}
-                className="rounded-xl border border-slate-200 p-4 dark:border-slate-800"
-              >
-                <summary className="cursor-pointer text-sm">
-                  {t("library.sections.summary")} · {new Date(summary.generatedAt).toLocaleString()}{" "}
-                  · {summary.model}
-                </summary>
-                <p className="mt-3 whitespace-pre-wrap text-sm">{summary.summary}</p>
-              </details>
-            ))}
-          </div>
-        ) : null}
+        {tab === "history" ? <SourceHistory detail={detail} history={history} t={t} /> : null}
         {tab === "overview" ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatTile
-              icon={FileText}
-              label={t("library.detail.stats.documents")}
-              value={detail.documents.length}
-              tone="cyan"
-            />
-            <StatTile
-              icon={Layers}
-              label={t("library.detail.stats.chunks")}
-              value={chunkCount}
-              tone="emerald"
-            />
-            <StatTile
-              icon={NotebookPen}
-              label={t("library.detail.stats.notes")}
-              value={detail.atomicNotes.length}
-              tone="violet"
-            />
-            <StatTile
-              icon={Globe}
-              label={t("library.detail.stats.relations")}
-              value={detail.relations.length}
-              tone="amber"
-            />
-          </div>
+          <SourceOverview detail={detail} chunkCount={chunkCount} t={t} />
         ) : null}
 
         {tab === "children" ? (
@@ -1917,7 +1608,7 @@ export function SourceDetailView({
             ) : loadError ? (
               <StateCard>{t("library.error")}</StateCard>
             ) : !subitems.length ? (
-              <StateCard>{t("sourceWorkspace.noChildren")}</StateCard>
+              <StateCard>{t("sourcePage.noChildren")}</StateCard>
             ) : null}
             <PageControls
               offset={offset}
@@ -1987,166 +1678,26 @@ export function SourceDetailView({
           </CollapsibleSection>
         ) : null}
 
-        {tab === "overview" ? (
-          <CollapsibleSection title={t("library.sections.summary")} defaultOpen>
-            <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-              {detail.summary ?? t("library.noSummary")}
-            </p>
-            {detail.metadata.summaryStale === true ? (
-              <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
-                {t("sourceWorkspace.stale")}
-              </p>
-            ) : null}
-          </CollapsibleSection>
-        ) : null}
-
-        {tab === "content" && detail.documents.length === 0 ? (
-          <StateCard>{t("library.containerHint")}</StateCard>
-        ) : null}
-
         {tab === "content" ? (
-          <Button className="w-fit" type="button" onClick={() => setEditor("edit")}>
-            <Pencil className="h-4 w-4" />
-            {t("sourceWorkspace.editContent")}
-          </Button>
+          <SourceContent
+            detail={detail}
+            cited={cited}
+            citedChunkId={citedChunkId}
+            passageCited={passageFocus !== null}
+            passageSignal={passageSignal}
+            t={t}
+            onEdit={() => setEditor("edit")}
+            onShowHistory={() => setTab("history")}
+          />
         ) : null}
-
-        {tab === "content" &&
-          detail.assets
-            .filter((asset) => asset.role !== "cover")
-            .map((asset) => (
-              <Button
-                className="w-fit"
-                key={asset.id}
-                onClick={() => void window.app.knowledge.openAsset(asset.id)}
-              >
-                {asset.originalFileName}
-              </Button>
-            ))}
-        {tab === "content" && passageFocus ? (
-          cited?.status === "found" ? (
-            <p
-              role="status"
-              className="flex flex-wrap items-center gap-x-2 rounded-lg border border-border bg-accent-soft px-3 py-2 text-sm text-foreground"
-            >
-              <Quote className="h-4 w-4 text-accent" aria-hidden="true" />
-              {t("objects.citation.showing")}
-              <span className="text-muted-foreground">
-                {t("library.chunk", { values: { index: cited.chunkIndex + 1 } })}
-                {cited.page ? ` · ${t("search.page")} ${cited.page}` : ""}
-              </span>
-            </p>
-          ) : (
-            <div
-              role="alert"
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-soft px-3 py-2 text-sm text-foreground"
-            >
-              {t("objects.citation.unavailable")}
-              <Button type="button" onClick={() => setTab("history")}>
-                {t("objects.citation.earlierVersions")}
-              </Button>
-            </div>
-          )
-        ) : null}
-        {tab === "content" &&
-          detail.documents.map((document) => (
-            <div key={document.id} className="grid gap-3">
-              <CollapsibleSection
-                title={t("library.sections.document")}
-                defaultOpen
-                openSignal={passageSignal}
-              >
-                <div className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-5 dark:bg-slate-950">
-                  <MarkdownPreview
-                    markdown={document.canonicalMarkdown}
-                    emptyLabel={t("markdown.emptyPreview")}
-                    highlight={
-                      cited?.status === "found" && cited.documentId === document.id && cited.range
-                        ? { ...cited.range, id: "cited-passage" }
-                        : undefined
-                    }
-                  />
-                </div>
-                {document.assets.length > 0 ? (
-                  <div className="mt-3 grid gap-2">
-                    <h4 className="text-sm font-semibold">{t("library.sections.originals")}</h4>
-                    <ul className="grid gap-1 text-sm">
-                      {document.assets.map((asset) => (
-                        <li key={asset.id}>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-2 text-cyan-700 hover:underline dark:text-cyan-300"
-                            onClick={() => void window.app.knowledge.openAsset(asset.id)}
-                          >
-                            <FileText className="h-4 w-4" aria-hidden="true" />
-                            {asset.originalFileName}
-                            <span className="sr-only">{t("library.openFile")}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </CollapsibleSection>
-              <CollapsibleSection
-                title={t("library.sections.chunks")}
-                count={document.chunks.length}
-                openSignal={citedChunkId && cited?.status === "found" ? passageSignal : 0}
-              >
-                <ol className="grid gap-2">
-                  {document.chunks.map((chunk) => (
-                    <li
-                      key={chunk.id}
-                      id={`passage-chunk-${chunk.id}`}
-                      tabIndex={-1}
-                      aria-current={chunk.id === citedChunkId ? "true" : undefined}
-                      className={cn(
-                        "scroll-my-6 rounded-lg border p-3 text-sm outline-none",
-                        chunk.id === citedChunkId
-                          ? "border-accent bg-accent-soft ring-2 ring-accent"
-                          : "border-slate-200 dark:border-slate-800"
-                      )}
-                    >
-                      <p className="mb-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {t("library.chunk", { values: { index: chunk.chunkIndex + 1 } })}
-                        {chunk.page ? ` · ${t("search.page")} ${chunk.page}` : ""}
-                        {chunk.id === citedChunkId ? (
-                          <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                            {t("objects.citation.cited")}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="whitespace-pre-wrap font-reading">{chunk.content}</p>
-                    </li>
-                  ))}
-                </ol>
-              </CollapsibleSection>
-            </div>
-          ))}
 
         {tab === "notes" ? (
-          <CollapsibleSection
-            title={t("library.sections.atomicNotes")}
-            count={detail.atomicNotes.length}
-            defaultOpen
-          >
-            {detail.atomicNotes.length === 0 ? (
-              <StateCard>{t("knowledge.notes.emptyForSource")}</StateCard>
-            ) : (
-              <ol className="grid gap-2">
-                {detail.atomicNotes.map((note) => (
-                  <li key={note.id}>
-                    <AtomicNoteCard
-                      note={note}
-                      focused={note.id === focusedAtomicNoteId}
-                      t={t}
-                      onOpenNote={onOpenNote}
-                    />
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CollapsibleSection>
+          <SourceNotesList
+            detail={detail}
+            focusedAtomicNoteId={focusedAtomicNoteId}
+            t={t}
+            onOpenNote={onOpenNote}
+          />
         ) : null}
 
         {tab === "graph" ? (
@@ -2209,106 +1760,9 @@ export function SourceDetailView({
           </div>
         ) : null}
 
-        {tab === "relations" ? (
-          <CollapsibleSection
-            title={t("library.sections.relations")}
-            count={detail.relations.length}
-            defaultOpen
-          >
-            {detail.relations.length === 0 ? (
-              <StateCard>{t("knowledge.relations.empty")}</StateCard>
-            ) : (
-              <ol className="grid gap-2">
-                {detail.relations.map((relation) => (
-                  <li
-                    key={relation.id}
-                    className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <p className="text-sm font-medium">
-                        <SourceReferenceBadge number={1} title={relation.sourceTitle} />
-                        {relation.sourceTitle} {relationPairArrow(relation.direction)}{" "}
-                        <SourceReferenceBadge number={2} title={relation.targetTitle} />
-                        {relation.targetTitle}
-                      </p>
-                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold tabular-nums dark:bg-slate-800">
-                        {relationConfidenceLabel(relation, t)}
-                      </span>
-                    </div>
-                    <p className="text-sm">
-                      {relationTypeView(relation.relationType).directed &&
-                      relation.direction === "unknown"
-                        ? t("knowledge.relations.linked", {
-                            values: { type: t(relationTypeKey(relation.relationType)) }
-                          })
-                        : t(relationTypeKey(relation.relationType))}
-                    </p>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                      <AtomicNoteRelationReferenceText
-                        text={
-                          relation.explanation.startsWith("knowledge.")
-                            ? t(relation.explanation as MessageKey)
-                            : relation.explanation
-                        }
-                        sourceId={relation.sourceAtomicNoteId}
-                        targetId={relation.targetAtomicNoteId}
-                        sourceTitle={relation.sourceTitle}
-                        targetTitle={relation.targetTitle}
-                      />
-                    </p>
-                    {relation.sourceStatus === "pending_review" ||
-                    relation.targetStatus === "pending_review" ? (
-                      <span className="w-fit rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                        {t("knowledge.relations.pendingInvolved")}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CollapsibleSection>
-        ) : null}
+        {tab === "relations" ? <SourceRelationsTab detail={detail} t={t} /> : null}
 
-        {tab === "metadata" ? (
-          <div className="grid gap-4">
-            <dl className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
-              {metadataEntries(detail.metadata).map(([key, value]) => (
-                <div key={key}>
-                  <dt className="text-xs text-slate-500">
-                    {t(`import.metadataFields.${key}` as MessageKey)}
-                  </dt>
-                  <dd className="mt-1 whitespace-pre-wrap break-words text-sm">
-                    {key === "tags" ? (
-                      <span className="flex flex-wrap gap-1.5">
-                        <TagBadges tags={value.split(/[,\n]/)} t={t} />
-                      </span>
-                    ) : (
-                      value
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <CollapsibleSection title={t("library.detail.rawMetadata")}>
-              <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">
-                {JSON.stringify(detail.metadata, null, 2)}
-              </pre>
-              {detail.assets
-                .filter((asset) => asset.role === "cover")
-                .map((asset) => (
-                  <button
-                    key={asset.id}
-                    type="button"
-                    className="mt-2 inline-flex w-fit items-center gap-2 text-sm text-cyan-700 hover:underline dark:text-cyan-300"
-                    onClick={() => void window.app.knowledge.openAsset(asset.id)}
-                  >
-                    <FileText className="h-4 w-4" aria-hidden="true" />
-                    {asset.originalFileName}
-                  </button>
-                ))}
-            </CollapsibleSection>
-          </div>
-        ) : null}
+        {tab === "metadata" ? <SourceDetails detail={detail} t={t} /> : null}
       </Tabs>
     </section>
   );
@@ -2514,155 +1968,6 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
  * A note in its source's list: its title opens the Note page, which shows the text, the evidence,
  * where the note is and its relations.
  */
-export function AtomicNoteCard({
-  note,
-  focused = false,
-  t,
-  onOpenNote
-}: {
-  note: SourceDetail["atomicNotes"][number];
-  focused?: boolean;
-  t: Translator;
-  onOpenNote?: ((noteId: string) => void) | undefined;
-}) {
-  const lang = note.language === "und" ? undefined : note.language;
-  return (
-    <article
-      id={`atomic-note-${note.id}`}
-      tabIndex={-1}
-      className={cn(
-        "scroll-my-4 flex flex-col gap-2 rounded-lg border border-border bg-surface p-4 outline-none",
-        focused && "ring-2 ring-accent"
-      )}
-    >
-      {onOpenNote ? (
-        <button
-          type="button"
-          className="text-left font-semibold hover:underline"
-          onClick={() => onOpenNote(note.id)}
-        >
-          {note.title}
-        </button>
-      ) : (
-        <span className="font-semibold">{note.title}</span>
-      )}
-      <p lang={lang} className="font-reading text-base">
-        {note.ideaStatement}
-      </p>
-      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>{t(noteStatusKey(note.status))}</span>
-        <AiNoteBadge t={t} status={note.status} humanProtected={note.humanProtected} />
-        {note.supersessionStatus !== "current" ? (
-          <span>{t("knowledgeEvolution.supersededNote")}</span>
-        ) : null}
-        <span>
-          {t(
-            note.ownership === "knowledge"
-              ? "knowledgeEvolution.knowledgeOwned"
-              : "knowledgeEvolution.sourceOwned"
-          )}
-        </span>
-      </p>
-    </article>
-  );
-}
-
-function CollapsibleSection({
-  title,
-  count,
-  defaultOpen = false,
-  openSignal = 0,
-  children
-}: {
-  title: string;
-  count?: number;
-  defaultOpen?: boolean;
-  /** Opens the section each time it grows (a citation needs the passage it holds on screen). */
-  openSignal?: number;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen || openSignal > 0);
-  const [seenSignal, setSeenSignal] = useState(openSignal);
-  if (openSignal !== seenSignal) {
-    setSeenSignal(openSignal);
-    if (openSignal > 0) setOpen(true);
-  }
-  const sectionRef = useExpandedCardViewport(open);
-  return (
-    <section
-      ref={sectionRef}
-      className="scroll-my-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
-    >
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-950/40"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="flex items-center gap-2 font-semibold">
-          {title}
-          {count !== undefined ? (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {count}
-            </span>
-          ) : null}
-        </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-slate-400 transition-transform",
-            open && "rotate-180"
-          )}
-          aria-hidden="true"
-        />
-      </button>
-      <div className={cn("section-collapse", open && "section-collapse-open")}>
-        <div>
-          <div className="px-4 pb-4">{children}</div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  tone
-}: {
-  icon: typeof FileText;
-  label: string;
-  value: number;
-  tone: "cyan" | "emerald" | "violet" | "amber";
-}) {
-  const tones = {
-    cyan: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200",
-    emerald: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
-    violet: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
-    amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-  };
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg", tones[tone])}>
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-xs text-slate-500">{label}</span>
-        <span className="mt-0.5 block text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
-          {value}
-        </span>
-      </span>
-    </div>
-  );
-}
-
-function StateCard({ children }: { children: string }) {
-  return (
-    <p className="rounded-md border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">
-      {children}
-    </p>
-  );
-}
 
 function currentHistoryState(): Record<string, unknown> {
   const state = window.history.state;
@@ -2695,19 +2000,6 @@ function stageKey(stage: string): MessageKey {
       } as Record<string, string>
     )[stage] ?? stage;
   return `jobs.stages.${normalized}` as MessageKey;
-}
-
-function noteStatusKey(status: string): MessageKey {
-  return `knowledge.notes.status.${status}` as MessageKey;
-}
-
-const legacyRelationTypes = new Set(AtomicNoteRelationTypeSchema.options as readonly string[]);
-
-/** The legacy types keep their Library words; the relations v2 write types read as on the Note page. */
-function relationTypeKey(type: string): MessageKey {
-  return legacyRelationTypes.has(type)
-    ? (`knowledge.relations.types.${type}` as MessageKey)
-    : relationTypeView(type).wordKey;
 }
 
 function PageControls({
@@ -2761,51 +2053,25 @@ function detailAsLibrarySource(detail: SourceDetail): LibrarySource {
   };
 }
 
-function metadataEntries(metadata: Record<string, unknown>): Array<[string, string]> {
-  const descriptor = metadata.descriptor;
-  if (!descriptor || typeof descriptor !== "object") return [];
-  const values = descriptor as Record<string, unknown>;
-  return [
-    "title",
-    "subtitle",
-    "creators",
-    "language",
-    "publicationDate",
-    "publisher",
-    "edition",
-    "isbn10",
-    "isbn13",
-    "doi",
-    "issn",
-    "venue",
-    "year",
-    "series",
-    "volume",
-    "issue",
-    "chapterNumber",
-    "sectionNumber",
-    "pageCount",
-    "url",
-    "siteName",
-    "platform",
-    "channel",
-    "durationSeconds",
-    "tags",
-    "subjects",
-    "keywords",
-    "abstract",
-    "description"
-  ].flatMap((key): Array<[string, string]> => {
-    const value = values[key];
-    if (value === undefined || value === null || value === "") return [];
-    const formatted = Array.isArray(value)
-      ? value
-          .map((item) =>
-            typeof item === "object" && item && "name" in item ? String(item.name) : String(item)
-          )
-          .join(", ")
-      : String(value);
-    return formatted ? [[key, formatted]] : [];
-  });
-}
 import { SourceRelationsList } from "./SourceRelationsList";
+import { SourceBreadcrumb, SourceHeader } from "../workspace/panels/source/source-header";
+import { SourceContent } from "../workspace/panels/source/source-content";
+import {
+  SourceDetails,
+  SourceHistory,
+  useSourceHistory
+} from "../workspace/panels/source/source-details";
+import { SourceNotesList } from "../workspace/panels/source/source-notes";
+import { SourceOverview } from "../workspace/panels/source/source-overview";
+import {
+  AtomicNoteCard,
+  CollapsibleSection,
+  expandedCardScrollBlock,
+  relationConfidenceLabel,
+  SourceTypeBadge,
+  StateCard,
+  typeIcons,
+  useExpandedCardViewport
+} from "../workspace/panels/source/source-parts";
+import { SourceRelationsTab } from "../workspace/panels/source/source-relations";
+export { AtomicNoteCard, expandedCardScrollBlock, relationConfidenceLabel };
