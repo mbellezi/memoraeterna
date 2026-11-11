@@ -14,7 +14,6 @@ import {
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hasMinimumSummaryContent,
-  limitKnowledgeGraphBatches,
   normalizeSummaryText,
   parseKnowledgeGraphBatchCheckpoints,
   parseKnowledgeGraphOutput,
@@ -527,7 +526,7 @@ describe("knowledge processing", () => {
       ).toThrow();
     });
 
-    it("never carries claims into the generated batches or their limits", async () => {
+    it("never carries claims into the generated batches or their checkpoints", async () => {
       const output = {
         entities: [entity("a"), entity("b")],
         claims: [{ text: "Ignored.", confidence: 1, evidenceChunkIds: ["c1"] }],
@@ -552,12 +551,11 @@ describe("knowledge processing", () => {
           profileId: "profile-1",
           aiTaskRunId: "run-1"
         }),
-        12_000,
-        { extractionLimits: { maxEntities: 1, maxRelations: 5 } }
+        12_000
       );
       const batch = generated?.batches[0];
       expect(Object.keys(batch ?? {}).sort()).toEqual(["entities", "relations"]);
-      expect(batch?.entities).toHaveLength(1);
+      expect(batch?.entities).toHaveLength(2);
       expect(
         JSON.stringify(generated?.checkpoints),
         "checkpoints persist entities and relations only"
@@ -766,7 +764,7 @@ describe("knowledge processing", () => {
     expect(prompt).not.toContain("00000000-0000-4000-8000-000000000001");
   });
 
-  it("puts the remaining source extraction limits in the prompt and enforces them", async () => {
+  it("states the same per-call caps in every batch and runs them all, whatever came before", async () => {
     const inputs = [
       {
         id: "chunk-1",
@@ -820,60 +818,19 @@ describe("knowledge processing", () => {
       inputs,
       run,
       100,
-      { inputKind: "source_chunks", extractionLimits: { maxEntities: 1, maxRelations: 2 } }
+      { inputKind: "source_chunks", batchLimits: { maxEntities: 2, maxRelations: 3 } }
     );
 
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run.mock.calls[0]?.[0]).toContain("Source excerpts:");
-    expect(run.mock.calls[0]?.[0]).toContain("at most 1 entities");
-    expect(run.mock.calls[0]?.[0]).toContain("2 relations");
+    // No budget spans the source (F5 D22): batch 2's prompt does not depend on batch 1's answer,
+    // and no batch's answer is cut to fit one.
+    expect(run).toHaveBeenCalledTimes(2);
+    for (const [prompt] of run.mock.calls) {
+      expect(prompt).toContain("Source excerpts:");
+      expect(prompt).toContain("at most 2 entities and 3 relations");
+    }
     expect(
       generated?.batches.flatMap((batch) => batch.entities).map((entity) => entity.canonicalName)
-    ).toEqual(["Allowed"]);
-  });
-
-  it("drops relations whose endpoints exceed the entity cap", () => {
-    const [limited] = limitKnowledgeGraphBatches(
-      [
-        {
-          entities: [
-            {
-              key: "e1",
-              type: "Concept",
-              canonicalName: "One",
-              identityDescription: "A concept defined in the supplied evidence.",
-              aliases: [],
-              confidence: 1,
-              evidenceChunkIds: ["chunk-1"]
-            },
-            {
-              key: "e2",
-              type: "Concept",
-              canonicalName: "Two",
-              identityDescription: "A concept defined in the supplied evidence.",
-              aliases: [],
-              confidence: 1,
-              evidenceChunkIds: ["chunk-1"]
-            }
-          ],
-          relations: [
-            {
-              subjectEntityKey: "e1",
-              predicate: "links",
-              displayLabel: "links",
-              definition: "The subject supports the object.",
-              objectEntityKey: "e2",
-              confidence: 1,
-              evidenceChunkIds: ["chunk-1"]
-            }
-          ]
-        }
-      ],
-      { maxEntities: 1, maxRelations: 10 }
-    );
-
-    expect(limited?.entities).toHaveLength(1);
-    expect(limited?.relations).toEqual([]);
+    ).toEqual(["Allowed", "Overflow", "Allowed", "Overflow"]);
   });
 
   it("resumes after completed graph batches instead of executing them again", async () => {

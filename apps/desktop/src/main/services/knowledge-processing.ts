@@ -14,6 +14,7 @@ import {
   type AtomicNoteGenerationOutput,
   type AtomicNoteRelationType,
   type KnowledgeGraphGenerationOutput,
+  mapInOrder,
   validateItems
 } from "@app/domain";
 
@@ -68,11 +69,14 @@ const knowledgeGraphExecutionTraceSchema = z
 /**
  * One extraction batch of the graph stage. Since F4 (D20) `batch` is the raw extraction, with no
  * canonical IDs (the model never supplies them); a checkpoint stored before holds a resolved batch,
- * and identity keeps the canonical IDs it already carries.
+ * and identity keeps the canonical IDs it already carries. Since F5 (D22) it holds its batch's
+ * position, since batches finish in any order; one stored before has none and was written as a
+ * prefix, in batch order.
  */
 const knowledgeGraphBatchCheckpointSchema = z
   .object({
     batchKey: z.string(),
+    batchIndex: z.number().int().nonnegative().optional(),
     batch: KnowledgeGraphGenerationOutputSchema,
     execution: knowledgeGraphExecutionTraceSchema
   })
@@ -121,6 +125,8 @@ export interface KnowledgeGraphExecutionTrace {
 
 export interface KnowledgeGraphBatchCheckpoint {
   batchKey: string;
+  /** The batch's position in the source; absent on a checkpoint stored before F5 (D22). */
+  batchIndex?: number | undefined;
   batch: KnowledgeGraphGenerationOutput;
   execution: KnowledgeGraphExecutionTrace;
 }
@@ -128,49 +134,6 @@ export interface KnowledgeGraphBatchCheckpoint {
 export interface KnowledgeGraphExtractionLimits {
   maxEntities: number;
   maxRelations: number;
-}
-
-export function limitKnowledgeGraphBatches(
-  batches: ReadonlyArray<KnowledgeGraphGenerationOutput>,
-  limits: KnowledgeGraphExtractionLimits
-): KnowledgeGraphGenerationOutput[] {
-  const maxEntities = Math.max(0, Math.floor(limits.maxEntities));
-  const maxRelations = Math.max(0, Math.floor(limits.maxRelations));
-  let entityCount = 0;
-  let relationCount = 0;
-  return batches.map((batch) => {
-    const allowedKeys = new Set<string>();
-    const entities = batch.entities.filter((entity) => {
-      if (entityCount >= maxEntities) return false;
-      entityCount += 1;
-      allowedKeys.add(entity.key);
-      return true;
-    });
-    const relations = batch.relations.filter((relation) => {
-      if (
-        relationCount >= maxRelations ||
-        !allowedKeys.has(relation.subjectEntityKey) ||
-        !allowedKeys.has(relation.objectEntityKey)
-      )
-        return false;
-      relationCount += 1;
-      return true;
-    });
-    return { entities, relations };
-  });
-}
-
-function remainingGraphLimits(
-  batches: ReadonlyArray<KnowledgeGraphGenerationOutput>,
-  limits?: KnowledgeGraphExtractionLimits
-): KnowledgeGraphExtractionLimits | null {
-  if (!limits) return null;
-  const entities = batches.reduce((total, batch) => total + batch.entities.length, 0);
-  const relations = batches.reduce((total, batch) => total + batch.relations.length, 0);
-  return {
-    maxEntities: Math.max(0, Math.floor(limits.maxEntities) - entities),
-    maxRelations: Math.max(0, Math.floor(limits.maxRelations) - relations)
-  };
 }
 
 export interface KnowledgeGraphGenerationOptions {
@@ -183,22 +146,41 @@ export interface KnowledgeGraphGenerationOptions {
    * content gets the same aliases on every import; chunk IDs never order anything.
    */
   chunkPositions?: ReadonlyMap<string, number>;
-  extractionLimits?: KnowledgeGraphExtractionLimits;
   /**
    * The recording-era parse path (F3 D5): the whole answer is validated strictly and repaired as a
    * whole, with no salvage. Pinned runs set it so every recorded repair replays.
    */
   pinned?: boolean;
-  /** The hard caps one call states (D36: 24/24 on a remote writer, 12/12 otherwise); 12/12 when left out. */
+  /**
+   * The hard caps every call states (D36: 24/24 on a remote writer, 12/12 otherwise); 12/12 when
+   * left out. No budget spans batches (F5 D22): a batch's prompt never depends on another's answer.
+   */
   batchLimits?: KnowledgeGraphExtractionLimits;
+  /**
+   * Batches in flight at once (F5 D22), the writer's lane limit; 1 when left out. Prompts,
+   * outputs and checkpoints are the same at any value.
+   */
+  concurrency?: number;
+  /** Cancels the extraction: no further batch starts once it is aborted. */
+  signal?: AbortSignal | undefined;
   /** Called for every batch whose answer was salvaged, so the items dropped with no call are counted. */
   onSalvage?: (input: { batchIndex: number; salvage: GraphSalvage; repaired: boolean }) => void;
+  /**
+   * Called once per extracted batch, one call at a time in the order the batches finish, with every
+   * checkpoint completed so far in batch order.
+   */
   onBatchCompleted?: (input: {
     completed: number;
     total: number;
     checkpoints: KnowledgeGraphBatchCheckpoint[];
   }) => Promise<void>;
 }
+
+/**
+ * Thrown inside a pool when the runner answered null (no model is routed), so no further call
+ * starts; the function then resolves null, as a serial run did at that call.
+ */
+class NoExecution extends Error {}
 
 export interface SummaryResult {
   summary: string;
@@ -245,7 +227,15 @@ export async function generateSummaryFromChunks(
    * The most bytes one reduction call's prompt may have (plan decision 28), or how to find out when
    * the partial summaries are there; null leaves the reduction as one call whatever its size.
    */
-  promptBudgetBytes: number | (() => Promise<number>) | null = null
+  promptBudgetBytes: number | (() => Promise<number>) | null = null,
+  /**
+   * The map's calls in flight at once (F5 D22), or how to find out when there is a map: the
+   * writer's lane limit; 1 when left out. The partial summaries keep chunk order at any value.
+   */
+  map: {
+    concurrency?: number | (() => Promise<number>);
+    signal?: AbortSignal | undefined;
+  } = {}
 ): Promise<SummaryResult | null> {
   const nonEmptyChunks = chunks.filter((chunk) => chunk.content.trim().length > 0);
   if (nonEmptyChunks.length === 0) return null;
@@ -281,20 +271,48 @@ export async function generateSummaryFromChunks(
 
   const partials: Array<{ text: string; chunkIds: string[] }> = [];
   const concepts: NonNullable<SummaryResult["concepts"]> = [];
-  for (const [batchIndex, group] of groups.entries()) {
-    const execution = await run(summaryPrompt(group, true), {
-      operation: "summary_map",
-      promptVersion: summaryPromptVersion,
-      batchIndex,
-      attempt: 0,
-      chunkIds: group.map((chunk) => chunk.id)
-    });
-    if (!execution) return null;
-    executions.push(execution);
-    const partial = normalizeSummaryText(execution.output);
-    concepts.push(...summaryConcepts(execution.output, group));
-    if (partial.length > 0)
-      partials.push({ text: partial, chunkIds: group.map((chunk) => chunk.id) });
+  // The map's calls are independent: they run up to the lane limit, and their partial summaries
+  // are joined in chunk order whatever order they finish in.
+  const concurrency =
+    typeof map.concurrency === "function" ? await map.concurrency() : (map.concurrency ?? 1);
+  let mapped: Array<{
+    execution: KnowledgeAiExecution;
+    partial: string;
+    concepts: NonNullable<SummaryResult["concepts"]>;
+  }>;
+  try {
+    mapped = await mapInOrder(
+      groups,
+      concurrency,
+      async (group, batchIndex) => {
+        const execution = await run(summaryPrompt(group, true), {
+          operation: "summary_map",
+          promptVersion: summaryPromptVersion,
+          batchIndex,
+          attempt: 0,
+          chunkIds: group.map((chunk) => chunk.id)
+        });
+        if (!execution) throw new NoExecution();
+        return {
+          execution,
+          partial: normalizeSummaryText(execution.output),
+          concepts: summaryConcepts(execution.output, group)
+        };
+      },
+      map.signal
+    );
+  } catch (error) {
+    if (error instanceof NoExecution) return null;
+    throw error;
+  }
+  for (const [batchIndex, result] of mapped.entries()) {
+    executions.push(result.execution);
+    concepts.push(...result.concepts);
+    if (result.partial.length > 0)
+      partials.push({
+        text: result.partial,
+        chunkIds: (groups[batchIndex] ?? []).map((chunk) => chunk.id)
+      });
   }
   if (partials.length === 0) {
     return { summary: "", mapReduce: true, executions, skippedReason: "non_content" };
@@ -430,127 +448,150 @@ export async function generateKnowledgeGraphFromAtomicNotes(
         checkpoint.batchKey.startsWith(`${checkpointNamespace}:`)
       )
     : (options.completedBatches ?? []);
-  const reusable = reusableGraphCheckpoints(
-    groups,
-    completedBatches,
-    checkpointNamespace,
-    options.contentLanguage
+  const keys = groups.map((group) =>
+    knowledgeGraphBatchKey(group, checkpointNamespace, options.contentLanguage)
   );
-  const limitedReusable = options.extractionLimits
-    ? limitKnowledgeGraphBatches(
-        reusable.map((checkpoint) => checkpoint.batch),
-        options.extractionLimits
-      )
-    : reusable.map((checkpoint) => checkpoint.batch);
-  const checkpoints = reusable.map((checkpoint, index) => ({
-    ...checkpoint,
-    batch: limitedReusable[index] ?? checkpoint.batch
-  }));
-  for (let batchIndex = checkpoints.length; batchIndex < groups.length; batchIndex += 1) {
-    const remaining = remainingGraphLimits(
-      checkpoints.map((checkpoint) => checkpoint.batch),
-      options.extractionLimits
+  // No batch depends on another (F5 D22): every call states the same caps, the batches run up to
+  // the lane limit, and a checkpoint is reused by its key (position and input), not as a prefix.
+  const checkpoints = reusableGraphCheckpoints(keys, completedBatches);
+  const pending = keys.flatMap((_, batchIndex) => (checkpoints[batchIndex] ? [] : [batchIndex]));
+  const batchLimits = options.batchLimits ?? { maxEntities: 12, maxRelations: 12 };
+  const completed = () =>
+    checkpoints.filter((checkpoint): checkpoint is KnowledgeGraphBatchCheckpoint =>
+      Boolean(checkpoint)
     );
-    if (remaining && remaining.maxEntities <= 0) break;
-    const group = groups[batchIndex] ?? [];
-    const evidenceAliases = createEvidenceAliases(group, options.chunkPositions);
-    const callCaps = options.batchLimits ?? { maxEntities: 12, maxRelations: 12 };
-    const batchLimits = {
-      maxEntities: Math.min(callCaps.maxEntities, remaining?.maxEntities ?? callCaps.maxEntities),
-      maxRelations: Math.min(
-        callCaps.maxRelations,
-        remaining?.maxRelations ?? callCaps.maxRelations
-      )
-    };
-    const execution = await run(
-      buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits),
+  // Progress and checkpoint writes run one at a time, in the order the batches finish; each write
+  // holds every batch completed so far, in batch order.
+  let writes: Promise<unknown> = Promise.resolve();
+  try {
+    await mapInOrder(
+      pending,
+      options.concurrency ?? 1,
+      async (batchIndex) => {
+        const group = groups[batchIndex] ?? [];
+        const extracted = await extractKnowledgeGraphBatch(
+          source,
+          group,
+          run,
+          { index: batchIndex, inputKind, limits: batchLimits },
+          options
+        );
+        // The raw batch is checkpointed (F4 D20): identity runs per source after extraction, so a
+        // failed identity group never discards a batch's extraction, and a retried stage resumes
+        // at identity.
+        checkpoints[batchIndex] = {
+          batchKey: keys[batchIndex]!,
+          batchIndex,
+          batch: extracted.output,
+          execution: executionTrace(extracted.execution)
+        };
+        const saved = completed();
+        const write = writes.then(() =>
+          options.onBatchCompleted?.({
+            completed: saved.length,
+            total: groups.length,
+            checkpoints: saved
+          })
+        );
+        writes = write.catch(() => undefined);
+        await write;
+      },
+      options.signal
+    );
+  } catch (error) {
+    if (error instanceof NoExecution) return null;
+    throw error;
+  }
+  const extracted = completed();
+  return {
+    batches: extracted.map((checkpoint) => checkpoint.batch),
+    executions: extracted.map((checkpoint) => checkpoint.execution),
+    checkpoints: extracted
+  };
+}
+
+/**
+ * One extraction call of the graph stage and, when its answer is invalid, one repair. Throws
+ * {@link NoExecution} when no model answered the first call.
+ */
+async function extractKnowledgeGraphBatch(
+  source: { title: string; language: string },
+  group: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  run: KnowledgeAiRunner,
+  batch: {
+    index: number;
+    inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata";
+    limits: KnowledgeGraphExtractionLimits;
+  },
+  options: KnowledgeGraphGenerationOptions
+): Promise<{ output: KnowledgeGraphGenerationOutput; execution: KnowledgeAiExecution }> {
+  const { index: batchIndex, inputKind, limits: batchLimits } = batch;
+  const evidenceAliases = createEvidenceAliases(group, options.chunkPositions);
+  const execution = await run(
+    buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits),
+    {
+      operation: `graph_${inputKind}`,
+      promptVersion: knowledgeGraphPromptVersion,
+      outputContract: knowledgeGraphOutputContract,
+      batchIndex,
+      attempt: 0,
+      chunkIds: [...evidenceAliases.values()]
+    }
+  );
+  if (!execution) throw new NoExecution();
+  let parsed: KnowledgeGraphGenerationOutput;
+  let finalExecution = execution;
+  // A pinned run parses as the recording did: strict, repaired as a whole, nothing salvaged.
+  const parse = options.pinned
+    ? (output: unknown) => ({
+        output: parseKnowledgeGraphOutput(output, evidenceAliases),
+        salvage: null
+      })
+    : (output: unknown) => {
+        const salvage = salvageKnowledgeGraph(parseJsonOutput(output), evidenceAliases);
+        if (salvage.nothingValid)
+          throw new StructuredItemsError("knowledge_graph_nothing_valid", salvage.problems);
+        return { output: salvage.output, salvage };
+      };
+  try {
+    const first = parse(execution.output);
+    parsed = first.output;
+    if (first.salvage?.salvagedItems)
+      options.onSalvage?.({ batchIndex, salvage: first.salvage, repaired: false });
+  } catch (initialError) {
+    const repaired = await run(
+      buildKnowledgeGraphRepairPrompt(
+        source,
+        group,
+        evidenceAliases,
+        execution.output,
+        initialError,
+        inputKind,
+        batchLimits
+      ),
       {
-        operation: `graph_${inputKind}`,
+        operation: `graph_${inputKind}_repair`,
         promptVersion: knowledgeGraphPromptVersion,
         outputContract: knowledgeGraphOutputContract,
         batchIndex,
-        attempt: 0,
+        attempt: 1,
         chunkIds: [...evidenceAliases.values()]
       }
     );
-    if (!execution) return null;
-    let parsed: KnowledgeGraphGenerationOutput;
-    let finalExecution = execution;
-    // A pinned run parses as the recording did: strict, repaired as a whole, nothing salvaged.
-    const parse = options.pinned
-      ? (output: unknown) => ({
-          output: parseKnowledgeGraphOutput(output, evidenceAliases),
-          salvage: null
-        })
-      : (output: unknown) => {
-          const salvage = salvageKnowledgeGraph(parseJsonOutput(output), evidenceAliases);
-          if (salvage.nothingValid)
-            throw new StructuredItemsError("knowledge_graph_nothing_valid", salvage.problems);
-          return { output: salvage.output, salvage };
-        };
+    if (!repaired) throw initialError;
     try {
-      const first = parse(execution.output);
-      parsed = first.output;
-      if (first.salvage?.salvagedItems)
-        options.onSalvage?.({ batchIndex, salvage: first.salvage, repaired: false });
-    } catch (initialError) {
-      const repaired = await run(
-        buildKnowledgeGraphRepairPrompt(
-          source,
-          group,
-          evidenceAliases,
-          execution.output,
-          initialError,
-          inputKind,
-          batchLimits
-        ),
-        {
-          operation: `graph_${inputKind}_repair`,
-          promptVersion: knowledgeGraphPromptVersion,
-          outputContract: knowledgeGraphOutputContract,
-          batchIndex,
-          attempt: 1,
-          chunkIds: [...evidenceAliases.values()]
-        }
+      const second = parse(repaired.output);
+      parsed = second.output;
+      if (second.salvage?.salvagedItems)
+        options.onSalvage?.({ batchIndex, salvage: second.salvage, repaired: true });
+    } catch (repairError) {
+      throw new Error(
+        `knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`
       );
-      if (!repaired) throw initialError;
-      try {
-        const second = parse(repaired.output);
-        parsed = second.output;
-        if (second.salvage?.salvagedItems)
-          options.onSalvage?.({ batchIndex, salvage: second.salvage, repaired: true });
-      } catch (repairError) {
-        throw new Error(
-          `knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`
-        );
-      }
-      finalExecution = repaired;
     }
-    if (options.extractionLimits) {
-      const limited = limitKnowledgeGraphBatches(
-        [...checkpoints.map((checkpoint) => checkpoint.batch), parsed],
-        options.extractionLimits
-      );
-      parsed = limited.at(-1) ?? { entities: [], relations: [] };
-    }
-    // The raw batch is checkpointed (F4 D20): identity runs per source after extraction, so a failed
-    // identity group never discards a batch's extraction, and a retried stage resumes at identity.
-    checkpoints.push({
-      batchKey: knowledgeGraphBatchKey(group, checkpointNamespace, options.contentLanguage),
-      batch: parsed,
-      execution: executionTrace(finalExecution)
-    });
-    await options.onBatchCompleted?.({
-      completed: checkpoints.length,
-      total: groups.length,
-      checkpoints: [...checkpoints]
-    });
+    finalExecution = repaired;
   }
-  return {
-    batches: checkpoints.map((checkpoint) => checkpoint.batch),
-    executions: checkpoints.map((checkpoint) => checkpoint.execution),
-    checkpoints
-  };
+  return { output: parsed, execution: finalExecution };
 }
 
 export function buildKnowledgeGraphPrompt(
@@ -1297,23 +1338,33 @@ function knowledgeGraphBatchKey(
   return namespace ? `${namespace}:${digest}` : digest;
 }
 
+/**
+ * The stored checkpoints that still hold a batch, by batch position: one is reused when its key
+ * (the batch's position and input fingerprint) matches, whatever the others hold. A checkpoint
+ * stored before F5 has no position and stands at its place in the list (they were written as a
+ * prefix, in batch order). Each reused checkpoint states its position from then on.
+ */
 function reusableGraphCheckpoints(
-  groups: ReadonlyArray<ReadonlyArray<KnowledgeGraphAtomicNoteInput>>,
-  completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>,
-  namespace = "",
-  contentLanguage = "en"
-): KnowledgeGraphBatchCheckpoint[] {
-  const reusable: KnowledgeGraphBatchCheckpoint[] = [];
-  for (let index = 0; index < Math.min(groups.length, completed.length); index += 1) {
-    const group = groups[index] ?? [];
-    const checkpoint = completed[index];
+  keys: readonly string[],
+  completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>
+): Array<KnowledgeGraphBatchCheckpoint | undefined> {
+  const reusable = new Array<KnowledgeGraphBatchCheckpoint | undefined>(keys.length).fill(
+    undefined
+  );
+  completed.forEach((checkpoint, position) => {
+    const batchIndex = checkpoint.batchIndex ?? position;
     if (
-      !checkpoint ||
-      checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace, contentLanguage)
+      batchIndex < keys.length &&
+      !reusable[batchIndex] &&
+      checkpoint.batchKey === keys[batchIndex]
     )
-      break;
-    reusable.push(checkpoint);
-  }
+      reusable[batchIndex] = {
+        batchKey: checkpoint.batchKey,
+        batchIndex,
+        batch: checkpoint.batch,
+        execution: checkpoint.execution
+      };
+  });
   return reusable;
 }
 

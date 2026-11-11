@@ -178,6 +178,10 @@ export interface KnowledgeServiceOptions {
   getContentLanguage?: () => Promise<string>;
   getEntityIdentitySimilarityThreshold?: () => Promise<number>;
   getRelationTypeSimilarityThreshold?: () => Promise<number>;
+  /**
+   * @deprecated Ignored since F5 (D22): no budget spans a source's graph batches any more, so each
+   * batch's prompt depends only on its own input. T123 removes it with its two settings.
+   */
   getKnowledgeGraphLimits?: () => Promise<{ maxEntities: number; maxRelations: number }>;
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
@@ -619,6 +623,25 @@ export class KnowledgeService {
     }
   }
 
+  /**
+   * How many calls of one source's stage may be in flight (F5 D22): the current limit of the lane
+   * the operation's writer takes (a local writer, 1). An AI service that cannot say runs them one at
+   * a time; results never depend on it.
+   */
+  private async routeConcurrency(
+    task: "summarization" | "knowledge-graph-generation",
+    operation: string,
+    workloadClass: "write-fast" | "write-quality"
+  ): Promise<number> {
+    try {
+      return typeof this.options.aiService.taskRouteConcurrency === "function"
+        ? await this.options.aiService.taskRouteConcurrency(task, { operation, workloadClass })
+        : 1;
+    } catch {
+      return 1;
+    }
+  }
+
   public async summarizeSource(
     sourceItemId: string,
     documentId: string,
@@ -666,7 +689,11 @@ export class KnowledgeService {
           (await this.options.getSummaryMinimumWordCount?.()) ?? defaultSummaryMinimumWordCount
         )
       ),
-      async () => (await this.summaryBudgetFor("summary_reduce")).bytes
+      async () => (await this.summaryBudgetFor("summary_reduce")).bytes,
+      {
+        concurrency: () => this.routeConcurrency("summarization", "summary_map", "write-fast"),
+        signal
+      }
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
     if (summary.summary.length === 0) {
@@ -1260,10 +1287,6 @@ export class KnowledgeService {
       throw new Error("source_document_not_found");
     const contentLanguage = (await this.options.getContentLanguage?.()) ?? "en";
     const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
-    const extractionLimits = (await this.options.getKnowledgeGraphLimits?.()) ?? {
-      maxEntities: 250,
-      maxRelations: 500
-    };
     const canonicalSettings = CanonicalMatchingSettingsSchema.parse(
       (await this.options.getCanonicalMatchingSettings?.()) ?? {}
     );
@@ -1277,8 +1300,16 @@ export class KnowledgeService {
           })
         : null;
     const batch = knowledgeGraphBatchFor(locality, { pinned });
+    // Every call states the same caps; no budget spans the source's batches (F5 D22), so they run up
+    // to the writer's lane limit and each prompt depends only on its own input.
     const batchLimits = { maxEntities: batch.maxEntities, maxRelations: batch.maxRelations };
     const maxInputCharacters = this.knowledgeGraphMaxInputCharacters ?? batch.maxInputCharacters;
+    const sourceInputKind = processingMode ? "catalog_metadata" : "source_chunks";
+    const sourceConcurrency = await this.routeConcurrency(
+      "knowledge-graph-generation",
+      `graph_${sourceInputKind}`,
+      "write-quality"
+    );
     const salvaged = { items: 0, normalized: 0, dropped: {} as Record<string, number> };
     const onSalvage: NonNullable<
       Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[4]
@@ -1409,14 +1440,15 @@ export class KnowledgeService {
       maxInputCharacters,
       {
         completedBatches,
-        inputKind: processingMode ? "catalog_metadata" : "source_chunks",
+        inputKind: sourceInputKind,
         pinned,
         batchLimits,
+        concurrency: sourceConcurrency,
+        signal,
         onSalvage,
         checkpointNamespace: "source",
         chunkPositions: positions,
         contentLanguage,
-        extractionLimits,
         ...(context.onBatchCompleted
           ? {
               onBatchCompleted: async ({ completed, total, checkpoints }) => {
@@ -1474,6 +1506,12 @@ export class KnowledgeService {
               inputKind: "atomic_notes",
               pinned,
               batchLimits,
+              concurrency: await this.routeConcurrency(
+                "knowledge-graph-generation",
+                "graph_atomic_notes",
+                "write-quality"
+              ),
+              signal,
               onSalvage,
               checkpointNamespace: "atomic_notes",
               chunkPositions: positions,
@@ -1541,7 +1579,7 @@ export class KnowledgeService {
           ),
           metadata: {
             graphModes,
-            extractionLimits,
+            batchLimits,
             promptVersion: knowledgeGraphPromptVersion,
             promptFingerprint: stagePromptFingerprints(
               capturePromptPin(),
@@ -1558,7 +1596,6 @@ export class KnowledgeService {
           runtime: finalExecution.runtime,
           promptVersion: knowledgeGraphPromptVersion,
           displayLanguage: finalExecution.outputLanguage ?? "en",
-          extractionLimits,
           ...(processingMode ? { processingMode } : {})
         }
       })
@@ -1596,7 +1633,7 @@ export class KnowledgeService {
       projectionError,
       batchCount: generated.batches.length,
       graphModes,
-      extractionLimits,
+      batchLimits,
       ...persisted
     };
   }

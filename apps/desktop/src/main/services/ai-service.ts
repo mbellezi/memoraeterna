@@ -82,6 +82,7 @@ import {
   executionLane,
   isDeadlineFailure,
   isRemoteExecution,
+  laneMaximum,
   providerTreatedAsRemote,
   localDeadlineMs,
   LocalDeadlineError,
@@ -1442,6 +1443,25 @@ export class AiService {
     await this.ensureLegacyRouteMapping();
     const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
     return selection ? routeCapacity(task, selection, context.operation) : null;
+  }
+
+  /**
+   * How many calls of one source's stage may be in flight at once (F5 D22): the current limit of
+   * the lane the task's calls take, read without a call. That is the configured maximum (4 for an
+   * API key, 2 for Codex, 1 for the local lane and in serial mode) until a rate limit lowered it.
+   * The scheduler still bounds the lane; this only lets a source's batches reach it. 1 when no
+   * route serves the task.
+   */
+  public async taskRouteConcurrency(
+    task: RoutedTask,
+    context: Pick<AiTaskLogContext, "operation" | "workloadClass"> = {}
+  ): Promise<number> {
+    await this.ensureLegacyRouteMapping();
+    const selection = await this.defaultTask(task, undefined, taskRouteKeys(task, context));
+    if (!selection) return 1;
+    const { lane, remoteKind } = executionLane(this.executionTarget(selection));
+    const current = this.scheduler.snapshot().find((snapshot) => snapshot.lane === lane);
+    return Math.max(1, current?.limit ?? laneMaximum(lane, remoteKind, this.laneConfig));
   }
 
   public async pinOrganizationProfile(

@@ -60,9 +60,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   output gets a bounded repair; valid items are kept and only missing ones are requested again.
 - Model output never supplies canonical IDs. Short aliases in prompts are
   resolved by the backend to real IDs and validated before persistence.
-- Prompts are a function of content, not of IDs: aliases and the order of
-  evidence, candidates and batches follow document position or a content key
-  (title, text); an ID only breaks a tie between indistinguishable items.
+- Prompts are a function of content, not of IDs: aliases and the order of evidence, candidates and
+  batches follow document position or a content key (title, text) and keep that order when a source's
+  batches run in parallel up to the lane limit; an ID only breaks a tie between indistinguishable items.
 - Oversized requests are rejected before the provider call with a localized
   error; evidence is never silently truncated.
 
