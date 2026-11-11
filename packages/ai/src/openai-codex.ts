@@ -289,6 +289,8 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         let inputTokens: number | undefined;
         let outputTokens: number | undefined;
         let streamError: AiProviderError | undefined;
+        // The reasoning steps this request reported, so a repeated report is not counted again.
+        const reasoningSteps = new Set<string>();
         await readServerSentEvents(
           response,
           (data) => {
@@ -298,6 +300,8 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
               delta?: string;
               message?: string;
               code?: string;
+              output_index?: number;
+              item?: { id?: string; type?: string };
               error?: { message?: string; code?: string; type?: string };
               response?: {
                 error?: { message?: string; code?: string; type?: string };
@@ -317,8 +321,22 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
               typeof event.delta === "string" &&
               event.delta.length > 0
             ) {
-              // Lifecycle events (created, in_progress, output_item.added, ...) are not progress.
               call.progressed("reasoning");
+            } else if (
+              (event.type === "response.output_item.added" ||
+                event.type === "response.output_item.done") &&
+              event.item?.type === "reasoning"
+            ) {
+              // A request that asks for no reasoning summary streams no reasoning text: a reasoning
+              // item starting or ending is the only sign that the model is still thinking (a step of
+              // about 500 tokens each, F4 CODEXSTALLFIX). Each start and each end counts once. Other
+              // lifecycle events (created, in_progress, a message item, content and summary parts)
+              // and keep-alive comments are not progress.
+              const step = `${event.type}\u0000${event.item.id ?? event.output_index ?? ""}`;
+              if (!reasoningSteps.has(step)) {
+                reasoningSteps.add(step);
+                call.progressed("reasoning");
+              }
             }
             if (event.type === "error" || event.type === "response.failed") {
               const failure = event.error ?? event.response?.error;

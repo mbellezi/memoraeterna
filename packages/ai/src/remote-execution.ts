@@ -61,7 +61,8 @@ const milliseconds = z.number().int().positive();
  * the execution (not from admission to a lane); connect, first-byte, no-answer and stall deadlines
  * apply to streamed responses, the total deadline to every call and to its retries together, retry
  * backoffs included, but not the time a retried attempt waits for its lane again. Bytes alone never
- * extend a stream: only progress does (answer text, and reasoning text before the answer).
+ * extend a stream: only progress does (answer text; before the answer, reasoning text or a new
+ * reasoning step the stream reports).
  */
 export const aiRuntimeConfigSchema = z
   .object({
@@ -79,18 +80,36 @@ export const aiRuntimeConfigSchema = z
          */
         firstByteHighReasoningMs: milliseconds,
         /**
-         * Longest stretch without progress: answer text once the answer started, reasoning text before it.
-         * Lifecycle events, keep-alives and empty data do not count as progress.
+         * Longest stretch without progress: answer text once the answer started; before it, reasoning
+         * text or a new reasoning step the stream reports (a model that streams no reasoning text still
+         * reports each step it starts or ends, as a Responses reasoning item does). Lifecycle events,
+         * keep-alives and empty data do not count as progress.
          */
         stallMs: milliseconds,
         /**
          * Longest time from the first body chunk to the first answer text of a request that is not
-         * high-reasoning and not served from this machine, whatever reasoning text arrives meanwhile. A
-         * stream that exceeds it stalls (a transient failure, retried inside the total deadline). A
-         * decide call asks for no reasoning summary and so is silent while it thinks: this is also the
-         * longest silence it is given before its first answer text, in place of `stallMs`.
+         * high-reasoning and not served from this machine, whatever reasoning arrives meanwhile, in a
+         * class without a bound of its own in `answerStartClassMs`. A stream that exceeds it stalls (a
+         * transient failure, retried inside the total deadline). A decide call asks for no reasoning
+         * summary and so is silent while it thinks: its bound is also the longest silence it is given
+         * before its first answer text, in place of `stallMs`.
          */
         answerStartMs: milliseconds,
+        /**
+         * The answer-start bound of a class whose requests think longer before they answer than
+         * `answerStartMs` allows; it replaces `answerStartMs` for that class, whatever reasoning the
+         * stream shows. Each one is kept short enough that every attempt of a call gets it whole inside
+         * the class's total.
+         */
+        answerStartClassMs: z
+          .object({
+            embed: milliseconds.optional(),
+            decide: milliseconds.optional(),
+            "write-fast": milliseconds.optional(),
+            "write-quality": milliseconds.optional(),
+            answer: milliseconds.optional()
+          })
+          .strict(),
         /** Multiplies the total deadline of servers on this machine, which are slower to answer. */
         localTotalFactor: z.number().min(1),
         totalMs: z
@@ -121,8 +140,9 @@ export const aiRuntimeConfigSchema = z
   .strict();
 export type AiRuntimeConfig = z.infer<typeof aiRuntimeConfigSchema>;
 export interface AiRuntimeConfigInput {
-  deadlines?: Partial<Omit<AiRuntimeConfig["deadlines"], "totalMs">> & {
+  deadlines?: Partial<Omit<AiRuntimeConfig["deadlines"], "totalMs" | "answerStartClassMs">> & {
     totalMs?: Partial<AiRuntimeConfig["deadlines"]["totalMs"]>;
+    answerStartClassMs?: AiRuntimeConfig["deadlines"]["answerStartClassMs"];
   };
   retry?: Partial<AiRuntimeConfig["retry"]>;
 }
@@ -134,6 +154,10 @@ export const defaultAiRuntimeConfig: AiRuntimeConfig = {
     firstByteHighReasoningMs: 120_000,
     stallMs: 20_000,
     answerStartMs: 30_000,
+    // Graph prompts reasoned up to 2,617 tokens before answering (Codex probe of 2026-11-11: 47.5 s
+    // from the first chunk at 18.2 ms a token): 90 s survives a 1.89x slower provider, and three
+    // attempts of 90 s fit inside the 300 s total (F4 amendment "Codex pre-answer watchdog").
+    answerStartClassMs: { "write-quality": 90_000 },
     localTotalFactor: 3,
     totalMs: {
       embed: 30_000,
@@ -147,15 +171,30 @@ export const defaultAiRuntimeConfig: AiRuntimeConfig = {
 };
 
 export function resolveAiRuntimeConfig(input: AiRuntimeConfigInput = {}): AiRuntimeConfig {
-  const { totalMs, ...deadlines } = input.deadlines ?? {};
+  const { totalMs, answerStartClassMs, ...deadlines } = input.deadlines ?? {};
   return aiRuntimeConfigSchema.parse({
     deadlines: {
       ...defaultAiRuntimeConfig.deadlines,
       ...deadlines,
+      answerStartClassMs: {
+        ...defaultAiRuntimeConfig.deadlines.answerStartClassMs,
+        ...answerStartClassMs
+      },
       totalMs: { ...defaultAiRuntimeConfig.deadlines.totalMs, ...totalMs }
     },
     retry: { ...defaultAiRuntimeConfig.retry, ...input.retry }
   });
+}
+
+/**
+ * The longest time from the first body chunk to the first answer text of a remote request of a
+ * class: the class's own bound, else the general one.
+ */
+export function remoteAnswerStartMs(
+  config: AiRuntimeConfig,
+  workloadClass: AiWorkloadClass
+): number {
+  return config.deadlines.answerStartClassMs[workloadClass] ?? config.deadlines.answerStartMs;
 }
 
 /** Exponential backoff with full jitter; a provider-requested delay is a floor. */
@@ -457,6 +496,7 @@ export async function runRemoteCall<T>(
     (options.beforeAttempt ? undefined : failedAttemptObserverOf(caller));
   const highReasoning = options.parameters !== undefined && isHighReasoning(options.parameters);
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
+  const answerStartMs = remoteAnswerStartMs(config, workload);
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
   // A decide call asks for no reasoning summary, so it thinks in silence before its answer text.
   const decide = options.taskType !== undefined && workload === "decide";
@@ -481,18 +521,19 @@ export async function runRemoteCall<T>(
         local: context.local === true,
         connectMs: config.deadlines.connectMs,
         firstByteMs: highReasoning ? firstByteHighReasoningMs : config.deadlines.firstByteMs,
-        // A reasoning model sends early events and then thinks in silence before its first output. A
-        // high-reasoning request may do so for its long window. A remote decide call, which has no
-        // reasoning text to show, may do so for the answer-start bound and not longer: the same bound
-        // that limits every other ordinary request, whatever reasoning text it streams.
+        // A reasoning model sends early events and then thinks before its first output, showing at most
+        // its reasoning text or its reasoning steps. A high-reasoning request may stay silent for its
+        // long window. A remote decide call, which has no reasoning text to show, may stay silent for
+        // its answer-start bound and not longer: the same bound that limits every other ordinary
+        // request of its class, whatever reasoning it shows.
         preOutputStallMs: highReasoning
           ? Math.max(stallMs, firstByteHighReasoningMs)
           : decide && !context.local
-            ? Math.max(stallMs, config.deadlines.answerStartMs)
+            ? Math.max(stallMs, answerStartMs)
             : stallMs,
         stallMs,
         // A server on this machine may take long to load a model and to think, so it has no such bound.
-        answerStartMs: highReasoning || context.local ? undefined : config.deadlines.answerStartMs,
+        answerStartMs: highReasoning || context.local ? undefined : answerStartMs,
         signals: [...(caller ? [caller] : []), total.signal]
       });
       let failure: unknown;
@@ -649,11 +690,11 @@ export class RemoteAttempt {
   }
 
   /**
-   * Call when the stream made progress: answer text, or reasoning text before the answer started. This
-   * is the only thing that restarts the stall deadline. Lifecycle events, keep-alives, comments and empty
-   * data are not progress, so a stream that sends only those stalls. Once answer text arrives the
-   * no-answer deadline ends and a silence of `stallMs` means the stream stalled; reasoning text that comes
-   * after the answer started is not progress.
+   * Call when the stream made progress: answer text, or reasoning before the answer started (reasoning
+   * text, or a new reasoning step the stream reports). This is the only thing that restarts the stall
+   * deadline. Lifecycle events, keep-alives, comments and empty data are not progress, so a stream that
+   * sends only those stalls. Once answer text arrives the no-answer deadline ends and a silence of
+   * `stallMs` means the stream stalled; reasoning that comes after the answer started is not progress.
    */
   public progressed(kind: "reasoning" | "answer"): void {
     if (!this.options.streaming) return;

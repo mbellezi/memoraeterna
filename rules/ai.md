@@ -44,10 +44,10 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   backoff never holds a lane, and a caller's timeout excludes its wait for a lane. A remote lane
   whose provider keeps failing transiently fails new calls fast until a probe succeeds (a job that
   meets this or cannot connect waits, attempt kept); running calls and other lanes are untouched.
-- Remote generation streams, so remote calls have deadlines from execution start (connect, first
-  byte, stalled stream, total). Only progress (answer text, or reasoning text before it) keeps a
-  stream alive, not bytes or lifecycle events, and unless high-reasoning or local a request must
-  start answering within a bound of the first byte. Decide calls ask for no reasoning summary, so
+- Remote generation streams, with deadlines from execution start (connect, first byte, stalled
+  stream, total). Only progress (answer text; before it, reasoning text or a new reasoning step)
+  keeps a stream alive, not bytes or lifecycle events, and unless high-reasoning or local a request
+  must start answering within a bound of the first byte. Decide calls ask for no reasoning summary:
   only that bound limits their thinking (a refusing backend gets the previous shape). Adapters retry
   only transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with bounded, jittered
   backoff, honoring `Retry-After` or a stated reset (a long wait goes to the job; an Ask waits

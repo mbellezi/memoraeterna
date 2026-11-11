@@ -10,6 +10,7 @@ import {
   defaultAiRuntimeConfig,
   isLocalEndpoint,
   monotonicProgress,
+  remoteAnswerStartMs,
   resolveAiRuntimeConfig,
   remoteCallReport,
   retryDelayMs,
@@ -47,6 +48,7 @@ describe("remote execution configuration", () => {
       firstByteMs: 30_000,
       stallMs: 20_000,
       answerStartMs: 30_000,
+      answerStartClassMs: { "write-quality": 90_000 },
       totalMs: { embed: 30_000, decide: 45_000 }
     });
     expect(
@@ -54,6 +56,37 @@ describe("remote execution configuration", () => {
     ).toEqual({ ...defaultAiRuntimeConfig.deadlines.totalMs, embed: 5_000 });
     expect(() => resolveAiRuntimeConfig({ deadlines: { stallMs: 0 } })).toThrow();
     expect(() => resolveAiRuntimeConfig({ retry: { maxAttempts: 0 } })).toThrow();
+    expect(() =>
+      resolveAiRuntimeConfig({ deadlines: { answerStartClassMs: { answer: 0 } } })
+    ).toThrow();
+  });
+
+  it("takes the answer-start bound of a class from its own entry, else from the general one", () => {
+    const config = resolveAiRuntimeConfig({
+      deadlines: { answerStartMs: 25_000, answerStartClassMs: { answer: 45_000 } }
+    });
+    // A class entry given leaves the other defaults in place.
+    expect(config.deadlines.answerStartClassMs).toEqual({
+      "write-quality": 90_000,
+      answer: 45_000
+    });
+    expect(remoteAnswerStartMs(config, "write-quality")).toBe(90_000);
+    expect(remoteAnswerStartMs(config, "answer")).toBe(45_000);
+    expect(remoteAnswerStartMs(config, "write-fast")).toBe(25_000);
+    expect(remoteAnswerStartMs(config, "decide")).toBe(25_000);
+  });
+
+  it("gives write-quality an answer-start bound that every attempt of a call gets whole inside its total", () => {
+    const { deadlines, retry } = defaultAiRuntimeConfig;
+    const bound = remoteAnswerStartMs(defaultAiRuntimeConfig, "write-quality");
+    // The longest backoffs before the second and the third attempt (full jitter below the cap).
+    const backoffs = Array.from({ length: retry.maxAttempts - 1 }, (_, retried) =>
+      Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** retried)
+    ).reduce((sum, delay) => sum + delay, 0);
+    expect(retry.maxAttempts * bound + backoffs).toBeLessThan(deadlines.totalMs["write-quality"]);
+    // Every other class keeps the general bound.
+    for (const workload of ["embed", "decide", "write-fast", "answer"] as const)
+      expect(remoteAnswerStartMs(defaultAiRuntimeConfig, workload)).toBe(deadlines.answerStartMs);
   });
 
   it("gives each task class its own total deadline", () => {
@@ -448,7 +481,7 @@ describe("runRemoteCall deadlines", () => {
         runtime?: AiRuntimeConfigInput;
         parameters?: Record<string, unknown>;
         local?: boolean;
-        taskType?: "reranking" | "structured-output";
+        taskType?: "reranking" | "structured-output" | "knowledge-graph-generation";
       } = {}
     ) => {
       let started = 0;
@@ -563,6 +596,71 @@ describe("runRemoteCall deadlines", () => {
       await vi.advanceTimersByTimeAsync(30_000);
       await settled;
       expect(attempts()).toBe(1);
+    });
+
+    describe("a class with its own answer-start bound (write-quality)", () => {
+      const graph = {
+        runtime: { retry: { maxAttempts: 1 } },
+        taskType: "knowledge-graph-generation"
+      } as const;
+      /** Reasoning progress every 9.3 s from the first chunk, as the Codex probe of 2026-11-11 saw. */
+      const steps = (count: number): Step[] => [
+        [0],
+        ...Array.from({ length: count }, (_, i): Step => [(i + 1) * 9_300, "reasoning"])
+      ];
+
+      it("lets it reason past the general bound and answer, as the probe's longest run did at 47.5 s", async () => {
+        const { result } = play(
+          [{ steps: [...steps(5), [47_500, "answer"]], endAt: 48_000 }],
+          graph
+        );
+        await vi.advanceTimersByTimeAsync(48_000);
+        await expect(result).resolves.toBe("done");
+      });
+
+      it("still stalls it at the stall window when nothing but lifecycle events arrives", async () => {
+        const { result } = play([{ steps: heartbeats() }], graph);
+        const settled = expect(result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(20_000);
+        await settled;
+      });
+
+      it("cuts its reasoning at the class's bound when no answer text ever comes", async () => {
+        const { result } = play([{ steps: steps(30) }], graph);
+        let ended = false;
+        const settled = expect(result).rejects.toMatchObject({
+          kind: "stalled",
+          message: "AI provider produced no answer text within 90000 ms."
+        });
+        void result.catch(() => {
+          ended = true;
+        });
+        await vi.advanceTimersByTimeAsync(89_999);
+        expect(ended).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        await settled;
+      });
+
+      it("gives a bound configured for another class to that class only", async () => {
+        const runtime = {
+          retry: { maxAttempts: 1 },
+          deadlines: { answerStartClassMs: { answer: 45_000 } }
+        };
+        const answer = play([{ steps: steps(30) }], { runtime });
+        const answerSettled = expect(answer.result).rejects.toMatchObject({
+          message: "AI provider produced no answer text within 45000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(45_000);
+        await answerSettled;
+        const decide = play([{ steps: steps(30) }], { runtime, taskType: "reranking" });
+        const decideSettled = expect(decide.result).rejects.toMatchObject({
+          message: "AI provider produced no answer text within 30000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(30_000);
+        await decideSettled;
+      });
     });
 
     it("retries a request whose answer did not start in time inside the total deadline", async () => {

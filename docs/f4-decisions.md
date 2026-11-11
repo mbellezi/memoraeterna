@@ -222,6 +222,51 @@ over the text below where they differ.
   no failures, so it is inert there. A record that still holds a failed AI call fails its `replayable` check and is
   taken again; each retry line logs the harness's longest event-loop block since the last one, to tell a provider
   stall from a harness too busy to read the stream.
+- **Codex pre-answer watchdog (card CODEXSTALLFIX, 11-11; amends `rules/ai.md`'s stream deadlines and F3 D31's
+  answer-start value for one class; not E6's bar, T0, T1 or D).** What changed (`packages/ai`, product code, both
+  branches): (1) before the first answer text, a new reasoning step the stream reports is progress: on the Codex
+  (Responses) stream a `response.output_item.added` or `.done` whose item type is `reasoning`, each start and each end
+  once (by item id); keep-alive comments, `created`, `in_progress`, message items, content and summary parts still are
+  not; (2) the answer-start bound becomes per class: `answerStartClassMs` (typed, `defaultAiRuntimeConfig`) gives
+  `write-quality` 90 s and replaces the general `answerStartMs` (30 s, unchanged) for that class on every remote
+  streaming adapter, whatever reasoning the stream shows. Unchanged: the 20 s stall (before the answer, re-armed only by
+  progress, and after it), first-byte and connect bounds, totals, retries, breaker, decide calls (30 s silence and
+  bound, 45 s total), Ask and write-fast (30 s bound), high reasoning (120 s, no bound), local runtimes, the request
+  body and so every cassette key; R6's injected stall comes after the answer started and keeps its meaning. Why: since a
+  day between 10-30 and 11-09 Codex serves 2.9x slower (18.1-18.4 ms per output token against 6.4), so a graph batch's
+  hidden reasoning (no reasoning level, so no summary and no reasoning text) lasts up to 48 s; the 20 s stall counted
+  none of it and cut every sample that reasoned more than about 1,050 tokens, and FRREC's graph stages failed
+  (CODEXSTALL, `.cache/f4/close/codex-stall-diagnosis.md`). Evidence (the orchestrator's live probe, 11-11 16:36-16:50
+  UTC, 13 runs of 3 recorded graph requests, f9e5b4e638 x5, 723856d4eb x5, c93d2b8cf3 x3, watchdog raised to 180 s,
+  `.cache/f4/close/codex-stall-probe/`; kinds and times kept as the test fixture
+  `packages/ai/src/test-fixtures/codex-reasoning-probe-2026-11-11.json`): all 13 answered; reasoning 236-2,617 tokens
+  (the same request varied 236-2,368), first answer text 4.7-47.5 s after the first chunk, about 18.2 ms per reasoning
+  token; the stream is not silent before the answer: a keep-alive comment after every 5 s without an event, and a
+  reasoning item every 9.3 s (about 517 tokens; the first `added` comes 9.3-10.1 s after the first chunk, 4.6 s on the
+  one run that reasoned a single step, then a `done`/`added` pair per step); answer deltas every 0.2-0.4 s, longest gap
+  after the answer 2.6 s. The old rule cut 8 of 13 (at 20.7-23.3 s), the 30 s bound alone with steps counted 4 of 13,
+  the new rule 0 of 13 (replayed through the adapter with fake timers; without either part the tests fail). Arithmetic:
+  the stall window over the longest gap between progress signals, 20 / 10.08 s = 1.98x (Codex up to about 36 ms per
+  token, 5.6x 10-24's speed); the bound over the longest pre-answer phase, 90 / 47.5 s = 1.89x (2.07x over 10-24's
+  longest reasoner, 2,381 tokens; at today's speed up to about 4,900 reasoning tokens), so both start cutting at about
+  the same slowdown, and a longer bound would not help a stream of this shape; three attempts of 90 s plus first chunk
+  (up to 3.3 s) and backoff (1.5 s) take at most 281 s, inside the 300 s total. Rejected: 60 s (the diagnosis's; 1.26x
+  over 47.5 s), 120 s (three attempts no longer fit), counting keep-alives or every lifecycle event (a pinging stream
+  would live until the total), a longer silent window for requests without reasoning text (a dead stream would hold a
+  slot 30-90 s), asking for a reasoning summary or a lower effort (request and cassette-key changes, decision 26), the
+  bound only for requests without reasoning text (a medium-effort route with summaries would get 30 s where the same
+  route at the default gets 90 s), a per-class object in place of the scalar `answerStartMs` (breaks every harness that
+  sets the scalar, the probe included). Cost, per attempt on the Codex lane (2 slots) and on API-key lanes (4): a dead
+  pre-answer stream (only keep-alives and lifecycle events) still fails at first chunk + 20 s, about 21 s, a call (3
+  attempts) at about 64 s, and with both Codex slots dead the breaker (5 consecutive failures) opens at about 63 s, as
+  today; a stream whose steps stop fails 20 s after its last step, at most at the class bound; a model that reasons
+  without end now holds its slot until the bound: write-quality about 91 s per attempt and 274 s per call (today 21 s
+  and 64 s), up to about 13.7 min per job over its 3 attempts (today 3.1 min), so the breaker opens after about 274 s
+  instead of 63 s, and on a first-run record (harness tries 5) up to about 26 min per call (today 9 min); the other
+  classes 31 s per attempt (today 21 s; decide unchanged). API-key lanes have no step events (their reasoning shows as
+  text or not at all), so only a write-quality stream that sends reasoning text and never answers costs more there (91 s
+  per attempt instead of 31 s). FRREC is recorded again on code with this change (both branches): a take recorded before
+  it measured the old watchdog (its durations hold stalled attempts).
 - **Codex ledger correction (T101's audit, 2026-11-11; amends the pre-soak figures above and section "Budget"; a
   correction, not a new approval).** The ledger file `queue-ledger.tsv`, whose running total RUN.md and the 10-25 cap
   decision quoted, omitted two gate S runs of 10-24 that never reached `gate-s.sh finish`: #1 (window closed, 31,664

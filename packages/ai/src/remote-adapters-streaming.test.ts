@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -209,7 +211,7 @@ describe("a stream is alive only while it makes progress", () => {
   const lifecycle = [
     events({ type: "response.created" }),
     events({ type: "response.in_progress" }),
-    events({ type: "response.output_item.added", item: { type: "reasoning" } }),
+    events({ type: "response.output_item.added", item: { type: "message" } }),
     events({ type: "response.content_part.added" }),
     ": keep-alive\n\n",
     "data:\n\n"
@@ -343,6 +345,268 @@ describe("a stream is alive only while it makes progress", () => {
     });
   });
 
+  describe("ChatGPT/Codex reasoning that streams no text (live probe of 2026-11-11)", () => {
+    type ProbeEvent = [atMs: number, kind: string, itemType?: string];
+    interface ProbeRun {
+      label: string;
+      run: number;
+      reasoningTokens: number;
+      firstChunkMs: number;
+      firstAnswerTextMs: number;
+      preAnswer: ProbeEvent[];
+      answerDeltasMs: number[];
+      afterAnswer: ProbeEvent[];
+    }
+    const probe = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "test-fixtures", "codex-reasoning-probe-2026-11-11.json"),
+        "utf8"
+      )
+    ) as { runs: ProbeRun[] };
+    const probeRun = (label: string, run: number) =>
+      probe.runs.find((entry) => entry.label.startsWith(label) && entry.run === run)!;
+    // The recorded request: a graph batch (class write-quality) with no reasoning level, so the
+    // backend gets no reasoning object and streams no reasoning text.
+    const graph: AiTaskRequest = {
+      ...request({ contextWindow: 128_000 }),
+      taskType: "knowledge-graph-generation"
+    };
+    /** The run's events with their recorded times: kinds and item types, as the probe saw them. */
+    const timelineOf = (run: ProbeRun): ProbeEvent[] => [
+      ...run.preAnswer,
+      ...run.answerDeltasMs.map((at): ProbeEvent => [at, "response.output_text.delta"]),
+      ...run.afterAnswer
+    ];
+    /** Keep-alive comments every five seconds from `from` to `until`. */
+    const keepAlives = (from: number, until = 200_000): ProbeEvent[] =>
+      Array.from({ length: Math.floor((until - from) / 5_000) + 1 }, (_, i) => [
+        from + i * 5_000,
+        "comment"
+      ]);
+    /**
+     * The stream of a timeline. Items get ids and indexes in the order they start, as the backend's
+     * do; a `done` closes the item started last.
+     */
+    const replay = (timeline: ProbeEvent[], endAt?: number) => {
+      const items: string[] = [];
+      const chunks = timeline.map(([at, kind, itemType]): [number, string] => {
+        if (kind === "comment") return [at, ": keep-alive\n\n"];
+        if (kind === "response.output_text.delta") return [at, answerText("x")];
+        if (kind === "response.completed") return [at, completed];
+        if (kind === "response.output_item.added" || kind === "response.output_item.done") {
+          if (kind === "response.output_item.added")
+            items.push(`${itemType === "reasoning" ? "rs" : "msg"}_${items.length}`);
+          const index = items.length - 1;
+          return [
+            at,
+            events({ type: kind, output_index: index, item: { id: items[index], type: itemType } })
+          ];
+        }
+        return [at, events({ type: kind })];
+      });
+      return scheduled(chunks, endAt);
+    };
+    const settledAt = async (result: Promise<unknown>, at: number) => {
+      let ended = false;
+      void result.catch(() => {
+        ended = true;
+      });
+      await vi.advanceTimersByTimeAsync(at - 1);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(ended).toBe(true);
+    };
+
+    it.each(probe.runs.map((run) => [`${run.label} #${run.run}`, run] as const))(
+      "answers the recorded run %s, kept alive before its answer by its reasoning steps",
+      async (_name, run) => {
+        const timeline = timelineOf(run);
+        const endAt = timeline.at(-1)![0];
+        const fetch = vi
+          .fn<typeof globalThis.fetch>()
+          .mockImplementation(async () => replay(timeline, endAt));
+        const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+        await vi.advanceTimersByTimeAsync(endAt + 1);
+        await expect(result).resolves.toMatchObject({
+          output: "x".repeat(run.answerDeltasMs.length),
+          attempts: 1
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it("answers the run that reasoned 2,368 tokens: steps every 9.3 s, keep-alives every 5 s, answer at 43.8 s", async () => {
+      const run = probeRun("stalled-f9e5", 4);
+      expect(run.firstAnswerTextMs).toBe(43_800);
+      const steps = run.preAnswer.filter(([, , item]) => item === "reasoning").map(([at]) => at);
+      const keepAliveCount = run.preAnswer.filter(([, kind]) => kind === "comment").length;
+      expect({ steps: steps.length, keepAliveCount }).toEqual({ steps: 10, keepAliveCount: 5 });
+      const timeline = timelineOf(run);
+      const endAt = timeline.at(-1)![0];
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => replay(timeline, endAt));
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+      // Past the old cut points: the 20 s stall (20.7 s) and the 30 s answer-start bound (30.7 s).
+      await vi.advanceTimersByTimeAsync(run.firstChunkMs + 30_001);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(endAt);
+      await expect(result).resolves.toMatchObject({ attempts: 1 });
+    });
+
+    it("still stalls a stream of keep-alives and lifecycle events at 20 s from its first chunk, as before", async () => {
+      // The same run with its reasoning steps taken out: what a stream that only pings sends.
+      const run = probeRun("stalled-f9e5", 4);
+      const pings = run.preAnswer.filter(([, , item]) => item !== "reasoning");
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        replay([...pings, ...keepAlives(run.firstAnswerTextMs + 5_000)])
+      );
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        transient: true,
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await settledAt(result, run.firstChunkMs + 20_000);
+      await settled;
+    });
+
+    it("stalls one stall window after the last reasoning step when the steps stop", async () => {
+      const run = probeRun("stalled-f9e5", 4);
+      // Keep the events up to the step at 29.0 s; afterwards only keep-alives arrive.
+      const lastStep = 29_006;
+      const before = run.preAnswer.filter(([at]) => at <= lastStep);
+      expect(before.at(-1)).toEqual([lastStep, "response.output_item.added", "reasoning"]);
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        replay([...before, ...keepAlives(lastStep + 5_000)])
+      );
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await settledAt(result, lastStep + 20_000);
+      await settled;
+    });
+
+    /** Reasoning steps every 9.3 s, as the probe saw them, and keep-alives between them; no answer. */
+    const endlessReasoning = (): ProbeEvent[] => {
+      const timeline: ProbeEvent[] = [
+        [700, "response.created"],
+        [700, "response.in_progress"]
+      ];
+      for (let at = 10_000; at < 200_000; at += 9_300)
+        timeline.push(
+          [at, "response.output_item.done", "reasoning"],
+          [at, "response.output_item.added", "reasoning"],
+          [at + 5_000, "comment"]
+        );
+      // The first step has no item to close yet.
+      return timeline.filter((_, index) => index !== 2);
+    };
+
+    it.each([
+      ["a graph batch (write-quality)", "knowledge-graph-generation", 90_000],
+      ["an Ask answer (answer)", "text-generation", 30_000],
+      ["a summary (write-fast)", "summarization", 30_000],
+      ["a decide call", "reranking", 30_000]
+    ] as const)(
+      "bounds the reasoning before the answer of %s at its class's bound",
+      async (_name, taskType, bound) => {
+        const fetch = vi.fn<typeof globalThis.fetch>(async () => replay(endlessReasoning()));
+        const result = codex(fetch, { retry: { maxAttempts: 1 } }).run({ ...graph, taskType });
+        const settled = expect(result).rejects.toMatchObject({
+          kind: "stalled",
+          transient: true,
+          message: `AI provider produced no answer text within ${bound} ms.`
+        });
+        await settledAt(result, 700 + bound);
+        await settled;
+      }
+    );
+
+    it("keeps the 20 s stall once the answer started, and reasoning steps after it are not progress", async () => {
+      const run = probeRun("stalled-f9e5", 4);
+      const [, second] = run.answerDeltasMs;
+      const timeline: ProbeEvent[] = [
+        ...run.preAnswer,
+        [run.firstAnswerTextMs, "response.output_text.delta"],
+        [second!, "response.output_text.delta"],
+        // The answer pauses (the soak's R6 shape); a reasoning item in the pause does not count.
+        [second! + 10_000, "response.output_item.added", "reasoning"],
+        ...keepAlives(second! + 5_000)
+      ];
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => replay(timeline));
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await settledAt(result, second! + 20_000);
+      await settled;
+    });
+
+    describe("which events show progress before the answer", () => {
+      const reasoningItem = (type: string, id = "rs_1") =>
+        events({ type, output_index: 0, item: { id, type: "reasoning" } });
+      /** A graph call whose stream sends `body` at 15 s after its first event at 0. */
+      const at15 = (body: string, earlier: Array<[number, string]> = []) => {
+        const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+          scheduled([[0, lifecycle[0]!], ...earlier, [15_000, body]])
+        );
+        return codex(fetch, { retry: { maxAttempts: 1 } }).run(graph);
+      };
+
+      it.each([
+        ["a reasoning item that starts", reasoningItem("response.output_item.added")],
+        ["a reasoning item that ends", reasoningItem("response.output_item.done")],
+        ["reasoning-summary text", reasoningText("Weighing")],
+        ["reasoning text", events({ type: "response.reasoning_text.delta", delta: "Weighing" })]
+      ])("counts %s, which re-arms the stall window", async (_name, body) => {
+        const result = at15(body);
+        const settled = expect(result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        await settledAt(result, 35_000);
+        await settled;
+      });
+
+      const notProgress: Array<[name: string, body: string]> = [
+        ["a keep-alive comment", ": keep-alive\n\n"],
+        ["an empty data line", "data:\n\n"],
+        ["response.in_progress", events({ type: "response.in_progress" })],
+        [
+          "a message item that starts",
+          events({ type: "response.output_item.added", item: { id: "msg_1", type: "message" } })
+        ],
+        [
+          "a message item that ends",
+          events({ type: "response.output_item.done", item: { id: "msg_1", type: "message" } })
+        ],
+        ["a content part", events({ type: "response.content_part.added" })],
+        ["a reasoning-summary part", events({ type: "response.reasoning_summary_part.added" })],
+        ["empty reasoning-summary text", reasoningText("")]
+      ];
+      it.each(notProgress)("does not count %s", async (_name, body) => {
+        const result = at15(body);
+        const settled = expect(result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        await settledAt(result, 20_000);
+        await settled;
+      });
+
+      it("does not count the same reasoning item reported again", async () => {
+        const started = reasoningItem("response.output_item.added");
+        const result = at15(started, [[5_000, started]]);
+        const settled = expect(result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        // Only its first report, at 5 s, re-armed the window.
+        await settledAt(result, 25_000);
+        await settled;
+      });
+    });
+  });
+
   describe("OpenAI-compatible", () => {
     const baseUrl = "https://progress.example.test/v1";
     const roleOnly = events({ choices: [{ delta: { role: "assistant", content: "" } }] });
@@ -396,6 +660,26 @@ describe("a stream is alive only while it makes progress", () => {
         message: "AI provider produced no answer text within 30000 ms."
       });
       await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    });
+
+    it("gives a write-quality request its class's answer-start bound, as every remote lane does", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () =>
+          scheduled(repeated(delta("reasoning_content", "Hmm"), 5_000, 200_000))
+        );
+      const result = openAi(fetch, baseUrl, { retry: { maxAttempts: 1 } }).runStreaming(
+        { ...request(), taskType: "knowledge-graph-generation" },
+        undefined,
+        () => undefined
+      );
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider produced no answer text within 90000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(89_999);
+      await vi.advanceTimersByTimeAsync(1);
       await settled;
     });
   });
