@@ -158,17 +158,30 @@ function encodeCursor(createdAt: string, id: string): string {
   return Buffer.from(JSON.stringify([createdAt, id]), "utf8").toString("base64url");
 }
 
+/** `created_at::text` as PostgreSQL writes it: `2026-03-07 10:20:30.123456+00` (zone hours, optional minutes). */
+const cursorTimestampPattern =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[ T]([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,6})?([+-](?:0\d|1[0-4])(:[0-5]\d)?|Z)$/;
+const cursorUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True for a calendar date that exists (the pattern alone lets February 30 through). */
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+/** Only what the encoder wrote is accepted, so no tampered cursor reaches the `::timestamptz` or `::uuid` cast. */
 function decodeCursor(cursor: string): { createdAt: string; id: string } {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-    if (
-      Array.isArray(parsed) &&
-      typeof parsed[0] === "string" &&
-      typeof parsed[1] === "string" &&
-      !Number.isNaN(Date.parse(parsed[0])) &&
-      /^[0-9a-f-]{36}$/i.test(parsed[1])
-    )
-      return { createdAt: parsed[0], id: parsed[1] };
+    if (Array.isArray(parsed) && typeof parsed[0] === "string" && typeof parsed[1] === "string") {
+      const match = cursorTimestampPattern.exec(parsed[0]);
+      if (
+        match &&
+        isCalendarDate(Number(match[1]), Number(match[2]), Number(match[3])) &&
+        cursorUuidPattern.test(parsed[1])
+      )
+        return { createdAt: parsed[0], id: parsed[1] };
+    }
   } catch {
     // Falls through to the refusal below.
   }
