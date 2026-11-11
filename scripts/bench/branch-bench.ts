@@ -12,8 +12,10 @@
 // The colour depth cycles 1, 2, 3 over the scopes; the limits are the defaults (400 notes, 80 per
 // topic, 2,000 relations). One warm-up pass, then `--rounds` passes. The executed plans of three
 // scopes (the median level-1 and level-2 topics and the heaviest source) are checked for sequential
-// scans of the large tables; a failure there is the cue for the `root_source_id` lever (D27).
-// Exit code 1 when the p95 is above `--target-ms` or a checked plan reads a large table whole.
+// scans of the large tables; a failure there is the cue for the `root_source_id` lever (D27). The
+// root's plan is not checked: its scope is every placed note, so reading a table whole is its job.
+// The target holds per scope kind, so the root's few calls are never hidden in the pooled p95.
+// Exit code 1 when a kind's p95 is above `--target-ms` or a checked plan reads a large table whole.
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -39,7 +41,7 @@ const usage = `Usage: npm run bench:branch -- (--profile <abs dir> | --db <conne
   --sources <n>        Source scopes: half the heaviest root sources, half drawn (default 20).
   --rounds <n>         Passes over the scopes after one warm-up pass (default 5).
   --seed <n>           Seed of the sample (default 20261111).
-  --target-ms <n>      p95 target; the exit code is 1 above it (default 150).
+  --target-ms <n>      p95 target of every scope kind; the exit code is 1 above it (default 150).
   --json <file>        Also write the measurements as JSON.
   --help               Show this text.`;
 
@@ -218,7 +220,7 @@ const guardedRelations = new Set([
 
 function sequentialRelations(node: PlanNode, found: Set<string> = new Set()): Set<string> {
   if (
-    node["Node Type"] === "Seq Scan" &&
+    node["Node Type"].endsWith("Seq Scan") &&
     node["Relation Name"] &&
     guardedRelations.has(node["Relation Name"])
   )
@@ -367,7 +369,10 @@ try {
     kinds.map((kind) => [kind, stats(calls.filter((call) => call.kind === kind).map((c) => c.ms))])
   ) as Record<Kind, Stats>;
   const explainPass = plans.every((plan) => plan.sequential.length === 0);
-  const pass = all.p95 <= targetMs && explainPass;
+  const measured = kinds.filter((kind) => byKind[kind].count > 0);
+  const slowest = measured.reduce((x, y) => (byKind[y].p95 > byKind[x].p95 ? y : x));
+  const latencyPass = measured.every((kind) => byKind[kind].p95 <= targetMs);
+  const pass = latencyPass && explainPass;
   exitCode = pass ? 0 : 1;
   const row = (name: string, s: Stats) =>
     `| ${name} | ${s.count} | ${fixed(s.p50)} | ${fixed(s.p95)} | ${fixed(s.p99)} | ${fixed(s.max)} |`;
@@ -380,12 +385,14 @@ try {
       "",
       "| Scope | Calls | p50 | p95 | p99 | max |",
       "| --- | --- | --- | --- | --- | --- |",
-      ...kinds.filter((kind) => byKind[kind].count > 0).map((kind) => row(kind, byKind[kind])),
+      ...measured.map((kind) => row(kind, byKind[kind])),
       row("all", all),
       "",
       `Largest scope: ${Math.max(...scopes.map((scope) => scope.notes))} notes; truncated answers: ${(truncatedShare * 100).toFixed(0)}%; ` +
         `largest answer: ${Math.max(...calls.map((call) => call.nodes))} nodes, ${Math.max(...calls.map((call) => call.edges))} edges.`,
-      `Target p95 <= ${targetMs} ms (calibrated): ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
+      `Target p95 <= ${targetMs} ms per scope kind (calibrated): ${latencyPass ? "PASS" : "FAIL"} ` +
+        `(slowest: ${slowest} ${fixed(byKind[slowest].p95)} ms; ` +
+        `over: ${measured.filter((kind) => byKind[kind].p95 > targetMs).join(", ") || "none"})`,
       "",
       "| Plan checked | Notes | Sequential scans of large tables |",
       "| --- | --- | --- |",
@@ -399,7 +406,7 @@ try {
   if (values.json)
     await writeFile(
       values.json,
-      `${JSON.stringify({ origin, seed, rounds, targetMs, all, byKind, plans, calls }, null, 2)}\n`
+      `${JSON.stringify({ origin, seed, rounds, targetMs, latencyPass, slowest, all, byKind, plans, calls }, null, 2)}\n`
     );
   log(`done in ${((Date.now() - startedAt) / 1000).toFixed(1)} s`);
 } catch (error) {

@@ -92,12 +92,12 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
   /** A document and a chunk per source: a note's evidence lies in the source it was made from. */
   const chunkOf = { [src.s1]: randomUUID(), [src.s2]: randomUUID(), [src.s3]: randomUUID() };
   const n = Object.fromEntries(
-    ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "m1", "m2", "u1"].map((key) => [
+    ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "m1", "m2", "u1", "r1"].map((key) => [
       key,
       randomUUID()
     ])
   ) as Record<
-    "n1" | "n2" | "n3" | "n4" | "n5" | "n6" | "n7" | "n8" | "n9" | "m1" | "m2" | "u1",
+    "n1" | "n2" | "n3" | "n4" | "n5" | "n6" | "n7" | "n8" | "n9" | "m1" | "m2" | "u1" | "r1",
     string
   >;
   const relationIds = new Map<string, string>();
@@ -211,6 +211,7 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
     await note("m1", src.s1, 10);
     await note("m2", src.s3, 11);
     await note("u1", src.s2, 12);
+    await note("r1", src.s1, 13);
 
     const trees = createTopicTreeRepository(pool);
     const tree = await trees.createTree({
@@ -263,6 +264,8 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
         place("n8", topic.a),
         place("m1", topic.b1),
         place("m2", topic.b1),
+        // r1 waits in Unsorted: its primary placement is on the root.
+        place("r1", rootId),
         // A secondary placement never makes a note part of a branch.
         { item: itemKey("note", n.m2), placement: placementRecord(topic.a2, { rank: 1 }) }
       ]
@@ -291,6 +294,8 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
     await relate("n2", "m1", 0.45);
     await relate("n5", "m2", 0.4);
     await relate("n1", "u1", 0.35);
+    // n1-r1 leaves A for Unsorted, which is no outside topic either.
+    await relate("n1", "r1", 0.3);
   }, 180_000);
 
   afterAll(async () => {
@@ -316,6 +321,13 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
     read!.edges.map((edge) => [keyOf(edge.a), keyOf(edge.b)].sort().join("-"));
   const colourOf = (read: RelationBranchRead | null) =>
     Object.fromEntries(read!.topics.map((item) => [item.id, item.colourIndex]));
+  /** Every node's topic is listed (or null), and no outside topic is drawn as a topic too. */
+  const expectSelfContained = (read: RelationBranchRead | null) => {
+    const listed = new Set(read!.topics.map((item) => item.id));
+    for (const node of read!.nodes)
+      if (node.topicId !== null) expect(listed).toContain(node.topicId);
+    for (const entry of read!.outside) expect(listed).not.toContain(entry.topicId);
+  };
 
   it("draws a branch: its topics, its current notes by degree, the shown relations among them", async () => {
     const read = await branch.read(request({ topicId: topic.a }));
@@ -354,7 +366,9 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
 
   it("counts the relations leaving the branch per the other note's topic", async () => {
     const read = await branch.read(request({ topicId: topic.a }));
+    // n1-u1 (not placed) and n1-r1 (Unsorted) have no outside topic.
     expect(read!.outside).toEqual([{ topicId: topic.b1, title: "Gamma", edgeCount: 3 }]);
+    expectSelfContained(read);
   });
 
   it("colours by the topics at the depth and aggregates super-edges between those groups", async () => {
@@ -414,8 +428,11 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
 
   it("scopes to a source: its notes and its chapters', and the topics they are placed in", async () => {
     const read = await branch.read(request({ sourceId: src.s1 }));
-    expect(new Set(nodeKeys(read))).toEqual(new Set(["n1", "n2", "n3", "n5", "m1", "u1"]));
+    expect(new Set(nodeKeys(read))).toEqual(new Set(["n1", "n2", "n3", "n5", "m1", "u1", "r1"]));
+    // Neither a note the tree has not placed nor one waiting in Unsorted has a topic.
     expect(read!.nodes.find((node) => node.id === n.u1)!.topicId).toBeNull();
+    expect(read!.nodes.find((node) => node.id === n.r1)!.topicId).toBeNull();
+    expectSelfContained(read);
     // The placed topics and their ancestors below the root, by depth then title.
     expect(read!.topics.map((item) => item.id)).toEqual([
       topic.a,
@@ -440,14 +457,11 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
       [topic.b1]: 1
     });
     expect(new Set(edgeKeys(read))).toEqual(
-      new Set(["n1-n2", "n1-n3", "n2-n3", "n1-n5", "m1-n1", "m1-n2", "n1-u1"])
+      new Set(["n1-n2", "n1-n3", "n2-n3", "n1-n5", "m1-n1", "m1-n2", "n1-u1", "n1-r1"])
     );
-    expect(read!.outside).toEqual([
-      { topicId: topic.a1, title: "Zeta", edgeCount: 2 },
-      { topicId: topic.a1x, title: "Deep", edgeCount: 1 },
-      { topicId: topic.a2, title: "Eta", edgeCount: 1 },
-      { topicId: topic.b1, title: "Gamma", edgeCount: 1 }
-    ]);
+    // Another source's notes in Zeta, Eta and Gamma are in topics this read draws, so only Deep is
+    // outside: a topic is never both a colour group and an outside pill.
+    expect(read!.outside).toEqual([{ topicId: topic.a1x, title: "Deep", edgeCount: 1 }]);
     const [a, b] = topic.a < topic.b ? [topic.a, topic.b] : [topic.b, topic.a];
     expect(read!.superEdges).toEqual([{ a, b, weight: 2 }]);
     expect(read!.truncated).toBe(false);
@@ -492,8 +506,12 @@ describe.skipIf(!sidecarInstalled)("relations.branch on a real database", () => 
   it("draws the whole tree from the root, the unnamed root first", async () => {
     const read = await branch.read(request({ topicId: rootId }));
     expect(read!.topics[0]).toMatchObject({ id: rootId, title: "", parentId: null });
-    // Every current note placed in the tree; u1 is not placed and n9 is an earlier version.
-    expect(read!.nodes).toHaveLength(10);
+    // Every current note placed in the tree, r1 on the root; u1 is not placed and n9 is an earlier
+    // version.
+    expect(read!.nodes).toHaveLength(11);
+    expect(read!.nodes.find((node) => node.id === n.r1)!.topicId).toBe(rootId);
+    expect(read!.topics[0]!.noteCount).toBe(1);
+    expectSelfContained(read);
     expect(read!.outside).toEqual([]);
   });
 });

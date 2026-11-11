@@ -4,6 +4,7 @@ import type { NoteRelationBand } from "@app/domain";
 
 import type { PgPool } from "../client.js";
 import { currentNoteSql, noteRelationStateSql, shownNoteRelationSql } from "./note-relation-sql.js";
+import { topicScopeCtes } from "./topicScopeSql.js";
 
 /**
  * Read model of `relations.branch` (F5 D19, Map › Grafo): the note graph of one branch of the
@@ -12,14 +13,19 @@ import { currentNoteSql, noteRelationStateSql, shownNoteRelationSql } from "./no
  *   scope       a topic (it and its live descendants; a retired topic is read through
  *               `redirect_to`) or a source (it and the sources below it: their current notes, and
  *               the topics those notes are primarily placed in with their ancestors below the root)
- *   notes       the scope's current notes, each in its primary topic (a source's note the tree has
- *               not placed yet has none), ranked by degree inside the scope, then by recency
- *               (`created_at`), then ID; at most `perTopicLimit` per topic and `noteLimit` in all
+ *   notes       the scope's current notes, each in its primary topic (in a source scope, a note
+ *               the tree has not placed yet or that waits in Unsorted, primarily placed on the
+ *               root, has none, so every topic a node names is listed), ranked by degree inside
+ *               the scope, then by recency (`created_at`), then ID; at most `perTopicLimit` per
+ *               topic and `noteLimit` in all
  *   edges       the shown relations among the drawn notes, strongest first (probability, unknown
  *               last, then the stored score and ID), at most `relationLimit`
  *   outside     the shown relations from a drawn note to a current note outside the scope, counted
  *               per that note's primary topic (the strongest `outsideMax` topics); bounded by the
- *               drawn notes, so a large branch never reads every relation leaving it
+ *               drawn notes, so a large branch never reads every relation leaving it. A topic
+ *               the answer lists is never outside (in a source scope, another source's note may
+ *               sit in a listed topic: that relation is neither an edge nor an outside count),
+ *               and neither is the root (Unsorted) nor a note the tree has not placed
  *   superEdges  the shown relations inside the scope between two colour groups, counted per pair
  *               (the strongest `superEdgeMax` pairs): the topic super-nodes of the zoomed-out canvas
  *   truncated   a scope note or a relation among the drawn notes was left out by a limit
@@ -45,7 +51,7 @@ export const relationBranchLimits = {
   superEdgeMax: 500,
   /** Source levels walked below the scope source. */
   sourceDepthMax: 8,
-  /** Topic levels walked below the scope topic (the tree is capped well below it). */
+  /** Topic levels a depth is computed through (the tree is capped well below it). */
   topicDepthMax: 16,
   /** Redirects followed from a retired topic (the bound of `objects.get` and `locate`). */
   redirectMax: 8
@@ -118,8 +124,9 @@ interface BranchRow extends QueryResultRow {
 const activeTree = `(select tree.id from topic_trees tree where tree.status = 'active')`;
 
 /**
- * $1 topic, $2 redirects followed, $3 levels walked. The live topic (through `redirect_to` when it
- * is retired or its tree is) and its live descendants, the scope topic first. No row: no live topic.
+ * $1 topic, $2 redirects followed. The live topic (through `redirect_to` when it is retired or its
+ * tree is) and its live descendants: the subtree of `topicScopeSql.ts` (Ask about a topic reads the
+ * same one). No row: no live topic.
  */
 const topicScopeTopicsSql = `
 with recursive follow(id, redirect_to, dead, depth) as (
@@ -133,15 +140,8 @@ with recursive follow(id, redirect_to, dead, depth) as (
    where f.dead and f.depth < $2::int
 ),
 live as (select f.id from follow f where not f.dead order by f.depth limit 1),
-sub(id, tree_id, parent_id, title, depth) as (
-  select t.id, t.tree_id, t.parent_id, t.title, 0
-    from topics t where t.id = (select id from live)
-  union all
-  select k.id, k.tree_id, k.parent_id, k.title, sub.depth + 1
-    from sub join topics k on k.tree_id = sub.tree_id and k.parent_id = sub.id and k.retired_at is null
-   where sub.depth < $3::int
-)
-select s.id, s.parent_id as "parentId", s.title from sub s`;
+${topicScopeCtes("(select id from live)")}
+select t.id, t.parent_id as "parentId", t.title from topic_sub s join topics t on t.id = s.id`;
 
 /**
  * The source, the sources below it and their current notes, each with its primary topic (if any);
@@ -166,9 +166,11 @@ linked(id) as (
 scope_notes as materialized (
   select n.id, n.title, n.created_at, pl.topic_id, true as current
     from linked join atomic_notes n on n.id = linked.id
+    -- A placement on the root (Unsorted) or a retired topic names no listed topic: none.
     left join lateral (
-      select p.topic_id from topic_placements p
+      select p.topic_id from topic_placements p join topics t on t.id = p.topic_id
        where p.note_id = n.id and p.item_kind = 'note' and p.rank = 0 and p.tree_id = ${activeTree}
+         and t.role <> 'root' and t.retired_at is null
        limit 1) pl on true
    where ${currentNoteSql("n")}
 )`;
@@ -213,8 +215,8 @@ const inner = (name: "a" | "b" | "c") => ({ alias: name, current: `${name}.curre
 
 /**
  * The graph of the scope notes: $1 notes per topic, $2 notes, $3 edges read (the limit plus one),
- * $4/$5 each topic and its colour group, $6 outside topics read, $7 super-edges read; the scope
- * from $8 on. One row.
+ * $4/$5 each listed topic and its colour group, $6 outside topics read, $7 super-edges read; the
+ * scope from $8 on. One row.
  */
 const graphSql = (scopeCtes: string) => `
 with recursive ${scopeCtes},
@@ -281,6 +283,7 @@ outside_rel as (
        where p.note_id = o.id and p.item_kind = 'note' and p.rank = 0 and p.tree_id = ${activeTree}
        limit 1) op
    where r.other_id not in (select id from scope_notes)
+     and op.topic_id <> all($4::uuid[])
      and ${shownNoteRelationSql("r", [inner("c"), "o"])}
 ),
 outside as (
@@ -289,7 +292,8 @@ outside as (
   select g.topic_id, coalesce(t.title, '') as title, g.edge_count
     from (select topic_id, count(*)::int as edge_count from outside_rel group by topic_id) g
     cross join lateral (
-      select t.title from topics t where t.id = g.topic_id and t.retired_at is null offset 0) t
+      select t.title from topics t
+       where t.id = g.topic_id and t.retired_at is null and t.role <> 'root' offset 0) t
    order by g.edge_count desc, coalesce(t.title, ''), g.topic_id
    limit $6::int
 ),
@@ -433,7 +437,7 @@ async function prepareBranch(
   if ("topicId" in scope) {
     topics = {
       text: topicScopeTopicsSql,
-      values: [scope.topicId, relationBranchLimits.redirectMax, relationBranchLimits.topicDepthMax]
+      values: [scope.topicId, relationBranchLimits.redirectMax]
     };
     topicRows = (await client.query<TopicRow>(topics.text, topics.values)).rows;
     if (topicRows.length === 0) return null;

@@ -117,7 +117,10 @@ export const RelationsBranchResultSchema = z
           .object({
             id: uuid,
             title: z.string(),
-            /** Null for a source's note the topic tree has not placed yet. */
+            /**
+             * Null in a source scope for a note the topic tree has not placed yet or that waits in
+             * Unsorted (on the root); otherwise one of `topics`.
+             */
             topicId: uuid.nullable(),
             degree: count
           })
@@ -141,7 +144,7 @@ export const RelationsBranchResultSchema = z
       .max(relationsBranchLimits.relationMax),
     /**
      * Shown relations from a drawn note to a note outside the scope, per that note's topic, the
-     * most first.
+     * most first; never a topic of `topics`, the root (Unsorted) or an unplaced note.
      */
     outside: z.array(z.object({ topicId: uuid, title: z.string(), edgeCount: count }).strict()),
     /** Shown relations between two colour groups of the scope (`a` < `b`), the heaviest first. */
