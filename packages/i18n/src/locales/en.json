@@ -3693,5 +3693,11 @@
       "invalidCursor": "The list changed meanwhile. Load it again.",
       "unavailable": "Changes are not available right now."
     }
+  },
+  "ui": {
+    "close": "Close",
+    "details": "Details",
+    "loading": "Loading",
+    "retry": "Retry"
   }
 }

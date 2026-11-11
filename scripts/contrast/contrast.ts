@@ -113,7 +113,7 @@ export const contract: readonly ContrastRule[] = [
 ];
 
 /** Colour tokens that are deliberately not part of any pair (decorative separators). */
-export const decorativeTokens: ReadonlySet<string> = new Set(["--border-subtle"]);
+export const decorativeTokens: ReadonlySet<string> = new Set(["--border-subtle", "--thread"]);
 
 /** Tokens drawn on the always-dark graph canvas: the same in every theme, mirroring the dark set. */
 const themeInvariantPrefix = "--graph-";

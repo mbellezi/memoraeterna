@@ -54,8 +54,7 @@ files executed directly by Node.
 | `react` / `react-dom` | `19.2.7` |
 | `@types/react` / `@types/react-dom` | `19.2.17` / `19.2.3` |
 | Tailwind CSS / `@tailwindcss/vite` | `4.3.2` |
-| shadcn/ui | Vendored components; CLI baseline `4.13.0` |
-| Primitives | `radix-ui` `1.8.1` and `cmdk` `1.1.1` (MIT), behind first-party components on the tokens (F5 D2) |
+| Primitives | `radix-ui` `1.8.1` and `cmdk` `1.1.1` (MIT): hand-vendored Radix and cmdk wrappers in `apps/desktop/src/renderer/components/ui/` on the tokens (no shadcn CLI; F5 D2) |
 | Icons | `lucide-react` `1.23.0` for interface icons; object-kind and relation-stance glyphs are first-party inline SVG (`apps/desktop/src/renderer/components/glyphs.tsx`) |
 | Fonts (OFL-1.1, bundled offline) | `@fontsource-variable/inter` `5.3.0` (interface) and `@fontsource-variable/source-serif-4` `5.3.0` (reading), imported through `wght.css` only |
 | Interactive graph rendering | `sigma` `3.0.3` with `graphology` `0.26.0` |
@@ -135,9 +134,9 @@ Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
 - bge-reranker-v2-m3 Q8_0 GGUF (gpustack), pinned by SHA-256 (F0 spike): Spike A
   rejected it for matching and F3 retired it as decision 3's second fallback
   (Q18; a bake-off control only), so it is not in the catalog.
-- `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike (F6; `umap-js`
-  is installed for the spike). Stay on `sigma` `3.0.3` until a sigma 4 spike
-  decides otherwise.
+- `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike (F6). `umap-js`
+  `1.4.0` is a dev dependency of the F5 spike and enters the product only on F6's go.
+  Stay on `sigma` `3.0.3` until a sigma 4 spike decides otherwise.
 
 Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use `@cosmos.gl/graph`
 (MIT) instead if a GPU force layout is ever needed.

@@ -3696,5 +3696,11 @@
       "invalidCursor": "A lista mudou enquanto isso. Carregue-a de novo.",
       "unavailable": "As mudanças não estão disponíveis agora."
     }
+  },
+  "ui": {
+    "close": "Fechar",
+    "details": "Detalhes",
+    "loading": "Carregando",
+    "retry": "Tentar de novo"
   }
 }

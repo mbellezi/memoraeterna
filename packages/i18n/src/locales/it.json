@@ -3691,5 +3691,11 @@
       "invalidCursor": "L'elenco è cambiato nel frattempo. Ricaricalo.",
       "unavailable": "Le modifiche non sono disponibili in questo momento."
     }
+  },
+  "ui": {
+    "close": "Chiudi",
+    "details": "Dettagli",
+    "loading": "Caricamento in corso",
+    "retry": "Riprova"
   }
 }

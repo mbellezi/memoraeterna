@@ -107,6 +107,14 @@ export const surfaces: readonly SurfaceEntry[] = [
   entry("panel-stack", "chrome", "workspace/PanelStack.tsx", "workspace/PanelStack.screen.tsx"),
   entry("panel-frame", "chrome", "workspace/PanelFrame.tsx", "workspace/PanelFrame.screen.tsx"),
 
+  // The primitives sheet (T124): every first-party primitive of components/ui on the tokens.
+  entry(
+    "primitives",
+    "chrome",
+    "components/ui/primitives-sheet.tsx",
+    "components/ui/primitives.screen.tsx"
+  ),
+
   // The five destinations; each root hosts its navigator and its content.
   destination("home", "Home"),
   destination("explore", "Explore"),

@@ -144,8 +144,8 @@ describe("control boundaries", () => {
     new RegExp(`(^|[\\s"'\`:])${utility}(?=[\\s"'\`/]|$)`, "u").test(classes);
   const secondaryButton = /secondary:\s*"([^"]*)"/u.exec(ui("button.tsx"))?.[1] ?? "";
 
-  it("exempt only the decorative separator token from the contrast check", () => {
-    expect([...decorativeTokens]).toEqual(["--border-subtle"]);
+  it("exempt only the decorative separator tokens from the contrast check", () => {
+    expect([...decorativeTokens]).toEqual(["--border-subtle", "--thread"]);
   });
 
   it("are drawn by Input and the secondary Button with the checked token, never the exempt one", () => {
@@ -372,5 +372,54 @@ describe("Tailwind bridge", () => {
   it("draws the graph canvas from the graph tokens", () => {
     expect(stylesCss).toContain("var(--graph-canvas-center)");
     expect(stylesCss).toContain("var(--graph-canvas-edge)");
+  });
+});
+
+describe("the F5 token additions (T124, design record 4.10)", () => {
+  const blocks = parseCssBlocks(tokensCss);
+  const darkBlock = blocks.find((block) => block.prelude === ".dark")!.declarations;
+  const systemBlock = blocks
+    .find((block) => block.prelude.startsWith("@media (prefers-color-scheme: dark)"))
+    ?.children.find((child) => child.prelude === ":root:not(.light):not(.dark)")?.declarations;
+
+  it("adds the measure, the two easings, the thread, the scrim and the two shadows", () => {
+    for (const name of [
+      "--measure",
+      "--ease-out",
+      "--ease-in-out",
+      "--thread",
+      "--scrim",
+      "--shadow-sheet",
+      "--shadow-pop"
+    ])
+      expect(rootTokens.has(name), `${name} in :root`).toBe(true);
+    expect(rootTokens.get("--measure")).toBe("34rem");
+    expect(rootTokens.get("--ease-out")).toContain("cubic-bezier(0.2, 0, 0, 1)");
+    expect(rootTokens.get("--ease-in-out")).toContain("cubic-bezier(0.4, 0, 0.2, 1)");
+  });
+
+  it("gives the thread, the scrim and the shadows a dark value, in .dark and in the system fallback", () => {
+    for (const name of ["--thread", "--scrim", "--shadow-sheet", "--shadow-pop"]) {
+      expect(darkBlock.get(name), `${name} in .dark`).toBeDefined();
+      expect(darkBlock.get(name), `${name} differs from light`).not.toBe(rootTokens.get(name));
+      expect(systemBlock?.get(name), `${name} in the system fallback`).toBe(darkBlock.get(name));
+    }
+    expect(darkBlock.get("--scrim")).toBe("rgba(5, 8, 12, 0.6)");
+    expect(rootTokens.get("--scrim")).toBe("rgba(22, 32, 48, 0.32)");
+  });
+
+  it("raises the dark strong border to #7a899f and adds no --focus token", () => {
+    expect(sets.dark.get("--border-strong")).toBe("#7a899f");
+    expect(sets.systemDark.get("--border-strong")).toBe("#7a899f");
+    expect(sets.light.get("--border-strong")).toBe("#78859a");
+    expect(tokensCss).not.toContain("--focus:");
+  });
+
+  it("removes every animation and transition under prefers-reduced-motion", () => {
+    const reduced = tokensCss.slice(tokensCss.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).toMatch(/\*,\s*\*::before,\s*\*::after\s*\{[^}]*animation:\s*none !important/u);
+    expect(reduced).toMatch(
+      /\*,\s*\*::before,\s*\*::after\s*\{[^}]*transition:\s*none !important/u
+    );
   });
 });

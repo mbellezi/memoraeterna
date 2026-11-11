@@ -141,6 +141,20 @@
   --motion-fast: 120ms;
   --motion-base: 200ms;
   --motion-slow: 240ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Reading measure in rem, so the cap does not follow the container's font size. */
+  --measure: 34rem;
+
+  /* Elevation: the sheet is the raised panel, the pop is anything that floats over it. */
+  --shadow-sheet: 0 1px 2px rgba(38, 49, 64, 0.06), 0 4px 16px -8px rgba(38, 49, 64, 0.1);
+  --shadow-pop: 0 0 0 1px rgba(38, 49, 64, 0.08), 0 16px 40px -8px rgba(38, 49, 64, 0.24);
+
+  /* The thread line is decorative; the meaning is carried by node shape and text. */
+  --thread: #cfd7e1;
+  /* The modal scrim: Cmd-K and dialogs. Quick-look is not modal and has none. */
+  --scrim: rgba(22, 32, 48, 0.32);
 }
 
 :root.light {
@@ -162,7 +176,7 @@
   --text-on-solid: #0e2530;
 
   --border-subtle: #2a3544;
-  --border-strong: #6b7a8f;
+  --border-strong: #7a899f;
 
   --accent: #65d6e8;
   --accent-hover: #8be3f1;
@@ -188,6 +202,11 @@
   --state-warning-soft: #382b10;
   --state-danger: #f58b84;
   --state-danger-soft: #3b1f1e;
+
+  --thread: #34425a;
+  --scrim: rgba(5, 8, 12, 0.6);
+  --shadow-sheet: 0 0 0 1px #222c3a, 0 4px 16px -8px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 0 0 1px #34425a, 0 16px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -204,7 +223,7 @@
     --text-on-solid: #0e2530;
 
     --border-subtle: #2a3544;
-    --border-strong: #6b7a8f;
+    --border-strong: #7a899f;
 
     --accent: #65d6e8;
     --accent-hover: #8be3f1;
@@ -230,6 +249,51 @@
     --state-warning-soft: #382b10;
     --state-danger: #f58b84;
     --state-danger-soft: #3b1f1e;
+
+    --thread: #34425a;
+    --scrim: rgba(5, 8, 12, 0.6);
+    --shadow-sheet: 0 0 0 1px #222c3a, 0 4px 16px -8px rgba(0, 0, 0, 0.6);
+    --shadow-pop: 0 0 0 1px #34425a, 0 16px 40px -8px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/*
+ * Keyframes of the first-party primitives in components/ui (design record 4.6). They take their
+ * durations and easings from the motion tokens at the use site; the reduced-motion rule below
+ * removes them all, so nothing is left hidden mid-animation.
+ */
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-shimmer {
+  to {
+    background-position: -200% 0;
   }
 }
 
@@ -238,5 +302,13 @@
     --motion-fast: 0ms;
     --motion-base: 0ms;
     --motion-slow: 0ms;
+  }
+
+  /* No motion at all: a running ring and the dots then show a static state with the same meaning. */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
