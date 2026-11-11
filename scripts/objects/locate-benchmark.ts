@@ -53,8 +53,9 @@ import { librarySeedSteps, noteRelationSeedSteps, seedTopicTree } from "./synthe
  *                                           read-only.
  *
  * The same run measures the rest of the objects read layer (F5 T118, D11) on the same database:
- * `resolveMany(200)` (a batch of 200 addresses over notes, sources and topics, with and without
- * the topics above each object; bar p95 <= 60 ms, calibrated) and `objects.backlinks` (one page of
+ * `resolveMany(200)` (a batch of 200 addresses over notes, sources, topics, entities and questions,
+ * a sixth of them anchored to a passage or span, with and without the topics above each object;
+ * bar p95 <= 60 ms on both variants, calibrated) and `objects.backlinks` (one page of
  * 50 for sampled sources and notes, reported, with the heaviest objects among them). The backlinks
  * statements are checked for sequential scans of the large tables.
  *
@@ -321,24 +322,49 @@ async function backlinkSequentialScans(
   return [...found];
 }
 
-/** `count` addresses of a mixed batch: half notes, a third sources, the rest topics. */
-function mixedBatch(
-  notes: readonly string[],
-  sources: readonly string[],
-  topics: readonly string[],
-  count: number,
-  offset: number
-): ObjectAddress[] {
-  const pick = (list: readonly string[], index: number) =>
+/** The addresses a resolveMany batch draws from; an empty pool gives its share to the notes. */
+interface BatchPools {
+  notes: readonly string[];
+  sources: readonly string[];
+  topics: readonly string[];
+  /** Passage and span addresses of notes and sources: the citation chips' previews. */
+  anchored: readonly ObjectAddress[];
+  entities: readonly string[];
+  questions: readonly string[];
+}
+
+/** `count` addresses of a batch the way the workspace asks: mostly notes, then sources, topics, anchored addresses, entities and questions. */
+function mixedBatch(pools: BatchPools, count: number, offset: number): ObjectAddress[] {
+  const shares: Array<[ObjectAddress["kind"] | "anchored", number]> = [
+    ["note", 0.35],
+    ["source", 0.2],
+    ["topic", 0.15],
+    ["anchored", 0.15],
+    ["entity", 0.075],
+    ["question", 0.075]
+  ];
+  const pick = <T>(list: readonly T[], index: number): T =>
     list[(offset * 37 + index) % list.length]!;
-  const wanted = { note: Math.floor(count / 2), source: Math.floor(count / 3) };
-  return Array.from({ length: count }, (_, index): ObjectAddress => {
-    if (index < wanted.note && notes.length) return { kind: "note", id: pick(notes, index) };
-    if (index < wanted.note + wanted.source && sources.length)
-      return { kind: "source", id: pick(sources, index) };
-    if (topics.length) return { kind: "topic", id: pick(topics, index) };
-    return { kind: "note", id: pick(notes, index) };
-  });
+  const batch: ObjectAddress[] = [];
+  let kindIndex = 0;
+  for (const [kind, share] of shares) {
+    const wanted = kind === "note" ? 0 : Math.floor(count * share);
+    for (let index = 0; index < wanted; index += 1, kindIndex += 1) {
+      if (kind === "anchored" && pools.anchored.length) batch.push(pick(pools.anchored, index));
+      else if (kind === "source" && pools.sources.length)
+        batch.push({ kind, id: pick(pools.sources, index) });
+      else if (kind === "topic" && pools.topics.length)
+        batch.push({ kind, id: pick(pools.topics, index) });
+      else if (kind === "entity" && pools.entities.length)
+        batch.push({ kind, id: pick(pools.entities, index) });
+      else if (kind === "question" && pools.questions.length)
+        batch.push({ kind, id: pick(pools.questions, index) });
+      else batch.push({ kind: "note", id: pick(pools.notes, kindIndex) });
+    }
+  }
+  for (let index = 0; batch.length < count; index += 1)
+    batch.push({ kind: "note", id: pick(pools.notes, 1000 + index) });
+  return batch;
 }
 
 const startedAt = Date.now();
@@ -543,9 +569,46 @@ try {
     for (const summary of resolvedBatch.values()) ObjectResolvedSchema.parse(summary);
     return performance.now() - start;
   };
-  const batches = Array.from({ length: batchCount }, (_, index) =>
-    mixedBatch(sampleNotes, sampleSources, sampleTopics, 200, index)
-  );
+  // The anchored addresses of D11 and D15: a passage of a source, and the evidence passage (or its
+  // span) of a note, as the citation chips and hover cards ask for them.
+  const anchored: ObjectAddress[] = [];
+  const anchorOf = (
+    kind: "note" | "source",
+    row: { id: string; chunk: string; span: string | null },
+    index: number
+  ) =>
+    anchored.push({
+      kind,
+      id: row.id,
+      anchor: row.span && index % 2 === 1 ? { span: row.span } : { passage: row.chunk }
+    });
+  (
+    await pool.query<{ id: string; chunk: string; span: string | null }>(
+      `select n.id, c.id as chunk, c.source_span_id as span
+         from atomic_notes n join chunks c on c.id = n.evidence_chunk_id
+        where n.id = any($1::uuid[])`,
+      [sampleNotes]
+    )
+  ).rows.forEach((row, index) => anchorOf("note", row, index));
+  (
+    await pool.query<{ id: string; chunk: string; span: string | null }>(
+      `select s.id, c.id as chunk, c.source_span_id as span
+         from source_items s
+         join lateral (select k.id, k.source_span_id from chunks k
+                        where k.source_item_id = s.id order by k.chunk_index limit 1) c on true
+        where s.id = any($1::uuid[])`,
+      [sampleSources]
+    )
+  ).rows.forEach((row, index) => anchorOf("source", row, index));
+  const pools: BatchPools = {
+    notes: sampleNotes,
+    sources: sampleSources,
+    topics: sampleTopics,
+    anchored,
+    entities: await ids(pool, "select id from entities order by random() limit $1", [sampleSize]),
+    questions: await ids(pool, "select id from questions order by random() limit $1", [sampleSize])
+  };
+  const batches = Array.from({ length: batchCount }, (_, index) => mixedBatch(pools, 200, index));
   await resolveBatch(batches[0]!, true); // warm-up
   const resolveTimes = { plain: [] as number[], withPath: [] as number[] };
   for (const batch of batches) resolveTimes.plain.push(await resolveBatch(batch, false));
@@ -554,7 +617,12 @@ try {
     batchSize: 200,
     plain: summarize(resolveTimes.plain),
     withPath: summarize(resolveTimes.withPath),
-    resolvedInFirstBatch: (await objects.resolve(batches[0]!, { path: false })).size
+    resolvedInFirstBatch: (await objects.resolve(batches[0]!, { path: false })).size,
+    mix: {
+      anchored: batches[0]!.filter((address) => address.anchor).length,
+      entities: batches[0]!.filter((address) => address.kind === "entity").length,
+      questions: batches[0]!.filter((address) => address.kind === "question").length
+    }
   };
 
   const heavySources = await ids(
@@ -638,6 +706,7 @@ try {
       (!hasTree || shape.placed > 0) &&
       sequential.size === 0 &&
       resolved.plain.p95 <= resolveTargetMs &&
+      resolved.withPath.p95 <= resolveTargetMs &&
       backlinkScans.size === 0,
     slowestPlan: {
       kind: slowest.sample.kind,
@@ -675,12 +744,13 @@ try {
         : `Sequential scans of large tables: ${[...sequential].map(([line, n]) => `${line} (${n})`).join(", ")}`,
       `Target p95 <= ${targetMs} ms: ${all.p95 <= targetMs ? "PASS" : "FAIL"} (${fixed(all.p95)} ms)`,
       "",
-      `objects.resolveMany(${resolved.batchSize}) latency (ms), ${batchCount} batches of notes, sources and topics (${resolved.resolvedInFirstBatch} resolved in the first)`,
+      `objects.resolveMany(${resolved.batchSize}) latency (ms), ${batchCount} batches of notes, sources, topics, entities and questions, ${resolved.mix.anchored} anchored (${resolved.resolvedInFirstBatch} resolved, ${resolved.mix.entities} entities and ${resolved.mix.questions} questions in the first)`,
       "| Variant | Calls | p50 | p95 | p99 | max |",
       "| --- | --- | --- | --- | --- | --- |",
       row("without path", resolved.plain),
       row("with path", resolved.withPath),
-      `Target p95 <= ${resolveTargetMs} ms (without path): ${resolved.plain.p95 <= resolveTargetMs ? "PASS" : "FAIL"} (${fixed(resolved.plain.p95)} ms)`,
+      `Target p95 <= ${resolveTargetMs} ms (without path, the previews' batch): ${resolved.plain.p95 <= resolveTargetMs ? "PASS" : "FAIL"} (${fixed(resolved.plain.p95)} ms)`,
+      `Target p95 <= ${resolveTargetMs} ms (with path, the hover cards' and Cmd-K's batch): ${resolved.withPath.p95 <= resolveTargetMs ? "PASS" : "FAIL"} (${fixed(resolved.withPath.p95)} ms)`,
       "",
       `objects.backlinks latency (ms), one page of ${backlinks.pageSize} (mean ${backlinks.meanItemsPerPage.toFixed(1)} items), reported without a bar`,
       "| Kind | Calls | p50 | p95 | p99 | max |",

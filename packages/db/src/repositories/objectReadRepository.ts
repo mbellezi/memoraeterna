@@ -77,8 +77,15 @@ select s.id, s.title, coalesce(nullif(left(s.summary, ${rawTextLength}), ''), le
 const noteFactsSql = `
 select n.id, n.title, coalesce(nullif(left(n.body_markdown, ${rawTextLength}), ''), n.idea_statement) as raw,
        n.language, n.updated_at as "updatedAt", ${currentNoteSql("n")} as current,
-       (select count(*)::int from atomic_note_source_links l where l.atomic_note_id = n.id) as sources
+       (select count(distinct l.source_item_id)::int from atomic_note_source_links l where l.atomic_note_id = n.id) as sources
   from atomic_notes n where n.id = any($1::uuid[])`;
+
+/**
+ * The lead paragraph of an overview without its citation markers ("[1]", "[1, 3]"): a preview has
+ * no source list for them to point into.
+ */
+const overviewLeadSql = `regexp_replace(left(o.paragraphs->0->>'text', ${rawTextLength}),
+  '[[:space:]]*\\[[0-9]+([[:space:]]*,[[:space:]]*[0-9]+)*\\]', '', 'g')`;
 
 /**
  * Topic: its description, else the lead of its overview. A retired topic follows `redirect_to`
@@ -97,14 +104,15 @@ with recursive follow(origin, id, redirect_to, retired, depth) as (
 ended as (select distinct on (origin) origin, id, retired from follow order by origin, depth desc)
 select t.id, t.title,
        coalesce(nullif(left(t.description, ${rawTextLength}), ''),
-                (select left(o.paragraphs->0->>'text', ${rawTextLength}) from topic_overviews o where o.topic_id = t.id)) as raw,
+                (select ${overviewLeadSql} from topic_overviews o where o.topic_id = t.id)) as raw,
        t.name_language as language, t.updated_at as "updatedAt",
-       case when t.retired_at is null then 'current'
+       case when t.retired_at is null then (case when tree.status = 'active' then 'current' else 'retired' end)
             when ended.id is not null and not ended.retired then 'redirected'
             else 'retired' end as status,
        case when ended.id is not null and not ended.retired then ended.id end as "redirectTo",
        coalesce(st.n, 0) as notes, coalesce(st.children, 0) as children
   from topics t
+  join topic_trees tree on tree.id = t.tree_id
   left join ended on ended.origin = t.id
   left join topic_stats st on st.topic_id = t.id
  where t.id = any($1::uuid[])`;
@@ -248,7 +256,11 @@ const sourceRelationArm = arm(
   ["r.created_at", "r.id"]
 );
 
-/** Overview citation: the live topics whose overview cites the note (one row per topic). */
+/**
+ * Overview citation: the live topics of the active tree whose overview cites the note (one row per
+ * topic; a retired tree keeps its topics and overviews, which are no longer shown). It pages by the
+ * topic's creation, which an overview rewrite does not move.
+ */
 const overviewCitationArm = arm(
   "overview_citation",
   `'memora://topic/' || c.topic_id::text as "from", null::text as anchor,
@@ -257,8 +269,9 @@ const overviewCitationArm = arm(
        where note_id = $1::uuid order by topic_id, n) c
      join topic_overviews o on o.topic_id = c.topic_id
      join topics t on t.id = c.topic_id
-    where t.retired_at is null`,
-  ["o.written_at", "c.topic_id"]
+    where t.retired_at is null
+      and t.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')`,
+  ["t.created_at", "c.topic_id"]
 );
 
 /** The stored citation anchor as an address fragment; a passage is cited as a chunk. */

@@ -50,7 +50,9 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
     old: randomUUID(),
     nap: randomUUID(),
     broken: randomUUID(),
-    unnamed: randomUUID()
+    unnamed: randomUUID(),
+    /** A live-looking topic of a retired tree (an old tree's topics keep `retired_at` null). */
+    stale: randomUUID()
   };
   const w = {
     s1: randomUUID(),
@@ -321,6 +323,32 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
       }
     ]);
 
+    // A retired tree keeps its topics and their overviews: its topic cites Naps too.
+    const oldTree = randomUUID();
+    const oldRoot = randomUUID();
+    await pool.query(
+      `insert into topic_trees (id, status, space_key, embedding_provider, embedding_model,
+         embedding_runtime, dimensions, config, config_hash, seed, activated_at, retired_at)
+       values ($1, 'retired', 'test:objects:old', 'test', 'test', 'none', 256, '{}', 'old', 1, now(), now())`,
+      [oldTree]
+    );
+    await pool.query(
+      `insert into topics (id, tree_id, role, parent_id, title, name_state, name_source, name_language, management)
+       values ($1, $3, 'root', null, null, 'unnamed', null, null, 'human'),
+              ($2, $3, 'topic', $1, 'Stale sleep', 'named', 'llm', 'en', 'human')`,
+      [oldRoot, topic.stale, oldTree]
+    );
+    await overview(topic.stale, "Old tree lead [1, 2].", [
+      {
+        n: 1,
+        chunkId: w.c2,
+        sourceSpanId: null,
+        noteId: w.n1,
+        excerpt: "Stale citation.",
+        excerptHash: hash("Stale citation.")
+      }
+    ]);
+
     // Source relations between Sleep and Memory: one visible, one removed.
     const sourceRelation = async (
       key: string,
@@ -452,7 +480,8 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
         title: "Naps",
         status: "current",
         preview: "Naps Short naps restore focus and mood. one two",
-        counts: { sources: 2 }
+        // Two passages of one source are one source.
+        counts: { sources: 1 }
       });
       expect((await resolve1({ kind: "note", id: w.n2 }))?.preview).toBe("Memories consolidate.");
     });
@@ -473,6 +502,19 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
       );
       expect((await resolve1({ kind: "topic", id: topic.unnamed }))?.title).toBe("");
       expect((await resolve1({ kind: "topic", id: topic.unnamed }))?.preview).toBe("");
+    });
+
+    it("leaves the citation markers of an overview lead out of a topic preview", async () => {
+      expect((await resolve1({ kind: "topic", id: topic.sleep }))?.preview).toBe("Naps help.");
+      expect((await resolve1({ kind: "topic", id: topic.stale }))?.preview).toBe("Old tree lead.");
+    });
+
+    it("marks a topic of a retired tree retired, though its own retired_at is null", async () => {
+      expect(await resolve1({ kind: "topic", id: topic.stale })).toMatchObject({
+        title: "Stale sleep",
+        status: "retired"
+      });
+      expect((await resolve1({ kind: "topic", id: topic.sleep }))?.status).toBe("current");
     });
 
     it("summarises an entity and a question", async () => {
@@ -671,6 +713,75 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
       expect(items.filter((item) => item.via === "question_citation")).toEqual([
         expect.objectContaining({ from: at("question", w.q1), via: "question_citation" })
       ]);
+    });
+
+    it("keeps a topic's backlink position when its overview is rewritten", async () => {
+      const sourceId = randomUUID();
+      const docId = randomUUID();
+      const chunkId = randomUUID();
+      const noteId = randomUUID();
+      await source(sourceId, "Overview source");
+      await document(docId, sourceId);
+      await chunk(chunkId, docId, sourceId, 0, "Overview passage.");
+      await note(noteId, "Cited note", "Body.", sourceId, chunkId);
+      const active = await pool.query<{ id: string }>(
+        "select id from topic_trees where status = 'active'"
+      );
+      const overviews = createTopicOverviewRepository(pool);
+      const write = (topicId: string, text: string) =>
+        overviews.write({
+          topicId,
+          paragraphs: [{ text, citations: [1] }],
+          evidence: [],
+          memberFingerprint: "members",
+          memberCount: 1,
+          inputHash: text,
+          promptRevisionId: "topic.overview@test",
+          provider: "test",
+          model: "test",
+          runtime: "none",
+          aiTaskRunId: null,
+          language: "en",
+          support: { status: "unchecked", unsupported: [] },
+          divergences: [],
+          citations: [
+            {
+              n: 1,
+              chunkId,
+              sourceSpanId: null,
+              noteId,
+              excerpt: "Overview passage.",
+              excerptHash: hash("Overview passage.")
+            }
+          ]
+        });
+      const ids: string[] = [];
+      for (let index = 0; index < 5; index += 1) {
+        const id = randomUUID();
+        ids.push(id);
+        await pool.query(
+          `insert into topics (id, tree_id, role, parent_id, title, name_state, name_source, name_language, management)
+           values ($1, $2, 'topic', $3, $4, 'named', 'llm', 'en', 'human')`,
+          [id, active.rows[0]!.id, topic.science, `Cited by overview ${index}`]
+        );
+        await write(id, `Lead ${index}.`);
+      }
+      const address: ObjectAddress = { kind: "note", id: noteId };
+      const whole = await objects.backlinks({ target: address, limit: 50 });
+      const overviewRows = whole.items.filter((item) => item.via === "overview_citation");
+      expect(overviewRows).toHaveLength(5);
+      const first = await objects.backlinks({ target: address, limit: 2 });
+      // The topic the last page ends with is rewritten while the client holds its cursor.
+      const last = overviewRows.at(-1)!.from;
+      await write(last.slice("memora://topic/".length), "Lead rewritten.");
+      const rest: ObjectBacklink[] = [];
+      let cursor = first.next;
+      while (cursor) {
+        const page = await objects.backlinks({ target: address, limit: 2, cursor });
+        rest.push(...page.items);
+        cursor = page.next;
+      }
+      expect([...first.items, ...rest]).toEqual(whole.items);
     });
 
     it("equals the shown relations of note-relation-sql on the same fixtures", async () => {
