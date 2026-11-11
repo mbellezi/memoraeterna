@@ -172,8 +172,8 @@ export function StandInPage({
   if (reported === "loading")
     return (
       <LoadingState t={stubT} delayMs={0}>
-        <Skeleton className={cn("h-6", compact ? "w-4/5" : "w-3/5")} />
-        <Skeleton className="w-2/5" />
+        <Skeleton className={cn("h-6 max-w-(--measure)", compact ? "w-4/5" : "w-3/5")} />
+        <Skeleton className="w-2/5 max-w-(--measure)" />
         <SkeletonLines lines={compact ? 3 : 5} className="mt-4 max-w-(--measure)" />
       </LoadingState>
     );
@@ -185,7 +185,6 @@ export function StandInPage({
         className="max-w-(--measure)"
         message={`This ${kind} could not be opened.`}
         kept={`Nothing was changed. The ${kind} is still in your library.`}
-        retryLabel="Try again"
         onRetry={() => undefined}
       />
     );

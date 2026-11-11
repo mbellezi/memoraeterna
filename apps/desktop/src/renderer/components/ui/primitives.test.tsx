@@ -293,11 +293,37 @@ describe("the four-state building blocks", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("The library did not load.");
     expect(html).toContain("Nothing was lost.");
-    expect(html).toContain(">Retry<");
+    expect(html).toContain(">Try again<");
     expect(html).toContain(">Details<");
     expect(html).toContain('aria-expanded="false"');
     // The technical text stays folded until asked for.
     expect(html).not.toContain("ECONNRESET");
+  });
+
+  it("error is quiet: no danger fill or box, a solid triangle, the reading measure", () => {
+    const html = renderToStaticMarkup(
+      <ErrorState t={t} message="It failed." kept="Nothing was lost." onRetry={noop} />
+    );
+    expect(html).not.toContain("bg-danger-soft");
+    expect(html).not.toContain("border-danger");
+    const rootClass = /^<div role="alert" class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(rootClass).not.toMatch(/\b(border|bg-|p-\d|rounded)/);
+    // The glyph is the solid triangle (a filled path), not an outline icon.
+    expect(html).toContain('fill="currentColor"');
+    expect(html).not.toContain("lucide");
+    expect(html).toContain("text-danger");
+    expect(html).toContain("max-w-(--measure)");
+    expect(html).toContain('role="alert"');
+  });
+
+  it("an empty headline balances its lines only on a page", () => {
+    const inline = renderToStaticMarkup(<EmptyState headline="Nothing is placed here yet." />);
+    const page = renderToStaticMarkup(
+      <EmptyState variant="page" headline="Nothing is placed here yet." />
+    );
+    expect(inline).not.toContain("text-wrap:balance");
+    expect(inline).toContain("text-wrap:pretty");
+    expect(page).toContain("text-wrap:balance");
   });
 
   it("error without a retry or details shows the sentence alone", () => {
