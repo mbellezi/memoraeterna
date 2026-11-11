@@ -15,6 +15,7 @@ import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { destinationIds, type DestinationId } from "./destinations";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
+import type { RibbonPlace } from "./PathRibbon";
 import { destinationTitleKeys } from "./shell-model";
 import {
   layout,
@@ -25,6 +26,7 @@ import {
   type WorkspaceAction,
   type WorkspaceState
 } from "./state";
+import { layoutConfig } from "./layout-config";
 import { panelStackStyles } from "./panel-stack-styles";
 
 /**
@@ -38,6 +40,22 @@ import { panelStackStyles } from "./panel-stack-styles";
  * `Component`, and the host finds them with `import.meta.glob`; there is no shared registry to edit.
  */
 
+/**
+ * How a panel's object is placed, as the panel knows it: a Source still being processed or a
+ * Question still streaming is `tentative…`, a finished Question is `byCitations`. `choose` is the
+ * panel's "Escolher lugar" for an object with no place; absent, the ribbon only says "Sem lugar".
+ */
+export interface PanelPlace {
+  place: RibbonPlace;
+  choose?: () => void;
+}
+
+/** What the frame draws of a panel's place. */
+interface PanelPlaceShown {
+  place: RibbonPlace;
+  canChoose: boolean;
+}
+
 /** What the host gives a panel's component. */
 export interface PanelProps {
   t: Translator;
@@ -48,6 +66,8 @@ export interface PanelProps {
   active: boolean;
   /** The panel's own load state; the frame writes it as `data-state`. */
   onState: (state: PanelLoadState) => void;
+  /** How the panel's object is placed; the frame's path ribbon draws it ("placed" until told). */
+  onPlace: (place: PanelPlace) => void;
   /** Opens an address beside this panel, or in it ("abrir neste painel", Option-click). */
   onOpen: (address: PanelAddress, options?: { replace?: boolean }) => void;
   /** For a root in its compact form: the address of the panel it opened (`aria-current`). */
@@ -127,31 +147,67 @@ export interface StackItemView {
 
 export interface StackView {
   items: StackItemView[];
-  /** The merged items, oldest first, for the "+N" spine and its list. */
+  /** The merged items left of the top, oldest first, for the "+N · older" spine and its list. */
   merged: number[];
+  /** The merged items right of the top, nearest first, for the "+N · ahead" spine beside it. */
+  mergedAhead: number[];
   /** The top item: the focused panel, or -1 for the root. */
   top: number;
 }
 
 /**
  * How a stack draws in a window `viewportWidth` px wide, from `layout()` (the one source of the
- * numbers): every item's mode and side, and which ones the "+N" spine holds. `noCompact` lists the
- * items that have no compact form (they draw as their spine instead).
+ * numbers): every item's mode and side, and which ones the "+N" spines hold. `noCompact` lists the
+ * items that have no compact form (they draw as their spine instead); in focus mode (`focusMode`)
+ * no item does, so the sheet stands beside spines only (design record §3, §16 `#note`).
+ *
+ * `layout()` merges the leftmost spines. When the root is the top, those are the panels just ahead
+ * of it, so the merged items split by side: the older ones go into the "+N · older" spine at the
+ * far left, the ones ahead into a "+N · ahead" spine right of the top, before the forward spines
+ * they precede, and the trail stays in order. A side that would merge a single item into a "+1"
+ * spine, which saves no room, merges the next spine with it.
  */
 export function stackView(
   stack: Stack,
   viewportWidth: number,
   chrome: LayoutChrome,
-  noCompact: ReadonlySet<number> = new Set()
+  noCompact: ReadonlySet<number> = new Set(),
+  focusMode = false
 ): StackView {
   const top = Math.min(Math.max(stack.focus, -1), stack.panels.length - 1);
-  const items = layout(stack, viewportWidth, undefined, chrome).map((item): StackItemView => ({
+  const laid = layout(stack, viewportWidth, undefined, chrome).map((item): StackItemView => ({
     panel: item.panel,
-    mode: item.mode === "compact" && noCompact.has(item.panel) ? "spine" : item.mode,
+    mode: item.mode === "compact" && (focusMode || noCompact.has(item.panel)) ? "spine" : item.mode,
     side: item.panel > top ? "right" : "left",
     merged: item.merged === true
   }));
-  return { items, merged: items.filter((item) => item.merged).map((item) => item.panel), top };
+  // The spines of each side in index order; layout() merges a prefix of all of them.
+  const left = laid.filter((item) => item.side === "left" && item.mode === "spine");
+  const right = laid.filter((item) => item.side === "right" && item.mode === "spine");
+  // A "+1" spine would save nothing: one more merges with it, or it stays its own spine.
+  const pair = (count: number, spines: readonly StackItemView[]) =>
+    count === 1 ? (spines.length >= 2 ? 2 : 0) : count;
+  const split = (merged: number): [number, number] => {
+    const olderPart = Math.min(merged, left.length);
+    return [pair(olderPart, left), pair(merged - olderPart, right)];
+  };
+  let merged = laid.filter((item) => item.merged).length;
+  let [olderCount, aheadCount] = split(merged);
+  // A previous panel drawn as its spine (focus mode) may pass six spines: the next ones merge.
+  while (
+    left.length + right.length - olderCount - aheadCount > layoutConfig.maxSpines &&
+    merged < left.length + right.length
+  ) {
+    merged += 1;
+    [olderCount, aheadCount] = split(merged);
+  }
+  const older = new Set(left.slice(0, olderCount).map((item) => item.panel));
+  const ahead = new Set(right.slice(0, aheadCount).map((item) => item.panel));
+  const items = laid.map((item) => ({
+    ...item,
+    merged: older.has(item.panel) || ahead.has(item.panel)
+  }));
+  return { items, merged: [...older], mergedAhead: [...ahead], top };
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +268,7 @@ export interface PanelStackProps {
   chrome: LayoutChrome;
   /** The stack is on screen (Settings or an old screen covers it otherwise). */
   shown?: boolean;
-  /** Focus mode (⌘⇧F): the top sheet's content is a centred column; Esc leaves it. */
+  /** Focus mode (⌘⇧F): the sheet beside spines, its content centred; Esc leaves it. */
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
   /** The panel modules; the files of `panels/` by default (a screen or a test passes its own). */
@@ -242,6 +298,28 @@ export function PanelStack({
   const place = workspace.destination;
   const current: DestinationId | null = place === "settings" ? null : place;
   const [states, setStates] = useState<ReadonlyMap<string, PanelLoadState>>(new Map());
+  // What each panel says of its place. Its "Escolher lugar" is kept aside (one map for the host's
+  // life), so a new callback from a panel draws nothing again.
+  const [places, setPlaces] = useState<ReadonlyMap<string, PanelPlaceShown>>(new Map());
+  const [choosers] = useState(() => new Map<string, () => void>());
+  const reportPlace = useCallback(
+    (key: string, report: PanelPlace) => {
+      if (report.choose) choosers.set(key, report.choose);
+      else choosers.delete(key);
+      const shown: PanelPlaceShown = {
+        place: report.place,
+        canChoose: report.choose !== undefined
+      };
+      setPlaces((map) => {
+        const known = map.get(key);
+        if (known && known.place === shown.place && known.canChoose === shown.canChoose) return map;
+        const next = new Map(map);
+        next.set(key, shown);
+        return next;
+      });
+    },
+    [choosers]
+  );
   const report = useCallback((key: string, state: PanelLoadState) => {
     setStates((map) => {
       if (map.get(key) === state) return map;
@@ -267,9 +345,9 @@ export function PanelStack({
   const activeStack = current ? workspace.stacks[current] : null;
   const noCompact = new Set<number>();
   if (activeStack && moduleFor(activeStack.root)?.compact === false) noCompact.add(-1);
-  const view = activeStack
-    ? stackView(activeStack, viewportWidth, chrome, noCompact)
-    : { items: [], merged: [], top: -1 };
+  const view: StackView = activeStack
+    ? stackView(activeStack, viewportWidth, chrome, noCompact, focusMode)
+    : { items: [], merged: [], mergedAhead: [], top: -1 };
   const summaries = useSummaries(
     activeStack ? activeStack.panels.map(addressOf) : [],
     shown && activeStack !== null
@@ -361,28 +439,55 @@ export function PanelStack({
     );
   };
 
-  const moreSpine = (destination: DestinationId, stack: Stack, merged: readonly number[]) => {
+  const moreSpine = (
+    destination: DestinationId,
+    stack: Stack,
+    merged: readonly number[],
+    side: StackItemView["side"] = "left"
+  ) => {
+    const copy =
+      side === "left"
+        ? ({
+            open: "panelFrame.olderOpen",
+            list: "panelFrame.olderList",
+            word: "panelFrame.older"
+          } as const)
+        : ({
+            open: "panelFrame.aheadOpen",
+            list: "panelFrame.aheadList",
+            word: "panelFrame.ahead"
+          } as const);
     const names = merged.map((index) =>
       index === -1
         ? rootTitle(destination)
         : `${kindWordOf(addressOf(stack.panels[index] as Panel))}: ${titleOf(addressOf(stack.panels[index] as Panel))}`
     );
-    const label = t("panelFrame.olderOpen", {
+    const label = t(copy.open, {
       values: { count: merged.length, titles: names.join("; ") }
     });
     return (
-      <Popover key="more">
+      <Popover key={`more:${side}`}>
         <PopoverTrigger asChild>
-          <button type="button" className="panel-stack__spine" aria-label={label} title={label}>
+          <button
+            type="button"
+            className="panel-stack__spine"
+            data-side={side}
+            aria-label={label}
+            title={label}
+          >
             <span className="panel-stack__spine-count">+{merged.length}</span>
             <span className="panel-stack__spine-text">
-              <span className="panel-stack__spine-kind">{t("panelFrame.older")}</span>
+              <span className="panel-stack__spine-kind">{t(copy.word)}</span>
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent side="right" align="start" className="w-72 p-1">
+        <PopoverContent
+          side={side === "left" ? "right" : "left"}
+          align="start"
+          className="w-72 p-1"
+        >
           <p className="m-0 px-2 pt-1.5 pb-1 text-xs font-semibold text-secondary-foreground">
-            {t("panelFrame.olderList", { values: { count: merged.length } })}
+            {t(copy.list, { values: { count: merged.length } })}
           </p>
           <ul className="m-0 grid list-none gap-0.5 p-0">
             {merged.map((index, at) => {
@@ -431,6 +536,7 @@ export function PanelStack({
     const mode = item?.mode ?? "spine";
     const drawn = item !== null && !item.merged && mode !== "spine";
     const onScreen = active && drawn;
+    const shownPlace = places.get(key);
     if (!module) return null;
     const Component = module.Component;
     return (
@@ -464,6 +570,8 @@ export function PanelStack({
             }}
             onClose={() => dispatch({ type: "close", panel: index })}
             onFocus={() => dispatch({ type: "focus", panel: index })}
+            {...(shownPlace ? { ribbonPlace: shownPlace.place } : {})}
+            {...(shownPlace?.canChoose ? { onChoosePlace: () => choosers.get(key)?.() } : {})}
             focusMode={focusMode}
             {...(onToggleFocusMode ? { onToggleFocusMode } : {})}
             onOpen={openFrom(index)}
@@ -476,6 +584,7 @@ export function PanelStack({
               mode={mode === "compact" ? "compact" : "full"}
               active={onScreen}
               onState={(state) => report(key, state)}
+              onPlace={(place) => reportPlace(key, place)}
               onOpen={openFrom(index)}
               {...(mode === "compact" && stack.panels[index + 1]
                 ? { current: addressOf(stack.panels[index + 1] as Panel) }
@@ -514,6 +623,7 @@ export function PanelStack({
           mode={mode === "compact" ? "compact" : "full"}
           active={onScreen}
           onState={(state) => report(key, state)}
+          onPlace={(place) => reportPlace(key, place)}
           onOpen={openFrom(-1)}
           {...(mode === "compact" && next ? { current: addressOf(next) } : {})}
         />
@@ -526,6 +636,8 @@ export function PanelStack({
   const after: ReactNode[] = [];
   if (current && activeStack) {
     if (view.merged.length > 0) before.push(moreSpine(current, activeStack, view.merged));
+    if (view.mergedAhead.length > 0)
+      after.push(moreSpine(current, activeStack, view.mergedAhead, "right"));
     for (const item of view.items) {
       if (item.merged) continue;
       if (item.mode === "spine")
@@ -534,9 +646,10 @@ export function PanelStack({
     }
   }
 
-  // Drawn order: the "+N" spine, the left spines, the root, the panels, the forward spines. A
-  // spine left of the root is impossible (the root is the first item), so the left spines all
-  // follow it when the root is drawn; when it is a spine itself, it is among them.
+  // Drawn order: the "+N" spine, the left spines, the root, the panels, the "+N" spine of the
+  // panels ahead, the forward spines. A spine left of the root is impossible (the root is the
+  // first item), so the left spines all follow it when the root is drawn; when it is a spine
+  // itself, it is among them.
   const rootDrawn = view.items.some(
     (item) => item.panel === -1 && item.mode !== "spine" && !item.merged
   );

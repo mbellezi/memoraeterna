@@ -61,6 +61,7 @@ function FramedPanel() {
             mode="full"
             active
             onState={report}
+            onPlace={noop}
             onOpen={noop}
           />
         </PanelFrame>

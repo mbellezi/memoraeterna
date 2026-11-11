@@ -65,6 +65,7 @@ import type { KeymapResult } from "./workspace/keymap";
 import { useViewportWidth, useWorkspace } from "./workspace/use-workspace";
 import * as legacyPanel from "./workspace/views/legacy.panel";
 import {
+  createScreenScroll,
   LegacyScreen,
   LegacyViewsContext,
   type LegacyViewsValue
@@ -153,6 +154,8 @@ export function App({
   );
   // What the Wiki shows (a topic, or where to start), as the history its Back and Forward follow.
   const [wikiHistory, setWikiHistory] = useState(startWikiTopicHistory);
+  // Where Settings and the old screens were scrolled, kept while the stack covers them.
+  const [screenScroll] = useState(createScreenScroll);
   // What Back and Forward step from: they arrive outside render, after the last commit.
   const wikiHistoryRef = useRef(wikiHistory);
   useEffect(() => {
@@ -512,6 +515,7 @@ export function App({
   }
 
   function selectSettingsScope(scope: SettingsScope) {
+    screenScroll.resetSettings();
     setActiveSettingsScope(scope);
   }
 
@@ -728,6 +732,7 @@ export function App({
     pushToast: (message, tone) => pushToast(t(message), tone),
     openImportedSource,
     searchState,
+    screenScroll,
     setSearchState
   };
 

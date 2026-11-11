@@ -45,7 +45,8 @@ function topWidth(view: StackView, width: number, chrome: LayoutChrome): number 
   const compact = view.items.some((item) => item.mode === "compact") ? tier.prevW : 0;
   const spines =
     view.items.filter((item) => item.mode === "spine" && !item.merged).length +
-    (view.merged.length > 0 ? 1 : 0);
+    (view.merged.length > 0 ? 1 : 0) +
+    (view.mergedAhead.length > 0 ? 1 : 0);
   return stack - compact - spines * tier.spineW;
 }
 
@@ -108,6 +109,42 @@ describe("the host lays the stack out with layout() at 960, 1280 and 1440 px", (
     const view = stackView(stackOf(4, 1), 1440, { navigator: true, context: false });
     expect(view.items.filter((item) => item.side === "right").map((i) => i.panel)).toEqual([2, 3]);
     expect(view.items.find((item) => item.panel === 1)?.mode).toBe("full");
+  });
+
+  it("draws no compact panel in focus mode: the sheet stands beside spines", () => {
+    const chrome = { navigator: false, context: false };
+    expect(stackView(stackOf(3), 1440, chrome).items.map((item) => item.mode)).toContain("compact");
+    const focus = stackView(stackOf(3), 1440, chrome, new Set(), true);
+    expect(focus.items.map((item) => item.mode)).toEqual(["spine", "spine", "spine", "full"]);
+  });
+
+  it("keeps panels ahead of a focused root right of it, never among the older ones", () => {
+    const view = stackView(stackOf(4, -1), 960, { navigator: true, context: false });
+    expect(view.top).toBe(-1);
+    expect(view.merged).toEqual([]);
+    expect(view.mergedAhead).toEqual([0, 1]);
+    expect(view.items.filter((item) => item.merged).every((item) => item.side === "right")).toBe(
+      true
+    );
+  });
+
+  it("never merges a single panel into a +1 spine, and keeps six spines at most", () => {
+    for (const chrome of chromes)
+      for (const width of [960, 1280, 1440, 1680])
+        for (let count = 1; count <= 8; count += 1)
+          for (let focus = -1; focus < count; focus += 1) {
+            const view = stackView(stackOf(count, focus), width, chrome);
+            expect(view.merged.length).not.toBe(1);
+            expect(view.mergedAhead.length).not.toBe(1);
+            for (const focusMode of [false, true]) {
+              const drawn = stackView(stackOf(count, focus), width, chrome, new Set(), focusMode);
+              const spines = drawn.items.filter((item) => item.mode === "spine" && !item.merged);
+              expect(spines.length).toBeLessThanOrEqual(layoutConfig.maxSpines);
+            }
+          }
+    // At 1440 px with the navigator and 8 panels, layout() merges the root alone; the next joins it.
+    const view = stackView(stackOf(8), 1440, { navigator: true, context: false });
+    expect(view.merged).toEqual([-1, 0]);
   });
 
   it("draws a root with no compact form as its spine", () => {
@@ -178,7 +215,7 @@ describe("the host", () => {
     }
   ];
 
-  function render(count: number, width: number, focus?: number) {
+  function render(count: number, width: number, focus?: number, focusMode = false) {
     const workspace = defaultWorkspace("2026-11-11");
     workspace.destination = "explore";
     workspace.stacks.explore = stackOf(count, focus);
@@ -190,6 +227,7 @@ describe("the host", () => {
         dispatch={noop}
         viewportWidth={width}
         chrome={{ navigator: true, context: false }}
+        focusMode={focusMode}
         registry={registry}
       />
     );
@@ -216,6 +254,53 @@ describe("the host", () => {
     const html = render(8, 960);
     expect(html).toMatch(/older panels: /u);
     expect(html).toContain("panel-stack__spine-count");
+  });
+
+  it("draws the panels ahead of a focused root after it, as panels ahead", () => {
+    const html = render(4, 960, -1);
+    expect(html).not.toMatch(/older panels/u);
+    expect(html).toMatch(/2 panels ahead: /u);
+    // The trail stays in order: the root, then the merged panels ahead, then the forward spines.
+    const root = html.indexOf("data-root-surface");
+    const ahead = html.indexOf("panels ahead");
+    const forward = html.indexOf('data-side="right" aria-label="Note. Reopen"');
+    expect(root).toBeGreaterThan(-1);
+    expect(ahead).toBeGreaterThan(root);
+    expect(forward).toBeGreaterThan(ahead);
+  });
+
+  it("draws spines and the sheet only in focus mode", () => {
+    expect(render(3, 1680)).toContain('data-panel-mode="compact"');
+    const html = render(3, 1680, undefined, true);
+    expect(html).not.toContain('data-panel-mode="compact"');
+    expect(html).toContain('data-panel-mode="full"');
+    expect(html).toContain("data-focus-mode");
+  });
+
+  it("gives every panel a channel to report its place to the frame's ribbon", () => {
+    const places = [
+      ...registry,
+      {
+        kind: "placing",
+        match: (address: string) => address.startsWith("memora://note/"),
+        title: () => "",
+        Component: ({ onPlace }: { onPlace?: unknown }) => <p data-reports-place={typeof onPlace} />
+      }
+    ];
+    const workspace = defaultWorkspace("2026-11-11");
+    workspace.destination = "explore";
+    workspace.stacks.explore = stackOf(1);
+    const html = renderToString(
+      <PanelStack
+        t={en}
+        workspace={workspace}
+        dispatch={noop}
+        viewportWidth={1440}
+        chrome={{ navigator: true, context: false }}
+        registry={places.filter((module) => module.kind !== "fake")}
+      />
+    );
+    expect(html).toContain('data-reports-place="function"');
   });
 
   it("keeps a hidden destination's drawn panel mounted, hidden", () => {

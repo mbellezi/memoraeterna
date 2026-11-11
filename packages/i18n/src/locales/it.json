@@ -3793,6 +3793,9 @@
     }
   },
   "panelFrame": {
+    "ahead": "successivi",
+    "aheadList": "{count} pannelli successivi",
+    "aheadOpen": "{count} pannelli successivi: {titles}. Apri l’elenco",
     "back": "Indietro in questo pannello",
     "close": "Chiudi il pannello",
     "focus": "Fuoco",
@@ -3818,6 +3821,7 @@
       "tentative": "Posizione probabile:",
       "tentativeQuestion": "dalle citazioni, quando la risposta sarà finita",
       "tentativeSource": "definita quando le note saranno pronte",
+      "topLevel": "Al primo livello dell’albero",
       "unsorted": "Senza posizione",
       "untitled": "Argomento senza nome"
     },

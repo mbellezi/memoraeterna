@@ -9,6 +9,7 @@ import type { Translator } from "@app/i18n";
 
 import { ObjectKindGlyph } from "../components/glyphs";
 import { Skeleton } from "../components/ui/skeleton";
+import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { useObjectChanged } from "../lib/object-events";
 
@@ -47,6 +48,19 @@ export function ribbonSegments(located: ObjectLocateResult): RibbonSegment[] {
     .map((ref) => ({ address: topicAddress(ref), id: ref.id, title: ref.title }));
 }
 
+/**
+ * Whether a located object has no place in the tree: no read result, or a primary path with no
+ * topic but the object itself. A top-level topic (its path is the root and itself) is placed: its
+ * only ancestor is the untitled root, so it has no crumbs, but it is never drawn as unsorted.
+ */
+export function isUnsorted(located: ObjectLocateResult | null): boolean {
+  if (!located) return true;
+  const { object } = located;
+  return !located.primaryPath.some(
+    (ref) => ref.kind === "topic" && !(ref.kind === object.kind && ref.id === object.id)
+  );
+}
+
 /** A run of crumbs folded into the "…" button. */
 export interface FoldedCrumbs {
   folded: number;
@@ -67,13 +81,17 @@ export function foldMiddle<T>(segments: readonly T[], hidden: number): (T | Fold
 const isFolded = (entry: unknown): entry is FoldedCrumbs =>
   typeof entry === "object" && entry !== null && "folded" in entry;
 
-type Located =
+/** The ribbon's read of `objects.locate`. */
+export type Located =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; located: ObjectLocateResult | null };
 
-/** Reads `objects.locate` for an address, and again when `object.changed` names the object. */
-function useLocated(address: string, active: boolean): [Located, () => void] {
+/**
+ * Reads `objects.locate` for an address. It returns the read, a retry that shows the skeleton, and
+ * a quiet re-read that keeps the shown place until the new one arrives.
+ */
+function useLocated(address: string, active: boolean): [Located, () => void, () => void] {
   const [state, setState] = useState<Located>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -96,13 +114,13 @@ function useLocated(address: string, active: boolean): [Located, () => void] {
       live = false;
     };
   }, [address, active, attempt]);
-  useObjectChanged([address], () => setAttempt((value) => value + 1), active);
   return [
     state,
     () => {
       setState({ status: "loading" });
       setAttempt((value) => value + 1);
-    }
+    },
+    () => setAttempt((value) => value + 1)
   ];
 }
 
@@ -124,20 +142,34 @@ export interface PathRibbonProps {
 /** The ribbon's line height in px per size: two lines at most before the middle folds. */
 const lineHeight = { regular: 20, compact: 16 } as const;
 
-export function PathRibbon({
-  t,
-  address,
-  compact = false,
-  place = "placed",
-  active = true,
-  onOpen,
-  onChoosePlace
-}: PathRibbonProps) {
+export function PathRibbon(props: PathRibbonProps) {
+  const { address, active = true } = props;
   const parsed = parseObjectAddress(address);
   const objectAddress = parsed
     ? formatObjectAddress({ kind: parsed.kind, id: parsed.id })
     : address;
-  const [located, retry] = useLocated(objectAddress, active);
+  const [located, retry, reread] = useLocated(objectAddress, active);
+  // The place follows the object and every topic of its path: a renamed or moved ancestor, or a
+  // tree change that places the object elsewhere, reads the place again.
+  const crumbs =
+    located.status === "ready" && located.located ? ribbonSegments(located.located) : [];
+  useObjectChanged([objectAddress, ...crumbs.map((crumb) => crumb.address)], reread, active);
+  useAppEvent("tree.changed", reread, active);
+  return <PathRibbonView {...props} located={located} onRetry={retry} />;
+}
+
+/** The ribbon for a read of the place (`PathRibbon` reads it; a test passes its own). */
+export function PathRibbonView({
+  t,
+  address,
+  compact = false,
+  place = "placed",
+  onOpen,
+  onChoosePlace,
+  located,
+  onRetry: retry
+}: PathRibbonProps & { located: Located; onRetry: () => void }) {
+  const parsed = parseObjectAddress(address);
   const segments =
     located.status === "ready" && located.located ? ribbonSegments(located.located) : [];
   const isTopic = parsed?.kind === "topic";
@@ -211,7 +243,7 @@ export function PathRibbon({
       </nav>
     );
 
-  if (segments.length === 0)
+  if (located.status === "ready" && isUnsorted(located.located))
     return (
       <nav
         aria-label={t("panelFrame.ribbon.label")}
@@ -239,6 +271,23 @@ export function PathRibbon({
     );
 
   const tentative = place === "tentativeSource" || place === "tentativeQuestion";
+  // A placed object with no crumbs is a top-level topic: its only ancestor is the root.
+  if (segments.length === 0 && !tentative)
+    return (
+      <nav
+        aria-label={t("panelFrame.ribbon.label")}
+        data-path-ribbon=""
+        data-ribbon-state="placed"
+        className={shell}
+      >
+        <ObjectKindGlyph
+          kind="topic"
+          size={compact ? 12 : 14}
+          className={cn("text-object-topic", compact ? "mt-[2px]" : "mt-[3px]")}
+        />
+        <span>{t("panelFrame.ribbon.topLevel")}</span>
+      </nav>
+    );
   const shown = expanded ? segments : foldMiddle(segments, hidden);
   const crumbs = shown.map((entry, index) => {
     const separator =

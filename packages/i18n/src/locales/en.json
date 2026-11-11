@@ -3795,6 +3795,9 @@
     }
   },
   "panelFrame": {
+    "ahead": "ahead",
+    "aheadList": "{count} panels ahead",
+    "aheadOpen": "{count} panels ahead: {titles}. Open the list",
     "back": "Back in this panel",
     "close": "Close panel",
     "focus": "Focus",
@@ -3820,6 +3823,7 @@
       "tentative": "Likely place:",
       "tentativeQuestion": "by the citations, when the answer is done",
       "tentativeSource": "set when the notes are done",
+      "topLevel": "At the top level of the tree",
       "unsorted": "No place",
       "untitled": "Untitled topic"
     },

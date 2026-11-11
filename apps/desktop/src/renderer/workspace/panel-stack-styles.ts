@@ -113,8 +113,11 @@ export const panelStackStyles = `
   color: var(--text-primary);
 }
 
-/* Focus mode (⌘⇧F): the top sheet's content sits in a centred reading column. */
-.panel-stack[data-focus-mode] .panel-stack__item[data-mode="full"] {
-  justify-content: center;
+/*
+ * Focus mode (⌘⇧F): the sheet stands beside spines only (stackView draws no compact panel), and
+ * its page's content grid, which sets its own measure, is centred in the sheet.
+ */
+.panel-stack[data-focus-mode] .panel-stack__item[data-mode="full"] [data-panel-body] > * {
+  margin-inline: auto;
 }
 `;

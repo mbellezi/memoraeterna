@@ -3,8 +3,15 @@ import { describe, expect, it } from "vitest";
 import { createTranslator, type Translator } from "@app/i18n";
 import type { ObjectLocateResult } from "@app/domain";
 
-import { PanelFrame, panelStates, type PanelFrameProps } from "./PanelFrame";
-import { foldMiddle, PathRibbon, ribbonSegments } from "./PathRibbon";
+import { PanelFrame, panelStates, pressFocusesPanel, type PanelFrameProps } from "./PanelFrame";
+import {
+  foldMiddle,
+  isUnsorted,
+  PathRibbon,
+  PathRibbonView,
+  ribbonSegments,
+  type Located
+} from "./PathRibbon";
 import { defaultWorkspace } from "./state";
 import { focusedPanel } from "./use-workspace";
 
@@ -79,6 +86,17 @@ describe("the panel frame", () => {
     expect(html).toContain('aria-label="Fechar painel"');
   });
 
+  it("returns to the previous panel on a press of its surface, never of its controls", () => {
+    const frameNode = { closest: () => null };
+    const row = { role: "row button" };
+    // A press on a list row or on × reaches the control itself: the panel does not jump first.
+    expect(pressFocusesPanel({ closest: () => row }, frameNode)).toBe(false);
+    // A press on the panel's text or padding makes it the top.
+    expect(pressFocusesPanel({ closest: () => null }, frameNode)).toBe(true);
+    expect(pressFocusesPanel({ closest: () => frameNode }, frameNode)).toBe(true);
+    expect(pressFocusesPanel(null, frameNode)).toBe(true);
+  });
+
   it("offers the pin only where a pin action exists", () => {
     expect(frame({}, pt)).not.toContain("Fixar no navegador");
     expect(frame({ onPin: noop }, pt)).toContain('aria-label="Fixar no navegador"');
@@ -131,6 +149,53 @@ describe("the path ribbon", () => {
     expect(foldMiddle(crumbs, 2)).toEqual(["a", { folded: 2 }, "d", "e"]);
     expect(foldMiddle(crumbs, 99)).toEqual(["a", { folded: 3 }, "e"]);
     expect(foldMiddle(["a", "b"], 5)).toEqual(["a", "b"]);
+  });
+
+  const ribbon = (address: string, read: Located, props: { place?: "tentativeSource" } = {}) =>
+    renderToString(
+      <PathRibbonView
+        t={pt}
+        address={address}
+        onOpen={noop}
+        located={read}
+        onRetry={noop}
+        {...props}
+      />
+    );
+
+  it("draws a top-level topic as placed, never as unsorted", () => {
+    const topic = ref("topic", 2, "Life sciences");
+    const read = located([ref("topic", 1, ""), topic]);
+    expect(ribbonSegments(read)).toEqual([]);
+    expect(isUnsorted(read)).toBe(false);
+    const html = ribbon(`memora://topic/${topic.id}`, { status: "ready", located: read });
+    expect(html).toContain('data-ribbon-state="placed"');
+    expect(html).toContain("No primeiro nível da árvore");
+    expect(html).not.toContain("Sem lugar");
+  });
+
+  it("draws an object with no topic in its path as unsorted", () => {
+    const loose = located([ref("source", 4, "Food microbiology"), ref("note", 5, "Lactic acid")]);
+    expect(isUnsorted(loose)).toBe(true);
+    expect(isUnsorted(null)).toBe(true);
+    const html = ribbon(noteAddress, { status: "ready", located: loose });
+    expect(html).toContain('data-ribbon-state="unsorted"');
+    expect(html).toContain("Sem lugar");
+  });
+
+  it("draws the place a panel reports as tentative with a dashed path", () => {
+    const read = located([
+      ref("topic", 1, ""),
+      ref("topic", 2, "Life sciences"),
+      ref("note", 5, "Lactic acid")
+    ]);
+    const html = ribbon(
+      noteAddress,
+      { status: "ready", located: read },
+      { place: "tentativeSource" }
+    );
+    expect(html).toContain('data-ribbon-state="tentative"');
+    expect(html).toContain("Lugar provável:");
   });
 
   it("shows a busy skeleton while it reads the place", () => {

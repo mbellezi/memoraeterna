@@ -94,6 +94,45 @@ export interface LegacyViewsValue {
   openImportedSource: (sourceItemId: string, status?: MessageKey) => void;
   searchState: SearchViewState;
   setSearchState: (state: SearchViewState) => void;
+  /** Where Settings and each old screen were scrolled (`createScreenScroll`). */
+  screenScroll: ScreenScroll;
+}
+
+/** A screen's scroll box, as the memory reads and writes it. */
+export interface ScrollBox {
+  scrollTop: number;
+}
+
+/**
+ * The scroll offsets of Settings and the old screens, which share one box in place of the stack
+ * (the old app's per-view offsets): each screen comes back where it was, and choosing a Settings
+ * section starts Settings at the top.
+ */
+export interface ScreenScroll {
+  /** The screen `view` shows in `box`, or left (null): a shown screen gets its offset back. */
+  show: (view: string, box: ScrollBox | null) => void;
+  /** The shown screen was scrolled to `top`. */
+  remember: (view: string, top: number) => void;
+  /** A Settings section was chosen: Settings starts at the top, now if it is shown. */
+  resetSettings: () => void;
+}
+
+export function createScreenScroll(): ScreenScroll {
+  const offsets = new Map<string, number>();
+  let shown: { view: string; box: ScrollBox } | null = null;
+  return {
+    show(view, box) {
+      shown = box ? { view, box } : null;
+      if (box) box.scrollTop = offsets.get(view) ?? 0;
+    },
+    remember(view, top) {
+      offsets.set(view, top);
+    },
+    resetSettings() {
+      offsets.set("settings", 0);
+      if (shown?.view === "settings") shown.box.scrollTop = 0;
+    }
+  };
 }
 
 /** The ids of the old views a destination hosts as its root. */
@@ -248,9 +287,18 @@ export function HostedLegacyView({ view, active }: { view: LegacyHostedView; act
 /** Settings or an old screen of the rail's "Old screens" menu, in place of the stack. */
 export function LegacyScreen({ view }: { view: "settings" | LegacyViewId }) {
   const legacy = useLegacyViews();
-  const { t } = legacy;
+  const { t, screenScroll } = legacy;
+  const box = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    screenScroll.show(view, box.current);
+    return () => screenScroll.show(view, null);
+  }, [view, screenScroll]);
   return (
-    <ScrollArea active>
+    <div
+      ref={box}
+      className="h-full min-h-0 w-full overflow-auto overscroll-contain p-5"
+      onScroll={(event) => screenScroll.remember(view, event.currentTarget.scrollTop)}
+    >
       {view === "settings" ? (
         // The old Settings keeps its section menu until Settings v2 (T161) brings its own column.
         <div className="flex min-h-full gap-5">
@@ -313,6 +361,6 @@ export function LegacyScreen({ view }: { view: "settings" | LegacyViewId }) {
           onOpenSource={(sourceItemId) => legacy.openLibrarySource({ sourceItemId })}
         />
       ) : null}
-    </ScrollArea>
+    </div>
   );
 }

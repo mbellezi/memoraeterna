@@ -3798,6 +3798,9 @@
     }
   },
   "panelFrame": {
+    "ahead": "à frente",
+    "aheadList": "{count} painéis à frente",
+    "aheadOpen": "{count} painéis à frente: {titles}. Abrir a lista",
     "back": "Voltar neste painel",
     "close": "Fechar painel",
     "focus": "Foco",
@@ -3823,6 +3826,7 @@
       "tentative": "Lugar provável:",
       "tentativeQuestion": "pelas citações, quando a resposta terminar",
       "tentativeSource": "definido quando as notas terminarem",
+      "topLevel": "No primeiro nível da árvore",
       "unsorted": "Sem lugar",
       "untitled": "Tópico sem nome"
     },

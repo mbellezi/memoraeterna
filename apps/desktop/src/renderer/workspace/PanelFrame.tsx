@@ -63,6 +63,34 @@ export interface PanelFrameProps {
   children: ReactNode;
 }
 
+/** The controls a press on the previous panel reaches as itself, without making the panel the top. */
+const panelControls =
+  'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], ' +
+  '[role="option"], [role="treeitem"], [role="menuitem"], [role="tab"], [contenteditable="true"]';
+
+/** The part of an element a press lands on that `closest` reads (a DOM element, or a test double). */
+interface PressTarget {
+  closest: (selector: string) => unknown;
+}
+
+const isPressTarget = (target: unknown): target is PressTarget =>
+  typeof target === "object" &&
+  target !== null &&
+  typeof (target as Partial<PressTarget>).closest === "function";
+
+/**
+ * Whether a press on a panel that is not the top makes it the top. A press on one of its controls
+ * (a list row, a link, its ×) does not: the control acts on mouseup, and making the panel the top
+ * on mousedown would redraw it full width and move the control from under the pointer (§8 rule 5:
+ * a click on the previous panel's own surface returns to it).
+ */
+export function pressFocusesPanel(target: unknown, frame: unknown): boolean {
+  if (!isPressTarget(target)) return true;
+  const control = target.closest(panelControls);
+  if (control === null || control === undefined || control === frame) return true;
+  return false;
+}
+
 const iconButton = cn(
   "inline-grid size-7 shrink-0 place-items-center rounded-md text-secondary-foreground",
   "transition-colors hover:bg-surface-hover hover:text-foreground",
@@ -136,7 +164,14 @@ export function PanelFrame({
       data-state={state}
       data-panel-mode={mode}
       data-panel-top={top ? "" : undefined}
-      onMouseDown={!top && onFocus ? onFocus : undefined}
+      onMouseDown={
+        !top && onFocus
+          ? (event) => {
+              if (event.button === 0 && pressFocusesPanel(event.target, event.currentTarget))
+                onFocus();
+            }
+          : undefined
+      }
       className={cn(
         "flex h-full min-h-0 w-full min-w-0 flex-col bg-surface outline-none",
         "focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]",
@@ -234,6 +269,7 @@ export function PanelFrame({
       </header>
       <div
         ref={body}
+        data-panel-body=""
         className={cn(
           "min-h-0 flex-1 overflow-auto",
           compact ? "px-4 pt-4 pb-8" : "px-(--top-pl) pt-5 pb-12"

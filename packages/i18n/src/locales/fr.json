@@ -3800,6 +3800,9 @@
     }
   },
   "panelFrame": {
+    "ahead": "suivants",
+    "aheadList": "{count} panneaux suivants",
+    "aheadOpen": "{count} panneaux suivants : {titles}. Ouvrir la liste",
     "back": "Retour dans ce panneau",
     "close": "Fermer le panneau",
     "focus": "Concentration",
@@ -3825,6 +3828,7 @@
       "tentative": "Emplacement probable :",
       "tentativeQuestion": "par les citations, quand la réponse sera terminée",
       "tentativeSource": "défini quand les notes seront prêtes",
+      "topLevel": "Au premier niveau de l’arbre",
       "unsorted": "Sans emplacement",
       "untitled": "Sujet sans nom"
     },
