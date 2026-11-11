@@ -81,7 +81,8 @@ describe("the four Obsidian services publish on their state changes", () => {
     const syncs = events.filter((event) => event.type === "obsidian.sync");
     expect(started.state).toBe("running");
     expect(syncs.map((event) => event.state)).toEqual(["running", "failed"]);
-    const { type: _type, ...last } = syncs.at(-1)!;
+    const last: Record<string, unknown> = { ...syncs.at(-1)! };
+    delete last.type;
     expect(last).toEqual(service.getSynchronizationStatus());
     expect(last).toMatchObject({ stage: "failed", error: "obsidian_sync_not_configured" });
     for (const event of syncs) expect(AppEventSchema.safeParse(event).success).toBe(true);
