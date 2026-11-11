@@ -176,10 +176,17 @@
         "any": "Tous les risques"
       }
     },
+    "confidence": {
+      "high": "confiance élevée ({percent})",
+      "medium": "confiance moyenne ({percent})",
+      "low": "confiance faible ({percent})",
+      "unknown": "confiance inconnue"
+    },
     "kinds": {
       "review": "À examiner",
       "quarantined": "Tâches en échec",
       "contradiction": "Contradictions",
+      "suggestion": "Liens suggérés",
       "withdrawn": "Liens retirés",
       "duplicate": "Doublons",
       "obsidianConflict": "Conflits Obsidian",
@@ -232,6 +239,11 @@
         "body": "Un lien suggéré indique que « {first} » et « {second} » défendent des positions opposées. Conservez-le pour consigner la contradiction, ou supprimez-le.",
         "divergenceTitle": "De nouvelles preuves divergent de la vue d'ensemble d'un sujet",
         "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
+      },
+      "suggestion": {
+        "title": "Un lien suggéré attend votre confirmation",
+        "body": "Un lien a été suggéré entre « {first} » et « {second} » : {confidence}. Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
+        "hint": "Rien n'est effacé : seul le lien change. Si vous le supprimez, il ne sera plus suggéré."
       },
       "withdrawn": {
         "title": "Un lien a été retiré",

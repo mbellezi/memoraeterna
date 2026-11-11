@@ -176,10 +176,17 @@
         "any": "Qualquer risco"
       }
     },
+    "confidence": {
+      "high": "confiança alta ({percent})",
+      "medium": "confiança média ({percent})",
+      "low": "confiança baixa ({percent})",
+      "unknown": "confiança desconhecida"
+    },
     "kinds": {
       "review": "Para revisar",
       "quarantined": "Tarefas com falha",
       "contradiction": "Contradições",
+      "suggestion": "Conexões sugeridas",
       "withdrawn": "Conexões retiradas",
       "duplicate": "Duplicatas",
       "obsidianConflict": "Conflitos do Obsidian",
@@ -232,6 +239,11 @@
         "body": "Uma conexão sugerida diz que “{first}” e “{second}” têm posições opostas. Mantenha-a para registrar a contradição ou remova-a.",
         "divergenceTitle": "Novas evidências discordam da visão geral de um tema",
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
+      },
+      "suggestion": {
+        "title": "Uma conexão sugerida espera sua confirmação",
+        "body": "Foi sugerida uma conexão entre “{first}” e “{second}”: {confidence}. Mantenha-a para que conte como decisão sua ou remova-a.",
+        "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {
         "title": "Uma conexão foi retirada",

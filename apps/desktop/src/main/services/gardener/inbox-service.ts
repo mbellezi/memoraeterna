@@ -351,6 +351,7 @@ export class InboxService {
         return parseDivergenceItemId(input.id) === null
           ? this.relation(input)
           : this.divergence(input);
+      case "suggestion":
       case "withdrawn":
         return this.relation(input);
       case "quarantined":

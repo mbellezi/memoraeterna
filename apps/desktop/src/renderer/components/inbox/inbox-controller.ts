@@ -51,6 +51,7 @@ export const refreshPagesMax = 10;
 const doneMessages = {
   review: { apply: "inbox.result.applied", dismiss: "inbox.result.dismissed" },
   contradiction: { apply: "inbox.result.kept", dismiss: "inbox.result.removed" },
+  suggestion: { apply: "inbox.result.kept", dismiss: "inbox.result.removed" },
   withdrawn: { apply: "inbox.result.kept", dismiss: "inbox.result.removed" },
   quarantined: { retry: "inbox.result.retried", dismiss: "inbox.result.dismissed" },
   duplicate: { dismiss: "inbox.result.dismissed" },
